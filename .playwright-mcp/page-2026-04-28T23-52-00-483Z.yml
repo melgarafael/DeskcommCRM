@@ -1,0 +1,11 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - paragraph [ref=e4]: Configurando autenticação em duas etapas...
+    - dialog "Configure a verificação em duas etapas" [ref=e5]:
+      - generic [ref=e7]:
+        - generic [ref=e8]:
+          - heading "Configure a verificação em duas etapas" [level=2] [ref=e9]
+          - paragraph [ref=e10]: Sua conta exige 2FA. Use um aplicativo autenticador (Google Authenticator, 1Password, Authy, Bitwarden) para gerar códigos de 6 dígitos.
+        - button "Iniciar configuração" [ref=e11] [cursor=pointer]
+  - region "Notifications alt+T"
+  - alert [ref=e12]

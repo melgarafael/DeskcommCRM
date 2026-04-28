@@ -46,6 +46,7 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.0",
     "react-hotkeys-hook": "^5.2.4",
+    "resend": "^6.12.2",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8"

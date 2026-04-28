@@ -1,0 +1,15 @@
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Entrar" [level=1] [ref=e6]
+      - paragraph [ref=e7]: DeskcommCRM
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - text: Email
+        - textbox "Email" [active] [ref=e10]
+      - generic [ref=e11]:
+        - text: Senha
+        - textbox "Senha" [ref=e12]
+      - button "Entrar" [ref=e13] [cursor=pointer]
+  - region "Notifications alt+T"
+  - alert [ref=e14]

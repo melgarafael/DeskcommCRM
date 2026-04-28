@@ -1,0 +1,29 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e123]:
+    - paragraph [ref=e125]: Configurando autenticação em duas etapas...
+    - dialog "Escaneie o QR code" [ref=e133]:
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - heading "Escaneie o QR code" [level=2] [ref=e136]
+          - paragraph [ref=e137]: Abra seu app autenticador, adicione uma nova conta e digite o código de 6 dígitos abaixo.
+        - img "QR code para configurar autenticador" [ref=e139]
+        - group [ref=e140]:
+          - generic "Não consegue escanear? Digite o código manual" [ref=e141] [cursor=pointer]
+        - generic [ref=e142]:
+          - paragraph [ref=e143]: Digite o código de 6 dígitos
+          - group "Código de 6 dígitos" [ref=e144]:
+            - textbox "Dígito 1" [ref=e145]
+            - textbox "Dígito 2" [ref=e146]
+            - textbox "Dígito 3" [ref=e147]
+            - textbox "Dígito 4" [ref=e148]
+            - textbox "Dígito 5" [ref=e149]
+            - textbox "Dígito 6" [ref=e150]
+          - button "Confirmar" [disabled]
+  - region "Notifications alt+T"
+  - generic [ref=e15]:
+    - img [ref=e17]
+    - button "Open Tanstack query devtools" [ref=e65] [cursor=pointer]:
+      - img [ref=e66]
+  - button "Open Next.js Dev Tools" [ref=e119] [cursor=pointer]:
+    - img [ref=e120]
+  - alert [ref=e14]: Deskcomm — CRM operacional para e-commerce

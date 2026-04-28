@@ -1,0 +1,19 @@
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Recuperar acesso" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Use um código de recuperação para reconfigurar sua autenticação em duas etapas.
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - text: Email
+        - textbox "Email" [active] [ref=e10]
+      - generic [ref=e11]:
+        - text: Código de recuperação
+        - textbox "Código de recuperação" [ref=e12]:
+          - /placeholder: ABCD2345
+        - paragraph [ref=e13]: Use um dos 10 códigos que você salvou ao configurar a verificação em duas etapas.
+      - button "Recuperar acesso" [ref=e14] [cursor=pointer]
+    - link "Voltar ao login" [ref=e16] [cursor=pointer]:
+      - /url: /login
+  - region "Notifications alt+T"
+  - alert [ref=e17]

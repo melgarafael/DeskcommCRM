@@ -1,0 +1,17 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e123]:
+    - paragraph [ref=e125]: Configurando autenticação em duas etapas...
+    - dialog "Configure a verificação em duas etapas" [ref=e126]:
+      - generic [ref=e128]:
+        - generic [ref=e129]:
+          - heading "Configure a verificação em duas etapas" [level=2] [ref=e130]
+          - paragraph [ref=e131]: Sua conta exige 2FA. Use um aplicativo autenticador (Google Authenticator, 1Password, Authy, Bitwarden) para gerar códigos de 6 dígitos.
+        - button "Iniciar configuração" [ref=e132] [cursor=pointer]
+  - region "Notifications alt+T"
+  - generic [ref=e15]:
+    - img [ref=e17]
+    - button "Open Tanstack query devtools" [ref=e65] [cursor=pointer]:
+      - img [ref=e66]
+  - button "Open Next.js Dev Tools" [ref=e119] [cursor=pointer]:
+    - img [ref=e120]
+  - alert [ref=e14]: Deskcomm — CRM operacional para e-commerce

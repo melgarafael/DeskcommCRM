@@ -8,8 +8,7 @@
 #   2. Gere o hash: echo -n "$WAHA_API_KEY" | shasum -a 512 | awk '{print $1}'
 #   3. Cole esse hash em WAHA_API_KEY abaixo (NÃO o plaintext)
 #   4. docker compose up -d
-#   5. Acesse http://localhost:3030/dashboard/ (UI do WAHA Plus)
-#      (host port 3030 — :3000 fica reservado pra outros dev tools como Remotion)
+#   5. Acesse http://localhost:3000/dashboard/ (UI do WAHA Plus)
 #
 # Em prod, WAHA roda em VPS dedicada (Hetzner) atrás de Nginx (proxy_buffering off
 # pra SSE). docker-compose aqui é DEV ONLY.
@@ -18,11 +17,11 @@ version: "3.9"
 
 services:
   waha:
-    image: devlikeapro/waha-plus:latest
+    image: devlikeapro/waha:noweb
     container_name: deskcomm-waha
     restart: unless-stopped
     ports:
-      - "3030:3000"
+      - "3000:3000"
     environment:
       # Hash SHA512 hex da api key (NÃO plaintext). Cliente envia plaintext em X-Api-Key.
       WAHA_API_KEY: ${WAHA_API_KEY_SHA512}
