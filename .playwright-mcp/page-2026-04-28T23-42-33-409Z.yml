@@ -1,0 +1,42 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e5]: DeskcommCRM
+      - navigation "Navegação principal" [ref=e6]:
+        - link "Inbox" [ref=e7] [cursor=pointer]:
+          - /url: /app/inbox
+          - img [ref=e8]
+          - generic [ref=e10]: Inbox
+        - link "Kanban" [ref=e11] [cursor=pointer]:
+          - /url: /app/kanban
+          - img [ref=e12]
+          - generic [ref=e14]: Kanban
+        - link "Contatos" [ref=e15] [cursor=pointer]:
+          - /url: /app/contacts
+          - img [ref=e16]
+          - generic [ref=e18]: Contatos
+        - link "Configurações" [ref=e19] [cursor=pointer]:
+          - /url: /app/settings
+          - img [ref=e20]
+          - generic [ref=e22]: Configurações
+      - button "Recolher sidebar" [ref=e24] [cursor=pointer]:
+        - img [ref=e25]
+        - generic [ref=e27]: Recolher
+    - generic [ref=e28]:
+      - banner [ref=e29]:
+        - button "Buscar... ⌘K" [ref=e31] [cursor=pointer]:
+          - img
+          - generic [ref=e32]: Buscar...
+          - generic [ref=e33]: ⌘K
+        - generic [ref=e35]:
+          - 'button "Tema: system. Cmd+Shift+L para alternar." [ref=e36] [cursor=pointer]':
+            - img
+          - button "Menu do usuário" [ref=e37] [cursor=pointer]:
+            - generic [ref=e39]: RM
+      - main [ref=e40]:
+        - generic [ref=e41]:
+          - img [ref=e42]
+          - heading "Inbox" [level=1] [ref=e45]
+          - paragraph [ref=e46]: Tela em construção. Será entregue no EPIC-03 (Inbox + Messaging).
+  - region "Notifications alt+T"
+  - alert [ref=e47]

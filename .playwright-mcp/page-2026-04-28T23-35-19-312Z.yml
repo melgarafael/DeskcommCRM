@@ -1,0 +1,22 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Entrar" [level=1] [ref=e6]
+      - paragraph [ref=e7]: DeskcommCRM
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - text: Email
+        - textbox "Email" [ref=e10]: rafael@maudibrasil.com.br
+      - generic [ref=e11]:
+        - text: Senha
+        - textbox "Senha" [ref=e12]: DeskcommAdmin@2026
+      - alert [ref=e123]: Email ou senha incorretos.
+      - button "Entrar" [ref=e13] [cursor=pointer]
+  - region "Notifications alt+T"
+  - generic [ref=e15]:
+    - img [ref=e17]
+    - button "Open Tanstack query devtools" [ref=e65] [cursor=pointer]:
+      - img [ref=e66]
+  - button "Open Next.js Dev Tools" [ref=e119] [cursor=pointer]:
+    - img [ref=e120]
+  - alert [ref=e14]

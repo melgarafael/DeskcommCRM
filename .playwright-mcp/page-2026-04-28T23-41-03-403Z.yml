@@ -1,0 +1,12 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e124]:
+    - heading "404" [level=1] [ref=e125]
+    - heading "This page could not be found." [level=2] [ref=e127]
+  - region "Notifications alt+T"
+  - generic [ref=e15]:
+    - img [ref=e17]
+    - button "Open Tanstack query devtools" [ref=e65] [cursor=pointer]:
+      - img [ref=e66]
+  - button "Open Next.js Dev Tools" [ref=e119] [cursor=pointer]:
+    - img [ref=e120]
+  - alert [ref=e14]: "404: This page could not be found."

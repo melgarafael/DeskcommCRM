@@ -10,8 +10,15 @@
  */
 import { createHash } from "node:crypto";
 
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { env } from "@/lib/env";
 import type { AuditAction } from "./actions";
+
+function isServiceRoleConfigured(): boolean {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  return key.length > 50 && !key.startsWith("PLACEHOLDER");
+}
 
 interface AuditEntry {
   action: AuditAction;
@@ -29,8 +36,12 @@ interface AuditEntry {
 
 export async function audit(entry: AuditEntry): Promise<void> {
   try {
-    const admin = createAdminClient();
-    const { error } = await admin.from("api_audit_log").insert({
+    // Prefer service-role admin (bypasses RLS, works for unauthenticated audit
+    // events like login_failed). Fall back to user-scoped client when service
+    // role is missing in dev — RLS policy `audit_log_insert_tenant_member` has
+    // null qual so authenticated users can insert their own audit rows.
+    const client = isServiceRoleConfigured() ? createAdminClient() : await createClient();
+    const { error } = await client.from("api_audit_log").insert({
       action: entry.action,
       actor_user_id: entry.actorUserId ?? null,
       organization_id: entry.organizationId ?? null,

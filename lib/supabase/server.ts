@@ -28,5 +28,13 @@ export async function createClient() {
         }
       },
     },
+    // D-01.01: cookie name canônico alinhado ao middleware.
+    cookieOptions: {
+      name: "sb-deskcomm-auth",
+      sameSite: "strict",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    },
   });
 }

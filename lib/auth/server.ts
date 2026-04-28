@@ -9,7 +9,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
 
 const ACTIVE_ORG_COOKIE = "active_org";
@@ -17,12 +16,17 @@ const ACTIVE_ORG_COOKIE = "active_org";
 interface RawMembershipRow {
   organization_id: string;
   role: string;
-  organizations: { name: string } | { name: string }[] | null;
+  organizations: { display_name: string } | { display_name: string }[] | null;
 }
 
 /**
  * Loads the AuthUser for the current request. Returns null if unauthenticated.
  * Use only in Server Components / Route Handlers / Server Actions.
+ *
+ * Uses the user-scoped server client (cookie session). RLS policies allow:
+ * - user_organizations: user_id = auth.uid() (user_orgs_select)
+ * - organizations: id IN fn_user_org_ids()  (orgs_select)
+ * - platform_admins: only platform admins read (so non-admins get null — correct)
  */
 export async function loadAuthUser(): Promise<AuthUser | null> {
   const supabase = await createClient();
@@ -31,10 +35,8 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const admin = createAdminClient();
-
-  // Platform admin? (active = no revoked_at)
-  const { data: paRow } = await admin
+  // Platform admin? (active = no revoked_at). RLS returns null for non-admins.
+  const { data: paRow } = await supabase
     .from("platform_admins")
     .select("user_id, revoked_at")
     .eq("user_id", user.id)
@@ -42,16 +44,16 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     .maybeSingle();
 
   // Org memberships (only active = not revoked, accepted)
-  const { data: rawMemberships } = await admin
+  const { data: rawMemberships } = await supabase
     .from("user_organizations")
-    .select("organization_id, role, organizations(name)")
+    .select("organization_id, role, organizations(display_name)")
     .eq("user_id", user.id)
     .is("revoked_at", null);
 
   const rows = (rawMemberships ?? []) as RawMembershipRow[];
   const memberships: UserOrgMembership[] = rows.map((row) => {
     const orgs = row.organizations;
-    const name = Array.isArray(orgs) ? (orgs[0]?.name ?? "—") : (orgs?.name ?? "—");
+    const name = Array.isArray(orgs) ? (orgs[0]?.display_name ?? "—") : (orgs?.display_name ?? "—");
     return {
       organization_id: row.organization_id,
       organization_name: name,
