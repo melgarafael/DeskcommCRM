@@ -2,39 +2,27 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
-import { createClient } from "@/lib/supabase/browser";
-import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
-import type { Lead } from "@/lib/types/leads";
+import { apiClient } from "@/lib/api/client";
+import type { BoardData } from "@/lib/kanban/types";
 
+/**
+ * Fetch board via API route (NOT direct supabase-js).
+ *
+ * Why: the auth cookie `sb-deskcomm-auth` is httpOnly so the browser Supabase
+ * client cannot read it — auth.uid() ends up null, RLS hides the pipeline,
+ * and PostgREST returns PGRST116. Routing through /api/v1/pipelines/[id]/board
+ * uses the server-side cookie reader, identical to every other authed query.
+ */
 async function fetchBoard(pipelineId: string): Promise<BoardData> {
-  const supabase = createClient();
-  const [
-    { data: pipeline, error: pipelineErr },
-    { data: stages, error: stagesErr },
-    { data: leads, error: leadsErr },
-  ] = await Promise.all([
-    supabase.from("crm_pipelines").select("*").eq("id", pipelineId).single(),
-    supabase
-      .from("crm_stages")
-      .select("*")
-      .eq("pipeline_id", pipelineId)
-      .eq("is_archived", false)
-      .order("position"),
-    supabase
-      .from("crm_leads")
-      .select("*")
-      .eq("pipeline_id", pipelineId)
-      .neq("status", "archived")
-      .order("position_in_stage"),
-  ]);
-  if (pipelineErr) throw pipelineErr;
-  if (stagesErr) throw stagesErr;
-  if (leadsErr) throw leadsErr;
-  return {
-    pipeline: pipeline as Pipeline,
-    stages: (stages ?? []) as Stage[],
-    leads: (leads ?? []) as Lead[],
-  };
+  const res = await apiClient.get<{ data: BoardData }>(
+    `/api/v1/pipelines/${pipelineId}/board`,
+  );
+  // apiClient unwraps { data, meta } envelope already in some helpers;
+  // ours returns the parsed JSON literally. Handle both shapes safely.
+  if (res && typeof res === "object" && "data" in res) {
+    return (res as { data: BoardData }).data;
+  }
+  return res as unknown as BoardData;
 }
 
 export function useBoard(pipelineId: string | null) {

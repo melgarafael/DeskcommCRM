@@ -22,6 +22,7 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.53",
     "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^3.9.0",
     "@phosphor-icons/react": "^2.1.10",
@@ -42,9 +43,11 @@
     "@tanstack/react-query": "^5.100.6",
     "@tanstack/react-query-devtools": "^5.100.6",
     "@tanstack/react-virtual": "^3.13.24",
+    "ai": "^6",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "gpt-tokenizer": "^3.4.0",
     "lucide-react": "^0.460.0",
     "next": "^15.0.0",
     "next-themes": "^0.4.6",
