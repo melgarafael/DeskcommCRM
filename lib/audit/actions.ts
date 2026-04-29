@@ -83,4 +83,6 @@ export type AuditAction =
   | "platform_admin.tenant_health_viewed"
   | "platform_admin.impersonate_started"
   | "platform_admin.impersonate_ended"
-  | "platform_admin.impersonate_misconfigured";
+  | "platform_admin.impersonate_misconfigured"
+  | "tenant.suspended"
+  | "tenant.reactivated";

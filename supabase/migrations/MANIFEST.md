@@ -25,6 +25,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260429100000` | `0017_storage_policies_lgpd_exports` | EPIC-08 wave 4 (S-08.04): private lgpd-exports bucket (50MB cap, pdf+json MIME) + per-tenant SELECT RLS on storage.objects (path-prefix org isolation via user_organizations EXISTS subquery). Worker uploads via service-role only — no INSERT/DELETE policies for anon/authenticated. |
 | `20260429110000` | `0018_lgpd_redaction_queue` | EPIC-08 wave 5 (S-08.05): storage_redaction_queue table (org-scoped RLS, unique (bucket, object_path), partial index on pending) — async drain target for LGPD media deletion. |
 | `20260429110001` | `0019_lgpd_cascade_redact_rpc` | EPIC-08 wave 5 (S-08.05, L-04): SECURITY DEFINER fn_lgpd_cascade_redact_contact(org, contact, request) — atomic 8-step cascade (contacts irreversible + conversations + messages + activities + leads + orders payload strip + media enqueue + audit). ACL revoked from anon/authenticated; granted only to service_role. |
+| `20260429120000` | `0020_organization_suspend_reason` | EPIC-11 wave 8 (S-11.08): organizations.suspended_reason (text) + suspended_by (uuid → auth.users) — enables suspend/reactivate API to store reason + actor. |
 
 ## Reproducibility
 

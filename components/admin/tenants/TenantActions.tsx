@@ -1,14 +1,8 @@
 "use client";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { SuspendDialog } from "./SuspendDialog";
+import { ReactivateDialog } from "./ReactivateDialog";
 import { ImpersonateButton } from "@/components/admin/ImpersonateButton";
 
 // ---------------------------------------------------------------------------
@@ -31,17 +25,11 @@ export function TenantActions({
   displayName,
 }: TenantActionsProps) {
   const [suspendOpen, setSuspendOpen] = useState(false);
+  const [reactivateOpen, setReactivateOpen] = useState(false);
 
   const canSuspend = status === "active" || status === "onboarding";
   const isSuspended = status === "suspended";
   const isRedacted = status === "redacted";
-
-  function handleReactivate() {
-    // STUB — Wave 8 (S-11.08) implementará reactivation real
-    toast.info("Reativação disponível em S-11.08", {
-      description: "O endpoint de reativação será implementado na Wave 8.",
-    });
-  }
 
   return (
     <>
@@ -60,7 +48,7 @@ export function TenantActions({
           }
         />
 
-        {/* Suspend / Reactivate */}
+        {/* Suspend */}
         {canSuspend && (
           <Button
             className="w-full"
@@ -72,22 +60,16 @@ export function TenantActions({
           </Button>
         )}
 
+        {/* Reactivate */}
         {isSuspended && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  onClick={handleReactivate}
-                  aria-label="Reativar tenant (disponível em S-11.08)"
-                >
-                  Reativar tenant
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Disponível em S-11.08 (Wave 8)</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Button
+            className="w-full"
+            variant="outline"
+            onClick={() => setReactivateOpen(true)}
+            aria-label="Reativar tenant"
+          >
+            Reativar tenant
+          </Button>
         )}
 
         {isRedacted && (
@@ -100,6 +82,12 @@ export function TenantActions({
       <SuspendDialog
         open={suspendOpen}
         onClose={() => setSuspendOpen(false)}
+        organizationId={organizationId}
+      />
+
+      <ReactivateDialog
+        open={reactivateOpen}
+        onClose={() => setReactivateOpen(false)}
         organizationId={organizationId}
       />
     </>

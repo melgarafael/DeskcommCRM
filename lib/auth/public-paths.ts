@@ -15,6 +15,7 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/_next\//,
   /^\/favicon\.ico$/,
   /^\/team\/accept-invite\/.+$/,
+  /^\/account-suspended$/,
 ];
 
 export function isPublicPath(pathname: string): boolean {

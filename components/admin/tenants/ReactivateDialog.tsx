@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useSuspendTenant } from "@/hooks/useSuspendTenant";
+import { useReactivateTenant } from "@/hooks/useReactivateTenant";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -25,7 +25,7 @@ const reasonSchema = z.string().min(10, "Mínimo 10 caracteres").max(500, "Máxi
 // Props
 // ---------------------------------------------------------------------------
 
-interface SuspendDialogProps {
+interface ReactivateDialogProps {
   open: boolean;
   onClose: () => void;
   organizationId: string;
@@ -35,11 +35,11 @@ interface SuspendDialogProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function SuspendDialog({ open, onClose, organizationId }: SuspendDialogProps) {
+export function ReactivateDialog({ open, onClose, organizationId }: ReactivateDialogProps) {
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const suspend = useSuspendTenant();
+  const reactivate = useReactivateTenant();
   const validation = reasonSchema.safeParse(reason);
   const isValid = validation.success;
 
@@ -49,7 +49,7 @@ export function SuspendDialog({ open, onClose, organizationId }: SuspendDialogPr
       setError(parsed.error.errors[0]?.message ?? "Razão inválida");
       return;
     }
-    suspend.mutate(
+    reactivate.mutate(
       { id: organizationId, reason: parsed.data },
       {
         onSuccess: () => {
@@ -71,23 +71,23 @@ export function SuspendDialog({ open, onClose, organizationId }: SuspendDialogPr
     <AlertDialog open={open} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Suspender tenant</AlertDialogTitle>
+          <AlertDialogTitle>Reativar tenant</AlertDialogTitle>
           <AlertDialogDescription>
-            A suspensão bloqueará o acesso dos usuários deste tenant à plataforma.
-            Esta ação pode ser revertida.
+            A reativação restabelece o acesso dos usuários deste tenant à plataforma.
+            Informe o motivo da reativação para o registro de auditoria.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
         <div className="space-y-2 py-2">
-          <Label htmlFor="suspend-reason">
-            Motivo da suspensão{" "}
+          <Label htmlFor="reactivate-reason">
+            Motivo da reativação{" "}
             <span className="text-muted-foreground text-xs font-normal">
               ({reason.length}/500)
             </span>
           </Label>
           <Textarea
-            id="suspend-reason"
-            placeholder="Descreva o motivo da suspensão (mínimo 10 caracteres)..."
+            id="reactivate-reason"
+            placeholder="Descreva o motivo da reativação (mínimo 10 caracteres)..."
             value={reason}
             onChange={(e) => {
               setReason(e.target.value);
@@ -95,10 +95,10 @@ export function SuspendDialog({ open, onClose, organizationId }: SuspendDialogPr
             }}
             rows={4}
             maxLength={500}
-            aria-describedby={error ? "suspend-reason-error" : undefined}
+            aria-describedby={error ? "reactivate-reason-error" : undefined}
           />
           {error && (
-            <p id="suspend-reason-error" className="text-xs text-destructive" role="alert">
+            <p id="reactivate-reason-error" className="text-xs text-destructive" role="alert">
               {error}
             </p>
           )}
@@ -107,11 +107,11 @@ export function SuspendDialog({ open, onClose, organizationId }: SuspendDialogPr
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleClose}>Cancelar</AlertDialogCancel>
           <Button
-            variant="destructive"
+            variant="default"
             onClick={handleConfirm}
-            disabled={!isValid || suspend.isPending}
+            disabled={!isValid || reactivate.isPending}
           >
-            {suspend.isPending ? "Suspendendo..." : "Confirmar suspensão"}
+            {reactivate.isPending ? "Reativando..." : "Confirmar reativação"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
