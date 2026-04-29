@@ -16,6 +16,7 @@ import {
 import { useContactList } from "@/hooks/contacts/useContactList";
 import { ContactsTable } from "@/components/contacts/ContactsTable";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
+import { EmptyContacts } from "@/components/empty";
 
 const SOURCE_OPTIONS = [
   { value: undefined, label: "Todas as origens" },
@@ -150,10 +151,8 @@ export function ContactsListClient() {
           </Button>
         </Card>
       ) : allContacts.length === 0 ? (
-        <Card className="p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Nenhum contato ainda. Clique em &quot;Novo contato&quot; para começar.
-          </p>
+        <Card className="p-2">
+          <EmptyContacts />
         </Card>
       ) : (
         <>

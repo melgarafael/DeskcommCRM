@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConversationListItem } from "./ConversationListItem";
+import { EmptyInbox } from "@/components/empty";
 import {
   useConversationsRealtime,
   type ConversationsFilters,
@@ -69,8 +70,8 @@ export function ConversationList({
 
   if (items.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-        Nenhuma conversa para os filtros atuais.
+      <div className="flex h-full items-center justify-center p-6">
+        <EmptyInbox />
       </div>
     );
   }

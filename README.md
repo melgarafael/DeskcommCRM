@@ -10,14 +10,14 @@
 
 ## Visão de Produto
 
-DeskcommCRM unifica atendimento humano, chatbot com RAG por tenant, gestão de pedidos e pipeline de pós-venda numa única plataforma multi-tenant. O canal primário é WhatsApp (via WAHA — API não-oficial). A arquitetura é multi-tenant desde o dia 1, sem refactor previsto pro pivot SaaS.
+DeskcommCRM unifica atendimento humano, chatbot com RAG por tenant, gestão de pedidos e pipeline de pós-venda numa única plataforma multi-tenant. Canal primário: WhatsApp (via WAHA). Multi-tenant desde o dia 1. LGPD nativa.
 
-**Diferenciais competitivos:**
+**Diferenciais:**
 
-1. **IA operando o atendimento** com RAG por tenant (FAQ + política + catálogo Nuvemshop + conversas resolvidas), não chatbot decorativo.
-2. **E-commerce-native**: pipeline e vocabulário desenhados pro ciclo "Carrinho abandonado → Pago → Enviado → Entregue → Pós-venda".
-3. **MCP-ready**: arquitetura inclui MCP server (Fase 2) com 19 tools canônicas.
-4. **LGPD nativa**: webhooks `customer/redact` e `customer/data_request` da Nuvemshop são contrato de primeira-classe.
+1. IA operando o atendimento com RAG por tenant (não chatbot decorativo).
+2. E-commerce-native: vocabulário desenhado pro ciclo "Carrinho abandonado → Pago → Enviado → Entregue → Pós-venda".
+3. MCP-ready (Fase 2).
+4. LGPD nativa: webhooks `customer/redact` e `customer/data_request` da Nuvemshop como contrato de primeira-classe.
 
 ---
 
@@ -27,110 +27,98 @@ DeskcommCRM unifica atendimento humano, chatbot com RAG por tenant, gestão de p
 |---|---|
 | Frontend | Next.js 15 App Router + TypeScript + Tailwind + shadcn/ui |
 | Backend | Next.js Route Handlers (mesmo repo) |
-| DB | Supabase (Postgres gerenciado, RLS em toda tabela tenant-aware) |
+| DB | Supabase (Postgres, RLS em toda tabela tenant-aware) |
 | Realtime | Supabase Realtime |
 | Auth | Supabase Auth via `@supabase/ssr` |
 | Storage | Supabase Storage |
 | WhatsApp | WAHA Plus (engine NOWEB) |
 | Hospedagem app | Vercel |
-| Hospedagem WAHA | Railway (MVP) → VPS Hetzner (prod) |
 | Validação | Zod |
 | Rate limit | Upstash Redis |
-| Cron | Vercel Cron |
 | AI Gateway | Vercel AI Gateway (Anthropic primário, OpenAI backup) |
 | Observability | Sentry |
 
 ---
 
-## Como rodar local
-
-### Pré-requisitos
-
-- Node 20+ (use `nvm use` — `.nvmrc` está no repo)
-- Docker + Docker Compose (pra WAHA local)
-- Conta Supabase (projeto criado, plano free serve pra dev)
-- Conta Upstash (Redis REST)
-- Conta Sentry (opcional em dev)
-- ngrok ou cloudflared (pra expor webhook do WAHA)
-
-### Setup
+## Quickstart 5 minutos
 
 ```bash
-# 1. Instalar dependências
-npm install
+# 1. Clone + Node 20
+nvm use            # ou instale Node 20+
 
-# 2. Configurar env
+# 2. Deps
+pnpm install
+
+# 3. Env
 cp .env.example .env.local
-# Preencher: NEXT_PUBLIC_SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY, INTERNAL_SECRET,
-# WAHA_API_KEY (plaintext), UPSTASH_*, etc.
+# Preencher SUPABASE_*, WAHA_API_KEY, UPSTASH_*, SENTRY_DSN, etc.
 
-# 3. Rodar migrations Supabase (placeholder; schema real virá das specs)
-npm run db:migrate
-
-# 4. Subir WAHA local (com hash SHA512 da api key)
-echo -n "$WAHA_API_KEY" | shasum -a 512 | awk '{print $1}' # → cole em WAHA_API_KEY_SHA512
+# 4. WAHA local (opcional em dev sem WhatsApp)
 docker compose up -d
 
-# 5. Expor webhook publicamente (terminal separado)
-ngrok http 3000  # → cole URL HTTPS em WAHA_WEBHOOK_BASE_URL e reinicie compose
-
-# 6. Iniciar dev server
-npm run dev
+# 5. Dev server
+pnpm dev
 ```
 
-App: <http://localhost:3000>
-WAHA dashboard: <http://localhost:3000/dashboard> (porta 3000 do container)
-Health check: <http://localhost:3000/api/v1/health>
+App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/health>
 
----
-
-## Estrutura do Projeto
-
-```
-DeskcommCRM/
-├── app/                    # Next.js App Router
-│   ├── (admin)/            # Rotas super-admin (admin.deskcomm.com)
-│   ├── (app)/              # Rotas do tenant (app.deskcomm.com)
-│   └── api/v1/             # API REST canônica
-├── components/             # React components
-│   └── ui/                 # shadcn/ui primitives
-├── lib/
-│   ├── supabase/           # Clients (browser, server, admin)
-│   ├── waha/               # Cliente WAHA (Spec 03)
-│   ├── ai/                 # IA + RAG (Spec 05)
-│   ├── api/                # Wrappers, errors
-│   └── env.ts              # Validação Zod das env vars
-├── hooks/                  # React hooks compartilhados
-├── supabase/
-│   ├── config.toml
-│   └── migrations/         # SQL versionado
-├── tests/
-│   ├── e2e/                # Playwright
-│   └── unit/               # Vitest
-├── scripts/                # CLI utilities (seed-tenant, etc.)
-├── docs/                   # PRDs, specs, business rules, research
-└── tasks/                  # Workflow de construção (todo.md)
-```
-
----
-
-## Documentação
-
-- [`docs/prd/00-prd-master.md`](docs/prd/00-prd-master.md) — Visão e escopo
-- [`docs/prd/01-prd-platform-base.md`](docs/prd/01-prd-platform-base.md) — Plataforma base (auth, tenancy, RBAC, LGPD)
-- [`docs/research/reference-synthesis.md`](docs/research/reference-synthesis.md) — Arquitetura herdada
-- [`CLAUDE.md`](CLAUDE.md) — Convenções e regras críticas (leitura obrigatória pra contribuir)
+Login seed (após seed): `rafael@maudibrasil.com.br` / `DeskcommAdmin@2026`.
 
 ---
 
 ## Testes
 
 ```bash
-npm run typecheck     # tsc --noEmit
-npm run lint          # eslint
-npm run test:unit     # Vitest
-npm run test:e2e      # Playwright
+pnpm typecheck     # tsc --noEmit
+pnpm lint          # eslint
+pnpm test:unit     # Vitest
+pnpm test:e2e      # Playwright (requer dev server)
 ```
+
+CI roda todos antes de merge. Teste de isolamento RLS é gate obrigatório.
+
+---
+
+## Estrutura
+
+```
+DeskcommCRM/
+├── app/                    # Next.js App Router
+│   ├── (admin)/            # Rotas super-admin
+│   ├── (public)/           # Login, recovery
+│   ├── app/                # Rotas autenticadas (inbox, kanban, contacts, audit, ...)
+│   └── api/v1/             # API REST canônica
+├── components/             # React (ui/, empty/, feedback/, shell/, ...)
+├── lib/                    # supabase/, waha/, ai/, api/, logger.ts, env.ts
+├── hooks/
+├── supabase/migrations/    # SQL versionado
+├── tests/{e2e,unit}/
+├── scripts/
+├── docs/                   # PRDs, specs, stories
+└── tasks/
+```
+
+---
+
+## Atalhos de teclado
+
+- `Tab` / `Shift+Tab` — navegação focável (login, formulários, kanban cards)
+- `Enter` — confirma ações primárias
+- `Esc` — fecha dialogs/sheets
+
+Documentação completa de keyboard shortcuts vem com EPIC-04 (kanban) e EPIC-03 (inbox).
+
+---
+
+## Documentação
+
+- [`CLAUDE.md`](CLAUDE.md) — convenções não-negociáveis (leitura obrigatória pra contribuir)
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — visão de 1 página
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — fluxo PR + epic-executor
+- [`docs/prd/`](docs/prd/) — PRDs
+- [`docs/specs/`](docs/specs/) — specs técnicas
+- [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md) — plano de execução
+- [`docs/DEPLOY-CHECKLIST.md`](docs/DEPLOY-CHECKLIST.md) — preflight pré-go-live
 
 ---
 

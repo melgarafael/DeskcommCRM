@@ -19,6 +19,7 @@ version: "3.9"
 services:
   waha:
     image: devlikeapro/waha-plus:latest
+    platform: linux/amd64
     container_name: deskcomm-waha
     restart: unless-stopped
     ports:

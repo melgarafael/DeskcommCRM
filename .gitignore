@@ -53,3 +53,6 @@ supabase/.branches/
 .waha-data/
 .epic-executor/
 .playwright-mcp/
+
+# Sentry Config File
+.env.sentry-build-plugin

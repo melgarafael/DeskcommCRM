@@ -1,0 +1,41 @@
+name: perf
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          SENTRY_DSN: ""
+
+      - name: Report bundle sizes
+        run: |
+          {
+            echo "## Build output sizes"
+            du -sh .next 2>/dev/null || true
+            if [ -d .next/static ]; then du -sh .next/static; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # NOTE: Lighthouse CI + bundle-analyzer thresholds deferred (S-12.05 follow-up).

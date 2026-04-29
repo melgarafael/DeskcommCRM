@@ -12,7 +12,9 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260428200016` | `0004_whatsapp_waha` | channel_sessions, channel_session_warmup, conversations, messages, webhook_events_log + emit_message_event trigger |
 | `20260428200128` | `0005_ai_rag` | ai_agents, ai_knowledge_sources, ai_chunks (vector(1536) ivfflat), ai_knowledge_versions, ai_invocations, ai_pricing (3 seeded), ai_budgets + fn_audit_log_row helper |
 | `20260428200211` | `0006_nuvemshop_lgpd` | tenant_integrations, orders, nuvemshop_products, lgpd_requests + fn_encrypt_oauth/fn_decrypt_oauth + LGPD/DLQ extra indexes on webhook_events_log |
-| `20260428xxxxxx` | `0007_security_hardening` | search_path=public set on all functions, ai_pricing public-read policy, revoke EXECUTE anon on internal helpers, tighten api_audit_log INSERT policy |
+| `20260428200331` | `0007_security_hardening` | search_path=public set on all functions, ai_pricing public-read policy, revoke EXECUTE anon on internal helpers, tighten api_audit_log INSERT policy |
+| `20260429013958` | `0008_tenant_onboarding_state` | onboarding state machine columns + transitions on organizations |
+| `20260429021857` | `0009_expand_messaging_constraints` | extra check constraints + indexes on conversations/messages for inbox perf |
 
 ## Reproducibility
 

@@ -1,0 +1,13 @@
+-- =============================================================================
+-- Migration 0001 — platform base (applied 2026-04-28 via Supabase MCP)
+-- =============================================================================
+-- Tables: organizations, user_organizations, platform_admins, api_tokens,
+-- api_audit_log, user_recovery_codes, idempotency_keys.
+-- Helpers: fn_user_org_ids, fn_is_platform_admin, fn_user_role_in_org,
+-- fn_role_at_least.
+--
+-- Source of truth: docs/specs/01-spec-platform-base.md
+-- Stub kept here to make supabase/migrations/ reflect remote
+-- supabase_migrations.schema_migrations. To replay on a fresh project, use the
+-- SQL embedded in the spec or `supabase db pull` from the source project.
+SELECT 1;

@@ -7,6 +7,8 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/login(\/.*)?$/,
   /^\/403$/,
   /^\/404$/,
+  /^\/500$/,
+  /^\/503$/,
   /^\/api\/v1\/health$/,
   /^\/api\/v1\/webhooks\//,
   /^\/_next\//,

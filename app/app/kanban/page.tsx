@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Kanban } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
+import { EmptyPipeline } from "@/components/empty";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +25,9 @@ export default async function KanbanPickerPage() {
 
       {list.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
-          <div className="max-w-sm text-center text-sm text-muted-foreground">
-            Nenhum pipeline. Crie um em Configurações.
-          </div>
+          <EmptyPipeline
+            primary={{ label: "Ir para Configurações", href: "/app/settings" }}
+          />
         </div>
       ) : (
         <ul className="flex flex-col gap-2">
