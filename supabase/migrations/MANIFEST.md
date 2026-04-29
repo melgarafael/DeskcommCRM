@@ -26,6 +26,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260429110000` | `0018_lgpd_redaction_queue` | EPIC-08 wave 5 (S-08.05): storage_redaction_queue table (org-scoped RLS, unique (bucket, object_path), partial index on pending) — async drain target for LGPD media deletion. |
 | `20260429110001` | `0019_lgpd_cascade_redact_rpc` | EPIC-08 wave 5 (S-08.05, L-04): SECURITY DEFINER fn_lgpd_cascade_redact_contact(org, contact, request) — atomic 8-step cascade (contacts irreversible + conversations + messages + activities + leads + orders payload strip + media enqueue + audit). ACL revoked from anon/authenticated; granted only to service_role. |
 | `20260429120000` | `0020_organization_suspend_reason` | EPIC-11 wave 8 (S-11.08): organizations.suspended_reason (text) + suspended_by (uuid → auth.users) — enables suspend/reactivate API to store reason + actor. |
+| *(wave 11)* | `0021_incidents` | EPIC-11 wave 11 (S-11.11): incidents table (organization_id optional FK, severity check info/warning/critical, status open/acknowledged/resolved, payload jsonb, acknowledged/resolved actor+timestamp, resolution_note, RLS via fn_is_platform_admin — platform-admins only, users do not see). Indexes on status+created_at (partial, excludes resolved), org+created_at, severity+status. |
 
 ## Reproducibility
 
@@ -33,7 +34,7 @@ Migrations were applied directly via the Supabase MCP `apply_migration` tool dur
 
 To re-apply on a fresh Supabase project, replay the migrations in version order via `supabase db push` (Supabase CLI) or via the MCP.
 
-## Tables created (32 total, all RLS enabled)
+## Tables created (33 total, all RLS enabled)
 
 - **Platform**: organizations, user_organizations, platform_admins, api_tokens, api_audit_log, user_recovery_codes, idempotency_keys
 - **Bus**: event_log
@@ -42,3 +43,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 - **AI**: ai_agents, ai_knowledge_sources, ai_knowledge_versions, ai_chunks, ai_invocations, ai_pricing (global), ai_budgets, ai_faq_items
 - **Integrations**: tenant_integrations, orders, nuvemshop_products
 - **Compliance**: lgpd_requests
+- **Ops**: incidents
