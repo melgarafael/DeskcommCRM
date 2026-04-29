@@ -7,7 +7,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeDueAt } from "./sla";
-import type { LgpdRequest, LgpdRequestType } from "./types";
+import type { LgpdRequest, LgpdRequestType, LgpdScope } from "./types";
 
 // ---------------------------------------------------------------------------
 // createLgpdRequest
@@ -24,6 +24,10 @@ export interface CreateLgpdRequestInput {
   slaDays: number;
   /** Extra context to store in request_payload. */
   payload?: Record<string, unknown>;
+  /** Whether this is a high-priority emergency request (drives early SLA alarms). Default false. */
+  emergency?: boolean;
+  /** Scope of the request: contact-level or tenant-level. Default 'contact'. */
+  scope?: LgpdScope;
 }
 
 export async function createLgpdRequest(
@@ -45,6 +49,8 @@ export async function createLgpdRequest(
       due_at: dueAt.toISOString(),
       status: "received",
       request_payload: input.payload ?? {},
+      emergency: input.emergency ?? false,
+      scope: input.scope ?? "contact",
     })
     .select("id, due_at")
     .single();

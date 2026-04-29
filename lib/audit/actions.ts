@@ -60,6 +60,7 @@ export type AuditAction =
   | "rag.conversations_batch_run"
   | "lgpd.redact_received"
   | "lgpd.data_request_received"
+  | "lgpd.store_redact_received"
   | "lgpd.export_generated"
   | "lgpd.redact_executed"
   | "lgpd.consent_changed"

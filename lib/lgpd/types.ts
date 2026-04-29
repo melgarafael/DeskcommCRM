@@ -5,6 +5,8 @@
 
 export type LgpdRequestType = "customer_redact" | "customer_data_request" | "store_redact";
 
+export type LgpdScope = "contact" | "tenant";
+
 export type LgpdRequestStatus =
   | "received"
   | "processing"
@@ -32,6 +34,10 @@ export interface LgpdRequest {
   result: Record<string, unknown> | null;
   error_message: string | null;
   cascaded_to: Record<string, unknown> | null;
+  /** Whether this request is high-priority (drives early SLA alarms). */
+  emergency: boolean;
+  /** Scope of the request: 'contact' (single customer) or 'tenant' (full store uninstall). */
+  scope: LgpdScope;
   created_at: string;
   updated_at: string;
 }
