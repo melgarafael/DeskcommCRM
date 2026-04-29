@@ -27,10 +27,51 @@ exposes_contracts:
   - "event.org.updated"
   - "event.consent.changed"
   - "event.notification_pref.changed"
-status: pending
+status: completed (partial: notification_prefs stubbed; sessions/storage/email change deferred)
 created_at: 2026-04-28
+completed_at: 2026-04-28
 owner: Rafael Melgaço
 ---
+
+## Wave Completion Log (2026-04-28)
+
+Implemented in 9 waves with documented deferrals:
+
+- **W1 — Audit API**: `GET /api/v1/audit` + `GET /api/v1/audit/export` (CSV, ≤10k rows). Filters: `actor_id`, `action` (ilike substring), `resource_type`, `from`, `to`, `cursor`, `limit≤100`. Keyset pagination over `(created_at DESC, id DESC)`. Manager+ gate (or `is_platform_admin`). Schema: `lib/schemas/audit.ts`.
+- **W2 — Audit page**: `/app/audit` server-gated (manager+) with `useAuditQuery` infinite query, filter bar, CSV export button, empty state. Hook: `hooks/audit/useAuditQuery.ts`.
+- **W3 — Profile**: `/app/settings/profile` editable `full_name/locale/timezone/avatar_url` via `auth.updateUser({ data: ... })`. Email read-only ("em breve"). Avatar = URL only (Storage upload deferred).
+- **W4 — Security**: `/app/settings/security` reads MFA factor status; "Regenerar códigos de recuperação" wipes + reissues 10 codes (audited as `mfa.recovery_codes_regenerated`). "Sair de todos" = `signOut({ scope: 'global' })`. Per-session list **deferred** (requires service-role admin API).
+- **W5 — Notifications [STUB]**: `/app/settings/notifications` shows 4 categories × 3 channels matrix with **disabled** toggles + amber banner. `updateNotificationPrefs` returns `feature_not_yet_available`. **`notification_prefs` table not migrated.**
+- **W6 — Tenant**: `/app/settings/tenant` admin-only edits `display_name/legal_name/cnpj/timezone/locale/media_retention_days/dpo_email/privacy_policy_url` + `settings.lost_reasons_extra` (CSV input). Audited as `org.updated`, emits `org.updated` domain event.
+- **W7 — WhatsApp**: `/app/settings/tenant/whatsapp` admin-only **read-only** list of `channel_sessions`. Edit/re-warm **deferred** (requires WAHA container).
+- **W8 — Pipelines**: `/app/settings/tenant/pipelines` admin-only per-pipeline editor for vocabulary + `settings.fields` (JSON array) + `settings.lost_reasons`. Server Action `updatePipelineConfig` audited as `pipeline.config_updated`.
+- **W9 — Billing**: `/app/settings/billing` static placeholder card pointing to `suporte@deskcomm.app`.
+
+### Settings hub
+`/app/settings/page.tsx` rewritten as a hub of cards routing to all subsections (admin/manager-aware visibility).
+
+### Audit actions added (`lib/audit/actions.ts`)
+`profile.updated`, `org.updated`, `pipeline.config_updated`, `mfa.recovery_codes_regenerated`, `notification_prefs.changed` (reserved for future).
+
+### Deferrals
+| Item | Reason |
+|---|---|
+| `notification_prefs` table + functional toggles | Table missing in current schema |
+| Per-session listing on `/app/settings/security` | Requires `auth.admin.listSessions` (service role); replaced by global signout |
+| WAHA writes (edit `daily_message_limit`, re-warm) | Requires running WAHA container |
+| Avatar/logo upload to Supabase Storage | Requires service role + bucket creation |
+| Email change confirmation flow | Requires Supabase confirmation-link infra |
+
+### Verification
+- `pnpm typecheck` clean (0 errors)
+- `pnpm lint` clean (only pre-existing KanbanBoard warnings)
+- `pnpm test:unit` 68/68 pass (added `lib/schemas/settings.test.ts` with 12 cases)
+- Smoke (anon HTTP):
+  - `GET /app/audit` → 307 → `/login?next=/app/audit`
+  - `GET /app/settings/profile` → 307 → `/login?next=/app/settings/profile`
+  - All `/app/settings/*` subroutes → 307 to `/login`
+  - `GET /api/v1/audit` → 307 (middleware redirect for unauth)
+
 
 # EPIC-10 — Audit & Settings
 
