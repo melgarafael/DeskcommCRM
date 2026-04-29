@@ -27,4 +27,10 @@ export type AuditAction =
   | "contact.anonymized"
   | "contact.merge_pending"
   | "contact.merged"
-  | "lgpd.anonymize_executed";
+  | "lgpd.anonymize_executed"
+  | "member.invited"
+  | "member.accepted"
+  | "member.role_changed"
+  | "member.revoked"
+  | "token.created"
+  | "token.revoked";

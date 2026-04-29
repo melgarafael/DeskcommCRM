@@ -12,6 +12,7 @@ export {
   Tray as Inbox,
   Kanban,
   Users,
+  UsersThree,
   Storefront,
   Robot,
   ShieldCheck,

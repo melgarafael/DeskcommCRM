@@ -11,6 +11,7 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/webhooks\//,
   /^\/_next\//,
   /^\/favicon\.ico$/,
+  /^\/team\/accept-invite\/.+$/,
 ];
 
 export function isPublicPath(pathname: string): boolean {
