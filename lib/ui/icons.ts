@@ -35,6 +35,9 @@ export {
   CircleNotch,
   // lgpd
   Scales as ScalesSimple,
+  Eye,
+  ChartBar,
+  ClockCountdown,
   // theme
   Sun,
   Moon,
