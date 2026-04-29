@@ -16,6 +16,7 @@ export interface LogInvocationInput {
   invocation_kind:
     | "bot_respond"
     | "sentiment_check"
+    | "sentiment_classify"
     | "embed_chunk"
     | "embed_query"
     | "intent_classify";
