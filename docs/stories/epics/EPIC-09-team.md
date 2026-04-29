@@ -24,10 +24,41 @@ exposes_contracts:
   - "event.member.revoked"
   - "event.token.created"
   - "event.token.revoked"
-status: pending
+status: completed (partial: real Resend send + service-role member listing pending env)
 created_at: 2026-04-28
+completed_at: 2026-04-28
 owner: Rafael Melgaço
 ---
+
+## Wave Completion Log (2026-04-28)
+
+All 7 waves merged in a single commit. Files delivered:
+
+- **Schemas** — `lib/schemas/team.ts` (invite/accept/role/api-token); re-exported via `lib/schemas/index.ts`.
+- **HMAC token** — `lib/auth/invite-token.ts` (sign/verify with `timingSafeEqual`, 24h TTL); test `lib/auth/invite-token.test.ts` (5 cases: roundtrip, expired, tampered sig, tampered body, malformed).
+- **Email template** — `lib/email/templates/invite.ts` (PT-BR, inline-styled, plain HTML).
+- **Audit actions** — added `member.invited`, `member.accepted`, `member.role_changed`, `member.revoked`, `token.created`, `token.revoked` to `lib/audit/actions.ts`.
+- **Routes**:
+  - `GET /api/v1/team` — member listing (degrades when service-role missing).
+  - `POST /api/v1/team/invite` — bulk (≤20), admin-only, audits each, includes accept_url for DEV when Resend not configured.
+  - `PATCH /api/v1/team/[user_id]/role` — guards last-admin demote.
+  - `POST /api/v1/team/[user_id]/revoke` — guards self-revoke + last-admin.
+  - `GET/POST /api/v1/settings/api-tokens` — plaintext returned UMA vez on create.
+  - `POST /api/v1/settings/api-tokens/[id]/revoke` — idempotent.
+- **Server Action** — `app/actions/team/acceptInvite.ts` (verifies HMAC, email match, inserts/reactivates membership, audits, redirects to `/app/inbox`).
+- **Pages** — `/app/team`, `/app/team/invite`, `/app/settings/api-tokens`, `/team/accept-invite/[token]` (public, smoke-tested → HTTP 200 with PT-BR error for invalid token).
+- **Hooks** — `hooks/team/{useTeamMembers,useInviteMembers,useChangeRole,useRevokeMember,useApiTokens}`.
+- **Sidebar** — added "Equipe" nav item with `UsersThree` icon.
+- **Public paths** — `/team/accept-invite/.+` added to `lib/auth/public-paths.ts`.
+
+### Known deferrals
+
+1. `RESEND_API_KEY` empty → emails log preview to console (dev) or no-op (prod). Invite UI shows the `accept_url` directly when delivery wasn't dispatched.
+2. `SUPABASE_SERVICE_ROLE_KEY` placeholder → `/api/v1/team` GET degrades: returns memberships without auth.users enrichment (email/full_name = null). UI still renders role/status.
+3. No `team_invites` table — invitations are stateless HMAC tokens (24h). The `invite_id` in audit is a uuid generated at issue time; no DB row until accept.
+4. No re-send/expire-now controls on the invitations side; admin re-invites by re-issuing.
+
+Verification: `pnpm typecheck` clean · `pnpm lint` clean (only pre-existing kanban warnings) · `pnpm test:unit` 56 passed (5 new for invite-token).
 
 # EPIC-09 — Team & Permissions
 
