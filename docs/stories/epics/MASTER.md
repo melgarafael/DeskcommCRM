@@ -32,7 +32,7 @@ estimated_calendar: 8-12 semanas
 | 0 | EPIC-00 | Foundation & Tooling | 8 | 21 | P0 | ✅ completed | `EPIC-00-foundation.md` |
 | 1 | EPIC-01 | Auth & App Shell | 12 | 38 | P0 | ✅ completed | `EPIC-01-auth-app-shell.md` |
 | 2 | EPIC-02 | Tenant Onboarding | 8 | 26 | P0 | ✅ completed (partial: WhatsApp QR build-only) | `EPIC-02-onboarding.md` |
-| 3 | EPIC-03 | Inbox + Messaging | 15 | 55 | P0 | pending | `EPIC-03-inbox-messaging.md` |
+| 3 | EPIC-03 | Inbox + Messaging | 15 | 55 | P0 | ✅ completed (partial: WhatsApp E2E send/receive precisa WAHA com sessão WhatsApp ativa) | `EPIC-03-inbox-messaging.md` |
 | 4 | EPIC-04 | Pipeline Kanban | 10 | 34 | P0 | ✅ completed | `EPIC-04-kanban.md` |
 | 5 | EPIC-05 | Customer 360 + Contacts | 9 | 28 | P0 | ✅ completed (partial: merge resolve + CPF encryption deferred) | `EPIC-05-customer-360.md` |
 | 6 | EPIC-06 | AI Agent + RAG | 12 | 42 | P0 | pending (Phase 3 gated) | `EPIC-06-ai-rag.md` |

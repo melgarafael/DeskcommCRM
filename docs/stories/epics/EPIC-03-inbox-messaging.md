@@ -36,7 +36,7 @@ exposes_contracts:
   - "event.message.failed"
   - "event.conversation.claimed"
   - "event.conversation.resolved"
-status: pending
+status: completed (partial: WhatsApp E2E send/receive precisa WAHA com sessão WhatsApp ativa)
 created_at: 2026-04-28
 owner: Rafael Melgaço
 ---
@@ -1579,3 +1579,17 @@ exposes:
 - Screen flow: 02 jornada 1 (Operador atende)
 - Business rules: W-01, W-02, W-03, W-04, W-05, W-08, W-12; AT-01, AT-04, AT-06, AT-08
 - Reconciliation log: aplica ADRs novos acima ao log no fim do epic
+
+## 10. Wave Completion Log
+
+| Wave | Scope | Commits |
+|---|---|---|
+| 1-6 | Schema migrations (conversations, messages, channel_sessions, RLS, triggers); Combo-A | EPIC-03 Combo-A commits |
+| 7-12 | API endpoints (list/get/patch, claim/release/close, messages send/list, WAHA webhook) + components (`InboxLayout`, `ConversationList`, `ChatThread`, `Composer`, `ConversationHeader`, `CRMSidePanel`, `InboxKeyboardShortcuts`) + hooks (`useConversationsRealtime`, `useMessagesRealtime`, `useSendMessage`, `useClaimConversation`, `useReleaseConversation`, `useCloseConversation`); Combo-B | EPIC-03 Combo-B commits |
+| 13 | Page wiring: `app/app/inbox/page.tsx` (server) + `[id]/page.tsx` (deep-link redirect) + `initialSelectedId` prop em `InboxLayout` | feat(EPIC-03): inbox page wiring + seed mock conversations [waves 13-15] |
+| 14 | Seed 4 mock conversations + 14 messages cobrindo `open` (não atribuído João), `open` atribuído (Maria), `pending` (Pedro AI), `resolved` (Ana) — link com 5 contatos do EPIC-05 + channel_session existente | mesmo commit |
+| 15 | Sidebar nav já apontando pra `/app/inbox` (sem mudança); typecheck/lint/test:unit verde; smokes 307 OK | mesmo commit |
+
+**Deferred**: Send/receive WhatsApp end-to-end requer WAHA Plus rodando + número WhatsApp autenticado na sessão `74ca5a45-181a-4f74-8da4-7144bf4cfe65`. UI/API/seed estão prontos; basta plugar a sessão real.
+
+**Adaptações de seed**: o check constraint atual de `conversations.status` aceita apenas `open|pending|resolved` (não `claimed|ai_handling|closed`) e `messages.sent_via` aceita `crm|external_device|automation|ai` (não `system|user`). Mapeamento adotado: `claimed→open` com `assigned_to_user_id` set, `ai_handling→pending`, `closed→resolved`; `system→external_device`, `user→crm`. Há divergência pre-existente entre constraint do DB e código da API claim — fora do escopo deste combo, registrar pra hardening.
