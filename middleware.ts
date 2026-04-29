@@ -17,6 +17,13 @@ export async function middleware(request: NextRequest) {
   response.headers.set("x-pathname", pathname);
   request.headers.set("x-pathname", pathname);
 
+  // EPIC-11: in dev we route by path (`/admin/*`); in prod the
+  // `admin.deskcomm.com` sub-domain is mapped via Vercel rewrites to the same
+  // `/admin/*` paths. The host-based branch below stays a NOOP today and only
+  // exists as documentation of the intended deploy topology.
+  const host = request.headers.get("host") ?? "";
+  const isAdminSurface = host.startsWith("admin.") || pathname.startsWith("/admin");
+
   if (isPublicPath(pathname)) {
     return response;
   }
@@ -57,11 +64,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // /admin/* additionally requires platform_admin
-  if (pathname.startsWith("/admin")) {
+  // /admin/* additionally requires platform_admin (early gate — authoritative
+  // check is server-side in `requirePlatformAdmin`). Skip the RPC for
+  // `/admin/forbidden` (rendered to non-admins, would otherwise loop).
+  if (isAdminSurface && pathname.startsWith("/admin") && pathname !== "/admin/forbidden") {
     const { data: isAdmin, error } = await supabase.rpc("fn_is_platform_admin");
     if (error || !isAdmin) {
-      return NextResponse.redirect(new URL("/403", request.url));
+      return NextResponse.redirect(new URL("/admin/forbidden", request.url));
     }
   }
 

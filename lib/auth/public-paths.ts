@@ -6,6 +6,7 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/$/,
   /^\/login(\/.*)?$/,
   /^\/403$/,
+  /^\/admin\/forbidden$/,
   /^\/404$/,
   /^\/500$/,
   /^\/503$/,

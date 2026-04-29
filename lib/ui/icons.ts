@@ -18,6 +18,12 @@ export {
   ShieldCheck,
   Gear,
   House,
+  // admin platform
+  Buildings,
+  ChatsCircle,
+  ClipboardText,
+  Scales,
+  Gauge,
   // actions
   PaperPlaneTilt,
   Check,
