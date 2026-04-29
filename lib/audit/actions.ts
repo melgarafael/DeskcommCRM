@@ -14,4 +14,11 @@ export type AuditAction =
   | "nuvemshop.disconnected"
   | "nuvemshop.oauth_failed"
   | "nuvemshop.webhook_received"
-  | "nuvemshop.webhook_invalid_signature";
+  | "nuvemshop.webhook_invalid_signature"
+  | "lead.created"
+  | "lead.updated"
+  | "lead.deleted"
+  | "lead.moved"
+  | "lead.won"
+  | "lead.lost"
+  | "lead.bulk_action";
