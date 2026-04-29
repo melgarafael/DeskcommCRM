@@ -21,4 +21,10 @@ export type AuditAction =
   | "lead.moved"
   | "lead.won"
   | "lead.lost"
-  | "lead.bulk_action";
+  | "lead.bulk_action"
+  | "contact.created"
+  | "contact.updated"
+  | "contact.anonymized"
+  | "contact.merge_pending"
+  | "contact.merged"
+  | "lgpd.anonymize_executed";
