@@ -23,6 +23,7 @@ export function isServiceRoleConfigured(): boolean {
 interface AuditEntry {
   action: AuditAction;
   actorUserId?: string | null;
+  actorApiTokenId?: string | null;
   organizationId?: string | null;
   resourceType?: string | null;
   resourceId?: string | null;
@@ -44,6 +45,7 @@ export async function audit(entry: AuditEntry): Promise<void> {
     const { error } = await client.from("api_audit_log").insert({
       action: entry.action,
       actor_user_id: entry.actorUserId ?? null,
+      actor_api_token_id: entry.actorApiTokenId ?? null,
       organization_id: entry.organizationId ?? null,
       resource_type: entry.resourceType ?? null,
       resource_id: entry.resourceId ?? null,

@@ -75,6 +75,7 @@ export async function listMessagesHandler(
     .from("messages")
     .select(MSG_COLS)
     .eq("conversation_id", conversationId)
+    .eq("organization_id", ctx.organization_id)
     .order("sent_at", { ascending: true })
     .order("id", { ascending: true })
     .limit(q.limit + 1);

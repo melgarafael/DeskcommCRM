@@ -96,4 +96,5 @@ export type AuditAction =
   | "platform_admin.usage_viewed"
   | "platform_admin.users_listed"
   | "platform_admin.user_viewed"
-  | "platform_admin.platform_admins_listed";
+  | "platform_admin.platform_admins_listed"
+  | "mcp.tool_called";

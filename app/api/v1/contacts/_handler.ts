@@ -86,6 +86,7 @@ export async function listContactsHandler(
   let query = supabase
     .from("contacts")
     .select(SELECT_COLS)
+    .eq("organization_id", ctx.organization_id)
     .order("last_activity_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -162,6 +163,7 @@ export async function getContactHandler(
     .from("contacts")
     .select(SELECT_COLS)
     .eq("id", input.contactId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (error) {

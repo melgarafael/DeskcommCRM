@@ -79,6 +79,7 @@ export async function listConversationsHandler(
   let query = supabase
     .from("conversations")
     .select(SELECT_COLS)
+    .eq("organization_id", ctx.organization_id)
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
@@ -152,6 +153,7 @@ export async function getConversationHandler(
     .from("conversations")
     .select(SELECT_COLS)
     .eq("id", conversationId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (error) {
