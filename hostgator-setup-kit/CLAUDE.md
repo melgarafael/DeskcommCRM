@@ -114,6 +114,11 @@ Se mesmo assim aparecerem, aqui está o diagnóstico pronto:
 7. **`/api/v1/health` diz "unhealthy" mas o site funciona** — versões antigas checavam
    rotas erradas (`/ping`, `/api/health`). A imagem atual já checa as rotas certas; se ver
    isso, garanta que a imagem do app está na tag `latest` mais nova (`bash update.sh`).
+8. **Criar agente de IA: seletor de modelo vazio em todo provedor** — `baseline.sql` é um
+   dump `--schema-only`, não traz o seed de 8 modelos (`ai_models`, migration 0023). O
+   `baseline.sql` atual já inclui esse insert (seção "COMPLEMENTO DO BASELINE" no fim do
+   arquivo); se ver a tabela vazia mesmo assim, rode o insert manualmente via `psql_run`
+   (ver `_common.sh`) — não é problema de credencial, é dado que faltou popular.
 
 ## Depois de instalado
 
