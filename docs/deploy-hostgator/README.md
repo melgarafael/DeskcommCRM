@@ -137,13 +137,19 @@ Agora escolha um dos dois caminhos:
 
 ### Caminho fácil: o Claude Code faz por você
 
-1. Tenha o **Claude Code** aberto e conectado no servidor.
-2. Arraste o arquivo **`deskcommcrm-setup-kit.zip`** pra dentro do chat.
-3. Escreva: **"instala o DeskcommCRM pra mim"**.
+1. Conecte no servidor por SSH e **abra o Claude Code lá dentro** (na VPS, não no seu PC).
+2. Escreva pra ele exatamente isto:
 
-Ele vai te pedir as informações (domínio, as chaves do Supabase e da Anthropic, e o
-e-mail/senha que você quer usar pra entrar) **uma de cada vez**, e faz todo o resto
-sozinho — inclusive resolver erros.
+   > *"Clone https://github.com/melgarafael/DeskcommCRM e me instale o DeskcommCRM
+   > seguindo o `hostgator-setup-kit/install.sh`. Me pergunte as chaves uma por uma e
+   > resolva os erros você mesmo."*
+
+3. Ele **baixa o projeto sozinho**, lê as instruções de instalação e conduz tudo —
+   pedindo o domínio, as chaves do Supabase e da Anthropic, e o e-mail/senha do admin
+   **uma de cada vez**, e resolvendo qualquer tropeço.
+
+> Não precisa baixar nem enviar nenhum arquivo `.zip`: o projeto é público e o Claude
+> Code baixa direto do GitHub, sempre na versão mais recente.
 
 ### Caminho manual: um comando
 
@@ -151,7 +157,7 @@ No servidor, baixe o projeto e rode o instalador:
 
 ```bash
 git clone https://github.com/melgarafael/DeskcommCRM.git
-cd deskcommcrm
+cd DeskcommCRM
 bash hostgator-setup-kit/install.sh
 ```
 
