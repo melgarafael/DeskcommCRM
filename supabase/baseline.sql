@@ -606,7 +606,7 @@ begin
   if not found or v_session.organization_id <> p_org_id then
     raise exception 'channel_session_not_found' using errcode = 'P0001';
   end if;
-  if v_session.status <> 'working' then
+  if v_session.status <> 'WORKING' then
     raise exception 'channel_session_offline' using errcode = 'P0001';
   end if;
 
