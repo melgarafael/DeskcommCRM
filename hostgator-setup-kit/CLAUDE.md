@@ -129,9 +129,17 @@ Se mesmo assim aparecerem, aqui está o diagnóstico pronto:
 
 ## Depois de instalado
 
-- **Atualizar** para uma versão nova: `bash update.sh`.
+- **Atualizar** para uma versão nova: `bash update.sh` (um comando só). Ele já:
+  (1) checa se há mesmo versão nova (se não, sai na hora); (2) **faz backup do banco
+  antes** de mexer em qualquer coisa; (3) puxa o código novo; (4) atualiza o banco
+  re-aplicando o `baseline.sql` — que é idempotente e **auto-curativo** (conserta
+  conversas bagunçadas de versões antigas). Re-aplicar gera muitos avisos "já existe" /
+  "multiple primary keys" — **é esperado e inofensivo**; o script filtra esse ruído e só
+  alerta sobre erros de verdade. (5) puxa a imagem nova do app e confere a saúde no fim.
+  Flags: `--force` (atualiza mesmo já estando na última) e `--skip-backup`.
 - **Backup** (importante! o Supabase grátis não faz sozinho): `bash backup.sh`,
-  e sugira agendar um backup diário no cron.
+  e sugira agendar um backup diário no cron. O `update.sh` já roda um backup sozinho
+  antes de cada atualização.
 
 ## O que você NÃO faz
 
