@@ -110,3 +110,15 @@
   bloqueado (aguarda respostas INB-02/INB-01 + G1.approved do dono).
 - Loop PARADO aguardando aprovação (guarda de entrada nº 2 segura as próximas
   sessões). Próximo passo é do dono: responder inbox e aprovar/recusar o checkpoint.
+
+## 2026-07-16 — sessão 8 do loop (core) — G1-06 (human_input aplicado)
+
+- Dono respondeu INB-02 via chat ao Maestro: (a)=B suas+fila, (b)=B
+  manual+round-robin, (c)=A reusa role agent, (d)=A transferência imediata,
+  (e)=A manager vê métricas individuais. INB-01: descartar supervisor §10.
+- Decisões transcritas na spec 13 (§3.5 defaults, §4 matriz 0 PENDENTEs, §5
+  roteamento; derivações conservadoras anotadas: settings/billing manager =
+  admin-only, default mode=manual). gov-verifier: PASS (fidelidade célula a
+  célula), hash-check OK. INB-01/02 fechados.
+- Dono autorizou (AskUserQuestion): criar G1.approved em nome dele + virada de
+  fase por merge+push direto (opção A). Executando na sequência.

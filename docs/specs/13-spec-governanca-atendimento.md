@@ -188,11 +188,12 @@ padrão de `crm_pipelines.settings.fields`):
 // organizations.settings (jsonb já existente — baseline.sql:1750)
 {
   "routing": {
-    "mode": "manual" | "round_robin" | "load",   // default: decisão G1-06b
+    "mode": "manual" | "round_robin",             // MVP = manual + round_robin (decisão G1-06b); "load" pós-MVP
+    // default: "manual" (derivado de G1-06b: round-robin é opt-in por org)
     "max_retries": 5, "backoff_seconds": 60       // knobs: nunca constantes hardcoded no worker
   },
   "visibility_mode": "all" | "own_and_unassigned" | "own"
-  // escopo do role agent em conversations/messages; default: PENDENTE G1-06a
+  // escopo do role agent em conversations/messages; default: "own_and_unassigned" (decisão G1-06a)
 }
 ```
 
@@ -201,7 +202,7 @@ de config org-level de baixa cardinalidade; tabela dedicada (`routing_rules`)
 seria over-modeling para 1 linha por org sem histórico. Se um dia routing tiver
 N regras condicionais por org, aí promove-se a tabela. → **Reuse**.
 
-## 4. Matriz role×recurso (G1-05; G1-06 fecha os PENDENTEs)
+## 4. Matriz role×recurso (G1-05; pendências fechadas pelas decisões G1-06/INB-01)
 
 Formato: célula = `{none|own|org}` × `{read|write}`. `own` = registros cujo
 `assigned_to_user_id`/`owner_user_id` é o próprio usuário (+ os sem dono, conforme
@@ -210,26 +211,28 @@ escopo `own` na RLS.
 
 | Recurso | viewer | agent | manager | admin |
 |---|---|---|---|---|
-| conversations | org:read ¹ | own:read+write (escopo default **PENDENTE G1-06a**) | org:read; write **PENDENTE INB-01** ² | org:read+write |
+| conversations | org:read ¹ | own:read+write (default `own_and_unassigned` — decisão G1-06a: as suas + fila não-atribuída) | org:read+write ² | org:read+write |
 | messages | org:read ¹ | segue conversations (own:read+write) | segue conversations ² | org:read+write |
 | contacts | org:read | org:read+write ³ | org:read+write | org:read+write |
-| crm_leads | org:read | own:read+write (escopo **PENDENTE G1-06a**) | org:read+write | org:read+write |
+| crm_leads | org:read | own:read+write (mesmo escopo da decisão G1-06a: os seus + sem dono) | org:read+write | org:read+write |
 | pipelines (config) | org:read ⁴ | org:read ⁴ | org:read+write | org:read+write |
-| settings | none | none | atendimento/routing: org:read+write ⁵; demais: **PENDENTE G1-06** | org:read+write |
+| settings | none | none | atendimento/routing: org:read+write ⁵; demais: none ⁵ | org:read+write |
 | api_tokens | none | none | none ⁶ | org:read+write |
-| billing | none | none | **PENDENTE G1-06** | org:read+write |
+| billing | none | none | none (admin-only; derivado: sem decisão explícita do dono, conservador) | org:read+write |
 | team (membros/papéis) | none | none | org:read ⁷ | org:read+write |
 | audit | none | none | org:read ⁸ | org:read |
-| métricas | none | own:read (**PENDENTE G1-06e**) | org:read; individuais de todos **PENDENTE G1-06e** | org:read |
+| métricas | none | own:read (decisão G1-06e: agent só as próprias) | org:read, incl. individuais de todos os atendentes (decisão G1-06e) | org:read |
 
 Notas:
 1. `viewer` é o papel de leitura org-wide (invariante "viewer NÃO escreve" —
-   Apêndice A, GAP G2). Se `visibility_mode ≠ all` deve restringir também o
-   viewer é parte da decisão **G1-06a**.
-2. Conflito registrado em **INB-01** (inbox do loop): esta matriz dava
-   `org:read+write` a manager, mas a spec 04 §10 define supervisor read-only
-   (manager não-dono só observa, com audit `observed_by_supervisor`). Decisão do
-   dono via inbox — não resolvida aqui.
+   Apêndice A, GAP G2). `visibility_mode` restringe apenas o role **agent**;
+   viewer segue org:read — decisão do dono (INB-01): viewer é o observador
+   read-only org-wide.
+2. Resolvido pela decisão do dono (**INB-01**, inbox do loop, 2026-07-16): o
+   modo supervisor read-only da spec 04 §10 está **descartado** — viewer já
+   cobre a observação read-only; manager mantém escrita plena
+   (`org:read+write`) em conversations/messages, sem audit
+   `observed_by_supervisor`.
 3. Contato é entidade compartilhada (1 contato × N atendimentos); escopo fino
    fica nas conversas, não na pessoa. Escrita de agent é operacional (nome, nota,
    tags de contato) — anonimização LGPD segue admin-only (spec 01).
@@ -239,28 +242,44 @@ Notas:
 5. Config de atendimento/roteamento (§3.5 `settings.routing`,
    `attendant_availability` de terceiros) é manager+ — já fixado pelos acceptances
    de G5-01/G5-04. As demais chaves de `settings` (perfil da org etc.) ficam
-   **PENDENTE G1-06**.
+   admin-only (derivado: sem decisão explícita do dono, conservador — manager
+   gerencia a operação de atendimento, não a configuração geral da org).
 6. Baseline já aplica `api_tokens_admin_only` (baseline.sql:3289) — manter.
 7. Manager lê a lista de membros para o painel de atendentes (G5-04); gestão de
    papéis (PATCH role) é admin-only (G2-02, "último admin não rebaixa").
 8. Hoje o baseline restringe select de `api_audit_log` a admin
    (baseline.sql:3297); abrir `org:read` a manager é a mudança-alvo aplicada em G2.
-9. A decisão **G1-06c** ("agent" = atendente ou nasce role novo?) pode renomear a
-   coluna `agent`; **G1-06d** (transferência exige aceite?) condiciona o write de
-   transfer, não a célula.
+9. Decisão **G1-06c**: o role `agent` existente É o atendente — sem role novo,
+   sem rename de coluna. Decisão **G1-06d**: transferência é imediata (auditada
+   via §3.1 + notificação ao destino), sem aceite — o write de transfer não tem
+   etapa de aprovação.
 
 Enforcement em **duas camadas obrigatórias**: RLS (fronteira) + helper único de
 rota (`require-role`, G2-01) — nunca só UI (anti-padrão 3).
 
-## 5. Roteamento (G1-06b/G5 fecham)
+## 5. Roteamento (decisões G1-06; G5 implementa)
 
-- Modos: `manual` (só claim/atribuição humana), `round_robin` (rodízio entre
-  elegíveis), `load` (menor carga). Elegível = disponível ∧ dentro do horário ∧
-  abaixo da capacidade.
+- **Modos no MVP** (decisão G1-06b): `manual` (só claim/atribuição humana) e
+  `round_robin` (rodízio entre elegíveis). `load` (menor carga) fica pós-MVP —
+  `settings.routing` é jsonb, entra sem quebrar contrato. Elegível =
+  disponível ∧ dentro do horário ∧ abaixo da capacidade.
+- **Default por org**: `mode = 'manual'` — round-robin é opt-in (derivado de
+  G1-06b: o dono escolheu os modos, não o default; manual é o comportamento
+  atual e conservador).
+- **Atendente** (decisão G1-06c): é o role `agent` existente do RBAC — nenhum
+  role novo.
+- **Visibilidade** (decisão G1-06a): `visibility_mode` default
+  `own_and_unassigned` — agent vê as suas conversas + a fila não-atribuída.
+- **Transferência** (decisão G1-06d): imediata, sem aceite do destino —
+  auditada em `conversation_assignment_events` (§3.1) + notificação ao novo
+  atendente.
 - Mecânica: evento `conversation.routing_requested` no `event_log`; worker
   consome com claim + dedup (at-least-once seguro: conversa que já tem dono nunca
   é reatribuída pelo replay).
 - Sem elegível ⇒ fila (visível, com posição) + re-agenda com backoff.
+
+> Origem das decisões deste documento (§3.5 defaults, §4 matriz, §5 roteamento):
+> decisões do dono, 2026-07-16, inbox INB-01/INB-02 (`loop/inbox.items.md`).
 
 ## 6. Métricas por responsável (G4-04 define antes do código)
 
