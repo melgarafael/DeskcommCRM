@@ -86,3 +86,18 @@
   app/api/v1/messages/route.ts — ponteiro impreciso, conclusão correta.
 - gov-verifier: PASS, hash-check OK (tree + inbox).
 - Próxima sessão: G1-05 (modelo de dados alvo + matriz role×recurso, deps G1-04 ✓).
+
+## 2026-07-16 — sessão 6 do loop (core) — G1-05
+
+- G1-05 (modelo de dados alvo + matriz role×recurso): spec 13 §3 com DDL
+  rascunho das 5 estruturas (assignment_events, assignee_kind, conversation
+  tags, attendant_availability, settings.routing/visibility_mode), cada uma
+  com DIRC; §4 com matriz 11 recursos × 4 roles.
+- 7 células PENDENTE G1-06 + 1 PENDENTE INB-01 (manager×conversations write —
+  conflito supervisor read-only). Nenhuma decisão de produto inventada
+  (verifier varreu célula a célula). Refs baseline.sql:linha 8/8 exatas.
+- Nota do verifier p/ G1-06: linha 191 usa "decisão G1-06b" em vez do literal
+  "PENDENTE G1-06" — incluir o default de roteamento ao fechar os pendentes.
+- gov-verifier: PASS, hash-check OK.
+- Próximo: G1-06 é human_input (única pendente da fase) → sessão seguinte abre
+  o item de inbox com as 5 perguntas e emite checkpoint G1 INCOMPLETO (§5).

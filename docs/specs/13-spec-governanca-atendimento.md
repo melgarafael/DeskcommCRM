@@ -52,43 +52,205 @@ evidência `arquivo:linha` no **Apêndice B** (G1-04):
 - `event_log` + padrão worker com claim transacional (trigger nunca faz HTTP).
 - `api_audit_log` append-only.
 
-## 3. Modelo de dados alvo (rascunho — G1-05 detalha com DIRC)
+## 3. Modelo de dados alvo (G1-05)
 
-Estruturas novas previstas (DDL rascunho + justificativa DIRC por tabela em G1-05):
+DDL **rascunho** — vira migration real (tripla: `migrations/` + `baseline.sql` +
+MANIFEST + `database.types.ts`) nas fases indicadas, **não agora**. Cada estrutura
+justifica DIRC (Derive? Infer? Reuse? Create?) contra o baseline atual; a doutrina
+do repo (Duplicar/Integrar/Referenciar/Calcular do CLAUDE.md) é a mesma pergunta
+por outro ângulo. Convenções seguidas: `type` é `text` + CHECK (não enum),
+`tags text[]` + GIN, config declarativa em `settings jsonb` com Zod.
 
-- **`conversation_assignment_events`** — auditoria de toda mudança de dono:
-  `(org_id, conversation_id, from_user_id?, to_user_id?, changed_by, reason
-  claim|transfer|release|routing|handoff, created_at)`. Fonte da história de
-  atendimento; RLS org.
-- **`conversations.assignee_kind`** (`'user'|'ai'`) — unifica `ai_handling` com
-  assignment: quem atende é humano OU a IA, nunca ambíguo. Handoff = reassignment
-  auditado (`reason=handoff`). Conversa `kind='user'` ⇒ bot vetado
-  (determinístico, mesma família de `force_human`).
-- **`conversations.tags text[]`** — mesmo padrão de contacts/leads (Reuse).
-- **`attendant_availability`** — `(org_id, user_id, is_available, capacity,
-  schedule jsonb tz-aware)`; persiste o status/heartbeat da spec 04 §8.
-- **`organizations.settings.routing`** — `{mode: manual|round_robin|load, knobs…}`;
-  knobs nunca constantes hardcoded.
-- **`organizations.settings.visibility_mode`** — `'all'|'own_and_unassigned'|'own'`
-  para o role `agent` (default: decisão G1-06a).
+### 3.1 `conversation_assignment_events` (G3-01)
 
-## 4. Matriz role×recurso (G1-05 preenche; G1-06 fecha os PENDENTEs)
+Auditoria estruturada de TODA mudança de dono de conversa — a "história de
+atendimento" que o sistema-modelo nunca teve (eixo 3).
 
-Formato: célula = `{none|own|org}` × `{read|write}`.
+```sql
+-- RASCUNHO (migration real em G3-01)
+create table if not exists conversation_assignment_events (
+  id              uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  conversation_id uuid not null references conversations(id) on delete cascade,
+  from_user_id    uuid references auth.users(id) on delete set null, -- null = sem dono / com a IA
+  to_user_id      uuid references auth.users(id) on delete set null, -- null = liberada (volta à fila/IA)
+  changed_by      uuid references auth.users(id) on delete set null, -- null = sistema (worker de routing / agente IA)
+  reason          text not null
+                  check (reason in ('claim','transfer','release','routing','handoff')),
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists idx_cae_conversation
+  on conversation_assignment_events (conversation_id, created_at desc);
+
+-- RLS: tenant org via fn_user_org_ids() (SELECT + INSERT).
+-- Append-only: sem policy de UPDATE/DELETE (mesma família de api_audit_log).
+```
+
+**DIRC** — *Derive?* Não: `conversations` só guarda o dono ATUAL
+(`assigned_to_user_id`); a história não é derivável do estado. *Reuse?*
+`api_audit_log` é genérico (payload jsonb, retenção própria, select admin-only) —
+sem `from/to/reason` tipados nem consulta eficiente por conversa;
+`crm_lead_activities` é timeline de LEAD, não de conversa. → **Create**.
+
+### 3.2 `conversations.assignee_kind` (G3-02)
+
+Decisão de design: **quem atende é `'user'` OU `'ai'`, nunca ambíguo** — unifica
+o status `ai_handling` (baseline.sql:1407) com o assignment. Handoff IA→humano
+vira reassignment auditado (`reason='handoff'` em 3.1). Conversa `kind='user'` ⇒
+pipeline do bot vetado deterministicamente (mesma família de guard de
+`force_human`/`bot_silenced_until`).
+
+```sql
+-- RASCUNHO (migration real em G3-02)
+alter table conversations
+  add column if not exists assignee_kind text
+  check (assignee_kind in ('user','ai'));
+
+-- Coerência com assigned_to_user_id: null = sem atendente (fila).
+alter table conversations
+  add constraint conversations_assignee_kind_coherence check (
+    (assignee_kind = 'user' and assigned_to_user_id is not null) or
+    (assignee_kind = 'ai'   and assigned_to_user_id is null)     or
+    (assignee_kind is null  and assigned_to_user_id is null)
+  );
+
+-- Backfill (na migration, ANTES da constraint — doutrina de migrations §8):
+-- update conversations set assignee_kind = 'user' where assigned_to_user_id is not null;
+-- update conversations set assignee_kind = 'ai'
+--   where status = 'ai_handling' and assigned_to_user_id is null;
+```
+
+**DIRC** — *Reuse + Derive*: reusa as colunas existentes
+(`assigned_to_user_id`, `status`) e desambigua a semântica dupla de
+`ai_handling`; nenhuma tabela nova. Coluna mínima em vez de tabela `assignees`
+polimórfica (anti-pattern 8 do CLAUDE.md) — só existem 2 kinds e o humano já tem
+FK própria. → **Create (coluna)**, não tabela.
+
+### 3.3 `conversations.tags text[]` (G3-05)
+
+```sql
+-- RASCUNHO (migration real em G3-05)
+alter table conversations
+  add column if not exists tags text[] not null default '{}';
+
+create index if not exists idx_conversations_tags_gin
+  on conversations using gin (tags);
+```
+
+Vocabulário canônico: `organizations.settings.canonical_conversation_tags`
+(array jsonb, schema Zod declarativo) — **não** o
+`crm_pipelines.settings.canonical_tags` (baseline.sql:1500), porque conversa não
+é pipeline-scoped; vocabulário de atendimento é da org. G3-05 registra/valida.
+
+**DIRC** — *Reuse do padrão*: mesmíssimo shape de `contacts.tags`
+(baseline.sql:1356 + GIN :2372) e `crm_leads.tags` (:1476 + :2424). *Por que não
+reusa `contacts.tags` direto?* Tag de contato qualifica a PESSOA (duradouro:
+"vip"); tag de conversa qualifica o ATENDIMENTO (episódico: "reclamação",
+"troca") — 1 contato tem N conversas de categorias distintas; inferir da mais
+recente perde informação. → **Create (coluna)**, padrão reusado.
+
+### 3.4 `attendant_availability` (G5-01)
+
+Persiste o `<AttendantStatusToggle>`/heartbeat da spec 04 §8.1-8.2 (hoje 100%
+ausente — Apêndice B).
+
+```sql
+-- RASCUNHO (migration real em G5-01)
+create table if not exists attendant_availability (
+  id                uuid primary key default gen_random_uuid(),
+  organization_id   uuid not null references organizations(id) on delete cascade,
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  is_available      boolean not null default false,
+  capacity          integer not null default 5 check (capacity > 0), -- ajustável por atendente, nunca constante no código
+  schedule          jsonb not null default '{}', -- tz-aware: {"timezone":"America/Sao_Paulo","windows":[{"dow":1,"start":"08:00","end":"18:00"}]}
+  last_heartbeat_at timestamptz,                 -- AT-08: auto-offline após 15min sem heartbeat (worker)
+  updated_at        timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+-- RLS: SELECT org via fn_user_org_ids();
+-- WRITE: a própria linha (user_id = auth.uid()) OU fn_role_at_least(org,'manager').
+```
+
+**DIRC** — *Derive?* Presença não é derivável: é declarada (toggle) + heartbeat.
+*Infer?* `last_outbound_at` das mensagens seria heurística frágil (atendente
+online sem responder). *Reuse?* `user_organizations` é membership/RBAC — misturar
+estado mutável de alta frequência com a tabela que a RLS consulta em todo request
+é hot-path errado. → **Create** (1 linha por org×user).
+
+### 3.5 `organizations.settings.routing` + `visibility_mode` (G5-01 / G4-01)
+
+Config de org, não tabela — shape declarativo (Zod em `lib/schemas/`, mesmo
+padrão de `crm_pipelines.settings.fields`):
+
+```jsonc
+// organizations.settings (jsonb já existente — baseline.sql:1750)
+{
+  "routing": {
+    "mode": "manual" | "round_robin" | "load",   // default: decisão G1-06b
+    "max_retries": 5, "backoff_seconds": 60       // knobs: nunca constantes hardcoded no worker
+  },
+  "visibility_mode": "all" | "own_and_unassigned" | "own"
+  // escopo do role agent em conversations/messages; default: PENDENTE G1-06a
+}
+```
+
+**DIRC** — *Reuse*: `organizations.settings jsonb` já existe e é o lugar canônico
+de config org-level de baixa cardinalidade; tabela dedicada (`routing_rules`)
+seria over-modeling para 1 linha por org sem histórico. Se um dia routing tiver
+N regras condicionais por org, aí promove-se a tabela. → **Reuse**.
+
+## 4. Matriz role×recurso (G1-05; G1-06 fecha os PENDENTEs)
+
+Formato: célula = `{none|own|org}` × `{read|write}`. `own` = registros cujo
+`assigned_to_user_id`/`owner_user_id` é o próprio usuário (+ os sem dono, conforme
+`visibility_mode` — §3.5). A fase G2 aplica esta matriz server-side; G4 aplica o
+escopo `own` na RLS.
 
 | Recurso | viewer | agent | manager | admin |
 |---|---|---|---|---|
-| conversations/messages | org:read (PENDENTE G1-06a) | own*:read+write | org:read+write | org:read+write |
-| contacts | … | … | … | … |
-| crm_leads | … | own (PENDENTE) | org | org |
-| pipelines (config) | none | none | org:write | org:write |
-| settings/api_tokens/billing | none | none | PENDENTE | org:write |
-| team (papéis) | none | none | none | org:write |
-| audit | none | none | org:read | org:read |
-| métricas individuais | none | own (PENDENTE G1-06e) | org | org |
+| conversations | org:read ¹ | own:read+write (escopo default **PENDENTE G1-06a**) | org:read; write **PENDENTE INB-01** ² | org:read+write |
+| messages | org:read ¹ | segue conversations (own:read+write) | segue conversations ² | org:read+write |
+| contacts | org:read | org:read+write ³ | org:read+write | org:read+write |
+| crm_leads | org:read | own:read+write (escopo **PENDENTE G1-06a**) | org:read+write | org:read+write |
+| pipelines (config) | org:read ⁴ | org:read ⁴ | org:read+write | org:read+write |
+| settings | none | none | atendimento/routing: org:read+write ⁵; demais: **PENDENTE G1-06** | org:read+write |
+| api_tokens | none | none | none ⁶ | org:read+write |
+| billing | none | none | **PENDENTE G1-06** | org:read+write |
+| team (membros/papéis) | none | none | org:read ⁷ | org:read+write |
+| audit | none | none | org:read ⁸ | org:read |
+| métricas | none | own:read (**PENDENTE G1-06e**) | org:read; individuais de todos **PENDENTE G1-06e** | org:read |
+
+Notas:
+1. `viewer` é o papel de leitura org-wide (invariante "viewer NÃO escreve" —
+   Apêndice A, GAP G2). Se `visibility_mode ≠ all` deve restringir também o
+   viewer é parte da decisão **G1-06a**.
+2. Conflito registrado em **INB-01** (inbox do loop): esta matriz dava
+   `org:read+write` a manager, mas a spec 04 §10 define supervisor read-only
+   (manager não-dono só observa, com audit `observed_by_supervisor`). Decisão do
+   dono via inbox — não resolvida aqui.
+3. Contato é entidade compartilhada (1 contato × N atendimentos); escopo fino
+   fica nas conversas, não na pessoa. Escrita de agent é operacional (nome, nota,
+   tags de contato) — anonimização LGPD segue admin-only (spec 01).
+4. Leitura da estrutura (stages, vocabulário) é necessária pra renderizar
+   board/inbox; **write de config é manager+** (invariante "agent NÃO escreve
+   config de pipeline" — Apêndice A, GAP G2).
+5. Config de atendimento/roteamento (§3.5 `settings.routing`,
+   `attendant_availability` de terceiros) é manager+ — já fixado pelos acceptances
+   de G5-01/G5-04. As demais chaves de `settings` (perfil da org etc.) ficam
+   **PENDENTE G1-06**.
+6. Baseline já aplica `api_tokens_admin_only` (baseline.sql:3289) — manter.
+7. Manager lê a lista de membros para o painel de atendentes (G5-04); gestão de
+   papéis (PATCH role) é admin-only (G2-02, "último admin não rebaixa").
+8. Hoje o baseline restringe select de `api_audit_log` a admin
+   (baseline.sql:3297); abrir `org:read` a manager é a mudança-alvo aplicada em G2.
+9. A decisão **G1-06c** ("agent" = atendente ou nasce role novo?) pode renomear a
+   coluna `agent`; **G1-06d** (transferência exige aceite?) condiciona o write de
+   transfer, não a célula.
 
 Enforcement em **duas camadas obrigatórias**: RLS (fronteira) + helper único de
-rota (`require-role`) — nunca só UI (anti-padrão 3).
+rota (`require-role`, G2-01) — nunca só UI (anti-padrão 3).
 
 ## 5. Roteamento (G1-06b/G5 fecham)
 
