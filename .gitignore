@@ -48,7 +48,13 @@ supabase/.branches/
 .epic-executor/
 
 # Claude Code harness artifacts (scheduled tasks lock, etc)
+# gov-loop: agents/ e commands/ são maquinaria versionada do loop e PRECISAM
+# viajar com o repo (merge de gov/setup → main); o resto de .claude/ segue local.
 .claude/
+!.claude/
+.claude/*
+!.claude/agents/
+!.claude/commands/
 
 # Local docker volumes (WAHA)
 .waha-data/
@@ -63,3 +69,14 @@ test-results/
 playwright-report/
 .vercel
 deskcommcrm-setup-kit.zip
+
+# gov-loop — estado operacional fica FORA do git (a resposta do humano na inbox
+# e a linha 'started' do sessions.log não podem sujar o working tree; a guarda de
+# chão limpo do LOOP.md os stasharia). loop/checkpoints/evidence/ NÃO é ignorado:
+# screenshot de checkpoint é evidência versionada.
+loop/inbox.items.md
+loop/sessions.log
+loop/logs/
+loop/locks/
+loop/STOP
+loop/run-session.sh

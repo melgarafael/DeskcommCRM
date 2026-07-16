@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# pre-push — nada sai da máquina fora do ritual de virada de fase (enforcement, não prosa).
+# A variável DESKCOMM_GOV_PHASE_MERGE=1 é exportada SÓ pelo ritual de virada
+# (loop/CHECKPOINT.md), que só dispara com loop/checkpoints/G<N>.approved do dono.
+if [ "${DESKCOMM_GOV_PHASE_MERGE:-0}" = "1" ]; then
+  exit 0
+fi
+echo "pre-push BLOQUEADO: push só existe no ritual de virada de fase (loop/CHECKPOINT.md)." >&2
+echo "O ritual exige loop/checkpoints/G<N>.approved criado pelo dono e exporta DESKCOMM_GOV_PHASE_MERGE=1." >&2
+echo "Se você é uma sessão do loop: você NUNCA faz push. Registre o estado e morra." >&2
+exit 1

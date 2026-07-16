@@ -1,0 +1,507 @@
+{
+  "_meta": {
+    "loop": "gov-loop",
+    "repo": "DeskcommCRM",
+    "active_phase": "G1",
+    "loop_doctrine": "Máquina portada do vendaval-loop. Doutrina de DOMÍNIO soberana: CLAUDE.md deste repo + docs/specs/ (multi-tenancy, migrations em tripla, idempotência, RBAC, LGPD, anti-patterns). Este arquivo só muda nos campos 'passes' e 'verification', via node loop/update-feature.ts — nunca editor. Feature nova/alterada = proposta em loop/inbox.items.md + aprovação humana + commit com DESKCOMM_GOV_PLAN_EDIT=1.",
+    "session_ritual": "Ler loop/LOOP.md e segui-lo à risca. Uma sessão = UMA feature. Maker≠checker: passes:true só com PASS do gov-verifier sob hash-check.",
+    "phase_gate": "G<n> elegível só se loop/checkpoints/G<n-1>.approved existe. Fase completa → relatório de checkpoint → PARAR (gate humano).",
+    "migration_doctrine": "Feature que toca schema segue a tripla do repo: supabase/migrations/<ts>_<NNNN>_<slug>.sql idempotente + apêndice em supabase/baseline.sql ('-- ---- ... (migration NNNN) ----') + linha em supabase/migrations/MANIFEST.md + lib/database.types.ts regenerado. Sequência NNNN validada contra TODAS as branches locais (a cadeia vendaval/F2-* pode ter migrations não mergeadas). Enforced por loop/hooks/check-migration-triple.sh.",
+    "provenance": "Backlog derivado de 7 eixos de feedbacks reais de usuários do sistema-modelo (TomikCRM), abstraídos por tema — ZERO PII neste repo. Spec-mãe: docs/specs/13-spec-governanca-atendimento.md (complementa 04 e 05, não duplica).",
+    "smoke": "pnpm typecheck && pnpm lint && pnpm test:unit"
+  },
+  "features": [
+    {
+      "id": "G1-01",
+      "phase": "G1",
+      "title": "Gate de CI consolidado (local + GitHub Actions)",
+      "description": "Hoje nenhum workflow roda typecheck/lint/test:unit (só perf.yml e publish-image.yml). Criar script local único e workflow de PR. É o 'verde' em que o verifier e o time passam a confiar.",
+      "acceptance": [
+        "Existe script `gov:verify` no package.json que roda `pnpm typecheck && pnpm lint && pnpm test:unit` e retorna exit!=0 se qualquer um falhar; executá-lo no repo atual termina verde.",
+        "Existe .github/workflows/ci.yml disparando em pull_request e push para main, com pnpm 9 + node 20 (mesmas versões de perf.yml), rodando os 3 comandos.",
+        "ci.yml passa em validação de sintaxe (actionlint se disponível, senão `node -e` com parser YAML) — sem depender de rodar no GitHub.",
+        "Nenhum teste existente foi alterado ou skipado."
+      ],
+      "depends_on": [],
+      "priority": 10,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G1-02",
+      "phase": "G1",
+      "title": "Postgres descartável: baseline install+update + isolamento 2-tenants",
+      "description": "Automatiza o gate manual da doutrina de migrations: aplicar supabase/baseline.sql num pgvector/pgvector:pg17 efêmero nos modos install (ON_ERROR_STOP=1) e update (re-apply idempotente), e provar isolamento RLS entre 2 orgs. Vira a fundação de tests/invariants.",
+      "acceptance": [
+        "Existe script `test:db` (package.json) que sobe container efêmero pgvector/pgvector:pg17 (docker), aplica baseline.sql com ON_ERROR_STOP=1 (modo install), re-aplica sem ON_ERROR_STOP (modo update) e falha se qualquer statement do modo install falhar.",
+        "Suíte vitest (ex.: tests/invariants/rls-isolation.test.ts) conecta no container, cria 2 orgs + 1 usuário em cada via SQL, e prova: usuário da org A não lê conversations/messages/contacts/crm_leads da org B (0 rows sob RLS com JWT/claims simulados via set_config, mesmo padrão fn_user_org_ids()).",
+        "`pnpm test:db` termina verde localmente e derruba o container ao final (trap), inclusive em falha.",
+        "README curto em tests/invariants/README.md explica como rodar e o contrato do harness."
+      ],
+      "depends_on": ["G1-01"],
+      "priority": 20,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G1-03",
+      "phase": "G1",
+      "title": "Suíte de invariantes de governança (o eval do épico — congelada)",
+      "description": "Codifica os 7 eixos de dor como testes executáveis contra o Postgres descartável e contra as rotas (unit). Gap conhecido = teste com test.fails explícito (catraca: quando a fase corrigir, o test.fails passa a falhar e obriga o flip para teste normal). Após merge, tests/invariants/** é congelado por hook.",
+      "acceptance": [
+        "Existe tests/invariants/ com ≥1 invariante por eixo (1-RBAC, 2-atribuição, 3-transferência, 4-roteamento/fila, 5-escopo de visualização, 6-handoff IA→humano, 7-tags), cada arquivo com comentário-cabeçalho citando o eixo e a spec 13.",
+        "Invariantes de estado atual que JÁ valem passam verdes (ex.: RLS org-flat isola entre orgs — G1-02; role helpers fn_role_at_least existem e ordenam viewer<agent<manager<admin).",
+        "Cada gap conhecido está como test.fails com comentário `GAP(G<fase que corrige>)` — ex.: 'agent vê conversa atribuída a outro agent' (GAP G4), 'transfer não gera evento de auditoria' (GAP G3), 'role de membro não é editável via API' (GAP G2).",
+        "`pnpm test:invariants` roda a suíte inteira verde (test.fails contam como esperados).",
+        "Tabela eixo→invariante→status(passa|GAP Gx) adicionada como apêndice A da docs/specs/13-spec-governanca-atendimento.md."
+      ],
+      "depends_on": ["G1-02"],
+      "priority": 30,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G1-04",
+      "phase": "G1",
+      "title": "Auditoria de gap: specs 04/05 + stories AT-* vs código real",
+      "description": "A spec 04 já define claim atômico (AT-02), fila round-robin em worker (AT-03), supervisor read-only (AT-04), heartbeat/status (AT-08), ReassignDialog e bulk-assign. Mapear mecanicamente o que existe implementado vs o que é só spec, para as fases G2-G5 não re-especificarem nem re-implementarem o que já há.",
+      "acceptance": [
+        "Apêndice B da spec 13 contém tabela: item da spec 04/05 (com §) → status {implementado|parcial|ausente} → evidência arquivo:linha do código real (app/, lib/, hooks/, supabase/baseline.sql).",
+        "Cobre no mínimo: claim atômico §9 (UPDATE condicional + 409), ReassignDialog, UnassignedQueueAlert §8.3, AttendantStatusToggle §8.1-8.2, supervisor read-only §10, bulk actions §6.5, handoff da spec 05, conversations.assigned_to_user_id/claimed/ai_handling no baseline.",
+        "Cada item 'parcial' ou 'ausente' aponta qual feature G* o cobre (ou registra proposta na inbox se nenhuma cobre).",
+        "Nenhuma afirmação sem evidência arquivo:linha — verificável por leitura."
+      ],
+      "depends_on": [],
+      "priority": 40,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G1-05",
+      "phase": "G1",
+      "title": "Modelo de dados alvo + matriz role×recurso (spec 13 §3-§4)",
+      "description": "Detalhar na spec 13 o DDL rascunho das estruturas novas (conversation_assignment_events, conversation tags, routing_rules/availability, assignee_kind) e a matriz completa role×recurso×ação que a G2 vai aplicar. Segue doutrina DIRC do repo antes de qualquer campo novo.",
+      "acceptance": [
+        "Spec 13 §3 tem DDL rascunho (CREATE TABLE comentado) para: eventos de atribuição (quem→quem, por quem, motivo, quando), tags de conversa, config de roteamento por org, disponibilidade/horário por atendente, e a decisão assignee_kind ('user'|'ai') unificando ai_handling com assignment.",
+        "Cada tabela nova justifica DIRC (Derive? Infer? Reuse? Create) contra o baseline atual (ex.: por que tags de conversa não reusa contacts.tags).",
+        "Spec 13 §4 tem matriz role×recurso: linhas = recursos (conversations, messages, contacts, crm_leads, pipelines, settings, api_tokens, billing, team, audit, métricas), colunas = viewer/agent/manager/admin, células = {none|own|org} × {read|write}.",
+        "Pontos que dependem de decisão do dono estão marcados 'PENDENTE G1-06' — nenhuma decisão de produto inventada."
+      ],
+      "depends_on": ["G1-04"],
+      "priority": 50,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G1-06",
+      "phase": "G1",
+      "title": "INPUT HUMANO: decisões de produto da governança",
+      "description": "Decisões que são do dono, não do loop: (a) default de visibilidade do role agent (vê só as suas? suas + fila não-atribuída? tudo?); (b) modos de roteamento desejados no MVP (manual, round-robin, por carga?); (c) 'agent' do RBAC = atendente do atendimento, ou nasce role novo?; (d) transferência exige aceite do destino ou é imediata?; (e) manager pode ver métricas individuais de todos?",
+      "acceptance": [
+        "Item registrado em loop/inbox.items.md com as 5 perguntas fechadas (formato: pergunta + opções + recomendação com 1 linha de porquê).",
+        "Respostas do dono registradas no mesmo item (status answered) e transcritas na spec 13 §4 (matriz sem PENDENTE) e §5 (decisões de roteamento).",
+        "Nenhuma feature de G2+ foi iniciada antes das respostas nos pontos que dependem delas."
+      ],
+      "depends_on": ["G1-05"],
+      "priority": 60,
+      "lane": "core",
+      "kind": "human_input",
+      "human_input": true,
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G2-01",
+      "phase": "G2",
+      "title": "Matriz role×endpoint aplicada server-side em /api/v1",
+      "description": "Enforcement da matriz (spec 13 §4) nas rotas — não só RLS, não só UI. Helper único de autorização (reusar lib/auth/server.ts; padrão requireRole) aplicado a cada grupo de rotas; a lição do sistema-modelo é que matriz advisória no frontend = atendente com poder de owner.",
+      "acceptance": [
+        "Existe helper único (ex.: lib/auth/require-role.ts) que resolve o role efetivo via getUser() + fn_user_role_in_org e nega com fail() 403 padronizado (lib/api/wrappers.ts); nenhuma rota reimplementa a checagem na mão.",
+        "Rotas de settings/api-tokens/billing/team exigem ≥manager ou admin conforme matriz; rotas de leitura de inbox/leads permitem agent; testes unit por grupo de rota provam o 403 para role insuficiente e o 200 para role mínimo.",
+        "Invariantes de RBAC (eixo 1) que eram test.fails em G1-03 flipados para testes normais e verdes.",
+        "Audit: tentativa negada relevante gera entrada em api_audit_log com action='authz.denied' (append-only)."
+      ],
+      "depends_on": ["G1-03", "G1-06"],
+      "priority": 10,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G2-02",
+      "phase": "G2",
+      "title": "Papel de membro editável pós-convite (API + UI + audit)",
+      "description": "No sistema-modelo, o nível de acesso não era editável após atribuição (bug recorrente). Aqui: PATCH de role em user_organizations com guarda admin, auditado, e UI na página de team.",
+      "acceptance": [
+        "PATCH /api/v1/team/[user_id] aceita {role} (viewer|agent|manager|admin), exige role admin do chamador, valida via Zod, retorna ok(); último admin da org não pode ser rebaixado (regra + teste).",
+        "Mudança gera api_audit_log com action='team.role_changed', actor e antes/depois.",
+        "UI app/app/team: seletor de papel por membro (admin only), com estado otimista e toast de erro; e2e ou teste de componente cobre o fluxo.",
+        "Migration NÃO é necessária (user_organizations.role já existe com CHECK) — se algo de schema for tocado, segue a tripla do repo."
+      ],
+      "depends_on": ["G2-01"],
+      "priority": 20,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G2-03",
+      "phase": "G2",
+      "title": "RLS por role nas tabelas de configuração + invariantes verdes",
+      "description": "Fechar no banco o que a G2-01 fechou na API (defesa em profundidade): policies por role nas tabelas de config que ainda estiverem org-flat, seguindo o padrão fn_role_at_least já usado em api_tokens/lgpd_requests/merge_queue.",
+      "acceptance": [
+        "Auditoria das policies atuais (baseline.sql) registrada: tabela → policy → role mínimo; tabelas de config org-flat identificadas.",
+        "Migration (tripla completa: migrations/ + baseline.sql + MANIFEST.md + database.types.ts se contrato mudou) aplicando fn_role_at_least nas write-policies das tabelas de config identificadas.",
+        "pnpm test:db verde (baseline install+update) e teste de isolamento por role no Postgres descartável: agent não escreve em tabela de config, manager sim (onde a matriz permitir).",
+        "Sequência NNNN validada contra todas as branches locais (hook check-migration-triple passa)."
+      ],
+      "depends_on": ["G2-01"],
+      "priority": 30,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G2-04",
+      "phase": "G2",
+      "title": "E2E de papéis (Playwright)",
+      "description": "Prova de ponta a ponta da matriz: cada papel navegando o app vê e consegue exatamente o que a matriz permite.",
+      "acceptance": [
+        "Spec Playwright (tests/e2e/rbac-roles.spec.ts) com 2 usuários seed (agent, admin) na mesma org: agent não acessa /app/settings/api-tokens nem /app/settings/billing (redirect ou 403 renderizado); admin acessa.",
+        "Agent vê inbox e kanban; viewer (se seedável) não consegue enviar mensagem (composer desabilitado ou 403).",
+        "Suíte roda com pnpm test:e2e local (webServer do playwright.config.ts) e passa.",
+        "Axe (já usado no repo) sem regressão nas telas tocadas."
+      ],
+      "depends_on": ["G2-02", "G2-03"],
+      "priority": 40,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G3-01",
+      "phase": "G3",
+      "title": "Eventos de atribuição auditáveis (claim/transfer/release)",
+      "description": "Toda mudança de dono de conversa vira linha em conversation_assignment_events (from, to, by, reason, at) — spec 13 §3. Integra com o claim atômico da spec 04 §9 e habilita o ReassignDialog de verdade.",
+      "acceptance": [
+        "Migration (tripla completa) cria conversation_assignment_events (org_id, conversation_id, from_user_id null, to_user_id null, changed_by, reason enum claim|transfer|release|routing|handoff, created_at) com RLS org + índice por conversation.",
+        "APIs de claim (UPDATE condicional, 409 se já assumida — spec 04 §9.2-9.3) e transfer (reatribuir com motivo) gravam o evento na MESMA transação da mudança de assigned_to_user_id.",
+        "Transferência aplica a decisão do dono (G1-06d: aceite ou imediata); UI ReassignDialog funcional no inbox.",
+        "Invariante do eixo 3 (test.fails 'transfer não gera evento') flipado e verde; teste de idempotência: claim duplicado → 409 + zero evento duplicado.",
+        "unread_count_for_assignee re-zerado na transferência (coluna já existe no baseline)."
+      ],
+      "depends_on": ["G1-06"],
+      "priority": 10,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G3-02",
+      "phase": "G3",
+      "title": "IA como assignee de 1ª classe (assignee_kind)",
+      "description": "Unificar ai_handling e assignment: quem atende é 'user' ou 'ai' (spec 13 §3). Handoff IA→humano vira reassignment auditado (reason=handoff), e conversa atribuída a humano silencia o bot — a semântica que o Vendaval consome na fase FG.",
+      "acceptance": [
+        "Migration (tripla completa): conversations ganha assignee_kind ('user'|'ai') coerente com assigned_to_user_id (CHECK: kind='user' ⇒ user_id not null; kind='ai' ⇒ user_id null); backfill dos status existentes (ai_handling → kind='ai').",
+        "crm_request_human_handoff (lib/mcp/tools/handoff.ts) passa a gravar o assignment event (reason=handoff) e mover kind ai→user/fila conforme roteamento vigente.",
+        "Regra determinística testada: conversa kind='user' (humano atendendo) ⇒ pipeline de resposta do bot não dispara (mesma família de guard de force_human/bot_silenced_until — teste unit prova o veto).",
+        "Invariante do eixo 6 flipado e verde; database.types.ts regenerado."
+      ],
+      "depends_on": ["G3-01"],
+      "priority": 20,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G3-03",
+      "phase": "G3",
+      "title": "Dono do lead visível e filtrável (kanban + lista)",
+      "description": "crm_leads.owner_user_id já existe; falta a superfície: card do kanban mostra o responsável (badge 'sem responsável' quando null), filtro por dono, coluna na lista. Feedback literal do sistema-modelo: 'não aparece quem está atendendo o lead no card'.",
+      "acceptance": [
+        "KanbanCard exibe avatar/inicial + nome do owner; badge visualmente distinta para owner null ('Sem responsável') — seguindo o design system do repo (app/design), sem cor hardcoded fora de tokens.",
+        "Filtro por owner no board (spec 04 §6.4) e na lista de leads; estado de filtro na URL (query param).",
+        "Atribuir/reatribuir owner pelo card ou painel do lead (mutação existente crm_update_lead/API v1), refletindo em tempo real (padrão de realtime já usado no board).",
+        "Teste de componente cobre owner presente/ausente; e2e smoke do filtro."
+      ],
+      "depends_on": ["G1-06"],
+      "priority": 30,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G3-04",
+      "phase": "G3",
+      "title": "Atribuição em massa de leads",
+      "description": "Bulk 'Atribuir' da spec 04 §6.5 de ponta a ponta — o feedback de operação 1:N do sistema-modelo (subida em lote precisava direcionar para atendente).",
+      "acceptance": [
+        "Seleção múltipla no kanban/lista com ação 'Atribuir a…' (assign_owner da spec 04 §6.5) chamando endpoint batch em /api/v1/leads (payload Zod: lead_ids[] + owner_user_id).",
+        "Endpoint exige ≥manager (matriz), aplica em transação única, audita 1 entrada agregada (action='leads.bulk_assigned', count) e retorna contagem afetada.",
+        "Owner inválido (fora da org) → fail() 422 com código estável; teste unit cobre sucesso, 422 e limite (ex.: máx 200 por chamada).",
+        "UI mostra progresso/resultado (toast com contagem)."
+      ],
+      "depends_on": ["G3-03"],
+      "priority": 40,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G3-05",
+      "phase": "G3",
+      "title": "Tags de conversa + filtros",
+      "description": "Eixo 7. contacts e crm_leads já têm tags text[]; conversas não. Adicionar tags de conversa (mesmo padrão text[] + canonical_tags da org — DIRC: Reuse do padrão) com UI de aplicar/remover e filtro no inbox.",
+      "acceptance": [
+        "Migration (tripla completa): conversations.tags text[] not null default '{}' + índice GIN; canonical_tags reusa o vocabulário em crm_pipelines.settings ou organizations.settings (decisão registrada na spec 13 com DIRC).",
+        "UI: aplicar/remover tag na conversa (ChatThread/side panel) com sugestão das canônicas; filtro por tag na ConversationList.",
+        "API v1 de conversas aceita tags no PATCH com Zod (max 20 tags, cada ≤40 chars, normalização lowercase/trim) e audita mudança.",
+        "Invariante do eixo 7 flipado e verde; teste de filtro (query por tag retorna só as marcadas, org-scoped)."
+      ],
+      "depends_on": ["G1-06"],
+      "priority": 50,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G4-01",
+      "phase": "G4",
+      "title": "visibility_mode: RLS de conversas/mensagens por atendente",
+      "description": "O coração do eixo 5. organizations.settings.visibility_mode ('all'|'own_and_unassigned'|'own', default decidido em G1-06a) aplicado nas policies de conversations/messages para o role agent; manager+ segue org-wide. Hoje as policies são tenant_isolation_all flat.",
+      "acceptance": [
+        "Migration (tripla completa): policies de SELECT de conversations e messages passam a considerar role + visibility_mode + assigned_to_user_id (função SQL fn_can_view_conversation(org, conv) estável e testável); default do knob = decisão G1-06a.",
+        "Teste no Postgres descartável com 1 org, 2 agents e 1 manager: agent A não lê conversa atribuída ao agent B (modo own*), lê as próprias e (se own_and_unassigned) as sem dono; manager lê todas.",
+        "Invariante do eixo 5 flipado e verde; pnpm test:db verde nos modos install+update.",
+        "Realtime (postgres_changes) respeita as mesmas policies — teste ou evidência documentada de que a subscription do inbox não vaza conversa fora do escopo."
+      ],
+      "depends_on": ["G2-03", "G3-01"],
+      "priority": 10,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G4-02",
+      "phase": "G4",
+      "title": "Inbox com escopo: minhas / fila / todas",
+      "description": "Superfície do escopo: filtros de visão no inbox coerentes com visibility_mode e papel — 'Minhas', 'Fila (sem dono)', 'Todas' (só manager+).",
+      "acceptance": [
+        "ConversationList ganha seletor de visão (Minhas | Fila | Todas), com 'Todas' oculto para agent quando visibility_mode ≠ all; contagens por visão corretas.",
+        "Deep-link ?filter= preservado (compatível com UnassignedQueueAlert da spec 04 §8.3).",
+        "Agent em modo own* não consegue abrir conversa fora do escopo nem por URL direta (a RLS G4-01 garante; a UI trata o vazio com estado claro, sem stack trace).",
+        "Teste de componente para as 3 visões + e2e smoke com 2 papéis."
+      ],
+      "depends_on": ["G4-01"],
+      "priority": 20,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G4-03",
+      "phase": "G4",
+      "title": "Escopo no kanban/leads para agent",
+      "description": "Mesmo princípio nos leads: agent vê os próprios (owner) conforme matriz decidida em G1-06; manager+ vê o board inteiro.",
+      "acceptance": [
+        "Policies/queries de crm_leads respeitam a matriz da spec 13 §4 para agent (own) — via RLS (migration tripla) ou filtro server-side documentado na spec (decisão justificada DIRC).",
+        "Board do agent renderiza só o escopo; manager vê tudo; teste 2-agents no Postgres descartável.",
+        "Filtros e contadores do board coerentes com o escopo (sem contar o que não vê).",
+        "Invariante correspondente do eixo 5 (leads) verde."
+      ],
+      "depends_on": ["G4-01"],
+      "priority": 30,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G4-04",
+      "phase": "G4",
+      "title": "Métricas por responsável (funil + performance individual)",
+      "description": "Feedback direto do sistema-modelo: 'não é possível filtrar por atendente nas métricas; impossibilita visualizar performance individual'. Filtro por responsável nas métricas de funil + visão de performance por atendente (manager+).",
+      "acceptance": [
+        "Métricas de funil/dashboard aceitam filtro por owner/assignee (query param + UI), org-scoped, respeitando matriz (agent só vê as próprias se G1-06e decidir assim).",
+        "Visão 'por atendente' (manager+): leads ganhos/perdidos, conversas atendidas, tempo até 1ª resposta — cada métrica com definição escrita na spec 13 §6 antes do código.",
+        "Queries agregadas com índice adequado (EXPLAIN sem seq scan em tabela grande documentado no PR/verification).",
+        "Teste unit das agregações com dataset seed conhecido (números exatos assertados)."
+      ],
+      "depends_on": ["G4-02", "G4-03"],
+      "priority": 40,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G5-01",
+      "phase": "G5",
+      "title": "Config de roteamento + disponibilidade/horário por atendente",
+      "description": "Schema e API do roteador (spec 13 §5): modo por org (manual|round_robin|load), capacidade por atendente, disponibilidade (online/offline — persiste o AttendantStatusToggle da spec 04 §8) e janela de horário por atendente.",
+      "acceptance": [
+        "Migration (tripla completa): attendant_availability (org_id, user_id, is_available, capacity int, schedule jsonb tz-aware) + organizations.settings.routing (mode, knobs) — knobs nunca constantes hardcoded (doutrina do repo).",
+        "API v1: GET/PATCH de disponibilidade (o próprio atendente muda o seu; manager muda de todos) e PATCH de routing config (≥manager) — Zod + audit.",
+        "AttendantStatusToggle persiste no schema novo (heartbeat AT-08: auto-offline 15min via job/worker — comportamento testado com clock mockado).",
+        "Teste unit: horário fora da janela ⇒ atendente não elegível; capacidade cheia ⇒ não elegível."
+      ],
+      "depends_on": ["G3-01", "G1-06"],
+      "priority": 10,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G5-02",
+      "phase": "G5",
+      "title": "Worker de roteamento via event_log",
+      "description": "AT-03 de verdade: distribuição automática de conversas sem dono segundo o modo configurado. Segue a doutrina do repo: trigger NUNCA faz HTTP — evento em event_log, worker consome com claim transacional e dedup.",
+      "acceptance": [
+        "Nova conversa (ou handoff para fila) emite evento (ex.: conversation.routing_requested) no event_log; worker consome com claim (consumed_by/attempts/next_attempt_at — padrão existente do repo) e atribui segundo o modo: round_robin (rodízio entre elegíveis) ou load (menor carga atual), respeitando disponibilidade+horário+capacidade da G5-01.",
+        "Atribuição do worker grava conversation_assignment_events (reason=routing) na mesma transação.",
+        "At-least-once seguro: reprocessar o mesmo evento não reatribui conversa que já ganhou dono (guard + teste de idempotência).",
+        "Sem elegível: conversa permanece na fila e evento re-agenda com backoff; teste cobre o caso.",
+        "Modo manual: worker não atribui nada (teste)."
+      ],
+      "depends_on": ["G5-01"],
+      "priority": 20,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G5-03",
+      "phase": "G5",
+      "title": "Fila visível com posição + notificação de atribuição",
+      "description": "O lead na fila e o atendente sabem onde estão: visão da fila (sem dono, ordenada por espera) com posição, e notificação in-app quando uma conversa é atribuída a você.",
+      "acceptance": [
+        "Visão de fila no inbox (extensão do filtro 'Fila' da G4-02): ordenada por tempo de espera, mostra posição e tempo aguardando; contagem bate com unassignedCount.",
+        "Atribuição (manual, transfer ou worker) dispara notificação in-app ao novo dono (padrão de notificações existente do repo; se não houver, badge + realtime no inbox conta como notificação — decisão registrada).",
+        "unread_count_for_assignee atualizado corretamente na atribuição via worker (teste).",
+        "e2e smoke: conversa entra → aparece na fila → worker/claim atribui → some da fila e aparece em 'Minhas' do dono."
+      ],
+      "depends_on": ["G5-02", "G4-02"],
+      "priority": 30,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G5-04",
+      "phase": "G5",
+      "title": "Painel admin de gestão de atendentes",
+      "description": "A tela que o sistema-modelo nunca teve: gestão central (manager+) de atendentes — status, carga atual, horário, capacidade — e do modo/cadência de roteamento da org.",
+      "acceptance": [
+        "Nova área em app/app/team (ou settings) 'Atendimento': lista de atendentes com status (online/offline), carga atual (conversas abertas atribuídas), capacidade, janela de horário; edição inline por manager+.",
+        "Config do modo de roteamento (manual|round_robin|load) e knobs editáveis na mesma tela, persistindo via API da G5-01.",
+        "Tudo dentro do design system (tokens; zero hardcode de cor/fonte); estados vazio/carregando/erro tratados.",
+        "e2e: manager altera modo e capacidade e as mudanças refletem no comportamento do worker (teste de integração ou unit no worker lendo config nova).",
+        "Screenshot da tela salvo em loop/checkpoints/evidence/G5/."
+      ],
+      "depends_on": ["G5-03"],
+      "priority": 40,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G6-01",
+      "phase": "G6",
+      "title": "MCP tools de governança (assign/tags/queue + handoff v2)",
+      "description": "A superfície para agentes externos (Vendaval): crm_assign_conversation, crm_manage_tags, crm_get_queue_status, e upgrade do crm_request_human_handoff para ser ciente de fila/horário (aceita atendente alvo opcional; sem elegível → fila com posição).",
+      "acceptance": [
+        "3 tools novas registradas em lib/mcp/tools/ + catalog.ts (sanity-check handler↔catalog passa), org-scoped, input Zod, audit em toda escrita.",
+        "crm_assign_conversation: atribui/transfere com reason (grava assignment event); recusa cross-org; idempotente por (conversation_id, to, reason) na janela curta.",
+        "crm_manage_tags: add/remove em conversation|contact|lead com as mesmas validações da G3-05.",
+        "crm_get_queue_status: fila da org (tamanho, tempo médio de espera, elegíveis online) — payload documentado.",
+        "crm_request_human_handoff v2: usa roteamento G5 (atendente alvo opcional; elegibilidade por disponibilidade/horário; fallback fila) e retorna o resultado estruturado (assigned_to|queued+position).",
+        "Testes unit por tool (sucesso, cross-org negado, input inválido)."
+      ],
+      "depends_on": ["G3-05", "G5-02"],
+      "priority": 10,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G6-02",
+      "phase": "G6",
+      "title": "ai_dispatch_mode respeitado pelo dispatcher nativo",
+      "description": "A flag organizations.settings.ai_dispatch_mode ('native'|'external') do edge-contract do Vendaval: org 'external' é PULADA pelo dispatcher nativo sem consumir o evento (nem claim, nem no_match). Verificar se a cadeia vendaval/F2-* já implementou; implementar/completar se não.",
+      "acceptance": [
+        "Auditoria registrada: a flag existe? o dispatcher nativo (caminho do runtime de IA deste repo) a respeita? — evidência arquivo:linha, incluindo checagem da cadeia vendaval/F2-* local.",
+        "Se ausente/parcial: implementação com migration (tripla) se necessário + dispatcher pulando org external SEM tocar o evento (status permanece pending, consumed_by intacto) — teste unit prova.",
+        "Org 'native' (default) segue comportamento atual inalterado (teste de regressão).",
+        "Se já implementado pela cadeia vendaval: registrar evidência e marcar como no-op justificado na verification."
+      ],
+      "depends_on": [],
+      "priority": 20,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G6-03",
+      "phase": "G6",
+      "title": "Tools de leitura expõem governança",
+      "description": "crm_get_conversation/crm_list_conversations incluem assignee (kind+user), tags e estado de fila; crm_get_lead/crm_list_leads incluem owner, stage e tags — o payload que o get_lead_context do Vendaval compõe.",
+      "acceptance": [
+        "Payloads das 4 tools de leitura ganham os campos (assignee_kind, assigned_to_user_id+nome, tags, queue_position quando na fila; owner_user_id+nome, stage, tags) — sem quebrar consumidores atuais (campos aditivos; teste de shape).",
+        "Campos documentados no schema Zod/descrição de cada tool (catalog.ts).",
+        "Teste unit por tool com fixture cobrindo atribuída/na fila/IA atendendo.",
+        "Zero credencial/PII extra vazada (payload revisado contra doutrina LGPD do repo)."
+      ],
+      "depends_on": ["G6-01"],
+      "priority": 30,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    },
+    {
+      "id": "G6-04",
+      "phase": "G6",
+      "title": "Contrato de governança para agentes externos (spec 14)",
+      "description": "O artefato que a fase FG do Vendaval consome: docs/specs/14-contrato-governanca-agentes-externos.md no estilo do edge-contract (autocontido, refs arquivo:linha verificadas, proibições explícitas).",
+      "acceptance": [
+        "Spec 14 documenta: as tools de governança (input/output exatos), semântica de assignee_kind e handoff, visibility_mode e o que um agente externo PODE ler, ai_dispatch_mode, e as proibições (ex.: nunca atribuir cross-org, nunca furar force_human/is_blocked).",
+        "Toda referência de código com arquivo:linha verificada na data (cabeçalho com data de verificação, como o edge-contract do Vendaval).",
+        "Seção 'mudanças requeridas em consumidores' listando o que o Vendaval precisa fazer do lado dele (vira insumo do FG-01).",
+        "Revisão mecânica: cada tool citada existe em lib/mcp/tools/ e catalog.ts (verifier confere 1 a 1)."
+      ],
+      "depends_on": ["G6-01", "G6-02", "G6-03"],
+      "priority": 40,
+      "lane": "core",
+      "kind": "build",
+      "passes": false,
+      "verification": null
+    }
+  ]
+}

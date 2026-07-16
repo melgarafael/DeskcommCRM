@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# pre-commit — dispatcher dos guards de commit do gov-loop (DeskcommCRM).
+# Armado via: git config core.hooksPath loop/hooks
+# Todos os guards precisam passar; qualquer um falhando bloqueia o commit.
+set -euo pipefail
+top="$(git rev-parse --show-toplevel)"
+"$top/loop/hooks/validate-features.sh"
+"$top/loop/hooks/check-migration-triple.sh"
+"$top/loop/hooks/freeze-invariants.sh"
