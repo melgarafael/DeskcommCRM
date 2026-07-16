@@ -100,8 +100,13 @@
       "priority": 40,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-16T20:12:00-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G1-05",

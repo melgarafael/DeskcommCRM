@@ -72,3 +72,17 @@
   por viewer. Catraca provada em probe (it.fails de assert válido → suíte RED).
 - gov-verifier: PASS, hash-check OK. Apêndice A da spec 13 preenchido (20 linhas).
 - Próxima sessão: G1-04 (auditoria de gap specs 04/05 vs código — sem deps).
+
+## 2026-07-16 — sessão 5 do loop (core) — G1-04
+
+- G1-04 (auditoria specs 04/05 vs código): Apêndice B da spec 13 preenchido —
+  20 itens (9 implementado / 5 parcial / 6 ausente), toda linha com arquivo:linha
+  conferida pelo verifier (20/20). Claim atômico e handoff §7.5 são reais;
+  ReassignDialog, AttendantStatusToggle e supervisor read-only ausentes.
+- INB-01 aberto na inbox (proposal): supervisor read-only §10 sem feature G* e
+  conflitando com a matriz spec 13 §4 (manager org:write) — decisão do dono.
+- Nota do verifier p/ sessão futura: linha "supervisor §10" cita
+  conversations/[id]/messages/route.ts:38 mas o POST real é
+  app/api/v1/messages/route.ts — ponteiro impreciso, conclusão correta.
+- gov-verifier: PASS, hash-check OK (tree + inbox).
+- Próxima sessão: G1-05 (modelo de dados alvo + matriz role×recurso, deps G1-04 ✓).
