@@ -435,3 +435,21 @@
   NNNN 0038-0049 reservados pro gov-loop, fusão renumera 0050+.
 - 17:5x: principal de volta em gov/G5, limpo, typecheck OK. STOP removido pelo
   watchdog com autorização do time que o criou. Loop retomando na G5-01.
+
+## 2026-07-17 — sessão 12 do loop (core) — REPARO DE SMOKE (não G5-01)
+
+- Entrada com smoke VERMELHO, mas NÃO era a main: vitest estava varrendo o
+  worktree aninhado .claude/worktrees/webhooks/ (fusão Vendaval do colega) —
+  275 test files / 5218 testes em vez dos nossos 165. 67 falhas eram do worktree
+  (imports quebrados, Playwright specs no vitest) + React duplo (node_modules do
+  worktree) quebrando nossos testes de componente com useContext null.
+- REPARO (§1.8): vitest.config.ts exclude ganhou ".claude/**" e "node_modules"
+  virou "**/node_modules/**". Suíte voltou aos 165 corretos (22 files).
+- Resíduo NÃO-código: 2 testes de interação de TeamMembersClient (G2-02)
+  oscilam no timeout de 5s sob load da máquina em 51 (catastrófico — build/test
+  do colega no worktree). MESMO teste passa a 2993ms (load baixo) e falha a
+  5758ms (load 51). Código são (gov-verifier verde na G2-02). NÃO mascarei o
+  timeout — é infra, resolve quando o load normaliza.
+- G5-01 NÃO iniciada: §1.8 (sessão de smoke-vermelho é reparo, 1 entrega) +
+  test:db (Docker+pgvector) inviável a load 51. Loop dorme (12/12 do teto);
+  amanhã abre G5-01 com a máquina fria.
