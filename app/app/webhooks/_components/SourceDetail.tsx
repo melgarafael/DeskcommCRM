@@ -85,7 +85,10 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
     setTesting(true);
     setTestOk(false);
     try {
-      const res = await fetch(url, {
+      // URL relativa de propósito: o teste bate no host que está servindo a
+      // página, mesmo que NEXT_PUBLIC_APP_URL (usada na URL exibida p/ forms
+      // externos) esteja desalinhada num self-host atrás de proxy.
+      const res = await fetch(`/api/v1/webhooks/in/${source.path_token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nome: "Lead de Teste", telefone: "11999990000", utm_source: "teste" }),
