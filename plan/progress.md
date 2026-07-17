@@ -189,3 +189,5 @@
 - Incidente sem perda registrado: implementer consumiu stash órfão 18:54
   (AGENTS/GEMINI idênticos aos do disco); órfão 18:43 intacto.
 - FASE G2 COMPLETA (4/4 passes:true) → checkpoint G2 na sequência, loop PARA.
+- Checkpoint G2 emitido (loop/checkpoints/G2-report.md, COMPLETO), loop PARADO
+  aguardando aprovação do dono (G2.approved) ou recusa (.rejected).
