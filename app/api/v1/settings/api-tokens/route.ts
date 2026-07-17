@@ -11,8 +11,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createApiTokenSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -23,13 +22,9 @@ const SELECT_COLS =
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Apenas admins podem ver tokens.", 403, { requestId });
-  }
+  const authz = await requireRole("admin", { requestId, resource: "api_tokens" });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -43,13 +38,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Apenas admins podem criar tokens.", 403, { requestId });
-  }
+  const authz = await requireRole("admin", { requestId, resource: "api_tokens" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let input;
   try {

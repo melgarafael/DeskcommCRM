@@ -9,6 +9,7 @@ import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import {
   contactCreateSchema,
@@ -73,22 +74,11 @@ export async function GET(req: NextRequest): Promise<Response> {
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  }
+  // spec 13 §4: escrita é agent+ (viewer é read-only).
+  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  if (!authz.ok) return authz.response;
+  const user = authz.user;
+  const activeOrg = authz.org;
 
   let input;
   try {

@@ -11,8 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -23,26 +22,13 @@ export async function GET(
 ): Promise<Response> {
   const requestId = randomUUID();
 
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
-  }
-
-  const isAllowed =
-    authUser.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
-  if (!isAllowed) {
-    return fail(
-      "forbidden_role",
-      "Apenas administradores podem acessar solicitações LGPD.",
-      403,
-      { requestId },
-    );
-  }
+  const authz = await requireRole("admin", {
+    requestId,
+    resource: "lgpd_requests",
+    allowPlatformAdmin: true,
+  });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
 
   const { id } = await params;
   const orgId = activeOrg.orgId;

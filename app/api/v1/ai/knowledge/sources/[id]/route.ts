@@ -10,8 +10,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -39,22 +38,9 @@ const patchSourceSchema = z.object({
 // ---------------------------------------------------------------------------
 
 async function resolveContext(requestId: string) {
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return { error: fail("unauthenticated", "Auth required.", 401, { requestId }) };
-  }
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return { error: fail("forbidden", "Nenhuma organização ativa.", 403, { requestId }) };
-  }
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK["manager"]) {
-    return {
-      error: fail("forbidden_role", "Permissão insuficiente. Requer role >= manager.", 403, {
-        requestId,
-      }),
-    };
-  }
-  return { authUser, activeOrg };
+  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
+  if (!authz.ok) return { error: authz.response };
+  return { authUser: authz.user, activeOrg: authz.org };
 }
 
 // ---------------------------------------------------------------------------

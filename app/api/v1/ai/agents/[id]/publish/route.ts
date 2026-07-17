@@ -15,8 +15,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { publishSchema, PUBLISH_ERROR_CODES } from "@/lib/ai/agents/validation";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
@@ -37,13 +36,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role admin.", 403, { requestId });
-  }
+  const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let raw: unknown;
   try {

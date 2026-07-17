@@ -17,7 +17,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import { lgpdAnonymizeSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -61,20 +61,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("not_found", "Contato não encontrado.", 404, { requestId });
   }
 
-  // Permission: tenant admin OR platform_admin.
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-  const membership = authUser.organizations.find(
-    (o) => o.organization_id === existing.organization_id,
-  );
-  const allowed = authUser.is_platform_admin || membership?.role === "admin";
-  if (!allowed) {
-    return fail("forbidden_role", "Apenas admin pode anonimizar contatos (LGPD).", 403, {
-      requestId,
-    });
-  }
+  // Permission: admin NA ORG DO CONTATO (pode diferir da org ativa do cookie)
+  // OR platform_admin. Org do contato vem de query RLS-scoped (fonte confiável).
+  const authz = await requireRole("admin", {
+    requestId,
+    resource: "contact",
+    allowPlatformAdmin: true,
+    organizationId: existing.organization_id,
+  });
+  if (!authz.ok) return authz.response;
 
   // Idempotency.
   if (existing.is_anonymized) {

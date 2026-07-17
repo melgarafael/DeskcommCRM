@@ -13,8 +13,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestPolicyFile, PdfExtractError } from "@/lib/ai/rag/ingest/policy";
@@ -49,21 +48,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   // --- Auth ---
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden", "Nenhuma organização ativa.", 403, { requestId });
-  }
-
-  // Role gate: manager or above
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK["manager"]) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role >= manager.", 403, {
-      requestId,
-    });
-  }
+  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   // --- Parse multipart ---
   let formData: FormData;

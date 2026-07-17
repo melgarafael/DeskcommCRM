@@ -6,8 +6,8 @@ import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
 import { createLeadSchema, validateRequest, type CreateLeadInput } from "@/lib/schemas";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 
 import { createLeadHandler } from "./_handler";
@@ -17,14 +17,10 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("no_active_org", "Nenhuma organização ativa.", 403, { requestId });
-  }
+  // spec 13 §4: escrita é agent+ (viewer é read-only).
+  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let input;
   try {

@@ -14,8 +14,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -30,26 +29,13 @@ export async function POST(
 ): Promise<Response> {
   const requestId = randomUUID();
 
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
-  }
-
-  const isAllowed =
-    authUser.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
-  if (!isAllowed) {
-    return fail(
-      "forbidden_role",
-      "Apenas administradores podem aprovar solicitações LGPD.",
-      403,
-      { requestId },
-    );
-  }
+  const authz = await requireRole("admin", {
+    requestId,
+    resource: "lgpd_requests",
+    allowPlatformAdmin: true,
+  });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   // Idempotency-Key is required
   const idempotencyKey =

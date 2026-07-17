@@ -15,8 +15,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { bufToBytea, encryptKey } from "@/lib/crypto/aes_gcm";
 import { validateProviderKey, type Provider } from "@/lib/ai/provider-validators";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -35,17 +34,9 @@ const createSchema = z.object({
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  }
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role >= manager.", 403, {
-      requestId,
-    });
-  }
+  const authz = await requireRole("manager", { requestId, resource: "ai_credentials" });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -62,17 +53,9 @@ export async function GET(): Promise<Response> {
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  }
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Permissão insuficiente. Requer role admin.", 403, {
-      requestId,
-    });
-  }
+  const authz = await requireRole("admin", { requestId, resource: "ai_credentials" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let rawBody: unknown;
   try {

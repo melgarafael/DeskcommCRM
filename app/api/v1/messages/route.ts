@@ -6,7 +6,7 @@ import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import { sendMessageSchema, validateRequest, type SendMessageInput } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -18,19 +18,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-
-  const authUser = await loadAuthUser();
-  const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
-  if (!activeOrg) {
-    return fail("no_active_org", "No active organization.", 403, { requestId });
-  }
+  // spec 13 §4: escrita é agent+ (viewer é read-only).
+  const authz = await requireRole("agent", { requestId, resource: "messages" });
+  if (!authz.ok) return authz.response;
+  const user = authz.user;
+  const activeOrg = authz.org;
 
   let input;
   try {

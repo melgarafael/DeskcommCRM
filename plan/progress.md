@@ -122,3 +122,19 @@
   célula), hash-check OK. INB-01/02 fechados.
 - Dono autorizou (AskUserQuestion): criar G1.approved em nome dele + virada de
   fase por merge+push direto (opção A). Executando na sequência.
+
+## 2026-07-16 — sessão 9 do loop (core) — G2-01 (fase G2 aberta)
+
+- Virada G1→main executada (merge 6ddc08f + push, opção A do dono); gov/G2 criada.
+- G2-01 (matriz role×endpoint server-side): helper único lib/auth/require-role.ts
+  (getUser + fn_user_role_in_org + fail 403 + audit authz.denied), ~47 rotas
+  gateadas conforme matriz spec 13 §4; 21 testes novos (115 unit no total).
+- Rodada 1 do verifier: FAIL (lgpd/anonymize checava role na mão, sem audit).
+  Reparo: helper ganhou opt organizationId (role na org do RECURSO, fail-closed);
+  rota migrada. Rodada 2: PASS, hash-check OK.
+- Invariantes GAP(G2) de gov-1-rbac NÃO flipados (são de RLS — G2-03 fecha);
+  decisão validada pelos 2 verifiers.
+- INB-03 aberto (follow-ups: onboarding/whatsapp/session sem gate de role;
+  nota pro bulk-assign ≥manager na G3-04).
+- Handoff: próximas sessões (G2-02+) delegadas ao terminal Arquiteto e Executor
+  (cooperação A2A retomada pelo dono); Maestro-DeskcommCRM vira watchdog.

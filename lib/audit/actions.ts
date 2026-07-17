@@ -116,4 +116,5 @@ export type AuditAction =
   | "ai_agent.run_completed"
   | "ai_agent.run_failed"
   | "channel.connected"
-  | "channel.reconnected";
+  | "channel.reconnected"
+  | "authz.denied";

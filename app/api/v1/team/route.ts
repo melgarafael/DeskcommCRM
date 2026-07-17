@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isServiceRoleConfigured } from "@/lib/audit";
@@ -34,10 +34,10 @@ interface MemberDto extends MembershipRow {
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
+  // spec 13 §4: team read é manager+ (viewer/agent = none; nota 7).
+  const authz = await requireRole("manager", { requestId, resource: "team" });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
 
   const supabase = await createClient();
   const { data: rows, error } = await supabase

@@ -10,6 +10,7 @@ import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import type { Conversation } from "@/lib/types/messaging";
 
@@ -32,13 +33,10 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const { id } = await ctx.params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
+  // spec 13 §4: escrita é agent+ (viewer é read-only).
+  const authz = await requireRole("agent", { requestId, resource: "conversations" });
+  if (!authz.ok) return authz.response;
+  const user = authz.user;
 
   const now = new Date().toISOString();
   const { data, error } = await supabase

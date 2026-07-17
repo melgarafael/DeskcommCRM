@@ -10,6 +10,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
 import { loseLeadSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -23,13 +24,10 @@ export async function POST(
   const { id: leadId } = await ctx.params;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
+  // spec 13 §4: escrita é agent+ (viewer é read-only).
+  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  if (!authz.ok) return authz.response;
+  const user = authz.user;
 
   let input;
   try {

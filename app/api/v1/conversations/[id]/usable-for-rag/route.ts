@@ -15,8 +15,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { validateRequest } from "@/lib/schemas/_validate";
 import { createClient } from "@/lib/supabase/server";
 
@@ -32,17 +31,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authUser = await loadAuthUser();
-  if (!authUser) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) {
-    return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  }
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.agent) {
-    return fail("forbidden_role", "Apenas agentes podem alterar opt-in RAG.", 403, { requestId });
-  }
+  const authz = await requireRole("agent", { requestId, resource: "conversations" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let input;
   try {

@@ -7,8 +7,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { auditQuerySchema } from "@/lib/schemas/audit";
 
@@ -35,15 +34,13 @@ function csvEscape(v: unknown): string {
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-
-  if (!authUser.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
-    return fail("forbidden_role", "Audit log requer manager+.", 403, { requestId });
-  }
+  const authz = await requireRole("manager", {
+    requestId,
+    resource: "audit",
+    allowPlatformAdmin: true,
+  });
+  if (!authz.ok) return authz.response;
+  const { org: activeOrg } = authz;
 
   const params = Object.fromEntries(new URL(req.url).searchParams.entries());
   // Force a high limit for export, ignore caller's `limit`.

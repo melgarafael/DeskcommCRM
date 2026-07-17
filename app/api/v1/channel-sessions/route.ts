@@ -12,7 +12,7 @@ import type { NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { requireRole } from "@/lib/auth/require-role";
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
@@ -42,13 +42,13 @@ export async function GET(): Promise<Response> {
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const user = await loadAuthUser();
-  if (!user) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
-  if (!user.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Apenas administradores podem conectar números.", 403, { requestId });
-  }
+  const authz = await requireRole("admin", {
+    requestId,
+    resource: "channel_sessions",
+    allowPlatformAdmin: true,
+  });
+  if (!authz.ok) return authz.response;
+  const { user, org: activeOrg } = authz;
 
   const waha = getWahaClient();
   if (!waha) {

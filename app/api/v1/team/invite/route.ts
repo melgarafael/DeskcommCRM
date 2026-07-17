@@ -16,9 +16,8 @@ import { env } from "@/lib/env";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ROLE_RANK } from "@/lib/auth/types";
 import { inviteMemberSchema, validateRequest } from "@/lib/schemas";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
@@ -40,13 +39,9 @@ interface FailedItem {
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authUser = await loadAuthUser();
-  if (!authUser) return fail("unauthenticated", "Auth required.", 401, { requestId });
-  const activeOrg = await resolveActiveOrg(authUser);
-  if (!activeOrg) return fail("forbidden_tenant", "Sem organização ativa.", 403, { requestId });
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
-    return fail("forbidden_role", "Apenas admins podem convidar membros.", 403, { requestId });
-  }
+  const authz = await requireRole("admin", { requestId, resource: "team" });
+  if (!authz.ok) return authz.response;
+  const { user: authUser, org: activeOrg } = authz;
 
   let input;
   try {
