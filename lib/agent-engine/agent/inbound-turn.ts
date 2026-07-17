@@ -127,12 +127,12 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO só para o SDK (o modelo vê os campos); a validação REAL é a
     // whitelist .strict() dentro de applyLeadStateUpdate — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z.looseObject({
+    inputSchema: z.object({
       stage: z.string().optional().describe('novo estágio do funil (só o próximo válido)'),
-      qualification: z.looseObject({}).optional().describe('qualificação: budget, authority, need, timeline'),
+      qualification: z.object({}).passthrough().optional().describe('qualificação: budget, authority, need, timeline'),
       next_action: z.string().nullable().optional().describe('próxima ação concreta combinada com o lead'),
       reason: z.string().optional().describe('evidência curta do avanço (vai ao audit do CRM)'),
-    }),
+    }).passthrough(),
   },
   schedule_followup: {
     description:
@@ -143,12 +143,12 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() + guard de prototype pollution dentro de applyScheduleFollowup — campo
     // extra/forjado e data inválida viram erro de ENSINO ao modelo, nunca exceção do SDK.
-    inputSchema: z.looseObject({
+    inputSchema: z.object({
       reason: z.string().describe('por que agendar o retorno'),
       promised_at: z.string().describe('data/hora ISO 8601 do retorno (no futuro), ex.: "2026-07-15T14:00:00Z"'),
       promise: z.string().describe('o que você prometeu ao lead'),
       context_snapshot: z.string().nullable().optional().describe('contexto curto para o seu run futuro'),
-    }),
+    }).passthrough(),
   },
   save_lead_note: {
     description:
@@ -160,22 +160,22 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() + guard de prototype pollution dentro de applySaveLeadNote — campo
     // extra/forjado vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z.looseObject({
+    inputSchema: z.object({
       headline: z.string().describe('linha curta do índice (sempre visível no prompt)'),
       body: z.string().describe('corpo completo da nota (lido sob demanda por get_lead_note)'),
       supersedes: z
         .array(z.string())
         .optional()
         .describe('ids de notas que esta substitui/consolida (vistos no índice de memória)'),
-    }),
+    }).passthrough(),
   },
   get_lead_note: {
     description:
       'Lê o CORPO completo de UMA nota da memória deste lead pelo id (o id aparece no índice de memória, ' +
       'entre colchetes). Use quando a headline no índice não bastar e você precisar do detalhe.',
-    inputSchema: z.looseObject({
+    inputSchema: z.object({
       note_id: z.string().describe('id da nota (como aparece no índice, entre colchetes)'),
-    }),
+    }).passthrough(),
   },
   request_human_handoff: {
     description:
@@ -186,9 +186,9 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO para o SDK (o modelo vê o campo); a validação REAL é a whitelist .strict()
     // + guard de prototype pollution dentro de applyRequestHumanHandoff — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z.looseObject({
+    inputSchema: z.object({
       reason: z.string().optional().describe('por que passar ao humano (curto)'),
-    }),
+    }).passthrough(),
   },
 } as const;
 
@@ -205,13 +205,13 @@ export class JobSettledError extends Error {
 // ROW do job (fonte confiável), nunca daqui; o payload só carrega ponteiros do CRM.
 const inboundTurnPayloadSchema = z
   .object({
-    conversation_id: z.uuid(),
-    contact_id: z.uuid(),
-    channel_session_id: z.uuid(),
-    inbound_message_id: z.uuid(),
-    crm_event_id: z.uuid(),
+    conversation_id: z.string().uuid(),
+    contact_id: z.string().uuid(),
+    channel_session_id: z.string().uuid(),
+    inbound_message_id: z.string().uuid(),
+    crm_event_id: z.string().uuid(),
   })
-  .loose();
+  .passthrough();
 
 /** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
 export const checkpointContentSchema = z.object({
@@ -225,8 +225,8 @@ export type CheckpointContent = z.infer<typeof checkpointContentSchema>;
 export interface LeadCheckpointRow extends CheckpointContent {
   id: string;
   seq: string;
-  tenant_id: string;
-  lead_id: string;
+  organization_id: string;
+  contact_id: string;
   job_id: string | null;
   created_at: Date;
 }
@@ -341,7 +341,7 @@ export async function latestCheckpoint(
 ): Promise<LeadCheckpointRow | null> {
   const { rows } = await db.query<LeadCheckpointRow>(
     `select * from lead_checkpoints
-     where tenant_id = $1 and lead_id = $2
+     where organization_id = $1 and contact_id = $2
      order by seq desc
      limit 1`,
     [tenantId, leadId],
@@ -354,7 +354,7 @@ async function insertCheckpoint(
   input: { tenantId: string; leadId: string; jobId: string; content: CheckpointContent },
 ): Promise<void> {
   await db.query(
-    `insert into lead_checkpoints (tenant_id, lead_id, job_id, commitments, objections, next_action, rolling_summary)
+    `insert into lead_checkpoints (organization_id, contact_id, job_id, commitments, objections, next_action, rolling_summary)
      values ($1, $2, $3, $4, $5, $6, $7)`,
     [
       input.tenantId,
@@ -496,10 +496,10 @@ export async function runAgentTurn(
   ctx: { workerId: string },
   input: AgentTurnInput,
 ): Promise<void> {
-  const tenantId = job.tenant_id;
-  const leadId = job.lead_id;
+  const tenantId = job.organization_id;
+  const leadId = job.contact_id;
   if (leadId === null) {
-    throw new Error('job de turno sem lead_id — o CHECK da 0002 deveria impedir');
+    throw new Error('job de turno sem contact_id — o CHECK da fila deveria impedir');
   }
   const contextKnobs = { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens };
   // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
@@ -527,7 +527,12 @@ export async function runAgentTurn(
       : `${playbook.prompt}\n\n=== skills (índice — o corpo carrega no turno quando a situação dispara) ===\n${skillIndex}`;
   const previous = await latestCheckpoint(pool, tenantId, leadId);
   const leadState = await getLeadState(pool, tenantId, leadId);
-  const openingContext = await getLeadContext(pool, deps.crmCfg, { tenantId, leadId }, contextKnobs);
+  const openingContext = await getLeadContext(
+    pool,
+    deps.crmCfg,
+    { tenantId, leadId, conversationId: input.conversationId },
+    contextKnobs,
+  );
   if (!openingContext.ok) {
     // Sem contexto não há turno: transiente (CRM fora) OU permanente (lead
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
@@ -541,7 +546,6 @@ export async function runAgentTurn(
   if (detectHumanHandoffRequest(latestInboundSignal(openingContext.context.messages))) {
     await performHumanHandoff(
       pool,
-      deps.crmCfg,
       { tenantId, leadId, conversationId: input.conversationId },
       { reason: 'requested_human', conversationSummary: buildHandoffSummary(previous), log: runLog },
     );
@@ -560,7 +564,6 @@ export async function runAgentTurn(
   if (detectAmbiguousOptOut(latestInboundSignal(openingContext.context.messages))) {
     await performHumanHandoff(
       pool,
-      deps.crmCfg,
       { tenantId, leadId, conversationId: input.conversationId },
       {
         reason: 'suspected_optout',
@@ -605,8 +608,8 @@ export async function runAgentTurn(
         {
           id: '',
           seq: '0',
-          tenant_id: tenantId,
-          lead_id: leadId,
+          organization_id: tenantId,
+          contact_id: leadId,
           job_id: null,
           created_at: new Date(),
           commitments: [],
@@ -686,7 +689,12 @@ export async function runAgentTurn(
       ...AGENT_TOOL_DEFS.get_lead_context,
       execute: async (): Promise<LeadContextResult | { ok: false; error: { code: string; message: string } }> => {
         try {
-          return await getLeadContext(pool, deps.crmCfg, { tenantId, leadId }, contextKnobs);
+          return await getLeadContext(
+            pool,
+            deps.crmCfg,
+            { tenantId, leadId, conversationId: input.conversationId },
+            contextKnobs,
+          );
         } catch (err) {
           // bug de programação: ensina o modelo a encerrar E derruba o job no fim
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -917,7 +925,6 @@ export async function runAgentTurn(
         try {
           const res = await applyRequestHumanHandoff(
             pool,
-            deps.crmCfg,
             { tenantId, leadId, conversationId: input.conversationId },
             { conversationSummary: buildHandoffSummary(previous), log: runLog },
             raw,
@@ -1098,8 +1105,8 @@ export async function runAgentTurn(
   // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
   const responseMessages =
     deps.knobs.prune !== undefined
-      ? pruneToolResults(turn.result.responseMessages, deps.knobs.prune)
-      : turn.result.responseMessages;
+      ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
+      : turn.result.response.messages;
 
   // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
   const closing = await runModelCall(

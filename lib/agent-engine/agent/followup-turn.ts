@@ -57,7 +57,7 @@ export const followupTurnPayloadSchema = z
     // = run normal do agente (comportamento F3-03 intocado).
     mode: z.enum(['agent', 'template']).optional(),
   })
-  .loose();
+  .passthrough();
 
 /** Duração humana pt-br do intervalo desde a última resposta — só ordem de grandeza. */
 function humanizeElapsed(ms: number): string {
@@ -158,23 +158,25 @@ function lastInboundOf(context: LeadContext): { body: string; sentAt: string } |
  */
 export function createFollowupTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
-    const tenantId = job.tenant_id;
-    const leadId = job.lead_id;
+    const tenantId = job.organization_id;
+    const leadId = job.contact_id;
     if (leadId === null) {
-      throw new Error('job followup_turn sem lead_id — o CHECK da 0002 deveria impedir');
+      throw new Error('job followup_turn sem contact_id — o CHECK da fila deveria impedir');
     }
     const payload = followupTurnPayloadSchema.parse(job.payload);
 
-    // Ids de envio da ROW do lead (fonte confiável, regra dura nº 1) — nunca do
-    // payload. Um follow-up só existe para um lead que já teve turno (o drain gravou
-    // conversa + número); ausência é anomalia → job falha e vira dead-letter.
-    const { rows } = await pool.query<{ crm_conversation_id: string | null; channel_session_id: string | null }>(
-      'select crm_conversation_id, channel_session_id from leads where tenant_id = $1 and id = $2',
+    // Ids de envio resolvidos da conversa 1:1 mais recente do contato (fonte
+    // confiável, mesmo banco — a tabela-espelho leads morreu na fusão). Um follow-up
+    // só existe para contato que já conversou; ausência é anomalia → dead-letter.
+    const { rows } = await pool.query<{ id: string; channel_session_id: string | null }>(
+      `select id, channel_session_id from conversations
+       where organization_id = $1 and contact_id = $2 and is_group = false
+       order by last_message_at desc nulls last limit 1`,
       [tenantId, leadId],
     );
-    const lead = rows[0];
-    if (lead === undefined || lead.channel_session_id === null || lead.crm_conversation_id === null) {
-      throw new Error('followup_turn sem conversa/número no lead — impossível retomar o contato');
+    const conv = rows[0];
+    if (conv === undefined || conv.channel_session_id === null) {
+      throw new Error('followup_turn sem conversa/número do contato — impossível retomar o contato');
     }
 
     const clock = deps.clock ?? ((): Date => new Date());
@@ -186,15 +188,15 @@ export function createFollowupTurnHandler(deps: InboundTurnDeps) {
       await runDeterministicReentry(deps, job, pool, ctx, clock, {
         tenantId,
         leadId,
-        channelSessionId: lead.channel_session_id,
-        conversationId: lead.crm_conversation_id,
+        channelSessionId: conv.channel_session_id,
+        conversationId: conv.id,
       });
       return;
     }
 
     await runAgentTurn(deps, job, pool, ctx, {
-      channelSessionId: lead.channel_session_id,
-      conversationId: lead.crm_conversation_id,
+      channelSessionId: conv.channel_session_id,
+      conversationId: conv.id,
       buildOpening: ({ previous, leadState, context, notesIndexBlock }) => {
         const temporalBlock = buildTemporalBlock({
           now: clock(),
@@ -363,7 +365,7 @@ async function rescheduleReentry(
 ): Promise<void> {
   const { rowCount } = await pool.query(
     `select 1 from cron_jobs
-     where tenant_id = $1 and lead_id = $2 and payload->>'reschedule_of' = $3`,
+     where organization_id = $1 and contact_id = $2 and payload->>'reschedule_of' = $3`,
     [input.tenantId, input.leadId, input.jobId],
   );
   if (rowCount !== null && rowCount > 0) {

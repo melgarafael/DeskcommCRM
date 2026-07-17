@@ -18,11 +18,11 @@ import { z } from 'zod';
 /** Base compartilhada: todo surrogate é observado por lead, dentro de uma org. */
 const surrogateBaseSchema = z.object({
   /** `orgs.id` do harness (mapeado do `organization_id` do CRM no pareamento). */
-  org_id: z.uuid(),
+  org_id: z.string().uuid(),
   /** `leads.id` do harness (espelho por `crm_contact_id`, edge-contract §1). */
-  lead_id: z.uuid(),
+  lead_id: z.string().uuid(),
   /** Quando a observação foi derivada (ISO 8601). */
-  observed_at: z.iso.datetime({ offset: true }),
+  observed_at: z.string().datetime({ offset: true }),
 });
 
 /** Lead respondeu: inbound do lead após outbound do agente na mesma conversa. */
@@ -30,9 +30,9 @@ export const leadRepliedSchema = surrogateBaseSchema.extend({
   metric: z.literal('lead_replied'),
   source: z.object({
     /** `event_log.id` do `ai_agent.dispatch_requested` que sinalizou o inbound. */
-    crm_event_log_id: z.uuid(),
+    crm_event_log_id: z.string().uuid(),
     /** `payload.inbound_message_id` do evento (linha em `messages` do CRM). */
-    crm_inbound_message_id: z.uuid(),
+    crm_inbound_message_id: z.string().uuid(),
   }),
 });
 export type LeadReplied = z.infer<typeof leadRepliedSchema>;
@@ -45,7 +45,7 @@ export const stageAdvancedSchema = surrogateBaseSchema.extend({
   to_stage: z.string().min(1),
   source: z.object({
     /** `crm_leads.id` cuja coluna `stage` transicionou. */
-    crm_lead_id: z.uuid(),
+    crm_lead_id: z.string().uuid(),
   }),
 });
 export type StageAdvanced = z.infer<typeof stageAdvancedSchema>;
@@ -55,7 +55,7 @@ export const stopRequestedSchema = surrogateBaseSchema.extend({
   metric: z.literal('stop_requested'),
   source: z.object({
     /** `contacts.id` do CRM cuja coluna `is_blocked` virou true. */
-    crm_contact_id: z.uuid(),
+    crm_contact_id: z.string().uuid(),
   }),
 });
 export type StopRequested = z.infer<typeof stopRequestedSchema>;
@@ -67,9 +67,9 @@ export const dropoffSchema = surrogateBaseSchema.extend({
   silence_days: z.number().int().positive(),
   source: z.object({
     /** `messages.id` do último outbound do agente (`sent_via='ai'`) sem resposta. */
-    crm_last_outbound_message_id: z.uuid(),
+    crm_last_outbound_message_id: z.string().uuid(),
     /** `messages.sent_at` desse outbound — início da janela de silêncio. */
-    crm_last_outbound_at: z.iso.datetime({ offset: true }),
+    crm_last_outbound_at: z.string().datetime({ offset: true }),
   }),
 });
 export type Dropoff = z.infer<typeof dropoffSchema>;
@@ -80,9 +80,9 @@ export const timeToReplySchema = surrogateBaseSchema.extend({
   seconds: z.number().nonnegative(),
   source: z.object({
     /** `messages.id` do outbound do agente que abriu a espera. */
-    crm_outbound_message_id: z.uuid(),
+    crm_outbound_message_id: z.string().uuid(),
     /** `messages.id` do inbound do lead que fechou o delta. */
-    crm_inbound_message_id: z.uuid(),
+    crm_inbound_message_id: z.string().uuid(),
   }),
 });
 export type TimeToReply = z.infer<typeof timeToReplySchema>;

@@ -46,7 +46,7 @@ export interface CacheAlertKnobs {
  */
 export async function recordRunMetrics(
   db: pg.Pool,
-  job: Pick<JobRow, 'id' | 'tenant_id' | 'lead_id' | 'kind'>,
+  job: Pick<JobRow, 'id' | 'organization_id' | 'contact_id' | 'kind'>,
 ): Promise<number> {
   const { rows } = await db.query<{
     calls: number;
@@ -63,8 +63,8 @@ export async function recordRunMetrics(
             (sum(cost_cents))::float8 as cost_cents,
             coalesce(sum(latency_ms), 0)::float8 as llm_latency_ms
      from llm_calls
-     where tenant_id = $1 and job_id = $2`,
-    [job.tenant_id, job.id],
+     where organization_id = $1 and job_id = $2`,
+    [job.organization_id, job.id],
   );
   const agg = rows[0];
   if (agg === undefined || agg.calls === 0) {
@@ -89,12 +89,12 @@ export async function recordRunMetrics(
   push('run_llm_latency_ms', agg.llm_latency_ms);
 
   // labels SÓ ids/atribuição (job_id É o run id) — PII jamais.
-  const labels = { job_id: job.id, lead_id: job.lead_id, kind: job.kind };
+  const labels = { job_id: job.id, contact_id: job.contact_id, kind: job.kind };
   await db.query(
-    `insert into metrics (tenant_id, name, labels, value)
+    `insert into metrics (organization_id, name, labels, value)
      select $1, t.name, $2::jsonb, t.value
      from unnest($3::text[], $4::float8[]) as t(name, value)`,
-    [job.tenant_id, JSON.stringify(labels), names, values],
+    [job.organization_id, JSON.stringify(labels), names, values],
   );
   return names.length;
 }
@@ -122,7 +122,7 @@ export async function evaluateCacheHitAlert(
   const { rows } = await db.query<{ runs: number; avg_ratio: number | null }>(
     `select count(*)::int as runs, avg(value)::float8 as avg_ratio
      from metrics
-     where tenant_id = $1 and name = $2
+     where organization_id = $1 and name = $2
        and created_at >= now() - ($3 * interval '1 millisecond')`,
     [tenantId, CACHE_RATIO_METRIC, knobs.windowMs],
   );
@@ -132,14 +132,14 @@ export async function evaluateCacheHitAlert(
     return { runs, avgRatio, alerted: false };
   }
   const res = await db.query(
-    `insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind)
+    `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind)
      select $1, 'other', 'warn',
             'Cache hit de prompt abaixo do alvo — custo por run acima do esperado',
             $2,
             $3
      where not exists (
-       select 1 from inbox_items
-       where tenant_id = $1 and ref_kind = $3 and status = 'open'
+       select 1 from agent_inbox_items
+       where organization_id = $1 and ref_kind = $3 and status = 'open'
      )`,
     [
       tenantId,
