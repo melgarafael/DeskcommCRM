@@ -82,4 +82,5 @@ export {
   CaretRight,
   ArrowRight,
   SignOut,
+  WebhooksLogo,
 } from "@phosphor-icons/react/dist/ssr";

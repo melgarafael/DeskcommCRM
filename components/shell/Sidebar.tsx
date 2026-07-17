@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, PlugsConnected } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, PlugsConnected, WebhooksLogo } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/app/team", label: "Equipe", icon: UsersThree },
   { href: "/app/lgpd/requests", label: "LGPD", icon: ScalesSimple, permission: "lgpd.execute_redact" },
   { href: "/app/ai/agents", label: "Agentes IA", icon: Robot, permission: "ai.agents.view" },
+  { href: "/app/webhooks", label: "Webhooks", icon: WebhooksLogo, permission: "webhooks.manage" },
   { href: "/app/settings", label: "Configurações", icon: Gear },
 ];
 
@@ -33,6 +34,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const [isPending, startTransition] = useTransition();
   const canLgpd = usePermission("lgpd.execute_redact");
   const canAiAgents = usePermission("ai.agents.view");
+  const canWebhooks = usePermission("webhooks.manage");
 
   return (
     <aside
@@ -49,6 +51,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         {NAV_ITEMS.filter((item) => {
           if (item.permission === "lgpd.execute_redact") return canLgpd;
           if (item.permission === "ai.agents.view") return canAiAgents;
+          if (item.permission === "webhooks.manage") return canWebhooks;
           return true;
         }).map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
