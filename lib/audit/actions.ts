@@ -121,4 +121,14 @@ export type AuditAction =
   | "channel.reconnected"
   | "authz.denied"
   | "team.role_changed"
-  | "leads.bulk_assigned";
+  | "leads.bulk_assigned"
+  | "webhook.source_created"
+  | "webhook.source_updated"
+  | "webhook.source_deleted"
+  | "webhook.lead_received"
+  | "webhook.inbound_invalid_signature"
+  | "automation.rule_created"
+  | "automation.rule_updated"
+  | "automation.rule_deleted"
+  | "automation.rule_executed"
+  | "automation.run_resent";
