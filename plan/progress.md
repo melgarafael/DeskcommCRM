@@ -154,3 +154,20 @@
   (pré-existente do EPIC-09, race de ms entre 2 admins) — candidata a inbox se
   o dono quiser fechar com constraint/trigger.
 - Próxima sessão: G2-03 (RLS por role nas tabelas de config — migration tripla).
+
+## 2026-07-16 — sessão 11 do loop (core) — G2-03
+
+- G2-03 (RLS por role): migration 0030 em tripla (migrations/ + apêndice
+  baseline + MANIFEST; types.ts intocado — policies não mudam contrato).
+  crm_pipelines/crm_stages: SELECT org-flat + write manager+; conversations:
+  SELECT byte-idêntico ao antigo (leitura NÃO estreitada — own-scope é G4-01)
+  + write agent+ (viewer read-only). Policies ALL antigas dropadas (sem OR órfão).
+- Flip da catraca: 2 it.fails GAP(G2) de gov-1-rbac viraram testes normais
+  (única mudança no arquivo; commit com DESKCOMM_GOV_INVARIANTS_EDIT=1).
+  Novo invariante gov-1-rbac-config-write.test.ts (positivos+negativos).
+- Auditoria de policies registrada como spec 13 §4.1; Apêndice A: 2 GAP G2 → passa.
+- gov-verifier: PASS 1ª rodada, hash-check OK. test:db install+update verdes,
+  35/35 invariantes pós-update, 123 unit.
+- INB-05 aberto (proposal): spec 13 §4 nota 8 prevê api_audit_log SELECT
+  manager+ "aplicada em G2", mas nenhuma feature G2 cobre — decisão do dono.
+- Próxima sessão: G2-04 (e2e Playwright de papéis) fecha a fase → checkpoint G2.

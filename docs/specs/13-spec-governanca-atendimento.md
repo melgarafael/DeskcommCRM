@@ -257,6 +257,36 @@ Notas:
 Enforcement em **duas camadas obrigatórias**: RLS (fronteira) + helper único de
 rota (`require-role`, G2-01) — nunca só UI (anti-padrão 3).
 
+### 4.1 Auditoria de policies RLS por role (G2-03)
+
+Auditoria mecânica do `supabase/baseline.sql` (gov/G2, 2026-07-16): tabela →
+policy de escrita → role mínimo efetivo. **Org-flat** = qualquer membro da org
+(incl. viewer) escreve. Tabelas fora da matriz §4 (ai_*, channel_sessions,
+contacts operacionais etc.) não são "config" e ficam fora do alvo desta fase.
+
+| Tabela | Policy de escrita (baseline) | Role mínimo | Org-flat? | Config §4? | Ação G2-03 |
+|---|---|---|---|---|---|
+| api_tokens | `api_tokens_admin_only` | admin | não | sim | manter |
+| lgpd_requests | `lgpd_requests_admin_write` | admin | não | — | manter |
+| merge_queue | `merge_queue_manager_write` | manager | não | — | manter |
+| tenant_integrations | `tenant_integrations_admin_write` | manager | não | sim (integrações) | manter |
+| user_organizations (team) | `user_orgs_insert/update/delete` | admin | não | sim | manter |
+| organizations (settings) | `orgs_write_platform_admin` | platform admin (tenant escreve via service role + guard de rota) | não | sim | manter |
+| **crm_pipelines** | `tenant_isolation_crm_pipelines_all` (ALL) | **qualquer membro** | **sim** | **sim (pipelines config)** | **migration 0030: write manager+** |
+| **crm_stages** | `tenant_isolation_crm_stages_all` (ALL) | **qualquer membro** | **sim** | **sim (config de pipeline, nota 4)** | **migration 0030: write manager+** |
+| **conversations** | `conversations_tenant_isolation_all` (ALL) | **qualquer membro (incl. viewer)** | **sim** | não é config, mas viewer é read-only (nota 1) | **migration 0030: write agent+; SELECT intocado (escopo own é G4-01)** |
+| messages | `messages_tenant_isolation_all` (ALL) | qualquer membro | sim | não (operacional; escopo segue conversations) | G4-01 |
+| contacts | `tenant_isolation_contacts_all` (ALL) | qualquer membro | sim | não (agent tem org:write, nota 3; viewer-write fica pra G4 junto do escopo) | G4 |
+| crm_leads / crm_lead_activities / crm_lead_links | `tenant_isolation_*` (ALL) | qualquer membro | sim | não (operacional; escopo own é G4-01) | G4-01 |
+| channel_sessions, ai_*, orders, nuvemshop_products, idempotency_keys, warmup, storage_redaction_queue | `*_tenant_isolation_*` (ALL) | qualquer membro | sim | não classificado na matriz §4 | fora do escopo G2-03 |
+| api_audit_log | `audit_log_insert_tenant_member` (insert-only, append) | qualquer membro | por design | — | manter (select manager é read, não write) |
+
+Resultado: as tabelas de **config org-flat** são `crm_pipelines` e `crm_stages`;
+a migration `20260716120000_0030_config_rls_role_policies.sql` aplica
+`fn_role_at_least(organization_id, 'manager')` nas write-policies delas e
+`fn_role_at_least(organization_id, 'agent')` no write de `conversations`
+(viewer read-only), mantendo todos os SELECTs org-flat.
+
 ## 5. Roteamento (decisões G1-06; G5 implementa)
 
 - **Modos no MVP** (decisão G1-06b): `manual` (só claim/atribuição humana) e
@@ -312,8 +342,8 @@ entre orgs (pré-requisito de tudo) já é coberto por
 | 1. RBAC | `gov-1-rbac.test.ts` → "fn_user_role_in mapeia viewer→1, agent→2, manager→3, admin→4" | passa |
 | 1. RBAC | `gov-1-rbac.test.ts` → "RLS impede agent de se auto-promover (user_orgs_update é admin-only)" | passa |
 | 1. RBAC | `gov-1-rbac.test.ts` → "role de membro é editável via API — PATCH /api/v1/team/[user_id]/role existe" (gap do plano JÁ fechado pelo EPIC-09) | passa |
-| 1. RBAC | `gov-1-rbac.test.ts` → "agent NÃO escreve config de pipeline (spec 13 §4: manager+)" | GAP G2 |
-| 1. RBAC | `gov-1-rbac.test.ts` → "viewer NÃO escreve em conversations (spec 13 §4: viewer é read-only)" | GAP G2 |
+| 1. RBAC | `gov-1-rbac.test.ts` → "agent NÃO escreve config de pipeline (spec 13 §4: manager+)" | passa (fechado por G2-03, migration 0030) |
+| 1. RBAC | `gov-1-rbac.test.ts` → "viewer NÃO escreve em conversations (spec 13 §4: viewer é read-only)" | passa (fechado por G2-03, migration 0030) |
 | 2. Atribuição | `gov-2-assignment.test.ts` → "conversations tem assigned_to_user_id + assigned_at, com FK para auth.users" | passa |
 | 2. Atribuição | `gov-2-assignment.test.ts` → "crm_leads tem owner_user_id" | passa |
 | 2. Atribuição | `gov-2-assignment.test.ts` → "mudança de owner em crm_leads emite lead.assigned no event_log" | passa |

@@ -88,10 +88,10 @@ describe("eixo 1 — RBAC", () => {
     expect(readFileSync(route, "utf8")).toContain("export async function PATCH");
   });
 
-  // GAP(G2): spec 13 §4 — pipelines (config) é manager+:write, agent=none.
-  // Hoje a policy tenant_isolation_crm_pipelines_all é org-flat: qualquer
-  // membro (incl. agent) escreve config de pipeline.
-  it.fails("agent NÃO escreve config de pipeline (spec 13 §4: manager+)", () => {
+  // Corrigido (G2-03, migration 0030): crm_pipelines_manager_write aplica
+  // fn_role_at_least(org, 'manager') — spec 13 §4: pipelines (config) é
+  // manager+:write, agent=none.
+  it("agent NÃO escreve config de pipeline (spec 13 §4: manager+)", () => {
     const updated = writeCountAs(
       GOV_AGENT_A,
       `update public.crm_pipelines set name = name where id = '${GOV_PIPELINE}'`,
@@ -99,9 +99,9 @@ describe("eixo 1 — RBAC", () => {
     expect(updated).toBe(0);
   });
 
-  // GAP(G2): spec 13 §4 — viewer é read-only em conversations. Hoje a policy
-  // org-flat (WITH CHECK por org) deixa o viewer inserir/escrever.
-  it.fails("viewer NÃO escreve em conversations (spec 13 §4: viewer é read-only)", () => {
+  // Corrigido (G2-03, migration 0030): conversations_agent_write aplica
+  // fn_role_at_least(org, 'agent') — spec 13 §4: viewer é read-only.
+  it("viewer NÃO escreve em conversations (spec 13 §4: viewer é read-only)", () => {
     const inserted = writeCountAs(
       GOV_VIEWER,
       `insert into public.conversations (id, organization_id, contact_id, channel_session_id, status)

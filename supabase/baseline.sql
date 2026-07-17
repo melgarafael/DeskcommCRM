@@ -4201,3 +4201,74 @@ revoke all on function public.fn_mark_conversation_message(uuid, text, text, tim
 grant execute on function public.fn_upsert_wa_contact(uuid, text, text, text, text, text) to service_role;
 grant execute on function public.fn_upsert_wa_conversation(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_mark_conversation_message(uuid, text, text, timestamptz) to service_role;
+
+-- ---- RLS por role em tabelas de config + viewer read-only (migration 0030) ----
+-- G2-03: spec 13 §4 — pipelines/stages (config) write manager+; conversations
+-- write agent+ (viewer read-only). SELECT permanece org-flat (escopo own é G4).
+-- Idempotente: drop if exists + create (auto-curativo no update.sh de clones).
+
+drop policy if exists "tenant_isolation_crm_pipelines_all" on public.crm_pipelines;
+drop policy if exists "crm_pipelines_select" on public.crm_pipelines;
+drop policy if exists "crm_pipelines_manager_write" on public.crm_pipelines;
+
+create policy "crm_pipelines_select" on public.crm_pipelines
+  for select using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+create policy "crm_pipelines_manager_write" on public.crm_pipelines
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+drop policy if exists "tenant_isolation_crm_stages_all" on public.crm_stages;
+drop policy if exists "crm_stages_select" on public.crm_stages;
+drop policy if exists "crm_stages_manager_write" on public.crm_stages;
+
+create policy "crm_stages_select" on public.crm_stages
+  for select using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+create policy "crm_stages_manager_write" on public.crm_stages
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+drop policy if exists "conversations_tenant_isolation_all" on public.conversations;
+drop policy if exists "conversations_select" on public.conversations;
+drop policy if exists "conversations_agent_write" on public.conversations;
+
+create policy "conversations_select" on public.conversations
+  for select using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+create policy "conversations_agent_write" on public.conversations
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
