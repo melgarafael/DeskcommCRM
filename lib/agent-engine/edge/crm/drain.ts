@@ -9,7 +9,7 @@
  *     (organization_id, source_event_id) em job_queue com captura de 23505;
  *   - coalescência de rajada: mensagens do MESMO contato dentro da janela de
  *     debounce viram UM job (o turno lê o histórico completo e responde a todas);
- *   - grupos @g.us: skip (regra dura nº 12) — evento marcado processed sem job;
+ *   - grupos @g.us: skip (regra dura nº 12) — evento marcado done sem job;
  *   - eventos 'processing' órfãos (crash do worker) voltam a 'pending' por timeout.
  */
 import { z } from 'zod';
@@ -84,7 +84,7 @@ export async function drainTick(
     try {
       await processEvent(pool, event, knobs, log);
       await pool.query(
-        `update event_log set status = 'processed', updated_at = now() where id = $1`,
+        `update event_log set status = 'done', updated_at = now() where id = $1`,
         [event.id],
       );
     } catch (err) {
@@ -95,7 +95,7 @@ export async function drainTick(
          set status = $2, last_error = $3, next_attempt_at = now() + interval '30 seconds',
              updated_at = now()
          where id = $1`,
-        [event.id, terminal ? 'failed' : 'pending', message],
+        [event.id, terminal ? 'dead' : 'pending', message],
       );
       log.error('drain: evento falhou', { event_id: event.id, terminal, error: message });
     }
@@ -131,7 +131,7 @@ async function processEvent(
   }
 
   // Coalescência: já existe job PENDING futuro deste contato → esta mensagem
-  // entra de carona (o turno lê o histórico completo). Evento vira processed.
+  // entra de carona (o turno lê o histórico completo). Evento vira done.
   if (knobs.debounceMs > 0) {
     const { rows: pendingRows } = await pool.query<{ id: string }>(
       `select id from job_queue
