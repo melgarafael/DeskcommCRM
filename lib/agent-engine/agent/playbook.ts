@@ -24,7 +24,7 @@ export const MAX_PLAYBOOK_LAYER_LINES = 200;
 
 export interface PlaybookVersionRow {
   id: string;
-  tenant_id: string | null;
+  organization_id: string | null;
   layer: PlaybookLayer;
   content: string;
   created_at: Date;
@@ -66,7 +66,7 @@ export async function insertPlaybookVersion(
 ): Promise<PlaybookVersionRow> {
   validatePlaybookLayerContent(input.content);
   const { rows } = await db.query<PlaybookVersionRow>(
-    `insert into playbook_versions (tenant_id, layer, content)
+    `insert into playbook_versions (organization_id, layer, content)
      values ($1, $2, $3)
      returning *`,
     [input.tenantId, input.layer, input.content],
@@ -90,13 +90,13 @@ export async function setPlaybookPointer(
 ): Promise<void> {
   const conflict =
     input.tenantId === null
-      ? '(layer) where tenant_id is null'
-      : '(tenant_id, layer) where tenant_id is not null';
+      ? '(layer) where organization_id is null'
+      : '(organization_id, layer) where organization_id is not null';
   const { rowCount } = await db.query(
-    `insert into playbook_pointers (tenant_id, layer, version_id)
-     select v.tenant_id, v.layer, v.id
+    `insert into playbook_pointers (organization_id, layer, version_id)
+     select v.organization_id, v.layer, v.id
      from playbook_versions v
-     where v.id = $1 and v.layer = $2 and v.tenant_id is not distinct from $3
+     where v.id = $1 and v.layer = $2 and v.organization_id is not distinct from $3
      on conflict ${conflict} do update
        set version_id = excluded.version_id,
            updated_at = now()`,
@@ -118,8 +118,8 @@ export async function loadPlaybook(db: pg.Pool, tenantId: string): Promise<Loade
     `select v.layer, v.id as version_id, v.content
      from playbook_pointers p
      join playbook_versions v on v.id = p.version_id
-     where (p.tenant_id is null and p.layer = 'platform')
-        or (p.tenant_id = $1 and p.layer in ('tenant', 'campaign'))`,
+     where (p.organization_id is null and p.layer = 'platform')
+        or (p.organization_id = $1 and p.layer in ('tenant', 'campaign'))`,
     [tenantId],
   );
   const byLayer = new Map(rows.map((r) => [r.layer, r]));

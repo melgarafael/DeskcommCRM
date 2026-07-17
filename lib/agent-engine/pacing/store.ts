@@ -63,7 +63,7 @@ export async function loadChannelKnobs(
     `select throttle_ms, jitter_max_ms, window_start_hour, window_end_hour,
             allow_sunday, timezone, warmup_daily_caps, number_activated_at
      from channel_knobs
-     where tenant_id = $1 and channel_session_id = $2`,
+     where organization_id = $1 and channel_session_id = $2`,
     [tenantId, channelSessionId],
   );
   const row = rows[0];
@@ -110,7 +110,7 @@ export async function loadPacingState(
     `select max(sent_at) as last_sent_at,
             count(*) filter (where sent_at >= $3) as sent_today
      from pacing_ledger
-     where tenant_id = $1 and channel_session_id = $2`,
+     where organization_id = $1 and channel_session_id = $2`,
     [tenantId, channelSessionId, dayStart],
   );
   const row = rows[0];
@@ -129,7 +129,7 @@ export async function recordSend(
   sentAt: Date = new Date(),
 ): Promise<void> {
   await db.query(
-    `insert into pacing_ledger (tenant_id, channel_session_id, sent_at)
+    `insert into pacing_ledger (organization_id, channel_session_id, sent_at)
      values ($1, $2, $3)`,
     [tenantId, channelSessionId, sentAt],
   );

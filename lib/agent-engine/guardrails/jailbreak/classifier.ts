@@ -7,13 +7,13 @@
  * É ADVISÓRIO por construção: NÃO veta o inbound sozinho (injeção INDIRETA exige as
  * defesas determinísticas da F4-03; este classifier cobre o resto). O sinal é FLAGRADO
  * no trace do turno e, correlacionado a uma tentativa de promessa fora de tabela (F4-01)
- * no MESMO turno, dispara escalação humana em inbox_items (escalateJailbreakPromise).
+ * no MESMO turno, dispara escalação humana em agent_inbox_items (escalateJailbreakPromise).
  *
  * PII: `reason` é uma categoria curta do modelo, mas pode ecoar trecho da mensagem do
- * lead — NUNCA vai a log nem ao corpo do inbox_item (regra dura 8). Só flag/level (não
+ * lead — NUNCA vai a log nem ao corpo do item da inbox (regra dura 8). Só flag/level (não
  * são PII) entram no trace.
  *
- * tenant_id/lead_id vêm da ROW do job (closure do run), nunca do payload (regra dura 1).
+ * organization_id/contact_id vêm da ROW do job (closure do run), nunca do payload (regra dura 1).
  */
 import type pg from 'pg';
 
@@ -121,9 +121,9 @@ export async function classifyJailbreak(
 
 /**
  * Escalação humana de RUNTIME (regra dura 13): sinal de jailbreak ALTO + tentativa de
- * promessa fora de tabela (F4-01) no MESMO turno → inbox_items. Dedup por episódio via
- * insert-if-not-exists sobre (tenant, ref_kind, ref_id, status='open'): 2× no mesmo
- * episódio aberto → 1 item (mesmo padrão de circuit.ts). ref_id = lead_id de fonte
+ * promessa fora de tabela (F4-01) no MESMO turno → agent_inbox_items. Dedup por episódio via
+ * insert-if-not-exists sobre (org, ref_kind, ref_id, status='open'): 2× no mesmo
+ * episódio aberto → 1 item (mesmo padrão de circuit.ts). ref_id = contact_id de fonte
  * confiável (row do job). Corpo SEM PII (só nível + descrição do padrão). Devolve quantos
  * itens foram criados (0 = já havia item aberto do episódio).
  */
@@ -132,11 +132,11 @@ export async function escalateJailbreakPromise(
   input: { tenantId: string; leadId: string; level: JailbreakLevel },
 ): Promise<number> {
   const { rowCount } = await db.query(
-    `insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind, ref_id)
+    `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
      select $1, 'other', 'critical', $2, $3, 'jailbreak_escalation', $4
      where not exists (
-       select 1 from inbox_items
-       where tenant_id = $1 and ref_kind = 'jailbreak_escalation' and ref_id = $4 and status = 'open'
+       select 1 from agent_inbox_items
+       where organization_id = $1 and ref_kind = 'jailbreak_escalation' and ref_id = $4 and status = 'open'
      )`,
     [
       input.tenantId,

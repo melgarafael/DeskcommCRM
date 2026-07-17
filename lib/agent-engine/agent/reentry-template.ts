@@ -16,7 +16,7 @@ import type pg from 'pg';
 
 export interface ReentryTemplateVersionRow {
   id: string;
-  tenant_id: string;
+  organization_id: string;
   variants: string[];
   created_at: Date;
 }
@@ -45,7 +45,7 @@ export async function insertReentryTemplateVersion(
 ): Promise<ReentryTemplateVersionRow> {
   validateVariants(input.variants);
   const { rows } = await db.query<ReentryTemplateVersionRow>(
-    `insert into reentry_template_versions (tenant_id, variants)
+    `insert into reentry_template_versions (organization_id, variants)
      values ($1, $2)
      returning *`,
     [input.tenantId, input.variants],
@@ -67,11 +67,11 @@ export async function setReentryTemplatePointer(
   input: { tenantId: string; versionId: string },
 ): Promise<void> {
   const { rowCount } = await db.query(
-    `insert into reentry_template_pointers (tenant_id, version_id)
-     select v.tenant_id, v.id
+    `insert into reentry_template_pointers (organization_id, version_id)
+     select v.organization_id, v.id
      from reentry_template_versions v
-     where v.id = $1 and v.tenant_id = $2
-     on conflict (tenant_id) do update
+     where v.id = $1 and v.organization_id = $2
+     on conflict (organization_id) do update
        set version_id = excluded.version_id, updated_at = now()`,
     [input.versionId, input.tenantId],
   );
@@ -90,7 +90,7 @@ export async function loadReentryTemplate(db: pg.Pool, tenantId: string): Promis
     `select v.id as version_id, v.variants
      from reentry_template_pointers p
      join reentry_template_versions v on v.id = p.version_id
-     where p.tenant_id = $1`,
+     where p.organization_id = $1`,
     [tenantId],
   );
   const row = rows[0];

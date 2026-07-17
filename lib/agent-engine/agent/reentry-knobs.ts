@@ -15,12 +15,23 @@
  * ponteiro ⇒ o próximo follow-up já resolve a versão nova com o daemon vivo.
  */
 import type pg from 'pg';
+import { z } from 'zod';
 
-import { reentryKnobsSchema, type ReentryKnobs } from '../../../scripts/flywheel/reentry-knobs-core';
+// Schema dos knobs INLINE (o otimizador do Vendaval — scripts/flywheel/ — entra na
+// Fase 3; até lá este é o dono do shape). Revalidado no insert E na leitura.
+export const reentryKnobsSchema = z
+  .object({
+    /** janela de follow-up em horas (>0) — o timing otimizável do flywheel. */
+    follow_up_window_hours: z.number().positive(),
+    /** segmentos habilitados para re-entrada (vazio = nenhum). */
+    enabled_segments: z.array(z.string()),
+  })
+  .strict();
+export type ReentryKnobs = z.infer<typeof reentryKnobsSchema>;
 
 export interface ReentryKnobVersionRow {
   id: string;
-  tenant_id: string;
+  organization_id: string;
   knobs: ReentryKnobs;
   created_at: Date;
 }
@@ -32,7 +43,7 @@ export async function insertReentryKnobVersion(
 ): Promise<ReentryKnobVersionRow> {
   const knobs = reentryKnobsSchema.parse(input.knobs);
   const { rows } = await db.query<ReentryKnobVersionRow>(
-    `insert into reentry_knob_versions (tenant_id, knobs)
+    `insert into reentry_knob_versions (organization_id, knobs)
      values ($1, $2)
      returning *`,
     [input.tenantId, JSON.stringify(knobs)],
@@ -54,11 +65,11 @@ export async function setReentryKnobPointer(
   input: { tenantId: string; versionId: string },
 ): Promise<void> {
   const { rowCount } = await db.query(
-    `insert into reentry_knob_pointers (tenant_id, version_id)
-     select v.tenant_id, v.id
+    `insert into reentry_knob_pointers (organization_id, version_id)
+     select v.organization_id, v.id
      from reentry_knob_versions v
-     where v.id = $1 and v.tenant_id = $2
-     on conflict (tenant_id) do update
+     where v.id = $1 and v.organization_id = $2
+     on conflict (organization_id) do update
        set version_id = excluded.version_id, updated_at = now()`,
     [input.versionId, input.tenantId],
   );
@@ -80,7 +91,7 @@ export async function loadReentryKnobs(
     `select v.id as version_id, v.knobs
      from reentry_knob_pointers p
      join reentry_knob_versions v on v.id = p.version_id
-     where p.tenant_id = $1`,
+     where p.organization_id = $1`,
     [tenantId],
   );
   const row = rows[0];

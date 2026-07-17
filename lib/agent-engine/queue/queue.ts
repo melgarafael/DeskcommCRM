@@ -1,5 +1,5 @@
 /**
- * Fila durável no Postgres do harness — FOR UPDATE SKIP LOCKED com lane por lead_id
+ * Fila durável no Postgres do harness — FOR UPDATE SKIP LOCKED com lane por contact_id
  * (F2-03; stack.md §3, blueprint 8.6). Primitivas puras: enqueue, claim, complete,
  * fail e reaper. O worker-loop de produção chega na F2-04.
  *
@@ -8,7 +8,7 @@
  *      MESMO lead no mesmo lote violariam a unique parcial e o 23505 abortaria o
  *      lote INTEIRO (starvation no hot path);
  *   b) FOR UPDATE SKIP LOCKED + UPDATE para 'running' (attempts incrementa AQUI).
- * O índice parcial uniq_job_queue_one_running_per_lead fica de CINTO: na corrida
+ * O índice parcial uniq_job_queue_one_running_per_contact fica de CINTO: na corrida
  * residual entre workers o 23505 é capturado e o claim perde só a rodada.
  *
  * Sem imports de RUNTIME de propósito: o worker de teste do SIGKILL roda este
@@ -21,8 +21,8 @@ export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'dead';
 
 export interface JobRow {
   id: string;
-  tenant_id: string;
-  lead_id: string | null;
+  organization_id: string;
+  contact_id: string | null;
   kind: JobKind;
   source_event_id: string | null;
   payload: Record<string, unknown>;
@@ -74,7 +74,7 @@ export async function enqueueJob(
   try {
     const { rows } = await db.query<JobRow>(
       `insert into job_queue
-         (tenant_id, lead_id, kind, source_event_id, payload, priority, run_after, max_attempts)
+         (organization_id, contact_id, kind, source_event_id, payload, priority, run_after, max_attempts)
        values
          ($1, $2, $3, $4, $5,
           coalesce($6::smallint, 100),      -- espelham os defaults do DDL (0002)
@@ -98,7 +98,7 @@ export async function enqueueJob(
       throw err;
     }
     const { rows } = await db.query<JobRow>(
-      'select * from job_queue where tenant_id = $1 and source_event_id = $2',
+      'select * from job_queue where organization_id = $1 and source_event_id = $2',
       [tenantId, input.sourceEventId],
     );
     return { job: mustRow(rows, 'job_queue dedup'), deduped: true };
@@ -116,13 +116,13 @@ export interface ClaimOptions {
 const CLAIM_SQL = `
   with dedup as (
     -- etapa (a): no máximo 1 job por lane por lote; lane sem lead = o próprio id
-    select distinct on (coalesce(j.lead_id, j.id)) j.id
+    select distinct on (coalesce(j.contact_id, j.id)) j.id
     from job_queue j
     where j.status = 'pending' and j.run_after <= now()
-      and (j.lead_id is null
+      and (j.contact_id is null
            or not exists (select 1 from job_queue r
-                          where r.lead_id = j.lead_id and r.status = 'running'))
-    order by coalesce(j.lead_id, j.id), j.priority, j.run_after
+                          where r.contact_id = j.contact_id and r.status = 'running'))
+    order by coalesce(j.contact_id, j.id), j.priority, j.run_after
   ),
   runnable as (
     -- etapa (b): lock sem bloquear ninguém
@@ -214,7 +214,7 @@ export async function completeJob<T = void>(
 
 /**
  * Devolve o job à fila após falha (attempts já foi incrementado no claim). Excedeu
- * `max_attempts` → 'dead' + escalação humana em inbox_items (kind='job_dead'), no
+ * `max_attempts` → 'dead' + escalação humana em agent_inbox_items (kind='job_dead'), no
  * MESMO statement (atômico). Devolve null se o lease já não era deste worker.
  */
 export async function failJob(
@@ -232,8 +232,8 @@ export async function failJob(
        returning *
      ),
      alert as (
-       insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind, ref_id)
-       select tenant_id, 'job_dead', 'critical',
+       insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
+       select organization_id, 'job_dead', 'critical',
               'Job descartado após esgotar tentativas',
               'kind=' || kind || '; attempts=' || attempts, 'job_queue', id
        from updated
@@ -296,7 +296,7 @@ export async function rescheduleJob(
 /**
  * Reaper do visibility timeout: job 'running' com locked_at mais velho que o timeout
  * é de um worker morto — volta a 'pending' (re-claim) ou, se já esgotou max_attempts,
- * vira 'dead' + inbox_items. Timeout é knob (QUEUE_VISIBILITY_TIMEOUT_MS, env.ts).
+ * vira 'dead' + agent_inbox_items. Timeout é knob (QUEUE_VISIBILITY_TIMEOUT_MS, env.ts).
  */
 export async function reapExpiredJobs(
   db: Queryable,
@@ -309,11 +309,11 @@ export async function reapExpiredJobs(
            locked_by = null, locked_at = null,
            last_error = coalesce(last_error, 'visibility timeout excedido (worker morto?)')
        where status = 'running' and locked_at < now() - ($1 * interval '1 millisecond')
-       returning id, tenant_id, kind, attempts, status
+       returning id, organization_id, kind, attempts, status
      ),
      alert as (
-       insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind, ref_id)
-       select tenant_id, 'job_dead', 'critical',
+       insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
+       select organization_id, 'job_dead', 'critical',
               'Job descartado após esgotar tentativas',
               'kind=' || kind || '; attempts=' || attempts, 'job_queue', id
        from expired
@@ -353,8 +353,8 @@ async function rollback(client: PoolClient, cause: unknown): Promise<void> {
   }
 }
 
-// Mesmo predicado de db/repository.ts (não exportado lá; este módulo fica sem
-// imports de runtime para rodar direto no Node 22 — ver cabeçalho).
+// Predicado local de propósito: este módulo fica sem imports de runtime para
+// rodar direto no Node 22 — ver cabeçalho.
 function isUniqueViolation(err: unknown): boolean {
   return (
     typeof err === 'object' &&

@@ -1,6 +1,6 @@
 /**
  * Extração determinística de promessas estruturadas PT-BR + validação contra a
- * tabela versionada do tenant (F4-01; blueprint 6.5). SEM LLM: a camada semântica
+ * tabela versionada da org (F4-01; blueprint 6.5). SEM LLM: a camada semântica
  * de texto livre ("faço de graça", "a gente resolve") é da F4-02 — aqui só o que
  * casa regex de valor estruturado.
  *
@@ -86,11 +86,11 @@ const brl = (cents: number): string =>
   `R$ ${(cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /**
- * Vete quando um valor detectado CONTRADIZ claramente a tabela versionada do tenant
+ * Vete quando um valor detectado CONTRADIZ claramente a tabela versionada da org
  * (preço abaixo do piso, desconto/parcelas acima do teto). Primeira contradição vence.
  * Sem tabela ou sem campo fiscalizado → passa (conservador: nada solto vira veto).
  */
-export function decidePromise(args: { candidate: string; table: import('./table.ts').PromiseTable }): PromiseDecision {
+export function decidePromise(args: { candidate: string; table: import('./table').PromiseTable }): PromiseDecision {
   const { table } = args;
   for (const p of extractPromises(args.candidate)) {
     if (p.kind === 'price' && table.minPriceCents !== undefined && p.value < table.minPriceCents) {

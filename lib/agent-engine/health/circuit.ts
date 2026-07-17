@@ -11,12 +11,13 @@
  * operação normal; segurar é não-destrutivo — o humano resolve).
  *
  * Fontes HONESTAS (só o que já é drenado/medido — nada inventado):
- *   - block rate = send_ledger.status='vetoed' (403 is_blocked, F2-06) / total de
- *     tentativas de outbound do número na janela. Atribuição ao número: send_ledger
- *     → leads.channel_session_id (durável; leads não somem). É o sinal por-envio do
- *     "outbound que virou is_blocked"; leads.is_opted_out é só o cache por-lead.
- *   - response rate = leads (do número) contatados (send_ledger 'accepted') que
- *     responderam (evento ai_agent.dispatch_requested drenado, F2-05) / contatados.
+ *   - block rate = send_ledger.status='vetoed' (is_blocked, F2-06) / total de
+ *     tentativas de outbound do número na janela. Atribuição ao número: exists em
+ *     conversations (contact_id + channel_session_id, is_group=false) — o vínculo
+ *     durável contato↔sessão no CRM. É o sinal por-envio do "outbound que virou
+ *     is_blocked"; contacts.is_blocked é o estado por-contato.
+ *   - response rate = contatos (do número) contatados (send_ledger 'accepted') que
+ *     responderam (evento ai_agent.dispatch_requested no event_log, F2-05) / contatados.
  *     ponytail: é um PROXY (janela grosseira; conversa iniciada por inbound infla o
  *     numerador) — por isso responseRateFloor nasce 0 (off, opt-in por número). Só
  *     vira circuito quando o operador o calibra com dado real; até lá é só observado.
@@ -75,7 +76,7 @@ export async function loadHealthKnobs(
   logger?: Logger,
 ): Promise<HealthKnobs> {
   const { rows } = await db.query<{ health_knobs: unknown }>(
-    `select health_knobs from channel_knobs where tenant_id = $1 and channel_session_id = $2`,
+    `select health_knobs from channel_knobs where organization_id = $1 and channel_session_id = $2`,
     [tenantId, channelSessionId],
   );
   const raw = rows[0]?.health_knobs;
@@ -100,8 +101,11 @@ interface SessionRates {
 
 /**
  * Computa block/response rate do número na janela — só de fontes já drenadas/medidas.
- * Atribuição send_ledger→número via leads.channel_session_id; inbound via evento
- * ai_agent.dispatch_requested no event_inbox (payload.channel_session_id/contact_id).
+ * Atribuição send_ledger→número: `exists` em conversations (contact_id +
+ * channel_session_id, is_group=false) — send_ledger não guarda a sessão; a
+ * conversa 1:1 do contato no número é o vínculo durável. Inbound via evento
+ * ai_agent.dispatch_requested no event_log do CRM (payload.channel_session_id/
+ * contact_id — as chaves que lib/waha/ingest.ts emite).
  */
 async function computeSessionRates(
   db: pg.Pool,
@@ -118,26 +122,37 @@ async function computeSessionRates(
     `with cut as (select now() - ($3 * interval '1 millisecond') as t)
      select
        (select count(*) from send_ledger sl
-          join leads l on l.id = sl.lead_id
-          where sl.tenant_id = $1 and l.channel_session_id = $2::uuid
-            and sl.created_at >= (select t from cut))::int as total_sends,
-       (select count(*) from send_ledger sl
-          join leads l on l.id = sl.lead_id
-          where sl.tenant_id = $1 and l.channel_session_id = $2::uuid
-            and sl.status = 'vetoed' and sl.created_at >= (select t from cut))::int as blocked_sends,
-       (select count(distinct sl.lead_id) from send_ledger sl
-          join leads l on l.id = sl.lead_id
-          where sl.tenant_id = $1 and l.channel_session_id = $2::uuid
-            and sl.status = 'accepted' and sl.created_at >= (select t from cut))::int as sent_leads,
-       (select count(distinct sl.lead_id) from send_ledger sl
-          join leads l on l.id = sl.lead_id
-          where sl.tenant_id = $1 and l.channel_session_id = $2::uuid
-            and sl.status = 'accepted' and sl.created_at >= (select t from cut)
+          where sl.organization_id = $1 and sl.created_at >= (select t from cut)
             and exists (
-              select 1 from event_inbox e
-              where e.tenant_id = $1 and e.event_type = 'ai_agent.dispatch_requested'
+              select 1 from conversations c
+              where c.organization_id = $1 and c.contact_id = sl.contact_id
+                and c.channel_session_id = $2::uuid and c.is_group = false))::int as total_sends,
+       (select count(*) from send_ledger sl
+          where sl.organization_id = $1 and sl.status = 'vetoed'
+            and sl.created_at >= (select t from cut)
+            and exists (
+              select 1 from conversations c
+              where c.organization_id = $1 and c.contact_id = sl.contact_id
+                and c.channel_session_id = $2::uuid and c.is_group = false))::int as blocked_sends,
+       (select count(distinct sl.contact_id) from send_ledger sl
+          where sl.organization_id = $1 and sl.status = 'accepted'
+            and sl.created_at >= (select t from cut)
+            and exists (
+              select 1 from conversations c
+              where c.organization_id = $1 and c.contact_id = sl.contact_id
+                and c.channel_session_id = $2::uuid and c.is_group = false))::int as sent_leads,
+       (select count(distinct sl.contact_id) from send_ledger sl
+          where sl.organization_id = $1 and sl.status = 'accepted'
+            and sl.created_at >= (select t from cut)
+            and exists (
+              select 1 from conversations c
+              where c.organization_id = $1 and c.contact_id = sl.contact_id
+                and c.channel_session_id = $2::uuid and c.is_group = false)
+            and exists (
+              select 1 from event_log e
+              where e.organization_id = $1 and e.event_type = 'ai_agent.dispatch_requested'
                 and e.payload->>'channel_session_id' = $2::text
-                and (e.payload->>'contact_id')::uuid = l.crm_contact_id
+                and (e.payload->>'contact_id')::uuid = sl.contact_id
                 and e.created_at >= (select t from cut)))::int as responded_leads`,
     [tenantId, channelSessionId, windowMs],
   );
@@ -186,7 +201,7 @@ export interface HealthTickResult {
   held: number;
   /** sessões que SAÍRAM de health-hold neste tick (manual ou cool-down) */
   released: number;
-  /** inbox_items(number_health) inseridos (dedup por episódio) */
+  /** agent_inbox_items(number_health) inseridos (dedup por episódio) */
   alerts: number;
   /** jobs de envio retidos pelo enforce deste tick (F2-14, reason-aware) */
   jobsHeld: number;
@@ -224,12 +239,12 @@ async function evaluateSession(
          (h.health_held_at is not null and now() - h.health_held_at >= ($3 * interval '1 millisecond'))
            as cooldown_elapsed,
          exists (
-           select 1 from inbox_items i
-           where i.tenant_id = h.tenant_id and i.ref_kind = $4 and i.ref_id = h.channel_session_id
+           select 1 from agent_inbox_items i
+           where i.organization_id = h.organization_id and i.ref_kind = $4 and i.ref_id = h.channel_session_id
              and i.status = 'open'
          ) as has_open_item
        from channel_session_health h
-       where h.tenant_id = $1 and h.channel_session_id = $2
+       where h.organization_id = $1 and h.channel_session_id = $2
        for update`,
       [tenantId, channelSessionId, k.cooldownMs, HEALTH_HOLD_REF_KIND],
     );
@@ -255,17 +270,17 @@ async function evaluateSession(
       await client.query(
         `update channel_session_health
          set health_hold_active = true, health_hold_reason = $3, health_held_at = now(), updated_at = now()
-         where tenant_id = $1 and channel_session_id = $2`,
+         where organization_id = $1 and channel_session_id = $2`,
         [tenantId, channelSessionId, reason],
       );
       delta.held = 1;
-      // inbox_item 1× por episódio: só cria se não há item aberto do número (dedup).
+      // inbox item 1× por episódio: só cria se não há item aberto do número (dedup).
       const ins = await client.query(
-        `insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind, ref_id)
+        `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
          select $1, 'other', $2, $3, $4, $5, $6
          where not exists (
-           select 1 from inbox_items
-           where tenant_id = $1 and ref_kind = $5 and ref_id = $6 and status = 'open'
+           select 1 from agent_inbox_items
+           where organization_id = $1 and ref_kind = $5 and ref_id = $6 and status = 'open'
          )`,
         [
           tenantId,
@@ -285,7 +300,7 @@ async function evaluateSession(
       await client.query(
         `update channel_session_health
          set health_hold_active = false, health_hold_reason = null, updated_at = now()
-         where tenant_id = $1 and channel_session_id = $2`,
+         where organization_id = $1 and channel_session_id = $2`,
         [tenantId, channelSessionId],
       );
       delta.released = 1;
@@ -300,7 +315,7 @@ async function evaluateSession(
         await client.query(
           `update channel_session_health
            set health_released_at = now(), health_hold_active = false, health_hold_reason = null, updated_at = now()
-           where tenant_id = $1 and channel_session_id = $2`,
+           where organization_id = $1 and channel_session_id = $2`,
           [tenantId, channelSessionId],
         );
         delta.released = 1;
@@ -314,8 +329,8 @@ async function evaluateSession(
         // automática: cool-down decorrido E recuperado → libera e auto-resolve o episódio.
         await clearHold();
         await client.query(
-          `update inbox_items set status = 'resolved'
-           where tenant_id = $1 and ref_kind = $2 and ref_id = $3 and status = 'open'`,
+          `update agent_inbox_items set status = 'resolved'
+           where organization_id = $1 and ref_kind = $2 and ref_id = $3 and status = 'open'`,
           [tenantId, HEALTH_HOLD_REF_KIND, channelSessionId],
         );
       }
@@ -353,14 +368,20 @@ export async function channelHealthTick(harness: pg.Pool, log?: Logger): Promise
     jobsHeld: 0,
     jobsReleased: 0,
   };
-  const { rows: sessions } = await harness.query<{ tenant_id: string; channel_session_id: string }>(
-    'select tenant_id, channel_session_id from channel_session_health',
-  );
+  const { rows: sessions } = await harness.query<{
+    organization_id: string;
+    channel_session_id: string;
+  }>('select organization_id, channel_session_id from channel_session_health');
   for (const s of sessions) {
     try {
-      const k = await loadHealthKnobs(harness, s.tenant_id, s.channel_session_id, log);
-      const rates = await computeSessionRates(harness, s.tenant_id, s.channel_session_id, k.windowMs);
-      const delta = await evaluateSession(harness, s.tenant_id, s.channel_session_id, rates, k);
+      const k = await loadHealthKnobs(harness, s.organization_id, s.channel_session_id, log);
+      const rates = await computeSessionRates(
+        harness,
+        s.organization_id,
+        s.channel_session_id,
+        k.windowMs,
+      );
+      const delta = await evaluateSession(harness, s.organization_id, s.channel_session_id, rates, k);
       result.evaluated += 1;
       result.held += delta.held;
       result.released += delta.released;

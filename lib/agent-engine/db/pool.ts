@@ -1,6 +1,6 @@
 /**
  * Pool do Postgres do harness (SQL cru tipado, sem ORM — stack.md §1/§3).
- * A URL vem do env validado (env.ts), nunca hardcoded.
+ * A URL vem do env (SUPABASE_DB_URL), nunca hardcoded.
  *
  * Backend morrendo (blip/restart do Postgres) emite 'error' sem handler e
  * derruba o processo — pitfall canônico do pg, em DUAS formas:

@@ -48,7 +48,7 @@ export async function loadSpinningKnobs(
 ): Promise<SpinningKnobs> {
   const { rows } = await db.query<{ spinning_knobs: unknown }>(
     `select spinning_knobs from channel_knobs
-     where tenant_id = $1 and channel_session_id = $2`,
+     where organization_id = $1 and channel_session_id = $2`,
     [tenantId, channelSessionId],
   );
   const raw = rows[0]?.spinning_knobs;
@@ -79,7 +79,7 @@ export async function loadRecentCopies(
 ): Promise<RecentCopy[]> {
   const { rows } = await db.query<{ normalized_text: string; normalized_hash: string }>(
     `select normalized_text, normalized_hash from outbound_copies
-     where tenant_id = $1 and channel_session_id = $2
+     where organization_id = $1 and channel_session_id = $2
      order by sent_at desc
      limit $3`,
     [tenantId, channelSessionId, windowSize],
@@ -102,7 +102,7 @@ export async function recordCopy(
 ): Promise<void> {
   const normalized = normalizeCopy(body);
   await db.query(
-    `insert into outbound_copies (tenant_id, channel_session_id, normalized_text, normalized_hash, sent_at)
+    `insert into outbound_copies (organization_id, channel_session_id, normalized_text, normalized_hash, sent_at)
      values ($1, $2, $3, $4, $5)`,
     [tenantId, channelSessionId, normalized, hashNormalized(normalized), sentAt],
   );

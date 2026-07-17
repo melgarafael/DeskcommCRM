@@ -121,7 +121,7 @@ export async function recallLeadNotes(
               websearch_to_tsquery('simple', $3)
             ) as bm25
        from lead_notes
-      where tenant_id = $1 and lead_id = $2`,
+      where organization_id = $1 and contact_id = $2`,
     [ids.tenantId, ids.leadId, query],
   );
   if (rows.length === 0) {
@@ -144,7 +144,7 @@ export async function recallLeadNotes(
   for (const [noteId, vec] of freshByNoteId) {
     await db.query(
       `update lead_notes set embedding = $4
-        where tenant_id = $1 and lead_id = $2 and id = $3`,
+        where organization_id = $1 and contact_id = $2 and id = $3`,
       [ids.tenantId, ids.leadId, noteId, JSON.stringify(vec)],
     );
   }

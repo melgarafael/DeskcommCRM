@@ -5,8 +5,8 @@
  * banco veta UPDATE; mudança = versão nova); ponteiro ativo em
  * `promise_table_pointers`; trocar versão/rollback = mover o ponteiro, sem restart.
  *
- * A tabela é por TENANT e carregada de fonte confiável (tenant_id do contexto do
- * turno, nunca do body — regra dura nº 1). Sem ponteiro = tenant não fiscaliza
+ * A tabela é por ORG e carregada de fonte confiável (organization_id do contexto do
+ * turno, nunca do body — regra dura nº 1). Sem ponteiro = org não fiscaliza
  * promessa (gate no-op) — opt-in por publicar uma tabela.
  */
 import type pg from 'pg';
@@ -14,7 +14,7 @@ import type { Queryable } from '../../queue/queue';
 
 /**
  * Valores estruturados PERMITIDOS. Cada campo é uma dimensão de risco comercial;
- * campo ausente = dimensão não fiscalizada (o operador liga o que importa ao tenant).
+ * campo ausente = dimensão não fiscalizada (o operador liga o que importa à org).
  * knobs versionados, não constantes: moram no DB, trocam com o ponteiro.
  */
 export interface PromiseTable {
@@ -57,7 +57,7 @@ export async function insertPromiseTableVersion(
 ): Promise<{ id: string }> {
   const table = validatePromiseTable(input.values);
   const { rows } = await db.query<{ id: string }>(
-    `insert into promise_table_versions (tenant_id, values) values ($1, $2) returning id`,
+    `insert into promise_table_versions (organization_id, values) values ($1, $2) returning id`,
     [input.tenantId, JSON.stringify(table)],
   );
   const row = rows[0];
@@ -66,39 +66,39 @@ export async function insertPromiseTableVersion(
 }
 
 /**
- * Move o ponteiro do tenant para uma versão — é O deploy e O rollback (sem restart).
- * O tenant vem DA VERSÃO no próprio SQL (fonte confiável): apontar para versão de
- * outro tenant é impossível por construção.
+ * Move o ponteiro da org para uma versão — é O deploy e O rollback (sem restart).
+ * A org vem DA VERSÃO no próprio SQL (fonte confiável): apontar para versão de
+ * outra org é impossível por construção.
  */
 export async function setPromiseTablePointer(
   db: pg.Pool,
   input: { tenantId: string; versionId: string },
 ): Promise<void> {
   const { rowCount } = await db.query(
-    `insert into promise_table_pointers (tenant_id, version_id)
-     select v.tenant_id, v.id
+    `insert into promise_table_pointers (organization_id, version_id)
+     select v.organization_id, v.id
      from promise_table_versions v
-     where v.id = $1 and v.tenant_id = $2
-     on conflict (tenant_id) do update
+     where v.id = $1 and v.organization_id = $2
+     on conflict (organization_id) do update
        set version_id = excluded.version_id, updated_at = now()`,
     [input.versionId, input.tenantId],
   );
   if (rowCount === 0) {
-    throw new Error('versão de tabela de promessa não encontrada para o tenant — ponteiro não movido');
+    throw new Error('versão de tabela de promessa não encontrada para a org — ponteiro não movido');
   }
 }
 
 /**
- * Resolve o ponteiro do tenant. Chamada sob o lock de cada tentativa de envio
+ * Resolve o ponteiro da org. Chamada sob o lock de cada tentativa de envio
  * (sem cache de processo): ponteiro movido = próxima tentativa já vê a versão nova.
- * Sem ponteiro → null (tenant não fiscaliza promessa; o gate vira no-op).
+ * Sem ponteiro → null (org não fiscaliza promessa; o gate vira no-op).
  */
 export async function loadPromiseTable(db: Queryable, tenantId: string): Promise<LoadedPromiseTable | null> {
   const { rows } = await db.query<{ version_id: string; values: unknown }>(
     `select v.id as version_id, v.values
      from promise_table_pointers p
      join promise_table_versions v on v.id = p.version_id
-     where p.tenant_id = $1`,
+     where p.organization_id = $1`,
     [tenantId],
   );
   const row = rows[0];

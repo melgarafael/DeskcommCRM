@@ -153,7 +153,7 @@ export function nextCronTime(expr: string, tz: string, afterMs: number): number 
 /**
  * Offset de stagger DETERMINÍSTICO por lead (anti-rajada): jobs no mesmo minuto
  * espalham por [0, windowMs). Mesmo lead → sempre o mesmo offset (sem thundering
- * herd, sem estado). FNV-1a 32-bit sobre o lead_id. windowMs<=0 desliga.
+ * herd, sem estado). FNV-1a 32-bit sobre o contact_id. windowMs<=0 desliga.
  */
 export function staggerOffsetMs(leadId: string, windowMs: number): number {
   if (windowMs <= 0) return 0;

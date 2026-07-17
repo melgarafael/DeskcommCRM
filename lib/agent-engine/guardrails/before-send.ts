@@ -61,10 +61,9 @@ export interface GateContext {
   /** corpo candidato (para o gate de spinning). */
   body: string;
   /**
-   * STOP irrevogável: `leads.is_opted_out` (cache do harness) OU `contacts.is_blocked`
-   * lido no `get_lead_context` deste turno (fonte: CRM). `force_human` entra no MESMO
-   * OR quando a leitura direta chegar (o `crm_get_contact` do MCP não expõe a coluna
-   * hoje — gap documentado em edge/crm/get-lead-context.ts).
+   * STOP irrevogável: `contacts.is_blocked` OR `contacts.force_human`, lidos DIRETO da
+   * fonte (mesmo banco pós-fusão — não existe mais cache) SOB o lock desta tentativa,
+   * OR o sinal lido no `get_lead_context` deste turno.
    */
   optedOut: boolean;
   pacing: {
@@ -78,8 +77,8 @@ export interface GateContext {
     window: RecentCopy[];
   };
   /**
-   * Tabela de preços/promessas versionada do tenant (F4-01), carregada por ponteiro
-   * sob o lock. null = tenant não fiscaliza promessa (gate no-op).
+   * Tabela de preços/promessas versionada da org (F4-01), carregada por ponteiro
+   * sob o lock. null = org não fiscaliza promessa (gate no-op).
    */
   promise: {
     table: PromiseTable | null;
@@ -95,8 +94,8 @@ export interface GateContext {
   semanticPromise: PromiseClassification | null;
   /**
    * Disclosure "assistente virtual" (F4-05; blueprint 5.7) — carregado por ponteiro sob o
-   * lock. `template` null = tenant não configurou disclosure (gate no-op). `isFirstOutbound`
-   * = não há envio `accepted` prévio a ESTE lead (send_ledger F2-06). `mode` (knob) decide o
+   * lock. `template` null = org não configurou disclosure (gate no-op). `isFirstOutbound`
+   * = não há envio `accepted` prévio a ESTE contato (send_ledger F2-06). `mode` (knob) decide o
    * que fazer quando a 1ª mensagem sai sem disclosure: 'veto' (bloqueia + ensina) ou 'inject'
    * (o gate devolve `amendBody` com o disclosure prependado).
    */
@@ -154,7 +153,7 @@ const stopGate: Gate = {
  *   - `isAnonymized` → veta QUALQUER envio (`lgpd_anonymized`), sempre (anonimização é irreversível);
  *   - 1º toque de PROSPECÇÃO (isProspecting && isFirstOutbound) sem base legal válida →
  *     `lgpd_missing_legal_basis`. Responder a inbound (isProspecting=false, o MVP) NÃO dispara.
- * Sem contexto LGPD injetado (null) = no-op. A escala à inbox_items acontece no runner (precisa
+ * Sem contexto LGPD injetado (null) = no-op. A escala à agent_inbox_items acontece no runner (precisa
  * de DB), não aqui — o gate é puro/síncrono como os demais.
  */
 export const lgpdGate: Gate = {
@@ -187,7 +186,7 @@ export const lgpdGate: Gate = {
 
 /**
  * Gate de promessa (F4-01) — validação determinística de preço/desconto/parcelamento
- * candidato contra a tabela versionada do tenant; contradição clara vira veto instrutivo
+ * candidato contra a tabela versionada da org; contradição clara vira veto instrutivo
  * (anti-"vendo por R$1", blueprint 6.5). Sem tabela = no-op. Posição 4 de
  * `BEFORE_SEND_GATES` (F4-08), após spinning e antes da camada semântica.
  */
@@ -231,7 +230,7 @@ export const semanticPromiseGate: Gate = {
 
 /**
  * Gate de disclosure (F4-05; blueprint 5.7) — garante que a PRIMEIRA mensagem outbound a um
- * lead novo se apresenta como assistente virtual (template versionado por tenant). Decisão de
+ * lead novo se apresenta como assistente virtual (template versionado por org). Decisão de
  * produto que blinda hoje (CDC) e amanhã (PL 2338), não exigência da Meta. Sem template
  * configurado OU não sendo o 1º outbound → PASS (segundo em diante não repete). 1º outbound
  * que JÁ contém o disclosure → PASS. 1º sem disclosure → conforme o knob `mode`: 'veto'
@@ -356,7 +355,7 @@ export interface RunBeforeSendArgs {
   /** número (channel_sessions.id do CRM) — chave da serialização e do estado anti-ban. */
   channelSessionId: string;
   body: string;
-  /** `contacts.is_blocked` lido no get_lead_context deste turno; combina com o cache no gate stop. */
+  /** `contacts.is_blocked` lido no get_lead_context deste turno; OR com a leitura direta da fonte no gate stop. */
   optedOutThisTurn: boolean;
   /**
    * channel_sessions.daily_message_limit do CRM (fonte única do cap absoluto). null =
@@ -414,7 +413,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
 
     // Estado confiável carregado SOB o lock (os contadores de cap/janela de copies
     // são racy — precisam ver o que o worker anterior já efetivou).
-    const optedOut = args.optedOutThisTurn || (await readOptedOutCache(client, args.tenantId, args.leadId));
+    const optedOut = args.optedOutThisTurn || (await readStopFlags(client, args.tenantId, args.leadId));
     const pacingCfg = await loadChannelKnobs(client, args.tenantId, args.channelSessionId, args.log);
     const pacingState = await loadPacingState(client, args.tenantId, args.channelSessionId, {
       now: args.now,
@@ -423,12 +422,12 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     });
     const spinningKnobs = await loadSpinningKnobs(client, args.tenantId, args.channelSessionId, args.log);
     const window = await loadRecentCopies(client, args.tenantId, args.channelSessionId, spinningKnobs.windowSize);
-    // tenant de fonte confiável (RunBeforeSendArgs.tenantId, do row do job) — regra dura nº 1.
+    // org de fonte confiável (RunBeforeSendArgs.tenantId = organization_id do row do job) — regra dura nº 1.
     const promise = await loadPromiseTable(client, args.tenantId);
     // Camada semântica (F4-02): a chamada de modelo (async) roda AQUI, sob o lock, e o
     // veredito entra no ctx para o `semanticPromiseGate` (sync) ler. Ausente = camada off.
     const semanticPromise = args.classifyPromiseSemantic ? await args.classifyPromiseSemantic(args.body) : null;
-    // Disclosure (F4-05): template por ponteiro do tenant + detecção de 1º outbound via
+    // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
     // send_ledger (só conta se há template — sem template o gate é no-op de qualquer forma).
     const disclosure = await loadDisclosureTemplate(client, args.tenantId);
     // "1º outbound" (send_ledger accepted == 0): sinal compartilhado pelo disclosure (F4-05) e
@@ -528,12 +527,16 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
   }
 }
 
-async function readOptedOutCache(db: Queryable, tenantId: string, leadId: string): Promise<boolean> {
-  const { rows } = await db.query<{ is_opted_out: boolean }>(
-    'select is_opted_out from leads where tenant_id = $1 and id = $2',
-    [tenantId, leadId],
+/**
+ * STOP direto da fonte (pós-fusão, mesmo banco): `contacts.is_blocked` OR
+ * `contacts.force_human`, lidos sob o lock — não existe mais cache no harness.
+ */
+async function readStopFlags(db: Queryable, organizationId: string, contactId: string): Promise<boolean> {
+  const { rows } = await db.query<{ stopped: boolean }>(
+    'select (is_blocked or force_human) as stopped from contacts where organization_id = $1 and id = $2',
+    [organizationId, contactId],
   );
-  return rows[0]?.is_opted_out === true;
+  return rows[0]?.stopped === true;
 }
 
 /** Trace estruturado: uma linha por gate avaliado (ids não são PII; corpo nunca é logado). */
@@ -565,7 +568,7 @@ async function persistTrace(
   try {
     await args.pool.query(
       `insert into before_send_traces
-         (tenant_id, job_id, lead_id, channel_session_id, trace, vetoed_gate, vetoed_code)
+         (organization_id, job_id, contact_id, channel_session_id, trace, vetoed_gate, vetoed_code)
        values ($1, $2, $3, $4, $5, $6, $7)`,
       [
         args.tenantId,

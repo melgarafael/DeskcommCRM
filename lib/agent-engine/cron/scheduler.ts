@@ -30,8 +30,8 @@ import {
 
 export interface CronJobRow {
   id: string;
-  tenant_id: string;
-  lead_id: string;
+  organization_id: string;
+  contact_id: string;
   kind: 'at' | 'every' | 'cron';
   interval_ms: string | null; // bigint chega como string do pg
   cron_expr: string | null;
@@ -92,7 +92,7 @@ export async function scheduleCronJob(
   const spec = input.spec;
   const { rows } = await db.query<CronJobRow>(
     `insert into cron_jobs
-       (tenant_id, lead_id, kind, interval_ms, cron_expr, tz, job_kind, payload, next_run_at, max_attempts)
+       (organization_id, contact_id, kind, interval_ms, cron_expr, tz, job_kind, payload, next_run_at, max_attempts)
      values
        ($1, $2, $3, $4, $5, coalesce($6, 'UTC'), coalesce($7, 'followup_turn'), $8, $9, coalesce($10::smallint, 5))
      returning *`,
@@ -127,7 +127,7 @@ export async function cancelPendingCronsForLead(
 ): Promise<number> {
   const { rowCount } = await db.query(
     `update cron_jobs set enabled = false, updated_at = now()
-     where tenant_id = $1 and lead_id = $2 and enabled = true`,
+     where organization_id = $1 and contact_id = $2 and enabled = true`,
     [tenantId, leadId],
   );
   return rowCount ?? 0;
@@ -155,7 +155,7 @@ type FailureOutcome = { outcome: 'retried' | 'disabled'; classification: string;
 /**
  * Aplica o desfecho de uma falha de disparo DENTRO da transação (row ainda locada):
  * permanente (SQLSTATE 22/23) OU transiente esgotado → desabilita + inbox 1×;
- * transiente com folga → backoff exponencial. Escala humana via inbox_items
+ * transiente com folga → backoff exponencial. Escala humana via agent_inbox_items
  * (runtime — nunca arquivo), sem PII.
  */
 async function applyFailure(
@@ -174,9 +174,9 @@ async function applyFailure(
       [cron.id, attempts, reason],
     );
     await client.query(
-      `insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind, ref_id)
+      `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        values ($1, 'job_dead', 'critical', 'Cron desabilitado após falha de disparo', $2, 'cron_jobs', $3)`,
-      [cron.tenant_id, `kind=${cron.kind}; job_kind=${cron.job_kind}; motivo=${classification}; attempts=${attempts}`, cron.id],
+      [cron.organization_id, `kind=${cron.kind}; job_kind=${cron.job_kind}; motivo=${classification}; attempts=${attempts}`, cron.id],
     );
     return { outcome: 'disabled', classification, attempts };
   }
@@ -217,12 +217,12 @@ async function fireOneDue(
     const spec = specFromRow(cron);
     try {
       await client.query('savepoint fire');
-      await enqueueJob(client, cron.tenant_id, {
+      await enqueueJob(client, cron.organization_id, {
         kind: cron.job_kind,
-        leadId: cron.lead_id,
+        leadId: cron.contact_id,
         payload: cron.payload,
       });
-      const next = computeNextRunAt(spec, cron.next_run_at.getTime(), nowMs, cfg.staggerWindowMs, cron.lead_id);
+      const next = computeNextRunAt(spec, cron.next_run_at.getTime(), nowMs, cfg.staggerWindowMs, cron.contact_id);
       if (next === null) {
         // one-shot ('at') concluído: desabilita.
         await client.query(

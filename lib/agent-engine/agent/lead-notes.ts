@@ -90,7 +90,7 @@ export async function getLeadNotesIndex(
 ): Promise<LeadNoteIndexEntry[]> {
   const { rows } = await db.query<LeadNoteIndexEntry>(
     `select id, headline from lead_notes
-     where tenant_id = $1 and lead_id = $2
+     where organization_id = $1 and contact_id = $2
      order by created_at, id`,
     [tenantId, leadId],
   );
@@ -107,7 +107,7 @@ export async function getLeadNoteBody(
   // id::text = $3 (não $3::uuid): um note_id forjado/não-uuid vira MISS limpo (null),
   // nunca erro de cast 22P02 que derrubaria o job. Filtra por (tenant, lead) primeiro.
   const { rows } = await db.query<{ body: string }>(
-    'select body from lead_notes where tenant_id = $1 and lead_id = $2 and id::text = $3',
+    'select body from lead_notes where organization_id = $1 and contact_id = $2 and id::text = $3',
     [tenantId, leadId, noteId],
   );
   return rows[0]?.body ?? null;
@@ -193,11 +193,11 @@ export async function applySaveLeadNote(
   const { rows } = await db.query<{ id: string; superseded: string }>(
     `with removed as (
        delete from lead_notes
-       where tenant_id = $1 and lead_id = $2 and id = any($3::uuid[])
+       where organization_id = $1 and contact_id = $2 and id = any($3::uuid[])
        returning id
      ),
      inserted as (
-       insert into lead_notes (tenant_id, lead_id, headline, body)
+       insert into lead_notes (organization_id, contact_id, headline, body)
        values ($1, $2, $4, $5)
        returning id
      )

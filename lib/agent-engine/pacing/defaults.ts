@@ -6,9 +6,8 @@
  *
  * Override por número/sessão: linha em `channel_knobs` (0010) — coluna NULL cai
  * aqui. O CAP DIÁRIO ABSOLUTO não mora aqui nem em channel_knobs: a fonte única
- * é `channel_sessions.daily_message_limit` do CRM (regra dura nº 3), injetado
- * pelo chamador em `decidePacing` (`crmDailyLimit`) — a leitura ao vivo é da
- * cadeia de envio (F2-13/F2-05).
+ * é `channel_sessions.daily_message_limit` (regra dura nº 3) — mesmo banco agora,
+ * a cadeia de envio lê por query direta e injeta em `decidePacing` (`crmDailyLimit`).
  */
 
 /** Degrau de warm-up: a partir de `minAgeDays` de idade do número vale `cap` envios/dia; `cap: null` = formado (sem cap de warm-up — resta só o limite do CRM). */

@@ -64,8 +64,8 @@ export type UpdateLeadStateInput = z.infer<typeof updateLeadStateInputSchema>;
 
 export interface LeadStateRow {
   id: string;
-  tenant_id: string;
-  lead_id: string;
+  organization_id: string;
+  contact_id: string;
   stage: LeadStage;
   qualification: Record<string, string>;
   next_action: string | null;
@@ -152,7 +152,7 @@ export async function getLeadState(
   leadId: string,
 ): Promise<LeadStateRow | null> {
   const { rows } = await db.query<LeadStateRow>(
-    'select * from lead_state where tenant_id = $1 and lead_id = $2',
+    'select * from lead_state where organization_id = $1 and contact_id = $2',
     [tenantId, leadId],
   );
   return rows[0] ?? null;
@@ -201,9 +201,9 @@ export async function applyLeadStateUpdate(
   const nextAction = input.next_action !== undefined ? input.next_action : (current?.next_action ?? null);
 
   const upsert = `
-    insert into lead_state (tenant_id, lead_id, stage, qualification, next_action)
+    insert into lead_state (organization_id, contact_id, stage, qualification, next_action)
     values ($1, $2, $3, $4::jsonb, $5)
-    on conflict (tenant_id, lead_id) do update
+    on conflict (organization_id, contact_id) do update
       set stage = excluded.stage,
           qualification = excluded.qualification,
           next_action = excluded.next_action,
@@ -216,7 +216,7 @@ export async function applyLeadStateUpdate(
     const { rows } = await db.query<LeadStateRow>(
       `with up as (${upsert}),
        tr as (
-         insert into lead_state_transitions (tenant_id, lead_id, job_id, from_stage, to_stage, reason)
+         insert into lead_state_transitions (organization_id, contact_id, job_id, from_stage, to_stage, reason)
          values ($1, $2, $6, $7, $3, $8)
        )
        select * from up`,

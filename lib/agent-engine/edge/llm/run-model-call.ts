@@ -1,17 +1,18 @@
 /**
- * SEAM ÚNICO de chamada de modelo (F2-23; stack.md §2): TODA chamada de LLM do
- * harness passa por runModelCall — agente, classificadores auxiliares e compaction
- * usam esta MESMA função (nenhum call site instancia provider; CLAUDE.md regra 6).
+ * SEAM ÚNICO de chamada de modelo: TODA chamada de LLM do harness passa por
+ * runModelCall — agente, classificadores auxiliares e compaction usam esta MESMA
+ * função (nenhum call site instancia provider).
  *
- * Por chamada: resolve a config BYOK da org no DB (troca de modelo/provider =
- * UPDATE na config, vale no run seguinte, sem restart) → checa o budget mensal
- * ANTES de sair byte para o provider → generateText do AI SDK → grava usage/custo
- * em llm_calls. A chave da org nunca entra em prompt, tool result ou log — ela só
+ * Por chamada: resolve a config da org no DB (BYOK em ai_provider_credentials +
+ * knobs em organizations.settings->'llm'; troca de modelo/provider = UPDATE na
+ * config, vale no run seguinte, sem restart) → checa o budget mensal ANTES de
+ * sair byte para o provider → generateText do AI SDK → grava usage/custo em
+ * llm_calls. A chave da org nunca entra em prompt, tool result ou log — ela só
  * cruza a fronteira na instância do provider.
  *
- * Shape do usage: AI SDK v7 `LanguageModelUsage` (node_modules/ai/dist/index.d.ts):
+ * Shape do usage: AI SDK v6 `LanguageModelUsage` (node_modules/ai/dist/index.d.ts):
  * inputTokens/outputTokens totais + inputTokenDetails.{cacheReadTokens,
- * cacheWriteTokens}. Upgrade de major re-valida esses paths via smoke (regra 16).
+ * cacheWriteTokens}. Upgrade de major re-valida esses paths via smoke.
  */
 import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
@@ -24,8 +25,8 @@ import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
 
 // Call sites FORA da camada importam os tipos daqui — nunca de 'ai' direto
-// (o lint de imports reprova; o seam é a única porta). `tool` idem: é como o
-// agente (F2-09) define ToolSet sem tocar no SDK.
+// (o seam é a única porta). `tool` idem: é como o agente define ToolSet sem
+// tocar no SDK.
 export { tool } from 'ai';
 export type { ModelMessage, ToolSet } from 'ai';
 export type { LlmEdgeConfig } from './credentials';
@@ -35,7 +36,7 @@ export { llmEdgeConfigFromEnv, LlmNotConfiguredError } from './credentials';
 export class LlmBudgetExceededError extends Error {
   override readonly name = 'llm_budget_exceeded';
   constructor() {
-    super('orçamento mensal de LLM da org esgotado — chamada recusada; ajuste o teto ou aguarde a virada do mês (inbox_items kind=budget_exceeded)');
+    super('orçamento mensal de LLM da org esgotado — chamada recusada; ajuste o teto ou aguarde a virada do mês (agent_inbox_items kind=budget_exceeded)');
   }
 }
 
@@ -63,7 +64,7 @@ const paramsSchema = z
     topK: z.number().int().optional(),
     maxOutputTokens: z.number().int().positive().optional(),
   })
-  .loose();
+  .passthrough();
 
 export interface RunModelCallInput {
   tenantId: string;
@@ -85,7 +86,7 @@ export interface RunModelCallInput {
    * Teto do loop de tool-calls do generateText (vira stopWhen: stepCountIs). Sem
    * ele o SDK para no 1º step (default stepCountIs(1)) — tools executam mas o
    * modelo não vê o resultado. Quem chama passa o knob (ex.: AGENT_MAX_STEPS do
-   * agente F2-09), nunca constante.
+   * agente), nunca constante.
    */
   maxSteps?: number;
 }
@@ -96,36 +97,37 @@ export interface RunModelCallDeps {
 }
 
 /**
- * Budget é enforcement do harness: agregado mensal de llm_calls × teto da org,
- * checado antes de QUALQUER byte ao provider. Estouro → inbox_items (1 por
- * episódio: enquanto houver item 'budget_exceeded' aberto, recusas novas não
- * duplicam o alerta) + erro tipado. ponytail: o insert-if-not-exists é um único
- * statement; duas recusas exatamente simultâneas podem duplicar o alerta — inócuo.
+ * Budget é enforcement do harness: agregado mensal de llm_calls × teto da org
+ * (organizations.settings.llm.monthly_budget_cents), checado antes de QUALQUER
+ * byte ao provider. Estouro → agent_inbox_items (1 por episódio: enquanto houver
+ * item 'budget_exceeded' aberto, recusas novas não duplicam o alerta) + erro
+ * tipado. ponytail: o insert-if-not-exists é um único statement; duas recusas
+ * exatamente simultâneas podem duplicar o alerta — inócuo.
  */
-async function assertBudget(db: pg.Pool, tenantId: string, budgetCents: number | null): Promise<void> {
+async function assertBudget(db: pg.Pool, organizationId: string, budgetCents: number | null): Promise<void> {
   if (budgetCents === null) {
     return;
   }
   const { rows } = await db.query<{ spent: number }>(
     `select coalesce(sum(cost_cents), 0)::float8 as spent
      from llm_calls
-     where tenant_id = $1 and created_at >= date_trunc('month', now())`,
-    [tenantId],
+     where organization_id = $1 and created_at >= date_trunc('month', now())`,
+    [organizationId],
   );
   const spent = rows[0]?.spent ?? 0;
   if (spent < budgetCents) {
     return;
   }
   await db.query(
-    `insert into inbox_items (tenant_id, kind, severity, title, body)
+    `insert into agent_inbox_items (organization_id, kind, severity, title, body)
      select $1, 'budget_exceeded', 'critical',
             'Orçamento mensal de LLM esgotado — agente pausado para esta org',
-            'gasto do mês atingiu o teto configurado em org_llm_credentials.monthly_budget_cents; aumente o teto ou aguarde a virada do mês'
+            'gasto do mês atingiu o teto configurado em organizations.settings.llm.monthly_budget_cents; aumente o teto ou aguarde a virada do mês'
      where not exists (
-       select 1 from inbox_items
-       where tenant_id = $1 and kind = 'budget_exceeded' and status = 'open'
+       select 1 from agent_inbox_items
+       where organization_id = $1 and kind = 'budget_exceeded' and status = 'open'
      )`,
-    [tenantId],
+    [organizationId],
   );
   throw new LlmBudgetExceededError();
 }
@@ -137,6 +139,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   await assertBudget(db, input.tenantId, config.monthlyBudgetCents);
 
   const model = input.model ?? config.defaultModel;
+  if (model === null || model === undefined) {
+    throw new Error(
+      'modelo LLM não definido — configure organizations.settings.llm.default_model ou passe input.model',
+    );
+  }
   if (config.enabledModels.length > 0 && !config.enabledModels.includes(model)) {
     throw new LlmModelNotEnabledError(model);
   }
@@ -146,14 +153,14 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   }
   const parsedParams = paramsSchema.safeParse(config.params);
   if (!parsedParams.success) {
-    throw new Error('params inválidos em org_llm_credentials.params — corrija a config da org');
+    throw new Error('params inválidos em organizations.settings.llm.params — corrija a config da org');
   }
   const { temperature, topP, topK, maxOutputTokens } = parsedParams.data;
 
-  // Disciplina de cache (F2-17): o prefixo estável org-wide (system do playbook +
-  // tools em ordem determinística) ganha os breakpoints AQUI, no seam — call sites
+  // Disciplina de cache: o prefixo estável org-wide (system do playbook + tools
+  // em ordem determinística) ganha os breakpoints AQUI, no seam — call sites
   // passam system/tools crus. Tudo por-lead vive em input.messages, DEPOIS do
-  // breakpoint. TTL: knob LLM_CACHE_TTL; '1h' é a doutrina (CLAUDE.md regra 15).
+  // breakpoint. TTL: knob LLM_CACHE_TTL; '1h' é a doutrina.
   const prefix = buildStablePrefix({
     system: input.system,
     tools: input.tools,
@@ -161,9 +168,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   });
 
   const startedAt = Date.now();
+  // v6: `system` aceita SystemModelMessage (com providerOptions de cache);
+  // no v7 este campo chamava-se `instructions`.
   const result = await generateText({
     model: factory(config.apiKey, model),
-    instructions: prefix.system,
+    system: prefix.system,
     messages: input.messages,
     tools: prefix.tools,
     stopWhen: input.maxSteps === undefined ? undefined : stepCountIs(input.maxSteps),
@@ -184,7 +193,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   const { rows } = await db.query<{ id: string }>(
     `insert into llm_calls
-       (tenant_id, lead_id, job_id, variant_id, purpose, provider, model,
+       (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      returning id`,
@@ -207,7 +216,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   // Só métricas — nunca conteúdo de mensagem (PII) nem chave.
   deps.log?.info('llm: chamada concluída', {
-    tenant_id: input.tenantId,
+    organization_id: input.tenantId,
     provider: config.provider,
     model,
     purpose: input.purpose ?? 'agent_turn',

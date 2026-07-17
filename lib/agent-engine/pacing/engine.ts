@@ -24,7 +24,14 @@ export interface PacingInput {
   now: Date;
   knobs: PacingKnobs;
   state: PacingState;
-  /** channel_sessions.daily_message_limit do CRM (fonte única do cap diário absoluto); null = sem limite conhecido. */
+  /**
+   * channel_sessions.daily_message_limit (fonte única do cap diário absoluto) —
+   * mesmo banco agora: o chamador lê por query direta, não por edge HTTP.
+   * null = sem limite conhecido. O Deskcomm também tem channel_sessions
+   * warmup_started_at/warmup_completed_at/is_warmup_complete, mas o warm-up DESTE
+   * motor é o cálculo próprio por idade (channel_knobs.number_activated_at +
+   * degraus) — não os campos do CRM.
+   */
   crmDailyLimit: number | null;
   /** [0,1) — injetável nos testes; default Math.random. */
   rng?: () => number;

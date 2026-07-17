@@ -5,7 +5,7 @@
  * byte-idêntico entre runs (mesmas versões ⇒ mesmo hash); tudo por-lead (checkpoint,
  * lead_state, contexto) entra DEPOIS, nas mensagens — nunca antes do breakpoint.
  *
- * Breakpoints (providerOptions.anthropic.cacheControl, AI SDK v7):
+ * Breakpoints (providerOptions.anthropic.cacheControl, AI SDK v6 instalado):
  *   - na ÚLTIMA tool da ordem determinística (tools vêm antes do system no request
  *     Anthropic — hit parcial quando o playbook muda mas as tools não);
  *   - no system message (fim do prefixo estável — cobre tools + system).

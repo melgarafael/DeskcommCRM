@@ -7,13 +7,13 @@
  *      NO-OP (o bot silencia, não gasta LLM nem envia).
  *   2. TOOL request_human_handoff — o modelo aciona quando percebe o limite da automação.
  *
- * A ação (performHumanHandoff), idempotente e at-least-once:
- *   (a) crm_request_human_handoff (FONTE DA VERDADE): seta conversations.status='pending'
- *       + bot_silenced_until='infinity' no CRM (lib/mcp/tools/handoff.ts) — irrevogável;
- *   (b) espelha o silêncio no CACHE do harness (leads.bot_silenced_until='infinity') para
- *       o NO-OP de runs futuros (crm_get_contact não expõe a coluna — gap documentado);
+ * A ação (performHumanHandoff), idempotente e at-least-once — TUDO no mesmo banco agora
+ * (a fusão matou o transporte MCP):
+ *   (a) FONTE DA VERDADE: contacts.force_human=true — irrevogável (regra dura 2);
+ *   (b) conversa: status transiciona SÓ 'ai_handling'→'pending' (CASE — nunca pisa em
+ *       claimed/closed) + bot_silenced_until='infinity' + last_handoff_at/reason;
  *   (c) cancela os crons PENDENTES do lead (follow-ups agendados não disparam após handoff);
- *   (d) cria inbox_items(kind='handoff') com o resumo da conversa (dedup por episódio aberto).
+ *   (d) cria agent_inbox_items(kind='handoff') com o resumo (dedup por episódio aberto).
  *
  * tenant/lead/conversation vêm da ROW do job (closure do run), NUNCA do payload (regra dura 1).
  * O resumo vai ao inbox (é PARA o humano assumir) — mas NUNCA a log (PII fora de log, regra 8).
@@ -22,11 +22,10 @@ import { z } from 'zod';
 import type pg from 'pg';
 
 import type { Logger } from '../obs/logger';
-import { callMcpTool, CrmTransportError, type CrmEdgeConfig } from '../edge/crm/mcp-client';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import { findForbiddenKey, zodIssuesSummary } from './lead-state';
 
-/** Postgres `infinity`: o bot nunca reassume após handoff (espelha SILENCE_INFINITY do CRM). */
+/** Postgres `infinity`: o bot nunca reassume após handoff. */
 const SILENCE_INFINITY = 'infinity';
 
 /**
@@ -113,70 +112,63 @@ export function detectAmbiguousOptOut(message: string): boolean {
 }
 
 /**
- * NO-OP de runs futuros (acceptance 2): o lead está em handoff quando o cache local do
- * silêncio ainda vale (bot_silenced_until no futuro — 'infinity' sempre vale). Lido no
- * INÍCIO do turno, antes de qualquer chamada de modelo. Só o CRM/humano libera.
+ * NO-OP de runs futuros (acceptance 2): o lead está em handoff quando force_human está
+ * setado no contato OU alguma conversa dele ainda está silenciada (bot_silenced_until no
+ * futuro — 'infinity' sempre vale). Lido no INÍCIO do turno, antes de qualquer chamada
+ * de modelo. Só o humano (via CRM) libera.
  */
 export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: string): Promise<boolean> {
-  const { rows } = await db.query<{ silenced: boolean }>(
-    `select (bot_silenced_until is not null and bot_silenced_until > now()) as silenced
-     from leads where tenant_id = $1 and id = $2`,
+  const { rows } = await db.query<{ handoff: boolean }>(
+    `select (
+       c.force_human
+       or exists (
+         select 1 from conversations v
+         where v.organization_id = $1 and v.contact_id = c.id
+           and v.bot_silenced_until is not null and v.bot_silenced_until > now()
+       )
+     ) as handoff
+     from contacts c
+     where c.organization_id = $1 and c.id = $2`,
     [tenantId, leadId],
   );
-  return rows[0]?.silenced === true;
+  return rows[0]?.handoff === true;
 }
 
 export interface HandoffIds {
   tenantId: string;
   leadId: string;
-  /** conversation_id do CRM (destino do send_message) — arg de crm_request_human_handoff. */
+  /** conversations.id — a conversa que transiciona para a fila humana. */
   conversationId: string;
 }
 
 /**
- * Executa o handoff (idempotente, at-least-once). Nunca lança por falha do CRM: espelha a
- * disciplina do mirrorLeadStageToCrm (F2-10) — o silêncio LOCAL + inbox são o fail-safe
- * (o bot para de responder mesmo se o CRM estiver fora), e o humano é alertado de qualquer
- * jeito. Devolve se o CRM confirmou (para o trace/tool result).
+ * Executa o handoff (idempotente, at-least-once) — tudo no banco do CRM, sem transporte.
+ * Re-executar no mesmo episódio é no-op semântico: force_human/silêncio já setados, o
+ * CASE do status não pisa em estado humano (claimed/closed) e o inbox deduplica.
  */
 export async function performHumanHandoff(
   db: pg.Pool,
-  crmCfg: CrmEdgeConfig,
   ids: HandoffIds,
   opts: { reason: string; conversationSummary: string; inboxTitle?: string; log: Logger },
-): Promise<{ crmConfirmed: boolean }> {
-  // (a) FONTE DA VERDADE: seta force_human/bot_silenced_until no CRM.
-  let crmConfirmed = false;
-  try {
-    const result = await callMcpTool(crmCfg, 'crm_request_human_handoff', {
-      conversation_id: ids.conversationId,
-      reason: opts.reason,
-    });
-    if (result.isError) {
-      // Tool rejeitou (ex.: conversation_not_found): NÃO reverte o silêncio local; o
-      // detalhe (sem PII — texto de negócio do CRM) entra no aviso e o inbox alerta.
-      opts.log.warn('handoff: crm_request_human_handoff recusado — silêncio local mantido', {
-        detail: result.errorText,
-      });
-    } else {
-      crmConfirmed = true;
-    }
-  } catch (err) {
-    if (err instanceof CrmTransportError) {
-      opts.log.warn('handoff: crm_request_human_handoff indisponível — silêncio local mantido', {
-        reason: err.message,
-      });
-    } else {
-      throw err; // bug de programação sobe — nunca engolido como "handoff parcial"
-    }
-  }
-
-  // (b) CACHE local do silêncio (NO-OP de runs futuros). Irrevogável pelo agente.
-  await db.query(`update leads set bot_silenced_until = $3 where tenant_id = $1 and id = $2`, [
+): Promise<void> {
+  // (a) FONTE DA VERDADE: force_human no contato — irrevogável pelo agente (regra dura 2).
+  await db.query(`update contacts set force_human = true where organization_id = $1 and id = $2`, [
     ids.tenantId,
     ids.leadId,
-    SILENCE_INFINITY,
   ]);
+
+  // (b) Conversa: silencia o bot para sempre e devolve à fila humana. O status SÓ
+  // transiciona 'ai_handling'→'pending' — conversa já claimed/closed/pending fica como
+  // está (nunca rouba do humano nem reabre encerrada).
+  await db.query(
+    `update conversations
+        set status = case when status = 'ai_handling' then 'pending' else status end,
+            bot_silenced_until = $3,
+            last_handoff_at = now(),
+            last_handoff_reason = $4
+      where organization_id = $1 and id = $2`,
+    [ids.tenantId, ids.conversationId, SILENCE_INFINITY, opts.reason],
+  );
 
   // (c) Cancela os crons PENDENTES do lead (follow-ups agendados — F3-01/02). Idempotente,
   // via o cancel compartilhado (mesma garantia que o opt-out irrevogável usa — F4-07).
@@ -185,11 +177,11 @@ export async function performHumanHandoff(
   // (d) inbox de escalação com o resumo da conversa. Dedup por episódio ABERTO (mesmo padrão
   // do escalateJailbreakPromise): 2× no mesmo handoff aberto → 1 item.
   await db.query(
-    `insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind, ref_id)
-     select $1, 'handoff', 'critical', $2, $3, 'lead', $4
+    `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
+     select $1, 'handoff', 'critical', $2, $3, 'contact', $4
      where not exists (
-       select 1 from inbox_items
-       where tenant_id = $1 and kind = 'handoff' and ref_kind = 'lead' and ref_id = $4 and status = 'open'
+       select 1 from agent_inbox_items
+       where organization_id = $1 and kind = 'handoff' and ref_kind = 'contact' and ref_id = $4 and status = 'open'
      )`,
     [
       ids.tenantId,
@@ -199,7 +191,10 @@ export async function performHumanHandoff(
     ],
   );
 
-  return { crmConfirmed };
+  // PII fora do log: só ids/motivo — nunca o resumo da conversa (regra dura 8).
+  opts.log.info('handoff humano aplicado (force_human + silêncio + crons cancelados + inbox)', {
+    reason: opts.reason,
+  });
 }
 
 /** Whitelist EXATA do payload da tool (mesmo padrão .strict() da F2-10/F3-02). */
@@ -222,7 +217,6 @@ export type RequestHumanHandoffResult =
  */
 export async function applyRequestHumanHandoff(
   db: pg.Pool,
-  crmCfg: CrmEdgeConfig,
   ids: HandoffIds,
   opts: { conversationSummary: string; log: Logger },
   rawInput: unknown,
@@ -236,7 +230,7 @@ export async function applyRequestHumanHandoff(
     return { ok: false, error: { code: 'invalid_payload', message: `payload inválido em request_human_handoff (${zodIssuesSummary(parsed.error)}). ${PAYLOAD_TEACHING}` } };
   }
 
-  await performHumanHandoff(db, crmCfg, ids, {
+  await performHumanHandoff(db, ids, {
     reason: parsed.data.reason ?? 'requested_human',
     conversationSummary: opts.conversationSummary,
     log: opts.log,

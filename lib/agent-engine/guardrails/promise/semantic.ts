@@ -15,7 +15,7 @@
  * GateContext (sob o advisory lock, junto de loadPromiseTable); o resultado entra no ctx e o
  * `semanticPromiseGate` (sync) lê e veta. Este módulo não persiste nada.
  *
- * tenant_id/lead_id vêm da ROW do job (closure do run), nunca do payload (regra dura 1).
+ * organization_id/contact_id vêm da ROW do job (closure do run), nunca do payload (regra dura 1).
  */
 import type pg from 'pg';
 

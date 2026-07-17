@@ -1,46 +1,52 @@
 /**
- * BYOK por org (F2-23; stack.md §2 §BYOK multi-tenant): a chave do provedor vive
- * CIFRADA em org_llm_credentials (pgp_sym_encrypt, pgcrypto) e a chave-mestra
- * LLM_CRED_KEY vive no env do daemon — nunca no DB, nunca em log, nunca no
- * contexto do modelo. Cifra e decifra acontecem DENTRO do Postgres; o plaintext
- * só existe em memória do processo no instante da chamada ao provider.
+ * Config LLM por org, pós-fusão (PORT-NOTES): a credencial BYOK vive em
+ * `ai_provider_credentials` do CRM (AES-256-GCM via lib/crypto/aes_gcm — colunas
+ * api_key_encrypted/api_key_iv/api_key_tag) e os knobs de modelo/params/teto vivem
+ * em `organizations.settings->'llm'`. Sem BYOK, o fallback é a chave de plataforma
+ * do env (ANTHROPIC_API_KEY) — só para provider anthropic. O plaintext da chave
+ * existe apenas em memória do processo no instante da chamada; nunca em log.
  *
  * A config é lida do DB A CADA chamada (resolveOrgLlmConfig) — trocar modelo/
  * provider/teto é UPDATE na config, sem restart nem deploy.
  */
 import type pg from 'pg';
+import { z } from 'zod';
 
+import { byteaToBuffer, decryptKey } from '@/lib/crypto/aes_gcm';
 import type { CacheTtl } from './stable-prefix';
 
 /** Config da camada LLM montada do env validado (padrão crmEdgeConfigFromEnv). */
 export interface LlmEdgeConfig {
-  credKey: string;
+  /** chave de plataforma (fallback quando a org não tem BYOK). Opcional no boot. */
+  anthropicApiKey?: string;
   /**
-   * TTL do prefixo estável de cache (F2-17; knob LLM_CACHE_TTL). Opcional para
-   * quem monta a config na mão (testes) — o seam aplica a doutrina '1h'
-   * (CLAUDE.md regra 15) quando ausente.
+   * TTL do prefixo estável de cache (knob LLM_CACHE_TTL). Opcional para quem
+   * monta a config na mão (testes) — o seam aplica a doutrina '1h' quando ausente.
    */
   cacheTtl?: CacheTtl;
 }
 
-export function llmEdgeConfigFromEnv(env: { LLM_CRED_KEY?: string; LLM_CACHE_TTL?: string }): LlmEdgeConfig {
-  if (!env.LLM_CRED_KEY) {
-    throw new Error(
-      'camada LLM não configurada — defina LLM_CRED_KEY no .env (chave-mestra do BYOK, stack.md §2)',
-    );
-  }
+export function llmEdgeConfigFromEnv(env: {
+  ANTHROPIC_API_KEY?: string;
+  LLM_CACHE_TTL?: string;
+}): LlmEdgeConfig {
   const ttl = env.LLM_CACHE_TTL ?? '1h';
   if (ttl !== '5m' && ttl !== '1h') {
-    throw new Error("LLM_CACHE_TTL inválido — use '5m' ou '1h' (default 1h; stack.md §2)");
+    throw new Error("LLM_CACHE_TTL inválido — use '5m' ou '1h' (default 1h)");
   }
-  return { credKey: env.LLM_CRED_KEY, cacheTtl: ttl };
+  return {
+    ...(env.ANTHROPIC_API_KEY ? { anthropicApiKey: env.ANTHROPIC_API_KEY } : {}),
+    cacheTtl: ttl,
+  };
 }
 
-/** Org sem credencial LLM default — erro tipado, mensagem sem valores (PII/credencial fora). */
+/** Org sem credencial LLM utilizável — erro tipado, mensagem sem valores (credencial fora). */
 export class LlmNotConfiguredError extends Error {
   override readonly name = 'llm_not_configured';
   constructor() {
-    super('org sem credencial LLM configurada — cadastre provider/chave/modelo em org_llm_credentials');
+    super(
+      'org sem credencial LLM utilizável — cadastre uma chave BYOK ativa/validada em ai_provider_credentials ou defina ANTHROPIC_API_KEY (fallback de plataforma, só provider anthropic)',
+    );
   }
 }
 
@@ -48,88 +54,85 @@ export interface OrgLlmConfig {
   provider: string;
   /** plaintext decifrado — existe só em memória, jamais logado/persistido */
   apiKey: string;
-  defaultModel: string;
+  defaultModel: string | null;
   params: Record<string, unknown>;
   enabledModels: string[];
   monthlyBudgetCents: number | null;
 }
 
+// Leitura DEFENSIVA de organizations.settings->'llm' (jsonb livre): campo com
+// shape errado cai no default, nunca derruba o turno.
+const llmSettingsSchema = z
+  .object({
+    provider: z.string().min(1).catch('anthropic'),
+    default_model: z.string().min(1).nullable().catch(null),
+    params: z.record(z.unknown()).catch({}),
+    enabled_models: z.array(z.string()).catch([]),
+    monthly_budget_cents: z.number().finite().nullable().catch(null),
+  })
+  .passthrough()
+  .catch({
+    provider: 'anthropic',
+    default_model: null,
+    params: {},
+    enabled_models: [],
+    monthly_budget_cents: null,
+  });
+
 /**
- * Resolve a config default da org, decifrando a chave no Postgres com a
- * chave-mestra do env. Chamada a cada run — é o que faz a troca de modelo
- * valer no run seguinte, sem restart.
+ * Resolve a config LLM da org: knobs de organizations.settings->'llm' + credencial
+ * BYOK mais recente ativa/validada de ai_provider_credentials (decifrada com
+ * aes_gcm). Sem BYOK → fallback cfg.anthropicApiKey (só anthropic). Sem nada →
+ * LlmNotConfiguredError. Chamada a cada run — troca de config vale no run seguinte.
  */
 export async function resolveOrgLlmConfig(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
-  tenantId: string,
+  organizationId: string,
 ): Promise<OrgLlmConfig> {
-  const { rows } = await db.query<{
-    provider: string;
-    api_key: string;
-    default_model: string;
-    params: Record<string, unknown>;
-    enabled_models: string[];
-    monthly_budget_cents: number | null;
-  }>(
-    `select provider,
-            pgp_sym_decrypt(api_key_encrypted, $2) as api_key,
-            default_model, params, enabled_models, monthly_budget_cents
-     from org_llm_credentials
-     where tenant_id = $1 and is_default`,
-    [tenantId, cfg.credKey],
+  const { rows } = await db.query<{ llm: unknown }>(
+    `select settings->'llm' as llm from organizations where id = $1`,
+    [organizationId],
   );
-  const row = rows[0];
-  if (row === undefined) {
+  if (rows.length === 0) {
+    throw new Error('organização inexistente ao resolver config LLM');
+  }
+  const settings = llmSettingsSchema.parse(rows[0]?.llm ?? {});
+
+  const { rows: credRows } = await db.query<{
+    api_key_encrypted: unknown;
+    api_key_iv: unknown;
+    api_key_tag: unknown;
+  }>(
+    `select api_key_encrypted, api_key_iv, api_key_tag
+     from ai_provider_credentials
+     where organization_id = $1 and provider = $2
+       and is_active and validated_at is not null
+     order by created_at desc
+     limit 1`,
+    [organizationId, settings.provider],
+  );
+
+  let apiKey: string;
+  const cred = credRows[0];
+  if (cred !== undefined) {
+    apiKey = decryptKey({
+      ciphertext: byteaToBuffer(cred.api_key_encrypted),
+      iv: byteaToBuffer(cred.api_key_iv),
+      tag: byteaToBuffer(cred.api_key_tag),
+    });
+  } else if (settings.provider === 'anthropic' && cfg.anthropicApiKey) {
+    apiKey = cfg.anthropicApiKey;
+  } else {
     throw new LlmNotConfiguredError();
   }
-  return {
-    provider: row.provider,
-    apiKey: row.api_key,
-    defaultModel: row.default_model,
-    params: row.params,
-    enabledModels: row.enabled_models,
-    monthlyBudgetCents: row.monthly_budget_cents,
-  };
-}
 
-/**
- * Upsert da credencial BYOK da org — a chave entra cifrada no MESMO statement
- * (pgp_sym_encrypt); nenhum caminho grava plaintext.
- */
-export async function setOrgLlmCredentials(
-  db: pg.Pool,
-  cfg: LlmEdgeConfig,
-  tenantId: string,
-  input: {
-    provider: string;
-    apiKey: string;
-    defaultModel: string;
-    params?: Record<string, unknown>;
-    enabledModels?: string[];
-    monthlyBudgetCents?: number | null;
-  },
-): Promise<void> {
-  await db.query(
-    `insert into org_llm_credentials
-       (tenant_id, provider, api_key_encrypted, default_model, params, enabled_models, monthly_budget_cents)
-     values ($1, $2, pgp_sym_encrypt($3, $4), $5, $6, $7, $8)
-     on conflict (tenant_id, provider) do update
-       set api_key_encrypted = excluded.api_key_encrypted,
-           default_model = excluded.default_model,
-           params = excluded.params,
-           enabled_models = excluded.enabled_models,
-           monthly_budget_cents = excluded.monthly_budget_cents,
-           updated_at = now()`,
-    [
-      tenantId,
-      input.provider,
-      input.apiKey,
-      cfg.credKey,
-      input.defaultModel,
-      input.params ?? {},
-      input.enabledModels ?? [],
-      input.monthlyBudgetCents ?? null,
-    ],
-  );
+  return {
+    provider: settings.provider,
+    apiKey,
+    defaultModel: settings.default_model ?? null,
+    params: settings.params,
+    enabledModels: settings.enabled_models,
+    monthlyBudgetCents: settings.monthly_budget_cents ?? null,
+  };
 }

@@ -52,7 +52,7 @@ export type SkillMatcher = z.infer<typeof skillMatcherSchema>;
 
 export interface SkillVersionRow {
   id: string;
-  tenant_id: string | null;
+  organization_id: string | null;
   name: string;
   description: string;
   body: string;
@@ -100,7 +100,7 @@ export async function insertSkillVersion(
   validateSkillBody(input.body);
   const matcher = skillMatcherSchema.parse(input.matcher);
   const { rows } = await db.query<SkillVersionRow>(
-    `insert into skill_versions (tenant_id, name, description, body, matcher)
+    `insert into skill_versions (organization_id, name, description, body, matcher)
      values ($1, $2, $3, $4, $5)
      returning *`,
     [input.tenantId, input.name, input.description, input.body, JSON.stringify(matcher)],
@@ -123,13 +123,13 @@ export async function setSkillPointer(
 ): Promise<void> {
   const conflict =
     input.tenantId === null
-      ? '(name) where tenant_id is null'
-      : '(tenant_id, name) where tenant_id is not null';
+      ? '(name) where organization_id is null'
+      : '(organization_id, name) where organization_id is not null';
   const { rowCount } = await db.query(
-    `insert into skill_pointers (tenant_id, name, version_id)
-     select v.tenant_id, v.name, v.id
+    `insert into skill_pointers (organization_id, name, version_id)
+     select v.organization_id, v.name, v.id
      from skill_versions v
-     where v.id = $1 and v.name = $2 and v.tenant_id is not distinct from $3
+     where v.id = $1 and v.name = $2 and v.organization_id is not distinct from $3
      on conflict ${conflict} do update
        set version_id = excluded.version_id,
            updated_at = now()`,
@@ -149,22 +149,22 @@ export async function setSkillPointer(
  */
 export async function loadSkills(db: Queryable, tenantId: string): Promise<LoadedSkill[]> {
   const { rows } = await db.query<{
-    tenant_id: string | null;
+    organization_id: string | null;
     name: string;
     description: string;
     body: string;
     matcher: SkillMatcher;
   }>(
-    `select v.tenant_id, v.name, v.description, v.body, v.matcher
+    `select v.organization_id, v.name, v.description, v.body, v.matcher
      from skill_pointers p
      join skill_versions v on v.id = p.version_id
-     where p.tenant_id is null or p.tenant_id = $1`,
+     where p.organization_id is null or p.organization_id = $1`,
     [tenantId],
   );
   // tenant vence plataforma no mesmo nome; ordem final estável por nome (prefixo estável).
   const byName = new Map<string, LoadedSkill>();
   for (const r of rows) {
-    if (!byName.has(r.name) || r.tenant_id !== null) {
+    if (!byName.has(r.name) || r.organization_id !== null) {
       byName.set(r.name, { name: r.name, description: r.description, body: r.body, matcher: r.matcher });
     }
   }

@@ -1,7 +1,8 @@
 /**
  * Conformidade LGPD como gate de release (F4-09; edge-contract §5.5 achado 5.6 +
  * §6 "Metadado legal_basis + data_origin por contato"). Duas checagens de base legal,
- * ambas de fonte confiável (CRM, lido no turno — nunca do body, regra dura nº 1):
+ * ambas de fonte confiável (tabelas canônicas do CRM, lidas no turno — nunca do body,
+ * regra dura nº 1):
  *
  *   (a) is_anonymized — contato anonimizado (anonimização é IRREVERSÍVEL): NENHUMA
  *       escrita/envio pode ir a ele, nunca (não é só o 1º toque). Veto `lgpd_anonymized`.
@@ -13,23 +14,24 @@
  *       inbound (o MVP inteiro) seria vetado. O cold first-touch é pós-MVP (edge-contract §6),
  *       então em MVP isProspecting é sempre false e este ramo é inócuo para inbound/follow-up.
  *
- * GAP de runtime documentado (como o de force_human): o crm_get_contact do MCP NÃO expõe
- * colunas dedicadas `legal_basis`/`legal_basis_ref` hoje — elas são a mudança de CRM da F4
- * (edge-contract §6). Até chegarem, derivamos best-effort do `contacts.source` (data_origin)
- * e do JSON `contacts.consent` (legal_basis/legal_basis_ref/granted). `is_anonymized` JÁ é
- * exposto pelo CRM (sem gap). Os TESTES de acceptance fornecem os campos por um CRM fake
- * (contract-style) e/ou passam o LgpdInput direto ao runner — determinísticos apesar do gap.
+ * Fonte dos sinais pós-fusão: `contacts.consent` (jsonb de consentimento POR FINALIDADE
+ * do Deskcomm — `{marketing: {granted_at, source, version}, transactional: ..., profiling: ...}`),
+ * `contacts.source` (data_origin) e `contacts.is_anonymized` — tudo no mesmo banco, sem gap
+ * de MCP. Consentimento de PROSPECÇÃO = finalidade `marketing` concedida (`granted_at`
+ * não-vazio). LIA = leitura DEFENSIVA de `consent.legitimate_interest.ref` (chave que o
+ * default do CRM não cria — presente só quando o operador a registra); campo ausente =
+ * sem base legal.
  */
 import type pg from 'pg';
 import type { Logger } from '../../obs/logger';
 
 /** Base legal de um contato para prospecção (LGPD art. 7º). */
 export interface LegalBasis {
-  /** hipótese declarada no CRM; null = nenhuma. */
+  /** hipótese derivada do `contacts.consent`; null = nenhuma. */
   basis: 'consent' | 'legitimate_interest' | null;
   /** referência da LIA (Legitimate Interest Assessment) — exigida para legitimate_interest. */
   legalBasisRef: string | null;
-  /** consentimento efetivamente concedido (consent.granted no CRM). */
+  /** consentimento de marketing efetivamente concedido (consent.marketing.granted_at no CRM). */
   consentGranted: boolean;
   /** origem do dado (contacts.source): 'whatsapp', 'import', etc. 'import' sem prova = inválida. */
   dataOrigin: string | null;
@@ -60,41 +62,54 @@ export function isLegalBasisValid(lb: LegalBasis): boolean {
   return false;
 }
 
-/** Shape mínimo do contato do CRM que carrega os sinais de LGPD (crm_get_contact). */
+/** Shape mínimo do contato que carrega os sinais de LGPD (linha de `contacts` do CRM). */
 export interface LgpdContactFields {
   source: string | null;
   consent: Record<string, unknown> | null;
   is_anonymized: boolean;
 }
 
+/** Leitura segura de um sub-objeto do jsonb `consent` (chave ausente/tipo errado → null). */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 /**
- * Deriva o LgpdInput de um contato do CRM. `isProspecting` NÃO vem do contato — é do fluxo
- * (o caller decide se é cold touch); default false (resposta a inbound). Enquanto as colunas
- * dedicadas de base legal não existem no CRM (gap F4), lê do JSON `consent`.
+ * Deriva o LgpdInput de uma linha de `contacts`. `isProspecting` NÃO vem do contato — é do
+ * fluxo (o caller decide se é cold touch); em MVP é sempre false (resposta a inbound).
+ * Consent por FINALIDADE do Deskcomm: prospecção usa `marketing.granted_at` (string
+ * não-vazia = concedido). LIA em `legitimate_interest.ref` (leitura defensiva — a chave só
+ * existe quando registrada). Sem nenhum dos dois → basis null (sem base legal).
  */
 export function deriveLgpdFromContact(c: LgpdContactFields, isProspecting: boolean): LgpdInput {
   const consent = c.consent ?? {};
-  const basisRaw = typeof consent.legal_basis === 'string' ? consent.legal_basis : null;
-  const basis = basisRaw === 'consent' || basisRaw === 'legitimate_interest' ? basisRaw : null;
+  const marketing = asRecord(consent.marketing);
+  const consentGranted = typeof marketing?.granted_at === 'string' && marketing.granted_at.trim() !== '';
+  const lia = asRecord(consent.legitimate_interest);
+  const legalBasisRef = typeof lia?.ref === 'string' && lia.ref.trim() !== '' ? lia.ref : null;
+  const basis = consentGranted ? 'consent' : legalBasisRef !== null ? 'legitimate_interest' : null;
   return {
     isAnonymized: c.is_anonymized === true,
     isProspecting,
     legalBasis: {
       basis,
-      legalBasisRef: typeof consent.legal_basis_ref === 'string' ? consent.legal_basis_ref : null,
-      consentGranted: consent.granted === true,
+      legalBasisRef,
+      consentGranted,
       dataOrigin: c.source ?? null,
     },
   };
 }
 
 /**
- * Escala um veto de LGPD à inbox do RUNTIME (regra dura nº 13). Dedup por episódio aberto
- * (mesmo padrão do escalateJailbreakPromise/handoff): 2× no mesmo lead com item aberto → 1.
- * `kind='other'` + `ref_kind='lgpd_escalation'` evita mexer no check de `kind` (sem migration
- * de constraint). ref_id = lead_id de fonte confiável (row do job). Corpo SEM PII: só o
- * código do veto e o que o DPO precisa checar no CRM. Falha aqui vira log.error, nunca
- * derruba o veto (o gate já barrou o envio — a inbox é o alerta, não o enforcement).
+ * Escala um veto de LGPD à inbox do RUNTIME (regra dura nº 13; tabela `agent_inbox_items`).
+ * Dedup por episódio aberto (mesmo padrão do escalateJailbreakPromise/handoff): 2× no mesmo
+ * contato com item aberto → 1. `kind='other'` + `ref_kind='lgpd_escalation'` evita mexer no
+ * check de `kind` (sem migration de constraint). ref_id = contact_id de fonte confiável (row
+ * do job). Corpo SEM PII: só o código do veto e o que o DPO precisa checar no CRM. Falha aqui
+ * vira log.error, nunca derruba o veto (o gate já barrou o envio — a inbox é o alerta, não o
+ * enforcement).
  */
 export async function escalateLgpdVeto(
   db: pg.Pool,
@@ -113,11 +128,11 @@ export async function escalateLgpdVeto(
       'Registre a base legal no CRM antes de prospectar este contato.';
   try {
     await db.query(
-      `insert into inbox_items (tenant_id, kind, severity, title, body, ref_kind, ref_id)
+      `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        select $1, 'other', 'critical', $2, $3, 'lgpd_escalation', $4
        where not exists (
-         select 1 from inbox_items
-         where tenant_id = $1 and ref_kind = 'lgpd_escalation' and ref_id = $4 and status = 'open'
+         select 1 from agent_inbox_items
+         where organization_id = $1 and ref_kind = 'lgpd_escalation' and ref_id = $4 and status = 'open'
        )`,
       [input.tenantId, title, body, input.leadId],
     );
