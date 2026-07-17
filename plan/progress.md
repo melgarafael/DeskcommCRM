@@ -198,3 +198,23 @@
 - FASE G2 COMPLETA (4/4 passes:true) → checkpoint G2 na sequência, loop PARA.
 - Checkpoint G2 emitido (loop/checkpoints/G2-report.md, COMPLETO), loop PARADO
   aguardando aprovação do dono (G2.approved) ou recusa (.rejected).
+
+## 2026-07-17 — sessão 13 do loop (core) — G3-01 (fase G3 aberta)
+
+- G3-01 (assignment events): migration 0031 em tripla cria
+  conversation_assignment_events (append-only, RLS org) + fn_conversation_assign
+  (SECURITY INVOKER, FOR UPDATE + UPDATE condicional + INSERT no mesmo corpo —
+  atomicidade real; changed_by=auth.uid() anti-spoof). claim/release migrados
+  pro rpc preservando 409; transfer novo (imediato, G1-06d) + ReassignDialog
+  (screenshot em evidence/G3/). database.types.ts regenerado DE VERDADE (estava
+  defasado desde ~0021; regen trouxe ai_* de carona — typecheck 0).
+- Desvio aprovado pelo verifier: GET /api/v1/team/assignable (agent lista
+  destinos, só user_id/nome/role, sem PII) — sem isso não há dialog.
+- Flip: único it.fails GAP(G3) de gov-3-transfer ("tabela existe") → verde.
+  +5 invariantes novos (gov-3-assignment-events), +7 unit. 40 invariantes,
+  130 unit, tudo verde. gov-verifier: PASS 1ª rodada, hash OK.
+- INB-06 aberto: (a) fn aceita p_to_user_id sem validar membership (rota valida;
+  banco não — probe H8); (b) banco live do dev sem 0030 aplicada
+  (schema_migrations parou na 0027; 0031 aplicada só pro screenshot).
+- Próxima sessão: G3-02 (assignee_kind) destravou; G3-03 também elegível — a
+  regra manda menor priority ⇒ G3-02 (prio 20).

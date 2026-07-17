@@ -49,6 +49,7 @@ export type AuditAction =
   | "tenant.onboarded"
   | "conversation.created"
   | "conversation.claimed"
+  | "conversation.transferred"
   | "conversation.released"
   | "conversation.closed"
   | "message.sent"

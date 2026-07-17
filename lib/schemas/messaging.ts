@@ -59,6 +59,14 @@ export const claimConversationSchema = z.object({
 
 export type ClaimConversationInput = z.infer<typeof claimConversationSchema>;
 
+/** G3-01: transferência imediata (decisão G1-06d) — reatribui com motivo opcional. */
+export const transferConversationSchema = z.object({
+  to_user_id: z.string().uuid(),
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
+export type TransferConversationInput = z.infer<typeof transferConversationSchema>;
+
 export const updateConversationStatusSchema = z.object({
   status: conversationStatusSchema,
 });

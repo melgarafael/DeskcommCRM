@@ -4,6 +4,10 @@
  * Concorrência: o UPDATE só vence se o assignee atual for NULL ou bater com
  * `expected_assignee` (optimistic lock). Se 0 linhas → 409 (outro atendente
  * já assumiu).
+ *
+ * G3-01: a mudança de dono acontece via rpc `fn_conversation_assign`
+ * (migration 0031), que faz o UPDATE condicional + INSERT do evento em
+ * `conversation_assignment_events` (reason='claim') na MESMA transação.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -17,14 +21,6 @@ import { createClient } from "@/lib/supabase/server";
 import type { Conversation } from "@/lib/types/messaging";
 
 export const dynamic = "force-dynamic";
-
-const SELECT_COLS = `
-  id, organization_id, contact_id, channel_session_id, channel, status,
-  status_changed_at, assigned_to_user_id, assigned_at, last_inbound_at,
-  last_outbound_at, last_message_at, last_message_preview,
-  unread_count_for_assignee, is_group, group_chat_id, metadata,
-  created_at, updated_at
-`;
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
@@ -53,36 +49,26 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     throw err;
   }
 
-  const now = new Date().toISOString();
-  let query = supabase
-    .from("conversations")
-    .update({
-      assigned_to_user_id: user.id,
-      assigned_at: now,
-      status: "claimed",
-      status_changed_at: now,
-    })
-    .eq("id", id);
-
-  // Optimistic lock: aceitamos null (livre) OU bater com expected_assignee.
-  if (input.expected_assignee === undefined) {
-    query = query.is("assigned_to_user_id", null);
-  } else if (input.expected_assignee === null) {
-    query = query.is("assigned_to_user_id", null);
-  } else {
-    query = query.eq("assigned_to_user_id", input.expected_assignee);
-  }
-
-  const { data, error } = await query.select(SELECT_COLS).maybeSingle();
+  // Optimistic lock (spec 04 §9.2): expected null/omitido = só assume se livre;
+  // expected uuid = takeover consciente. UPDATE + evento na mesma transação.
+  const { data, error } = await supabase.rpc("fn_conversation_assign", {
+    p_organization_id: authz.org.orgId,
+    p_conversation_id: id,
+    p_to_user_id: user.id,
+    p_reason: "claim",
+    ...(input.expected_assignee ? { p_expected_assignee: input.expected_assignee } : {}),
+    p_enforce_expected: true,
+  });
 
   if (error) {
     return fail("internal_error", error.message, 500, { requestId });
   }
-  if (!data) {
+  const row = data?.[0];
+  if (!row) {
     return fail("state_conflict", "Outro atendente já assumiu.", 409, { requestId });
   }
 
-  const conv = data as unknown as Conversation;
+  const conv = row as unknown as Conversation;
 
   await audit({
     action: "conversation.claimed",

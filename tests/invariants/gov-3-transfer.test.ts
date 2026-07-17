@@ -41,11 +41,11 @@ describe("eixo 3 — transferência", () => {
     expect(second).toBe(0);
   });
 
-  // GAP(G3): transferência não gera evento de auditoria — a tabela
-  // conversation_assignment_events (spec 13 §3: org_id, conversation_id,
-  // from/to, changed_by, reason claim|transfer|release|routing|handoff)
-  // ainda não existe.
-  it.fails("transferência é auditada: tabela conversation_assignment_events existe (spec 13 §3)", () => {
+  // Fechado em G3-01 (migration 0031): conversation_assignment_events
+  // (spec 13 §3: org_id, conversation_id, from/to, changed_by, reason
+  // claim|transfer|release|routing|handoff) + fn_conversation_assign.
+  // Comportamento detalhado em gov-3-assignment-events.test.ts.
+  it("transferência é auditada: tabela conversation_assignment_events existe (spec 13 §3)", () => {
     expect(tableExists("conversation_assignment_events")).toBe(true);
   });
 });
