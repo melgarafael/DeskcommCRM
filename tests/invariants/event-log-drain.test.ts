@@ -216,6 +216,37 @@ registerHandler({
   },
 });
 
+// Segundo handler no mesmo event_type "test.drain_multi": um sempre erra,
+// outro sempre pede retry (+1h) — cobre o mix retry+error num mesmo tick.
+registerHandler({
+  key: "test-drain-multi-err",
+  events: ["test.drain_multi"],
+  async handle(): Promise<HandlerResult> {
+    return { consumer_key: "test-drain-multi-err", status: "error", detail: "multi-boom" };
+  },
+});
+registerHandler({
+  key: "test-drain-multi-retry",
+  events: ["test.drain_multi"],
+  async handle(): Promise<HandlerResult> {
+    return {
+      consumer_key: "test-drain-multi-retry",
+      status: "retry",
+      retry_at: new Date(Date.now() + 3600_000).toISOString(),
+    };
+  },
+});
+
+// Handler isolado no event_type "test.drain_retry_no_backoff": pede retry SEM
+// retry_at — cobre o fallback de backoff (senão busy-loop a cada tick).
+registerHandler({
+  key: "test-drain-retry-no-backoff",
+  events: ["test.drain_retry_no_backoff"],
+  async handle(): Promise<HandlerResult> {
+    return { consumer_key: "test-drain-retry-no-backoff", status: "retry" };
+  },
+});
+
 describe("drainEventLog — cron driver genérico do event_log (migration 0037)", () => {
   let idOk: string;
   let idError: string;
@@ -223,6 +254,8 @@ describe("drainEventLog — cron driver genérico do event_log (migration 0037)"
   let idRetry: string;
   let idNoHandler: string;
   let idFuture: string;
+  let idMulti: string;
+  let idRetryNoBackoff: string;
 
   beforeAll(() => {
     seedGov();
@@ -232,6 +265,8 @@ describe("drainEventLog — cron driver genérico do event_log (migration 0037)"
     idRetry = emitDrainCase("retry");
     idNoHandler = emitDrainCase("ok", "test.no_handler");
     idFuture = emitDrainCase("ok");
+    idMulti = emitDrainCase("n/a", "test.drain_multi");
+    idRetryNoBackoff = emitDrainCase("n/a", "test.drain_retry_no_backoff");
 
     // Case 3: pré-seta attempts=4 — próximo erro deve levar a status='dead'.
     sql(`update public.event_log set attempts = 4 where id = '${idDead}';`);
@@ -242,10 +277,11 @@ describe("drainEventLog — cron driver genérico do event_log (migration 0037)"
   it("processa o batch e devolve um resumo consistente com os estados finais", async () => {
     const summary = await drainEventLog(fakeAdminClient(), { limit: 50 });
 
-    // scanned = ok + error + dead + retry (4); no_handler e future ficam de fora.
-    expect(summary.scanned).toBe(4);
+    // scanned = ok + error + dead + retry + multi + retry_no_backoff (6);
+    // no_handler e future ficam de fora.
+    expect(summary.scanned).toBe(6);
     expect(summary.done).toBe(1);
-    expect(summary.retried).toBe(1);
+    expect(summary.retried).toBe(3);
     expect(summary.failed).toBe(1);
     expect(summary.dead).toBe(1);
   });
@@ -294,5 +330,25 @@ describe("drainEventLog — cron driver genérico do event_log (migration 0037)"
     expect(row.status).toBe("pending");
     expect(row.consumed_by).toEqual([]);
     expect(calls).not.toContain(idFuture);
+  });
+
+  it("caso 7 — dois handlers no mesmo tick (um error, um retry): retry vence mas preserva last_error do erro, sem contar attempt", () => {
+    const row = rowState(idMulti);
+    expect(row.status).toBe("pending");
+    expect(row.attempts).toBe(0);
+    expect(row.last_error).toContain("test-drain-multi-err");
+    expect(row.last_error).toContain("multi-boom");
+    expect(row.next_attempt_at).not.toBeNull();
+    const deltaMs = new Date(row.next_attempt_at!).getTime() - Date.now();
+    expect(deltaMs).toBeGreaterThan(55 * 60_000);
+    expect(deltaMs).toBeLessThan(65 * 60_000);
+  });
+
+  it("caso 8 — retry sem retry_at: aplica backoff (não busy-loopa), attempts inalterado", () => {
+    const row = rowState(idRetryNoBackoff);
+    expect(row.status).toBe("pending");
+    expect(row.attempts).toBe(0);
+    expect(row.next_attempt_at).not.toBeNull();
+    expect(new Date(row.next_attempt_at!).getTime()).toBeGreaterThan(Date.now());
   });
 });

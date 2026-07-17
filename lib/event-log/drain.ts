@@ -75,10 +75,24 @@ export async function drainEventLog(
     const errors = results.filter((r) => r.status === "error");
 
     if (retry) {
-      // Reagendamento benigno (ex. janela anti-ban): NÃO conta attempt.
+      // Reagendamento benigno (ex. janela anti-ban): NÃO conta attempt — mesmo
+      // que outro handler do mesmo tick tenha retornado erro (esse handler
+      // nunca entrou em consumed_by, então ele reroda no próximo tick; aqui só
+      // preservamos o last_error dele pra visibilidade/observabilidade).
+      // retry_at é opcional no HandlerResult — sem ele, aplica o mesmo backoff
+      // do branch de erro pra não busy-loop reprocessando a cada tick.
+      const retryAt = retry.retry_at ?? backoffAt(row.attempts + 1);
       await admin
         .from("event_log")
-        .update({ status: "pending", consumed_by: consumedBy, next_attempt_at: retry.retry_at, updated_at: new Date().toISOString() })
+        .update({
+          status: "pending",
+          consumed_by: consumedBy,
+          next_attempt_at: retryAt,
+          updated_at: new Date().toISOString(),
+          ...(errors.length
+            ? { last_error: errors.map((e) => `${e.consumer_key}: ${e.detail ?? "error"}`).join("; ") }
+            : {}),
+        })
         .eq("id", row.id);
       summary.retried += 1;
     } else if (errors.length) {
