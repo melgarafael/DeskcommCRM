@@ -7,7 +7,7 @@ export default defineConfig({
     setupFiles: ["./tests/setup/vitest.setup.ts"],
     globals: true,
     coverage: { provider: "v8", reporter: ["text", "html"] },
-    exclude: ["node_modules", ".next", "dist", "tests/e2e/**"],
+    exclude: ["node_modules", ".next", "dist", "tests/e2e/**", "tests/invariants/**"],
   },
   resolve: { alias: { "@": path.resolve(__dirname, ".") } },
 });

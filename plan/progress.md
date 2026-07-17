@@ -29,3 +29,96 @@
   2026-07-16T18:43:17-0300" — EXCETO `.lina/` (estado vivo do Lina Space;
   stashar derrubaria o app do dono). `.lina/` permanece untracked no chão.
 - Próxima sessão: main verde; G1-01 (gate de CI) é a elegível de menor priority.
+
+## 2026-07-16 — sessão 2 do loop (core) — G1-01
+
+- G1-01 (gate de CI): `gov:verify` no package.json (cadeia `&&`, exit!=0 provado
+  com script análogo) + `.github/workflows/ci.yml` novo (pull_request sem filtro
+  de branch — de propósito, PRs gov/* precisam do gate; push só main; pnpm 9 +
+  node 20 byte-idênticos a perf.yml). Sem envs: os 3 comandos não fazem build Next.
+- gov-verifier: PASS, hash-check OK (tree intacto antes/depois da verificação).
+- Convenção registrada: `verification.commit="self"` = o próprio commit atômico
+  da sessão (auto-referência de sha é impossível pré-commit; audite por
+  `git log --grep '<ID>'`). Primeira gravação do update-feature.ts normalizou a
+  formatação do features.json (reformat único previsto no header do script).
+- Chão de entrada: AGENTS.md/GEMINI.md reapareceram (app externo regenera);
+  stashados como "orphan 2026-07-16T18:54:42-0300". `.lina/` segue intocado no chão.
+- Próxima sessão: G1-02 (Postgres descartável + isolamento 2-tenants) é a elegível.
+
+## 2026-07-16 — sessão 3 do loop (core) — G1-02
+
+- G1-02 (Postgres descartável + isolamento 2-tenants): `pnpm test:db` sobe
+  pgvector:pg17 efêmero (porta 127.0.0.1:54329, --rm, trap EXIT), aplica prelude
+  de stubs Supabase (roles, auth.uid() via request.jwt.claims, storage.*) + 
+  baseline install (ON_ERROR_STOP=1) + update, e roda 9 testes RLS via
+  `docker exec psql` — zero devDependency nova.
+- gov-verifier: PASS com probes independentes (UPDATE cross-org → 0 rows;
+  authenticated sem claims → nada vaza; SIGINT → teardown ok). Hash-check OK.
+- Sessão rodada pelo watchdog (Maestro): terminal Arquiteto ficou Idle após
+  G1-01 e a cooperação A2A do Espaço está pausada — continuidade assumida aqui.
+- Nota pra fase futura: create policy do apêndice do baseline (0014/0017) não é
+  idempotente ("already exists" tolerado no update) — melhoria possível, não bug.
+- Próxima sessão: G1-03 (suíte de invariantes dos 7 eixos) ou G1-04 (auditoria
+  de gap, sem deps) — G1-03 tem priority menor (30 < 40).
+
+## 2026-07-16 — sessão 4 do loop (core) — G1-03
+
+- G1-03 (suíte de invariantes dos 7 eixos): 8 arquivos em tests/invariants/
+  (gov-helpers + gov-1..7), 29 testes no total — 22 verdes + 7 catracas it.fails
+  com GAP(Gx). `pnpm test:invariants` = alias do harness test-db.
+- Desvio aceito pelo verifier: gap-exemplo "role não editável via API" JÁ estava
+  fechado (rota do EPIC-09 em app/api/v1/team/[user_id]/role) → virou invariante
+  verde; gaps RBAC reais de G2: pipeline write por agent, conversations write
+  por viewer. Catraca provada em probe (it.fails de assert válido → suíte RED).
+- gov-verifier: PASS, hash-check OK. Apêndice A da spec 13 preenchido (20 linhas).
+- Próxima sessão: G1-04 (auditoria de gap specs 04/05 vs código — sem deps).
+
+## 2026-07-16 — sessão 5 do loop (core) — G1-04
+
+- G1-04 (auditoria specs 04/05 vs código): Apêndice B da spec 13 preenchido —
+  20 itens (9 implementado / 5 parcial / 6 ausente), toda linha com arquivo:linha
+  conferida pelo verifier (20/20). Claim atômico e handoff §7.5 são reais;
+  ReassignDialog, AttendantStatusToggle e supervisor read-only ausentes.
+- INB-01 aberto na inbox (proposal): supervisor read-only §10 sem feature G* e
+  conflitando com a matriz spec 13 §4 (manager org:write) — decisão do dono.
+- Nota do verifier p/ sessão futura: linha "supervisor §10" cita
+  conversations/[id]/messages/route.ts:38 mas o POST real é
+  app/api/v1/messages/route.ts — ponteiro impreciso, conclusão correta.
+- gov-verifier: PASS, hash-check OK (tree + inbox).
+- Próxima sessão: G1-05 (modelo de dados alvo + matriz role×recurso, deps G1-04 ✓).
+
+## 2026-07-16 — sessão 6 do loop (core) — G1-05
+
+- G1-05 (modelo de dados alvo + matriz role×recurso): spec 13 §3 com DDL
+  rascunho das 5 estruturas (assignment_events, assignee_kind, conversation
+  tags, attendant_availability, settings.routing/visibility_mode), cada uma
+  com DIRC; §4 com matriz 11 recursos × 4 roles.
+- 7 células PENDENTE G1-06 + 1 PENDENTE INB-01 (manager×conversations write —
+  conflito supervisor read-only). Nenhuma decisão de produto inventada
+  (verifier varreu célula a célula). Refs baseline.sql:linha 8/8 exatas.
+- Nota do verifier p/ G1-06: linha 191 usa "decisão G1-06b" em vez do literal
+  "PENDENTE G1-06" — incluir o default de roteamento ao fechar os pendentes.
+- gov-verifier: PASS, hash-check OK.
+- Próximo: G1-06 é human_input (única pendente da fase) → sessão seguinte abre
+  o item de inbox com as 5 perguntas e emite checkpoint G1 INCOMPLETO (§5).
+
+## 2026-07-16 — sessão 7 do loop (core) — checkpoint G1
+
+- G1-06 é human_input (única pendente da fase): INB-02 aberto na inbox com as
+  5 perguntas (a)-(e), opções e recomendação do loop em cada uma.
+- Checkpoint G1 emitido: loop/checkpoints/G1-report.md, Status INCOMPLETO —
+  bloqueado (aguarda respostas INB-02/INB-01 + G1.approved do dono).
+- Loop PARADO aguardando aprovação (guarda de entrada nº 2 segura as próximas
+  sessões). Próximo passo é do dono: responder inbox e aprovar/recusar o checkpoint.
+
+## 2026-07-16 — sessão 8 do loop (core) — G1-06 (human_input aplicado)
+
+- Dono respondeu INB-02 via chat ao Maestro: (a)=B suas+fila, (b)=B
+  manual+round-robin, (c)=A reusa role agent, (d)=A transferência imediata,
+  (e)=A manager vê métricas individuais. INB-01: descartar supervisor §10.
+- Decisões transcritas na spec 13 (§3.5 defaults, §4 matriz 0 PENDENTEs, §5
+  roteamento; derivações conservadoras anotadas: settings/billing manager =
+  admin-only, default mode=manual). gov-verifier: PASS (fidelidade célula a
+  célula), hash-check OK. INB-01/02 fechados.
+- Dono autorizou (AskUserQuestion): criar G1.approved em nome dele + virada de
+  fase por merge+push direto (opção A). Executando na sequência.

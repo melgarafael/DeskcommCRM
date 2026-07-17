@@ -26,8 +26,13 @@
       "priority": 10,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-16T19:01:24-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G1-02",
@@ -40,12 +45,19 @@
         "`pnpm test:db` termina verde localmente e derruba o container ao final (trap), inclusive em falha.",
         "README curto em tests/invariants/README.md explica como rodar e o contrato do harness."
       ],
-      "depends_on": ["G1-01"],
+      "depends_on": [
+        "G1-01"
+      ],
       "priority": 20,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-16T19:26:00-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G1-03",
@@ -59,12 +71,19 @@
         "`pnpm test:invariants` roda a suíte inteira verde (test.fails contam como esperados).",
         "Tabela eixo→invariante→status(passa|GAP Gx) adicionada como apêndice A da docs/specs/13-spec-governanca-atendimento.md."
       ],
-      "depends_on": ["G1-02"],
+      "depends_on": [
+        "G1-02"
+      ],
       "priority": 30,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-16T19:48:00-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G1-04",
@@ -81,8 +100,13 @@
       "priority": 40,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-16T20:12:00-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G1-05",
@@ -95,12 +119,19 @@
         "Spec 13 §4 tem matriz role×recurso: linhas = recursos (conversations, messages, contacts, crm_leads, pipelines, settings, api_tokens, billing, team, audit, métricas), colunas = viewer/agent/manager/admin, células = {none|own|org} × {read|write}.",
         "Pontos que dependem de decisão do dono estão marcados 'PENDENTE G1-06' — nenhuma decisão de produto inventada."
       ],
-      "depends_on": ["G1-04"],
+      "depends_on": [
+        "G1-04"
+      ],
       "priority": 50,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-16T20:24:00-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G1-06",
@@ -112,13 +143,20 @@
         "Respostas do dono registradas no mesmo item (status answered) e transcritas na spec 13 §4 (matriz sem PENDENTE) e §5 (decisões de roteamento).",
         "Nenhuma feature de G2+ foi iniciada antes das respostas nos pontos que dependem delas."
       ],
-      "depends_on": ["G1-05"],
+      "depends_on": [
+        "G1-05"
+      ],
       "priority": 60,
       "lane": "core",
       "kind": "human_input",
       "human_input": true,
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-16T20:36:00-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G2-01",
@@ -131,7 +169,10 @@
         "Invariantes de RBAC (eixo 1) que eram test.fails em G1-03 flipados para testes normais e verdes.",
         "Audit: tentativa negada relevante gera entrada em api_audit_log com action='authz.denied' (append-only)."
       ],
-      "depends_on": ["G1-03", "G1-06"],
+      "depends_on": [
+        "G1-03",
+        "G1-06"
+      ],
       "priority": 10,
       "lane": "core",
       "kind": "build",
@@ -149,7 +190,9 @@
         "UI app/app/team: seletor de papel por membro (admin only), com estado otimista e toast de erro; e2e ou teste de componente cobre o fluxo.",
         "Migration NÃO é necessária (user_organizations.role já existe com CHECK) — se algo de schema for tocado, segue a tripla do repo."
       ],
-      "depends_on": ["G2-01"],
+      "depends_on": [
+        "G2-01"
+      ],
       "priority": 20,
       "lane": "core",
       "kind": "build",
@@ -167,7 +210,9 @@
         "pnpm test:db verde (baseline install+update) e teste de isolamento por role no Postgres descartável: agent não escreve em tabela de config, manager sim (onde a matriz permitir).",
         "Sequência NNNN validada contra todas as branches locais (hook check-migration-triple passa)."
       ],
-      "depends_on": ["G2-01"],
+      "depends_on": [
+        "G2-01"
+      ],
       "priority": 30,
       "lane": "core",
       "kind": "build",
@@ -185,7 +230,10 @@
         "Suíte roda com pnpm test:e2e local (webServer do playwright.config.ts) e passa.",
         "Axe (já usado no repo) sem regressão nas telas tocadas."
       ],
-      "depends_on": ["G2-02", "G2-03"],
+      "depends_on": [
+        "G2-02",
+        "G2-03"
+      ],
       "priority": 40,
       "lane": "core",
       "kind": "build",
@@ -204,7 +252,9 @@
         "Invariante do eixo 3 (test.fails 'transfer não gera evento') flipado e verde; teste de idempotência: claim duplicado → 409 + zero evento duplicado.",
         "unread_count_for_assignee re-zerado na transferência (coluna já existe no baseline)."
       ],
-      "depends_on": ["G1-06"],
+      "depends_on": [
+        "G1-06"
+      ],
       "priority": 10,
       "lane": "core",
       "kind": "build",
@@ -222,7 +272,9 @@
         "Regra determinística testada: conversa kind='user' (humano atendendo) ⇒ pipeline de resposta do bot não dispara (mesma família de guard de force_human/bot_silenced_until — teste unit prova o veto).",
         "Invariante do eixo 6 flipado e verde; database.types.ts regenerado."
       ],
-      "depends_on": ["G3-01"],
+      "depends_on": [
+        "G3-01"
+      ],
       "priority": 20,
       "lane": "core",
       "kind": "build",
@@ -240,7 +292,9 @@
         "Atribuir/reatribuir owner pelo card ou painel do lead (mutação existente crm_update_lead/API v1), refletindo em tempo real (padrão de realtime já usado no board).",
         "Teste de componente cobre owner presente/ausente; e2e smoke do filtro."
       ],
-      "depends_on": ["G1-06"],
+      "depends_on": [
+        "G1-06"
+      ],
       "priority": 30,
       "lane": "core",
       "kind": "build",
@@ -258,7 +312,9 @@
         "Owner inválido (fora da org) → fail() 422 com código estável; teste unit cobre sucesso, 422 e limite (ex.: máx 200 por chamada).",
         "UI mostra progresso/resultado (toast com contagem)."
       ],
-      "depends_on": ["G3-03"],
+      "depends_on": [
+        "G3-03"
+      ],
       "priority": 40,
       "lane": "core",
       "kind": "build",
@@ -276,7 +332,9 @@
         "API v1 de conversas aceita tags no PATCH com Zod (max 20 tags, cada ≤40 chars, normalização lowercase/trim) e audita mudança.",
         "Invariante do eixo 7 flipado e verde; teste de filtro (query por tag retorna só as marcadas, org-scoped)."
       ],
-      "depends_on": ["G1-06"],
+      "depends_on": [
+        "G1-06"
+      ],
       "priority": 50,
       "lane": "core",
       "kind": "build",
@@ -294,7 +352,10 @@
         "Invariante do eixo 5 flipado e verde; pnpm test:db verde nos modos install+update.",
         "Realtime (postgres_changes) respeita as mesmas policies — teste ou evidência documentada de que a subscription do inbox não vaza conversa fora do escopo."
       ],
-      "depends_on": ["G2-03", "G3-01"],
+      "depends_on": [
+        "G2-03",
+        "G3-01"
+      ],
       "priority": 10,
       "lane": "core",
       "kind": "build",
@@ -312,7 +373,9 @@
         "Agent em modo own* não consegue abrir conversa fora do escopo nem por URL direta (a RLS G4-01 garante; a UI trata o vazio com estado claro, sem stack trace).",
         "Teste de componente para as 3 visões + e2e smoke com 2 papéis."
       ],
-      "depends_on": ["G4-01"],
+      "depends_on": [
+        "G4-01"
+      ],
       "priority": 20,
       "lane": "core",
       "kind": "build",
@@ -330,7 +393,9 @@
         "Filtros e contadores do board coerentes com o escopo (sem contar o que não vê).",
         "Invariante correspondente do eixo 5 (leads) verde."
       ],
-      "depends_on": ["G4-01"],
+      "depends_on": [
+        "G4-01"
+      ],
       "priority": 30,
       "lane": "core",
       "kind": "build",
@@ -348,7 +413,10 @@
         "Queries agregadas com índice adequado (EXPLAIN sem seq scan em tabela grande documentado no PR/verification).",
         "Teste unit das agregações com dataset seed conhecido (números exatos assertados)."
       ],
-      "depends_on": ["G4-02", "G4-03"],
+      "depends_on": [
+        "G4-02",
+        "G4-03"
+      ],
       "priority": 40,
       "lane": "core",
       "kind": "build",
@@ -366,7 +434,10 @@
         "AttendantStatusToggle persiste no schema novo (heartbeat AT-08: auto-offline 15min via job/worker — comportamento testado com clock mockado).",
         "Teste unit: horário fora da janela ⇒ atendente não elegível; capacidade cheia ⇒ não elegível."
       ],
-      "depends_on": ["G3-01", "G1-06"],
+      "depends_on": [
+        "G3-01",
+        "G1-06"
+      ],
       "priority": 10,
       "lane": "core",
       "kind": "build",
@@ -385,7 +456,9 @@
         "Sem elegível: conversa permanece na fila e evento re-agenda com backoff; teste cobre o caso.",
         "Modo manual: worker não atribui nada (teste)."
       ],
-      "depends_on": ["G5-01"],
+      "depends_on": [
+        "G5-01"
+      ],
       "priority": 20,
       "lane": "core",
       "kind": "build",
@@ -403,7 +476,10 @@
         "unread_count_for_assignee atualizado corretamente na atribuição via worker (teste).",
         "e2e smoke: conversa entra → aparece na fila → worker/claim atribui → some da fila e aparece em 'Minhas' do dono."
       ],
-      "depends_on": ["G5-02", "G4-02"],
+      "depends_on": [
+        "G5-02",
+        "G4-02"
+      ],
       "priority": 30,
       "lane": "core",
       "kind": "build",
@@ -422,7 +498,9 @@
         "e2e: manager altera modo e capacidade e as mudanças refletem no comportamento do worker (teste de integração ou unit no worker lendo config nova).",
         "Screenshot da tela salvo em loop/checkpoints/evidence/G5/."
       ],
-      "depends_on": ["G5-03"],
+      "depends_on": [
+        "G5-03"
+      ],
       "priority": 40,
       "lane": "core",
       "kind": "build",
@@ -442,7 +520,10 @@
         "crm_request_human_handoff v2: usa roteamento G5 (atendente alvo opcional; elegibilidade por disponibilidade/horário; fallback fila) e retorna o resultado estruturado (assigned_to|queued+position).",
         "Testes unit por tool (sucesso, cross-org negado, input inválido)."
       ],
-      "depends_on": ["G3-05", "G5-02"],
+      "depends_on": [
+        "G3-05",
+        "G5-02"
+      ],
       "priority": 10,
       "lane": "core",
       "kind": "build",
@@ -478,7 +559,9 @@
         "Teste unit por tool com fixture cobrindo atribuída/na fila/IA atendendo.",
         "Zero credencial/PII extra vazada (payload revisado contra doutrina LGPD do repo)."
       ],
-      "depends_on": ["G6-01"],
+      "depends_on": [
+        "G6-01"
+      ],
       "priority": 30,
       "lane": "core",
       "kind": "build",
@@ -496,7 +579,11 @@
         "Seção 'mudanças requeridas em consumidores' listando o que o Vendaval precisa fazer do lado dele (vira insumo do FG-01).",
         "Revisão mecânica: cada tool citada existe em lib/mcp/tools/ e catalog.ts (verifier confere 1 a 1)."
       ],
-      "depends_on": ["G6-01", "G6-02", "G6-03"],
+      "depends_on": [
+        "G6-01",
+        "G6-02",
+        "G6-03"
+      ],
       "priority": 40,
       "lane": "core",
       "kind": "build",
