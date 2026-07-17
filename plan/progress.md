@@ -413,3 +413,11 @@
 - Checkpoint G4 emitido (loop/checkpoints/G4-report.md, COMPLETO 5/5), loop
   PARADO aguardando aprovação do dono (G4.approved) ou recusa (.rejected).
   5 INB abertos (03/04/05/08/10, proposal/não-vetantes) copiados no §3.
+
+## 2026-07-17 — virada de fase G4 → main (watchdog/Maestro)
+
+- G4 aprovada pelo dono via chat ("retome"); gov/G4 mergeada em main e pushada
+  (59b0d33, inclui os 2 commits de docs de webhooks de outra sessão do dono);
+  gov/G5 criada. INB-03/04/05/08/10 seguem open (re-apresentar no checkpoint G5;
+  INB-10 é pré-condição da G6).
+- Próximo: Arquiteto abre G5-01 (routing config + availability). Teto 10/12 hoje.
