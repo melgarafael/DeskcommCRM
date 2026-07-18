@@ -544,3 +544,6 @@
   online-mas-stale mostrado offline (vitrine do status honesto).
 - app/page.tsx e graphify-out/ (outros terminais) NÃO commitados (add explícito).
 - FASE G5 COMPLETA (4/4) → checkpoint G5 na sequência, loop PARA no gate.
+- Checkpoint G5 emitido (loop/checkpoints/G5-report.md, COMPLETO 4/4), loop
+  PARADO aguardando aprovação do dono (G5.approved). 9 INB abertos no §3.
+  INB-10 é pré-condição da G6 (o dono já concordou).
