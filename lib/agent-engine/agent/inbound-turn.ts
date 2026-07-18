@@ -658,6 +658,20 @@ export async function runAgentTurn(
   // injetado no SUFIXO da abertura (não invalida o prefixo cacheável F2-17). Montado
   // DEPOIS do flush (F3-07) para que as notas gravadas neste turno já entrem no índice.
   const notesIndexBlock = await buildNotesIndexBlock(pool, tenantId, leadId, deps.knobs.notesIndexMaxTokens);
+  // Observabilidade da memória (Fase 2A): SÓ ids/contagens no log — headline/corpo
+  // são PII e nunca saem do prompt. Prova auditável de que a memória durável do
+  // lead entrou no contexto DESTE turno.
+  {
+    const { rows: noteIdRows } = await pool.query<{ id: string }>(
+      'select id from lead_notes where organization_id = $1 and contact_id = $2 order by created_at',
+      [tenantId, leadId],
+    );
+    runLog.info('memória do lead injetada no turno', {
+      checkpoint_seq: effectivePrevious?.seq ?? null,
+      notes_count: noteIdRows.length,
+      note_ids: noteIdRows.map((r) => r.id),
+    });
+  }
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
