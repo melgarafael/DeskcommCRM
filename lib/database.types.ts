@@ -985,6 +985,47 @@ export type Database = {
           },
         ];
       };
+      attendant_availability: {
+        Row: {
+          capacity: number;
+          id: string;
+          is_available: boolean;
+          last_heartbeat_at: string | null;
+          organization_id: string;
+          schedule: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          capacity?: number;
+          id?: string;
+          is_available?: boolean;
+          last_heartbeat_at?: string | null;
+          organization_id: string;
+          schedule?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          capacity?: number;
+          id?: string;
+          is_available?: boolean;
+          last_heartbeat_at?: string | null;
+          organization_id?: string;
+          schedule?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendant_availability_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       channel_session_warmup: {
         Row: {
           channel_session_id: string;

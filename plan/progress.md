@@ -453,3 +453,25 @@
 - G5-01 NÃO iniciada: §1.8 (sessão de smoke-vermelho é reparo, 1 entrega) +
   test:db (Docker+pgvector) inviável a load 51. Loop dorme (12/12 do teto);
   amanhã abre G5-01 com a máquina fria.
+
+## 2026-07-18 — sessão 13 do loop (core) — G5-01 (fase G5 aberta)
+
+- G5-01 (disponibilidade + routing config): migration 0039 (NÃO 0038 — colidia
+  com feat/webhooks-automation do colega; corrigi antes de codar). attendant_availability
+  (is_available, capacity, schedule jsonb tz-aware, last_heartbeat_at) + RLS
+  por-comando (SELECT org-wide; write own-OU-manager; sem FOR ALL). settings.routing
+  Zod (mode manual|round_robin default manual; knobs config, não hardcoded).
+- Decisões do implementer: elegibilidade em TS puro (lib/routing/eligibility.ts,
+  now injetado → clock mockado; tz-aware via Intl, sem dep); heartbeat = cron TS
+  GET /cron/attendant-heartbeat (Bearer, trigger NUNCA faz HTTP), auto-offline
+  15min (HEARTBEAT_TIMEOUT_MINUTES nomeada); rota /settings/routing nova
+  (manager+) separada do updateTenant (admin-only) — matriz §4 nota 5. UI toggle
+  adiada pra G5-04 (sem .tsx no diff → screenshot não requerido, verifier confirmou).
+- 3 rotas API v1 + cron; audit em cada mutação (3 actions append-only). Flip do
+  gov-4 (attendant_availability existe) + shape + RLS write-scope.
+- gov-verifier PASS 1ª rodada, hash OK. 178 unit + 100 invariantes; probes RLS
+  cross-atendente (agent grava própria=1, de outro=0, manager=qualquer).
+- INB-11 aberto: bloco attendant_availability DUPLICADO no baseline.sql (linhas
+  4936+4999, mesmo SQL, headers diferentes) — inócuo (idempotente, install+update
+  verdes) mas ruído; dedup num forward-fix.
+- Próxima: G5-02 (worker de roteamento via event_log) — consome a elegibilidade daqui.

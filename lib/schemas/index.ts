@@ -13,3 +13,4 @@ export * from "./contacts";
 export * from "./team";
 export * from "./onboarding";
 export * from "./messaging";
+export * from "./routing";

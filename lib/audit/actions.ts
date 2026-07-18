@@ -121,4 +121,7 @@ export type AuditAction =
   | "channel.reconnected"
   | "authz.denied"
   | "team.role_changed"
-  | "leads.bulk_assigned";
+  | "leads.bulk_assigned"
+  | "attendant.availability_changed"
+  | "routing.config_changed"
+  | "attendant.heartbeat_swept";

@@ -4932,3 +4932,130 @@ revoke all on function public.fn_attendant_metrics(uuid, timestamptz, timestampt
 revoke execute on function public.fn_attendant_metrics(uuid, timestamptz, timestamptz, uuid) from anon;
 grant execute on function public.fn_attendant_metrics(uuid, timestamptz, timestamptz, uuid)
   to authenticated, service_role;
+
+-- ---- disponibilidade/horário por atendente: attendant_availability (migration 0039) ----
+-- spec 13 §3.4/§5. Persiste o <AttendantStatusToggle> (spec 04 §8): is_available,
+-- capacity (>0), schedule jsonb tz-aware, last_heartbeat_at (AT-08 auto-offline
+-- 15min via worker TS). RLS por-comando (nunca FOR ALL): SELECT org-wide;
+-- INSERT/UPDATE/DELETE = própria linha OU manager+. Idempotente.
+
+create table if not exists public.attendant_availability (
+  id                uuid primary key default gen_random_uuid(),
+  organization_id   uuid not null references public.organizations(id) on delete cascade,
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  is_available      boolean not null default false,
+  capacity          integer not null default 5 check (capacity > 0),
+  schedule          jsonb not null default '{}',
+  last_heartbeat_at timestamptz,
+  updated_at        timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+create index if not exists idx_attendant_availability_available
+  on public.attendant_availability (organization_id)
+  where is_available;
+
+alter table public.attendant_availability enable row level security;
+
+drop policy if exists "attendant_availability_select" on public.attendant_availability;
+create policy "attendant_availability_select" on public.attendant_availability
+  for select using (
+    public.fn_is_platform_admin()
+    or organization_id in (select public.fn_user_org_ids())
+  );
+
+drop policy if exists "attendant_availability_insert" on public.attendant_availability;
+create policy "attendant_availability_insert" on public.attendant_availability
+  for insert with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_update" on public.attendant_availability;
+create policy "attendant_availability_update" on public.attendant_availability
+  for update using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_delete" on public.attendant_availability;
+create policy "attendant_availability_delete" on public.attendant_availability
+  for delete using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+-- ---- roteamento: disponibilidade/horário por atendente (migration 0039) ----
+-- spec 13 §3.4/§5. attendant_availability (1 linha por org×user): toggle
+-- online/offline + capacity ajustável + schedule tz-aware + last_heartbeat_at
+-- (AT-08). RLS por-comando (nunca FOR ALL): SELECT org-wide; WRITE própria linha
+-- OU manager+. settings.routing (§3.5) fica no jsonb organizations.settings,
+-- validado por Zod (lib/schemas/routing.ts) — sem coluna nova. Idempotente.
+
+create table if not exists public.attendant_availability (
+  id                uuid primary key default gen_random_uuid(),
+  organization_id   uuid not null references public.organizations(id) on delete cascade,
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  is_available      boolean not null default false,
+  capacity          integer not null default 5 check (capacity > 0),
+  schedule          jsonb not null default '{}',
+  last_heartbeat_at timestamptz,
+  updated_at        timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+create index if not exists idx_attendant_availability_available
+  on public.attendant_availability (organization_id)
+  where is_available;
+
+alter table public.attendant_availability enable row level security;
+
+drop policy if exists "attendant_availability_select" on public.attendant_availability;
+create policy "attendant_availability_select" on public.attendant_availability
+  for select using (
+    public.fn_is_platform_admin()
+    or organization_id in (select public.fn_user_org_ids())
+  );
+
+drop policy if exists "attendant_availability_insert" on public.attendant_availability;
+create policy "attendant_availability_insert" on public.attendant_availability
+  for insert with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_update" on public.attendant_availability;
+create policy "attendant_availability_update" on public.attendant_availability
+  for update using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_delete" on public.attendant_availability;
+create policy "attendant_availability_delete" on public.attendant_availability
+  for delete using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );

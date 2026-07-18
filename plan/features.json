@@ -532,8 +532,13 @@
       "priority": 10,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-18T10:30:26-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G5-02",
