@@ -559,3 +559,18 @@
 - Decisões do dono: INB-10 → G6-00 (prio 2, pré-condição G6-03); INB-13 → G6-05;
   INB-14 → G6-06. G6-03 agora depende de G6-00. INBs marcados answered.
 - G6 = última fase do épico (7 features: 00/05/06/01/02/03/04).
+
+## 2026-07-18 — sessão 17 do loop (core) — G6-00 (fase G6 aberta)
+
+- G6-00 (INB-10, pré-condição da G6-03): migration 0042 tripla. SELECT de
+  crm_lead_activities/crm_lead_links via EXISTS no lead-pai (fn_can_view_lead da
+  G4-03 reusada, NÃO scalar-subquery — lição G4-01). crm_lead_links FOR ALL
+  DROPADA e re-expressa por-comando (a armadilha). Write ORG-SCOPE preservado
+  byte-idêntico (cuidado do Maestro: timeline polimórfica escrita por service
+  role/IA/painel NÃO pode quebrar) — teste positivo service-role-insert=1 +
+  agent-insert-próprio=1.
+- NNNN: 0041 já tomado por fix/webhooks-secret-encryption (colega) → usei 0042.
+- Load destravou (57→9, dono fechou abas do Chrome). Smoke 256/256 (webhooks do
+  colega na main agora). gov-verifier PASS 1ª rodada SEM findings, hash OK.
+  gov-5e 8/8 (cross-atendente 0, próprio 1, manager todos, service role escreve).
+- INB-10 fechado. Próxima: G6-05 (prio 4, forward-fix agent-dispatcher status inválido).

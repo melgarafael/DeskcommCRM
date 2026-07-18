@@ -5206,3 +5206,69 @@ create trigger trg_conversation_routing_requested
   for each row
   when (new.assigned_to_user_id is null and new.status in ('open', 'pending'))
   execute function public.fn_emit_conversation_routing();
+
+
+-- ---- RLS por role em crm_lead_activities/crm_lead_links (migration 0042) ----
+-- G6-00 (INB-10): timeline/vínculos de lead seguiam org-flat no SELECT — agent em
+-- modo 'own' não via o lead (0036) mas lia as activities/links dele por query direta.
+-- FIX: SELECT das tabelas-filhas HERDA a visibilidade do lead-pai via a MESMA
+-- fn_can_view_lead (0036), por EXISTS no lead_id (NÃO scalar de owner — lição G4-01:
+-- scalar devolveria NULL pro lead oculto e own_and_unassigned trataria como fila ⇒
+-- vazamento; o EXISTS fecha). WRITE fica org-scope IDÊNTICO ao de hoje (defesa em
+-- profundidade, não o vetor: todo escritor real usa service role e bypassa RLS;
+-- activities é append-only). crm_lead_links era FOR ALL (USING governa SELECT via OR,
+-- a armadilha G4-01) — dropada e re-expressa POR-COMANDO. Idempotente, auto-curativo.
+
+drop policy if exists "tenant_isolation_crm_lead_activities_select" on public.crm_lead_activities;
+drop policy if exists "tenant_isolation_crm_lead_activities_insert" on public.crm_lead_activities;
+drop policy if exists "crm_lead_activities_select" on public.crm_lead_activities;
+drop policy if exists "crm_lead_activities_insert" on public.crm_lead_activities;
+
+create policy "crm_lead_activities_select" on public.crm_lead_activities
+  for select using (
+    exists (
+      select 1 from public.crm_leads l
+      where l.id = crm_lead_activities.lead_id
+        and public.fn_can_view_lead(l.organization_id, l.owner_user_id)
+    )
+  );
+
+create policy "crm_lead_activities_insert" on public.crm_lead_activities
+  for insert with check (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "tenant_isolation_crm_lead_links_all" on public.crm_lead_links;
+drop policy if exists "crm_lead_links_select" on public.crm_lead_links;
+drop policy if exists "crm_lead_links_insert" on public.crm_lead_links;
+drop policy if exists "crm_lead_links_update" on public.crm_lead_links;
+drop policy if exists "crm_lead_links_delete" on public.crm_lead_links;
+
+create policy "crm_lead_links_select" on public.crm_lead_links
+  for select using (
+    exists (
+      select 1 from public.crm_leads l
+      where l.id = crm_lead_links.lead_id
+        and public.fn_can_view_lead(l.organization_id, l.owner_user_id)
+    )
+  );
+
+create policy "crm_lead_links_insert" on public.crm_lead_links
+  for insert with check (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+create policy "crm_lead_links_update" on public.crm_lead_links
+  for update using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+create policy "crm_lead_links_delete" on public.crm_lead_links
+  for delete using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
