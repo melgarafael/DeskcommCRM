@@ -547,3 +547,15 @@
 - Checkpoint G5 emitido (loop/checkpoints/G5-report.md, COMPLETO 4/4), loop
   PARADO aguardando aprovação do dono (G5.approved). 9 INB abertos no §3.
   INB-10 é pré-condição da G6 (o dono já concordou).
+
+## 2026-07-18 — virada de fase G5 → main + integração origin (watchdog/Maestro)
+
+- G5 aprovada pelo dono; gov/G5 mergeada em main. Surpresa: origin/main tinha 55
+  commits novos (PRs #7 redirect, #8 webhooks-automation com migration 0038,
+  #9 oss-hygiene). Integração com 5 conflitos aditivos resolvidos keep-both
+  (schemas, vercel crons, audit unions, database.types costurado, baseline
+  0038→0039→0040). typecheck zerado, 256 unit verdes (1 flake de webhook na 1ª
+  rodada, verde na 2ª). Push d8a7880; gov/G6 criada.
+- Decisões do dono: INB-10 → G6-00 (prio 2, pré-condição G6-03); INB-13 → G6-05;
+  INB-14 → G6-06. G6-03 agora depende de G6-00. INBs marcados answered.
+- G6 = última fase do épico (7 features: 00/05/06/01/02/03/04).
