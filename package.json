@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.94",
-    "@ai-sdk/google": "^3.0.89",
+    "@ai-sdk/google": "^4.0.18",
     "@ai-sdk/openai": "^3.0.53",
     "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^3.9.0",
