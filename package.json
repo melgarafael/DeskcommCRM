@@ -23,7 +23,8 @@
     "test:db": "bash scripts/test-db.sh",
     "test:invariants": "bash scripts/test-db.sh",
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm test:unit",
-    "worker": "tsx --env-file=.env --env-file=.env.local workers/agent-worker/main.ts"
+    "worker": "tsx --env-file=.env --env-file=.env.local workers/agent-worker/main.ts",
+    "flywheel:judge": "tsx --env-file=.env --env-file=.env.local scripts/flywheel-judge-live.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.94",

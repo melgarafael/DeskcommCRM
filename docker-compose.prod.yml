@@ -45,6 +45,9 @@ services:
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     env_file: .env
+    environment:
+      # dentro da rede do compose, o WAHA é o serviço 'waha' na porta interna 3000
+      WAHA_API_BASE_URL: http://waha:3000
     networks:
       - internal
     healthcheck:

@@ -120,6 +120,11 @@ const envSchema = z.object({
   RAG_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
   RAG_EMBEDDING_API_KEY: z.string().min(1).optional(),
   RAG_EMBEDDING_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  // Flywheel agendado (4B): rodada judge→distiller sobre turnos reais a cada
+  // intervalo. 0 = OFF (só o gatilho manual pnpm flywheel:judge). Gate humano
+  // sempre: proposta nunca vira comportamento sem o dono publicar na tela.
+  FLYWHEEL_INTERVAL_MS: z.coerce.number().int().min(0).default(21_600_000),
+  FLYWHEEL_BATCH_LIMIT: z.coerce.number().int().positive().default(10),
   // Contenção de egress — hosts EXTRA além do Supabase/WAHA (CSV). Fail-closed.
   EGRESS_EXTRA_ALLOWED_HOSTS: z.string().optional(),
 });

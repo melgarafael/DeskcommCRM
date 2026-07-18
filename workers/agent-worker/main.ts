@@ -32,6 +32,7 @@ import { crmEdgeConfigFromEnv } from '@/lib/agent-engine/edge/crm/mcp-client';
 import { enforceHolds, sessionHealthMetrics } from '@/lib/agent-engine/edge/crm/session-watchdog';
 import { runSessionWatchdogLoop } from '@/lib/agent-engine/edge/crm/session-reconciler';
 import { runHealthLoop } from '@/lib/agent-engine/health/circuit';
+import { runFlywheelLoop } from '@/lib/agent-engine/flywheel/live';
 import { llmEdgeConfigFromEnv } from '@/lib/agent-engine/edge/llm/run-model-call';
 import { loadEnv, type Env } from '@/lib/agent-engine/env';
 import { createLogger, type Logger } from '@/lib/agent-engine/obs/logger';
@@ -219,6 +220,18 @@ export async function startWorker(
     loopsAbort.signal,
   );
 
+  // Flywheel agendado (4B): judge→distiller periódico sobre turnos reais.
+  // Precisa da camada LLM; sem intervalo (0) fica OFF.
+  const flywheelLoop =
+    env.FLYWHEEL_INTERVAL_MS > 0
+      ? runFlywheelLoop(
+          pool,
+          llmEdgeConfigFromEnv(env),
+          { intervalMs: env.FLYWHEEL_INTERVAL_MS, limit: env.FLYWHEEL_BATCH_LIMIT, log },
+          loopsAbort.signal,
+        )
+      : Promise.resolve();
+
   // Cron persistente por contato (follow-up) — só enfileira em job_queue.
   const cronLoop = runCronLoop(
     pool,
@@ -304,7 +317,7 @@ export async function startWorker(
     server.close();
     server.closeIdleConnections();
     loopsAbort.abort();
-    await Promise.all([drainLoop, healthLoop, cronLoop, sessionWatchdogLoop]);
+    await Promise.all([drainLoop, healthLoop, cronLoop, sessionWatchdogLoop, flywheelLoop]);
     await workerLoop;
     let graceTimer: NodeJS.Timeout | undefined;
     const grace = new Promise<'grace'>((resolve) => {
