@@ -26,7 +26,7 @@ const SELECT_COLS = `
 `;
 
 interface CursorPayload {
-  last_message_at: string | null;
+  sort: string | null;
   id: string;
 }
 
@@ -36,9 +36,12 @@ function encodeCursor(p: CursorPayload): string {
 function decodeCursor(raw: string): CursorPayload | null {
   try {
     const json = Buffer.from(raw, "base64url").toString("utf8");
-    const parsed = JSON.parse(json) as CursorPayload;
+    const parsed = JSON.parse(json) as CursorPayload & { last_message_at?: string | null };
     if (typeof parsed.id !== "string") return null;
-    return parsed;
+    // `last_message_at` é o nome legado do campo de ordenação (cursores em voo
+    // durante deploy); `sort` é o genérico atual (default OU fila).
+    const sort = parsed.sort ?? parsed.last_message_at ?? null;
+    return { sort, id: parsed.id };
   } catch {
     return null;
   }
@@ -76,12 +79,20 @@ export async function listConversationsHandler(
   ctx: HandlerCtx,
   q: ListConversationsQuery,
 ): Promise<ListConversationsResult> {
+  // Fila (assigned_to=unassigned): ordena por TEMPO DE ESPERA — quem espera há
+  // mais tempo primeiro. `last_inbound_at` = última mensagem do cliente = "há
+  // quanto tempo aguarda resposta" (não `created_at`, que pode ser uma conversa
+  // antiga reaberta). Demais visões: por atividade recente (last_message_at desc).
+  const isQueue = q.assigned_to === "unassigned";
+  const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
+  const asc = isQueue;
+
   let query = supabase
     .from("conversations")
     .select(SELECT_COLS)
     .eq("organization_id", ctx.organization_id)
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .order("id", { ascending: false })
+    .order(sortCol, { ascending: asc, nullsFirst: false })
+    .order("id", { ascending: asc })
     .limit(q.limit + 1);
 
   if (q.status) query = query.eq("status", q.status);
@@ -115,12 +126,15 @@ export async function listConversationsHandler(
     if (!c) {
       throw new ApiError(400, "invalid_cursor", undefined, ctx.requestId, "Cursor inválido.");
     }
-    if (c.last_message_at) {
+    const op = asc ? "gt" : "lt";
+    if (c.sort) {
       query = query.or(
-        `last_message_at.lt.${c.last_message_at},and(last_message_at.eq.${c.last_message_at},id.lt.${c.id})`,
+        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
       );
     } else {
-      query = query.is("last_message_at", null).lt("id", c.id);
+      // Página já na região de sort NULL (nulls last): pagina só por id.
+      query = query.is(sortCol, null);
+      query = asc ? query.gt("id", c.id) : query.lt("id", c.id);
     }
   }
 
@@ -135,7 +149,7 @@ export async function listConversationsHandler(
   const last = page[page.length - 1];
   const cursor =
     hasMore && last
-      ? encodeCursor({ last_message_at: last.last_message_at, id: last.id })
+      ? encodeCursor({ sort: (last[sortCol] as string | null) ?? null, id: last.id })
       : null;
 
   return { conversations: page, cursor, has_more: hasMore };

@@ -501,3 +501,24 @@
   dos test:db acumulados) — disco 193Mi→15Gi. Rodar prune periódico evita o
   aperto que travou o loop.
 - Próxima: G5-03 (fila visível + notificação).
+
+## 2026-07-18 — sessão 15 (nota) — hash-check da G5-03 invalidado por edição concorrente
+- 1ª verificação da G5-03 deu PASS, mas o hash-check FALHOU: o tree mudou durante
+  a verificação. Causa provada NÃO-verifier: app/page.tsx (edição de OUTRO terminal
+  no mesmo worktree — refactor landing→redirect) passou de M→limpo durante a janela.
+  HEAD não moveu, meus 9 arquivos G5-03 intactos. Falso-positivo do guard, causado
+  por checkout compartilhado. §3: re-verifico fresco mesmo assim (não racionalizo guard).
+
+## 2026-07-18 — sessão 15 do loop (core) — G5-03 (fechada após re-verificação)
+- G5-03 (fila visível): fila ordenada por last_inbound_at ASC (fonte ÚNICA;
+  tiebreak id ASC) com posição (índice+1 na mesma lista) + "Aguardando há X" —
+  o cuidado do Maestro (coerência ordem↔posição) provado: 3 conversas 30/10/2min
+  → OLD=pos1. Contagem = counts.unassigned (mesmo predicado). Notificação = badge
+  + realtime (fallback do acceptance; sem sistema novo, decisão na spec §5).
+  Sem migration. unread na atribuição worker testado (stale 7→0).
+- Re-verificação: 1ª deu PASS mas hash-check tripou por edição CONCORRENTE
+  (app/page.tsx de outro terminal, M→limpo durante a verificação; falso-positivo,
+  meus arquivos intactos). §3 aplicado: verifier FRESCO → PASS 2ª, hash ESTÁVEL
+  (worktree quieto após Maestro isolar a causa). 188 unit + 112 invariantes.
+- app/page.tsx (refactor landing→redirect do colega) NÃO commitado (fora do
+  escopo; git add por caminho explícito). Próxima: G5-04 (painel admin) FECHA a fase.

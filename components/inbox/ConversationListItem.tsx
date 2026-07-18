@@ -11,6 +11,8 @@ interface Props {
   conversation: ConversationWithContact;
   isSelected: boolean;
   onSelect: (id: string) => void;
+  /** Posição 1-based na fila (G5-03). Presente só na visão Fila. */
+  queuePosition?: number;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -43,7 +45,19 @@ function relativeTime(iso: string | null): string {
   return format(d, "dd/MM");
 }
 
-export function ConversationListItem({ conversation, isSelected, onSelect }: Props) {
+/** "Aguardando há 5 min" — desde a última mensagem do cliente (fallback: criação). */
+function waitingLabel(conversation: ConversationWithContact): string {
+  const since = conversation.last_inbound_at ?? conversation.created_at;
+  if (!since) return "Aguardando";
+  return `Aguardando ${formatDistanceToNowStrict(new Date(since), { addSuffix: true, locale: ptBR })}`;
+}
+
+export function ConversationListItem({
+  conversation,
+  isSelected,
+  onSelect,
+  queuePosition,
+}: Props) {
   const c = conversation.contacts ?? null;
   const displayName =
     c?.display_name?.trim() ||
@@ -87,6 +101,19 @@ export function ConversationListItem({ conversation, isSelected, onSelect }: Pro
       </div>
 
       <div className="min-w-0 flex-1">
+        {queuePosition !== undefined && (
+          <div className="mb-1 flex items-center gap-1.5">
+            <span
+              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/10 px-1 text-[10px] font-medium tabular-nums text-primary"
+              aria-label={`Posição ${queuePosition} na fila`}
+            >
+              {queuePosition}º
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {waitingLabel(conversation)}
+            </span>
+          </div>
+        )}
         <div className="flex items-baseline justify-between gap-2">
           <span
             className={cn(
