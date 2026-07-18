@@ -54,7 +54,9 @@ interface CuratedField {
 const LEAD_FIELDS: CuratedField[] = [
   { value: "lead.title", label: "Nome do lead", op: "eq" },
   { value: "lead.tags", label: "Tags do lead", op: "contains" },
-  { value: "lead.custom_fields.utm_source", label: "Origem (utm_source)", op: "eq" },
+  // utm_* entram pelo webhook em source_metadata (decisão da rota inbound),
+  // não em custom_fields — o path aqui tem que apontar pra onde o dado mora.
+  { value: "lead.source_metadata.utm_source", label: "Origem (utm_source)", op: "eq" },
 ];
 const STAGE_FIELD: CuratedField = {
   value: "event.to_stage_id",
@@ -231,8 +233,12 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
           <section className="space-y-3">
             <h3 className="text-lg font-semibold text-text">SE (opcional)</h3>
             {conditions.map((cond, idx) => {
+              // Linha nova (campo vazio) começa no modo curado — o avançado é
+              // escape p/ quem sabe o path; só cai nele sozinho ao EDITAR uma
+              // regra cujo campo salvo não está na lista curada.
               const isAdvanced =
-                advancedRows[idx] ?? !curatedFields.some((f) => f.value === cond.field);
+                advancedRows[idx] ??
+                (cond.field !== "" && !curatedFields.some((f) => f.value === cond.field));
               const curated = curatedFields.find((f) => f.value === cond.field);
               return (
                 <div key={idx} className="space-y-1 rounded-sm border border-border p-3">
