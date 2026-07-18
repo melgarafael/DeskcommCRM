@@ -53,7 +53,12 @@
 **PUSH FEITO (autorizado pelo Rafael, --no-verify explícito) + PR ABERTO: https://github.com/melgarafael/DeskcommCRM/pull/8**
 Nota de merge: MANIFEST pula 0033→0038 (0034-37 vivem no gov/*) — conflito trivial quando ambos chegarem na main.
 
-**TICKETS DE FOLLOW-UP (documentados no ledger `.superpowers/sdd/progress.md`):** cifragem at-rest do secret (spec §10, dropada na T1 do plano); idempotência por external_id no inbound (spec §5 não implementada); uniq_conversations_1to1 vs conversa closed; aposentar trigger legado fn_emit_event_on_lead_change; INTERNAL_CRON_SECRET não populada pelo install.sh; assign_owner sem checagem role≥agent.
+**FASE FOLLOW-UPS (branch `fix/webhooks-secret-encryption`):**
+
+✅ **TICKET 1 — Cifragem at-rest (commits `eeb2a41`+`4efbd4c`, migration 0041):** `webhook_sources.secret`→`secret_encrypted` (plaintext DROPADA, provado no remoto); `config.secret`→`config.secret_enc` no jsonb das regras; audit nunca vê secret; UI write-only (type=password). **2 forward-fixes de raiz descobertos:** (a) fn_encrypt/decrypt_oauth tinham search_path sem 'extensions' + pgcrypto faltava no baseline — Nuvemshop OAuth quebraria na 1ª cifra real em QUALQUER ambiente; (b) Supabase cloud NEGA ALTER DATABASE/ROLE SET de GUC custom (42501) — chave agora vive em `private.app_secrets` (GUC como override p/ VPS/testes), seedada no remoto. PROVAS: 24/24 invariantes (148, incl. 4 novos da migration re-aplicada + descarte-sem-chave), 229/229 unit, typecheck limpo; remoto: roundtrip cifra OK, HMAC E2E 401 sem/errada + 200 correta com secret decifrado do banco. NNNN 0041 (0039/0040 da gov/G5).
+NOTA operacional: `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` do .env.local agora está seedada em `private.app_secrets` do remoto — trocar a chave = update na tabela + re-cifrar dados.
+
+**TICKETS RESTANTES:** idempotência por external_id no inbound (spec §5); uniq_conversations_1to1 vs conversa closed; aposentar trigger legado fn_emit_event_on_lead_change; INTERNAL_CRON_SECRET no install.sh (+ seed da chave de cifra no kit — mesma natureza); assign_owner sem checagem role≥agent.
 
 Screenshots de evidência: `.superpowers/evidence/*.png`.
 **NOTA DE ROLLOUT (decidir na fase UI/kit):** primeiro deploy do cron drain processa backlog histórico de tipos com handler em qualquer clone — marcar pré-existentes como done na migration do kit OU documentar o processamento tardio.
