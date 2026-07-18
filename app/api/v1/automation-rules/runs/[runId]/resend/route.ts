@@ -11,6 +11,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { buildContext } from "@/lib/automation/engine";
 import { executeCallWebhook } from "@/lib/automation/actions/call-webhook";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
@@ -92,7 +93,10 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const failed = results.filter((r) => r.status === "failed").length;
   const status = failed === 0 ? "success" : failed === results.length ? "failed" : "partial";
 
-  const { data: newRun, error: insErr } = await supabase
+  // RLS: automation_rule_runs é select-only p/ authenticated (escrita é do
+  // service_role, como no engine). Org vem do authz — nunca do body.
+  const admin = createAdminClient();
+  const { data: newRun, error: insErr } = await admin
     .from("automation_rule_runs")
     .insert({
       organization_id: activeOrg.orgId,
