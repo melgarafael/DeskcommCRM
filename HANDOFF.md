@@ -50,9 +50,8 @@
 
 **FEATURE ENCERRADA — MERGE-READY.** Review final whole-branch: YES (seams das 4 camadas alinhados, doutrina limpa, migration triple consistente). Fix final aplicado e verificado (`57ad069`): bulk move/tag emite eventos por lead (automação dispara em multi-select) + audit `automation.rule_executed` em runs falhos. Estado final: **45 commits, typecheck limpo, 218/218 unit, 96/97 invariantes (19 arquivos), E2E Playwright 9 passos verde.**
 
-**PENDÊNCIAS DE DECISÃO (Rafael):**
-1. **Push/merge** — hook pre-push do gov-loop bloqueia; opções: (a) autorizar `--no-verify` explícito, (b) push manual dele, (c) esperar ritual do gov-loop.
-2. Nota de merge: MANIFEST pula 0033→0038 (0034-37 vivem no gov/*) — conflito trivial quando ambos chegarem na main.
+**PUSH FEITO (autorizado pelo Rafael, --no-verify explícito) + PR ABERTO: https://github.com/melgarafael/DeskcommCRM/pull/8**
+Nota de merge: MANIFEST pula 0033→0038 (0034-37 vivem no gov/*) — conflito trivial quando ambos chegarem na main.
 
 **TICKETS DE FOLLOW-UP (documentados no ledger `.superpowers/sdd/progress.md`):** cifragem at-rest do secret (spec §10, dropada na T1 do plano); idempotência por external_id no inbound (spec §5 não implementada); uniq_conversations_1to1 vs conversa closed; aposentar trigger legado fn_emit_event_on_lead_change; INTERNAL_CRON_SECRET não populada pelo install.sh; assign_owner sem checagem role≥agent.
 
