@@ -37,7 +37,17 @@
 | BE-T12 APIs de gestão | ✅ completa (review ok + fix secret) | `bcf22a9`+`efbfeb1`; 12/12 schema; fix controller: secret write-only na leitura, nunca em audit; forense: cifragem §10 dropada na T1 do PLANO → ticket |
 | BE-T13 verificação final | ✅ COMPLETA | Suites: unit 218/218, invariantes 93/94, typecheck limpo. **E2E REAL no banco remoto**: 0038 aplicada (Management API + token CLI do keychain; MCP OAuth quebrado), types regenerados por máquina, dev server 3011: POST público → 200 lead_id → lead com E.164/utm/custom_fields → drain 3 ticks (68 eventos, 0 falhas; 5889 sem-handler ignorados por design) → regra disparou → tags=['from-webhook-e2e'] + 1 run success com SÓ entity_kind crm_lead (duplicata do trigger filtrada ao vivo). 404 token inválido, 401 sem auth. Seed E2E desativado. |
 
-**BACKEND 13/13 COMPLETO.** Próxima fase: plano de UI (`docs/superpowers/plans/2026-07-17-webhooks-ui.md`, 6 tasks) — sidebar, 3 abas, kit HostGator, Playwright E2E com screenshots e medidas por ferramenta.
+**BACKEND 13/13 COMPLETO.** Fase UI em curso:
+
+| UI Task | Status | Prova |
+|---|---|---|
+| UI-T1 sidebar + shell | ✅ | `8b738b3`+`0dbb446`; screenshot + medidas (ritmo 40px, gap 24px, h-9, Sage, Atkinson); zero console errors (fix hydration Tabs SSR); gate agent testado ao vivo |
+| UI-T2 aba Receber dados | ✅ | `d34af99`+`303c46f`; fluxo leigo completo no browser: fonte criada, lead de teste REAL no banco (SQL provado), feed "há 2s"; fix: teste usa URL relativa |
+| UI-T3 builder de automações | ✅ | `c26470c`+`57fe887`; regra 100% via UI rodou com controle positivo/negativo (instagram→tag, google→sem); fixes: default curado; PATH DO PLANO ERRADO utm→source_metadata corrigido |
+| UI-T4 aba Atividade | ⏳ em implementação | — |
+| UI-T5 kit HostGator / UI-T6 E2E+DoD | pendente | — |
+
+Screenshots de evidência: `.superpowers/evidence/*.png`.
 **NOTA DE ROLLOUT (decidir na fase UI/kit):** primeiro deploy do cron drain processa backlog histórico de tipos com handler em qualquer clone — marcar pré-existentes como done na migration do kit OU documentar o processamento tardio.
 | UI T1-T6 | pendente | — |
 
