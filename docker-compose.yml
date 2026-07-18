@@ -29,8 +29,9 @@ services:
       WAHA_API_KEY: ${WAHA_API_KEY_SHA512}
       # Webhook base URL — precisa ser pública (use ngrok/cloudflared em dev).
       # host.docker.internal: o app Next roda no HOST em dev — localhost dentro do
-      # container seria o próprio WAHA e o webhook nunca chegaria.
-      WHATSAPP_HOOK_URL: ${WAHA_HOOK_BASE_URL:-http://host.docker.internal:3001}/api/v1/webhooks/waha
+      # container seria o próprio WAHA e o webhook nunca chegaria. Porta 3002:
+      # a stack da fusão é isolada do checkout principal (3001 é do gov-loop).
+      WHATSAPP_HOOK_URL: ${WAHA_HOOK_BASE_URL:-http://host.docker.internal:3003}/api/v1/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message,message.any,message.ack,session.status,state.change"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
       WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
