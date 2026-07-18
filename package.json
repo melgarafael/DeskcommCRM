@@ -25,7 +25,7 @@
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm test:unit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.94",
+    "@ai-sdk/anthropic": "^4.0.16",
     "@ai-sdk/google": "^3.0.89",
     "@ai-sdk/openai": "^3.0.53",
     "@hello-pangea/dnd": "^17.0.0",
