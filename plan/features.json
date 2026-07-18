@@ -611,8 +611,14 @@
       "priority": 40,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-18T12:37:35-0300",
+        "commit": "self",
+        "note": "resumed after auth-error mid-screenshot; supabase local torn down + volumes pruned"
+      }
     },
     {
       "id": "G6-01",

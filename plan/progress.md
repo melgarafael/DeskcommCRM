@@ -522,3 +522,25 @@
   (worktree quieto após Maestro isolar a causa). 188 unit + 112 invariantes.
 - app/page.tsx (refactor landing→redirect do colega) NÃO commitado (fora do
   escopo; git add por caminho explícito). Próxima: G5-04 (painel admin) FECHA a fase.
+
+## 2026-07-18 — sessão 16 do loop (core) — G5-04 (fase G5 COMPLETA)
+
+- G5-04 (painel de atendentes): aba "Atendimento" em app/app/team (Tabs) — lista
+  agent+ com status HONESTO (isHeartbeatStale: online-mas-stale >15min → offline),
+  carga atual (OPEN_LOAD_STATUSES movido pra eligibility.ts como fonte única, worker
+  importa → carga exibida = carga do router), capacidade/horário editáveis inline
+  (manager+), card de modo de roteamento (manual|round_robin; 'load' disabled
+  "em breve" nunca vai à API) persistindo via PATCH /settings/routing. Sem migration.
+- Root-cause do implementer: RLS de user_organizations limita manager a ver só a
+  própria linha via /team → estendi GET /attendants/availability pra roster
+  auto-suficiente (service role + filtro org manual, anti-pattern 10 satisfeito,
+  sem vazamento cross-org). INB-14 registra o gap do /team.
+- Incidente: implementer morreu por auth-error (Not logged in) no meio do
+  screenshot; /login refeito, resumido do ponto exato → completou screenshot +
+  teardown (supabase stop + docker volume prune, vendaval preservado).
+- gov-verifier PASS 1ª rodada SEM findings, hash OK (worktree quieto). 192 unit,
+  config-worker 4/4 (mode manual→não atribui, round_robin→atribui, capacity
+  reduz→inelegível→requeue, backoff do knob não hardcoded). Screenshot com Bruno
+  online-mas-stale mostrado offline (vitrine do status honesto).
+- app/page.tsx e graphify-out/ (outros terminais) NÃO commitados (add explícito).
+- FASE G5 COMPLETA (4/4) → checkpoint G5 na sequência, loop PARA no gate.

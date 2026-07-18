@@ -14,7 +14,7 @@
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
-import { isAttendantEligible } from "@/lib/routing/eligibility";
+import { isAttendantEligible, OPEN_LOAD_STATUSES } from "@/lib/routing/eligibility";
 import { decideRouting, type RoutingCandidate } from "@/lib/routing/decide";
 import { routingConfigSchema, availabilityScheduleSchema } from "@/lib/schemas/routing";
 
@@ -22,8 +22,6 @@ export const ROUTING_WORKER_KEY = "worker.routing.v1";
 export const ROUTING_EVENT_TYPE = "conversation.routing_requested";
 
 const DEFAULT_BATCH_SIZE = 100;
-/** Conversas que contam como "carga" (abertas atribuídas); resolved/closed/archived não. */
-const OPEN_LOAD_STATUSES = ["open", "pending", "claimed", "ai_handling"] as const;
 
 export type RoutingOutcome =
   | "assigned"

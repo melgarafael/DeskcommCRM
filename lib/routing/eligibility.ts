@@ -15,6 +15,14 @@ import type { AvailabilitySchedule } from "@/lib/schemas/routing";
 /** AT-08: atendente sem heartbeat há mais que isto ⇒ auto-offline (config, não mágica). */
 export const HEARTBEAT_TIMEOUT_MINUTES = 15;
 
+/**
+ * Status de conversa que contam como "carga" do atendente (aberta atribuída);
+ * resolved/closed/archived não. Fonte única: o worker de roteamento (elegibilidade
+ * por capacidade) e o painel de atendimento (carga exibida) leem daqui — o número
+ * que o manager vê é o mesmo que o router usa.
+ */
+export const OPEN_LOAD_STATUSES = ["open", "pending", "claimed", "ai_handling"] as const;
+
 const WEEKDAY_INDEX: Record<string, number> = {
   Sun: 0,
   Mon: 1,
