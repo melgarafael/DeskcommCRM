@@ -18,6 +18,7 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { evaluateConditions, type RuleCondition } from "@/lib/automation/conditions";
 import { getAction } from "@/lib/automation/actions";
 import type { ActionResultDetail } from "@/lib/automation/types";
+import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
@@ -164,14 +165,29 @@ export async function runAutomationForEvent(
 
     const failed = results.filter((r) => r.status === "failed").length;
     const status = failed === 0 ? "success" : failed === results.length ? "failed" : "partial";
-    const { error: runErr } = await admin.from("automation_rule_runs").insert({
-      organization_id: row.organization_id,
-      rule_id: rule.id,
-      event_id: row.id,
-      status,
-      actions_result: results,
-    });
+    const { data: runRow, error: runErr } = await admin
+      .from("automation_rule_runs")
+      .insert({
+        organization_id: row.organization_id,
+        rule_id: rule.id,
+        event_id: row.id,
+        status,
+        actions_result: results,
+      })
+      .select("id")
+      .maybeSingle();
     if (runErr) logger.error("[automation.engine] run insert failed", { error: runErr.message });
+
+    // Audit só em falha/partial (spec §9) — não inflar audit em toda run.
+    if (status !== "success") {
+      void audit({
+        action: "automation.rule_executed",
+        organizationId: row.organization_id,
+        resourceType: "automation_rule_run",
+        resourceId: runRow?.id ?? null,
+        metadata: { rule_id: rule.id, status, event_type: row.event_type },
+      });
+    }
 
     // run_count sem RPC de increment: read-modify-write é aceitável aqui
     // (contador informativo de UI, não invariante).
