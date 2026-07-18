@@ -30,6 +30,10 @@ const envSchema = z.object({
   QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(250),
   QUEUE_REAPER_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(30_000),
+  // Dono ÚNICO dos eventos ai_agent.dispatch_requested (mesma chave do app):
+  // 'engine' (default) = o drain deste worker consome; 'native' = o dispatcher
+  // EPIC-13 consome e o drain daqui NÃO liga. Nunca os dois.
+  AGENT_DISPATCH_CONSUMER: z.enum(['engine', 'native']).default('engine'),
   // Modo do gate de disclosure: 'inject' (default conservador) ou 'veto'.
   DISCLOSURE_MODE: z.enum(['inject', 'veto']).default('inject'),
   // Resposta 'queued' (sessão ≠ WORKING): job reagendado com este atraso, SEM
