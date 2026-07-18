@@ -290,3 +290,126 @@
 - Checkpoint G3 emitido (loop/checkpoints/G3-report.md, COMPLETO 5/5), loop
   PARADO aguardando aprovação do dono (G3.approved) ou recusa (.rejected).
   7 INB abertos (03-09, todos proposal/não-vetantes) copiados no §3 do report.
+
+## 2026-07-17 — pós-checkpoint G3 (watchdog/Maestro)
+
+- G3 aprovada pelo dono via chat; gov/G3 mergeada em main e pushada (bff9bae);
+  gov/G4 criada.
+- INB-07 aprovado → feature G4-00 (hardening SECURITY DEFINER anon) criada no
+  plano com DESKCOMM_GOV_PLAN_EDIT=1 (ca36202); agrupa INB-09.
+- INB-06b executado: banco dev (rrydmwnporysaiysiztn) reconciliado — histórico
+  supabase reparado (16 versões MCP revertidas, 17 locais applied) e migrations
+  0030/0032/0033 aplicadas via supabase db push --include-all. 0031 já estava.
+- INB-03/04/05/08 seguem open (decisões menores do dono).
+- Próximo: Arquiteto abre G4-00 (prio 5), depois G4-01 (visibility_mode RLS).
+
+## 2026-07-17 — sessão 18 do loop (core) — G4-00 (fase G4 aberta)
+
+- G4-00 (hardening INB-07/09): migration 0034 tripla — revoke de anon nas 6
+  SECURITY DEFINER de escrita. DESCOBERTA do implementer: 2 origens distintas de
+  anon-EXECUTE — Grupo A (fn_upsert_wa_contact/conversation, mark_message) grant
+  direto → revoke from anon; Grupo B (emit_event, fn_log_event, fn_audit_log_row)
+  herdava via PUBLIC → revoke from public + re-grant explícito a authenticated/
+  service_role. Invariante gov-hardening-anon-definer (12 probes) prova as 6 →
+  permission denied SOB anon real + service_role positivo. types intocado.
+- INB-09 fechado na mesma feature (acceptance 4): nota 1 fail-closed
+  (owner_validation_unavailable 422 se service role ausente); nota 2 org do authz
+  + .eq organization_id no SELECT do bulk (não mais org do 1º lead).
+- INCIDENTE de infra: gov-verifier morreu por API timeout (stream idle) no meio
+  da 1ª verificação — tree conferido intacto por hash (verifier não tem Write),
+  re-despachado FRESCO; PASS na 2ª. Registro pro caso de recorrer.
+- 60 invariantes + 155 unit verdes. INB-07 e INB-09 fechados (status closed).
+- Próxima sessão: G4-01 (visibility_mode RLS — o CORAÇÃO do épico, decisão
+  G1-06a default own_and_unassigned).
+
+## 2026-07-17 — sessão 19 do loop (core) — G4-01 (o CORAÇÃO do épico)
+
+- G4-01 (visibility_mode RLS): migration 0035 tripla. fn_can_view_conversation
+  (STABLE SECURITY DEFINER, recebe campos da row — zero subquery por-row; role
+  via auth.uid; anon/public revogados). conversations_select role+visibility-aware
+  (só agent restrito; viewer/manager/admin org-wide); messages_select herda via
+  EXISTS na conversa-mãe. Default own_and_unassigned (G1-06a).
+- 2 descobertas de causa raiz do implementer: (1) rejeitou scalar-subquery de
+  assigned_to (sob RLS daria NULL→tratado como fila→VAZAMENTO); usou EXISTS.
+  (2) fn_conversation_assign virou DEFINER: com SELECT visibility-aware, o
+  UPDATE...RETURNING numa transferência re-aplicava a policy à nova linha (novo
+  dono invisível ao autor)→RLS violation quebrava transfer/release EM PRODUÇÃO.
+  Fix: DEFINER + guard re-afirmando autz (caller agent+ same-org; INB-06a
+  preservado). E: write-policies FOR ALL re-expressas por-comando (o USING de
+  FOR ALL permissivo também governa SELECT via OR — anularia o visibility).
+- Verifier: PASS 1ª rodada, 7 vetores de vazamento provados (cross-org 0,
+  cross-atendente 0, fila por modo, manager org-wide, msg herda escopo, fn anon
+  negada, transfer legítimo ok). pg_policy enumerado: conversations tem
+  EXATAMENTE 1 policy SELECT (visibility-aware), ZERO FOR ALL. Hash OK. 65
+  invariantes + 155 unit. Flip do eixo 5.
+- Nota do verifier (não-defeito): UPDATE/DELETE direto de agent agora limitado às
+  linhas visíveis (Postgres lê a row-alvo sob a SELECT policy) — endurecimento
+  coerente; cross-owner via fn DEFINER, ingestão via service_role. Registrar
+  pra G4-02/03 (a UI/queries do agent precisam contar com isso).
+- Próxima sessão: G4-02 (inbox com escopo minhas/fila/todas) ou G4-03 (escopo no
+  kanban) — ambas dep G4-01. Menor priority ⇒ G4-02 (prio 20).
+
+## 2026-07-17 — sessão 20 do loop (core) — G4-02
+
+- G4-02 (inbox com escopo): tabs Minhas/Fila/Todas já existiam — gap era: (A)
+  esconder 'Todas' pra agent quando mode≠all (helper visibleInboxTabs; role já
+  no ActiveOrg, visibility_mode exposto estendendo o select de org do AppLayout
+  — sem query nova, sem migration); (B) contagens via GET /conversations/counts
+  com createClient() USER-SCOPED (herda RLS, nunca admin); (C) tab vira ?filter=
+  na URL (deep-link); (D) URL direta fora do escopo → useConversation 404 →
+  "Conversa não encontrada ou fora do seu acesso", sem stack trace.
+- Reforço do Maestro provado: esconder tab é cosmético, a RLS é a garantia —
+  gov-5b (invariante NOVO) prova agent all=2 (own+fila) < manager all=3 (total);
+  agent forçando where-id-other=0. A diferença agent<manager É a prova anti-admin.
+- Incidente: implementer morreu 1x por API timeout (stream idle) no meio; o
+  SendMessage do reforço RESUMIU automaticamente do ponto — concluiu na 2ª.
+- gov-verifier PASS 1ª rodada, hash OK. 165 unit + 71 invariantes (gov-5b 6/6).
+- Próxima: G4-03 (escopo no kanban/leads pra agent) — dep G4-01, prio 30.
+
+## 2026-07-17 — sessão 21 do loop (core) — G4-03
+
+- G4-03 (escopo de leads): migration 0036 tripla. fn_can_view_lead espelha
+  fn_can_view_conversation (owner_user_id, mesmo visibility_mode). crm_leads:
+  FOR ALL org-flat DROPADA, re-expressa por-comando (a armadilha da G4-01);
+  SELECT visibility-aware; escrita own pro agent (drag-and-drop do lead próprio
+  passa, de outro agent = 0 rows, WITH CHECK bloqueia criar pra outro),
+  manager+ org-wide (bulk assign G3-04 intacto). DIRC RLS-vs-server-side na spec.
+- Cuidado do Maestro (lead sem dono) provado — 4 números espelho das conversas:
+  own_and_unassigned vê=1/move=1; own vê=0/move=0. Board sem código novo (já
+  user-scoped, RLS filtra; contadores coerentes).
+- Incidente: implementer morreu 1x por API error mid-stream; trabalho parcial
+  intacto no tree (migration+fn feitas), resumido via SendMessage do ponto exato
+  — completou DIRC+invariante. gov-verifier PASS 1ª rodada, hash OK. 84 test:db,
+  165 unit, gov-5c 13/13.
+- Screenshot: verifier julgou INAPLICÁVEL (diff não toca UI — zero componente/
+  hook/página; board pré-existente; prova é o teste no Postgres descartável que
+  o acceptance 2 pede). Não vetou.
+- INB-10 aberto: crm_lead_activities/crm_lead_links seguem FOR ALL org-flat —
+  timeline/vínculos de lead invisível vazam por query direta. Gap pré-existente.
+- Próxima: G4-04 (métricas por responsável) — fecha a fase G4.
+
+## 2026-07-17 — sessão 22 do loop (core) — G4-04 (fase G4 COMPLETA)
+
+- G4-04 (métricas por responsável): spec §6 escrita ANTES do código (won/lost
+  por owner sobre closed_at, conversas por assignee sobre assigned_at, TTFR =
+  1ª outbound de HUMANO menos 1ª inbound). fn_attendant_metrics SECURITY INVOKER
+  — a RLS 0035/0036 é o gate (agent agrega = só as próprias, automático; manager+
+  org-wide + filtro por atendente). Migration 0037 tripla: 2 índices parciais.
+  Rota /api/v1/metrics/attendants client USER-SCOPED (admin só resolve nome).
+  UI nova: página Desempenho (funil + tabela por atendente + filtro) + nav.
+- 2 detalhes do Maestro provados: (1) TTFR exclui bot (sent_by_user_id not null;
+  bot tem sent_via='ai'+null) — seed com bot ANTES da humana, TTFR ignora;
+  (2) EXPLAIN sob role agent E manager (não superuser), Index Scan, sem seq scan.
+- Números exatos (gov-8, 12/12): manager A=[3,1,2,90s] B=[1,2,1,30s]; won/conversa
+  fora da janela não conta; agent A own-scope vê própria + [] pra B; funil escopo-aware.
+- Screenshot via Supabase LOCAL (não tocou remoto): G4-04-metrics-manager.png
+  primário com dados reais. INCIDENTE de infra: supabase start local travou o
+  Docker do host; reiniciei o Docker Desktop (kill -9 + reopen, 2 tentativas) e
+  derrubei os containers supabase locais — ambiente recuperado, docker run OK,
+  test:db rodou no verifier. O -agent.png saiu em loading (trava na captura);
+  own-scope do agent provado pelo gov-8.
+- gov-verifier PASS 1ª rodada, hash OK. 96 invariantes + 165 unit.
+- FASE G4 COMPLETA (5/5) → checkpoint G4 na sequência, loop PARA no gate.
+- Checkpoint G4 emitido (loop/checkpoints/G4-report.md, COMPLETO 5/5), loop
+  PARADO aguardando aprovação do dono (G4.approved) ou recusa (.rejected).
+  5 INB abertos (03/04/05/08/10, proposal/não-vetantes) copiados no §3.

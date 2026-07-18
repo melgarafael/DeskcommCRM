@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
@@ -8,8 +9,9 @@ import {
   type ConversationsFilters,
   type ConversationWithContact,
 } from "@/hooks/inbox/useConversationsRealtime";
+import { useConversation, isNotFound } from "@/hooks/inbox/useConversation";
 import { ConversationList } from "./ConversationList";
-import { InboxFilters, type InboxFiltersValue } from "./InboxFilters";
+import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
@@ -33,6 +35,16 @@ function tabToFilter(tab: InboxFiltersValue["tab"]): Partial<ConversationsFilter
   }
 }
 
+const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "ai"];
+
+/**
+ * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
+ * lista volta RLS-scoped (a tab só some cosmeticamente); default: fila.
+ */
+function parseFilterParam(v: string | null): InboxTab {
+  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "unassigned";
+}
+
 interface InboxLayoutProps {
   initialSelectedId?: string | null;
 }
@@ -41,11 +53,30 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const { activeOrg } = useAuth();
   const orgId = activeOrg?.orgId ?? null;
 
-  const [filterValue, setFilterValue] = useState<InboxFiltersValue>({
-    tab: "unassigned",
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = parseFilterParam(searchParams.get("filter"));
+
+  // tab vive na URL (?filter=); os demais filtros são estado local de sessão.
+  const [aux, setAux] = useState<Omit<InboxFiltersValue, "tab">>({
     search: "",
     onlyUnread: false,
   });
+  const filterValue: InboxFiltersValue = { tab, ...aux };
+  const setFilterValue = useCallback(
+    (next: InboxFiltersValue) => {
+      if (next.tab !== tab) {
+        const params = new URLSearchParams(searchParams);
+        params.set("filter", next.tab);
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      }
+      const { tab: _t, ...rest } = next;
+      setAux(rest);
+    },
+    [tab, searchParams, router, pathname],
+  );
+
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -72,10 +103,19 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // We need the selected conversation object for header / composer / side panel.
   // Source it from the same query the list uses to avoid an extra request.
   const listQ = useConversationsRealtime(filters, orgId);
-  const selectedConversation: ConversationWithContact | null = useMemo(() => {
+  const inList = useMemo(() => {
     const all = listQ.data?.pages.flatMap((p) => p.data) ?? [];
     return all.find((c) => c.id === selectedId) ?? null;
   }, [listQ.data, selectedId]);
+
+  // Deep-link para conversa fora do filtro atual (ou fora do escopo do agent):
+  // busca única RLS-scoped. 404/vazio ⇒ inacessível ⇒ estado vazio claro (GAP D),
+  // nunca stack trace. A RLS (G4-01) é quem garante o não-vazamento.
+  const needsFetch = !!selectedId && !inList && !listQ.isLoading;
+  const single = useConversation(selectedId, needsFetch);
+  const selectedConversation: ConversationWithContact | null = inList ?? single.data ?? null;
+  const selectionNotFound =
+    needsFetch && !single.isPending && !single.data && isNotFound(single.error);
 
   const claim = useClaimConversation();
   const close = useCloseConversation();
@@ -131,6 +171,10 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               disabled={selectedConversation.status === "closed"}
             />
           </>
+        ) : selectionNotFound ? (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            Conversa não encontrada ou fora do seu acesso.
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             Selecione uma conversa

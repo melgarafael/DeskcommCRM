@@ -256,16 +256,16 @@ function emitRealEvent(eventType: string, entityKind: string, entityId: string, 
 
 // Namespace próprio ('ffffffff-') — org DEDICADA (não reusa GOV_ORG: as
 // automation_rules R1-R6 de automation-engine.test.ts escutam GOV_ORG/ORG_2).
-const ORG = "ffffffff-0000-4000-8000-000000000001";
-const PIPELINE = "ffffffff-5000-4000-8000-000000000001";
-const STAGE_A = "ffffffff-5555-4000-8000-000000000001";
-const STAGE_B = "ffffffff-5555-4000-8000-000000000002";
-const LEAD_M1 = "ffffffff-6000-4000-8000-000000000001";
-const LEAD_M2 = "ffffffff-6000-4000-8000-000000000002";
-const LEAD_T1 = "ffffffff-6000-4000-8000-000000000003";
-const LEAD_T2 = "ffffffff-6000-4000-8000-000000000004";
-const RULE_UNKNOWN = "ffffffff-7000-4000-8000-000000000001";
-const FAKE_USER_ID = "ffffffff-1000-4000-8000-000000000001";
+const ORG = "ffffffff-b000-4000-8000-000000000001";
+const PIPELINE = "ffffffff-b500-4000-8000-000000000001";
+const STAGE_A = "ffffffff-b550-4000-8000-000000000001";
+const STAGE_B = "ffffffff-b550-4000-8000-000000000002";
+const LEAD_M1 = "ffffffff-b600-4000-8000-000000000001";
+const LEAD_M2 = "ffffffff-b600-4000-8000-000000000002";
+const LEAD_T1 = "ffffffff-b600-4000-8000-000000000003";
+const LEAD_T2 = "ffffffff-b600-4000-8000-000000000004";
+const RULE_UNKNOWN = "ffffffff-b700-4000-8000-000000000001";
+const FAKE_USER_ID = "ffffffff-b100-4000-8000-000000000001";
 
 const FAKE_USER: AuthUser = {
   id: FAKE_USER_ID,

@@ -208,6 +208,18 @@ describe("POST /api/v1/leads/bulk — validação de owner", () => {
     expect(body.error.code).toBe("invalid_owner");
   });
 
+  it("INB-09 nota 1: sem service role + owner não-null → 422 owner_validation_unavailable, sem UPDATE (fail-closed)", async () => {
+    vi.mocked(isServiceRoleConfigured).mockReturnValue(false);
+    const state = stubState();
+    session("manager", state);
+    const { POST } = await import("@/app/api/v1/leads/bulk/route");
+    const res = await POST(postReq(assignBody(OWNER_ID)));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("owner_validation_unavailable");
+    expect(state.updateCalled).toBe(false);
+  });
+
   it("desatribuir (owner_user_id null) → 200, pula validação de membership", async () => {
     vi.mocked(isServiceRoleConfigured).mockReturnValue(true);
     const state = stubState({ targetMember: null });

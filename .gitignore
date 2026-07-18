@@ -80,3 +80,4 @@ loop/logs/
 loop/locks/
 loop/STOP
 loop/run-session.sh
+.superpowers/

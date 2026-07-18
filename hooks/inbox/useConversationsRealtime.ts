@@ -67,6 +67,16 @@ export function useConversationsRealtime(
     qc.invalidateQueries({ queryKey: ["conversations"] });
   }, [qc]);
 
+  // G4-01 (visibility_mode): a subscription postgres_changes HERDA a RLS de
+  // SELECT de `conversations` — o Supabase Realtime avalia as policies do usuário
+  // autenticado antes de entregar cada change (docs: "Realtime respects RLS
+  // policies"; requer a tabela na publication `supabase_realtime` + REPLICA
+  // IDENTITY, já configurados na migration 0025). Como a policy `conversations_select`
+  // (migration 0035) agora aplica fn_can_view_conversation(role + visibility_mode +
+  // assigned_to), um agent NÃO recebe changes de conversa fora do seu escopo, mesmo
+  // com o filtro amplo `organization_id=eq.<org>` abaixo. Prova do filtro em
+  // tests/invariants/gov-5-visibility-scope.test.ts (SELECT sob role agent = 0 rows
+  // para conversa de outro atendente — o mesmo SELECT que o Realtime executa).
   useRealtimeChannel({
     name: orgId ? `inbox-${orgId}` : "inbox-disabled",
     postgresChanges: orgId

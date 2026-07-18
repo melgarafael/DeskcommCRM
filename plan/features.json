@@ -388,6 +388,31 @@
       }
     },
     {
+      "id": "G4-00",
+      "phase": "G4",
+      "title": "Hardening: SECURITY DEFINER de escrita sem EXECUTE de anon (INB-07/INB-09)",
+      "description": "Aprovada pelo dono em 2026-07-17 (INB-07). Varredura da G3-02 achou 6 funções SECURITY DEFINER de ESCRITA executáveis por anon (herança de ALTER DEFAULT PRIVILEGES do baseline): fn_upsert_wa_contact, fn_upsert_wa_conversation, fn_mark_conversation_message, emit_event, fn_log_event, fn_audit_log_row. Defesa em profundidade: revogar anon. Inclui as 2 notas do INB-09 (bulk assign).",
+      "acceptance": [
+        "Auditoria prévia registrada (no PR/verification): nenhuma das 6 funções é invocada por fluxo anônimo legítimo (webhooks/cron usam service role) — evidência arquivo:linha dos call sites.",
+        "Migration em tripla completa (migrations/ + apêndice idempotente em baseline.sql + MANIFEST.md) com REVOKE EXECUTE FROM anon nas 6 funções; database.types.ts intocado (sem mudança de contrato) ou regenerado se mudar.",
+        "Invariante novo em tests/invariants/ provando SOB role anon real no container (set role anon) que cada uma das 6 → permission denied; caminho service_role continua funcional (probe positivo).",
+        "Notas do INB-09 avaliadas e fechadas: validação de owner do bulk assign não depende de service role presente (guard explícito ou evidência de que o caminho é impossível), e resolução de org do bulk usa a org do RECURSO consistentemente em cenário multi-org (teste ou evidência).",
+        "pnpm test:db verde nos modos install+update; pnpm test:invariants e test:unit verdes."
+      ],
+      "depends_on": [],
+      "priority": 5,
+      "lane": "core",
+      "kind": "build",
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-17T10:56:30-0300",
+        "commit": "self",
+        "note": "verifier re-spawned after API timeout; fresh verdict, hash unchanged"
+      }
+    },
+    {
       "id": "G4-01",
       "phase": "G4",
       "title": "visibility_mode: RLS de conversas/mensagens por atendente",
@@ -405,8 +430,13 @@
       "priority": 10,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-17T11:31:28-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G4-02",
@@ -425,8 +455,13 @@
       "priority": 20,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-17T13:09:02-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G4-03",
@@ -445,8 +480,13 @@
       "priority": 30,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-17T13:37:13-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G4-04",
@@ -466,8 +506,13 @@
       "priority": 40,
       "lane": "core",
       "kind": "build",
-      "passes": false,
-      "verification": null
+      "passes": true,
+      "verification": {
+        "verdict": "PASS",
+        "by": "gov-verifier",
+        "at": "2026-07-17T15:00:26-0300",
+        "commit": "self"
+      }
     },
     {
       "id": "G5-01",

@@ -60,7 +60,19 @@ export async function POST(req: NextRequest): Promise<Response> {
     // A RLS de user_organizations só mostra o próprio membership a um manager,
     // por isso o admin client filtrado pela org resolvida.
     const ownerId = input.params.owner_user_id;
-    if (ownerId !== null && isServiceRoleConfigured()) {
+    if (ownerId !== null) {
+      // INB-09 nota 1: fail-closed. A validação de membership só roda com service
+      // role (a RLS de user_organizations não mostra membership alheio a um
+      // manager). Sem service role NÃO se pode validar o dono → recusar em vez
+      // de atribuir um owner não-verificado. Desatribuir (owner null) segue livre.
+      if (!isServiceRoleConfigured()) {
+        return fail(
+          "owner_validation_unavailable",
+          "Não foi possível validar o responsável agora. Tente novamente em instantes.",
+          422,
+          { requestId },
+        );
+      }
       const admin = createAdminClient();
       const { data: member, error: memberErr } = await admin
         .from("user_organizations")
@@ -81,11 +93,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  // Resolve organization_id from the first lead the caller can see (RLS-scoped).
-  // Used for the aggregate event emission.
+  // INB-09 nota 2: org de fonte confiável = org ativa do cookie (authz), NUNCA
+  // inferida do 1º lead. A RLS já escopa por org do membro, mas um ator em 2+
+  // orgs veria leads de ambas — o filtro explícito garante que o bulk só toca a
+  // org ativa (mesmo padrão do gate de owner acima).
+  const organizationId = authz.org.orgId;
   const { data: scoped } = await supabase
     .from("crm_leads")
     .select("id, organization_id, tags, stage_id, pipeline_id")
+    .eq("organization_id", organizationId)
     .in("id", input.lead_ids);
 
   const visible = scoped ?? [];
@@ -99,7 +115,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
   const visibleIds = visible.map((r) => r.id);
-  const organizationId = first.organization_id as string;
 
   let updatedCount = 0;
   const nowIso = new Date().toISOString();

@@ -15,8 +15,28 @@ import {
 import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
+import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
+import type { Role, VisibilityMode } from "@/lib/auth/types";
 
 export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "ai";
+
+const INBOX_TABS: { value: InboxTab; label: string }[] = [
+  { value: "unassigned", label: "Fila" },
+  { value: "mine", label: "Minhas" },
+  { value: "all", label: "Todas" },
+  { value: "closed", label: "Fechadas" },
+  { value: "ai", label: "IA" },
+];
+
+/**
+ * Visões visíveis por papel + escopo (G4-02, acceptance 1). 'Todas' fica oculta
+ * para `agent` quando visibility_mode ≠ 'all'; viewer/manager/admin sempre veem.
+ * É apenas cosmético — a RLS (G4-01) é quem garante o escopo mesmo via ?filter=all.
+ */
+export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): InboxTab[] {
+  const hideAll = role === "agent" && mode !== "all";
+  return INBOX_TABS.filter((t) => !(t.value === "all" && hideAll)).map((t) => t.value);
+}
 
 export interface InboxFiltersValue {
   tab: InboxTab;
@@ -36,6 +56,16 @@ export function InboxFilters({ value, onChange }: Props) {
   const { data: channels } = useChannelSessions({ refetchInterval: 30_000 });
   const { activeOrg } = useAuth();
   const { data: tagVocabulary } = useConversationTagVocabulary(activeOrg?.orgId ?? null);
+  const { data: counts } = useConversationCounts(activeOrg?.orgId ?? null);
+
+  const tabs = activeOrg
+    ? visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode)
+    : INBOX_TABS.map((t) => t.value);
+  const countFor: Partial<Record<InboxTab, number>> = {
+    unassigned: counts?.unassigned,
+    mine: counts?.mine,
+    all: counts?.all,
+  };
   // Alternador só aparece com 2+ números — com um só não há o que alternar.
   const showChannelSwitch = (channels?.length ?? 0) >= 2;
 
@@ -112,22 +142,24 @@ export function InboxFilters({ value, onChange }: Props) {
         value={value.tab}
         onValueChange={(v) => onChange({ ...value, tab: v as InboxTab })}
       >
-        <TabsList className="grid h-8 w-full grid-cols-5">
-          <TabsTrigger value="unassigned" className="text-[11px]">
-            Não atribuídos
-          </TabsTrigger>
-          <TabsTrigger value="mine" className="text-[11px]">
-            Meus
-          </TabsTrigger>
-          <TabsTrigger value="all" className="text-[11px]">
-            Todos
-          </TabsTrigger>
-          <TabsTrigger value="closed" className="text-[11px]">
-            Fechados
-          </TabsTrigger>
-          <TabsTrigger value="ai" className="text-[11px]">
-            IA
-          </TabsTrigger>
+        <TabsList
+          className="grid h-8 w-full"
+          style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+        >
+          {tabs.map((tab) => {
+            const meta = INBOX_TABS.find((t) => t.value === tab)!;
+            const count = countFor[tab];
+            return (
+              <TabsTrigger key={tab} value={tab} className="gap-1 text-[11px]">
+                {meta.label}
+                {typeof count === "number" && count > 0 && (
+                  <span className="text-[10px] tabular-nums text-muted-foreground">
+                    {count}
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
         </TabsList>
       </Tabs>
 

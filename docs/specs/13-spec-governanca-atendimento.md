@@ -260,6 +260,27 @@ Notas:
 Enforcement em **duas camadas obrigatórias**: RLS (fronteira) + helper único de
 rota (`require-role`, G2-01) — nunca só UI (anti-padrão 3).
 
+**DIRC — escopo `own` de `crm_leads` via RLS, não filtro server-side (G4-03).**
+O escopo `own` do agent (linha 220 da matriz) é aplicado na **RLS** por
+`fn_can_view_lead(p_org, p_owner_user_id)` (migration 0036), espelho exato de
+`fn_can_view_conversation` (G4-01): mesma lógica (role via `fn_user_role_in_org`
++ `visibility_mode` + campo-dono da row), `STABLE SECURITY DEFINER`, `search_path`
+blindado, `EXECUTE` só para `authenticated`/`service_role`. O "dono" do lead é
+`crm_leads.owner_user_id` (não `assigned_to_user_id` — isso é conversa), e o knob
+é o **mesmo** `organizations.settings.visibility_mode` (§3.5) — a matriz diz
+"mesmo escopo da G1-06a", logo é reuse do botão, não um novo. *Por que RLS e não
+filtro server-side*: (**D**uplicar/**I**ntegrar) o predicado de visibilidade já
+vive no banco para conversations — repeti-lo em cada caller (board, MCP,
+`listLeadsHandler`, bulk, move) seria N cópias a manter em sincronia, e a primeira
+que alguém esquecer vira vazamento cross-atendente (anti-padrão 10: "select sem
+where"). A RLS é a fronteira única que **todo** caller cookie/JWT atravessa
+(defesa em profundidade no banco, consistente com o precedente G4-01) → **Reuse**
+da fn-pattern na RLS. A escrita é re-expressa por-comando (a `FOR ALL` org-flat
+governaria o SELECT junto, anulando o escopo): agent = own-scope pela **mesma**
+fn (por isso o drag-and-drop de lead próprio e a puxada da fila não-atribuída no
+modo `own_and_unassigned` continuam UPDATE-áveis pelo agent — espelho das
+conversas), manager+ = org-wide (bulk assign G3-04 intacto), viewer = none.
+
 ### 4.1 Auditoria de policies RLS por role (G2-03)
 
 Auditoria mecânica do `supabase/baseline.sql` (gov/G2, 2026-07-16): tabela →
@@ -314,11 +335,124 @@ a migration `20260716120000_0030_config_rls_role_policies.sql` aplica
 > Origem das decisões deste documento (§3.5 defaults, §4 matriz, §5 roteamento):
 > decisões do dono, 2026-07-16, inbox INB-01/INB-02 (`loop/inbox.items.md`).
 
-## 6. Métricas por responsável (G4-04 define antes do código)
+## 6. Métricas por responsável (G4-04)
 
-Definições escritas aqui ANTES da implementação: leads ganhos/perdidos por owner,
-conversas atendidas por assignee, tempo até 1ª resposta. Filtro por responsável
-em todo funil; visão individual para manager+.
+Feedback do sistema-modelo: *"não é possível filtrar por atendente nas métricas;
+impossibilita visualizar performance individual"*. Esta seção define **antes do
+código** cada métrica: fórmula exata, fonte (tabela/coluna), janela temporal e
+como escopo/role a afetam. Implementação: `fn_attendant_metrics()` (SQL
+**SECURITY INVOKER** — a RLS das tabelas se aplica) + rota
+`GET /api/v1/metrics/attendants` + página `/app/metrics`.
+
+### 6.1 Convenções transversais
+
+- **Janela temporal**: intervalo **semiaberto** `[from, to)` (inclui `from`,
+  exclui `to`), dois query params ISO-8601 UTC. Default = últimos 30 dias
+  (`to = now()`, `from = now() - 30d`). Cada métrica declara sobre QUAL coluna a
+  janela incide (não é a mesma para todas).
+- **Escopo/role (o gate é a própria RLS, não uma checagem paralela)**: a agregação
+  roda com o **client user-scoped** (cookie session) — a RLS de `crm_leads`
+  (migration 0036, `fn_can_view_lead`) e `conversations` (migration 0035,
+  `fn_can_view_conversation`) já filtra por atendente. Consequência:
+  - **agent** agregando → a RLS colapsa os resultados aos **próprios**
+    leads/conversas (own-scope, decisão G1-06a); a "visão por atendente" reduz a
+    UMA linha (a dele). É assim que "agent só vê as próprias" (acceptance 1) é
+    garantido SEM lógica extra — a mesma policy do kanban/inbox.
+  - **manager+** agregando → RLS org-wide; a "visão por atendente" lista todos, e
+    o filtro `owner_user_id`/`assigned_to_user_id` (query param) é um WHERE
+    explícito. Piso de rota = `agent` (vê as próprias); a comparação entre
+    atendentes é naturalmente manager+ porque a RLS impede o agent de ver outros.
+- **Sem cross-tenant**: `organization_id = <org do cookie>` em TODA subquery;
+  nunca do body. `fn_attendant_metrics(p_org, …)` recebe a org de fonte confiável.
+- **Atribuição**: métricas de lead usam `crm_leads.owner_user_id` (o dono do
+  negócio); métricas de conversa usam `conversations.assigned_to_user_id` (o
+  atendente da conversa) — são responsáveis distintos por design (§3, §4).
+
+### 6.2 Funil por owner (acceptance 1)
+
+- **Definição**: contagem de leads **abertos** por stage, opcionalmente filtrada
+  por dono. É um **snapshot atual** — NÃO usa janela temporal (o funil é o estado
+  do board agora).
+- **Fórmula**: para cada `crm_stages` (não-arquivado) do org,
+  `count(crm_leads) where status = 'open' and stage_id = <stage>
+  [and owner_user_id = p_owner]`.
+- **Fonte**: `crm_leads.stage_id`, `crm_leads.status`, `crm_leads.owner_user_id`;
+  `crm_stages.id/name/position/is_archived`.
+- **Índice**: `idx_crm_leads_org_owner_status` (já existe, parcial
+  `WHERE status='open'`) cobre org+owner+open.
+
+### 6.3 Leads ganhos por owner (acceptance 2)
+
+- **Definição**: leads que o dono **fechou como ganho na janela**.
+- **Fórmula**: `count(crm_leads) where status = 'won' and closed_at >= from and
+  closed_at < to [and owner_user_id = p_owner]`, agrupado por `owner_user_id`.
+- **Janela**: incide sobre **`closed_at`** (momento em que virou ganho — o CHECK
+  `crm_leads_closed_at_consistency` garante `closed_at NOT NULL` sse
+  `status ∈ {won,lost}`, então a janela é sempre bem-definida para won/lost).
+- **Fonte**: `crm_leads.status`, `crm_leads.closed_at`, `crm_leads.owner_user_id`.
+
+### 6.4 Leads perdidos por owner (acceptance 2)
+
+- Idêntico a §6.3 com `status = 'lost'`. Mesma janela (`closed_at`), mesma fonte.
+
+### 6.5 Conversas atendidas por assignee (acceptance 2)
+
+- **Definição**: conversas que o atendente **assumiu na janela** (foi atribuído
+  a ele). "Atendida" = atribuída ao atendente no período — não depende de a
+  conversa já estar fechada (uma conversa em andamento já foi atendida).
+- **Fórmula**: `count(conversations) where assigned_to_user_id is not null and
+  assigned_at >= from and assigned_at < to [and assigned_to_user_id = p_owner]`,
+  agrupado por `assigned_to_user_id`.
+- **Janela**: incide sobre **`assigned_at`** (momento da atribuição).
+- **Fonte**: `conversations.assigned_to_user_id`, `conversations.assigned_at`.
+
+### 6.6 Tempo até 1ª resposta por assignee (acceptance 2)
+
+- **Definição**: por conversa atribuída ao atendente, o intervalo entre a
+  **primeira mensagem inbound** (cliente) e a **primeira mensagem outbound de um
+  atendente HUMANO** — a resposta do bot/IA **não** conta. Métrica = **média (em
+  segundos)** desse intervalo sobre as conversas cuja 1ª resposta humana caiu na
+  janela.
+- **Coluna que distingue humano de bot**: **`messages.sent_by_user_id`** — é o
+  usuário que enviou; `NOT NULL` ⇒ atendente humano. A resposta do bot/IA tem
+  `sent_via = 'ai'` e `sent_by_user_id IS NULL` (CHECK `messages_sent_via_check`
+  admite `'ai'`). Logo a definição filtra `direction='outbound' AND
+  sent_by_user_id IS NOT NULL` — **exclui o bot explicitamente** (não há
+  ambiguidade; a coluna existe e distingue). Se no futuro o bot passar a gravar
+  `sent_by_user_id`, este filtro precisa de um discriminador adicional
+  (`sent_via <> 'ai'`) — registrado aqui como ponto de atenção.
+- **Fórmula** (por conversa `c` com `assigned_to_user_id = X`):
+  `t0 = min(messages.sent_at) where conversation_id = c and direction = 'inbound'`;
+  `t1 = min(messages.sent_at) where conversation_id = c and direction = 'outbound'
+  and sent_by_user_id is not null`. TTFR da conversa `= t1 - t0`, **somente** se
+  `t0` e `t1` existem e `t1 > t0` (respostas anteriores ao 1º inbound — conversa
+  iniciada pelo atendente — são descartadas: não há "tempo de resposta"). A
+  métrica é `avg(extract(epoch from (t1 - t0)))` sobre as conversas do atendente
+  com `t1 ∈ [from, to)`.
+- **Fonte**: `messages.direction`, `messages.sent_by_user_id`, `messages.sent_at`
+  (timestamp da mensagem; `NOT NULL default now()`), `messages.conversation_id`;
+  `conversations.assigned_to_user_id`. Atribuído ao `assigned_to_user_id` da
+  conversa (o dono da conversa), não ao autor da mensagem.
+
+### 6.7 Índices dedicados (acceptance 3 — migration 0037)
+
+Os índices existentes não cobrem won/lost por owner (o parcial de `crm_leads` é
+`WHERE status='open'`) nem a agregação org-wide de conversas por assignee
+(`idx_conversations_assigned` lidera por `assigned_to`, não por `organization_id`).
+A migration 0037 adiciona:
+
+- `idx_crm_leads_org_status_closed_owner` = `crm_leads (organization_id, status,
+  closed_at, owner_user_id) WHERE closed_at IS NOT NULL` — cobre §6.3/§6.4
+  (org+status+janela de `closed_at`, filtro/grupo por owner). Parcial mantém o
+  índice pequeno (só won/lost têm `closed_at`).
+- `idx_conversations_org_assignee_assigned` = `conversations (organization_id,
+  assigned_to_user_id, assigned_at) WHERE assigned_to_user_id IS NOT NULL` —
+  cobre §6.5 e o filtro por org da §6.6.
+
+TTFR (§6.6) reusa `idx_messages_conversation_sent (conversation_id, sent_at)` para
+o `min(...)` por conversa — sem índice novo em `messages`. `EXPLAIN (ANALYZE)`
+sob role `agent` E `manager` (com a RLS ativa, que muda o plano) prova ausência de
+seq scan em `crm_leads`/`conversations`/`messages` — documentado no verification.
 
 ## 7. Contrato para agentes externos (G6 → spec 14)
 

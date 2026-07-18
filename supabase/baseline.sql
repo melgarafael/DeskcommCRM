@@ -4524,6 +4524,416 @@ update public.organizations
  where not (coalesce(settings, '{}'::jsonb) ? 'canonical_conversation_tags');
 
 
+-- ---- revoke anon EXECUTE em SECURITY DEFINER de escrita (migration 0034) ----
+-- G4-00 (gov-loop): defesa em profundidade (INB-07). Duas origens de EXECUTE a
+-- anon: (A) grant DIRETO do ALTER DEFAULT PRIVILEGES ... TO anon acima (funções
+-- criadas depois dele, já sem grant a PUBLIC) → revoke anon; (B) grant via
+-- PUBLIC (funções criadas ANTES do ALTER e nunca revogadas de public) → revoke
+-- public + re-afirma authenticated/service_role (call sites legítimos). Nenhum
+-- fluxo anônimo depende delas. Idempotente/auto-curativo.
+revoke execute on function public.fn_upsert_wa_contact(uuid, text, text, text, text, text) from anon;
+revoke execute on function public.fn_upsert_wa_conversation(uuid, uuid, uuid) from anon;
+revoke execute on function public.fn_mark_conversation_message(uuid, text, text, timestamptz) from anon;
+
+revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public;
+revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from anon;
+grant execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
+
+revoke execute on function public.fn_log_event(uuid, text, jsonb) from public;
+revoke execute on function public.fn_log_event(uuid, text, jsonb) from anon;
+grant execute on function public.fn_log_event(uuid, text, jsonb) to authenticated, service_role;
+
+revoke execute on function public.fn_audit_log_row() from public;
+revoke execute on function public.fn_audit_log_row() from anon;
+grant execute on function public.fn_audit_log_row() to service_role;
+
+
+-- ---- visibility_mode: RLS de conversas/mensagens por atendente (migration 0035) ----
+-- G4-01 (gov-loop): eixo 5 (spec 13 §3.5 + §4). organizations.settings.visibility_mode
+-- ('all'|'own_and_unassigned'|'own', default 'own_and_unassigned' — G1-06a) restringe o
+-- SELECT de conversations/messages APENAS para o role agent; viewer/manager/admin seguem
+-- org-wide read. fn_can_view_conversation recebe os campos da ROW (evita lookup/recursão
+-- por-row); DEFINER + search_path blindado + revoke anon/public (lição G4-00). A escrita
+-- 0030 era FOR ALL, cujo USING também governa SELECT (policies OR-adas) — por isso é
+-- re-expressa por-comando (mesmo agent+/org; quem escreve não muda), removendo só o grant
+-- implícito de SELECT. messages SELECT herda o escopo da conversa via exists(). Idempotente,
+-- auto-curativo. Escrita não restringida; ingestão/outbound via service_role bypassa RLS.
+
+create or replace function public.fn_can_view_conversation(
+  p_org uuid,
+  p_assigned_to_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    when public.fn_user_role_in_org(p_org) is null then false
+    when public.fn_user_role_in_org(p_org) in ('viewer','manager','admin') then true
+    when p_assigned_to_user_id = auth.uid() then true
+    else case coalesce(
+           (select settings->>'visibility_mode' from public.organizations where id = p_org),
+           'own_and_unassigned')
+         when 'all' then true
+         when 'own_and_unassigned' then p_assigned_to_user_id is null
+         else false
+       end
+  end;
+$$;
+
+revoke all on function public.fn_can_view_conversation(uuid, uuid) from public;
+revoke execute on function public.fn_can_view_conversation(uuid, uuid) from anon;
+grant execute on function public.fn_can_view_conversation(uuid, uuid)
+  to authenticated, service_role;
+
+drop policy if exists "conversations_select" on public.conversations;
+create policy "conversations_select" on public.conversations
+  for select using (
+    public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+  );
+
+drop policy if exists "conversations_agent_write" on public.conversations;
+drop policy if exists "conversations_agent_insert" on public.conversations;
+drop policy if exists "conversations_agent_update" on public.conversations;
+drop policy if exists "conversations_agent_delete" on public.conversations;
+
+create policy "conversations_agent_insert" on public.conversations
+  for insert with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+create policy "conversations_agent_update" on public.conversations
+  for update using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  ) with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+create policy "conversations_agent_delete" on public.conversations
+  for delete using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists "messages_tenant_isolation_all" on public.messages;
+drop policy if exists "messages_select" on public.messages;
+drop policy if exists "messages_insert" on public.messages;
+drop policy if exists "messages_update" on public.messages;
+drop policy if exists "messages_delete" on public.messages;
+
+create policy "messages_select" on public.messages
+  for select using (
+    public.fn_is_platform_admin()
+    or exists (
+      select 1 from public.conversations c
+      where c.id = messages.conversation_id
+    )
+  );
+
+create policy "messages_insert" on public.messages
+  for insert with check (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+create policy "messages_update" on public.messages
+  for update using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+create policy "messages_delete" on public.messages
+  for delete using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+-- Forward-fix do G4-01: fn_conversation_assign (0031/0032) passa a SECURITY
+-- DEFINER. Com o SELECT de conversations visibility-aware, o `update ... returning
+-- *` re-aplica a policy de SELECT à NOVA linha — numa transferência o dono passa a
+-- ser outro atendente, invisível ao autor, e o RETURNING falharia. DEFINER bypassa
+-- a RLS na escrita interna; a autorização do caller (antes garantida pela RLS
+-- INVOKER) é re-afirmada dentro da função: agent+ ativo da MESMA org (service_role
+-- com auth.uid() null é dispensado). Corpo idêntico ao 0032 fora o guard.
+create or replace function public.fn_conversation_assign(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_to_user_id uuid,
+  p_reason text,
+  p_expected_assignee uuid default null,
+  p_enforce_expected boolean default false
+) returns setof public.conversations
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+begin
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  select assigned_to_user_id into v_from
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+   for update;
+
+  if not found then
+    return;
+  end if;
+
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason);
+
+  return next v_conv;
+end;
+$$;
+
+revoke all on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean) from public;
+revoke execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean) from anon;
+grant execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean)
+  to authenticated, service_role;
+
+-- ---- visibility_mode: RLS de crm_leads (kanban) por atendente (migration 0036) ----
+-- G4-03 (gov-loop): eixo 5 (spec 13 §4 linha 220). Espelha a G4-01 (conversations,
+-- 0035) para crm_leads — "dono" do lead = owner_user_id (não assigned_to). REUSE do
+-- mesmo organizations.settings.visibility_mode ('all'|'own_and_unassigned'|'own',
+-- default 'own_and_unassigned' — G1-06a; a matriz diz "mesmo escopo"). Só o role
+-- agent é restrito; viewer/manager/admin org-wide read; platform_admin tudo.
+-- fn_can_view_lead recebe os campos da ROW (sem lookup/recursão); DEFINER +
+-- search_path blindado + revoke anon/public (lição G4-00). A FOR ALL org-flat
+-- `tenant_isolation_crm_leads_all` governava SELECT junto (USING OR-ado) — dropada e
+-- re-expressa por-comando: SELECT visibility-aware + escrita por-role (agent=own-scope
+-- via a mesma fn, manager+=org-wide, viewer=none via piso 'agent'). Drag-and-drop de
+-- lead próprio (UPDATE de stage/position sem mudar owner) passa; lead de outro agent
+-- bloqueado; bulk assign (G3-04, ≥manager) intacto. Idempotente, auto-curativo.
+
+create or replace function public.fn_can_view_lead(
+  p_org uuid,
+  p_owner_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    when public.fn_user_role_in_org(p_org) is null then false
+    when public.fn_user_role_in_org(p_org) in ('viewer','manager','admin') then true
+    when p_owner_user_id = auth.uid() then true
+    else case coalesce(
+           (select settings->>'visibility_mode' from public.organizations where id = p_org),
+           'own_and_unassigned')
+         when 'all' then true
+         when 'own_and_unassigned' then p_owner_user_id is null
+         else false
+       end
+  end;
+$$;
+
+revoke all on function public.fn_can_view_lead(uuid, uuid) from public;
+revoke execute on function public.fn_can_view_lead(uuid, uuid) from anon;
+grant execute on function public.fn_can_view_lead(uuid, uuid)
+  to authenticated, service_role;
+
+drop policy if exists "tenant_isolation_crm_leads_all" on public.crm_leads;
+drop policy if exists "crm_leads_select" on public.crm_leads;
+drop policy if exists "crm_leads_insert" on public.crm_leads;
+drop policy if exists "crm_leads_update" on public.crm_leads;
+drop policy if exists "crm_leads_delete" on public.crm_leads;
+
+create policy "crm_leads_select" on public.crm_leads
+  for select using (
+    public.fn_can_view_lead(organization_id, owner_user_id)
+  );
+
+create policy "crm_leads_insert" on public.crm_leads
+  for insert with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent')
+        and (public.fn_role_at_least(organization_id, 'manager')
+             or public.fn_can_view_lead(organization_id, owner_user_id)))
+  );
+create policy "crm_leads_update" on public.crm_leads
+  for update using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent')
+        and (public.fn_role_at_least(organization_id, 'manager')
+             or public.fn_can_view_lead(organization_id, owner_user_id)))
+  ) with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent')
+        and (public.fn_role_at_least(organization_id, 'manager')
+             or public.fn_can_view_lead(organization_id, owner_user_id)))
+  );
+create policy "crm_leads_delete" on public.crm_leads
+  for delete using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent')
+        and (public.fn_role_at_least(organization_id, 'manager')
+             or public.fn_can_view_lead(organization_id, owner_user_id)))
+  );
+
+
+-- ---- métricas por responsável: índices + fn_attendant_metrics (migration 0037) ----
+-- spec 13 §6. Índices dedicados (won/lost por owner na janela de closed_at;
+-- conversas por assignee org-leading) + agregação SECURITY INVOKER (a RLS de
+-- crm_leads/conversations define o escopo por atendente). Idempotente.
+
+create index if not exists idx_crm_leads_org_status_closed_owner
+  on public.crm_leads (organization_id, status, closed_at, owner_user_id)
+  where closed_at is not null;
+
+create index if not exists idx_conversations_org_assignee_assigned
+  on public.conversations (organization_id, assigned_to_user_id, assigned_at)
+  where assigned_to_user_id is not null;
+
+create or replace function public.fn_attendant_metrics(
+  p_org uuid,
+  p_from timestamptz,
+  p_to timestamptz,
+  p_owner uuid default null
+) returns jsonb
+language sql stable
+set search_path = public
+as $$
+  with
+  lead_agg as (
+    select
+      owner_user_id as user_id,
+      count(*) filter (where status = 'won')  as won,
+      count(*) filter (where status = 'lost') as lost
+    from public.crm_leads
+    where organization_id = p_org
+      and status in ('won', 'lost')
+      and closed_at >= p_from and closed_at < p_to
+      and owner_user_id is not null
+      and (p_owner is null or owner_user_id = p_owner)
+    group by owner_user_id
+  ),
+  conv_agg as (
+    select
+      assigned_to_user_id as user_id,
+      count(*) as conversations_handled
+    from public.conversations
+    where organization_id = p_org
+      and assigned_to_user_id is not null
+      and assigned_at >= p_from and assigned_at < p_to
+      and (p_owner is null or assigned_to_user_id = p_owner)
+    group by assigned_to_user_id
+  ),
+  ttfr as (
+    select
+      c.assigned_to_user_id as user_id,
+      avg(extract(epoch from (fr.first_human_out - fr.first_in))) as avg_first_response_seconds
+    from public.conversations c
+    cross join lateral (
+      select
+        min(m.sent_at) filter (where m.direction = 'inbound') as first_in,
+        min(m.sent_at) filter (
+          where m.direction = 'outbound' and m.sent_by_user_id is not null
+        ) as first_human_out
+      from public.messages m
+      where m.conversation_id = c.id
+    ) fr
+    where c.organization_id = p_org
+      and c.assigned_to_user_id is not null
+      and (p_owner is null or c.assigned_to_user_id = p_owner)
+      and fr.first_in is not null
+      and fr.first_human_out is not null
+      and fr.first_human_out > fr.first_in
+      and fr.first_human_out >= p_from and fr.first_human_out < p_to
+    group by c.assigned_to_user_id
+  ),
+  attendant_ids as (
+    select user_id from lead_agg
+    union select user_id from conv_agg
+    union select user_id from ttfr
+  )
+  select jsonb_build_object(
+    'funnel', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'stage_id', s.id,
+          'stage_name', s.name,
+          'position', s.position,
+          'count', coalesce(l.cnt, 0)
+        ) order by s.position, s.name
+      )
+      from public.crm_stages s
+      left join (
+        select stage_id, count(*) as cnt
+        from public.crm_leads
+        where organization_id = p_org
+          and status = 'open'
+          and (p_owner is null or owner_user_id = p_owner)
+        group by stage_id
+      ) l on l.stage_id = s.id
+      where s.organization_id = p_org
+        and s.is_archived = false
+    ), '[]'::jsonb),
+    'attendants', coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'user_id', a.user_id,
+          'won', coalesce(la.won, 0),
+          'lost', coalesce(la.lost, 0),
+          'conversations_handled', coalesce(ca.conversations_handled, 0),
+          'avg_first_response_seconds', tf.avg_first_response_seconds
+        ) order by coalesce(la.won, 0) desc, a.user_id
+      )
+      from attendant_ids a
+      left join lead_agg la on la.user_id = a.user_id
+      left join conv_agg ca on ca.user_id = a.user_id
+      left join ttfr tf on tf.user_id = a.user_id
+    ), '[]'::jsonb)
+  );
+$$;
+
+revoke all on function public.fn_attendant_metrics(uuid, timestamptz, timestamptz, uuid) from public;
+revoke execute on function public.fn_attendant_metrics(uuid, timestamptz, timestamptz, uuid) from anon;
+grant execute on function public.fn_attendant_metrics(uuid, timestamptz, timestamptz, uuid)
+  to authenticated, service_role;
+
+
 -- ---- webhooks universais + motor de regras (migration 0038) ----
 -- Spec: docs/superpowers/specs/2026-07-17-webhooks-design.md. Idempotente
 -- (create if not exists / drop policy if exists) — auto-curativo no update.sh.
