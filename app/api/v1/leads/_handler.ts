@@ -150,6 +150,8 @@ export async function createLeadHandler(
   input: CreateLeadInput & {
     custom_fields?: Record<string, unknown>;
     source_metadata?: Record<string, unknown>;
+    /** Interno (webhook inbound) — idempotência via uniq_crm_leads_org_source_external. */
+    external_id?: string;
   },
 ): Promise<Record<string, unknown>> {
   // Validate stage belongs to pipeline within active org.
@@ -205,6 +207,7 @@ export async function createLeadHandler(
       tags: input.tags ?? [],
       source: input.source,
       source_metadata: input.source_metadata ?? {},
+      external_id: input.external_id ?? null,
       custom_fields: input.custom_fields ?? {},
       status: "open",
       position_in_stage: nextPos,
