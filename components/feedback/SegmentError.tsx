@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { copyToClipboard } from "@/lib/clipboard";
 
 export interface SegmentErrorProps {
   error: Error & { digest?: string };
@@ -25,12 +26,12 @@ export function SegmentError({ error, reset, segment }: SegmentErrorProps) {
   const displayId = eventId ?? error.digest ?? "—";
 
   function copyId() {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(displayId).then(() => {
+    void copyToClipboard(displayId).then((ok) => {
+      if (ok) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      });
-    }
+      }
+    });
   }
 
   return (

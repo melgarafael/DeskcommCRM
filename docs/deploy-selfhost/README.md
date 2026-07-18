@@ -37,6 +37,12 @@ Edite o `.env` e preencha (mínimo):
   > `NEXT_PUBLIC_APP_URL` começar com `http://` — o cookie de sessão deixa de
   > ser `Secure` automaticamente e o login funciona. Com `https://`, `Secure`
   > sempre ligado.
+  >
+  > Em `http://` o app funciona 100%: as três Web APIs que somem fora de
+  > secure context estão tratadas (cookie `Secure`, `crypto.randomUUID` e
+  > `navigator.clipboard` — os botões de copiar usam fallback). Ainda assim,
+  > HTTPS via Caddy é o recomendado de produção: fecha a família inteira de
+  > restrições de contexto não-seguro de uma vez.
 - **Segredos** (gere com `openssl rand -base64 32` cada): `INTERNAL_SECRET`,
   `INTERNAL_CRON_SECRET`, `CPF_ENCRYPTION_KEY`, `AI_CRED_AES_KEY`,
   `WAHA_BYO_ENCRYPTION_KEY`, `IMPERSONATE_COOKIE_SECRET`, `LGPD_SIGNING_KEY`, `SRH_TOKEN`

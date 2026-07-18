@@ -1,5 +1,7 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
+
 import { PALETTES } from "../lib/tokens";
 import type { ColorScale, PaletteId } from "../lib/tokens";
 import { useVariant } from "../lib/variant-context";
@@ -19,7 +21,7 @@ function Swatches({ scale, onDarkAfter = 600 }: { scale: ColorScale; onDarkAfter
             className="ds-swatch"
             data-on-dark={onDark}
             style={{ background: hex }}
-            onClick={() => navigator.clipboard?.writeText(hex)}
+            onClick={() => void copyToClipboard(hex)}
             title={`${stop} · ${hex} (clique para copiar)`}
           >
             <span>{stop}</span>
