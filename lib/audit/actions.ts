@@ -125,4 +125,14 @@ export type AuditAction =
   | "attendant.availability_changed"
   | "routing.config_changed"
   | "routing.worker_run"
-  | "attendant.heartbeat_swept";
+  | "attendant.heartbeat_swept"
+  | "webhook.source_created"
+  | "webhook.source_updated"
+  | "webhook.source_deleted"
+  | "webhook.lead_received"
+  | "webhook.inbound_invalid_signature"
+  | "automation.rule_created"
+  | "automation.rule_updated"
+  | "automation.rule_deleted"
+  | "automation.rule_executed"
+  | "automation.run_resent";

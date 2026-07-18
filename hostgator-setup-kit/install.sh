@@ -11,6 +11,10 @@
 #
 set -euo pipefail
 
+# Diretório onde este script (e _common.sh, seu irmão) vivem — capturado ANTES
+# de qualquer 'cd' (step 2 pode entrar num repo clonado à parte).
+KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
 REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
 REPO_DIR="${REPO_DIR:-deskcommcrm}"
 COMPOSE="docker-compose.prod.yml"
@@ -70,6 +74,7 @@ else
   cd "$REPO_DIR"
 fi
 PROJECT_DIR="$(pwd)"
+source "$KIT_DIR/_common.sh"
 
 # ── 3. Coleta de config ─────────────────────────────────────────────────────
 step "Configuração"
@@ -239,6 +244,10 @@ for i in $(seq 1 30); do
   sleep 3
 done
 [ "$ok" = 1 ] && c_grn "✓ app respondendo" || c_ylw "⚠ app ainda não respondeu. Veja: docker compose -f $COMPOSE logs app"
+
+# ── 11. Automações (cron do drain de eventos) ───────────────────────────────
+step "Ativando as automações"
+setup_event_log_drain_cron
 
 # ── Final ───────────────────────────────────────────────────────────────────
 cat <<DONE

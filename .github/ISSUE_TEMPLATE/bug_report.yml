@@ -1,0 +1,42 @@
+name: 🐛 Bug report
+description: Algo quebrou ou não funciona como documentado
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar! Para **vulnerabilidades de segurança**, NÃO abra issue — use o [relato privado](https://github.com/melgarafael/DeskcommCRM/security/advisories/new).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: O que aconteceu?
+      description: Descreva o bug e o que você esperava que acontecesse.
+      placeholder: Ao clicar em X na tela Y, acontece Z em vez de W.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Acesse '...'
+        2. Clique em '...'
+        3. Veja o erro
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Ambiente
+      description: Versão do Node, pnpm, SO, e onde roda (local / Vercel / VPS HostGator).
+      placeholder: |
+        Node 20.x · pnpm 9.x · macOS 15 · self-host via hostgator-setup-kit
+        Output de /api/v1/health: ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshot
+      description: Stack trace, print ou output relevante (remova dados pessoais!).
+      render: shell

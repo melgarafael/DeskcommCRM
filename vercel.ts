@@ -27,6 +27,8 @@ const config: VercelConfig = {
     // conversas sem dono por org (round_robin). Per-minute (cap do Vercel) —
     // no-eligible reenfileira com backoff da config (settings.routing).
     { path: "/api/v1/cron/routing-worker", schedule: "*/1 * * * *" },
+    // Webhooks/automação: drain genérico do event_log (spec 2026-07-17).
+    { path: "/api/v1/cron/event-log-drain", schedule: "*/1 * * * *" },
   ],
   functions: {
     // EPIC-13 S-13.08: ToolLoopAgent runtime can issue multiple tool calls per

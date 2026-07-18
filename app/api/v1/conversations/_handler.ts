@@ -57,9 +57,11 @@ function actorAuditPayload(actor: Actor): {
   return {
     actorUserId: null,
     metadataActor: {
-      actor_type: "ai_agent",
+      actor_type: actor.type,
       actor_id: actor.id,
-      ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      ...(actor.type === "ai_agent" && actor.api_token_id
+        ? { actor_api_token_id: actor.api_token_id }
+        : {}),
     },
   };
 }

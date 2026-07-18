@@ -1,0 +1,24 @@
+name: 💡 Feature request
+description: Sugira uma melhoria ou funcionalidade nova
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Qual problema isso resolve?
+      description: Descreva a dor real de quem opera o CRM, não só a solução.
+      placeholder: Como atendente, eu preciso de X porque Y.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solução proposta
+      description: Como você imagina que isso funcionaria?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+      description: Outras formas de resolver, ou como você contorna hoje.

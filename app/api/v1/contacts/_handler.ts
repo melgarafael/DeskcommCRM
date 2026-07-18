@@ -61,9 +61,11 @@ function actorAuditPayload(actor: Actor): {
   return {
     actorUserId: null,
     metadataActor: {
-      actor_type: "ai_agent",
+      actor_type: actor.type,
       actor_id: actor.id,
-      ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      ...(actor.type === "ai_agent" && actor.api_token_id
+        ? { actor_api_token_id: actor.api_token_id }
+        : {}),
     },
   };
 }
@@ -314,7 +316,7 @@ export async function patchContactHandler(
 ): Promise<Contact> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
-    .select("id, organization_id, is_anonymized")
+    .select("id, organization_id, is_anonymized, tags")
     .eq("id", contactId)
     .maybeSingle();
 
@@ -401,6 +403,25 @@ export async function patchContactHandler(
     .then(({ error }) => {
       if (error) console.error("[contacts.patch] emit_event failed", error.message);
     });
+
+  if (input.tags !== undefined) {
+    const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
+    const addedTags = input.tags.filter((t) => !prevTags.includes(t));
+    if (addedTags.length) {
+      await supabase
+        .rpc("emit_event", {
+          p_event_type: "contact.tag_added",
+          p_entity_kind: "contact",
+          p_entity_id: contact.id,
+          p_payload: { added_tags: addedTags, tags: input.tags },
+          p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+          p_organization_id: contact.organization_id,
+        })
+        .then(({ error }) => {
+          if (error) console.error("[contacts.patch] emit_event failed", error.message);
+        });
+    }
+  }
 
   await audit({
     action: "contact.updated",

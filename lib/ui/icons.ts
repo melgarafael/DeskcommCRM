@@ -44,6 +44,7 @@ export {
   MagnifyingGlass,
   Pause,
   Play,
+  SkipForward,
   Copy,
   Archive,
   // feedback
@@ -76,10 +77,12 @@ export {
   // misc
   DotsThree,
   CaretDown,
+  CaretUp,
   CaretDoubleLeft,
   CaretDoubleRight,
   CaretLeft,
   CaretRight,
   ArrowRight,
   SignOut,
+  WebhooksLogo,
 } from "@phosphor-icons/react/dist/ssr";
