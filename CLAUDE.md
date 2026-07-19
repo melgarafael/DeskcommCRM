@@ -12,7 +12,7 @@ DeskcommCRM é um CRM operacional multi-tenant para e-commerce com IA conversaci
 
 ## Stack canônica
 
-- **Frontend:** Next.js 15 App Router + TypeScript estrito + Tailwind + shadcn/ui (style: `new-york`, neutral)
+- **Frontend:** Next.js 16 App Router (Turbopack) + React 19 + TypeScript 6 estrito + Tailwind + shadcn/ui (style: `new-york`, neutral)
 - **Backend:** Next.js Route Handlers (mesmo repo); workers via `event_log` table + cron
 - **DB:** Supabase (Postgres). RLS em toda tabela tenant-aware. Extensions: `uuid-ossp`, `pgcrypto`, `vector`
 - **Auth:** Supabase Auth via `@supabase/ssr`. Cookie SameSite=Strict, HttpOnly, Secure
