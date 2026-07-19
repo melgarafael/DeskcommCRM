@@ -31,6 +31,10 @@ export function ConversationList({
 }: Props) {
   const q = useConversationsRealtime(filters, orgId);
 
+  // Fila (G5-03): a lista já vem ordenada por tempo de espera (server), então a
+  // posição é o índice na lista visível. Só mostramos posição/espera nessa visão.
+  const isQueue = filters.assigned_to === "unassigned";
+
   const items = useMemo(() => {
     const all: ConversationWithContact[] = q.data?.pages.flatMap((p) => p.data) ?? [];
     return clientFilter ? all.filter(clientFilter) : all;
@@ -82,12 +86,13 @@ export function ConversationList({
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto">
-        {items.map((c) => (
+        {items.map((c, i) => (
           <ConversationListItem
             key={c.id}
             conversation={c}
             isSelected={c.id === selectedId}
             onSelect={onSelect}
+            queuePosition={isQueue ? i + 1 : undefined}
           />
         ))}
         {q.hasNextPage && (

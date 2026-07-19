@@ -1,17 +1,22 @@
 import { defineConfig } from "@playwright/test";
 
+// Porta do dev server sob teste. Default 3001; sobrescreva com E2E_PORT quando
+// a 3001 já estiver ocupada por outro checkout/worktree.
+const PORT = process.env.E2E_PORT ?? "3001";
+const BASE_URL = `http://localhost:${PORT}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   fullyParallel: false,
   retries: 0,
   use: {
-    baseURL: "http://localhost:3001",
+    baseURL: BASE_URL,
     trace: "on-first-retry",
   },
   webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:3001",
+    command: `pnpm dev --port ${PORT}`,
+    url: BASE_URL,
     reuseExistingServer: true,
     timeout: 120_000,
   },

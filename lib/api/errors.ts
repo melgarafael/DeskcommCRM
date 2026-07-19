@@ -35,6 +35,7 @@ export const ApiErrorCodes = {
   state_conflict: "state_conflict",
   tenant_already_exists: "tenant_already_exists",
   duplicate_external_id: "duplicate_external_id",
+  event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
 
   // 422 — semântica
   unprocessable_entity: "unprocessable_entity",

@@ -41,6 +41,14 @@ DeskcommCRM unifica **atendimento humano**, **agentes de IA com RAG por tenant**
 - 🔌 **MCP-ready** — MCP server interno pros agentes; contrato público pra agentes externos em construção.
 - 🏢 **Multi-tenant de verdade** — RLS em toda tabela tenant-aware, teste de isolamento como gate de CI.
 
+### 🔌 Webhooks & Automações
+
+Todo tenant pode criar **fontes de captação**: um endereço público (`/api/v1/webhooks/in/<token>`) que recebe leads de landing pages, formulários próprios ou ferramentas como Zapier/n8n via POST (JSON ou `application/x-www-form-urlencoded`) e já entra direto no funil/estágio escolhido — sem código, sem integração customizada por tenant. Em cima dessas fontes (e dos outros eventos do CRM — lead mudou de etapa, ganhou tag, chegou mensagem no WhatsApp), o tenant monta **automações**: regras no formato QUANDO/SE/ENTÃO que disparam ações como adicionar tag, mover o lead no funil, atribuir a um atendente, mandar uma mensagem de WhatsApp ou avisar outro sistema via webhook de saída.
+
+Na UI, tudo mora em **Webhooks** na sidebar (visível só pra quem tem papel `manager`/`admin` — `agent`/`viewer` não veem o item nem acessam a rota, redirecionados pro inbox). A tela tem três abas: **Receber dados** (criar fonte, copiar o endereço/formulário pronto, disparar um lead de teste, ver os últimos recebimentos), **Automações** (montar a regra, que sempre nasce pausada até o tenant revisar e ligar) e **Atividade** (timeline de cada execução, com o resultado de cada ação e reenvio manual quando uma chamada de webhook externo falha).
+
+Por baixo, cada evento (lead criado, tag adicionada, etc.) vira uma linha em `event_log` — nenhum trigger de banco faz chamada HTTP diretamente. Quem drena essa fila e realmente dispara as automações é a rota `/api/v1/cron/event-log-drain`, chamada a cada minuto. No Vercel isso é um Cron Job gerenciado; **no kit self-host da HostGator** (`hostgator-setup-kit/`), o `install.sh`/`update.sh` já configura sozinho uma linha de `crontab` que roda essa rota todo minuto com o `INTERNAL_SECRET` do `.env` — sem esse cron ativo, fontes e automações continuam sendo criadas normalmente, mas os eventos ficam empilhados em `event_log` e nenhuma automação chega a rodar de verdade.
+
 ---
 
 ## 🚀 Quickstart (5 minutos pra ver rodando)

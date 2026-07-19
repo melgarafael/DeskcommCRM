@@ -288,6 +288,24 @@ async function handleInbound(
       .then(({ error }) => {
         if (error) console.error("[waha.ingest] emit dispatch_requested failed", error.message);
       });
+
+    admin
+      .rpc("emit_event" as never, {
+        p_event_type: "message.received",
+        p_entity_kind: "message",
+        p_entity_id: inboundMessageId,
+        p_payload: {
+          conversation_id: conversationId,
+          contact_id: contactId,
+          channel_session_id: session.id,
+          body_preview: (p.body ?? "").slice(0, 280),
+        },
+        p_metadata: { source: "waha_webhook", request_id: requestId },
+        p_organization_id: session.organization_id,
+      } as never)
+      .then(({ error }) => {
+        if (error) console.error("[waha.ingest] emit message.received failed", error.message);
+      });
   }
 }
 

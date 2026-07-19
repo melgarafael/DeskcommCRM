@@ -331,6 +331,19 @@ a migration `20260716120000_0030_config_rls_role_policies.sql` aplica
   consome com claim + dedup (at-least-once seguro: conversa que já tem dono nunca
   é reatribuída pelo replay).
 - Sem elegível ⇒ fila (visível, com posição) + re-agenda com backoff.
+- **Notificação de atribuição** (decisão G5-03): o repo NÃO tem sistema de
+  notificação in-app (só `notification_prefs` = preferências; sem tabela de
+  notificação nem entrega de toast). A notificação ao novo dono é, portanto, o
+  par **unread badge + realtime**: `fn_conversation_assign` zera
+  `unread_count_for_assignee` e seta `assigned_to_user_id`; a subscription
+  `postgres_changes` de `conversations` (G4-01/02, RLS visibility-aware) entrega
+  o change ao novo dono, que vê a conversa surgir em "Minhas" com o unread badge.
+  Não construímos um sistema de notificação novo (fora de escopo).
+- **Fila com posição/espera** (G5-03): a visão Fila (`assigned_to=unassigned`)
+  ordena por `last_inbound_at` ASC (quem espera há mais tempo primeiro); posição =
+  índice na lista ordenada; "aguardando há X" derivado de `last_inbound_at`. A
+  contagem da fila casa com `counts.unassigned` (mesmo predicado: sem dono +
+  status `open`).
 
 > Origem das decisões deste documento (§3.5 defaults, §4 matriz, §5 roteamento):
 > decisões do dono, 2026-07-16, inbox INB-01/INB-02 (`loop/inbox.items.md`).

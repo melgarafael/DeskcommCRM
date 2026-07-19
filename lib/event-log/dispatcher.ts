@@ -29,7 +29,9 @@ export interface EventRow {
 export interface HandlerResult {
   /** Stable key to push into `event_log.consumed_by`. */
   consumer_key: string;
-  status: "ok" | "skipped" | "error";
+  status: "ok" | "skipped" | "error" | "retry";
+  /** ISO timestamp — obrigatório quando status="retry"; drain reagenda sem contar attempt. */
+  retry_at?: string;
   detail?: string;
 }
 

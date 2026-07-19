@@ -51,6 +51,20 @@ e-mail/senha do admin), gera o resto e sobe tudo.
 | `reset-mfa.sh` | Remove o MFA de um usuário travado |
 | `healthcheck.sh` | Diagnóstico dos serviços |
 
+## Automações e webhooks
+
+O `install.sh` (e o `update.sh`, a cada atualização) já ativa sozinho um cron que roda todo minuto e "puxa" a fila de eventos pendentes (`/api/v1/cron/event-log-drain`) — é isso que faz uma automação disparar de verdade no seu servidor (ex.: enviar uma mensagem de WhatsApp quando um pedido muda de status). **Sem esse cron, as automações ficam paradas na fila e nunca rodam** — é um requisito, não um extra.
+
+Rodar de novo o `install.sh`/`update.sh` não duplica a linha do cron (ele mesmo substitui a antiga). Na 1ª vez que o cron é ativado numa instalação que já existia há um tempo, o script também limpa eventos pendentes com mais de 7 dias (marcando como concluídos, sem apagar histórico) — assim o primeiro drain não sai disparando efeitos atrasados de semanas atrás.
+
+Pra testar na mão, rode no próprio VPS (usa o `INTERNAL_SECRET` do seu `.env`):
+
+```bash
+source .env && curl -s -H "Authorization: Bearer ${INTERNAL_SECRET}" "${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain"
+```
+
+Resposta esperada: `{"data":{"scanned":N,...}}` (N pode ser 0 se não houver eventos na fila — o importante é receber esse formato, não um erro de autenticação ou de conexão).
+
 ## Suporte
 
 Problemas comuns e como resolver estão no `CLAUDE.md` (seção "Quando der problema").

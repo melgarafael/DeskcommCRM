@@ -22,6 +22,12 @@ function actorAuditPayload(actor: Actor): {
   if (actor.type === "user") {
     return { actorUserId: actor.id, metadataActor: { actor_type: "user" } };
   }
+  if (actor.type === "webhook_source") {
+    return {
+      actorUserId: null,
+      metadataActor: { actor_type: "webhook_source", actor_id: actor.id },
+    };
+  }
   return {
     actorUserId: null,
     metadataActor: {
@@ -141,7 +147,10 @@ export async function getLeadHandler(
 export async function createLeadHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  input: CreateLeadInput,
+  input: CreateLeadInput & {
+    custom_fields?: Record<string, unknown>;
+    source_metadata?: Record<string, unknown>;
+  },
 ): Promise<Record<string, unknown>> {
   // Validate stage belongs to pipeline within active org.
   const { data: stage, error: stageErr } = await supabase
@@ -195,8 +204,8 @@ export async function createLeadHandler(
       expected_close_date: input.expected_close_date ?? null,
       tags: input.tags ?? [],
       source: input.source,
-      source_metadata: {},
-      custom_fields: {},
+      source_metadata: input.source_metadata ?? {},
+      custom_fields: input.custom_fields ?? {},
       status: "open",
       position_in_stage: nextPos,
       created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
@@ -262,7 +271,7 @@ export async function updateLeadHandler(
 ): Promise<Record<string, unknown>> {
   const { data: existing, error: selErr } = await supabase
     .from("crm_leads")
-    .select("id, organization_id")
+    .select("id, organization_id, tags")
     .eq("id", leadId)
     .maybeSingle();
 
@@ -319,6 +328,25 @@ export async function updateLeadHandler(
     .then(({ error }) => {
       if (error) console.error("[lead.update] emit_event failed", error.message);
     });
+
+  if (input.tags !== undefined) {
+    const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
+    const addedTags = input.tags.filter((t) => !prevTags.includes(t));
+    if (addedTags.length) {
+      await supabase
+        .rpc("emit_event", {
+          p_event_type: "lead.tag_added",
+          p_entity_kind: "crm_lead",
+          p_entity_id: leadId,
+          p_payload: { added_tags: addedTags, tags: input.tags },
+          p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+          p_organization_id: existing.organization_id,
+        })
+        .then(({ error }) => {
+          if (error) console.error("[lead.update] emit_event failed", error.message);
+        });
+    }
+  }
 
   await audit({
     action: "lead.updated",
@@ -436,6 +464,7 @@ export async function moveLeadHandler(
       p_entity_kind: "crm_lead",
       p_entity_id: leadId,
       p_payload: {
+        pipeline_id: lead.pipeline_id,
         from_stage_id: lead.stage_id,
         to_stage_id: input.to_stage_id,
         position_in_stage: position,

@@ -99,3 +99,7 @@ else
   c_ylw "⚠ Atualizei, mas o app ainda não respondeu 'ok'. Veja os logs:"
   c_ylw "  docker compose -f $COMPOSE logs --tail=50 app"
 fi
+
+# ── 7. Automações (cron do drain de eventos) ─────────────────────────────────
+step "Conferindo as automações"
+setup_event_log_drain_cron

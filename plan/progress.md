@@ -413,3 +413,137 @@
 - Checkpoint G4 emitido (loop/checkpoints/G4-report.md, COMPLETO 5/5), loop
   PARADO aguardando aprovação do dono (G4.approved) ou recusa (.rejected).
   5 INB abertos (03/04/05/08/10, proposal/não-vetantes) copiados no §3.
+
+## 2026-07-17 — virada de fase G4 → main (watchdog/Maestro)
+
+- G4 aprovada pelo dono via chat ("retome"); gov/G4 mergeada em main e pushada
+  (59b0d33, inclui os 2 commits de docs de webhooks de outra sessão do dono);
+  gov/G5 criada. INB-03/04/05/08/10 seguem open (re-apresentar no checkpoint G5;
+  INB-10 é pré-condição da G6).
+- Próximo: Arquiteto abre G5-01 (routing config + availability). Teto 10/12 hoje.
+
+## 2026-07-17 — incidente de infra + trombada de checkouts (watchdog/Maestro)
+
+- 16:55: G5-01 blocked — disco 100% (1.5Gi livre) + untracked da fusão Vendaval
+  (lib/agent-engine, migration 0038 colidente) quebrando o smoke no checkout.
+- Watchdog liberou 6.5Gi (caches npm/uv/puppeteer/pnpm) → 8Gi livres.
+- 17:11: Terminal B criou loop/STOP alegando git clean ~17h apagando trabalho
+  da fusão. Apuração: gov-loop usa stash (não clean); trabalho confirmado salvo
+  no worktree ../DeskcommCRM-vendaval. Principal chegou a ser trocado pra
+  fusion/vendaval por engano e foi revertido pelo Maestro do Vendaval.
+- Acordo de convivência: fusão vive no worktree (branch vendaval-fusion);
+  NNNN 0038-0049 reservados pro gov-loop, fusão renumera 0050+.
+- 17:5x: principal de volta em gov/G5, limpo, typecheck OK. STOP removido pelo
+  watchdog com autorização do time que o criou. Loop retomando na G5-01.
+
+## 2026-07-17 — sessão 12 do loop (core) — REPARO DE SMOKE (não G5-01)
+
+- Entrada com smoke VERMELHO, mas NÃO era a main: vitest estava varrendo o
+  worktree aninhado .claude/worktrees/webhooks/ (fusão Vendaval do colega) —
+  275 test files / 5218 testes em vez dos nossos 165. 67 falhas eram do worktree
+  (imports quebrados, Playwright specs no vitest) + React duplo (node_modules do
+  worktree) quebrando nossos testes de componente com useContext null.
+- REPARO (§1.8): vitest.config.ts exclude ganhou ".claude/**" e "node_modules"
+  virou "**/node_modules/**". Suíte voltou aos 165 corretos (22 files).
+- Resíduo NÃO-código: 2 testes de interação de TeamMembersClient (G2-02)
+  oscilam no timeout de 5s sob load da máquina em 51 (catastrófico — build/test
+  do colega no worktree). MESMO teste passa a 2993ms (load baixo) e falha a
+  5758ms (load 51). Código são (gov-verifier verde na G2-02). NÃO mascarei o
+  timeout — é infra, resolve quando o load normaliza.
+- G5-01 NÃO iniciada: §1.8 (sessão de smoke-vermelho é reparo, 1 entrega) +
+  test:db (Docker+pgvector) inviável a load 51. Loop dorme (12/12 do teto);
+  amanhã abre G5-01 com a máquina fria.
+
+## 2026-07-18 — sessão 13 do loop (core) — G5-01 (fase G5 aberta)
+
+- G5-01 (disponibilidade + routing config): migration 0039 (NÃO 0038 — colidia
+  com feat/webhooks-automation do colega; corrigi antes de codar). attendant_availability
+  (is_available, capacity, schedule jsonb tz-aware, last_heartbeat_at) + RLS
+  por-comando (SELECT org-wide; write own-OU-manager; sem FOR ALL). settings.routing
+  Zod (mode manual|round_robin default manual; knobs config, não hardcoded).
+- Decisões do implementer: elegibilidade em TS puro (lib/routing/eligibility.ts,
+  now injetado → clock mockado; tz-aware via Intl, sem dep); heartbeat = cron TS
+  GET /cron/attendant-heartbeat (Bearer, trigger NUNCA faz HTTP), auto-offline
+  15min (HEARTBEAT_TIMEOUT_MINUTES nomeada); rota /settings/routing nova
+  (manager+) separada do updateTenant (admin-only) — matriz §4 nota 5. UI toggle
+  adiada pra G5-04 (sem .tsx no diff → screenshot não requerido, verifier confirmou).
+- 3 rotas API v1 + cron; audit em cada mutação (3 actions append-only). Flip do
+  gov-4 (attendant_availability existe) + shape + RLS write-scope.
+- gov-verifier PASS 1ª rodada, hash OK. 178 unit + 100 invariantes; probes RLS
+  cross-atendente (agent grava própria=1, de outro=0, manager=qualquer).
+- INB-11 aberto: bloco attendant_availability DUPLICADO no baseline.sql (linhas
+  4936+4999, mesmo SQL, headers diferentes) — inócuo (idempotente, install+update
+  verdes) mas ruído; dedup num forward-fix.
+- Próxima: G5-02 (worker de roteamento via event_log) — consome a elegibilidade daqui.
+
+## 2026-07-18 — sessão 14 do loop (core) — G5-02
+
+- G5-02 (worker de roteamento): trigger AFTER INSERT (migration 0040) emite
+  conversation.routing_requested só quando conversa NASCE sem dono (WHEN
+  assigned_to_user_id IS NULL AND status IN open/pending) — ZERO trigger de
+  UPDATE ⇒ o assign do worker NÃO re-emite (anti-eco físico, não convenção).
+  worker (lib/routing/worker.ts): dreno com claim CAS pending→processing→done/
+  dead (status VÁLIDOS do event_log_status_check, não os processed/failed que o
+  agent-dispatcher usa errado), atribui via fn_conversation_assign(reason=routing)
+  atômico; decide.ts é lógica PURA (round_robin/manual/backoff/dead).
+- Cuidado do Maestro provado: anti-eco count=1 após 2 assigns (não 2/3);
+  idempotência (2º assign expected=null → 0 rows, 1 evento); sem elegível →
+  backoff da CONFIG (next_attempt_at=now+backoff_seconds, attempts++, dead após
+  max_retries); manual → no-op; load inalcançável (schema) → branch defensivo.
+- gov-verifier PASS 1ª rodada SEM findings, hash OK. 188 unit + 107 invariantes
+  (gov-4b 7/7). Sem flip (não havia it.fails de worker; gov-4b é adição).
+- INB-12 aberto: 2 round-robins divergentes (decide.ts selectRoundRobin vs
+  handoff pickRoundRobinAssignee) — dívida de duplicação, extrair pra lib comum.
+- INB-13 aberto: BUG pré-existente do agent-dispatcher (lib/ai/dispatcher/index.ts
+  :403/456 grava status processed/failed, inválido no event_log_status_check →
+  UPDATE viola constraint em runtime). NÃO é da G5-02.
+- MITIGAÇÃO DE INFRA: docker volume prune recuperou 28.34GB (volumes dangling
+  dos test:db acumulados) — disco 193Mi→15Gi. Rodar prune periódico evita o
+  aperto que travou o loop.
+- Próxima: G5-03 (fila visível + notificação).
+
+## 2026-07-18 — sessão 15 (nota) — hash-check da G5-03 invalidado por edição concorrente
+- 1ª verificação da G5-03 deu PASS, mas o hash-check FALHOU: o tree mudou durante
+  a verificação. Causa provada NÃO-verifier: app/page.tsx (edição de OUTRO terminal
+  no mesmo worktree — refactor landing→redirect) passou de M→limpo durante a janela.
+  HEAD não moveu, meus 9 arquivos G5-03 intactos. Falso-positivo do guard, causado
+  por checkout compartilhado. §3: re-verifico fresco mesmo assim (não racionalizo guard).
+
+## 2026-07-18 — sessão 15 do loop (core) — G5-03 (fechada após re-verificação)
+- G5-03 (fila visível): fila ordenada por last_inbound_at ASC (fonte ÚNICA;
+  tiebreak id ASC) com posição (índice+1 na mesma lista) + "Aguardando há X" —
+  o cuidado do Maestro (coerência ordem↔posição) provado: 3 conversas 30/10/2min
+  → OLD=pos1. Contagem = counts.unassigned (mesmo predicado). Notificação = badge
+  + realtime (fallback do acceptance; sem sistema novo, decisão na spec §5).
+  Sem migration. unread na atribuição worker testado (stale 7→0).
+- Re-verificação: 1ª deu PASS mas hash-check tripou por edição CONCORRENTE
+  (app/page.tsx de outro terminal, M→limpo durante a verificação; falso-positivo,
+  meus arquivos intactos). §3 aplicado: verifier FRESCO → PASS 2ª, hash ESTÁVEL
+  (worktree quieto após Maestro isolar a causa). 188 unit + 112 invariantes.
+- app/page.tsx (refactor landing→redirect do colega) NÃO commitado (fora do
+  escopo; git add por caminho explícito). Próxima: G5-04 (painel admin) FECHA a fase.
+
+## 2026-07-18 — sessão 16 do loop (core) — G5-04 (fase G5 COMPLETA)
+
+- G5-04 (painel de atendentes): aba "Atendimento" em app/app/team (Tabs) — lista
+  agent+ com status HONESTO (isHeartbeatStale: online-mas-stale >15min → offline),
+  carga atual (OPEN_LOAD_STATUSES movido pra eligibility.ts como fonte única, worker
+  importa → carga exibida = carga do router), capacidade/horário editáveis inline
+  (manager+), card de modo de roteamento (manual|round_robin; 'load' disabled
+  "em breve" nunca vai à API) persistindo via PATCH /settings/routing. Sem migration.
+- Root-cause do implementer: RLS de user_organizations limita manager a ver só a
+  própria linha via /team → estendi GET /attendants/availability pra roster
+  auto-suficiente (service role + filtro org manual, anti-pattern 10 satisfeito,
+  sem vazamento cross-org). INB-14 registra o gap do /team.
+- Incidente: implementer morreu por auth-error (Not logged in) no meio do
+  screenshot; /login refeito, resumido do ponto exato → completou screenshot +
+  teardown (supabase stop + docker volume prune, vendaval preservado).
+- gov-verifier PASS 1ª rodada SEM findings, hash OK (worktree quieto). 192 unit,
+  config-worker 4/4 (mode manual→não atribui, round_robin→atribui, capacity
+  reduz→inelegível→requeue, backoff do knob não hardcoded). Screenshot com Bruno
+  online-mas-stale mostrado offline (vitrine do status honesto).
+- app/page.tsx e graphify-out/ (outros terminais) NÃO commitados (add explícito).
+- FASE G5 COMPLETA (4/4) → checkpoint G5 na sequência, loop PARA no gate.
+- Checkpoint G5 emitido (loop/checkpoints/G5-report.md, COMPLETO 4/4), loop
+  PARADO aguardando aprovação do dono (G5.approved). 9 INB abertos no §3.
+  INB-10 é pré-condição da G6 (o dono já concordou).

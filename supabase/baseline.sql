@@ -4932,3 +4932,277 @@ revoke all on function public.fn_attendant_metrics(uuid, timestamptz, timestampt
 revoke execute on function public.fn_attendant_metrics(uuid, timestamptz, timestamptz, uuid) from anon;
 grant execute on function public.fn_attendant_metrics(uuid, timestamptz, timestamptz, uuid)
   to authenticated, service_role;
+
+
+-- ---- webhooks universais + motor de regras (migration 0038) ----
+-- Spec: docs/superpowers/specs/2026-07-17-webhooks-design.md. Idempotente
+-- (create if not exists / drop policy if exists) — auto-curativo no update.sh.
+
+create table if not exists public.webhook_sources (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  path_token text not null unique,
+  secret text,
+  kind text not null default 'lead_capture' check (kind in ('lead_capture')),
+  default_pipeline_id uuid not null references public.crm_pipelines(id) on delete cascade,
+  default_stage_id uuid not null references public.crm_stages(id) on delete cascade,
+  field_map jsonb not null default '{}'::jsonb,
+  redirect_to text,
+  is_active boolean not null default true,
+  last_received_at timestamptz,
+  created_by_user_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.automation_rules (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  name text not null,
+  trigger_event text not null
+    check (trigger_event ~ '^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$'),
+  conditions jsonb not null default '[]'::jsonb,
+  actions jsonb not null default '[]'::jsonb,
+  is_active boolean not null default false,
+  last_run_at timestamptz,
+  run_count integer not null default 0,
+  created_by_user_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_automation_rules_org_trigger
+  on public.automation_rules (organization_id, trigger_event)
+  where is_active;
+
+create table if not exists public.automation_rule_runs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  rule_id uuid not null references public.automation_rules(id) on delete cascade,
+  event_id uuid references public.event_log(id) on delete set null,
+  status text not null check (status in ('success', 'partial', 'failed')),
+  actions_result jsonb not null default '[]'::jsonb,
+  error text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_automation_rule_runs_org_created
+  on public.automation_rule_runs (organization_id, created_at desc);
+create index if not exists idx_automation_rule_runs_rule
+  on public.automation_rule_runs (rule_id, created_at desc);
+
+alter table public.webhook_sources enable row level security;
+alter table public.automation_rules enable row level security;
+alter table public.automation_rule_runs enable row level security;
+
+drop policy if exists "webhook_sources_select" on public.webhook_sources;
+drop policy if exists "webhook_sources_manager_write" on public.webhook_sources;
+
+create policy "webhook_sources_select" on public.webhook_sources
+  for select using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+create policy "webhook_sources_manager_write" on public.webhook_sources
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+drop policy if exists "automation_rules_select" on public.automation_rules;
+drop policy if exists "automation_rules_manager_write" on public.automation_rules;
+
+create policy "automation_rules_select" on public.automation_rules
+  for select using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+create policy "automation_rules_manager_write" on public.automation_rules
+  using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+drop policy if exists "automation_rule_runs_select" on public.automation_rule_runs;
+
+create policy "automation_rule_runs_select" on public.automation_rule_runs
+  for select using (
+    (organization_id in (select public.fn_user_org_ids()))
+    or public.fn_is_platform_admin()
+  );
+
+-- ---- disponibilidade/horário por atendente: attendant_availability (migration 0039) ----
+-- spec 13 §3.4/§5. Persiste o <AttendantStatusToggle> (spec 04 §8): is_available,
+-- capacity (>0), schedule jsonb tz-aware, last_heartbeat_at (AT-08 auto-offline
+-- 15min via worker TS). RLS por-comando (nunca FOR ALL): SELECT org-wide;
+-- INSERT/UPDATE/DELETE = própria linha OU manager+. Idempotente.
+
+create table if not exists public.attendant_availability (
+  id                uuid primary key default gen_random_uuid(),
+  organization_id   uuid not null references public.organizations(id) on delete cascade,
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  is_available      boolean not null default false,
+  capacity          integer not null default 5 check (capacity > 0),
+  schedule          jsonb not null default '{}',
+  last_heartbeat_at timestamptz,
+  updated_at        timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+create index if not exists idx_attendant_availability_available
+  on public.attendant_availability (organization_id)
+  where is_available;
+
+alter table public.attendant_availability enable row level security;
+
+drop policy if exists "attendant_availability_select" on public.attendant_availability;
+create policy "attendant_availability_select" on public.attendant_availability
+  for select using (
+    public.fn_is_platform_admin()
+    or organization_id in (select public.fn_user_org_ids())
+  );
+
+drop policy if exists "attendant_availability_insert" on public.attendant_availability;
+create policy "attendant_availability_insert" on public.attendant_availability
+  for insert with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_update" on public.attendant_availability;
+create policy "attendant_availability_update" on public.attendant_availability
+  for update using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_delete" on public.attendant_availability;
+create policy "attendant_availability_delete" on public.attendant_availability
+  for delete using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+-- ---- roteamento: disponibilidade/horário por atendente (migration 0039) ----
+-- spec 13 §3.4/§5. attendant_availability (1 linha por org×user): toggle
+-- online/offline + capacity ajustável + schedule tz-aware + last_heartbeat_at
+-- (AT-08). RLS por-comando (nunca FOR ALL): SELECT org-wide; WRITE própria linha
+-- OU manager+. settings.routing (§3.5) fica no jsonb organizations.settings,
+-- validado por Zod (lib/schemas/routing.ts) — sem coluna nova. Idempotente.
+
+create table if not exists public.attendant_availability (
+  id                uuid primary key default gen_random_uuid(),
+  organization_id   uuid not null references public.organizations(id) on delete cascade,
+  user_id           uuid not null references auth.users(id) on delete cascade,
+  is_available      boolean not null default false,
+  capacity          integer not null default 5 check (capacity > 0),
+  schedule          jsonb not null default '{}',
+  last_heartbeat_at timestamptz,
+  updated_at        timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+create index if not exists idx_attendant_availability_available
+  on public.attendant_availability (organization_id)
+  where is_available;
+
+alter table public.attendant_availability enable row level security;
+
+drop policy if exists "attendant_availability_select" on public.attendant_availability;
+create policy "attendant_availability_select" on public.attendant_availability
+  for select using (
+    public.fn_is_platform_admin()
+    or organization_id in (select public.fn_user_org_ids())
+  );
+
+drop policy if exists "attendant_availability_insert" on public.attendant_availability;
+create policy "attendant_availability_insert" on public.attendant_availability
+  for insert with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_update" on public.attendant_availability;
+create policy "attendant_availability_update" on public.attendant_availability
+  for update using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+drop policy if exists "attendant_availability_delete" on public.attendant_availability;
+create policy "attendant_availability_delete" on public.attendant_availability
+  for delete using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid()
+             or public.fn_role_at_least(organization_id, 'manager')))
+  );
+
+
+-- ---- roteamento: emissão de conversation.routing_requested (migration 0040) ----
+-- AT-03: a ENTRADA de uma conversa na fila emite o evento; o worker (cron TS
+-- lib/routing/worker.ts) consome e distribui. Trigger NUNCA faz HTTP — só
+-- emit_event. ANTI-ECO: AFTER INSERT APENAS + WHEN sem-dono numa fila aberta;
+-- não há trigger de UPDATE, então o UPDATE de atribuição do worker NUNCA re-emite
+-- (sem isso ⇒ loop infinito). Idempotente (create or replace + drop if exists).
+create or replace function public.fn_emit_conversation_routing() returns trigger
+  language plpgsql
+  security definer
+  set search_path = public
+as $$
+begin
+  perform public.emit_event(
+    'conversation.routing_requested',
+    'conversation',
+    new.id,
+    jsonb_build_object('conversation_id', new.id, 'organization_id', new.organization_id),
+    '{}'::jsonb,
+    new.organization_id
+  );
+  return null;
+end;
+$$;
+
+alter function public.fn_emit_conversation_routing() owner to postgres;
+
+drop trigger if exists trg_conversation_routing_requested on public.conversations;
+create trigger trg_conversation_routing_requested
+  after insert on public.conversations
+  for each row
+  when (new.assigned_to_user_id is null and new.status in ('open', 'pending'))
+  execute function public.fn_emit_conversation_routing();

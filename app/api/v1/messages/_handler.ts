@@ -31,9 +31,11 @@ function actorAuditPayload(actor: Actor): {
   return {
     actorUserId: null,
     metadataActor: {
-      actor_type: "ai_agent",
+      actor_type: actor.type,
       actor_id: actor.id,
-      ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      ...(actor.type === "ai_agent" && actor.api_token_id
+        ? { actor_api_token_id: actor.api_token_id }
+        : {}),
     },
   };
 }
@@ -168,7 +170,7 @@ export async function sendMessageHandler(
     body: input.body ?? null,
     media_url: input.media_url ?? null,
     media_mime: input.media_mime ?? null,
-    sent_via: ctx.actor.type === "ai_agent" ? ("ai" as const) : ("user" as const),
+    sent_via: ctx.actor.type !== "user" ? ("ai" as const) : ("user" as const),
     sent_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     sent_at: now,
     metadata: {

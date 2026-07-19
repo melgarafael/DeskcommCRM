@@ -100,7 +100,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const organizationId = authz.org.orgId;
   const { data: scoped } = await supabase
     .from("crm_leads")
-    .select("id, organization_id, tags")
+    .select("id, organization_id, tags, stage_id, pipeline_id")
     .eq("organization_id", organizationId)
     .in("id", input.lead_ids);
 
@@ -132,6 +132,33 @@ export async function POST(req: NextRequest): Promise<Response> {
         .select("id");
       if (error) return fail("internal_error", error.message, 500, { requestId });
       updatedCount = data?.length ?? 0;
+
+      // Per-lead lead.stage_changed so the automation engine (which only
+      // consumes per-entity events) fires for bulk moves too — mirrors
+      // moveLeadHandler's payload. Skip leads already at the target stage.
+      const movedIds = new Set((data ?? []).map((r) => r.id as string));
+      await Promise.all(
+        visible
+          .filter((row) => movedIds.has(row.id) && row.stage_id !== input.params.stage_id)
+          .map((row) =>
+            supabase
+              .rpc("emit_event", {
+                p_event_type: "lead.stage_changed",
+                p_entity_kind: "crm_lead",
+                p_entity_id: row.id,
+                p_payload: {
+                  pipeline_id: row.pipeline_id,
+                  from_stage_id: row.stage_id,
+                  to_stage_id: input.params.stage_id,
+                },
+                p_metadata: { request_id: requestId, actor_user_id: user.id },
+                p_organization_id: organizationId,
+              })
+              .then(({ error: emitError }) => {
+                if (emitError) console.error("[lead.bulk_moved] emit_event failed", emitError.message);
+              }),
+          ),
+      );
       break;
     }
     case "assign": {
@@ -164,6 +191,24 @@ export async function POST(req: NextRequest): Promise<Response> {
           .eq("id", row.id);
         if (error) return fail("internal_error", error.message, 500, { requestId });
         updatedCount += 1;
+
+        // Per-lead lead.tag_added (only-when-added), same contract as
+        // updateLeadHandler, so the automation engine fires for bulk tags too.
+        const addedTags = add.filter((t) => !current.includes(t));
+        if (addedTags.length) {
+          await supabase
+            .rpc("emit_event", {
+              p_event_type: "lead.tag_added",
+              p_entity_kind: "crm_lead",
+              p_entity_id: row.id,
+              p_payload: { added_tags: addedTags, tags: next },
+              p_metadata: { request_id: requestId, actor_user_id: user.id },
+              p_organization_id: organizationId,
+            })
+            .then(({ error: emitError }) => {
+              if (emitError) console.error("[lead.bulk_tagged] emit_event failed", emitError.message);
+            });
+        }
       }
       break;
     }
