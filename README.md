@@ -4,7 +4,7 @@
 
 **CRM operacional multi-tenant para e-commerce, com IA conversacional nativa, WhatsApp via WAHA e LGPD by-design.**
 
-[![Next.js 15](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
 [![Tailwind](https://img.shields.io/badge/Tailwind-CSS-38bdf8?logo=tailwindcss)](https://tailwindcss.com)
@@ -88,7 +88,7 @@ App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/heal
 
 | Camada | Escolha | Por quê |
 |---|---|---|
-| **Frontend** | Next.js 15 App Router + TypeScript estrito | Server Components + Route Handlers no mesmo repo |
+| **Frontend** | Next.js 16 App Router (Turbopack) + React 19 + TypeScript 6 estrito | Server Components + Route Handlers no mesmo repo |
 | **Estilo** | Tailwind + shadcn/ui (`new-york`, neutral) | Customizável sem lock-in |
 | **DB** | Supabase (Postgres + RLS + `vector`) | Multi-tenant nativo, embedding pra RAG |
 | **Auth** | Supabase Auth via `@supabase/ssr` | Cookie SameSite=Strict, HttpOnly |
@@ -97,7 +97,7 @@ App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/heal
 | **WhatsApp** | WAHA Plus (engine NOWEB) | Multi-tenant, retry, S3 |
 | **Filas** | `event_log` table + workers (cron) | Sem Inngest/Trigger no MVP |
 | **Rate limit** | Upstash Redis (sliding window) | Serverless, free tier suficiente |
-| **AI** | Vercel AI Gateway (Anthropic primário, OpenAI embeddings) | Fallback automático, ZDR |
+| **AI** | Vercel AI SDK v7 (providers Anthropic/Google/OpenAI v4) via AI Gateway | Fallback automático, ZDR |
 | **Validação** | Zod | Input externo, env, payloads |
 | **Observability** | Sentry (com `beforeSend` sanitizado) | Sem PII no breadcrumb |
 | **Hospedagem** | Vercel (app) + Hostgator VPS Turing/SP (WAHA) | Edge + dedicado pra WhatsApp; datacenter Brasil |

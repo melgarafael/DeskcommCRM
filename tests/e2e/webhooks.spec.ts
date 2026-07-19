@@ -23,7 +23,9 @@ import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
 
-const APP_URL = "http://localhost:3011";
+// Segue o dev server do harness (playwright.config webServer) — nunca hardcodar
+// porta: o config usa E2E_PORT (default 3001).
+const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
 interface Creds {

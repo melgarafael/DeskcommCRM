@@ -127,7 +127,7 @@ export async function GET(
 
   const merged = new Map<string, TimelineItem>();
   for (const row of (directRes.data ?? []) as TimelineItem[]) merged.set(row.id, row);
-  for (const row of ((leadRes.data ?? []) as TimelineItem[]) ?? []) merged.set(row.id, row);
+  for (const row of (leadRes.data ?? []) as TimelineItem[]) merged.set(row.id, row);
 
   const sorted = Array.from(merged.values()).sort((a, b) => {
     if (a.performed_at !== b.performed_at) {

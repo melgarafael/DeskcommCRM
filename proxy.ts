@@ -9,7 +9,7 @@ import {
 
 const COOKIE_NAME = "sb-deskcomm-auth";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: request.headers } });
 
   // Inject X-Request-Id for downstream correlation (audit log, error wrappers).
