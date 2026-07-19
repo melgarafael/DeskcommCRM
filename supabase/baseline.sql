@@ -6335,3 +6335,12 @@ $$;
 
 comment on function public.fn_publish_ai_agent_version(uuid, uuid, uuid) is
   'EPIC-13 S-13.06 (fixed in 0026): compares channel_sessions.status against WORKING (uppercase), matching channel_sessions_status_check. 0024/0025 compared against lowercase working and always raised channel_session_offline.';
+
+-- ============================================================================
+-- 0053 — Operação Visível F3: rastro de aplicação de proposta do flywheel
+-- (applied_at/applied_version_id/applied_by; null = pendente). Idempotente.
+-- ============================================================================
+alter table flywheel_distiller_proposals
+  add column if not exists applied_at timestamptz,
+  add column if not exists applied_version_id uuid references ai_agent_versions(id) on delete set null,
+  add column if not exists applied_by uuid;

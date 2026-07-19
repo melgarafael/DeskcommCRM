@@ -1,6 +1,7 @@
 /**
- * PATCH /api/v1/ai/inbox/[id] — marca um aviso do runtime como resolvido (ou o
- * reabre). Operação de time (agent+), auditada. Operação Visível F1.
+ * Épico Operação Visível (F1) — transição de status de um aviso do agente.
+ * PATCH { status: 'ack' | 'resolved' | 'open' } — org-scoped, auditado.
+ * Reabrir (→'open') é permitido: resolver por engano não pode esconder alerta.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -9,52 +10,63 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const patchSchema = z.object({
-  status: z.enum(["open", "ack", "resolved"]),
-});
+const bodySchema = z.object({ status: z.enum(["open", "ack", "resolved"]) }).strict();
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
-  if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
+  if (!UUID_RX.test(id)) {
+    return fail("invalid_request", "id inválido.", 400, { requestId });
+  }
 
   const authz = await requireRole("agent", { requestId, resource: "agent_inbox_items" });
   if (!authz.ok) return authz.response;
-  const { user, org } = authz;
+  const { user: authUser, org } = authz;
 
-  const parsed = patchSchema.safeParse(await req.json().catch(() => null));
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+  }
+  const parsed = bodySchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("invalid_request", "status deve ser open, ack ou resolved.", 400, { requestId });
+    return fail("validation_failed", "Campos inválidos.", 422, {
+      requestId,
+      details: parsed.error.flatten(),
+    });
   }
 
-  const supabase = await createClient();
-  const { data: updated, error } = await supabase
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("agent_inbox_items")
     .update({ status: parsed.data.status })
-    .eq("organization_id", org.orgId)
     .eq("id", id)
-    .select("id, status")
+    .eq("organization_id", org.orgId)
+    .select("id, kind, severity, title, body, ref_kind, ref_id, status, created_at")
     .maybeSingle();
-  if (error) return fail("internal_error", "Erro ao atualizar aviso.", 500, { requestId });
-  if (!updated) return fail("not_found", "Aviso não encontrado.", 404, { requestId });
+  if (error) {
+    return fail("internal_error", "Falha ao atualizar o aviso.", 500, { requestId });
+  }
+  if (!data) {
+    return fail("not_found", "Aviso não encontrado nesta organização.", 404, { requestId });
+  }
 
-  void audit({
-    action: "ai.inbox_item_updated",
-    actorUserId: user.id,
+  await audit({
+    action: "ai.inbox_item_status_changed",
+    actorUserId: authUser.id,
     organizationId: org.orgId,
-    resourceType: "agent_inbox_item",
+    resourceType: "agent_inbox_items",
     resourceId: id,
-    requestId,
     metadata: { status: parsed.data.status },
   });
 
-  return ok(updated, { requestId });
+  return ok({ item: data }, { requestId });
 }
