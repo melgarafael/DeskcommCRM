@@ -56,7 +56,7 @@ export function MergeDialog({ queueItemId, open, onOpenChange }: Props) {
       .select("id, candidates, status")
       .eq("id", queueItemId)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data }: { data: unknown }) => {
         if (!cancelled) {
           setItem(data as MergeQueueRow | null);
           setLoading(false);

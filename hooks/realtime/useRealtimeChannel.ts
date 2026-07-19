@@ -48,14 +48,16 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): { status: Real
     }
     const supabase = createClient();
     const channelName = `${name}::${instanceId}`;
-    let channel: RealtimeChannel | null = supabase.channel(channelName);
+    // `chain` nunca é null durante o setup; `active` (anulável) existe só pro
+    // cleanup — separado para o narrowing do TS não depender de reatribuição.
+    let chain: RealtimeChannel = supabase.channel(channelName);
 
     const handler = (payload: unknown) => {
       onChangeRef.current(payload);
     };
 
     if (postgresChanges) {
-      channel = channel.on(
+      chain = chain.on(
         "postgres_changes",
         {
           event: postgresChanges.event,
@@ -68,11 +70,12 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): { status: Real
     }
 
     if (broadcast) {
-      channel = channel.on("broadcast", { event: broadcast.event }, handler);
+      chain = chain.on("broadcast", { event: broadcast.event }, handler);
     }
 
+    let active: RealtimeChannel | null = chain;
     setStatus("connecting");
-    channel.subscribe((s) => {
+    chain.subscribe((s) => {
       // s is one of "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED"
       const map: Record<string, RealtimeStatus> = {
         SUBSCRIBED: "subscribed",
@@ -84,9 +87,9 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): { status: Real
     });
 
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-        channel = null;
+      if (active) {
+        supabase.removeChannel(active);
+        active = null;
       }
     };
     // intentionally omit onChange (ref); only re-subscribe when channel topology changes
