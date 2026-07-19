@@ -34,6 +34,7 @@ export {
   ArrowsClockwise,
   Dot,
   // actions
+  Bell,
   PaperPlaneTilt,
   Check,
   Checks,

@@ -105,6 +105,7 @@ export type AuditAction =
   | "ai.credential_created"
   | "ai.credential_deleted"
   | "ai.credential_revalidated"
+  | "ai.inbox_item_updated"
   | "ai_agent.created"
   | "ai_agent.updated"
   | "ai_agent.archived"
