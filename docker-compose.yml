@@ -35,8 +35,10 @@ services:
       WHATSAPP_HOOK_EVENTS: "message,message.any,message.ack,session.status,state.change"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
       WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
-      # Engine NOWEB por default (mais leve, ~150MB; estável).
-      WAHA_DEFAULT_ENGINE: NOWEB
+      # Engine NOWEB por default (mais leve, ~150MB; estável). O env é
+      # WHATSAPP_DEFAULT_ENGINE — WAHA_DEFAULT_ENGINE NÃO existe no WAHA e caía
+      # silenciosamente no default WEBJS (browser, trava a sessão).
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
       # Storage de mídia: Supabase Storage via Backend (NÃO inline base64).
       WAHA_DASHBOARD_ENABLED: "true"
     extra_hosts:

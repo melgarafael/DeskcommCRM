@@ -68,7 +68,10 @@ services:
       WHATSAPP_HOOK_URL: ${WAHA_WEBHOOK_BASE_URL}/api/v1/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message,message.any,message.ack,session.status,state.change"
       WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
-      WAHA_DEFAULT_ENGINE: ${WAHA_DEFAULT_ENGINE:-NOWEB}
+      # WAHA lê WHATSAPP_DEFAULT_ENGINE (NÃO WAHA_DEFAULT_ENGINE — o nome errado
+      # fazia cair no default WEBJS, engine com browser que trava/corrompe a sessão
+      # quando o WhatsApp Web atualiza; NOWEB é websocket direto, estável e leve).
+      WHATSAPP_DEFAULT_ENGINE: ${WHATSAPP_DEFAULT_ENGINE:-NOWEB}
       WAHA_DASHBOARD_ENABLED: "false"    # nunca expor o dashboard num template público
     volumes:
       - waha-data:/app/.sessions          # sessões pareadas (QR) — perder = re-parear
