@@ -10,9 +10,10 @@
  * llm_calls. A chave da org nunca entra em prompt, tool result ou log — ela só
  * cruza a fronteira na instância do provider.
  *
- * Shape do usage: AI SDK v6 `LanguageModelUsage` (node_modules/ai/dist/index.d.ts):
+ * Shape do usage: `LanguageModelUsage` (node_modules/ai/dist/index.d.ts):
  * inputTokens/outputTokens totais + inputTokenDetails.{cacheReadTokens,
- * cacheWriteTokens}. Upgrade de major re-valida esses paths via smoke.
+ * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
+ * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
 import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
 import type pg from 'pg';
@@ -173,8 +174,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   });
 
   const startedAt = Date.now();
-  // v6: `system` aceita SystemModelMessage (com providerOptions de cache);
-  // no v7 este campo chamava-se `instructions`.
+  // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
+  // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
   const result = await generateText({
     model: factory(config.apiKey, model),
     system: prefix.system,
