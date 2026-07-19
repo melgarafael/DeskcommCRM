@@ -101,6 +101,8 @@ step "Gerando segredos"
 gen_hex() { openssl rand -hex 32; }
 gen_b64() { openssl rand -base64 32; }
 : "${INTERNAL_SECRET:=$(gen_hex)}"
+: "${INTERNAL_CRON_SECRET:=$(gen_hex)}"
+: "${NUVEMSHOP_OAUTH_ENCRYPTION_KEY:=$(gen_hex)}"
 : "${CPF_ENCRYPTION_KEY:=$(gen_b64)}"
 : "${AI_CRED_AES_KEY:=$(gen_b64)}"
 : "${WAHA_BYO_ENCRYPTION_KEY:=$(gen_b64)}"
@@ -132,7 +134,8 @@ NEXT_PUBLIC_ADMIN_URL=${NEXT_PUBLIC_ADMIN_URL}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 AI_GATEWAY_API_KEY=${AI_GATEWAY_API_KEY:-}
 INTERNAL_SECRET=${INTERNAL_SECRET}
-INTERNAL_CRON_SECRET=
+INTERNAL_CRON_SECRET=${INTERNAL_CRON_SECRET}
+NUVEMSHOP_OAUTH_ENCRYPTION_KEY=${NUVEMSHOP_OAUTH_ENCRYPTION_KEY}
 CPF_ENCRYPTION_KEY=${CPF_ENCRYPTION_KEY}
 AI_CRED_AES_KEY=${AI_CRED_AES_KEY}
 WAHA_BYO_ENCRYPTION_KEY=${WAHA_BYO_ENCRYPTION_KEY}
@@ -247,6 +250,7 @@ done
 
 # ── 11. Automações (cron do drain de eventos) ───────────────────────────────
 step "Ativando as automações"
+ensure_encryption_key .env
 setup_event_log_drain_cron
 
 # ── Final ───────────────────────────────────────────────────────────────────

@@ -10,6 +10,8 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { updateWebhookSourceSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -48,15 +50,35 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", "Fonte não encontrada.", 404, { requestId });
 
+  // secret plaintext do input vira secret_encrypted (migration 0041); a coluna
+  // em claro não existe mais. `secret: null` remove o segredo da fonte.
+  const { secret: patchedSecret, ...restPatch } = parsed.data;
+  const patch: Record<string, unknown> = { ...restPatch, updated_at: new Date().toISOString() };
+  if (patchedSecret !== undefined) {
+    if (patchedSecret === null) {
+      patch.secret_encrypted = null;
+    } else {
+      const enc = await encryptWebhookSecret(createAdminClient(), patchedSecret);
+      if (enc === null) {
+        return fail(
+          "encryption_unavailable",
+          "Não foi possível guardar o segredo com segurança. Configure NUVEMSHOP_OAUTH_ENCRYPTION_KEY (chave de cifra do banco) e tente de novo.",
+          422,
+          { requestId },
+        );
+      }
+      patch.secret_encrypted = enc;
+    }
+  }
+
   const { data: updated, error: updErr } = await supabase
     .from("webhook_sources")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update(patch)
     .eq("id", id)
     .select("*")
     .single();
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
 
-  const { secret: patchedSecret, ...auditableFields } = parsed.data;
   void audit({
     action: "webhook.source_updated",
     actorUserId: user.id,
@@ -65,15 +87,11 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     resourceId: id,
     requestId,
     // Nunca gravar o valor do secret no audit log — só o fato da troca.
-    metadata: { ...auditableFields, ...(patchedSecret !== undefined ? { secret_changed: true } : {}) },
+    metadata: { ...restPatch, ...(patchedSecret !== undefined ? { secret_changed: true } : {}) },
   });
 
-  // secret é write-only na leitura: só volta no response se ESTE patch o definiu.
-  if (parsed.data.secret === undefined && updated && typeof updated === "object" && "secret" in updated) {
-    const { secret, ...rest } = updated as Record<string, unknown>;
-    return ok({ ...rest, has_secret: secret !== null }, { requestId });
-  }
-  return ok(updated, { requestId });
+  const { secret_encrypted: encAfter, ...updatedPublic } = updated as Record<string, unknown>;
+  return ok({ ...updatedPublic, has_secret: encAfter !== null }, { requestId });
 }
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {

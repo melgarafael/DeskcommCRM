@@ -24,7 +24,16 @@ export const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("send_whatsapp_message"), config: z.object({ channel_session_id: z.string().uuid(), template: z.string().min(1).max(2000) }) }),
   z.object({ type: z.literal("add_tag"), config: z.object({ tags: z.array(z.string().min(1).max(60)).min(1).max(10) }) }),
   z.object({ type: z.literal("assign_owner"), config: z.object({ user_id: z.string().uuid() }) }),
-  z.object({ type: z.literal("call_webhook"), config: z.object({ url: z.string().url().max(2000), secret: z.string().max(200).optional() }) }),
+  z.object({
+    type: z.literal("call_webhook"),
+    config: z.object({
+      url: z.string().url().max(2000),
+      // Input do usuário (plaintext, write-only) — a rota troca por secret_enc.
+      secret: z.string().max(200).optional(),
+      // Ciphertext hex (round-trip do editor: GET devolve, PATCH preserva).
+      secret_enc: z.string().max(4000).optional(),
+    }),
+  }),
 ]);
 
 export const createWebhookSourceSchema = z.object({

@@ -1061,49 +1061,49 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
-        ];
-      };
+        ]
+      }
       attendant_availability: {
         Row: {
-          capacity: number;
-          id: string;
-          is_available: boolean;
-          last_heartbeat_at: string | null;
-          organization_id: string;
-          schedule: Json;
-          updated_at: string;
-          user_id: string;
-        };
+          capacity: number
+          id: string
+          is_available: boolean
+          last_heartbeat_at: string | null
+          organization_id: string
+          schedule: Json
+          updated_at: string
+          user_id: string
+        }
         Insert: {
-          capacity?: number;
-          id?: string;
-          is_available?: boolean;
-          last_heartbeat_at?: string | null;
-          organization_id: string;
-          schedule?: Json;
-          updated_at?: string;
-          user_id: string;
-        };
+          capacity?: number
+          id?: string
+          is_available?: boolean
+          last_heartbeat_at?: string | null
+          organization_id: string
+          schedule?: Json
+          updated_at?: string
+          user_id: string
+        }
         Update: {
-          capacity?: number;
-          id?: string;
-          is_available?: boolean;
-          last_heartbeat_at?: string | null;
-          organization_id?: string;
-          schedule?: Json;
-          updated_at?: string;
-          user_id?: string;
-        };
+          capacity?: number
+          id?: string
+          is_available?: boolean
+          last_heartbeat_at?: string | null
+          organization_id?: string
+          schedule?: Json
+          updated_at?: string
+          user_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "attendant_availability_organization_id_fkey";
-            columns: ["organization_id"];
-            isOneToOne: false;
-            referencedRelation: "organizations";
-            referencedColumns: ["id"];
+            foreignKeyName: "attendant_availability_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
-        ];
-      };
+        ]
+      }
       automation_rule_runs: {
         Row: {
           actions_result: Json
@@ -4244,7 +4244,7 @@ export type Database = {
           organization_id: string
           path_token: string
           redirect_to: string | null
-          secret: string | null
+          secret_encrypted: string | null
           updated_at: string
         }
         Insert: {
@@ -4261,7 +4261,7 @@ export type Database = {
           organization_id: string
           path_token: string
           redirect_to?: string | null
-          secret?: string | null
+          secret_encrypted?: string | null
           updated_at?: string
         }
         Update: {
@@ -4278,7 +4278,7 @@ export type Database = {
           organization_id?: string
           path_token?: string
           redirect_to?: string | null
-          secret?: string | null
+          secret_encrypted?: string | null
           updated_at?: string
         }
         Relationships: [

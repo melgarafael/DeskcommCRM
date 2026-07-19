@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { CreateLeadInput } from "@/lib/schemas";
 import { mapInboundPayload, verifyInboundSignature, type FieldMap } from "@/lib/webhooks/inbound";
+import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { ApiError } from "@/lib/api/types";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const admin = createAdminClient();
   const { data: source, error: srcErr } = await admin
     .from("webhook_sources")
-    .select("id, organization_id, secret, default_pipeline_id, default_stage_id, field_map, redirect_to, is_active")
+    .select("id, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, redirect_to, is_active")
     .eq("path_token", token)
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
@@ -88,8 +89,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   }
 
   const sigHeader = req.headers.get("x-deskcomm-signature");
-  const validSignature = source.secret ? verifyInboundSignature(rawBody, sigHeader, source.secret) : null;
-  if (source.secret && !validSignature) {
+  // secret cifrado at-rest (migration 0041). Decrypt falhou (chave da GUC
+  // ausente/trocada)? Precedente WAHA: pula a validação em vez de derrubar a
+  // captação — secret aqui é defesa opcional, não gate de disponibilidade.
+  let sourceSecret: string | null = null;
+  let hmacSkipped = false;
+  if (source.secret_encrypted) {
+    sourceSecret = await decryptWebhookSecret(admin, source.secret_encrypted as unknown as string);
+    if (sourceSecret === null) hmacSkipped = true;
+  }
+  const validSignature = sourceSecret ? verifyInboundSignature(rawBody, sigHeader, sourceSecret) : null;
+  if (sourceSecret && !validSignature) {
     await audit({
       action: "webhook.inbound_invalid_signature",
       organizationId: source.organization_id,
@@ -115,15 +125,54 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     raw_body: rawBody,
     payload_parsed: payload,
     signature_header: sigHeader ?? null,
+    // hmacSkipped (decrypt indisponível) conta como "não validado mas aceito",
+    // igual ao webhook WAHA — o feed da UI não pinta de vermelho.
     valid_signature: validSignature ?? true,
-    event_type: "lead_capture.received",
+    event_type: hmacSkipped ? "lead_capture.received_hmac_skipped" : "lead_capture.received",
     external_id: null,
     status: "received",
     attempts: 0,
   });
 
+  // Idempotência (spec §5): `external_id` é campo reservado do envio — quem
+  // integra via sistema (Zapier/n8n/loja) manda o ID único do disparo e o
+  // reenvio automático (retry por timeout) NUNCA duplica o lead. O índice
+  // uniq_crm_leads_org_source_external garante a corrida; aqui vai o fast-path.
+  const externalIdRaw = payload["external_id"];
+  const externalId =
+    typeof externalIdRaw === "string" && externalIdRaw.trim() ? externalIdRaw.trim().slice(0, 255) : null;
+
+  const respondWithLead = (leadId: string): NextResponse => {
+    if (isForm && source.redirect_to) {
+      return NextResponse.redirect(source.redirect_to as string, 303);
+    }
+    return ok({ lead_id: leadId }, { requestId });
+  };
+
+  const findLeadByExternalId = async (): Promise<string | null> => {
+    if (!externalId) return null;
+    const { data } = await admin
+      .from("crm_leads")
+      .select("id")
+      .eq("organization_id", source.organization_id)
+      .eq("source", "webhook")
+      .eq("external_id", externalId)
+      .maybeSingle();
+    return (data?.id as string | undefined) ?? null;
+  };
+
+  const dedupedLeadId = await findLeadByExternalId();
+  if (dedupedLeadId) {
+    // Mesmo envio repetido: 200 com o lead existente, nada é recriado — a
+    // ferramenta que reenviou recebe sucesso e para de tentar.
+    return respondWithLead(dedupedLeadId);
+  }
+
   const fieldMap = (source.field_map ?? {}) as FieldMap;
-  const mapped = mapInboundPayload(payload, fieldMap);
+  // external_id não é dado do lead — sai do payload antes do mapeamento pra
+  // não virar custom_field (o log de recebimento acima preserva o original).
+  const { external_id: _reservedExternalId, ...payloadForMapping } = payload;
+  const mapped = mapInboundPayload(externalId ? payloadForMapping : payload, fieldMap);
   if (!mapped.phone) {
     const rawPhone = findRawPhoneIfUnnormalized(payload, fieldMap);
     if (rawPhone) mapped.source_metadata.raw_phone = rawPhone;
@@ -186,6 +235,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const leadInput: CreateLeadInput & {
     custom_fields?: Record<string, unknown>;
     source_metadata?: Record<string, unknown>;
+    external_id?: string;
   } = {
     pipeline_id: source.default_pipeline_id,
     stage_id: source.default_stage_id,
@@ -196,6 +246,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     source: "webhook",
     custom_fields: mapped.custom_fields,
     source_metadata: { webhook_source_id: source.id, ...mapped.source_metadata },
+    ...(externalId ? { external_id: externalId } : {}),
   };
 
   let lead: Record<string, unknown>;
@@ -211,6 +262,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     );
   } catch (err) {
     if (err instanceof ApiError) {
+      // Corrida do retry: dois POSTs simultâneos com o mesmo external_id
+      // passam ambos pelo fast-path; o índice único derruba o segundo INSERT
+      // (23505) — re-seleciona o vencedor e responde idempotente.
+      if (externalId && err.message?.includes("uniq_crm_leads_org_source_external")) {
+        const winnerId = await findLeadByExternalId();
+        if (winnerId) return respondWithLead(winnerId);
+      }
       return fail(err.code, err.message ?? "erro", err.status, { requestId });
     }
     throw err;
@@ -230,8 +288,5 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     metadata: { webhook_source_id: source.id },
   });
 
-  if (isForm && source.redirect_to) {
-    return NextResponse.redirect(source.redirect_to as string, 303);
-  }
-  return ok({ lead_id: lead.id }, { requestId });
+  return respondWithLead(String(lead.id));
 }

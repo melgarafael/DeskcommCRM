@@ -11,6 +11,8 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAutomationRuleSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +52,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041).
+  const safeActions = await encryptRuleActionSecrets(createAdminClient(), parsed.data.actions);
+  if (safeActions === null) {
+    return fail(
+      "encryption_unavailable",
+      "Não foi possível guardar o segredo do webhook com segurança. Configure NUVEMSHOP_OAUTH_ENCRYPTION_KEY e tente de novo — ou crie a ação sem segredo.",
+      422,
+      { requestId },
+    );
+  }
+
   const supabase = await createClient();
   const { data: created, error: insErr } = await supabase
     .from("automation_rules")
@@ -59,7 +72,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       name: parsed.data.name,
       trigger_event: parsed.data.trigger_event,
       conditions: parsed.data.conditions,
-      actions: parsed.data.actions,
+      actions: safeActions,
     })
     .select("*")
     .single();

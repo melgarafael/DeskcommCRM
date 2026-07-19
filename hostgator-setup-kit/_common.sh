@@ -69,3 +69,28 @@ setup_event_log_drain_cron() {
       || c_ylw "⚠ não consegui higienizar eventos antigos — confira manualmente a tabela event_log se necessário."
   fi
 }
+
+# Garante a chave de cifra dos segredos (webhooks/Nuvemshop) e a semeia no
+# banco (private.app_secrets, migration 0041). Idempotente: reusa a chave do
+# .env se existir (trocá-la invalidaria dados já cifrados); gera se ausente e
+# appenda ao .env. Chamada por install.sh e update.sh APÓS aplicar o baseline.
+ensure_encryption_key() {
+  local envfile="${1:-.env}"
+  local key="${NUVEMSHOP_OAUTH_ENCRYPTION_KEY:-}"
+  if [ -z "$key" ] && [ -f "$envfile" ]; then
+    key="$(grep -E '^NUVEMSHOP_OAUTH_ENCRYPTION_KEY=' "$envfile" | head -1 | cut -d= -f2- || true)"
+  fi
+  if [ -z "$key" ]; then
+    key="$(openssl rand -hex 32)"
+    printf '\nNUVEMSHOP_OAUTH_ENCRYPTION_KEY=%s\n' "$key" >> "$envfile"
+    c_grn "✓ chave de cifra dos segredos gerada e gravada no .env"
+  fi
+  export NUVEMSHOP_OAUTH_ENCRYPTION_KEY="$key"
+
+  # Semeia no banco — é de lá que as funções de cifra leem (Supabase não
+  # permite configurar a chave via parâmetro de banco).
+  psql_run -c "insert into private.app_secrets (name, value) values ('nuvemshop_oauth_key', '${key}') on conflict (name) do update set value = excluded.value, updated_at = now();" \
+    >/dev/null 2>&1 \
+    && c_grn "✓ chave de cifra ativa no banco (segredos de webhook são guardados cifrados)" \
+    || c_ylw "⚠ não consegui semear a chave de cifra no banco — segredos de webhook não poderão ser salvos até rodar update.sh de novo."
+}

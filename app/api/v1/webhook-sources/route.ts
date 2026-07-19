@@ -19,6 +19,8 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createWebhookSourceSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +37,9 @@ export async function GET(): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .order("created_at", { ascending: false });
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  const masked = (data ?? []).map(({ secret, ...rest }) => ({
+  const masked = (data ?? []).map(({ secret_encrypted, ...rest }) => ({
     ...rest,
-    has_secret: secret !== null,
+    has_secret: secret_encrypted !== null,
   }));
   return ok(masked, { requestId });
 }
@@ -64,6 +66,22 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const pathToken = randomBytes(24).toString("base64url");
 
+  // Secret nunca é armazenado em claro (migration 0041): cifra via admin RPC
+  // (grant service_role). Sem a chave de cifra configurada, recusa em vez de
+  // degradar pra plaintext.
+  let secretEncrypted: string | null = null;
+  if (parsed.data.secret) {
+    secretEncrypted = await encryptWebhookSecret(createAdminClient(), parsed.data.secret);
+    if (secretEncrypted === null) {
+      return fail(
+        "encryption_unavailable",
+        "Não foi possível guardar o segredo com segurança. Configure NUVEMSHOP_OAUTH_ENCRYPTION_KEY (chave de cifra do banco) e tente de novo — ou crie a fonte sem segredo.",
+        422,
+        { requestId },
+      );
+    }
+  }
+
   const supabase = await createClient();
   const { data: created, error: insErr } = await supabase
     .from("webhook_sources")
@@ -72,7 +90,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       created_by_user_id: user.id,
       name: parsed.data.name,
       path_token: pathToken,
-      secret: parsed.data.secret ?? null,
+      secret_encrypted: secretEncrypted,
       default_pipeline_id: parsed.data.default_pipeline_id,
       default_stage_id: parsed.data.default_stage_id,
       field_map: parsed.data.field_map ?? {},
@@ -94,5 +112,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     metadata: { name: parsed.data.name },
   });
 
-  return ok(created, { requestId, status: 201 });
+  const { secret_encrypted: _enc, ...createdPublic } = created as Record<string, unknown>;
+  return ok({ ...createdPublic, has_secret: secretEncrypted !== null }, { requestId, status: 201 });
 }

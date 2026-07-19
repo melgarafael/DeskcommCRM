@@ -53,7 +53,20 @@
 **PUSH FEITO (autorizado pelo Rafael, --no-verify explícito) + PR ABERTO: https://github.com/melgarafael/DeskcommCRM/pull/8**
 Nota de merge: MANIFEST pula 0033→0038 (0034-37 vivem no gov/*) — conflito trivial quando ambos chegarem na main.
 
-**TICKETS DE FOLLOW-UP (documentados no ledger `.superpowers/sdd/progress.md`):** cifragem at-rest do secret (spec §10, dropada na T1 do plano); idempotência por external_id no inbound (spec §5 não implementada); uniq_conversations_1to1 vs conversa closed; aposentar trigger legado fn_emit_event_on_lead_change; INTERNAL_CRON_SECRET não populada pelo install.sh; assign_owner sem checagem role≥agent.
+**FASE FOLLOW-UPS (branch `fix/webhooks-secret-encryption`):**
+
+✅ **TICKET 1 — Cifragem at-rest (commits `eeb2a41`+`4efbd4c`, migration 0041):** `webhook_sources.secret`→`secret_encrypted` (plaintext DROPADA, provado no remoto); `config.secret`→`config.secret_enc` no jsonb das regras; audit nunca vê secret; UI write-only (type=password). **2 forward-fixes de raiz descobertos:** (a) fn_encrypt/decrypt_oauth tinham search_path sem 'extensions' + pgcrypto faltava no baseline — Nuvemshop OAuth quebraria na 1ª cifra real em QUALQUER ambiente; (b) Supabase cloud NEGA ALTER DATABASE/ROLE SET de GUC custom (42501) — chave agora vive em `private.app_secrets` (GUC como override p/ VPS/testes), seedada no remoto. PROVAS: 24/24 invariantes (148, incl. 4 novos da migration re-aplicada + descarte-sem-chave), 229/229 unit, typecheck limpo; remoto: roundtrip cifra OK, HMAC E2E 401 sem/errada + 200 correta com secret decifrado do banco. NNNN 0041 (0039/0040 da gov/G5).
+NOTA operacional: `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` do .env.local agora está seedada em `private.app_secrets` do remoto — trocar a chave = update na tabela + re-cifrar dados.
+
+✅ **TICKET 2 — Idempotência external_id (commit `1c12180`):** descoberta-chave: o índice único `uniq_crm_leads_org_source_external` JÁ existia no schema — zero migration; só rota (fast-path 200 + catch 23505 re-select) + passthrough no handler. external_id não vaza pra custom_fields. PROVAS: 25/25 invariantes (152, incl. 4 novos do índice); curl: 3 retries sequenciais → mesmo lead_id, 4 POSTs PARALELOS → mesmo lead_id (corrida real vencida); SQL: 7 POSTs = 2 leads; Playwright: 1 card de cada no Kanban (screenshot em .superpowers/evidence/webhooks-idempotency-kanban.png).
+
+✅ **TICKETS 3-6 — hardening (commit `fda47df`):**
+- `assign_owner` rejeita viewer (`invalid_owner`, régua G3-04).
+- `ensureConversation` REABRE conversa fechada (índice 1:1 sem filtro de status travava envio automatizado pra sempre) + catch 23505 de corrida.
+- **Migration 0043**: trigger de leads não duplica mais `lead.created`/`stage_changed` (cirurgia — `won/lost/reopened/assigned` preservados, são únicos; trigger virou AFTER UPDATE; backlog duplicado marcado done). PROVADO no remoto: antes `{lead:3, crm_lead:3}` pendentes → depois `{crm_lead:3}`; INSERT vivo não emite nada; `won` ainda emite `lead.won`. NNNN 0043 (0042 tomado pela gov/G6 no meio do trabalho).
+- **Kit HostGator**: install gera `INTERNAL_CRON_SECRET` + `NUVEMSHOP_OAUTH_ENCRYPTION_KEY`; `ensure_encryption_key()` (install+update) semeia `private.app_secrets` — idempotência provada em harness (2 runs → 1 linha no .env, chave estável, warn gracioso sem banco).
+
+**TODOS OS 6 TICKETS DE FOLLOW-UP FECHADOS + PR ABERTO: https://github.com/melgarafael/DeskcommCRM/pull/20** (MERGEABLE; CI rodando). Merge da main (fase G5) resolvido: baseline 0039→0043 encadeado; 0039/0040 do G5 APLICADAS no banco remoto (gov não tinha aplicado — painel G5 quebraria em runtime); types regenerados com G5+0041. Suíte unificada: 27/27 invariantes (168), 256/256 unit, typecheck limpo.
 
 Screenshots de evidência: `.superpowers/evidence/*.png`.
 **NOTA DE ROLLOUT (decidir na fase UI/kit):** primeiro deploy do cron drain processa backlog histórico de tipos com handler em qualquer clone — marcar pré-existentes como done na migration do kit OU documentar o processamento tardio.

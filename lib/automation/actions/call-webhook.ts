@@ -8,6 +8,7 @@ import { createHmac } from "node:crypto";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
+import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 const TIMEOUT_MS = 10_000;
 const RETRY_DELAYS_MS = [1_000, 5_000]; // total 3 tentativas
@@ -86,7 +87,14 @@ export async function executeCallWebhook(
     "Content-Type": "application/json",
     "X-Deskcomm-Event": ctx.event.event_type,
   };
-  const secret = typeof config.secret === "string" ? config.secret : null;
+  // secret_enc (cifrado at-rest, migration 0041) tem precedência; config.secret
+  // plaintext fica só como legado pré-retrofit. Decrypt indisponível (chave da
+  // GUC ausente) → envia SEM assinatura em vez de falhar a entrega — espelho do
+  // hmacSkipped do inbound.
+  let secret: string | null = typeof config.secret === "string" && config.secret ? config.secret : null;
+  if (typeof config.secret_enc === "string" && config.secret_enc) {
+    secret = await decryptWebhookSecret(ctx.admin, config.secret_enc);
+  }
   if (secret) {
     headers["X-Deskcomm-Signature"] = createHmac("sha256", secret).update(body).digest("hex");
   }

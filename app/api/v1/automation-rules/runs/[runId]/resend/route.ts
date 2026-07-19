@@ -77,10 +77,14 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     (action) => action.type === "call_webhook",
   );
 
+  // Admin real no ctx: o executor decifra config.secret_enc via RPC
+  // fn_decrypt_oauth (grant só service_role) — client de sessão falharia e o
+  // outbound sairia sem assinatura silenciosamente.
+  const adminForActions = createAdminClient();
   const results: ActionResultDetail[] = [];
   for (const action of callWebhookActions) {
     const actionCtx: ActionCtx = {
-      admin: supabase,
+      admin: adminForActions,
       organizationId: activeOrg.orgId,
       ruleId: rule.id,
       event: typedEvent,

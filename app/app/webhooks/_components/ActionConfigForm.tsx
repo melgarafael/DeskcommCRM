@@ -21,7 +21,7 @@ export type ActionItem =
   | { type: "send_whatsapp_message"; config: { channel_session_id: string; template: string } }
   | { type: "add_tag"; config: { tags: string[] } }
   | { type: "assign_owner"; config: { user_id: string } }
-  | { type: "call_webhook"; config: { url: string; secret?: string } };
+  | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -34,7 +34,7 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "assign_owner":
       return { type, config: { user_id: "" } };
     case "call_webhook":
-      return { type, config: { url: "", secret: "" } };
+      return { type, config: { url: "" } };
   }
 }
 
@@ -225,7 +225,14 @@ function AssignOwnerForm({ config, onChange }: FormProps<{ user_id: string }>) {
   );
 }
 
-function CallWebhookForm({ config, onChange }: FormProps<{ url: string; secret?: string }>) {
+function CallWebhookForm({
+  config,
+  onChange,
+}: FormProps<{ url: string; secret?: string; secret_enc?: string }>) {
+  // O segredo é write-only: o servidor guarda cifrado (secret_enc) e nunca
+  // devolve o valor. Digitar aqui envia `secret` novo; deixar em branco
+  // preserva o secret_enc existente no round-trip do editor.
+  const hasStoredSecret = Boolean(config.secret_enc) && !config.secret;
   return (
     <div className="space-y-2">
       <div className="space-y-1">
@@ -240,12 +247,20 @@ function CallWebhookForm({ config, onChange }: FormProps<{ url: string; secret?:
       <div className="space-y-1">
         <Label>Segredo (opcional)</Label>
         <Input
+          type="password"
           value={config.secret ?? ""}
-          onChange={(e) => onChange({ ...config, secret: e.target.value })}
-          placeholder="uma senha só sua"
+          onChange={(e) => {
+            const next = e.target.value;
+            // Digitou algo novo → substitui; limpou → remove o guardado também.
+            const { secret_enc: _enc, ...rest } = config;
+            onChange(next ? { ...rest, secret: next } : { ...rest, secret: undefined });
+          }}
+          placeholder={hasStoredSecret ? "•••••••• (definido — digite para trocar)" : "uma senha só sua"}
         />
         <p className="text-xs text-muted-foreground">
-          Se preencher, enviaremos uma assinatura para o outro sistema conferir que fomos nós.
+          {hasStoredSecret
+            ? "Já existe um segredo guardado com segurança. Digitar aqui substitui; limpar remove."
+            : "Se preencher, enviaremos uma assinatura para o outro sistema conferir que fomos nós."}
         </p>
       </div>
     </div>

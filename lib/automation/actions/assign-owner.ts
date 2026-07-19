@@ -1,6 +1,7 @@
 /**
  * Ação `assign_owner` — valida membership ativa na org (tabela
- * `user_organizations`, `revoked_at is null`) e seta owner_user_id +
+ * `user_organizations`, `revoked_at is null`, role acima de viewer — doutrina
+ * G3-04: responsável tem que ser atendente ativo) e seta owner_user_id +
  * assigned_at do lead do contexto.
  */
 import { registerAction } from "@/lib/automation/actions";
@@ -13,12 +14,16 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 
   const { data: member } = await ctx.admin
     .from("user_organizations")
-    .select("user_id")
+    .select("user_id, role")
     .eq("organization_id", ctx.organizationId)
     .eq("user_id", userId)
     .is("revoked_at", null)
     .maybeSingle();
   if (!member) return { type: "assign_owner", status: "failed", error: "user_not_in_org" };
+  if (member.role === "viewer") {
+    // Mesma régua do bulk-assign (G3-04 invalid_owner): viewer não atende.
+    return { type: "assign_owner", status: "failed", error: "invalid_owner" };
+  }
 
   const { error } = await ctx.admin
     .from("crm_leads")

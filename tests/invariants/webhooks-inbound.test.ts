@@ -204,6 +204,18 @@ function fakeAdminClient(): SupabaseClient {
     from: (table: string) => new FakeQuery(table),
     rpc: (name: string, params: Record<string, unknown>): Promise<QResult> => {
       return (async () => {
+        // migration 0039: a rota decifra o secret da fonte via RPC.
+        if (name === "fn_decrypt_oauth") {
+          try {
+            const ct = String((params as { ciphertext: string }).ciphertext);
+            const out = sql(
+              `select public.fn_decrypt_oauth(${sqlString(ct)}::bytea);`,
+            ).trim();
+            return { data: out || null, error: null };
+          } catch (err) {
+            return { data: null, error: { message: (err as Error).message } };
+          }
+        }
         if (name !== "emit_event") {
           throw new Error(`fakeAdminClient: unsupported rpc ${name}`);
         }
@@ -282,9 +294,17 @@ beforeAll(() => {
       (id, organization_id, name, path_token, default_pipeline_id, default_stage_id, is_active)
       values ('${WHIN_SOURCE_INACTIVE}', '${GOV_ORG}', 'Inactive source', '${TOKEN_INACTIVE}', '${GOV_PIPELINE}', '${GOV_STAGE}', false)
       on conflict do nothing;
+    -- migration 0039: secret é cifrado at-rest. Configura a GUC da chave no
+    -- database efêmero (sessões novas herdam — o fake rpc de decrypt precisa)
+    -- e cifra o fixture na MESMA sessão via set_config.
+    do $guc$ begin
+      execute format('alter database %I set app.nuvemshop_oauth_key = %L',
+                     current_database(), 'test-guc-key-0123456789abcdef0123456789abcdef');
+    end $guc$;
+    select set_config('app.nuvemshop_oauth_key', 'test-guc-key-0123456789abcdef0123456789abcdef', false);
     insert into public.webhook_sources
-      (id, organization_id, name, path_token, default_pipeline_id, default_stage_id, secret)
-      values ('${WHIN_SOURCE_SECRET}', '${GOV_ORG}', 'Secret source', '${TOKEN_SECRET}', '${GOV_PIPELINE}', '${GOV_STAGE}', '${SECRET}')
+      (id, organization_id, name, path_token, default_pipeline_id, default_stage_id, secret_encrypted)
+      values ('${WHIN_SOURCE_SECRET}', '${GOV_ORG}', 'Secret source', '${TOKEN_SECRET}', '${GOV_PIPELINE}', '${GOV_STAGE}', public.fn_encrypt_oauth('${SECRET}'))
       on conflict do nothing;
   `);
 });

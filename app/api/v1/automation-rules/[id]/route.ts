@@ -10,6 +10,8 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { updateAutomationRuleSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
 
 export const dynamic = "force-dynamic";
 
@@ -48,14 +50,31 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", "Regra não encontrada.", 404, { requestId });
 
+  // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041);
+  // secret_enc existente (round-trip do editor) passa intacto.
+  const patch: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
+  if (parsed.data.actions !== undefined) {
+    const safeActions = await encryptRuleActionSecrets(createAdminClient(), parsed.data.actions);
+    if (safeActions === null) {
+      return fail(
+        "encryption_unavailable",
+        "Não foi possível guardar o segredo do webhook com segurança. Configure NUVEMSHOP_OAUTH_ENCRYPTION_KEY e tente de novo.",
+        422,
+        { requestId },
+      );
+    }
+    patch.actions = safeActions;
+  }
+
   const { data: updated, error: updErr } = await supabase
     .from("automation_rules")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update(patch)
     .eq("id", id)
     .select("*")
     .single();
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
 
+  const { actions: _actionsWithSecrets, ...auditableRule } = parsed.data;
   void audit({
     action: "automation.rule_updated",
     actorUserId: user.id,
@@ -63,7 +82,8 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     resourceType: "automation_rule",
     resourceId: id,
     requestId,
-    metadata: parsed.data,
+    // actions fora do audit: config de call_webhook carrega secret plaintext no input.
+    metadata: { ...auditableRule, ...(parsed.data.actions !== undefined ? { actions_changed: true } : {}) },
   });
 
   return ok(updated, { requestId });
