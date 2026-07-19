@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
+import { cookieSecure } from "@/lib/supabase/cookie-secure";
 
 export type VerifyMfaResult =
   | { ok: false; error: "mfa_invalid" }
@@ -75,7 +76,7 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
     store.set(ATTEMPT_COOKIE, String(newAttempts), {
       httpOnly: true,
       sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecure(),
       maxAge: ATTEMPT_TTL_SECONDS,
       path: "/",
     });

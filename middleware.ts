@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { isPublicPath } from "@/lib/auth/public-paths";
@@ -51,7 +52,7 @@ export async function middleware(request: NextRequest) {
         name: COOKIE_NAME,
         sameSite: "strict",
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: cookieSecure(),
         path: "/",
       },
     },

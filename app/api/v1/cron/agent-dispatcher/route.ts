@@ -45,6 +45,14 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
+  // Fusão (Fase 4): com o agent-engine como dono do dispatch, este cron é
+  // NO-OP mecânico — dois consumidores dos mesmos eventos = turno duplicado
+  // ou perdido. O worker (drain) é o único consumidor quando
+  // AGENT_DISPATCH_CONSUMER='engine' (default do produto fundido).
+  if (env.AGENT_DISPATCH_CONSUMER === "engine") {
+    return ok({ skipped: true, reason: "dispatch_owned_by_agent_engine" }, { requestId });
+  }
+
   let summary;
   try {
     summary = await dispatchAgents();

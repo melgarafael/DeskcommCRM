@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Check, Checks, ImageIcon, MusicNote, FileText, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import {
@@ -98,16 +98,21 @@ export function MessageBubble({ message, debugCitations }: Props) {
           )}
           {isOutbound && !isFailed && <AckIndicator status={message.status} />}
           {isFailed && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-0.5 font-semibold text-destructive">
-                  <WarningOctagon size={10} weight="fill" aria-hidden /> Falhou
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {message.error_message ?? message.error_code ?? "Erro desconhecido"}
-              </TooltipContent>
-            </Tooltip>
+            // Provider local: o painel do inbox não tem TooltipProvider ancestral e
+            // este Tooltip só monta em mensagem failed — sem o provider, abrir uma
+            // conversa com falha de envio derrubava o painel inteiro (error boundary).
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-0.5 font-semibold text-destructive">
+                    <WarningOctagon size={10} weight="fill" aria-hidden /> Falhou
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {message.error_message ?? message.error_code ?? "Erro desconhecido"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
       </div>

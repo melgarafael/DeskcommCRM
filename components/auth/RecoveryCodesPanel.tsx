@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 interface RecoveryCodesPanelProps {
@@ -20,12 +21,9 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
   const [acked, setAcked] = useState(false);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(codes.join("\n"));
-      toast.success("Códigos copiados para a área de transferência.");
-    } catch {
-      toast.error("Não foi possível copiar. Selecione e copie manualmente.");
-    }
+    const ok = await copyToClipboard(codes.join("\n"));
+    if (ok) toast.success("Códigos copiados para a área de transferência.");
+    else toast.error("Não foi possível copiar. Selecione e copie manualmente.");
   };
 
   const handleDownload = () => {

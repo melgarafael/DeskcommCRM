@@ -6,6 +6,7 @@
  */
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 
@@ -33,7 +34,7 @@ export async function createClient() {
       name: "sb-deskcomm-auth",
       sameSite: "strict",
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecure(),
       path: "/",
     },
   });

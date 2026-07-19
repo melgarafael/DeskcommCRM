@@ -8,6 +8,7 @@ import {
   useRevokeApiToken,
   type CreatedApiToken,
 } from "@/hooks/team/useApiTokens";
+import { copyToClipboard } from "@/lib/clipboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -226,8 +227,10 @@ export function ApiTokensClient() {
                 type="button"
                 variant="secondary"
                 onClick={() => {
-                  navigator.clipboard.writeText(created.plaintext);
-                  toast.success("Token copiado.");
+                  void copyToClipboard(created.plaintext).then((ok) => {
+                    if (ok) toast.success("Token copiado.");
+                    else toast.error("Não foi possível copiar — selecione o token acima.");
+                  });
                 }}
               >
                 Copiar para clipboard

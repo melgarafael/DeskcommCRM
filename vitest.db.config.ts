@@ -12,12 +12,12 @@ export default defineConfig({
     // Seed + queries via docker exec são lentos o suficiente pro default de 5s.
     testTimeout: 30_000,
     hookTimeout: 60_000,
-    // Todos os arquivos batem no MESMO container Postgres efêmero — helpers
-    // com contagem global não-escopada (ex.: automation-engine.test.ts's
-    // runsCount()) correm em cima de estado compartilhado. Rodar os arquivos
-    // em paralelo cria interferência cross-file (flakiness observada quando
-    // webhooks-bulk-events.test.ts grava em automation_rule_runs ao mesmo
-    // tempo que o before/after de outro arquivo lê a contagem global).
+    // Todos os arquivos batem no MESMO container Postgres efêmero, com estado
+    // GLOBAL compartilhado entre arquivos: helpers de contagem não-escopada
+    // (ex.: automation-engine.test.ts's runsCount() sobre automation_rule_runs)
+    // E o ponteiro platform do playbook (playbook-seed deleta/recria;
+    // agent-no-credential depende dele). Rodar os arquivos em paralelo cria
+    // interferência cross-file (flakiness real observada nos dois casos).
     fileParallelism: false,
     // webhooks-trigger-events.test.ts chama os handlers REST diretamente (não
     // só SQL cru), e eles importam lib/env transitivamente (via lib/audit) —

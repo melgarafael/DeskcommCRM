@@ -18,7 +18,7 @@ version: "3.9"
 
 services:
   waha:
-    image: devlikeapro/waha-plus:latest
+    image: devlikeapro/waha:noweb
     platform: linux/amd64
     container_name: deskcomm-waha
     restart: unless-stopped
@@ -28,7 +28,10 @@ services:
       # Hash SHA512 hex da api key (NÃO plaintext). Cliente envia plaintext em X-Api-Key.
       WAHA_API_KEY: ${WAHA_API_KEY_SHA512}
       # Webhook base URL — precisa ser pública (use ngrok/cloudflared em dev).
-      WHATSAPP_HOOK_URL: ${WAHA_WEBHOOK_BASE_URL}/api/v1/webhooks/waha
+      # host.docker.internal: o app Next roda no HOST em dev — localhost dentro do
+      # container seria o próprio WAHA e o webhook nunca chegaria. Porta 3002:
+      # a stack da fusão é isolada do checkout principal (3001 é do gov-loop).
+      WHATSAPP_HOOK_URL: ${WAHA_HOOK_BASE_URL:-http://host.docker.internal:3003}/api/v1/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message,message.any,message.ack,session.status,state.change"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
       WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
@@ -36,15 +39,44 @@ services:
       WAHA_DEFAULT_ENGINE: NOWEB
       # Storage de mídia: Supabase Storage via Backend (NÃO inline base64).
       WAHA_DASHBOARD_ENABLED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - waha-data:/app/.sessions
       - waha-media:/app/.media
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      # /ping é o único endpoint sem auth desta build (api/health = 401/404).
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/ping"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  # Worker 24/7 do agent-engine (fusão Vendaval): fila, cron/follow-up, drain do
+  # event_log e turnos do agente rico. Postgres = Supabase (SUPABASE_DB_URL no
+  # .env.local). Sobe junto do WAHA: `docker compose up -d`.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: deskcomm-agent-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      # dentro do container, localhost é o próprio worker — o WAHA está na rede
+      # do compose (serviço waha, porta interna 3000). Sobrepõe o .env.local.
+      WAHA_API_BASE_URL: http://waha:3000
+    ports:
+      - "8787:8787"
+    healthcheck:
+      # 127.0.0.1 explícito: localhost resolve p/ ::1 e o healthz escuta só IPv4.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   waha-data:
