@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { copyToClipboard } from "@/lib/clipboard";
 import { Copy, Trash, CaretDown } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import {
@@ -61,8 +62,9 @@ function curlSnippet(url: string): string {
 }
 
 async function copy(text: string, label: string): Promise<void> {
-  await navigator.clipboard.writeText(text);
-  toast.success(label);
+  const ok = await copyToClipboard(text);
+  if (ok) toast.success(label);
+  else toast.error("Não foi possível copiar — selecione e copie manualmente.");
 }
 
 function relativeReceivedAt(iso: string): string {

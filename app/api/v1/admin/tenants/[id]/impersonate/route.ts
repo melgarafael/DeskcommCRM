@@ -20,6 +20,7 @@ import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import {
   IMPERSONATE_COOKIE_NAME,
   IMPERSONATE_TTL_SECONDS,
@@ -92,7 +93,7 @@ export async function POST(
   const cookieStore = await cookies();
   cookieStore.set(IMPERSONATE_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: true,
+    secure: cookieSecure(),
     sameSite: "lax",
     maxAge: IMPERSONATE_TTL_SECONDS,
     path: "/",

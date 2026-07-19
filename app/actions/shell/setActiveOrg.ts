@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { loadAuthUser } from "@/lib/auth/server";
+import { cookieSecure } from "@/lib/supabase/cookie-secure";
 
 export async function setActiveOrg(orgId: string): Promise<{ ok: boolean; error?: string }> {
   const user = await loadAuthUser();
@@ -14,7 +15,7 @@ export async function setActiveOrg(orgId: string): Promise<{ ok: boolean; error?
   store.set("active_org", orgId, {
     httpOnly: true,
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(),
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });

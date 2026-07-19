@@ -3,6 +3,8 @@
 import * as Sentry from "@sentry/nextjs";
 import { useEffect, useState } from "react";
 
+import { copyToClipboard } from "@/lib/clipboard";
+
 export default function GlobalError({
   error,
   reset,
@@ -70,12 +72,12 @@ export default function GlobalError({
             <button
               type="button"
               onClick={() => {
-                if (typeof navigator !== "undefined" && navigator.clipboard) {
-                  void navigator.clipboard.writeText(displayId).then(() => {
+                void copyToClipboard(displayId).then((ok) => {
+                  if (ok) {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
-                  });
-                }
+                  }
+                });
               }}
               style={{
                 padding: "0.5rem 1rem",

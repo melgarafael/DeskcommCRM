@@ -14,6 +14,7 @@ import { audit } from "@/lib/audit";
 import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import type { Message } from "@/lib/types/messaging";
 import { getWahaClient } from "@/lib/waha/client";
+import { parseWahaMessageId } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
 
 type SB = SupabaseClient;
@@ -245,14 +246,11 @@ export async function sendMessageHandler(
         c.channel_sessions.waha_session_name,
         chatId,
         input.body ?? "",
-      )) as { id?: string | { _serialized?: string } };
-      // WAHA/NOWEB returns `id` as a WAMessageKey object ({fromMe, remote, id,
-      // _serialized}), not a plain string — storing it raw got JSON-stringified
-      // into external_id, which never matched the plain-string id the WAHA
-      // webhook uses later, so the ack/status update inserted a duplicate row
-      // instead of updating this one.
-      const rawId = wahaRes?.id;
-      const externalId = typeof rawId === "string" ? rawId : (rawId?._serialized ?? null);
+      )) as unknown;
+      // Fase 4A-3: o shape do id varia por engine (string | {_serialized} |
+      // NOWEB {id:{id}} | {key:{id}}) — parser compartilhado cobre todos; sem
+      // external_id o ack do webhook duplica a linha em vez de atualizar.
+      const externalId = parseWahaMessageId(wahaRes);
       const { data: updated } = await supabase
         .from("messages")
         .update({ status: "sent", external_id: externalId, ack: 0 })

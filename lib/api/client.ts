@@ -1,6 +1,7 @@
 import type { ZodSchema } from "zod";
 
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
+import { randomId } from "@/lib/random-id";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
@@ -101,7 +102,7 @@ async function request<T>(
   body: unknown,
   opts: RequestOpts = {},
 ): Promise<T> {
-  const requestId = crypto.randomUUID();
+  const requestId = randomId();
   const headers: Record<string, string> = {
     Accept: "application/json",
     "X-Request-Id": requestId,
@@ -113,7 +114,7 @@ async function request<T>(
   }
 
   if (MUTATING_METHODS.has(method)) {
-    headers["Idempotency-Key"] ??= opts.idempotencyKey ?? crypto.randomUUID();
+    headers["Idempotency-Key"] ??= opts.idempotencyKey ?? randomId();
   }
 
   const serializedBody =

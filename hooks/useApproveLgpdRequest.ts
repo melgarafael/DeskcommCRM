@@ -1,6 +1,7 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { randomId } from "@/lib/random-id";
 
 interface ApproveInput {
   id: string;
@@ -19,7 +20,7 @@ export function useApproveLgpdRequest() {
 
   return useMutation({
     mutationFn: async ({ id, approved_reason }: ApproveInput) => {
-      const idempotencyKey = crypto.randomUUID();
+      const idempotencyKey = randomId();
       return apiClient.post<ApproveResponse>(
         `/api/v1/lgpd/requests/${id}/approve`,
         { approved_reason },

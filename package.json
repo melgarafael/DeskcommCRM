@@ -22,7 +22,9 @@
     "test:unit": "vitest run",
     "test:db": "bash scripts/test-db.sh",
     "test:invariants": "bash scripts/test-db.sh",
-    "gov:verify": "pnpm typecheck && pnpm lint && pnpm test:unit"
+    "gov:verify": "pnpm typecheck && pnpm lint && pnpm test:unit",
+    "worker": "tsx --env-file=.env --env-file=.env.local workers/agent-worker/main.ts",
+    "flywheel:judge": "tsx --env-file=.env --env-file=.env.local scripts/flywheel-judge-live.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.16",
@@ -75,7 +77,8 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8",
-    "zod-to-json-schema": "^3.25.2"
+    "zod-to-json-schema": "^3.25.2",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
@@ -102,7 +105,9 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "@types/pg": "^8.15.6",
+    "tsx": "^4.23.1"
   },
   "packageManager": "pnpm@9.15.9"
 }

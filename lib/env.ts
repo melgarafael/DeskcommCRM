@@ -77,6 +77,13 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
 
+  // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
+  // 'engine' (default) = o worker agent-engine é o único consumidor (o cron
+  // agent-dispatcher vira no-op mecânico); 'native' = o dispatcher EPIC-13
+  // consome (deploy sem worker). NUNCA os dois — dois consumidores = turno
+  // duplicado ou perdido (bug real da fusão).
+  AGENT_DISPATCH_CONSUMER: z.enum(["engine", "native"]).optional().default("engine"),
+
   // Workers — opt-in via env so dev doesn't run loops. Production cron sets it.
   EVENT_LOG_WORKER_ENABLED: z
     .enum(["true", "false"])
