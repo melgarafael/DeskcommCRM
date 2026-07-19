@@ -684,3 +684,6 @@
   pré-existente em messages.ts:110).
 - *** FASE G6 COMPLETA (7/7) → checkpoint G6 na sequência = GATILHO da FG do
   Vendaval. O ÉPICO DE GOVERNANÇA DE ATENDIMENTO FECHA AQUI (G1-G6). ***
+- Checkpoint G6 emitido (loop/checkpoints/G6-report.md, COMPLETO 7/7), loop
+  PARADO aguardando aprovação do dono (G6.approved = GATILHO da FG do Vendaval).
+  7 INB abertos no §3. O ÉPICO DE GOVERNANÇA (G1-G6) FECHA na aprovação.
