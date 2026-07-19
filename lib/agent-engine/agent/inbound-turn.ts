@@ -528,6 +528,11 @@ export async function runAgentTurn(
   }
   // Knobs por-turno: a versão publicada vence o env; sem ela, env (main.ts).
   const maxSteps = agentConfig?.maxSteps ?? deps.knobs.maxSteps;
+  // Fallback de modelo das chamadas AUXILIARES (classificadores/compaction/promessa):
+  // knob de env → modelo do agente PUBLICADO na tela → organizations.settings.llm.
+  // Sem isso, self-host que configurou tudo pela tela (que não preenche default_model)
+  // morria no primeiro classificador: "modelo LLM não definido".
+  const agentModel = agentConfig?.model;
   const turnContextKnobs =
     agentConfig !== null
       ? { historyLimit: agentConfig.historyMessageWindow, maxTokens: deps.knobs.maxContextTokens }
@@ -623,7 +628,12 @@ export async function runAgentTurn(
       {
         context: openingContext.context,
         previousSummary: previous?.rolling_summary ?? '',
-        knobs: deps.knobs.compaction,
+        knobs: {
+          ...deps.knobs.compaction,
+          ...(deps.knobs.compaction.model === undefined && agentModel !== undefined
+            ? { model: agentModel }
+            : {}),
+        },
         notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
       },
       { registry: deps.registry, log: runLog },
@@ -721,7 +731,12 @@ export async function runAgentTurn(
             pool,
             deps.llmCfg,
             { tenantId, leadId, jobId: job.id },
-            { candidate, ...(deps.knobs.promiseSemantic?.model !== undefined ? { model: deps.knobs.promiseSemantic.model } : {}) },
+            {
+              candidate,
+              ...((deps.knobs.promiseSemantic?.model ?? agentModel) !== undefined
+                ? { model: (deps.knobs.promiseSemantic?.model ?? agentModel) as string }
+                : {}),
+            },
             { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
           )
       : undefined;
@@ -1084,7 +1099,9 @@ export async function runAgentTurn(
       {
         context: effectiveContext,
         currentStage,
-        ...(deps.knobs.stageClassifier.model !== undefined ? { model: deps.knobs.stageClassifier.model } : {}),
+        ...((deps.knobs.stageClassifier.model ?? agentModel) !== undefined
+          ? { model: (deps.knobs.stageClassifier.model ?? agentModel) as string }
+          : {}),
       },
       { registry: deps.registry, log: runLog },
     );
@@ -1105,7 +1122,9 @@ export async function runAgentTurn(
       { tenantId, leadId, jobId: job.id },
       {
         message: skillSignal,
-        ...(deps.knobs.jailbreak.model !== undefined ? { model: deps.knobs.jailbreak.model } : {}),
+        ...((deps.knobs.jailbreak.model ?? agentModel) !== undefined
+          ? { model: (deps.knobs.jailbreak.model ?? agentModel) as string }
+          : {}),
       },
       { registry: deps.registry, log: runLog },
     );
