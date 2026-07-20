@@ -8,6 +8,7 @@ import { AgentForm, type ChannelSessionLite } from "./AgentForm";
 import { TestPanel } from "./TestPanel";
 import { RunsTable } from "./RunsTable";
 import { VersionHistory } from "./VersionHistory";
+import { ProposalsPanel } from "./ProposalsPanel";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
@@ -23,9 +24,9 @@ interface Props {
 }
 
 export function AgentTabs(props: Props) {
-  const [tab, setTab] = React.useState<"configuration" | "test" | "runs" | "history">(
-    "configuration",
-  );
+  const [tab, setTab] = React.useState<
+    "configuration" | "test" | "runs" | "history" | "proposals"
+  >("configuration");
   const hasVersion = !!(props.draft || props.published);
 
   return (
@@ -41,6 +42,7 @@ export function AgentTabs(props: Props) {
         </TabsTrigger>
         <TabsTrigger value="runs">Execuções</TabsTrigger>
         <TabsTrigger value="history">Histórico</TabsTrigger>
+        <TabsTrigger value="proposals">Propostas</TabsTrigger>
       </TabsList>
 
       <TabsContent value="configuration" className="m-0">
@@ -66,6 +68,14 @@ export function AgentTabs(props: Props) {
 
       <TabsContent value="runs" className="m-0">
         <RunsTable agentId={props.agent.id} active={tab === "runs"} />
+      </TabsContent>
+
+      <TabsContent value="proposals" className="m-0">
+        <ProposalsPanel
+          agentId={props.agent.id}
+          active={tab === "proposals"}
+          readOnly={props.readOnly}
+        />
       </TabsContent>
 
       <TabsContent value="history" className="m-0">

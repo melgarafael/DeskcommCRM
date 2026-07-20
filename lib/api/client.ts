@@ -3,7 +3,7 @@ import type { ZodSchema } from "zod";
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
 import { randomId } from "@/lib/random-id";
 
-type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 
 export type RequestOpts = {
   schema?: ZodSchema<unknown>;
@@ -16,7 +16,7 @@ export type RequestOpts = {
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 3;
 const RETRYABLE_STATUSES = new Set([429, 503]);
-const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PATCH", "DELETE"]);
+const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PATCH", "PUT", "DELETE"]);
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -217,6 +217,9 @@ export const apiClient = {
   },
   patch<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
     return request<T>("PATCH", path, body, opts);
+  },
+  put<T>(path: string, body: unknown, opts?: RequestOpts): Promise<T> {
+    return request<T>("PUT", path, body, opts);
   },
   delete<T>(path: string, opts?: RequestOpts): Promise<T> {
     return request<T>("DELETE", path, undefined, opts);

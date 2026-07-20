@@ -20,9 +20,9 @@
 | Feature | Status | Prova |
 |---|---|---|
 | F2(i) motivo da retenção na conversa | ✅ local | endpoint GET `/api/v1/conversations/[id]/retention` + `lib/inbox/retention-copy.ts` (código→pt-br leigo) + `RetentionNotice` acima do composer. Typecheck+lint zero no diff. Playwright localhost: `.superpowers/evidence/operacao-visivel-f2i-localhost.png` (veto `outside_window` seedado → "Fora da janela de envio (7h–22h, sem domingo)…"). Falta: prova VPS. |
-| F2(ii) knobs | ⏳ | contrato despachado ao Terminal B (GET/PATCH `/api/v1/channel-sessions/[id]/anti-ban`) |
+| F2(ii) knobs | ✅ local | backend do Terminal B (GET/PUT `/api/v1/ai/pacing`, branch `epic/op-visivel-backend` mergeada); UI = botão "Proteção de envio" no card de Conexões → `AntiBanSheet` (janela, domingo, ritmo+jitter em segundos, teto diário, fuso, escada de warm-up explicada; campo vazio = default do engine). Playwright localhost: salvou janela 8–21 → SQL `channel_knobs` = `8|21`. Evidência `operacao-visivel-f2ii-localhost.png`. Falta: prova VPS. |
 | F1 central de avisos | ✅ local | GET `/api/v1/ai/inbox` (+open_count) e PATCH `/api/v1/ai/inbox/[id]` (agent+, audit `ai.inbox_item_updated`); página `/app/ai/inbox` (abas Abertos/Resolvidos, badge severidade, marcar resolvido/reabrir); sino `AlertsBell` no TopBar com contador. Playwright localhost: `.superpowers/evidence/operacao-visivel-f1-localhost.png` (3 avisos seedados → resolve 1 → sino 3→2 ao vivo). Falta: prova VPS. |
-| F3 propostas flywheel | ⏳ | contrato despachado ao Terminal B (GET proposals + POST apply) |
+| F3 propostas flywheel | ✅ local | backend do B (GET `/api/v1/ai/agents/[id]/proposals` + POST apply, migration 0053 aplicada no remoto via Management API); UI = aba "Propostas" no AgentTabs (`ProposalsPanel`: badge pendente/aplicada, botão admin "Aplicar como versão nova"). Playwright localhost: apply → versão 4 published, ponteiro movido, proposta com applied_version_id (SQL provado). Caminho de veto TESTADO: sessão offline → 422 `channel_session_offline`, proposta segue pendente. Evidência `operacao-visivel-f3-localhost.png`. Falta: prova VPS. |
 
 ## Decisões e problemas
 
