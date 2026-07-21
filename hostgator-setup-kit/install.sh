@@ -184,10 +184,47 @@ if [ -f supabase/baseline.sql ]; then
     >/dev/null 2>&1 \
     && c_grn "✓ extensões (vector, citext, pg_trgm) habilitadas no public" \
     || c_ylw "⚠ não consegui habilitar as extensões — o schema pode falhar abaixo."
-  docker run --rm -i -v "$PROJECT_DIR/supabase/baseline.sql:/baseline.sql:ro" \
-    postgres:17-alpine psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f /baseline.sql \
-    && c_grn "✓ schema aplicado" \
-    || c_ylw "⚠ baseline retornou aviso/erro (pode já estar aplicado — idempotente). Verifique o log acima."
+  SCHEMA_LOG="$PROJECT_DIR/baseline-apply.log"
+  # Banco novo ou re-execução? Re-aplicar com ON_ERROR_STOP pararia no primeiro
+  # "já existe" (ex.: multiple primary keys) e PULARIA o resto do arquivo —
+  # inclusive o apêndice com as migrations novas. Banco existente = modo update
+  # (mesmo contrato do update.sh); banco novo = ON_ERROR_STOP e falha é FATAL
+  # (schema pela metade = app sem RLS).
+  has_schema="$(docker run --rm postgres:17-alpine psql "$SUPABASE_DB_URL" -tAc \
+    "select 1 from information_schema.tables where table_schema='public' and table_name='organizations' limit 1" 2>/dev/null | tr -d '[:space:]')"
+
+  if [ "$has_schema" = "1" ]; then
+    c_ylw "• schema já existe — re-aplicando em modo update (erros 'já existe' são esperados e ficam no log)"
+    raw="$(docker run --rm -i -v "$PROJECT_DIR/supabase/baseline.sql:/baseline.sql:ro" \
+          postgres:17-alpine psql "$SUPABASE_DB_URL" -q -f /baseline.sql 2>&1 || true)"
+    printf '%s\n' "$raw" > "$SCHEMA_LOG"
+    benign='already exists|multiple primary keys|multiple default values|is already a member|already a partition'
+    unexpected="$(printf '%s\n' "$raw" | grep -iE 'ERROR|FATAL' | grep -viE "$benign" || true)"
+    if [ -n "$unexpected" ]; then
+      c_ylw "⚠ Erros no banco que NÃO são os esperados (log completo: $SCHEMA_LOG):"
+      printf '%s\n' "$unexpected" | head -20
+    else
+      c_grn "✓ schema re-aplicado (apêndice de migrations incluído)"
+    fi
+  else
+    if docker run --rm -i -v "$PROJECT_DIR/supabase/baseline.sql:/baseline.sql:ro" \
+        postgres:17-alpine psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f /baseline.sql \
+        > "$SCHEMA_LOG" 2>&1; then
+      c_grn "✓ schema aplicado (log: $SCHEMA_LOG)"
+    else
+      tail -5 "$SCHEMA_LOG"
+      die "baseline falhou num banco NOVO — o schema ficaria incompleto (sem RLS). Log completo: $SCHEMA_LOG"
+    fi
+  fi
+
+  # Verificação real, não wishful thinking: o app precisa das tabelas core.
+  n_tables="$(docker run --rm postgres:17-alpine psql "$SUPABASE_DB_URL" -tAc \
+    "select count(*) from information_schema.tables where table_schema='public'" 2>/dev/null | tr -d '[:space:]')"
+  if [ "${n_tables:-0}" -ge 30 ]; then
+    c_grn "✓ verificação: ${n_tables} tabelas no schema public"
+  else
+    c_ylw "⚠ verificação: só ${n_tables:-0} tabelas no schema public — confira $SCHEMA_LOG"
+  fi
 else
   c_ylw "⚠ supabase/baseline.sql não encontrado — pulei (aplique o schema manualmente)."
 fi
