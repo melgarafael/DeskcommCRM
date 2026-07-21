@@ -14,7 +14,7 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-major_version = 15
+major_version = 17
 
 [db.pooler]
 enabled = false
@@ -42,16 +42,30 @@ file_size_limit = "50MiB"
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+additional_redirect_urls = [
+  "http://localhost:3000/auth/callback",
+  "http://localhost:3000/auth/confirm",
+  "http://localhost:3001/auth/confirm",
+]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
-enable_signup = false # Onboarding manual via super-admin no MVP
+enable_signup = true # Signup self-service (/signup) — provisiona tenant em /auth/confirm
 
 [auth.email]
-enable_signup = false
+enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
+
+# Templates apontam para /auth/confirm (fluxo token_hash do @supabase/ssr).
+# Self-host GoTrue: ver docs/deploy-selfhost (GOTRUE_MAILER_TEMPLATES_*).
+[auth.email.template.confirmation]
+subject = "Confirme seu e-mail — DeskcommCRM"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Redefinir senha — DeskcommCRM"
+content_path = "./supabase/templates/recovery.html"
 
 [auth.mfa]
 max_enrolled_factors = 10

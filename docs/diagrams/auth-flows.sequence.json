@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "DeskcommCRM — Signup & Recuperação de Senha",
+    "subtitle": "fluxo token_hash (@supabase/ssr) com provisionamento de tenant em /auth/confirm",
+    "output": "auth-flows.html",
+    "viewBox": [920, 990],
+    "quality_profile": "standard"
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "Usuário", "sublabel": "browser" },
+    { "id": "app", "type": "frontend", "label": "App Next.js", "sublabel": "pages + actions" },
+    { "id": "confirm", "type": "backend", "label": "/auth/confirm", "sublabel": "route handler" },
+    { "id": "gotrue", "type": "security", "label": "GoTrue", "sublabel": "Supabase Auth" },
+    { "id": "mail", "type": "messagebus", "label": "E-mail", "sublabel": "SMTP / Mailpit" },
+    { "id": "db", "type": "database", "label": "Postgres", "sublabel": "orgs + memberships" }
+  ],
+  "segments": [
+    { "from": 168, "to": 520, "label": "01 / CRIAR CONTA" },
+    { "from": 540, "to": 940, "label": "02 / RECUPERAR SENHA" }
+  ],
+  "messages": [
+    { "id": "signup-post", "from": "user", "to": "app", "y": 200, "label": "/signup: criar conta", "variant": "emphasis" },
+    { "id": "signup-gotrue", "from": "app", "to": "gotrue", "y": 240, "label": "auth.signUp" },
+    { "id": "signup-mail", "from": "gotrue", "to": "mail", "y": 280, "label": "e-mail confirmação", "variant": "dashed", "note": "token_hash" },
+    { "id": "signup-link", "from": "mail", "to": "user", "y": 320, "label": "link /auth/confirm", "variant": "return" },
+    { "id": "confirm-get", "from": "user", "to": "confirm", "y": 360, "label": "GET ?token_hash&type=signup", "variant": "emphasis" },
+    { "id": "confirm-verify", "from": "confirm", "to": "gotrue", "y": 400, "label": "verifyOtp → sessão", "variant": "security" },
+    { "id": "confirm-provision", "from": "confirm", "to": "db", "y": 440, "label": "org + membership admin", "variant": "emphasis", "note": "idempotente" },
+    { "id": "confirm-redirect", "from": "confirm", "to": "user", "y": 485, "label": "302 /onboarding", "variant": "return" },
+    { "id": "forgot-post", "from": "user", "to": "app", "y": 580, "label": "/login/forgot: pedir link", "variant": "emphasis" },
+    { "id": "forgot-gotrue", "from": "app", "to": "gotrue", "y": 620, "label": "resetPasswordForEmail" },
+    { "id": "forgot-mail", "from": "gotrue", "to": "mail", "y": 660, "label": "e-mail recovery", "variant": "dashed" },
+    { "id": "forgot-link", "from": "mail", "to": "user", "y": 700, "label": "link /auth/confirm", "variant": "return" },
+    { "id": "recovery-get", "from": "user", "to": "confirm", "y": 740, "label": "GET ?token_hash&type=recovery", "variant": "emphasis" },
+    { "id": "recovery-verify", "from": "confirm", "to": "gotrue", "y": 780, "label": "verifyOtp → sessão recovery", "variant": "security" },
+    { "id": "recovery-redirect", "from": "confirm", "to": "user", "y": 820, "label": "302 /login/reset", "variant": "return" },
+    { "id": "reset-update", "from": "user", "to": "app", "y": 860, "label": "updateUser(nova senha)", "variant": "emphasis" },
+    { "id": "reset-done", "from": "app", "to": "user", "y": 900, "label": "signOut → /login?reset=success", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "confirm", "from": 350, "to": 495, "type": "backend" },
+    { "participant": "confirm", "from": 730, "to": 830, "type": "backend" }
+  ],
+  "cards": []
+}

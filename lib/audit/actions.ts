@@ -140,4 +140,14 @@ export type AuditAction =
   | "automation.rule_updated"
   | "automation.rule_deleted"
   | "automation.rule_executed"
-  | "automation.run_resent";
+  | "automation.run_resent"
+  | "auth.signup_requested"
+  | "auth.signup_failed"
+  | "auth.signup_confirmed"
+  | "auth.signup_provision_failed"
+  | "auth.email_link_rejected"
+  | "auth.password_reset_requested"
+  | "auth.password_reset_request_failed"
+  | "auth.password_reset_completed"
+  | "auth.password_reset_failed"
+  | "tenant.created_by_signup";
