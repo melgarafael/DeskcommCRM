@@ -306,6 +306,21 @@ async function handleInbound(
       .then(({ error }) => {
         if (error) console.error("[waha.ingest] emit message.received failed", error.message);
       });
+
+    if (p.mediaUrl) {
+      admin
+        .rpc("emit_event" as never, {
+          p_event_type: "media.persist_requested",
+          p_entity_kind: "message",
+          p_entity_id: inboundMessageId,
+          p_payload: { message_id: inboundMessageId, conversation_id: conversationId },
+          p_metadata: { source: "waha_webhook", request_id: requestId },
+          p_organization_id: session.organization_id,
+        } as never)
+        .then(({ error }) => {
+          if (error) console.error("[waha.ingest] emit media.persist_requested failed", error.message);
+        });
+    }
   }
 }
 
@@ -332,23 +347,27 @@ async function handleOutboundFromUserPhone(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
-  const { error: insertErr } = await admin.from("messages").insert({
-    organization_id: session.organization_id,
-    conversation_id: conversationId,
-    channel_session_id: session.id,
-    contact_id: contactId,
-    external_id: p.id,
-    type: mapWahaMessageType(p.type),
-    direction: "outbound",
-    status: "sent",
-    ack: p.ack ?? null,
-    body: p.body ?? null,
-    media_url: p.mediaUrl ?? null,
-    media_mime: p.mimetype ?? null,
-    sent_via: "external_device",
-    sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
-    metadata: { raw_type: p.type, fromMe: true },
-  });
+  const { data: insertedOutbound, error: insertErr } = await admin
+    .from("messages")
+    .insert({
+      organization_id: session.organization_id,
+      conversation_id: conversationId,
+      channel_session_id: session.id,
+      contact_id: contactId,
+      external_id: p.id,
+      type: mapWahaMessageType(p.type),
+      direction: "outbound",
+      status: "sent",
+      ack: p.ack ?? null,
+      body: p.body ?? null,
+      media_url: p.mediaUrl ?? null,
+      media_mime: p.mimetype ?? null,
+      sent_via: "external_device",
+      sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
+      metadata: { raw_type: p.type, fromMe: true },
+    })
+    .select("id")
+    .maybeSingle();
   if (insertErr && insertErr.code !== "23505") {
     console.error("[waha.ingest] outbound insert failed", insertErr.message);
     return;
@@ -364,6 +383,21 @@ async function handleOutboundFromUserPhone(
     requestId,
     metadata: { conversation_id: conversationId, type: p.type, external_id: p.id, from_user_phone: true },
   });
+
+  if (insertedOutbound?.id && p.mediaUrl) {
+    admin
+      .rpc("emit_event" as never, {
+        p_event_type: "media.persist_requested",
+        p_entity_kind: "message",
+        p_entity_id: insertedOutbound.id,
+        p_payload: { message_id: insertedOutbound.id, conversation_id: conversationId },
+        p_metadata: { source: "waha_webhook", request_id: requestId },
+        p_organization_id: session.organization_id,
+      } as never)
+      .then(({ error }) => {
+        if (error) console.error("[waha.ingest] emit media.persist_requested failed", error.message);
+      });
+  }
 }
 
 async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promise<void> {
