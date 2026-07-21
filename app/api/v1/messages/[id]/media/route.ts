@@ -42,10 +42,12 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   // Client de sessão: RLS garante que a mensagem pertence a uma org do usuário.
+  // Filtro explícito de organization_id por doutrina (defense-in-depth).
   const { data: msg, error } = await supabase
     .from("messages")
     .select("id, media_url, media_mime, media_storage_path")
     .eq("id", messageId)
+    .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (error) {
     return fail("internal_error", "Erro ao buscar mensagem.", 500, { requestId });
@@ -60,7 +62,12 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .from("whatsapp-media")
       .createSignedUrl(msg.media_storage_path, SIGNED_URL_TTL_S);
     if (!signErr && signed?.signedUrl) {
-      return NextResponse.redirect(signed.signedUrl, 302);
+      const response = NextResponse.redirect(signed.signedUrl, 302);
+      response.headers.set("X-Request-Id", requestId);
+      return response;
+    }
+    if (signErr) {
+      console.error("[messages.media] createSignedUrl failed", signErr.message);
     }
   }
 
