@@ -6344,3 +6344,8 @@ alter table flywheel_distiller_proposals
   add column if not exists applied_at timestamptz,
   add column if not exists applied_version_id uuid references ai_agent_versions(id) on delete set null,
   add column if not exists applied_by uuid;
+
+-- ---- bucket whatsapp-media (migration 0055) ----
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('whatsapp-media', 'whatsapp-media', false, 52428800)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;
