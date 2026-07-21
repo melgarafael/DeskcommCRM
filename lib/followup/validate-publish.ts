@@ -143,6 +143,11 @@ function isCycleComponent(component: string[], outEdges: Map<string, FlowEdge[]>
  * once no matter how many original-graph cycles loop inside it (implements
  * "cycles count 1 iteration"). Polynomial (O(V+E)): no per-path enumeration,
  * so branching/reconverging DAGs can't blow it up.
+ *
+ * ponytail: dentro de um SCC multi-ramo o total soma TODOS os waits/nós do
+ * componente — upper bound conservador (nunca aceita grafo ruim; pode gerar
+ * 422 a mais num SCC com sub-loops independentes). Máximo exato por caminho
+ * simples é NP-difícil; upgrade só se 422 falso-positivo aparecer na prática.
  */
 function analyzeCondensedPaths(
   startId: string,
