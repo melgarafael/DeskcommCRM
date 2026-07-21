@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/app/ai/agents", label: "Agentes" },
   { href: "/app/ai/credentials", label: "Credenciais" },
-  { href: "/app/ai/knowledge", label: "Conhecimento" },
+  { href: "/app/ai/knowledge/sources", label: "Conhecimento" },
   { href: "/app/ai/usage", label: "Uso" },
   { href: "/app/ai/inbox", label: "Inbox" },
 ];
