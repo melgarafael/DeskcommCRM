@@ -31,7 +31,7 @@
 
 | Onda | Status | Prova |
 |---|---|---|
-| 0 — Fundação mídia (Storage + MediaSource + signed URL) | 🛠 em execução (T3/7 ✅) | T1: bucket `whatsapp-media` criado (migration **0055**, não 0054 — branch irmã reivindicou o número) e aplicado no banco dev via `supabase db query --linked`; prova SQL: `public=false, file_size_limit=52428800`. Review spec ✅ + quality approved. |
+| 0 — Fundação mídia (Storage + MediaSource + signed URL) | 🛠 em execução (T4/7 ✅) | T1: bucket `whatsapp-media` criado (migration **0055**, não 0054 — branch irmã reivindicou o número) e aplicado no banco dev via `supabase db query --linked`; prova SQL: `public=false, file_size_limit=52428800`. Review spec ✅ + quality approved. |
 | 1 — Render real na UI | ⏳ aguarda 0 | — |
 | 2 — Composer WhatsApp (anexo/áudio/emoji) | ⏳ aguarda 0-1 | — |
 | 3 — Agente multimodal (vision/transcrição/PDF/vídeo) | ⏳ aguarda 0 | — |
@@ -46,7 +46,7 @@ pra conta de teste) baixada do WAHA → Storage → signed URL servida.
 
 ## Decisões e problemas
 
-- (registrar aqui a cada avanço)
+- **T4/retry (2026-07-21):** o plano previa retry gerido pelo handler (`status:"retry"` + backoff próprio) — ERRADO contra o contrato real: `drain.ts` não conta attempt em `retry` (reservado a postpone benigno) → loop infinito. Decisão: worker retorna `status:"error"` sempre e o drain é dono de retry/backoff/dead-letter; worker marca `media_status:"failed"` só no último attempt (`row.attempts >= 4`, espelho do MAX_ATTEMPTS=5 do drain). Review pegou isso — o teste original passava porque bypassava o drain.
 
 ## Log de sessões
 
