@@ -23,7 +23,7 @@
 
 ## Estado atual
 
-- **Onda:** 1 — Task 1.1 ✅ (review Approved). Próxima: Task 1.2 (testes de invariante RLS/unique/claim).
+- **Onda:** 1 ✅ COMPLETA (1.1 + 1.2 Approved). Próxima: Onda 2 (Task 2.1 schema Zod do grafo; Task 2.2 validador de publish).
 - **Migration seguinte livre:** 0055.
 - **Pendências deliberadas:** aplicar 0054 no dev DB remoto + regenerar `lib/database.types.ts` → fazer na preparação da Onda 3 (controller faz; subagents sem MCP Supabase). Minors do review 1.1 p/ triagem final: (1) idiom `duplicate_object` nas policies difere da convenção `drop policy if exists` do repo; (2) sem índice org-only em `followup_flow_versions`/`followup_enrollment_events`.
 
@@ -33,6 +33,9 @@
 - 2026-07-21: `@xyflow/react` aprovado pelo Rafael para o canvas (dynamic import, medir bundle).
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-21: **Task 1.2 ✅** (commit 298dd24, review Approved). `tests/invariants/followup-schema.test.ts` — 12 testes: RLS 2-tenants nas 4 tabelas (via JWT-scoped client real), unique enrollment vivo (23505 + libera após completed), unique idempotency_key (23505), CHECK active sem next_eval_at (23514), claim concorrente disjunto (2 conexões pg reais, união=5 interseção=0). **PROVA (1ª mão do controller):** `npm run test:invariants` → 35 arquivos, 204 passed | 1 skipped, exit 0. RED provado derrubando as 3 constraints (3/12 falham).
+- 2026-07-21: **Bugs operacionais da sessão:** (1) Docker daemon caiu no meio de um run → exit 255 mascarado; reiniciado + órfãos limpos; (2) implementer stallou 3x "aguardando watcher" (não acorda sozinho) → doutrina nova: dispatch exige poll síncrono, controller vigia PID e retoma. (3) **Flake pré-existente descoberto:** gov-1b × gov-6 colidem slug `gov-inv-b` (order-dependent). `tests/invariants/**` congelado → escalado como `INBOX-001` em `loop/inbox.items.md` com fix pronto de 1 linha. AVISAR RAFAEL.
 
 - 2026-07-21: **Task 1.1 ✅** (commit 9363db9, review Approved). Migration 0054 (4 tabelas + RLS + `fn_claim_due_followup_enrollments` SKIP LOCKED) + apêndice baseline + MANIFEST. **PROVA:** fresh install `ON_ERROR_STOP=1` + update re-apply verdes em `pgvector/pgvector:pg17` descartável; `\dt followup*` = 4 tabelas nas duas passadas; suite completa de invariantes 34/34 arquivos, 192 testes verdes. Detalhe no report `.superpowers/sdd/task-1.1-report.md`. Bug operacional: Docker daemon estava parado → controller iniciou Docker Desktop e retomou o implementer.
 
