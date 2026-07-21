@@ -38,9 +38,13 @@ export interface WahaPayload {
   timestamp?: number;
   mediaUrl?: string;
   mimetype?: string;
+  /** WAHA >= 2026.x (NOWEB): mídia vem aninhada em payload.media. */
+  media?: { url?: string | null; mimetype?: string | null; filename?: string | null } | null;
   _data?: {
     notifyName?: string;
     pushName?: string;
+    /** NOWEB: o conteúdo real (imageMessage, stickerMessage, …) — fonte do tipo. */
+    message?: Record<string, unknown>;
   } & Record<string, unknown>;
 }
 
@@ -93,8 +97,18 @@ export function verifyHmacSha512(
 
 function previewFromMessage(p: WahaPayload): string {
   if (p.body) return p.body.slice(0, 280);
-  if (p.type) return `[${p.type}]`;
-  return "";
+  const t = resolveMessageType(p);
+  return t !== "text" ? `[${t}]` : "";
+}
+
+/** URL da mídia: WAHA novo (payload.media.url) com fallback legado (payload.mediaUrl). */
+export function mediaUrlOf(p: WahaPayload): string | null {
+  return p.mediaUrl ?? p.media?.url ?? null;
+}
+
+/** MIME da mídia: idem (payload.media.mimetype é o campo do NOWEB atual). */
+export function mediaMimeOf(p: WahaPayload): string | null {
+  return p.mimetype ?? p.media?.mimetype ?? null;
 }
 
 /**
@@ -124,6 +138,40 @@ function mapWahaMessageType(raw: string | undefined): string {
   // Fallback "text": só chegamos ao insert com body/mídia presente (guarda acima),
   // então tratar tipo desconhecido como texto não perde a mensagem.
   return WA_TYPE_MAP[raw.toLowerCase()] ?? "text";
+}
+
+/**
+ * NOWEB (WAHA 2026.x) não envia `type` no payload — o tipo real está nas
+ * chaves de `_data.message` (imageMessage, stickerMessage, …). Ordem de
+ * resolução: `type` explícito → chave do message → prefixo do MIME → text.
+ */
+const NOWEB_MESSAGE_KEY_TYPE: Record<string, string> = {
+  stickerMessage: "sticker",
+  imageMessage: "image",
+  videoMessage: "video",
+  ptvMessage: "video", // video note (bolinha)
+  audioMessage: "audio",
+  documentMessage: "document",
+  documentWithCaptionMessage: "document",
+};
+
+export function resolveMessageType(p: WahaPayload): string {
+  if (p.type) return mapWahaMessageType(p.type);
+  const msg = p._data?.message;
+  if (msg && typeof msg === "object") {
+    for (const [key, mapped] of Object.entries(NOWEB_MESSAGE_KEY_TYPE)) {
+      if (key in msg) return mapped;
+    }
+  }
+  const mime = mediaMimeOf(p);
+  if (mime) {
+    if (mime === "image/webp") return "sticker";
+    if (mime.startsWith("image/")) return "image";
+    if (mime.startsWith("video/")) return "video";
+    if (mime.startsWith("audio/")) return "audio";
+    return "document";
+  }
+  return "text";
 }
 
 function notifyNameOf(p: WahaPayload): string | null {
@@ -205,7 +253,7 @@ async function handleInbound(
   if (parsed.kind === "group") return; // grupos não fazem binding CRM
   if (!p.id || !chatId) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
-  if (!p.body && !p.mediaUrl && !p.hasMedia) return;
+  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
 
   const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
   if (!contactId) return;
@@ -221,13 +269,13 @@ async function handleInbound(
       channel_session_id: session.id,
       contact_id: contactId,
       external_id: p.id,
-      type: mapWahaMessageType(p.type),
+      type: resolveMessageType(p),
       direction: "inbound",
       status: "delivered",
       ack: p.ack ?? null,
       body: p.body ?? null,
-      media_url: p.mediaUrl ?? null,
-      media_mime: p.mimetype ?? null,
+      media_url: mediaUrlOf(p),
+      media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
       delivered_at: now,
@@ -307,7 +355,7 @@ async function handleInbound(
         if (error) console.error("[waha.ingest] emit message.received failed", error.message);
       });
 
-    if (p.mediaUrl) {
+    if (mediaUrlOf(p)) {
       admin
         .rpc("emit_event" as never, {
           p_event_type: "media.persist_requested",
@@ -339,7 +387,7 @@ async function handleOutboundFromUserPhone(
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return;
   if (!p.id || !chatId) return;
-  if (!p.body && !p.mediaUrl && !p.hasMedia) return;
+  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
 
   const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
   if (!contactId) return;
@@ -355,13 +403,13 @@ async function handleOutboundFromUserPhone(
       channel_session_id: session.id,
       contact_id: contactId,
       external_id: p.id,
-      type: mapWahaMessageType(p.type),
+      type: resolveMessageType(p),
       direction: "outbound",
       status: "sent",
       ack: p.ack ?? null,
       body: p.body ?? null,
-      media_url: p.mediaUrl ?? null,
-      media_mime: p.mimetype ?? null,
+      media_url: mediaUrlOf(p),
+      media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
       metadata: { raw_type: p.type, fromMe: true },
@@ -384,7 +432,7 @@ async function handleOutboundFromUserPhone(
     metadata: { conversation_id: conversationId, type: p.type, external_id: p.id, from_user_phone: true },
   });
 
-  if (insertedOutbound?.id && p.mediaUrl) {
+  if (insertedOutbound?.id && mediaUrlOf(p)) {
     admin
       .rpc("emit_event" as never, {
         p_event_type: "media.persist_requested",

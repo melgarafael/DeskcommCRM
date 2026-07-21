@@ -31,9 +31,34 @@ describe("fetchWahaMedia", () => {
     );
   });
 
-  it("recusa host fora do WAHA_API_BASE_URL (anti-SSRF)", async () => {
-    await expect(fetchWahaMedia("http://evil.example.com/x.jpg")).rejects.toThrow(
-      "waha_media_untrusted_host",
+  it("reescreve host arbitrário p/ a base do WAHA (anti-SSRF por construção)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(new ArrayBuffer(2), { status: 200, headers: { "content-type": "image/jpeg" } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchWahaMedia("http://evil.example.com/api/files/x.jpg?q=1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${WAHA_BASE}/api/files/x.jpg?q=1`,
+      expect.anything(),
+    );
+  });
+
+  it("reescreve a porta interna anunciada pelo WAHA p/ a base real", async () => {
+    // WAHA anuncia localhost:3000 (porta interna do container); no host é 3030.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(new ArrayBuffer(2), { status: 200, headers: { "content-type": "image/webp" } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchWahaMedia("http://localhost:3000/api/files/sessao/sticker.webp");
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${WAHA_BASE}/api/files/sessao/sticker.webp`,
+      expect.anything(),
     );
   });
 

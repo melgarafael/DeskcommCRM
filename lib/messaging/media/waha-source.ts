@@ -1,9 +1,13 @@
 /**
  * MediaSource do WAHA: baixa o binário hospedado pelo container WAHA.
- * O webhook HMAC é best-effort, então o host da mediaUrl É validado contra
- * WAHA_API_BASE_URL (anti-SSRF: payload forjado não faz o worker buscar
- * URL arbitrária). A futura MetaMediaSource implementa a mesma assinatura
- * baixando via media_id + Graph API.
+ *
+ * A URL anunciada no webhook NÃO é confiável nem correta: o HMAC é
+ * best-effort (payload forjado é possível) e o WAHA anuncia seu endereço
+ * INTERNO (ex.: localhost:3000 dentro do container, mapeado p/ 3030 no
+ * host). Por isso o fetch é SEMPRE reconstruído sobre WAHA_API_BASE_URL,
+ * aproveitando apenas path+query da URL anunciada — SSRF impossível por
+ * construção (o host nunca vem do payload). A futura MetaMediaSource
+ * implementa a mesma assinatura baixando via media_id + Graph API.
  */
 import {
   MAX_MEDIA_BYTES,
@@ -19,21 +23,16 @@ export async function fetchWahaMedia(
 ): Promise<FetchedMedia> {
   const base = process.env.WAHA_API_BASE_URL;
   let url: URL;
-  let baseUrl: URL;
-
   try {
-    url = new URL(mediaUrl);
-    baseUrl = new URL(base ?? "");
+    const advertised = new URL(mediaUrl);
+    // Host/porta descartados: só path+query sobrevivem, resolvidos na base.
+    url = new URL(advertised.pathname + advertised.search, base ?? "");
   } catch {
     throw new Error("waha_media_untrusted_host");
   }
 
-  if (!base || url.host !== baseUrl.host) {
-    throw new Error("waha_media_untrusted_host");
-  }
-
   const apiKey = process.env.WAHA_API_KEY;
-  const res = await fetch(mediaUrl, {
+  const res = await fetch(url.toString(), {
     headers: apiKey ? { "X-Api-Key": apiKey } : {},
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
