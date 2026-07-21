@@ -2341,6 +2341,9 @@ export type Database = {
       }
       flywheel_distiller_proposals: {
         Row: {
+          applied_at: string | null
+          applied_by: string | null
+          applied_version_id: string | null
           content: string
           dataset: string
           evidence: Json
@@ -2352,6 +2355,9 @@ export type Database = {
           type: string
         }
         Insert: {
+          applied_at?: string | null
+          applied_by?: string | null
+          applied_version_id?: string | null
           content: string
           dataset: string
           evidence: Json
@@ -2363,6 +2369,9 @@ export type Database = {
           type: string
         }
         Update: {
+          applied_at?: string | null
+          applied_by?: string | null
+          applied_version_id?: string | null
           content?: string
           dataset?: string
           evidence?: Json
@@ -2374,6 +2383,13 @@ export type Database = {
           type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "flywheel_distiller_proposals_applied_version_id_fkey"
+            columns: ["applied_version_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_versions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "flywheel_distiller_proposals_organization_id_fkey"
             columns: ["organization_id"]
@@ -2429,6 +2445,242 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "flywheel_judge_verdicts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      followup_enrollment_events: {
+        Row: {
+          created_at: string
+          enrollment_id: string
+          event_type: string
+          id: string
+          idempotency_key: string | null
+          node_id: string | null
+          organization_id: string
+          payload: Json
+        }
+        Insert: {
+          created_at?: string
+          enrollment_id: string
+          event_type: string
+          id?: string
+          idempotency_key?: string | null
+          node_id?: string | null
+          organization_id: string
+          payload?: Json
+        }
+        Update: {
+          created_at?: string
+          enrollment_id?: string
+          event_type?: string
+          id?: string
+          idempotency_key?: string | null
+          node_id?: string | null
+          organization_id?: string
+          payload?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_enrollment_events_enrollment_id_fkey"
+            columns: ["enrollment_id"]
+            isOneToOne: false
+            referencedRelation: "followup_enrollments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_enrollment_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      followup_enrollments: {
+        Row: {
+          attempts: number
+          cancel_reason: string | null
+          claimed_until: string | null
+          completed_at: string | null
+          contact_id: string
+          conversation_id: string | null
+          current_node_id: string
+          id: string
+          last_error: string | null
+          max_attempts: number
+          next_eval_at: string | null
+          organization_id: string
+          outcome: string | null
+          pointer_id: string
+          started_at: string
+          status: string
+          steps_taken: number
+          updated_at: string
+          version_id: string
+        }
+        Insert: {
+          attempts?: number
+          cancel_reason?: string | null
+          claimed_until?: string | null
+          completed_at?: string | null
+          contact_id: string
+          conversation_id?: string | null
+          current_node_id: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          next_eval_at?: string | null
+          organization_id: string
+          outcome?: string | null
+          pointer_id: string
+          started_at?: string
+          status?: string
+          steps_taken?: number
+          updated_at?: string
+          version_id: string
+        }
+        Update: {
+          attempts?: number
+          cancel_reason?: string | null
+          claimed_until?: string | null
+          completed_at?: string | null
+          contact_id?: string
+          conversation_id?: string | null
+          current_node_id?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          next_eval_at?: string | null
+          organization_id?: string
+          outcome?: string | null
+          pointer_id?: string
+          started_at?: string
+          status?: string
+          steps_taken?: number
+          updated_at?: string
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_enrollments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_enrollments_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_enrollments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_enrollments_pointer_id_fkey"
+            columns: ["pointer_id"]
+            isOneToOne: false
+            referencedRelation: "followup_flow_pointers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_enrollments_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "followup_flow_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      followup_flow_pointers: {
+        Row: {
+          active_version_id: string | null
+          created_at: string
+          draft_graph: Json | null
+          handoff_policy: string
+          id: string
+          name: string
+          organization_id: string
+          status: string
+          trigger_config: Json
+          updated_at: string
+        }
+        Insert: {
+          active_version_id?: string | null
+          created_at?: string
+          draft_graph?: Json | null
+          handoff_policy?: string
+          id?: string
+          name: string
+          organization_id: string
+          status?: string
+          trigger_config?: Json
+          updated_at?: string
+        }
+        Update: {
+          active_version_id?: string | null
+          created_at?: string
+          draft_graph?: Json | null
+          handoff_policy?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          status?: string
+          trigger_config?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_flow_pointers_active_version_id_fkey"
+            columns: ["active_version_id"]
+            isOneToOne: false
+            referencedRelation: "followup_flow_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "followup_flow_pointers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      followup_flow_versions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          graph: Json
+          id: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          graph: Json
+          id?: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          graph?: Json
+          id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_flow_versions_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -4388,6 +4640,36 @@ export type Database = {
       fn_can_view_lead: {
         Args: { p_org: string; p_owner_user_id: string }
         Returns: boolean
+      }
+      fn_claim_due_followup_enrollments: {
+        Args: { p_lease_seconds: number; p_limit: number }
+        Returns: {
+          attempts: number
+          cancel_reason: string | null
+          claimed_until: string | null
+          completed_at: string | null
+          contact_id: string
+          conversation_id: string | null
+          current_node_id: string
+          id: string
+          last_error: string | null
+          max_attempts: number
+          next_eval_at: string | null
+          organization_id: string
+          outcome: string | null
+          pointer_id: string
+          started_at: string
+          status: string
+          steps_taken: number
+          updated_at: string
+          version_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "followup_enrollments"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       fn_conversation_assign: {
         Args: {
