@@ -44,7 +44,13 @@ interface Props {
 }
 
 function publicUrl(pathToken: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  // window.location.origin > env: NEXT_PUBLIC_APP_URL é inlined no build e num
+  // Docker self-host fica congelada no placeholder do Dockerfile — a origem da
+  // página é o único valor confiável em runtime.
+  const base =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_APP_URL ?? "");
   return `${base}/api/v1/webhooks/in/${pathToken}`;
 }
 
