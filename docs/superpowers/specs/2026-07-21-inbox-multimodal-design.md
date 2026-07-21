@@ -90,6 +90,8 @@ Worker de derivação roda após a persistência da mídia e grava derivado text
 ## Transversal (Definition of Done por onda)
 
 - `typecheck`/`lint`/testes verdes; RLS testada em toda tabela nova; audit log em mutações; Zod em todo input externo.
-- Prova visível na tela a cada entrega (dev server/Playwright/screenshot).
+- **Prova visível obrigatória**: teste real com Playwright em conta real a cada passo. Proibido reportar "funcionou" sem evidência observada (screenshot/output). O critério é "funcionou BEM" — experiência ruim identificada é bug e se corrige antes de reportar. Medidas de front por ferramenta (getBoundingClientRect/getComputedStyle), não a olho.
+- **Handoff doc do épico** (`HANDOFF-inbox-multimodal.md` na raiz): lido no início de toda sessão, alimentado + commitado a cada avanço, teste, bug e correção.
+- Referências de mercado (WhatsApp Web, Intercom etc.) como âncora de UX quando houver dúvida de comportamento.
 - Toda mudança de schema: migration versionada + apêndice no `baseline.sql` + MANIFEST.
 - Nada de HTTP em trigger Postgres — side effects sempre via `event_log` + worker.
