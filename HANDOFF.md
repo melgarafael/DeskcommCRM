@@ -23,7 +23,7 @@
 
 ## Estado atual
 
-- **Onda:** 1 ✅ COMPLETA (1.1 + 1.2 Approved). Próxima: Onda 2 (Task 2.1 schema Zod do grafo; Task 2.2 validador de publish).
+- **Onda:** 2 ✅ COMPLETA (2.1 + 2.2 Approved). Próxima: Onda 3 (API de fluxos) — ANTES do dispatch: aplicar 0054 no dev DB + regenerar `lib/database.types.ts` (pendência da Onda 1).
 - **Migration seguinte livre:** 0055.
 - **Pendências deliberadas:** aplicar 0054 no dev DB remoto + regenerar `lib/database.types.ts` → fazer na preparação da Onda 3 (controller faz; subagents sem MCP Supabase). Minors do review 1.1 p/ triagem final: (1) idiom `duplicate_object` nas policies difere da convenção `drop policy if exists` do repo; (2) sem índice org-only em `followup_flow_versions`/`followup_enrollment_events`.
 
@@ -33,6 +33,8 @@
 - 2026-07-21: `@xyflow/react` aprovado pelo Rafael para o canvas (dynamic import, medir bundle).
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-21: **Onda 2 ✅** — Task 2.1 (e866497, Approved): `lib/followup/graph-schema.ts`, 80 testes unit, contrato exato dos 6 nós/arestas/grafo. Task 2.2 (9a27c2b + fix ea5a746 + 57e914e, Approved na re-review): `lib/followup/validate-publish.ts`, 17 testes. **Review pegou 2 Criticals reais no 1º round** (validador aceitava sub-ciclo sem espera dentro de SCC com espera; DFS com cap de 200k truncava silenciosamente em DAG ramificado ≤60 nós) → corrigidos com algoritmos EXATOS: remoção de nós-de-espera + Tarjan (ciclo) e condensação SCC + longest-path topológico O(V+E) (24h/max_steps). Regressões: contra-exemplo A/B/C, boundary 30/31, diamond-DAG 58 nós <1s. **PROVA:** 17/17 focados, suite unit 432/432, typecheck 0. Nota p/ Onda 6 (UI): `label` de nó ≤60 chars; grafo 2..60 nós, 120 arestas.
 
 - 2026-07-21: **Task 1.2 ✅** (commit 298dd24, review Approved). `tests/invariants/followup-schema.test.ts` — 12 testes: RLS 2-tenants nas 4 tabelas (via JWT-scoped client real), unique enrollment vivo (23505 + libera após completed), unique idempotency_key (23505), CHECK active sem next_eval_at (23514), claim concorrente disjunto (2 conexões pg reais, união=5 interseção=0). **PROVA (1ª mão do controller):** `npm run test:invariants` → 35 arquivos, 204 passed | 1 skipped, exit 0. RED provado derrubando as 3 constraints (3/12 falham).
 - 2026-07-21: **Bugs operacionais da sessão:** (1) Docker daemon caiu no meio de um run → exit 255 mascarado; reiniciado + órfãos limpos; (2) implementer stallou 3x "aguardando watcher" (não acorda sozinho) → doutrina nova: dispatch exige poll síncrono, controller vigia PID e retoma. (3) **Flake pré-existente descoberto:** gov-1b × gov-6 colidem slug `gov-inv-b` (order-dependent). `tests/invariants/**` congelado → escalado como `INBOX-001` em `loop/inbox.items.md` com fix pronto de 1 linha. AVISAR RAFAEL.
