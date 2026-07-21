@@ -23,9 +23,9 @@
 
 ## Estado atual
 
-- **Onda:** 0 (setup) — worktree criado, deps a instalar.
-- **Próxima task:** 0.2 (npm install + @xyflow/react), depois 1.1 (migration 0054).
-- **Migration seguinte livre:** 0054.
+- **Onda:** 1 — Task 1.1 ✅ (review Approved). Próxima: Task 1.2 (testes de invariante RLS/unique/claim).
+- **Migration seguinte livre:** 0055.
+- **Pendências deliberadas:** aplicar 0054 no dev DB remoto + regenerar `lib/database.types.ts` → fazer na preparação da Onda 3 (controller faz; subagents sem MCP Supabase). Minors do review 1.1 p/ triagem final: (1) idiom `duplicate_object` nas policies difere da convenção `drop policy if exists` do repo; (2) sem índice org-only em `followup_flow_versions`/`followup_enrollment_events`.
 
 ## Decisões tomadas
 
@@ -33,6 +33,8 @@
 - 2026-07-21: `@xyflow/react` aprovado pelo Rafael para o canvas (dynamic import, medir bundle).
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-21: **Task 1.1 ✅** (commit 9363db9, review Approved). Migration 0054 (4 tabelas + RLS + `fn_claim_due_followup_enrollments` SKIP LOCKED) + apêndice baseline + MANIFEST. **PROVA:** fresh install `ON_ERROR_STOP=1` + update re-apply verdes em `pgvector/pgvector:pg17` descartável; `\dt followup*` = 4 tabelas nas duas passadas; suite completa de invariantes 34/34 arquivos, 192 testes verdes. Detalhe no report `.superpowers/sdd/task-1.1-report.md`. Bug operacional: Docker daemon estava parado → controller iniciou Docker Desktop e retomou o implementer.
 
 - 2026-07-21: Onda 0 iniciada. HANDOFF antigo (webhooks) arquivado em `docs/superpowers/handoffs/`. Worktree + branch criados. Spec, plano e mineração commitados na base (b1202ca, 790546f).
 
