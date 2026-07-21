@@ -35,10 +35,18 @@ const STATUS_LABELS: Record<string, string> = {
   redacted: "Redigido",
 };
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  onboardedAt,
+}: {
+  status: string;
+  onboardedAt: string | null;
+}) {
+  // 'onboarding' não existe no banco — é derivado: ativo sem onboarding concluído.
+  const effective = status === "active" && !onboardedAt ? "onboarding" : status;
   return (
-    <Badge variant={STATUS_VARIANTS[status] ?? "neutral"}>
-      {STATUS_LABELS[status] ?? status}
+    <Badge variant={STATUS_VARIANTS[effective] ?? "neutral"}>
+      {STATUS_LABELS[effective] ?? effective}
     </Badge>
   );
 }
@@ -158,7 +166,7 @@ export function TenantsTable({
                   {shortCnpj(row.cnpj)}
                 </TableCell>
                 <TableCell>
-                  <StatusBadge status={row.status} />
+                  <StatusBadge status={row.status} onboardedAt={row.onboarded_at} />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {extractCount(row.user_count)}

@@ -11,7 +11,7 @@ import { ImpersonateButton } from "@/components/admin/ImpersonateButton";
 
 interface TenantActionsProps {
   organizationId: string;
-  status: "active" | "suspended" | "onboarding" | "redacted";
+  status: "active" | "suspended" | "redacted";
   displayName: string;
 }
 
@@ -27,7 +27,7 @@ export function TenantActions({
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
 
-  const canSuspend = status === "active" || status === "onboarding";
+  const canSuspend = status === "active";
   const isSuspended = status === "suspended";
   const isRedacted = status === "redacted";
 
