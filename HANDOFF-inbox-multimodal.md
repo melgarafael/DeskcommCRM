@@ -31,7 +31,7 @@
 
 | Onda | Status | Prova |
 |---|---|---|
-| 0 — Fundação mídia (Storage + MediaSource + signed URL) | 🛠 em execução (T5/7 ✅) | T1: bucket `whatsapp-media` criado (migration **0055**, não 0054 — branch irmã reivindicou o número) e aplicado no banco dev via `supabase db query --linked`; prova SQL: `public=false, file_size_limit=52428800`. Review spec ✅ + quality approved. |
+| 0 — Fundação mídia (Storage + MediaSource + signed URL) | 🛠 em execução (T6/7 ✅) | T1: bucket `whatsapp-media` criado (migration **0055**, não 0054 — branch irmã reivindicou o número) e aplicado no banco dev via `supabase db query --linked`; prova SQL: `public=false, file_size_limit=52428800`. Review spec ✅ + quality approved. |
 | 1 — Render real na UI | ⏳ aguarda 0 | — |
 | 2 — Composer WhatsApp (anexo/áudio/emoji) | ⏳ aguarda 0-1 | — |
 | 3 — Agente multimodal (vision/transcrição/PDF/vídeo) | ⏳ aguarda 0 | — |
