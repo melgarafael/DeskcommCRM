@@ -85,16 +85,25 @@ describe("persistMessageMedia", () => {
     expect(uploadMock).not.toHaveBeenCalled();
   });
 
-  it("agenda retry quando o download falha e attempts < 5", async () => {
+  it("retorna error em falha de download com poucas tentativas, sem marcar failed", async () => {
     vi.mocked(fetchWahaMedia).mockRejectedValue(new Error("waha_media_503"));
     const result = await persistMessageMedia(eventRow(1));
-    expect(result.status).toBe("retry");
-    expect(result.retry_at).toBeTruthy();
+    expect(result.status).toBe("error");
+    expect(updateEqMock).not.toHaveBeenCalled();
   });
 
-  it("marca failed na 5ª tentativa", async () => {
+  it("marca failed quando o download falha na última tentativa (drain dead-letra em seguida)", async () => {
     vi.mocked(fetchWahaMedia).mockRejectedValue(new Error("waha_media_503"));
-    const result = await persistMessageMedia(eventRow(5));
+    const result = await persistMessageMedia(eventRow(4));
+    expect(result.status).toBe("error");
+    expect(updateEqMock).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ media_status: "failed" }) }),
+    );
+  });
+
+  it("marca failed quando o upload falha na última tentativa", async () => {
+    uploadMock.mockResolvedValue({ error: { message: "bucket unreachable" } });
+    const result = await persistMessageMedia(eventRow(4));
     expect(result.status).toBe("error");
     expect(updateEqMock).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: expect.objectContaining({ media_status: "failed" }) }),

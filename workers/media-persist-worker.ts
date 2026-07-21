@@ -2,8 +2,13 @@
  * Consome `media.persist_requested`: baixa o binário da mídia (MediaSource
  * WAHA) e persiste no bucket privado `whatsapp-media`, preenchendo
  * media_storage_path/media_size_bytes na linha de `messages`.
- * Retry com backoff linear via HandlerResult (até 5 tentativas), depois
- * marca metadata.media_status = "failed" (Onda 3 poderá reprocessar).
+ * Retry/backoff é responsabilidade do drain (`lib/event-log/drain.ts`), não
+ * deste handler: aqui só retornamos `status:"error"` em falha. O drain conta
+ * `attempts` e dead-letra a partir do próprio `MAX_ATTEMPTS`; espelhamos esse
+ * valor localmente (`DRAIN_MAX_ATTEMPTS`) só para saber quando é a ÚLTIMA
+ * tentativa que o drain vai permitir e marcar `metadata.media_status =
+ * "failed"` na própria mensagem antes do dead-letter (Onda 3 poderá
+ * reprocessar).
  */
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { storagePathFor } from "@/lib/messaging/media/types";
@@ -12,8 +17,12 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const MEDIA_PERSIST_CONSUMER_KEY = "media_persist_v1";
-const MAX_ATTEMPTS = 5;
-const RETRY_BASE_MS = 60_000;
+// Espelha MAX_ATTEMPTS de lib/event-log/drain.ts (não exportado de lá).
+// `row.attempts` chega ao handler como a contagem ANTES do incremento do
+// drain; o drain dead-letra quando `row.attempts + 1 >= DRAIN_MAX_ATTEMPTS`,
+// ou seja, a última tentativa que o drain ainda vai permitir é
+// `row.attempts === DRAIN_MAX_ATTEMPTS - 1`.
+const DRAIN_MAX_ATTEMPTS = 5;
 
 interface MessageMediaRow {
   id: string;
@@ -52,21 +61,17 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     if (updErr) throw new Error(`message update failed: ${updErr.message}`);
   };
 
+  const isLastAttempt = row.attempts >= DRAIN_MAX_ATTEMPTS - 1;
+
   let media;
   try {
     media = await fetchWahaMedia(msg.media_url, msg.media_mime);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    if (row.attempts < MAX_ATTEMPTS) {
-      return {
-        consumer_key,
-        status: "retry",
-        retry_at: new Date(Date.now() + RETRY_BASE_MS * (row.attempts + 1)).toISOString(),
-        detail,
-      };
+    if (isLastAttempt) {
+      logger.error("[media-persist] download failed permanently", { message_id: msg.id, detail });
+      await markStatus("failed");
     }
-    logger.error("[media-persist] download failed permanently", { message_id: msg.id, detail });
-    await markStatus("failed");
     return { consumer_key, status: "error", detail };
   }
 
@@ -74,7 +79,16 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   const { error: uploadErr } = await admin.storage
     .from("whatsapp-media")
     .upload(path, media.buffer, { contentType: media.mime, upsert: true });
-  if (uploadErr) return { consumer_key, status: "error", detail: uploadErr.message };
+  if (uploadErr) {
+    if (isLastAttempt) {
+      logger.error("[media-persist] upload failed permanently", {
+        message_id: msg.id,
+        detail: uploadErr.message,
+      });
+      await markStatus("failed");
+    }
+    return { consumer_key, status: "error", detail: uploadErr.message };
+  }
 
   await markStatus("stored", {
     media_storage_path: path,
