@@ -31,7 +31,7 @@
 
 | Onda | Status | Prova |
 |---|---|---|
-| 0 — Fundação mídia (Storage + MediaSource + signed URL) | ✅ local (7/7, aguarda review final) | E2E REAL provado 2026-07-21: WhatsApp "Lia" +5511 4863-3324 conectado por QR; Rafael enviou imagem/áudio/vídeo/PDF/figurinha reais → 5/5 ingeridos com tipo certo, worker persistiu no bucket (SQL: `media_status='stored'`, bytes corretos, path `{org}/{conv}/{msg}.{ext}`); endpoint 302→signed URL 5/5 com content-type certo (~800ms), cross-org 404. Evidências: `.superpowers/evidence/inbox-multimodal-onda0-{inbox,endpoint}.png`. T1: bucket via migration **0055** (0054 tomado por branch irmã). |
+| 0 — Fundação mídia (Storage + MediaSource + signed URL) | ✅ COMPLETA (7/7 + review final ready-to-merge) | E2E REAL provado 2026-07-21: WhatsApp "Lia" +5511 4863-3324 conectado por QR; Rafael enviou imagem/áudio/vídeo/PDF/figurinha reais → 5/5 ingeridos com tipo certo, worker persistiu no bucket (SQL: `media_status='stored'`, bytes corretos, path `{org}/{conv}/{msg}.{ext}`); endpoint 302→signed URL 5/5 com content-type certo (~800ms), cross-org 404. Evidências: `.superpowers/evidence/inbox-multimodal-onda0-{inbox,endpoint}.png`. T1: bucket via migration **0055** (0054 tomado por branch irmã). |
 | 1 — Render real na UI | ⏳ aguarda 0 | — |
 | 2 — Composer WhatsApp (anexo/áudio/emoji) | ⏳ aguarda 0-1 | — |
 | 3 — Agente multimodal (vision/transcrição/PDF/vídeo) | ⏳ aguarda 0 | — |
@@ -40,9 +40,7 @@
 
 ## Próximo passo exato
 
-Escrever o plano de implementação da Onda 0 (skill writing-plans) e executar com
-prova Playwright: mídia inbound real (imagem/áudio enviados de um WhatsApp real
-pra conta de teste) baixada do WAHA → Storage → signed URL servida.
+Decidir integração da branch feat/inbox-multimodal (stacked sobre feat/operacao-visivel, base a480193) e iniciar spec/plano da Onda 1 (render real de mídia no MessageBubble — o endpoint 302 já serve como src direto).
 
 ## Decisões e problemas
 
