@@ -31,7 +31,7 @@
 
 | Onda | Status | Prova |
 |---|---|---|
-| 0 — Fundação mídia (Storage + MediaSource + signed URL) | 🔜 planejamento | — |
+| 0 — Fundação mídia (Storage + MediaSource + signed URL) | 🛠 em execução (T1/7 ✅) | T1: bucket `whatsapp-media` criado (migration **0055**, não 0054 — branch irmã reivindicou o número) e aplicado no banco dev via `supabase db query --linked`; prova SQL: `public=false, file_size_limit=52428800`. Review spec ✅ + quality approved. |
 | 1 — Render real na UI | ⏳ aguarda 0 | — |
 | 2 — Composer WhatsApp (anexo/áudio/emoji) | ⏳ aguarda 0-1 | — |
 | 3 — Agente multimodal (vision/transcrição/PDF/vídeo) | ⏳ aguarda 0 | — |
@@ -52,3 +52,7 @@ pra conta de teste) baixada do WAHA → Storage → signed URL servida.
 
 - **2026-07-21** — Brainstorming + design mestre aprovado e commitado (`6e596ac`).
   Handoff criado. Nada implementado ainda.
+- **2026-07-21 (exec Onda 0)** — Worktree `.claude/worktrees/feat-inbox-multimodal`
+  (branch `feat/inbox-multimodal`, base `a480193`), baseline 335 testes verdes.
+  T1 concluída (commit `98d78a2`). Aprendizado: aplicar SQL em `storage.*` no dev
+  = `supabase db query --linked` (MCP exige OAuth; role `agent_worker` sem grants).
