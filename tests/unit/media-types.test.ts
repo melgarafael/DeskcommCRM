@@ -12,6 +12,7 @@ describe("extFromMime", () => {
     expect(extFromMime("image/png")).toBe("png");
     expect(extFromMime("image/webp")).toBe("webp"); // figurinhas
     expect(extFromMime("video/mp4")).toBe("mp4");
+    expect(extFromMime("application/mp4")).toBe("mp4"); // mime real observado no WAHA 2026.7.1
     expect(extFromMime("audio/ogg; codecs=opus")).toBe("ogg"); // PTT
     expect(extFromMime("audio/mpeg")).toBe("mp3");
     expect(extFromMime("application/pdf")).toBe("pdf");

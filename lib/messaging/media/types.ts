@@ -24,6 +24,7 @@ const MIME_EXT: Record<string, string> = {
   "image/webp": "webp",
   "image/gif": "gif",
   "video/mp4": "mp4",
+  "application/mp4": "mp4", // WAHA/NOWEB anuncia vídeo do WhatsApp com esse mime
   "video/3gpp": "3gp",
   "audio/ogg": "ogg",
   "audio/mpeg": "mp3",
