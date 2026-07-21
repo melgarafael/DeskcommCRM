@@ -33,13 +33,17 @@ export type PublishValidationResult =
 const LONG_WAIT_THRESHOLD_MS = 86_400_000; // 24h
 const MIN_CYCLE_WAIT_MS = 300_000; // 5min
 const MAX_PATH_STEPS = 30;
-// ponytail: caps worst-case path-DFS blowup on adversarial dense graphs; the
-// schema already bounds graphs to 60 nodes / 120 edges so this cap is headroom,
-// not a real limit for any graph a user can actually build in the editor.
-const MAX_DFS_CALLS = 200_000;
 
 function waitMs(config: Extract<FlowNode, { type: 'wait' }>['config']): number {
   return config.mode === 'fixed' ? config.duration_ms : config.max_ms;
+}
+
+/** A wait node whose duration meets the 5min floor required to break a cycle. */
+function isSufficientWaitNode(node: FlowNode): boolean {
+  if (node.type !== 'wait') return false;
+  return node.config.mode === 'fixed'
+    ? node.config.duration_ms >= MIN_CYCLE_WAIT_MS
+    : node.config.min_ms >= MIN_CYCLE_WAIT_MS;
 }
 
 function buildOutEdges(edges: FlowEdge[]): Map<string, FlowEdge[]> {
@@ -67,7 +71,13 @@ function bfsReachable(startIds: string[], outEdges: Map<string, FlowEdge[]>): Se
   return visited;
 }
 
-/** Tarjan strongly-connected-components, used to locate cycles. */
+/**
+ * Tarjan strongly-connected-components. Returned components are in the
+ * algorithm's natural finishing order, which is the REVERSE of a topological
+ * order of the condensation DAG (a component finishes only after every
+ * component reachable from it has already finished). Callers that need a
+ * source-to-sink sweep should iterate the result back-to-front.
+ */
 function stronglyConnectedComponents(
   nodeIds: string[],
   outEdges: Map<string, FlowEdge[]>
@@ -115,47 +125,98 @@ function stronglyConnectedComponents(
 }
 
 /**
- * Single per-path DFS from the trigger, tracking cumulative wait time
- * (fixed -> duration_ms, smart -> max_ms) and path length. A node already on
- * the current path is not re-entered (cycles count one iteration, per spec).
+ * Whether a component (as returned by stronglyConnectedComponents) is an
+ * actual cycle in `outEdges`: more than one node, or a single node with a
+ * self-loop.
  */
-function walkPaths(
+function isCycleComponent(component: string[], outEdges: Map<string, FlowEdge[]>): boolean {
+  if (component.length > 1) return true;
+  const onlyId = component[0]!; // Tarjan never yields an empty component
+  return (outEdges.get(onlyId) ?? []).some((e) => e.target === onlyId);
+}
+
+/**
+ * SCC condensation + topological forward sweep from the trigger, computing —
+ * per component reachable from it — the MAX accumulated wait (fixed ->
+ * duration_ms, smart -> max_ms) and MAX accumulated step count over any path
+ * from the trigger. A component's own internal wait/step total is counted
+ * once no matter how many original-graph cycles loop inside it (implements
+ * "cycles count 1 iteration"). Polynomial (O(V+E)): no per-path enumeration,
+ * so branching/reconverging DAGs can't blow it up.
+ */
+function analyzeCondensedPaths(
   startId: string,
+  nodes: FlowNode[],
   nodesById: Map<string, FlowNode>,
   outEdges: Map<string, FlowEdge[]>
 ): { longWaitNodeIds: Set<string>; maxStepsExceeded: boolean } {
   const longWaitNodeIds = new Set<string>();
   let maxStepsExceeded = false;
-  let calls = 0;
 
-  function dfs(nodeId: string, accumulatedWait: number, pathVisited: Set<string>) {
-    calls++;
-    if (calls > MAX_DFS_CALLS) return;
-    if (pathVisited.has(nodeId)) return;
-    const node = nodesById.get(nodeId);
-    if (!node) return; // dangling edge reference — not this validator's concern
+  const components = stronglyConnectedComponents(
+    nodes.map((n) => n.id),
+    outEdges
+  );
+  const componentIndexById = new Map<string, number>();
+  components.forEach((comp, idx) => comp.forEach((id) => componentIndexById.set(id, idx)));
 
-    const nextVisited = new Set(pathVisited);
-    nextVisited.add(nodeId);
-    if (nextVisited.size > MAX_PATH_STEPS) maxStepsExceeded = true;
+  const waitWeight = components.map((comp) =>
+    comp.reduce((sum, id) => {
+      const node = nodesById.get(id);
+      return node && node.type === 'wait' ? sum + waitMs(node.config) : sum;
+    }, 0)
+  );
+  const stepWeight = components.map((comp) => comp.length);
 
-    const nextAccumulated = node.type === 'wait' ? accumulatedWait + waitMs(node.config) : accumulatedWait;
-
-    if (
-      node.type === 'action' &&
-      node.config.mode === 'ai_message' &&
-      !node.config.fallback_template_id &&
-      nextAccumulated >= LONG_WAIT_THRESHOLD_MS
-    ) {
-      longWaitNodeIds.add(nodeId);
-    }
-
-    for (const edge of outEdges.get(nodeId) ?? []) {
-      dfs(edge.target, nextAccumulated, nextVisited);
+  const condOut = new Map<number, Set<number>>();
+  for (const edgeList of outEdges.values()) {
+    for (const edge of edgeList) {
+      const cu = componentIndexById.get(edge.source);
+      const cv = componentIndexById.get(edge.target);
+      if (cu === undefined || cv === undefined || cu === cv) continue;
+      const succs = condOut.get(cu);
+      if (succs) succs.add(cv);
+      else condOut.set(cu, new Set([cv]));
     }
   }
 
-  dfs(startId, 0, new Set());
+  const startComp = componentIndexById.get(startId);
+  if (startComp === undefined) return { longWaitNodeIds, maxStepsExceeded };
+
+  const arriveWait = new Map<number, number>([[startComp, 0]]);
+  const arriveSteps = new Map<number, number>([[startComp, 0]]);
+
+  // components[] is in reverse-topological (Tarjan finishing) order; walking
+  // it back-to-front visits every predecessor component before its successors.
+  for (let idx = components.length - 1; idx >= 0; idx--) {
+    const arrivedWait = arriveWait.get(idx);
+    if (arrivedWait === undefined) continue; // not reachable from the trigger
+    const arrivedSteps = arriveSteps.get(idx)!;
+
+    const totalWait = arrivedWait + waitWeight[idx]!;
+    const totalSteps = arrivedSteps + stepWeight[idx]!;
+
+    if (totalSteps > MAX_PATH_STEPS) maxStepsExceeded = true;
+
+    for (const id of components[idx]!) {
+      const node = nodesById.get(id);
+      if (
+        node &&
+        node.type === 'action' &&
+        node.config.mode === 'ai_message' &&
+        !node.config.fallback_template_id &&
+        totalWait >= LONG_WAIT_THRESHOLD_MS
+      ) {
+        longWaitNodeIds.add(id);
+      }
+    }
+
+    for (const succ of condOut.get(idx) ?? []) {
+      arriveWait.set(succ, Math.max(arriveWait.get(succ) ?? -Infinity, totalWait));
+      arriveSteps.set(succ, Math.max(arriveSteps.get(succ) ?? -Infinity, totalSteps));
+    }
+  }
+
   return { longWaitNodeIds, maxStepsExceeded };
 }
 
@@ -213,7 +274,12 @@ export function validateFlowForPublish(graph: FlowGraph): PublishValidationResul
       }
     }
 
-    const { longWaitNodeIds, maxStepsExceeded } = walkPaths(startTrigger.id, nodesById, outEdges);
+    const { longWaitNodeIds, maxStepsExceeded } = analyzeCondensedPaths(
+      startTrigger.id,
+      nodes,
+      nodesById,
+      outEdges
+    );
     for (const id of [...longWaitNodeIds].sort()) {
       errors.push({
         node_id: id,
@@ -276,37 +342,27 @@ export function validateFlowForPublish(graph: FlowGraph): PublishValidationResul
     }
   }
 
-  // ponytail: SCC-based over-approximation. A cycle is flagged only when NO
-  // node in its whole strongly-connected component is a sufficient wait node —
-  // exact for "no wait anywhere in the loop", but a component with a safe wait
-  // node reachable only by SOME of its cycles won't distinguish between them.
-  // Upgrade to per-simple-cycle checking if that gap ever bites in practice.
-  const components = stronglyConnectedComponents(
-    nodes.map((n) => n.id),
-    outEdges
+  // cycle_without_wait — exact, not an approximation: a directed cycle with no
+  // sufficient-wait node exists IFF removing every sufficient-wait node still
+  // leaves a cycle (SCC with >1 node, or a self-loop) in the remaining
+  // subgraph. Runs independently of trigger reachability — a node can carry
+  // both unreachable_node and cycle_without_wait at once; that's intentional,
+  // each signal is independently actionable for the editor UI.
+  const sufficientWaitIds = new Set(nodes.filter(isSufficientWaitNode).map((n) => n.id));
+  const remainingIds = nodes.map((n) => n.id).filter((id) => !sufficientWaitIds.has(id));
+  const remainingEdges = edges.filter(
+    (e) => !sufficientWaitIds.has(e.source) && !sufficientWaitIds.has(e.target)
   );
-  for (const component of components) {
-    const firstId = component[0]!; // Tarjan never yields an empty component
-    const isCycle =
-      component.length > 1 || (outEdges.get(firstId) ?? []).some((e) => e.target === firstId);
-    if (!isCycle) continue;
-
-    const hasSufficientWait = component.some((id) => {
-      const node = nodesById.get(id);
-      if (!node || node.type !== 'wait') return false;
-      return node.config.mode === 'fixed'
-        ? node.config.duration_ms >= MIN_CYCLE_WAIT_MS
-        : node.config.min_ms >= MIN_CYCLE_WAIT_MS;
+  const remainingOutEdges = buildOutEdges(remainingEdges);
+  const cycleComponents = stronglyConnectedComponents(remainingIds, remainingOutEdges);
+  for (const component of cycleComponents) {
+    if (!isCycleComponent(component, remainingOutEdges)) continue;
+    const nodeId = [...component].sort()[0]!;
+    errors.push({
+      node_id: nodeId,
+      code: 'cycle_without_wait',
+      message: `Ciclo sem espera mínima de 5min detectado (contém "${nodeId}").`,
     });
-
-    if (!hasSufficientWait) {
-      const nodeId = [...component].sort()[0]!; // same non-empty guarantee as above
-      errors.push({
-        node_id: nodeId,
-        code: 'cycle_without_wait',
-        message: `Ciclo sem espera mínima de 5min detectado (contém "${nodeId}").`,
-      });
-    }
   }
 
   if (errors.length === 0) return { ok: true };

@@ -224,22 +224,116 @@ describe('validateFlowForPublish', () => {
     expect(validateFlowForPublish(g).ok).toBe(true);
   });
 
-  it('flags max_steps_exceeded when the longest acyclic path from trigger exceeds 30 nodes', () => {
+  // A regression fixture for the SCC-based cycle_without_wait check: A and B
+  // form a cycle with no wait in it; C is a *separate* cycle with A that DOES
+  // have a sufficient wait. A naive "does the whole component contain a wait"
+  // check would merge A/B/C into one component (since C links back into A)
+  // and wrongly conclude the component is safe. Removing sufficient-wait
+  // nodes before computing SCCs (the actual algorithm) keeps A<->B a cycle on
+  // its own and correctly flags it.
+  it('flags cycle_without_wait when a wait-free cycle shares a node with a wait-guarded one', () => {
+    const g = graph(
+      [trigger('t1'), condition('A'), condition('B'), wait('C', { mode: 'fixed', duration_ms: 300_000 }), end('end1')],
+      [
+        edge('t1', 'A', always()),
+        edge('A', 'B', condResult(true)),
+        edge('B', 'A', condResult(true)),
+        edge('A', 'C', condResult(false)),
+        edge('C', 'A', always()),
+        edge('B', 'end1', condResult(false)),
+      ]
+    );
+    const result = validateFlowForPublish(g);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((e) => e.code)).toEqual(['cycle_without_wait']);
+    }
+  });
+
+  it('does not flag max_steps_exceeded for a path of exactly 30 nodes', () => {
     const waitNodes: FlowNode[] = [];
     const edges: FlowEdge[] = [];
     let prev = 't1';
-    for (let i = 1; i <= 31; i++) {
+    for (let i = 1; i <= 28; i++) {
       const id = `w${i}`;
       waitNodes.push(wait(id, { mode: 'fixed', duration_ms: 300_000 }));
       edges.push(edge(prev, id, always()));
       prev = id;
     }
     edges.push(edge(prev, 'e1', always()));
-    const g = graph([trigger('t1'), ...waitNodes, end('e1')], edges);
+    const g = graph([trigger('t1'), ...waitNodes, end('e1')], edges); // 1 + 28 + 1 = 30 nodes
+    expect(validateFlowForPublish(g).ok).toBe(true);
+  });
+
+  it('flags max_steps_exceeded for a path of exactly 31 nodes', () => {
+    const waitNodes: FlowNode[] = [];
+    const edges: FlowEdge[] = [];
+    let prev = 't1';
+    for (let i = 1; i <= 29; i++) {
+      const id = `w${i}`;
+      waitNodes.push(wait(id, { mode: 'fixed', duration_ms: 300_000 }));
+      edges.push(edge(prev, id, always()));
+      prev = id;
+    }
+    edges.push(edge(prev, 'e1', always()));
+    const g = graph([trigger('t1'), ...waitNodes, end('e1')], edges); // 1 + 29 + 1 = 31 nodes
     const result = validateFlowForPublish(g);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.map((e) => e.code)).toContain('max_steps_exceeded');
+      expect(result.errors.map((e) => e.code)).toEqual(['max_steps_exceeded']);
+    }
+  });
+
+  // Regression for the old per-path DFS: a width-2 "diamond" DAG re-converges
+  // every layer, so the number of distinct trigger->leaf paths is 2^layers —
+  // astronomically more than the old MAX_DFS_CALLS cap could enumerate for a
+  // schema-legal 60-node graph, which silently truncated and could miss a
+  // violation. The SCC-condensation sweep is O(V+E) regardless of path count,
+  // so this must both finish fast and still catch the violator correctly.
+  it('flags long_wait_needs_template in a wide reconverging DAG without blowing up', () => {
+    // 27 wait layers + trigger + action + end = 30 steps exactly, so this
+    // exercises long_wait_needs_template in isolation without also crossing
+    // the (separately regression-tested) max_steps_exceeded boundary.
+    const LAYERS = 27;
+    const LAYER_WAIT_MS = 3_200_000; // 27 * 3.2M = 86.4M ms == 24h threshold
+    const nodes: FlowNode[] = [trigger('t1')];
+    const edges: FlowEdge[] = [];
+
+    const layerId = (layer: number, branch: 'a' | 'b') => `d${layer}_${branch}`;
+
+    for (let layer = 1; layer <= LAYERS; layer++) {
+      nodes.push(wait(layerId(layer, 'a'), { mode: 'fixed', duration_ms: LAYER_WAIT_MS }));
+      nodes.push(wait(layerId(layer, 'b'), { mode: 'fixed', duration_ms: LAYER_WAIT_MS }));
+
+      const sources =
+        layer === 1 ? (['t1', 't1'] as const) : ([layerId(layer - 1, 'a'), layerId(layer - 1, 'b')] as const);
+      for (const source of sources) {
+        edges.push(edge(source, layerId(layer, 'a'), always()));
+        edges.push(edge(source, layerId(layer, 'b'), always()));
+      }
+    }
+
+    nodes.push(actionAiMessage('act_bad')); // violator: no fallback_template_id
+    nodes.push(actionTemplate('act_ok'));
+    nodes.push(end('end_diamond'));
+    for (const source of [layerId(LAYERS, 'a'), layerId(LAYERS, 'b')] as const) {
+      edges.push(edge(source, 'act_bad', always()));
+      edges.push(edge(source, 'act_ok', always()));
+    }
+    edges.push(edge('act_bad', 'end_diamond', always()));
+    edges.push(edge('act_ok', 'end_diamond', always()));
+
+    expect(nodes.length).toBe(58); // well within the schema's 60-node cap
+
+    const start = performance.now();
+    const result = validateFlowForPublish(graph(nodes, edges));
+    const elapsedMs = performance.now() - start;
+
+    expect(elapsedMs).toBeLessThan(1000); // polynomial, not exponential
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((e) => e.code)).toEqual(['long_wait_needs_template']);
+      expect(result.errors[0]!.node_id).toBe('act_bad');
     }
   });
 
