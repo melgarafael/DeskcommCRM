@@ -31,7 +31,7 @@
 
 | Onda | Status | Prova |
 |---|---|---|
-| 0 — Fundação mídia (Storage + MediaSource + signed URL) | 🛠 em execução (T6/7 ✅) | T1: bucket `whatsapp-media` criado (migration **0055**, não 0054 — branch irmã reivindicou o número) e aplicado no banco dev via `supabase db query --linked`; prova SQL: `public=false, file_size_limit=52428800`. Review spec ✅ + quality approved. |
+| 0 — Fundação mídia (Storage + MediaSource + signed URL) | ✅ local (7/7, aguarda review final) | E2E REAL provado 2026-07-21: WhatsApp "Lia" +5511 4863-3324 conectado por QR; Rafael enviou imagem/áudio/vídeo/PDF/figurinha reais → 5/5 ingeridos com tipo certo, worker persistiu no bucket (SQL: `media_status='stored'`, bytes corretos, path `{org}/{conv}/{msg}.{ext}`); endpoint 302→signed URL 5/5 com content-type certo (~800ms), cross-org 404. Evidências: `.superpowers/evidence/inbox-multimodal-onda0-{inbox,endpoint}.png`. T1: bucket via migration **0055** (0054 tomado por branch irmã). |
 | 1 — Render real na UI | ⏳ aguarda 0 | — |
 | 2 — Composer WhatsApp (anexo/áudio/emoji) | ⏳ aguarda 0-1 | — |
 | 3 — Agente multimodal (vision/transcrição/PDF/vídeo) | ⏳ aguarda 0 | — |
@@ -46,6 +46,8 @@ pra conta de teste) baixada do WAHA → Storage → signed URL servida.
 
 ## Decisões e problemas
 
+- **T7/bugs reais do WAHA 2026.7.1 (2026-07-21, commits 131bea7+33bfc36):** a prova em conta real revelou que o payload NOWEB mudou: mídia em `payload.media.{url,mimetype}` (não `mediaUrl`), SEM campo `type` (inferir de `_data.message`: stickerMessage/imageMessage/…), `media.url` anuncia porta INTERNA do container (localhost:3000; no host é 3030). Fixes: `mediaUrlOf`/`mediaMimeOf`/`resolveMessageType` no ingest; `fetchWahaMedia` reconstrói a URL sobre `WAHA_API_BASE_URL` (path+query só — SSRF impossível por construção); `application/mp4`→`.mp4`. Mensagens de mídia pré-fix foram ingeridas como text vazio (limpas no dev; clones antigos não têm dados a migrar — mídia nunca funcionou antes).
+- **Dev/WAHA auth:** o `.env.local` precisava do HASH sha512 em `WAHA_API_KEY` (o client envia o hash; imagem Core compara literal) — corrigido no worktree. Sessão FAILED `org_6e567068_a3ec82` ficou órfã em Conexões (limpar depois).
 - **T4/retry (2026-07-21):** o plano previa retry gerido pelo handler (`status:"retry"` + backoff próprio) — ERRADO contra o contrato real: `drain.ts` não conta attempt em `retry` (reservado a postpone benigno) → loop infinito. Decisão: worker retorna `status:"error"` sempre e o drain é dono de retry/backoff/dead-letter; worker marca `media_status:"failed"` só no último attempt (`row.attempts >= 4`, espelho do MAX_ATTEMPTS=5 do drain). Review pegou isso — o teste original passava porque bypassava o drain.
 
 ## Log de sessões
