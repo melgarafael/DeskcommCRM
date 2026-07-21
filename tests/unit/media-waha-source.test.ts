@@ -67,4 +67,8 @@ describe("fetchWahaMedia", () => {
     const media = await fetchWahaMedia(`${WAHA_BASE}/api/files/x`, "audio/ogg; codecs=opus");
     expect(media.mime).toBe("audio/ogg; codecs=opus");
   });
+
+  it("mapeia mediaUrl malformada p/ waha_media_untrusted_host", async () => {
+    await expect(fetchWahaMedia("not-a-url")).rejects.toThrow("waha_media_untrusted_host");
+  });
 });

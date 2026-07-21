@@ -18,8 +18,17 @@ export async function fetchWahaMedia(
   hintMime?: string | null,
 ): Promise<FetchedMedia> {
   const base = process.env.WAHA_API_BASE_URL;
-  const url = new URL(mediaUrl);
-  if (!base || url.host !== new URL(base).host) {
+  let url: URL;
+  let baseUrl: URL;
+
+  try {
+    url = new URL(mediaUrl);
+    baseUrl = new URL(base ?? "");
+  } catch {
+    throw new Error("waha_media_untrusted_host");
+  }
+
+  if (!base || url.host !== baseUrl.host) {
     throw new Error("waha_media_untrusted_host");
   }
 
