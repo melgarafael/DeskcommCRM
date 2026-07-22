@@ -229,6 +229,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           credential_id: string | null
+          followup: Json
           handoff_keywords: string[]
           handoff_tool_enabled: boolean
           history_message_window: number
@@ -254,6 +255,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           credential_id?: string | null
+          followup?: Json
           handoff_keywords?: string[]
           handoff_tool_enabled?: boolean
           history_message_window?: number
@@ -279,6 +281,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           credential_id?: string | null
+          followup?: Json
           handoff_keywords?: string[]
           handoff_tool_enabled?: boolean
           history_message_window?: number

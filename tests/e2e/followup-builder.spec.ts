@@ -16,11 +16,19 @@ import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
 
+import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
+
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
+// test-results/ é limpo pelo outputDir do Playwright a cada run — preserva a
+// prova da Task 7.2 aqui (mesmo padrão de followup-queue.spec.ts).
+const ARTIFACTS_DIR = path.join(process.cwd(), "e2e-artifacts");
+fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
 
 interface Creds {
   password: string;
   users: Record<string, { email: string }>;
+  admin_totp?: { factor_id: string; secret: string };
+  followup_agent_fixtures?: { credential_id: string; channel_session_id: string };
 }
 
 function loadCreds(): Creds {
@@ -43,6 +51,37 @@ async function login(page: Page, email: string): Promise<void> {
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: /entrar/i }).click();
   await page.waitForURL(/\/app\//);
+}
+
+/**
+ * Login com MFA TOTP (mesmo padrão de rbac-roles.spec.ts). Necessário pro
+ * admin: o editor de agente (`AgentForm.tsx`) passa `readOnly` quando
+ * `role<admin` (page.tsx §RBAC — manager só VÊ o formulário, não salva), e a
+ * Task 7.2 precisa salvar o rascunho.
+ */
+async function loginWithTotp(page: Page, email: string, secret: string): Promise<void> {
+  await page.goto("/login");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill(creds.password);
+  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.waitForURL(/\/login\/mfa/);
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (msUntilNextTotpWindow() < 3_000) {
+      await page.waitForTimeout(msUntilNextTotpWindow() + 200);
+    }
+    const code = generateTotp(secret);
+    const firstDigit = page.locator('input[aria-label="Dígito 1"]');
+    await firstDigit.click();
+    await page.keyboard.type(code, { delay: 40 });
+    try {
+      await page.waitForURL(/\/app\//, { timeout: 8_000 });
+      return;
+    } catch {
+      await page.waitForTimeout(msUntilNextTotpWindow() + 200);
+    }
+  }
+  throw new Error("MFA challenge failed after 2 TOTP attempts");
 }
 
 test.describe("followup flows — lista + criação (Task 6.1)", () => {
@@ -75,9 +114,18 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
   });
 
   test("viewer não vê o botão de criar fluxo (RBAC)", async ({ page }) => {
+    // Achado ao rodar a suíte completa desta task: este teste ficou
+    // desatualizado pela Task 7.1 (commit 6546271, já na main deste worktree
+    // antes desta sessão) — o gate de PÁGINA que redirecionava viewer pra
+    // /403 foi deliberadamente relaxado (viewer é dono da aba "Fila"; só
+    // "Fluxos" exige manager+ via `canWrite` DENTRO da aba, não mais na
+    // rota). A asserção velha (`waitForURL(/\/403/)`) nunca mais bate —
+    // corrigida aqui pra refletir o RBAC atual: a página carrega, mas o
+    // botão "Novo fluxo" não aparece pro viewer.
     await login(page, creds.users.viewer!.email);
     await page.goto("/app/ai/followups");
-    await page.waitForURL(/\/403/);
+    await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Novo fluxo" })).toHaveCount(0);
   });
 });
 
@@ -532,5 +580,125 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     await page.locator(".react-flow__controls-fitview").click();
     await page.waitForTimeout(400);
     await page.screenshot({ path: "test-results/followup-6.3-04-published-branching.png", fullPage: true });
+  });
+});
+
+/**
+ * Task 7.2 — seletor de fluxo no editor do agente.
+ *
+ * Setup 100% via API (não UI): publica um fluxo mínimo trigger→end como
+ * admin (mesmo padrão de followup-queue.spec.ts), cria um mcp_agent + v1
+ * draft via `POST /api/v1/ai/agents` usando as fixtures de credential/canal
+ * seedadas por scripts/seed-e2e-followup-agent.ts (não existe rota pública
+ * pra credential validada nem fixture pronta no repo — grep confirmou).
+ * Login como ADMIN (não manager, como o brief original sugeria): o gate de
+ * `page.tsx` deixa manager VER o formulário mas `readOnly=true` — só admin
+ * salva (achado ao ler o RBAC real antes de escrever o teste).
+ */
+test.describe("followup flow selector no editor do agente (Task 7.2)", () => {
+  test.beforeAll(() => {
+    execFileSync("npx", ["tsx", "scripts/seed-e2e-followup-agent.ts"], { stdio: "inherit" });
+  });
+
+  test("admin vincula um fluxo publicado ao agente, salva, e a persistência é provada via API", async ({
+    page,
+  }) => {
+    expect(creds.admin_totp?.secret, "seed deve gravar admin_totp em .e2e-creds.json").toBeTruthy();
+    expect(
+      creds.followup_agent_fixtures,
+      "seed-e2e-followup-agent.ts deve gravar followup_agent_fixtures",
+    ).toBeTruthy();
+    await loginWithTotp(page, creds.users.admin!.email, creds.admin_totp!.secret);
+
+    // --- 1. publica um fluxo mínimo trigger→end via API ---
+    const stamp = Date.now();
+    const flowName = `E2E Seletor ${stamp}`;
+    const createFlowRes = await page.request.post("/api/v1/ai/followup-flows", { data: { name: flowName } });
+    expect(createFlowRes.status()).toBe(201);
+    const { data: flow } = (await createFlowRes.json()) as { data: { id: string } };
+
+    const graph = {
+      nodes: [
+        { id: "trigger-1", type: "trigger", label: "Início", position: { x: 0, y: 0 }, config: {} },
+        { id: "end-1", type: "end", label: "Fim", position: { x: 0, y: 200 }, config: { outcome: "exhausted" } },
+      ],
+      edges: [{ id: "edge-1", source: "trigger-1", target: "end-1", priority: 0, condition: { type: "always" } }],
+    };
+    const patchRes = await page.request.patch(`/api/v1/ai/followup-flows/${flow.id}`, {
+      data: { draft_graph: graph },
+    });
+    expect(patchRes.status()).toBe(200);
+    const publishRes = await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/publish`, { data: {} });
+    expect(publishRes.status()).toBe(200);
+
+    // --- 2. cria um mcp_agent + v1 draft via API, usando as fixtures seedadas ---
+    const fixtures = creds.followup_agent_fixtures!;
+    const agentName = `E2E Agente Follow-up ${stamp}`;
+    const createAgentRes = await page.request.post("/api/v1/ai/agents", {
+      data: {
+        name: agentName,
+        version: {
+          system_prompt: "Você é um atendente de teste E2E. Responda de forma clara em pt-BR.",
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          credential_id: fixtures.credential_id,
+          channel_session_id: fixtures.channel_session_id,
+        },
+      },
+    });
+    expect(createAgentRes.status()).toBe(201);
+    const { data: created } = (await createAgentRes.json()) as {
+      data: { agent: { id: string }; version: { id: string; followup: { enabled: boolean; flow_pointer_ids: string[] } } };
+    };
+    const agentId = created.agent.id;
+    const versionId = created.version.id;
+
+    // Nasce com o default aditivo (enabled=false, []) — prova que o schema novo
+    // não quebra a criação de um agent que nunca falou de follow-up.
+    expect(created.version.followup).toEqual({ enabled: false, flow_pointer_ids: [] });
+
+    // --- 3. abre o editor, habilita o toggle e seleciona o fluxo publicado ---
+    await page.goto(`/app/ai/agents/${agentId}`);
+    await expect(page.getByRole("heading", { name: agentName })).toBeVisible();
+
+    const followupHeading = page.getByRole("heading", { name: "Follow-up", exact: true });
+    await followupHeading.scrollIntoViewIfNeeded();
+    await expect(followupHeading).toBeVisible();
+
+    const followupToggle = page.getByLabel("Habilitar gatilhos automáticos de follow-up");
+    await expect(followupToggle).not.toBeChecked();
+    await followupToggle.click();
+    await expect(followupToggle).toBeChecked();
+
+    const flowCheckbox = page.getByLabel(flowName, { exact: true });
+    await expect(flowCheckbox).toBeVisible();
+    await flowCheckbox.check();
+    await expect(flowCheckbox).toBeChecked();
+    await page.screenshot({
+      path: path.join(ARTIFACTS_DIR, "followup-7.2-01-flow-selected.png"),
+      fullPage: true,
+    });
+
+    // --- 4. salva o rascunho ---
+    await page.getByRole("button", { name: "Salvar rascunho" }).click();
+    await expect(page.getByText(/Rascunho v\d+ salvo\./)).toBeVisible();
+    await page.screenshot({
+      path: path.join(ARTIFACTS_DIR, "followup-7.2-02-saved.png"),
+      fullPage: true,
+    });
+
+    // --- 5. prova via API (não só UI): a version persistida tem enabled=true
+    // e flow_pointer_ids contendo o id do fluxo publicado ---
+    const versionRes = await page.request.get(`/api/v1/ai/agents/${agentId}/versions/${versionId}`);
+    expect(versionRes.status()).toBe(200);
+    const { data: persisted } = (await versionRes.json()) as {
+      data: { followup: { enabled: boolean; flow_pointer_ids: string[] } };
+    };
+    expect(persisted.followup.enabled).toBe(true);
+    expect(persisted.followup.flow_pointer_ids).toContain(flow.id);
+
+    // Cleanup: arquiva o agent de teste + desativa o fluxo (reduz acúmulo).
+    await page.request.delete(`/api/v1/ai/agents/${agentId}`);
+    await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/disable`, { data: {} });
   });
 });
