@@ -6526,3 +6526,13 @@ begin
 end;
 $$;
 revoke all on function fn_publish_followup_flow_version(uuid, uuid, jsonb, uuid) from public, anon, authenticated;
+
+-- ---- agent_inbox_items: kind 'followup_dead' (migration 0057) ----
+
+alter table agent_inbox_items
+  drop constraint if exists agent_inbox_items_kind_check;
+
+alter table agent_inbox_items
+  add constraint agent_inbox_items_kind_check check (kind in
+    ('qr_rescan','job_dead','event_dead','budget_exceeded','handoff',
+     'promotion_review','judge_unaligned','followup_dead','other'));
