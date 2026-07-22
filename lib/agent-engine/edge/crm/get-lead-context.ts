@@ -186,15 +186,21 @@ function fitToBudget(
   history: HistoryRow[],
   maxTokens: number,
 ): LeadContext {
-  let messages: LeadContextMessage[] = history.map((m) => ({
-    direction: m.direction,
-    // Onda 3: mídia usa o derivado textual (universal); sem derivado, marcador [tipo].
-    body: m.body ?? (m.media_derived_text ?? (m.media_storage_path || m.media_url ? `[${m.type}]` : '')),
-    sent_at: m.sent_at,
-    ...(m.media_storage_path || m.media_url
-      ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime }
-      : {}),
-  }));
+  let messages: LeadContextMessage[] = history.map((m) => {
+    const hasMedia = Boolean(m.media_storage_path || m.media_url);
+    const derived = m.media_derived_text;
+    // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM — a descrição
+    // da mídia nunca é mascarada pela legenda. Sem derivado, marcador [tipo].
+    const body = derived
+      ? (m.body ? `${m.body}\n${derived}` : derived)
+      : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
+    return {
+      direction: m.direction,
+      body,
+      sent_at: m.sent_at,
+      ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
+    };
+  });
   const build = (msgs: LeadContextMessage[]): LeadContext => ({ ...base, messages: msgs });
   const over = (msgs: LeadContextMessage[]): boolean =>
     countPayloadTokens(JSON.stringify(build(msgs))) > maxTokens;

@@ -28,4 +28,12 @@ describe("fitToBudget — mídia no contexto", () => {
     ], 100000);
     expect(ctx.messages[0]!.body).toBe("oi");
   });
+
+  it("mídia com LEGENDA e derivado — os dois coexistem, legenda não mascara a descrição", () => {
+    const ctx = __test_fitToBudget(base, [
+      { direction: "inbound", type: "image", body: "quero esse", media_url: "u", media_storage_path: "p", media_mime: "image/jpeg", media_derived_text: "tênis vermelho tamanho 42", sent_at: "2026-07-22T10:00:00Z" },
+    ], 100000);
+    expect(ctx.messages[0]!.body).toContain("quero esse");
+    expect(ctx.messages[0]!.body).toContain("tênis vermelho");
+  });
 });
