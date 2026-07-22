@@ -23,7 +23,8 @@
 
 ## Estado atual
 
-- **Onda:** 2 ✅ COMPLETA (2.1 + 2.2 Approved). Próxima: Onda 3 (API de fluxos) — ANTES do dispatch: aplicar 0054 no dev DB + regenerar `lib/database.types.ts` (pendência da Onda 1).
+- **Onda:** 3 ✅ COMPLETA (3.1 Approved na re-review). Próxima: Onda 4 (motor: engine core + cron route + nós determinísticos).
+- **Dev DB:** migrations 0054 e 0056 APLICADAS no projeto rrydmwnporysaiysiztn via Management API (token do CLI no keychain, entrada "Supabase CLI"/"access-token", formato go-keyring-base64). `database.types.ts` regenerado (public,storage,graphql_public).
 - **Migration seguinte livre:** 0055.
 - **Pendências deliberadas:** aplicar 0054 no dev DB remoto + regenerar `lib/database.types.ts` → fazer na preparação da Onda 3 (controller faz; subagents sem MCP Supabase). Minors do review 1.1 p/ triagem final: (1) idiom `duplicate_object` nas policies difere da convenção `drop policy if exists` do repo; (2) sem índice org-only em `followup_flow_versions`/`followup_enrollment_events`.
 
@@ -33,6 +34,8 @@
 - 2026-07-21: `@xyflow/react` aprovado pelo Rafael para o canvas (dynamic import, medir bundle).
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-21: **Onda 3 ✅** — Task 3.1 (dad6a7d + fix 83a9645 + minors 09073c8, Approved na re-review). 5 rotas `/api/v1/ai/followup-flows` (CRUD, publish, disable, rollback), RBAC manager+/member, audit 5 ações, Zod strict. **Review 1º round: 2 Importants** → fix com **migration 0056** (pointer_id + backfill genérico + `fn_publish_followup_flow_version` RPC atômica com FOR UPDATE; revoke anon/authenticated — NÃO copiou o furo do template `fn_publish_ai_agent_version`, que tem GRANT p/ anon: **flag de segurança pré-existente p/ Rafael**). Rollback valida linhagem + preserva status. **PROVA:** 24/24 API tests, 456/456 unit, invariantes 204/204, baseline 0056 fresh+update no pg17 descartável, transcript curl real de 13 passos com cookies de auth reais + 7 linhas de audit confirmadas no banco (detalhe no task-3.1-report.md). 0056 aplicada no dev DB (coluna+função confirmadas). Colisão de numeração 0055 pega pelo hook → renumerada 0056.
 
 - 2026-07-21: **Onda 2 ✅** — Task 2.1 (e866497, Approved): `lib/followup/graph-schema.ts`, 80 testes unit, contrato exato dos 6 nós/arestas/grafo. Task 2.2 (9a27c2b + fix ea5a746 + 57e914e, Approved na re-review): `lib/followup/validate-publish.ts`, 17 testes. **Review pegou 2 Criticals reais no 1º round** (validador aceitava sub-ciclo sem espera dentro de SCC com espera; DFS com cap de 200k truncava silenciosamente em DAG ramificado ≤60 nós) → corrigidos com algoritmos EXATOS: remoção de nós-de-espera + Tarjan (ciclo) e condensação SCC + longest-path topológico O(V+E) (24h/max_steps). Regressões: contra-exemplo A/B/C, boundary 30/31, diamond-DAG 58 nós <1s. **PROVA:** 17/17 focados, suite unit 432/432, typecheck 0. Nota p/ Onda 6 (UI): `label` de nó ≤60 chars; grafo 2..60 nós, 120 arestas.
 
