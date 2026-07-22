@@ -41,3 +41,8 @@ export const patchFollowupFlowSchema = z.strictObject({
 export const rollbackFollowupFlowSchema = z.strictObject({
   version_id: z.string().uuid(),
 });
+
+export const createFollowupEnrollmentSchema = z.strictObject({
+  pointer_id: z.string().uuid(),
+  contact_id: z.string().uuid(),
+});
