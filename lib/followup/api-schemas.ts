@@ -11,11 +11,20 @@ export const createFollowupFlowSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
 });
 
+// `cancel_on_reply` (Task 5.2 — reatividade): se true, um enrollment `waiting_reply`
+// desse fluxo cancela (outcome='replied') na 1ª resposta do contato em vez de
+// acordar o classify. Sibling de `kind` (não dentro de `params`) porque é uma
+// política de REAÇÃO À RESPOSTA, ortogonal a como o fluxo foi disparado — vale
+// pros 4 `kind`s igualmente. Default false quando ausente (fluxos existentes
+// continuam acordando o classify, comportamento inalterado).
+const CANCEL_ON_REPLY = { cancel_on_reply: z.boolean().optional() };
+
 export const triggerConfigSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("manual") }),
+  z.strictObject({ kind: z.literal("manual"), ...CANCEL_ON_REPLY }),
   z.strictObject({
     kind: z.literal("stage_change"),
     params: z.strictObject({ stage_id: z.string().uuid() }),
+    ...CANCEL_ON_REPLY,
   }),
   z.strictObject({
     kind: z.literal("silence"),
@@ -23,10 +32,12 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
       threshold_minutes: z.number().int().min(5).max(10_080),
       segments: z.array(z.string()).optional(),
     }),
+    ...CANCEL_ON_REPLY,
   }),
   z.strictObject({
     kind: z.literal("conversation_end"),
     params: z.strictObject({}),
+    ...CANCEL_ON_REPLY,
   }),
 ]);
 export type TriggerConfig = z.infer<typeof triggerConfigSchema>;
