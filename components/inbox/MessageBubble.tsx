@@ -34,7 +34,7 @@ export function MessageBubble({ message, debugCitations }: Props) {
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: ptBR });
   const isFailed = message.status === "failed";
-  const hasMedia = Boolean(message.media_url);
+  const hasMedia = Boolean(message.media_url || message.media_storage_path);
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   const aiGenerated = isAiGeneratedMessage(message.metadata);

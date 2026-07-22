@@ -69,6 +69,7 @@ export {
   Phone,
   Paperclip,
   Image as ImageIcon,
+  ImageSquare,
   MusicNote,
   FileText,
   Lock,
