@@ -33,7 +33,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     focus: () => taRef.current?.focus(),
   }));
 
-  const isDisabled = disabled || !!blockedReason || send.isPending;
+  const isDisabled = disabled || !!blockedReason || send.isPending || upload.isPending;
 
   function autoresize() {
     const ta = taRef.current;
@@ -111,18 +111,23 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         onCancel={() => setPendingFile(null)}
         onSend={async (caption) => {
           if (!pendingFile) return;
-          const uploaded = await upload.mutateAsync({ conversationId, file: pendingFile });
-          send.mutate(
-            {
-              conversation_id: conversationId,
-              type: uploaded.kind,
-              body: caption || undefined,
-              media_storage_path: uploaded.storage_path,
-              media_mime: uploaded.media_mime,
-              media_size_bytes: uploaded.media_size_bytes,
-            },
-            { onSuccess: () => setPendingFile(null) },
-          );
+          try {
+            const uploaded = await upload.mutateAsync({ conversationId, file: pendingFile });
+            send.mutate(
+              {
+                conversation_id: conversationId,
+                type: uploaded.kind,
+                body: caption || undefined,
+                media_storage_path: uploaded.storage_path,
+                media_mime: uploaded.media_mime,
+                media_size_bytes: uploaded.media_size_bytes,
+              },
+              { onSuccess: () => setPendingFile(null) },
+            );
+          } catch {
+            // toast já disparado pelo onError de useUploadMedia; dialog fica aberto p/ retry
+            return;
+          }
         }}
       />
     </>

@@ -2,6 +2,7 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { ApiError, type ApiErrorBody } from "@/lib/api/types";
 
 export interface UploadedMedia {
   storage_path: string;
@@ -19,12 +20,10 @@ export function useUploadMedia() {
         method: "POST",
         body: form,
       });
-      const json = (await res.json()) as { data?: UploadedMedia; error?: { code: string; message: string } };
+      const json = (await res.json()) as Partial<ApiErrorBody> & { data?: UploadedMedia };
       if (!res.ok || !json.data) {
-        throw Object.assign(new Error(json.error?.message ?? "upload_failed"), {
-          code: json.error?.code,
-          status: res.status,
-        });
+        const e = json.error;
+        throw new ApiError(res.status, e?.code ?? "upload_failed", e?.details, e?.request_id ?? "", e?.message);
       }
       return json.data;
     },

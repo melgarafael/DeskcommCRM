@@ -68,4 +68,20 @@ describe("Composer + anexos", () => {
       ),
     );
   });
+
+  it("upload falho mantém o dialog aberto (sem disparar send)", async () => {
+    uploadMock.mockRejectedValueOnce(new Error("upload_failed"));
+    renderComposer();
+    fireEvent.click(screen.getByRole("button", { name: /anexar/i }));
+    const input = document.querySelector('input[accept^="image"]') as HTMLInputElement;
+    const file = new File([new Uint8Array([1, 2, 3])], "foto.jpg", { type: "image/jpeg" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^enviar$/i }));
+
+    await waitFor(() => expect(uploadMock).toHaveBeenCalled());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
 });
