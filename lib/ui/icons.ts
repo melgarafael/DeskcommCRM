@@ -47,6 +47,7 @@ export {
   Play,
   SkipForward,
   Copy,
+  DownloadSimple,
   Archive,
   // feedback
   CheckCircle,
