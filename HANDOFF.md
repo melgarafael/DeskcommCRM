@@ -23,7 +23,7 @@
 
 ## Estado atual
 
-- **Onda:** 4 ✅ COMPLETA (Task 4.1 engine + Task 4.2 cron route + enrollment manual). Próxima: Onda 5 (nós de IA — action/ai_classify/wait smart via `job_queue`).
+- **Onda:** 4 ✅ COMPLETA. Onda 5 EM ANDAMENTO: Task 5.1 ✅ (ponte engine ⇄ job_queue). Próxima: Task 5.2 (reatividade — inbound acorda classify; ver nota de interplay abaixo).
 - **Dev DB:** migrations 0054 e 0056 APLICADAS no projeto rrydmwnporysaiysiztn via Management API (token do CLI no keychain, entrada "Supabase CLI"/"access-token", formato go-keyring-base64). `database.types.ts` regenerado (public,storage,graphql_public). **0057 (Task 4.1, kind `followup_dead`) ainda NÃO aplicada no dev DB remoto** — não bloqueou a prova ao vivo da Task 4.2 porque o cenário provado (trigger→wait→condition→end) nunca passa pelo caminho `markDead`/`agent_inbox_items.kind='followup_dead'`; aplicar antes de qualquer prova futura que precise do caminho dead-letter.
 - **Migration seguinte livre:** 0058.
 - **Pendências deliberadas:** aplicar 0054 no dev DB remoto + regenerar `lib/database.types.ts` → fazer na preparação da Onda 3 (controller faz; subagents sem MCP Supabase). Minors do review 1.1 p/ triagem final: (1) idiom `duplicate_object` nas policies difere da convenção `drop policy if exists` do repo; (2) sem índice org-only em `followup_flow_versions`/`followup_enrollment_events`.
@@ -35,6 +35,57 @@
 - 2026-07-21 (Task 4.1): **`AdminClient` do engine NÃO é `SupabaseClient`** — é uma interface própria e estreita (poucos métodos nomeados: claim/loadGraph/loadLeadFacts/loadEvents/insertEvent/updateEnrollment/loadPointerName/insertDeadInbox). Motivo: `tests/invariants/**` roda contra Postgres cru (`pg.Pool`, sem PostgREST — `NEXT_PUBLIC_SUPABASE_URL` aponta pra porta inalcançável de propósito no `vitest.db.config.ts`), então um `AdminClient=SupabaseClient` real seria intestável ali. `lib/followup/engine.ts` exporta `createSupabaseAdminClient(admin)` pra produção (ainda sem consumidor — a rota de cron é task futura) e o teste DB implementa o adapter `pg`-puro inline. **Próximas tasks que precisarem de uma rota real usando o engine devem usar `createSupabaseAdminClient`, não reinventar.**
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-22: **Task 5.1 ✅ (commits ff97ccc/b164560/502f9ab/51cbfb8) — ponte engine ⇄ job_queue.**
+  `lib/followup/turn-bridge.ts` (novo): `completeTurnForEnrollment(db, orgId, enrollmentId,
+  nodeId, result, clock?)` traduz o resultado de um turno em progressão de enrollment — 'sent'
+  avança via `selectEdge('always')`, 'classified' via `class_match` (fallback 'always' embutido),
+  'timing' clampa `[min_ms,max_ms]` do wait smart pinado e reagenda sem sair do nó. Idempotente
+  por `${node_id}:${steps_taken}` (mesma doutrina de `applyResult`). `TurnBridgeAdminClient`
+  estende o `AdminClient` do engine com `loadEnrollmentById` — extensão ISOLADA (não no
+  `AdminClient` do engine.ts) pra não obrigar o adapter pg já aprovado em
+  `followup-engine.test.ts` a ganhar método que não usa. `createPgAdminClient(pool)` é o adapter
+  de produção real, usado tanto pela wiring (main.ts) quanto pelo teste DB-real (mesmo código,
+  não duplicado).
+  `lib/agent-engine/agent/followup-turn.ts` — MUDANÇA MÍNIMA guardada por
+  `if (payload.followup_enrollment_id !== undefined)`: 3 `purpose` roteados (send_message roda
+  `runAgentTurn` normal com `prompt_hint` anexado à abertura; classify/decide_timing NÃO rodam o
+  agente inteiro — 1 chamada estruturada cada, `lib/agent-engine/agent/followup-flow-classify.ts`
+  novo, mesmo padrão de `stage-classifier.ts`/`guardrails/promise/semantic.ts`). Callback
+  `completeFollowupTurn` injetado via `FollowupTurnDeps` (= `InboundTurnDeps` + o callback
+  opcional); wiring real em `workers/agent-worker/main.ts` (achado como o ÚNICO consumidor de
+  `createFollowupTurnHandler` no repo — não existe rota Next.js pra isso, é o worker 24/7 que
+  fala `pg` puro, nunca Supabase client).
+  `lib/followup/node-handlers.ts` — fix de bug real do critério 2 da onda: `ai_classify` em
+  re-entrada (grace elapsed, checagem `waitElapsed` reusada de `wait`) SEMPRE reenfileirava outro
+  turno de classificação, mesmo depois do `grace_timeout_ms` vencer sem resposta. Agora rota
+  `no_reply` via `selectEdge` sem chamar LLM.
+  **Desvios documentados do esboço do plano:** `completeTurnForEnrollment` ganhou `orgId`
+  (toda escrita é org-scoped) e `nodeId` (guarda de obsolescência — turno tardio contra
+  enrollment que já saiu do nó vira no-op, não reaplica sobre o nó errado); o payload do
+  `FollowupJobRequest` (engine.ts) ganhou `prompt_hint`/`classes`/`hint`/`guidance` opcionais
+  (o plano não especificava esses campos, mas o turno precisa deles — extensão do lado followup,
+  liberada pelo dispatch).
+  **Decisão deliberada de escopo:** o `wait` (mode `smart`) do `node-handlers.ts` CONTINUA usando
+  `max_ms` direto (não wired pra `enqueue_turn purpose:'decide_timing'` nesta task) — investiguei
+  e concluí que reusar `resolveWaitPhase`/`waitElapsed` pra essa transição tem uma ambiguidade real
+  (uma recheck-tick de 5min enquanto o turno de decide_timing ainda não terminou colidiria com o
+  sinal "já elapsed"), e o TDD explícito do dispatch não pedia essa mudança — só pedia que
+  `completeTurnForEnrollment` trate 'timing' corretamente (o que está feito e testado, unit +
+  DB-real). Fica registrado pra quem for wire isso: vai precisar de um sinal PRÓPRIO (não
+  `resolveWaitPhase`) pra diferenciar "aguardando o turno terminar" de "wait de verdade elapsou".
+  **PROVA:** node-handlers 34/34 (3 novos), turn-bridge unit 13/13, followup-flow-classify unit
+  8/8, suíte unit completa 529/529, typecheck 0, lint 0 novo (os 2 erros pré-existentes em
+  `graph-schema.test.ts` da Task 2.1 continuam intocados). DB-real: 37/37 arquivos de
+  invariantes, 215 passed | 1 skipped (+1 arquivo, +11 testes sobre a baseline), install+update
+  do baseline.sql sem erro novo em `pgvector/pgvector:pg17` descartável. `tests/invariants/followup-turn-bridge.test.ts`
+  prova contra Postgres real: ciclo action completo (enqueue→complete→advance) + dupla conclusão
+  idempotente (23505 real) + classe exata→aresta + grace-sem-resposta→no_reply SEM reenfileirar
+  (via `runFollowupTick` real, não só a função pura) + clamp do wait smart contra o grafo pinado.
+  **Sem migration nesta task.** Detalhe completo em `.superpowers/sdd/task-5.1-report.md`.
+  **Pendente pra Task 5.2:** reactivity.ts vai precisar de um sinal PRÓPRIO pra acordar
+  `ai_classify` cedo (inbound chegou) sem ser confundido com "grace expirou" pelo fix desta task
+  (ambos re-entram o MESMO nó via a MESMA checagem `waitElapsed` hoje).
 
 - 2026-07-22: **Task 4.2 ✅ (commit 0571db0) — Onda 4 fechada.** `app/api/v1/cron/followup-flow-worker/route.ts` (GET/POST, clone literal do `routing-worker`: auth Bearer fail-closed, `runFollowupTick` via `createSupabaseAdminClient` — reusa o engine da 4.1, `enqueueJob` insere em `job_queue` kind=`followup_turn` já existente, audit `followup.worker_run` agregada por tick) + `app/api/v1/ai/followups/enrollments/route.ts` (POST manager+ cria enrollment manual: pointer ativo→422 `flow_not_active`, contato da org→404, resolve nó `trigger` do grafo pinado, 23505→409, audit `followup_enrollment.created`; GET member lista com filtro `?status=`). **PROVA AO VIVO (não só unit):** 18 testes novos + 505/505 suite completa + typecheck/lint zerados; contra `npm run dev` (porta 3020) + DB remoto real (0054+0056), com cookie de sessão real (Playwright login) e secret real do `.env.local`: criei fluxo → PATCH grafo `trigger→wait(5min fixo)→condition(steps_taken≥0)→end(exhausted)` → publish → criei contato real → enrollment (RBAC 403 pro agent, 409 em duplicata viva provados) → cron sem/com secret errado→403 (fail-closed provado) → **5 ticks reais** (o worker processa 1 passo por chamada, não faz loop até estabilizar — ficou visível: trigger-advance e wait-start são 2 chamadas HTTP distintas) com **sleep real de 5min+ em foreground** entre o wait começar e elapsar (nada de manipular relógio) → enrollment fechou `status=completed, outcome=exhausted`. Confirmado direto no Postgres (admin client, não o mock do teste): 7 audit rows `followup.worker_run` batendo 1:1 com as 7 chamadas cron autenticadas (as 2 fail-closed corretamente não auditam), 3 audit rows das mutações (`created`/`published`/`enrollment.created`), 5 `followup_enrollment_events` (1 por passo real do grafo). Dados de smoke limpos depois (audit ficou, append-only). Detalhe completo + transcript integral em `.superpowers/sdd/task-4.2-report.md`. **Sem migration nesta task.**
 
