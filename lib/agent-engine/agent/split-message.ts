@@ -88,6 +88,11 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
  * pelo mesmo `send` (que no runtime é o channel.send pós-guardrails, com seq++).
  * Para no 1º outcome que não seja de sucesso ('sent'/'already_sent'/'queued')
  * e o devolve — não segue mandando bolha após veto/bloqueio/falha.
+ *
+ * LIMITAÇÃO CONHECIDA: o contador de cap diário do pacing anti-ban (recordSend)
+ * conta o send lógico UMA vez por turno, então um turno de N bolhas avança o cap
+ * em 1, não N — aceitável por ora (doutrina: "anti-ban gateia uma vez"); revisitar
+ * se o warm-up precisar de precisão por mensagem física.
  */
 const OK_KINDS = new Set(["sent", "already_sent", "queued"]);
 

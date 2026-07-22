@@ -812,7 +812,7 @@ export async function runAgentTurn(
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
-                jitter: () => 700 + Math.floor(Math.random() * 800), // 700–1500ms humano
+                jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
                 send: (bubble): Promise<ChannelSendResult> => {
                   seq += 1;
                   return channel.send({
