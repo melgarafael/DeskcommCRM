@@ -189,10 +189,11 @@ function fitToBudget(
   let messages: LeadContextMessage[] = history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
     const derived = m.media_derived_text;
-    // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM — a descrição
-    // da mídia nunca é mascarada pela legenda. Sem derivado, marcador [tipo].
+    // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
+    // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
+    // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
     const body = derived
-      ? (m.body ? `${m.body}\n${derived}` : derived)
+      ? frameMediaBody(m.type, m.body, derived)
       : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
     return {
       direction: m.direction,
@@ -212,6 +213,34 @@ function fitToBudget(
     messages = [{ ...messages[0]!, body: messages[0]!.body.slice(0, Math.floor(messages[0]!.body.length / 2)) }];
   }
   return build(messages);
+}
+
+/** Substantivo pt-br por tipo de mídia (p/ o enquadramento do derivado). */
+const MEDIA_NOUN: Record<string, string> = {
+  image: 'uma imagem',
+  video: 'um vídeo',
+  audio: 'um áudio',
+  document: 'um documento (PDF)',
+  sticker: 'uma figurinha',
+};
+
+/**
+ * Enquadra o derivado de mídia como PERCEPÇÃO do agente (Onda 3, ajuste pós-prova).
+ * Sem isto, o modelo via a transcrição/descrição mas respondia "não consigo ver
+ * mídia" por reflexo. O enquadramento diz explicitamente: o conteúdo já foi
+ * processado; trate como se tivesse visto/ouvido; nunca negue a mídia. Legenda do
+ * cliente (se houver) e conteúdo derivado coexistem. @internal exposto p/ teste.
+ */
+export function frameMediaBody(type: string, caption: string | null, derived: string): string {
+  const noun = MEDIA_NOUN[type] ?? 'uma mídia';
+  const parts = [
+    `[Mídia do cliente: ele enviou ${noun} e o sistema já processou o conteúdo pra você. ` +
+      `Trate o texto abaixo como se você mesma tivesse visto/ouvido — NUNCA responda que não ` +
+      `consegue ver/ouvir mídia. Comente ou use o conteúdo naturalmente.]`,
+  ];
+  if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
+  parts.push(`Conteúdo: ${derived}`);
+  return parts.join('\n');
 }
 
 /** @internal exposto p/ teste — não usar fora de testes. */
