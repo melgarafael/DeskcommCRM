@@ -1,0 +1,49 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { buildNativeMediaParts } from "@/lib/agent-engine/agent/media-parts";
+
+function signer(ok = true) {
+  return {
+    storage: {
+      from: () => ({
+        createSignedUrl: vi.fn(async (path: string) =>
+          ok ? { data: { signedUrl: `https://signed/${path}` }, error: null } : { data: null, error: { message: "x" } },
+        ),
+      }),
+    },
+  };
+}
+
+const imgMsg = { direction: "inbound" as const, body: "[image]", sent_at: "t", type: "image", media_storage_path: "org/conv/m.jpg", media_mime: "image/jpeg" };
+const pdfMsg = { direction: "inbound" as const, body: "[document]", sent_at: "t", type: "document", media_storage_path: "org/conv/m.pdf", media_mime: "application/pdf" };
+const textMsg = { direction: "inbound" as const, body: "oi", sent_at: "t" };
+
+describe("buildNativeMediaParts", () => {
+  it("flag off → []", async () => {
+    const parts = await buildNativeMediaParts({ messages: [imgMsg], provider: "anthropic", model: "claude", multimodalInput: false, admin: signer() as never });
+    expect(parts).toEqual([]);
+  });
+  it("provider capaz + imagem → part image com signed URL", async () => {
+    const parts = await buildNativeMediaParts({ messages: [imgMsg], provider: "anthropic", model: "claude-sonnet-4-6", multimodalInput: true, admin: signer() as never });
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ type: "image" });
+  });
+  it("pdf em provider com pdf → part file", async () => {
+    const parts = await buildNativeMediaParts({ messages: [pdfMsg], provider: "google", model: "gemini-2.5-pro", multimodalInput: true, admin: signer() as never });
+    expect(parts[0]).toMatchObject({ type: "file", mediaType: "application/pdf" });
+  });
+  it("provider incapaz (desconhecido) → [] (derivado cobre)", async () => {
+    const parts = await buildNativeMediaParts({ messages: [imgMsg], provider: "nova-ia", model: "x", multimodalInput: true, admin: signer() as never });
+    expect(parts).toEqual([]);
+  });
+  it("texto puro → []", async () => {
+    const parts = await buildNativeMediaParts({ messages: [textMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: signer() as never });
+    expect(parts).toEqual([]);
+  });
+  it("só a mídia inbound MAIS RECENTE entra (evita re-enviar histórico caro)", async () => {
+    const older = { ...imgMsg, media_storage_path: "org/conv/old.jpg" };
+    const parts = await buildNativeMediaParts({ messages: [older, imgMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: signer() as never, maxItems: 1 });
+    expect(parts).toHaveLength(1);
+    expect((parts[0] as { image: URL }).image.toString()).toContain("m.jpg");
+  });
+});

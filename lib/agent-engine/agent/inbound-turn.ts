@@ -48,6 +48,7 @@ import {
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { mirrorLeadStageToCrm } from '../edge/crm/move-lead-stage';
 import { insertInboxItem } from '../db/repository';
+import { buildNativeMediaParts } from './media-parts';
 import type { JobRow, Queryable } from '../queue/queue';
 import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
@@ -1147,12 +1148,23 @@ export async function runAgentTurn(
   // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
   // skill casadas (F3-09) + hint do classificador (F3-11). Vazios são omitidos.
   const openingSuffixes = [matchedSkillsBlock, stageHintBlock].filter((b) => b !== '');
-  const openingMessages: ModelMessage[] = [
-    {
-      role: 'user',
-      content: openingSuffixes.length === 0 ? openingBase : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`,
-    },
-  ];
+  const openingText =
+    openingSuffixes.length === 0 ? openingBase : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
+  // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
+  // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
+  // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
+  const nativeParts = await buildNativeMediaParts({
+    messages: effectiveContext.messages,
+    provider: agentConfig?.provider ?? 'anthropic',
+    model: agentConfig?.model ?? '',
+    multimodalInput: agentConfig?.multimodalInput ?? false,
+    admin: deps.crmCfg.supabase,
+  });
+  const openingTextOnly: ModelMessage[] = [{ role: 'user', content: openingText }];
+  const openingMessages: ModelMessage[] =
+    nativeParts.length === 0
+      ? openingTextOnly
+      : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
 
   // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
   const turn = await runModelCall(
@@ -1227,7 +1239,9 @@ export async function runAgentTurn(
         : {}),
       system,
       messages: [
-        ...openingMessages,
+        // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+        // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+        ...openingTextOnly,
         ...responseMessages,
         { role: 'user', content: CHECKPOINT_INSTRUCTION },
       ],
