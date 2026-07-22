@@ -4,6 +4,7 @@ import { PaperPlaneTilt } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
+import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
 import { cn } from "@/lib/utils";
@@ -93,16 +94,20 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={isDisabled}
             aria-label="Mensagem"
           />
-          <Button
-            type="button"
-            size="icon"
-            className="h-9 w-9 shrink-0"
-            onClick={handleSubmit}
-            disabled={isDisabled || !text.trim()}
-            aria-label="Enviar"
-          >
-            <PaperPlaneTilt size={16} weight="fill" aria-hidden />
-          </Button>
+          {text.trim() ? (
+            <Button
+              type="button"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              onClick={handleSubmit}
+              disabled={isDisabled}
+              aria-label="Enviar"
+            >
+              <PaperPlaneTilt size={16} weight="fill" aria-hidden />
+            </Button>
+          ) : (
+            <AudioRecorder conversationId={conversationId} disabled={isDisabled} />
+          )}
         </div>
       </div>
       <AttachmentPreviewDialog
