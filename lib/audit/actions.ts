@@ -140,4 +140,7 @@ export type AuditAction =
   | "automation.rule_updated"
   | "automation.rule_deleted"
   | "automation.rule_executed"
-  | "automation.run_resent";
+  | "automation.run_resent"
+  | "template.created"
+  | "template.updated"
+  | "template.deleted";
