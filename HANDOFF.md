@@ -23,7 +23,7 @@
 
 ## Estado atual
 
-- **Onda:** 4 ✅ COMPLETA. Onda 5 EM ANDAMENTO: Task 5.1 ✅ Approved (ponte engine ⇄ job_queue). Task 5.2 ✅ (reatividade — inbound acorda classify, STOP cancela tudo, handoff pausa/retoma). Próxima: Onda 6 (UI Builder React Flow).
+- **Onda:** 5 ✅ COMPLETA. Onda 6 EM ANDAMENTO (UI Builder React Flow): Task 6.1 ✅ (página + lista de fluxos, prova Playwright). Próxima: Task 6.2 (editor visual do grafo em `/app/ai/followups/[id]`).
 - **RACE do classify lento — RESOLVIDA na 5.2.** `processNode` (node-handlers.ts) ganhou `wokeEarly?: boolean`: quando `waitElapsed=true` E `wokeEarly=true`, reenfileira classify em vez de rotear `no_reply`. `engine.ts` computa `wokeEarly` checando o marker `${node}:${steps}:wake` nos eventos do enrollment — gravado por `lib/followup/reactivity.ts` quando um inbound chega durante `waiting_reply` sem `cancel_on_reply`. Distinto do idempotency_key de passo que `waitElapsed` já checava (Task 5.1), então os dois sinais nunca se confundem. Provado em `tests/invariants/followup-reactivity.test.ts` (o TESTE CRÍTICO: 1º tick enfileira classify, reactivity empurra `next_eval_at` pra agora ANTES do grace vencer, 2º tick do engine real reenfileira classify — não roteia `no_reply`).
 - **Dev DB:** migrations 0054 e 0056 APLICADAS no projeto rrydmwnporysaiysiztn via Management API (token do CLI no keychain, entrada "Supabase CLI"/"access-token", formato go-keyring-base64). `database.types.ts` regenerado (public,storage,graphql_public). **0057 (Task 4.1, kind `followup_dead`) ainda NÃO aplicada no dev DB remoto** — não bloqueou a prova ao vivo da Task 4.2 porque o cenário provado (trigger→wait→condition→end) nunca passa pelo caminho `markDead`/`agent_inbox_items.kind='followup_dead'`; aplicar antes de qualquer prova futura que precise do caminho dead-letter.
 - **Migration seguinte livre:** 0058.
@@ -36,6 +36,43 @@
 - 2026-07-21 (Task 4.1): **`AdminClient` do engine NÃO é `SupabaseClient`** — é uma interface própria e estreita (poucos métodos nomeados: claim/loadGraph/loadLeadFacts/loadEvents/insertEvent/updateEnrollment/loadPointerName/insertDeadInbox). Motivo: `tests/invariants/**` roda contra Postgres cru (`pg.Pool`, sem PostgREST — `NEXT_PUBLIC_SUPABASE_URL` aponta pra porta inalcançável de propósito no `vitest.db.config.ts`), então um `AdminClient=SupabaseClient` real seria intestável ali. `lib/followup/engine.ts` exporta `createSupabaseAdminClient(admin)` pra produção (ainda sem consumidor — a rota de cron é task futura) e o teste DB implementa o adapter `pg`-puro inline. **Próximas tasks que precisarem de uma rota real usando o engine devem usar `createSupabaseAdminClient`, não reinventar.**
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-22: **Task 6.1 ✅ (commit fcd0068) — página + lista de fluxos, 1ª tela user-visible da feature.**
+  `app/app/ai/followups/page.tsx` (server component, mesmo padrão de `app/app/ai/agents/page.tsx`:
+  `requireAuth`/`resolveActiveOrg`, redirect `/403` se role<manager, SELECT direto em
+  `followup_flow_pointers` filtrado por `organization_id`) + `_components/FlowsList.tsx` (client,
+  `useFollowupFlows` via TanStack Query) + `NewFlowDialog.tsx` (form controlado, `useCreateFollowupFlow`
+  faz POST e prepend otimista na lista via `setQueryData` — sem navegar pro builder, que ainda não
+  existe) + `FlowStatusBadge.tsx` (draft→`neutral`, active→`success`, disabled→`warning` — variants
+  NATIVOS do `Badge` Sage, que já mapeiam pra `--color-{success,warning}-{bg,fg}` tokens; não usei
+  Tailwind cru). `hooks/followup/useFollowupFlows.ts` espelha `hooks/ai/useAgent.ts` +
+  `hooks/ai/useAgents.ts` (mesmo `apiClient`, mesmo padrão de query key + mutation). Nav: `Sidebar.tsx`
+  ganhou item "Follow-ups" (ícone `FlowArrow`, novo no barrel `lib/ui/icons.ts` — ADR-05, import só
+  daqui) reusando a permissão `ai.agents.view` (rank manager) — mesmo filtro de `NAV_ITEMS` já cobre o
+  novo item porque o filtro casa por STRING de permissão, não por href.
+  **Contagem de enrollments vivos por fluxo: DEFERIDA.** O GET de `/api/v1/ai/followup-flows` não expõe
+  isso hoje; adicionar exigiria mudar o SELECT da rota (subquery correlacionada `count(*) from
+  followup_enrollments where pointer_id=... and status not in (completed,cancelled,dead)`) — fora do
+  escopo mínimo desta task (a UI de 6.1 já comunica status/versão sem o número). Fica pra quando 6.2/6.3
+  precisarem mostrar fila viva.
+  **PROVA (Playwright headed, `tests/e2e/followup-builder.spec.ts`, 2/2 verde):** dev server real
+  (`next dev --port 3022` — 3001 estava ocupado por OUTRO worktree, `DeskcommCRM-qa`, confirmado via
+  `lsof`/`cwd` antes de escolher a porta) + DB remoto real + login real do manager seed
+  (`.e2e-creds.json`). Caso 1: login manager → `/app/ai/followups` → heading "Follow-ups" visível →
+  screenshot lista vazia → clica "Novo fluxo" → dialog abre com foco no input (`toBeFocused` via
+  locator, não visual) → digita nome com timestamp único (`E2E Follow-up <Date.now()>`, evita colisão
+  entre runs — não há DELETE na API, decisão deliberada de onda anterior) → screenshot → clica "Criar
+  fluxo" → dialog fecha → o card na lista contém o nome E o texto exato "Rascunho" (`getByText` escopado
+  ao `<li>`, não "por perto") → screenshot final. Caso 2 (RBAC): login viewer → `/app/ai/followups` →
+  redirect síncrono pro `/403` (a página nem renderiza o botão — gate é no `page.tsx`, mais forte que
+  esconder o botão no client). 4 screenshots em `test-results/followup-6.1-0{1..4}-*.png` (visualmente
+  inspecionados: paleta Sage, ícone `FlowArrow` ativo na sidebar, badge "Rascunho" como pill neutro —
+  nada de shadcn-default). **`npm run typecheck` 0 / `npm run lint` 0 novo** (2 erros pré-existentes em
+  `graph-schema.test.ts` da Task 2.1, intocado, seguem os mesmos). Draft de teste (`E2E Follow-up
+  <timestamp>`) fica no dev DB — sem endpoint DELETE, sweep manual é dívida conhecida, não bloqueia.
+  **Sem migration nesta task** (só leitura/escrita via a rota 3.1 já existente).
+
+
 
 - 2026-07-22: **Task 5.2 ✅ (commits 863d625/ba22723/ebf4a72/d50fffb) — reatividade: inbound acorda classify, STOP cancela tudo, handoff pausa/retoma (o anti-Tomik).**
   `lib/followup/reactivity.ts` (novo) — `applyReactivityEvent(db, clock, row)` trata 3
