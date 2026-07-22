@@ -36,9 +36,13 @@ export interface LeadContextKnobs {
 /** Uma mensagem do histórico, já curada. */
 export interface LeadContextMessage {
   direction: 'inbound' | 'outbound';
-  /** Corpo textual; mídia sem corpo vira marcador `[tipo]` (mesma regra de preview do CRM). */
+  /** Corpo textual; mídia usa o derivado (transcrição/visão/pdf) ou marcador [tipo]. */
   body: string;
   sent_at: string;
+  /** Metadados de mídia (Onda 3): presentes só em mensagens com mídia. */
+  type?: string;
+  media_storage_path?: string | null;
+  media_mime?: string | null;
 }
 
 /** Payload curado que o modelo recebe. */
@@ -88,6 +92,9 @@ interface HistoryRow {
   type: string;
   body: string | null;
   media_url: string | null;
+  media_storage_path: string | null;
+  media_mime: string | null;
+  media_derived_text: string | null;
   sent_at: string;
 }
 
@@ -126,7 +133,8 @@ export async function getLeadContext(
   const history: HistoryRow[] = conversationId
     ? (
         await db.query<HistoryRow>(
-          `select direction, type, body, media_url, sent_at::text as sent_at
+          `select direction, type, body, media_url, media_storage_path, media_mime,
+                  media_derived_text, sent_at::text as sent_at
            from messages
            where organization_id = $1 and conversation_id = $2
              and direction in ('inbound', 'outbound')
@@ -180,9 +188,12 @@ function fitToBudget(
 ): LeadContext {
   let messages: LeadContextMessage[] = history.map((m) => ({
     direction: m.direction,
-    // Mesma regra de preview do CRM: mídia sem corpo vira [tipo].
-    body: m.body ?? (m.media_url ? `[${m.type}]` : ''),
+    // Onda 3: mídia usa o derivado textual (universal); sem derivado, marcador [tipo].
+    body: m.body ?? (m.media_derived_text ?? (m.media_storage_path || m.media_url ? `[${m.type}]` : '')),
     sent_at: m.sent_at,
+    ...(m.media_storage_path || m.media_url
+      ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime }
+      : {}),
   }));
   const build = (msgs: LeadContextMessage[]): LeadContext => ({ ...base, messages: msgs });
   const over = (msgs: LeadContextMessage[]): boolean =>
@@ -196,3 +207,6 @@ function fitToBudget(
   }
   return build(messages);
 }
+
+/** @internal exposto p/ teste — não usar fora de testes. */
+export const __test_fitToBudget = fitToBudget;
