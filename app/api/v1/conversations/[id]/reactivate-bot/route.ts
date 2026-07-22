@@ -6,6 +6,12 @@
  *
  * Auth: cookie session, role >= agent.
  * Audit: action `ai.reactivated_by_agent`.
+ * Event: emite `ai.handoff_resolved` no event_log (Task 5.2, followup) — o
+ * fechamento do handoff que `lib/ai/handoff/orchestrator.ts` (ai.handoff_triggered)
+ * não tinha contraparte nenhuma pra sinalizar; sem isso, um enrollment de
+ * follow-up pausado por handoff (`lib/followup/reactivity.ts`) nunca teria
+ * como retomar (violaria a garantia anti-Tomik — pausa sem consumidor de
+ * retomada). Mesmo padrão `emit_event` já usado em ~30 rotas deste repo.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -38,7 +44,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .update({ bot_silenced_until: null })
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
-    .select("id, organization_id, bot_silenced_until")
+    .select("id, organization_id, contact_id, bot_silenced_until")
     .maybeSingle();
 
   if (error) {
@@ -56,6 +62,19 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     resourceId: id,
     requestId,
   });
+
+  supabase
+    .rpc("emit_event", {
+      p_event_type: "ai.handoff_resolved",
+      p_entity_kind: "conversation",
+      p_entity_id: id,
+      p_payload: { conversation_id: id, contact_id: data.contact_id, organization_id: activeOrg.orgId },
+      p_metadata: { source: "reactivate-bot", request_id: requestId },
+      p_organization_id: activeOrg.orgId,
+    })
+    .then(({ error: emitErr }) => {
+      if (emitErr) console.error("[reactivate-bot] emit ai.handoff_resolved failed", emitErr.message);
+    });
 
   return ok({ reactivated: true }, { requestId });
 }
