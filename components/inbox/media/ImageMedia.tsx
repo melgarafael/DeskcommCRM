@@ -19,7 +19,12 @@ export function ImageMedia({ messageId, alt }: Props) {
   const [open, setOpen] = useState(false);
   const src = mediaSrc(messageId);
 
-  if (state === "error") return <MediaUnavailable kind="Imagem" />;
+  if (state === "error")
+    return (
+      <div className="w-64 max-w-full aspect-[4/3]">
+        <MediaUnavailable kind="Imagem" className="h-full w-full" />
+      </div>
+    );
 
   return (
     <>
@@ -27,20 +32,15 @@ export function ImageMedia({ messageId, alt }: Props) {
         type="button"
         aria-label="Ampliar imagem"
         onClick={() => setOpen(true)}
-        className="relative block cursor-zoom-in overflow-hidden rounded-lg focus-visible:outline-2 focus-visible:outline-ring"
+        disabled={state !== "ready"}
+        aria-disabled={state !== "ready"}
+        className={cn(
+          "relative block w-64 max-w-full aspect-[4/3] overflow-hidden rounded-lg focus-visible:outline-2 focus-visible:outline-ring",
+          state === "ready" ? "cursor-zoom-in" : "cursor-not-allowed opacity-50",
+        )}
       >
         {state === "loading" && <Skeleton className="absolute inset-0 h-full w-full" />}
-        <img
-          src={src}
-          alt={alt}
-          loading="lazy"
-          onLoad={() => setState("ready")}
-          onError={() => setState("error")}
-          className={cn(
-            "max-h-72 w-auto max-w-full rounded-lg object-cover",
-            state === "loading" && "min-h-32 min-w-48 opacity-0",
-          )}
-        />
+        <img src={src} alt={alt} loading="lazy" onLoad={() => setState("ready")} onError={() => setState("error")} className="h-full w-full object-cover" />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl border-none bg-transparent p-0 shadow-none">
