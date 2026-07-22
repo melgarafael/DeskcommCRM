@@ -127,11 +127,17 @@ export async function GET(req: NextRequest): Promise<Response> {
   // filtragem aplicada às duas fontes). Sem match → resultado vazio direto.
   let contactIds: string[] | null = null;
   if (q) {
+    // Mesmo escape de %/_ de conversations/_handler.ts (LIKE wildcards literais).
+    // Diferente de lá (um `.ilike()` fluente só), aqui os 3 termos vão dentro de
+    // um `.or()` cru — vírgula/parêntese são delimitadores do PRÓPRIO DSL do
+    // `.or()`, então também são removidos (não só escapados) pra um termo de
+    // busca nunca injetar uma condição extra na string do filtro.
+    const safeQ = q.replace(/[%_]/g, (m) => `\\${m}`).replace(/[,()]/g, " ");
     const { data: matches, error: cErr } = await supabase
       .from("contacts")
       .select("id")
       .eq("organization_id", activeOrg.orgId)
-      .or(`name.ilike.%${q}%,display_name.ilike.%${q}%,phone_number.ilike.%${q}%`)
+      .or(`name.ilike.%${safeQ}%,display_name.ilike.%${safeQ}%,phone_number.ilike.%${safeQ}%`)
       .limit(500); // ponytail: fila é escala MVP; sobe se virar hot path
     if (cErr) return fail("internal_error", cErr.message, 500, { requestId });
     contactIds = (matches ?? []).map((m) => m.id);
