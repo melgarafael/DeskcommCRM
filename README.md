@@ -1,6 +1,6 @@
 <div align="center">
 
-🇧🇷 Português · [🇺🇸 English](README.en.md)
+🇧🇷 Português · [🇺🇸 English](README.en.md) · [🇪🇸 Español](README.es.md)
 
 # 🛠️ DeskcommCRM — Sistema Operacional de Vendas com Agentes de IA
 
