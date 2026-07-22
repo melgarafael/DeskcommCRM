@@ -11,7 +11,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { flowGraphSchema, type FlowGraph } from "./graph-schema";
+import { flowGraphSchema, type FlowGraph, type FlowNode } from "./graph-schema";
 import {
   BACKOFF_MS,
   processNode,
@@ -134,6 +134,22 @@ async function markDead(
   attempts?: number,
 ): Promise<void> {
   const sanitized = errorMessage(reason);
+
+  // Ordem deliberada: inbox ANTES do status='dead'. Se cair no meio (crash /
+  // DB soluço entre as duas escritas), o enrollment continua com status
+  // active/waiting_reply — ainda claimable — então um tick futuro re-executa
+  // markDead do zero. Pior caso é um item de inbox duplicado (visível, o
+  // usuário só vê o aviso 2x); a ordem inversa arriscaria o pior caso real:
+  // status='dead' gravado e o aviso NUNCA sair — enrollment morto em
+  // silêncio. Duplicata visível > perda silenciosa.
+  const flowName = (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ?? enrollment.pointer_id;
+  await db.insertDeadInboxItem({
+    organization_id: enrollment.organization_id,
+    title: "Um fluxo de follow-up parou de tentar",
+    body: `O fluxo "${flowName}" (enrollment ${enrollment.id}) foi marcado como "dead": ${sanitized}`,
+    ref_id: enrollment.id,
+  });
+
   await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
     ...(attempts !== undefined ? { attempts } : {}),
     status: "dead",
@@ -143,14 +159,6 @@ async function markDead(
     claimed_until: null,
     completed_at: clock().toISOString(),
     updated_at: clock().toISOString(),
-  });
-
-  const flowName = (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ?? enrollment.pointer_id;
-  await db.insertDeadInboxItem({
-    organization_id: enrollment.organization_id,
-    title: "Um fluxo de follow-up parou de tentar",
-    body: `O fluxo "${flowName}" (enrollment ${enrollment.id}) foi marcado como "dead": ${sanitized}`,
-    ref_id: enrollment.id,
   });
 }
 
@@ -191,7 +199,7 @@ function tallyOutcome(result: NodeResult, summary: TickSummary): void {
 async function applyResult(
   deps: TickDeps,
   enrollment: EnrollmentRow,
-  node: { id: string; type: string; config: unknown },
+  node: FlowNode,
   result: NodeResult,
   summary: TickSummary,
 ): Promise<void> {
@@ -233,14 +241,25 @@ async function applyResult(
     case "enqueue_turn": {
       patch.current_node_id = enrollment.current_node_id;
       patch.status = result.wake_status;
+      // node.type narrado (union discriminada de FlowNode) — sem cast: dentro
+      // do `if`, node.config já é o config do ai_classify de verdade.
       const graceMs =
         result.purpose === "classify" && node.type === "ai_classify"
-          ? (node.config as { grace_timeout_ms: number }).grace_timeout_ms
+          ? node.config.grace_timeout_ms
           : ACTION_RECHECK_MS;
       patch.next_eval_at = new Date(clock().getTime() + graceMs).toISOString();
       if (!isReplay) {
         // At-most-once: o job só é disparado na aplicação FRESCA do resultado —
-        // um replay (23505) nunca reenfileira turno (doutrina de envio).
+        // um replay (23505) nunca reenfileira turno (doutrina de envio). Se
+        // enqueueJob falhar aqui (rede/fila fora do ar), o evento JÁ foi
+        // commitado — updateEnrollment abaixo não roda nesta tentativa, então
+        // o enrollment continua claimable e o tick seguinte reprocessa o
+        // MESMO passo: o insert do evento bate 23505 (replay), enqueueJob é
+        // pulado de novo (nunca reenvia) e o enrollment converge pro
+        // next_eval_at normal (5min ação / grace do classify). Efeito líquido
+        // de uma falha transitória no enqueue: atraso limitado ao próximo
+        // recheck, nunca um envio duplicado — self-healing, sem retry
+        // agressivo de envio.
         await enqueueJob({
           organization_id: enrollment.organization_id,
           contact_id: enrollment.contact_id,

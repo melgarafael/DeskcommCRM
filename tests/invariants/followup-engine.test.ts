@@ -67,7 +67,8 @@ function mapEnrollmentRow(row: Record<string, unknown>): EnrollmentRow {
   };
 }
 
-function pgAdminClient(): AdminClient {
+function pgAdminClient(opts?: { failInboxTimes?: number }): AdminClient {
+  let inboxFailuresLeft = opts?.failInboxTimes ?? 0;
   return {
     async claimDueEnrollments(limit, leaseSeconds) {
       const { rows } = await pool.query(`select * from fn_claim_due_followup_enrollments($1, $2)`, [
@@ -132,6 +133,10 @@ function pgAdminClient(): AdminClient {
       return rows[0]?.name ?? null;
     },
     async insertDeadInboxItem(item) {
+      if (inboxFailuresLeft > 0) {
+        inboxFailuresLeft--;
+        throw new Error("simulated transient inbox insert failure");
+      }
       await pool.query(
         `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
          values ($1, 'followup_dead', 'warn', $2, $3, 'followup_enrollment', $4)`,
@@ -210,9 +215,9 @@ async function getEnrollment(id: string): Promise<Record<string, unknown>> {
   return rows[0]!;
 }
 
-function makeDeps(jobs: FollowupJobRequest[]): TickDeps {
+function makeDeps(jobs: FollowupJobRequest[], db: AdminClient = pgAdminClient()): TickDeps {
   return {
-    db: pgAdminClient(),
+    db,
     clock: () => new Date(),
     enqueueJob: async (job) => {
       jobs.push(job);
@@ -437,6 +442,57 @@ describe("runFollowupTick — backoff progride e esgota em 'dead' + inbox item",
     );
     expect(inboxRows).toHaveLength(1);
     expect(inboxRows[0].ref_id).toBe(enrollmentId);
+  });
+
+  it("insertDeadInboxItem falhando 1x NÃO deixa o enrollment 'dead' (ordem inbox-antes-do-status); retry mata direito", async () => {
+    const org = "bbbbbbb4-0000-4000-8000-000000000001";
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { pointerId, versionId } = await seedFlow(org, TWO_NODE_GRAPH);
+    // max_steps é o gatilho mais direto de markDead (sem depender de rodadas de backoff).
+    const enrollmentId = await seedEnrollment({
+      org,
+      pointerId,
+      versionId,
+      contactId,
+      currentNodeId: "t1",
+      stepsTaken: 31,
+    });
+
+    const jobs: FollowupJobRequest[] = [];
+    const flakyDb = pgAdminClient({ failInboxTimes: 1 });
+
+    const s1 = await runFollowupTick(makeDeps(jobs, flakyDb), { limit: 5 });
+    expect(s1.dead).toBe(0); // markDead jogou antes de gravar status='dead' — não conta como morto
+    expect(s1.failed).toBe(1); // caiu no catch por-enrollment (applyHandlerFailure)
+
+    const afterFailedInbox = await getEnrollment(enrollmentId);
+    expect(afterFailedInbox.status).not.toBe("dead"); // continua claimable
+    expect(afterFailedInbox.next_eval_at).not.toBeNull();
+
+    const { rows: inboxAfterFail } = await pool.query(
+      `select 1 from agent_inbox_items where organization_id = $1 and kind = 'followup_dead'`,
+      [org],
+    );
+    expect(inboxAfterFail).toHaveLength(0); // nada gravado — nem inbox nem status
+
+    // simula o backoff elapsindo (não é fast-retry: o próximo tick livre resolve)
+    await pool.query(`update followup_enrollments set next_eval_at = now() - interval '1 second' where id = $1`, [
+      enrollmentId,
+    ]);
+
+    const s2 = await runFollowupTick(makeDeps(jobs, pgAdminClient()), { limit: 5 });
+    expect(s2.dead).toBe(1);
+
+    const afterRetry = await getEnrollment(enrollmentId);
+    expect(afterRetry.status).toBe("dead");
+    expect(afterRetry.cancel_reason).toBe("max_steps");
+
+    const { rows: inboxAfterRetry } = await pool.query(
+      `select 1 from agent_inbox_items where organization_id = $1 and kind = 'followup_dead'`,
+      [org],
+    );
+    expect(inboxAfterRetry).toHaveLength(1); // exatamente 1 — a falha simulada não deixou lixo
   });
 });
 
