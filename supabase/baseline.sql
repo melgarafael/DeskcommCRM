@@ -6350,7 +6350,7 @@ insert into storage.buckets (id, name, public, file_size_limit)
 values ('whatsapp-media', 'whatsapp-media', false, 52428800)
 on conflict (id) do update set file_size_limit = excluded.file_size_limit;
 
--- ---- media multimodal: derivado + flags (migration 0056) ----
+-- ---- media multimodal: derivado + flags (migration 0058) ----
 alter table messages
   add column if not exists media_derived_text text,
   add column if not exists media_derived_status text;
