@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AudioPlayer } from "@/components/inbox/media/AudioPlayer";
@@ -39,5 +39,42 @@ describe("AudioPlayer", () => {
     expect(rate).toHaveTextContent("2x");
     fireEvent.click(rate);
     expect(rate).toHaveTextContent("1x");
+  });
+
+  it("resiliente a duration Infinity (OGG stream): max=1 fallback, healing ao refinar", async () => {
+    const { container } = render(<AudioPlayer messageId="m3" isOutbound={false} />);
+    const input = screen.getByRole("slider");
+
+    // Simula OGG report Infinity
+    const audio = container.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "duration", {
+      configurable: true,
+      value: Infinity,
+    });
+    act(() => {
+      audio.dispatchEvent(new Event("loadedmetadata"));
+    });
+
+    // max deve ser fallback "1"
+    await waitFor(() => expect(input).toHaveAttribute("max", "1"));
+
+    // Refina para 42
+    Object.defineProperty(audio, "duration", { value: 42 });
+    act(() => {
+      audio.dispatchEvent(new Event("durationchange"));
+    });
+
+    // max heals para "42"
+    await waitFor(() => expect(input).toHaveAttribute("max", "42"));
+  });
+
+  it("erro ao carregar exibe MediaUnavailable", async () => {
+    const { container } = render(<AudioPlayer messageId="m3" isOutbound={false} />);
+    const audio = container.querySelector("audio") as HTMLAudioElement;
+    act(() => {
+      audio.dispatchEvent(new Event("error"));
+    });
+
+    await waitFor(() => expect(screen.getByText(/mídia indisponível/i)).toBeInTheDocument());
   });
 });

@@ -39,17 +39,22 @@ export function AudioPlayer({ messageId, isOutbound }: Props) {
     const onError = () => setFailed(true);
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("loadedmetadata", onMeta);
+    el.addEventListener("durationchange", onMeta);
     el.addEventListener("ended", onEnded);
     el.addEventListener("error", onError);
     return () => {
       el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("loadedmetadata", onMeta);
+      el.removeEventListener("durationchange", onMeta);
       el.removeEventListener("ended", onEnded);
       el.removeEventListener("error", onError);
     };
   }, []);
 
   if (failed) return <MediaUnavailable kind="Áudio" />;
+
+  // ponytail: OGG streams report Infinity at loadedmetadata; self-heal when refined
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
 
   const toggle = () => {
     const el = audioRef.current;
@@ -98,15 +103,16 @@ export function AudioPlayer({ messageId, isOutbound }: Props) {
         <input
           type="range"
           aria-label="Progresso do áudio"
+          aria-valuetext={`${fmt(current)} de ${fmt(safeDuration)}`}
           min="0"
-          max={String(duration || 1)}
+          max={String(safeDuration || 1)}
           step="0.1"
           value={current}
           onChange={(e) => seek(Number(e.target.value))}
           className="h-1 w-full cursor-pointer accent-current"
         />
         <span className="text-[10px] tabular-nums opacity-70">
-          {fmt(current)} / {fmt(duration)}
+          {fmt(current)} / {fmt(safeDuration)}
         </span>
       </div>
       <button
