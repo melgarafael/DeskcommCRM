@@ -31,7 +31,17 @@ const MIME_EXT: Record<string, string> = {
   "audio/mp4": "m4a",
   "audio/aac": "aac",
   "audio/amr": "amr",
+  "audio/webm": "webm",
   "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "text/plain": "txt",
+  "text/csv": "csv",
+  "application/zip": "zip",
 };
 
 export function extFromMime(mime: string): string {

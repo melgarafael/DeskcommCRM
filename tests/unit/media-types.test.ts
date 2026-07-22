@@ -16,6 +16,10 @@ describe("extFromMime", () => {
     expect(extFromMime("audio/ogg; codecs=opus")).toBe("ogg"); // PTT
     expect(extFromMime("audio/mpeg")).toBe("mp3");
     expect(extFromMime("application/pdf")).toBe("pdf");
+    expect(extFromMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("docx");
+    expect(extFromMime("text/csv")).toBe("csv");
+    expect(extFromMime("application/zip")).toBe("zip");
+    expect(extFromMime("audio/webm")).toBe("webm");
   });
   it("cai em bin para mime desconhecido", () => {
     expect(extFromMime("application/x-unknown")).toBe("bin");
