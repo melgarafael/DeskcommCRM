@@ -284,6 +284,51 @@ describe("processNode — ai_classify / action", () => {
     expect(result).toEqual({ kind: "enqueue_turn", purpose: "classify", wake_status: "waiting_reply" });
   });
 
+  it("ai_classify re-entry (grace elapsed, no completed classify): routes via 'no_reply' class_match edge without enqueuing another turn", () => {
+    const node: FlowNode = {
+      id: "ac1",
+      type: "ai_classify",
+      label: "Classify",
+      position: { x: 0, y: 0 },
+      config: { classes: ["hot", "cold"], grace_timeout_ms: 900_000, target: "last_reply" },
+    };
+    const edges = [
+      edge({ source: "ac1", target: "hot-node", condition: { type: "class_match", value: "hot" } }),
+      edge({ source: "ac1", target: "no-reply-node", condition: { type: "class_match", value: "no_reply" } }),
+    ];
+    const result = processNode({ node, edges, enrollment: enrollment(), lead: lead(), clock, waitElapsed: true });
+    expect(result).toEqual({ kind: "advance", next_node_id: "no-reply-node", next_eval_at: NOW });
+  });
+
+  it("ai_classify re-entry without an explicit no_reply edge falls back to the 'always' edge", () => {
+    const node: FlowNode = {
+      id: "ac1",
+      type: "ai_classify",
+      label: "Classify",
+      position: { x: 0, y: 0 },
+      config: { classes: ["hot", "cold"], grace_timeout_ms: 900_000, target: "last_reply" },
+    };
+    const edges = [
+      edge({ source: "ac1", target: "hot-node", condition: { type: "class_match", value: "hot" } }),
+      edge({ source: "ac1", target: "fallback-node", condition: { type: "always" } }),
+    ];
+    const result = processNode({ node, edges, enrollment: enrollment(), lead: lead(), clock, waitElapsed: true });
+    expect(result).toEqual({ kind: "advance", next_node_id: "fallback-node", next_eval_at: NOW });
+  });
+
+  it("ai_classify re-entry with neither a no_reply nor an always edge: fails", () => {
+    const node: FlowNode = {
+      id: "ac1",
+      type: "ai_classify",
+      label: "Classify",
+      position: { x: 0, y: 0 },
+      config: { classes: ["hot", "cold"], grace_timeout_ms: 900_000, target: "last_reply" },
+    };
+    const edges = [edge({ source: "ac1", target: "hot-node", condition: { type: "class_match", value: "hot" } })];
+    const result = processNode({ node, edges, enrollment: enrollment(), lead: lead(), clock, waitElapsed: true });
+    expect(result.kind).toBe("fail");
+  });
+
   it("action enqueues a send_message turn and keeps status active", () => {
     const node: FlowNode = {
       id: "a1",

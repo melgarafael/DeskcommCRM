@@ -51,6 +51,13 @@ export interface FollowupJobRequest {
     followup_enrollment_id: string;
     node_id: string;
     purpose: "send_message" | "classify" | "decide_timing";
+    /** action (mode 'ai_message') — Task 5.1: repassado ao turno pra virar o bloco de orientação. */
+    prompt_hint?: string;
+    /** ai_classify — Task 5.1: classes possíveis + dica opcional pro classificador. */
+    classes?: string[];
+    hint?: string;
+    /** wait (mode 'smart') — Task 5.1: orientação opcional pro instante proposto. */
+    guidance?: string;
   };
 }
 
@@ -124,6 +131,25 @@ function eventPayload(result: NodeResult): Record<string, unknown> {
     case "fail":
       return { error: result.error };
   }
+}
+
+/**
+ * Campos extras do payload do job por tipo de nó (Task 5.1) — o turno do
+ * agent-engine precisa da orientação do PRÓPRIO nó pinado (prompt_hint da
+ * action, classes/hint do ai_classify, guidance do wait smart) pra saber o que
+ * fazer; sem isso o job só teria os 3 campos genéricos (enrollment/node/purpose).
+ */
+function turnPayloadExtras(node: FlowNode): Partial<FollowupJobRequest["payload"]> {
+  if (node.type === "action" && node.config.mode === "ai_message") {
+    return { prompt_hint: node.config.prompt_hint };
+  }
+  if (node.type === "ai_classify") {
+    return { classes: node.config.classes, ...(node.config.hint !== undefined ? { hint: node.config.hint } : {}) };
+  }
+  if (node.type === "wait" && node.config.mode === "smart") {
+    return node.config.guidance !== undefined ? { guidance: node.config.guidance } : {};
+  }
+  return {};
 }
 
 async function markDead(
@@ -263,7 +289,12 @@ async function applyResult(
         await enqueueJob({
           organization_id: enrollment.organization_id,
           contact_id: enrollment.contact_id,
-          payload: { followup_enrollment_id: enrollment.id, node_id: node.id, purpose: result.purpose },
+          payload: {
+            followup_enrollment_id: enrollment.id,
+            node_id: node.id,
+            purpose: result.purpose,
+            ...turnPayloadExtras(node),
+          },
         });
       }
       break;
@@ -307,7 +338,7 @@ async function processEnrollment(deps: TickDeps, enrollment: EnrollmentRow, summ
   };
 
   let waitElapsed: boolean | undefined;
-  if (node.type === "wait") {
+  if (node.type === "wait" || node.type === "ai_classify") {
     const events = await db.loadEnrollmentEvents(enrollment.id);
     waitElapsed = resolveWaitPhase(events, node.id, enrollment.steps_taken);
   }

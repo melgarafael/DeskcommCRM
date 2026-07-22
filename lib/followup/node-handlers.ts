@@ -153,7 +153,14 @@ function evaluateCondition(
 /**
  * Pure per-node decision. `waitElapsed` is resolved by the engine (via
  * `resolveWaitPhase` against real events) BEFORE calling this — optional so
- * non-`wait` calls don't need to pass it.
+ * non-`wait`/`ai_classify` calls don't need to pass it. For `ai_classify` it
+ * means "a classify turn was already enqueued for this occupancy of the node"
+ * (same prior-step-event check as `wait`) — re-entering with it `true` means
+ * `grace_timeout_ms` elapsed without a completed classification (onda 5,
+ * Task 5.1, critério 2). Today that's the ONLY way to re-enter this node
+ * (reactivity/Task 5.2 doesn't exist yet); once it lands, it will need its own
+ * signal to tell "grace expired" apart from "inbound woke it up early" instead
+ * of reusing this same flag.
  */
 export function processNode(input: {
   node: FlowNode;
@@ -189,8 +196,17 @@ export function processNode(input: {
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 
-    case "ai_classify":
-      return { kind: "enqueue_turn", purpose: "classify", wake_status: "waiting_reply" };
+    case "ai_classify": {
+      if (!waitElapsed) {
+        return { kind: "enqueue_turn", purpose: "classify", wake_status: "waiting_reply" };
+      }
+      // grace_timeout_ms venceu sem turno de classificação concluído — classifica
+      // como 'no_reply' SEM chamar o LLM (onda 5, critério 2); selectEdge já cai
+      // no fallback 'always' se não houver aresta 'no_reply' explícita.
+      const edge = selectEdge(edges, node.id, { type: "class_match", value: "no_reply" });
+      if (!edge) return { kind: "fail", error: `ai_classify node "${node.id}" has no edge for class "no_reply" (fallback also missing)` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
 
     case "action":
       return { kind: "enqueue_turn", purpose: "send_message", wake_status: "active" };
