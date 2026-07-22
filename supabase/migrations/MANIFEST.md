@@ -54,6 +54,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260720100000` | `0053_flywheel_proposal_applied` | Épico Operação Visível (F3): colunas `applied_at`/`applied_version_id`/`applied_by` em `flywheel_distiller_proposals` — rastro de aplicação de proposta como ai_agent_version nova via publish-por-ponteiro (gate humano = clique de aplicar; null = pendente; base da idempotência do endpoint apply). Sem RLS nova (tabela já org-scoped na 0050). NNNN=0053 (0050–0052 vendaval; verificado contra todas as branches). Contrato: colunas novas lidas via service role — database.types.ts não regenerado (tabela fora do types atual). |
 | `20260721120000` | `0055_whatsapp_media_bucket` | Bucket privado `whatsapp-media` (50MB) p/ persistir binários de mídia do WhatsApp (Onda 0 inbox-multimodal). NNNN=0055 (0054 já usado por `feat/followup-flows`, verificado contra todas as branches locais). |
 | `20260722120000` | `0058_media_multimodal` | Colunas `media_derived_text`/`media_derived_status` em messages + flags `multimodal_input`/`video_frames_enabled` em ai_agent_versions (Onda 3 agente multimodal). NNNN=0058 (0056/0057 tomados por `feat/followup-flows`, verificado contra todas as branches/worktrees locais). |
+| `20260722130000` | `0059_agent_split_messages` | Colunas `split_messages`/`split_max_chars` em ai_agent_versions (Onda 4 split de mensagens). |
 
 ## Reproducibility
 

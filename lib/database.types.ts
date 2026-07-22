@@ -240,6 +240,8 @@ export type Database = {
           organization_id: string
           provider: string
           published_at: string | null
+          split_max_chars: number
+          split_messages: boolean
           status: string
           superseded_at: string | null
           system_prompt: string
@@ -267,6 +269,8 @@ export type Database = {
           organization_id: string
           provider: string
           published_at?: string | null
+          split_max_chars?: number
+          split_messages?: boolean
           status?: string
           superseded_at?: string | null
           system_prompt: string
@@ -294,6 +298,8 @@ export type Database = {
           organization_id?: string
           provider?: string
           published_at?: string | null
+          split_max_chars?: number
+          split_messages?: boolean
           status?: string
           superseded_at?: string | null
           system_prompt?: string

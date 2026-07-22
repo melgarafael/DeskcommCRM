@@ -6357,3 +6357,8 @@ alter table messages
 alter table ai_agent_versions
   add column if not exists multimodal_input boolean not null default true,
   add column if not exists video_frames_enabled boolean not null default false;
+
+-- ---- split de mensagens por-agente (migration 0059) ----
+alter table ai_agent_versions
+  add column if not exists split_messages boolean not null default false,
+  add column if not exists split_max_chars integer not null default 600;
