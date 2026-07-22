@@ -6,8 +6,11 @@ import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
+import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
+import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
+import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { cn } from "@/lib/utils";
 
 export interface ComposerHandle {
@@ -19,17 +22,23 @@ interface Props {
   disabled?: boolean;
   /** Set true when contact is blocked / anonymized — explanation shown. */
   blockedReason?: string | null;
+  /** Nome do contato da conversa, para interpolar {{nome}}/{{primeiro_nome}} do template escolhido. */
+  contactName?: string | null;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
-  { conversationId, disabled, blockedReason },
+  { conversationId, disabled, blockedReason, contactName },
   ref,
 ) {
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const send = useSendMessage();
   const upload = useUploadMedia();
+  const templates = useMessageTemplates();
+  const slash = resolveSlash(text);
+  const menuOpen = slash.open && !menuDismissed;
 
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
@@ -58,9 +67,27 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     );
   }
 
+  function applyTemplate(t: MessageTemplate) {
+    const filled = interpolateTemplate(t.body, { name: contactName ?? null });
+    setText(filled);
+    setMenuDismissed(true);
+    const ta = taRef.current;
+    if (!ta) return;
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = filled.length;
+      autoresize();
+    });
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Escape" && menuOpen) {
+      setMenuDismissed(true);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (menuOpen) return; // deixa o Enter pro menu; não envia /query como mensagem
       handleSubmit();
     }
   }
@@ -75,7 +102,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   return (
     <>
-      <div className="border-t border-border bg-background px-3 py-2">
+      <div className="relative border-t border-border bg-background px-3 py-2">
+        <TemplateMenu
+          open={menuOpen}
+          query={slash.query}
+          templates={templates.data ?? []}
+          onPick={applyTemplate}
+          onClose={() => setMenuDismissed(true)}
+        />
         <div className="flex items-end gap-2">
           <AttachMenu disabled={isDisabled} onPick={setPendingFile} />
           <EmojiButton
@@ -102,6 +136,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             value={text}
             onChange={(e) => {
               setText(e.target.value);
+              if (!resolveSlash(e.target.value).open) setMenuDismissed(false);
               autoresize();
             }}
             onKeyDown={onKeyDown}
