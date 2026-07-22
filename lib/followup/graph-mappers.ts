@@ -37,7 +37,8 @@ export function toReactFlow(graph: FlowGraph): { nodes: RFNode[]; edges: RFEdge[
 /** Extracts the config type belonging to a single arm of the FlowNode union. */
 type ConfigOf<T extends NodeType> = Extract<FlowNode, { type: T }>["config"];
 
-function toFlowNode(n: RFNode): FlowNode {
+/** Exported for the edge condition panel (Task 6.3) — reads a live RFNode's classes/config as a FlowNode. */
+export function toFlowNode(n: RFNode): FlowNode {
   const shared = {
     id: n.id,
     label: n.data.label,

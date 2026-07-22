@@ -11,15 +11,26 @@ import {
   useEdgesState,
   useReactFlow,
   type Connection,
+  type EdgeMouseHandler,
   type NodeMouseHandler,
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { toReactFlow, fromReactFlow, graphsEqual, type RFNode, type RFEdge, type RFNodeData } from "@/lib/followup/graph-mappers";
-import type { FlowGraph, NodeType } from "@/lib/followup/graph-schema";
+import {
+  toReactFlow,
+  fromReactFlow,
+  graphsEqual,
+  toFlowNode,
+  type RFNode,
+  type RFEdge,
+  type RFNodeData,
+} from "@/lib/followup/graph-mappers";
+import { conditionLabel } from "@/lib/followup/edge-condition-options";
+import type { FlowEdge, FlowGraph, NodeType } from "@/lib/followup/graph-schema";
 import { useFollowupFlow, type FollowupFlowDetailRow } from "@/hooks/followup/useFollowupFlow";
 import { NodeConfigPanel } from "./NodeConfigPanel";
+import { EdgeConfigPanel } from "./EdgeConfigPanel";
 import { NodePalette } from "./NodePalette";
 import { PublishBar } from "./PublishBar";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
@@ -65,6 +76,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const nextEdgeId = useRef(1);
   const { screenToFlowPosition } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const liveGraph = useMemo(() => fromReactFlow(nodes, edges), [nodes, edges]);
   const dirty = useMemo(() => !graphsEqual(liveGraph, savedGraph), [liveGraph, savedGraph]);
@@ -79,10 +91,19 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     setNodes((nds) => nds.map((n) => (n.data.errors ? { ...n, data: { ...n.data, errors: undefined } } : n)));
   }, [setNodes]);
 
+  // Node and edge selection are mutually exclusive — opening one panel closes the other's.
   const onNodeClick = useCallback<NodeMouseHandler<RFNode>>((_, node) => {
     setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
   }, []);
-  const onPaneClick = useCallback(() => setSelectedNodeId(null), []);
+  const onEdgeClick = useCallback<EdgeMouseHandler<RFEdge>>((_, edge) => {
+    setSelectedEdgeId(edge.id);
+    setSelectedNodeId(null);
+  }, []);
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, []);
 
   const updateNodeData = useCallback(
     (id: string, patch: Partial<RFNodeData>) => {
@@ -90,8 +111,31 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     },
     [setNodes],
   );
+  const updateEdgeCondition = useCallback(
+    (id: string, condition: FlowEdge["condition"]) => {
+      setEdges((eds) =>
+        eds.map((e) => (e.id === id ? { ...e, data: { priority: e.data?.priority ?? 0, condition } } : e)),
+      );
+    },
+    [setEdges],
+  );
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
+  const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
+  const selectedEdgeSource = selectedEdge ? (nodes.find((n) => n.id === selectedEdge.source) ?? null) : null;
+  const selectedEdgeTarget = selectedEdge ? (nodes.find((n) => n.id === selectedEdge.target) ?? null) : null;
+
+  // Wire label: derived at render time from `data.condition`, never persisted on the edge
+  // itself — `condition` alone stays the source of truth the mapper round-trips.
+  const edgesForRender = useMemo(
+    () =>
+      edges.map((e) => ({
+        ...e,
+        label: conditionLabel(e.data?.condition ?? { type: "always" }),
+        selected: e.id === selectedEdgeId,
+      })),
+    [edges, selectedEdgeId],
+  );
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -165,12 +209,13 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
         <div className="relative h-full flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={edgesForRender}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             fitView
           >
@@ -190,6 +235,21 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
               key={selectedNode.id}
               node={selectedNode}
               onChange={(patch) => updateNodeData(selectedNode.id, patch)}
+            />
+          </aside>
+        )}
+
+        {selectedEdge && (
+          <aside
+            className="h-full w-96 shrink-0 overflow-y-auto border-l border-border bg-surface p-4"
+            data-testid="edge-config-sheet"
+          >
+            <EdgeConfigPanel
+              key={selectedEdge.id}
+              sourceNode={selectedEdgeSource ? toFlowNode(selectedEdgeSource) : undefined}
+              targetNode={selectedEdgeTarget ? toFlowNode(selectedEdgeTarget) : undefined}
+              condition={selectedEdge.data?.condition ?? { type: "always" }}
+              onChange={(condition) => updateEdgeCondition(selectedEdge.id, condition)}
             />
           </aside>
         )}

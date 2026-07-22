@@ -81,6 +81,36 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
   });
 });
 
+/**
+ * Drags from a node's source handle to another node's target handle.
+ * `steps` on the 2nd move gives React Flow's connection-line drag enough
+ * intermediate pointermove events to register the gesture reliably.
+ */
+async function connectHandles(page: Page, sourceNodeId: string, targetNodeId: string): Promise<void> {
+  const source = page.locator(`.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`);
+  const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
+  const sBox = await source.boundingBox();
+  const tBox = await target.boundingBox();
+  if (!sBox || !tBox) throw new Error(`handle não encontrado: ${sourceNodeId} -> ${targetNodeId}`);
+  await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
+  await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+}
+
+/** All React Flow node ids currently rendered whose id starts with `${prefix}-`, in DOM order. */
+async function nodeIdsByPrefix(page: Page, prefix: string): Promise<string[]> {
+  const els = await page.locator(`.react-flow__node[data-id^="${prefix}-"]`).all();
+  const ids: string[] = [];
+  for (const el of els) {
+    const id = await el.getAttribute("data-id");
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
 test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
   // Canvas grande: com 4+ nós o fitView inicial pode chegar a zoom 2x (maxZoom
   // default) — um viewport pequeno deixa nós fora da área visível, e
@@ -110,25 +140,6 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator(".react-flow")).toBeVisible();
     await page.screenshot({ path: "test-results/followup-6.2-01-canvas-empty.png", fullPage: true });
   });
-
-  /**
-   * Drags from a node's source handle to another node's target handle.
-   * `steps` on the 2nd move gives React Flow's connection-line drag enough
-   * intermediate pointermove events to register the gesture reliably.
-   */
-  async function connectHandles(page: Page, sourceNodeId: string, targetNodeId: string): Promise<void> {
-    const source = page.locator(`.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`);
-    const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
-    const sBox = await source.boundingBox();
-    const tBox = await target.boundingBox();
-    if (!sBox || !tBox) throw new Error(`handle não encontrado: ${sourceNodeId} -> ${targetNodeId}`);
-    await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
-    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
-    await page.mouse.up();
-    await page.waitForTimeout(200);
-  }
 
   test("adiciona os 4 nós via paleta e conecta trigger→wait→action→end", async ({ page }) => {
     await login(page, creds.users.manager!.email);
@@ -335,5 +346,191 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
 
     // 8. Rollback disabled — only 1 version exists (this is the first publish).
     await expect(page.getByTestId("rollback-button")).toBeDisabled();
+  });
+});
+
+test.describe("followup flow builder — editor de condição de aresta / ai_classify (Task 6.3)", () => {
+  test.use({ viewport: { width: 1600, height: 900 } });
+
+  /**
+   * The palette's default add-position grid (`addNodeAt` in FlowCanvas) lays
+   * nodes out in same-height rows 220px apart — narrower than a card's own
+   * 224px width, and blind to each card's Top/Bottom handle orientation. For
+   * a >4-node branching graph that produces overlapping cards and looping
+   * bezier edges whose label sits under a neighboring card. Dragging each
+   * node (by its header, away from the Top/Bottom handles) to an explicit,
+   * handle-respecting position — sources above targets, siblings apart on X —
+   * is what a real user would do before wiring a non-trivial flow; this
+   * mirrors that instead of fighting the demo grid.
+   */
+  async function moveNodeTo(page: Page, nodeId: string, targetX: number, targetY: number): Promise<void> {
+    const card = page.locator(`[data-testid="node-card-${nodeId}"]`);
+    const box = await card.boundingBox();
+    if (!box) throw new Error(`nó ${nodeId} sem bounding box`);
+    const startX = box.x + box.width / 2;
+    const startY = box.y + 20; // inside the header, clear of the Top handle
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move((startX + targetX) / 2, (startY + targetY) / 2, { steps: 5 });
+    await page.mouse.move(targetX, targetY, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  }
+
+  /**
+   * Clicks an edge's own condition-label background rect (always present —
+   * every edge renders a label from Task 6.3's `edgesForRender`, defaulting to
+   * "Sempre") — a precise, always-solid hit target, instead of guessing where
+   * on the curved path the bounding-box center lands.
+   */
+  async function clickEdge(page: Page, edgeId: string): Promise<void> {
+    await page.locator(`[data-testid="rf__edge-${edgeId}"] .react-flow__edge-textbg`).click();
+  }
+
+  async function setEdgeCondition(page: Page, edgeId: string, optionLabel: string): Promise<void> {
+    await clickEdge(page, edgeId);
+    const edgePanel = page.getByTestId("edge-config-panel");
+    await expect(edgePanel).toBeVisible();
+    await edgePanel.getByRole("combobox").click();
+    await page.getByRole("option", { name: optionLabel, exact: true }).click();
+  }
+
+  /**
+   * MANDATORY acceptance (Task 6.3 wave gate): the SAME graph shape — trigger
+   * → ai_classify(2 classes) → 2 actions → 2 ends — genuinely fails publish
+   * while every classify-outgoing edge is still the hardcoded `always` from
+   * Task 6.2 (`missing_class_edge`/`missing_no_reply_edge`, anchored to the
+   * classify node), and genuinely succeeds once the new EdgeConfigPanel is
+   * used to set `class_match`/`always` per edge. That flip is the whole point
+   * of this task: the editor is what unblocks ai_classify in the canvas.
+   */
+  test("ai_classify só publica depois de configurar class_match/no_reply/always nas arestas de saída", async ({
+    page,
+  }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/followups");
+    const flowName = `E2E Classify ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nome").fill(flowName);
+    await dialog.getByRole("button", { name: "Criar fluxo" }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
+    await expect(page.locator(".react-flow")).toBeVisible();
+
+    // 1. Build: trigger, ai_classify, 2x action, 2x end. Two ends are required, not
+    // decorative: a classify node needs 4 distinct outgoing edges (positivo, objecao,
+    // no_reply, always-fallback) and React Flow's own `addEdge` refuses a 2nd edge
+    // between the same (source, target, handle) pair — no_reply and the always
+    // fallback can't both point at a single "end" node.
+    await page.getByTestId("palette-add-trigger").click();
+    await page.getByTestId("palette-add-ai_classify").click();
+    await page.getByTestId("palette-add-action").click();
+    await page.getByTestId("palette-add-action").click();
+    await page.getByTestId("palette-add-end").click();
+    await page.getByTestId("palette-add-end").click();
+
+    const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
+    const classifyId = await page.locator('.react-flow__node[data-id^="ai_classify-"]').getAttribute("data-id");
+    const [action1Id, action2Id] = await nodeIdsByPrefix(page, "action");
+    const [end1Id, end2Id] = await nodeIdsByPrefix(page, "end");
+    if (!triggerId || !classifyId || !action1Id || !action2Id || !end1Id || !end2Id) {
+      throw new Error("node ids ausentes");
+    }
+
+    // `fitView` re-fits (and can hit its 2x maxZoom) every time a newly-added node
+    // finishes its first measurement — settle it to a known, stable zoom BEFORE doing
+    // any screen-space math below, or the 6 sequential palette adds keep moving the
+    // goalposts mid-repositioning (see the 6.2 canvas test for the same caveat).
+    const zoomOut = page.locator(".react-flow__controls-zoomout");
+    for (let i = 0; i < 6; i++) await zoomOut.click();
+    await page.waitForTimeout(300);
+
+    // 1b. Spread the 6 nodes into a real branching layout (source above target, siblings
+    // apart on X) — see `moveNodeTo` for why the default add-grid can't be used here.
+    const canvasBox = await page.getByTestId("flow-canvas").boundingBox();
+    if (!canvasBox) throw new Error("flow-canvas sem bounding box");
+    const at = (dx: number, dy: number): [number, number] => [canvasBox.x + dx, canvasBox.y + dy];
+    await moveNodeTo(page, triggerId, ...at(150, 60));
+    await moveNodeTo(page, classifyId, ...at(150, 220));
+    await moveNodeTo(page, action1Id, ...at(50, 420));
+    await moveNodeTo(page, action2Id, ...at(400, 420));
+    await moveNodeTo(page, end1Id, ...at(225, 620));
+    await moveNodeTo(page, end2Id, ...at(650, 220));
+
+    // 2. Configure ai_classify classes = positivo, objecao (replacing the hot/cold default).
+    await page.locator(`[data-testid="node-card-${classifyId}"]`).click();
+    const panel = page.getByTestId("node-config-panel");
+    await panel.getByLabel("Classes (separadas por vírgula)").fill("positivo, objecao");
+    await panel.getByLabel("Classes (separadas por vírgula)").blur();
+    await expect(page.locator(`[data-testid="node-card-${classifyId}"]`)).toContainText("2 classes");
+
+    // 3. Configure the 2 action nodes' prompt_hint.
+    await page.locator(`[data-testid="node-card-${action1Id}"]`).click();
+    await panel.getByLabel("Instrução para a IA").fill("Envie uma oferta especial reforçando o interesse.");
+    await panel.getByLabel("Instrução para a IA").blur();
+    await page.locator(`[data-testid="node-card-${action2Id}"]`).click();
+    await panel.getByLabel("Instrução para a IA").fill("Pergunte com empatia qual é a objeção específica.");
+    await panel.getByLabel("Instrução para a IA").blur();
+
+    // Close the config panel — docked aside narrows the canvas, would break the drags below.
+    await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+    await expect(page.getByTestId("node-config-sheet")).toHaveCount(0);
+
+    // 4. Connect the graph. Order fixes each edge's deterministic id (edge-1..edge-7 —
+    // FlowCanvas assigns ids from a monotonic counter in connection order).
+    await connectHandles(page, triggerId, classifyId); // edge-1: trigger -> classify
+    await connectHandles(page, classifyId, action1Id); // edge-2: classify -> action1
+    await connectHandles(page, classifyId, action2Id); // edge-3: classify -> action2
+    await connectHandles(page, classifyId, end1Id); // edge-4: classify -> end1 (will become no_reply)
+    await connectHandles(page, classifyId, end2Id); // edge-5: classify -> end2 (stays always-fallback)
+    await connectHandles(page, action1Id, end1Id); // edge-6: action1 -> end1
+    await connectHandles(page, action2Id, end1Id); // edge-7: action2 -> end1
+    await expect(page.locator(".react-flow__edge")).toHaveCount(7);
+    await page.screenshot({ path: "test-results/followup-6.3-01-built.png", fullPage: true });
+
+    // 5. NEGATIVE CHECK — publish with every classify-outgoing edge still `always` (the
+    // Task 6.2 state, before this task's editor existed). It must fail: `ai_classify`
+    // has no `class_match` edge for either declared class and no `no_reply` edge.
+    await page.getByTestId("publish-button").click();
+    await expect(page.getByText(/reprovado na validação/i)).toBeVisible();
+    await expect(page.locator(`[data-testid="node-error-${classifyId}"]`)).toBeVisible();
+    // Exactly one node carries an error — proves the failure is scoped to the classify
+    // node's edge coverage, not some unrelated structural problem in the graph.
+    await expect(page.locator('[data-testid^="node-error-"]')).toHaveCount(1);
+    const classifyErrorText = await page.locator(`[data-testid="node-error-${classifyId}"]`).textContent();
+    expect(classifyErrorText).toMatch(/class_match|no_reply/i);
+    await page.screenshot({ path: "test-results/followup-6.3-02-publish-422-all-always.png", fullPage: true });
+
+    // 6. Fix it: use the new EdgeConfigPanel to set each classify-outgoing edge's condition.
+    await setEdgeCondition(page, "edge-2", "positivo");
+    await setEdgeCondition(page, "edge-3", "objecao");
+    await setEdgeCondition(page, "edge-4", "Sem resposta");
+    // edge-5 is already the "always" fallback by default — open it and confirm rather
+    // than change it, proving the option is genuinely selected, not just left untouched.
+    await clickEdge(page, "edge-5");
+    await expect(page.getByTestId("edge-config-panel").getByRole("combobox")).toContainText("Sempre");
+
+    await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+    await expect(page.getByTestId("edge-config-sheet")).toHaveCount(0);
+    await page.screenshot({ path: "test-results/followup-6.3-03-edges-configured.png", fullPage: true });
+
+    // 7. Publish for real — expect SUCCESS this time, where the identical graph shape
+    // with all-`always` edges failed above.
+    await page.getByTestId("publish-button").click();
+    await expect(page.getByText("Fluxo publicado.")).toBeVisible();
+    await expect(page.locator('[aria-label="status: Ativo"]')).toBeVisible();
+    await expect(page.locator(`[data-testid="node-error-${classifyId}"]`)).toHaveCount(0);
+
+    // 8. Prove the wire labels reflect each condition — the acceptance screenshot.
+    await expect(page.getByTestId("rf__edge-edge-2")).toContainText("positivo");
+    await expect(page.getByTestId("rf__edge-edge-3")).toContainText("objecao");
+    await expect(page.getByTestId("rf__edge-edge-4")).toContainText("Sem resposta");
+    await expect(page.getByTestId("rf__edge-edge-5")).toContainText("Sempre");
+    await page.locator(".react-flow__controls-fitview").click();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: "test-results/followup-6.3-04-published-branching.png", fullPage: true });
   });
 });
