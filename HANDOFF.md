@@ -23,7 +23,7 @@
 
 ## Estado atual
 
-- **Onda:** 5 ✅ COMPLETA. Onda 6 EM ANDAMENTO (UI Builder React Flow): Task 6.1 ✅ (página + lista de fluxos, prova Playwright). Próxima: Task 6.2 (editor visual do grafo em `/app/ai/followups/[id]`).
+- **Onda:** 5 ✅ COMPLETA. Onda 6 EM ANDAMENTO (UI Builder React Flow): Task 6.1 ✅ + Task 6.2 ✅ (editor visual completo do grafo em `/app/ai/followups/[id]` — canvas, 6 node cards, painel de config Zod-driven, publish bar com dirty-state/salvar/publicar/desativar/rollback). Próxima: Onda 7 (UI Fila + seletor no agente).
 - **RACE do classify lento — RESOLVIDA na 5.2.** `processNode` (node-handlers.ts) ganhou `wokeEarly?: boolean`: quando `waitElapsed=true` E `wokeEarly=true`, reenfileira classify em vez de rotear `no_reply`. `engine.ts` computa `wokeEarly` checando o marker `${node}:${steps}:wake` nos eventos do enrollment — gravado por `lib/followup/reactivity.ts` quando um inbound chega durante `waiting_reply` sem `cancel_on_reply`. Distinto do idempotency_key de passo que `waitElapsed` já checava (Task 5.1), então os dois sinais nunca se confundem. Provado em `tests/invariants/followup-reactivity.test.ts` (o TESTE CRÍTICO: 1º tick enfileira classify, reactivity empurra `next_eval_at` pra agora ANTES do grace vencer, 2º tick do engine real reenfileira classify — não roteia `no_reply`).
 - **Dev DB:** migrations 0054 e 0056 APLICADAS no projeto rrydmwnporysaiysiztn via Management API (token do CLI no keychain, entrada "Supabase CLI"/"access-token", formato go-keyring-base64). `database.types.ts` regenerado (public,storage,graphql_public). **0057 (Task 4.1, kind `followup_dead`) ainda NÃO aplicada no dev DB remoto** — não bloqueou a prova ao vivo da Task 4.2 porque o cenário provado (trigger→wait→condition→end) nunca passa pelo caminho `markDead`/`agent_inbox_items.kind='followup_dead'`; aplicar antes de qualquer prova futura que precise do caminho dead-letter.
 - **Migration seguinte livre:** 0058.
@@ -36,6 +36,64 @@
 - 2026-07-21 (Task 4.1): **`AdminClient` do engine NÃO é `SupabaseClient`** — é uma interface própria e estreita (poucos métodos nomeados: claim/loadGraph/loadLeadFacts/loadEvents/insertEvent/updateEnrollment/loadPointerName/insertDeadInbox). Motivo: `tests/invariants/**` roda contra Postgres cru (`pg.Pool`, sem PostgREST — `NEXT_PUBLIC_SUPABASE_URL` aponta pra porta inalcançável de propósito no `vitest.db.config.ts`), então um `AdminClient=SupabaseClient` real seria intestável ali. `lib/followup/engine.ts` exporta `createSupabaseAdminClient(admin)` pra produção (ainda sem consumidor — a rota de cron é task futura) e o teste DB implementa o adapter `pg`-puro inline. **Próximas tasks que precisarem de uma rota real usando o engine devem usar `createSupabaseAdminClient`, não reinventar.**
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-22: **Task 6.2 ✅ (commits e06bf1e/bb928fd/fbc2415/6fdce2d/3d5d9f4) — builder visual
+  completo em `/app/ai/followups/[id]`, o centerpiece da feature.** 5 incrementos, cada um
+  provado por Playwright antes do próximo:
+  1. `lib/followup/graph-mappers.ts` — `toReactFlow`/`fromReactFlow` puros (sem DB), round-trip
+     provado (7 testes: 6 tipos de nó + 3 condições de aresta + posições não-triviais + piso de
+     2 nós). `graphsEqual` (sorted-key stringify) alimenta o dirty-state do incremento 5.
+  2. `page.tsx` (gate manager+, 404 fora da org) + `FlowBuilder.tsx` (shell `next/dynamic
+     ssr:false` — `@xyflow/react` só carrega nesta rota) + `FlowCanvas.tsx` + `NodePalette.tsx`
+     (clique OU HTML5 drag-and-drop via `screenToFlowPosition`). GET `/api/v1/ai/followup-flows/:id`
+     ganhou `versions_count`/`previous_version_id` (2ª query de linhagem, sem `.limit()` de
+     propósito — o fake DB de `tests/api/followup-flows.test.ts` não suporta esse método).
+  3. 6 node cards (`Trigger/Wait/Condition/Classify/Action/End`Node.tsx) finos sobre
+     `NodeCard.tsx` compartilhado — ícone+cor Sage distintos por tipo (trigger=accent,
+     wait=info, condition=warning, ai_classify=accent sólido, action=success, end=error),
+     subtítulo derivado do config via `describeNodeConfig`. `onConnect` sempre cria aresta
+     `{type:'always'}` (editável só por convenção de default — sem UI de edge ainda, decisão de
+     escopo: a spec de aceite não exercita `ai_classify`/`condition` com múltiplas saídas).
+  4. `NodeConfigPanel.tsx` — 1 form por tipo, cada campo valida contra o schema exportado de
+     `graph-schema.ts` (`safeParse`) antes de escrever no nó vivo; inválido = erro inline, nunca
+     propaga estado parcial. **Achado de design importante**: a 1ª versão usava `Sheet` (Radix
+     Dialog) e o overlay full-screen bloqueava clique em OUTRO nó do canvas (pointer-events da
+     camada, independe de `modal={false}`) — trocado por `<aside>` comum, irmão de layout do
+     canvas (padrão "docked inspector" de Figma/n8n), não modal.
+  5. `PublishBar.tsx` — badge de status + "Alterações não salvas"; Salvar (PATCH draft_graph);
+     Publicar SALVA primeiro (garante validar o que está no canvas, não um draft_graph
+     desatualizado) depois POST publish — 422 mapeia `details.errors[].node_id` pro
+     `node.data.errors` de cada nó (ring vermelho + texto inline, reservado desde o incremento 3);
+     Desativar; Rollback usa `previous_version_id`, desabilitado com ≤1 versão; select de
+     `handoff_policy` faz PATCH direto. `FlowCanvas.tsx` trocou o snapshot estático do SSR por
+     `useFollowupFlow` (react-query, reativo às mutations).
+  **PROVA — sequência mandatória completa** (Playwright headed, dev server real porta 3022 +
+  DB remoto real, `tests/e2e/followup-builder.spec.ts`, 6/6 verde em 3 rodadas seguidas): monta
+  trigger+wait+action+end via paleta → conecta só trigger→wait→action (SEM end) → configura
+  wait=10min + action prompt_hint → Publicar com grafo incompleto → 422 com erros ANCORADOS
+  (screenshot mostra 4 cards com ring vermelho + mensagem própria: trigger/wait/action por
+  `no_end_path`/inalcançável, end por `unreachable_node` — não um banner genérico) → conecta
+  action→end → Publicar de novo → toast "Fluxo publicado." + badge "Ativo" → RELOAD da página →
+  grafo idêntico (4 nós, 3 arestas, "10 min" e o prompt_hint intactos) → Rollback desabilitado
+  (1 versão, é o 1º publish). Screenshots `test-results/followup-6.2-0{1..8}-*.png`.
+  **Achado de robustez do PRÓPRIO TESTE** (não bug do app, documentado no spec): comparar
+  posição de nó via `getBoundingClientRect` só é estável se o `fitView` já assentou ANTES de
+  medir dos DOIS lados (antes do reload e depois) — sob carga (suíte inteira, não isolado),
+  uma corrida esporádica gerava ~390px de diferença; fix foi uma espera de 400ms após o clique
+  em fit-view em ambos os lados da comparação (não era flake de posição real, era flake de
+  QUANDO medir a posição).
+  **`npm run build` (Turbopack) verde.** Bundle: chunk do `@xyflow/react`
+  (`.next/static/chunks/0r6p4oj5ltmpf.js`, 192K bruto / ~60K gzip) confirmado AUSENTE de
+  `rootMainFiles` (bundle compartilhado) e do `build-manifest.json` de AMBAS as páginas
+  (`/app/ai/followups` e `/app/ai/followups/[id]`) — só carrega client-side via o
+  `next/dynamic` do `FlowBuilder.tsx`, e só quando o usuário abre o builder.
+  **typecheck 0 / lint 0 novo** (2 erros pré-existentes em `graph-schema.test.ts` da Task 2.1,
+  intocado) / **unit 538/538** (+7 desta onda, sem regressão).
+  **Decisão deliberada de escopo:** edição de condição de aresta (class_match/cond_result) via
+  UI fica pra uma próxima iteração — a sequência de aceite mandatória só exercita arestas
+  `always` (trigger→wait→action→end); `ai_classify`/`condition` com múltiplas saídas
+  continuam editáveis via `NodeConfigPanel` (o NÓ), só a aresta em si nasce sempre `always`.
+  Detalhe completo em `.superpowers/sdd/task-6.2-report.md`.
 
 - 2026-07-22: **Task 6.1 ✅ (commit fcd0068) — página + lista de fluxos, 1ª tela user-visible da feature.**
   `app/app/ai/followups/page.tsx` (server component, mesmo padrão de `app/app/ai/agents/page.tsx`:
