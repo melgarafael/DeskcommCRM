@@ -12,8 +12,10 @@ import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 import { getWahaClient } from "@/lib/waha/client";
+import { wahaSendPlanFor } from "@/lib/waha/media-send";
 import { parseWahaMessageId } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
 
@@ -171,6 +173,8 @@ export async function sendMessageHandler(
     body: input.body ?? null,
     media_url: input.media_url ?? null,
     media_mime: input.media_mime ?? null,
+    media_storage_path: input.media_storage_path ?? null,
+    media_size_bytes: input.media_size_bytes ?? null,
     sent_via: ctx.actor.type !== "user" ? ("ai" as const) : ("user" as const),
     sent_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     sent_at: now,
@@ -242,11 +246,34 @@ export async function sendMessageHandler(
     if (updated) message = updated as unknown as Message;
   } else {
     try {
-      const wahaRes = (await waha.sendMessage(
-        c.channel_sessions.waha_session_name,
-        chatId,
-        input.body ?? "",
-      )) as unknown;
+      let wahaRes: unknown;
+      if (input.media_storage_path) {
+        // Storage-first: signed URL curta só pro WAHA baixar (nunca base64).
+        const admin = createAdminClient();
+        const { data: signed, error: signErr } = await admin.storage
+          .from("whatsapp-media")
+          .createSignedUrl(input.media_storage_path, 600);
+        if (signErr || !signed?.signedUrl) {
+          throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
+        }
+        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        wahaRes = await waha.sendMedia(
+          c.channel_sessions.waha_session_name,
+          chatId,
+          wahaSendPlanFor(input.type, {
+            url: signed.signedUrl,
+            mime: input.media_mime ?? "application/octet-stream",
+            filename,
+            caption: input.body ?? null,
+          }),
+        );
+      } else {
+        wahaRes = await waha.sendMessage(
+          c.channel_sessions.waha_session_name,
+          chatId,
+          input.body ?? "",
+        );
+      }
       // Fase 4A-3: o shape do id varia por engine (string | {_serialized} |
       // NOWEB {id:{id}} | {key:{id}}) — parser compartilhado cobre todos; sem
       // external_id o ack do webhook duplica a linha em vez de atualizar.
