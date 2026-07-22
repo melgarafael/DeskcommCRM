@@ -64,6 +64,21 @@ function toFlowNode(n: RFNode): FlowNode {
   }
 }
 
+/** Deep-equal with sorted object keys — safe against key-order drift across a jsonb round trip. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value as Record<string, unknown>).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Used by the builder's dirty-state indicator (PublishBar, Task 6.2) — not order-sensitive. */
+export function graphsEqual(a: FlowGraph, b: FlowGraph): boolean {
+  return stableStringify(a) === stableStringify(b);
+}
+
 export function fromReactFlow(nodes: RFNode[], edges: RFEdge[]): FlowGraph {
   return {
     nodes: nodes.map(toFlowNode),

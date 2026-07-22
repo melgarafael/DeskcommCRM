@@ -214,4 +214,126 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator('[data-testid^="node-card-action-"]')).toContainText("Reforce o benefício");
     await page.screenshot({ path: "test-results/followup-6.2-04-action-configured.png", fullPage: true });
   });
+
+  /**
+   * MANDATORY acceptance sequence (Task 6.2 wave gate): build the graph,
+   * publish it INCOMPLETE first (errors anchored to the offending nodes, not
+   * a generic banner), fix it, publish for real, reload and prove the graph
+   * persisted identically, and confirm Rollback is disabled with 1 version.
+   */
+  test("fluxo completo: montar, publicar incompleto (422 ancorado), corrigir, publicar, recarregar, rollback desabilitado", async ({
+    page,
+  }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/followups");
+    const flowName = `E2E Acceptance ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nome").fill(flowName);
+    await dialog.getByRole("button", { name: "Criar fluxo" }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.waitForURL(/\/app\/ai\/followups\/([0-9a-f-]+)$/);
+    const flowUrl = page.url();
+    await expect(page.locator(".react-flow")).toBeVisible();
+
+    // 1. Build: trigger + wait + action + end.
+    await page.getByTestId("palette-add-trigger").click();
+    await page.getByTestId("palette-add-wait").click();
+    await page.getByTestId("palette-add-action").click();
+    await page.getByTestId("palette-add-end").click();
+
+    const zoomOut = page.locator(".react-flow__controls-zoomout");
+    for (let i = 0; i < 5; i++) await zoomOut.click();
+
+    const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
+    const waitId = await page.locator('.react-flow__node[data-id^="wait-"]').getAttribute("data-id");
+    const actionId = await page.locator('.react-flow__node[data-id^="action-"]').getAttribute("data-id");
+    const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
+    if (!triggerId || !waitId || !actionId || !endId) throw new Error("node ids ausentes");
+
+    // 2. Connect trigger→wait→action — deliberately WITHOUT wiring to end yet.
+    await connectHandles(page, triggerId, waitId);
+    await connectHandles(page, waitId, actionId);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+
+    // 3. Configure wait=10min + action prompt_hint.
+    await page.locator(`[data-testid="node-card-${waitId}"]`).click();
+    const panel = page.getByTestId("node-config-panel");
+    await panel.getByLabel("Duração (minutos)").fill("10");
+    await panel.getByLabel("Duração (minutos)").blur();
+    await expect(page.locator(`[data-testid="node-card-${waitId}"]`)).toContainText("10 min");
+
+    await page.locator(`[data-testid="node-card-${actionId}"]`).click();
+    await panel.getByLabel("Instrução para a IA").fill("Reforce o benefício e pergunte se ainda tem interesse.");
+    await panel.getByLabel("Instrução para a IA").blur();
+    await expect(page.locator(`[data-testid="node-card-${actionId}"]`)).toContainText("Reforce o benefício");
+    // Close the config panel — it's a docked aside that narrows the canvas and
+    // can occlude nodes, which would break the next handle-to-handle drag.
+    await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+    await expect(page.getByTestId("node-config-sheet")).toHaveCount(0);
+    await page.screenshot({ path: "test-results/followup-6.2-05-built-incomplete.png", fullPage: true });
+
+    // 4. Publish INCOMPLETE — expect 422 anchored to the offending nodes.
+    await page.getByTestId("publish-button").click();
+    await expect(page.getByText(/reprovado na validação/i)).toBeVisible();
+    await expect(page.locator(`[data-testid="node-error-${waitId}"]`)).toBeVisible();
+    await expect(page.locator(`[data-testid="node-error-${actionId}"]`)).toBeVisible();
+    await expect(page.locator(`[data-testid="node-error-${endId}"]`)).toBeVisible();
+    await page.screenshot({ path: "test-results/followup-6.2-06-publish-422-anchored.png", fullPage: true });
+
+    // 5. Fix: connect action→end.
+    await connectHandles(page, actionId, endId);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+
+    // 6. Publish for real — expect success + "Ativo" badge + toast.
+    await page.getByTestId("publish-button").click();
+    await expect(page.getByText("Fluxo publicado.")).toBeVisible();
+    await expect(page.locator('[aria-label="status: Ativo"]')).toBeVisible();
+    await expect(page.locator(`[data-testid="node-error-${waitId}"]`)).toHaveCount(0);
+    await page.screenshot({ path: "test-results/followup-6.2-07-published.png", fullPage: true });
+
+    // Normalize the viewport (pan/zoom drifted from the manual connect drags)
+    // so the before/after position comparison isn't comparing two arbitrary
+    // transforms — both sides fit the same 4 nodes to the same container.
+    await page.locator(".react-flow__controls-fitview").click();
+    // fitView's viewport transform settles on the next animation frame(s) —
+    // under load (full suite run) reading positions immediately can catch a
+    // mid-transition frame. Wait for it to settle before the "before" capture.
+    await page.waitForTimeout(400);
+
+    const positionsBefore: Record<string, { x: number; y: number; width: number; height: number }> = {};
+    for (const id of [triggerId, waitId, actionId, endId]) {
+      const box = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox();
+      if (!box) throw new Error(`nó ${id} sem bounding box antes do reload`);
+      positionsBefore[id] = box;
+    }
+
+    // 7. Reload — the graph must persist identically.
+    await page.reload();
+    await page.waitForURL(flowUrl);
+    await expect(page.locator(".react-flow")).toBeVisible();
+    await expect(page.locator('[aria-label="status: Ativo"]')).toBeVisible();
+    await expect(page.locator(".react-flow__node")).toHaveCount(4);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+    await expect(page.locator(`[data-testid="node-card-${waitId}"]`)).toContainText("10 min");
+    await expect(page.locator(`[data-testid="node-card-${actionId}"]`)).toContainText("Reforce o benefício");
+    // Same settle wait as the "before" capture — the post-reload fitView (on
+    // mount) needs the same grace period before its transform is comparable.
+    await page.waitForTimeout(400);
+
+    const TOLERANCE_PX = 10;
+    for (const id of [triggerId, waitId, actionId, endId]) {
+      const box = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox();
+      if (!box) throw new Error(`nó ${id} sem bounding box depois do reload`);
+      const before = positionsBefore[id]!;
+      expect(Math.abs(box.x - before.x)).toBeLessThanOrEqual(TOLERANCE_PX);
+      expect(Math.abs(box.y - before.y)).toBeLessThanOrEqual(TOLERANCE_PX);
+    }
+    await page.screenshot({ path: "test-results/followup-6.2-08-reloaded-persisted.png", fullPage: true });
+
+    // 8. Rollback disabled — only 1 version exists (this is the first publish).
+    await expect(page.getByTestId("rollback-button")).toBeDisabled();
+  });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { toReactFlow, fromReactFlow } from "./graph-mappers";
+import { toReactFlow, fromReactFlow, graphsEqual } from "./graph-mappers";
 import type { FlowGraph } from "./graph-schema";
 
 /** Exercises all 6 node types + all 3 edge condition variants, non-trivial positions. */
@@ -135,5 +135,32 @@ describe("graph-mappers", () => {
     };
     const { nodes, edges } = toReactFlow(minimal);
     expect(fromReactFlow(nodes, edges)).toEqual(minimal);
+  });
+});
+
+describe("graphsEqual", () => {
+  it("is true for the same graph reconstructed with different key order", () => {
+    const a: FlowGraph = {
+      nodes: [{ id: "a", type: "trigger", label: "A", position: { x: 0, y: 0 }, config: {} }],
+      edges: [],
+    };
+    // Same content, keys inserted in a different order (simulates a jsonb round trip).
+    const b: FlowGraph = {
+      edges: [],
+      nodes: [{ position: { y: 0, x: 0 }, label: "A", type: "trigger", id: "a", config: {} }],
+    };
+    expect(graphsEqual(a, b)).toBe(true);
+  });
+
+  it("is false when a position or config actually differs", () => {
+    const a: FlowGraph = {
+      nodes: [{ id: "a", type: "trigger", label: "A", position: { x: 0, y: 0 }, config: {} }],
+      edges: [],
+    };
+    const b: FlowGraph = {
+      nodes: [{ id: "a", type: "trigger", label: "A", position: { x: 1, y: 0 }, config: {} }],
+      edges: [],
+    };
+    expect(graphsEqual(a, b)).toBe(false);
   });
 });

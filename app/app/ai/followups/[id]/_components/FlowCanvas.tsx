@@ -16,11 +16,12 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { toReactFlow, type RFNode, type RFEdge, type RFNodeData } from "@/lib/followup/graph-mappers";
+import { toReactFlow, fromReactFlow, graphsEqual, type RFNode, type RFEdge, type RFNodeData } from "@/lib/followup/graph-mappers";
 import type { FlowGraph, NodeType } from "@/lib/followup/graph-schema";
-import type { FollowupFlowDetailRow } from "@/hooks/followup/useFollowupFlow";
+import { useFollowupFlow, type FollowupFlowDetailRow } from "@/hooks/followup/useFollowupFlow";
 import { NodeConfigPanel } from "./NodeConfigPanel";
 import { NodePalette } from "./NodePalette";
+import { PublishBar } from "./PublishBar";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
 import { TriggerNode } from "./nodes/TriggerNode";
 import { WaitNode } from "./nodes/WaitNode";
@@ -48,17 +49,35 @@ interface Props {
   initialData: FollowupFlowDetailRow;
 }
 
-function FlowCanvasInner({ initialData }: Props) {
+function FlowCanvasInner({ flowId, initialData }: Props) {
+  const { data: flow } = useFollowupFlow(flowId, { initialData });
+  // `initial` seeds React Flow state ONCE on mount — it must NOT react to
+  // `flow` changing on every refetch (that would clobber in-progress edits).
   const initial = useMemo(
     () => toReactFlow(initialData.draft_graph ?? EMPTY_GRAPH),
-    [initialData.draft_graph],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(initial.edges);
+  const [savedGraph, setSavedGraph] = useState<FlowGraph>(initialData.draft_graph ?? EMPTY_GRAPH);
   const nextId = useRef(1);
   const nextEdgeId = useRef(1);
   const { screenToFlowPosition } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  const liveGraph = useMemo(() => fromReactFlow(nodes, edges), [nodes, edges]);
+  const dirty = useMemo(() => !graphsEqual(liveGraph, savedGraph), [liveGraph, savedGraph]);
+
+  const markNodeErrors = useCallback(
+    (errorsByNode: Record<string, string[]>) => {
+      setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, errors: errorsByNode[n.id] } })));
+    },
+    [setNodes],
+  );
+  const clearNodeErrors = useCallback(() => {
+    setNodes((nds) => nds.map((n) => (n.data.errors ? { ...n, data: { ...n.data, errors: undefined } } : n)));
+  }, [setNodes]);
 
   const onNodeClick = useCallback<NodeMouseHandler<RFNode>>((_, node) => {
     setSelectedNodeId(node.id);
@@ -129,39 +148,52 @@ function FlowCanvasInner({ initialData }: Props) {
   );
 
   return (
-    <div className="flex h-full min-h-[600px] w-full">
-      <NodePalette onAdd={onPaletteAdd} />
-      <div className="relative h-full flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          onPaneClick={onPaneClick}
-          fitView
-        >
-          <Background />
-          <Controls />
-        </ReactFlow>
-      </div>
-
-      {selectedNode && (
-        // Docked panel, NOT a modal overlay — the canvas stays fully clickable
-        // so switching node selection (or dragging edges) works while it's open.
-        <aside
-          className="h-full w-96 shrink-0 overflow-y-auto border-l border-border bg-surface p-4"
-          data-testid="node-config-sheet"
-        >
-          <NodeConfigPanel
-            key={selectedNode.id}
-            node={selectedNode}
-            onChange={(patch) => updateNodeData(selectedNode.id, patch)}
-          />
-        </aside>
+    <div className="flex h-full min-h-[600px] w-full flex-col">
+      {flow && (
+        <PublishBar
+          flowId={flowId}
+          flow={flow}
+          graph={liveGraph}
+          dirty={dirty}
+          onSaved={setSavedGraph}
+          onPublishErrors={markNodeErrors}
+          onPublishSuccess={clearNodeErrors}
+        />
       )}
+      <div className="flex flex-1 overflow-hidden">
+        <NodePalette onAdd={onPaletteAdd} />
+        <div className="relative h-full flex-1" data-testid="flow-canvas" onDragOver={onDragOver} onDrop={onDrop}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            fitView
+          >
+            <Background />
+            <Controls />
+          </ReactFlow>
+        </div>
+
+        {selectedNode && (
+          // Docked panel, NOT a modal overlay — the canvas stays fully clickable
+          // so switching node selection (or dragging edges) works while it's open.
+          <aside
+            className="h-full w-96 shrink-0 overflow-y-auto border-l border-border bg-surface p-4"
+            data-testid="node-config-sheet"
+          >
+            <NodeConfigPanel
+              key={selectedNode.id}
+              node={selectedNode}
+              onChange={(patch) => updateNodeData(selectedNode.id, patch)}
+            />
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
