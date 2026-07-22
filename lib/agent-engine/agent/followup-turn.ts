@@ -36,6 +36,7 @@ import {
 import { isLeadInHandoff } from './human-handoff';
 import type { LeadStateRow } from './lead-state';
 import { loadReentryTemplate, pickReentryVariant } from './reentry-template';
+import { classifyFollowupReply, decideFollowupTiming } from './followup-flow-classify';
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -56,8 +57,39 @@ export const followupTurnPayloadSchema = z
     // direto pela cadeia de guardrails, sem LLM (custo $0, blueprint). Ausente/'agent'
     // = run normal do agente (comportamento F3-03 intocado).
     mode: z.enum(['agent', 'template']).optional(),
+    // Onda 5 (Task 5.1): turno DIRIGIDO POR FLUXO (lib/followup/engine.ts enfileira
+    // este payload, campo a campo IDÊNTICO ao FollowupJobRequest.payload de lá).
+    // Presente ⇒ ramo guardado em runFlowDrivenTurn; ausente ⇒ comportamento LEGADO
+    // (schedule_followup / F3-03 / F3-04) intocado — nem lido.
+    followup_enrollment_id: z.string().uuid().optional(),
+    node_id: z.string().min(1).optional(),
+    purpose: z.enum(['send_message', 'classify', 'decide_timing']).optional(),
+    prompt_hint: z.string().optional(),
+    classes: z.array(z.string()).optional(),
+    hint: z.string().optional(),
+    guidance: z.string().optional(),
   })
   .passthrough();
+
+/** Resultado de um turno dirigido por fluxo — espelha `TurnResult` de lib/followup/turn-bridge.ts
+ *  (agent-engine não importa followup/* — regra dura de dependência numa direção só). */
+export type FollowupFlowTurnResult =
+  | { kind: 'sent' }
+  | { kind: 'classified'; class: string }
+  | { kind: 'timing'; proposed_at: string };
+
+/**
+ * `InboundTurnDeps` + o callback que fecha o turno dirigido por fluxo de volta
+ * no enrollment. Ausente (deps antigo, sem o campo) ⇒ o ramo de fluxo lança um
+ * erro claro em vez de silenciosamente não persistir nada — falha alto e cedo,
+ * nunca um turno "concluído" que a ponte nunca soube que aconteceu.
+ */
+export interface FollowupTurnDeps extends InboundTurnDeps {
+  completeFollowupTurn?: (
+    pool: pg.Pool,
+    input: { organizationId: string; enrollmentId: string; nodeId: string; result: FollowupFlowTurnResult },
+  ) => Promise<void>;
+}
 
 /** Duração humana pt-br do intervalo desde a última resposta — só ordem de grandeza. */
 function humanizeElapsed(ms: number): string {
@@ -152,11 +184,31 @@ function lastInboundOf(context: LeadContext): { body: string; sentAt: string } |
 }
 
 /**
+ * A última inbound, mas SÓ se veio depois da última outbound — "nada de novo
+ * desde a última vez que falamos" vira `null` (onda 5: o classify SÓ tem algo
+ * pra classificar quando o lead respondeu DEPOIS do nosso último envio).
+ */
+function lastInboundSinceLastOutbound(context: LeadContext): string | null {
+  let lastOutboundAt: number | null = null;
+  for (const m of context.messages) {
+    if (m.direction === 'outbound') lastOutboundAt = Date.parse(m.sent_at);
+  }
+  for (let i = context.messages.length - 1; i >= 0; i -= 1) {
+    const m = context.messages[i]!;
+    if (m.direction === 'inbound') {
+      const at = Date.parse(m.sent_at);
+      return lastOutboundAt === null || at > lastOutboundAt ? m.body : null;
+    }
+  }
+  return null;
+}
+
+/**
  * Handler de `followup_turn` para o registry do daemon (main.ts). Resolve os ids de
  * envio da row do lead (nunca do payload) e injeta o bloco temporal no sufixo antes
  * de delegar ao núcleo compartilhado do run (runAgentTurn).
  */
-export function createFollowupTurnHandler(deps: InboundTurnDeps) {
+export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const tenantId = job.organization_id;
     const leadId = job.contact_id;
@@ -180,6 +232,22 @@ export function createFollowupTurnHandler(deps: InboundTurnDeps) {
     }
 
     const clock = deps.clock ?? ((): Date => new Date());
+    const target: ReentrySendTarget = { tenantId, leadId, channelSessionId: conv.channel_session_id, conversationId: conv.id };
+
+    // Onda 5 (Task 5.1): turno DIRIGIDO POR FLUXO — guard exclusivo, nunca cai nos
+    // caminhos legados abaixo (F3-03/F3-04 seguem intocados quando o campo falta).
+    if (payload.followup_enrollment_id !== undefined) {
+      await runFlowDrivenTurn(deps, job, pool, ctx, clock, target, {
+        enrollmentId: payload.followup_enrollment_id,
+        nodeId: payload.node_id,
+        purpose: payload.purpose,
+        promptHint: payload.prompt_hint,
+        classes: payload.classes,
+        hint: payload.hint,
+        guidance: payload.guidance,
+      });
+      return;
+    }
 
     // F3-04: caminho determinístico ($0) — envia o template versionado direto pela
     // cadeia de guardrails, sem chamar o modelo. É um CAMINHO ADICIONAL: o run do
@@ -216,6 +284,104 @@ interface ReentrySendTarget {
   leadId: string;
   channelSessionId: string;
   conversationId: string;
+}
+
+/**
+ * Onda 5 (Task 5.1) — turno dirigido por fluxo (`payload.followup_enrollment_id`
+ * presente). Roteia pelos 3 `purpose` que `lib/followup/node-handlers.ts` pode
+ * pedir; ao terminar, chama `deps.completeFollowupTurn` (injetado — a ponte de
+ * verdade vive em `lib/followup/turn-bridge.ts`, que este arquivo NUNCA importa:
+ * agent-engine não conhece followup/*, só o callback).
+ */
+async function runFlowDrivenTurn(
+  deps: FollowupTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  ctx: { workerId: string },
+  clock: () => Date,
+  target: ReentrySendTarget,
+  input: {
+    enrollmentId: string;
+    nodeId: string | undefined;
+    purpose: 'send_message' | 'classify' | 'decide_timing' | undefined;
+    promptHint: string | undefined;
+    classes: string[] | undefined;
+    hint: string | undefined;
+    guidance: string | undefined;
+  },
+): Promise<void> {
+  if (input.nodeId === undefined || input.purpose === undefined) {
+    throw new Error('followup_turn dirigido por fluxo sem node_id/purpose no payload — payload do engine incompleto');
+  }
+  const complete = deps.completeFollowupTurn;
+  if (!complete) {
+    throw new Error(
+      'followup_turn dirigido por fluxo sem completeFollowupTurn nos deps do handler — a ponte não foi injetada na wiring (workers/agent-worker/main.ts)',
+    );
+  }
+  const { enrollmentId, nodeId } = input;
+  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
+
+  if (input.purpose === 'send_message') {
+    await runAgentTurn(deps, job, pool, ctx, {
+      channelSessionId: target.channelSessionId,
+      conversationId: target.conversationId,
+      buildOpening: ({ previous, leadState, context, notesIndexBlock }) => {
+        const temporalBlock = buildTemporalBlock({ now: clock(), lastInbound: lastInboundOf(context) });
+        const opening = buildFollowupOpeningMessage(temporalBlock, previous, leadState, context, notesIndexBlock);
+        if (!input.promptHint) return opening;
+        return `${opening}\n\n## Orientação do passo do fluxo\n${input.promptHint}`;
+      },
+    });
+    await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'sent' } });
+    return;
+  }
+
+  if (input.purpose === 'classify') {
+    const classes = input.classes ?? [];
+    const context = await getLeadContext(pool, deps.crmCfg, { tenantId: target.tenantId, leadId: target.leadId }, {
+      historyLimit: deps.knobs.historyLimit,
+      maxTokens: deps.knobs.maxContextTokens,
+    });
+    if (!context.ok) {
+      throw new Error(`turno de classificação do fluxo falhou em get_lead_context (${context.error.code})`);
+    }
+    const cls = await classifyFollowupReply(
+      pool,
+      deps.llmCfg,
+      { tenantId: target.tenantId, leadId: target.leadId, jobId: job.id },
+      {
+        candidateText: lastInboundSinceLastOutbound(context.context),
+        classes,
+        ...(input.hint !== undefined ? { hint: input.hint } : {}),
+        ...(deps.knobs.followupAi?.model !== undefined ? { model: deps.knobs.followupAi.model } : {}),
+      },
+      { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+    );
+    await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'classified', class: cls } });
+    return;
+  }
+
+  // 'decide_timing'
+  const context = await getLeadContext(pool, deps.crmCfg, { tenantId: target.tenantId, leadId: target.leadId }, {
+    historyLimit: deps.knobs.historyLimit,
+    maxTokens: deps.knobs.maxContextTokens,
+  });
+  if (!context.ok) {
+    throw new Error(`turno de decisão de instante do fluxo falhou em get_lead_context (${context.error.code})`);
+  }
+  const proposedAt = await decideFollowupTiming(
+    pool,
+    deps.llmCfg,
+    { tenantId: target.tenantId, leadId: target.leadId, jobId: job.id },
+    {
+      context: context.context,
+      ...(input.guidance !== undefined ? { guidance: input.guidance } : {}),
+      ...(deps.knobs.followupAi?.model !== undefined ? { model: deps.knobs.followupAi.model } : {}),
+    },
+    { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog, clock },
+  );
+  await complete(pool, { organizationId: target.tenantId, enrollmentId, nodeId, result: { kind: 'timing', proposed_at: proposedAt } });
 }
 
 /**

@@ -20,11 +20,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import type pg from 'pg';
 
-import {
-  createInboundTurnHandler,
-  type InboundTurnDeps,
-} from '@/lib/agent-engine/agent/inbound-turn';
-import { createFollowupTurnHandler } from '@/lib/agent-engine/agent/followup-turn';
+import { createInboundTurnHandler } from '@/lib/agent-engine/agent/inbound-turn';
+import { createFollowupTurnHandler, type FollowupTurnDeps } from '@/lib/agent-engine/agent/followup-turn';
+import { completeTurnForEnrollment, createPgAdminClient } from '@/lib/followup/turn-bridge';
 import { seedPlatformPlaybook } from '@/lib/agent-engine/agent/playbook-seed';
 import { runCronLoop } from '@/lib/agent-engine/cron/scheduler';
 import { createPool } from '@/lib/agent-engine/db/pool';
@@ -364,7 +362,7 @@ export async function main(): Promise<void> {
   const env = loadEnv();
   const log = createLogger();
   const handlers = new Map<JobKind, JobHandler>();
-  const turnDeps: InboundTurnDeps = {
+  const turnDeps: FollowupTurnDeps = {
     crmCfg: crmEdgeConfigFromEnv({
       SUPABASE_URL: env.NEXT_PUBLIC_SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -410,8 +408,17 @@ export async function main(): Promise<void> {
         enabled: env.PROMISE_SEMANTIC_ENABLED,
         ...(env.PROMISE_SEMANTIC_MODEL !== undefined ? { model: env.PROMISE_SEMANTIC_MODEL } : {}),
       },
+      followupAi: {
+        ...(env.FOLLOWUP_AI_MODEL !== undefined ? { model: env.FOLLOWUP_AI_MODEL } : {}),
+      },
     },
     log,
+    // Onda 5 (Task 5.1): fecha o turno dirigido por fluxo de volta no enrollment —
+    // o worker fala pg puro (nunca Supabase client), então usa o adapter pg de
+    // lib/followup/turn-bridge.ts (equivalente ao createSupabaseAdminClient das
+    // rotas Next.js, mas pra este processo).
+    completeFollowupTurn: (pool, { organizationId, enrollmentId, nodeId, result }) =>
+      completeTurnForEnrollment(createPgAdminClient(pool), organizationId, enrollmentId, nodeId, result),
   };
   handlers.set('inbound_turn', createInboundTurnHandler(turnDeps));
   handlers.set('followup_turn', createFollowupTurnHandler(turnDeps));
