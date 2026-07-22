@@ -59,16 +59,26 @@ Signed URLs obtidas do endpoint da Onda 0, cacheadas via React Query com staleTi
 
 ## Onda 3 — Agente multimodal
 
-Worker de derivação roda após a persistência da mídia e grava derivado textual em `messages` (`media_derived_text` + `media_derived_status`; WhatsApp = 1 mídia por mensagem, colunas bastam):
+**Requisito central: MODEL-AGNÓSTICO.** O agente deve funcionar com Claude, OpenAI e Gemini — e ser universal, de forma que qualquer modelo novo plugado no sistema funcione sem código novo. A arquitetura tem DUAS camadas:
 
-| Tipo | Estratégia |
-|---|---|
-| Imagem | Anexada nativa no model call (Claude vision) no turno corrente; derivado textual curto serve histórico/resumo |
-| PDF | Suporte nativo da API Anthropic; derivado = texto extraído |
-| Áudio/PTT | `TranscriptionProvider` plugável (decisão 1) |
-| Vídeo | Flag por agente, off por default (decisão 2): ffmpeg extrai faixa de áudio (transcrição) + N frames (vision) → derivado textual |
+1. **Camada universal (funciona com QUALQUER modelo, presente ou futuro) — derivado textual.** Um worker de derivação roda após a persistência da mídia e grava `media_derived_text` na linha de `messages`. Áudio→transcrição, PDF/documento→texto extraído, imagem→descrição por visão, vídeo→transcrição da faixa + descrição de frames. Como o derivado é **texto puro**, ele entra no contexto do agente (histórico + turno) e QUALQUER modelo o lê — é a garantia de universalidade. `get-lead-context.ts` troca `[image]`/`[audio]` pelo derivado.
 
-`get-lead-context.ts` troca `[image]`/`[audio]` pelo derivado — o agente passa a "ver" mídia inclusive no histórico. Corrida derivado × turno: aguardar com timeout curto; se estourar, segue com placeholder e o derivado entra no próximo turno.
+2. **Camada de aprimoramento (por-modelo, capability-gated) — parte nativa.** Para a mídia do turno CORRENTE, se o modelo configurado é conhecido por aceitar a modalidade nativamente, anexa-se também a content part nativa da AI SDK (`{type:'image', image}` / `{type:'file', data, mediaType}`) para fidelidade máxima. O seam `run-model-call.ts` já passa `ModelMessage[]` cru e a AI SDK v7 normaliza as parts para Claude/OpenAI/Gemini — ponto de injeção único: `inbound-turn.ts` (onde nasce `openingMessages`). Modelo desconhecido → sem parte nativa, o derivado já cobre (nunca quebra).
+
+**Peças da universalidade:**
+- **Provider registry** (`lib/agent-engine/edge/llm/providers.ts`): registrar `openai` e `google` ao lado de `anthropic` (uma linha cada; deps `@ai-sdk/{openai,google}` já instaladas). BYOK (`ai_provider_credentials`) já aceita os três no check.
+- **Capability registry** (novo, declarativo): mapa por provider/prefixo de modelo → `{ image, pdf }`. Default conservador (modelo desconhecido = só derivado). Estender = uma linha; nunca quebra por construção.
+- **`TranscriptionProvider` plugável** (decisão 1): default = API speech-to-text via credencial BYOK (OpenAI Whisper / Groq); `mlx-whisper` opcional em Apple Silicon. O derivado é texto → alimenta qualquer modelo de chat.
+- **Derivação usa a mesma resolução BYOK** (`resolveOrgLlmConfig`) e o capability map p/ escolher um modelo de visão do tenant — model-agnóstica de ponta a ponta.
+
+| Tipo | Camada universal (derivado) | Aprimoramento nativo (se capaz) |
+|---|---|---|
+| Imagem | Descrição por visão (modelo do tenant) | `{type:'image'}` no turno |
+| PDF | Texto extraído | `{type:'file'}` no turno |
+| Áudio/PTT | Transcrição (`TranscriptionProvider`) | — (nenhum provider aceita áudio nativo no chat hoje; derivado é o caminho) |
+| Vídeo | Flag por agente, off default (decisão 2): ffmpeg → faixa de áudio (transcrição) + N frames (descrição) → derivado | — |
+
+Corrida derivado × turno: aguardar com timeout curto; se estourar, o turno segue com o que houver (placeholder/parcial) e o derivado completo entra no próximo turno. Flag por-agente `multimodal_input` (nativo on/off) e `video_frames_enabled` em `ai_agent_versions`.
 
 ## Onda 4 — Split de mensagens configurável
 
