@@ -14,6 +14,7 @@ import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
 import { createPool } from "@/lib/agent-engine/db/pool";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
+import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -21,7 +22,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const MEDIA_DERIVE_CONSUMER_KEY = "media_derive_v1";
 const DRAIN_MAX_ATTEMPTS = 5; // espelho de lib/event-log/drain.ts
 
-const DERIVABLE = new Set(["audio", "image", "document"]);
+const DERIVABLE = new Set(["audio", "image", "document", "video"]);
 
 // ponytail: singleton lazy — o drain só nos dá o admin client; resolveOrgLlmConfig
 // exige pg.Pool direto. Sem pool global no processo Next.js, então criamos um sob
@@ -61,6 +62,19 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
   if (!msg?.media_storage_path) return { consumer_key, status: "skipped", detail: "no media" };
   if (msg.media_derived_status === "ready") return { consumer_key, status: "skipped", detail: "already derived" };
   if (!DERIVABLE.has(msg.type)) return { consumer_key, status: "skipped", detail: `type ${msg.type}` };
+  // Vídeo é opt-in (custo: ffmpeg + N chamadas de visão): só deriva se algum agente
+  // publicado da org tem video_frames_enabled=true (flag da migration 0058).
+  if (msg.type === "video") {
+    const { data: flag } = await admin
+      .from("ai_agent_versions")
+      .select("id")
+      .eq("organization_id", row.organization_id)
+      .eq("status", "published")
+      .eq("video_frames_enabled", true)
+      .limit(1)
+      .maybeSingle();
+    if (!flag) return { consumer_key, status: "skipped", detail: "video_frames_disabled" };
+  }
 
   const markFailed = async () => {
     await admin.from("messages").update({ media_derived_status: "failed" })
@@ -115,9 +129,12 @@ function buildDeriveDeps(llm: { provider: string; apiKey: string; defaultModel: 
     });
     return res.text;
   };
+  const transcriber = apiTranscriptionProvider({ apiKey: llm.apiKey });
   return {
-    transcriber: apiTranscriptionProvider({ apiKey: llm.apiKey }),
+    transcriber,
     describeImage,
     extractPdf: extractPdfText,
+    // Onda 3.1: vídeo → ffmpeg (áudio+frames) reusando transcrição e visão da org.
+    deriveVideo: (buffer) => deriveVideoText(buffer, { transcriber, describeImage }),
   };
 }

@@ -11,6 +11,8 @@ export interface DeriveDeps {
   transcriber: TranscriptionProvider;
   describeImage(buffer: Buffer, mime: string): Promise<string>;
   extractPdf(buffer: Buffer): Promise<string>;
+  /** Onda 3.1: derivação de vídeo (ffmpeg → áudio+frames). Ausente = vídeo não derivado. */
+  deriveVideo?: (buffer: Buffer, mime: string) => Promise<string>;
 }
 
 export async function deriveMediaText(
@@ -27,7 +29,9 @@ export async function deriveMediaText(
     text = await deps.extractPdf(buffer);
   } else if (kind === "image") {
     text = await deps.describeImage(buffer, mime);
+  } else if (kind === "video" && deps.deriveVideo) {
+    text = await deps.deriveVideo(buffer, mime);
   }
-  // sticker/video/document-não-pdf: sem derivado nesta onda.
+  // sticker/document-não-pdf (e vídeo sem deriveVideo): sem derivado.
   return (text ?? "").slice(0, MAX_DERIVED_CHARS);
 }
