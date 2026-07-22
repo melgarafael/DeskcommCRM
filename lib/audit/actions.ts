@@ -147,4 +147,5 @@ export type AuditAction =
   | "followup_flow.disabled"
   | "followup_flow.rolled_back"
   | "followup.worker_run"
-  | "followup_enrollment.created";
+  | "followup_enrollment.created"
+  | "followup_enrollment.cancelled";

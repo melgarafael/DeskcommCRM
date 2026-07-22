@@ -4,7 +4,9 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FlowsList } from "./_components/FlowsList";
+import { QueueTab } from "./_components/QueueTab";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +16,8 @@ export default async function FollowupFlowsPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
-  if (ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
-    redirect("/403");
-  }
+  // Fluxos (edição) segue exigindo manager+; a Fila (leitura) é de qualquer
+  // member — o gate por tela fica dentro das abas (canWrite), não na rota.
 
   const supabase = await createClient();
   const { data } = await supabase
@@ -39,7 +40,18 @@ export default async function FollowupFlowsPage() {
           </p>
         </div>
       </header>
-      <FlowsList initialData={flows} canWrite={canWrite} />
+      <Tabs defaultValue="fluxos" className="flex flex-1 flex-col">
+        <TabsList>
+          <TabsTrigger value="fluxos">Fluxos</TabsTrigger>
+          <TabsTrigger value="fila">Fila</TabsTrigger>
+        </TabsList>
+        <TabsContent value="fluxos">
+          <FlowsList initialData={flows} canWrite={canWrite} />
+        </TabsContent>
+        <TabsContent value="fila">
+          <QueueTab canWrite={canWrite} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
