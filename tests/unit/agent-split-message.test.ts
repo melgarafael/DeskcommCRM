@@ -31,4 +31,13 @@ describe("splitIntoBubbles", () => {
     expect(out).toContain(big);
     expect(out.every((b) => b.length > 0)).toBe(true);
   });
+  it("não perde texto quando o ponto não é seguido de espaço (preço decimal)", () => {
+    const out = splitIntoBubbles(
+      "Seu pedido de R$149.90 já saiu para entrega hoje as 14h no bairro central.",
+      30,
+    );
+    expect(out.join(" ")).toContain("Seu pedido");
+    expect(out.join(" ")).toContain("149");
+    expect(out.join(" ")).toContain("central");
+  });
 });

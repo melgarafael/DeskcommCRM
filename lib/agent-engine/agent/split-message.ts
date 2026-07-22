@@ -1,4 +1,3 @@
-// lib/agent-engine/agent/split-message.ts
 /**
  * Quebra o texto da resposta em "bolhas" curtas (Onda 4) — parágrafo → sentença
  * → palavra, juntando pedaços adjacentes que caibam em maxChars. Puro. Usado no
@@ -44,7 +43,7 @@ export function splitIntoBubbles(text: string, maxChars: number): string[] {
 
 /** Divide em sentenças mantendo a pontuação final (. ! ?). */
 function splitSentences(text: string): string[] {
-  const out = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g);
+  const out = text.match(/[^.!?]+[.!?]*/g);
   return (out ?? [text]).map((s) => s.trim()).filter((s) => s !== "");
 }
 
