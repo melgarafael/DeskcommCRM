@@ -3,7 +3,7 @@
  * Aponta o pointer pra uma version já existente (manager+), sem criar uma
  * version nova.
  *
- * Linhagem (migration 0055): version precisa ter `pointer_id = este pointer`
+ * Linhagem (migration 0056): version precisa ter `pointer_id = este pointer`
  * — não basta ser da mesma org. Versions com pointer_id null (órfãs, nunca
  * promovidas a active por nenhum pointer) nunca são alvo de rollback.
  *

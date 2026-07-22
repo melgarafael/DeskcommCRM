@@ -1,7 +1,7 @@
 /**
  * POST /api/v1/ai/followup-flows/:id/publish — valida o draft_graph
  * (validateFlowForPublish, Task 2.2) e, se válido, publica atomicamente via
- * fn_publish_followup_flow_version (migration 0055): insert da version +
+ * fn_publish_followup_flow_version (migration 0056): insert da version +
  * ativação do pointer (active_version_id + status='active') numa função só,
  * sem janela onde a version fica órfã. EXECUTE da função é só service_role
  * (revogado de authenticated) — por isso o client aqui é o admin, com
@@ -89,6 +89,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .from("followup_flow_pointers")
     .select("id, status, active_version_id, updated_at")
     .eq("id", id)
+    .eq("organization_id", activeOrg.orgId)
     .single();
   if (reloadErr || !updatedPointer) {
     return fail("internal_error", reloadErr?.message ?? "followup_flow_reload_failed", 500, {
