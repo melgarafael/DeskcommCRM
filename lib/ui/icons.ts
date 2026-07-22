@@ -22,6 +22,7 @@ export {
   House,
   // admin platform
   Buildings,
+  FlowArrow,
   ChatsCircle,
   ClipboardText,
   Scales,
