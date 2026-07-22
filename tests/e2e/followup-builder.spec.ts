@@ -176,4 +176,42 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator(".react-flow__edge")).toHaveCount(3);
     await page.screenshot({ path: "test-results/followup-6.2-02-connected.png", fullPage: true });
   });
+
+  test("clica no nó Aguardar e configura 10min; clica no nó Ação e configura o prompt_hint", async ({ page }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/followups");
+    const flowName = `E2E Config ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nome").fill(flowName);
+    await dialog.getByRole("button", { name: "Criar fluxo" }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
+    await expect(page.locator(".react-flow")).toBeVisible();
+
+    await page.getByTestId("palette-add-wait").click();
+    await page.getByTestId("palette-add-action").click();
+
+    // Wait node → 10 min.
+    await page.locator('[data-testid^="node-card-wait-"]').click();
+    const panel = page.getByTestId("node-config-panel");
+    await expect(panel).toBeVisible();
+    const durationInput = panel.getByLabel("Duração (minutos)");
+    await durationInput.fill("10");
+    await durationInput.blur();
+    // Subtitle on the card derives straight from committed config — proves the
+    // panel wrote through to the live FlowGraph state, not just local form state.
+    await expect(page.locator('[data-testid^="node-card-wait-"]')).toContainText("10 min");
+    await page.screenshot({ path: "test-results/followup-6.2-03-wait-configured.png", fullPage: true });
+
+    // Action node → prompt_hint.
+    await page.locator('[data-testid^="node-card-action-"]').click();
+    const promptHint = panel.getByLabel("Instrução para a IA");
+    await promptHint.fill("Reforce o benefício e pergunte se ainda tem interesse.");
+    await promptHint.blur();
+    await expect(page.locator('[data-testid^="node-card-action-"]')).toContainText("Reforce o benefício");
+    await page.screenshot({ path: "test-results/followup-6.2-04-action-configured.png", fullPage: true });
+  });
 });

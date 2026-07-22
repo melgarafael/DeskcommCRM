@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -11,13 +11,15 @@ import {
   useEdgesState,
   useReactFlow,
   type Connection,
+  type NodeMouseHandler,
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { toReactFlow, type RFNode, type RFEdge } from "@/lib/followup/graph-mappers";
+import { toReactFlow, type RFNode, type RFEdge, type RFNodeData } from "@/lib/followup/graph-mappers";
 import type { FlowGraph, NodeType } from "@/lib/followup/graph-schema";
 import type { FollowupFlowDetailRow } from "@/hooks/followup/useFollowupFlow";
+import { NodeConfigPanel } from "./NodeConfigPanel";
 import { NodePalette } from "./NodePalette";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
 import { TriggerNode } from "./nodes/TriggerNode";
@@ -56,6 +58,21 @@ function FlowCanvasInner({ initialData }: Props) {
   const nextId = useRef(1);
   const nextEdgeId = useRef(1);
   const { screenToFlowPosition } = useReactFlow();
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  const onNodeClick = useCallback<NodeMouseHandler<RFNode>>((_, node) => {
+    setSelectedNodeId(node.id);
+  }, []);
+  const onPaneClick = useCallback(() => setSelectedNodeId(null), []);
+
+  const updateNodeData = useCallback(
+    (id: string, patch: Partial<RFNodeData>) => {
+      setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)));
+    },
+    [setNodes],
+  );
+
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -122,12 +139,29 @@ function FlowCanvasInner({ initialData }: Props) {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
           fitView
         >
           <Background />
           <Controls />
         </ReactFlow>
       </div>
+
+      {selectedNode && (
+        // Docked panel, NOT a modal overlay — the canvas stays fully clickable
+        // so switching node selection (or dragging edges) works while it's open.
+        <aside
+          className="h-full w-96 shrink-0 overflow-y-auto border-l border-border bg-surface p-4"
+          data-testid="node-config-sheet"
+        >
+          <NodeConfigPanel
+            key={selectedNode.id}
+            node={selectedNode}
+            onChange={(patch) => updateNodeData(selectedNode.id, patch)}
+          />
+        </aside>
+      )}
     </div>
   );
 }
