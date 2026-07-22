@@ -33,7 +33,7 @@
 |---|---|---|
 | 0 — Fundação mídia (Storage + MediaSource + signed URL) | ✅ COMPLETA (7/7 + review final ready-to-merge) | E2E REAL provado 2026-07-21: WhatsApp "Lia" +5511 4863-3324 conectado por QR; Rafael enviou imagem/áudio/vídeo/PDF/figurinha reais → 5/5 ingeridos com tipo certo, worker persistiu no bucket (SQL: `media_status='stored'`, bytes corretos, path `{org}/{conv}/{msg}.{ext}`); endpoint 302→signed URL 5/5 com content-type certo (~800ms), cross-org 404. Evidências: `.superpowers/evidence/inbox-multimodal-onda0-{inbox,endpoint}.png`. T1: bucket via migration **0055** (0054 tomado por branch irmã). |
 | 1 — Render real na UI | ✅ COMPLETA (review final ready) | E2E real 2026-07-21: 5/5 mídias RENDERIZADAS na conversa real; áudio tocou (currentTime 1.41s, 1.5x no clique), vídeo 103.9s, lightbox Esc ok; medidas por getBoundingClientRect: img 256×192 (4:3), sticker 160×160, audio 240×44, video 384×216 (16:9), zero overflow; 391+ testes, tsc/lint 0. Evidências: .superpowers/evidence/inbox-multimodal-onda1-{thread,lightbox}.png. Forward Onda 2: alargar hasMedia p/ media_storage_path. |
-| 2 — Composer WhatsApp (anexo/áudio/emoji) | ⏳ aguarda 0-1 | — |
+| 2 — Composer WhatsApp (anexo/áudio/emoji) | 🛠 em execução (T1 ✅, T2 em curso) | T1: upload outbound storage-first com guard de DoS e allowlist por categoria (8 testes). Plano: docs/superpowers/plans/2026-07-21-onda2-composer-whatsapp.md (deps novas: emoji-mart lazy; contingência voz OGG registrada). |
 | 3 — Agente multimodal (vision/transcrição/PDF/vídeo) | ⏳ aguarda 0 | — |
 | 4 — Split de mensagens | ⏳ | — |
 | 5 — Toolkit vendedor (templates, draft IA, notas, snooze) | ⏳ | — |
