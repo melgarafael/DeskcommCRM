@@ -51,3 +51,10 @@ begin
   return new;
 end;
 $fn$;
+
+-- Espelha o baseline: re-assenta o trigger idempotentemente (aponta pra mesma
+-- função pós-create-or-replace; no-op num banco que já o tem do 0051).
+drop trigger if exists trg_ai_agent_versions_content_immutable on public.ai_agent_versions;
+create trigger trg_ai_agent_versions_content_immutable
+  before update on public.ai_agent_versions
+  for each row execute function fn_ai_agent_version_content_immutable();
