@@ -89,6 +89,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
       .from("followup_flow_pointers")
       .select(DETAIL_COLUMNS)
       .eq("id", id)
+      .eq("organization_id", activeOrg.orgId)
       .single();
     if (reloadErr || !unchanged) {
       return fail("internal_error", reloadErr?.message ?? "reload_failed", 500, { requestId });

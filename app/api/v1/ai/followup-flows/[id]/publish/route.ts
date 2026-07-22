@@ -1,8 +1,11 @@
 /**
  * POST /api/v1/ai/followup-flows/:id/publish — valida o draft_graph
- * (validateFlowForPublish, Task 2.2) e, se válido, cria uma nova
- * followup_flow_versions com o graph e aponta o pointer pra ela
- * (active_version_id + status='active').
+ * (validateFlowForPublish, Task 2.2) e, se válido, publica atomicamente via
+ * fn_publish_followup_flow_version (migration 0055): insert da version +
+ * ativação do pointer (active_version_id + status='active') numa função só,
+ * sem janela onde a version fica órfã. EXECUTE da função é só service_role
+ * (revogado de authenticated) — por isso o client aqui é o admin, com
+ * organization_id sempre filtrado explicitamente (nunca do body).
  *
  * 422 validation_failed com details.errors (mesmo shape de PublishValidationError)
  * se draft_graph ausente ou reprovado na validação estrutural/semântica.
@@ -13,8 +16,9 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { validateFlowForPublish } from "@/lib/followup/validate-publish";
+import { publishFollowupFlowVersion } from "@/lib/followup/publish";
 import type { FlowGraph } from "@/lib/followup/graph-schema";
 
 export const dynamic = "force-dynamic";
@@ -34,8 +38,8 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (!authz.ok) return authz.response;
   const { user, org: activeOrg } = authz;
 
-  const supabase = await createClient();
-  const { data: pointer, error: fetchErr } = await supabase
+  const admin = createAdminClient();
+  const { data: pointer, error: fetchErr } = await admin
     .from("followup_flow_pointers")
     .select("id, draft_graph")
     .eq("id", id)
@@ -68,30 +72,26 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     });
   }
 
-  const { data: version, error: versionErr } = await supabase
-    .from("followup_flow_versions")
-    .insert({ organization_id: activeOrg.orgId, graph, created_by: user.id })
-    .select("id, created_at")
-    .single();
-  if (versionErr || !version) {
-    return fail("internal_error", versionErr?.message ?? "followup_flow_version_insert_failed", 500, {
-      requestId,
-    });
+  const result = await publishFollowupFlowVersion(admin, {
+    orgId: activeOrg.orgId,
+    pointerId: id,
+    graph,
+    createdBy: user.id,
+  });
+  if (!result.ok) {
+    if (result.code === "pointer_not_found") {
+      return fail("not_found", "Fluxo não encontrado.", 404, { requestId });
+    }
+    return fail("internal_error", result.message, 500, { requestId });
   }
 
-  const { data: updatedPointer, error: updErr } = await supabase
+  const { data: updatedPointer, error: reloadErr } = await admin
     .from("followup_flow_pointers")
-    .update({
-      active_version_id: version.id,
-      status: "active",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
     .select("id, status, active_version_id, updated_at")
+    .eq("id", id)
     .single();
-  if (updErr || !updatedPointer) {
-    return fail("internal_error", updErr?.message ?? "followup_flow_pointer_update_failed", 500, {
+  if (reloadErr || !updatedPointer) {
+    return fail("internal_error", reloadErr?.message ?? "followup_flow_reload_failed", 500, {
       requestId,
     });
   }
@@ -103,7 +103,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     resourceType: "followup_flow_pointer",
     resourceId: id,
     requestId,
-    metadata: { version_id: version.id },
+    metadata: { version_id: result.version_id },
   });
 
   return ok(updatedPointer, { requestId });

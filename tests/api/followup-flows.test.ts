@@ -12,12 +12,14 @@ import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { fail } from "@/lib/api/wrappers";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 import type { FlowGraph, FlowNode, FlowEdge } from "@/lib/followup/graph-schema";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -176,7 +178,32 @@ function makeDb(pointers: Row[], versions: Row[]) {
     return b;
   }
 
-  return { from: (table: string) => builder(table) };
+  /** Mirrors fn_publish_followup_flow_version (migration 0055): insert version
+   *  (with pointer_id) + activate pointer, atomically, or 'pointer_not_found'. */
+  async function rpc(name: string, params: Record<string, unknown>) {
+    if (name !== "fn_publish_followup_flow_version") {
+      return { data: null, error: { message: `unknown rpc: ${name}` } };
+    }
+    const pointer = pointers.find((p) => p.id === params.p_pointer);
+    if (!pointer || pointer.organization_id !== params.p_org) {
+      return { data: null, error: { message: "pointer_not_found" } };
+    }
+    const versionId = randomUUID();
+    versions.push({
+      id: versionId,
+      organization_id: params.p_org,
+      pointer_id: params.p_pointer,
+      graph: params.p_graph,
+      created_by: params.p_created_by,
+      created_at: new Date().toISOString(),
+    });
+    pointer.active_version_id = versionId;
+    pointer.status = "active";
+    pointer.updated_at = new Date().toISOString();
+    return { data: versionId, error: null };
+  }
+
+  return { from: (table: string) => builder(table), rpc };
 }
 
 function session(effectiveRole: Role, db: ReturnType<typeof makeDb>) {
@@ -196,6 +223,8 @@ function session(effectiveRole: Role, db: ReturnType<typeof makeDb>) {
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.mocked(createClient).mockResolvedValue(db as any);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  vi.mocked(createAdminClient).mockReturnValue(db as any);
 }
 
 function req(method: string, body?: Record<string, unknown>) {
@@ -381,6 +410,17 @@ describe("PATCH /api/v1/ai/followup-flows/:id", () => {
     const res = await PATCH(req("PATCH", { name: "B" }), ctx("55555555-5555-4555-8555-555555555555"));
     expect(res.status).toBe(404);
   });
+
+  it("body {} (nada a mudar) → 200, recarrega o pointer da própria org (reload filtra organization_id)", async () => {
+    const db = makeDb([pointerRow({ name: "nome-original" })], []);
+    session("manager", db);
+    const { PATCH } = await import("@/app/api/v1/ai/followup-flows/[id]/route");
+    const res = await PATCH(req("PATCH", {}), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Row };
+    expect(body.data.name).toBe("nome-original");
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -461,28 +501,53 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/v1/ai/followup-flows/:id/rollback", () => {
+  const P1 = "33333333-3333-4333-8333-333333333333";
+  const OTHER_POINTER = "99999999-9999-4999-8999-999999999999";
+
   it("version_id de outra org → 404 not_found", async () => {
     const db = makeDb(
-      [{ id: "33333333-3333-4333-8333-333333333333", organization_id: ORG_ID, status: "active", active_version_id: "66666666-6666-4666-8666-666666666666" }],
-      [{ id: "88888888-8888-4888-8888-888888888888", organization_id: OTHER_ORG_ID, graph: VALID_GRAPH }],
+      [{ id: P1, organization_id: ORG_ID, status: "active", active_version_id: "66666666-6666-4666-8666-666666666666" }],
+      [{ id: "88888888-8888-4888-8888-888888888888", organization_id: OTHER_ORG_ID, pointer_id: P1, graph: VALID_GRAPH }],
     );
     session("manager", db);
     const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/rollback/route");
-    const res = await POST(req("POST", { version_id: "88888888-8888-4888-8888-888888888888" }), ctx("33333333-3333-4333-8333-333333333333"));
+    const res = await POST(req("POST", { version_id: "88888888-8888-4888-8888-888888888888" }), ctx(P1));
     expect(res.status).toBe(404);
   });
 
-  it("version_id válido na org → 200, pointer aponta pra ela e status volta a active", async () => {
+  it("version da mesma org mas de OUTRO pointer (linhagem errada) → 404 not_found", async () => {
     const db = makeDb(
-      [{ id: "33333333-3333-4333-8333-333333333333", organization_id: ORG_ID, status: "active", active_version_id: "66666666-6666-4666-8666-666666666666" }],
+      [{ id: P1, organization_id: ORG_ID, status: "active", active_version_id: "66666666-6666-4666-8666-666666666666" }],
+      [{ id: "77777777-7777-4777-8777-777777777777", organization_id: ORG_ID, pointer_id: OTHER_POINTER, graph: VALID_GRAPH }],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/rollback/route");
+    const res = await POST(req("POST", { version_id: "77777777-7777-4777-8777-777777777777" }), ctx(P1));
+    expect(res.status).toBe(404);
+  });
+
+  it("version órfã (pointer_id null) → 404 not_found, nunca é alvo de rollback", async () => {
+    const db = makeDb(
+      [{ id: P1, organization_id: ORG_ID, status: "active", active_version_id: "66666666-6666-4666-8666-666666666666" }],
+      [{ id: "77777777-7777-4777-8777-777777777777", organization_id: ORG_ID, pointer_id: null, graph: VALID_GRAPH }],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/rollback/route");
+    const res = await POST(req("POST", { version_id: "77777777-7777-4777-8777-777777777777" }), ctx(P1));
+    expect(res.status).toBe(404);
+  });
+
+  it("version_id válido e da linhagem do pointer → 200, pointer aponta pra ela", async () => {
+    const db = makeDb(
+      [{ id: P1, organization_id: ORG_ID, status: "active", active_version_id: "66666666-6666-4666-8666-666666666666" }],
       [
-        { id: "66666666-6666-4666-8666-666666666666", organization_id: ORG_ID, graph: VALID_GRAPH },
-        { id: "77777777-7777-4777-8777-777777777777", organization_id: ORG_ID, graph: VALID_GRAPH },
+        { id: "66666666-6666-4666-8666-666666666666", organization_id: ORG_ID, pointer_id: P1, graph: VALID_GRAPH },
+        { id: "77777777-7777-4777-8777-777777777777", organization_id: ORG_ID, pointer_id: P1, graph: VALID_GRAPH },
       ],
     );
     session("manager", db);
     const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/rollback/route");
-    const res = await POST(req("POST", { version_id: "77777777-7777-4777-8777-777777777777" }), ctx("33333333-3333-4333-8333-333333333333"));
+    const res = await POST(req("POST", { version_id: "77777777-7777-4777-8777-777777777777" }), ctx(P1));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { active_version_id: string; status: string } };
     expect(body.data.active_version_id).toBe("77777777-7777-4777-8777-777777777777");
@@ -490,6 +555,23 @@ describe("POST /api/v1/ai/followup-flows/:id/rollback", () => {
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "followup_flow.rolled_back" }),
     );
+  });
+
+  it("pointer 'disabled' → rollback só troca active_version_id, NÃO reativa (status continua disabled)", async () => {
+    const db = makeDb(
+      [{ id: P1, organization_id: ORG_ID, status: "disabled", active_version_id: "66666666-6666-4666-8666-666666666666" }],
+      [
+        { id: "66666666-6666-4666-8666-666666666666", organization_id: ORG_ID, pointer_id: P1, graph: VALID_GRAPH },
+        { id: "77777777-7777-4777-8777-777777777777", organization_id: ORG_ID, pointer_id: P1, graph: VALID_GRAPH },
+      ],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/rollback/route");
+    const res = await POST(req("POST", { version_id: "77777777-7777-4777-8777-777777777777" }), ctx(P1));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { active_version_id: string; status: string } };
+    expect(body.data.active_version_id).toBe("77777777-7777-4777-8777-777777777777");
+    expect(body.data.status).toBe("disabled");
   });
 });
 

@@ -3,11 +3,13 @@
  * Aponta o pointer pra uma version já existente (manager+), sem criar uma
  * version nova.
  *
- * KNOWN GAP: followup_flow_versions não tem pointer_id (migration 0054) —
- * versions só se ligam ao pointer via active_version_id, não há tabela de
- * linhagem por pointer. Por isso o check aqui é "version pertence à MESMA
- * org", não "version já foi ativa deste pointer". Levantar em revisão final:
- * se aceitável, considerar registrar pointer_id em followup_flow_versions.
+ * Linhagem (migration 0055): version precisa ter `pointer_id = este pointer`
+ * — não basta ser da mesma org. Versions com pointer_id null (órfãs, nunca
+ * promovidas a active por nenhum pointer) nunca são alvo de rollback.
+ *
+ * Só troca active_version_id — NÃO força status='active'. Se o fluxo estava
+ * 'disabled', continua 'disabled' (rollback muda o QUE seria publicado, não
+ * o estado de ativação do pointer).
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .select("id")
     .eq("id", parsed.data.version_id)
     .eq("organization_id", activeOrg.orgId)
+    .eq("pointer_id", id)
     .maybeSingle();
   if (versionErr) return fail("internal_error", versionErr.message, 500, { requestId });
   if (!version) return fail("not_found", "Version não encontrada.", 404, { requestId });
@@ -73,7 +76,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .from("followup_flow_pointers")
     .update({
       active_version_id: version.id,
-      status: "active",
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
