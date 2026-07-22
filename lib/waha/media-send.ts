@@ -15,6 +15,11 @@ export interface WahaSendPlan {
   payload: Record<string, unknown>;
 }
 
+/** Posse do objeto no bucket: o path DEVE estar sob {org}/{conversation}/ (chaves do Storage são literais — sem semântica de traversal). */
+export function isMediaPathOwnedBy(path: string, orgId: string, conversationId: string): boolean {
+  return path.startsWith(`${orgId}/${conversationId}/`);
+}
+
 export function wahaSendPlanFor(kind: string, media: OutboundMedia): WahaSendPlan {
   const file: Record<string, unknown> = { url: media.url, mimetype: media.mime };
   if (media.filename) file.filename = media.filename;

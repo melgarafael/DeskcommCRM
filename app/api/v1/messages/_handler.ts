@@ -15,7 +15,7 @@ import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 import { getWahaClient } from "@/lib/waha/client";
-import { wahaSendPlanFor } from "@/lib/waha/media-send";
+import { isMediaPathOwnedBy, wahaSendPlanFor } from "@/lib/waha/media-send";
 import { parseWahaMessageId } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
 
@@ -113,9 +113,14 @@ export async function listMessagesHandler(
 // send
 // ---------------------------------------------------------------------------
 
-function previewFrom(input: { body?: string; media_url?: string; type?: string }): string {
+function previewFrom(input: {
+  body?: string;
+  media_url?: string;
+  media_storage_path?: string;
+  type?: string;
+}): string {
   if (input.body) return input.body.slice(0, 280);
-  if (input.media_url) return `[${input.type ?? "media"}]`;
+  if (input.media_url || input.media_storage_path) return `[${input.type ?? "media"}]`;
   return "";
 }
 
@@ -158,6 +163,16 @@ export async function sendMessageHandler(
       undefined,
       ctx.requestId,
       "Contato bloqueou o atendimento.",
+    );
+  }
+
+  if (input.media_storage_path && !isMediaPathOwnedBy(input.media_storage_path, c.organization_id, c.id)) {
+    throw new ApiError(
+      422,
+      "invalid_media_path",
+      undefined,
+      ctx.requestId,
+      "media_storage_path fora da conversa.",
     );
   }
 
@@ -287,11 +302,12 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "waha_unknown";
+      const code = msg.startsWith("storage_sign_failed") ? "storage_sign_failed" : "waha_error";
       const { data: updated } = await supabase
         .from("messages")
         .update({
           status: "failed",
-          error_code: "waha_error",
+          error_code: code,
           error_message: msg,
         })
         .eq("id", message.id)
@@ -309,6 +325,7 @@ export async function sendMessageHandler(
       last_message_preview: previewFrom({
         body: input.body,
         media_url: input.media_url,
+        media_storage_path: input.media_storage_path,
         type: input.type,
       }),
     })

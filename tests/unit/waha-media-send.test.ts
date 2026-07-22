@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { wahaSendPlanFor } from "@/lib/waha/media-send";
+import { isMediaPathOwnedBy, wahaSendPlanFor } from "@/lib/waha/media-send";
 
 const media = { url: "https://signed.example/x?token=t", mime: "image/jpeg", filename: "x.jpg", caption: "oi" };
 
@@ -26,5 +26,23 @@ describe("wahaSendPlanFor", () => {
     const plan = wahaSendPlanFor("document", { ...media, mime: "application/pdf", filename: "doc.pdf" });
     expect(plan.endpoint).toBe("sendFile");
     expect((plan.payload.file as { filename: string }).filename).toBe("doc.pdf");
+  });
+});
+
+describe("isMediaPathOwnedBy", () => {
+  const orgId = "org-1";
+  const conversationId = "conv-1";
+
+  it("path da própria org/conversa → true", () => {
+    expect(isMediaPathOwnedBy(`${orgId}/${conversationId}/foo.jpg`, orgId, conversationId)).toBe(true);
+  });
+  it("org diferente → false", () => {
+    expect(isMediaPathOwnedBy(`org-2/${conversationId}/foo.jpg`, orgId, conversationId)).toBe(false);
+  });
+  it("conversa diferente → false", () => {
+    expect(isMediaPathOwnedBy(`${orgId}/conv-2/foo.jpg`, orgId, conversationId)).toBe(false);
+  });
+  it("confusão de prefixo (org-1x/...) → false", () => {
+    expect(isMediaPathOwnedBy(`${orgId}x/${conversationId}/foo.jpg`, orgId, conversationId)).toBe(false);
   });
 });
