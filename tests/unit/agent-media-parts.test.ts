@@ -46,6 +46,10 @@ describe("buildNativeMediaParts", () => {
     expect(parts).toHaveLength(1);
     expect((parts[0] as { image: URL }).image.toString()).toContain("m.jpg");
   });
+  it("imagem seguida de texto (turno atual é texto) → [] (não re-cobra visão)", async () => {
+    const parts = await buildNativeMediaParts({ messages: [imgMsg, textMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: signer() as never });
+    expect(parts).toEqual([]);
+  });
   it("signed URL malformada → [] sem lançar (derivado cobre)", async () => {
     const malformedSigner = {
       storage: {

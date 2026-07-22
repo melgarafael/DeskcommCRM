@@ -31,11 +31,13 @@ export async function buildNativeMediaParts(args: BuildNativeMediaPartsArgs): Pr
   if (!caps.image && !caps.pdf) return [];
 
   const maxItems = args.maxItems ?? 1;
-  // mais recentes primeiro (o array vem em ordem cronológica asc → reverse)
-  const candidates = [...args.messages]
-    .reverse()
-    .filter((m) => m.direction === "inbound" && m.media_storage_path)
-    .slice(0, maxItems);
+  // Gate é "o turno atual tem mídia", não "existe mídia recente no histórico" — senão
+  // uma imagem enviada 3 mensagens atrás seria re-anexada (e re-cobrada da visão) em
+  // todo turno de texto seguinte. Acha a última inbound (qualquer tipo); só vira
+  // candidata se ELA MESMA carrega mídia. WhatsApp = 1 mídia/msg, então isso já é
+  // no máximo 1 item — maxItems fica só como teto declarado na assinatura.
+  const latestInbound = [...args.messages].reverse().find((m) => m.direction === "inbound");
+  const candidates = latestInbound?.media_storage_path ? [latestInbound].slice(0, maxItems) : [];
 
   const parts: NativeMediaPart[] = [];
   // ponytail: esta camada é aprimoramento, não caminho crítico — o derivado textual
