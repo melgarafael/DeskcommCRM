@@ -83,6 +83,7 @@ import {
 } from './skills';
 import { wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
 import { runBeforeSend } from '../guardrails/before-send';
+import { sendInBubbles } from './split-message';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -806,17 +807,24 @@ export async function runAgentTurn(
             ...(semanticClassifier !== undefined ? { classifyPromiseSemantic: semanticClassifier } : {}),
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
-            send: (finalBody) => {
-              seq += 1;
-              return channel.send({
-                tenantId,
-                leadId,
-                jobId: job.id,
-                seq,
-                conversationId: input.conversationId,
-                body: finalBody,
-              });
-            },
+            send: (finalBody) =>
+              sendInBubbles(finalBody, {
+                enabled: agentConfig?.splitMessages ?? false,
+                maxChars: agentConfig?.splitMaxChars ?? 600,
+                sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+                jitter: () => 700 + Math.floor(Math.random() * 800), // 700–1500ms humano
+                send: (bubble): Promise<ChannelSendResult> => {
+                  seq += 1;
+                  return channel.send({
+                    tenantId,
+                    leadId,
+                    jobId: job.id,
+                    seq,
+                    conversationId: input.conversationId,
+                    body: bubble,
+                  });
+                },
+              }),
           });
           if (chain.status === 'vetoed') {
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
@@ -1146,8 +1154,12 @@ export async function runAgentTurn(
     notesIndexBlock,
   });
   // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
-  // skill casadas (F3-09) + hint do classificador (F3-11). Vazios são omitidos.
-  const openingSuffixes = [matchedSkillsBlock, stageHintBlock].filter((b) => b !== '');
+  // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
+  // split_messages está on — Onda 4). Vazios são omitidos.
+  const splitHint = (agentConfig?.splitMessages ?? false)
+    ? 'Responda em mensagens curtas e naturais, uma ideia por mensagem — como uma pessoa digitando no WhatsApp. Prefira várias mensagens curtas a um texto único e longo.'
+    : '';
+  const openingSuffixes = [matchedSkillsBlock, stageHintBlock, splitHint].filter((b) => b !== '');
   const openingText =
     openingSuffixes.length === 0 ? openingBase : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
   // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
