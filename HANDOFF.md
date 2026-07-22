@@ -23,8 +23,8 @@
 
 ## Estado atual
 
-- **Onda:** 4 ✅ COMPLETA. Onda 5 EM ANDAMENTO: Task 5.1 ✅ Approved (ponte engine ⇄ job_queue). Próxima: Task 5.2 (reatividade — inbound acorda classify; ver nota de interplay + RACE do classify lento abaixo).
-- **RACE a resolver na 5.2 (reviewer 5.1, Important):** um job `classify` cujo LLM demora além do `grace_timeout_ms` perde a corrida pro `no_reply` auto-advance do tick — classificação real descartada silenciosamente. NÃO é só "inbound acordou cedo": afeta o caso de LLM lento SEM reatividade nenhuma. Proteção atual: obsolescência (`current_node_id !== nodeId` → no-op) + unique index como CAS — impede corrupção, mas não impede o descarte. Mitigação a considerar na 5.2: não avançar via `no_reply` se um job `classify` ainda está plausivelmente em voo (ex.: checar job_queue status running p/ este enrollment/nó, ou marca de "classify enfileirado" no evento).
+- **Onda:** 4 ✅ COMPLETA. Onda 5 EM ANDAMENTO: Task 5.1 ✅ Approved (ponte engine ⇄ job_queue). Task 5.2 ✅ (reatividade — inbound acorda classify, STOP cancela tudo, handoff pausa/retoma). Próxima: Onda 6 (UI Builder React Flow).
+- **RACE do classify lento — RESOLVIDA na 5.2.** `processNode` (node-handlers.ts) ganhou `wokeEarly?: boolean`: quando `waitElapsed=true` E `wokeEarly=true`, reenfileira classify em vez de rotear `no_reply`. `engine.ts` computa `wokeEarly` checando o marker `${node}:${steps}:wake` nos eventos do enrollment — gravado por `lib/followup/reactivity.ts` quando um inbound chega durante `waiting_reply` sem `cancel_on_reply`. Distinto do idempotency_key de passo que `waitElapsed` já checava (Task 5.1), então os dois sinais nunca se confundem. Provado em `tests/invariants/followup-reactivity.test.ts` (o TESTE CRÍTICO: 1º tick enfileira classify, reactivity empurra `next_eval_at` pra agora ANTES do grace vencer, 2º tick do engine real reenfileira classify — não roteia `no_reply`).
 - **Dev DB:** migrations 0054 e 0056 APLICADAS no projeto rrydmwnporysaiysiztn via Management API (token do CLI no keychain, entrada "Supabase CLI"/"access-token", formato go-keyring-base64). `database.types.ts` regenerado (public,storage,graphql_public). **0057 (Task 4.1, kind `followup_dead`) ainda NÃO aplicada no dev DB remoto** — não bloqueou a prova ao vivo da Task 4.2 porque o cenário provado (trigger→wait→condition→end) nunca passa pelo caminho `markDead`/`agent_inbox_items.kind='followup_dead'`; aplicar antes de qualquer prova futura que precise do caminho dead-letter.
 - **Migration seguinte livre:** 0058.
 - **Pendências deliberadas:** aplicar 0054 no dev DB remoto + regenerar `lib/database.types.ts` → fazer na preparação da Onda 3 (controller faz; subagents sem MCP Supabase). Minors do review 1.1 p/ triagem final: (1) idiom `duplicate_object` nas policies difere da convenção `drop policy if exists` do repo; (2) sem índice org-only em `followup_flow_versions`/`followup_enrollment_events`.
@@ -36,6 +36,57 @@
 - 2026-07-21 (Task 4.1): **`AdminClient` do engine NÃO é `SupabaseClient`** — é uma interface própria e estreita (poucos métodos nomeados: claim/loadGraph/loadLeadFacts/loadEvents/insertEvent/updateEnrollment/loadPointerName/insertDeadInbox). Motivo: `tests/invariants/**` roda contra Postgres cru (`pg.Pool`, sem PostgREST — `NEXT_PUBLIC_SUPABASE_URL` aponta pra porta inalcançável de propósito no `vitest.db.config.ts`), então um `AdminClient=SupabaseClient` real seria intestável ali. `lib/followup/engine.ts` exporta `createSupabaseAdminClient(admin)` pra produção (ainda sem consumidor — a rota de cron é task futura) e o teste DB implementa o adapter `pg`-puro inline. **Próximas tasks que precisarem de uma rota real usando o engine devem usar `createSupabaseAdminClient`, não reinventar.**
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-22: **Task 5.2 ✅ (commits 863d625/ba22723/ebf4a72/d50fffb) — reatividade: inbound acorda classify, STOP cancela tudo, handoff pausa/retoma (o anti-Tomik).**
+  `lib/followup/reactivity.ts` (novo) — `applyReactivityEvent(db, clock, row)` trata 3
+  `event_type`s: `message.received` (contato `is_blocked` → cancela TUDO vivo `opted_out`;
+  senão, `waiting_reply` do contato: `trigger_config.cancel_on_reply` do pointer → cancela
+  `replied`, senão acorda via marker `inbound_woke` step-scoped + `next_eval_at=now`),
+  `ai.handoff_triggered` (aberto — aplica `handoff_policy` do pointer: pause/cancel/allow),
+  `ai.handoff_resolved` (fechado — `paused_handoff`→`active` com `next_eval_at=now+30min`).
+  **DESVIO DELIBERADO do esboço do brief** (cursor próprio em `watchdog_cursors` dentro do
+  tick do `followup-flow-worker`): investiguei o consumidor de `event_log` REAL em produção
+  neste repo — `lib/event-log/dispatcher.ts`+`drain.ts` (roda a cada minuto via
+  `app/api/v1/cron/event-log-drain`, tanto Vercel cron quanto crontab do kit self-host —
+  README.md confirma) com idempotência via `consumed_by[]` já testada
+  (`tests/invariants/event-log-drain.test.ts`). `watchdog_cursors` tem ZERO consumidores TS
+  neste repo (grep confirmou — infra não usada). Reusar o dispatcher genérico
+  (`lib/followup/reactivity.handler.ts`, key `followup-reactivity.v1`, registrado em
+  `lib/event-log/register-handlers.ts`) evita inventar um 2º mecanismo de consumo E dá de
+  graça o requisito "falha de reactivity não aborta o tick": são crons/rotas SEPARADOS —
+  isolamento total, não um try/catch agregando summary. `runFollowupTick`/engine.ts
+  continuam intocados nesse aspecto (só ganharam o `wokeEarly` — ver acima).
+  **`ai.handoff_resolved` é evento NOVO** — grep confirmou que não existia NENHUM sinal de
+  fechamento de handoff no repo (só `ai.handoff_triggered` na abertura, via
+  `lib/ai/handoff/orchestrator.ts`); a spec §4 assumia "evento de fechamento já emitido" mas
+  isso nunca foi verdade. Adicionado em `app/api/v1/conversations/[id]/reactivate-bot/route.ts`
+  (rota home-grown, não código portado do WAHA — mesmo padrão `emit_event` de ~30 rotas do
+  repo, ex. `conversations/[id]/claim/route.ts`). Sem isso, `paused_handoff` seria
+  literalmente órfão — violaria o próprio requisito anti-Tomik da task.
+  `lib/followup/api-schemas.ts` — `triggerConfigSchema` ganha `cancel_on_reply` opcional
+  (sibling de `kind`, não dentro de `params`: é política de reação-à-resposta, ortogonal a
+  como o fluxo foi disparado). Aditivo, sem migration (jsonb, Zod só valida na escrita).
+  **Idempotência:** escritas de cancel/pause/resume usam
+  `reactivity:${event_log_row_id}:${enrollment_id}:${tipo}` (redrain do MESMO row nunca
+  duplica); o wake marker usa a chave step-scoped que engine.ts consome. Toda leitura/escrita
+  filtra `organization_id` de `row.organization_id` (nunca do payload).
+  **PROVA:** node-handlers 38/38 (+2 wokeEarly), suíte unit completa 531/531, typecheck 0,
+  lint 0 novo (os 2 erros pré-existentes em `graph-schema.test.ts` da Task 2.1 continuam
+  intocados). DB-real: `tests/invariants/followup-reactivity.test.ts` novo, 10/10 — STOP
+  cancela tudo (3 pointers distintos — a constraint `idx_followup_enrollments_one_live` não
+  permite 2 vivos no mesmo pointer) + idempotência sob re-drain; inbound wake + O TESTE
+  CRÍTICO da corrida classify-lento (sequência `classify_enqueued→inbound_woke→
+  classify_enqueued`, nunca sai do nó via `no_reply`); `cancel_on_reply` true/ausente;
+  handoff pause/cancel/allow; **O CENTERPIECE anti-Tomik**: abre(pause, `next_eval_at=null`)
+  → fecha(`ai.handoff_resolved`) → retoma(`active`, `next_eval_at=now+30min`) → o tick do
+  engine REAL consegue reclamar essa linha depois (`steps_taken` incrementa) — nunca preso;
+  + idempotência do fechamento. Suíte completa de invariantes: 38/38 arquivos, 225 passed |
+  1 skipped (era 215+1 na Task 5.1 — exatos +10 testes, +1 arquivo, zero regressão);
+  install+update do baseline.sql sem erro novo em `pgvector/pgvector:pg17` descartável.
+  **Sem migration nesta task** (widening de Zod sobre jsonb existente, sem tocar schema).
+  Detalhe completo em `.superpowers/sdd/task-5.2-report.md`.
+  **Pendente pra Onda 6:** nenhuma. O motor de reatividade está completo e coberto; a UI
+  (builder React Flow) é trabalho totalmente separado.
 
 - 2026-07-22: **Task 5.1 ✅ (commits ff97ccc/b164560/502f9ab/51cbfb8) — ponte engine ⇄ job_queue.**
   `lib/followup/turn-bridge.ts` (novo): `completeTurnForEnrollment(db, orgId, enrollmentId,
