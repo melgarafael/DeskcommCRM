@@ -44,7 +44,27 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!data) return fail("not_found", "Fluxo não encontrado.", 404, { requestId });
 
-  return ok(data, { requestId });
+  // Linhagem de versions (Task 6.2 — builder): o PublishBar precisa saber se
+  // existe versão anterior pra habilitar Rollback. `.limit()` deliberadamente
+  // evitado (não coberto pelo fake DB de tests/api/followup-flows.test.ts);
+  // volume por pointer é baixo (1 insert por publish), então ordenar tudo em
+  // memória é seguro.
+  const { data: versionRows, error: versionsErr } = await supabase
+    .from("followup_flow_versions")
+    .select("id, created_at")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("pointer_id", id)
+    .order("created_at", { ascending: false });
+  if (versionsErr) return fail("internal_error", versionsErr.message, 500, { requestId });
+
+  return ok(
+    {
+      ...data,
+      versions_count: versionRows?.length ?? 0,
+      previous_version_id: versionRows?.[1]?.id ?? null,
+    },
+    { requestId },
+  );
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {

@@ -80,3 +80,29 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
     await page.waitForURL(/\/403/);
   });
 });
+
+test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
+  test("manager cria um fluxo, clica na linha e o canvas React Flow abre", async ({ page }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/followups");
+    const flowName = `E2E Builder ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nome").fill(flowName);
+    await dialog.getByRole("button", { name: "Criar fluxo" }).click();
+    await expect(dialog).not.toBeVisible();
+
+    const card = page.locator("li", { hasText: flowName });
+    await expect(card).toBeVisible();
+    await card.getByRole("link").click();
+
+    await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
+    await expect(page.getByTestId("flow-builder-shell")).toBeVisible();
+    await expect(page.getByTestId("flow-canvas")).toBeVisible();
+    await expect(page.getByTestId("node-palette")).toBeVisible();
+    // React Flow's own pane element — proves the dynamically-imported canvas actually mounted.
+    await expect(page.locator(".react-flow")).toBeVisible();
+    await page.screenshot({ path: "test-results/followup-6.2-01-canvas-empty.png", fullPage: true });
+  });
+});
