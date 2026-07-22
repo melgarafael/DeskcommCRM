@@ -76,7 +76,18 @@ export async function completeTurnForEnrollment(
   const enrollment = await db.loadEnrollmentById(orgId, enrollmentId);
   if (!enrollment) return; // enrollment sumiu (nunca deveria, mas nada a completar)
   if (enrollment.current_node_id !== nodeId) return; // turno tardio/obsoleto — o enrollment já saiu do nó
-  if (enrollment.status === "completed" || enrollment.status === "cancelled" || enrollment.status === "dead") return;
+  // paused_handoff entra aqui: um turno em voo quando o handoff pausou (reactivity.ts)
+  // NUNCA pode reativar/avançar por baixo do reactToHandoffClose — o resultado é
+  // stale (computado antes do humano intervir); descartar é o comportamento CERTO,
+  // não perda de dado (fix de review — Task 5.2, o guard excluía só completed/
+  // cancelled/dead, deixando essa corrida passar).
+  if (
+    enrollment.status === "completed" ||
+    enrollment.status === "cancelled" ||
+    enrollment.status === "dead" ||
+    enrollment.status === "paused_handoff"
+  )
+    return;
 
   const graph = await db.loadFlowGraph(orgId, enrollment.version_id);
   if (!graph) throw new Error("flow_version_not_found");

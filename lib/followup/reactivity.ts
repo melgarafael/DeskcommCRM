@@ -225,6 +225,13 @@ async function reactToInbound(
 
 // ---- reação 2: ai.handoff_triggered (aberto) -------------------------------
 
+/**
+ * Escopo deliberadamente por CONTATO, não por conversa: `LiveEnrollmentRef`
+ * não carrega `conversation_id` (um contato pode ter enrollments vivos sem
+ * conversa associada — gatilho manual/silêncio) e um handoff numa conversa
+ * pausa TODOS os fluxos vivos do contato, não só um vinculado àquela
+ * conversa específica — o humano está atendendo a PESSOA, não um canal.
+ */
 async function reactToHandoffOpen(
   db: ReactivityAdminClient,
   clock: () => Date,
@@ -276,6 +283,8 @@ async function reactToHandoffOpen(
 
 // ---- reação 3: ai.handoff_resolved (fechado) -------------------------------
 
+/** Mesmo escopo por CONTATO da reactToHandoffOpen acima (não por conversa) —
+ *  retoma TODOS os `paused_handoff` do contato, simétrico à pausa. */
 async function reactToHandoffClose(
   db: ReactivityAdminClient,
   clock: () => Date,

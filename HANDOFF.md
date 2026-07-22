@@ -88,6 +88,51 @@
   **Pendente pra Onda 6:** nenhuma. O motor de reatividade está completo e coberto; a UI
   (builder React Flow) é trabalho totalmente separado.
 
+- 2026-07-22: **Task 5.2 — fix de review (1 Critical + 1 Important + 2 Minors, todos
+  corrigidos).**
+  **Critical** (`lib/followup/turn-bridge.ts`): o guard de obsolescência de
+  `completeTurnForEnrollment` excluía só `completed|cancelled|dead` — faltava
+  `paused_handoff`. Um job `classify`/`action`/`decide_timing` em voo quando um handoff
+  pausa (current_node_id não muda no pause — só `status`) passava o guard incólume e
+  reativava/avançava o enrollment por baixo do humano, ignorando `reactToHandoffClose`
+  inteiramente (mensagens automáticas enquanto um humano segura a conversa). Fix: 1 linha
+  — `paused_handoff` entra na exclusão, a conclusão tardia vira NO-OP (o resultado stale é
+  descartado, não perdido: é exatamente o comportamento certo — foi calculado antes do
+  humano intervir). Provado em `tests/invariants/followup-reactivity.test.ts` (describe
+  novo "completeTurnForEnrollment (turn-bridge) — respeita paused_handoff"): classify job em
+  voo → handoff abre (pausa) → o job completa tarde com resultado 'hot' →
+  enrollment CONTINUA `paused_handoff`/`ac1`/sem evento `ai_classified` → handoff fecha →
+  retoma normalmente pra `active` no MESMO nó (o resultado stale nunca foi aplicado).
+  **Important** (`app/api/v1/conversations/[id]/reactivate-bot/route.ts`): o emit de
+  `ai.handoff_resolved` era fire-and-forget (`.then()` sem await). Nas ~30 outras rotas um
+  evento perdido custa um audit trail; aqui é o ÚNICO produtor do sinal de fechamento, sem
+  retry — um drop órfã `paused_handoff` PRA SEMPRE. Fix: `await` no `emit_event`; falha
+  agora devolve 500 (a query de update já é idempotente — reclicar reactivate-bot é seguro).
+  **Minor 1**: comentário em `reactToHandoffOpen`/`reactToHandoffClose`
+  (`lib/followup/reactivity.ts`) documentando o escopo deliberado por CONTATO (não por
+  conversa) — `LiveEnrollmentRef` não carrega `conversation_id` de propósito.
+  **Minor 2**: `task-5.2-report.md` tinha a formulação ERRADA sobre o caminho
+  `force_human`/`human-handoff.ts` — dizia "pausa sem retomada". Corrigido: esse caminho
+  **nunca chama `emit_event`**, então `ai.handoff_triggered` nunca dispara pra ele,
+  `reactToHandoffOpen` nunca roda, e o enrollment **nunca é pausado** — ele segue tickando
+  normal (`active`/`waiting_reply`), só o ENVIO da mensagem é barrado (guard independente de
+  `force_human` em `before-send.ts`). É "nenhuma pausa acontece", não "pausa órfã".
+  **PROVA:** node-handlers 36/36 (inalterado — este fix não mexe em node-handlers/engine),
+  suíte unit completa 531/531, typecheck 0, lint 0 novo. DB-real:
+  `tests/invariants/followup-reactivity.test.ts` 12/12 (+1 sobre a versão anterior — o teste
+  do Critical), `followup-turn-bridge.test.ts` + `followup-engine.test.ts` sem regressão.
+  Suíte completa de invariantes: 2 de 3 rodadas do `npm run test:invariants` oficial
+  vieram 38/38 arquivos limpo (226 passed | 1 skipped); 1 rodada teve 1 falha intermitente
+  em `followup-engine.test.ts` (`claimed` 2 em vez de 1) — reproduzida em isolamento
+  (arquivo sozinho: sempre verde) e via 2 reruns completos subsequentes (sempre verdes):
+  é o MESMO padrão de flake order-dependent do claim global já documentado no log da Task
+  1.2 (INBOX-001, gov-1b×gov-6) — `fn_claim_due_followup_enrollments` não filtra org, então
+  qualquer due-row residual de um teste anterior pode ser reclamada por outro; não é
+  determinístico e não regrediu com este fix (mesma taxa antes/depois). Não investiguei mais
+  fundo — está fora do escopo deste fix e já está escalado como categoria conhecida.
+  Detalhe completo (seção "Fix de review") em `.superpowers/sdd/task-5.2-report.md`.
+  **Sem migration.**
+
 - 2026-07-22: **Task 5.1 ✅ (commits ff97ccc/b164560/502f9ab/51cbfb8) — ponte engine ⇄ job_queue.**
   `lib/followup/turn-bridge.ts` (novo): `completeTurnForEnrollment(db, orgId, enrollmentId,
   nodeId, result, clock?)` traduz o resultado de um turno em progressão de enrollment — 'sent'

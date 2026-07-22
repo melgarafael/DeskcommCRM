@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
 import { runFollowupTick, type FollowupJobRequest, type TickDeps, type AdminClient } from "@/lib/followup/engine";
+import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 import {
   applyReactivityEvent,
   RESUME_GRACE_MS,
@@ -644,5 +645,77 @@ describe("applyReactivityEvent — anti-Tomik: paused_handoff SEMPRE tem consumi
     expect(s1.reacted).toBe(1);
     expect(s2.reacted).toBe(0); // já não está mais paused_handoff — no LIVE filtro do close
     expect(afterSecond.next_eval_at).toEqual(afterFirst.next_eval_at); // não reagendou de novo
+  });
+});
+
+// ---- 5. FIX DE REVIEW (Critical) — turn-bridge respeita paused_handoff ----
+
+describe("completeTurnForEnrollment (turn-bridge) — respeita paused_handoff", () => {
+  it("classify job em voo quando o handoff pausa: a conclusão tardia é NO-OP — não reativa nem avança por baixo do reactToHandoffClose", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const conversationId = await seedConversation(org, contactId);
+    const { pointerId, versionId } = await seedFlow(org, CLASSIFY_GRAPH, { handoffPolicy: "pause" });
+
+    // 1º tick real: entra no ai_classify, enfileira o job de classify (o job
+    // "em voo" que o cenário descreve) — status vira waiting_reply.
+    const pgDb = createPgAdminClient(pool); // TurnBridgeAdminClient — superset de AdminClient
+    const jobs: FollowupJobRequest[] = [];
+    const enrollmentId = await seedEnrollment({
+      org,
+      pointerId,
+      versionId,
+      contactId,
+      currentNodeId: "ac1",
+      nextEvalAt: new Date(Date.now() - 1_000).toISOString(),
+    });
+    const tick1 = await runFollowupTick({ db: pgDb, clock: () => new Date(), enqueueJob: async (j) => void jobs.push(j) }, { limit: 5 });
+    expect(tick1.scheduled).toBe(1);
+    const afterTick1 = await getEnrollment(enrollmentId);
+    expect(afterTick1.status).toBe("waiting_reply");
+    expect(afterTick1.current_node_id).toBe("ac1");
+
+    // Handoff abre ANTES do job de classify (ainda em voo) terminar — pausa.
+    const reactDb = reactivityDb();
+    await applyReactivityEvent(
+      reactDb,
+      () => new Date(),
+      eventRow({ organization_id: org, event_type: "ai.handoff_triggered", payload: { conversation_id: conversationId } }),
+    );
+    const paused = await getEnrollment(enrollmentId);
+    expect(paused.status).toBe("paused_handoff");
+    expect(paused.current_node_id).toBe("ac1");
+
+    // O job de classify em voo finalmente completa — resultado STALE (calculado
+    // antes do humano intervir). ANTES do fix, o guard de obsolescência só
+    // excluía completed/cancelled/dead: current_node_id ainda bate ("ac1"), então
+    // isto reativaria e avançaria o enrollment por baixo do handoff. Com o fix
+    // (paused_handoff também excluído), é NO-OP.
+    await completeTurnForEnrollment(pgDb, org, enrollmentId, "ac1", { kind: "classified", class: "hot" });
+
+    const afterStaleComplete = await getEnrollment(enrollmentId);
+    expect(afterStaleComplete.status).toBe("paused_handoff"); // NÃO reativou
+    expect(afterStaleComplete.current_node_id).toBe("ac1"); // NÃO avançou pro hot-node
+    expect(afterStaleComplete.next_eval_at).toBeNull(); // continua sem relógio — só o close resolve
+
+    // A conclusão stale não deixou nenhum evento 'ai_classified' — o passo
+    // nunca foi de fato aplicado (idempotency_key livre pro futuro, se algum
+    // dia o mesmo passo precisar ser reprocessado de verdade).
+    const eventsWhilePaused = await getEvents(enrollmentId);
+    expect(eventsWhilePaused.map((e) => e.event_type)).not.toContain("ai_classified");
+
+    // Handoff fecha — retoma NORMALMENTE (reactToHandoffClose, não o turno stale).
+    const closeSummary = await applyReactivityEvent(
+      reactDb,
+      () => new Date(),
+      eventRow({ organization_id: org, event_type: "ai.handoff_resolved", payload: { conversation_id: conversationId, contact_id: contactId } }),
+    );
+    expect(closeSummary.reacted).toBe(1);
+
+    const resumed = await getEnrollment(enrollmentId);
+    expect(resumed.status).toBe("active");
+    expect(resumed.current_node_id).toBe("ac1"); // segue no MESMO nó — o resultado stale foi descartado, não aplicado
+    expect(resumed.next_eval_at).not.toBeNull();
   });
 });
