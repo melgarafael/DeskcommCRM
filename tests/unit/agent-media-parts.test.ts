@@ -2,12 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildNativeMediaParts } from "@/lib/agent-engine/agent/media-parts";
 
+// Mock do admin storage: download() devolve um Blob com bytes (path embutido nos
+// bytes p/ o teste de recência conseguir distinguir qual mídia foi baixada).
 function signer(ok = true) {
   return {
     storage: {
       from: () => ({
-        createSignedUrl: vi.fn(async (path: string) =>
-          ok ? { data: { signedUrl: `https://signed/${path}` }, error: null } : { data: null, error: { message: "x" } },
+        download: vi.fn(async (path: string) =>
+          ok
+            ? { data: new Blob([new TextEncoder().encode(path)]), error: null }
+            : { data: null, error: { message: "x" } },
         ),
       }),
     },
@@ -23,10 +27,10 @@ describe("buildNativeMediaParts", () => {
     const parts = await buildNativeMediaParts({ messages: [imgMsg], provider: "anthropic", model: "claude", multimodalInput: false, admin: signer() as never });
     expect(parts).toEqual([]);
   });
-  it("provider capaz + imagem → part image com signed URL", async () => {
+  it("provider capaz + imagem → part file com mediaType da imagem (AI SDK v7)", async () => {
     const parts = await buildNativeMediaParts({ messages: [imgMsg], provider: "anthropic", model: "claude-sonnet-4-6", multimodalInput: true, admin: signer() as never });
     expect(parts).toHaveLength(1);
-    expect(parts[0]).toMatchObject({ type: "image" });
+    expect(parts[0]).toMatchObject({ type: "file", mediaType: "image/jpeg" });
   });
   it("pdf em provider com pdf → part file", async () => {
     const parts = await buildNativeMediaParts({ messages: [pdfMsg], provider: "google", model: "gemini-2.5-pro", multimodalInput: true, admin: signer() as never });
@@ -44,22 +48,16 @@ describe("buildNativeMediaParts", () => {
     const older = { ...imgMsg, media_storage_path: "org/conv/old.jpg" };
     const parts = await buildNativeMediaParts({ messages: [older, imgMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: signer() as never, maxItems: 1 });
     expect(parts).toHaveLength(1);
-    expect((parts[0] as { image: URL }).image.toString()).toContain("m.jpg");
+    // os bytes baixados contêm o path (mock) — confirma que baixou a mídia MAIS RECENTE.
+    expect(new TextDecoder().decode((parts[0] as { data: Uint8Array }).data)).toContain("m.jpg");
   });
   it("imagem seguida de texto (turno atual é texto) → [] (não re-cobra visão)", async () => {
     const parts = await buildNativeMediaParts({ messages: [imgMsg, textMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: signer() as never });
     expect(parts).toEqual([]);
   });
-  it("signed URL malformada → [] sem lançar (derivado cobre)", async () => {
-    const malformedSigner = {
-      storage: {
-        from: () => ({
-          createSignedUrl: vi.fn(async () => ({ data: { signedUrl: "::not a url::" }, error: null })),
-        }),
-      },
-    };
+  it("falha de download → [] sem lançar (derivado cobre)", async () => {
     await expect(
-      buildNativeMediaParts({ messages: [imgMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: malformedSigner as never }),
+      buildNativeMediaParts({ messages: [imgMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: signer(false) as never }),
     ).resolves.toEqual([]);
   });
 });

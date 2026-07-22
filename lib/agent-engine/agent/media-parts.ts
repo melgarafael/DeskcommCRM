@@ -9,11 +9,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LeadContextMessage } from "@/lib/agent-engine/edge/crm/get-lead-context";
 import { modelCapabilities } from "@/lib/agent-engine/edge/llm/capabilities";
 
-const SIGNED_TTL_S = 300;
 
-export type NativeMediaPart =
-  | { type: "image"; image: URL }
-  | { type: "file"; data: URL; mediaType: string };
+/**
+ * AI SDK v7: imagem E pdf vão como `file` part com `mediaType` (o antigo
+ * `{type:'image', image}` foi DEPRECATED e o provider não o processa). `data`
+ * são os BYTES inline (Buffer do Node), não uma URL: passar signed URL faria o
+ * provider baixá-la pelo seu fetch CONTIDO (allowlist só do endpoint do vendor),
+ * bloqueando o supabase.co — a imagem nunca chegava ao modelo. Baixamos os
+ * bytes aqui (admin client) e mandamos direto.
+ */
+export type NativeMediaPart = { type: "file"; data: Buffer; mediaType: string };
 
 export interface BuildNativeMediaPartsArgs {
   messages: LeadContextMessage[];
@@ -52,11 +57,13 @@ export async function buildNativeMediaParts(args: BuildNativeMediaPartsArgs): Pr
         const isPdf = m.type === "document" && mime === "application/pdf" && caps.pdf;
         if (!isImage && !isPdf) continue;
 
-        const signed = await args.admin.storage.from("whatsapp-media").createSignedUrl(m.media_storage_path!, SIGNED_TTL_S);
-        if (signed.error || !signed.data?.signedUrl) continue;
-        const url = new URL(signed.data.signedUrl);
-        if (isImage) parts.push({ type: "image", image: url });
-        else parts.push({ type: "file", data: url, mediaType: "application/pdf" });
+        const dl = await args.admin.storage.from("whatsapp-media").download(m.media_storage_path!);
+        if (dl.error || !dl.data) continue;
+        // Buffer do Node (não Uint8Array cru) — mesmo shape que o derive worker usa
+        // com sucesso; alguns adapters do AI SDK tratam Buffer e Uint8Array diferente.
+        const bytes = Buffer.from(await dl.data.arrayBuffer());
+        // file part com mediaType p/ imagem e pdf; bytes inline (sem URL p/ o provider baixar).
+        parts.push({ type: "file", data: bytes, mediaType: isImage ? mime : "application/pdf" });
       } catch {
         continue;
       }

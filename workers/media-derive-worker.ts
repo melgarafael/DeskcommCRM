@@ -107,7 +107,8 @@ function buildDeriveDeps(llm: { provider: string; apiKey: string; defaultModel: 
           role: "user",
           content: [
             { type: "text", text: "Descreva objetivamente esta imagem em 1-2 frases, em português, para um atendente de vendas entender o que o cliente enviou." },
-            { type: "image", image: buffer, mediaType: mime.split(";")[0] },
+            // AI SDK v7: file part com mediaType (o antigo image part é deprecated).
+            { type: "file", data: buffer, mediaType: mime.split(";")[0]! },
           ],
         },
       ],
