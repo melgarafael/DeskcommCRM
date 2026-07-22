@@ -63,7 +63,7 @@ describe("DocumentCard", () => {
     );
     expect(screen.getByText("PDF")).toBeInTheDocument();
     expect(screen.getByText(/3,0 MB/)).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: /baixar documento/i });
+    const link = screen.getByRole("link", { name: /baixar pdf \(3,0 MB\)/i });
     expect(link).toHaveAttribute("href", "/api/v1/messages/m5/media");
     expect(link).toHaveAttribute("target", "_blank");
   });

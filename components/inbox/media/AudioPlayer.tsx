@@ -51,7 +51,7 @@ export function AudioPlayer({ messageId, isOutbound }: Props) {
     };
   }, []);
 
-  if (failed) return <MediaUnavailable kind="Áudio" />;
+  if (failed) return <MediaUnavailable kind="Áudio" className="h-12 w-60" />;
 
   // ponytail: OGG streams report Infinity at loadedmetadata; self-heal when refined
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
