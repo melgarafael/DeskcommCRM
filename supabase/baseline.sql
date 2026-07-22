@@ -6349,3 +6349,11 @@ alter table flywheel_distiller_proposals
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('whatsapp-media', 'whatsapp-media', false, 52428800)
 on conflict (id) do update set file_size_limit = excluded.file_size_limit;
+
+-- ---- media multimodal: derivado + flags (migration 0056) ----
+alter table messages
+  add column if not exists media_derived_text text,
+  add column if not exists media_derived_status text;
+alter table ai_agent_versions
+  add column if not exists multimodal_input boolean not null default true,
+  add column if not exists video_frames_enabled boolean not null default false;

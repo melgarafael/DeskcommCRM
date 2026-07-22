@@ -236,6 +236,7 @@ export type Database = {
           id: string
           max_steps: number
           model: string
+          multimodal_input: boolean
           organization_id: string
           provider: string
           published_at: string | null
@@ -246,6 +247,7 @@ export type Database = {
           tool_ids: string[]
           trigger_config: Json
           version_number: number
+          video_frames_enabled: boolean
         }
         Insert: {
           agent_id: string
@@ -261,6 +263,7 @@ export type Database = {
           id?: string
           max_steps?: number
           model: string
+          multimodal_input?: boolean
           organization_id: string
           provider: string
           published_at?: string | null
@@ -271,6 +274,7 @@ export type Database = {
           tool_ids?: string[]
           trigger_config?: Json
           version_number: number
+          video_frames_enabled?: boolean
         }
         Update: {
           agent_id?: string
@@ -286,6 +290,7 @@ export type Database = {
           id?: string
           max_steps?: number
           model?: string
+          multimodal_input?: boolean
           organization_id?: string
           provider?: string
           published_at?: string | null
@@ -296,6 +301,7 @@ export type Database = {
           tool_ids?: string[]
           trigger_config?: Json
           version_number?: number
+          video_frames_enabled?: boolean
         }
         Relationships: [
           {
@@ -3071,6 +3077,8 @@ export type Database = {
           error_message: string | null
           external_id: string | null
           id: string
+          media_derived_status: string | null
+          media_derived_text: string | null
           media_mime: string | null
           media_size_bytes: number | null
           media_storage_path: string | null
@@ -3099,6 +3107,8 @@ export type Database = {
           error_message?: string | null
           external_id?: string | null
           id?: string
+          media_derived_status?: string | null
+          media_derived_text?: string | null
           media_mime?: string | null
           media_size_bytes?: number | null
           media_storage_path?: string | null
@@ -3127,6 +3137,8 @@ export type Database = {
           error_message?: string | null
           external_id?: string | null
           id?: string
+          media_derived_status?: string | null
+          media_derived_text?: string | null
           media_mime?: string | null
           media_size_bytes?: number | null
           media_storage_path?: string | null
