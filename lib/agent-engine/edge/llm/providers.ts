@@ -4,6 +4,8 @@
  * BYOK da org: sem pool global de chave, sem fallback silencioso.
  */
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
@@ -19,6 +21,8 @@ export type ProviderRegistry = Record<string, (apiKey: string, modelId: string) 
  * que ele entra (junto do `fetch` contido), nunca espalhado.
  */
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com';
+const OPENAI_ENDPOINT = 'https://api.openai.com';
+const GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com';
 
 /**
  * Providers reais do lançamento. Sonnet (Anthropic) é o default RECOMENDADO —
@@ -29,19 +33,24 @@ const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com';
  * allowlist do provider = seu endpoint canônico + hosts extra de config
  * (`allowedHosts`, ex.: proxy corporativo). Testes usam o registry fake
  * (createFakeRegistry, sem fetch real); este caminho só é exercitado pelo smoke
- * (rede real → api.anthropic.com allowlistada).
- *
- * ponytail: openai/google entram quando a primeira org pedir — cada um é uma
- * linha aqui (endpoint + fetch contido) + dep já instalada no repo.
+ * (rede real → endpoint canônico do provider allowlistado).
  */
 export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): ProviderRegistry {
-  const anthropicAllowlist = buildAllowlist([ANTHROPIC_ENDPOINT, ...(opts?.allowedHosts ?? [])]);
-  const containedFetch: typeof fetch = (input, init) => {
-    const url = typeof input === 'string' || input instanceof URL ? input : input.url;
-    return allowlistedFetch(url, init, { allowlist: anthropicAllowlist });
+  const extra = opts?.allowedHosts ?? [];
+  const contain = (endpoint: string): typeof fetch => {
+    const allow = buildAllowlist([endpoint, ...extra]);
+    return (input, init) => {
+      const url = typeof input === 'string' || input instanceof URL ? input : input.url;
+      return allowlistedFetch(url, init, { allowlist: allow });
+    };
   };
   return {
-    anthropic: (apiKey, modelId) => createAnthropic({ apiKey, fetch: containedFetch })(modelId),
+    anthropic: (apiKey, modelId) =>
+      createAnthropic({ apiKey, fetch: contain(ANTHROPIC_ENDPOINT) })(modelId),
+    openai: (apiKey, modelId) =>
+      createOpenAI({ apiKey, fetch: contain(OPENAI_ENDPOINT) })(modelId),
+    google: (apiKey, modelId) =>
+      createGoogleGenerativeAI({ apiKey, fetch: contain(GOOGLE_ENDPOINT) })(modelId),
   };
 }
 
