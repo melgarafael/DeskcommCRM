@@ -14,6 +14,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { audit } from "@/lib/audit";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
+import { bareWaMessageId } from "@/lib/waha/message-id";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -458,11 +459,13 @@ async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promis
   if (ack >= 2) update.delivered_at = now;
   if (ack >= 3) update.read_at = now;
 
+  // O ack do WAHA 2026.x vem como `{fromMe}_{chatId}_{bareId}`, mas o envio
+  // gravou `external_id` = bareId. Normaliza p/ a cauda antes de casar.
   await admin
     .from("messages")
     .update(update)
     .eq("organization_id", session.organization_id)
-    .eq("external_id", p.id);
+    .eq("external_id", bareWaMessageId(p.id));
 }
 
 interface SessionStatusRow extends Session {

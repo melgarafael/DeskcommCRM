@@ -21,3 +21,19 @@ export function parseWahaMessageId(raw: unknown): string | null {
   if (typeof r.key === 'object' && r.key !== null && typeof r.key.id === 'string') return r.key.id;
   return null;
 }
+
+/**
+ * Normaliza um id de mensagem WAHA para a "cauda" serializada (bare id).
+ *
+ * O WAHA 2026.x/NOWEB é assimétrico: a resposta de ENVIO devolve o id interno
+ * cru (`3EB0…`), mas o webhook `message.ack` chega no formato completo
+ * `{fromMe}_{chatId}_{3EB0…}` (ex.: `true_5511…@lid_3EB0…`). Como o envio grava
+ * `external_id` = bare, casar o ack pelo id completo nunca acha a linha e o
+ * status trava em `sent` (ack=0). Aqui reduzimos ambos ao trecho após o último
+ * `_` — chatId (`@c.us`/`@lid`) e o serializado WA não contêm `_`, então a
+ * cauda é sempre o bare id; um id já-bare passa intacto (sem `_`).
+ */
+export function bareWaMessageId(id: string): string {
+  const cut = id.lastIndexOf('_');
+  return cut === -1 ? id : id.slice(cut + 1);
+}
