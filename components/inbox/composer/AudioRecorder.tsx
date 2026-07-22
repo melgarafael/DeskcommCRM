@@ -26,6 +26,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const discardRef = useRef(false);
+  const startingRef = useRef(false);
   const upload = useUploadMedia();
   const send = useSendMessage();
 
@@ -40,7 +41,19 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
     streamRef.current = null;
   };
 
+  // Trocar de conversa/rota no meio de uma gravação não pode deixar o mic aberto.
+  useEffect(
+    () => () => {
+      discardRef.current = true;
+      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      cleanupStream();
+    },
+    [],
+  );
+
   async function start() {
+    if (startingRef.current || recording) return;
+    startingRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -84,7 +97,13 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
       // permissão negada / sem mic — não gravar é o estado final; toast simples
       const { showApiError } = await import("@/components/feedback/ApiErrorToast");
       showApiError(new Error("Não consegui acessar o microfone. Verifique a permissão do navegador."));
+    } finally {
+      startingRef.current = false;
     }
+  }
+
+  function stopIfRecording() {
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
   }
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -114,7 +133,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         aria-label="Cancelar gravação"
         onClick={() => {
           discardRef.current = true;
-          recorderRef.current?.stop();
+          stopIfRecording();
         }}
       >
         <Trash size={16} weight="regular" aria-hidden />
@@ -128,7 +147,7 @@ export function AudioRecorder({ conversationId, disabled }: Props) {
         size="icon"
         className="h-9 w-9 shrink-0"
         aria-label="Enviar áudio"
-        onClick={() => recorderRef.current?.stop()}
+        onClick={stopIfRecording}
       >
         <PaperPlaneTilt size={16} weight="fill" aria-hidden />
       </Button>

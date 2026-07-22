@@ -69,7 +69,6 @@ export {
   Phone,
   Paperclip,
   Microphone,
-  StopCircle,
   Image as ImageIcon,
   ImageSquare,
   MusicNote,

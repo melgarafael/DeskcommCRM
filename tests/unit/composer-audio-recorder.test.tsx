@@ -38,16 +38,19 @@ class FakeRecorder {
   }
 }
 
+let trackStopMock: ReturnType<typeof vi.fn>;
+
 describe("AudioRecorder", () => {
   beforeEach(() => {
     uploadMock.mockClear();
     sendMock.mockClear();
     FakeRecorder.instances = [];
+    trackStopMock = vi.fn();
     vi.stubGlobal("MediaRecorder", FakeRecorder as unknown as typeof MediaRecorder);
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
-        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: trackStopMock }] })),
       },
     });
   });
@@ -83,5 +86,27 @@ describe("AudioRecorder", () => {
     fireEvent.click(await screen.findByRole("button", { name: /cancelar gravação/i }));
     expect(uploadMock).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /gravar áudio/i })).toBeInTheDocument();
+  });
+
+  it("desmontar durante a gravação libera o microfone", async () => {
+    const { unmount } = render(<AudioRecorder conversationId="conv-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));
+    await screen.findByRole("button", { name: /cancelar gravação/i });
+    expect(trackStopMock).not.toHaveBeenCalled();
+    unmount();
+    expect(trackStopMock).toHaveBeenCalled();
+  });
+
+  it("clicar em enviar duas vezes rápido não quebra e sobe uma vez só", async () => {
+    render(<AudioRecorder conversationId="conv-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));
+    const sendBtn = await screen.findByRole("button", { name: /enviar áudio/i });
+    await act(async () => {
+      expect(() => {
+        fireEvent.click(sendBtn);
+        fireEvent.click(sendBtn);
+      }).not.toThrow();
+    });
+    await waitFor(() => expect(uploadMock).toHaveBeenCalledTimes(1));
   });
 });
