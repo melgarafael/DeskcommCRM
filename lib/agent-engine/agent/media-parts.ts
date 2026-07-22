@@ -38,17 +38,29 @@ export async function buildNativeMediaParts(args: BuildNativeMediaPartsArgs): Pr
     .slice(0, maxItems);
 
   const parts: NativeMediaPart[] = [];
-  for (const m of candidates) {
-    const mime = (m.media_mime ?? "").split(";")[0]!.trim().toLowerCase();
-    const isImage = m.type === "image" && mime.startsWith("image/") && caps.image;
-    const isPdf = m.type === "document" && mime === "application/pdf" && caps.pdf;
-    if (!isImage && !isPdf) continue;
+  // ponytail: esta camada é aprimoramento, não caminho crítico — o derivado textual
+  // (já embutido no contexto via LeadContextMessage) é o fallback universal. Uma
+  // exceção aqui NUNCA pode abortar o turno inteiro, então falha vira "pula o item"
+  // (try interno) ou, no limite, "devolve o que já juntou" (try externo).
+  try {
+    for (const m of candidates) {
+      try {
+        const mime = (m.media_mime ?? "").split(";")[0]!.trim().toLowerCase();
+        const isImage = m.type === "image" && mime.startsWith("image/") && caps.image;
+        const isPdf = m.type === "document" && mime === "application/pdf" && caps.pdf;
+        if (!isImage && !isPdf) continue;
 
-    const signed = await args.admin.storage.from("whatsapp-media").createSignedUrl(m.media_storage_path!, SIGNED_TTL_S);
-    if (signed.error || !signed.data?.signedUrl) continue;
-    const url = new URL(signed.data.signedUrl);
-    if (isImage) parts.push({ type: "image", image: url });
-    else parts.push({ type: "file", data: url, mediaType: "application/pdf" });
+        const signed = await args.admin.storage.from("whatsapp-media").createSignedUrl(m.media_storage_path!, SIGNED_TTL_S);
+        if (signed.error || !signed.data?.signedUrl) continue;
+        const url = new URL(signed.data.signedUrl);
+        if (isImage) parts.push({ type: "image", image: url });
+        else parts.push({ type: "file", data: url, mediaType: "application/pdf" });
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    return parts;
   }
   return parts;
 }

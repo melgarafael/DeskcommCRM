@@ -46,4 +46,16 @@ describe("buildNativeMediaParts", () => {
     expect(parts).toHaveLength(1);
     expect((parts[0] as { image: URL }).image.toString()).toContain("m.jpg");
   });
+  it("signed URL malformada → [] sem lançar (derivado cobre)", async () => {
+    const malformedSigner = {
+      storage: {
+        from: () => ({
+          createSignedUrl: vi.fn(async () => ({ data: { signedUrl: "::not a url::" }, error: null })),
+        }),
+      },
+    };
+    await expect(
+      buildNativeMediaParts({ messages: [imgMsg], provider: "anthropic", model: "claude", multimodalInput: true, admin: malformedSigner as never }),
+    ).resolves.toEqual([]);
+  });
 });
