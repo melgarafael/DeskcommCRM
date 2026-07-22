@@ -459,13 +459,17 @@ async function handleAck(admin: Admin, session: Session, p: WahaPayload): Promis
   if (ack >= 2) update.delivered_at = now;
   if (ack >= 3) update.read_at = now;
 
-  // O ack do WAHA 2026.x vem como `{fromMe}_{chatId}_{bareId}`, mas o envio
-  // gravou `external_id` = bareId. Normaliza p/ a cauda antes de casar.
+  // O ack do WAHA 2026.x vem como `{fromMe}_{chatId}_{bareId}`. O NOWEB grava
+  // `external_id` = bareId (id interno), o WEBJS grava o `_serialized` completo.
+  // Casar as duas formas cobre ambos os engines sem tocar no external_id de
+  // inbound (que é full e sustenta o dedup 23505).
+  const bare = bareWaMessageId(p.id);
+  const candidates = bare === p.id ? [p.id] : [p.id, bare];
   await admin
     .from("messages")
     .update(update)
     .eq("organization_id", session.organization_id)
-    .eq("external_id", bareWaMessageId(p.id));
+    .in("external_id", candidates);
 }
 
 interface SessionStatusRow extends Session {

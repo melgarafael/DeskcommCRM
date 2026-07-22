@@ -36,10 +36,20 @@ describe("bareWaMessageId", () => {
   it("id já-bare (sem _) passa intacto — envio grava assim", () => {
     expect(bareWaMessageId("3EB02714A82A56A80702CE")).toBe("3EB02714A82A56A80702CE");
   });
-  it("cauda do ack casa com o external_id gravado no envio (invariante do fix)", () => {
-    // O envio grava parseWahaMessageId(resp NOWEB { id: { id } }) = bare.
+  it("cauda do ack casa com o external_id NOWEB (invariante do fix)", () => {
+    // NOWEB grava parseWahaMessageId({ id: { id } }) = bare; handleAck casa a cauda.
     const stored = parseWahaMessageId({ id: { id: "3EB01851263993A0465D2D" } });
     const fromAck = bareWaMessageId("true_59782320914646@lid_3EB01851263993A0465D2D");
     expect(fromAck).toBe(stored);
+  });
+
+  it("o ack full está entre os candidatos que cobrem o WEBJS (_serialized)", () => {
+    // WEBJS grava external_id = _serialized (full). handleAck casa por [full, bare],
+    // então ambos os engines destravam. Aqui: a forma full do ack é o próprio p.id.
+    const ackFull = "true_5511999999999@c.us_3EB0ABC";
+    const webjsStored = parseWahaMessageId({ id: { _serialized: ackFull } });
+    const candidates = [ackFull, bareWaMessageId(ackFull)];
+    expect(candidates).toContain(webjsStored); // WEBJS: casa pela forma full
+    expect(candidates).toContain("3EB0ABC"); // NOWEB: casa pela cauda
   });
 });
