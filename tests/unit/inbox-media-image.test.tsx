@@ -58,4 +58,13 @@ describe("StickerMedia", () => {
     const skeleton = document.querySelector(".animate-pulse");
     expect(skeleton).not.toBeInTheDocument();
   });
+
+  it("mostra caixa estável no erro (h-40 w-40)", () => {
+    render(<StickerMedia messageId="m2" />);
+    const img = screen.getByAltText("Figurinha");
+    fireEvent.error(img);
+    const stableBox = document.querySelector(".h-40.w-40");
+    expect(stableBox).toBeInTheDocument();
+    expect(screen.getByText("Mídia indisponível")).toBeInTheDocument();
+  });
 });
