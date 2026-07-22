@@ -36,6 +36,7 @@ export {
   // actions
   Bell,
   PaperPlaneTilt,
+  Smiley,
   Check,
   Checks,
   X,

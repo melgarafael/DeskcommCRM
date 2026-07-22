@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
+import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,25 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       <div className="border-t border-border bg-background px-3 py-2">
         <div className="flex items-end gap-2">
           <AttachMenu disabled={isDisabled} onPick={setPendingFile} />
+          <EmojiButton
+            disabled={isDisabled}
+            onPick={(emoji) => {
+              const ta = taRef.current;
+              if (!ta) {
+                setText((t) => t + emoji);
+                return;
+              }
+              const start = ta.selectionStart ?? text.length;
+              const end = ta.selectionEnd ?? text.length;
+              const next = text.slice(0, start) + emoji + text.slice(end);
+              setText(next);
+              requestAnimationFrame(() => {
+                ta.focus();
+                ta.selectionStart = ta.selectionEnd = start + emoji.length;
+                autoresize();
+              });
+            }}
+          />
           <textarea
             ref={taRef}
             value={text}
