@@ -129,6 +129,11 @@ export function parseProposedAt(text: string): string | null {
  * lead + a orientação do nó. A PONTE (turn-bridge.ts) é quem clampa o
  * resultado em `[min_ms, max_ms]` — este módulo só propõe, nunca decide o
  * range nem escreve no enrollment.
+ *
+ * ponytail: SEM PRODUTOR VIVO hoje. O engine ainda não enfileira
+ * `purpose:'decide_timing'` (wait smart tratado como fixed=max_ms) — ver
+ * pendência do `wait` smart em HANDOFF.md (fiar isto exige resolver a
+ * ambiguidade de race no resolveWaitPhase, item da Onda 5.2/futuro).
  */
 export async function decideFollowupTiming(
   db: pg.Pool,
