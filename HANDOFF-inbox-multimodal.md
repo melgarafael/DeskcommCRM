@@ -32,7 +32,7 @@
 | Onda | Status | Prova |
 |---|---|---|
 | 0 — Fundação mídia (Storage + MediaSource + signed URL) | ✅ COMPLETA (7/7 + review final ready-to-merge) | E2E REAL provado 2026-07-21: WhatsApp "Lia" +5511 4863-3324 conectado por QR; Rafael enviou imagem/áudio/vídeo/PDF/figurinha reais → 5/5 ingeridos com tipo certo, worker persistiu no bucket (SQL: `media_status='stored'`, bytes corretos, path `{org}/{conv}/{msg}.{ext}`); endpoint 302→signed URL 5/5 com content-type certo (~800ms), cross-org 404. Evidências: `.superpowers/evidence/inbox-multimodal-onda0-{inbox,endpoint}.png`. T1: bucket via migration **0055** (0054 tomado por branch irmã). |
-| 1 — Render real na UI | 🛠 em execução (T1-T4 ✅, T5 em curso) | T1 utils; T2 imagem+lightbox+figurinha (caixas estáveis, 9 testes); T3 AudioPlayer resiliente a OGG Infinity (5 testes); T4 vídeo aspect-video estável + DocumentCard (5 testes). 4 fixes de UX/edge pegos em review antes da tela. |
+| 1 — Render real na UI | ✅ COMPLETA (review final ready) | E2E real 2026-07-21: 5/5 mídias RENDERIZADAS na conversa real; áudio tocou (currentTime 1.41s, 1.5x no clique), vídeo 103.9s, lightbox Esc ok; medidas por getBoundingClientRect: img 256×192 (4:3), sticker 160×160, audio 240×44, video 384×216 (16:9), zero overflow; 391+ testes, tsc/lint 0. Evidências: .superpowers/evidence/inbox-multimodal-onda1-{thread,lightbox}.png. Forward Onda 2: alargar hasMedia p/ media_storage_path. |
 | 2 — Composer WhatsApp (anexo/áudio/emoji) | ⏳ aguarda 0-1 | — |
 | 3 — Agente multimodal (vision/transcrição/PDF/vídeo) | ⏳ aguarda 0 | — |
 | 4 — Split de mensagens | ⏳ | — |
