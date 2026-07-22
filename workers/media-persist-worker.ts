@@ -95,5 +95,18 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     media_size_bytes: media.buffer.byteLength,
     media_mime: media.mime,
   });
+
+  // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
+  // resto do repo: falha de emit não reverte a persistência já concluída.
+  const { error: emitErr } = await admin.rpc("emit_event" as never, {
+    p_event_type: "media.derive_requested",
+    p_entity_kind: "message",
+    p_entity_id: msg.id,
+    p_payload: { message_id: msg.id },
+    p_metadata: { source: "media_persist" },
+    p_organization_id: msg.organization_id,
+  } as never);
+  if (emitErr) logger.warn("[media-persist] emit_event failed (non-blocking)", { message_id: msg.id, detail: emitErr.message });
+
   return { consumer_key, status: "ok" };
 }

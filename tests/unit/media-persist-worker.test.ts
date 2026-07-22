@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const uploadMock = vi.fn();
 const updateEqMock = vi.fn();
+const rpcMock = vi.fn();
 const messageRow = {
   id: "msg1",
   organization_id: "org1",
@@ -26,6 +27,7 @@ vi.mock("@/lib/supabase/admin", () => ({
       },
     }),
     storage: { from: () => ({ upload: uploadMock }) },
+    rpc: rpcMock,
   }),
 }));
 
@@ -54,6 +56,7 @@ describe("persistMessageMedia", () => {
   beforeEach(() => {
     uploadMock.mockReset().mockResolvedValue({ error: null });
     updateEqMock.mockReset();
+    rpcMock.mockReset().mockResolvedValue({ error: null });
     messageRow.media_storage_path = null;
     vi.mocked(fetchWahaMedia).mockResolvedValue({
       buffer: Buffer.from([1, 2, 3]),
@@ -75,6 +78,10 @@ describe("persistMessageMedia", () => {
         media_size_bytes: 3,
         metadata: expect.objectContaining({ media_status: "stored" }),
       }),
+    );
+    expect(rpcMock).toHaveBeenCalledWith(
+      "emit_event",
+      expect.objectContaining({ p_event_type: "media.derive_requested", p_entity_id: "msg1" }),
     );
   });
 
