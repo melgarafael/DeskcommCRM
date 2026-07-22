@@ -68,19 +68,25 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
   const { id } = await params;
 
   const supabase = await createClient();
-  const { error } = await supabase
+  // .select() confirma que a linha existia E era visível/apagável pela RLS.
+  // Sem isso, um DELETE barrado pela RLS afeta 0 linhas mas ainda retornaria
+  // 204 + audit falso (mutação que não ocorreu). Espelha a semântica do PATCH.
+  const { data: deleted, error } = await supabase
     .from("message_templates")
     .delete()
     .eq("id", id)
-    .eq("organization_id", org.orgId);
+    .eq("organization_id", org.orgId)
+    .select("id")
+    .maybeSingle();
   if (error) return fail("internal_error", "Erro ao excluir template.", 500, { requestId });
+  if (!deleted) return fail("not_found", "Template não encontrado.", 404, { requestId });
 
   void audit({
     action: "template.deleted",
     actorUserId: user.id,
     organizationId: org.orgId,
     resourceType: "message_template",
-    resourceId: id,
+    resourceId: deleted.id,
     requestId,
   });
   return noContent(requestId);

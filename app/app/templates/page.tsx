@@ -19,7 +19,7 @@ export default async function TemplatesPage() {
           Scripts salvos para responder mais rápido; pessoais ou compartilhados com a equipe.
         </p>
       </header>
-      <TemplatesClient canShare={canShare} />
+      <TemplatesClient canShare={canShare} currentUserId={user.id} />
     </div>
   );
 }
