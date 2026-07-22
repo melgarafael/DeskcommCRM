@@ -55,6 +55,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260721120000` | `0055_whatsapp_media_bucket` | Bucket privado `whatsapp-media` (50MB) p/ persistir binários de mídia do WhatsApp (Onda 0 inbox-multimodal). NNNN=0055 (0054 já usado por `feat/followup-flows`, verificado contra todas as branches locais). |
 | `20260722120000` | `0058_media_multimodal` | Colunas `media_derived_text`/`media_derived_status` em messages + flags `multimodal_input`/`video_frames_enabled` em ai_agent_versions (Onda 3 agente multimodal). NNNN=0058 (0056/0057 tomados por `feat/followup-flows`, verificado contra todas as branches/worktrees locais). |
 | `20260722130000` | `0059_agent_split_messages` | Colunas `split_messages`/`split_max_chars` em ai_agent_versions (Onda 4 split de mensagens). |
+| `20260722140000` | `0060_message_templates` | Tabela `message_templates` (templates de script do vendedor, pessoal/compartilhado, RLS) — Onda 5. |
 
 ## Reproducibility
 

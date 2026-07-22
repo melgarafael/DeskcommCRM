@@ -3068,6 +3068,50 @@ export type Database = {
           },
         ]
       }
+      message_templates: {
+        Row: {
+          body: string
+          created_at: string
+          created_by_user_id: string | null
+          id: string
+          organization_id: string
+          owner_user_id: string | null
+          shortcut: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          organization_id: string
+          owner_user_id?: string | null
+          shortcut?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          organization_id?: string
+          owner_user_id?: string | null
+          shortcut?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           ack: number | null
