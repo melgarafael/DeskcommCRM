@@ -1,0 +1,26 @@
+# DeskcommCRM
+
+> Open-source AI sales OS: a self-hosted, multi-tenant CRM where AI agents natively operate sales and support over WhatsApp. An open alternative to Kommo, Octadesk and Intercom — for any business that sells through conversations (e-commerce, clinics, real estate, info-products, agencies, services). MIT-licensed, no paid tier; the recommended production path is a one-command install on a HostGator VPS.
+
+Key facts:
+- Category: open-source CRM / AI sales operating system / WhatsApp customer platform
+- AI: per-tenant RAG agents (pgvector) that answer, qualify and move leads; sentiment analysis; audited AI→human handoff; AI as first-class assignee; per-org AI budget; self-improvement loop (resolved conversations feed the knowledge base)
+- MCP: internal MCP server today; public MCP contract on the roadmap — any AI agent can operate the CRM
+- WhatsApp: via WAHA (multi-number, anti-ban throttling, media, STOP detection)
+- Multi-niche: configurable vocabulary per pipeline (lead = Customer/Patient/Buyer; won = Paid/Booked/Closed); Nuvemshop integration for the e-commerce vertical
+- Compliance: multi-tenant Postgres RLS (isolation tested in CI), LGPD by design (redact, data_request, anonymization), append-only audit log
+- Stack: Next.js 16, React 19, TypeScript, Supabase (Postgres + Auth + Realtime + Storage), Vercel AI SDK, WAHA
+- License: MIT. Fully self-hosted; your data stays on your VPS.
+
+## Docs
+
+- [README (Portuguese)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.md): project overview, quickstart, stack
+- [README (English)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.en.md): English overview
+- [Vision & positioning](https://github.com/melgarafael/DeskcommCRM/blob/main/VISION.md): what the project believes about self-improving AI agents
+- [Architecture](https://github.com/melgarafael/DeskcommCRM/blob/main/ARCHITECTURE.md): one-page architecture
+- [Setup guide](https://github.com/melgarafael/DeskcommCRM/blob/main/docs/SETUP.md): step-by-step setup of every integration
+- [Self-host on a VPS](https://github.com/melgarafael/DeskcommCRM/blob/main/docs/deploy-selfhost/README.md): docker compose deploy on any VPS
+
+## Repository
+
+- [GitHub](https://github.com/melgarafael/DeskcommCRM): source code, issues, discussions

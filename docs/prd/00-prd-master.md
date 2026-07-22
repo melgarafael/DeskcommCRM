@@ -1,8 +1,8 @@
 ---
 title: DeskcommCRM — PRD-Mestre
-version: 0.1
+version: 0.2
 status: em revisão
-date: 2026-04-28
+date: 2026-07-19
 owner: Rafael Melgaço
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
@@ -13,19 +13,32 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 ---
 
+## 0. Nota de transição (2026-07) — de "CRM de e-commerce" para "AI Sales OS"
+
+Este PRD nasceu (v0.1, abril/2026) com o produto posicionado como **CRM operacional para e-commerce**. Após a abertura do código, a realidade da adoção mudou o produto: a maioria da comunidade roda o Deskcomm em **clínicas, infoprodutos, imobiliárias, agências e serviços**, e os pedidos de feature nos especializaram em **agentes de IA integrados via MCP**. O posicionamento vigente está em [`VISION.md`](../../VISION.md):
+
+> **Sistema operacional de vendas open source com agentes de IA nativos e WhatsApp — self-hosted, multi-tenant, para qualquer negócio que vende conversando.**
+
+Implicações de leitura deste documento e dos sub-PRDs:
+- **E-commerce passa de definição do produto a primeiro vertical.** Referências a Nuvemshop, pipeline de pedidos e vocabulário de e-commerce continuam válidas como o template do vertical de origem — o mecanismo que as generaliza é o `vocabulary` configurável por pipeline (Sub-PRD 02 §3.7).
+- **O modelo comercial é open source + infraestrutura** (parceria HostGator para self-host em VPS), não venda de assinatura. Menções a "modo SaaS" descrevem uma opção arquitetural preservada, não o plano comercial corrente.
+- Requisitos, contratos e decisões técnicas dos sub-PRDs permanecem válidos — a arquitetura multi-tenant com `vocabulary` configurável foi o que permitiu a expansão multi-nicho sem refactor.
+
+---
+
 ## 1. Sumário Executivo
 
-**O que é.** DeskcommCRM é um CRM operacional especializado em e-commerce, com IA conversacional integrada nativamente. Unifica atendimento humano, chatbot com RAG por tenant, gestão de pedidos e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial).
+**O que é.** DeskcommCRM é um sistema operacional de vendas open source com agentes de IA nativos — um CRM operacional onde a IA atende, qualifica e move o funil junto com humanos. Unifica atendimento humano, agentes com RAG por tenant, gestão de pedidos/negócios e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial). Nasceu especializado em e-commerce (vertical de origem, com integração Nuvemshop); hoje serve qualquer negócio que vende conversando — ver Nota de transição (§0).
 
 **Quem usa.** Hoje, em modo BPO: a empresa operadora (TBD) usa o DeskcommCRM internamente pra prestar atendimento como serviço aos e-commerces clientes contratados. Atendentes humanos operam múltiplos tenants através de uma "caixa de entrada unificada" via *super-admin role*. Amanhã, em modo SaaS: o mesmo produto será comercializado direto pra e-commerces operarem por conta própria. Toda a arquitetura é multi-tenant desde o dia 1, sem refactor previsto pro pivot.
 
-**Quem é o cliente alvo (tenant).** PME brasileiro de e-commerce na plataforma Nuvemshop, com ~5 mil pedidos/mês, ~300 atendimentos/dia, 2–5 atendentes humanos e 1–2 números WhatsApp.
+**Quem é o cliente alvo (tenant).** PME brasileira que vende pelo WhatsApp — e-commerce, clínica, imobiliária, infoprodutor, agência ou serviço — na faixa de ~300 atendimentos/dia, 2–5 atendentes humanos e 1–2 números WhatsApp. O perfil de calibração original (e-commerce Nuvemshop com ~5 mil pedidos/mês) segue sendo a referência de carga.
 
-**Diferencial competitivo.** Quatro elementos juntos — ausentes nos concorrentes incumbentes (Pipedrive, RD CRM, Zendesk, Octadesk):
-1. **IA operando o atendimento** com RAG por tenant (FAQ + política da loja + catálogo Nuvemshop sincronizado + conversas resolvidas), não chatbot decorativo.
-2. **E-commerce-native**: pipeline, vocabulário e métricas desenhados pro ciclo de e-commerce ("Carrinho abandonado → Pago → Enviado → Entregue → Pós-venda"), não pro funil B2B SaaS.
-3. **MCP-ready**: arquitetura inclui MCP server (Fase 2) com 19 tools canônicas pra LLMs operarem o sistema.
-4. **LGPD nativa**: webhooks `customer/redact` e `customer/data_request` da Nuvemshop são contrato de primeira-classe, não afterthought.
+**Diferencial competitivo.** Quatro elementos juntos — ausentes nos concorrentes incumbentes (Kommo, Octadesk, Zendesk, Pipedrive, RD CRM):
+1. **Agentes de IA operando o CRM** com RAG por tenant (FAQ + políticas do negócio + catálogo sincronizado + conversas resolvidas), não chatbot decorativo — com trilha de auto-aprimoramento: conversas resolvidas realimentam a base de conhecimento.
+2. **Multi-nicho por design**: pipeline, vocabulário e métricas configuráveis por tenant (`vocabulary` por pipeline) — o ciclo de e-commerce ("Carrinho abandonado → Pago → Enviado → Entregue → Pós-venda") é o template do vertical de origem, não o limite do produto.
+3. **MCP-ready**: arquitetura inclui MCP server (interno hoje; contrato público na Fase 2) com 19 tools canônicas pra LLMs operarem o sistema.
+4. **LGPD nativa**: redact e data_request como contrato de primeira-classe (incluindo os webhooks da Nuvemshop no vertical e-commerce), não afterthought.
 
 **Restrições principais.** MVP-B em produção em **8–12 semanas**. Stack obrigatória: bundle adotado (Next.js 14+ App Router + Supabase + WAHA Plus + Vercel + MCP server separado em Node ESM). LGPD desde o dia 1. Arquitetura multi-tenant com RLS Postgres em toda tabela tenant-aware.
 
@@ -41,15 +54,15 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 3. **LGPD em pé de fragilidade.** Lojistas raramente têm processo formal de redact e data_request. Multas vêm crescendo desde 2023 e passam pra eles em primeiro lugar — e pro fornecedor de software, em segundo. Não é compliance opcional.
 
-4. **CRMs B2B genéricos não servem pra e-commerce.** Pipedrive, RD CRM e similares foram desenhados pra venda de SaaS — funil "Lead → Proposta → Negociação → Fechado". E-commerce tem ciclo curto, automatizado, repetitivo. Vender no e-commerce não é vender SaaS.
+4. **CRMs B2B genéricos não servem pra quem vende conversando.** Pipedrive, RD CRM e similares foram desenhados pra venda de SaaS — funil "Lead → Proposta → Negociação → Fechado". Venda conversacional (e-commerce, clínica, imobiliária, infoproduto) tem ciclo curto, automatizado, repetitivo, centrado no WhatsApp. O vocabulário e o ritmo são outros — e cada nicho precisa do seu (`vocabulary` configurável).
 
 5. **Sem MCP nativo no mercado.** Lojistas que querem operar o CRM via Claude Desktop ou agentes IA hoje não têm plataforma que exponha CRUD do CRM como tools MCP. Tendência forte pós-2025; janela competitiva aberta.
 
 ### Visão
 
-> "DeskcommCRM é a plataforma onde IA e humanos atendem juntos os clientes finais de PMEs de e-commerce no WhatsApp, com Customer 360° unificado, compliance LGPD nativa e operação multi-tenant pronta pra escala."
+> "DeskcommCRM é o sistema operacional de vendas onde agentes de IA e humanos atendem juntos os clientes de qualquer negócio que vende pelo WhatsApp, com Customer 360° unificado, compliance LGPD nativa, operação multi-tenant pronta pra escala — e agentes que se auto-aprimoram a cada conversa resolvida."
 
-Em três anos: dominar o nicho de BPO de atendimento de e-commerce no Brasil; abrir SaaS direto pra lojistas; expandir pra VTEX, Shopify, e demais plataformas; oferecer MCP público como diferencial pra clientes power-user que querem orquestrar o CRM via agentes IA próprios.
+Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de IA e WhatsApp" — milhares de instâncias self-hosted (VPS HostGator como caminho recomendado), ecossistema de agentes plugados via MCP público, templates prontos por nicho (e-commerce, clínica, imobiliária, infoproduto), e o flywheel de auto-aprimoramento medido em produção. Posicionamento completo em [`VISION.md`](../../VISION.md).
 
 ---
 
@@ -293,7 +306,7 @@ Roadmap revisado a cada 4 semanas. Estimativa otimista; recalibrar a cada milest
 
 ## 11. Glossário
 
-- **Tenant** — uma organização cliente do DeskcommCRM (um e-commerce). No DB = `organizations`. Sinônimo: organização.
+- **Tenant** — uma organização cliente do DeskcommCRM (um negócio que vende pelo WhatsApp: e-commerce, clínica, imobiliária, infoprodutor, etc.). No DB = `organizations`. Sinônimo: organização.
 - **Operador BPO** — funcionário da empresa operadora que atende múltiplos tenants. Tem role super-admin de plataforma.
 - **Super-admin de plataforma** — role que cruza tenants. Distinto do `admin` de um tenant específico.
 - **Lead / Cliente** — registro central no CRM (`crm_leads`). No vocabulary de e-commerce, lead = "Cliente". Engloba cliente em qualquer estágio (interesse, comprou, pós-venda).

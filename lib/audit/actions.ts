@@ -143,4 +143,14 @@ export type AuditAction =
   | "automation.run_resent"
   | "template.created"
   | "template.updated"
-  | "template.deleted";
+  | "template.deleted"
+  | "auth.signup_requested"
+  | "auth.signup_failed"
+  | "auth.signup_confirmed"
+  | "auth.signup_provision_failed"
+  | "auth.email_link_rejected"
+  | "auth.password_reset_requested"
+  | "auth.password_reset_request_failed"
+  | "auth.password_reset_completed"
+  | "auth.password_reset_failed"
+  | "tenant.created_by_signup";

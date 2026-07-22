@@ -11,7 +11,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 # Sub-PRD 05 — IA Conversacional + RAG por tenant + Sentiment Detection + Handoff
 
-> Camada de inteligência operacional do DeskcommCRM. Define como o chatbot responde inbounds com contexto rico (perfil + último pedido + base de conhecimento do tenant), como o sistema detecta frustração em tempo real, e como o produto orquestra a transição bot→humano sem perda de contexto. Sem essa camada, o produto vira CRM convencional com WhatsApp colado; com ela, é o diferencial que justifica a tese e-commerce-native.
+> Camada de inteligência operacional do DeskcommCRM. Define como o chatbot responde inbounds com contexto rico (perfil + último pedido + base de conhecimento do tenant), como o sistema detecta frustração em tempo real, e como o produto orquestra a transição bot→humano sem perda de contexto. Sem essa camada, o produto vira CRM convencional com WhatsApp colado; com ela, é o diferencial que justifica a tese do AI Sales OS — agentes de IA operando a venda de verdade (ver `VISION.md`).
 
 ---
 

@@ -100,7 +100,10 @@ export async function GET(req: NextRequest) {
     .order("id", { ascending: false })
     .limit(limit + 1);
 
-  if (status) {
+  if (status === "onboarding") {
+    // Estado derivado: ativo no banco, onboarding ainda não concluído.
+    query = query.eq("status", "active").is("onboarded_at", null);
+  } else if (status) {
     query = query.eq("status", status);
   }
 
@@ -195,7 +198,9 @@ export async function POST(req: NextRequest) {
       slug,
       legal_name: legal_name ?? null,
       cnpj: cnpj ?? null,
-      status: "onboarding",
+      // A check constraint de organizations.status não tem 'onboarding' — o
+      // marcador de onboarding é onboarded_at null (mesmo modelo do signup).
+      status: "active",
       settings: { plan },
       created_by: adminCtx.user.id,
     })

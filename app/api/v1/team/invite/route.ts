@@ -59,54 +59,37 @@ export async function POST(req: NextRequest): Promise<Response> {
   const sent: SentItem[] = [];
   const failed: FailedItem[] = [];
 
-  // Resolve existing-member check via admin client (auth.users lookup by email).
   const admin = isServiceRoleConfigured() ? createAdminClient() : null;
   // env.* parseia process.env em runtime → funciona na imagem genérica self-host
   // (não fica queimado no bundle como process.env.NEXT_PUBLIC_APP_URL direto).
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const inviterName = authUser.full_name ?? authUser.email ?? "Um colega";
 
+  // Emails com membership ATIVA na org — para pular o reconvite de quem já é membro.
+  // O schema `auth` NÃO é acessível via PostgREST (erro "Invalid schema: auth"), então
+  // resolvemos email↔usuário pela GoTrue admin API (getUserById) — mesmo padrão de
+  // app/api/v1/team/route.ts. N pequeno (poucos membros por org no perfil BPO).
+  const memberEmails = new Set<string>();
+  if (admin) {
+    const { data: members } = await admin
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", activeOrg.orgId)
+      .is("revoked_at", null);
+    for (const m of members ?? []) {
+      const { data: u } = await admin.auth.admin.getUserById(m.user_id as string);
+      const memberEmail = u?.user?.email?.trim().toLowerCase();
+      if (memberEmail) memberEmails.add(memberEmail);
+    }
+  }
+
   for (const inv of input.invitations) {
     const email = inv.email.trim().toLowerCase();
 
-    // Best-effort already-member check (only when service role is configured).
-    if (admin) {
-      try {
-        const { data: usersList } = await admin.auth.admin.listUsers({
-          page: 1,
-          perPage: 1,
-        });
-        // listUsers does not support email filter directly across all versions;
-        // fallback to a paginated scan is overkill for MVP. Try direct getUser
-        // by email if available; otherwise skip the pre-check.
-        void usersList;
-      } catch {
-        // ignore — issue invite anyway
-      }
-      // Direct email lookup (Supabase JS v2): find via SQL on auth.users.
-      try {
-        const { data: existingUser } = await admin
-          .schema("auth")
-          .from("users")
-          .select("id")
-          .eq("email", email)
-          .maybeSingle();
-        if (existingUser?.id) {
-          const { data: existingMembership } = await admin
-            .from("user_organizations")
-            .select("id")
-            .eq("user_id", existingUser.id)
-            .eq("organization_id", activeOrg.orgId)
-            .is("revoked_at", null)
-            .maybeSingle();
-          if (existingMembership?.id) {
-            failed.push({ email, reason: "already_member" });
-            continue;
-          }
-        }
-      } catch {
-        // ignore lookup failure — proceed to issue invite
-      }
+    // já é membro ativo → pula (não reenvia convite)
+    if (memberEmails.has(email)) {
+      failed.push({ email, reason: "already_member" });
+      continue;
     }
 
     const inviteId = randomUUID();

@@ -1,16 +1,19 @@
 <div align="center">
 
-# 🛠️ DeskcommCRM
+🇧🇷 Português · [🇺🇸 English](README.en.md)
 
-**CRM operacional multi-tenant para e-commerce, com IA conversacional nativa, WhatsApp via WAHA e LGPD by-design.**
+# 🛠️ DeskcommCRM — Sistema Operacional de Vendas com Agentes de IA
+
+**Agentes de IA que atendem, qualificam e vendem no WhatsApp — dentro de um CRM open source rodando no seu servidor.**
+**Sem mensalidade, sem feature travada, seus dados com você. A alternativa aberta a Kommo, Octadesk e Intercom.**
 
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
-[![Tailwind](https://img.shields.io/badge/Tailwind-CSS-38bdf8?logo=tailwindcss)](https://tailwindcss.com)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-1%20comando-orange)](hostgator-setup-kit/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[**📘 Setup Guide**](docs/SETUP.md) · [**🏗️ Arquitetura**](ARCHITECTURE.md) · [**🤝 Contribuir**](CONTRIBUTING.md) · [**📋 PRDs**](docs/prd/) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
+[**🧭 Visão**](VISION.md) · [**📘 Setup Guide**](docs/SETUP.md) · [**🏗️ Arquitetura**](ARCHITECTURE.md) · [**🤝 Contribuir**](CONTRIBUTING.md) · [**📋 PRDs**](docs/prd/) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
 
 </div>
 
@@ -27,19 +30,20 @@
 
 ## ✨ O que é
 
-DeskcommCRM unifica **atendimento humano**, **agentes de IA com RAG por tenant**, **gestão de pedidos** e **pipeline de pós-venda** numa única plataforma. Canal primário: **WhatsApp via WAHA**. Multi-tenant desde o dia 1. LGPD nativa.
+**Deskcomm** vem de **Desk** (mesa) + **comm** (comércio): **o comercial de mesa** — toda a operação de vendas do seu negócio numa mesa só, operada por pessoas e agentes de IA juntos.
 
-> **Modo atual:** BPO interno (uma operadora atende N tenants).
-> **Modo futuro:** SaaS direto pra lojistas.
+O projeto nasceu como CRM de e-commerce e a comunidade o levou muito além: hoje roda em **clínicas, imobiliárias, infoprodutos, agências, lojas e prestadores de serviço** — qualquer negócio que vende pelo WhatsApp. O produto acompanhou essa virada e virou um **sistema operacional de vendas**: agentes de IA com RAG por tenant atendem, qualificam, movem leads no funil, disparam automações e sabem a hora de passar pra um humano — com o CRM inteiro exposto via **MCP** pros agentes operarem de verdade. A história completa está em [`VISION.md`](VISION.md).
 
 ### Diferenciais
 
-- 🤖 **IA operando o atendimento** — agentes com RAG por tenant, análise de sentimento, handoff IA→humano auditado e controle de budget. Não é chatbot decorativo, é triagem real.
-- 🛒 **E-commerce-native** — vocabulário desenhado pro ciclo *Carrinho abandonado → Pago → Enviado → Entregue → Pós-venda*.
-- 🇧🇷 **LGPD by-design** — webhooks `customer/redact` e `customer/data_request` da Nuvemshop como contrato de primeira-classe; anonimização preferida sobre delete; audit append-only com retenção 5 anos.
+- 🤖 **Agentes de IA que operam o CRM** — RAG por tenant, análise de sentimento, handoff IA→humano auditado, IA como assignee de primeira classe e controle de budget por organização. Não é chatbot decorativo: o agente atende, qualifica e move o funil.
+- 🔁 **Agentes que se auto-aprimoram** — conversas resolvidas viram conhecimento novo na base RAG; handoffs marcam onde o agente ainda não alcança; métricas fecham o loop. Cada mês de operação torna o agente melhor, com gate humano no que importa.
+- 🧩 **Multi-nicho por design** — vocabulário configurável por pipeline: lead vira *Cliente*, *Paciente* ou *Comprador*; won vira *Pago*, *Agendado* ou *Fechado*. O mesmo core serve e-commerce (nosso berço, com integração Nuvemshop), clínica, imobiliária ou infoproduto.
+- 🔌 **MCP-ready** — MCP server interno pros agentes; contrato público pra agentes externos em construção. O CRM como infraestrutura pra qualquer agente de IA.
+- 💬 **WhatsApp-native via WAHA** — multi-número, anti-banimento (throttle + jitter + janela de horário), mídia via Storage, STOP detection.
 - 👥 **Governança de atendimento** — RBAC server-side de verdade, atribuição/transferência auditada, fila com posição, roteamento automático e escopo de visualização por papel.
-- 🔌 **MCP-ready** — MCP server interno pros agentes; contrato público pra agentes externos em construção.
-- 🏢 **Multi-tenant de verdade** — RLS em toda tabela tenant-aware, teste de isolamento como gate de CI.
+- 🏢 **Multi-tenant + LGPD by-design** — RLS em toda tabela tenant-aware com teste de isolamento como gate de CI; anonimização preferida sobre delete; audit append-only com retenção 5 anos.
+- 🖥️ **Self-hosted de verdade** — seus dados na sua VPS; instalação com 1 comando; sem versão paga, sem feature travada.
 
 ### 🔌 Webhooks & Automações
 
@@ -147,6 +151,7 @@ CI roda todos antes de merge. **Teste de isolamento RLS é gate obrigatório** �
 
 | Doc | O que tem |
 |---|---|
+| [`VISION.md`](VISION.md) | **Visão e posicionamento** — o que o projeto é, no que acredita e pra onde vai |
 | [`docs/SETUP.md`](docs/SETUP.md) | **Setup completo passo a passo** de todas as integrações |
 | [`CLAUDE.md`](CLAUDE.md) | Convenções não-negociáveis (leitura obrigatória pra contribuir) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Visão de 1 página da arquitetura |
@@ -198,29 +203,23 @@ Pra **vulnerabilidades de segurança**, **NÃO abra issue pública** — use o [
 
 - **Fundação & plataforma** — auth (MFA pra admin), multi-tenancy com RLS + teste de isolamento, RBAC 4 papéis, audit log append-only, onboarding de tenant.
 - **Atendimento WhatsApp** — inbox 3 painéis em tempo real, conexões WAHA multi-número, mídia via Storage, anti-banimento (throttle + jitter + janela de horário), STOP detection.
-- **CRM & pedidos** — kanban com vocabulário e-commerce (fractional indexing), customer 360, contatos, tags, integração Nuvemshop.
+- **CRM & pedidos** — kanban com vocabulário configurável por nicho (fractional indexing), customer 360, contatos, tags, integração Nuvemshop pra e-commerce.
 - **IA nativa** — agentes com RAG por tenant (pgvector), análise de sentimento, handoff IA→humano, controle de budget por org, MCP server interno.
 - **LGPD** — export e redact via workers, anonimização em cascata, consentimento auditado.
 - **Self-host** — `hostgator-setup-kit` (app + WAHA + banco com 1 comando), `baseline.sql` auto-curativo, runbook de produção.
-- **Webhooks & automação** — gatilhos de eventos do CRM pra sistemas externos.
-
-### 🔄 Em andamento — Governança de Atendimento
-
-Épico guiado por invariantes (suíte de 100+ testes como eval), fase a fase:
-
-- ✅ **G1** — provas & fundação (invariantes dos 7 eixos de dor, CI consolidado)
-- ✅ **G2** — RBAC server-side em toda a API (matriz papel×endpoint)
-- ✅ **G3** — atribuição & transferência auditadas; IA como assignee de 1ª classe; tags
-- ✅ **G4** — escopo de visualização por papel (RLS) + métricas por atendente
-- 🔄 **G5** — roteamento automático, fila com posição e painel de gestão *(fechando)*
-- 🔜 **G6** — contrato de governança pra agentes de IA externos (MCP tools públicas)
+- **Webhooks & automação** — fontes de captação + regras QUANDO/SE/ENTÃO + gatilhos pra sistemas externos.
+- **Governança de atendimento** — RBAC server-side em toda a API, atribuição e transferência auditadas (IA como assignee de 1ª classe), visualização por papel (RLS) + métricas por atendente, roteamento automático com fila e painel de gestão, e contrato de governança pra agentes de IA externos ([`docs/specs/14`](docs/specs/14-contrato-governanca-agentes-externos.md)). Épico guiado por 100+ invariantes (G1–G6).
+- **Operação visível** — telas pro operador entender o agente: motivo da retenção anti-ban traduzido na conversa, central de avisos com severidade, controle de proteção de envio (janela/ritmo/teto) e propostas do flywheel aplicáveis como versão nova (com gate humano).
 
 ### 🔮 Próximo
 
-- **MCP público** — capabilities do CRM expostas pro ecossistema de agentes.
+- **Fase FG** — agente Vendaval consome a governança via `ai_dispatch_mode=external` 🔜 *(aguardando priorização do dono)*
+
+- **MCP público** — capabilities do CRM expostas pro ecossistema de agentes: plugue o agente que quiser e ele opera o Deskcomm.
+- **Flywheel de auto-aprimoramento** — o loop conversa resolvida → conhecimento → agente melhor, medido e com gate humano.
+- **Templates por nicho** — pipelines e vocabulários prontos pra clínica, imobiliária, infoproduto e serviços (e-commerce já entregue).
 - **Integrações** — VTEX e Shopify via adapter pattern (Nuvemshop já entregue).
 - **Identity probabilística** — unificação de contatos entre canais.
-- **Modo SaaS** — self-service direto pra lojistas (hoje: BPO single-operator).
 
 ---
 
@@ -271,7 +270,7 @@ Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestr
 - **Vercel** — hosting + AI Gateway.
 - **Anthropic** (Claude) — IA conversacional.
 - **shadcn/ui** — base de componentes.
-- Comunidade brasileira de e-commerce que validou as primeiras hipóteses.
+- A comunidade que nos levou do e-commerce pra clínicas, imobiliárias, infoprodutos e além — vocês definiram o que este projeto é.
 
 ---
 

@@ -6,7 +6,7 @@
 
 ## Visão (1 parágrafo)
 
-DeskcommCRM é um CRM operacional multi-tenant para e-commerce com IA conversacional nativa. Unifica atendimento humano, chatbot RAG por tenant, gestão de pedidos e pós-venda — WhatsApp como canal primário (via WAHA). Modo atual = BPO (operadora atende N tenants); modo futuro = SaaS direto pra lojistas. Arquitetura multi-tenant com RLS desde o dia 1; LGPD nativa; MCP-ready.
+DeskcommCRM é um sistema operacional de vendas open source com agentes de IA nativos — multi-nicho (e-commerce, clínicas, imobiliárias, infoprodutos, serviços), com WhatsApp como canal primário (via WAHA). Agentes com RAG por tenant atendem, qualificam e movem o funil junto com humanos; CRM inteiro exposto via MCP. Monetização = self-host em VPS (parceria HostGator), não assinatura. Arquitetura multi-tenant com RLS desde o dia 1; LGPD nativa. Posicionamento completo: `VISION.md`.
 
 ---
 

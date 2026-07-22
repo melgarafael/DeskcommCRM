@@ -2,7 +2,7 @@
   "name": "deskcomm-crm",
   "version": "0.1.0",
   "private": true,
-  "description": "DeskcommCRM — CRM operacional multi-tenant para e-commerce com IA conversacional, WhatsApp via WAHA e LGPD nativa.",
+  "description": "DeskcommCRM — sistema operacional de vendas open source com agentes de IA nativos e WhatsApp (WAHA). Self-hosted, multi-tenant, LGPD by-design.",
   "engines": {
     "node": ">=20"
   },
