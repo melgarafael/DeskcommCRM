@@ -329,6 +329,34 @@ describe("processNode — ai_classify / action", () => {
     expect(result.kind).toBe("fail");
   });
 
+  it("ai_classify re-entry with waitElapsed=true AND wokeEarly=true (reactivity's inbound signal): re-enqueues classify instead of routing no_reply — the classify-lento race fix", () => {
+    const node: FlowNode = {
+      id: "ac1",
+      type: "ai_classify",
+      label: "Classify",
+      position: { x: 0, y: 0 },
+      config: { classes: ["hot", "cold"], grace_timeout_ms: 900_000, target: "last_reply" },
+    };
+    const edges = [
+      edge({ source: "ac1", target: "hot-node", condition: { type: "class_match", value: "hot" } }),
+      edge({ source: "ac1", target: "no-reply-node", condition: { type: "class_match", value: "no_reply" } }),
+    ];
+    const result = processNode({ node, edges, enrollment: enrollment(), lead: lead(), clock, waitElapsed: true, wokeEarly: true });
+    expect(result).toEqual({ kind: "enqueue_turn", purpose: "classify", wake_status: "waiting_reply" });
+  });
+
+  it("ai_classify re-entry with waitElapsed=false and wokeEarly=true (defensive — shouldn't happen, but wokeEarly alone never blocks the normal 1st-entry path): still enqueues classify", () => {
+    const node: FlowNode = {
+      id: "ac1",
+      type: "ai_classify",
+      label: "Classify",
+      position: { x: 0, y: 0 },
+      config: { classes: ["hot", "cold"], grace_timeout_ms: 900_000, target: "last_reply" },
+    };
+    const result = processNode({ node, edges: [], enrollment: enrollment(), lead: lead(), clock, waitElapsed: false, wokeEarly: true });
+    expect(result).toEqual({ kind: "enqueue_turn", purpose: "classify", wake_status: "waiting_reply" });
+  });
+
   it("action enqueues a send_message turn and keeps status active", () => {
     const node: FlowNode = {
       id: "a1",

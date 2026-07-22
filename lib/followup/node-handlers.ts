@@ -156,11 +156,12 @@ function evaluateCondition(
  * non-`wait`/`ai_classify` calls don't need to pass it. For `ai_classify` it
  * means "a classify turn was already enqueued for this occupancy of the node"
  * (same prior-step-event check as `wait`) — re-entering with it `true` means
- * `grace_timeout_ms` elapsed without a completed classification (onda 5,
- * Task 5.1, critério 2). Today that's the ONLY way to re-enter this node
- * (reactivity/Task 5.2 doesn't exist yet); once it lands, it will need its own
- * signal to tell "grace expired" apart from "inbound woke it up early" instead
- * of reusing this same flag.
+ * EITHER `grace_timeout_ms` elapsed without a completed classification OR
+ * reactivity (Task 5.2, `lib/followup/reactivity.ts`) woke the node early
+ * because an inbound reply arrived. `wokeEarly` is the signal that
+ * disambiguates the two (own marker event, distinct from the
+ * `classify_enqueued` event `waitElapsed` checks): `true` re-enqueues a fresh
+ * classify turn with the real reply instead of auto-advancing via `no_reply`.
  */
 export function processNode(input: {
   node: FlowNode;
@@ -169,8 +170,9 @@ export function processNode(input: {
   lead: LeadFacts;
   clock: () => Date;
   waitElapsed?: boolean;
+  wokeEarly?: boolean;
 }): NodeResult {
-  const { node, edges, clock, lead, waitElapsed } = input;
+  const { node, edges, clock, lead, waitElapsed, wokeEarly } = input;
 
   switch (node.type) {
     case "trigger": {
@@ -197,7 +199,11 @@ export function processNode(input: {
     }
 
     case "ai_classify": {
-      if (!waitElapsed) {
+      if (!waitElapsed || wokeEarly) {
+        // 1ª entrada (waitElapsed=false) OU reactivity acordou cedo com uma
+        // resposta real (wokeEarly=true, mesmo com waitElapsed=true — o marker
+        // de reactivity é o desempate): reenfileira classify. Nunca conta como
+        // 'no_reply' quando existe reply de verdade em voo.
         return { kind: "enqueue_turn", purpose: "classify", wake_status: "waiting_reply" };
       }
       // grace_timeout_ms venceu sem turno de classificação concluído — classifica

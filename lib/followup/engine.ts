@@ -338,12 +338,22 @@ async function processEnrollment(deps: TickDeps, enrollment: EnrollmentRow, summ
   };
 
   let waitElapsed: boolean | undefined;
+  let wokeEarly: boolean | undefined;
   if (node.type === "wait" || node.type === "ai_classify") {
     const events = await db.loadEnrollmentEvents(enrollment.id);
     waitElapsed = resolveWaitPhase(events, node.id, enrollment.steps_taken);
+    if (node.type === "ai_classify") {
+      // Marker próprio de reactivity (Task 5.2, lib/followup/reactivity.ts) —
+      // `${node.id}:${steps_taken}:wake`, distinto do idempotency_key de passo
+      // (`${node.id}:${steps_taken - 1}`) que waitElapsed checa. Existe ⇒ um
+      // inbound chegou nesta ocupação do nó; desempata contra o "no_reply" do
+      // fix da Task 5.1 (ambos re-entram via a MESMA waitElapsed=true).
+      const wakeKey = `${node.id}:${enrollment.steps_taken}:wake`;
+      wokeEarly = events.some((e) => e.node_id === node.id && e.idempotency_key === wakeKey);
+    }
   }
 
-  const result = processNode({ node, edges: graph.edges, enrollment, lead, clock, waitElapsed });
+  const result = processNode({ node, edges: graph.edges, enrollment, lead, clock, waitElapsed, wokeEarly });
   await applyResult(deps, enrollment, node, result, summary);
 }
 
