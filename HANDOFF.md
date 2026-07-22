@@ -121,17 +121,39 @@
   suíte unit completa 531/531, typecheck 0, lint 0 novo. DB-real:
   `tests/invariants/followup-reactivity.test.ts` 12/12 (+1 sobre a versão anterior — o teste
   do Critical), `followup-turn-bridge.test.ts` + `followup-engine.test.ts` sem regressão.
-  Suíte completa de invariantes: 2 de 3 rodadas do `npm run test:invariants` oficial
-  vieram 38/38 arquivos limpo (226 passed | 1 skipped); 1 rodada teve 1 falha intermitente
-  em `followup-engine.test.ts` (`claimed` 2 em vez de 1) — reproduzida em isolamento
-  (arquivo sozinho: sempre verde) e via 2 reruns completos subsequentes (sempre verdes):
-  é o MESMO padrão de flake order-dependent do claim global já documentado no log da Task
-  1.2 (INBOX-001, gov-1b×gov-6) — `fn_claim_due_followup_enrollments` não filtra org, então
-  qualquer due-row residual de um teste anterior pode ser reclamada por outro; não é
-  determinístico e não regrediu com este fix (mesma taxa antes/depois). Não investiguei mais
-  fundo — está fora do escopo deste fix e já está escalado como categoria conhecida.
-  Detalhe completo (seção "Fix de review") em `.superpowers/sdd/task-5.2-report.md`.
+  1 de 3 rodadas do `npm run test:invariants` oficial teve 1 falha intermitente em
+  `followup-engine.test.ts` (`claimed` 2 em vez de 1) — **DIAGNÓSTICO CORRIGIDO no fix
+  seguinte** (não é INBOX-001/gov-1b×gov-6, que é uma colisão de slug não-relacionada):
+  era um defeito de ISOLAMENTO no PRÓPRIO `followup-engine.test.ts` desta sessão (Task 4.1),
+  resolvido no commit seguinte. Detalhe completo (seção "Fix de review") em
+  `.superpowers/sdd/task-5.2-report.md`.
   **Sem migration.**
+
+- 2026-07-22: **Task 5.2 — fix de review 2 (isolamento do due-queue global em
+  `followup-engine.test.ts`).**
+  Diagnóstico correto do flake intermitente acima (o coordenador identificou; a formulação
+  anterior deste HANDOFF citando INBOX-001 estava ERRADA — corrigida no bloco acima):
+  `fn_claim_due_followup_enrollments` é deliberadamente GLOBAL/cross-org (design de
+  produção correto, SKIP LOCKED entre workers, provado na Task 1.2) — e
+  `tests/invariants/**` compartilha UM Postgres não-resetado entre arquivos
+  (`vitest.db.config.ts`, `fileParallelism:false`). `followup-engine.test.ts` (autorado
+  nesta sessão, Task 4.1) nunca limpava a fila de enrollments devidos entre `it`s — uma
+  linha residual de um teste-irmão (ex.: o wake de `followup-reactivity.test.ts`, que seta
+  `next_eval_at=now()`) podia ser fisgada pelo `runFollowupTick({limit:5})` de OUTRO teste
+  que esperava `claimed`/`advanced`/`jobs.length` exatos, corrompendo as contagens agregadas.
+  **Fix:** `beforeEach` em `followup-engine.test.ts` fazendo
+  `delete from followup_enrollments` antes de CADA `it` (cada um já semeia sua própria
+  org/enrollment DEPOIS do hook — seguro). `followup_enrollment_events.enrollment_id` tem
+  `on delete cascade` (migration 0054, conferido no catálogo — nenhuma outra tabela
+  referencia essa FK), então deletar só `followup_enrollments` já limpa os eventos junto.
+  TODAS as asserções `toBe(1)`/`toHaveLength(1)` (incluindo a de idempotência em
+  `jobs.length` na linha ~378) ficaram EXATAMENTE como estavam — nenhuma foi relaxada, o
+  fix resolve a causa raiz (contaminação cross-test), não o sintoma (afrouxar assert).
+  **PROVA (o ponto inteiro deste fix):** `npm run test:invariants -- followup` rodado
+  **3 vezes seguidas, síncrono, saída completa cada vez** — **3/3 limpo**: 38/38 arquivos,
+  226 passed | 1 skipped em TODAS as 3 rodadas, zero flake. node-handlers 36/36 (inalterado),
+  unit completo 531/531, typecheck 0, lint 0.
+  Detalhe completo em `.superpowers/sdd/task-5.2-report.md`. **Sem migration.**
 
 - 2026-07-22: **Task 5.1 ✅ (commits ff97ccc/b164560/502f9ab/51cbfb8) — ponte engine ⇄ job_queue.**
   `lib/followup/turn-bridge.ts` (novo): `completeTurnForEnrollment(db, orgId, enrollmentId,

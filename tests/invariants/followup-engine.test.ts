@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
 
 import { runFollowupTick, type AdminClient, type FollowupJobRequest, type TickDeps } from "@/lib/followup/engine";
@@ -34,6 +34,21 @@ const pool = new pg.Pool({
 
 afterAll(async () => {
   await pool.end();
+});
+
+// fn_claim_due_followup_enrollments é GLOBAL (sem filtro de org — mesmo
+// design usado em produção, SKIP LOCKED entre workers, provado em Task 1.2).
+// tests/invariants/** compartilha UM container Postgres não resetado entre
+// arquivos (vitest.db.config.ts, fileParallelism:false) — sem isto, uma
+// enrollment devida deixada por um `it` anterior (ex.: o wake de
+// followup-reactivity.test.ts empurra next_eval_at=now) entra no
+// `runFollowupTick({limit:5})` de outro `it` que espera `claimed`/
+// `advanced`/`jobs.length` exatos, corrompendo as contagens agregadas
+// (fix de review — Task 5.2). `followup_enrollment_events.enrollment_id` tem
+// `on delete cascade` (migration 0054) — deletar só `followup_enrollments`
+// já limpa os eventos junto; nenhuma outra tabela referencia essa FK.
+beforeEach(async () => {
+  await pool.query(`delete from followup_enrollments`);
 });
 
 // ---- pg-backed AdminClient (test-only adapter; prod uses createSupabaseAdminClient) ----
