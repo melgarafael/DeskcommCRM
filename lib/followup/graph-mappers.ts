@@ -9,7 +9,10 @@ import type { FlowGraph, FlowNode, FlowEdge, NodeType } from "./graph-schema";
  * has no first-class slot for them, everything else maps 1:1.
  */
 
-export type RFNodeData = { label: string; config: FlowNode["config"] };
+// `errors` is UI-only (Task 6.2 — publish 422 anchored to the offending node),
+// never read/written by the mappers below; `data` is `Record<string, unknown>`
+// per @xyflow/react's Node<NodeData> constraint, so it can't be dropped here.
+export type RFNodeData = { label: string; config: FlowNode["config"]; errors?: string[] };
 export type RFNode = Node<RFNodeData, NodeType>;
 
 export type RFEdgeData = { priority: number; condition: FlowEdge["condition"] };

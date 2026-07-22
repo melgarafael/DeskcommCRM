@@ -88,3 +88,49 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
 };
 
 export const NODE_VISUAL_LIST = Object.values(NODE_VISUALS);
+
+const OUTCOME_LABEL: Record<string, string> = {
+  converted: "Convertido",
+  exhausted: "Esgotado",
+  custom: "Personalizado",
+};
+
+type ConfigOf<T extends NodeType> = Extract<FlowNode, { type: T }>["config"];
+
+/**
+ * One-line summary of a node's config — shown as the card subtitle. Takes the
+ * RF node's own `type`/`data.config` pair (not a reconstructed `FlowNode`)
+ * because the node components only ever see React Flow's generic shape.
+ */
+export function describeNodeConfig(type: NodeType, config: FlowNode["config"]): string {
+  switch (type) {
+    case "trigger":
+      return "Início do fluxo";
+    case "wait": {
+      const c = config as ConfigOf<"wait">;
+      return c.mode === "fixed"
+        ? `${Math.round(c.duration_ms / 60_000)} min`
+        : `${Math.round(c.min_ms / 60_000)}–${Math.round(c.max_ms / 60_000)} min (adaptativo)`;
+    }
+    case "condition": {
+      const c = config as ConfigOf<"condition">;
+      return `${c.checks.length} condição(ões) · ${c.combinator === "and" ? "E" : "OU"}`;
+    }
+    case "ai_classify": {
+      const c = config as ConfigOf<"ai_classify">;
+      return `${c.classes.length} classes · grace ${Math.round(c.grace_timeout_ms / 60_000)}min`;
+    }
+    case "action": {
+      const c = config as ConfigOf<"action">;
+      return c.mode === "ai_message" ? c.prompt_hint : "Template fixo";
+    }
+    case "end": {
+      const c = config as ConfigOf<"end">;
+      return OUTCOME_LABEL[c.outcome] ?? c.outcome;
+    }
+    default: {
+      const exhaustive: never = type;
+      return String(exhaustive);
+    }
+  }
+}

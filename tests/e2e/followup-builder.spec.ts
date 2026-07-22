@@ -82,6 +82,11 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
 });
 
 test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
+  // Canvas grande: com 4+ nós o fitView inicial pode chegar a zoom 2x (maxZoom
+  // default) — um viewport pequeno deixa nós fora da área visível, e
+  // coordenadas de handle fora do viewport quebram os drags de conexão.
+  test.use({ viewport: { width: 1600, height: 900 } });
+
   test("manager cria um fluxo, clica na linha e o canvas React Flow abre", async ({ page }) => {
     await login(page, creds.users.manager!.email);
 
@@ -104,5 +109,71 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     // React Flow's own pane element — proves the dynamically-imported canvas actually mounted.
     await expect(page.locator(".react-flow")).toBeVisible();
     await page.screenshot({ path: "test-results/followup-6.2-01-canvas-empty.png", fullPage: true });
+  });
+
+  /**
+   * Drags from a node's source handle to another node's target handle.
+   * `steps` on the 2nd move gives React Flow's connection-line drag enough
+   * intermediate pointermove events to register the gesture reliably.
+   */
+  async function connectHandles(page: Page, sourceNodeId: string, targetNodeId: string): Promise<void> {
+    const source = page.locator(`.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`);
+    const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
+    const sBox = await source.boundingBox();
+    const tBox = await target.boundingBox();
+    if (!sBox || !tBox) throw new Error(`handle não encontrado: ${sourceNodeId} -> ${targetNodeId}`);
+    await page.mouse.move(sBox.x + sBox.width / 2, sBox.y + sBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sBox.x + sBox.width / 2 + 5, sBox.y + sBox.height / 2 + 5, { steps: 3 });
+    await page.mouse.move(tBox.x + tBox.width / 2, tBox.y + tBox.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+  }
+
+  test("adiciona os 4 nós via paleta e conecta trigger→wait→action→end", async ({ page }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/followups");
+    const flowName = `E2E Connect ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nome").fill(flowName);
+    await dialog.getByRole("button", { name: "Criar fluxo" }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
+    await expect(page.locator(".react-flow")).toBeVisible();
+
+    await page.getByTestId("palette-add-trigger").click();
+    await page.getByTestId("palette-add-wait").click();
+    await page.getByTestId("palette-add-action").click();
+    await page.getByTestId("palette-add-end").click();
+
+    const triggerCard = page.locator('[data-testid^="node-card-trigger-"]');
+    const waitCard = page.locator('[data-testid^="node-card-wait-"]');
+    const actionCard = page.locator('[data-testid^="node-card-action-"]');
+    const endCard = page.locator('[data-testid^="node-card-end-"]');
+    await expect(triggerCard).toBeVisible();
+    await expect(waitCard).toBeVisible();
+    await expect(actionCard).toBeVisible();
+    await expect(endCard).toBeVisible();
+
+    // fitView pode chegar ao maxZoom (2x) com poucos nós — zoom out garante
+    // que todos os handles fiquem dentro do viewport pros drags de conexão.
+    const zoomOut = page.locator(".react-flow__controls-zoomout");
+    for (let i = 0; i < 5; i++) await zoomOut.click();
+
+    const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
+    const waitId = await page.locator('.react-flow__node[data-id^="wait-"]').getAttribute("data-id");
+    const actionId = await page.locator('.react-flow__node[data-id^="action-"]').getAttribute("data-id");
+    const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
+    if (!triggerId || !waitId || !actionId || !endId) throw new Error("node ids ausentes");
+
+    await connectHandles(page, triggerId, waitId);
+    await connectHandles(page, waitId, actionId);
+    await connectHandles(page, actionId, endId);
+
+    await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+    await page.screenshot({ path: "test-results/followup-6.2-02-connected.png", fullPage: true });
   });
 });

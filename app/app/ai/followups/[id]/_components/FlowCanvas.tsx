@@ -6,10 +6,12 @@ import {
   ReactFlowProvider,
   Background,
   Controls,
+  addEdge,
   useNodesState,
   useEdgesState,
   useReactFlow,
-  type DefaultEdgeOptions,
+  type Connection,
+  type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -18,10 +20,26 @@ import type { FlowGraph, NodeType } from "@/lib/followup/graph-schema";
 import type { FollowupFlowDetailRow } from "@/hooks/followup/useFollowupFlow";
 import { NodePalette } from "./NodePalette";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
+import { TriggerNode } from "./nodes/TriggerNode";
+import { WaitNode } from "./nodes/WaitNode";
+import { ConditionNode } from "./nodes/ConditionNode";
+import { ClassifyNode } from "./nodes/ClassifyNode";
+import { ActionNode } from "./nodes/ActionNode";
+import { EndNode } from "./nodes/EndNode";
 
 const EMPTY_GRAPH: FlowGraph = { nodes: [], edges: [] };
 const DND_MIME = "application/x-followup-node-type";
-const DEFAULT_EDGE_OPTIONS: DefaultEdgeOptions = { data: { priority: 0, condition: { type: "always" } } };
+
+// Defined outside the component — React Flow warns (and re-mounts nodes) if
+// nodeTypes is a fresh object every render.
+const nodeTypes: NodeTypes = {
+  trigger: TriggerNode,
+  wait: WaitNode,
+  condition: ConditionNode,
+  ai_classify: ClassifyNode,
+  action: ActionNode,
+  end: EndNode,
+};
 
 interface Props {
   flowId: string;
@@ -36,7 +54,23 @@ function FlowCanvasInner({ initialData }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(initial.edges);
   const nextId = useRef(1);
+  const nextEdgeId = useRef(1);
   const { screenToFlowPosition } = useReactFlow();
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      const newEdge: RFEdge = {
+        id: `edge-${nextEdgeId.current++}`,
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+        data: { priority: 0, condition: { type: "always" } },
+      };
+      setEdges((eds) => addEdge(newEdge, eds));
+    },
+    [setEdges],
+  );
 
   const addNodeAt = useCallback(
     (type: NodeType, position: { x: number; y: number }) => {
@@ -84,9 +118,10 @@ function FlowCanvasInner({ initialData }: Props) {
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+          onConnect={onConnect}
           fitView
         >
           <Background />
