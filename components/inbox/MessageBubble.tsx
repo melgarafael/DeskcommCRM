@@ -1,11 +1,12 @@
 "use client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Check, Checks, ImageIcon, MusicNote, FileText, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
+import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -14,23 +15,6 @@ import {
 interface Props {
   message: Message;
   debugCitations?: boolean;
-}
-
-function MediaPlaceholder({ type }: { type: string }) {
-  const map: Record<string, { Icon: typeof ImageIcon; label: string }> = {
-    image: { Icon: ImageIcon, label: "Imagem" },
-    audio: { Icon: MusicNote, label: "Áudio" },
-    video: { Icon: ImageIcon, label: "Vídeo" },
-    document: { Icon: FileText, label: "Documento" },
-    sticker: { Icon: ImageIcon, label: "Figurinha" },
-  };
-  const entry = map[type] ?? map.document!;
-  const Icon = entry.Icon;
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs">
-      <Icon size={12} weight="duotone" aria-hidden /> {entry.label}
-    </span>
-  );
 }
 
 function AckIndicator({ status }: { status: string }) {
@@ -50,6 +34,9 @@ export function MessageBubble({ message, debugCitations }: Props) {
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: ptBR });
   const isFailed = message.status === "failed";
+  const hasMedia = Boolean(message.media_url);
+  // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
+  const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   const aiGenerated = isAiGeneratedMessage(message.metadata);
   const citations = extractCitations(message.metadata);
   const showCitationButton =
@@ -64,10 +51,15 @@ export function MessageBubble({ message, debugCitations }: Props) {
     <div className={cn("flex w-full px-4 py-1", isOutbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm",
-          isOutbound
-            ? "rounded-br-sm bg-primary text-primary-foreground"
-            : "rounded-bl-sm bg-muted text-foreground",
+          "max-w-[75%] text-sm",
+          isBareSticker
+            ? "px-0 py-0"
+            : cn(
+                "rounded-2xl px-3 py-2 shadow-sm",
+                isOutbound
+                  ? "rounded-br-sm bg-primary text-primary-foreground"
+                  : "rounded-bl-sm bg-muted text-foreground",
+              ),
           isFailed && "border border-destructive",
         )}
       >
@@ -80,11 +72,15 @@ export function MessageBubble({ message, debugCitations }: Props) {
           </div>
         )}
 
+        {hasMedia && (
+          <div className={cn(message.body && "mb-1")}>
+            <MediaRenderer message={message} />
+          </div>
+        )}
+
         {message.body && (
           <p className="whitespace-pre-wrap break-words leading-snug">{message.body}</p>
         )}
-
-        {!message.body && message.media_url && <MediaPlaceholder type={message.type} />}
 
         <div
           className={cn(
