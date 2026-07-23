@@ -23,6 +23,7 @@ export interface Conversation {
   group_chat_id: string | null;
   tags: string[];
   metadata: Record<string, unknown>;
+  snooze_until: string | null;
   created_at: string;
   updated_at: string;
 }
