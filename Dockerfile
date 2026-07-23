@@ -49,6 +49,10 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     NEXT_TELEMETRY_DISABLED=1
+# ffmpeg: a derivação de vídeo (Onda 3.1) roda no processo do app — o cron
+# event-log-drain executa o media_derive handler, que chama `ffmpeg` via spawn
+# pra extrair áudio+frames. Sem o binário, todo vídeo recebido falha a derivação.
+RUN apk add --no-cache ffmpeg
 # non-root
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 # O output standalone NÃO inclui public/ nem .next/static — copiar explicitamente,
