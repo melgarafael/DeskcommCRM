@@ -82,18 +82,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   function applyDraft(draft: string) {
-    const ta = taRef.current;
-    if (!text.trim()) {
-      setText(draft);
-    } else if (ta) {
-      const start = ta.selectionStart ?? text.length;
-      const end = ta.selectionEnd ?? text.length;
-      setText(text.slice(0, start) + draft + text.slice(end));
-    } else {
-      setText((t) => t + draft);
-    }
+    // O rascunho é uma resposta COMPLETA sugerida — substitui o conteúdo, nunca
+    // concatena (inserir no cursor grudaria dois textos completos, gerando uma
+    // mensagem sem sentido). O vendedor edita/envia a partir daqui.
+    setText(draft);
     requestAnimationFrame(() => {
-      ta?.focus();
+      taRef.current?.focus();
       autoresize();
     });
   }
