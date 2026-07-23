@@ -1,6 +1,6 @@
 <div align="center">
 
-[🇧🇷 Português](README.md) · 🇺🇸 English
+[🇧🇷 Português](README.md) · 🇺🇸 English · [🇪🇸 Español](README.es.md)
 
 # 🛠️ DeskcommCRM — The AI Sales OS
 
