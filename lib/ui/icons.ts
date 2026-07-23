@@ -17,6 +17,7 @@ export {
   UsersThree,
   Storefront,
   Robot,
+  Sparkle,
   ShieldCheck,
   Gear,
   House,

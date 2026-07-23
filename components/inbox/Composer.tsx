@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
+import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
@@ -80,6 +81,23 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     });
   }
 
+  function applyDraft(draft: string) {
+    const ta = taRef.current;
+    if (!text.trim()) {
+      setText(draft);
+    } else if (ta) {
+      const start = ta.selectionStart ?? text.length;
+      const end = ta.selectionEnd ?? text.length;
+      setText(text.slice(0, start) + draft + text.slice(end));
+    } else {
+      setText((t) => t + draft);
+    }
+    requestAnimationFrame(() => {
+      ta?.focus();
+      autoresize();
+    });
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Escape" && menuOpen) {
       setMenuDismissed(true);
@@ -112,6 +130,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         />
         <div className="flex items-end gap-2">
           <AttachMenu disabled={isDisabled} onPick={setPendingFile} />
+          <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
           <EmojiButton
             disabled={isDisabled}
             onPick={(emoji) => {
