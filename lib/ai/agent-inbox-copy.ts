@@ -15,6 +15,7 @@ export const KIND_LABEL: Record<string, string> = {
   promotion_review: "Proposta de melhoria do assistente aguardando sua revisão",
   judge_unaligned: "O avaliador de qualidade precisa de recalibragem",
   followup_dead: "Um fluxo de follow-up parou de tentar",
+  snooze_expired: "O lead não respondeu no prazo que você definiu",
   other: "Aviso do assistente",
 };
 

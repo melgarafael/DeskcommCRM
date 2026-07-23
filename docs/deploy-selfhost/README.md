@@ -1,7 +1,8 @@
 # DeskcommCRM self-hosted — instalação em VPS (com agente de IA)
 
-> CRM operacional para e-commerce com agente SDR de IA integrado (WhatsApp via
-> WAHA). Este guia sobe TUDO numa VPS com `docker compose`: app web, worker do
+> Sistema operacional de vendas open source com agente SDR de IA integrado
+> (WhatsApp via WAHA) — pra qualquer negócio que vende conversando.
+> Este guia sobe TUDO numa VPS com `docker compose`: app web, worker do
 > agente, WAHA e proxy com HTTPS automático. Tempo estimado: ~30 min.
 
 ## O que você precisa antes
@@ -99,6 +100,39 @@ Sobe: `caddy` (HTTPS automático via Let's Encrypt) → `app` (CRM) → `worker`
 
 Confira: `docker compose -f docker-compose.prod.yml ps` — tudo `healthy`.
 O worker loga `agent-engine pronto` (`docker compose logs worker`).
+
+## 3.5 E-mails de auth (criar conta e recuperar senha)
+
+O app tem signup self-service (`/signup`) e recuperação de senha
+(`/login/forgot`). Os dois dependem do e-mail transacional do Supabase Auth
+chegando com link para `https://SEU_DOMINIO/auth/confirm`.
+
+**Supabase hospedado (recomendado):** no Dashboard →
+
+1. **Authentication → Sign In / Up**: habilite *Allow new users to sign up* e
+   mantenha *Confirm email* ligado.
+2. **Authentication → URL Configuration**: `Site URL = https://SEU_DOMINIO` e
+   adicione `https://SEU_DOMINIO/auth/confirm` em *Redirect URLs*.
+3. **Authentication → Email Templates**: troque o link dos templates
+   *Confirm signup* e *Reset password* para o fluxo server-side:
+
+   ```html
+   <!-- Confirm signup -->
+   <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=signup">Confirmar e-mail</a>
+   <!-- Reset password -->
+   <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery">Redefinir senha</a>
+   ```
+
+4. **SMTP próprio** (Authentication → SMTP): o sender embutido do Supabase tem
+   limite baixo (~2 e-mails/h) — configure Resend/SES/etc. para produção.
+
+**GoTrue self-hosted:** equivalente por env:
+`GOTRUE_DISABLE_SIGNUP=false`, `GOTRUE_MAILER_AUTOCONFIRM=false`,
+`GOTRUE_SITE_URL=https://SEU_DOMINIO`,
+`GOTRUE_URI_ALLOW_LIST=https://SEU_DOMINIO/auth/confirm`,
+`GOTRUE_SMTP_{HOST,PORT,USER,PASS}` e
+`GOTRUE_MAILER_TEMPLATES_{CONFIRMATION,RECOVERY}` apontando para os templates
+de `supabase/templates/` (mesmo link `token_hash` acima).
 
 ## 4. Conectar o WhatsApp
 

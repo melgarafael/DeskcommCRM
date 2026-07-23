@@ -15,9 +15,13 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `pnpm dev --port ${PORT}`,
+    // Produção (`next build` antes!): dev-server compila por rota (40-80s) e
+    // Turbopack dev quebra cookies() fora do request scope — inviável p/ e2e.
+    command: `pnpm exec next start --port ${PORT}`,
     url: BASE_URL,
-    reuseExistingServer: true,
+    // false: reusar um server que já ocupa a porta pode ser OUTRO processo
+    // (ex.: bundle do Remotion na 3000) — o teste precisa do NOSSO next start.
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],

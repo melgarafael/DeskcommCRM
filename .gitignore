@@ -86,3 +86,4 @@ loop/run-session.sh
 # graphify (análise local de knowledge graph)
 graphify-out/
 package-lock.json
+.e2e-invite.json

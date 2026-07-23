@@ -91,6 +91,23 @@ export class WahaClient {
     if (!res.ok) throw new Error(`waha_${res.status}`);
     return res.json();
   }
+
+  async sendMedia(
+    session: string,
+    chatId: string,
+    plan: { endpoint: string; payload: Record<string, unknown> },
+  ): Promise<unknown> {
+    const res = await fetch(`${this.baseUrl}/api/${plan.endpoint}`, {
+      method: "POST",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ session, chatId, ...plan.payload }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`waha_${res.status}: ${body.slice(0, 200)}`);
+    }
+    return res.json();
+  }
 }
 
 /**

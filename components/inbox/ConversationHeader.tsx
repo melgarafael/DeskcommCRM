@@ -9,6 +9,7 @@ import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
+import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 
 interface Props {
@@ -83,6 +84,12 @@ export function ConversationHeader({ conversation }: Props) {
           <Button size="sm" variant="outline" onClick={() => setReassignOpen(true)}>
             Transferir
           </Button>
+        )}
+        {status !== "closed" && status !== "archived" && (
+          <SnoozeButton
+            conversationId={conversation.id}
+            snoozeUntil={conversation.snooze_until ?? null}
+          />
         )}
         {status !== "closed" && status !== "archived" && (
           <Button

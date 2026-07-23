@@ -28,6 +28,10 @@ export interface PublishedAgentConfig {
   historyTokenWindow: number;
   handoffKeywords: string[];
   handoffToolEnabled: boolean;
+  splitMessages: boolean;
+  splitMaxChars: number;
+  /** input multimodal (imagem/áudio/pdf) habilitado no turno (Onda 3). */
+  multimodalInput: boolean;
   /** tool_ids do catálogo MCP habilitadas na tela (2B-tools). */
   toolIds: string[];
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
@@ -48,6 +52,9 @@ interface Row {
   history_token_window: number;
   handoff_keywords: string[] | null;
   handoff_tool_enabled: boolean;
+  split_messages: boolean;
+  split_max_chars: number;
+  multimodal_input: boolean;
   tool_ids: string[] | null;
   version_created_by: string | null;
   agent_created_by: string | null;
@@ -71,6 +78,9 @@ export async function loadPublishedAgentConfig(
             v.history_token_window,
             v.handoff_keywords,
             v.handoff_tool_enabled,
+            v.split_messages,
+            v.split_max_chars,
+            v.multimodal_input,
             v.tool_ids,
             v.created_by as version_created_by,
             a.created_by as agent_created_by
@@ -102,6 +112,9 @@ export async function loadPublishedAgentConfig(
     historyTokenWindow: r.history_token_window,
     handoffKeywords: (r.handoff_keywords ?? []).map((k) => k.toLowerCase().trim()).filter((k) => k !== ''),
     handoffToolEnabled: r.handoff_tool_enabled,
+    splitMessages: r.split_messages,
+    splitMaxChars: r.split_max_chars,
+    multimodalInput: r.multimodal_input,
     toolIds: r.tool_ids ?? [],
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,

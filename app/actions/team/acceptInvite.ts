@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 
 import { audit } from "@/lib/audit";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export type AcceptInviteResult =
@@ -36,8 +37,13 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
     return { ok: false, error: "email_mismatch", expectedEmail: payload.email };
   }
 
-  // Reactivate or insert. Use upsert-like flow: check existing membership first.
-  const { data: existing, error: fetchErr } = await supabase
+  // Reactivate or insert. RLS em user_organizations exige admin da org para
+  // INSERT/UPDATE (user_orgs_insert/update) — o convidado ainda NÃO é membro, então
+  // não pode se auto-inserir. A escrita da membership usa o service role. Autorização:
+  // token HMAC verificado + email do usuário autenticado === email do convite; org e
+  // role vêm do token assinado (fonte confiável), nunca do body.
+  const db = createAdminClient();
+  const { data: existing, error: fetchErr } = await db
     .from("user_organizations")
     .select("id, revoked_at")
     .eq("user_id", user.id)
@@ -50,7 +56,7 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
   const nowIso = new Date().toISOString();
 
   if (existing?.id) {
-    const { error: updErr } = await supabase
+    const { error: updErr } = await db
       .from("user_organizations")
       .update({
         role: payload.role,
@@ -70,7 +76,7 @@ export async function acceptInviteAction(token: string): Promise<AcceptInviteRes
       metadata: { invite_id: payload.invite_id, role: payload.role, reactivated: !!existing.revoked_at },
     });
   } else {
-    const { data: inserted, error: insErr } = await supabase
+    const { data: inserted, error: insErr } = await db
       .from("user_organizations")
       .insert({
         user_id: user.id,
