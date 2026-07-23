@@ -19,6 +19,7 @@ export type InboxKind =
   | 'budget_exceeded'
   | 'handoff'
   | 'promotion_review'
+  | 'snooze_expired'
   | 'other';
 
 export interface InboxItemRow {
