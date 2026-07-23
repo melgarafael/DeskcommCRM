@@ -17,6 +17,7 @@ export interface FollowupQueueRow {
   id: string;
   contact: { id: string; name: string };
   flow_name: string | null;
+  agent_name: string | null;
   node_or_reason: string;
   next_fire_at: string | null;
   status: string;

@@ -354,30 +354,32 @@ beforeAll(() => {
 // ---- 1. STOP cancela tudo ----
 
 describe("applyReactivityEvent — STOP/opt-out (message.received + is_blocked)", () => {
-  it("cancela TODOS os enrollments vivos do contato (active/waiting_reply/paused_handoff) com outcome='opted_out'", async () => {
+  it("cancela o enrollment VIVO do contato (outcome='opted_out') e ignora os já terminais", async () => {
     const org = nextOrgId();
     await seedOrg(org);
     const contactId = await seedContact(org, { isBlocked: true });
-    // 3 pointers distintos — a constraint idx_followup_enrollments_one_live
-    // permite só 1 enrollment vivo por (pointer_id, contact_id); um contato
-    // real teria N enrollments vivos em N fluxos diferentes, não no mesmo.
-    const flow1 = await seedFlow(org, SIMPLE_GRAPH);
-    const flow2 = await seedFlow(org, CLASSIFY_GRAPH);
-    const flow3 = await seedFlow(org, SIMPLE_GRAPH, { handoffPolicy: "pause" });
-    const e1 = await seedEnrollment({ org, pointerId: flow1.pointerId, versionId: flow1.versionId, contactId, currentNodeId: "w1", status: "active" });
-    const e2 = await seedEnrollment({ org, pointerId: flow2.pointerId, versionId: flow2.versionId, contactId, currentNodeId: "ac1", status: "waiting_reply" });
-    const e3 = await seedEnrollment({ org, pointerId: flow3.pointerId, versionId: flow3.versionId, contactId, currentNodeId: "w1", status: "paused_handoff" });
+    // Task 8.6: 1 follow-up vivo por lead ORG-WIDE (idx_followup_enrollments_one_live
+    // virou (organization_id, contact_id) na migration 0062) — um contato tem no
+    // MÁXIMO 1 enrollment vivo, não N em N fluxos. Aqui ele está num estado vivo
+    // não-trivial (paused_handoff, next_eval_at já null) pra provar que o STOP o
+    // cancela mesmo assim; um 2º enrollment já 'completed' (não-vivo, permitido
+    // pelo índice parcial) prova que o STOP não toca terminais.
+    const flow1 = await seedFlow(org, SIMPLE_GRAPH, { handoffPolicy: "pause" });
+    const flow2 = await seedFlow(org, SIMPLE_GRAPH);
+    const live = await seedEnrollment({ org, pointerId: flow1.pointerId, versionId: flow1.versionId, contactId, currentNodeId: "w1", status: "paused_handoff" });
+    const done = await seedEnrollment({ org, pointerId: flow2.pointerId, versionId: flow2.versionId, contactId, currentNodeId: "w1", status: "completed", nextEvalAt: null });
 
     const row = eventRow({ organization_id: org, event_type: "message.received", payload: { contact_id: contactId } });
     const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row);
-    expect(summary).toEqual({ matched: true, reacted: 3 });
+    expect(summary).toEqual({ matched: true, reacted: 1 });
 
-    for (const id of [e1, e2, e3]) {
-      const after = await getEnrollment(id);
-      expect(after.status).toBe("cancelled");
-      expect(after.outcome).toBe("opted_out");
-      expect(after.next_eval_at).toBeNull();
-    }
+    const afterLive = await getEnrollment(live);
+    expect(afterLive.status).toBe("cancelled");
+    expect(afterLive.outcome).toBe("opted_out");
+    expect(afterLive.next_eval_at).toBeNull();
+
+    const afterDone = await getEnrollment(done);
+    expect(afterDone.status).toBe("completed"); // terminal intocado pelo STOP
   });
 
   it("re-drenar o MESMO event_log row é idempotente — sem efeito duplicado", async () => {

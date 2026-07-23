@@ -16,6 +16,10 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createFollowupEnrollmentSchema } from "@/lib/followup/api-schemas";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
+import {
+  createSupabaseFollowupGateDb,
+  resolveAgentForAutomaticTrigger,
+} from "@/lib/followup/agent-followup-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
-  const { pointer_id, contact_id } = parsed.data;
+  const { pointer_id, contact_id, agent_id: agentIdInput } = parsed.data;
 
   const supabase = await createClient();
 
@@ -107,6 +111,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("internal_error", "Grafo publicado sem nó trigger.", 500, { requestId });
   }
 
+  // Task 8.6: fixa qual agente arma este enrollment. Se o body passou agent_id,
+  // valida que é um agente DA ORG (nunca confia no body pra tenancy). Senão,
+  // resolve do próprio pointer (agentes publicados que o habilitam) — mesmo
+  // pick determinístico do silence-sweep. Sem nenhum resolvível → null (ok).
+  let agentId: string | null = null;
+  if (agentIdInput !== undefined) {
+    const { data: agent, error: agentErr } = await supabase
+      .from("ai_agents")
+      .select("id")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", agentIdInput)
+      .maybeSingle();
+    if (agentErr) return fail("internal_error", agentErr.message, 500, { requestId });
+    if (!agent) return fail("not_found", "Agente não encontrado.", 404, { requestId });
+    agentId = agentIdInput;
+  } else {
+    agentId = await resolveAgentForAutomaticTrigger(
+      createSupabaseFollowupGateDb(supabase),
+      activeOrg.orgId,
+      pointer_id,
+    );
+  }
+
   const now = new Date().toISOString();
   const { data: created, error: insErr } = await supabase
     .from("followup_enrollments")
@@ -118,13 +145,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       current_node_id: triggerNode.id,
       status: "active",
       next_eval_at: now,
+      agent_id: agentId,
     })
     .select(LIST_COLUMNS)
     .single();
 
   if (insErr || !created) {
     if (insErr?.code === "23505") {
-      return fail("conflict", "Já existe um enrollment ativo deste fluxo para este contato.", 409, { requestId });
+      return fail("conflict", "Este contato já está em um follow-up ativo (1 por lead na organização).", 409, { requestId });
     }
     return fail("internal_error", insErr?.message ?? "followup_enrollment_insert_failed", 500, { requestId });
   }
@@ -136,7 +164,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "followup_enrollment",
     resourceId: created.id,
     requestId,
-    metadata: { pointer_id, contact_id, version_id: pointer.active_version_id },
+    metadata: { pointer_id, contact_id, version_id: pointer.active_version_id, agent_id: agentId },
   });
 
   return ok(created, { requestId, status: 201 });

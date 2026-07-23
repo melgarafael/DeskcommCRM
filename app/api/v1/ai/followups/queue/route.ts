@@ -79,10 +79,40 @@ export interface QueueRow {
   id: string;
   contact: { id: string; name: string };
   flow_name: string | null;
+  /** Agente publicado que armou o fluxo (Task 8.6); null p/ promessas e enrollments sem agente pinado. */
+  agent_name: string | null;
   node_or_reason: string;
   next_fire_at: string | null;
   status: string;
   detail: string | null;
+}
+
+/** Linha de enrollment (com embeds de contato/fluxo/agente) → QueueRow. Pura p/ teste. */
+export function enrollmentToQueueRow(e: {
+  id: string;
+  contact_id: string;
+  current_node_id: string;
+  next_eval_at: string | null;
+  status: string;
+  outcome: string | null;
+  contacts: ContactRow | ContactRow[] | null;
+  followup_flow_pointers: { name: string } | { name: string }[] | null;
+  ai_agents: { name: string } | { name: string }[] | null;
+}): QueueRow {
+  const contact = embedded(e.contacts);
+  const pointer = embedded(e.followup_flow_pointers);
+  const agent = embedded(e.ai_agents);
+  return {
+    source: "enrollment",
+    id: e.id,
+    contact: { id: e.contact_id, name: resolveContactName(contact) },
+    flow_name: pointer?.name ?? null,
+    agent_name: agent?.name ?? null,
+    node_or_reason: e.current_node_id,
+    next_fire_at: e.next_eval_at,
+    status: e.status,
+    detail: e.outcome,
+  };
 }
 
 /** Chave de ordenação/seek: null (infinito) sempre vem por último. */
@@ -152,9 +182,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   let enrollQuery = supabase
     .from("followup_enrollments")
     .select(
-      `id, pointer_id, contact_id, status, current_node_id, next_eval_at, outcome, updated_at,
+      `id, pointer_id, contact_id, status, current_node_id, next_eval_at, outcome, updated_at, agent_id,
        contacts:contact_id(id, name, display_name, phone_number),
-       followup_flow_pointers:pointer_id(name)`,
+       followup_flow_pointers:pointer_id(name),
+       ai_agents:agent_id(name)`,
     )
     .eq("organization_id", activeOrg.orgId)
     .order("next_eval_at", { ascending: true, nullsFirst: false })
@@ -199,20 +230,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (enrollRes.error) return fail("internal_error", enrollRes.error.message, 500, { requestId });
   if (promiseRes.error) return fail("internal_error", promiseRes.error.message, 500, { requestId });
 
-  const enrollRows: QueueRow[] = (enrollRes.data ?? []).map((e) => {
-    const contact = embedded(e.contacts as ContactRow | ContactRow[] | null);
-    const pointer = embedded(e.followup_flow_pointers as { name: string } | { name: string }[] | null);
-    return {
-      source: "enrollment",
-      id: e.id,
-      contact: { id: e.contact_id, name: resolveContactName(contact) },
-      flow_name: pointer?.name ?? null,
-      node_or_reason: e.current_node_id,
-      next_fire_at: e.next_eval_at,
-      status: e.status,
-      detail: e.outcome,
-    };
-  });
+  const enrollRows: QueueRow[] = (enrollRes.data ?? []).map((e) =>
+    enrollmentToQueueRow(e as Parameters<typeof enrollmentToQueueRow>[0]),
+  );
 
   const promiseRows: QueueRow[] = (promiseRes.data ?? []).map((j) => {
     const contact = embedded(j.contacts as ContactRow | ContactRow[] | null);
@@ -222,6 +242,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       id: j.id,
       contact: { id: j.contact_id, name: resolveContactName(contact) },
       flow_name: null,
+      agent_name: null,
       node_or_reason: payload.reason ?? "—",
       next_fire_at: j.next_run_at,
       status: j.enabled ? "agendada" : "concluída",

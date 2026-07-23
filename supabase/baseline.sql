@@ -6576,3 +6576,34 @@ drop trigger if exists trg_ai_agent_versions_content_immutable on public.ai_agen
 create trigger trg_ai_agent_versions_content_immutable
   before update on public.ai_agent_versions
   for each row execute function fn_ai_agent_version_content_immutable();
+
+-- ---- followup enrollment: 1 vivo por lead ORG-WIDE + agent_id (migration 0064) ----
+-- Dedup ANTES de trocar o índice (self-host-safe: o update.sh re-aplica sem
+-- ON_ERROR_STOP, então o dado sujo tem que ser curado antes da constraint).
+with ranked as (
+  select id,
+         row_number() over (
+           partition by organization_id, contact_id
+           order by started_at desc, id desc
+         ) as rn
+  from followup_enrollments
+  where status in ('active', 'waiting_reply', 'paused_handoff')
+)
+update followup_enrollments e
+set status = 'cancelled',
+    cancel_reason = 'exclusivity_backfill',
+    next_eval_at = null,
+    updated_at = now()
+from ranked
+where e.id = ranked.id
+  and ranked.rn > 1;
+
+drop index if exists idx_followup_enrollments_one_live;
+create unique index if not exists idx_followup_enrollments_one_live
+  on followup_enrollments (organization_id, contact_id)
+  where status in ('active', 'waiting_reply', 'paused_handoff');
+
+alter table followup_enrollments
+  add column if not exists agent_id uuid references ai_agents(id) on delete set null;
+create index if not exists idx_followup_enrollments_agent
+  on followup_enrollments (agent_id);

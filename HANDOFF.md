@@ -41,6 +41,41 @@
 
 ## Log de avanços (mais recente primeiro)
 
+- 2026-07-23: **Task 8.6 ✅ — furo anti-spam do Rafael fechado: 1 follow-up vivo por lead
+  ORG-WIDE + pin do agente no enrollment.**
+  **Migration 0062** (`20260722160000_0062_followup_enrollment_exclusivity.sql`) + apêndice
+  idempotente no `baseline.sql` + linha no MANIFEST: (a) DEDUP FIRST via window function
+  genérica — `(org, contact)` com >1 vivo (active/waiting_reply/paused_handoff) mantém o
+  `started_at` mais recente e cancela o resto (`cancelled/exclusivity_backfill/next_eval_at
+  null`) ANTES do índice (self-host-safe); (b) `idx_followup_enrollments_one_live` (MESMO
+  nome, WHERE inalterado) de `(pointer_id, contact_id)` → `(organization_id, contact_id)`;
+  (c) `agent_id uuid references ai_agents(id) on delete set null` + índice.
+  **Gate refatorado** (`agent-followup-gate.ts`): 1 método `loadEnabledPublishedFollowupAgents`
+  (uma query, deriva booleano+pick). `resolveAgentForAutomaticTrigger` → agent_id do agente
+  que arma o pointer, **pick determinístico = MENOR uuid** quando >1 (documentado+testado).
+  **silence-sweep** colapsa gate+pick no memo e pina `agent_id`; **manual-enroll** aceita
+  `agent_id` opcional (valida org — nunca do body p/ tenancy) OU resolve do pointer.
+  **Fila** (queue route + QueueTab + hook): embed `ai_agents:agent_id(name)` → `agent_name`,
+  mostrado como subtexto "agente X" sob o fluxo; mapeamento extraído p/ `enrollmentToQueueRow`
+  puro.
+  **PERSONA-IN-SEND DEFERIDO (scoped follow-up, honesto):** a persona do envio vem de
+  `loadPublishedAgentConfig(pool, org, channelSessionId)` — segue o NÚMERO (channel_session),
+  não `agent_id`. Usar a persona PINADA exigiria mudar a assinatura de harness portado
+  (`runAgentTurn`/`AgentTurnInput`/`loadPublishedAgentConfig`) + o enqueue do motor = cirurgia
+  profunda que o brief mandou não fazer. O `agent_id` já fica PERSISTIDO no enrollment; o
+  wire-up futuro é só no seam do turno, sem migration. Ressalva: número segue a conversa
+  (continuidade preservada) e o agente pinado normalmente É o do número — divergência só com
+  >1 agente armando o mesmo fluxo (raro no MVP).
+  **PROVA:** `test:invariants` **2x verde** (40 files, 247 passed | 1 skipped, incl. baseline
+  install `ON_ERROR_STOP=1` + update) — exclusividade **RED→GREEN** (índice antigo enrolla nos
+  2 fluxos = spam; o novo barra o 2º via 23505 org-wide), dedup 0062 (2 vivos → 1 + cancelled/
+  exclusivity_backfill), agent-pin (menor uuid). `test:unit` **564/564**, typecheck 0, lint 0
+  erros. **Consequência tratada+disclosed:** o índice virar org-wide quebrou o STOP test da
+  reactivity (seedava 3 vivos p/ o MESMO contato — estado agora impossível por decisão do
+  Rafael) → corrigido p/ 1 vivo (`paused_handoff`) + 1 terminal (`completed`), sob
+  `DESKCOMM_GOV_INVARIANTS_EDIT=1`. **Pendente do controller:** aplicar 0062 no dev DB remoto +
+  regenerar `database.types.ts`. Detalhe: `.superpowers/sdd/task-8.6-report.md`.
+
 - 2026-07-23: **Task 8.3 (jornada) — fix de review CRITICAL: try/finally cobria tarde demais.** O `try`
   original só abria DEPOIS do enrollment confirmado — mas o pointer vira elegível pro silence sweep
   quando o AGENT é publicado com `followup.enabled=true` (bem antes disso), então ~80 linhas (publish do

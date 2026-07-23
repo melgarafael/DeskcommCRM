@@ -18,11 +18,17 @@
  * `runFollowupTick` no MESMO tick do cron (route.ts), esse enrollment recém-
  * criado só é reclamado no PRÓXIMO tick (~1min depois), não neste.
  *
- * Idempotência: o índice único `idx_followup_enrollments_one_live`
- * (pointer_id, contact_id) já impede duplicata VIVA — 23505 vira skip
- * silencioso (`insertEnrollment` devolve `inserted:false`), nunca erro. Um
- * contato que COMPLETOU ou foi cancelado pode ser re-enrollado na varredura
- * seguinte se continuar silencioso — aceitável no MVP, sem cooldown table.
+ * Idempotência + exclusividade: o índice único `idx_followup_enrollments_one_live`
+ * é ORG-WIDE `(organization_id, contact_id)` (migration 0062, Task 8.6) — um
+ * contato já vivo em QUALQUER fluxo da org barra novo enrollment (1 follow-up
+ * vivo por lead), 23505 vira skip silencioso (`insertEnrollment` devolve
+ * `inserted:false`), nunca erro. Um contato que COMPLETOU ou foi cancelado
+ * pode ser re-enrollado na varredura seguinte se continuar silencioso —
+ * aceitável no MVP, sem cooldown table.
+ *
+ * agent_id: cada pointer é gateado por `resolveAgentForAutomaticTrigger`, que
+ * devolve o agente publicado que ARMA o pointer (menor uuid se >1) — esse
+ * agent_id é PINADO no enrollment (persona + exibição na fila). `null` = gate-out.
  *
  * `segments`: única primitiva de segmentação já modelada no schema é
  * `contacts.tags` (GIN index `idx_contacts_tags_gin` já existe) — interpretado
@@ -33,7 +39,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
-import { isPointerEnabledForAutomaticTrigger, type FollowupGateDb } from "./agent-followup-gate";
+import { resolveAgentForAutomaticTrigger, type FollowupGateDb } from "./agent-followup-gate";
 
 export interface SilencePointer {
   id: string;
@@ -59,6 +65,7 @@ export interface SilenceSweepDb {
     contact_id: string;
     current_node_id: string;
     next_eval_at: string;
+    agent_id: string | null;
   }): Promise<{ inserted: boolean }>;
 }
 
@@ -87,22 +94,25 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
   const pointers = await db.loadActiveSilencePointers();
   summary.pointers_scanned = pointers.length;
 
-  // Memoiza o gate por pointer dentro desta varredura — nada impede 2 pointers
-  // silence na mesma org, e o gate já é 1 query por org (não precisa repetir).
-  const gateCache = new Map<string, Promise<boolean>>();
-  const isGated = (orgId: string, pointerId: string): Promise<boolean> => {
+  // Memoiza a resolução do agente por pointer dentro desta varredura — nada
+  // impede 2 pointers silence na mesma org, e a query do gate já é 1 por org
+  // (não precisa repetir). `null` = gate-out (nenhum agente publicado arma o
+  // pointer); qualquer agent_id = habilitado E já pinado (o mesmo id que vai
+  // pro enrollment). Colapsa gate + pick numa chamada só (Task 8.6).
+  const agentCache = new Map<string, Promise<string | null>>();
+  const resolveAgent = (orgId: string, pointerId: string): Promise<string | null> => {
     const key = `${orgId}:${pointerId}`;
-    let hit = gateCache.get(key);
+    let hit = agentCache.get(key);
     if (!hit) {
-      hit = isPointerEnabledForAutomaticTrigger(gateDb, orgId, pointerId);
-      gateCache.set(key, hit);
+      hit = resolveAgentForAutomaticTrigger(gateDb, orgId, pointerId);
+      agentCache.set(key, hit);
     }
     return hit;
   };
 
   for (const pointer of pointers) {
-    const enabled = await isGated(pointer.organization_id, pointer.id);
-    if (!enabled) {
+    const agentId = await resolveAgent(pointer.organization_id, pointer.id);
+    if (agentId === null) {
       summary.pointers_gated_out++;
       continue;
     }
@@ -122,6 +132,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
         contact_id: contactId,
         current_node_id: triggerNodeId,
         next_eval_at: nextEvalAt,
+        agent_id: agentId,
       });
       if (inserted) summary.enrolled++;
       else summary.skipped_existing++;
@@ -216,6 +227,9 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
     },
 
     async insertEnrollment(input) {
+      // 23505 aqui agora é o índice ORG-WIDE (organization_id, contact_id) —
+      // um contato já vivo em QUALQUER fluxo da org barra este insert (Task
+      // 8.6: 1 follow-up vivo por lead). Vira skip silencioso, nunca erro.
       const { error } = await admin.from("followup_enrollments").insert(input);
       if (error) {
         if (error.code === "23505") return { inserted: false };

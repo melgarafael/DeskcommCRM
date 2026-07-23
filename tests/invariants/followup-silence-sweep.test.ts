@@ -118,9 +118,17 @@ function silenceSweepDb(): SilenceSweepDb {
       try {
         await pool.query(
           `insert into followup_enrollments
-             (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at)
-           values ($1, $2, $3, $4, $5, 'active', $6)`,
-          [input.organization_id, input.pointer_id, input.version_id, input.contact_id, input.current_node_id, input.next_eval_at],
+             (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, agent_id)
+           values ($1, $2, $3, $4, $5, 'active', $6, $7)`,
+          [
+            input.organization_id,
+            input.pointer_id,
+            input.version_id,
+            input.contact_id,
+            input.current_node_id,
+            input.next_eval_at,
+            input.agent_id,
+          ],
         );
         return { inserted: true };
       } catch (err) {
@@ -135,18 +143,20 @@ function silenceSweepDb(): SilenceSweepDb {
 
 function pgGateDb(): FollowupGateDb {
   return {
-    async loadEnabledPublishedFollowupPointerIds(orgId) {
-      const { rows } = await pool.query<{ followup: unknown }>(
-        `select followup from ai_agent_versions where organization_id = $1 and status = 'published'`,
+    async loadEnabledPublishedFollowupAgents(orgId) {
+      const { rows } = await pool.query<{ agent_id: string; followup: unknown }>(
+        `select agent_id, followup from ai_agent_versions where organization_id = $1 and status = 'published'`,
         [orgId],
       );
-      const ids = new Set<string>();
+      const byAgent = new Map<string, Set<string>>();
       for (const row of rows) {
         const f = row.followup as { enabled?: unknown; flow_pointer_ids?: unknown } | null;
         if (!f || f.enabled !== true || !Array.isArray(f.flow_pointer_ids)) continue;
-        for (const id of f.flow_pointer_ids) if (typeof id === "string") ids.add(id);
+        const set = byAgent.get(row.agent_id) ?? new Set<string>();
+        for (const id of f.flow_pointer_ids) if (typeof id === "string") set.add(id);
+        if (set.size > 0) byAgent.set(row.agent_id, set);
       }
-      return [...ids];
+      return [...byAgent].map(([agentId, ids]) => ({ agentId, pointerIds: [...ids] }));
     },
   };
 }
@@ -239,12 +249,16 @@ async function seedSilenceFlow(
 
 async function seedPublishedAgentVersion(
   org: string,
-  opts: { status?: string; enabled?: boolean; pointerIds?: string[] },
-): Promise<void> {
+  opts: { status?: string; enabled?: boolean; pointerIds?: string[]; agentId?: string },
+): Promise<string> {
   const sessionId = await seedChannelSession(org);
   const { rows: agentRows } = await pool.query<{ id: string }>(
-    `insert into ai_agents (organization_id, name, system_prompt) values ($1, $2, 'prompt') returning id`,
-    [org, `Silence Gate Agent ${Date.now()}-${Math.random()}`],
+    opts.agentId
+      ? `insert into ai_agents (id, organization_id, name, system_prompt) values ($3, $1, $2, 'prompt') returning id`
+      : `insert into ai_agents (organization_id, name, system_prompt) values ($1, $2, 'prompt') returning id`,
+    opts.agentId
+      ? [org, `Silence Gate Agent ${Date.now()}-${Math.random()}`, opts.agentId]
+      : [org, `Silence Gate Agent ${Date.now()}-${Math.random()}`],
   );
   const agentId = agentRows[0]!.id;
   const followup = { enabled: opts.enabled ?? true, flow_pointer_ids: opts.pointerIds ?? [] };
@@ -254,6 +268,7 @@ async function seedPublishedAgentVersion(
      values ($1, $2, 1, 'prompt', 'anthropic', 'claude-sonnet-4-6', $3, $4, $5)`,
     [org, agentId, sessionId, opts.status ?? "published", JSON.stringify(followup)],
   );
+  return agentId;
 }
 
 async function countEnrollments(pointerId: string, contactId: string): Promise<number> {
@@ -442,5 +457,198 @@ describe("isPointerEnabledForAutomaticTrigger — integração SQL real (ai_agen
     await seedPublishedAgentVersion(orgA, { status: "published", enabled: true, pointerIds: [pointerId] });
 
     await expect(isPointerEnabledForAutomaticTrigger(pgGateDb(), orgB, pointerId)).resolves.toBe(false);
+  });
+});
+
+// ---- 6. Task 8.6: agent_id pinado no enrollment ------------------------
+
+async function agentIdOfEnrollment(pointerId: string, contactId: string): Promise<string | null> {
+  const { rows } = await pool.query<{ agent_id: string | null }>(
+    `select agent_id from followup_enrollments where pointer_id = $1 and contact_id = $2`,
+    [pointerId, contactId],
+  );
+  return rows[0]?.agent_id ?? null;
+}
+
+describe("runSilenceSweep — pina o agent_id do agente que arma o pointer (Task 8.6)", () => {
+  it("um agente armando → agent_id do enrollment = esse agente", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const agentId = await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.enrolled).toBe(1);
+    expect(await agentIdOfEnrollment(pointerId, contactId)).toBe(agentId);
+  });
+
+  it(">1 agente armando o MESMO pointer → pina o MENOR agent_id (uuid asc, determinístico)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const AGENT_LOW = "a0000000-0000-4000-8000-000000000001";
+    const AGENT_HIGH = "f0000000-0000-4000-8000-000000000001";
+    // ordem de seed HIGH antes de LOW — o pick não pode depender da ordem de inserção
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId], agentId: AGENT_HIGH });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId], agentId: AGENT_LOW });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90);
+
+    await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(await agentIdOfEnrollment(pointerId, contactId)).toBe(AGENT_LOW);
+  });
+});
+
+// ---- 7. Task 8.6: exclusividade 1-follow-up-vivo-por-lead ORG-WIDE ------
+
+async function countLiveForContact(org: string, contactId: string): Promise<number> {
+  const { rows } = await pool.query<{ n: string }>(
+    `select count(*) as n from followup_enrollments
+     where organization_id = $1 and contact_id = $2
+       and status in ('active','waiting_reply','paused_handoff')`,
+    [org, contactId],
+  );
+  return Number(rows[0]!.n);
+}
+
+const ONE_LIVE = "idx_followup_enrollments_one_live";
+async function setOneLiveIndex(columns: string): Promise<void> {
+  await pool.query(`drop index if exists ${ONE_LIVE}`);
+  await pool.query(
+    `create unique index if not exists ${ONE_LIVE} on followup_enrollments (${columns})
+       where status in ('active','waiting_reply','paused_handoff')`,
+  );
+}
+
+describe("runSilenceSweep — 1 follow-up vivo por lead ORG-WIDE (Task 8.6, furo do Rafael)", () => {
+  it("RED→GREEN: contato silencioso casa 2 fluxos — índice ANTIGO (pointer,contact) enrolla nos DOIS (spam); o NOVO (org,contact) barra o 2º", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const flowA = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const flowB = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    // um agente publicado arma AMBOS os pointers
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [flowA.pointerId, flowB.pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90); // silencioso p/ os dois
+
+    const deps = { db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK };
+
+    try {
+      // RED — índice como era ANTES da 0062: (pointer_id, contact_id)
+      await setOneLiveIndex("pointer_id, contact_id");
+      const red = await runSilenceSweep(deps);
+      expect(red.enrolled).toBe(2); // um por fluxo — o spam que o Rafael achou
+      expect(await countLiveForContact(org, contactId)).toBe(2);
+
+      // limpa (2 vivos violariam o índice único org-wide ao recriá-lo)
+      await pool.query(`delete from followup_enrollments where contact_id = $1`, [contactId]);
+
+      // GREEN — índice da 0062: (organization_id, contact_id)
+      await setOneLiveIndex("organization_id, contact_id");
+      const green = await runSilenceSweep(deps);
+      expect(green.enrolled).toBe(1); // exclusividade: só o 1º fluxo enrolla
+      expect(green.skipped_existing).toBeGreaterThanOrEqual(1); // o 2º barrado por 23505 org-wide
+      expect(await countLiveForContact(org, contactId)).toBe(1);
+    } finally {
+      // restaura o estado do baseline (índice org-wide), sem deixar linha viva órfã
+      await pool.query(`drop index if exists ${ONE_LIVE}`);
+      await pool.query(`delete from followup_enrollments where contact_id = $1`, [contactId]);
+      await setOneLiveIndex("organization_id, contact_id");
+    }
+  });
+
+  it("contato JÁ vivo no fluxo A → sweep do fluxo B NÃO enrolla (índice do baseline)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const flowA = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const flowB = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const agentId = await seedPublishedAgentVersion(org, {
+      enabled: true,
+      pointerIds: [flowA.pointerId, flowB.pointerId],
+    });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, 90);
+
+    // enrollment vivo pré-existente no fluxo A (direto, como se um sweep anterior tivesse criado)
+    await pool.query(
+      `insert into followup_enrollments
+         (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, agent_id)
+       values ($1, $2, $3, $4, 't1', 'active', now(), $5)`,
+      [org, flowA.pointerId, flowA.versionId, contactId, agentId],
+    );
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    // fluxo B tentou, bateu no índice org-wide → skip, nada novo
+    expect(await countEnrollments(flowB.pointerId, contactId)).toBe(0);
+    expect(await countLiveForContact(org, contactId)).toBe(1);
+    expect(summary.skipped_existing).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---- 8. Task 8.6: dedup da migration 0062 (antes do índice) -------------
+
+describe("dedup 0062 — >1 enrollment vivo pro mesmo (org,contact) vira 1 vivo + resto cancelado", () => {
+  it("mantém o started_at MAIS RECENTE; os demais → cancelled/exclusivity_backfill/next_eval_at null", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const flowA = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const flowB = await seedSilenceFlow(org, { thresholdMinutes: 30 });
+    const contactId = await seedContact(org);
+
+    try {
+      // estado sujo pré-migration: 2 vivos pro mesmo (org,contact). Só é possível
+      // sem o índice org-wide — reproduz um clone anterior à 0062.
+      await pool.query(`drop index if exists ${ONE_LIVE}`);
+      const older = await pool.query<{ id: string }>(
+        `insert into followup_enrollments
+           (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, started_at)
+         values ($1,$2,$3,$4,'t1','active', now(), now() - interval '2 hours') returning id`,
+        [org, flowA.pointerId, flowA.versionId, contactId],
+      );
+      const newer = await pool.query<{ id: string }>(
+        `insert into followup_enrollments
+           (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, started_at)
+         values ($1,$2,$3,$4,'t1','active', now(), now() - interval '10 minutes') returning id`,
+        [org, flowB.pointerId, flowB.versionId, contactId],
+      );
+
+      // A DEDUP exata da migration 0062 (window function genérica, sem ids hardcoded).
+      await pool.query(
+        `with ranked as (
+           select id, row_number() over (
+             partition by organization_id, contact_id
+             order by started_at desc, id desc
+           ) as rn
+           from followup_enrollments
+           where status in ('active','waiting_reply','paused_handoff')
+         )
+         update followup_enrollments e
+         set status='cancelled', cancel_reason='exclusivity_backfill', next_eval_at=null, updated_at=now()
+         from ranked where e.id = ranked.id and ranked.rn > 1`,
+      );
+
+      // recriar o índice único org-wide agora PASSA (dado curado antes)
+      await setOneLiveIndex("organization_id, contact_id");
+
+      expect(await countLiveForContact(org, contactId)).toBe(1);
+      const kept = await pool.query<{ status: string }>(
+        `select status from followup_enrollments where id = $1`,
+        [newer.rows[0]!.id],
+      );
+      expect(kept.rows[0]!.status).toBe("active"); // o mais recente sobrevive
+      const cancelled = await pool.query<{ status: string; cancel_reason: string; next_eval_at: string | null }>(
+        `select status, cancel_reason, next_eval_at from followup_enrollments where id = $1`,
+        [older.rows[0]!.id],
+      );
+      expect(cancelled.rows[0]!.status).toBe("cancelled");
+      expect(cancelled.rows[0]!.cancel_reason).toBe("exclusivity_backfill");
+      expect(cancelled.rows[0]!.next_eval_at).toBeNull();
+    } finally {
+      await pool.query(`drop index if exists ${ONE_LIVE}`);
+      await pool.query(`delete from followup_enrollments where contact_id = $1`, [contactId]);
+      await setOneLiveIndex("organization_id, contact_id");
+    }
   });
 });

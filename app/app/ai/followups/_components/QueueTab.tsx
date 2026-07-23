@@ -199,7 +199,12 @@ export function QueueTab({ canWrite }: Props) {
                   <TableRow key={`${row.source}:${row.id}`} data-testid="queue-row">
                     <TableCell className="font-medium">{row.contact.name}</TableCell>
                     <TableCell>
-                      {row.flow_name ?? <span className="text-text-muted">Promessa</span>}
+                      <div className="flex flex-col">
+                        <span>{row.flow_name ?? <span className="text-text-muted">Promessa</span>}</span>
+                        {row.agent_name && (
+                          <span className="text-xs text-text-muted">agente {row.agent_name}</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="max-w-[280px] truncate text-sm" title={row.node_or_reason}>
                       {row.node_or_reason}

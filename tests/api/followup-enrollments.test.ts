@@ -46,12 +46,21 @@ const GRAPH: FlowGraph = {
 
 type Row = Record<string, unknown>;
 
-function makeDb(pointers: Row[], versions: Row[], contacts: Row[], enrollments: Row[] = []) {
+function makeDb(
+  pointers: Row[],
+  versions: Row[],
+  contacts: Row[],
+  enrollments: Row[] = [],
+  agents: Row[] = [],
+  agentVersions: Row[] = [],
+) {
   const tables: Record<string, Row[]> = {
     followup_flow_pointers: pointers,
     followup_flow_versions: versions,
     contacts,
     followup_enrollments: enrollments,
+    ai_agents: agents,
+    ai_agent_versions: agentVersions,
   };
 
   function builder(table: string) {
@@ -290,6 +299,47 @@ describe("POST /api/v1/ai/followups/enrollments", () => {
     const { POST } = await import("@/app/api/v1/ai/followups/enrollments/route");
     const res = await POST(req("POST", { pointer_id: POINTER_ID, contact_id: CONTACT_ID }));
     expect(res.status).toBe(201);
+  });
+
+  // Task 8.6 — pin do agent_id no enrollment manual.
+  const AGENT_ID = "66666666-6666-4666-8666-666666666666";
+
+  it("agent_id explícito no body válido na org → 201 e pinado no enrollment", async () => {
+    const agents = [{ id: AGENT_ID, organization_id: ORG_ID }];
+    const db = makeDb([activePointer()], [version()], [contact()], [], agents);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followups/enrollments/route");
+    const res = await POST(req("POST", { pointer_id: POINTER_ID, contact_id: CONTACT_ID, agent_id: AGENT_ID }));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: Row };
+    expect(body.data.agent_id).toBe(AGENT_ID);
+  });
+
+  it("agent_id de OUTRA org → 404 (nunca confia no body pra tenancy)", async () => {
+    const agents = [{ id: AGENT_ID, organization_id: OTHER_ORG_ID }];
+    const db = makeDb([activePointer()], [version()], [contact()], [], agents);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followups/enrollments/route");
+    const res = await POST(req("POST", { pointer_id: POINTER_ID, contact_id: CONTACT_ID, agent_id: AGENT_ID }));
+    expect(res.status).toBe(404);
+  });
+
+  it("sem agent_id no body → resolve do pointer (agente publicado que o arma) e pina", async () => {
+    const agentVersions = [
+      {
+        agent_id: AGENT_ID,
+        organization_id: ORG_ID,
+        status: "published",
+        followup: { enabled: true, flow_pointer_ids: [POINTER_ID] },
+      },
+    ];
+    const db = makeDb([activePointer()], [version()], [contact()], [], [{ id: AGENT_ID, organization_id: ORG_ID }], agentVersions);
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followups/enrollments/route");
+    const res = await POST(req("POST", { pointer_id: POINTER_ID, contact_id: CONTACT_ID }));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: Row };
+    expect(body.data.agent_id).toBe(AGENT_ID);
   });
 });
 

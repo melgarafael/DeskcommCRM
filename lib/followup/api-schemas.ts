@@ -56,4 +56,8 @@ export const rollbackFollowupFlowSchema = z.strictObject({
 export const createFollowupEnrollmentSchema = z.strictObject({
   pointer_id: z.string().uuid(),
   contact_id: z.string().uuid(),
+  // Task 8.6: agente a fixar no enrollment (persona + fila). Opcional — se
+  // ausente, resolve-se do próprio pointer (agentes que o armam). Validado
+  // contra a org antes de gravar.
+  agent_id: z.string().uuid().optional(),
 });
