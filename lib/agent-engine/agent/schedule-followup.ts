@@ -42,7 +42,7 @@ export type ScheduleFollowupResult =
   | {
       ok: false;
       error: {
-        code: 'invalid_payload' | 'promised_at_in_past' | 'promised_at_out_of_window';
+        code: 'invalid_payload' | 'promised_at_in_past' | 'promised_at_out_of_window' | 'already_pending';
         message: string;
       };
     };
@@ -113,6 +113,37 @@ export async function applyScheduleFollowup(
         message:
           `horário fora da janela aceitável de follow-up: agende o retorno entre ` +
           `${humanizeMs(minAheadMs)} e ${humanizeMs(maxAheadMs)} a partir de agora.`,
+      },
+    };
+  }
+
+  // Guard anti-empilhamento (1 follow-up VIVO por lead): sem isto, o agente marca
+  // um "reconfirmar amanhã" a cada turno e o lead vira alvo de N sequências
+  // paralelas com data relativa congelada — o bug de spam de produção. Um follow-up
+  // pendente já cobre o retorno; o modelo é ENSINADO a não duplicar (não é erro
+  // fatal, é continue-sem-agendar). Espelha a exclusividade org-wide do sistema de
+  // fluxos (migration 0064), aplicada aqui à tool de demanda.
+  const { rows: pendentes } = await db.query<{ id: string; promised_at: string | null }>(
+    `select id, (payload->>'promised_at') as promised_at
+       from cron_jobs
+      where organization_id = $1 and contact_id = $2
+        and job_kind = 'followup_turn' and enabled = true
+      order by next_run_at asc
+      limit 1`,
+    [ids.tenantId, ids.leadId],
+  );
+  if (pendentes.length > 0) {
+    const quando = pendentes[0]!.promised_at;
+    return {
+      ok: false,
+      error: {
+        code: 'already_pending',
+        message:
+          `este lead JÁ tem um follow-up agendado${quando ? ` para ${quando}` : ''} — ` +
+          `não agende outro (evita bombardear o lead com confirmações repetidas). ` +
+          `Se precisa mudar o horário, encerre o turno; o follow-up existente vai disparar no horário combinado. ` +
+          `Use SEMPRE data ABSOLUTA (ex.: "2026-07-25T13:00:00Z"), nunca relativa como "amanhã" — ` +
+          `a promessa é lida dias depois e "amanhã" fica sem sentido.`,
       },
     };
   }
