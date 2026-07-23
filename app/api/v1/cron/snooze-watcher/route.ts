@@ -67,7 +67,14 @@ async function handle(req: NextRequest): Promise<Response> {
   let reopened = 0;
 
   for (const c of conversations) {
-    const leadReplied = !!(c.last_inbound_at && c.snoozed_at && c.last_inbound_at > c.snoozed_at);
+    // Comparar como Date, não string: dois timestamptz ISO com formatos sutilmente
+    // diferentes (Z vs +00:00, frações de precisão distinta) quebrariam a ordem
+    // lexicográfica — e esta comparação decide se a conversa reabre.
+    const leadReplied = !!(
+      c.last_inbound_at &&
+      c.snoozed_at &&
+      new Date(c.last_inbound_at).getTime() > new Date(c.snoozed_at).getTime()
+    );
     const clear = { snooze_until: null, snoozed_at: null, snoozed_by_user_id: null };
 
     if (!leadReplied && c.status !== "closed" && c.status !== "archived") {
