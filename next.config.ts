@@ -36,7 +36,11 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          // microphone=(self): o gravador de voz do composer (PTT estilo WhatsApp)
+          // usa getUserMedia({audio}); microphone=() bloquearia em TODA origem,
+          // inclusive a própria — daria "microphone is not allowed in this document".
+          // Câmera e geolocalização seguem bloqueadas (não usadas).
+          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
         ],
       },
     ];

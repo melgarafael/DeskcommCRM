@@ -12,6 +12,8 @@ import { ragIndexerHandler } from "@/workers/rag-indexer.handler";
 import { lgpdExportHandler } from "@/workers/lgpd-export-worker.handler";
 import { lgpdRedactHandler } from "@/workers/lgpd-redact-worker.handler";
 import { automationRulesHandler } from "@/lib/automation/engine.handler";
+import { mediaPersistHandler } from "@/workers/media-persist-worker.handler";
+import { mediaDeriveHandler } from "@/workers/media-derive-worker.handler";
 import { registerHandler } from "@/lib/event-log/dispatcher";
 
 let _registered = false;
@@ -25,5 +27,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(lgpdExportHandler);
   registerHandler(lgpdRedactHandler);
   registerHandler(automationRulesHandler);
+  registerHandler(mediaPersistHandler);
+  registerHandler(mediaDeriveHandler);
   _registered = true;
 }

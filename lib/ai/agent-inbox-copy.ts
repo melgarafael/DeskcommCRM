@@ -14,6 +14,7 @@ export const KIND_LABEL: Record<string, string> = {
   handoff: "O assistente passou um atendimento para um humano",
   promotion_review: "Proposta de melhoria do assistente aguardando sua revisão",
   judge_unaligned: "O avaliador de qualidade precisa de recalibragem",
+  snooze_expired: "O lead não respondeu no prazo que você definiu",
   other: "Aviso do assistente",
 };
 

@@ -23,6 +23,7 @@ export interface Conversation {
   group_chat_id: string | null;
   tags: string[];
   metadata: Record<string, unknown>;
+  snooze_until: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -51,6 +52,16 @@ export interface Message {
   delivered_at: string | null;
   read_at: string | null;
   metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+/** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */
+export interface Note {
+  id: string;
+  conversation_id: string;
+  body: string;
+  created_by_user_id: string | null;
+  created_by_name: string | null;
   created_at: string;
 }
 

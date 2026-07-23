@@ -9,6 +9,8 @@ interface SendArgs {
   body?: string;
   media_url?: string;
   media_mime?: string;
+  media_storage_path?: string;
+  media_size_bytes?: number;
   type?: string;
 }
 
@@ -24,6 +26,8 @@ export function useSendMessage() {
     mutationFn: async (input: SendArgs) =>
       apiClient.post<{ data: Message }>("/api/v1/messages", input),
     onMutate: async (args) => {
+      if (args.media_storage_path || args.media_url) return {};
+
       const queryKey = ["messages", args.conversation_id];
       await qc.cancelQueries({ queryKey });
 

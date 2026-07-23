@@ -141,6 +141,9 @@ export type AuditAction =
   | "automation.rule_deleted"
   | "automation.rule_executed"
   | "automation.run_resent"
+  | "template.created"
+  | "template.updated"
+  | "template.deleted"
   | "auth.signup_requested"
   | "auth.signup_failed"
   | "auth.signup_confirmed"
@@ -150,4 +153,9 @@ export type AuditAction =
   | "auth.password_reset_request_failed"
   | "auth.password_reset_completed"
   | "auth.password_reset_failed"
-  | "tenant.created_by_signup";
+  | "tenant.created_by_signup"
+  | "conversation.snoozed"
+  | "conversation.snooze_cancelled"
+  | "conversation.snooze_watcher_run"
+  | "conversation.note_added"
+  | "conversation.note_deleted";

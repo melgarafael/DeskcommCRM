@@ -6344,3 +6344,108 @@ alter table flywheel_distiller_proposals
   add column if not exists applied_at timestamptz,
   add column if not exists applied_version_id uuid references ai_agent_versions(id) on delete set null,
   add column if not exists applied_by uuid;
+
+-- ---- bucket whatsapp-media (migration 0055) ----
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('whatsapp-media', 'whatsapp-media', false, 52428800)
+on conflict (id) do update set file_size_limit = excluded.file_size_limit;
+
+-- ---- media multimodal: derivado + flags (migration 0058) ----
+alter table messages
+  add column if not exists media_derived_text text,
+  add column if not exists media_derived_status text;
+alter table ai_agent_versions
+  add column if not exists multimodal_input boolean not null default true,
+  add column if not exists video_frames_enabled boolean not null default false;
+
+-- ---- split de mensagens por-agente (migration 0059) ----
+alter table ai_agent_versions
+  add column if not exists split_messages boolean not null default false,
+  add column if not exists split_max_chars integer not null default 600;
+
+-- ---- templates de script do vendedor (migration 0060) ----
+create table if not exists message_templates (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  owner_user_id uuid references auth.users(id) on delete cascade,
+  title text not null,
+  body text not null,
+  shortcut text,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_message_templates_org on message_templates (organization_id);
+
+alter table message_templates enable row level security;
+
+drop policy if exists "message_templates_select" on message_templates;
+create policy "message_templates_select" on message_templates
+  for select using (
+    (
+      organization_id in (select fn_user_org_ids())
+      and (owner_user_id is null or owner_user_id = auth.uid())
+    )
+    or fn_is_platform_admin()
+  );
+
+drop policy if exists "message_templates_write" on message_templates;
+create policy "message_templates_write" on message_templates
+  for all using (
+    organization_id in (select fn_user_org_ids())
+    and (
+      (owner_user_id = auth.uid() and fn_role_at_least(organization_id, 'agent'))
+      or (owner_user_id is null and fn_role_at_least(organization_id, 'manager'))
+    )
+  )
+  with check (
+    organization_id in (select fn_user_org_ids())
+    and (
+      (owner_user_id = auth.uid() and fn_role_at_least(organization_id, 'agent'))
+      or (owner_user_id is null and fn_role_at_least(organization_id, 'manager'))
+    )
+  );
+
+-- ---- snooze por conversa (migration 0062) ----
+alter table conversations
+  add column if not exists snooze_until timestamptz,
+  add column if not exists snoozed_by_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists snoozed_at timestamptz;
+
+create index if not exists idx_conversations_snooze_until
+  on conversations (snooze_until) where snooze_until is not null;
+
+alter table agent_inbox_items drop constraint if exists agent_inbox_items_kind_check;
+alter table agent_inbox_items add constraint agent_inbox_items_kind_check
+  check (kind in ('qr_rescan','job_dead','event_dead','budget_exceeded','handoff',
+                  'promotion_review','judge_unaligned','snooze_expired','other'));
+
+-- ---- notas internas de conversa (migration 0063) ----
+create table if not exists conversation_notes (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  conversation_id uuid not null references conversations(id) on delete cascade,
+  body text not null,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_by_name text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_conversation_notes_conversation
+  on conversation_notes (conversation_id, created_at);
+
+alter table conversation_notes enable row level security;
+
+drop policy if exists "conversation_notes_select" on conversation_notes;
+create policy "conversation_notes_select" on conversation_notes
+  for select using (
+    organization_id in (select fn_user_org_ids()) or fn_is_platform_admin()
+  );
+
+drop policy if exists "conversation_notes_write" on conversation_notes;
+create policy "conversation_notes_write" on conversation_notes
+  for all using (
+    organization_id in (select fn_user_org_ids()) and fn_role_at_least(organization_id, 'agent')
+  )
+  with check (
+    organization_id in (select fn_user_org_ids()) and fn_role_at_least(organization_id, 'agent')
+  );

@@ -171,6 +171,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               conversationId={selectedConversation.id}
               blockedReason={blockedReason}
               disabled={selectedConversation.status === "closed"}
+              contactName={selectedConversation.contacts?.name ?? null}
             />
           </>
         ) : selectionNotFound ? (

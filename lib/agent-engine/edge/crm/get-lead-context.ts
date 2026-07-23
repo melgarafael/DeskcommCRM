@@ -36,9 +36,13 @@ export interface LeadContextKnobs {
 /** Uma mensagem do histórico, já curada. */
 export interface LeadContextMessage {
   direction: 'inbound' | 'outbound';
-  /** Corpo textual; mídia sem corpo vira marcador `[tipo]` (mesma regra de preview do CRM). */
+  /** Corpo textual; mídia usa o derivado (transcrição/visão/pdf) ou marcador [tipo]. */
   body: string;
   sent_at: string;
+  /** Metadados de mídia (Onda 3): presentes só em mensagens com mídia. */
+  type?: string;
+  media_storage_path?: string | null;
+  media_mime?: string | null;
 }
 
 /** Payload curado que o modelo recebe. */
@@ -88,6 +92,9 @@ interface HistoryRow {
   type: string;
   body: string | null;
   media_url: string | null;
+  media_storage_path: string | null;
+  media_mime: string | null;
+  media_derived_text: string | null;
   sent_at: string;
 }
 
@@ -126,7 +133,8 @@ export async function getLeadContext(
   const history: HistoryRow[] = conversationId
     ? (
         await db.query<HistoryRow>(
-          `select direction, type, body, media_url, sent_at::text as sent_at
+          `select direction, type, body, media_url, media_storage_path, media_mime,
+                  media_derived_text, sent_at::text as sent_at
            from messages
            where organization_id = $1 and conversation_id = $2
              and direction in ('inbound', 'outbound')
@@ -178,12 +186,22 @@ function fitToBudget(
   history: HistoryRow[],
   maxTokens: number,
 ): LeadContext {
-  let messages: LeadContextMessage[] = history.map((m) => ({
-    direction: m.direction,
-    // Mesma regra de preview do CRM: mídia sem corpo vira [tipo].
-    body: m.body ?? (m.media_url ? `[${m.type}]` : ''),
-    sent_at: m.sent_at,
-  }));
+  let messages: LeadContextMessage[] = history.map((m) => {
+    const hasMedia = Boolean(m.media_storage_path || m.media_url);
+    const derived = m.media_derived_text;
+    // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
+    // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
+    // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
+    const body = derived
+      ? frameMediaBody(m.type, m.body, derived)
+      : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
+    return {
+      direction: m.direction,
+      body,
+      sent_at: m.sent_at,
+      ...(hasMedia ? { type: m.type, media_storage_path: m.media_storage_path, media_mime: m.media_mime } : {}),
+    };
+  });
   const build = (msgs: LeadContextMessage[]): LeadContext => ({ ...base, messages: msgs });
   const over = (msgs: LeadContextMessage[]): boolean =>
     countPayloadTokens(JSON.stringify(build(msgs))) > maxTokens;
@@ -196,3 +214,34 @@ function fitToBudget(
   }
   return build(messages);
 }
+
+/** Substantivo pt-br por tipo de mídia (p/ o enquadramento do derivado). */
+const MEDIA_NOUN: Record<string, string> = {
+  image: 'uma imagem',
+  video: 'um vídeo',
+  audio: 'um áudio',
+  document: 'um documento (PDF)',
+  sticker: 'uma figurinha',
+};
+
+/**
+ * Enquadra o derivado de mídia como PERCEPÇÃO do agente (Onda 3, ajuste pós-prova).
+ * Sem isto, o modelo via a transcrição/descrição mas respondia "não consigo ver
+ * mídia" por reflexo. O enquadramento diz explicitamente: o conteúdo já foi
+ * processado; trate como se tivesse visto/ouvido; nunca negue a mídia. Legenda do
+ * cliente (se houver) e conteúdo derivado coexistem. @internal exposto p/ teste.
+ */
+export function frameMediaBody(type: string, caption: string | null, derived: string): string {
+  const noun = MEDIA_NOUN[type] ?? 'uma mídia';
+  const parts = [
+    `[Mídia do cliente: ele enviou ${noun} e o sistema já processou o conteúdo pra você. ` +
+      `Trate o texto abaixo como se você mesma tivesse visto/ouvido — NUNCA responda que não ` +
+      `consegue ver/ouvir mídia. Comente ou use o conteúdo naturalmente.]`,
+  ];
+  if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
+  parts.push(`Conteúdo: ${derived}`);
+  return parts.join('\n');
+}
+
+/** @internal exposto p/ teste — não usar fora de testes. */
+export const __test_fitToBudget = fitToBudget;

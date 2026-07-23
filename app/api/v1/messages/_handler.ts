@@ -12,8 +12,10 @@ import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 import { getWahaClient } from "@/lib/waha/client";
+import { isMediaPathOwnedBy, wahaSendPlanFor } from "@/lib/waha/media-send";
 import { parseWahaMessageId } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
 
@@ -111,9 +113,14 @@ export async function listMessagesHandler(
 // send
 // ---------------------------------------------------------------------------
 
-function previewFrom(input: { body?: string; media_url?: string; type?: string }): string {
+function previewFrom(input: {
+  body?: string;
+  media_url?: string;
+  media_storage_path?: string;
+  type?: string;
+}): string {
   if (input.body) return input.body.slice(0, 280);
-  if (input.media_url) return `[${input.type ?? "media"}]`;
+  if (input.media_url || input.media_storage_path) return `[${input.type ?? "media"}]`;
   return "";
 }
 
@@ -159,6 +166,16 @@ export async function sendMessageHandler(
     );
   }
 
+  if (input.media_storage_path && !isMediaPathOwnedBy(input.media_storage_path, c.organization_id, c.id)) {
+    throw new ApiError(
+      422,
+      "invalid_media_path",
+      undefined,
+      ctx.requestId,
+      "media_storage_path fora da conversa.",
+    );
+  }
+
   const now = new Date().toISOString();
   const insertRow = {
     organization_id: c.organization_id,
@@ -171,6 +188,8 @@ export async function sendMessageHandler(
     body: input.body ?? null,
     media_url: input.media_url ?? null,
     media_mime: input.media_mime ?? null,
+    media_storage_path: input.media_storage_path ?? null,
+    media_size_bytes: input.media_size_bytes ?? null,
     sent_via: ctx.actor.type !== "user" ? ("ai" as const) : ("user" as const),
     sent_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     sent_at: now,
@@ -242,11 +261,34 @@ export async function sendMessageHandler(
     if (updated) message = updated as unknown as Message;
   } else {
     try {
-      const wahaRes = (await waha.sendMessage(
-        c.channel_sessions.waha_session_name,
-        chatId,
-        input.body ?? "",
-      )) as unknown;
+      let wahaRes: unknown;
+      if (input.media_storage_path) {
+        // Storage-first: signed URL curta só pro WAHA baixar (nunca base64).
+        const admin = createAdminClient();
+        const { data: signed, error: signErr } = await admin.storage
+          .from("whatsapp-media")
+          .createSignedUrl(input.media_storage_path, 600);
+        if (signErr || !signed?.signedUrl) {
+          throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
+        }
+        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        wahaRes = await waha.sendMedia(
+          c.channel_sessions.waha_session_name,
+          chatId,
+          wahaSendPlanFor(input.type, {
+            url: signed.signedUrl,
+            mime: input.media_mime ?? "application/octet-stream",
+            filename,
+            caption: input.body ?? null,
+          }),
+        );
+      } else {
+        wahaRes = await waha.sendMessage(
+          c.channel_sessions.waha_session_name,
+          chatId,
+          input.body ?? "",
+        );
+      }
       // Fase 4A-3: o shape do id varia por engine (string | {_serialized} |
       // NOWEB {id:{id}} | {key:{id}}) — parser compartilhado cobre todos; sem
       // external_id o ack do webhook duplica a linha em vez de atualizar.
@@ -260,11 +302,12 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "waha_unknown";
+      const code = msg.startsWith("storage_sign_failed") ? "storage_sign_failed" : "waha_error";
       const { data: updated } = await supabase
         .from("messages")
         .update({
           status: "failed",
-          error_code: "waha_error",
+          error_code: code,
           error_message: msg,
         })
         .eq("id", message.id)
@@ -282,6 +325,7 @@ export async function sendMessageHandler(
       last_message_preview: previewFrom({
         body: input.body,
         media_url: input.media_url,
+        media_storage_path: input.media_storage_path,
         type: input.type,
       }),
     })

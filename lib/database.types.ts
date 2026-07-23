@@ -236,9 +236,12 @@ export type Database = {
           id: string
           max_steps: number
           model: string
+          multimodal_input: boolean
           organization_id: string
           provider: string
           published_at: string | null
+          split_max_chars: number
+          split_messages: boolean
           status: string
           superseded_at: string | null
           system_prompt: string
@@ -246,6 +249,7 @@ export type Database = {
           tool_ids: string[]
           trigger_config: Json
           version_number: number
+          video_frames_enabled: boolean
         }
         Insert: {
           agent_id: string
@@ -261,9 +265,12 @@ export type Database = {
           id?: string
           max_steps?: number
           model: string
+          multimodal_input?: boolean
           organization_id: string
           provider: string
           published_at?: string | null
+          split_max_chars?: number
+          split_messages?: boolean
           status?: string
           superseded_at?: string | null
           system_prompt: string
@@ -271,6 +278,7 @@ export type Database = {
           tool_ids?: string[]
           trigger_config?: Json
           version_number: number
+          video_frames_enabled?: boolean
         }
         Update: {
           agent_id?: string
@@ -286,9 +294,12 @@ export type Database = {
           id?: string
           max_steps?: number
           model?: string
+          multimodal_input?: boolean
           organization_id?: string
           provider?: string
           published_at?: string | null
+          split_max_chars?: number
+          split_messages?: boolean
           status?: string
           superseded_at?: string | null
           system_prompt?: string
@@ -296,6 +307,7 @@ export type Database = {
           tool_ids?: string[]
           trigger_config?: Json
           version_number?: number
+          video_frames_enabled?: boolean
         }
         Relationships: [
           {
@@ -1678,6 +1690,51 @@ export type Database = {
           },
         ]
       }
+      conversation_notes: {
+        Row: {
+          body: string
+          conversation_id: string
+          created_at: string
+          created_by_name: string | null
+          created_by_user_id: string | null
+          id: string
+          organization_id: string
+        }
+        Insert: {
+          body: string
+          conversation_id: string
+          created_at?: string
+          created_by_name?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          organization_id: string
+        }
+        Update: {
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          created_by_name?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_notes_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_notes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           assigned_at: string | null
@@ -1700,6 +1757,9 @@ export type Database = {
           metadata: Json
           organization_id: string
           rag_review_status: string | null
+          snooze_until: string | null
+          snoozed_at: string | null
+          snoozed_by_user_id: string | null
           status: string
           status_changed_at: string
           tags: string[]
@@ -1730,6 +1790,9 @@ export type Database = {
           metadata?: Json
           organization_id: string
           rag_review_status?: string | null
+          snooze_until?: string | null
+          snoozed_at?: string | null
+          snoozed_by_user_id?: string | null
           status?: string
           status_changed_at?: string
           tags?: string[]
@@ -1760,6 +1823,9 @@ export type Database = {
           metadata?: Json
           organization_id?: string
           rag_review_status?: string | null
+          snooze_until?: string | null
+          snoozed_at?: string | null
+          snoozed_by_user_id?: string | null
           status?: string
           status_changed_at?: string
           tags?: string[]
@@ -3056,6 +3122,50 @@ export type Database = {
           },
         ]
       }
+      message_templates: {
+        Row: {
+          body: string
+          created_at: string
+          created_by_user_id: string | null
+          id: string
+          organization_id: string
+          owner_user_id: string | null
+          shortcut: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          organization_id: string
+          owner_user_id?: string | null
+          shortcut?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          organization_id?: string
+          owner_user_id?: string | null
+          shortcut?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           ack: number | null
@@ -3071,6 +3181,8 @@ export type Database = {
           error_message: string | null
           external_id: string | null
           id: string
+          media_derived_status: string | null
+          media_derived_text: string | null
           media_mime: string | null
           media_size_bytes: number | null
           media_storage_path: string | null
@@ -3099,6 +3211,8 @@ export type Database = {
           error_message?: string | null
           external_id?: string | null
           id?: string
+          media_derived_status?: string | null
+          media_derived_text?: string | null
           media_mime?: string | null
           media_size_bytes?: number | null
           media_storage_path?: string | null
@@ -3127,6 +3241,8 @@ export type Database = {
           error_message?: string | null
           external_id?: string | null
           id?: string
+          media_derived_status?: string | null
+          media_derived_text?: string | null
           media_mime?: string | null
           media_size_bytes?: number | null
           media_storage_path?: string | null

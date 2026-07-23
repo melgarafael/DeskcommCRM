@@ -43,11 +43,13 @@ export const sendMessageSchema = z
     type: messageTypeSchema.default("text"),
     body: z.string().min(1).max(4096).optional(),
     media_url: z.string().url().optional(),
+    media_storage_path: z.string().min(1).max(500).optional(),
     media_mime: z.string().optional(),
+    media_size_bytes: z.number().int().positive().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   })
-  .refine((d) => !!d.body || !!d.media_url, {
-    message: "body or media_url required",
+  .refine((d) => !!d.body || !!d.media_url || !!d.media_storage_path, {
+    message: "body, media_url or media_storage_path required",
     path: ["body"],
   });
 
