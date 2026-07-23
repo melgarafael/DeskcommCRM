@@ -1690,6 +1690,51 @@ export type Database = {
           },
         ]
       }
+      conversation_notes: {
+        Row: {
+          body: string
+          conversation_id: string
+          created_at: string
+          created_by_name: string | null
+          created_by_user_id: string | null
+          id: string
+          organization_id: string
+        }
+        Insert: {
+          body: string
+          conversation_id: string
+          created_at?: string
+          created_by_name?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          organization_id: string
+        }
+        Update: {
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          created_by_name?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_notes_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_notes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           assigned_at: string | null

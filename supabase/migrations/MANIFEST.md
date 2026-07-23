@@ -57,6 +57,7 @@ Migrations applied to Supabase project `rrydmwnporysaiysiztn` (sa-east-1, Postgr
 | `20260722130000` | `0059_agent_split_messages` | Colunas `split_messages`/`split_max_chars` em ai_agent_versions (Onda 4 split de mensagens). |
 | `20260722140000` | `0060_message_templates` | Tabela `message_templates` (templates de script do vendedor, pessoal/compartilhado, RLS) — Onda 5. |
 | `20260722160000` | `0062_conversation_snooze` | Colunas snooze_* em conversations + kind snooze_expired em agent_inbox_items (Onda 5.3). NNNN=0062 (0061 tomado por `feat/followup-flows` concorrentemente — verificado contra todas as branches/worktrees locais). |
+| `20260723120000` | `0063_conversation_notes` | Tabela `conversation_notes` (notas internas de conversa, visíveis só ao time, RLS select/write) — Onda 5.2. |
 
 ## Reproducibility
 
