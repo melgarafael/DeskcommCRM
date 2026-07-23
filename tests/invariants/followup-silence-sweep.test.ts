@@ -20,11 +20,18 @@ import type { FlowGraph } from "@/lib/followup/graph-schema";
  * (2) o MESMO cenário mas SEM nenhum agente publicado habilitando o pointer →
  * 0 enrollments (prova que o gate é de fato chamado, não só importado);
  * (3) contato silencioso HÁ MENOS que o threshold → não enrolla (boundary);
+ * silêncio EXATAMENTE igual ao threshold → enrolla (`<=`, não `<`);
  * (4) `isPointerEnabledForAutomaticTrigger` contra `ai_agent_versions` REAL
  * (não o fake hand-rolled de agent-followup-gate.test.ts): publicado+
  * habilitado+pointer-membro → true; rascunho (não publicado) → false;
  * enabled=false → false; pointer de OUTRA org → false (reviewer Minor #2 da
- * Task 7.2 — a task que primeiro CONSOME o gate é quem prova a query real).
+ * Task 7.2 — a task que primeiro CONSOME o gate é quem prova a query real);
+ * (5) redução anti-spam (review pós-approval, o gap coberto agora): contato
+ * com 2 conversas (1 velha silenciosa + 1 recente dentro do threshold) NÃO
+ * enrolla — prova que a redução pega o `last_inbound_at` MAIS RECENTE por
+ * contato, não a 1ª conversa velha encontrada; contato cuja única conversa
+ * nunca recebeu inbound (`last_inbound_at is null`) também NÃO enrolla —
+ * "nunca conversou" ≠ "está em silêncio", sem mass-enroll de contato novo.
  */
 
 const container = process.env.TEST_DB_CONTAINER;
@@ -189,6 +196,19 @@ async function seedConversation(org: string, contactId: string, agoMinutes: numb
   return rows[0]!.id;
 }
 
+/** Mesmo que `seedConversation`, mas com `last_inbound_at` EXATO (ISO), não relativo a `now()`
+ *  do Postgres — necessário pro teste de boundary exato (evita drift entre `now()` do DB e o
+ *  `clock()` injetado no sweep, que roda em JS). */
+async function seedConversationAt(org: string, contactId: string, atIso: string): Promise<string> {
+  const sessionId = await seedChannelSession(org);
+  const { rows } = await pool.query<{ id: string }>(
+    `insert into conversations (organization_id, contact_id, channel_session_id, status, is_group, last_inbound_at)
+     values ($1, $2, $3, 'open', false, $4) returning id`,
+    [org, contactId, sessionId, atIso],
+  );
+  return rows[0]!.id;
+}
+
 async function seedSilenceFlow(
   org: string,
   opts?: { thresholdMinutes?: number; segments?: string[] },
@@ -325,6 +345,59 @@ describe("runSilenceSweep — boundary de threshold", () => {
 
     const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
     expect(summary.pointers_gated_out).toBe(0); // o gate passou — não é isso que bloqueou
+    expect(summary.enrolled).toBe(0);
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  it("silêncio EXATAMENTE igual ao threshold (at === cutoff) → enrolla (silêncio é <=, não <)", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const thresholdMinutes = 60;
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+
+    // clock() fixo (não `new Date()` a cada chamada) pra `cutoff` do sweep e o
+    // `last_inbound_at` semeado baterem no MESMO instante, sem drift de execução.
+    const refTime = new Date();
+    const cutoff = new Date(refTime.getTime() - thresholdMinutes * 60_000);
+    await seedConversationAt(org, contactId, cutoff.toISOString());
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: () => refTime });
+    expect(summary.enrolled).toBe(1);
+    expect(await countEnrollments(pointerId, contactId)).toBe(1);
+  });
+});
+
+// ---- 3b. redução anti-spam (o ponto mais arriscado da lógica) -----------
+
+describe("runSilenceSweep — redução anti-spam (multi-conversa + never-inbound)", () => {
+  it("contato com 2 conversas — 1 antiga silenciosa + 1 RECENTE (dentro do threshold) → NÃO enrolla", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    // conversa OLD: 120min de silêncio (> threshold 60, sozinha enrollaria).
+    await seedConversation(org, contactId, 120);
+    // conversa NEW: 5min — o contato respondeu recentemente por OUTRA conversa.
+    await seedConversation(org, contactId, 5);
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
+    expect(summary.pointers_gated_out).toBe(0); // não foi o gate que bloqueou
+    expect(summary.enrolled).toBe(0); // a redução MAX(last_inbound_at) pegou a conversa recente, não a velha
+    expect(await countEnrollments(pointerId, contactId)).toBe(0);
+  });
+
+  it("contato cuja ÚNICA conversa nunca recebeu inbound (last_inbound_at NULL) → NÃO enrolla", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const { pointerId } = await seedSilenceFlow(org, { thresholdMinutes: 60 });
+    await seedPublishedAgentVersion(org, { enabled: true, pointerIds: [pointerId] });
+    const contactId = await seedContact(org);
+    await seedConversation(org, contactId, null); // nunca recebeu inbound — não é "silêncio", é ausência de histórico
+
+    const summary = await runSilenceSweep({ db: silenceSweepDb(), gateDb: pgGateDb(), clock: CLOCK });
     expect(summary.enrolled).toBe(0);
     expect(await countEnrollments(pointerId, contactId)).toBe(0);
   });

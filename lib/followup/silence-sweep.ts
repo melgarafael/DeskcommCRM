@@ -14,7 +14,9 @@
  * agente PUBLICADO da org tem esse pointer habilitado) → acha contatos
  * silenciosos da org (sem inbound há >= threshold_minutes) → cria 1
  * enrollment por (pointer, contato) qualificado, nascendo no nó `trigger` do
- * grafo pinado com `next_eval_at=now` (o mesmo tick do engine já pode pegar).
+ * grafo pinado com `next_eval_at=now`. Como `runSilenceSweep` roda DEPOIS de
+ * `runFollowupTick` no MESMO tick do cron (route.ts), esse enrollment recém-
+ * criado só é reclamado no PRÓXIMO tick (~1min depois), não neste.
  *
  * Idempotência: o índice único `idx_followup_enrollments_one_live`
  * (pointer_id, contact_id) já impede duplicata VIVA — 23505 vira skip
