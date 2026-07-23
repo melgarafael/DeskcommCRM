@@ -373,6 +373,17 @@ Semântica: inbound de contato com enrollment `waiting_reply` ⇒ `next_eval_at=
 - [ ] Implementar em incrementos com Playwright acompanhando: paleta+drop → conexões → painel de config → save/reload → publish com erro → publish ok.
 - [ ] **Prova visível:** rodar spec inteira headed uma vez, screenshots no HANDOFF. Commit por incremento.
 
+### Task 6.3: Editor de condição de aresta (desbloqueia ai_classify/condition)
+
+**Motivo:** a 6.2 cortou a edição de condição de aresta — toda aresta nasce `always`. Sem UI pra mudar, um nó `ai_classify` NUNCA passa no `validateFlowForPublish` (exige `class_match` por classe + `no_reply` + fallback `always`), e um `condition` não roteia `true`/`false`. A jornada E2E da Onda 8 publica um fluxo com classify pelo builder → **isto é pré-requisito da Onda 8**, não backlog.
+
+**Files:** Create: `app/app/ai/followups/[id]/_components/EdgeConfigPanel.tsx`; Modify: `_components/FlowCanvas.tsx` (onEdgeClick → seleciona aresta + abre painel; render de label na aresta refletindo a condição), `_components/FlowBuilder.tsx` (estado de aresta selecionada). O `graph-mappers.ts` JÁ preserva `condition` no round-trip (provado no review 6.2) — nenhuma mudança de mapper.
+
+**Interfaces:** o painel lê o nó `source` da aresta: se `source.type==='ai_classify'` → opções de condição = `class_match` com value ∈ (classes do nó + `no_reply`) OU `always`; se `source.type==='condition'` → `cond_result` true|false OU `always`; senão → só `always`. Editar grava `edge.data.condition`; dirty-state marca o draft. Label da aresta mostra o value (ex.: "positivo", "no_reply", "sim/não", "sempre").
+
+- [ ] TDD do mapper de opções por tipo de source (unit) → UI → Playwright: fluxo trigger→classify(2 classes)→[2 ações]→end, editar as arestas pra `class_match`+`no_reply`+`always`, publicar com SUCESSO (o que antes dava `missing_class_edge`). Screenshot do fluxo classify publicado.
+- [ ] **Prova visível:** screenshot no HANDOFF do classify ramificado publicado "Ativo".
+
 ---
 
 ## Onda 7 — UI Fila + seletor no agente

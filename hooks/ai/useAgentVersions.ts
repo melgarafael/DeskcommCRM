@@ -23,6 +23,7 @@ export interface AgentVersionRow {
   history_token_window: number;
   handoff_keywords: string[];
   handoff_tool_enabled: boolean;
+  followup: { enabled: boolean; flow_pointer_ids: string[] };
   status: "draft" | "published" | "superseded" | "archived";
   published_at: string | null;
   superseded_at: string | null;

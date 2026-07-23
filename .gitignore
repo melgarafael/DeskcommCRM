@@ -21,6 +21,7 @@ coverage/
 .nyc_output/
 playwright-report/
 test-results/
+e2e-artifacts/
 
 # IDE / OS
 .DS_Store

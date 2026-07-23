@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, PlugsConnected, ChartBar, WebhooksLogo, FileText } from "@/lib/ui/icons";
+import { Kanban, Users, UsersThree, Gear, CaretDoubleLeft, CaretDoubleRight, Inbox, ScalesSimple, Robot, PlugsConnected, ChartBar, WebhooksLogo, FlowArrow, FileText } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/app/templates", label: "Templates", icon: FileText },
   { href: "/app/lgpd/requests", label: "LGPD", icon: ScalesSimple, permission: "lgpd.execute_redact" },
   { href: "/app/ai/agents", label: "Agentes IA", icon: Robot, permission: "ai.agents.view" },
+  { href: "/app/ai/followups", label: "Follow-ups", icon: FlowArrow, permission: "ai.agents.view" },
   { href: "/app/webhooks", label: "Webhooks", icon: WebhooksLogo, permission: "webhooks.manage" },
   { href: "/app/settings", label: "Configurações", icon: Gear },
 ];

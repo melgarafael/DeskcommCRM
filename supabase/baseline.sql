@@ -6345,6 +6345,268 @@ alter table flywheel_distiller_proposals
   add column if not exists applied_version_id uuid references ai_agent_versions(id) on delete set null,
   add column if not exists applied_by uuid;
 
+-- ---- followup flows (migration 0054) ----
+
+create table if not exists followup_flow_versions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  graph jsonb not null,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists followup_flow_pointers (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  name text not null,
+  status text not null default 'draft' check (status in ('draft','active','disabled')),
+  active_version_id uuid references followup_flow_versions(id),
+  draft_graph jsonb,
+  handoff_policy text not null default 'pause' check (handoff_policy in ('pause','cancel','allow')),
+  trigger_config jsonb not null default '{"kind":"manual"}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, name)
+);
+
+create table if not exists followup_enrollments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  pointer_id uuid not null references followup_flow_pointers(id) on delete cascade,
+  version_id uuid not null references followup_flow_versions(id),
+  contact_id uuid not null references contacts(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete set null,
+  current_node_id text not null,
+  status text not null default 'active'
+    check (status in ('active','waiting_reply','paused_handoff','completed','cancelled','dead')),
+  next_eval_at timestamptz,
+  claimed_until timestamptz,
+  attempts smallint not null default 0,
+  max_attempts smallint not null default 5,
+  last_error text,
+  steps_taken smallint not null default 0,
+  outcome text check (outcome in ('converted','replied','exhausted','opted_out','handoff')),
+  cancel_reason text,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  updated_at timestamptz not null default now(),
+  -- estados com relógio TÊM next_eval_at; pausados/terminais NÃO — coerência no schema
+  check (
+    (status in ('active','waiting_reply') and next_eval_at is not null)
+    or (status in ('paused_handoff','completed','cancelled','dead'))
+  )
+);
+
+create index if not exists idx_followup_enrollments_due
+  on followup_enrollments (next_eval_at)
+  where status in ('active','waiting_reply');
+
+create unique index if not exists idx_followup_enrollments_one_live
+  on followup_enrollments (pointer_id, contact_id)
+  where status in ('active','waiting_reply','paused_handoff');
+
+create index if not exists idx_followup_enrollments_contact
+  on followup_enrollments (organization_id, contact_id);
+
+create table if not exists followup_enrollment_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  enrollment_id uuid not null references followup_enrollments(id) on delete cascade,
+  node_id text,
+  event_type text not null,
+  payload jsonb not null default '{}',
+  idempotency_key text,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_followup_events_idem
+  on followup_enrollment_events (enrollment_id, idempotency_key)
+  where idempotency_key is not null;
+
+-- RLS (padrão fn_user_org_ids)
+alter table followup_flow_versions enable row level security;
+alter table followup_flow_pointers enable row level security;
+alter table followup_enrollments enable row level security;
+alter table followup_enrollment_events enable row level security;
+
+do $$ begin
+  create policy tenant_isolation_followup_flow_versions_all on followup_flow_versions
+    for all using (organization_id in (select fn_user_org_ids()))
+    with check (organization_id in (select fn_user_org_ids()));
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy tenant_isolation_followup_flow_pointers_all on followup_flow_pointers
+    for all using (organization_id in (select fn_user_org_ids()))
+    with check (organization_id in (select fn_user_org_ids()));
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy tenant_isolation_followup_enrollments_all on followup_enrollments
+    for all using (organization_id in (select fn_user_org_ids()))
+    with check (organization_id in (select fn_user_org_ids()));
+exception when duplicate_object then null; end $$;
+do $$ begin
+  create policy tenant_isolation_followup_enrollment_events_all on followup_enrollment_events
+    for all using (organization_id in (select fn_user_org_ids()))
+    with check (organization_id in (select fn_user_org_ids()));
+exception when duplicate_object then null; end $$;
+
+-- Claim atômico do worker (SKIP LOCKED) — service role only
+create or replace function fn_claim_due_followup_enrollments(p_limit int, p_lease_seconds int)
+returns setof followup_enrollments
+language sql
+security definer
+set search_path = public
+as $$
+  update followup_enrollments e
+  set claimed_until = now() + make_interval(secs => p_lease_seconds),
+      updated_at = now()
+  where e.id in (
+    select id from followup_enrollments
+    where status in ('active','waiting_reply')
+      and next_eval_at <= now()
+      and (claimed_until is null or claimed_until < now())
+    order by next_eval_at
+    limit p_limit
+    for update skip locked
+  )
+  returning e.*;
+$$;
+revoke all on function fn_claim_due_followup_enrollments(int, int) from public, anon, authenticated;
+
+-- ---- followup version lineage + atomic publish (migration 0056) ----
+
+alter table followup_flow_versions
+  add column if not exists pointer_id uuid references followup_flow_pointers(id) on delete cascade;
+
+update followup_flow_versions v
+set pointer_id = p.id
+from followup_flow_pointers p
+where p.active_version_id = v.id
+  and v.pointer_id is null;
+
+create index if not exists idx_followup_versions_pointer
+  on followup_flow_versions (pointer_id);
+
+create or replace function fn_publish_followup_flow_version(
+  p_org uuid,
+  p_pointer uuid,
+  p_graph jsonb,
+  p_created_by uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_pointer record;
+  v_version_id uuid;
+begin
+  select p.id, p.organization_id
+    into v_pointer
+  from followup_flow_pointers p
+  where p.id = p_pointer
+  for update;
+
+  if not found or v_pointer.organization_id <> p_org then
+    raise exception 'pointer_not_found' using errcode = 'P0001';
+  end if;
+
+  insert into followup_flow_versions (organization_id, pointer_id, graph, created_by)
+  values (p_org, p_pointer, p_graph, p_created_by)
+  returning id into v_version_id;
+
+  update followup_flow_pointers
+     set active_version_id = v_version_id,
+         status = 'active',
+         updated_at = now()
+   where id = p_pointer;
+
+  return v_version_id;
+end;
+$$;
+revoke all on function fn_publish_followup_flow_version(uuid, uuid, jsonb, uuid) from public, anon, authenticated;
+
+-- ---- agent_inbox_items: kind 'followup_dead' (migration 0057) ----
+
+alter table agent_inbox_items
+  drop constraint if exists agent_inbox_items_kind_check;
+
+alter table agent_inbox_items
+  add constraint agent_inbox_items_kind_check check (kind in
+    ('qr_rescan','job_dead','event_dead','budget_exceeded','handoff',
+     'promotion_review','judge_unaligned','followup_dead','other'));
+
+-- ---- agent editor: seletor de fluxo de follow-up (migration 0061) ----
+
+alter table ai_agent_versions
+  add column if not exists followup jsonb not null default '{"enabled": false, "flow_pointer_ids": []}'::jsonb;
+
+create or replace function fn_ai_agent_version_content_immutable() returns trigger
+language plpgsql as $fn$
+begin
+  if old.status <> 'draft' and (
+       new.system_prompt          is distinct from old.system_prompt
+    or new.provider               is distinct from old.provider
+    or new.model                  is distinct from old.model
+    or new.credential_id          is distinct from old.credential_id
+    or new.tool_ids               is distinct from old.tool_ids
+    or new.trigger_config         is distinct from old.trigger_config
+    or new.channel_session_id     is distinct from old.channel_session_id
+    or new.max_steps              is distinct from old.max_steps
+    or new.token_budget           is distinct from old.token_budget
+    or new.cost_budget_cents      is distinct from old.cost_budget_cents
+    or new.history_message_window is distinct from old.history_message_window
+    or new.history_token_window   is distinct from old.history_token_window
+    or new.handoff_keywords       is distinct from old.handoff_keywords
+    or new.handoff_tool_enabled   is distinct from old.handoff_tool_enabled
+    or new.followup               is distinct from old.followup
+    or new.version_number         is distinct from old.version_number
+    or new.agent_id               is distinct from old.agent_id
+    or new.organization_id        is distinct from old.organization_id
+  ) then
+    raise exception 'ai_agent_versions % é imutável (status=%): mudança de conteúdo = versão draft nova; rollback = revert (clona + publica)',
+      old.id, old.status;
+  end if;
+  return new;
+end;
+$fn$;
+
+drop trigger if exists trg_ai_agent_versions_content_immutable on public.ai_agent_versions;
+create trigger trg_ai_agent_versions_content_immutable
+  before update on public.ai_agent_versions
+  for each row execute function fn_ai_agent_version_content_immutable();
+
+-- ---- followup enrollment: 1 vivo por lead ORG-WIDE + agent_id (migration 0064) ----
+-- Dedup ANTES de trocar o índice (self-host-safe: o update.sh re-aplica sem
+-- ON_ERROR_STOP, então o dado sujo tem que ser curado antes da constraint).
+with ranked as (
+  select id,
+         row_number() over (
+           partition by organization_id, contact_id
+           order by started_at desc, id desc
+         ) as rn
+  from followup_enrollments
+  where status in ('active', 'waiting_reply', 'paused_handoff')
+)
+update followup_enrollments e
+set status = 'cancelled',
+    cancel_reason = 'exclusivity_backfill',
+    next_eval_at = null,
+    updated_at = now()
+from ranked
+where e.id = ranked.id
+  and ranked.rn > 1;
+
+drop index if exists idx_followup_enrollments_one_live;
+create unique index if not exists idx_followup_enrollments_one_live
+  on followup_enrollments (organization_id, contact_id)
+  where status in ('active', 'waiting_reply', 'paused_handoff');
+
+alter table followup_enrollments
+  add column if not exists agent_id uuid references ai_agents(id) on delete set null;
+create index if not exists idx_followup_enrollments_agent
+  on followup_enrollments (agent_id);
 -- ---- bucket whatsapp-media (migration 0055) ----
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('whatsapp-media', 'whatsapp-media', false, 52428800)
@@ -6449,3 +6711,13 @@ create policy "conversation_notes_write" on conversation_notes
   with check (
     organization_id in (select fn_user_org_ids()) and fn_role_at_least(organization_id, 'agent')
   );
+
+-- ---- agent_inbox_items: reconcilia kind check followup_dead+snooze_expired (migration 0065) ----
+
+alter table agent_inbox_items
+  drop constraint if exists agent_inbox_items_kind_check;
+
+alter table agent_inbox_items
+  add constraint agent_inbox_items_kind_check check (kind in
+    ('qr_rescan','job_dead','event_dead','budget_exceeded','handoff',
+     'promotion_review','judge_unaligned','followup_dead','snooze_expired','other'));

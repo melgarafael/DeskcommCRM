@@ -100,6 +100,9 @@ const envSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
   PROMISE_SEMANTIC_MODEL: z.string().min(1).optional(),
+  // Onda 5 (Task 5.1) — modelo auxiliar dos turnos classify/decide_timing do
+  // sistema de fluxos de follow-up (sem valor = default da org).
+  FOLLOWUP_AI_MODEL: z.string().min(1).optional(),
   // Loop do agente — teto de steps de tool-calls por run.
   AGENT_MAX_STEPS: z.coerce.number().int().positive().default(8),
   // Circuit breaker de tools por run.

@@ -57,6 +57,7 @@
     "@tanstack/react-query-devtools": "^5.101.2",
     "@tanstack/react-virtual": "^3.14.6",
     "@upstash/redis": "^1.38.0",
+    "@xyflow/react": "^12.11.2",
     "ai": "^7.0.31",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

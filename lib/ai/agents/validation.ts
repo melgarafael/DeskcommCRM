@@ -41,6 +41,22 @@ const triggerConfigSchema = z
 
 export type TriggerConfig = z.infer<typeof triggerConfigSchema>;
 
+// Task 7.2 — vínculo do agente com fluxos de follow-up publicados. Aditivo:
+// `.default(...)` faz agents/versions existentes (sem este campo no payload)
+// continuarem válidos, lidos com enabled=false/[] (comportamento inalterado).
+// `flow_pointer_ids` referencia `followup_flow_pointers.id` — sem FK real de
+// array no Postgres (mesma doutrina de `tool_ids`: domínio validado em app,
+// não em constraint de banco).
+const followupConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    flow_pointer_ids: z.array(UUID).max(20).default([]),
+  })
+  .strict()
+  .default({ enabled: false, flow_pointer_ids: [] });
+
+export type FollowupConfig = z.infer<typeof followupConfigSchema>;
+
 const versionShapeSchema = z
   .object({
     system_prompt: z.string().trim().min(10).max(20000),
@@ -67,6 +83,7 @@ const versionShapeSchema = z
       .max(20)
       .default(["falar com humano", "atendente", "pessoa real"]),
     handoff_tool_enabled: z.boolean().default(true),
+    followup: followupConfigSchema,
   })
   .strict();
 

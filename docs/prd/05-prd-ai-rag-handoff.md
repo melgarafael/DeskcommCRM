@@ -282,3 +282,27 @@ A decidir em `docs/specs/05-spec-ai-rag-handoff.md`:
 - `docs/prd/03-prd-whatsapp-waha.md` (inbound webhook, outbound dispatch, janela 24h)
 - `docs/prd/04-prd-pipeline-attendance.md` (conversation.status, roteamento, stages)
 - `tasks/todo.md`
+
+---
+
+## Anexo — Sistema de Follow-up Inteligente (2026-07)
+
+> Contrato detalhado: `docs/superpowers/specs/2026-07-21-followup-system-design.md`.
+> Pesquisa de referência (odysseus/hermes/openclaw + autópsia TomikCRM): `docs/research/followup-reference-mining.md`.
+
+O agente ganhou um subsistema de follow-up com **um motor, um enrollment, um relógio** (`followup_enrollments.next_eval_at`) — silêncio, demanda ("me chama em X dias") e campanha são gatilhos do MESMO grafo, nunca motores paralelos (o anti-padrão-raiz do CRM anterior).
+
+**Modelo de dados** (migrations 0054/0056/0057/0061, todas no baseline + MANIFEST):
+- `followup_flow_versions` (grafo imutável) + `followup_flow_pointers` (identidade, `draft_graph`, `handoff_policy`, `trigger_config`) — padrão `*_versions`/`*_pointers` do harness; lead em voo fica pinado na versão em que entrou.
+- `followup_enrollments` (lead no fluxo: status active/waiting_reply/paused_handoff/completed/cancelled/dead, `next_eval_at`, `outcome`) + `followup_enrollment_events` (append-only, idempotência por `(enrollment_id, idempotency_key)`).
+- `ai_agent_versions.followup jsonb` (`{enabled, flow_pointer_ids}`) — seletor de fluxos por agente, no veto de imutabilidade da versão.
+
+**Motor** (`lib/followup/engine.ts`, cron `followup-flow-worker` 1/min): claim `FOR UPDATE SKIP LOCKED`, 1 nó/tick, envio **at-most-once** (mensagem duplicada de follow-up = ban), backoff `[30s,1m,5m,15m,1h]` → dead-letter em `agent_inbox_items`. Nós de IA delegam a `job_queue` (kind `followup_turn`).
+
+**6 nós** (Zod + validador estrutural exato no publish, `lib/followup/validate-publish.ts`): Gatilho (silêncio/estágio/fim-de-conversa), Espera (fixa/inteligente com clamp), Condição, IA Classifica (grace obrigatório ≥15min), Ação (ai_message/template), Fim. Builder visual React Flow em `/app/ai/followups`.
+
+**As 3 causas-raiz do CRM anterior viraram regras estruturais:** (1) janela 24h validada no PUBLISH (espera longa exige template fallback); (2) `ai_classify` com grace obrigatório (nunca classifica no instante zero); (3) `paused_handoff` com retomada por evento (`ai.handoff_resolved`) — estado órfão impossível.
+
+**Reatividade** (`lib/followup/reactivity.ts`, via event_log dispatcher): inbound acorda classify; STOP cancela tudo (`opted_out`); handoff pausa/retoma. **Gatilho de silêncio** (`lib/followup/silence-sweep.ts`) só enrolla se um agente publicado tem o fluxo habilitado (gate org-wide). **Flywheel**: `lib/followup/outcome-stats.ts` agrega outcomes por fluxo/versão (`conversion_rate`) no run do flywheel.
+
+**Fila** (`/app/ai/followups` aba Fila): união de enrollments vivos + promessas do `schedule_followup`, com cancelamento manager+.

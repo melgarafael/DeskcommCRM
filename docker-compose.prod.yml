@@ -124,6 +124,7 @@ services:
         apk add --no-cache curl tzdata >/dev/null 2>&1
         cat > /etc/crontabs/root <<EOF
         * * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/agent-dispatcher >/dev/null 2>&1
+        * * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/followup-flow-worker >/dev/null 2>&1
         * * * * * curl -fsS -m45 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/event-log-drain >/dev/null 2>&1
         */5 * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" "http://app:3000/api/v1/cron/storage-redaction?limit=50" >/dev/null 2>&1
         */5 * * * * curl -fsS -m25 -H "Authorization: Bearer $$INTERNAL_SECRET" http://app:3000/api/v1/cron/snooze-watcher >/dev/null 2>&1

@@ -23,6 +23,7 @@ export {
   House,
   // admin platform
   Buildings,
+  FlowArrow,
   ChatsCircle,
   ClipboardText,
   Scales,
@@ -81,6 +82,9 @@ export {
   Tag,
   Question,
   Keyboard,
+  // followup flow builder (Task 6.2)
+  GitBranch,
+  Flag,
   // misc
   DotsThree,
   CaretDown,

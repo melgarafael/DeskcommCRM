@@ -95,6 +95,12 @@ function buildFieldChanges(a: AgentVersionRow, b: AgentVersionRow): FieldChange[
 export function VersionDiff({ versionA, versionB }: Props) {
   const tools = diffArr(versionA.tool_ids ?? [], versionB.tool_ids ?? []);
   const handoffKw = diffArr(versionA.handoff_keywords ?? [], versionB.handoff_keywords ?? []);
+  const followupFlows = diffArr(
+    versionA.followup?.flow_pointer_ids ?? [],
+    versionB.followup?.flow_pointer_ids ?? [],
+  );
+  const followupEnabledChanged =
+    (versionA.followup?.enabled ?? false) !== (versionB.followup?.enabled ?? false);
   const fields = buildFieldChanges(versionA, versionB);
   const lines = diffLines(versionA.system_prompt ?? "", versionB.system_prompt ?? "");
 
@@ -143,6 +149,28 @@ export function VersionDiff({ versionA, versionB }: Props) {
         <Pills label="Adicionadas" tone="add" items={handoffKw.added} />
         <Pills label="Removidas" tone="del" items={handoffKw.removed} />
         {handoffKw.added.length === 0 && handoffKw.removed.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Sem mudanças.</p>
+        ) : null}
+      </Section>
+
+      <Section title="Follow-up">
+        {followupEnabledChanged ? (
+          <p className="text-xs">
+            Habilitado:{" "}
+            <span className="font-mono text-destructive">
+              {String(versionA.followup?.enabled ?? false)}
+            </span>{" "}
+            →{" "}
+            <span className="font-mono text-emerald-600">
+              {String(versionB.followup?.enabled ?? false)}
+            </span>
+          </p>
+        ) : null}
+        <Pills label="Fluxos adicionados" tone="add" items={followupFlows.added} />
+        <Pills label="Fluxos removidos" tone="del" items={followupFlows.removed} />
+        {!followupEnabledChanged &&
+        followupFlows.added.length === 0 &&
+        followupFlows.removed.length === 0 ? (
           <p className="text-xs text-muted-foreground">Sem mudanças.</p>
         ) : null}
       </Section>

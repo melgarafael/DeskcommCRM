@@ -307,6 +307,12 @@ export interface InboundTurnKnobs {
    * CUSTO: com enabled, é UMA chamada de modelo auxiliar POR TENTATIVA DE ENVIO (não por turno).
    */
   promiseSemantic?: { enabled: boolean; model?: string };
+  /**
+   * Onda 5 (Task 5.1) — modelo auxiliar dos turnos `classify`/`decide_timing` do
+   * sistema de fluxos de follow-up (lib/agent-engine/agent/followup-flow-classify.ts).
+   * Ausente = usa o defaultModel da org (mesma convenção de stageClassifier/jailbreak).
+   */
+  followupAi?: { model?: string };
 }
 
 export interface InboundTurnDeps {
