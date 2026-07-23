@@ -64,12 +64,24 @@ export type NodeResult =
       purpose: "send_message" | "classify" | "decide_timing";
       wake_status: "active" | "waiting_reply";
     }
+  // action recheck: the send turn is already in flight; stay put WITHOUT re-enqueuing (anti-dup-send).
+  | { kind: "recheck"; next_eval_at: Date }
+  // action dead-man: the turn never completed after MAX_ACTION_RECHECKS — give up (engine routes to markDead).
+  | { kind: "dead"; reason: string }
   // outcome is nullable for the 'custom' end-node case (cancel_reason carries the note instead).
   | { kind: "complete"; outcome: EnrollmentOutcome | null; cancel_reason?: string }
   | { kind: "fail"; error: string };
 
 /** Backoff ladder indexed by `attempts - 1` (clamped to the last slot) — 30s..1h. */
 export const BACKOFF_MS = [30_000, 60_000, 300_000, 900_000, 3_600_000] as const;
+
+/** Recheck cadence while an action's send turn is in flight — how long the engine waits before
+ *  looking again to see if the turn landed. Imported by engine.ts for the enqueue next_eval_at too. */
+export const ACTION_RECHECK_MS = 5 * 60_000;
+
+/** Dead-man bound: idle rechecks tolerated on an action node before a turn that never completes
+ *  (worker down / permanently failing) is markDead — never re-enqueues, never waits forever. */
+export const MAX_ACTION_RECHECKS = 5;
 
 export type EdgeMatch =
   | { type: "always" }
@@ -171,8 +183,16 @@ export function processNode(input: {
   clock: () => Date;
   waitElapsed?: boolean;
   wokeEarly?: boolean;
+  /** action occupancy guard: a `turn_enqueued` event for THIS stay on the action node already
+   *  exists (an entry/recheck happened before). Resolved by the engine via `resolveWaitPhase`
+   *  — same prior-step-event check as `wait`. When true, the send turn is in flight: DON'T
+   *  re-enqueue (a second job_id would bypass the send sink's (job_id,seq) dedup → dup message). */
+  actionEnqueued?: boolean;
+  /** action dead-man counter: number of events already accumulated on this action node — used to
+   *  bound rechecks so a turn that never completes routes to `dead` instead of looping forever. */
+  actionRecheckCount?: number;
 }): NodeResult {
-  const { node, edges, clock, lead, waitElapsed, wokeEarly } = input;
+  const { node, edges, clock, lead, waitElapsed, wokeEarly, actionEnqueued, actionRecheckCount } = input;
 
   switch (node.type) {
     case "trigger": {
@@ -214,8 +234,28 @@ export function processNode(input: {
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 
-    case "action":
-      return { kind: "enqueue_turn", purpose: "send_message", wake_status: "active" };
+    case "action": {
+      // At-most-once send: enqueue the turn EXACTLY ONCE per occupancy. First entry
+      // (no prior occupancy event) enqueues; a recheck fired while the turn is still in
+      // flight — completeTurnForEnrollment (turn-bridge) hasn't advanced the enrollment
+      // yet — must NOT re-enqueue. Mirrors the wait/ai_classify guard (resolveWaitPhase),
+      // which the action node lacked (steps_taken increments every recheck, so the
+      // `${node}:${steps}` idempotency_key was a FRESH key each tick → a 2nd job → a 2nd
+      // real send that the send sink's (job_id,seq) dedup can't catch).
+      if (!actionEnqueued) {
+        return { kind: "enqueue_turn", purpose: "send_message", wake_status: "active" };
+      }
+      // Dead-man: the turn never completed (worker down / turn permanently failing). Never
+      // re-enqueue, never wait forever — after MAX_ACTION_RECHECKS idle rechecks give up.
+      // ponytail: recheck budget is counted per-node over the enrollment's lifetime, so a
+      // flow that LOOPS back to the same action node shares the budget (re-sending on a
+      // loop is itself an anti-ban smell). Precise per-occupancy counting would need the
+      // event_type, which EnrollmentEventRef doesn't carry — upgrade there if loops appear.
+      if ((actionRecheckCount ?? 0) >= MAX_ACTION_RECHECKS) {
+        return { kind: "dead", reason: "action_turn_never_completed" };
+      }
+      return { kind: "recheck", next_eval_at: new Date(clock().getTime() + ACTION_RECHECK_MS) };
+    }
 
     case "end": {
       if (node.config.outcome === "custom") {

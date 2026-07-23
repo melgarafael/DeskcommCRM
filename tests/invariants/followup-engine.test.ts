@@ -3,7 +3,8 @@ import pg from "pg";
 
 import { runFollowupTick, type AdminClient, type FollowupJobRequest, type TickDeps } from "@/lib/followup/engine";
 import { flowGraphSchema, type FlowGraph } from "@/lib/followup/graph-schema";
-import type { EnrollmentEventRef, EnrollmentRow } from "@/lib/followup/node-handlers";
+import { MAX_ACTION_RECHECKS, type EnrollmentEventRef, type EnrollmentRow } from "@/lib/followup/node-handlers";
+import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
 
 /**
  * Task 4.1 — motor do worker de follow-up (tick + node-handlers) contra
@@ -282,12 +283,30 @@ const ACTION_GRAPH: FlowGraph = {
   edges: [{ id: "t1-a1", source: "t1", target: "a1", priority: 0, condition: { type: "always" } }],
 };
 
+// action com saída (a1 → e1): a única forma de sair do nó action é a conclusão do
+// turno (completeTurnForEnrollment 'sent' via turn-bridge) — o engine só ENFILEIRA,
+// nunca avança o action por conta própria. Usado pelo happy path.
+const ACTION_END_GRAPH: FlowGraph = {
+  nodes: [
+    {
+      id: "a1",
+      type: "action",
+      label: "Send",
+      position: { x: 0, y: 0 },
+      config: { mode: "ai_message", prompt_hint: "lembre o lead da proposta" },
+    },
+    { id: "e1", type: "end", label: "Done", position: { x: 0, y: 0 }, config: { outcome: "converted" } },
+  ],
+  edges: [{ id: "a1-e1", source: "a1", target: "e1", priority: 0, condition: { type: "always" } }],
+};
+
 beforeAll(async () => {
-  // flowGraphSchema exige >=2 nós — os 3 grafos fixos acima já satisfazem isso;
+  // flowGraphSchema exige >=2 nós — os grafos fixos acima já satisfazem isso;
   // valida aqui uma vez pra falhar cedo (erro de fixture, não de asserção).
   flowGraphSchema.parse(TWO_NODE_GRAPH);
   flowGraphSchema.parse(WAIT_GRAPH);
   flowGraphSchema.parse(ACTION_GRAPH);
+  flowGraphSchema.parse(ACTION_END_GRAPH);
 });
 
 // ---- 1. tick avança 1 nó por tick ---------------------------------------
@@ -542,5 +561,121 @@ describe("runFollowupTick — max_steps", () => {
       [org],
     );
     expect(inboxRows).toHaveLength(1);
+  });
+});
+
+// ---- 7. action node: envio EXATAMENTE 1x por ocupação (anti-envio-duplicado) ----
+//
+// O bug (onda 8): o nó `action` enfileirava o turno de envio INCONDICIONALMENTE. Como
+// `steps_taken` incrementa a cada tick e o idempotency_key é `${node}:${steps}`, um recheck
+// (5min) enquanto o turno ainda está em voo gerava uma chave FRESCA → 2º job → 2º envio real
+// (o dedup (job_id,seq) do sink não pega, job_ids diferentes). O guard de ocupação
+// (resolveWaitPhase, igual ao wait/ai_classify) enfileira só na 1ª entrada.
+
+describe("runFollowupTick — action enfileira envio 1x por ocupação (anti-dup-send)", () => {
+  it("recheck com turno em voo NÃO reenfileira: 1 job após 2 ticks (não 2)", async () => {
+    const org = "aaaaaaa6-0000-4000-8000-000000000001";
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { pointerId, versionId } = await seedFlow(org, ACTION_GRAPH);
+    const enrollmentId = await seedEnrollment({ org, pointerId, versionId, contactId, currentNodeId: "a1" });
+
+    const jobs: FollowupJobRequest[] = [];
+
+    // Tick 1: 1ª entrada no action → enfileira 1 turno de envio, fica no nó.
+    const s1 = await runFollowupTick(makeDeps(jobs), { limit: 5 });
+    expect(s1.scheduled).toBe(1);
+    expect(jobs).toHaveLength(1);
+    const afterTick1 = await getEnrollment(enrollmentId);
+    expect(afterTick1.current_node_id).toBe("a1"); // permanece no action
+    expect(afterTick1.status).toBe("active");
+
+    // Turno EM VOO — completeTurnForEnrollment NÃO é chamado (turno lento sob flood de silêncio).
+    // Avança o relógio: o recheck de 5min vence AGORA sem dormir de verdade.
+    await pool.query(`update followup_enrollments set next_eval_at = now() - interval '1 second' where id = $1`, [
+      enrollmentId,
+    ]);
+
+    // Tick 2: recheck com o turno ainda em voo → NÃO pode reenfileirar.
+    const s2 = await runFollowupTick(makeDeps(jobs), { limit: 5 });
+    expect(s2.claimed).toBeGreaterThanOrEqual(1);
+    // O CORAÇÃO DO TESTE: ainda 1 job no total, NUNCA 2. (Contra o código com bug: 2.)
+    expect(jobs).toHaveLength(1);
+    const afterTick2 = await getEnrollment(enrollmentId);
+    expect(afterTick2.current_node_id).toBe("a1"); // segue esperando o turno em voo landar
+    expect(afterTick2.status).toBe("active");
+  });
+});
+
+// ---- 8. action dead-man: turno nunca conclui → 'dead' + inbox, envio nunca duplica ----
+
+describe("runFollowupTick — action dead-man (turno nunca conclui)", () => {
+  it(`após ${MAX_ACTION_RECHECKS} rechecks sem conclusão → 'dead' + inbox item, enqueueJob só 1x`, async () => {
+    const org = "aaaaaaa7-0000-4000-8000-000000000001";
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { pointerId, versionId } = await seedFlow(org, ACTION_GRAPH);
+    const enrollmentId = await seedEnrollment({ org, pointerId, versionId, contactId, currentNodeId: "a1" });
+
+    const jobs: FollowupJobRequest[] = [];
+
+    // Tick 1: enfileira o único envio.
+    await runFollowupTick(makeDeps(jobs), { limit: 5 });
+    expect(jobs).toHaveLength(1);
+
+    // Rechecks repetidos SEM concluir o turno. Cada um avança o relógio e roda um tick.
+    let deadTick = -1;
+    for (let i = 0; i < MAX_ACTION_RECHECKS + 1; i++) {
+      await pool.query(`update followup_enrollments set next_eval_at = now() - interval '1 second' where id = $1`, [
+        enrollmentId,
+      ]);
+      const s = await runFollowupTick(makeDeps(jobs), { limit: 5 });
+      if (s.dead >= 1) {
+        deadTick = i;
+        break;
+      }
+    }
+
+    expect(deadTick).toBeGreaterThanOrEqual(0); // morreu dentro do bound
+    const row = await getEnrollment(enrollmentId);
+    expect(row.status).toBe("dead");
+    expect(row.cancel_reason).toBe("action_turn_never_completed");
+    expect(row.next_eval_at).toBeNull();
+
+    // Nunca um 2º envio, mesmo morrendo — o guard de ocupação vale por todo o caminho.
+    expect(jobs).toHaveLength(1);
+
+    const { rows: inboxRows } = await pool.query(
+      `select ref_id from agent_inbox_items where organization_id = $1 and kind = 'followup_dead'`,
+      [org],
+    );
+    expect(inboxRows).toHaveLength(1);
+    expect(inboxRows[0].ref_id).toBe(enrollmentId);
+  });
+});
+
+// ---- 9. action happy path: conclusão do turno avança além do action (inalterado) ----
+
+describe("runFollowupTick — action happy path (turno conclui rápido)", () => {
+  it("completeTurnForEnrollment('sent') avança o enrollment para além do action", async () => {
+    const org = "aaaaaaa8-0000-4000-8000-000000000001";
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { pointerId, versionId } = await seedFlow(org, ACTION_END_GRAPH);
+    const enrollmentId = await seedEnrollment({ org, pointerId, versionId, contactId, currentNodeId: "a1" });
+
+    const jobs: FollowupJobRequest[] = [];
+
+    // Tick 1: enfileira o envio.
+    await runFollowupTick(makeDeps(jobs), { limit: 5 });
+    expect(jobs).toHaveLength(1);
+
+    // Turno conclui RÁPIDO (caso feliz) — a ponte avança pela aresta 'always'.
+    await completeTurnForEnrollment(createPgAdminClient(pool), org, enrollmentId, "a1", { kind: "sent" });
+
+    const row = await getEnrollment(enrollmentId);
+    expect(row.current_node_id).toBe("e1"); // avançou além do action
+    expect(row.status).toBe("active");
+    expect(jobs).toHaveLength(1); // sem reenvio
   });
 });

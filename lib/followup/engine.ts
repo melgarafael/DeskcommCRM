@@ -13,6 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { flowGraphSchema, type FlowGraph, type FlowNode } from "./graph-schema";
 import {
+  ACTION_RECHECK_MS,
   BACKOFF_MS,
   processNode,
   resolveWaitPhase,
@@ -25,7 +26,6 @@ import {
 } from "./node-handlers";
 
 const MAX_STEPS = 30;
-const ACTION_RECHECK_MS = 5 * 60_000;
 const CLAIM_LEASE_SECONDS = 120;
 const DEFAULT_CLAIM_LIMIT = 20;
 const MAX_ERROR_LEN = 300;
@@ -111,8 +111,14 @@ function eventTypeFor(result: NodeResult): string {
       return "wait_started";
     case "enqueue_turn":
       return result.purpose === "classify" ? "classify_enqueued" : "turn_enqueued";
+    case "recheck":
+      return "action_recheck";
     case "complete":
       return "flow_completed";
+    // `dead`/`fail` never reach the event-insert (handled at the top of applyResult) — cases
+    // present only for switch exhaustiveness, mirroring how `fail` is already listed here.
+    case "dead":
+      return "flow_dead";
     case "fail":
       return "node_failed";
   }
@@ -123,11 +129,14 @@ function eventPayload(result: NodeResult): Record<string, unknown> {
     case "advance":
       return { next_node_id: result.next_node_id };
     case "wait":
+    case "recheck":
       return { next_eval_at: result.next_eval_at.toISOString() };
     case "enqueue_turn":
       return { purpose: result.purpose, wake_status: result.wake_status };
     case "complete":
       return { outcome: result.outcome, cancel_reason: result.cancel_reason ?? null };
+    case "dead":
+      return { reason: result.reason };
     case "fail":
       return { error: result.error };
   }
@@ -217,7 +226,7 @@ async function applyHandlerFailure(
 function tallyOutcome(result: NodeResult, summary: TickSummary): void {
   if (result.kind === "advance" || result.kind === "complete") {
     summary.advanced++;
-  } else if (result.kind === "wait" || result.kind === "enqueue_turn") {
+  } else if (result.kind === "wait" || result.kind === "enqueue_turn" || result.kind === "recheck") {
     summary.scheduled++;
   }
 }
@@ -233,6 +242,15 @@ async function applyResult(
 
   if (result.kind === "fail") {
     await applyHandlerFailure(deps, enrollment, result.error, summary);
+    return;
+  }
+
+  if (result.kind === "dead") {
+    // Action dead-man: turn never completed after MAX_ACTION_RECHECKS. Reuse the shared
+    // markDead path (status='dead' + agent_inbox_items kind 'followup_dead') — same as
+    // max_steps/exhausted-backoff — so the operator sees exactly one dead-letter notice.
+    await markDead(db, clock, enrollment, result.reason);
+    summary.dead++;
     return;
   }
 
@@ -260,6 +278,9 @@ async function applyResult(
       patch.next_eval_at = result.next_eval_at.toISOString();
       break;
     case "wait":
+    case "recheck":
+      // recheck = action turn in flight: stay on the node, stay active, look again after the
+      // recheck delay. No enqueueJob (the whole point) — the in-flight turn owns the send.
       patch.current_node_id = enrollment.current_node_id;
       patch.status = "active";
       patch.next_eval_at = result.next_eval_at.toISOString();
@@ -339,8 +360,14 @@ async function processEnrollment(deps: TickDeps, enrollment: EnrollmentRow, summ
 
   let waitElapsed: boolean | undefined;
   let wokeEarly: boolean | undefined;
-  if (node.type === "wait" || node.type === "ai_classify") {
+  let actionEnqueued: boolean | undefined;
+  let actionRecheckCount: number | undefined;
+  if (node.type === "wait" || node.type === "ai_classify" || node.type === "action") {
     const events = await db.loadEnrollmentEvents(enrollment.id);
+    // Same prior-step-event check for all three: "did we already act on this node at this
+    // occupancy?" — resolveWaitPhase looks for `${node}:${steps_taken - 1}`. For `action`
+    // this is the occupancy guard that makes the send enqueue EXACTLY ONCE (a recheck sees
+    // the prior `turn_enqueued` event and skips re-enqueuing).
     waitElapsed = resolveWaitPhase(events, node.id, enrollment.steps_taken);
     if (node.type === "ai_classify") {
       // Marker próprio de reactivity (Task 5.2, lib/followup/reactivity.ts) —
@@ -351,9 +378,25 @@ async function processEnrollment(deps: TickDeps, enrollment: EnrollmentRow, summ
       const wakeKey = `${node.id}:${enrollment.steps_taken}:wake`;
       wokeEarly = events.some((e) => e.node_id === node.id && e.idempotency_key === wakeKey);
     }
+    if (node.type === "action") {
+      actionEnqueued = waitElapsed;
+      // Dead-man counter: events on THIS action node (action never enters waiting_reply, so
+      // reactivity never writes a `:wake` marker for it — this counts turn_enqueued + recheck).
+      actionRecheckCount = events.filter((e) => e.node_id === node.id).length;
+    }
   }
 
-  const result = processNode({ node, edges: graph.edges, enrollment, lead, clock, waitElapsed, wokeEarly });
+  const result = processNode({
+    node,
+    edges: graph.edges,
+    enrollment,
+    lead,
+    clock,
+    waitElapsed,
+    wokeEarly,
+    actionEnqueued,
+    actionRecheckCount,
+  });
   await applyResult(deps, enrollment, node, result, summary);
 }
 
