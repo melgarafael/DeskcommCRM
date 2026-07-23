@@ -6405,3 +6405,17 @@ create policy "message_templates_write" on message_templates
       or (owner_user_id is null and fn_role_at_least(organization_id, 'manager'))
     )
   );
+
+-- ---- snooze por conversa (migration 0062) ----
+alter table conversations
+  add column if not exists snooze_until timestamptz,
+  add column if not exists snoozed_by_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists snoozed_at timestamptz;
+
+create index if not exists idx_conversations_snooze_until
+  on conversations (snooze_until) where snooze_until is not null;
+
+alter table agent_inbox_items drop constraint if exists agent_inbox_items_kind_check;
+alter table agent_inbox_items add constraint agent_inbox_items_kind_check
+  check (kind in ('qr_rescan','job_dead','event_dead','budget_exceeded','handoff',
+                  'promotion_review','judge_unaligned','snooze_expired','other'));

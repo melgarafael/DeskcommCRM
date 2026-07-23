@@ -1712,6 +1712,9 @@ export type Database = {
           metadata: Json
           organization_id: string
           rag_review_status: string | null
+          snooze_until: string | null
+          snoozed_at: string | null
+          snoozed_by_user_id: string | null
           status: string
           status_changed_at: string
           tags: string[]
@@ -1742,6 +1745,9 @@ export type Database = {
           metadata?: Json
           organization_id: string
           rag_review_status?: string | null
+          snooze_until?: string | null
+          snoozed_at?: string | null
+          snoozed_by_user_id?: string | null
           status?: string
           status_changed_at?: string
           tags?: string[]
@@ -1772,6 +1778,9 @@ export type Database = {
           metadata?: Json
           organization_id?: string
           rag_review_status?: string | null
+          snooze_until?: string | null
+          snoozed_at?: string | null
+          snoozed_by_user_id?: string | null
           status?: string
           status_changed_at?: string
           tags?: string[]
