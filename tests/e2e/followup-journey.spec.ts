@@ -305,133 +305,148 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
     await expect(page.locator('[aria-label="status: Ativo"]')).toBeVisible();
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, "followup-8.3-01-flow-published.png"), fullPage: true });
 
-    // =========================================================================
-    // 2. [REAL UI + API] Vincula o fluxo a um agente publicado — só um agente
-    //    PUBLICADO com followup.enabled=true habilita o gatilho automático
-    //    (isPointerEnabledForAutomaticTrigger, Task 7.2/8.1).
-    // =========================================================================
-    runHelper(["prepare-agent-fixtures"]); // credential.validated_at + channel_session=WORKING
-    const fixtures = creds.followup_agent_fixtures!;
-    const agentName = `E2E Agente Jornada ${stamp}`;
-    const createAgentRes = await page.request.post("/api/v1/ai/agents", {
-      data: {
-        name: agentName,
-        version: {
-          system_prompt: "Você é um atendente de teste E2E. Responda de forma clara em pt-BR.",
-          provider: "anthropic",
-          model: "claude-sonnet-4-6",
-          credential_id: fixtures.credential_id,
-          channel_session_id: fixtures.channel_session_id,
-        },
-      },
-    });
-    expect(createAgentRes.status()).toBe(201);
-    const { data: created } = (await createAgentRes.json()) as {
-      data: { agent: { id: string }; version: { id: string } };
-    };
-    const agentId = created.agent.id;
-    const versionId = created.version.id;
-
-    await page.goto(`/app/ai/agents/${agentId}`);
-    await expect(page.getByRole("heading", { name: agentName })).toBeVisible();
-    const followupHeading = page.getByRole("heading", { name: "Follow-up", exact: true });
-    await followupHeading.scrollIntoViewIfNeeded();
-    const followupToggle = page.getByLabel("Habilitar gatilhos automáticos de follow-up");
-    await followupToggle.click();
-    await expect(followupToggle).toBeChecked();
-    const flowCheckbox = page.getByLabel(flowName, { exact: true });
-    await flowCheckbox.check();
-    await expect(flowCheckbox).toBeChecked();
-    await page.screenshot({
-      path: path.join(ARTIFACTS_DIR, "followup-8.3-02-agent-followup-section.png"),
-      fullPage: true,
-    });
-    await page.getByRole("button", { name: "Salvar rascunho" }).click();
-    await expect(page.getByText(/Rascunho v\d+ salvo\./)).toBeVisible();
-
-    // Publica a version — sem isso o gate (Task 7.2) nunca libera o gatilho
-    // automático (só conta agente com version status='published').
-    const publishAgentRes = await page.request.post(`/api/v1/ai/agents/${agentId}/publish`, {
-      data: { version_id: versionId },
-    });
-    expect(publishAgentRes.status()).toBe(200);
-
-    // Prova via API (não só UI): a version publicada carrega o pointer.
-    const versionRes = await page.request.get(`/api/v1/ai/agents/${agentId}/versions/${versionId}`);
-    expect(versionRes.status()).toBe(200);
-    const { data: persisted } = (await versionRes.json()) as {
-      data: { status: string; followup: { enabled: boolean; flow_pointer_ids: string[] } };
-    };
-    expect(persisted.status).toBe("published");
-    expect(persisted.followup.enabled).toBe(true);
-    expect(persisted.followup.flow_pointer_ids).toContain(flowId);
-
-    // =========================================================================
-    // 3. [REAL — service role] Semeia um contato silencioso: última conversa
-    //    com last_inbound_at bem mais velho que o threshold_minutes=5 do
-    //    trigger.
-    // =========================================================================
-    const seed = runHelper(["seed-silent-contact", "5", "jornada"]) as {
-      contactId: string;
-      contactName: string;
-      conversationId: string;
-      channelSessionId: string;
-    };
-
-    // =========================================================================
-    // 4. [REAL] POST no cron real (runFollowupTick + runSilenceSweep) até a
-    //    varredura enrollar o contato — prova que o GATE deixou passar
-    //    (agente publicado+enabled) e que o gatilho automático de silêncio
-    //    funciona ponta a ponta.
-    // =========================================================================
-    async function tickCron(): Promise<void> {
-      const res = await page.request.post("/api/v1/cron/followup-flow-worker", {
-        headers: { Authorization: `Bearer ${secret}` },
-      });
-      expect(res.ok()).toBeTruthy();
-    }
-
-    async function pollEnrollment(
-      enrollmentId: string,
-      predicate: (e: EnrollmentRow) => boolean,
-      label: string,
-      maxTicks = 15,
-    ): Promise<EnrollmentRow> {
-      let e = runHelper(["get-enrollment", enrollmentId]) as EnrollmentRow;
-      for (let i = 0; i < maxTicks && !predicate(e); i++) {
-        await tickCron();
-        e = runHelper(["get-enrollment", enrollmentId]) as EnrollmentRow;
-      }
-      if (!predicate(e)) {
-        throw new Error(`pollEnrollment timeout esperando "${label}"; estado atual: ${JSON.stringify(e)}`);
-      }
-      return e;
-    }
-
-    let enrollment: EnrollmentRow | null = null;
-    for (let i = 0; i < 10 && !enrollment; i++) {
-      await tickCron();
-      enrollment = runHelper(["find-enrollment", creds.org_id, flowId, seed.contactId]) as EnrollmentRow | null;
-    }
-    if (!enrollment) throw new Error("varredura de silêncio não enrollou o contato a tempo");
-    expect(enrollment.pointer_id).toBe(flowId);
-    expect(enrollment.contact_id).toBe(seed.contactId);
-    expect(enrollment.current_node_id).toBe(triggerId);
-    expect(enrollment.status).toBe("active");
-    const enrollmentId = enrollment.id;
-
-    // Desativa o pointer JÁ AQUI (não só no cleanup final): o gatilho de
-    // silêncio é cross-CONTATO de propósito (varre a org inteira, não só
-    // quem esta run semeou) — cada tick subsequente do cron nos passos 5-7
-    // abaixo rodaria a varredura de novo enquanto o pointer segue 'active',
-    // arriscando enrollar QUALQUER outro contato silencioso real do banco de
-    // dev compartilhado. Desativar não afeta o enrollment já criado: o
-    // engine avança enrollments existentes só por status/next_eval_at, nunca
-    // filtra por status do pointer (confirmado lendo fn_claim_due_followup_
-    // enrollments/engine.ts).
-    await page.request.post(`/api/v1/ai/followup-flows/${flowId}/disable`, { data: {} });
+    // A partir daqui o pointer é `status='active'` com `trigger_config.kind=
+    // 'silence'` — a MOMENTO que o agente (seção 2) for publicado com
+    // followup.enabled=true apontando pra ele, o gate abre e a próxima
+    // varredura do cron pode enrollar QUALQUER contato silencioso real do
+    // banco de dev compartilhado, não só o desta run. Tudo que segue até o
+    // fim da jornada roda em try/finally: qualquer falha no meio (agent
+    // publish, seed do contato, o loop de varredura, os ticks do engine...)
+    // NUNCA pode deixar o pointer `active`/o agent `published+enabled` órfãos.
+    let agentId: string | undefined;
+    let seed: { contactId: string; contactName: string; conversationId: string; channelSessionId: string } | undefined;
 
     try {
+      // =========================================================================
+      // 2. [REAL UI + API] Vincula o fluxo a um agente publicado — só um agente
+      //    PUBLICADO com followup.enabled=true habilita o gatilho automático
+      //    (isPointerEnabledForAutomaticTrigger, Task 7.2/8.1).
+      // =========================================================================
+      runHelper(["prepare-agent-fixtures"]); // credential.validated_at + channel_session=WORKING
+      const fixtures = creds.followup_agent_fixtures!;
+      const agentName = `E2E Agente Jornada ${stamp}`;
+      const createAgentRes = await page.request.post("/api/v1/ai/agents", {
+        data: {
+          name: agentName,
+          version: {
+            system_prompt: "Você é um atendente de teste E2E. Responda de forma clara em pt-BR.",
+            provider: "anthropic",
+            model: "claude-sonnet-4-6",
+            credential_id: fixtures.credential_id,
+            channel_session_id: fixtures.channel_session_id,
+          },
+        },
+      });
+      expect(createAgentRes.status()).toBe(201);
+      const { data: created } = (await createAgentRes.json()) as {
+        data: { agent: { id: string }; version: { id: string } };
+      };
+      agentId = created.agent.id;
+      const versionId = created.version.id;
+
+      await page.goto(`/app/ai/agents/${agentId}`);
+      await expect(page.getByRole("heading", { name: agentName })).toBeVisible();
+      const followupHeading = page.getByRole("heading", { name: "Follow-up", exact: true });
+      await followupHeading.scrollIntoViewIfNeeded();
+      const followupToggle = page.getByLabel("Habilitar gatilhos automáticos de follow-up");
+      await followupToggle.click();
+      await expect(followupToggle).toBeChecked();
+      const flowCheckbox = page.getByLabel(flowName, { exact: true });
+      await flowCheckbox.check();
+      await expect(flowCheckbox).toBeChecked();
+      await page.screenshot({
+        path: path.join(ARTIFACTS_DIR, "followup-8.3-02-agent-followup-section.png"),
+        fullPage: true,
+      });
+      await page.getByRole("button", { name: "Salvar rascunho" }).click();
+      await expect(page.getByText(/Rascunho v\d+ salvo\./)).toBeVisible();
+
+      // Publica a version — sem isso o gate (Task 7.2) nunca libera o gatilho
+      // automático (só conta agente com version status='published'). É AQUI
+      // que a janela de risco realmente abre (pointer active + agent
+      // published+enabled apontando pra ele) — dali em diante, TUDO até o fim
+      // do teste tem que estar dentro deste try.
+      const publishAgentRes = await page.request.post(`/api/v1/ai/agents/${agentId}/publish`, {
+        data: { version_id: versionId },
+      });
+      expect(publishAgentRes.status()).toBe(200);
+
+      // Prova via API (não só UI): a version publicada carrega o pointer.
+      const versionRes = await page.request.get(`/api/v1/ai/agents/${agentId}/versions/${versionId}`);
+      expect(versionRes.status()).toBe(200);
+      const { data: persisted } = (await versionRes.json()) as {
+        data: { status: string; followup: { enabled: boolean; flow_pointer_ids: string[] } };
+      };
+      expect(persisted.status).toBe("published");
+      expect(persisted.followup.enabled).toBe(true);
+      expect(persisted.followup.flow_pointer_ids).toContain(flowId);
+
+      // =========================================================================
+      // 3. [REAL — service role] Semeia um contato silencioso: última conversa
+      //    com last_inbound_at bem mais velho que o threshold_minutes=5 do
+      //    trigger.
+      // =========================================================================
+      seed = runHelper(["seed-silent-contact", "5", "jornada"]) as {
+        contactId: string;
+        contactName: string;
+        conversationId: string;
+        channelSessionId: string;
+      };
+
+      // =========================================================================
+      // 4. [REAL] POST no cron real (runFollowupTick + runSilenceSweep) até a
+      //    varredura enrollar o contato — prova que o GATE deixou passar
+      //    (agente publicado+enabled) e que o gatilho automático de silêncio
+      //    funciona ponta a ponta.
+      // =========================================================================
+      async function tickCron(): Promise<void> {
+        const res = await page.request.post("/api/v1/cron/followup-flow-worker", {
+          headers: { Authorization: `Bearer ${secret}` },
+        });
+        expect(res.ok()).toBeTruthy();
+      }
+
+      async function pollEnrollment(
+        enrollmentId: string,
+        predicate: (e: EnrollmentRow) => boolean,
+        label: string,
+        maxTicks = 15,
+      ): Promise<EnrollmentRow> {
+        let e = runHelper(["get-enrollment", enrollmentId]) as EnrollmentRow;
+        for (let i = 0; i < maxTicks && !predicate(e); i++) {
+          await tickCron();
+          e = runHelper(["get-enrollment", enrollmentId]) as EnrollmentRow;
+        }
+        if (!predicate(e)) {
+          throw new Error(`pollEnrollment timeout esperando "${label}"; estado atual: ${JSON.stringify(e)}`);
+        }
+        return e;
+      }
+
+      let enrollment: EnrollmentRow | null = null;
+      for (let i = 0; i < 10 && !enrollment; i++) {
+        await tickCron();
+        enrollment = runHelper(["find-enrollment", creds.org_id, flowId, seed.contactId]) as EnrollmentRow | null;
+      }
+      if (!enrollment) throw new Error("varredura de silêncio não enrollou o contato a tempo");
+      // pointer_id/contact_id não precisam de assert: find-enrollment já
+      // filtra por eles no SQL (WHERE), não podem divergir independentemente.
+      expect(enrollment.current_node_id).toBe(triggerId);
+      expect(enrollment.status).toBe("active");
+      const enrollmentId = enrollment.id;
+
+      // Desativa o pointer JÁ AQUI (não só no cleanup do finally): o gatilho
+      // de silêncio é cross-CONTATO de propósito (varre a org inteira, não só
+      // quem esta run semeou) — cada tick subsequente do cron nos passos 5-7
+      // abaixo rodaria a varredura de novo enquanto o pointer segue 'active',
+      // arriscando enrollar QUALQUER outro contato silencioso real do banco de
+      // dev compartilhado. Desativar não afeta o enrollment já criado: o
+      // engine avança enrollments existentes só por status/next_eval_at, nunca
+      // filtra por status do pointer (confirmado lendo fn_claim_due_followup_
+      // enrollments/engine.ts). Repetido (idempotente) no finally como rede de
+      // segurança caso este próprio POST falhe.
+      await page.request.post(`/api/v1/ai/followup-flows/${flowId}/disable`, { data: {} });
+
       // Fila reflete o enrollment recém-criado — [REAL UI]. Escopa por
       // contato E fluxo (não só contato) — o gatilho de silêncio é
       // cross-contato, então mais de um pointer de teste pode ter enrollado
@@ -576,16 +591,38 @@ test.describe("followup — jornada completa (Task 8.3)", () => {
         fullPage: true,
       });
     } finally {
-      // --- Cleanup: reduz acúmulo no dev DB compartilhado. O gatilho de
-      // silêncio é cross-contato (ver nota acima) — cleanup-flow-enrollments
-      // apaga TODO enrollment que este pointer criou (não só o do contato
-      // desta run), não apenas o que a asserção rastreou. Roda em `finally`
-      // pra nunca deixar o pointer 'active'/contato órfão se uma asserção
-      // no meio do caminho falhar.
-      await page.request.post(`/api/v1/ai/followup-flows/${flowId}/disable`, { data: {} }).catch(() => undefined);
-      await page.request.delete(`/api/v1/ai/agents/${agentId}`).catch(() => undefined);
-      runHelper(["cleanup-flow-enrollments", flowId]);
-      runHelper(["cleanup-contact", seed.contactId]);
+      // --- Cleanup: reduz acúmulo no dev DB compartilhado. RESILIENTE de
+      // propósito — cada passo no seu próprio try/catch, pra uma falha em UM
+      // não pular os outros (o mais importante é o disable: é o que impede o
+      // sweep de continuar enrollando contatos reais; nunca pode ser pulado
+      // por causa de um erro em cleanup-contact, por exemplo). `flowId` é
+      // sempre conhecido aqui (é o 1º id que a jornada obtém, fora do try);
+      // `agentId`/`seed` podem ainda ser `undefined` se a falha aconteceu
+      // ANTES deles serem atribuídos (ex.: durante a criação do agent).
+      try {
+        await page.request.post(`/api/v1/ai/followup-flows/${flowId}/disable`, { data: {} });
+      } catch (err) {
+        console.error("cleanup: falha ao desativar o fluxo", err);
+      }
+      try {
+        runHelper(["cleanup-flow-enrollments", flowId]);
+      } catch (err) {
+        console.error("cleanup: falha ao limpar enrollments do pointer", err);
+      }
+      if (agentId) {
+        try {
+          await page.request.delete(`/api/v1/ai/agents/${agentId}`);
+        } catch (err) {
+          console.error("cleanup: falha ao arquivar o agent", err);
+        }
+      }
+      if (seed?.contactId) {
+        try {
+          runHelper(["cleanup-contact", seed.contactId]);
+        } catch (err) {
+          console.error("cleanup: falha ao limpar o contato semeado", err);
+        }
+      }
     }
   });
 });

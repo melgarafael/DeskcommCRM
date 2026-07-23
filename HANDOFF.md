@@ -41,6 +41,22 @@
 
 ## Log de avanços (mais recente primeiro)
 
+- 2026-07-23: **Task 8.3 (jornada) — fix de review CRITICAL: try/finally cobria tarde demais.** O `try`
+  original só abria DEPOIS do enrollment confirmado — mas o pointer vira elegível pro silence sweep
+  quando o AGENT é publicado com `followup.enabled=true` (bem antes disso), então ~80 linhas (publish do
+  agent, seed do contato, o loop de varredura) ficavam fora da proteção: uma falha ali deixava o pointer
+  `active`+agent `published` órfãos, reabrindo o MESMO incidente do parágrafo anterior. Fix: `try` agora
+  abre logo antes da seção 2 (criar/publicar o agent); `agentId`/`seed` viraram `let` fora do try
+  (indefinidos até serem atribuídos); `finally` roda 4 passos INDEPENDENTES (disable do fluxo +
+  `cleanup-flow-enrollments`, sempre; archive do agent se `agentId` existir; `cleanup-contact` se
+  `seed?.contactId` existir), cada um no seu próprio try/catch — uma falha em cleanup-contact nunca
+  impede o disable (o passo que realmente estanca o sweep). **Prova do fix**: throw injetado logo após o
+  publish do agent (a linha exata onde a janela abre) → teste falhou como esperado → Postgres real
+  confirmou o `finally` MESMO ASSIM desativou o pointer + arquivou o agent (0 pointers silence ativos,
+  0 enrollments vivos org-wide) → throw removido → 2 rodadas reais seguidas 1/1 verde cada → Postgres
+  real limpo depois (0/0/0). Detalhe completo (throw + saídas coladas) em
+  `.superpowers/sdd/task-8.3-report.md`, seção "Fix de review".
+
 - 2026-07-23: **Task 8.3 (jornada) ✅ — `tests/e2e/followup-journey.spec.ts`, a prova ponta-a-ponta que amarra
   o sistema inteiro: silêncio → enroll (gate do agente) → engine avança nó a nó → resposta do lead →
   classify roteia → outcome → fila.**
