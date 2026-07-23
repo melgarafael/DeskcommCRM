@@ -144,6 +144,16 @@ describe("generateDraftReply", () => {
     expect(mockRunModelCall).not.toHaveBeenCalled();
   });
 
+  it("erro de leitura do CRM (getLeadContext ok:false) → error, não blocked, sem chamar runModelCall", async () => {
+    mockLoadAgent.mockResolvedValue(AGENT);
+    mockGetLeadContext.mockResolvedValue({ ok: false, reason: "crm_unavailable" } as never);
+
+    const result = await generateDraftReply(db, llmCfg, crmCfg, input);
+
+    expect(result).toEqual({ ok: false, reason: "error" });
+    expect(mockRunModelCall).not.toHaveBeenCalled();
+  });
+
   it("result.text vazio/whitespace → empty", async () => {
     mockLoadAgent.mockResolvedValue(AGENT);
     mockGetLeadContext.mockResolvedValue(contextResult());

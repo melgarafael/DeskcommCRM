@@ -23,7 +23,7 @@ export interface DraftReplyInput {
 
 export type DraftReplyResult =
   | { ok: true; draft: string }
-  | { ok: false; reason: 'no_agent' | 'blocked' | 'empty' };
+  | { ok: false; reason: 'no_agent' | 'blocked' | 'empty' | 'error' };
 
 export async function generateDraftReply(
   db: pg.Pool,
@@ -43,10 +43,12 @@ export async function generateDraftReply(
     // já são exatamente os campos que LeadContextKnobs espera.
     { historyLimit: agent.historyMessageWindow, maxTokens: agent.historyTokenWindow },
   );
-  // ok:false (lead_not_found/crm_error/crm_unavailable) colapsa em "blocked":
-  // sem contexto confiável não há rascunho seguro, e o contrato de
-  // DraftReplyResult não tem um reason próprio para erro de leitura do CRM.
-  if (!ctx.ok || ctx.context.contact.is_blocked || ctx.lgpd.isAnonymized) {
+  // Erro de leitura do CRM (lead_not_found/crm_error/crm_unavailable) é falha
+  // técnica → "error" (vira 500 na rota), NÃO "blocked" (que diria ao vendedor
+  // "contato bloqueado/anonimizado" — mensagem enganosa para um erro de infra).
+  if (!ctx.ok) return { ok: false, reason: 'error' };
+  // Bloqueio/anonimização é decisão de conformidade: não sugerir resposta.
+  if (ctx.context.contact.is_blocked || ctx.lgpd.isAnonymized) {
     return { ok: false, reason: 'blocked' };
   }
 
