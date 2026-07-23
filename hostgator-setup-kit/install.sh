@@ -39,9 +39,23 @@ ask() {
   local input
   if [ "$secret" = "secret" ]; then
     read -r -s -p "$prompt${default:+ [$default]}: " input; echo
-  else
-    read -r -p "$prompt${default:+ [$default]}: " input
+    input="${input:-$default}"
+    # Campo secreto não ecoa o que foi colado — a pessoa não vê se colou, então
+    # tende a colar de novo "pra garantir", e cola duas vezes na mesma linha
+    # (sem separador, vira um valor só, dobrado). Isso gera chaves/connection
+    # strings inválidas com erro críptico lá na frente (ex.: psql de socket).
+    # Detecta o padrão (metade == outra metade) e barra aqui, na origem.
+    if [ -n "$input" ]; then
+      local len=${#input} half=$((${#input} / 2))
+      if [ $((len % 2)) -eq 0 ] && [ "${input:0:half}" = "${input:half}" ]; then
+        die "Parece que esse valor foi colado 2x seguidas na mesma linha (comum: o campo é secreto e não mostra o que você cola, então não dá pra saber se colou). Rode de novo e cole uma vez só."
+      fi
+      c_grn "  ✓ recebido (${len} caracteres)"
+    fi
+    printf -v "$var" '%s' "$input"
+    return 0
   fi
+  read -r -p "$prompt${default:+ [$default]}: " input
   printf -v "$var" '%s' "${input:-$default}"
 }
 
