@@ -8,6 +8,7 @@ import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
 import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
+import { useCreateNote } from "@/hooks/inbox/useCreateNote";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
@@ -34,18 +35,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [text, setText] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [menuDismissed, setMenuDismissed] = useState(false);
+  const [mode, setMode] = useState<"reply" | "note">("reply");
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const send = useSendMessage();
   const upload = useUploadMedia();
+  const createNote = useCreateNote();
   const templates = useMessageTemplates();
   const slash = resolveSlash(text);
-  const menuOpen = slash.open && !menuDismissed;
+  const menuOpen = mode === "reply" && slash.open && !menuDismissed;
 
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
   }));
 
-  const isDisabled = disabled || !!blockedReason || send.isPending || upload.isPending;
+  const isDisabled =
+    disabled || !!blockedReason || send.isPending || upload.isPending || createNote.isPending;
 
   function autoresize() {
     const ta = taRef.current;
@@ -57,6 +61,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   function handleSubmit() {
     const body = text.trim();
     if (!body || isDisabled) return;
+    if (mode === "note") {
+      createNote.mutate(
+        { conversation_id: conversationId, body },
+        {
+          onSuccess: () => {
+            setText("");
+            requestAnimationFrame(() => autoresize());
+          },
+        },
+      );
+      return;
+    }
     send.mutate(
       { conversation_id: conversationId, body, type: "text" },
       {
@@ -114,7 +130,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   return (
     <>
-      <div className="relative border-t border-border bg-background px-3 py-2">
+      <div
+        className={cn(
+          "relative border-t border-border bg-background px-3 py-2",
+          mode === "note" && "border-warning/40 bg-warning-bg",
+        )}
+      >
         <TemplateMenu
           open={menuOpen}
           query={slash.query}
@@ -122,9 +143,37 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           onPick={applyTemplate}
           onClose={() => setMenuDismissed(true)}
         />
+        <div className="mb-1.5 flex gap-1">
+          <button
+            type="button"
+            onClick={() => setMode("reply")}
+            className={cn(
+              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              mode === "reply"
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            Responder
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("note")}
+            className={cn(
+              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              mode === "note"
+                ? "bg-warning text-warning-fg"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            Nota interna
+          </button>
+        </div>
         <div className="flex items-end gap-2">
-          <AttachMenu disabled={isDisabled} onPick={setPendingFile} />
-          <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
+          {mode === "reply" && <AttachMenu disabled={isDisabled} onPick={setPendingFile} />}
+          {mode === "reply" && (
+            <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
+          )}
           <EmojiButton
             disabled={isDisabled}
             onPick={(emoji) => {
@@ -154,7 +203,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             }}
             onKeyDown={onKeyDown}
             rows={1}
-            placeholder="Escreva uma mensagem… (Enter envia, Shift+Enter quebra linha)"
+            placeholder={
+              mode === "note"
+                ? "Escreva uma nota interna… (só o time vê)"
+                : "Escreva uma mensagem… (Enter envia, Shift+Enter quebra linha)"
+            }
             className={cn(
               "min-h-9 max-h-40 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
               "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring",
@@ -162,13 +215,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={isDisabled}
             aria-label="Mensagem"
           />
-          {text.trim() ? (
+          {text.trim() || mode === "note" ? (
             <Button
               type="button"
               size="icon"
               className="h-9 w-9 shrink-0"
               onClick={handleSubmit}
-              disabled={isDisabled}
+              disabled={isDisabled || !text.trim()}
               aria-label="Enviar"
             >
               <PaperPlaneTilt size={16} weight="fill" aria-hidden />
