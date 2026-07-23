@@ -1,14 +1,23 @@
 /**
- * GET/POST /api/v1/cron/followup-flow-worker — Onda 4 (Task 4.2).
+ * GET/POST /api/v1/cron/followup-flow-worker — Onda 4 (Task 4.2) + Onda 8
+ * (Task 8.1, gatilho de silêncio).
  *
  * Drena os enrollments due de `followup_enrollments` via `runFollowupTick`
  * (lib/followup/engine.ts) — o motor único de relógio do sistema de
  * follow-up. Trigger Postgres NUNCA faz HTTP; este cron TS é quem consome via
  * admin client, no mesmo contrato dos demais crons.
  *
+ * Depois do tick, roda `runSilenceSweep` (lib/followup/silence-sweep.ts) NO
+ * MESMO tick — gatilho TIME-DRIVEN (varredura periódica, não event-driven):
+ * acha pointers `trigger_config.kind='silence'` ativos, gateia via
+ * `isPointerEnabledForAutomaticTrigger` (só enrolla se algum agente publicado
+ * da org tem o pointer habilitado), acha contatos silenciosos e cria
+ * enrollment. Falha do sweep NUNCA aborta a resposta do tick (try/catch
+ * isolado, só loga) — o cron sempre devolve o resultado de `runFollowupTick`.
+ *
  * Auth: Bearer INTERNAL_CRON_SECRET|INTERNAL_SECRET, fail-closed. Audit
- * agregada por tick (`followup.worker_run`), sem organization_id (roda pra
- * todas as orgs).
+ * agregada por tick (`followup.worker_run` + `followup.silence_sweep_run`),
+ * sem organization_id (roda pra todas as orgs).
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -19,6 +28,8 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest } from "@/lib/followup/engine";
+import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
+import { createSupabaseSilenceSweepDb, runSilenceSweep } from "@/lib/followup/silence-sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +80,26 @@ async function handle(req: NextRequest): Promise<Response> {
     metadata: { ...summary },
     requestId,
   });
+
+  try {
+    const sweepSummary = await runSilenceSweep({
+      db: createSupabaseSilenceSweepDb(admin),
+      gateDb: createSupabaseFollowupGateDb(admin),
+      clock: () => new Date(),
+    });
+    void audit({
+      action: "followup.silence_sweep_run",
+      organizationId: null,
+      bypassedRls: true,
+      metadata: { ...sweepSummary },
+      requestId,
+    });
+  } catch (err) {
+    // Sweep falhando NUNCA aborta o tick — a resposta abaixo já reflete o
+    // resultado de runFollowupTick, que rodou (e foi auditado) antes disto.
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.error("[followup-flow-worker.cron] runSilenceSweep threw", { error: detail, requestId });
+  }
 
   return ok(summary, { requestId });
 }

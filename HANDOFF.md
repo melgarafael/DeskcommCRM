@@ -23,7 +23,7 @@
 
 ## Estado atual
 
-- **Onda:** 5 ✅. Onda 6 ✅. Onda 7 EM ANDAMENTO: Task 7.1 ✅. Task 7.2 ✅ (seletor de fluxo no editor do agente + gate de gatilho automático) — ver Log de avanços. Onda 7 fechada. Próxima: **Onda 8 (gatilhos automáticos + flywheel + E2E jornada completa)** — Task 8.1 (silence/stage → enrollment) DEVE chamar `isPointerEnabledForAutomaticTrigger` (`lib/followup/agent-followup-gate.ts`) antes de criar qualquer enrollment por gatilho automático.
+- **Onda:** 5 ✅. Onda 6 ✅. Onda 7 ✅. Onda 8 EM ANDAMENTO: **Task 8.1 ✅ — gatilho de silêncio (varredura TIME-DRIVEN no cron `followup-flow-worker`) + primeiro consumidor do gate.** Ver Log de avanços. Falta na Onda 8: `stage_change` (não pedido nesta task — brief 8.1 focou só em `silence`), flywheel, E2E de jornada completa.
 - **Task 7.1 ✅ — endpoint fila + aba + cancelar.** `GET /api/v1/ai/followups/queue` (viewer+): UNION app-side de `followup_enrollments` + `cron_jobs` (kind='at'+job_kind='followup_turn'), ordenado `(next_fire_at asc nulls last, id asc)`, cursor seek `{next_fire_at,id}` aplicado às 2 fontes, janela `limit+1` por fonte + merge (k-way lookahead — sem pular/duplicar entre páginas). `status`/`pointer_id` pulam a fonte de promessas (não têm esses campos); `q` resolve pra `contact_id`s primeiro, aplicado nas 2 fontes. `POST /api/v1/ai/followups/enrollments/:id/cancel` (manager+): 409 `already_terminal` se já encerrado, senão cancela + evento `cancelled_manual` + audit `followup_enrollment.cancelled` (ação nova). `app/app/ai/followups/page.tsx` virou `Tabs` (Fluxos/Fila) — o gate de página que exigia manager+ pra ver QUALQUER coisa foi relaxado pra só exigir org ativa (Fila é viewer+; Fluxos manteve seu próprio `canWrite`). `QueueTab.tsx` + `useFollowupQueue.ts` (useInfiniteQuery, mesmo padrão de `useAdminIncidents`) — filtros status/fluxo/busca (debounce 250ms), relativo+absoluto via `date-fns`/`ptBR` (reuso, sem dep nova), `AlertDialog` de cancelar.
   **PROVA AO VIVO (`tests/e2e/followup-queue.spec.ts`, 2/2 verde, `E2E_PORT=3010`):** setup 100% via API real (fluxo publicado, contato, enrollment) + `scripts/seed-e2e-followup-promise.ts` novo (mesmo padrão de `seed-e2e-queue.ts`, service role — não existe rota pública pra criar `cron_jobs`, só a tool do agente em runtime). Os 4 casos de aceite cobertos SEM DEFERIR NENHUM: (1) linha do enrollment com contato/fluxo/nó/próximo-disparo/status; (2) filtro status esconde e filtro por fluxo estreita pra exatamente 1 linha; (3) cancelar via dialog → some do filtro Ativo + toast + prova via API (`GET queue?status=cancelled` contém o id cancelado) + RBAC extra verificada ad-hoc (viewer faz POST direto em `/cancel` → 403 `forbidden_role` server-side, não só botão escondido); (4) busca por nome da promessa seedada estreita a fila INTEIRA da org pra exatamente 1 linha (`flow_name="Promessa"`, motivo, "Agendada", "em 3 dias", sem botão Cancelar). Screenshots em `test-results/followup-7.1-0{1..6}-*.png` — a 01 mostra dado 100% real incluindo 3 promessas de uso genuíno da IA já existentes no dev DB ("Prova Multimodal"). `npm run typecheck` 0, `npm run lint` 0 novo (2 erros pré-existentes intocados da Task 2.1), `npm run test:unit` 547/547 sem regressão. **Sem migration** (só leitura de tabelas já existentes; `cancelled_manual` é `event_type text` livre, sem CHECK a alterar). Detalhe completo em `.superpowers/sdd/task-7.1-report.md`.
 - **Task 6.3 ✅ — editor de condição de aresta.** `lib/followup/edge-condition-options.ts` (novo, puro): `edgeConditionOptions(sourceNode)` — `ai_classify` → `always` + 1 `class_match` por classe declarada + `class_match:no_reply`; `condition` → `always` + `cond_result:true/false`; qualquer outro tipo → só `always`. Mais `conditionKey`/`conditionLabel` (pt-br: classe crua, `no_reply`→"Sem resposta", `true`→"Sim", `false`→"Não", `always`→"Sempre") — 9 testes unit. `app/app/ai/followups/[id]/_components/EdgeConfigPanel.tsx` (novo): painel docado (mesmo estilo do NodeConfigPanel), mostra origem→destino e um Select com as opções exatas do nó de origem. `FlowCanvas.tsx`: `onEdgeClick` seleciona a aresta (fecha o painel de nó, e vice-versa — mutuamente exclusivos), `edgesForRender` (memo) injeta `label` derivado de `data.condition` em TODA aresta pro fio mostrar "positivo"/"Sem resposta"/"Sempre"/"Sim"/"Não" (React Flow's built-in edge label, sem edge customizado — confirmado no dist instalado que `BaseEdge`/`EdgeText` já suportam `label` nos 4 tipos default). `graph-mappers.ts`: só um `export` adicionado em `toFlowNode` (já existia, não exportada) — reuso, ZERO mudança de comportamento/round-trip.
@@ -40,6 +40,76 @@
 - 2026-07-21 (Task 4.1): **`AdminClient` do engine NÃO é `SupabaseClient`** — é uma interface própria e estreita (poucos métodos nomeados: claim/loadGraph/loadLeadFacts/loadEvents/insertEvent/updateEnrollment/loadPointerName/insertDeadInbox). Motivo: `tests/invariants/**` roda contra Postgres cru (`pg.Pool`, sem PostgREST — `NEXT_PUBLIC_SUPABASE_URL` aponta pra porta inalcançável de propósito no `vitest.db.config.ts`), então um `AdminClient=SupabaseClient` real seria intestável ali. `lib/followup/engine.ts` exporta `createSupabaseAdminClient(admin)` pra produção (ainda sem consumidor — a rota de cron é task futura) e o teste DB implementa o adapter `pg`-puro inline. **Próximas tasks que precisarem de uma rota real usando o engine devem usar `createSupabaseAdminClient`, não reinventar.**
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-22: **Task 8.1 ✅ — gatilho de SILÊNCIO (varredura TIME-DRIVEN no cron) + primeiro consumidor real do gate `isPointerEnabledForAutomaticTrigger`.**
+  **Decisão de arquitetura (dada, não descoberta aqui):** silêncio é
+  TIME-DRIVEN (varredura periódica), NÃO event-driven — não entra em
+  `lib/followup/reactivity.ts` (que reage a `event_log`). Vive no cron
+  `app/api/v1/cron/followup-flow-worker/route.ts`, que já roda a cada minuto
+  com admin client: `runSilenceSweep` roda DEPOIS de `runFollowupTick` (e da
+  sua auditoria), num try/catch ISOLADO — sweep falhando NUNCA aborta a
+  resposta do tick (só loga, sem PII).
+  **`lib/followup/silence-sweep.ts` (novo)** — `runSilenceSweep(deps)`:
+  acha pointers `status='active'` com `trigger_config.kind='silence'` de TODAS
+  as orgs (mesmo desenho cross-org de `fn_claim_due_followup_enrollments`) →
+  GATEIA cada um via `isPointerEnabledForAutomaticTrigger` (memoizado por
+  `orgId:pointerId` dentro da varredura) → acha contatos silenciosos da org →
+  cria enrollment nascendo no nó `trigger` do grafo pinado, `next_eval_at=now`.
+  Interface `SilenceSweepDb` estreita, mesma doutrina de `AdminClient`/
+  `ReactivityAdminClient`/`FollowupGateDb`; `createSupabaseSilenceSweepDb(admin)`
+  é o adapter de produção.
+  **"Última inbound" — achado central:** `conversations.last_inbound_at` JÁ
+  EXISTIA (populado por `fn_ingest_message`, já usado por
+  `workers/ai-response-worker.ts` e `lib/routing/queue.ts`) — **zero
+  migration**. Ressalva real: é POR CONVERSA, o enrollment é POR CONTATO (um
+  contato pode ter 2+ conversas/channel_sessions) — `loadSilentContactIds`
+  busca todas as conversas da org com embed de contato (mesmo padrão 1:1 de
+  `ai-response-worker.ts:255`) e reduz client-side pro `last_inbound_at` MAIS
+  RECENTE por contato (Map). Decisão deliberada: NÃO criei uma function SQL
+  pra fazer isso no Postgres (o `GROUP BY MAX` cabe numa reduction em memória
+  pro volume do perfil PME do CLAUDE.md — evita migration+baseline+MANIFEST
+  pra uma agregação pequena; troca é um refactor local se a escala pedir).
+  **`segments`:** não havia NENHUMA primitiva de segmento de contato modelada
+  (`enabled_segments` em `reentry-knobs.ts` é de outro sistema — Vendaval,
+  valores opacos). Interpretei como overlap com `contacts.tags` (única coluna
+  real, já com GIN index). Vazio/ausente = todos os contatos silenciosos —
+  documentado como interpretação deferida no header do módulo.
+  **Idempotência:** `insertEnrollment` é INSERT puro — 23505 (índice único
+  `idx_followup_enrollments_one_live`) vira `skipped_existing`, nunca erro. Um
+  contato que completou/cancelou pode re-enrollar na varredura seguinte se
+  continuar silencioso — aceitável no MVP, sem cooldown table (fora de escopo
+  por instrução explícita do brief).
+  **`app/api/v1/cron/followup-flow-worker/route.ts`** — chama `runSilenceSweep`
+  com `createSupabaseSilenceSweepDb(admin)` + `createSupabaseFollowupGateDb(admin)`
+  depois do tick; audita `followup.silence_sweep_run` (nova action em
+  `lib/audit/actions.ts`, union tipada) em sucesso. Response contract do tick
+  (`ok(summary,...)`) INTOCADO — o sweep não polui o body de resposta, só
+  audita separadamente — preserva `tests/api/followup-cron-worker.test.ts`
+  sem precisar editá-lo.
+  **PROVA (DB-real, `tests/invariants/followup-silence-sweep.test.ts`, 8
+  testes novos):** (1) pointer silence gateado + contato silencioso > threshold
+  → 1 enrollment no nó trigger; 2ª varredura não duplica (unique-live); (2)
+  gate-out em 2 sabores (sem agente publicado habilitando / agente publicado
+  com `enabled=false`) → 0 enrollments — prova que o gate É chamado, não só
+  importado; (3) boundary — silêncio < threshold → 0 enrollments, gate passou
+  (isola o que bloqueou); (4) **gate SQL integration** (reviewer Minor #2 da
+  Task 7.2 — requisito explícito desta task): `isPointerEnabledForAutomaticTrigger`
+  contra `ai_agent_versions` REAL via adapter pg-backed espelhando a query de
+  `createSupabaseFollowupGateDb` — publicado+enabled+membro→true,
+  draft→false, enabled=false→false, cross-org→false.
+  **Flake achado e corrigido na 1ª rodada** (mesma classe já documentada no
+  fix da Task 5.2): `loadActiveSilencePointers` é cross-org de propósito, então
+  um pointer `kind='silence'` de um `it` anterior (nunca desativado)
+  contaminava `pointers_scanned`/`pointers_gated_out` do `it` seguinte — fix:
+  `beforeEach` deletando `followup_flow_pointers where trigger_config->>'kind'
+  = 'silence'` (escopo estreito, cascade via `on delete cascade`).
+  **PROVA:** typecheck 0, lint 0 novo (os 2 erros pré-existentes de
+  `graph-schema.test.ts`, Task 2.1, intocados), unit 551/551 sem regressão
+  (nenhum unit novo — brief só pediu invariantes pra esta task). Invariantes:
+  **3 rodadas seguidas, síncronas — 3/3 limpo**: 39/39 arquivos, 234 passed |
+  1 skipped em TODAS (era 226+1 antes — exatos +8, +1 arquivo, zero
+  regressão). Detalhe completo em `.superpowers/sdd/task-8.1-report.md`.
+  **Sem migration nesta task.**
 
 - 2026-07-22: **Task 7.2 ✅ — seletor de fluxo no editor do agente + gate de gatilho automático. Onda 7 fechada.**
   **Achado que muda o brief:** a config versionada de agente (`ai_agent_versions`) NÃO é um jsonb único —
