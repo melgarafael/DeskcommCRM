@@ -61,7 +61,11 @@ export async function POST(_req: NextRequest, { params }: RouteParams): Promise<
     return fail("unavailable", "Rascunho da IA indisponível (config).", 503, { requestId });
   }
 
-  const result = await generateDraftReply(
+  // Falha controlada (getLeadContext ok:false) volta como reason:'error' e vira
+  // 500 abaixo. Exceção inesperada (credencial inválida, provider fora, pool
+  // morto, assertBudget) NÃO é engolida: sobe pro handler global do Next, que a
+  // registra — perder a causa raiz de uma chamada de LLM seria cegueira em prod.
+  const result: DraftReplyResult = await generateDraftReply(
     pool,
     llmEdgeConfigFromEnv(env),
     crmEdgeConfigFromEnv({
@@ -74,7 +78,7 @@ export async function POST(_req: NextRequest, { params }: RouteParams): Promise<
       conversationId: conv.id,
       channelSessionId: conv.channel_session_id,
     },
-  ).catch((): DraftReplyResult => ({ ok: false, reason: "error" }));
+  );
 
   if (!result.ok) {
     const [code, message, status] = REASON_TO_RESPONSE[result.reason];
