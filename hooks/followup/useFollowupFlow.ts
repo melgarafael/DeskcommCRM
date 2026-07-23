@@ -121,6 +121,26 @@ export function useRollbackFollowupFlow(id: string) {
   });
 }
 
+/** PATCH trigger_config — controle de gatilho (Manual/Silêncio) na PublishBar. */
+export function useUpdateTriggerConfig(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (trigger_config: Record<string, unknown>) => {
+      const res = await apiClient.patch<SingleResponse>(`/api/v1/ai/followup-flows/${id}`, {
+        trigger_config,
+      });
+      return res.data;
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(id), (prev) =>
+        prev ? { ...prev, ...updated } : prev,
+      );
+      toast.success("Gatilho atualizado.");
+    },
+    onError: (err) => showApiError(err),
+  });
+}
+
 export function useUpdateHandoffPolicy(id: string) {
   const qc = useQueryClient();
   return useMutation({

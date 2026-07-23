@@ -14,6 +14,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +77,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     payload: { actor_user_id: user.id },
   });
   if (eventErr) {
-    console.error("[followup.enrollment.cancel] event insert failed", eventErr.message);
+    logger.error("[followup.enrollment.cancel] event insert failed", { error: eventErr.message, requestId });
   }
 
   void audit({

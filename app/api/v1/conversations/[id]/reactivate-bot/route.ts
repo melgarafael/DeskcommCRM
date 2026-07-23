@@ -25,6 +25,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -78,7 +79,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     p_organization_id: activeOrg.orgId,
   });
   if (emitErr) {
-    console.error("[reactivate-bot] emit ai.handoff_resolved failed", emitErr.message);
+    logger.error("[reactivate-bot] emit ai.handoff_resolved failed", { error: emitErr.message, requestId });
     return fail("internal_error", "Bot reativado, mas o sinal de retomada do follow-up falhou — tente de novo.", 500, {
       requestId,
     });

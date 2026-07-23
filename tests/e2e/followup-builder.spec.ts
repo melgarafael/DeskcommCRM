@@ -702,3 +702,72 @@ test.describe("followup flow selector no editor do agente (Task 7.2)", () => {
     await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/disable`, { data: {} });
   });
 });
+
+test.describe("followup flow builder — controle de gatilho na PublishBar (Task 8.5)", () => {
+  test("operador arma o gatilho de Silêncio (threshold) pela UI; oferece só Manual/Silêncio; PATCH round-trips", async ({
+    page,
+  }) => {
+    await login(page, creds.users.manager!.email);
+
+    const createRes = await page.request.post("/api/v1/ai/followup-flows", {
+      data: { name: `E2E Gatilho ${Date.now()}` },
+    });
+    expect(createRes.status()).toBe(201);
+    const { data: flow } = (await createRes.json()) as { data: { id: string } };
+
+    try {
+      await page.goto(`/app/ai/followups/${flow.id}`);
+      await expect(page.getByTestId("flow-builder-shell")).toBeVisible();
+
+      // Draft novo nasce trigger_config={kind:'manual'} — o botão mostra isso sem precisar abrir o popover.
+      const triggerButton = page.getByTestId("trigger-config-button");
+      await expect(triggerButton).toHaveText("Gatilho: Manual");
+
+      await triggerButton.click();
+      const panel = page.getByTestId("trigger-config-panel");
+      await expect(panel).toBeVisible();
+      await page.screenshot({ path: "e2e-artifacts/followup-8.5-01-trigger-panel-manual.png", fullPage: true });
+
+      // Só Manual e Silêncio são oferecidos — stage_change/conversation_end não têm motor de enrollment.
+      const kindSelect = panel.getByRole("combobox");
+      await kindSelect.click();
+      await expect(page.getByRole("option")).toHaveCount(2);
+      await expect(page.getByRole("option", { name: "Manual", exact: true })).toBeVisible();
+      await expect(page.getByRole("option", { name: "Silêncio", exact: true })).toBeVisible();
+      await expect(page.getByRole("option", { name: /stage_change|conversation_end/i })).toHaveCount(0);
+
+      await page.getByRole("option", { name: "Silêncio", exact: true }).click();
+      await expect(panel.getByLabel("Minutos de silêncio")).toBeVisible();
+
+      const thresholdInput = panel.getByLabel("Minutos de silêncio");
+      await thresholdInput.fill("45");
+
+      const saveButton = panel.getByTestId("trigger-config-save");
+      await expect(saveButton).toBeEnabled();
+      await page.screenshot({ path: "e2e-artifacts/followup-8.5-02-trigger-silence-filled.png", fullPage: true });
+      await saveButton.click();
+
+      await expect(page.getByText("Gatilho atualizado.")).toBeVisible();
+      await expect(triggerButton).toHaveText("Gatilho: Silêncio (45 min)");
+      await page.screenshot({ path: "e2e-artifacts/followup-8.5-03-trigger-saved.png", fullPage: true });
+
+      // Reload — o valor persistido (PATCH round-trip) sobrevive, não é só estado local.
+      await page.reload();
+      await expect(page.getByTestId("trigger-config-button")).toHaveText("Gatilho: Silêncio (45 min)");
+
+      // Prova via API (não só UI): GET devolve o trigger_config exato que foi salvo.
+      const getRes = await page.request.get(`/api/v1/ai/followup-flows/${flow.id}`);
+      expect(getRes.status()).toBe(200);
+      const { data: persisted } = (await getRes.json()) as {
+        data: { trigger_config: { kind: string; params?: { threshold_minutes?: number } } };
+      };
+      expect(persisted.trigger_config.kind).toBe("silence");
+      expect(persisted.trigger_config.params?.threshold_minutes).toBe(45);
+    } finally {
+      // O fluxo nunca foi publicado (fica em 'draft') — nenhum enrollment
+      // possível daqui. Desativa mesmo assim (doutrina da task: qualquer
+      // fluxo criado pelo spec sai desativado, sem depender de estar 'active').
+      await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/disable`, { data: {} });
+    }
+  });
+});

@@ -24,6 +24,7 @@ import {
   type FollowupFlowDetailRow,
 } from "@/hooks/followup/useFollowupFlow";
 import { FlowStatusBadge } from "../../_components/FlowStatusBadge";
+import { TriggerConfigControl } from "./TriggerConfigControl";
 
 interface Props {
   flowId: string;
@@ -105,6 +106,8 @@ export function PublishBar({ flowId, flow, graph, dirty, onSaved, onPublishError
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <TriggerConfigControl flowId={flowId} triggerConfig={flow.trigger_config} />
+
         <Select value={flow.handoff_policy} onValueChange={(v) => handoffPolicy.mutate(v as FollowupFlowDetailRow["handoff_policy"])}>
           <SelectTrigger className="w-56" aria-label="Política de handoff">
             <SelectValue />

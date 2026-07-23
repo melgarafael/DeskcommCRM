@@ -494,6 +494,92 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
     const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
     expect(res.status).toBe(404);
   });
+
+  it("trigger_config.kind='stage_change' (sem motor de enrollment) → 422 trigger_kind_not_implemented, sem publicar", async () => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: VALID_GRAPH,
+          trigger_config: { kind: "stage_change", params: { stage_id: "44444444-4444-4444-8444-444444444444" } },
+        },
+      ],
+      [],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("trigger_kind_not_implemented");
+
+    const { data: pointerRows } = (await db
+      .from("followup_flow_pointers")
+      .select()
+      .eq("id", "33333333-3333-4333-8333-333333333333")) as { data: Row[] };
+    expect(pointerRows[0]!.status).toBe("draft");
+  });
+
+  it("trigger_config.kind='conversation_end' (sem motor de enrollment) → 422 trigger_kind_not_implemented", async () => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: VALID_GRAPH,
+          trigger_config: { kind: "conversation_end", params: {} },
+        },
+      ],
+      [],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("trigger_kind_not_implemented");
+  });
+
+  it("trigger_config.kind='silence' → publica normalmente (kind com motor)", async () => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: VALID_GRAPH,
+          trigger_config: { kind: "silence", params: { threshold_minutes: 30 } },
+        },
+      ],
+      [],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(200);
+  });
+
+  it("trigger_config.kind='manual' → publica normalmente", async () => {
+    const db = makeDb(
+      [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          organization_id: ORG_ID,
+          status: "draft",
+          draft_graph: VALID_GRAPH,
+          trigger_config: { kind: "manual" },
+        },
+      ],
+      [],
+    );
+    session("manager", db);
+    const { POST } = await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    const res = await POST(req("POST"), ctx("33333333-3333-4333-8333-333333333333"));
+    expect(res.status).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------

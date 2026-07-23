@@ -41,12 +41,26 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const admin = createAdminClient();
   const { data: pointer, error: fetchErr } = await admin
     .from("followup_flow_pointers")
-    .select("id, draft_graph")
+    .select("id, draft_graph, trigger_config")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!pointer) return fail("not_found", "Fluxo não encontrado.", 404, { requestId });
+
+  // Só `manual` e `silence` têm motor de enrollment (POST manual / silence-sweep).
+  // `stage_change`/`conversation_end` são kinds válidos no schema (roadmap) mas
+  // publicar um fluxo com eles produziria um `status='active'` que nunca enrola
+  // ninguém — um fluxo morto e silencioso. Bloqueia no publish, não no schema.
+  const triggerKind = (pointer.trigger_config as { kind?: string } | null)?.kind ?? "manual";
+  if (triggerKind === "stage_change" || triggerKind === "conversation_end") {
+    return fail(
+      "trigger_kind_not_implemented",
+      `O gatilho '${triggerKind}' ainda não está disponível — use Silêncio ou Manual.`,
+      422,
+      { requestId },
+    );
+  }
 
   if (!pointer.draft_graph) {
     return fail("validation_failed", "Fluxo não tem rascunho pronto para publicar.", 422, {
