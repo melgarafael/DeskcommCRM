@@ -55,6 +55,16 @@ export interface Message {
   created_at: string;
 }
 
+/** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */
+export interface Note {
+  id: string;
+  conversation_id: string;
+  body: string;
+  created_by_user_id: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
 /**
  * Mapeia ack do WAHA (0..3) para o status canônico em messages.status.
  * 0=pending/sent server-side, 1=server-confirmed, 2=delivered (device), 3=read.

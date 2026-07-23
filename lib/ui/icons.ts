@@ -74,6 +74,7 @@ export {
   Image as ImageIcon,
   ImageSquare,
   MusicNote,
+  Note,
   FileText,
   Lock,
   Receipt,

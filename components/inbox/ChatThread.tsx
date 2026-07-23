@@ -5,13 +5,32 @@ import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageBubble } from "./MessageBubble";
+import { NoteCard } from "./NoteCard";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
+import { useConversationNotes } from "@/hooks/inbox/useConversationNotes";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
-import type { Message } from "@/lib/types/messaging";
+import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
   conversationId: string | null;
+}
+
+/** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
+export type ThreadItem =
+  | { kind: "message"; ts: string; data: Message }
+  | { kind: "note"; ts: string; data: Note };
+
+/** Intercala mensagens e notas por timestamp asc (puro, sem I/O — testado em thread-merge.test.ts). */
+export function mergeThreadItems(messages: Message[], notes: Note[]): ThreadItem[] {
+  const items: ThreadItem[] = [
+    ...messages.map((data): ThreadItem => ({ kind: "message", ts: data.sent_at, data })),
+    ...notes.map((data): ThreadItem => ({ kind: "note", ts: data.created_at, data })),
+  ];
+  // Sort estável (Array#sort é estável no V8/Node): empate mantém a ordem de
+  // inserção acima — mensagens antes de notas no mesmo instante.
+  items.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+  return items;
 }
 
 function dayLabel(d: Date): string {
@@ -22,6 +41,7 @@ function dayLabel(d: Date): string {
 
 export function ChatThread({ conversationId }: Props) {
   const q = useMessagesRealtime(conversationId);
+  const notes = useConversationNotes(conversationId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const activeOrg = useActiveOrg();
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
@@ -31,11 +51,16 @@ export function ChatThread({ conversationId }: Props) {
     [q.data],
   );
 
-  // Scroll to bottom on first load + new message arrival.
+  const items: ThreadItem[] = useMemo(
+    () => mergeThreadItems(messages, notes),
+    [messages, notes],
+  );
+
+  // Scroll to bottom on first load + new message/note arrival.
   useEffect(() => {
     if (!bottomRef.current) return;
     bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, conversationId]);
+  }, [items.length, conversationId]);
 
   if (!conversationId) {
     return (
@@ -66,7 +91,7 @@ export function ChatThread({ conversationId }: Props) {
     );
   }
 
-  if (messages.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Nenhuma mensagem nesta conversa.
@@ -74,14 +99,14 @@ export function ChatThread({ conversationId }: Props) {
     );
   }
 
-  // Group by day for separators.
-  const groups: { key: string; date: Date; items: Message[] }[] = [];
-  for (const m of messages) {
-    const d = new Date(m.sent_at);
+  // Group by day for separators (usa o timestamp do item — sent_at pra mensagem, created_at pra nota).
+  const groups: { key: string; date: Date; items: ThreadItem[] }[] = [];
+  for (const item of items) {
+    const d = new Date(item.ts);
     const key = format(d, "yyyy-MM-dd");
     const last = groups[groups.length - 1];
-    if (last && last.key === key) last.items.push(m);
-    else groups.push({ key, date: d, items: [m] });
+    if (last && last.key === key) last.items.push(item);
+    else groups.push({ key, date: d, items: [item] });
   }
 
   return (
@@ -107,13 +132,17 @@ export function ChatThread({ conversationId }: Props) {
                 {dayLabel(g.date)}
               </span>
             </div>
-            {g.items.map((m) => (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                debugCitations={debugCitations}
-              />
-            ))}
+            {g.items.map((item) =>
+              item.kind === "note" ? (
+                <NoteCard key={`note-${item.data.id}`} note={item.data} />
+              ) : (
+                <MessageBubble
+                  key={`msg-${item.data.id}`}
+                  message={item.data}
+                  debugCitations={debugCitations}
+                />
+              ),
+            )}
           </div>
         ))}
 
