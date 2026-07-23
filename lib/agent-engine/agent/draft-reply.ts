@@ -63,6 +63,10 @@ export async function generateDraftReply(
     content: m.body,
   }));
 
+  // Sem histórico não há o que rascunhar — e o AI SDK lança com messages vazio
+  // (viraria 500 cru). Retorna 'empty' (a UI mostra um aviso amigável).
+  if (messages.length === 0) return { ok: false, reason: 'empty' };
+
   const { result } = await runModelCall(db, llmCfg, {
     tenantId: input.tenantId,
     leadId: input.leadId,

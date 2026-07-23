@@ -154,6 +154,25 @@ describe("generateDraftReply", () => {
     expect(mockRunModelCall).not.toHaveBeenCalled();
   });
 
+  it("histórico vazio (sem mensagens) → empty, sem chamar runModelCall", async () => {
+    mockLoadAgent.mockResolvedValue(AGENT);
+    mockGetLeadContext.mockResolvedValue(
+      contextResult({
+        context: {
+          lead_id: input.leadId,
+          contact: { name: "Rafael", phone: null, email: null, tags: [], is_blocked: false },
+          conversation_id: input.conversationId,
+          messages: [],
+        },
+      }),
+    );
+
+    const result = await generateDraftReply(db, llmCfg, crmCfg, input);
+
+    expect(result).toEqual({ ok: false, reason: "empty" });
+    expect(mockRunModelCall).not.toHaveBeenCalled();
+  });
+
   it("result.text vazio/whitespace → empty", async () => {
     mockLoadAgent.mockResolvedValue(AGENT);
     mockGetLeadContext.mockResolvedValue(contextResult());

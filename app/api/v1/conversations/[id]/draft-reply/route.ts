@@ -45,7 +45,7 @@ export async function POST(_req: NextRequest, { params }: RouteParams): Promise<
   const supabase = await createClient();
   const { data: conv } = await supabase
     .from("conversations")
-    .select("id, organization_id, contact_id, channel_session_id, status")
+    .select("id, organization_id, contact_id, channel_session_id")
     .eq("id", id)
     .eq("organization_id", org.orgId)
     .maybeSingle();

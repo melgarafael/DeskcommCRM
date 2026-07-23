@@ -76,12 +76,23 @@ async function handle(req: NextRequest): Promise<Response> {
       new Date(c.last_inbound_at).getTime() > new Date(c.snoozed_at).getTime()
     );
     const clear = { snooze_until: null, snoozed_at: null, snoozed_by_user_id: null };
+    const willReopen = !leadReplied && c.status !== "closed" && c.status !== "archived";
+    const fields = willReopen ? { ...clear, status: "open", last_message_at: nowIso } : clear;
 
-    if (!leadReplied && c.status !== "closed" && c.status !== "archived") {
-      await admin
-        .from("conversations")
-        .update({ ...clear, status: "open", last_message_at: nowIso })
-        .eq("id", c.id);
+    // O clear É o claim atômico: `.not("snooze_until","is",null)` garante que só
+    // quem ainda vê o snooze não-nulo processa a row. Se dois ticks concorrentes
+    // (double-schedule / curl manual durante o cron) leem a mesma row, só o
+    // primeiro atualiza — o segundo recebe 0 linhas e pula, sem aviso duplicado.
+    const { data: claimed } = await admin
+      .from("conversations")
+      .update(fields)
+      .eq("id", c.id)
+      .not("snooze_until", "is", null)
+      .select("id")
+      .maybeSingle();
+    if (!claimed) continue; // outro tick já processou esta conversa
+
+    if (willReopen) {
       await admin.from("agent_inbox_items").insert({
         organization_id: c.organization_id,
         kind: "snooze_expired",
@@ -91,8 +102,6 @@ async function handle(req: NextRequest): Promise<Response> {
         ref_id: c.id,
       });
       reopened++;
-    } else {
-      await admin.from("conversations").update(clear).eq("id", c.id);
     }
   }
 
