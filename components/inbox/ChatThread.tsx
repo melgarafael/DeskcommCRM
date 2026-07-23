@@ -8,8 +8,10 @@ import { MessageBubble } from "./MessageBubble";
 import { NoteCard } from "./NoteCard";
 import { useMessagesRealtime } from "@/hooks/inbox/useMessagesRealtime";
 import { useConversationNotes } from "@/hooks/inbox/useConversationNotes";
+import { useDeleteNote } from "@/hooks/inbox/useDeleteNote";
 import { useDebugToggle } from "@/hooks/ai/useDebugToggle";
-import { useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
+import { ROLE_RANK } from "@/lib/auth/types";
 import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
@@ -44,6 +46,9 @@ export function ChatThread({ conversationId }: Props) {
   const notes = useConversationNotes(conversationId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const activeOrg = useActiveOrg();
+  const currentUser = useUser();
+  const deleteNote = useDeleteNote(conversationId ?? "");
+  const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
   const messages: Message[] = useMemo(
@@ -134,7 +139,17 @@ export function ChatThread({ conversationId }: Props) {
             </div>
             {g.items.map((item) =>
               item.kind === "note" ? (
-                <NoteCard key={`note-${item.data.id}`} note={item.data} />
+                <NoteCard
+                  key={`note-${item.data.id}`}
+                  note={item.data}
+                  // Só o autor ou manager+ vê o excluir — o backend barra o resto (403),
+                  // então não mostramos um botão que daria erro.
+                  onDelete={
+                    item.data.created_by_user_id === currentUser.id || canManage
+                      ? () => deleteNote.mutate(item.data.id)
+                      : undefined
+                  }
+                />
               ) : (
                 <MessageBubble
                   key={`msg-${item.data.id}`}
