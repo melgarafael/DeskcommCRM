@@ -155,4 +155,5 @@ export type AuditAction =
   | "auth.password_reset_failed"
   | "tenant.created_by_signup"
   | "conversation.snoozed"
-  | "conversation.snooze_cancelled";
+  | "conversation.snooze_cancelled"
+  | "conversation.snooze_watcher_run";
