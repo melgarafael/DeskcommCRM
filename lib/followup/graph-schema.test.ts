@@ -768,7 +768,7 @@ describe('graph-schema', () => {
         type: 'trigger' as const,
         label: `Node ${i}`,
         position: { x: i * 10, y: i * 10 },
-        config: {} as {},
+        config: {} as Record<string, never>,
       }));
       const result = flowGraphSchema.safeParse({
         nodes,
@@ -784,7 +784,7 @@ describe('graph-schema', () => {
           type: 'trigger' as const,
           label: 'Start',
           position: { x: 0, y: 0 },
-          config: {} as {},
+          config: {} as Record<string, never>,
         },
         {
           id: 'end-1',
