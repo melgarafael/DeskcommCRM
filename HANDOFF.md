@@ -23,7 +23,7 @@
 
 ## Estado atual
 
-- **Onda:** 5 ✅. Onda 6 ✅. Onda 7 ✅. Onda 8 EM ANDAMENTO: **Task 8.1 ✅ — gatilho de silêncio (varredura TIME-DRIVEN no cron `followup-flow-worker`) + primeiro consumidor do gate.** Ver Log de avanços. Falta na Onda 8: `stage_change` (não pedido nesta task — brief 8.1 focou só em `silence`), flywheel, E2E de jornada completa.
+- **Onda:** 5 ✅. Onda 6 ✅. Onda 7 ✅. Onda 8 EM ANDAMENTO: **Task 8.1 ✅ — gatilho de silêncio.** **Task 8.3 (jornada E2E) ✅ — `tests/e2e/followup-journey.spec.ts`, 2/2 rodadas verdes.** Ver Log de avanços. Falta na Onda 8: `stage_change` (não pedido nesta task — brief 8.1 focou só em `silence`), flywheel, e o restante da Task 8.3 (checklist DoD item a item + doc do PRD — o controller cobre essa parte separadamente).
 - **Task 7.1 ✅ — endpoint fila + aba + cancelar.** `GET /api/v1/ai/followups/queue` (viewer+): UNION app-side de `followup_enrollments` + `cron_jobs` (kind='at'+job_kind='followup_turn'), ordenado `(next_fire_at asc nulls last, id asc)`, cursor seek `{next_fire_at,id}` aplicado às 2 fontes, janela `limit+1` por fonte + merge (k-way lookahead — sem pular/duplicar entre páginas). `status`/`pointer_id` pulam a fonte de promessas (não têm esses campos); `q` resolve pra `contact_id`s primeiro, aplicado nas 2 fontes. `POST /api/v1/ai/followups/enrollments/:id/cancel` (manager+): 409 `already_terminal` se já encerrado, senão cancela + evento `cancelled_manual` + audit `followup_enrollment.cancelled` (ação nova). `app/app/ai/followups/page.tsx` virou `Tabs` (Fluxos/Fila) — o gate de página que exigia manager+ pra ver QUALQUER coisa foi relaxado pra só exigir org ativa (Fila é viewer+; Fluxos manteve seu próprio `canWrite`). `QueueTab.tsx` + `useFollowupQueue.ts` (useInfiniteQuery, mesmo padrão de `useAdminIncidents`) — filtros status/fluxo/busca (debounce 250ms), relativo+absoluto via `date-fns`/`ptBR` (reuso, sem dep nova), `AlertDialog` de cancelar.
   **PROVA AO VIVO (`tests/e2e/followup-queue.spec.ts`, 2/2 verde, `E2E_PORT=3010`):** setup 100% via API real (fluxo publicado, contato, enrollment) + `scripts/seed-e2e-followup-promise.ts` novo (mesmo padrão de `seed-e2e-queue.ts`, service role — não existe rota pública pra criar `cron_jobs`, só a tool do agente em runtime). Os 4 casos de aceite cobertos SEM DEFERIR NENHUM: (1) linha do enrollment com contato/fluxo/nó/próximo-disparo/status; (2) filtro status esconde e filtro por fluxo estreita pra exatamente 1 linha; (3) cancelar via dialog → some do filtro Ativo + toast + prova via API (`GET queue?status=cancelled` contém o id cancelado) + RBAC extra verificada ad-hoc (viewer faz POST direto em `/cancel` → 403 `forbidden_role` server-side, não só botão escondido); (4) busca por nome da promessa seedada estreita a fila INTEIRA da org pra exatamente 1 linha (`flow_name="Promessa"`, motivo, "Agendada", "em 3 dias", sem botão Cancelar). Screenshots em `test-results/followup-7.1-0{1..6}-*.png` — a 01 mostra dado 100% real incluindo 3 promessas de uso genuíno da IA já existentes no dev DB ("Prova Multimodal"). `npm run typecheck` 0, `npm run lint` 0 novo (2 erros pré-existentes intocados da Task 2.1), `npm run test:unit` 547/547 sem regressão. **Sem migration** (só leitura de tabelas já existentes; `cancelled_manual` é `event_type text` livre, sem CHECK a alterar). Detalhe completo em `.superpowers/sdd/task-7.1-report.md`.
 - **Task 6.3 ✅ — editor de condição de aresta.** `lib/followup/edge-condition-options.ts` (novo, puro): `edgeConditionOptions(sourceNode)` — `ai_classify` → `always` + 1 `class_match` por classe declarada + `class_match:no_reply`; `condition` → `always` + `cond_result:true/false`; qualquer outro tipo → só `always`. Mais `conditionKey`/`conditionLabel` (pt-br: classe crua, `no_reply`→"Sem resposta", `true`→"Sim", `false`→"Não", `always`→"Sempre") — 9 testes unit. `app/app/ai/followups/[id]/_components/EdgeConfigPanel.tsx` (novo): painel docado (mesmo estilo do NodeConfigPanel), mostra origem→destino e um Select com as opções exatas do nó de origem. `FlowCanvas.tsx`: `onEdgeClick` seleciona a aresta (fecha o painel de nó, e vice-versa — mutuamente exclusivos), `edgesForRender` (memo) injeta `label` derivado de `data.condition` em TODA aresta pro fio mostrar "positivo"/"Sem resposta"/"Sempre"/"Sim"/"Não" (React Flow's built-in edge label, sem edge customizado — confirmado no dist instalado que `BaseEdge`/`EdgeText` já suportam `label` nos 4 tipos default). `graph-mappers.ts`: só um `export` adicionado em `toFlowNode` (já existia, não exportada) — reuso, ZERO mudança de comportamento/round-trip.
@@ -40,6 +40,62 @@
 - 2026-07-21 (Task 4.1): **`AdminClient` do engine NÃO é `SupabaseClient`** — é uma interface própria e estreita (poucos métodos nomeados: claim/loadGraph/loadLeadFacts/loadEvents/insertEvent/updateEnrollment/loadPointerName/insertDeadInbox). Motivo: `tests/invariants/**` roda contra Postgres cru (`pg.Pool`, sem PostgREST — `NEXT_PUBLIC_SUPABASE_URL` aponta pra porta inalcançável de propósito no `vitest.db.config.ts`), então um `AdminClient=SupabaseClient` real seria intestável ali. `lib/followup/engine.ts` exporta `createSupabaseAdminClient(admin)` pra produção (ainda sem consumidor — a rota de cron é task futura) e o teste DB implementa o adapter `pg`-puro inline. **Próximas tasks que precisarem de uma rota real usando o engine devem usar `createSupabaseAdminClient`, não reinventar.**
 
 ## Log de avanços (mais recente primeiro)
+
+- 2026-07-23: **Task 8.3 (jornada) ✅ — `tests/e2e/followup-journey.spec.ts`, a prova ponta-a-ponta que amarra
+  o sistema inteiro: silêncio → enroll (gate do agente) → engine avança nó a nó → resposta do lead →
+  classify roteia → outcome → fila.**
+  **O seam de LLM (honestidade real-vs-injetado, explícito no arquivo e no report):** dev gateway não tem
+  model ids reais utilizáveis — a spec NUNCA roda um agente de IA de verdade. Ela chama
+  `completeTurnForEnrollment` (turn-bridge.ts) — a MESMA função que o worker 24/7 chamaria depois de uma
+  chamada real de LLM — com resultado CONTROLADO (`{kind:'sent'}` no nó action, `{kind:'classified',
+  class:'positivo'}` no ai_classify). TUDO o resto é real: build/publish/link do fluxo na UI, silence sweep
+  gateado por agente publicado, engine avançando nó a nó via tick real do cron (`fn_claim_due_followup_
+  enrollments`), enqueue real em `job_queue`, roteamento de aresta, event_log real (`emit_event` +
+  `event-log-drain`) acordando `reactivity.ts`, fila.
+  **`scripts/e2e-followup-journey-helpers.ts` (novo)** — CLI de subcomandos (pg direto via `SUPABASE_DB_URL`,
+  mesmo `createPgAdminClient` de produção que o worker 24/7 usa) cobrindo o que a API pública genuinamente não
+  expõe: `seed-silent-contact` (contato+conversa com `last_inbound_at` no passado), `fast-forward-enrollment`
+  (pula os 5min/15min reais de wait/grace sem dormir), `simulate-inbound` (insere `messages` + chama
+  `emit_event('message.received', ...)` — a MESMA função que `lib/waha/ingest.ts` chama no webhook real),
+  `complete-turn` (o seam acima), `find-job`/`get-enrollment`/`find-enrollment`/`list-events` (leitura de
+  prova), `cleanup-contact`/`cleanup-flow-enrollments` (teardown).
+  **Achado de UI real (não bypass):** `trigger_config` (kind='silence', threshold) não tem NENHUM controle no
+  canvas do builder ainda — confirmado lendo `NodeConfigPanel.tsx` (o branch `trigger` só mostra texto
+  explicativo). A spec seta via `PATCH /api/v1/ai/followup-flows/:id` — o MESMO endpoint que `handoff_policy`
+  já usa no PublishBar, só sem widget dedicado ainda. Registrado como gap de UI conhecido, não escondido.
+  **Achado operacional sério (2ª rodada, corrigido antes de fechar a task):** o gatilho de silêncio é
+  CROSS-CONTATO por design (varre a org inteira) — uma 1ª tentativa que travou num timeout de teste (antes de
+  eu ajustar `test.setTimeout`) deixou um fluxo de teste `active` sem cleanup, e ele começou a enrollar
+  contatos REAIS do dev DB (`Rafael Melgaço`, `Cliente Fila E2E`, etc.) nas rodadas seguintes — 12 enrollments
+  espúrios encontrados e removidos manualmente. Fix estrutural: (1) o teste desativa o pointer IMEDIATAMENTE
+  após confirmar o próprio enrollment (não espera o fim do teste — desativar não afeta enrollments já vivos,
+  só impede o sweep de pegar mais um), (2) todo o corpo pós-enroll roda em `try/finally` com
+  `cleanup-flow-enrollments` (apaga TODO enrollment daquele pointer, não só o do contato desta run) — nunca
+  deixa um pointer `active` ou um enrollment órfão se uma asserção falhar no meio, (3) as asserções de fila
+  escopam por CONTATO+FLUXO (`.filter({hasText: flowName})`), não só contato, porque o mesmo contato pode
+  aparecer em mais de um pointer de teste entre rodadas.
+  **Fixtures de agente pra PUBLICAR (não só salvar draft):** `seed-e2e-followup-agent.ts` (Task 7.2) cria a
+  credential SEM `validated_at` e a `channel_session` nasce `STARTING` — suficiente pra salvar rascunho, mas
+  `fn_publish_ai_agent_version` exige `credential.validated_at is not null` e `channel_session.status='WORKING'`.
+  `prepare-agent-fixtures` (novo subcomando) seta os dois via UPDATE direto antes do publish — não mexe no
+  seed script original (mantém 7.2 intocado).
+  **Grafo:** trigger→wait(fixed 5min, floor do schema — `duration_ms` mínimo é 300_000, não dá pra ir mais
+  "pequeno")→action(ai_message)→ai_classify(1 classe "positivo", grace 15min — floor do schema)→3 fins
+  (positivo/no_reply/always-fallback: `validateFlowForPublish` exige as 3 arestas de saída do classify —
+  `missing_class_edge`/`missing_no_reply_edge`/`missing_always_fallback` — e o `addEdge` do React Flow recusa
+  2 arestas source→target iguais, então precisa de 3 nós de fim distintos, não 1). `steps_taken` esperado em
+  cada marco documentado inline no spec (contagem exata: trigger-advance=1, wait-start=2, wait-elapsed=3,
+  action-enqueue=4, classify-enqueue=6 — o `complete-turn('sent')` entre os dois soma +1 fora do tick).
+  **PROVA — 2 rodadas seguidas, síncronas, 1/1 verde cada** (porta 3033, `E2E_PORT=3033`): rodada 1 = 1m18s,
+  rodada 2 = 1m14s (timeout do teste elevado pra 300s via `test.setTimeout` — múltiplos round-trips reais de
+  cron/drain, mesmo padrão de `webhooks.spec.ts`). Confirmado no Postgres real após CADA rodada: 0 enrollments
+  órfãos, 0 contatos de teste remanescentes, pointer/agent desativados/arquivados. Screenshots em
+  `e2e-artifacts/followup-8.3-0{1..4}-*.png` (fluxo publicado, seção Follow-up do agente, fila com o
+  enrollment ativo, fila com o outcome "Concluído"). `npm run typecheck` 0, `npm run lint` 0 erros (117
+  warnings pré-existentes de `no-console`, mesma classe tolerada de todo `scripts/seed-e2e-*.ts`; nenhum novo
+  além do padrão). **Sem migration nesta task** (só leitura/escrita via rotas e tabelas já existentes).
+  Detalhe completo em `.superpowers/sdd/task-8.3-report.md`. **Pendente:** checklist DoD item a item, doc do
+  PRD, HANDOFF final — o brief 8.3 divide essa parte pro controller (fora do escopo desta sessão).
 
 - 2026-07-22: **Task 8.1 ✅ — gatilho de SILÊNCIO (varredura TIME-DRIVEN no cron) + primeiro consumidor real do gate `isPointerEnabledForAutomaticTrigger`.**
   **Decisão de arquitetura (dada, não descoberta aqui):** silêncio é
