@@ -8,6 +8,7 @@ import pg from 'pg';
 
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 import type { Logger } from '../obs/logger';
+import { aggregateFollowupOutcomes, type FlowOutcomeStat } from '../../followup/outcome-stats';
 
 const JUDGE_MODEL = 'claude-haiku-4-5';
 // O distiller PRECISA de modelo próprio: o flywheel roda org-wide sem turno/agent
@@ -117,6 +118,11 @@ export interface FlywheelRunResult {
   runId: string;
   judged: number;
   proposals: number;
+  /** Task 8.2 — outcomes de follow-up (converted/replied/exhausted/opted_out/
+   *  handoff/in_flight) por pointer+version, por org tocada nesta rodada
+   *  (via os turnos coletados). Fecha o loop: o flywheel passa a enxergar
+   *  quais fluxos convertem, não só a higiene de memória do turno. */
+  followupOutcomes: Array<{ organization_id: string; stats: FlowOutcomeStat[] }>;
 }
 
 export async function runFlywheelOnce(
@@ -203,7 +209,23 @@ export async function runFlywheelOnce(
       log.info('flywheel: proposta do distiller gravada (gate humano pendente)', { job_id: turn.job_id });
     }
   }
-  return { runId, judged, proposals };
+  // Task 8.2 — o sinal (followup_enrollments.outcome) já existe (Ondas 4/5);
+  // aqui só agregamos por org tocada nesta rodada (via os turnos coletados
+  // acima) e logamos, pra a rodada do flywheel surfacear "flow X converte a
+  // N%" junto do resto. Sem tabela nova: nenhum destino de persistência
+  // óbvio existe pra artefatos de rodada do flywheel (ver flywheel_judge_verdicts/
+  // flywheel_distiller_proposals no baseline) — log + retorno no resultado é
+  // suficiente por instrução do brief.
+  const orgIds = [...new Set(turns.map((t) => t.organization_id))];
+  const followupOutcomes: FlywheelRunResult['followupOutcomes'] = [];
+  for (const orgId of orgIds) {
+    const stats = await aggregateFollowupOutcomes(pool, orgId);
+    if (stats.length === 0) continue;
+    followupOutcomes.push({ organization_id: orgId, stats });
+    log.info('flywheel: outcomes de follow-up por fluxo', { run_id: runId, organization_id: orgId, stats });
+  }
+
+  return { runId, judged, proposals, followupOutcomes };
 }
 
 /** Loop agendado do flywheel (4B) — intervalo por knob; erro nunca derruba o worker. */
