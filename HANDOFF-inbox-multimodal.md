@@ -51,7 +51,7 @@
 
 ## Próximo passo exato
 
-**Todo o épico + sub-ondas 5.1/5.2/5.3 COMPLETOS e provados em conta real** (só a 5.2 falta o review final, em curso). Depois: **decidir o destino da branch** `feat/inbox-multimodal` (a main já está integrada; pronta pra PR). Follow-ups: rotacionar chave Anthropic; ffmpeg no worker de prod; agendar o cron snooze-watcher no deploy; visão nativa no turno (upgrade @ai-sdk/*); limpar dados de prova da org de teste.
+**Todo o épico + sub-ondas 5.1/5.2/5.3 COMPLETOS e provados em conta real** (só a 5.2 falta o review final, em curso). Depois: **decidir o destino da branch** `feat/inbox-multimodal` (a main já está integrada; pronta pra PR). Follow-ups: rotacionar chave Anthropic; ffmpeg no worker de prod; agendar o cron snooze-watcher no deploy; visão nativa no turno (upgrade @ai-sdk/*); limpar dados de prova da org de teste. **Melhorias 5.2 (review, não-bloqueantes):** M2 — a RLS `conversation_notes_write` deixa qualquer agent deletar nota alheia via PostgREST direto (a regra autor/manager+ vive só na rota); defense-in-depth = policy DELETE escopada a `created_by_user_id = auth.uid() OR fn_role_at_least(org,'manager')`. M3 — o modo "Nota interna" fica indisponível em conversa bloqueada (`blockedReason` faz early-return no Composer antes do toggle); anotar sobre contato bloqueado deveria ser permitido.
 
 **Follow-ups abertos (não bloqueiam o épico, dependem do Rafael):**
 - **Sub-ondas do toolkit** (5.1 rascunho da IA no composer, 5.2 notas internas de conversa, 5.3 snooze/lembrete de lead) — greenfield, cada uma com plano próprio quando o Rafael priorizar.
