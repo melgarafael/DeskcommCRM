@@ -80,7 +80,7 @@
     "resend": "^6.18.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.4",
-    "zod": "^3.23.8",
+    "zod": "^4.4.3",
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
