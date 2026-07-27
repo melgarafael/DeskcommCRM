@@ -62,8 +62,8 @@ Por debajo, cada evento se convierte en una fila en `event_log` — ningún trig
 git clone https://github.com/melgarafael/DeskcommCRM.git
 cd DeskcommCRM
 
-# 2. Node 20 + pnpm
-nvm use                    # o instala Node 20+
+# 2. Node 22 + pnpm
+nvm use                    # o instala Node 22+
 npm install -g pnpm
 pnpm install
 

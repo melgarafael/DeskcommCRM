@@ -63,8 +63,8 @@ Under the hood, every event becomes a row in `event_log` — no database trigger
 git clone https://github.com/melgarafael/DeskcommCRM.git
 cd DeskcommCRM
 
-# 2. Node 20 + pnpm
-nvm use                    # or install Node 20+
+# 2. Node 22 + pnpm
+nvm use                    # or install Node 22+
 npm install -g pnpm
 pnpm install
 

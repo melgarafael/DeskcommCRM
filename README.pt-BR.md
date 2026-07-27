@@ -62,8 +62,8 @@ Por baixo, cada evento (lead criado, tag adicionada, etc.) vira uma linha em `ev
 git clone https://github.com/melgarafael/DeskcommCRM.git
 cd DeskcommCRM
 
-# 2. Node 20 + pnpm
-nvm use                    # ou instale Node 20+
+# 2. Node 22 + pnpm
+nvm use                    # ou instale Node 22+
 npm install -g pnpm
 pnpm install
 
