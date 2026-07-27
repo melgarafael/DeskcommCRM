@@ -14,8 +14,8 @@ Key facts:
 
 ## Docs
 
-- [README (Portuguese)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.md): project overview, quickstart, stack
-- [README (English)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.en.md): English overview
+- [README (English)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.md): project overview, quickstart, stack
+- [README (Portuguese)](https://github.com/melgarafael/DeskcommCRM/blob/main/README.pt-BR.md): visão geral em português
 - [Vision & positioning](https://github.com/melgarafael/DeskcommCRM/blob/main/VISION.md): what the project believes about self-improving AI agents
 - [Architecture](https://github.com/melgarafael/DeskcommCRM/blob/main/ARCHITECTURE.md): one-page architecture
 - [Setup guide](https://github.com/melgarafael/DeskcommCRM/blob/main/docs/SETUP.md): step-by-step setup of every integration

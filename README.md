@@ -1,61 +1,62 @@
 <div align="center">
 
-🇧🇷 Português · [🇺🇸 English](README.en.md) · [🇪🇸 Español](README.es.md)
+[🇧🇷 Português](README.pt-BR.md) · 🇺🇸 English · [🇪🇸 Español](README.es.md)
 
-# 🛠️ DeskcommCRM — Sistema Operacional de Vendas com Agentes de IA
+# 🛠️ DeskcommCRM — The open-source AI Sales OS for WhatsApp
 
-**Agentes de IA que atendem, qualificam e vendem no WhatsApp — dentro de um CRM open source rodando no seu servidor.**
-**Sem mensalidade, sem feature travada, seus dados com você. A alternativa aberta a Kommo, Octadesk e Intercom.**
+**AI agents that answer, qualify and sell on WhatsApp — inside an open-source CRM running on your own server.**
+**No subscription, no gated features, your data stays yours. The open alternative to Kommo, Octadesk and Intercom.**
 
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
-[![Self-hosted](https://img.shields.io/badge/self--hosted-1%20comando-orange)](hostgator-setup-kit/)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-one%20command-orange)](hostgator-setup-kit/)
+[![CI](https://github.com/melgarafael/DeskcommCRM/actions/workflows/ci.yml/badge.svg)](https://github.com/melgarafael/DeskcommCRM/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[**🧭 Visão**](VISION.md) · [**📘 Setup Guide**](docs/SETUP.md) · [**🏗️ Arquitetura**](ARCHITECTURE.md) · [**🤝 Contribuir**](CONTRIBUTING.md) · [**📋 PRDs**](docs/prd/) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
+[**🧭 Vision**](VISION.md) · [**📘 Setup Guide**](docs/SETUP.md) · [**🏗️ Architecture**](ARCHITECTURE.md) · [**🤝 Contributing**](CONTRIBUTING.md) · [**📋 PRDs**](docs/prd/) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
 
 </div>
 
----
+## ✨ What is it
 
-> ### ☁️ Rode este CRM em produção com 1 comando
->
-> O DeskcommCRM foi desenvolvido em **parceria com a HostGator**: o [`hostgator-setup-kit/`](hostgator-setup-kit/)
-> instala o CRM completo (app + WAHA + banco) numa VPS com um único comando, e o
-> [runbook de produção](docs/runbooks/waha-hostgator.md) já assume esse ambiente.
->
-> **[👉 Assinar a VPS HostGator com desconto da parceria](https://www.hostgator.com.br/52708-141-3-52.html)** —
-> datacenter em São Paulo, ideal pro WhatsApp rodando 24/7. *(link de parceiro — assinar por ele apoia o projeto e sai mais barato)*
+**Deskcomm** comes from **Desk** + **comm** (commerce): your entire sales operation on a single desk, run by people and AI agents working together.
 
-## ✨ O que é
+The project was born as an e-commerce CRM — and the open-source community took it much further: today it runs in **clinics, real-estate agencies, info-product businesses, agencies, stores and service providers** — any business that sells over WhatsApp. The product followed that shift and became a **sales operating system**: AI agents with per-tenant RAG answer customers, qualify leads, move them through the pipeline, trigger automations and know when to hand off to a human — with the whole CRM exposed via **MCP** so agents can truly operate it. The full story is in [`VISION.md`](VISION.md).
 
-**Deskcomm** vem de **Desk** (mesa) + **comm** (comércio): **o comercial de mesa** — toda a operação de vendas do seu negócio numa mesa só, operada por pessoas e agentes de IA juntos.
+### Why it's different
 
-O projeto nasceu como CRM de e-commerce e a comunidade o levou muito além: hoje roda em **clínicas, imobiliárias, infoprodutos, agências, lojas e prestadores de serviço** — qualquer negócio que vende pelo WhatsApp. O produto acompanhou essa virada e virou um **sistema operacional de vendas**: agentes de IA com RAG por tenant atendem, qualificam, movem leads no funil, disparam automações e sabem a hora de passar pra um humano — com o CRM inteiro exposto via **MCP** pros agentes operarem de verdade. A história completa está em [`VISION.md`](VISION.md).
-
-### Diferenciais
-
-- 🤖 **Agentes de IA que operam o CRM** — RAG por tenant, análise de sentimento, handoff IA→humano auditado, IA como assignee de primeira classe e controle de budget por organização. Não é chatbot decorativo: o agente atende, qualifica e move o funil.
-- 🔁 **Agentes que se auto-aprimoram** — conversas resolvidas viram conhecimento novo na base RAG; handoffs marcam onde o agente ainda não alcança; métricas fecham o loop. Cada mês de operação torna o agente melhor, com gate humano no que importa.
-- 🧩 **Multi-nicho por design** — vocabulário configurável por pipeline: lead vira *Cliente*, *Paciente* ou *Comprador*; won vira *Pago*, *Agendado* ou *Fechado*. O mesmo core serve e-commerce (nosso berço, com integração Nuvemshop), clínica, imobiliária ou infoproduto.
-- 🔌 **MCP-ready** — MCP server interno pros agentes; contrato público pra agentes externos em construção. O CRM como infraestrutura pra qualquer agente de IA.
-- 💬 **WhatsApp-native via WAHA** — multi-número, anti-banimento (throttle + jitter + janela de horário), mídia via Storage, STOP detection.
-- 👥 **Governança de atendimento** — RBAC server-side de verdade, atribuição/transferência auditada, fila com posição, roteamento automático e escopo de visualização por papel.
-- 🏢 **Multi-tenant + LGPD by-design** — RLS em toda tabela tenant-aware com teste de isolamento como gate de CI; anonimização preferida sobre delete; audit append-only com retenção 5 anos.
-- 🖥️ **Self-hosted de verdade** — seus dados na sua VPS; instalação com 1 comando; sem versão paga, sem feature travada.
-
-### 🔌 Webhooks & Automações
-
-Todo tenant pode criar **fontes de captação**: um endereço público (`/api/v1/webhooks/in/<token>`) que recebe leads de landing pages, formulários próprios ou ferramentas como Zapier/n8n via POST (JSON ou `application/x-www-form-urlencoded`) e já entra direto no funil/estágio escolhido — sem código, sem integração customizada por tenant. Em cima dessas fontes (e dos outros eventos do CRM — lead mudou de etapa, ganhou tag, chegou mensagem no WhatsApp), o tenant monta **automações**: regras no formato QUANDO/SE/ENTÃO que disparam ações como adicionar tag, mover o lead no funil, atribuir a um atendente, mandar uma mensagem de WhatsApp ou avisar outro sistema via webhook de saída.
-
-Na UI, tudo mora em **Webhooks** na sidebar (visível só pra quem tem papel `manager`/`admin` — `agent`/`viewer` não veem o item nem acessam a rota, redirecionados pro inbox). A tela tem três abas: **Receber dados** (criar fonte, copiar o endereço/formulário pronto, disparar um lead de teste, ver os últimos recebimentos), **Automações** (montar a regra, que sempre nasce pausada até o tenant revisar e ligar) e **Atividade** (timeline de cada execução, com o resultado de cada ação e reenvio manual quando uma chamada de webhook externo falha).
-
-Por baixo, cada evento (lead criado, tag adicionada, etc.) vira uma linha em `event_log` — nenhum trigger de banco faz chamada HTTP diretamente. Quem drena essa fila e realmente dispara as automações é a rota `/api/v1/cron/event-log-drain`, chamada a cada minuto. No Vercel isso é um Cron Job gerenciado; **no kit self-host da HostGator** (`hostgator-setup-kit/`), o `install.sh`/`update.sh` já configura sozinho uma linha de `crontab` que roda essa rota todo minuto com o `INTERNAL_SECRET` do `.env` — sem esse cron ativo, fontes e automações continuam sendo criadas normalmente, mas os eventos ficam empilhados em `event_log` e nenhuma automação chega a rodar de verdade.
+- 🤖 **AI agents that operate the CRM** — per-tenant RAG, sentiment analysis, audited AI→human handoff, AI as a first-class assignee and per-org budget control. Not a decorative chatbot: the agent answers, qualifies and moves the funnel.
+- 🔁 **Self-improving agents** — resolved conversations become new RAG knowledge; handoffs mark where the agent falls short; metrics close the loop. Every month of operation makes the agent better, with a human gate where it matters.
+- 🧩 **Multi-niche by design** — configurable vocabulary per pipeline: a lead becomes a *Customer*, *Patient* or *Buyer*; "won" becomes *Paid*, *Booked* or *Closed*. The same core serves e-commerce (our birthplace, with native Nuvemshop integration), clinics, real estate or info-products.
+- 🔌 **MCP-ready** — internal MCP server for the built-in agents; a public contract for external agents is in the works. The CRM as infrastructure for any AI agent.
+- 💬 **WhatsApp-native via WAHA** — multi-number, anti-ban (throttle + jitter + time windows), media via Storage, STOP detection.
+- 👥 **Support governance** — real server-side RBAC, audited assignment/transfer, queue with position, automatic routing and per-role visibility scopes.
+- 🏢 **Multi-tenant + privacy by design (LGPD)** — RLS on every tenant-aware table with an isolation test as a CI gate; anonymization preferred over deletion; append-only audit log with 5-year retention.
+- 🖥️ **Truly self-hosted** — your data on your VPS; one-command install; no paid tier, no gated features.
 
 ---
 
-## 🚀 Quickstart (5 minutos pra ver rodando)
+> ### ☁️ Run this CRM in production with one command
+>
+> DeskcommCRM is developed in **partnership with HostGator**: the [`hostgator-setup-kit/`](hostgator-setup-kit/)
+> installs the full CRM (app + WAHA + database) on a VPS with a single command, and the
+> [production runbook](docs/runbooks/waha-hostgator.md) assumes that environment.
+>
+> **[👉 Get the HostGator VPS with the partnership discount](https://www.hostgator.com.br/52708-141-3-52.html)** —
+> São Paulo datacenter, ideal for WhatsApp running 24/7. *(partner link — subscribing through it supports the project and costs you less)*
+
+### 🔌 Webhooks & Automations
+
+Every tenant can create **capture sources**: a public endpoint (`/api/v1/webhooks/in/<token>`) that receives leads from landing pages, custom forms or tools like Zapier/n8n via POST (JSON or `application/x-www-form-urlencoded`) and drops them straight into the chosen pipeline/stage — no code, no per-tenant custom integration. On top of those sources (and the other CRM events — lead changed stage, got a tag, WhatsApp message arrived), tenants build **automations**: WHEN/IF/THEN rules that add tags, move leads, assign agents, send WhatsApp messages or notify external systems via outgoing webhooks.
+
+In the UI everything lives under **Webhooks** in the sidebar (visible only to `manager`/`admin` roles). Three tabs: **Receive data** (create a source, copy the ready-made endpoint/form, fire a test lead, see recent deliveries), **Automations** (build rules, which are always born paused until reviewed and enabled) and **Activity** (a timeline of each run, with per-action results and manual retry when an external webhook call fails).
+
+Under the hood, every event becomes a row in `event_log` — no database trigger ever makes an HTTP call. The `/api/v1/cron/event-log-drain` route drains the queue every minute. On Vercel that's a managed Cron Job; **on the HostGator self-host kit** (`hostgator-setup-kit/`), `install.sh`/`update.sh` automatically configures a `crontab` line that hits the route every minute with the `INTERNAL_SECRET` from `.env`.
+
+---
+
+## 🚀 Quickstart (see it running in 5 minutes)
 
 ```bash
 # 1. Clone
@@ -63,222 +64,166 @@ git clone https://github.com/melgarafael/DeskcommCRM.git
 cd DeskcommCRM
 
 # 2. Node 20 + pnpm
-nvm use                    # ou instale Node 20+
+nvm use                    # or install Node 20+
 npm install -g pnpm
 pnpm install
 
 # 3. Env vars
 cp .env.example .env.local
-# Edite .env.local — guia completo em docs/SETUP.md
+# Edit .env.local — full guide in docs/SETUP.md
 
-# 4. WAHA local (opcional em dev sem WhatsApp)
+# 4. Local WAHA (optional in dev without WhatsApp)
 docker compose up -d
 
-# 5. Migrations Supabase
-supabase link --project-ref <seu-ref>
+# 5. Supabase migrations
+supabase link --project-ref <your-ref>
 supabase db push
 
-# 6. Sobe o app
+# 6. Run the app
 pnpm dev
 ```
 
 App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/health>
 
-> 🆕 **Primeira vez? Não pula etapa.** [`docs/SETUP.md`](docs/SETUP.md) é o tutorial completo passo a passo de **todas as integrações** (Supabase, WAHA, Anthropic, Upstash, Sentry, Resend, Nuvemshop) — feito pra quem nunca configurou nada disso antes. ~60–90 min do zero ao app rodando.
+> 🆕 **First time? Don't skip steps.** [`docs/SETUP.md`](docs/SETUP.md) is the complete step-by-step tutorial for **every integration** (Supabase, WAHA, Anthropic, Upstash, Sentry, Resend, Nuvemshop) — written for people who have never configured any of this. ~60–90 min from zero to a running app. *(Docs are in Brazilian Portuguese; translations welcome!)*
 
 ---
 
 ## 🧱 Stack
 
-| Camada | Escolha | Por quê |
+| Layer | Choice | Why |
 |---|---|---|
-| **Frontend** | Next.js 16 App Router (Turbopack) + React 19 + TypeScript 6 estrito | Server Components + Route Handlers no mesmo repo |
-| **Estilo** | Tailwind + shadcn/ui (`new-york`, neutral) | Customizável sem lock-in |
-| **DB** | Supabase (Postgres + RLS + `vector`) | Multi-tenant nativo, embedding pra RAG |
-| **Auth** | Supabase Auth via `@supabase/ssr` | Cookie SameSite=Strict, HttpOnly |
+| **Frontend** | Next.js 16 App Router (Turbopack) + React 19 + strict TypeScript 6 | Server Components + Route Handlers in one repo |
+| **Styling** | Tailwind + shadcn/ui (`new-york`, neutral) | Customizable without lock-in |
+| **DB** | Supabase (Postgres + RLS + `vector`) | Native multi-tenancy, embeddings for RAG |
+| **Auth** | Supabase Auth via `@supabase/ssr` | SameSite=Strict, HttpOnly cookies |
 | **Realtime** | Supabase Realtime | postgres_changes + broadcast |
-| **Storage** | Supabase Storage (URLs assinadas) | Bucket privado `whatsapp-media` |
-| **WhatsApp** | WAHA Plus (engine NOWEB) | Multi-tenant, retry, S3 |
-| **Filas** | `event_log` table + workers (cron) | Sem Inngest/Trigger no MVP |
-| **Rate limit** | Upstash Redis (sliding window) | Serverless, free tier suficiente |
-| **AI** | Vercel AI SDK v7 (providers Anthropic/Google/OpenAI v4) via AI Gateway | Fallback automático, ZDR |
-| **Validação** | Zod | Input externo, env, payloads |
-| **Observability** | Sentry (com `beforeSend` sanitizado) | Sem PII no breadcrumb |
-| **Hospedagem** | Vercel (app) + Hostgator VPS Turing/SP (WAHA) | Edge + dedicado pra WhatsApp; datacenter Brasil |
+| **Storage** | Supabase Storage (signed URLs) | Private `whatsapp-media` bucket |
+| **WhatsApp** | WAHA Plus (NOWEB engine) | Multi-tenant, retry, S3 |
+| **Queues** | `event_log` table + workers (cron) | No Inngest/Trigger in the MVP |
+| **Rate limit** | Upstash Redis (sliding window) | Serverless, free tier is enough |
+| **AI** | Vercel AI SDK v7 (Anthropic/Google/OpenAI providers v4) via AI Gateway | Automatic fallback, ZDR |
+| **Validation** | Zod | External input, env, payloads |
+| **Observability** | Sentry (sanitized `beforeSend`) | No PII in breadcrumbs |
+| **Hosting** | Vercel (app) + HostGator VPS Turing/SP (WAHA) | Edge + dedicated box for WhatsApp; Brazil datacenter |
 
-Detalhes: [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
----
-
-## 📁 Estrutura
-
-```
-DeskcommCRM/
-├── app/                    # Next.js App Router
-│   ├── (admin)/            # Rotas super-admin (impersonate, tenants)
-│   ├── (public)/           # Login, recovery
-│   ├── app/                # Rotas autenticadas: inbox, kanban, contacts,
-│   │                       #   connections, ai (agentes), integrations,
-│   │                       #   metrics, lgpd, audit, team, settings
-│   └── api/v1/             # API REST canônica
-├── components/             # React (ui/, inbox/, kanban/, shell/, ...)
-├── lib/                    # supabase/, waha/, ai/, api/, routing/, env.ts
-├── hooks/
-├── supabase/migrations/    # SQL versionado (+ baseline.sql pro self-host)
-├── workers/                # consumers de event_log (IA, RAG, LGPD, rotinas)
-├── tests/{e2e,unit,invariants}/
-├── scripts/                # seeds, qa-waves, manutenção
-├── docs/                   # PRDs, specs, stories, SETUP.md
-└── hostgator-setup-kit/    # instalação self-host com 1 comando
-```
+Details: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 
-## 🧪 Testes
+## 🧪 Tests
 
 ```bash
-pnpm typecheck     # tsc --noEmit (estrito)
+pnpm typecheck     # tsc --noEmit (strict)
 pnpm lint          # eslint next/core-web-vitals
-pnpm test:unit     # Vitest (NÃO inclui tests/invariants/**)
-pnpm test:db       # Postgres efêmero + baseline install/update + invariantes
-pnpm test:e2e      # Playwright (requer dev server)
+pnpm test:unit     # Vitest (does NOT include tests/invariants/**)
+pnpm test:db       # ephemeral Postgres + baseline install/update + invariants
+pnpm test:e2e      # Playwright (requires dev server)
 ```
 
-O CI roda `typecheck`, `lint` e `test:unit` em todo PR. Um segundo job — **`invariants`** — sobe um Postgres limpo, aplica o `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e depois em modo update (provando idempotência), e roda **364 testes de invariante** distribuídos em 56 arquivos, cobrindo RBAC, atribuição, escopo de visualização, roteamento, follow-up, webhooks e automações.
+CI runs `typecheck`, `lint` and `test:unit` on every PR. A second job — **`invariants`** — boots a clean Postgres, applies `supabase/baseline.sql` in install mode (`ON_ERROR_STOP=1`) and then in update mode (proving idempotency), and runs **364 invariant tests** across 56 files covering RBAC, assignment, visibility scoping, routing, follow-up, webhooks and automations.
 
-Entre eles está o **teste de isolamento RLS**: cria 2 organizações, simula os claims JWT pelo mesmo caminho `auth.uid()` / `fn_user_org_ids()` que as policies de produção usam, e prova que um usuário da org A enxerga **zero linhas** da org B em `conversations`, `messages`, `contacts` e `crm_leads`. Antes disso, um caso de controle prova que as linhas da org B realmente existem no banco — sem ele, o teste passaria mesmo com a tabela vazia.
+Among them is the **RLS isolation test**: it creates 2 organizations, simulates JWT claims through the same `auth.uid()` / `fn_user_org_ids()` path production policies use, and proves a user of org A sees **zero rows** of org B in `conversations`, `messages`, `contacts` and `crm_leads`. A control case first proves org B's rows actually exist in the database — without it, the test would pass against an empty table.
 
 ---
 
-## 📚 Documentação
+## 📚 Documentation
 
-| Doc | O que tem |
+| Doc | What's in it |
 |---|---|
-| [`VISION.md`](VISION.md) | **Visão e posicionamento** — o que o projeto é, no que acredita e pra onde vai |
-| [`docs/SETUP.md`](docs/SETUP.md) | **Setup completo passo a passo** de todas as integrações |
-| [`CLAUDE.md`](CLAUDE.md) | Convenções não-negociáveis (leitura obrigatória pra contribuir) |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Visão de 1 página da arquitetura |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Fluxo PR + epic-executor |
-| [`docs/prd/`](docs/prd/) | PRDs (master, platform, customer 360, WhatsApp, pipeline, IA-RAG, Nuvemshop) |
-| [`docs/specs/`](docs/specs/) | Specs técnicas 01–13 (schema SQL, payloads, MCP, governança) |
-| [`docs/business-rules/`](docs/business-rules/) | Regras de negócio fora do código |
-| [`docs/DEPLOY-CHECKLIST.md`](docs/DEPLOY-CHECKLIST.md) | Preflight pré-go-live |
-| [`docs/runbooks/waha-hostgator.md`](docs/runbooks/waha-hostgator.md) | Runbook completo de WAHA em produção (VPS Hostgator) |
-| [`docs/ATUALIZANDO.md`](docs/ATUALIZANDO.md) | Como atualizar uma instalação self-host |
+| [`VISION.md`](VISION.md) | **Vision & positioning** — what the project is, what it believes, where it's going |
+| [`docs/SETUP.md`](docs/SETUP.md) | **Complete step-by-step setup** for every integration |
+| [`CLAUDE.md`](CLAUDE.md) | Non-negotiable conventions (required reading to contribute) |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | One-page architecture overview |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | PR flow |
+| [`docs/prd/`](docs/prd/) | PRDs (master, platform, customer 360, WhatsApp, pipeline, AI-RAG, Nuvemshop) |
+| [`docs/specs/`](docs/specs/) | Technical specs 01–13 (SQL schema, payloads, MCP, governance) |
+| [`docs/runbooks/waha-hostgator.md`](docs/runbooks/waha-hostgator.md) | Full production runbook for WAHA (HostGator VPS) |
+
+> Most docs are written in Brazilian Portuguese — our primary community. Translation contributions are very welcome.
 
 ---
 
-## 🤝 Contribuindo
+## 🤝 Contributing
 
-Esse projeto é open source pra comunidade. Toda contribuição é bem-vinda — desde fix de typo em doc até feature nova.
+This project is open source for the community. Every contribution is welcome — from doc typo fixes to new features.
 
-**Antes de abrir PR:**
+1. Read [`CLAUDE.md`](CLAUDE.md) (~5 min) — non-negotiable conventions (multi-tenancy, RLS, audit, privacy).
+2. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) — branch flow, commits.
+3. Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-1. Leia [`CLAUDE.md`](CLAUDE.md) (~5 min) — convenções não-negociáveis (multi-tenancy, RLS, audit, LGPD).
-2. Leia [`CONTRIBUTING.md`](CONTRIBUTING.md) — fluxo de branches, commits, epic-executor.
-3. Siga o [Código de Conduta](CODE_OF_CONDUCT.md).
-
-**Fluxo curto:**
-
-```bash
-git checkout -b feat/short-slug
-# implementa + testes
-pnpm typecheck && pnpm lint && pnpm test:unit
-git commit -m "feat(escopo): descrição"
-# abre PR — o template já traz o checklist de Definition of Done
-```
-
-**Definition of Done:** typecheck zero, lint zero, testes relevantes verdes, RLS testada se toca tabela tenant-aware, audit log emitido em mutações, migration versionada se muda schema. Detalhes em [`CLAUDE.md`](CLAUDE.md#definition-of-done).
+**Definition of Done:** zero typecheck errors, zero lint errors, relevant tests green, RLS tested if a tenant-aware table is touched, audit log emitted on mutations, versioned migration if the schema changes.
 
 ---
 
-## 🐛 Reportando bugs
+## 🐛 Reporting bugs
 
-Abra uma [issue](https://github.com/melgarafael/DeskcommCRM/issues/new/choose) — o template pede o que precisamos (ambiente, `/api/v1/health`, steps).
+Open an [issue](https://github.com/melgarafael/DeskcommCRM/issues/new/choose) — the template asks for what we need (environment, `/api/v1/health`, steps).
 
-Pra **vulnerabilidades de segurança**, **NÃO abra issue pública** — use o [relato privado de vulnerabilidades](https://github.com/melgarafael/DeskcommCRM/security/advisories/new). Detalhes em [`SECURITY.md`](SECURITY.md).
+For **security vulnerabilities**, **do NOT open a public issue** — use [private vulnerability reporting](https://github.com/melgarafael/DeskcommCRM/security/advisories/new). Details in [`SECURITY.md`](SECURITY.md).
 
 ---
 
 ## 🗺️ Roadmap
 
-### ✅ Entregue
+### ✅ Shipped
 
-- **Fundação & plataforma** — auth (MFA pra admin), multi-tenancy com RLS + teste de isolamento, RBAC 4 papéis, audit log append-only, onboarding de tenant.
-- **Atendimento WhatsApp** — inbox 3 painéis em tempo real, conexões WAHA multi-número, mídia via Storage, anti-banimento (throttle + jitter + janela de horário), STOP detection.
-- **CRM & pedidos** — kanban com vocabulário configurável por nicho (fractional indexing), customer 360, contatos, tags, integração Nuvemshop pra e-commerce.
-- **IA nativa** — agentes com RAG por tenant (pgvector), análise de sentimento, handoff IA→humano, controle de budget por org, MCP server interno.
-- **LGPD** — export e redact via workers, anonimização em cascata, consentimento auditado.
-- **Self-host** — `hostgator-setup-kit` (app + WAHA + banco com 1 comando), `baseline.sql` auto-curativo, runbook de produção.
-- **Webhooks & automação** — fontes de captação + regras QUANDO/SE/ENTÃO + gatilhos pra sistemas externos.
-- **Governança de atendimento** — RBAC server-side em toda a API, atribuição e transferência auditadas (IA como assignee de 1ª classe), visualização por papel (RLS) + métricas por atendente, roteamento automático com fila e painel de gestão, e contrato de governança pra agentes de IA externos ([`docs/specs/14`](docs/specs/14-contrato-governanca-agentes-externos.md)). Épico guiado por 100+ invariantes (G1–G6).
-- **Operação visível** — telas pro operador entender o agente: motivo da retenção anti-ban traduzido na conversa, central de avisos com severidade, controle de proteção de envio (janela/ritmo/teto) e propostas do flywheel aplicáveis como versão nova (com gate humano).
+- **Foundation & platform** — auth (MFA for admins), multi-tenancy with RLS + isolation test, 4-role RBAC, append-only audit log, tenant onboarding.
+- **WhatsApp support** — real-time 3-pane inbox, multi-number WAHA connections, media via Storage, anti-ban (throttle + jitter + time windows), STOP detection.
+- **CRM & orders** — kanban with per-niche configurable vocabulary (fractional indexing), customer 360, contacts, tags, Nuvemshop integration for e-commerce.
+- **Native AI** — agents with per-tenant RAG (pgvector), sentiment analysis, AI→human handoff, per-org budget control, internal MCP server.
+- **Privacy (LGPD)** — export and redact via workers, cascading anonymization, audited consent.
+- **Self-host** — `hostgator-setup-kit` (app + WAHA + database with one command), self-healing `baseline.sql`, production runbook.
+- **Webhooks & automation** — capture sources + WHEN/IF/THEN rules + triggers for external systems.
+- **Support governance** — server-side RBAC across the API, audited assignment/transfer (AI as a first-class assignee), per-role visibility (RLS) + per-agent metrics, automatic routing with queue and management panel, and a governance contract for external AI agents ([`docs/specs/14`](docs/specs/14-contrato-governanca-agentes-externos.md)). Epic driven by 100+ invariants (G1–G6).
+- **Visible operation** — screens that let operators understand the agent: anti-ban hold reasons translated in the conversation, a notice center with severities, send-protection controls (window/pace/cap) and flywheel proposals applicable as a new version (human-gated).
 
-### 🔮 Próximo
+### 🔮 Next
 
-- **MCP público** — capabilities do CRM expostas pro ecossistema de agentes: plugue o agente que quiser e ele opera o Deskcomm.
-- **Flywheel de auto-aprimoramento** — o loop conversa resolvida → conhecimento → agente melhor, medido e com gate humano.
-- **Templates por nicho** — pipelines e vocabulários prontos pra clínica, imobiliária, infoproduto e serviços (e-commerce já entregue).
-- **Integrações** — VTEX e Shopify via adapter pattern (Nuvemshop já entregue).
-- **Identity probabilística** — unificação de contatos entre canais.
+- **Public MCP** — CRM capabilities exposed to the agent ecosystem: plug in any agent and it operates Deskcomm.
+- **Self-improvement flywheel** — the resolved-conversation → knowledge → better-agent loop, measured and human-gated.
+- **Niche templates** — ready-made pipelines and vocabularies for clinics, real estate, info-products and services (e-commerce already shipped).
+- **Integrations** — VTEX and Shopify via the adapter pattern (Nuvemshop already shipped).
+- **Probabilistic identity** — contact unification across channels.
 
 ---
 
-## 💬 Comunidade
+## 💬 Community
 
-- **Discussões:** [GitHub Discussions](https://github.com/melgarafael/DeskcommCRM/discussions) — pra perguntas, ideias, showcase.
-- **Issues:** [GitHub Issues](https://github.com/melgarafael/DeskcommCRM/issues) — bugs e tasks.
+- **Discussions:** [GitHub Discussions](https://github.com/melgarafael/DeskcommCRM/discussions)
+- **Issues:** [GitHub Issues](https://github.com/melgarafael/DeskcommCRM/issues)
 - **Instagram:** [@melgarafael](https://www.instagram.com/melgarafael)
 - **YouTube:** [youtube.com/@melgarafael](https://www.youtube.com/@melgarafael)
 
 ---
 
-## 📜 Licença
+## 📜 License
 
-Distribuído sob a licença **MIT** — veja [`LICENSE`](LICENSE). Você pode usar, modificar
-e distribuir livremente, inclusive comercialmente. O software é fornecido **"como está",
-sem garantias** (ver cláusula de isenção no `LICENSE`).
+Distributed under the **MIT** license — see [`LICENSE`](LICENSE). You may use, modify and distribute freely, including commercially. The software is provided **"as is", without warranties**.
 
 ---
 
-## 🛟 Suporte & responsabilidades (self-host)
+## 🛟 Support & responsibilities (self-host)
 
-Este é um projeto **self-host**: cada pessoa roda o CRM na **própria infraestrutura**
-(VPS, banco Supabase e chave de IA próprios). Isso implica:
+This is a **self-hosted** project: each person runs the CRM on their **own infrastructure** (own VPS, Supabase database and AI key). That means:
 
-- **Suporte é comunitário e "as-is".** Dúvidas e bugs entram como
-  [Issues](https://github.com/melgarafael/DeskcommCRM/issues) ou
-  [Discussions](https://github.com/melgarafael/DeskcommCRM/discussions). Não há SLA nem
-  suporte garantido — é open source mantido por boa vontade.
-- **Você é responsável pela sua instalação.** Atualizações não são automáticas
-  (`bash hostgator-setup-kit/update.sh` quando quiser), e manter/backup do seu servidor
-  é com você.
-- **LGPD — atenção:** quem **hospeda** a instância é o **controlador** dos dados pessoais
-  ali tratados (clientes, conversas, pedidos), com as obrigações legais decorrentes. Os
-  mantenedores do projeto **não têm acesso** aos seus dados e **não são** controladores
-  nem operadores da sua instância.
-- **Telemetria (Sentry):** por padrão, erros **anonimizados** (CPF/telefone/e-mail
-  removidos) são enviados ao Sentry da comunidade pra ajudar a corrigir bugs que afetam
-  todos. Para **desligar**, use `SENTRY_DSN=off` no `.env`; para enviar ao **seu** Sentry,
-  use `SENTRY_DSN=<seu-dsn>`. Ver [`lib/sentry/dsn.ts`](lib/sentry/dsn.ts).
+- **Support is community-based and "as-is".** No SLA — it's open source maintained by goodwill.
+- **You are responsible for your installation**, including updates (`bash hostgator-setup-kit/update.sh`) and backups.
+- **Data protection:** whoever **hosts** the instance is the **controller** of the personal data processed there. The project maintainers **have no access** to your data.
+- **Telemetry (Sentry):** by default, **anonymized** errors (no PII) are sent to the community Sentry. Set `SENTRY_DSN=off` to disable, or `SENTRY_DSN=<your-dsn>` to use your own.
 
 ---
 
-## 🙏 Agradecimentos
+## 🙏 Acknowledgements
 
-- **WAHA** ([devlikeapro](https://waha.devlikeapro.com/)) — engine WhatsApp.
-- **Supabase** — Postgres + Auth + Storage + Realtime numa stack só.
-- **Vercel** — hosting + AI Gateway.
-- **Anthropic** (Claude) — IA conversacional.
-- **shadcn/ui** — base de componentes.
-- A comunidade que nos levou do e-commerce pra clínicas, imobiliárias, infoprodutos e além — vocês definiram o que este projeto é.
+- **WAHA** ([devlikeapro](https://waha.devlikeapro.com/)) — WhatsApp engine.
+- **Supabase**, **Vercel**, **Anthropic** (Claude), **shadcn/ui**.
+- The community that took Deskcomm from e-commerce to clinics, real estate, info-products and beyond — you defined what this project is.
 
 ---
 
 <div align="center">
 
 **Built with ☕ in Brasil** · **Made for the community**
-
-Siga o desenvolvimento: [Instagram](https://www.instagram.com/melgarafael) · [YouTube](https://www.youtube.com/@melgarafael)
 
 </div>
