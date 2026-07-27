@@ -30,7 +30,7 @@ body:
       label: Ambiente
       description: Versão do Node, pnpm, SO, e onde roda (local / Vercel / VPS HostGator).
       placeholder: |
-        Node 20.x · pnpm 9.x · macOS 15 · self-host via hostgator-setup-kit
+        Node 22.x · pnpm 9.x · macOS 15 · self-host via hostgator-setup-kit
         Output de /api/v1/health: ...
     validations:
       required: true

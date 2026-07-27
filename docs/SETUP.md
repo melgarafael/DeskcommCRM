@@ -30,7 +30,7 @@
 ## Antes de começar
 
 **O que você precisa ter instalado:**
-- **Node.js 20** — recomendamos via [nvm](https://github.com/nvm-sh/nvm). No repo, rode `nvm use` e ele puxa a versão certa.
+- **Node.js 22** — recomendamos via [nvm](https://github.com/nvm-sh/nvm). No repo, rode `nvm use` e ele puxa a versão certa. A suíte `pnpm test:db` exige Node 22+: os testes instanciam o cliente do Supabase, que precisa do `WebSocket` global (nativo só a partir do 22).
 - **Docker Desktop** — pra rodar o WAHA local. [Download](https://www.docker.com/products/docker-desktop/).
 - **pnpm** — `npm install -g pnpm` (gerenciador de pacotes que usamos).
 - **Git** — você já tem se clonou o repo.

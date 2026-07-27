@@ -149,7 +149,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 ## Como rodar local
 
 ```bash
-nvm use                    # node 20
+nvm use                    # node 22
 npm install
 cp .env.example .env.local  # preencher
 docker compose up -d        # WAHA local
