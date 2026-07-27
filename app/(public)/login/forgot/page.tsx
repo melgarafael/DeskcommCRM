@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { ForgotPasswordForm } from "@/components/auth/ForgotPasswordForm";
 
-export const metadata = { title: "Recuperar senha — DeskcommCRM" };
+export const metadata = { title: "Recuperar senha" };
 
 export default function ForgotPasswordPage() {
   return (

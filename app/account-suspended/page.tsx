@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 export const metadata = {
-  title: "Conta suspensa — DeskcommCRM",
+  title: "Conta suspensa",
 };
 
 export default function AccountSuspendedPage() {

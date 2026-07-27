@@ -133,6 +133,7 @@ Among them is the **RLS isolation test**: it creates 2 organizations, simulates 
 |---|---|
 | [`VISION.md`](VISION.md) | **Vision & positioning** — what the project is, what it believes, where it's going |
 | [`docs/SETUP.md`](docs/SETUP.md) | **Complete step-by-step setup** for every integration |
+| [`docs/white-label.md`](docs/white-label.md) | **Installing for clients** — rebranding, one-install-per-client vs shared, reseller operations |
 | [`CLAUDE.md`](CLAUDE.md) | Non-negotiable conventions (required reading to contribute) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | One-page architecture overview |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | PR flow |

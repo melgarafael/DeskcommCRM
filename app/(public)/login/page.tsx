@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 import { LoginForm } from "@/components/auth/LoginForm";
+import { branding } from "@/lib/branding";
 
-export const metadata = { title: "Entrar — DeskcommCRM" };
+export const metadata = { title: "Entrar" };
 
 export default async function LoginPage({
   searchParams,
@@ -14,7 +15,7 @@ export default async function LoginPage({
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">Entrar</h1>
-        <p className="text-sm text-muted-foreground">DeskcommCRM</p>
+        <p className="text-sm text-muted-foreground">{branding().name}</p>
       </div>
       {reset === "success" && (
         <div

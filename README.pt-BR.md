@@ -156,6 +156,7 @@ Entre eles está o **teste de isolamento RLS**: cria 2 organizações, simula os
 |---|---|
 | [`VISION.md`](VISION.md) | **Visão e posicionamento** — o que o projeto é, no que acredita e pra onde vai |
 | [`docs/SETUP.md`](docs/SETUP.md) | **Setup completo passo a passo** de todas as integrações |
+| [`docs/white-label.md`](docs/white-label.md) | **Instalar para clientes** — trocar a marca, uma instalação por cliente vs compartilhada, operação de revenda |
 | [`CLAUDE.md`](CLAUDE.md) | Convenções não-negociáveis (leitura obrigatória pra contribuir) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Visão de 1 página da arquitetura |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Fluxo PR + epic-executor |

@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 import { SignupForm } from "@/components/auth/SignupForm";
+import { branding } from "@/lib/branding";
 
-export const metadata = { title: "Criar conta — DeskcommCRM" };
+export const metadata = { title: "Criar conta" };
 
 export default function SignupPage() {
   return (
@@ -10,7 +11,7 @@ export default function SignupPage() {
       <div className="space-y-1.5 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">Criar conta</h1>
         <p className="text-sm text-muted-foreground">
-          Comece a usar o DeskcommCRM em minutos
+          Comece a usar o {branding().name} em minutos
         </p>
       </div>
       <SignupForm />

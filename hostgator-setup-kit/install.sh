@@ -105,6 +105,11 @@ ask SUPABASE_DB_URL   "Supabase DB connection string (Settings > Database)" "" s
 ask ANTHROPIC_API_KEY "Chave da Anthropic (IA)" "" secret
 ask OWNER_EMAIL       "E-mail do primeiro admin (dono)"
 ask OWNER_PASSWORD    "Senha do primeiro admin" "" secret
+# Marca da instalação. Fica por último de propósito: é opcional, e perguntar no
+# meio das credenciais faria parecer obrigatório. Enter aceita o default.
+# Quem instala para clientes troca aqui e a marca vale em toda a interface, sem
+# editar código — patch em código se perderia no próximo update.sh.
+ask APP_NAME          "Nome que aparece na interface (Enter para o padrão)" "DeskcommCRM"
 
 # Derivados
 NEXT_PUBLIC_APP_URL="https://${DOMAIN}"
@@ -145,6 +150,10 @@ SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
 SUPABASE_DB_URL=${SUPABASE_DB_URL}
 NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 NEXT_PUBLIC_ADMIN_URL=${NEXT_PUBLIC_ADMIN_URL}
+# Marca da instalação (white-label). Preencha APP_LOGO_URL com a URL de uma
+# imagem pública para trocar o texto por logo na sidebar. Ver lib/branding.ts.
+APP_NAME=${APP_NAME}
+APP_LOGO_URL=${APP_LOGO_URL:-}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 AI_GATEWAY_API_KEY=${AI_GATEWAY_API_KEY:-}
 INTERNAL_SECRET=${INTERNAL_SECRET}

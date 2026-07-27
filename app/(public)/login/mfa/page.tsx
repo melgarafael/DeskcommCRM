@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MfaForm } from "@/components/auth/MfaForm";
 
-export const metadata = { title: "Verificação em duas etapas — DeskcommCRM" };
+export const metadata = { title: "Verificação em duas etapas" };
 
 export default async function MfaChallengePage({
   searchParams,

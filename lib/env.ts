@@ -133,6 +133,13 @@ const schema = z.object({
     .string()
     .url()
     .default("http://localhost:3000"),
+
+  // Marca da instalação (white-label) — ver lib/branding.ts.
+  // Sem prefixo NEXT_PUBLIC_ de propósito: essas seriam queimadas no bundle
+  // durante o build da imagem, e o self-hoster roda uma imagem pré-buildada.
+  // O <PublicEnvScript/> injeta os valores em runtime.
+  APP_NAME: z.string().optional().default(""),
+  APP_LOGO_URL: z.string().optional().default(""),
 });
 
 let parsed = schema.safeParse(process.env);

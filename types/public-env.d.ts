@@ -10,6 +10,9 @@ interface PublicEnv {
   NEXT_PUBLIC_SUPABASE_URL?: string;
   NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
   SENTRY_DSN?: string;
+  /** Marca da instalação (white-label). Ver `lib/branding.ts`. */
+  APP_NAME?: string;
+  APP_LOGO_URL?: string;
 }
 
 interface Window {

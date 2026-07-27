@@ -132,6 +132,7 @@ Entre ellos está el **test de aislamiento RLS**: crea 2 organizaciones, simula 
 |---|---|
 | [`VISION.md`](VISION.md) | **Visión y posicionamiento** — qué es el proyecto, en qué cree, hacia dónde va |
 | [`docs/SETUP.md`](docs/SETUP.md) | **Instalación completa paso a paso** de todas las integraciones |
+| [`docs/white-label.md`](docs/white-label.md) | **Instalar para clientes** — cambiar la marca, una instalación por cliente vs compartida, operación de reventa |
 | [`CLAUDE.md`](CLAUDE.md) | Convenciones no negociables (lectura obligatoria para contribuir) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Visión de 1 página de la arquitectura |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Flujo de PRs |

@@ -1,6 +1,6 @@
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
 
-export const metadata = { title: "Nova senha — DeskcommCRM" };
+export const metadata = { title: "Nova senha" };
 
 export default function ResetPasswordPage() {
   return (

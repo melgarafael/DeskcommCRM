@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Atkinson_Hyperlegible, IBM_Plex_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { branding } from "@/lib/branding";
 import { ThemeProvider } from "@/lib/theme";
 import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
@@ -20,26 +21,36 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-mono",
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "Deskcomm — CRM operacional para e-commerce",
-    template: "%s · Deskcomm",
-  },
-  description:
-    "Centralize WhatsApp, e-mail e Instagram em um único atendimento. IA que resolve sozinha o que dá pra resolver, time humano focado no que importa. Multi-tenant, LGPD-nativo, sob medida pra operações brasileiras.",
-  applicationName: "Deskcomm",
-  authors: [{ name: "Deskcomm" }],
-  keywords: [
-    "CRM",
-    "atendimento",
-    "WhatsApp",
-    "e-commerce",
-    "IA conversacional",
-    "LGPD",
-    "multi-tenant",
-  ],
-  robots: { index: false, follow: false },
-};
+/**
+ * Metadata dinâmica (não `export const metadata`) para a marca ser lida em RUNTIME.
+ * Constante seria resolvida durante o `next build`, e a imagem self-host — que é
+ * pré-buildada — carregaria a nossa marca para sempre. Ver `lib/branding.ts`.
+ *
+ * O `template` é o que faz a marca existir em UM lugar só: as páginas filhas
+ * declaram apenas o próprio nome ("Entrar") e herdam o sufixo daqui.
+ */
+export function generateMetadata(): Metadata {
+  const { name } = branding();
+  return {
+    title: {
+      default: `${name} — atendimento e vendas por WhatsApp com agentes de IA`,
+      template: `%s · ${name}`,
+    },
+    description:
+      "Centralize o atendimento por WhatsApp num funil só. Agentes de IA resolvem o que dá pra resolver e passam para o time humano o que importa — com tudo registrado. Multi-tenant, LGPD-nativo, feito para operações brasileiras.",
+    applicationName: name,
+    authors: [{ name }],
+    keywords: [
+      "CRM",
+      "atendimento",
+      "WhatsApp",
+      "IA conversacional",
+      "LGPD",
+      "multi-tenant",
+    ],
+    robots: { index: false, follow: false },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: [

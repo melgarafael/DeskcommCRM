@@ -15,6 +15,7 @@ import {
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { branding } from "@/lib/branding";
 
 interface NavItem {
   href: string;
@@ -46,7 +47,7 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
       <div className="flex h-14 items-center border-b px-4">
         <div className="flex flex-col">
           <span className="text-xs uppercase tracking-wider text-muted-foreground">
-            DeskcommCRM
+            {branding().name}
           </span>
           <span className="text-sm font-semibold tracking-tight">Admin Plataforma</span>
         </div>

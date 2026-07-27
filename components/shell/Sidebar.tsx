@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
+import { branding } from "@/lib/branding";
 
 interface NavItem {
   href: string;
@@ -42,6 +43,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const canAiMemory = usePermission("ai.memory.view");
   const canWebhooks = usePermission("webhooks.manage");
 
+  const brand = branding();
+
   return (
     <aside
       className={cn(
@@ -50,8 +53,28 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
       )}
     >
       <div className={cn("flex items-center border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
-        <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>DeskcommCRM</span>
-        {collapsed && <span aria-hidden className="text-lg font-bold text-primary">D</span>}
+        {brand.logoUrl && !collapsed ? (
+          // <img> em vez de next/image de propósito: a URL vem do .env de quem hospeda,
+          // e next/image exige allowlist de domínios fechada em build — a imagem
+          // pré-buildada rejeitaria o domínio do self-hoster. Altura fixa e largura
+          // livre porque a arte enviada tem proporção desconhecida; forçar as duas
+          // distorceria o logo de quem configurou.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={brand.logoUrl}
+            alt={brand.name}
+            className="h-7 w-auto max-w-[10rem] object-contain"
+          />
+        ) : (
+          <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
+            {brand.name}
+          </span>
+        )}
+        {collapsed && (
+          <span aria-hidden className="text-lg font-bold text-primary">
+            {brand.initial}
+          </span>
+        )}
       </div>
       <nav className="flex-1 space-y-1 p-2" aria-label="Navegação principal">
         {NAV_ITEMS.filter((item) => {
