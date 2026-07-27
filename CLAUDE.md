@@ -163,13 +163,21 @@ Ver `README.md` pra detalhes de setup.
 ## Testes
 
 ```bash
-npm run typecheck   # tsc --noEmit (estrito)
-npm run lint        # eslint next/core-web-vitals
-npm run test:unit   # Vitest
-npm run test:e2e    # Playwright
+pnpm typecheck   # tsc --noEmit (estrito)
+pnpm lint        # eslint next/core-web-vitals
+pnpm test:unit   # Vitest (NÃO inclui tests/invariants/** — ver abaixo)
+pnpm test:db     # Postgres efêmero + baseline install/update + 364 invariantes
+pnpm test:e2e    # Playwright (requer dev server)
 ```
 
-CI deve rodar todos antes de merge. Teste de isolamento RLS é gate obrigatório.
+**Os invariantes não estão no `test:unit`.** `vitest.config.ts` exclui `tests/invariants/**` de propósito: essa suíte precisa de um Postgres real e roda via `vitest.db.config.ts`, orquestrada por `scripts/test-db.sh`. Rodar só `pnpm test:unit` e concluir "está tudo verde" é um falso verde — o isolamento RLS não foi exercitado.
+
+O CI (`.github/workflows/ci.yml`) tem dois jobs em paralelo, ambos obrigatórios antes de merge:
+
+- **`verify`** — typecheck + lint + test:unit.
+- **`invariants`** — `pnpm test:db`: sobe `pgvector/pgvector:pg17`, aplica `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e update (idempotência), e roda os 364 testes de invariante, incluindo o de isolamento RLS entre 2 organizações.
+
+Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webhooks ou automações: rode `pnpm test:db` **localmente** antes de abrir PR. É o único caminho que exercita o `baseline.sql` que o self-hoster realmente aplica.
 
 ---
 

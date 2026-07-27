@@ -115,11 +115,14 @@ Details: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 ```bash
 pnpm typecheck     # tsc --noEmit (strict)
 pnpm lint          # eslint next/core-web-vitals
-pnpm test:unit     # Vitest
+pnpm test:unit     # Vitest (does NOT include tests/invariants/**)
+pnpm test:db       # ephemeral Postgres + baseline install/update + invariants
 pnpm test:e2e      # Playwright (requires dev server)
 ```
 
-CI runs everything before merge. **The RLS isolation test is a mandatory gate** — it creates 2 tenants and verifies no leakage. The **governance invariants suite** (100+ tests) locks down RBAC, assignment, scoping and routing against regressions.
+CI runs `typecheck`, `lint` and `test:unit` on every PR. A second job — **`invariants`** — boots a clean Postgres, applies `supabase/baseline.sql` in install mode (`ON_ERROR_STOP=1`) and then in update mode (proving idempotency), and runs **364 invariant tests** across 56 files covering RBAC, assignment, visibility scoping, routing, follow-up, webhooks and automations.
+
+Among them is the **RLS isolation test**: it creates 2 organizations, simulates JWT claims through the same `auth.uid()` / `fn_user_org_ids()` path production policies use, and proves a user of org A sees **zero rows** of org B in `conversations`, `messages`, `contacts` and `crm_leads`. A control case first proves org B's rows actually exist in the database — without it, the test would pass against an empty table.
 
 ---
 
@@ -175,8 +178,6 @@ For **security vulnerabilities**, **do NOT open a public issue** — use [privat
 - **Visible operation** — screens that let operators understand the agent: anti-ban hold reasons translated in the conversation, a notice center with severities, send-protection controls (window/pace/cap) and flywheel proposals applicable as a new version (human-gated).
 
 ### 🔮 Next
-
-- **Phase FG** — the Vendaval agent consumes governance via `ai_dispatch_mode=external` 🔜 *(awaiting owner prioritization)*
 
 - **Public MCP** — CRM capabilities exposed to the agent ecosystem: plug in any agent and it operates Deskcomm.
 - **Self-improvement flywheel** — the resolved-conversation → knowledge → better-agent loop, measured and human-gated.

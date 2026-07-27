@@ -115,11 +115,14 @@ Detalles: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 ```bash
 pnpm typecheck     # tsc --noEmit (estricto)
 pnpm lint          # eslint next/core-web-vitals
-pnpm test:unit     # Vitest
+pnpm test:unit     # Vitest (NO incluye tests/invariants/**)
+pnpm test:db       # Postgres efímero + baseline install/update + invariantes
 pnpm test:e2e      # Playwright (requiere dev server)
 ```
 
-CI ejecuta todo antes del merge. **El test de aislamiento RLS es un gate obligatorio** — crea 2 tenants y verifica que no haya fugas. La suite de **invariantes de gobernanza** (100+ tests) bloquea regresiones de RBAC, asignación, alcance y enrutamiento.
+El CI ejecuta `typecheck`, `lint` y `test:unit` en cada PR. Un segundo job — **`invariants`** — levanta un Postgres limpio, aplica `supabase/baseline.sql` en modo install (`ON_ERROR_STOP=1`) y luego en modo update (probando idempotencia), y ejecuta **364 tests de invariante** repartidos en 56 archivos, cubriendo RBAC, asignación, alcance de visualización, enrutamiento, follow-up, webhooks y automatizaciones.
+
+Entre ellos está el **test de aislamiento RLS**: crea 2 organizaciones, simula los claims JWT por el mismo camino `auth.uid()` / `fn_user_org_ids()` que usan las policies de producción, y prueba que un usuario de la org A ve **cero filas** de la org B en `conversations`, `messages`, `contacts` y `crm_leads`. Antes, un caso de control prueba que las filas de la org B realmente existen en la base — sin él, el test pasaría contra una tabla vacía.
 
 ---
 
@@ -175,8 +178,6 @@ Para **vulnerabilidades de seguridad**, **NO abras un issue público** — usa e
 - **Operación visible** — pantallas para que el operador entienda al agente: motivo de la retención anti-baneo traducido en la conversación, central de avisos con severidades, control de protección de envío (ventana/ritmo/tope) y propuestas del flywheel aplicables como versión nueva (con compuerta humana).
 
 ### 🔮 Próximo
-
-- **Fase FG** — el agente Vendaval consume la gobernanza vía `ai_dispatch_mode=external` 🔜 *(esperando priorización del dueño)*
 
 - **MCP público** — capacidades del CRM expuestas al ecosistema de agentes: conecta el agente que quieras y opera Deskcomm.
 - **Flywheel de auto-mejora** — el ciclo conversación resuelta → conocimiento → agente mejor, medido y con compuerta humana.

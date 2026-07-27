@@ -139,11 +139,14 @@ DeskcommCRM/
 ```bash
 pnpm typecheck     # tsc --noEmit (estrito)
 pnpm lint          # eslint next/core-web-vitals
-pnpm test:unit     # Vitest
+pnpm test:unit     # Vitest (NÃO inclui tests/invariants/**)
+pnpm test:db       # Postgres efêmero + baseline install/update + invariantes
 pnpm test:e2e      # Playwright (requer dev server)
 ```
 
-CI roda todos antes de merge. **Teste de isolamento RLS é gate obrigatório** — cria 2 tenants e verifica não-vazamento. A suíte de **invariantes de governança** (100+ testes) trava regressões de RBAC, atribuição, escopo e roteamento.
+O CI roda `typecheck`, `lint` e `test:unit` em todo PR. Um segundo job — **`invariants`** — sobe um Postgres limpo, aplica o `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e depois em modo update (provando idempotência), e roda **364 testes de invariante** distribuídos em 56 arquivos, cobrindo RBAC, atribuição, escopo de visualização, roteamento, follow-up, webhooks e automações.
+
+Entre eles está o **teste de isolamento RLS**: cria 2 organizações, simula os claims JWT pelo mesmo caminho `auth.uid()` / `fn_user_org_ids()` que as policies de produção usam, e prova que um usuário da org A enxerga **zero linhas** da org B em `conversations`, `messages`, `contacts` e `crm_leads`. Antes disso, um caso de controle prova que as linhas da org B realmente existem no banco — sem ele, o teste passaria mesmo com a tabela vazia.
 
 ---
 
@@ -212,8 +215,6 @@ Pra **vulnerabilidades de segurança**, **NÃO abra issue pública** — use o [
 - **Operação visível** — telas pro operador entender o agente: motivo da retenção anti-ban traduzido na conversa, central de avisos com severidade, controle de proteção de envio (janela/ritmo/teto) e propostas do flywheel aplicáveis como versão nova (com gate humano).
 
 ### 🔮 Próximo
-
-- **Fase FG** — agente Vendaval consome a governança via `ai_dispatch_mode=external` 🔜 *(aguardando priorização do dono)*
 
 - **MCP público** — capabilities do CRM expostas pro ecossistema de agentes: plugue o agente que quiser e ele opera o Deskcomm.
 - **Flywheel de auto-aprimoramento** — o loop conversa resolvida → conhecimento → agente melhor, medido e com gate humano.

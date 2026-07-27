@@ -148,7 +148,7 @@ const DOCS = versionados("*.md").filter(
  * sozinha.
  */
 const LEGADO = new Set([
-  "HANDOFF-inbox-multimodal.md",
+  "docs/handoffs/HANDOFF-inbox-multimodal.md",
   "HANDOFF-operacao-visivel.md",
   "HANDOFF.md",
   "docs/superpowers/plans/2026-07-21-onda0-fundacao-midia.md",
@@ -177,7 +177,13 @@ function refsNormalizadas(doc: string): string[] {
     ...new Set(
       refs.map((ref) => {
         const limpa = ref.replace(/^\.\//, "");
-        const base = dir === "." ? "evidence" : dir;
+        // `docs/handoffs/` conta como raiz: são handoffs ARQUIVADOS que nasceram
+        // na raiz do repo e citam evidência sem prefixo, como todo doc de raiz.
+        // Arquivar o documento não move as imagens — elas seguem em `evidence/`.
+        // Sem este caso o guarda procuraria as imagens dentro de `docs/handoffs/`
+        // e reprovaria documento correto por um caminho que ele mesmo inventou —
+        // exatamente o defeito que o comentário acima já mandou não repetir.
+        const base = dir === "." || dir === "docs/handoffs" ? "evidence" : dir;
         // Sem diretório → resolve contra a pasta do documento.
         if (!limpa.includes("/")) return path.posix.join(base, limpa);
         // Subpasta REAL de evidence/ → também resolve. Aceitar a referência sem

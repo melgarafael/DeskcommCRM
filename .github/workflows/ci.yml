@@ -29,3 +29,28 @@ jobs:
 
       - name: Unit tests
         run: pnpm test:unit
+
+  # Gate de isolamento multi-tenant + invariantes de governança.
+  # Job separado de propósito: roda em paralelo ao verify (não atrasa o feedback
+  # rápido) e vira um check nomeado, que é o que a doutrina de RLS exige provar.
+  # scripts/test-db.sh sobe pgvector/pgvector:pg17, aplica supabase/baseline.sql
+  # em modo install (ON_ERROR_STOP=1) e update (idempotência), e roda
+  # tests/invariants/** contra ele. Invocar via `pnpm test:db` é o que põe
+  # node_modules/.bin no PATH que o script herda para chamar `vitest`.
+  invariants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: RLS isolation + governance invariants
+        run: pnpm test:db
