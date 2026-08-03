@@ -122,7 +122,10 @@ jobs:
             smoke.spec.ts auth.spec.ts error-pages.spec.ts \
             password-recovery.spec.ts signup-journey.spec.ts \
             rbac-roles.spec.ts inbox-scope.spec.ts reset-password-mfa.spec.ts \
-            degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts
+            degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts \
+            followup-builder.spec.ts followup-queue.spec.ts \
+            kanban-owner-filter.spec.ts queue-assign.spec.ts \
+            risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
         env:
           INTERNAL_SECRET: ci-placeholder-nao-e-segredo
           CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
@@ -141,16 +144,15 @@ jobs:
           {
             echo "## E2E — cobertura deste job"
             echo ""
-            echo "**Rodou (10 de 20 specs):** smoke, auth, error-pages, password-recovery,"
+            echo "**Rodou (17 de 20 specs):** smoke, auth, error-pages, password-recovery,"
             echo "signup-journey, rbac-roles, inbox-scope, reset-password-mfa,"
-            echo "degradacao-silenciosa, vps-webhook-outbound-ssrf."
+            echo "degradacao-silenciosa, vps-webhook-outbound-ssrf, followup-builder,"
+            echo "followup-queue, kanban-owner-filter, queue-assign, risk-radar,"
+            echo "invite-lifecycle, system-update."
             echo ""
-            echo "**Não rodou (10):**"
+            echo "**Não rodou (3) — todas por dependência externa:**"
             echo "- precisa de WAHA: followup-journey, webhooks"
-            echo "- precisa de WAHA + Redis + Resend + Nuvemshop: vps-fresh-onboarding"
-            echo "- precisa de seed próprio: followup-builder, followup-queue,"
-            echo "  kanban-owner-filter, queue-assign, risk-radar, invite-lifecycle,"
-            echo "  system-update"
+            echo "- precisa de WAHA + Redis + Resend + Nuvemshop: vps-fresh-onboarding (P0)"
             echo ""
             echo "Expandir é trabalho de seguimento — issue #63."
           } >> "$GITHUB_STEP_SUMMARY"
