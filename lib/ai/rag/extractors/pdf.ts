@@ -69,6 +69,25 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
     return combined;
   } catch (err) {
     if (err instanceof PdfExtractError) throw err;
+
+    // O pdfjs 6 faz `new DOMMatrix()` no topo do módulo e depende do
+    // `@napi-rs/canvas` (optionalDependency) para o polyfill. Sem esse binário —
+    // plataforma sem binding publicado, registry corporativo sem os artefatos, ou
+    // instalação com optional deps podadas — ele estoura no IMPORT, antes de ler o
+    // arquivo. A versão 4 só avisava e extraía o texto assim mesmo.
+    //
+    // Sem esta mensagem, quem instalou vê "DOMMatrix is not defined" e não tem como
+    // ligar isso a uma dependência que ele nem sabe que existe. O diagnóstico custa
+    // 4 linhas; a caçada custa uma tarde.
+    if (err instanceof Error && /DOMMatrix|@napi-rs\/canvas/.test(err.message)) {
+      throw new PdfExtractError(
+        "Extração de PDF indisponível: o binário nativo @napi-rs/canvas não foi instalado " +
+          "nesta plataforma. Reinstale as dependências SEM podar as opcionais " +
+          "(`pnpm install`, não `--no-optional`). Até lá, PDFs não são lidos.",
+        err,
+      );
+    }
+
     throw new PdfExtractError("Both pdf-parse and pdfjs-dist failed to extract text", err);
   }
 }
