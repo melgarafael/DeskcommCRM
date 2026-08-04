@@ -259,6 +259,13 @@ async function upsertContact(
   // Com `kind === "group"` (a forma antiga), acrescentar uma variante à união
   // abria esse buraco em silêncio: o TS não reclama de um `===` que deixou de
   // cobrir todos os casos. Perguntar quem PODE passar falha fechado sozinho.
+  //
+  // ⚠️ SEGUNDA CAMADA, SEM COBERTURA POSSÍVEL — e isto está escrito porque medi:
+  // trocar esta linha de volta pela denylist deixa a suíte inteira VERDE (35/35,
+  // typecheck 0). Os dois chamadores já barram o não-endereçável antes de chegar
+  // aqui, então nenhum teste consegue alcançá-la; é defesa em profundidade na
+  // fronteira com uma RPC que não valida nada. Quem mexer aqui não vai ser
+  // avisado por teste nenhum — só por este comentário.
   if (!ehEnderecavel(parsed)) return null;
   const { data, error } = await admin.rpc("fn_upsert_wa_contact" as never, {
     p_org: orgId,
