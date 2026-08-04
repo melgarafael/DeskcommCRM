@@ -40,46 +40,90 @@ const RAIZ = join(__dirname, "..", "..");
  */
 const MODULOS_PUROS = ["@/lib/leads/timeline-query"] as const;
 
-/** Importa o módulo num processo filho SEM as variáveis do app. */
+/**
+ * Mensagem que `@/lib/env` lança quando o Zod reprova o ambiente (`lib/env.ts`).
+ * O controle positivo abaixo exige ESTA mensagem, não um erro qualquer — ver lá
+ * o porquê.
+ */
+const FALHA_ESPERADA_DO_ENV = "Variáveis de ambiente inválidas";
+
+/**
+ * Importa o módulo num processo filho SEM as variáveis do app.
+ *
+ * Invoca o Node DIRETO (`process.execPath`) com o loader do tsx via `--import`,
+ * e NÃO `npx tsx`: no Windows o `npx` só existe como `npx.cmd`, e o
+ * `execFileSync` sem `shell: true` devolve ENOENT pra `npx` e EINVAL pra
+ * `npx.cmd` (mitigação do CVE-2024-27980, Node ≥18.20/20.12/22). O teste ficava
+ * vermelho na máquina de quem desenvolve no Windows por defeito do APARATO, não
+ * do módulo vigiado — e o controle positivo passava pelo motivo errado, porque
+ * ENOENT também dá `ok:false`.
+ *
+ * `shell: true` mataria o ENOENT e traria coisa pior: o `script` abaixo tem
+ * aspas, e mandá-lo por interpretador de shell é escaping esperando pra falhar.
+ * `process.execPath` é caminho absoluto — nem depende do PATH pra resolver.
+ */
 function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } {
-  const script = `import(${JSON.stringify(modulo)}).then(()=>{console.log("OK")},(e)=>{console.log("ERRO:"+String(e && e.message).split("\\n")[0]);});`;
-  // Só PATH e HOME: PATH para achar o `npx`, HOME para o cache dele. Nenhuma
-  // variável do app — é justamente a ausência delas que o teste mede.
-  // `NODE_ENV` fica de fora de propósito; o cast existe porque o tipo do Node o
-  // exige e aqui a omissão é o ponto.
+  // Nenhuma barra invertida no script: o filho só IMPRIME e quem recorta linha é
+  // o pai, logo abaixo. Escapar `\n` através de duas camadas de citação
+  // (template literal + linha de comando) é o tipo de coisa que quebra em um
+  // sistema operacional só, que é exatamente o defeito que este comentário
+  // fecha.
+  const script = `import(${JSON.stringify(modulo)}).then(()=>console.log("OK"),(e)=>console.log("ERRO:"+(e && e.message)));`;
+  // Só PATH e HOME: PATH porque processo filho sem PATH é campo minado, HOME
+  // pro cache do tsx. Nenhuma variável do app — é justamente a ausência delas
+  // que o teste mede. `NODE_ENV` fica de fora de propósito; o cast existe porque
+  // o tipo do Node o exige e aqui a omissão é o ponto.
   const limpo = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
   } as unknown as NodeJS.ProcessEnv;
   try {
-    const saida = execFileSync("npx", ["tsx", "--eval", script], {
+    const saida = execFileSync(process.execPath, ["--import", "tsx", "--eval", script], {
       cwd: RAIZ,
       env: limpo,
       encoding: "utf8",
       timeout: 120_000,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    return { ok: saida.includes("OK"), erro: saida.trim() };
+    // Linha EXATA, não `includes("OK")`: mensagem de erro que por acaso contenha
+    // "OK" não pode virar sucesso. O `trim()` também come o `\r` do Windows.
+    const linhas = saida
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    return { ok: linhas.includes("OK"), erro: linhas.join(" | ").slice(0, 400) };
   } catch (e) {
     return { ok: false, erro: e instanceof Error ? e.message.slice(0, 400) : String(e) };
   }
 }
 
 describe("módulo de função pura importa sem ambiente", () => {
-  // Timeout explícito: estes dois casos abrem um PROCESSO FILHO (`npx tsx`), que
-  // custa ~5s em máquina livre e mais em máquina carregada — acima do padrão de
-  // 5s do vitest. O timeout interno do execFileSync já é 120s; quem estourava
-  // era o do vitest, e o teste ficava vermelho por LENTIDÃO, não por defeito.
-  // Justamente o estrago que o cabeçalho deste arquivo descreve: main vermelha
-  // travando PR de quem não mexeu em nada (aconteceu no PR #81, que só mexia em
-  // documentação).
+  // Timeout explícito: estes dois casos abrem um PROCESSO FILHO (`node --import
+  // tsx`), que custa ~5s em máquina livre e mais em máquina carregada — acima do
+  // padrão de 5s do vitest. O timeout interno do execFileSync já é 120s; quem
+  // estourava era o do vitest, e o teste ficava vermelho por LENTIDÃO, não por
+  // defeito. Justamente o estrago que o cabeçalho deste arquivo descreve: main
+  // vermelha travando PR de quem não mexeu em nada (aconteceu no PR #81, que só
+  // mexia em documentação).
   it("o aparato consegue detectar o defeito (controle positivo)", { timeout: 60_000 }, () => {
-    // Sem isto, um `npx tsx` que falhasse por qualquer motivo daria "ok:false"
-    // e o teste principal ficaria vermelho pelo motivo errado — ou, pior, um
-    // script que sempre imprime OK deixaria tudo verde medindo nada.
+    // Sem isto, um processo filho que falhasse por qualquer motivo daria
+    // "ok:false" e o teste principal ficaria vermelho pelo motivo errado — ou,
+    // pior, um script que sempre imprime OK deixaria tudo verde medindo nada.
     // `@/lib/env` DEVE falhar sem ambiente: é literalmente o trabalho dele.
     const controle = importaComAmbienteLimpo("@/lib/env");
     expect(controle.ok, `esperava @/lib/env FALHAR sem env, veio: ${controle.erro}`).toBe(false);
+    // `ok:false` sozinho NÃO é controle: ENOENT do spawn, tsx ausente ou typo no
+    // caminho também dão `ok:false`, e aí o aparato estaria quebrado com o
+    // controle verde — o "medir nada e ficar verde" que o cabeçalho proíbe. Só a
+    // mensagem do Zod prova que o filho SUBIU, importou o módulo e reprovou o
+    // ambiente. Se `lib/env.ts` mudar essa mensagem, atualize a constante.
+    expect(
+      controle.erro,
+      `o controle positivo falhou pelo motivo ERRADO: esperava a validação Zod de @/lib/env ` +
+        `("${FALHA_ESPERADA_DO_ENV}"), veio: ${controle.erro}. ` +
+        `Isso é defeito do APARATO (processo filho não subiu?), não do módulo vigiado — ` +
+        `enquanto durar, o caso abaixo não está medindo nada.`,
+    ).toContain(FALHA_ESPERADA_DO_ENV);
   });
 
   it.each(MODULOS_PUROS)("%s importa com ambiente vazio", { timeout: 60_000 }, (modulo) => {
