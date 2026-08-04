@@ -58,13 +58,26 @@ export interface WahaEnvelope {
 export type ChatIdentity =
   | { kind: "phone"; phone: string; lid: null }
   | { kind: "lid"; phone: null; lid: string } // lid = somente dígitos
-  | { kind: "group"; phone: null; lid: null };
+  | { kind: "group"; phone: null; lid: null }
+  | { kind: "unknown"; phone: null; lid: null };
 
 /**
  * Resolve um chatId WAHA em identidade canônica:
  *  - `{number}@c.us` | `@s.whatsapp.net` -> phone E.164 ("+55...")
  *  - `{lid}@lid` -> lid (somente dígitos; número protegido pelo WhatsApp)
- *  - `@g.us` | formato desconhecido -> group (skip binding CRM)
+ *  - `@g.us` -> group (skip binding CRM — descarte ESPERADO, por doutrina)
+ *  - qualquer outra coisa -> unknown (descarte que DEIXA RASTRO)
+ *
+ * A quarta variante existe porque este `return` final classificava tudo o que
+ * não reconhecia como "grupo", e o ingest descarta grupo: "não sei ler isto"
+ * virava "descarta calado" — a mesma família do defeito que sumia com a mensagem
+ * digitada no celular (PR #108), inclusive o mesmo sintoma de webhook devolvendo
+ * 200 sem erro. `@newsletter` e `@broadcast` já existem em produção e caíam
+ * aqui; o próximo formato do WhatsApp reproduziria o caso inteiro.
+ *
+ * Grupo e desconhecido têm o MESMO desfecho (não viram contato) e naturezas
+ * opostas: um é decisão de produto, o outro é buraco de conhecimento. Só o
+ * segundo é anomalia, então só ele emite evento.
  */
 export function parseChatId(chatId: string): ChatIdentity {
   if (chatId.endsWith("@g.us")) return { kind: "group", phone: null, lid: null };
@@ -75,7 +88,52 @@ export function parseChatId(chatId: string): ChatIdentity {
     const digits = chatId.replace(/@.*$/, "").replace(/^\+/, "");
     return { kind: "phone", phone: "+" + digits, lid: null };
   }
-  return { kind: "group", phone: null, lid: null };
+  return { kind: "unknown", phone: null, lid: null };
+}
+
+/** Só estes dois viram contato no CRM — ver a guarda de `upsertContact`. */
+function ehEnderecavel(parsed: ChatIdentity): boolean {
+  return parsed.kind === "phone" || parsed.kind === "lid";
+}
+
+/**
+ * O SUFIXO responde "que formato é este?"; o resto identifica uma pessoa.
+ *
+ * Registro operacional não é cópia de dado de contato — mesma linha de
+ * `markConversation`, que deliberadamente não copia o texto da mensagem. Sem
+ * isso, o log de diagnóstico vira depósito de número de telefone.
+ */
+function sufixoDeChatId(chatId: string): string {
+  const at = chatId.lastIndexOf("@");
+  if (at !== -1) return chatId.slice(at);
+  return chatId === "" ? "(vazio)" : "(sem @)";
+}
+
+/**
+ * Um chatId que não sabemos endereçar é ANOMALIA — tem que ser contável.
+ *
+ * `select count(*) from event_log where event_type = 'whatsapp.chat_id_not_recognized'`
+ * responde "o WhatsApp mudou de formato e estamos perdendo mensagem?", que antes
+ * não tinha como ser respondido: o descarte não deixava nada para trás.
+ */
+async function avisarChatNaoReconhecido(
+  admin: Admin,
+  organizationId: string,
+  sessionId: string,
+  chatId: string,
+  direction: "inbound" | "outbound",
+): Promise<void> {
+  const { error } = await admin.rpc("emit_event" as never, {
+    p_event_type: "whatsapp.chat_id_not_recognized",
+    p_entity_kind: "channel_session",
+    p_entity_id: sessionId,
+    p_payload: { sufixo: sufixoDeChatId(chatId), direction },
+    p_metadata: { severity: "warn" },
+    p_organization_id: organizationId,
+  } as never);
+  if (error) {
+    console.error("[waha.ingest] o aviso de chat não reconhecido também falhou", error.message);
+  }
 }
 
 const STOP_RX = /\b(STOP|PARAR|SAIR|UNSUBSCRIBE)\b/i;
@@ -190,7 +248,18 @@ async function upsertContact(
   chatId: string,
   notifyName: string | null,
 ): Promise<string | null> {
-  if (parsed.kind === "group") return null;
+  // ALLOWLIST, não denylist — e a diferença aqui não é estilo.
+  //
+  // `fn_upsert_wa_contact` NÃO valida `p_kind`, e `contacts.wa_identity` é coluna
+  // GERADA que só produz `phone:`/`lid:`; qualquer outro kind a deixa NULL. Como
+  // o `on conflict` da RPC é `(organization_id, wa_identity) where wa_identity is
+  // not null`, uma linha NULL nunca conflita — nasceria UM CONTATO NOVO A CADA
+  // WEBHOOK, que é exatamente o anti-pattern que a migration 0027 veio matar.
+  //
+  // Com `kind === "group"` (a forma antiga), acrescentar uma variante à união
+  // abria esse buraco em silêncio: o TS não reclama de um `===` que deixou de
+  // cobrir todos os casos. Perguntar quem PODE passar falha fechado sozinho.
+  if (!ehEnderecavel(parsed)) return null;
   const { data, error } = await admin.rpc("fn_upsert_wa_contact" as never, {
     p_org: orgId,
     p_kind: parsed.kind,
@@ -294,9 +363,17 @@ async function handleInbound(
   const chatId = p.from ?? "";
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return; // grupos não fazem binding CRM
-  if (!p.id || !chatId) return;
+  if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  // Daqui para baixo era para ser uma mensagem de verdade: se o chat não é
+  // endereçável, PERDEMOS uma — e isso precisa ser contável. O aviso fica depois
+  // das guardas acima de propósito; antes delas, todo evento de presença viraria
+  // um registro, e log que enche sozinho é log que ninguém lê.
+  if (!ehEnderecavel(parsed)) {
+    await avisarChatNaoReconhecido(admin, session.organization_id, session.id, chatId, "inbound");
+    return;
+  }
 
   const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
   if (!contactId) return;
@@ -441,8 +518,21 @@ async function handleOutboundFromUserPhone(
   const chatId = p.to ?? chatIdFromWaMessageId(p.id ?? "") ?? p.from ?? "";
   const parsed = parseChatId(chatId);
   if (parsed.kind === "group") return;
-  if (!p.id || !chatId) return;
+  if (!p.id) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
+  // defeito do #108 — mensagem que o dono digitou no celular sem `to`, sem id
+  // composto e sem `from`. Se voltar a acontecer por um formato novo, agora sai
+  // um evento em vez de silêncio.
+  //
+  // A metade `!chatId` da guarda anterior sai daqui junto: ela era condição
+  // MORTA (varri 12 valores de `to` e nenhum a disparava, porque o único falsy
+  // já era classificado como grupo uma linha acima) e voltaria a viver como
+  // duplicata desta guarda, descartando calado justamente o caso que se quer ver.
+  if (!ehEnderecavel(parsed)) {
+    await avisarChatNaoReconhecido(admin, session.organization_id, session.id, chatId, "outbound");
+    return;
+  }
 
   // ECO DO PRÓPRIO ENVIO — não duplicar.
   //

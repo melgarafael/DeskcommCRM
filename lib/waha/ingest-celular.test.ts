@@ -167,12 +167,17 @@ describe("mensagem digitada no celular do dono (fromMe)", () => {
     expect(messages).toHaveLength(1);
   });
 
-  it("o descarte era silencioso porque chatId vazio cai na classificação de grupo", async () => {
-    // `p.to ?? ""` produzia "" e `parseChatId("")` não casa nenhum sufixo
-    // conhecido → devolve `group`. O `return` executado era o do filtro de
-    // grupo, uma linha ANTES da guarda `if (!p.id || !chatId)`. Mesmo desfecho,
-    // e é por isso que não havia sequer um log: grupo é descarte esperado.
-    expect(parseChatId("")).toEqual({ kind: "group", phone: null, lid: null });
+  it("o descarte era silencioso porque chatId vazio caía na classificação de grupo", async () => {
+    // COMO ERA, e por que o defeito não deixava rastro: `p.to ?? ""` produzia ""
+    // e `parseChatId("")` não casava nenhum sufixo conhecido → devolvia `group`.
+    // O `return` executado era o do filtro de grupo, uma linha ANTES da guarda
+    // que a descrição do PR apontava. Grupo é descarte esperado, então ninguém
+    // jamais pensaria em instrumentar ali — daí o silêncio total.
+    //
+    // COMO É AGORA: string vazia é `unknown`, não `group`. A ausência de dado
+    // parou de se disfarçar de decisão de produto, e o descarte emite
+    // `whatsapp.chat_id_not_recognized`. Ver ingest-chat-desconhecido.test.ts.
+    expect(parseChatId("")).toEqual({ kind: "unknown", phone: null, lid: null });
   });
 });
 
