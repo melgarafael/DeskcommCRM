@@ -29,7 +29,7 @@
  * silenciosa — se você precisar acrescentar uma, escreva o porquê junto.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { posix } from "node:path";
 
 const FORBIDDEN = /\b(waha|WAHA|meta_cloud|graph\.facebook\.com)\b/;
 const ROOTS = ["app", "lib", "components", "workers"];
@@ -138,9 +138,17 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
 
 const DEBT = new Set(KNOWN_DEBT.flatMap((g) => g.files));
 
+/**
+ * Monta o caminho com `posix.join`, não com `join`: no Windows o `join` do SO
+ * devolve `\`, e aí nem `ALLOWED` (regex com `/`) nem `KNOWN_DEBT` (strings com
+ * `/`) casam — a catraca acusava os ~50 arquivos da dívida como novos E como
+ * stale ao mesmo tempo, derrubando o `gov:verify` inteiro. A barra é normalizada
+ * na origem para o resto do arquivo comparar um formato só. Node aceita `/` em
+ * `readdirSync`/`readFileSync` nos dois SOs.
+ */
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = join(dir, e.name);
+    const p = posix.join(dir, e.name);
     if (e.isDirectory()) return e.name === "node_modules" ? [] : walk(p);
     return /\.tsx?$/.test(e.name) ? [p] : [];
   });
