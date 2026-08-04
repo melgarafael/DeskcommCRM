@@ -6,7 +6,8 @@
 > real). Curl/API só como diagnóstico, nunca como prova de UX.
 >
 > Persona: **usuário leigo** que rodou o `install.sh` numa VPS e abriu o navegador.
-> Ambiente de referência: banco 100% zerado + `bootstrap-owner.ts` (o que o kit faz).
+> Ambiente de referência: banco 100% zerado + `bootstrap-owner.ts` (espelha o que o kit
+> faz — o `install.sh` refaz esse bootstrap em bash, não chama o script).
 
 ## Convenções
 
@@ -21,7 +22,8 @@
 ## J1 — Onboarding do primeiro usuário `[P0]`
 
 Contexto do código: sem signup público (`app/(public)/login`); primeiro usuário nasce
-do `scripts/bootstrap-owner.ts` (install.sh). Wizard: welcome → whatsapp → (nuvemshop
+do `scripts/bootstrap-owner.ts` (na VPS, do bootstrap equivalente dentro do `install.sh`).
+Wizard: welcome → whatsapp → (nuvemshop
 se `NUVEMSHOP_ENABLED`) → setup-ai → invite-team → done. Gate: `organizations.onboarded_at`.
 MFA obrigatório pra admin logo após o wizard (`MfaEnrollGate`).
 

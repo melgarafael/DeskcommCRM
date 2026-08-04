@@ -3,7 +3,8 @@
  *
  * Pré-condições (ambiente que simula o kit self-host):
  *   - banco zerado do baseline.sql (Supabase local pg17)
- *   - primeiro usuário criado via scripts/bootstrap-owner.ts (como o install.sh)
+ *   - primeiro usuário criado via scripts/bootstrap-owner.ts, que espelha o
+ *     bootstrap do install.sh (o instalador refaz o passo em bash, não chama o script)
  *   - WAHA ativo, Redis local, RESEND_API_KEY VAZIO (realidade da VPS fresca)
  *   - app em produção (next build + next start) na E2E_PORT
  *
