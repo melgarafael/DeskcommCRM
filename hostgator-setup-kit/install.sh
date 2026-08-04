@@ -490,6 +490,77 @@ eh_traefik() {  # eh_traefik <imagem> <nome>
   return 1
 }
 
+# Os nomes que os labels do docker-compose.traefik.yml precisam CITAR, lidos da
+# configuração estática do Traefik da hospedagem. Não são convenção: Easypanel
+# (comum em VPS BR) chama os entrypoints de `http`/`https`, Dokploy de
+# `web`/`websecure`. Assumir um par é aposta — e a aposta errada falha CALADA: o
+# Traefik não reclama de label apontando para entrypoint inexistente, ele só não
+# cria a rota. O `up -d` diz "Started", o domínio cai no 404 catch-all do proxy e
+# não há uma linha de log dizendo por quê. Medido em produção: Easypanel com
+# Traefik 3.6.7, exatamente esse 404.
+#
+# Duas regras vieram de medir um Traefik v3.6 de verdade, não da documentação —
+# e as duas mudam o resultado:
+#   1. nome vindo de env vira MINÚSCULA (TRAEFIK_ENTRYPOINTS_HTTP_ADDRESS → `http`);
+#      nome vindo de argumento mantém a caixa (--entryPoints.WebSecure → `WebSecure`).
+#   2. argumento não se SOMA ao ambiente, SUBSTITUI: um único
+#      `--entrypoints.X.address` apaga o mapa inteiro que veio das env vars.
+#      Ler as duas fontes juntas inventaria um entrypoint que não existe.
+#
+# Ecoa "<entrypoint da 80>|<entrypoint da 443>|<certresolver>"; campo vazio = não
+# achei, e aí quem chama fica com o default de hoje.
+traefik_nomes() {  # traefik_nomes <linhas "cmd <arg>" e "env <VAR=valor>">
+  printf '%s\n' "${1:-}" | awk '
+    # ":80", "0.0.0.0:80", "[::]:80/tcp" → 80. O /udp é o QUIC, que NÃO é o
+    # entrypoint TCP que a rota do CRM usa.
+    function porta(v) {
+      gsub(/^"|"$/, "", v)
+      if (v ~ /\/udp$/) return ""
+      sub(/\/tcp$/, "", v); sub(/^.*:/, "", v)
+      return (v ~ /^[0-9]+$/) ? v : ""
+    }
+    { fonte = $1; par = substr($0, length($1) + 2)
+      chave = par; sub(/=.*/, "", chave)
+      valor = index(par, "=") ? substr(par, index(par, "=") + 1) : ""
+      k = tolower(chave) }
+    # --entrypoints.<nome>.address=:80  (a caixa do nome é preservada)
+    fonte == "cmd" && k ~ /^--?entrypoints\.[^.]+\.address$/ {
+      nome = chave; sub(/^--?[^.]*\./, "", nome); sub(/\.[^.]*$/, "", nome)
+      p = porta(valor); if (p != "") { ep["cmd" p] = nome; tem_ep_cmd = 1 } }
+    # TRAEFIK_ENTRYPOINTS_<NOME>_ADDRESS=:80  (o Traefik minúscula o nome)
+    fonte == "env" && k ~ /^traefik_entrypoints_.+_address$/ {
+      nome = k; sub(/^[^_]*_[^_]*_/, "", nome); sub(/_[^_]*$/, "", nome)
+      p = porta(valor); if (p != "") ep["env" p] = nome }
+    # --certificatesresolvers.<nome>.acme.…
+    fonte == "cmd" && k ~ /^--?certificatesresolvers\.[^.]+\.acme\./ {
+      nome = chave; sub(/^--?[^.]*\./, "", nome); sub(/\..*/, "", nome)
+      if (cr["cmd"] == "") cr["cmd"] = nome }
+    # TRAEFIK_CERTIFICATESRESOLVERS_<NOME>_ACME_…
+    fonte == "env" && k ~ /^traefik_certificatesresolvers_.+_acme_/ {
+      nome = k; sub(/^[^_]*_[^_]*_/, "", nome); sub(/_acme_.*$/, "", nome)
+      if (cr["env"] == "") cr["env"] = nome }
+    END {
+      f = tem_ep_cmd ? "cmd" : "env"
+      printf "%s|%s|%s\n", ep[f "80"], ep[f "443"], (cr["cmd"] != "" ? cr["cmd"] : cr["env"])
+    }
+  '
+}
+
+# Aplica um nome detectado. O valor que já está no .env é do dono e MANDA — mas
+# divergir do que o proxy tem de verdade é o sintoma exato do 404 mudo, e quem
+# instalou antes desta detecção tem `websecure` gravado sem nunca ter escolhido
+# isso. Avisar é o que transforma "não abre e não sei por quê" numa linha.
+tk_nome() {  # tk_nome <NOME_DA_VAR> <detectado>
+  local var="$1" achado="${2:-}" atual="${!1:-}"
+  [ -z "$achado" ] && return 0
+  if [ -z "$atual" ]; then
+    printf -v "$var" '%s' "$achado"
+  elif [ "$atual" != "$achado" ]; then
+    c_ylw "⚠ $var='$atual' no .env, mas o Traefik desta VPS usa '$achado'."
+    c_ylw "  Mantive o seu valor. Se o site não abrir, é aqui: troque para '$achado'."
+  fi
+}
+
 # Esconde o miolo de um segredo para a tela de conferência.
 mask() {
   local v="$1"
@@ -855,6 +926,49 @@ identifique a rede dele e ponha TRAEFIK_NETWORK=<nome> no .env antes de tentar d
 fi
 TRAEFIK_NETWORK="${TRAEFIK_NETWORK:-traefik}"
 
+# Os NOMES dos entrypoints e do certresolver, pela mesma via da rede: perguntar
+# ao proxy em vez de assumir. Ver o cabeçalho de traefik_nomes para o porquê de
+# assumir ser caro aqui (o erro é mudo) e para as duas regras medidas.
+#
+# Numa re-execução com REVERSE_PROXY já no .env a detecção de proxy não roda e
+# `traefik_container` fica vazio — mas o dono das portas foi levantado assim
+# mesmo lá em cima, e é ele que interessa. É o caso de quem já instalou: é essa
+# rodada que aponta o `websecure` errado que ficou gravado.
+_tk_ct="$traefik_container"
+if [ "$REVERSE_PROXY" = "traefik" ] && [ -z "$_tk_ct" ] && eh_traefik "$dono_imagem" "$dono_portas"; then
+  _tk_ct="$dono_portas"
+fi
+if [ "$REVERSE_PROXY" = "traefik" ] && [ -n "$_tk_ct" ]; then
+  # `.Config.Cmd` traz os argumentos (inclusive num contêiner de serviço Swarm,
+  # que é como o Easypanel roda o dele) e `.Config.Env`, a config por ambiente.
+  # "|| true" pelo mesmo motivo do bloco da rede: numa atribuição o status do
+  # pipeline vira o do script. Aqui não achar nada é caso PREVISTO — Traefik
+  # configurado por traefik.yml montado não expõe nada disso, e o default cobre.
+  _tk_conf="$(docker inspect \
+    -f '{{range .Config.Cmd}}cmd {{println .}}{{end}}{{range .Config.Env}}env {{println .}}{{end}}' \
+    "$_tk_ct" 2>/dev/null || true)"
+  _tk="$(traefik_nomes "$_tk_conf" || true)"
+  _tk_resto="${_tk#*|}"
+  tk_nome TRAEFIK_ENTRYPOINT_HTTP "${_tk%%|*}"
+  tk_nome TRAEFIK_ENTRYPOINT      "${_tk_resto%%|*}"
+  tk_nome TRAEFIK_CERTRESOLVER    "${_tk_resto##*|}"
+  # Sem as barras não sobra nada = nenhum dos três nomes saiu. Comparar com "||"
+  # dava verde falso no caso em que o próprio traefik_nomes não ecoa (awk fora do
+  # PATH): a mensagem diria "detectei" mostrando os defaults.
+  if [ -z "${_tk//|/}" ]; then
+    c_ylw "⚠ Não consegui ler os entrypoints do Traefik de '$_tk_ct' (config por arquivo?)."
+    c_ylw "  Vou usar os nomes padrão. Se o site responder 404 depois de instalado,"
+    c_ylw "  o nome certo está no traefik.yml da hospedagem (ou em"
+    c_ylw "  'docker inspect $_tk_ct | grep -i entrypoints'): ponha em"
+    c_ylw "  TRAEFIK_ENTRYPOINT_HTTP / TRAEFIK_ENTRYPOINT no .env e rode de novo."
+  else
+    c_grn "✓ Traefik: entrypoints ${TRAEFIK_ENTRYPOINT_HTTP:-web}/${TRAEFIK_ENTRYPOINT:-websecure}, certresolver ${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+  fi
+  unset _tk_conf _tk _tk_resto
+fi
+# `_tk_ct` sobrevive de propósito: a conferência da rota, lá no fim, nomeia esse
+# contêiner no comando que a pessoa vai copiar.
+
 # ── Telemetria: perguntar, não presumir ─────────────────────────────────────
 # Issue #100. Antes, quem não definisse SENTRY_DSN mandava relatório de erro pro
 # Sentry da comunidade sem ter decidido nada — e só ficava sabendo na mensagem
@@ -1135,6 +1249,37 @@ else
   # "|| true": mesma família do pipe que matava o supabase-provision.sh — o
   # corpo passa de 200 bytes, o head fecha o pipe e o printf leva SIGPIPE.
   [ -n "$health_body" ] && c_dim "  última resposta: $(printf '%s' "$health_body" | head -c 200 || true)"
+fi
+
+# O healthcheck acima pergunta ao app DENTRO do contêiner (127.0.0.1:3000), então
+# ele é verde mesmo quando o proxy não roteia nada — e é por isso que o entrypoint
+# errado passava despercebido até a pessoa abrir o site. Aqui a pergunta é feita
+# pelo caminho do usuário: bate na porta 80 do próprio proxy com o Host do
+# domínio. Sem DNS e sem TLS no meio, então isto não depende de propagação nem de
+# certificado — só responde se o Traefik encontrou (ou não) a rota do CRM.
+# Avisa, nunca bloqueia: uma hospedagem pode ter razões próprias para não ter
+# entrypoint na 80, e reprovar uma instalação boa por isso é pior que o aviso.
+if [ "$REVERSE_PROXY" = "traefik" ]; then
+  step "Conferindo a rota no Traefik da hospedagem"
+  _rota=""
+  for _i in 1 2 3; do
+    # O provider do Docker leva um instante para ver o contêiner novo.
+    _rota="$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H "Host: ${DOMAIN}" http://127.0.0.1/ 2>/dev/null || true)"
+    case "$_rota" in 000|''|404) sleep 3;; *) break;; esac
+  done
+  case "$_rota" in
+    000|'')
+      c_dim "  (a porta 80 não respondeu aqui dentro — não deu para conferir)" ;;
+    404)
+      c_ylw "⚠ O Traefik respondeu 404 para ${DOMAIN}: ele NÃO está roteando o CRM."
+      c_ylw "  Quase sempre é o nome do entrypoint. Os desta VPS estão em:"
+      c_ylw "      docker inspect ${_tk_ct:-<contêiner do traefik>} | grep -i entrypoints"
+      c_ylw "  Ajuste TRAEFIK_ENTRYPOINT_HTTP / TRAEFIK_ENTRYPOINT no .env e rode:"
+      c_ylw "      docker compose $(dc_files) up -d" ;;
+    *)
+      c_grn "✓ o Traefik está roteando ${DOMAIN} para o CRM (HTTP ${_rota})" ;;
+  esac
+  unset _rota _i
 fi
 
 # ── 11. Automações (cron do drain de eventos) ───────────────────────────────
