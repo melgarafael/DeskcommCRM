@@ -33,9 +33,15 @@
 #
 # PRÉ-REQUISITOS NO TRAEFIK DA HOSPEDAGEM
 # ---------------------------------------
-# Espera-se um entrypoint `websecure` (443) e um certresolver `letsencrypt` —
-# os nomes padrão dessas instalações. Se a sua usa outros nomes, ajuste
-# TRAEFIK_ENTRYPOINT e TRAEFIK_CERTRESOLVER no .env.
+# Um entrypoint na 443 e outro na 80, mais um certresolver ACME. Os NOMES deles
+# não são padronizados — Dokploy chama de `web`/`websecure`, Easypanel de
+# `http`/`https` — e citar um nome que não existe naquele proxy falha CALADO: o
+# Traefik não reclama do label, só não cria a rota, e o domínio cai no 404
+# catch-all. Por isso o install.sh não assume: ele lê os nomes da config
+# estática do contêiner do Traefik (env vars e argumentos) e grava
+# TRAEFIK_ENTRYPOINT_HTTP / TRAEFIK_ENTRYPOINT / TRAEFIK_CERTRESOLVER no .env.
+# Os defaults abaixo são o fallback de quando não dá para ler (config por
+# traefik.yml montado, por exemplo) — aí é ajuste manual no .env.
 #
 # O Traefik precisa enxergar a rede deste projeto. O nome dela é
 # "<projeto>_internal", e <projeto> é o nome da pasta onde o compose roda — ou

@@ -516,6 +516,69 @@ dec_ok "Traefik da hospedagem → por ele"    traefik  "80 e 443" "coolify"   "c
 dec_ok "ocupante não identificado → bloqueia" bloqueia "80"     ""          "crm" ""              ""
 dec_ok "projeto vazio não casa projeto vazio" bloqueia "80"     ""          ""    "nginx"         "web"
 
+echo "proxy reverso: os nomes dos entrypoints do Traefik"
+# Os defaults `web`/`websecure` são os do Dokploy, não uma convenção. Easypanel
+# usa `http`/`https`, e o erro é MUDO: o Traefik não reclama de label apontando
+# para entrypoint inexistente, só não cria a rota — o domínio cai no 404
+# catch-all e o `up -d` termina dizendo "Started". Medido em produção (Easypanel,
+# Traefik 3.6.7).
+#
+# Os dois casos que decidem o resultado saíram de medir um Traefik v3.6 real,
+# não da documentação — e um deles é contra-intuitivo (argumento SUBSTITUI o
+# ambiente em vez de somar). Estão marcados abaixo.
+tn_ok() {  # tn_ok <descrição> <esperado "http|https|cert"> <blob>
+  local desc="$1" esperado="$2" real
+  real="$(traefik_nomes "$3")"
+  if [ "$real" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
+  else printf '  ✗ %s\n     deu:      [%s]\n     esperava: [%s]\n' "$desc" "$real" "$esperado"; fail=1; fi
+}
+
+# Easypanel, copiado da VPS de produção onde o bug apareceu.
+tn_ok "Easypanel (env): http/https" 'http|https|letsencrypt' 'env TRAEFIK_ENTRYPOINTS_HTTP_ADDRESS=:80
+env TRAEFIK_ENTRYPOINTS_HTTPS_ADDRESS=:443
+env TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL=dono@exemplo.com.br
+env TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_STORAGE=/etc/traefik/acme.json
+env PATH=/usr/local/bin:/usr/bin'
+
+# Dokploy — o par que o kit já assumia. Detectar não pode mudar o que já
+# funciona: aqui a detecção precisa CONFIRMAR o default, não substituí-lo.
+tn_ok "Dokploy (args): web/websecure" 'web|websecure|letsencrypt' 'cmd --providers.docker=true
+cmd --entrypoints.web.address=:80
+cmd --entrypoints.websecure.address=:443
+cmd --certificatesresolvers.letsencrypt.acme.httpchallenge=true'
+
+# MEDIDO em traefik:v3.6 — a linha de comando não SOMA ao ambiente, SUBSTITUI o
+# mapa inteiro. Com env http/https + arg `outro`, a API do Traefik lista só
+# `outro`: os entrypoints do ambiente somem. Ler as duas fontes juntas daria
+# `http`, um entrypoint que naquele proxy não existe mais.
+tn_ok "argumento apaga o mapa que veio do ambiente" '|outro|' 'env TRAEFIK_ENTRYPOINTS_HTTP_ADDRESS=:80
+env TRAEFIK_ENTRYPOINTS_HTTPS_ADDRESS=:443
+cmd --entrypoints.outro.address=:443'
+
+# MEDIDO em traefik:v3.6 — o nome vindo do ambiente vira minúscula
+# (TRAEFIK_ENTRYPOINTS_HTTP_ADDRESS → `http`), o vindo de argumento mantém a
+# caixa (--entryPoints.WebSecure → `WebSecure`). O label cita o nome exato, e
+# nomear `websecure` um entrypoint que se chama `WebSecure` é o mesmo 404.
+tn_ok "argumento preserva a caixa do nome" '|WebSecure|' 'cmd --entryPoints.WebSecure.address=:443'
+tn_ok "ambiente minúscula o nome"          '|websecure|' 'env TRAEFIK_ENTRYPOINTS_WEBSECURE_ADDRESS=:443'
+
+tn_ok "endereço com host explícito"    'web|websecure|' 'cmd --entrypoints.web.address=0.0.0.0:80
+cmd --entrypoints.websecure.address=[::]:443'
+# QUIC/HTTP3 declara :443/udp num entrypoint separado. Ele não serve rota HTTP —
+# escolhê-lo é o mesmo 404, com o agravante de parecer certo.
+tn_ok "entrypoint /udp (QUIC) não é o da rota" '|websecure|' 'cmd --entrypoints.websecure.address=:443
+cmd --entrypoints.quic.address=:443/udp'
+tn_ok "porta que não é 80/443 é ignorada" '||' 'cmd --entrypoints.traefik.address=:8080'
+# Traefik configurado por traefik.yml montado não expõe nada em env nem em args.
+# Nada detectado tem de sair vazio: é o que faz o chamador cair no default de
+# hoje, em vez de gravar um nome inventado.
+tn_ok "config por arquivo → nada detectado" '||' 'env PATH=/usr/bin
+cmd --configfile=/etc/traefik/traefik.yml'
+tn_ok "entrada vazia não inventa nome" '||' ''
+# Só a 443 configurada: cada porta se resolve sozinha, e a que faltou volta ao
+# default. Um campo vazio não pode arrastar o outro.
+tn_ok "detecção parcial não contamina a outra" '|https|' 'env TRAEFIK_ENTRYPOINTS_HTTPS_ADDRESS=:443'
+
 echo "nome do projeto que o docker compose usa"
 # O compose faz TrimLeft("_-") no basename. Sem isso, uma pasta /root/_deskcomm
 # faz o kit calcular "_deskcomm" enquanto os contêineres carregam "deskcomm" — a
