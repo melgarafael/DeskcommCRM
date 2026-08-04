@@ -18,6 +18,17 @@ import { lastLine, sql } from "./gov-helpers";
 // O permission denied acontece na resolução da função (antes do corpo), então
 // args dummy bastam. A assinatura exata é a que o revoke/regprocedure exige.
 const DEFINER_WRITE_FNS: ReadonlyArray<readonly [string, string, string]> = [
+  // Entrou pela triagem do PR #121: a função nasce no APÊNDICE do baseline, ou
+  // seja depois do `ALTER DEFAULT PRIVILEGES ... TO anon` da linha 3960, e por
+  // isso as duas linhas padrão (revoke from public + grant service_role) NÃO
+  // bastam — foi medido `anon` executando um wipe de conversas e mensagens.
+  // Enquanto a issue #128 não trouxer a varredura genérica, esta lista é o que
+  // impede a regressão silenciosa.
+  [
+    "fn_hard_reset_contact_context",
+    "public.fn_hard_reset_contact_context(null::uuid, null::uuid, null::boolean)",
+    "public.fn_hard_reset_contact_context(uuid, uuid, boolean)",
+  ],
   [
     "fn_upsert_wa_contact",
     "public.fn_upsert_wa_contact(null::uuid, null::text, null::text, null::text, null::text, null::text)",

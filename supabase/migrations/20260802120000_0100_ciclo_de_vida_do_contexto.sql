@@ -1,4 +1,4 @@
--- Migration 0098 — ciclo de vida do contexto do agente (Spec 16 §3).
+-- Migration 0100 — ciclo de vida do contexto do agente (Spec 16 §3).
 --
 -- Duas peças, ambas não-destrutivas e reversíveis:
 --   1. contacts.context_reset_at — marca de corte. Enquanto NULL, comportamento

@@ -46,7 +46,7 @@ Sai da fase quando:
 ## C2 — Marca de corte e hard reset
 
 Sai da fase quando:
-- Migration 0098 completa na tripla, aplicando em Postgres descartável nos modos
+- Migration 0100 completa na tripla, aplicando em Postgres descartável nos modos
   install e update.
 - As três leituras (mensagens, checkpoint, `lead_state`) respeitam `context_reset_at`,
   com `lead_state` **neutralizado em leitura**, nunca sobrescrito.

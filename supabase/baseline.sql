@@ -8716,7 +8716,7 @@ CREATE OR REPLACE FUNCTION "public"."retrieve_top_k_chunks"("p_organization_id" 
   limit greatest(p_k, 0);
 $$;
 
--- ---- ciclo de vida do contexto do agente (migration 0098) ----
+-- ---- ciclo de vida do contexto do agente (migration 0100) ----
 -- Duas peças não-destrutivas e reversíveis (Spec 16 §3): marca de corte em
 -- contacts (nada apagado — limpar o campo restaura), e a política de
 -- expiração vivendo na etapa que o TENANT nomeou (nunca is_won/is_lost).
@@ -8757,7 +8757,7 @@ comment on column public.crm_stages.resets_context is
 comment on column public.crm_stages.context_reset_after_days is
   'Carência em dias antes de expirar, contada de crm_leads.stage_changed_at. Default 7 — dá tempo ao pós-venda antes de cortar o contexto.';
 
--- ---- hard reset atômico do contexto (migration 0099) ----
+-- ---- hard reset atômico do contexto (migration 0101) ----
 -- SECURITY DEFINER + service_role: mesma doutrina de fn_lgpd_cascade_redact_contact.
 -- TX única evita reset parcial (checkpoint sumiu + 500 sem audit).
 CREATE OR REPLACE FUNCTION "public"."fn_hard_reset_contact_context"(
@@ -8885,10 +8885,24 @@ $$;
 
 ALTER FUNCTION "public"."fn_hard_reset_contact_context"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_purge_knowledge_base" boolean) OWNER TO "postgres";
 
+-- Os dois REVOKE abaixo NÃO são redundantes com o REVOKE FROM PUBLIC, e a razão é
+-- POSICIONAL: o `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON FUNCTIONS TO anon` da
+-- linha 3960 vale para toda função criada DEPOIS dele, e concede um grant DIRETO
+-- que `revoke from public` não remove. Uma função que nasce ANTES da 3960 (ex.:
+-- fn_lgpd_cascade_redact_contact, linha 324) fica protegida só com as duas linhas
+-- padrão; toda função de apêndice nasce no fim do arquivo, ou seja depois, e não
+-- fica. Medido: sem estas duas linhas, `set role anon` executa esta RPC e apaga
+-- conversations + messages de qualquer (organization_id, contact_id) passado como
+-- argumento — sem autenticação, porque a função é SECURITY DEFINER. Como o kit
+-- self-host aplica SÓ este baseline (nunca as migrations/), o revoke correto que
+-- já existe em 0101_hard_reset_context_rpc.sql não protegeria instalação nenhuma.
+-- Ver issue #128: falta um invariante que varra isto para toda função nova.
 REVOKE ALL ON FUNCTION "public"."fn_hard_reset_contact_context"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_purge_knowledge_base" boolean) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION "public"."fn_hard_reset_contact_context"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_purge_knowledge_base" boolean) FROM "anon";
+REVOKE EXECUTE ON FUNCTION "public"."fn_hard_reset_contact_context"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_purge_knowledge_base" boolean) FROM "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_hard_reset_contact_context"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_purge_knowledge_base" boolean) TO "service_role";
 
--- ---- debounce inbound por organização (migration 0100) ----
+-- ---- debounce inbound por organização (migration 0102) ----
 -- A chave é opcional de propósito: sem ela, o runtime usa INBOUND_DEBOUNCE_MS
 -- da instalação. Não semear 5000 aqui, pois isso sobrescreveria uma escolha
 -- global existente (inclusive 0 = desligado) ao atualizar um self-host.

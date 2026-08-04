@@ -75,10 +75,19 @@ beforeAll(() => {
       on conflict (id) do nothing;
 
     -- Mesmo telefone nas duas orgs (prova de isolamento por org, não por número).
+    --
+    -- O número precisa ser EXCLUSIVO deste arquivo. ORG_A é o mesmo uuid que
+    -- gov-helpers.ts chama de GOV_ORG, e automation-send-whatsapp.test.ts já semeia
+    -- +5511999990001 ali com outro id. Como a suíte roda com fileParallelism:false
+    -- contra um banco só, a segunda inserção violava uniq_contacts_org_phone — e o
+    -- on-conflict daqui tem alvo na PK, então não engolia nada.
+    -- O sintoma enganava: o erro que aparecia era conversations_contact_id_fkey,
+    -- porque o on-conflict-do-nothing SEM alvo do outro arquivo engole a colisão
+    -- de unicidade em silêncio e a quebra só estoura um insert adiante.
     insert into public.contacts (id, organization_id, phone_number, display_name)
       values
-        ('${CONTACT_A}', '${ORG_A}', '+5511999990001', 'Contato A'),
-        ('${CONTACT_B}', '${ORG_B}', '+5511999990001', 'Contato B')
+        ('${CONTACT_A}', '${ORG_A}', '+5511999991001', 'Contato A'),
+        ('${CONTACT_B}', '${ORG_B}', '+5511999991001', 'Contato B')
       on conflict (id) do nothing;
 
     insert into public.conversations (id, organization_id, contact_id, channel_session_id)

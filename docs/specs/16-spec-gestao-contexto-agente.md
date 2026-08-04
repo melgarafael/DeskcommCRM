@@ -52,10 +52,10 @@ Princípios não-negociáveis:
 
 ## 3. Schema SQL
 
-Migration **0098** — `supabase/migrations/20260802120000_0098_ciclo_de_vida_do_contexto.sql`.
+Migration **0100** — `supabase/migrations/20260802120000_0100_ciclo_de_vida_do_contexto.sql`.
 
 ```sql
--- ---- marca de corte do contexto do agente (migration 0098) ----
+-- ---- marca de corte do contexto do agente (migration 0100) ----
 -- Não-destrutiva e reversível: enquanto NULL, comportamento idêntico ao atual.
 -- Escrita pelo worker de expiração (política por etapa) ou pelo reset manual.
 alter table contacts
@@ -71,7 +71,7 @@ create index if not exists idx_contacts_context_reset_at
   on contacts (organization_id, context_reset_at)
   where context_reset_at is not null;
 
--- ---- política de expiração por etapa do Kanban (migration 0098) ----
+-- ---- política de expiração por etapa do Kanban (migration 0100) ----
 -- Vocabulário do TENANT: a decisão é da etapa que ele nomeou, nunca de is_won/is_lost.
 alter table crm_stages
   add column if not exists resets_context boolean not null default false,
@@ -382,8 +382,8 @@ Componentes usam `usePermission("context.reset_manual")` — nunca checagem manu
 
 ## 10. Migrations (a tripla)
 
-1. `supabase/migrations/20260802120000_0098_ciclo_de_vida_do_contexto.sql` — DDL de §3, idempotente (`add column if not exists`, `create index if not exists`, constraint guardada por `do $$`).
-2. Apêndice em `supabase/baseline.sql`, rotulado `-- ---- ciclo de vida do contexto (migration 0098) ----`, idempotente e auto-curativo — é o que o `install.sh` e o `update.sh` do kit self-host aplicam.
+1. `supabase/migrations/20260802120000_0100_ciclo_de_vida_do_contexto.sql` — DDL de §3, idempotente (`add column if not exists`, `create index if not exists`, constraint guardada por `do $$`).
+2. Apêndice em `supabase/baseline.sql`, rotulado `-- ---- ciclo de vida do contexto (migration 0100) ----`, idempotente e auto-curativo — é o que o `install.sh` e o `update.sh` do kit self-host aplicam.
 3. Linha em `supabase/migrations/MANIFEST.md` descrevendo o quê e o porquê.
 4. `lib/database.types.ts` regenerado (contrato de `contacts` e `crm_stages` mudou).
 
@@ -427,7 +427,7 @@ Sem backfill: as colunas nascem com default que reproduz o comportamento atual (
 | **C4** | Ficha do cliente + aviso de atendimento anterior | não |
 | **C5** | *(deferido)* card novo na recompra; purga de retenção LGPD | sim |
 
-C1 entrega valor sozinha e sem risco de schema. C2 e C3 compartilham a migration 0098 — se forem entregues em PRs separados, a migration sai inteira em C2 e C3 apenas passa a usar as colunas.
+C1 entrega valor sozinha e sem risco de schema. C2 e C3 compartilham a migration 0100 — se forem entregues em PRs separados, a migration sai inteira em C2 e C3 apenas passa a usar as colunas.
 
 ---
 

@@ -132,6 +132,7 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
       "lib/webhooks/secrets.ts",
       "workers/agent-worker/main.ts",
       "workers/ai-response-worker.ts",
+      "workers/agent-worker/app-cron-ticker.ts",
     ],
   },
 ];

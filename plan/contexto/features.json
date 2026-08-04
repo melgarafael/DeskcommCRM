@@ -95,11 +95,11 @@
     {
       "id": "C2-01",
       "phase": "C2",
-      "title": "Migration 0098 — marca de corte e política por etapa (tripla completa)",
+      "title": "Migration 0100 — marca de corte e política por etapa (tripla completa)",
       "description": "DDL da Spec §3: contacts.context_reset_at/context_reset_reason, índice parcial, crm_stages.resets_context/context_reset_after_days com CHECK de faixa. Colunas nascem com default que reproduz o comportamento atual — sem backfill.",
       "acceptance": [
-        "Existe `supabase/migrations/20260802120000_0098_ciclo_de_vida_do_contexto.sql` idempotente (`add column if not exists`, `create index if not exists`, constraint guardada por bloco `do $$`), sem BEGIN/COMMIT explícito e sem temp table.",
-        "`supabase/baseline.sql` tem apêndice rotulado `-- ---- ciclo de vida do contexto (migration 0098) ----` com o mesmo DDL idempotente.",
+        "Existe `supabase/migrations/20260802120000_0100_ciclo_de_vida_do_contexto.sql` idempotente (`add column if not exists`, `create index if not exists`, constraint guardada por bloco `do $$`), sem BEGIN/COMMIT explícito e sem temp table.",
+        "`supabase/baseline.sql` tem apêndice rotulado `-- ---- ciclo de vida do contexto (migration 0100) ----` com o mesmo DDL idempotente.",
         "`supabase/migrations/MANIFEST.md` tem linha nova descrevendo versão, nome e o QUÊ/PORQUÊ.",
         "`lib/database.types.ts` regenerado contendo `context_reset_at`, `context_reset_reason`, `resets_context` e `context_reset_after_days`.",
         "Postgres descartável `pgvector/pgvector:pg17`: `baseline.sql` aplica em modo install (`ON_ERROR_STOP=1`) e em modo update (re-aplicar, sem a flag) — ambos passam.",
@@ -116,7 +116,7 @@
       "verification": {
         "verdict": "PASS",
         "by": "self",
-        "note": "pnpm test:db: install (ON_ERROR_STOP=1) e update aplicam a migration 0098 sem NENHUM erro/notice associado a context_reset_at/resets_context/crm_stages_context_reset_days_range (grep confirmado). 398-399/400 invariantes verdes; a 1 falha ocasional (followup-reactivity.test.ts, teste de relógio real) é PRÉ-EXISTENTE — reproduzida também SEM a migration (1 falha em 3 runs de cada lado, taxa equivalente), não é regressão desta feature. database.types.ts regenerado manualmente (contacts + crm_stages) e pnpm typecheck 0 erros. MANIFEST.md e baseline.sql atualizados."
+        "note": "pnpm test:db: install (ON_ERROR_STOP=1) e update aplicam a migration 0100 sem NENHUM erro/notice associado a context_reset_at/resets_context/crm_stages_context_reset_days_range (grep confirmado). 398-399/400 invariantes verdes; a 1 falha ocasional (followup-reactivity.test.ts, teste de relógio real) é PRÉ-EXISTENTE — reproduzida também SEM a migration (1 falha em 3 runs de cada lado, taxa equivalente), não é regressão desta feature. database.types.ts regenerado manualmente (contacts + crm_stages) e pnpm typecheck 0 erros. MANIFEST.md e baseline.sql atualizados."
       }
     },
     {

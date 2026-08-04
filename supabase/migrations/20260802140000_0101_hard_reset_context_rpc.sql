@@ -1,4 +1,4 @@
--- 0099_hard_reset_context_rpc
+-- 0101_hard_reset_context_rpc
 -- Spec 16 §6.1 / C2-03: hard reset do contexto do agente em UMA transação.
 -- Mesmo padrão de fn_lgpd_cascade_redact_contact (SECURITY DEFINER + service_role).
 --

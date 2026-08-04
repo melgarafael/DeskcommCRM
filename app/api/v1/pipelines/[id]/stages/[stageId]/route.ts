@@ -54,7 +54,7 @@ const bodySchema = z
     is_lost: z.boolean().optional(),
     depois_de: z.string().min(1).nullable().optional(),
     // Spec 16 §9.1 — política de expiração do contexto do agente. Faixa 0..365
-    // espelha o CHECK `crm_stages_context_reset_days_range` da migration 0098.
+    // espelha o CHECK `crm_stages_context_reset_days_range` da migration 0100.
     resets_context: z.boolean().optional(),
     context_reset_after_days: z.number().int().min(0).max(365).optional(),
   })

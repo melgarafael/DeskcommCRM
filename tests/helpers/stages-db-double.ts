@@ -47,7 +47,7 @@ export function etapa(over: Partial<StageRow> & { id: string; name: string }): S
     agent_stage_hint: null,
     pipeline_id: PIPE,
     organization_id: ORG_ID,
-    // Default de fábrica da migration 0098 — org nova não tem etapa marcada.
+    // Default de fábrica da migration 0100 — org nova não tem etapa marcada.
     resets_context: false,
     context_reset_after_days: 7,
     ...over,
