@@ -29,6 +29,17 @@
 > **[👉 Assinar a VPS HostGator com desconto da parceria](https://www.hostgator.com.br/52708-141-3-52.html)** —
 > datacenter em São Paulo, ideal pro WhatsApp rodando 24/7. *(link de parceiro — assinar por ele apoia o projeto e sai mais barato)*
 >
+> **Ainda não tem servidor?** Rode isto **no seu computador** (macOS, Linux ou WSL). Ele diz
+> qual plano contratar — com os números do runbook, não um "depende" — e te devolve o
+> comando certo pro seu caso:
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh | bash
+> ```
+>
+> *(prefere ler antes de executar? clone o repo e rode `bash hostgator-setup-kit/comecar.sh` —
+> ele não instala nada sem você confirmar.)*
+>
 > Já tem a VPS? Entre nela por SSH e rode:
 >
 > ```bash
@@ -164,7 +175,7 @@ pnpm test:db       # Postgres efêmero + baseline install/update + invariantes
 pnpm test:e2e      # Playwright (requer dev server)
 ```
 
-O CI roda `typecheck`, `lint` e `test:unit` em todo PR. Um segundo job — **`invariants`** — sobe um Postgres limpo, aplica o `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e depois em modo update (provando idempotência), e roda **364 testes de invariante** distribuídos em 56 arquivos, cobrindo RBAC, atribuição, escopo de visualização, roteamento, follow-up, webhooks e automações.
+O job **`verify`** roda `typecheck`, `lint`, `lint:channels`, `test:unit` e `test:shell` em todo PR. Um segundo job — **`invariants`** — sobe um Postgres limpo, aplica o `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e depois em modo update (provando idempotência), e roda **364 testes de invariante** distribuídos em 56 arquivos, cobrindo RBAC, atribuição, escopo de visualização, roteamento, follow-up, webhooks e automações.
 
 Entre eles está o **teste de isolamento RLS**: cria 2 organizações, simula os claims JWT pelo mesmo caminho `auth.uid()` / `fn_user_org_ids()` que as policies de produção usam, e prova que um usuário da org A enxerga **zero linhas** da org B em `conversations`, `messages`, `contacts` e `crm_leads`. Antes disso, um caso de controle prova que as linhas da org B realmente existem no banco — sem ele, o teste passaria mesmo com a tabela vazia.
 
@@ -204,10 +215,15 @@ Esse projeto é open source pra comunidade. Toda contribuição é bem-vinda —
 ```bash
 git checkout -b feat/short-slug
 # implementa + testes
-pnpm typecheck && pnpm lint && pnpm test:unit
+pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm test:unit && pnpm test:shell && pnpm build
+pnpm test:db   # precisa de Docker — é o job `invariants`, obrigatório no merge
 git commit -m "feat(escopo): descrição"
 # abre PR — o template já traz o checklist de Definition of Done
 ```
+
+Essa linha é a lista **completa** dos gates obrigatórios, de propósito: rodar só metade e descobrir o
+resto como surpresa vermelha depois de horas de espera é a pior primeira experiência que este
+repositório sabe entregar.
 
 **Definition of Done:** typecheck zero, lint zero, testes relevantes verdes, RLS testada se toca tabela tenant-aware, audit log emitido em mutações, migration versionada se muda schema. Detalhes em [`CLAUDE.md`](CLAUDE.md#definition-of-done).
 

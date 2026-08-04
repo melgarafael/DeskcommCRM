@@ -1,79 +1,60 @@
-```markdown
-# DeskcommCRM Development Patterns
+---
+name: DeskcommCRM
+description: Doutrina de código do DeskcommCRM — multi-tenancy com RLS, tripla de migration, restrição de canal, eixo self-host. USE SEMPRE ao escrever ou revisar código neste repositório, e antes de responder pergunta sobre convenção, schema, tenancy, WhatsApp/WAHA, instalador ou Definition of Done. É o ponteiro para a doutrina viva do repo; não substitui ler o CLAUDE.md.
+---
 
-> Auto-generated skill from repository analysis
+# DeskcommCRM — doutrina de código
 
-## Overview
-This skill teaches the core development patterns and conventions used in the DeskcommCRM TypeScript codebase. It covers file organization, code style, commit message standards, and testing patterns, providing practical examples and command suggestions to streamline your workflow.
+> A fonte da verdade é o `CLAUDE.md` da raiz, lido do `origin/main` e não de um resumo. Esta skill
+> existe para te fazer abri-lo na hora certa e para carregar as três regras que mais custam caro
+> quando esquecidas.
 
-## Coding Conventions
+## 1. Leia antes de escrever
 
-### File Naming
-- Use **snake_case** for all file names.
-  - Example:  
-    ```
-    user_profile.ts
-    customer_data_manager.ts
-    ```
+| arquivo | quando |
+|---|---|
+| `CLAUDE.md` | **sempre**, antes de qualquer código — contém a Definition of Done, que muda |
+| `VISION.md` | antes de decidir escopo, ou de dizer não a uma feature |
+| `docs/doctrine/` | ao mexer em canal, agente, ou peça que se conecte a outra |
+| `ARCHITECTURE.md` | para a visão de uma página |
 
-### Import Style
-- Use **relative imports** for referencing modules.
-  - Example:
-    ```typescript
-    import { getUser } from './user_utils';
-    import { Customer } from '../models/customer';
-    ```
+**Não confie em resumo de doutrina — nem neste arquivo.** A Definition of Done já foi de 13 para 14
+itens; cópia congelada ensina a regra de ontem. Abra o `CLAUDE.md`.
 
-### Export Style
-- Use **named exports** for all modules.
-  - Example:
-    ```typescript
-    // In user_utils.ts
-    export function getUser(id: string) { ... }
-    export const USER_ROLE = 'admin';
-    ```
+## 2. As três que mais custam
 
-### Commit Messages
-- Follow **conventional commits** with the `fix` prefix for bug fixes.
-  - Example:
-    ```
-    fix: correct customer email validation logic
-    ```
+**Multi-tenancy.** Toda tabela tenant-aware leva `organization_id uuid not null` e RLS com policy
+`tenant_isolation_<tabela>_all` via `fn_user_org_ids()`. Service role bypassa RLS — handler que o usa
+filtra `organization_id` **manualmente**, resolvido de fonte confiável (cookie, JWT, segredo de
+webhook, token de path), **nunca do body**. No backend é sempre `getUser()`, nunca `getSession()`.
 
-## Workflows
+**Schema sai em tripla.** Arquivo em `supabase/migrations/`, apêndice **idempotente** no
+`supabase/baseline.sql`, e linha no `MANIFEST.md`. O kit self-host aplica **só o baseline** — o que
+não chega lá não chega em quem instalou numa VPS, que é o cliente que paga. Constraint nova exige
+corrigir os dados **antes**, senão o `update.sh` do clone quebra.
 
-### Bug Fix Workflow
-**Trigger:** When you need to fix a bug in the codebase  
-**Command:** `/fix-bug`
+**Nenhuma feature nomeia um provider.** Provider vive em `lib/channels/`. `pnpm lint:channels` é
+catraca com lista de dívida: arquivo novo sujo reprova — e arquivo que ficou limpo e não saiu da
+lista **também** reprova.
 
-1. Identify the bug and create a new branch.
-2. Make code changes following the coding conventions.
-3. Write or update relevant tests (`*.test.*` files).
-4. Commit your changes using the `fix:` prefix and a concise description.
-    - Example: `fix: resolve crash on empty customer list`
-5. Push your branch and open a pull request.
+## 3. O eixo que não é técnico
 
-### Adding a New Module
-**Trigger:** When you need to add a new feature or module  
-**Command:** `/add-module`
+A monetização é **self-host em VPS**, não assinatura: quem instala é o cliente. Então uma mudança
+pode ser tecnicamente impecável e ainda assim ser recusada — env var nova sem default quebra
+instalação fresca, dependência de serviço pago obrigatório quebra o modelo, e a pior de todas é a
+**falha-em-verde**: a sonda que declara sucesso medindo caminho diferente do que o usuário usa. Num
+produto que a pessoa instala sozinha, ela não descobre que está quebrado.
 
-1. Create new files using snake_case naming.
-2. Use relative imports to connect new and existing modules.
-3. Export functions and constants using named exports.
-4. Write corresponding tests in `*.test.*` files.
-5. Commit with an appropriate message (e.g., `feat: add customer notes module`).
+## 4. Antes de dizer "pronto"
 
-## Testing Patterns
+Verde de teste não é prova de comportamento. Sabote a linha que você corrigiu e confirme que a suíte
+fica **vermelha** — teste que não reprova não guarda nada. E declare o que **não** mediu: é o campo
+que separa medição de relato.
 
-- Test files follow the `*.test.*` naming pattern.
-  - Example: `user_utils.test.ts`
-- The testing framework is not explicitly specified; check existing test files for structure.
-- Place tests alongside or near the modules they test.
-- Ensure all new features and bug fixes are covered by tests.
+## Não-objetivos
 
-## Commands
-| Command      | Purpose                                 |
-|--------------|-----------------------------------------|
-| /fix-bug     | Start the bug fix workflow              |
-| /add-module  | Start the new module addition workflow  |
-```
+Não lista comandos de fluxo — não existem `/fix-bug` nem `/add-module` neste repo. Não descreve
+estrutura de pastas nem convenção de nome de arquivo: a versão anterior deste arquivo era gerada
+automaticamente e ensinava `snake_case` com imports relativos, quando o repo usa kebab-case com
+alias `@/`. Detalhe correto mora no `CLAUDE.md`, que está atualizado — o que este arquivo não pode
+prometer.

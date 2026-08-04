@@ -603,7 +603,7 @@ async function persistAndDispatch(
     direction: "outbound" as const,
     status: "sending",
     body: finalText,
-    sent_via: "bot" as const,
+    sent_via: "ai" as const,
     sent_at: new Date().toISOString(),
     metadata: {
       ai_generated: true,

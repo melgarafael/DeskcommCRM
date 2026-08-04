@@ -10,7 +10,7 @@ EMAIL="${1:-}"
 [ -n "$EMAIL" ] || die "Uso: reset-mfa.sh <email>"
 
 c_ylw "Isto remove TODOS os fatores MFA de $EMAIL."
-read -r -p "Confirmar? (s/N) " a; [ "${a:-N}" = "s" ] || die "Cancelado."
+read -r -p "Confirmar? (s/N) " a; resposta_sim "$a" || die "Cancelado."
 
 step "Removendo fatores MFA"
 psql_run <<SQL

@@ -2,6 +2,16 @@
 
 Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois caminhos:
 
+> **Ainda nem tem servidor?** Comece por `comecar.sh` — ele roda **no seu computador**, antes
+> de existir VPS, e responde a pergunta que trava todo mundo no início: *o que eu preciso
+> contratar?* Ele nomeia o plano (VPS Turing, 2 vCPU / 4 GB — o Cartesius não dá conta do
+> WhatsApp), abre a página se você quiser, e devolve o comando exato do seu caso. Depois que
+> a VPS existir, o caminho é o `install.sh` daqui de baixo.
+>
+> ```bash
+> bash comecar.sh
+> ```
+
 > **Outra hospedagem?** O kit é feito para a HostGator (é a parceria do projeto e o caminho
 > testado de ponta a ponta), mas roda em qualquer VPS com Docker. Se a sua já vem com um
 > **proxy reverso próprio** ocupando as portas 80/443 — caso de Hostinger, Coolify, Dokploy
@@ -85,7 +95,7 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
 - Portas **80** e **443** abertas (`ufw allow 80,443,22/tcp`).
 - Docker + Docker Compose v2 — o `install.sh` instala o Docker sozinho se faltar (ver acima).
 
-### VPS que já vem com proxy próprio (Hostinger, Coolify, Dokploy…)
+### VPS que já vem com proxy próprio (Hostinger, Coolify, Dokploy, Easypanel…)
 
 Algumas hospedagens entregam a VPS com um **Traefik** já ocupando as portas 80/443 — é ele
 que dá HTTPS automático ao que o painel instala. O Caddy do kit quer as mesmas portas e não
@@ -98,7 +108,17 @@ docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml up -d
 ```
 
 Não desligue o Traefik da hospedagem para liberar as portas — isso quebra as automações do
-painel dela. Se o seu Traefik usa nomes diferentes de `websecure`/`letsencrypt`, ajuste
+painel dela.
+
+Os **nomes** dos entrypoints também são descobertos, não presumidos: o instalador lê a
+configuração do contêiner do Traefik (variáveis de ambiente e argumentos) e casa pelo
+endereço — quem escuta `:80` vira o `TRAEFIK_ENTRYPOINT_HTTP`, quem escuta `:443` vira o
+`TRAEFIK_ENTRYPOINT`, e o certresolver ACME sai do mesmo lugar. Isso importa porque os
+nomes variam por painel (Dokploy usa `web`/`websecure`, Easypanel usa `http`/`https`) e
+errar o nome falha **em silêncio**: o Traefik não reclama do label, apenas não cria a rota
+— o site responde o 404 do proxy e o `up -d` diz que subiu. Quando não dá para ler a
+configuração (Traefik com `traefik.yml` montado), o instalador avisa, usa
+`web`/`websecure`/`letsencrypt` e você ajusta `TRAEFIK_ENTRYPOINT_HTTP`,
 `TRAEFIK_ENTRYPOINT` e `TRAEFIK_CERTRESOLVER` no `.env`.
 
 ## Scripts do kit

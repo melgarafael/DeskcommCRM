@@ -43,20 +43,36 @@ Ao finalizar um epic:
 
 1. Branch a partir de `main`.
 2. Implementar. Adicionar testes (E2E pra fluxos, unit pra lógica pura).
-3. **Definition of Done** — todos verdes:
-   - `pnpm typecheck`
-   - `pnpm lint`
-   - `pnpm test:unit`
-   - `pnpm test:e2e` (subset relevante) — **opcional se você contribui de fora**, ver abaixo
-   - RLS testada se feature toca tabela tenant-aware
+3. **Definition of Done.** A lista está separada em duas por um motivo: até hoje ela misturava
+   o que uma máquina reprova com o que só uma pessoa percebe, e contribuidor marcava o checklist
+   inteiro de boa-fé para ser barrado por um gate que ninguém tinha contado a ele.
+
+   **O que o CI reprova sozinho** — rode antes de abrir o PR e não terá surpresa:
+
+   ```bash
+   pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm test:unit && pnpm test:shell && pnpm build
+   pnpm test:db   # precisa de Docker; sobe um Postgres limpo e aplica o baseline
+   ```
+
+   **O que o CI NÃO vê** — fica com você e com a revisão, e é onde moram os defeitos caros:
+
+   - RLS habilitada e policy `tenant_isolation_<tabela>_all` se você criou tabela tenant-aware
+     (o teste de isolamento cobre uma lista fixa de tabelas; a sua nova não entra sozinha)
    - Audit log emitido se há mutação relevante
-   - Rate limit aplicado se rota é pública
-   - Zod valida todo input externo
-   - Sem `console.log` esquecido (use `lib/logger.ts`)
-   - Env vars novas em `.env.example` + `lib/env.ts`
+   - Rate limit aplicado se a rota é pública
+   - Zod validando todo input externo
+   - Sem `console.log` esquecido (use `lib/logger.ts`). **O `pnpm lint` não reprova isso** — a regra
+     está como aviso, então ele passa verde; a conferência é humana
+   - Env vars novas em `.env.example` **e** `lib/env.ts`, com default que não quebre instalação nova
+   - Mudança de schema saiu como **tripla**: arquivo em `supabase/migrations/`, apêndice idempotente
+     no `supabase/baseline.sql` e linha no `MANIFEST.md`. O kit self-host aplica **só o baseline** —
+     migration que não chega lá não chega em quem instalou numa VPS. Nenhum job de CI confere isso
    - Docs atualizadas se mudou contrato (PRD/spec)
+   - `pnpm test:e2e` (subset relevante) — **opcional se você contribui de fora**, ver abaixo
 4. Abrir PR contra `main`. Description deve referenciar o epic e listar evidências (logs/screenshots dos testes).
 5. CI deve passar antes de merge. Obrigatórios: `verify`, `invariants` (isolamento RLS) e `build-and-size`.
+   O job `e2e` roda e é **não-bloqueante de propósito** — ele mesmo imprime, no resumo, quais specs
+   não cobriu. Verde nele não é "jornada provada".
 
 ### Pegando uma issue — o protocolo
 
@@ -108,4 +124,13 @@ Veja [`README.md`](README.md) §Como rodar local.
 
 ## Suporte
 
-Dúvidas: `rafael@maudibrasil.com.br`. Canal interno do BPO Discord (link no Notion).
+**[GitHub Discussions](https://github.com/melgarafael/DeskcommCRM/discussions)** — é o canal público,
+funciona para qualquer pessoa e é onde a resposta fica registrada para quem vier depois. Para bug,
+[abra uma issue](https://github.com/melgarafael/DeskcommCRM/issues/new/choose).
+
+Se for algo que não cabe em público (segurança, por exemplo): `rafael@maudibrasil.com.br` — o mesmo
+endereço do [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+> Esta seção apontava para um Discord interno cujo convite mora num Notion privado — inalcançável
+> justamente para quem mais precisava dela, que é quem vem de fora. Ficou aqui como lembrete de que
+> canal de suporte se testa pelo lado de fora.

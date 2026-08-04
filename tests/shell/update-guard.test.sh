@@ -43,8 +43,16 @@ cat > "$WORK/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$DOCKER_LOG"
 case " $* " in
-  # Healthcheck do update.sh: "docker compose ... exec -T app node -e ..."
-  *" exec "*)   printf '{"status":"ok"}\n' ;;
+  # Healthcheck do update.sh: "docker compose ... exec -T app node -e ...".
+  # O dublê responde o que o app RESPONDE DE VERDADE — capturado da instalação
+  # em produção. Antes aqui vinha {"status":"ok"}, um formato que /api/v1/health
+  # nunca emitiu: `ok` é o vocabulário dos CHECKS individuais, e o status geral
+  # usa healthy|degraded|unhealthy. Um dublê que fala um dialeto inventado
+  # aprova código que o app real reprovaria — foi exatamente por casar
+  # '"status":"ok"' no JSON cru que o kit dava por saudável um app com o BANCO
+  # FORA, desde que qualquer outro check estivesse de pé.
+  # São duas linhas porque o probe imprime o status geral e depois o corpo.
+  *" exec "*)   printf 'healthy\n{"data":{"status":"healthy","version":"0.1.0","checks":{"supabase":{"status":"ok","latency_ms":268},"redis":{"status":"ok","latency_ms":4},"waha":{"status":"ok","latency_ms":6}}}}\n' ;;
   # Imagem em execução, que o agent.sh guarda para poder voltar. Precisa
   # devolver algo: com PREV_IMAGE vazio o rollback nem seria tentado, e o teste
   # do agente passaria mesmo com o defeito de volta.

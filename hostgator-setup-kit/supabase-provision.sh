@@ -42,6 +42,35 @@ c_ylw() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
 c_dim() { printf '\033[2m%s\033[0m\n' "$*" >&2; }
 die()   { c_red "✖ $*"; exit 1; }
 
+# Senha do banco: 32 alfanuméricos, sem os caracteres que quebram uma URL
+# (@ : / ? # &) — ela entra na connection string, e um '@' aqui parte o host.
+#
+# Antes isto era uma ATRIBUIÇÃO NO ESCOPO DO SCRIPT:
+#   DB_PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+# e o script morria ali, todas as vezes. O head fecha o pipe ao juntar os 32
+# caracteres, o `tr` — que continuaria lendo /dev/urandom para sempre — leva
+# SIGPIPE e sai 141, e com pipefail esse 141 vira o status da atribuição, que
+# sob `set -e` mata o script inteiro DEPOIS de a senha existir. Medido na VPS e
+# reproduzido fora dela: a criação automática do banco falhava sempre, e o
+# instalador só dizia "Não consegui criar o projeto Supabase", sem motivo.
+#
+# O que fecha o buraco é ESTA função existir: o status de `$(gen_db_pass)` passa
+# a ser o do `printf` final, não o do pipe lá dentro (medido: com o pipe antigo
+# dentro de uma função, o script sobrevive; no escopo, sai 141). Ler um bloco
+# FINITO é defesa em profundidade — não depende desse detalhe de propagação, e
+# vale se alguém um dia inlinar a chamada de volta. 4096 bytes rendem ~980
+# alfanuméricos (24% dos bytes), folga larga para 32.
+# Coberta por test-validators.sh, no call site — que é onde o bug morava.
+gen_db_pass() {
+  local p
+  p="$(LC_ALL=C tr -dc 'A-Za-z0-9' < <(head -c 4096 /dev/urandom))"
+  printf '%s' "${p:0:32}"
+}
+
+# Carrega só as funções acima, sem provisionar nada — é assim que o
+# test-validators.sh exercita o gerador de senha.
+if [ "${SUPABASE_PROVISION_LIB:-}" = "1" ]; then return 0; fi
+
 # Passo numerado: quem instala precisa saber ONDE está e QUANTO falta. "▶ Criando
 # projeto" sozinho não diz se é o começo ou o fim.
 TOTAL_PASSOS=6
@@ -117,7 +146,8 @@ fi
 # ── 2. Senha do banco ───────────────────────────────────────────────────────
 # Sem caracteres que quebram uma URL (@ : / ? # &) — a senha entra na
 # connection string, e um '@' aqui parte o host no meio.
-DB_PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+DB_PASS="$(gen_db_pass)"
+[ "${#DB_PASS}" -eq 32 ] || die "não consegui gerar a senha do banco (só ${#DB_PASS} caracteres). Rode de novo."
 
 # ── 3. Cria o projeto ───────────────────────────────────────────────────────
 step "Criando o projeto '$PROJECT_NAME' em $REGION"

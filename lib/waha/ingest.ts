@@ -567,7 +567,10 @@ async function handleOutboundFromUserPhone(
     .maybeSingle();
   if (jaRegistrada) return; // nasceu no envio; quem atualiza o status é o ack
 
-  const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, notifyNameOf(p));
+  // fromMe: o pushName do payload é o do OPERADOR, não do destinatário —
+  // repassá-lo batizaria o contato do cliente com o nome da loja (e o
+  // coalesce do fn_upsert_wa_contact congelaria o nome errado).
+  const contactId = await upsertContact(admin, session.organization_id, parsed, chatId, null);
   if (!contactId) return;
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;

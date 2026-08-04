@@ -193,13 +193,7 @@ fi
 # ── 6. O app voltou no ar? ───────────────────────────────────────────────────
 step "Conferindo se o app voltou no ar"
 ok=""
-for _ in $(seq 1 20); do
-  out="$(dc exec -T app node -e \
-    "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(()=>process.exit(1))" \
-    2>/dev/null || echo '')"
-  printf '%s' "$out" | grep -q '"status":"ok"' && { ok=1; break; }
-  sleep 3
-done
+wait_app_healthy 20 3 >/dev/null && ok=1
 if [ -n "$ok" ]; then
   c_grn "✓ Atualização concluída — app no ar e saudável."
 else

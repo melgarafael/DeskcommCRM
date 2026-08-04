@@ -34,11 +34,75 @@ dc_files() {
   fi
 }
 
-c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
-c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
-c_ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
+# Cor só quando há terminal de verdade — mesma regra do install.sh (se mexer
+# numa, mexa na outra). Aqui isso vale dobrado: o update.sh, que herda estas
+# funções, é rodado pelo agent.sh com a saída redirecionada para arquivo
+# (`> "$LOG"`) a cada 5 minutos, para sempre, em toda instalação. Era daí que
+# vinha o escape ANSI que o esc() do agent.sh precisa varrer byte a byte antes
+# de mandar o log no heartbeat; não emitir na origem é a correção de causa.
+if   [ -n "${NO_COLOR:-}" ];    then COLOR=0
+elif [ -n "${FORCE_COLOR:-}" ]; then COLOR=1
+elif [ -t 1 ];                  then COLOR=1
+else                                 COLOR=0
+fi
+paint() { local code="$1"; shift; if [ "$COLOR" = 1 ]; then printf '\033[%sm%s\033[0m\n' "$code" "$*"; else printf '%s\n' "$*"; fi; }
+c_red() { paint 31 "$*"; }
+c_grn() { paint 32 "$*"; }
+c_ylw() { paint 33 "$*"; }
 die()   { c_red "✖ $*"; exit 1; }
-step()  { printf '\n\033[1m▶ %s\033[0m\n' "$*"; }
+step()  { printf '\n'; paint 1 "▶ $*"; }
+
+# Gêmea da de install.sh (se mexer numa, mexa na outra) — ver o comentário lá
+# para o defeito que ela fecha. Coberta por test-validators.sh.
+resposta_sim() {
+  local r
+  r="$(printf '%s' "${1:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  case "$r" in s|sim|y|yes) return 0;; *) return 1;; esac
+}
+
+# Saúde do app pela rota que ele responde de verdade, não pela porta. A porta
+# 3000 aceita conexão assim que o Node sobe — ANTES de o app saber se alcança
+# banco, Redis e WhatsApp. Era exatamente a diferença entre o install.sh, que
+# testava a porta e imprimia "Instalação concluída!" mesmo sem resposta, e o
+# update.sh, que só declara sucesso com "status":"ok". Um critério, um lugar.
+# Devolve DUAS linhas: o status GERAL na primeira, o corpo inteiro na segunda.
+#
+# A separação existe porque procurar '"status":"ok"' no JSON cru é errado, e
+# erra em silêncio: `ok` é o vocabulário dos CHECKS individuais
+# (ok|degraded|down), enquanto o status geral usa outro (healthy|degraded|
+# unhealthy). Medido contra o app real: um `grep '"status":"ok"'` casa com o
+# `checks.redis`, então um app com o BANCO FORA — status geral "unhealthy" —
+# passava como saudável, desde que qualquer outro check estivesse de pé. Quem
+# decide é o app, no Node que já está sendo invocado; o shell não repete a
+# regra dele.
+app_health_probe() {
+  dc exec -T app node -e \
+    "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.json()).then(j=>{console.log((j&&j.data&&j.data.status)||'sem_status');console.log(JSON.stringify(j))}).catch(()=>process.exit(1))" \
+    2>/dev/null || echo ''
+}
+
+# wait_app_healthy [tentativas] [intervalo_s] — 0 quando o app se declara
+# `healthy` ou `degraded`, 1 caso contrário. `degraded` entra de propósito:
+# significa que algum serviço OPCIONAL ainda não foi configurado (o check
+# devolve degraded/not_configured), e recusar a instalação por isso reprovaria
+# um CRM que está de pé e atendendo. `unhealthy` é outra história — quer dizer
+# check DOWN, e aí o app não serve. Ecoa o corpo lido, para quem chama poder
+# mostrar o motivo em vez de só dizer que não deu.
+wait_app_healthy() {
+  local tentativas="${1:-20}" intervalo="${2:-3}" saida='' status='' corpo='' i=0
+  while [ "$i" -lt "$tentativas" ]; do
+    saida="$(app_health_probe)"
+    status="$(printf '%s\n' "$saida" | head -1 | tr -d '\r')"
+    corpo="$(printf '%s\n' "$saida" | tail -n +2)"
+    case "$status" in
+      healthy|degraded) printf '%s' "$corpo"; return 0;;
+    esac
+    i=$((i+1))
+    [ "$i" -lt "$tentativas" ] && sleep "$intervalo"
+  done
+  printf '%s' "$corpo"
+  return 1
+}
 
 # Código de saída de quem RECUSOU antes de tocar em qualquer coisa — distinto
 # de "falhei no meio" (1). O agent.sh usa isso para não desfazer uma
@@ -94,7 +158,16 @@ load_env() {
     case "$key" in ''|*[!A-Za-z0-9_]*) continue;; esac
     case "$val" in
       \"*\") val="${val:1:${#val}-2}";;
-      \'*\') val="${val:1:${#val}-2}";;
+      \'*\')
+        val="${val:1:${#val}-2}"
+        # envq escreve a aspa simples do CONTEÚDO como '\'' (fecha o literal,
+        # escapa a aspa, reabre) — é o que faz a linha ser shell válido. Só que
+        # tirar as aspas de fora não desfaz isso: sem esta troca, uma senha com
+        # aspa volta da releitura com quatro caracteres a mais, e o erro só
+        # aparece longe daqui (o psql recusa a conexão, o login não bate) sem
+        # nada apontando para o .env. Achado pelo teste de round-trip.
+        val="${val//"'\\''"/"'"}"
+        ;;
     esac
     printf -v "$key" '%s' "$val"
     export "${key?}"
@@ -149,6 +222,33 @@ owner_id_by_email() {
 # lidos por cron, não por trigger→HTTP nem fila gerenciada (doutrina do
 # projeto: trigger Postgres nunca faz HTTP). Chamada por install.sh e
 # update.sh — re-rodar não duplica a linha do crontab.
+# ── Cron: uma instalação nunca mexe na linha de outra ────────────────────────
+# O filtro era `crontab -l | grep -v 'event-log-drain' | crontab -`: casava com
+# a linha de QUALQUER instalação do host. Instalar uma segunda instância na
+# mesma VPS apagava as duas linhas da primeira — o drain de eventos e o agente
+# de atualização — em silêncio, e o dono só descobriria pelo que parou de
+# acontecer. Confirmado numa VPS com produção rodando: as linhas dela seriam
+# levadas por uma instalação nova em outra pasta.
+#
+# Agora cada linha carrega um marcador com o diretório da instalação, e o
+# filtro remove só as que são dela.
+# O marcador identifica a instalação E O PAPEL da linha. O papel não é enfeite:
+# com um marcador só por instalação, a segunda função a rodar apagava a linha da
+# primeira (o filtro remove tudo que casa com o marcador, e as duas linhas
+# casavam). Medido na VPS: depois de instalar, sobrava só o agente e o CRM ficava
+# SEM o drain de eventos — a automação inteira parada, em silêncio.
+cron_tag() { printf '# deskcomm:%s:%s' "${PROJECT_DIR:-$PWD}" "${1:?papel da linha (drain|agent)}"; }
+
+# Puro (testável sem tocar no crontab real): lê o crontab atual em stdin e
+# imprime o novo. Tira as linhas DESTA instalação — pelo marcador, e também
+# pela `assinatura` para as linhas legadas, escritas antes de o marcador
+# existir, que sem isso ficariam duplicadas a cada re-execução.
+cron_merge() {  # cron_merge <marcador> <assinatura_legada> <linha_nova>
+  local marcador="$1" legado="$2" nova="$3"
+  { grep -vF -e "$marcador" | grep -vF -e "$legado"; } || true
+  printf '%s\n' "$nova"
+}
+
 setup_event_log_drain_cron() {
   command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — instale o pacote 'cron' e rode de novo pra ativar as automações."; return 0; }
 
@@ -157,14 +257,17 @@ setup_event_log_drain_cron() {
   [ -n "$secret" ] || { c_ylw "⚠ falta INTERNAL_SECRET/INTERNAL_CRON_SECRET — não ativei o cron das automações."; return 0; }
   [ -n "${NEXT_PUBLIC_APP_URL:-}" ] || { c_ylw "⚠ falta NEXT_PUBLIC_APP_URL — não ativei o cron das automações."; return 0; }
 
-  local first_time=1
-  if crontab -l 2>/dev/null | grep -q 'event-log-drain'; then first_time=0; fi
+  local url_drain="${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain"
+  local marcador; marcador="$(cron_tag drain)"
 
-  local cron_line="* * * * * curl -fsS -H \"Authorization: Bearer ${secret}\" \"${NEXT_PUBLIC_APP_URL}/api/v1/cron/event-log-drain\" >/dev/null 2>&1"
-  # "|| true": com pipefail ativo, grep -v sem match nenhum (crontab vazio ou
-  # sem a linha ainda) sai com status 1 e derrubaria o subshell por set -e
-  # ANTES do echo do novo cron_line — neutralizamos aqui, de propósito.
-  ( crontab -l 2>/dev/null | grep -v 'event-log-drain' || true; echo "$cron_line" ) | crontab -
+  # "primeira vez" é sobre ESTA instalação, não sobre o host: com o teste antigo
+  # ('existe alguma linha de event-log-drain?'), uma instalação nova numa VPS
+  # que já roda outra se achava veterana e pulava a higienização de eventos.
+  local first_time=1
+  if crontab -l 2>/dev/null | grep -qF -e "$url_drain"; then first_time=0; fi
+
+  local cron_line="* * * * * curl -fsS -H \"Authorization: Bearer ${secret}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
+  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
   c_grn "✓ automações ativas (cron do event-log-drain, a cada minuto)"
 
   if [ "$first_time" = 1 ]; then
@@ -198,9 +301,12 @@ setup_update_agent_cron() {
   # DIRETÓRIO CORRENTE. No cron o CWD é o home do dono do crontab — sem o cd,
   # a linha só funciona por acidente (instalação padrão em /root/deskcommcrm) e
   # morre calada a cada 5 minutos em qualquer REPO_DIR customizado ou /opt.
-  local cron_line="*/5 * * * * cd ${PROJECT_DIR} && bash hostgator-setup-kit/agent.sh >/dev/null 2>&1"
-  # "|| true": com pipefail, grep -v sem match sai 1 e derrubaria o subshell.
-  ( crontab -l 2>/dev/null | grep -v 'hostgator-setup-kit/agent.sh' || true; echo "$cron_line" ) | crontab -
+  # A assinatura legada inclui o PROJECT_DIR: é o que distingue a linha desta
+  # instalação da linha de uma vizinha, que roda o mesmo agent.sh em outra pasta.
+  local legado="cd ${PROJECT_DIR} && bash hostgator-setup-kit/agent.sh"
+  local marcador; marcador="$(cron_tag agent)"
+  local cron_line="*/5 * * * * ${legado} >/dev/null 2>&1 ${marcador}"
+  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
   c_grn "✓ atualização pela tela ativa (agente a cada 5 minutos)"
 }
 

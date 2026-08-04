@@ -179,6 +179,26 @@ describe("mensagem digitada no celular do dono (fromMe)", () => {
     // `whatsapp.chat_id_not_recognized`. Ver ingest-chat-desconhecido.test.ts.
     expect(parseChatId("")).toEqual({ kind: "unknown", phone: null, lid: null });
   });
+
+  it("pushName de mensagem fromMe é do OPERADOR — nunca vira nome do contato", async () => {
+    // Sintoma real: dono manda msg do celular p/ cliente novo e o contato nasce
+    // na lista como "connectsmartphones" (o nome de WhatsApp da LOJA). Em
+    // payload fromMe, _data.pushName identifica o remetente — o operador — e
+    // não o destinatário; e o coalesce do fn_upsert_wa_contact congela o nome
+    // errado para sempre.
+    const { admin, rpcs } = bancoDeMentira();
+
+    await dispatchWahaEvent(
+      admin as never,
+      SESSION as never,
+      envelope({ ...CELULAR_NOWEB, _data: { pushName: "connectsmartphones" } }),
+      "req-1",
+    );
+
+    const contato = rpcs.find((c) => c.fn === "fn_upsert_wa_contact");
+    expect(contato, "o contato do cliente nem foi criado").toBeDefined();
+    expect(contato!.args.p_notify, "outbound batizou o cliente com o nome do operador").toBeNull();
+  });
 });
 
 describe("controles — o que tem que continuar sendo descartado", () => {

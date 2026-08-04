@@ -96,8 +96,8 @@ Estes pontos já foram descobertos e corrigidos no `install.sh` / `docker-compos
 Se mesmo assim aparecerem, aqui está o diagnóstico pronto:
 
 0. **O VPS já tem um proxy (Traefik) nas portas 80/443** — acontece na Hostinger, Coolify,
-   Dokploy e afins: o painel entrega a VPS com um Traefik próprio, que é quem dá o HTTPS
-   automático a tudo que ele instala. O Caddy do kit quer as MESMAS portas, então o
+   Dokploy, Easypanel e afins: o painel entrega a VPS com um Traefik próprio, que é quem dá
+   o HTTPS automático a tudo que ele instala. O Caddy do kit quer as MESMAS portas, então o
    `up -d` falha no bind e a instalação morre no meio. O `install.sh` **detecta isso
    sozinho** (procura um contêiner Traefik rodando), grava `REVERSE_PROXY=traefik` no
    `.env` e passa a subir com o override `docker-compose.traefik.yml` — que desliga o
@@ -105,6 +105,17 @@ Se mesmo assim aparecerem, aqui está o diagnóstico pronto:
    para "liberar" as portas: isso quebra as automações do painel dela. Se precisar rodar
    compose na mão nessa instalação, inclua sempre os dois arquivos:
    `docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml ...`
+0b. **Instalou por Traefik, os contêineres subiram, mas o site responde 404** — é o nome do
+   entrypoint. Ele muda por painel (Dokploy: `web`/`websecure`; Easypanel: `http`/`https`),
+   e o erro é MUDO: label citando entrypoint inexistente não faz o Traefik reclamar, ele só
+   não cria a rota — o domínio cai no 404 catch-all e o `up -d` diz "Started". O
+   `install.sh` atual **lê os nomes** da config do contêiner do Traefik (env e argumentos,
+   casando `:80` e `:443`) e ainda confere a rota no fim, batendo na porta 80 do proxy com
+   o Host do domínio. Numa instalação FEITA ANTES disso o `.env` já tem `websecure`
+   gravado, e valor existente não é sobrescrito: rode `bash install.sh` de novo — ele é
+   idempotente e avisa a divergência ("o Traefik desta VPS usa 'https'"), ou troque
+   `TRAEFIK_ENTRYPOINT_HTTP`/`TRAEFIK_ENTRYPOINT` no `.env` à mão e suba de novo. Para ver
+   os nomes reais: `docker inspect <contêiner do traefik> | grep -i entrypoints`.
 1. **Firewall te tranca fora do VPS** — o `ufw` padrão libera a porta **22**, mas alguns
    VPS da HostGator usam SSH em porta **custom** (ex.: `22022`). SEMPRE confira a porta do
    SSH atual (`ss -tlnp | grep sshd` ou o número que você usou pra conectar) e libere ELA

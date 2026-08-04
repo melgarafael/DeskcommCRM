@@ -16,6 +16,9 @@ set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+# Uma constante, dois usos (o fim feliz e o fim travado) — e o comecar.sh tem a
+# gêmea. Link repetido à mão vira link divergente na primeira troca.
+COMUNIDADE_URL="https://lp-comunidade.automatiklabs.com.br"
 REPO_DIR="${REPO_DIR:-deskcommcrm}"
 COMPOSE="docker-compose.prod.yml"
 COMPOSE_TRAEFIK="docker-compose.traefik.yml"
@@ -40,12 +43,91 @@ dc_files() {
   fi
 }
 
-c_red() { printf '\033[31m%s\033[0m\n' "$*"; }
-c_grn() { printf '\033[32m%s\033[0m\n' "$*"; }
-c_ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
-c_dim() { printf '\033[2m%s\033[0m\n' "$*"; }
+# ── Aparência ───────────────────────────────────────────────────────────────
+# Cor só quando há terminal de verdade. Antes o ANSI saía sempre, inclusive
+# quando a saída vai para arquivo — o agent.sh redireciona o update.sh (`>
+# "$LOG"`) e o esc() de lá precisa varrer byte a byte para tirar esses escapes
+# do heartbeat. Desligar na origem é a correção de causa. NO_COLOR é a
+# convenção que quem roda em CI espera; FORCE_COLOR é a válvula de quem quer
+# cor mesmo em pipe.
+if   [ -n "${NO_COLOR:-}" ];    then COLOR=0
+elif [ -n "${FORCE_COLOR:-}" ]; then COLOR=1
+elif [ -t 1 ];                  then COLOR=1
+else                                 COLOR=0
+fi
+
+# paint <código ANSI> <texto…>. Sem cor, imprime o texto cru — nunca some.
+paint() { local code="$1"; shift; if [ "$COLOR" = 1 ]; then printf '\033[%sm%s\033[0m\n' "$code" "$*"; else printf '%s\n' "$*"; fi; }
+c_red() { paint 31 "$*"; }
+c_grn() { paint 32 "$*"; }
+c_ylw() { paint 33 "$*"; }
+c_dim() { paint 2  "$*"; }
 die()   { c_red "✖ $*"; exit 1; }
-step()  { printf '\n\033[1m▶ %s\033[0m\n' "$*"; }
+step()  { printf '\n'; paint 1 "▶ $*"; }
+
+# A resposta é sim? Aceita o que gente digita de verdade: s, S, sim, SIM, y,
+# yes, com espaço em volta. Cada prompt comparava a resposta com uma string
+# exata, então "S" e "sim" — a resposta certa, com a tecla errada — caíam no
+# ramo do NÃO. No gate do DNS isso encerrava a instalação com uma frase que nem
+# correspondia à escolha da pessoa. Gêmea da de _common.sh: se mexer numa,
+# mexa na outra. Coberta por test-validators.sh.
+resposta_sim() {
+  local r
+  r="$(printf '%s' "${1:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  case "$r" in s|sim|y|yes) return 0;; *) return 1;; esac
+}
+
+# ── Fases da jornada ────────────────────────────────────────────────────────
+# Os passos técnicos (step) são muitos e alguns são condicionais — numerá-los
+# daria um "7 de 11" que muda conforme o caminho de cada instalação. As FASES
+# são estáveis: são o mapa que a pessoa acompanha para saber onde está e
+# quanto falta, num processo que leva minutos e é o primeiro contato dela com
+# o produto.
+FASE_TOTAL=4
+fase() { printf '\n'; paint 1 "━━━ Fase $1/$FASE_TOTAL · $2"; }
+
+# ── Marca ───────────────────────────────────────────────────────────────────
+# Logo em blocos (fonte ANSI Shadow). Os blocos saem no MESMO verde do "✓" já
+# usado aqui, e o relevo (═╗║╝╚╔) em dim: essa dupla lê tanto em terminal de
+# fundo escuro quanto claro, sem precisar detectar o tema — uma cor de acento
+# clara sumiria no branco de quem usa terminal claro.
+#
+# A pintura é por substituição literal de string (${x//…}), não por classe de
+# caractere em sed/awk: sob LC_ALL=C essas ferramentas tratam a entrada como
+# BYTES, e todos esses glifos começam com 0xE2 — uma classe [╗║…] casaria
+# pedaço de █ e embaralharia o desenho na VPS de quem roda em locale C.
+LOGO_COLS=71
+banner() {
+  local cols linha ch
+  cols="$(tput cols 2>/dev/null || echo 80)"
+  case "$cols" in ''|*[!0-9]*) cols=80;; esac
+  printf '\n'
+  # Terminal estreito recebe a versão de uma linha: logo quebrado no meio é
+  # pior do que logo nenhum.
+  if [ "$COLOR" != 1 ] || [ "$cols" -lt $((LOGO_COLS + 2)) ]; then
+    paint 1 "  DESKCOMM"
+  else
+    # Tela limpa: tira o ruído do clone/apt de cima do logo. Exige TTY de
+    # verdade (não basta COLOR=1): com FORCE_COLOR numa saída redirecionada, um
+    # "limpe a tela" no meio do arquivo é lixo que ninguém pediu.
+    [ -t 1 ] && printf '\033[2J\033[H'
+    while IFS= read -r linha; do
+      linha="${linha//█/$'\033[32m'█$'\033[0m'}"
+      for ch in ═ ╗ ║ ╝ ╚ ╔; do linha="${linha//$ch/$'\033[2m'$ch$'\033[0m'}"; done
+      printf '  %s\n' "$linha"
+    done <<'LOGO'
+██████╗ ███████╗███████╗██╗  ██╗ ██████╗ ██████╗ ███╗   ███╗███╗   ███╗
+██╔══██╗██╔════╝██╔════╝██║ ██╔╝██╔════╝██╔═══██╗████╗ ████║████╗ ████║
+██║  ██║█████╗  ███████╗█████╔╝ ██║     ██║   ██║██╔████╔██║██╔████╔██║
+██║  ██║██╔══╝  ╚════██║██╔═██╗ ██║     ██║   ██║██║╚██╔╝██║██║╚██╔╝██║
+██████╔╝███████╗███████║██║  ██╗╚██████╗╚██████╔╝██║ ╚═╝ ██║██║ ╚═╝ ██║
+╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝
+LOGO
+  fi
+  printf '\n'
+  c_dim "  Agentes de IA que atendem no WhatsApp, dentro do seu CRM."
+  c_dim "  Open-source · roda no seu servidor · os dados são seus."
+}
 
 # ── Rede de segurança: nenhuma saída silenciosa ─────────────────────────────
 # Antes, qualquer comando que falhasse sob `set -e` derrubava o script sem
@@ -294,8 +376,189 @@ ask_one() {
     fi
     if [ "$secret" = "secret" ]; then c_grn "  ✓ recebido (${#input} caracteres)"; else c_grn "  ✓"; fi
     printf -v "$var" '%s' "$input"
+    save_partial "$var"
     return 0
   done
+}
+
+# O limiar NÃO é 4 GB, e a diferença importa: `MemTotal` é o que sobra depois
+# do que o kernel reserva para si, sempre menos do que foi vendido. Medido num
+# kernel com 8 GiB configurados: 8025284 KB, ou 95,7% — na mesma proporção uma
+# VPS de 4 GiB reporta ~4.012.000 KB, 0,3% acima de 4.000.000. E quem vende "4
+# GB" em GB decimais entrega 3.906.250 KB, que reporta ~3.735.000. Ou seja: com
+# o corte em 4.000.000 o aviso caía em cima de quem tinha ACABADO de comprar
+# exatamente a VPS recomendada — a pior hora possível para dizer a alguém que o
+# servidor dele é pequeno demais. 3.500.000 KB (3,34 GiB) deixa 4 GB de fora em
+# qualquer convenção e ainda pega de sobra as de 2 e 3 GB, que sofrem de verdade.
+RAM_MINIMA_KB=3500000
+ram_abaixo_do_recomendado() { [ "${1:-0}" -lt "$RAM_MINIMA_KB" ]; }
+
+# Uma linha de .env com o valor entre aspas simples e as aspas do conteúdo
+# escapadas — o que faz senha com espaço, `#` ou `$` sobreviver à releitura.
+# Fica aqui em cima (e não junto do bloco que escreve o .env) porque o
+# save_partial abaixo grava durante a ENTREVISTA, muito antes daquele bloco.
+envq() { printf "%s='%s'\n" "$1" "$(printf '%s' "${2-}" | sed "s/'/'\\\\''/g")"; }
+
+# Guarda cada resposta no instante em que ela é aceita. Antes, as 12 respostas
+# só viravam arquivo no FIM: quem travasse na connection string — a pergunta
+# mais difícil, e a última das credenciais — perdia tudo o que já tinha digitado
+# e recomeçava do zero na tentativa seguinte. Justamente quem mais precisa de
+# uma segunda tentativa é quem tem menos paciência para redigitar 11 campos.
+# Mesma permissão do .env (600): o conteúdo é o mesmo, inclusive os segredos.
+PARTIAL_FILE="${PARTIAL_FILE:-.env.partial}"
+save_partial() {
+  local var="$1" val="${!1-}" tmp="${PARTIAL_FILE}.tmp.$$"
+  umask 077
+  { [ -f "$PARTIAL_FILE" ] && grep -vE "^${var}=" "$PARTIAL_FILE" || true; } > "$tmp"
+  envq "$var" "$val" >> "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$PARTIAL_FILE"
+}
+
+# Quem publica 80 ou 443 NO HOST? Lê linhas "nome|projeto|imagem|portas" (o
+# formato do docker ps) e ecoa "nome|imagem" do primeiro que casar.
+#
+# O lado que importa da coluna Ports é o ANTES da seta — "0.0.0.0:80->80/tcp" é
+# host 80; "0.0.0.0:8080->80/tcp" é host 8080 e NÃO disputa nada. A primeira
+# versão disto olhava `docker port` ancorado na porta INTERNA, e errava dos dois
+# lados: abortava a instalação por causa de um phpMyAdmin em `-p 8080:80` (com
+# 80/443 livres, mandando o dono derrubar o site dele), e deixava passar um proxy
+# real em `-p 80:8080`, que é como se sobe Traefik sem privilégio.
+#
+# Separador é "|", não TAB: tab é IFS-whitespace, então dois tabs seguidos viram
+# um só e o campo vazio do meio SOME — um proxy subido com `docker run` (sem
+# label de compose) perdia a imagem, e o Traefik da hospedagem chamado
+# "coolify-proxy" era classificado como intruso.
+dono_das_portas() {  # dono_das_portas  < linhas   → ecoa "nome|projeto|imagem"
+  local nome proj img ports
+  while IFS='|' read -r nome proj img ports; do
+    [ -n "$nome" ] || continue
+    case "${ports// /}" in
+      *:80-\>*|*:443-\>*) printf '%s|%s|%s' "$nome" "$proj" "$img"; return 0;;
+    esac
+  done
+  return 1
+}
+
+# O nome que o docker compose dá ao projeto quando ninguém passa -p: basename do
+# diretório, minúsculo, só [a-z0-9_-] — E com os `_`/`-` do INÍCIO aparados
+# (NormalizeProjectName faz TrimLeft). Sem essa aparada, uma pasta como
+# `/root/_deskcomm` faz o kit calcular `_deskcomm` enquanto os contêineres
+# carregam `deskcomm`: a instalação deixa de se reconhecer e passa a se tratar
+# como intrusa. Medido contra o docker compose v2.38.2 em `_deskcomm`,
+# `-deskcomm`, `_-_crm` e `_123` — todos divergiam.
+nome_do_projeto_compose() {  # nome_do_projeto_compose <diretório>
+  local n
+  n="$(basename "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"
+  printf '%s' "${n#"${n%%[!_-]*}"}"
+}
+
+# A pergunta que decide é "o Docker consegue publicar a porta?", e a resposta
+# vem de TENTAR — não de inferir. Toda heurística sobre `docker port` ou `ss`
+# erra em algum caso real (proxy sem privilégio publicando 80:8080, app em
+# 8080:80, bind só no loopback, `ss` fora do PATH, userland-proxy desligado), e
+# erra dos dois lados: ou aborta uma instalação boa, ou entrega o choque de
+# portas lá na frente. Publicar de mentirinha usa exatamente a mecânica que o
+# Caddy vai usar, então não há espaço entre o teste e a realidade.
+# O contêiner sai na hora; a imagem é a mesma que o compose do kit já usa.
+porta_publicavel() {  # porta_publicavel <porta>
+  docker run --rm -p "$1:$1" --entrypoint /bin/true alpine:3.20 >/dev/null 2>&1
+}
+
+# A decisão final, isolada para poder ser exercitada sem Docker: este é o ponto
+# que já errou duas vezes (uma tratando o próprio Caddy como intruso, outra
+# deixando passar proxy que não fosse Traefik), e nas duas o erro só apareceu
+# rodando de verdade numa VPS.
+# Ecoa: caddy | traefik | bloqueia
+decide_proxy() {  # decide_proxy <portas_ocupadas> <projeto_do_dono> <projeto_atual> <imagem> <nome>
+  local ocupadas="${1:-}" dono_proj="${2:-}" meu_proj="${3:-}" img="${4:-}" nome="${5:-}"
+  [ -z "$ocupadas" ] && { printf 'caddy'; return 0; }
+  # As portas estão com ESTA MESMA instalação, já no ar: é a re-execução, que o
+  # próprio kit ensina como caminho para corrigir uma resposta.
+  [ -n "$dono_proj" ] && [ "$dono_proj" = "$meu_proj" ] && { printf 'caddy'; return 0; }
+  eh_traefik "$img" "$nome" && { printf 'traefik'; return 0; }
+  printf 'bloqueia'
+}
+
+# É um Traefik? Compara em minúsculas o par imagem+nome. A versão anterior usava
+# `*[Tt]raefik*`, que só tem classe de equivalência no primeiro caractere:
+# um contêiner "TRAEFIK-PROXY" escapava e era tratado como intruso.
+eh_traefik() {  # eh_traefik <imagem> <nome>
+  case "$(printf '%s %s' "${1:-}" "${2:-}" | tr '[:upper:]' '[:lower:]')" in
+    *traefik*) return 0;;
+  esac
+  return 1
+}
+
+# Os nomes que os labels do docker-compose.traefik.yml precisam CITAR, lidos da
+# configuração estática do Traefik da hospedagem. Não são convenção: Easypanel
+# (comum em VPS BR) chama os entrypoints de `http`/`https`, Dokploy de
+# `web`/`websecure`. Assumir um par é aposta — e a aposta errada falha CALADA: o
+# Traefik não reclama de label apontando para entrypoint inexistente, ele só não
+# cria a rota. O `up -d` diz "Started", o domínio cai no 404 catch-all do proxy e
+# não há uma linha de log dizendo por quê. Medido em produção: Easypanel com
+# Traefik 3.6.7, exatamente esse 404.
+#
+# Duas regras vieram de medir um Traefik v3.6 de verdade, não da documentação —
+# e as duas mudam o resultado:
+#   1. nome vindo de env vira MINÚSCULA (TRAEFIK_ENTRYPOINTS_HTTP_ADDRESS → `http`);
+#      nome vindo de argumento mantém a caixa (--entryPoints.WebSecure → `WebSecure`).
+#   2. argumento não se SOMA ao ambiente, SUBSTITUI: um único
+#      `--entrypoints.X.address` apaga o mapa inteiro que veio das env vars.
+#      Ler as duas fontes juntas inventaria um entrypoint que não existe.
+#
+# Ecoa "<entrypoint da 80>|<entrypoint da 443>|<certresolver>"; campo vazio = não
+# achei, e aí quem chama fica com o default de hoje.
+traefik_nomes() {  # traefik_nomes <linhas "cmd <arg>" e "env <VAR=valor>">
+  printf '%s\n' "${1:-}" | awk '
+    # ":80", "0.0.0.0:80", "[::]:80/tcp" → 80. O /udp é o QUIC, que NÃO é o
+    # entrypoint TCP que a rota do CRM usa.
+    function porta(v) {
+      gsub(/^"|"$/, "", v)
+      if (v ~ /\/udp$/) return ""
+      sub(/\/tcp$/, "", v); sub(/^.*:/, "", v)
+      return (v ~ /^[0-9]+$/) ? v : ""
+    }
+    { fonte = $1; par = substr($0, length($1) + 2)
+      chave = par; sub(/=.*/, "", chave)
+      valor = index(par, "=") ? substr(par, index(par, "=") + 1) : ""
+      k = tolower(chave) }
+    # --entrypoints.<nome>.address=:80  (a caixa do nome é preservada)
+    fonte == "cmd" && k ~ /^--?entrypoints\.[^.]+\.address$/ {
+      nome = chave; sub(/^--?[^.]*\./, "", nome); sub(/\.[^.]*$/, "", nome)
+      p = porta(valor); if (p != "") { ep["cmd" p] = nome; tem_ep_cmd = 1 } }
+    # TRAEFIK_ENTRYPOINTS_<NOME>_ADDRESS=:80  (o Traefik minúscula o nome)
+    fonte == "env" && k ~ /^traefik_entrypoints_.+_address$/ {
+      nome = k; sub(/^[^_]*_[^_]*_/, "", nome); sub(/_[^_]*$/, "", nome)
+      p = porta(valor); if (p != "") ep["env" p] = nome }
+    # --certificatesresolvers.<nome>.acme.…
+    fonte == "cmd" && k ~ /^--?certificatesresolvers\.[^.]+\.acme\./ {
+      nome = chave; sub(/^--?[^.]*\./, "", nome); sub(/\..*/, "", nome)
+      if (cr["cmd"] == "") cr["cmd"] = nome }
+    # TRAEFIK_CERTIFICATESRESOLVERS_<NOME>_ACME_…
+    fonte == "env" && k ~ /^traefik_certificatesresolvers_.+_acme_/ {
+      nome = k; sub(/^[^_]*_[^_]*_/, "", nome); sub(/_acme_.*$/, "", nome)
+      if (cr["env"] == "") cr["env"] = nome }
+    END {
+      f = tem_ep_cmd ? "cmd" : "env"
+      printf "%s|%s|%s\n", ep[f "80"], ep[f "443"], (cr["cmd"] != "" ? cr["cmd"] : cr["env"])
+    }
+  '
+}
+
+# Aplica um nome detectado. O valor que já está no .env é do dono e MANDA — mas
+# divergir do que o proxy tem de verdade é o sintoma exato do 404 mudo, e quem
+# instalou antes desta detecção tem `websecure` gravado sem nunca ter escolhido
+# isso. Avisar é o que transforma "não abre e não sei por quê" numa linha.
+tk_nome() {  # tk_nome <NOME_DA_VAR> <detectado>
+  local var="$1" achado="${2:-}" atual="${!1:-}"
+  [ -z "$achado" ] && return 0
+  if [ -z "$atual" ]; then
+    printf -v "$var" '%s' "$achado"
+  elif [ "$atual" != "$achado" ]; then
+    c_ylw "⚠ $var='$atual' no .env, mas o Traefik desta VPS usa '$achado'."
+    c_ylw "  Mantive o seu valor. Se o site não abrir, é aqui: troque para '$achado'."
+  fi
 }
 
 # Esconde o miolo de um segredo para a tela de conferência.
@@ -331,7 +594,10 @@ sb_carrega_credenciais() {
 # `test-validators.sh` exercita os validadores:  INSTALL_SH_LIB=1 . install.sh
 if [ "${INSTALL_SH_LIB:-}" = "1" ]; then trap - EXIT; return 0; fi
 
+banner
+
 # ── 1. Preflight ────────────────────────────────────────────────────────────
+fase 1 "Preparando o servidor"
 step "Verificando dependências"
 
 # VPS "cru" (Hetzner, DigitalOcean, Contabo…) não vem com Docker. Antes isto era
@@ -383,9 +649,10 @@ c_grn "✓ docker, git, openssl, curl ok"
 # instalar em 2GB achando que estava dentro do recomendado.
 if [ -r /proc/meminfo ]; then
   mem_kb=$(awk '/MemTotal/{print $2}' /proc/meminfo)
-  if [ "$mem_kb" -lt 4000000 ]; then
-    c_ylw "⚠ RAM total ~$((mem_kb/1024))MB. Recomendado 4GB para operar (2GB sobe, mas no limite)."
-    c_ylw "  Com menos de 4GB, adicione swap — ver docs/runbooks/waha-hostgator.md."
+  if ram_abaixo_do_recomendado "$mem_kb"; then
+    c_ylw "⚠ Este servidor tem ~$((mem_kb/1024))MB de RAM. O CRM sobe, mas fica no limite:"
+    c_ylw "  são 7 contêineres e o WhatsApp usa ~150MB por número conectado."
+    c_ylw "  Adicione swap antes de operar — ver docs/runbooks/waha-hostgator.md."
   fi
 fi
 
@@ -404,9 +671,108 @@ PROJECT_DIR="$(pwd)"
 source "$KIT_DIR/_common.sh"
 
 # ── 3. Coleta de config ─────────────────────────────────────────────────────
+fase 2 "Suas informações"
 step "Configuração"
 # Se já existe .env, carrega pra não repetir perguntas (idempotência).
 if [ -f .env ]; then load_env .env; c_grn "✓ .env existente carregado"; fi
+# Respostas guardadas de uma tentativa que não chegou ao fim. Carregam DEPOIS do
+# .env de propósito: se as duas fontes têm a chave, a mais recente é esta.
+if [ -f "$PARTIAL_FILE" ]; then
+  load_env "$PARTIAL_FILE"
+  c_grn "✓ retomando: $(grep -c '=' "$PARTIAL_FILE" 2>/dev/null || echo 0) resposta(s) guardadas da tentativa anterior"
+  c_dim "  (para responder tudo de novo do zero: rm $PARTIAL_FILE)"
+fi
+
+# ── Proxy reverso: quem está com as portas 80 e 443? ────────────────────────
+# Fica AQUI, logo depois de ler o .env e ANTES de qualquer coisa cara: era a
+# última etapa da fase 2, então quem esbarrava neste problema já tinha criado um
+# projeto Supabase, respondido tudo e esperado o clone — para só então o
+# `docker compose up` morrer com "Bind for 0.0.0.0:80 failed: port is already
+# allocated". Descobrir isso antes de cobrar qualquer trabalho é o mínimo.
+#
+# A varredura NÃO procura por "traefik": procura por QUEM PUBLICA as portas, e
+# só depois pergunta o que é. A versão anterior só reconhecia Traefik, então um
+# Caddy — inclusive o de outro DeskcommCRM instalado na mesma VPS — passava
+# despercebido e a instalação escolhia `caddy`, garantindo o choque de portas.
+# Medido numa VPS com produção rodando: exatamente esse erro, na fase 4.
+#
+# Contêineres DESTA instalação são ignorados: numa re-execução o nosso próprio
+# Caddy está de pé publicando 80/443, e tratá-lo como "outro proxy" mataria a
+# idempotência — que é justamente o que permite rodar de novo para corrigir uma
+# resposta errada.
+proj_atual="${COMPOSE_PROJECT_NAME:-$(nome_do_projeto_compose "$PROJECT_DIR")}"
+
+portas_ocupadas=""; n_ocupadas=0
+porta_publicavel 80  || { portas_ocupadas="80"; n_ocupadas=1; }
+porta_publicavel 443 || { portas_ocupadas="${portas_ocupadas:+$portas_ocupadas e }443"; n_ocupadas=$((n_ocupadas + 1)); }
+
+# Identificação do ocupante — só para a MENSAGEM. Quem decide é o teste acima,
+# então não saber quem é NUNCA vira "pode instalar": a falha é fechada.
+# O "|| true" não é decorativo: numa atribuição o status do pipeline vira o
+# status do script, e sob `set -e` + `pipefail` um docker ps que falhe (ou um
+# SIGPIPE do consumidor) mataria o instalador mudo, no meio da fase 2.
+dono_portas=""; dono_projeto=""; dono_imagem=""
+if [ -n "$portas_ocupadas" ]; then
+  _dono="$(docker ps --format '{{.Names}}|{{.Label "com.docker.compose.project"}}|{{.Image}}|{{.Ports}}' 2>/dev/null | dono_das_portas || true)"
+  if [ -n "$_dono" ]; then
+    dono_portas="${_dono%%|*}"; _resto="${_dono#*|}"
+    dono_projeto="${_resto%%|*}"; dono_imagem="${_resto#*|}"
+    unset _resto
+  fi
+  unset _dono
+fi
+
+# Inicializado sempre: o bloco da rede do Traefik, mais abaixo, lê esta variável
+# sem default, e sob `set -u` uma instalação que já traz REVERSE_PROXY=traefik no
+# .env (portanto sem passar pela detecção) morreria com "unbound variable".
+traefik_container=""
+
+if [ -z "${REVERSE_PROXY:-}" ]; then
+  # A exclusão da própria instalação acontece AQUI, não na varredura: o teste de
+  # bind não tem como se auto-excluir, então filtrar o nosso contêiner antes só
+  # produzia um "ocupado por ninguém" — bloqueio sem um comando sequer.
+  case "$(decide_proxy "$portas_ocupadas" "$dono_projeto" "$proj_atual" "$dono_imagem" "$dono_portas")" in
+  caddy)
+    REVERSE_PROXY=caddy
+    [ -n "$portas_ocupadas" ] && c_dim "  (as portas 80/443 já estão com esta instalação — seguindo)"
+    ;;
+  traefik)
+    REVERSE_PROXY=traefik
+    traefik_container="$dono_portas"
+    c_ylw "⚠ Detectei um Traefik já rodando neste VPS (contêiner '${dono_portas}', ocupando 80/443)."
+    c_ylw "  Vou publicar o CRM através dele em vez de subir um proxy próprio —"
+    c_ylw "  desligar o Traefik quebraria o que a sua hospedagem instalou."
+    ;;
+  *)
+    # A preposição vem junto do trecho: "por o contêiner" sai errado se a frase
+    # fixar "por" e o pedaço variável começar com artigo. E a imagem só entra se
+    # for conhecida — "(imagem )" vazio era o sintoma de um campo perdido.
+    ocupante="${dono_portas:+pelo contêiner '${dono_portas}'${dono_imagem:+ (imagem ${dono_imagem})}}"
+    ocupante="${ocupante:-por um programa do próprio servidor}"
+    # Concordância com o número de portas: "A porta 80 e 443 já está ocupada"
+    # saiu na prova real e denuncia texto montado sem olhar o próprio dado.
+    if [ "$n_ocupadas" -gt 1 ]; then
+      c_red "✖ As portas ${portas_ocupadas} já estão ocupadas ${ocupante}."
+    else
+      c_red "✖ A porta ${portas_ocupadas} já está ocupada ${ocupante}."
+    fi
+    printf '\n%s\n'   "  O CRM precisa dessas duas portas para publicar o site com HTTPS. Subir um"
+    printf '%s\n\n'   "  segundo proxy nelas não funciona: o Docker recusa e a instalação para."
+    printf '%s\n'     "  Como resolver, na ordem do mais provável:"
+    printf '\n%s\n'   "  1. Já é outro DeskcommCRM neste servidor? Então use aquele — entre na"
+    printf '%s\n'     "     pasta dele e rode: bash hostgator-setup-kit/update.sh"
+    printf '\n%s\n'   "  2. Não usa mais o que está ocupando? Desligue e rode este instalador de novo:"
+    [ -n "$dono_portas" ] && printf '%s\n' "       docker stop ${dono_portas}"
+    printf '\n%s\n'   "  3. Quer manter os dois no ar? Aí o CRM tem de sair por um proxy só, e isso"
+    printf '%s\n'     "     é configuração manual — o kit automatiza esse caminho apenas para"
+    printf '%s\n\n'   "     Traefik (ponha REVERSE_PROXY=traefik no .env)."
+    if [ "$n_ocupadas" -gt 1 ]; then
+      die "Libere as portas ${portas_ocupadas} (ou use a instalação que já existe) e rode de novo."
+    fi
+    die "Libere a porta ${portas_ocupadas} (ou use a instalação que já existe) e rode de novo."
+    ;;
+  esac
+fi
 
 # ── Supabase automático (opcional) ──────────────────────────────────────────
 # Criar o projeto no navegador e copiar 4 campos era o passo mais LENTO da
@@ -540,37 +906,6 @@ UPSTASH_REDIS_REST_TOKEN="$SRH_TOKEN"
 c_grn "✓ segredos prontos"
 
 # ── 5. Escreve .env (600) ───────────────────────────────────────────────────
-# ── Proxy reverso: o VPS já tem um? ─────────────────────────────────────────
-# Várias hospedagens entregam a VPS com um Traefik próprio já ocupando 80/443
-# (Hostinger, Coolify, Dokploy...). Nesse caso o Caddy do kit não consegue subir
-# — falha no bind da porta e a instalação morre no meio, com um erro que não diz
-# nada a quem não é técnico. Detectar isso sozinho é o que separa "instalou" de
-# "desistiu". Quem já tem REVERSE_PROXY no .env manda: a detecção não sobrescreve.
-# O candidato precisa PUBLICAR 80/443. Só casar "traefik" no nome/imagem aceita
-# qualquer contêiner chamado `traefik-backup` e desligaria o TLS que o kit
-# controla por causa de um homônimo parado.
-traefik_container=""
-for _c in $(docker ps --format '{{.Names}}' 2>/dev/null); do
-  case "$(docker inspect -f '{{.Config.Image}} {{.Name}}' "$_c" 2>/dev/null)" in
-    *[Tt]raefik*)
-      if docker port "$_c" 2>/dev/null | grep -qE '^(80|443)/tcp'; then
-        traefik_container="$_c"; break
-      fi
-      ;;
-  esac
-done
-
-if [ -z "${REVERSE_PROXY:-}" ]; then
-  if [ -n "$traefik_container" ]; then
-    REVERSE_PROXY=traefik
-    c_ylw "⚠ Detectei um Traefik já rodando neste VPS (contêiner '${traefik_container}', ocupando 80/443)."
-    c_ylw "  Vou publicar o CRM através dele em vez de subir um proxy próprio —"
-    c_ylw "  desligar o Traefik quebraria o que a sua hospedagem instalou."
-  else
-    REVERSE_PROXY=caddy
-  fi
-fi
-
 # A rede em que o Traefik REALMENTE está. Antes isto era calculado como
 # "<pasta>_internal", ou seja, a rede do PRÓPRIO projeto — e aí nada funcionava:
 # o Traefik não alcança uma bridge que não é dele, e o label `traefik.docker.network`
@@ -578,13 +913,61 @@ fi
 # nas duas redes. Medido com Traefik v3.3 real: só com o label apontando pra rede do
 # PROXY a requisição sai de HTTP 000 (timeout) para HTTP 200.
 if [ "$REVERSE_PROXY" = "traefik" ] && [ -z "${TRAEFIK_NETWORK:-}" ] && [ -n "$traefik_container" ]; then
-  TRAEFIK_NETWORK="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$traefik_container" 2>/dev/null | awk '{print $1}')"
+  # "|| true": sem ele o `die` explicativo logo abaixo — que é o tratamento
+  # CERTO deste caso — é inalcançável. Numa atribuição o status do pipeline vira
+  # o status do script; se o painel da hospedagem recriou o proxy entre a
+  # detecção e aqui, o docker inspect sai 1, o 2>/dev/null engole a mensagem e o
+  # instalador cai no painel genérico de erro sem dizer o que houve.
+  TRAEFIK_NETWORK="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$traefik_container" 2>/dev/null | awk '{print $1}' || true)"
 fi
 if [ "$REVERSE_PROXY" = "traefik" ] && [ -z "${TRAEFIK_NETWORK:-}" ]; then
   die "Não consegui descobrir a rede Docker do seu Traefik. Rode 'docker network ls',
 identifique a rede dele e ponha TRAEFIK_NETWORK=<nome> no .env antes de tentar de novo."
 fi
 TRAEFIK_NETWORK="${TRAEFIK_NETWORK:-traefik}"
+
+# Os NOMES dos entrypoints e do certresolver, pela mesma via da rede: perguntar
+# ao proxy em vez de assumir. Ver o cabeçalho de traefik_nomes para o porquê de
+# assumir ser caro aqui (o erro é mudo) e para as duas regras medidas.
+#
+# Numa re-execução com REVERSE_PROXY já no .env a detecção de proxy não roda e
+# `traefik_container` fica vazio — mas o dono das portas foi levantado assim
+# mesmo lá em cima, e é ele que interessa. É o caso de quem já instalou: é essa
+# rodada que aponta o `websecure` errado que ficou gravado.
+_tk_ct="$traefik_container"
+if [ "$REVERSE_PROXY" = "traefik" ] && [ -z "$_tk_ct" ] && eh_traefik "$dono_imagem" "$dono_portas"; then
+  _tk_ct="$dono_portas"
+fi
+if [ "$REVERSE_PROXY" = "traefik" ] && [ -n "$_tk_ct" ]; then
+  # `.Config.Cmd` traz os argumentos (inclusive num contêiner de serviço Swarm,
+  # que é como o Easypanel roda o dele) e `.Config.Env`, a config por ambiente.
+  # "|| true" pelo mesmo motivo do bloco da rede: numa atribuição o status do
+  # pipeline vira o do script. Aqui não achar nada é caso PREVISTO — Traefik
+  # configurado por traefik.yml montado não expõe nada disso, e o default cobre.
+  _tk_conf="$(docker inspect \
+    -f '{{range .Config.Cmd}}cmd {{println .}}{{end}}{{range .Config.Env}}env {{println .}}{{end}}' \
+    "$_tk_ct" 2>/dev/null || true)"
+  _tk="$(traefik_nomes "$_tk_conf" || true)"
+  _tk_resto="${_tk#*|}"
+  tk_nome TRAEFIK_ENTRYPOINT_HTTP "${_tk%%|*}"
+  tk_nome TRAEFIK_ENTRYPOINT      "${_tk_resto%%|*}"
+  tk_nome TRAEFIK_CERTRESOLVER    "${_tk_resto##*|}"
+  # Sem as barras não sobra nada = nenhum dos três nomes saiu. Comparar com "||"
+  # dava verde falso no caso em que o próprio traefik_nomes não ecoa (awk fora do
+  # PATH): a mensagem diria "detectei" mostrando os defaults.
+  if [ -z "${_tk//|/}" ]; then
+    c_ylw "⚠ Não consegui ler os entrypoints do Traefik de '$_tk_ct' (config por arquivo?)."
+    c_ylw "  Vou usar os nomes padrão. Se o site responder 404 depois de instalado,"
+    c_ylw "  o nome certo está no traefik.yml da hospedagem (ou em"
+    c_ylw "  'docker inspect $_tk_ct | grep -i entrypoints'): ponha em"
+    c_ylw "  TRAEFIK_ENTRYPOINT_HTTP / TRAEFIK_ENTRYPOINT no .env e rode de novo."
+  else
+    c_grn "✓ Traefik: entrypoints ${TRAEFIK_ENTRYPOINT_HTTP:-web}/${TRAEFIK_ENTRYPOINT:-websecure}, certresolver ${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+  fi
+  unset _tk_conf _tk _tk_resto
+fi
+# `_tk_ct` sobrevive de propósito: a conferência da rota, lá no fim, nomeia esse
+# contêiner no comando que a pessoa vai copiar.
 
 # ── Telemetria: perguntar, não presumir ─────────────────────────────────────
 # Issue #100. Antes, quem não definisse SENTRY_DSN mandava relatório de erro pro
@@ -605,7 +988,7 @@ if [ -z "${SENTRY_DSN+x}" ]; then
     printf '%s\n' "Seus dados de clientes, conversas e banco NUNCA saem daqui."
     printf '\n%s\n' "Você pode mudar depois no .env, a qualquer momento."
     read -r -p "  Enviar relatórios de erro anonimizados? (s/N) " _tel
-    if [ "${_tel:-N}" = "s" ] || [ "${_tel:-N}" = "S" ]; then
+    if resposta_sim "${_tel:-}"; then
       SENTRY_DSN=""
       c_grn "✓ Telemetria de erros ligada — obrigado, isso ajuda o projeto."
     else
@@ -623,7 +1006,6 @@ umask 077
 # arquivo com `source` — os scripts do kit e a receita do próprio README
 # (`source .env && curl ...`). O Docker Compose remove as aspas ao carregar,
 # então o contêiner recebe exatamente o valor digitado.
-envq() { printf "%s='%s'\n" "$1" "$(printf '%s' "${2-}" | sed "s/'/'\\\\''/g")"; }
 
 {
   printf '# Gerado por install.sh — NÃO comitar. Contém segredos.\n'
@@ -696,9 +1078,14 @@ envq() { printf "%s='%s'\n" "$1" "$(printf '%s' "${2-}" | sed "s/'/'\\\\''/g")";
   envq OWNER_PASSWORD "$OWNER_PASSWORD"
 } > .env
 chmod 600 .env
+# O .env definitivo existe: o rascunho cumpriu o papel e some — deixá-lo no
+# disco seria uma segunda cópia dos segredos, e desatualizada na primeira
+# correção que alguém fizer no .env.
+rm -f "$PARTIAL_FILE"
 c_grn "✓ .env escrito (permissão 600)"
 
 # ── 6. Checagem de DNS ──────────────────────────────────────────────────────
+fase 3 "Banco de dados e domínio"
 step "Conferindo DNS de ${DOMAIN}"
 public_ip="$(curl -fsS --max-time 8 https://api.ipify.org 2>/dev/null || echo '')"
 # Um domínio pode ter A (IPv4) e AAAA (IPv6) ao mesmo tempo, e o resolver não
@@ -712,9 +1099,31 @@ resolved="$(getent ahosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | t
 if [ -n "$public_ip" ] && case " $resolved " in *" $public_ip "*) true;; *) false;; esac; then
   c_grn "✓ ${DOMAIN} → ${public_ip} (aponta pra este VPS)"
 else
-  c_ylw "⚠ ${DOMAIN} resolve para '${resolved:-nada}' e o IP deste VPS é '${public_ip:-desconhecido}'."
-  c_ylw "  O SSL (Let's Encrypt) só será emitido quando o A-record apontar pra cá."
-  [ "$NONINTERACTIVE" = 0 ] && { read -r -p "  Continuar mesmo assim? (s/N) " a; [ "${a:-N}" = "s" ] || die "Ajuste o DNS e rode de novo."; }
+  # DNS recém-apontado leva minutos para propagar: chegar aqui é estado NORMAL,
+  # não erro. Antes havia uma única saída — responder exatamente "s" — e
+  # qualquer outra coisa matava a instalação. Agora o padrão é esperar junto com
+  # a pessoa: Enter reconsulta, e sair é uma escolha explícita dela.
+  while [ "$NONINTERACTIVE" = 0 ]; do
+    c_ylw "⚠ ${DOMAIN} resolve para '${resolved:-nada}' e o IP deste VPS é '${public_ip:-desconhecido}'."
+    c_ylw "  O SSL (Let's Encrypt) só será emitido quando o A-record apontar pra cá."
+    printf '\n%s\n'   "  No painel do seu domínio, crie um registro A apontando ${DOMAIN}"
+    printf '%s\n\n'   "  para ${public_ip:-o IP deste servidor}. Costuma valer em poucos minutos."
+    printf '%s\n'     "  Enter = conferir de novo"
+    printf '%s\n'     "  c     = continuar assim mesmo (o site sobe sem cadeado até o DNS valer)"
+    printf '%s\n'     "  s     = sair e voltar depois (o que você já respondeu fica guardado)"
+    if ! read -r -p "  > " a; then a="s"; fi
+    case "$(printf '%s' "$a" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" in
+      c|continuar) c_ylw "  Seguindo sem o DNS pronto — lembre de apontar o A-record."; break;;
+      s|sair|n|nao) die "Ajuste o A-record de ${DOMAIN} para ${public_ip:-o IP deste servidor} e rode o instalador de novo.";;
+      *)
+        resolved="$(getent ahosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' || echo '')"
+        if [ -n "$public_ip" ] && case " $resolved " in *" $public_ip "*) true;; *) false;; esac; then
+          c_grn "✓ ${DOMAIN} → ${public_ip} (agora aponta pra este VPS)"; break
+        fi
+        c_ylw "  Ainda não propagou. Dá pra esperar e tentar de novo."
+        ;;
+    esac
+  done
 fi
 
 # ── 7. Aplica o schema (baseline) no Supabase — via container postgres ───────
@@ -818,6 +1227,7 @@ end \$\$;
 SQL
 
 # ── 9. Sobe a stack ─────────────────────────────────────────────────────────
+fase 4 "Colocando o CRM no ar"
 step "Puxando a imagem e subindo os serviços"
 dc pull
 dc up -d
@@ -825,14 +1235,52 @@ c_grn "✓ containers no ar"
 
 # ── 10. Healthcheck ─────────────────────────────────────────────────────────
 step "Aguardando o app ficar saudável"
-ok=0
-for i in $(seq 1 30); do
-  if dc exec -T app node -e "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))" 2>/dev/null; then
-    ok=1; break
-  fi
-  sleep 3
-done
-[ "$ok" = 1 ] && c_grn "✓ app respondendo" || c_ylw "⚠ app ainda não respondeu. Veja: docker compose $(dc_files) logs app"
+# Antes isto abria um socket na porta 3000 e dava por bom. A porta abre assim
+# que o Node sobe, então o "✓" saía com o app ainda sem banco — e o bloco
+# "Instalação concluída!" saía logo atrás, incondicionalmente. Um falso verde
+# no exato momento em que a pessoa decide se confia no produto. Agora o critério
+# é o mesmo do update.sh: a rota /api/v1/health responder "status":"ok".
+if health_body="$(wait_app_healthy 30 3)"; then
+  APP_SAUDAVEL=1
+  c_grn "✓ app no ar e saudável"
+else
+  APP_SAUDAVEL=0
+  c_ylw "⚠ os contêineres subiram, mas o app não respondeu que está saudável."
+  # "|| true": mesma família do pipe que matava o supabase-provision.sh — o
+  # corpo passa de 200 bytes, o head fecha o pipe e o printf leva SIGPIPE.
+  [ -n "$health_body" ] && c_dim "  última resposta: $(printf '%s' "$health_body" | head -c 200 || true)"
+fi
+
+# O healthcheck acima pergunta ao app DENTRO do contêiner (127.0.0.1:3000), então
+# ele é verde mesmo quando o proxy não roteia nada — e é por isso que o entrypoint
+# errado passava despercebido até a pessoa abrir o site. Aqui a pergunta é feita
+# pelo caminho do usuário: bate na porta 80 do próprio proxy com o Host do
+# domínio. Sem DNS e sem TLS no meio, então isto não depende de propagação nem de
+# certificado — só responde se o Traefik encontrou (ou não) a rota do CRM.
+# Avisa, nunca bloqueia: uma hospedagem pode ter razões próprias para não ter
+# entrypoint na 80, e reprovar uma instalação boa por isso é pior que o aviso.
+if [ "$REVERSE_PROXY" = "traefik" ]; then
+  step "Conferindo a rota no Traefik da hospedagem"
+  _rota=""
+  for _i in 1 2 3; do
+    # O provider do Docker leva um instante para ver o contêiner novo.
+    _rota="$(curl -s -o /dev/null -m 5 -w '%{http_code}' -H "Host: ${DOMAIN}" http://127.0.0.1/ 2>/dev/null || true)"
+    case "$_rota" in 000|''|404) sleep 3;; *) break;; esac
+  done
+  case "$_rota" in
+    000|'')
+      c_dim "  (a porta 80 não respondeu aqui dentro — não deu para conferir)" ;;
+    404)
+      c_ylw "⚠ O Traefik respondeu 404 para ${DOMAIN}: ele NÃO está roteando o CRM."
+      c_ylw "  Quase sempre é o nome do entrypoint. Os desta VPS estão em:"
+      c_ylw "      docker inspect ${_tk_ct:-<contêiner do traefik>} | grep -i entrypoints"
+      c_ylw "  Ajuste TRAEFIK_ENTRYPOINT_HTTP / TRAEFIK_ENTRYPOINT no .env e rode:"
+      c_ylw "      docker compose $(dc_files) up -d" ;;
+    *)
+      c_grn "✓ o Traefik está roteando ${DOMAIN} para o CRM (HTTP ${_rota})" ;;
+  esac
+  unset _rota _i
+fi
 
 # ── 11. Automações (cron do drain de eventos) ───────────────────────────────
 step "Ativando as automações"
@@ -841,6 +1289,46 @@ setup_event_log_drain_cron
 setup_update_agent_cron
 
 # ── Final ───────────────────────────────────────────────────────────────────
+# O app não confirmou que está de pé: dizer "Instalação concluída!" aqui seria
+# mentir na única tela que a pessoa vai ler inteira. Ela recebe o estado real e
+# o caminho de diagnóstico — e não a receita de apagar tudo do show_recovery,
+# que existe para quem parou no MEIO. Aqui nada ficou pela metade: a config
+# está salva e a stack está de pé; falta o app responder.
+if [ "${APP_SAUDAVEL:-0}" != 1 ]; then
+  cat <<INCOMPLETO
+
+$(c_ylw "═══════════════════════════════════════════════════════")
+$(c_ylw " Quase lá — falta o app responder")
+$(c_ylw "═══════════════════════════════════════════════════════")
+
+  A configuração está salva e os contêineres estão no ar. Você NÃO precisa
+  refazer nada — falta o app dizer que está saudável.
+
+  O motivo mais comum é uma chave faltando ou errada no .env. O log diz qual:
+
+       docker compose $(dc_files) logs --tail=50 app
+
+     procure por: [env] Falha de validação
+
+  Diagnóstico completo dos serviços:
+
+       bash ${KIT_DIR}/healthcheck.sh
+
+  Depois de corrigir o .env, é só subir de novo (nada é perdido):
+
+       docker compose $(dc_files) up -d
+
+  Travou? Leve o log para a comunidade — tem gente que já passou por isso:
+
+       ${COMUNIDADE_URL}
+
+INCOMPLETO
+  # Sai != 0 para que automação (e o --yes) saiba que não terminou saudável,
+  # mas sem o trap: a receita de "apague tudo e recomece" não cabe aqui.
+  trap - EXIT
+  exit 1
+fi
+
 cat <<DONE
 
 $(c_grn "═══════════════════════════════════════════════════════")
@@ -862,6 +1350,13 @@ $(c_grn "═══════════════════════�
   4. Ao terminar o onboarding, o CRM pede a verificação em duas etapas:
        tenha o Google Authenticator/Authy à mão e GUARDE os códigos de
        recuperação que aparecem. Perdeu o celular? bash hostgator-setup-kit/reset-mfa.sh ${OWNER_EMAIL}
+
+$(c_grn "  ─── A comunidade ──────────────────────────────────────")
+
+  É onde saem os avisos de versão nova, os agentes que outras pessoas já
+  configuraram e a resposta de quem roda exatamente este CRM:
+
+       ${COMUNIDADE_URL}
 
   Telemetria: por padrão os erros desta instalação são enviados ao Sentry do
   projeto, o que ajuda a corrigir falhas que afetam todo mundo. Para desligar,
