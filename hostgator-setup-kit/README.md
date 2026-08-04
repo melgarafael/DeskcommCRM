@@ -115,7 +115,7 @@ painel dela. Se o seu Traefik usa nomes diferentes de `websecure`/`letsencrypt`,
 
 | Script | Função |
 |---|---|
-| `install.sh` | Instala tudo (idempotente) |
+| `install.sh` | Instala tudo (idempotente — re-rodar **não** troca a senha de um admin que já existe) |
 | `update.sh` | Atualiza pra versão nova |
 | `backup.sh` | Backup do banco + sessões WhatsApp |
 | `restore.sh` | Restaura um backup |

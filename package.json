@@ -22,7 +22,7 @@
     "test:journeys": "playwright test -c tests/journeys/playwright.config.ts",
     "test:unit": "vitest run",
     "test:db": "bash scripts/test-db.sh",
-    "test:shell": "bash tests/shell/update-guard.test.sh",
+    "test:shell": "bash tests/shell/update-guard.test.sh && bash hostgator-setup-kit/test-validators.sh",
     "test:invariants": "bash scripts/test-db.sh",
     "lint:channels": "tsx scripts/lint-channels.ts",
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm test:unit",

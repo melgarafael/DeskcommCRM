@@ -519,6 +519,33 @@ sb_carrega_credenciais() {
   done <<<"$1"
 }
 
+# Cria o dono no Supabase Auth (passo 8). Se esse e-mail JÁ tem usuário, a admin
+# API responde 422 `email_exists` e NÃO toca na senha dele — medido contra o
+# GoTrue: depois do 422, a senha antiga continua entrando e a do corpo não vale.
+# Ou seja, o instalador nunca troca a senha de ninguém, e re-rodar é seguro.
+#
+# O que faltava era DIZER isso. Sem a mensagem, quem re-roda o instalador para
+# corrigir uma config lê "senha: (a que você definiu)" no fim, tenta entrar com
+# a senha que acabou de pôr no .env, e não entra — a que vale é a da instalação
+# anterior. Nada quebrou, mas a última tela mentiu, que é o pior lugar.
+#
+# Sai 0 sempre (quem decide se o dono existe é o psql do passo seguinte, que
+# resolve o uid direto do auth.users); quem já existia fica em OWNER_JA_EXISTIA.
+OWNER_JA_EXISTIA=0
+criar_dono_no_auth() {
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users" \
+    -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+    -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"${OWNER_EMAIL}\",\"password\":\"${OWNER_PASSWORD}\",\"email_confirm\":true}" 2>/dev/null || true)"
+  [ "$code" = "422" ] || return 0
+  OWNER_JA_EXISTIA=1
+  c_ylw "• esse e-mail já tinha usuário — a senha dele NÃO foi alterada."
+  c_dim "  continua valendo a senha anterior; para trocar:"
+  c_dim "    bash ${KIT_DIR}/reset-password.sh ${OWNER_EMAIL}"
+}
+
 # Carrega só as funções acima, sem instalar nada — é assim que
 # `test-validators.sh` exercita os validadores:  INSTALL_SH_LIB=1 . install.sh
 if [ "${INSTALL_SH_LIB:-}" = "1" ]; then trap - EXIT; return 0; fi
@@ -1075,20 +1102,15 @@ fi
 
 # ── 8. Bootstrap do 1º dono (cria no Auth + promove via psql) ───────────────
 step "Criando o primeiro admin (${OWNER_EMAIL})"
-# 1) Cria o usuário no Supabase Auth. Se já existe, a API responde 422 — ignoramos
-#    (|| true): a re-execução é idempotente, o passo seguinte encontra o usuário.
-curl -fsS -X POST "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Content-Type: application/json" \
-  -d "{\"email\":\"${OWNER_EMAIL}\",\"password\":\"${OWNER_PASSWORD}\",\"email_confirm\":true}" \
-  >/dev/null 2>&1 || true
+# 1) Cria o usuário no Supabase Auth. Se já existe, a API responde 422, a senha
+#    dele fica intacta e a função avisa — ver o comentário na definição dela.
+criar_dono_no_auth
 
 # 2) Resolve o id direto do auth.users e cria org + membership + platform_admin.
 #    Resolver o uid DENTRO do SQL evita parsing frágil de JSON e funciona tanto para
 #    usuário recém-criado quanto para um que já existia (re-execução).
 docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<SQL \
-  && c_grn "✓ dono criado e promovido a super-admin" \
+  && c_grn "✓ dono $([ "$OWNER_JA_EXISTIA" = 1 ] && printf 'confirmado' || printf 'criado') e promovido a super-admin" \
   || die "Não consegui promover o admin. Confira a service_role key, a URL e a connection string do Supabase."
 do \$\$
 declare v_org uuid; v_uid uuid;
@@ -1184,6 +1206,16 @@ INCOMPLETO
   exit 1
 fi
 
+# Numa reinstalação sobre um banco que já tinha esse dono, a senha que entra é a
+# antiga — o Auth recusou (422) a que está no .env. Dizer "a que você definiu"
+# aqui manda a pessoa tentar a senha errada na primeira tela que ela vê.
+if [ "$OWNER_JA_EXISTIA" = 1 ]; then
+  SENHA_LOGIN="a MESMA de antes (esse e-mail já tinha usuário; o instalador não troca senha)
+                trocar: bash ${KIT_DIR}/reset-password.sh ${OWNER_EMAIL}"
+else
+  SENHA_LOGIN="(a que você definiu)"
+fi
+
 cat <<DONE
 
 $(c_grn "═══════════════════════════════════════════════════════")
@@ -1195,7 +1227,7 @@ $(c_grn "═══════════════════════�
 
   2. Faça login com:
        e-mail: ${OWNER_EMAIL}
-       senha:  (a que você definiu)
+       senha:  ${SENHA_LOGIN}
 
   3. Conecte o WhatsApp (2º passo do onboarding):
        Deixe o WhatsApp JÁ ABERTO em Configurações → Aparelhos conectados

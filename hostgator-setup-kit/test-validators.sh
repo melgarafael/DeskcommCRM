@@ -535,6 +535,49 @@ np_ok /root/_123         123
 np_ok /root/deskcomm.crm deskcommcrm
 np_ok /root/crm_cliente  crm_cliente
 
+echo "bootstrap do dono (o instalador não troca senha de quem já existe)"
+# Um `curl` de mentira devolve só o código HTTP, que é o que a função lê. Prova
+# a única coisa que ela decide: 422 = o e-mail já tinha usuário, então a senha
+# que entra é a ANTIGA e a pessoa precisa ouvir isso — senão ela sai da última
+# tela do instalador tentando a senha nova do .env, que o Auth recusou.
+FAKEBIN="$(mktemp -d)"
+trap 'rm -rf "$FAKEBIN"' EXIT
+cat > "$FAKEBIN/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s' "${FAKE_HTTP_CODE:-000}"
+STUB
+chmod +x "$FAKEBIN/curl"
+PATH="$FAKEBIN:$PATH"
+NEXT_PUBLIC_SUPABASE_URL="https://x.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="service-role-de-mentira"
+OWNER_EMAIL="dono@empresa.com.br"
+OWNER_PASSWORD="SenhaNovaDoEnv!2026"
+KIT_DIR="hostgator-setup-kit"
+
+dono_ok() {  # dono_ok <descrição> <http> <ja_existia> [trecho esperado na saída]
+  local desc="$1" http="$2" esperado="$3" want="${4-}" out
+  OWNER_JA_EXISTIA=0
+  out="$(FAKE_HTTP_CODE="$http" criar_dono_no_auth 2>&1; printf '|%s' "$OWNER_JA_EXISTIA")"
+  local flag="${out##*|}"; out="${out%|*}"
+  if [ "$flag" != "$esperado" ]; then
+    printf '  ✗ %s  (OWNER_JA_EXISTIA=%s, esperava %s)\n' "$desc" "$flag" "$esperado"; fail=1; return
+  fi
+  if [ -n "$want" ] && ! printf '%s' "$out" | grep -qi -- "$want"; then
+    printf '  ✗ %s  (não avisou; esperava falar de: %s)\n     disse: %s\n' "$desc" "$want" "$out"; fail=1; return
+  fi
+  if [ -z "$want" ] && [ -n "$out" ]; then
+    printf '  ✗ %s  (falou de senha numa criação normal: %s)\n' "$desc" "$out"; fail=1; return
+  fi
+  printf '  ✓ %s\n' "$desc"
+}
+
+dono_ok "201 (usuário novo) → segue calado"                201 0
+dono_ok "422 (já existe) → marca e avisa que NÃO trocou"   422 1 "senha dele NÃO foi alterada"
+dono_ok "422 → ensina o caminho de trocar a senha"         422 1 "reset-password.sh"
+# Rede fora / URL errada não é "já existe": inventar o aviso aqui faria a pessoa
+# desconfiar de uma senha que está certa. Quem reprova de verdade é o psql adiante.
+dono_ok "000 (curl não chegou) → não inventa que já existia" 000 0
+
 echo
 if [ "$fail" = 0 ]; then echo "todos os validadores passaram"; else echo "FALHOU"; fi
 exit "$fail"

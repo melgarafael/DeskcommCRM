@@ -25,7 +25,8 @@
  *     Chamar `sincronizaEstagioDoAgente` direto passaria com a ponte desligada —
  *     por isso a ponte é o ponto de entrada.
  *   • a criação da organização é um INSERT em `organizations` com o service role,
- *     o mesmo que `scripts/bootstrap-owner.ts` (o que o `install.sh` roda) faz.
+ *     o mesmo que `scripts/bootstrap-owner.ts` — e que o bootstrap equivalente
+ *     dentro do próprio `install.sh`, que não chama o script — faz.
  *     Quem semeia é o GATILHO do banco, então qualquer caminho de criação passa
  *     por ele.
  *

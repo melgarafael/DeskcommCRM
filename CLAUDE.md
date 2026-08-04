@@ -200,7 +200,8 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 
 **O que "recurso real" significa (e o que NÃO conta):**
 - **Conta.** Prova pela tela, dirigindo o browser (Playwright), logando com conta de teste real. `curl`/chamada de API **não** provam UX — validam o backend, mas não o que o usuário vê, clica e entende. Use curl só como diagnóstico.
-- **Banco fresco estilo VPS.** Postgres limpo aplicado do `supabase/baseline.sql` (não das `migrations/` — a cadeia fresh não sobe) + `scripts/bootstrap-owner.ts` (o que o `install.sh` faz). O ambiente do teste = o que o clone recém-instalado tem: sem os seus dados, sem os seus envs opcionais.
+- **Banco fresco estilo VPS.** Postgres limpo aplicado do `supabase/baseline.sql` (não das `migrations/` — a cadeia fresh não sobe) + `scripts/bootstrap-owner.ts`. O ambiente do teste = o que o clone recém-instalado tem: sem os seus dados, sem os seus envs opcionais.
+  - ⚠️ **`bootstrap-owner.ts` ESPELHA o bootstrap do `install.sh`, mas não é chamado por ele.** O instalador refaz o passo em bash (`curl` na admin API + heredoc `psql`) — sempre foi assim. São duas implementações do mesmo contrato, e elas já divergiram calada na credencial do dono: até 2026-08-04 o script TS sobrescrevia a senha de um dono que já existia e o instalador não (ele leva 422 e preserva). **Ao mexer num, cheque o outro** — e, para saber o que a VPS faz, leia o `install.sh`, não o script.
 - **Dependências como na VPS.** WAHA local, Redis local (`redis` + `serverless-redis-http`), cron drain via endpoint. E **teste com os envs opcionais AUSENTES** (ex.: sem `RESEND_API_KEY`) — é o estado real de um primeiro deploy, e é onde moram os piores bugs de primeira impressão.
 - **Efeito colateral externo provado com receiver real.** Webhook outbound, envio — suba um receiver HTTP de verdade e prove o que chegou (ou que foi barrado). Mock não estressa o egress real (anti-SSRF, projeção de payload, https em prod).
 

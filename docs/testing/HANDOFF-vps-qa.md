@@ -15,7 +15,8 @@ os bugs achados na causa raiz.
 
 - **Banco:** Supabase local **pg17** (`config.toml major_version = 17`) do
   `baseline.sql`; extensões `vector/pg_trgm/citext/uuid-ossp/pgcrypto` antes.
-- **Primeiro usuário:** `scripts/bootstrap-owner.ts` (como o `install.sh`):
+- **Primeiro usuário:** `scripts/bootstrap-owner.ts` (espelha o bootstrap do
+  `install.sh` — que **não** chama este script, refaz o passo em bash):
   `dono@qa.local` / `QaVps!2026#Dono`, org "Loja QA VPS".
 - **Deps:** WAHA Core local (`deskcomm-waha`, :3030), Redis + serverless-redis-http
   (`qa-redis`/`qa-srh`, :8079), cron drain via endpoint.
