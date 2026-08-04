@@ -7,11 +7,12 @@
  *
  * Pré-requisito: seed de credenciais + seed de kanban (rodados aqui se faltarem).
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
+
+import { rodaSeed } from "./helpers/seed";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
@@ -28,11 +29,11 @@ function loadCreds(): Creds {
     return !c.users?.manager;
   };
   if (needsBase()) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-credentials.ts");
   }
   let c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   if (!c.kanban?.pipeline_id) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-kanban.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-kanban.ts");
     c = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
   }
   return c;

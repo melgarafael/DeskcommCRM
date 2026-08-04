@@ -17,7 +17,6 @@
  * Contra o Supabase do env (local recomendado — precisa das migrations de RLS
  * 0035/0036/0042/0044 pro escopo do agent ser real).
  */
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -27,6 +26,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { signInviteToken } from "../../lib/auth/invite-token";
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
+import { rodaSeed } from "./helpers/seed";
 
 // ---- creds do seed base (.e2e-creds.json) + do convite (.e2e-invite.json) ----
 interface BaseCreds {
@@ -45,7 +45,7 @@ const INVITE_PATH = path.join(process.cwd(), ".e2e-invite.json");
 
 function load(): { base: BaseCreds; inv: InviteCreds } {
   if (!fs.existsSync(INVITE_PATH) || !fs.existsSync(CREDS_PATH)) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-invite.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-invite.ts");
   }
   return {
     base: JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as BaseCreds,

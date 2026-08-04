@@ -14,13 +14,14 @@
  * bloqueia hosts privados —, então essa metade fica para a sessão de deploy
  * real (mesma categoria do WhatsApp com número real).
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
+
+import { rodaSeed } from "./helpers/seed";
 
 const APP_URL = `http://localhost:${process.env.E2E_PORT ?? "3001"}`;
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
@@ -32,7 +33,7 @@ interface Creds {
 
 function loadCreds(): Creds {
   if (!fs.existsSync(CREDS_PATH)) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-credentials.ts");
   }
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 }

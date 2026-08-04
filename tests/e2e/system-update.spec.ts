@@ -18,13 +18,13 @@
  *   nem autenticaria — o arquivo INTEIRO pula em vez de falhar por motivo
  *   errado (ausência de ambiente ≠ defeito).
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
+import { rodaSeed } from "./helpers/seed";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const SECRET = process.env.INTERNAL_SECRET ?? "";
@@ -47,11 +47,11 @@ function loadCreds(): E2ECreds {
     return !c.users?.agent || !c.admin_totp?.secret;
   };
   if (needsSeed()) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-credentials.ts");
   }
   // Dono do servidor (platform_admins) + system_version/system_update_runs
   // limpos — idempotente, roda sempre pra deixar o teste repetível.
-  execFileSync("npx", ["tsx", "scripts/seed-e2e-system-update.ts"], { stdio: "inherit" });
+  rodaSeed("scripts/seed-e2e-system-update.ts");
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as E2ECreds;
 }
 
@@ -157,7 +157,7 @@ async function runProgress(
 
 /** Volta o estado da instalação ao zero (sem run nenhum), como um seed. */
 function resetEstado(): void {
-  execFileSync("npx", ["tsx", "scripts/seed-e2e-system-update.ts"], { stdio: "inherit" });
+  rodaSeed("scripts/seed-e2e-system-update.ts");
 }
 
 test("o dono vê a versão nova na sidebar e atualiza pela tela", async ({ page, request }) => {
