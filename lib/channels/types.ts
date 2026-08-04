@@ -96,4 +96,20 @@ export interface ChannelAdapter {
     sessionRef: string;
     recipient: string;
   }): Promise<string | null>;
+
+  /**
+   * Todas as formas sob as quais ESTE canal pode ter registrado a MESMA mensagem
+   * que acabou de ser enviada — para reconhecer o eco do próprio envio quando ele
+   * volta pelo webhook.
+   *
+   * Existe porque alguns canais são assimétricos: a resposta do envio e o
+   * webhook do eco trazem pontas diferentes do mesmo identificador, e comparar
+   * as duas strings direto nunca casa. Que formas são essas é conhecimento do
+   * canal, não de quem envia — por isso mora aqui e não no handler, que é
+   * justamente o que o lint de canal impede.
+   *
+   * OPCIONAL: um canal simétrico (mesmo id nos dois lados) não implementa, e
+   * quem chama cai no próprio `externalId`.
+   */
+  echoExternalIds?(input: { externalId: string; recipient: string }): string[];
 }

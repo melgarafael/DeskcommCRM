@@ -7,7 +7,7 @@
  */
 import { getWahaClient } from "@/lib/waha/client";
 import { wahaSendPlanFor } from "@/lib/waha/media-send";
-import { parseWahaMessageId } from "@/lib/waha/message-id";
+import { bareWaMessageId, parseWahaMessageId } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
 import type { ChannelAdapter, OutboundEnvelope, RecipientInput } from "../types";
 
@@ -16,6 +16,23 @@ export const wahaAdapter: ChannelAdapter = {
 
   resolveRecipient(input: RecipientInput): string | null {
     return resolveWahaChatId(input);
+  },
+
+  /**
+   * As duas pontas do mesmo id, porque os engines gravam lados opostos:
+   *   NOWEB — o envio devolve o id cru (`3EB0…`) e o webhook manda o composto
+   *           `true_<chatId>_3EB0…`
+   *   WEBJS — os dois lados usam o `_serialized` completo
+   *
+   * Reduzir ao bare cobre o segundo caso; para o primeiro é preciso CONSTRUIR o
+   * composto a partir do destinatário — daí o `recipient`. Sem ele o par nunca
+   * contém a forma que o webhook realmente gravou.
+   *
+   * `true_` porque o eco de um envio nosso é sempre `fromMe`.
+   */
+  echoExternalIds(input: { externalId: string; recipient: string }): string[] {
+    const bare = bareWaMessageId(input.externalId);
+    return [...new Set([input.externalId, bare, `true_${input.recipient}_${bare}`])];
   },
 
   // Mesmo pre-check que o handler já fazia com `getWahaClient() !== null`,
