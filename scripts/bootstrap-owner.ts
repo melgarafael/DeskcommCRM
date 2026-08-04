@@ -13,6 +13,15 @@
  * Uso (o install.sh exporta as vars; localmente lê .env/.env.local):
  *   OWNER_EMAIL=dono@empresa.com OWNER_PASSWORD='senha-forte' \
  *   OWNER_ORG_NAME='Minha Empresa' npx tsx scripts/bootstrap-owner.ts
+ *
+ * Sobre um banco que JÁ tem esse e-mail, a senha existente é PRESERVADA. Antes
+ * ela era sobrescrita em silêncio pelo OWNER_PASSWORD do .env — e este script é
+ * documentado como "o que o install.sh faz", que faz o oposto: o instalador
+ * manda um POST /auth/v1/admin/users, leva 422 `email_exists` e não toca na
+ * senha. Duas rotas que se anunciam iguais e divergem justamente na credencial
+ * do dono trancam quem re-roda o bootstrap com um .env de senha antiga.
+ * Redefinir agora é escolha explícita:
+ *   npx tsx scripts/bootstrap-owner.ts --reset-owner-password
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -40,6 +49,8 @@ const SERVICE_ROLE = env.SUPABASE_SERVICE_ROLE_KEY;
 const OWNER_EMAIL = env.OWNER_EMAIL;
 const OWNER_PASSWORD = env.OWNER_PASSWORD;
 const ORG_NAME = env.OWNER_ORG_NAME || "Minha Empresa";
+/** Só com esta flag o script mexe na senha de um dono que já existe. */
+const RESET_SENHA = process.argv.includes("--reset-owner-password");
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   throw new Error("Faltam NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.");
@@ -67,8 +78,21 @@ async function ensureOwnerUser(): Promise<string> {
   const { data: list } = await admin.auth.admin.listUsers({ perPage: 200 });
   const existing = list.users.find((u) => u.email === OWNER_EMAIL);
   if (existing) {
-    await admin.auth.admin.updateUserById(existing.id, { password: OWNER_PASSWORD });
-    console.log(`[bootstrap] dono já existia, senha atualizada: ${existing.id}`);
+    if (!RESET_SENHA) {
+      console.log(
+        `[bootstrap] dono já existia, senha PRESERVADA: ${existing.id}` +
+          ` (para redefinir: --reset-owner-password)`,
+      );
+      return existing.id;
+    }
+    // O erro era engolido: uma senha que a admin API recusou (política de
+    // tamanho, por ex.) saía como "senha atualizada" e a pessoa só descobria
+    // na tela de login.
+    const { error } = await admin.auth.admin.updateUserById(existing.id, {
+      password: OWNER_PASSWORD,
+    });
+    if (error) throw new Error(`redefinir senha do dono: ${error.message}`);
+    console.log(`[bootstrap] dono já existia, senha REDEFINIDA: ${existing.id}`);
     return existing.id;
   }
   const { data, error } = await admin.auth.admin.createUser({

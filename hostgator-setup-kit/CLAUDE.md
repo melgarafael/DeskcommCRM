@@ -121,6 +121,14 @@ Se mesmo assim aparecerem, aqui está o diagnóstico pronto:
    `hiett/serverless-redis-http` (o compose já usa). Um nome antigo (`hjr265/...`) saiu do ar.
 6. **"usuário já existe" (422) no bootstrap do admin** — normal numa 2ª tentativa. O
    `install.sh` é idempotente: ignora o 422 e encontra o usuário pelo e-mail. Não trava.
+   **O 422 também quer dizer que a senha do dono NÃO mudou:** a admin API recusa o
+   cadastro inteiro, então o `OWNER_PASSWORD` que está no `.env` agora não vale — quem
+   entra continua sendo a senha da instalação anterior. Repare nisso quando você re-roda
+   o instalador para corrigir uma configuração (que é o caminho que este kit indica): se
+   a pessoa trocou a senha no `.env` esperando que ela passasse a valer, ela vai bater na
+   tela de login com a senha errada. O instalador avisa na hora e repete no fim, no lugar
+   da senha. Trocar a senha é outro comando, de propósito:
+   `bash reset-password.sh <email>`.
 7. **`/api/v1/health` diz "unhealthy" mas o site funciona** — versões antigas checavam
    rotas erradas (`/ping`, `/api/health`). A imagem atual já checa as rotas certas; se ver
    isso, garanta que a imagem do app está na tag `latest` mais nova (`bash update.sh`).
