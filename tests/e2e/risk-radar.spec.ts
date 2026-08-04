@@ -8,11 +8,12 @@
  * O seed do radar roda a cada execução (reseta a conversa para "sem dono"), então
  * o teste de assumir é repetível.
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "@playwright/test";
+
+import { rodaSeed } from "./helpers/seed";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
@@ -29,10 +30,10 @@ function loadCreds(): Creds {
     return !c.users?.manager;
   };
   if (needsBase()) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-credentials.ts");
   }
   // Sempre reseta o fixture do radar (conversa volta a ficar sem dono).
-  execFileSync("npx", ["tsx", "scripts/seed-e2e-radar.ts"], { stdio: "inherit" });
+  rodaSeed("scripts/seed-e2e-radar.ts");
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 }
 

@@ -17,11 +17,12 @@
  * :3001 — reuseExistingServer teria reusado o servidor ERRADO). Por isso este
  * spec usa APP_URL absoluto em vez do baseURL do config.
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "@playwright/test";
+
+import { rodaSeed } from "./helpers/seed";
 
 // Segue o dev server do harness (playwright.config webServer) — nunca hardcodar
 // porta: o config usa E2E_PORT (default 3001).
@@ -40,7 +41,7 @@ function loadCreds(): Creds {
     return !c.users?.manager || !c.users?.agent;
   };
   if (needsBase()) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-credentials.ts");
   }
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 }

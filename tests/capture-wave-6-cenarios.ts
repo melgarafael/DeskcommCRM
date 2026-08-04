@@ -1210,9 +1210,17 @@ async function main(): Promise<void> {
       // e o que eu ia perder tratando o meu próprio zero como veredito.
       const quadrosNavegadorAntes = quadrosDeAtividade;
       let controleExterno = await new Promise<string>((resolve) => {
+        // `process.execPath` + `--import tsx` em vez de `npx tsx`: no Windows o
+        // `npx` não é executável, é o shim `npx.cmd`, e o `execFile` sem shell
+        // devolve ENOENT para um e EINVAL para o outro (CVE-2024-27980). O
+        // `execFile` engole o erro no callback — o controle irmão viraria
+        // "(não mediu)" caladamente, e o critério cairia no ramo que trata
+        // "ninguém recebeu" como ambiente morto. Ou seja: não é vermelho que
+        // aparece, é veredito trocado, que é pior. Mesma porta que os seeds E2E
+        // usam (tests/e2e/helpers/seed.ts), aqui em forma assíncrona.
         execFile(
-          "npx",
-          ["tsx", "tests/prova-taxa-de-entrega.ts"],
+          process.execPath,
+          ["--import", "tsx", "tests/prova-taxa-de-entrega.ts"],
           // N=1 basta desde que a raiz foi nomeada: aqui o controle não investiga
           // mais nada, só responde "havia como chegar?". Três rodadas eram o
           // preço de uma pergunta que já foi respondida noutro lugar.

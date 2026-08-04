@@ -31,12 +31,13 @@
  * A peça que falta é do produto, não do teste: um REFETCH DE SEGURANÇA. Ele é ao
  * mesmo tempo a base da tela, a cura da perda e o detector da falha.
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+
+import { rodaSeed } from "./helpers/seed";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
@@ -48,7 +49,7 @@ interface Creds {
 
 function loadCreds(): Creds {
   if (!fs.existsSync(CREDS_PATH)) {
-    execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
+    rodaSeed("scripts/seed-e2e-credentials.ts");
   }
   return JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
 }
