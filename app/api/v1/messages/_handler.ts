@@ -80,6 +80,13 @@ async function removerEcoDoProprioEnvio(
       .eq("conversation_id", conversationId)
       .eq("sent_via", "external_device")
       .in("external_id", candidatos)
+      // ⚠️ SEGUNDA CAMADA, SEM COBERTURA POSSÍVEL — escrito porque medi: trocar
+      // este `neq` por um que nunca casa deixa a suíte VERDE. O filtro de
+      // `sent_via` acima já exclui a linha deste envio (que nasce `user`/`ai`,
+      // nunca `external_device`), então nenhum teste alcança esta cláusula.
+      // Fica porque o desfecho que ela impede é o pior que esta função poderia
+      // produzir: apagar a própria mensagem que acabou de ser entregue. Quem
+      // mexer no filtro de cima não vai ser avisado por teste nenhum.
       .neq("id", minhaLinhaId);
     if (error) console.error("[messages.send] não consegui remover o eco do próprio envio", error.message);
   } catch (err) {
