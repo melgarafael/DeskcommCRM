@@ -13,9 +13,19 @@ export interface PacingSessionLite {
   daily_message_limit: number | null;
 }
 
+/** Estado do aquecimento, já calculado no servidor (a tela não recalcula a regra). */
+export interface PacingWarmupView {
+  number_activated_at: string | null;
+  age_days: number;
+  skipped: boolean;
+  /** Teto de HOJE pelo aquecimento; null = sem teto (número formado ou aquecimento pulado). */
+  cap_today: number | null;
+}
+
 export interface PacingKnobsItem {
   channel_session: PacingSessionLite;
   effective: PacingKnobs;
+  warmup: PacingWarmupView;
   overrides: ChannelKnobsRow | null;
   defaults: PacingKnobs;
   bounds: {

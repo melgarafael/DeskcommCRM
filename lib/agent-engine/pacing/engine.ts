@@ -112,8 +112,12 @@ export function decidePacing(input: PacingInput): PacingDecision {
  * Degrau vigente para a idade (degraus ordenados por minAgeDays crescente).
  * Falha FECHADO: idade aquém do primeiro degrau usa o cap do PRIMEIRO degrau
  * (o mais conservador) — configuração com furo nunca vira "sem cap".
+ *
+ * Exportada para a TELA poder dizer ao operador qual é o teto de hoje. A regra
+ * tem de ser esta mesma função: uma segunda cópia na UI é a receita para a tela
+ * prometer um número e o motor aplicar outro.
  */
-function warmupCapFor(ageDays: number, steps: WarmupStep[]): number | null {
+export function warmupCapFor(ageDays: number, steps: WarmupStep[]): number | null {
   let cap: number | null = steps[0]?.cap ?? null;
   for (const step of steps) {
     if (ageDays >= step.minAgeDays) cap = step.cap;

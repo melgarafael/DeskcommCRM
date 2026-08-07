@@ -37,6 +37,9 @@ interface FormState {
   daily_message_limit: string;
   allow_sunday: boolean;
   timezone: string;
+  /** `yyyy-mm-dd` do input date; '' = não declarado (o motor trata como idade 0). */
+  numero_em_uso_desde: string;
+  pular_aquecimento: boolean;
 }
 
 function fromItem(item: PacingKnobsItem): FormState {
@@ -52,6 +55,10 @@ function fromItem(item: PacingKnobsItem): FormState {
         : "",
     allow_sunday: o?.allow_sunday ?? item.defaults.allowSunday,
     timezone: o?.timezone ?? "",
+    numero_em_uso_desde: item.warmup.number_activated_at
+      ? item.warmup.number_activated_at.slice(0, 10)
+      : "",
+    pular_aquecimento: item.warmup.skipped,
   };
 }
 
@@ -90,6 +97,14 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         ...(form.daily_message_limit.trim() !== ""
           ? { daily_message_limit: Math.round(Number(form.daily_message_limit)) }
           : {}),
+        // Meio-dia UTC, não meia-noite: a data é um DIA declarado pelo operador, e
+        // meia-noite vira o dia anterior em qualquer fuso a oeste — o número
+        // envelheceria um dia a menos do que ele informou.
+        number_activated_at:
+          form.numero_em_uso_desde.trim() === ""
+            ? null
+            : new Date(`${form.numero_em_uso_desde}T12:00:00.000Z`).toISOString(),
+        skip_warmup: form.pular_aquecimento,
       });
       toast.success("Proteção de envio atualizada.");
       onClose();
@@ -110,6 +125,43 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         </SheetHeader>
 
         <div className="flex flex-col gap-5 px-4 py-2" data-testid="anti-ban-form">
+          <fieldset className="flex flex-col gap-2" data-testid="aquecimento">
+            <Label htmlFor="numero-em-uso-desde">Este número é usado desde</Label>
+            <Input
+              id="numero-em-uso-desde"
+              type="date"
+              max={new Date().toISOString().slice(0, 10)}
+              value={form.numero_em_uso_desde}
+              onChange={(e) => set({ numero_em_uso_desde: e.target.value })}
+              disabled={!canWrite || form.pular_aquecimento}
+              className="w-48"
+            />
+            <p className="text-xs text-muted-foreground">
+              A conexão pode ser nova sem que o número seja. O aquecimento conta a idade do
+              NÚMERO — se você deixar em branco, ele é tratado como recém-criado e começa
+              liberando pouco por dia.
+            </p>
+
+            <div className="mt-1 flex items-center gap-2">
+              <Switch
+                id="pular-aquecimento"
+                checked={form.pular_aquecimento}
+                onCheckedChange={(v) => set({ pular_aquecimento: v })}
+                disabled={!canWrite}
+              />
+              <Label htmlFor="pular-aquecimento" className="font-normal">
+                Este número já está aquecido — pular o aquecimento
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {form.pular_aquecimento
+                ? "Vale só o teto diário abaixo. Use apenas se o número já envia há semanas: pular o aquecimento num número novo é o caminho mais rápido para o bloqueio."
+                : item.warmup.cap_today === null
+                  ? `Número com ${item.warmup.age_days} dia(s) de uso — já formado. Vale só o teto diário abaixo.`
+                  : `Hoje o aquecimento libera ${item.warmup.cap_today} envio(s) — o número tem ${item.warmup.age_days} dia(s) de uso. Enquanto esse número for menor que o teto diário, é ELE que limita, e mexer no teto diário não muda nada.`}
+            </p>
+          </fieldset>
+
           <fieldset className="flex flex-col gap-2">
             <Label>Janela de envio (horário local)</Label>
             <div className="flex items-center gap-2">
