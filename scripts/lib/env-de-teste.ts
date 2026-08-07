@@ -35,6 +35,21 @@ export interface CredenciaisSupabase {
   anonKey: string;
   /** base do app, para links gerados pelo seed. */
   appUrl: string;
+  /**
+   * Conexão DIRETA ao Postgres, para os seeds que abrem `pg.Pool` (13 deles).
+   *
+   * Nasceu faltando: a interface não a declarava e nenhum dos dois ramos a
+   * devolvia, mas os seeds já liam `credenciais.dbUrl`. O compilador não pegou
+   * porque `tsconfig.json` tem `"exclude": ["scripts/**"]` — ler propriedade
+   * inexistente aqui não custa nada a ele.
+   *
+   * E o sintoma escolhia o ambiente: local costuma cair no ramo do ARQUIVO e o
+   * shell já ter a variável; no CI o workflow exporta as credenciais para o
+   * ambiente, o ramo "ambiente" vence, `dbUrl` sai `undefined`, e o `pg` cai no
+   * default do libpq — `ECONNREFUSED 127.0.0.1:5432`, uma porta que ninguém
+   * pediu (o Supabase local publica na 54322).
+   */
+  dbUrl: string;
   /** de onde os valores vieram — vai ao log, para o operador não adivinhar. */
   origem: "ambiente" | "arquivo";
 }
@@ -66,6 +81,12 @@ export function credenciaisSupabaseDeTeste(): CredenciaisSupabase {
       ...doAmbiente,
       anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
       appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+      // Cai no arquivo antes de desistir: quem exporta URL + service role no
+      // ambiente (o CI faz isso) não necessariamente exporta a conexão direta,
+      // e ela costuma estar no `.env.local` do lado. Só o ambiente venceria a
+      // regra desta função; nada aqui a contradiz — `process.env` continua
+      // tendo precedência quando existe.
+      dbUrl: process.env.SUPABASE_DB_URL ?? lerArquivo(".env.local").SUPABASE_DB_URL ?? "",
       origem: "ambiente",
     };
   }
@@ -84,6 +105,7 @@ export function credenciaisSupabaseDeTeste(): CredenciaisSupabase {
     serviceRole,
     anonKey: arquivo.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
     appUrl: arquivo.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    dbUrl: arquivo.SUPABASE_DB_URL ?? "",
     origem: "arquivo",
   };
 }
