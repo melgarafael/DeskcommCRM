@@ -3,8 +3,11 @@
 @tailwind utilities;
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
-   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
+   DeskcommCRM — Design System tokens (density Aerada)
+   Accent: paleta Croma (laranja) — instalação com marca própria, ver
+   lib/branding.ts para nome/logo. O showcase em /app/design/lib/tokens.ts
+   (PALETTES.sage etc.) é ferramenta de exploração à parte, não reflete
+   este accent.
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
 
@@ -24,18 +27,22 @@
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
 
-  /* Accent — Sage (11 stops) */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  /* Accent — Croma orange (11 stops). 500 = hex exato da marca (#f16b2b);
+     600 é usado como --color-accent (texto branco em cima, ex.: botão
+     primário) e por isso é ligeiramente mais escuro que o 500 — o hex exato
+     da marca só chega a 3.05:1 de contraste com branco (abaixo do mínimo
+     WCAG AA de 4.5:1); o 600 chega a 4.70:1 mantendo o mesmo tom. */
+  --color-accent-50:  #fdf4ef;
+  --color-accent-100: #fce6dc;
+  --color-accent-200: #f9cdb9;
+  --color-accent-300: #f5a984;
+  --color-accent-400: #f28450;
+  --color-accent-500: #f16b2b;
+  --color-accent-600: #c94a0d;
+  --color-accent-700: #9e3f12;
+  --color-accent-800: #7a3412;
+  --color-accent-900: #582811;
+  --color-accent-950: #32180c;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
@@ -160,20 +167,20 @@
   --color-border-strong: #444239;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
+  --color-accent-50:  #fdf4ef;
+  --color-accent-100: #fce6dc;
+  --color-accent-200: #f9cdb9;
+  --color-accent-300: #f5a984;
+  --color-accent-400: #f28450;
+  --color-accent-500: #f16b2b;
+  --color-accent-600: #c94a0d;
+  --color-accent-700: #9e3f12;
+  --color-accent-800: #7a3412;
+  --color-accent-900: #582811;
+  --color-accent-950: #32180c;
   --color-accent: var(--color-accent-400);
   --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
+  --color-accent-soft: rgba(242, 132, 80, 0.16);
   --color-accent-hover: var(--color-accent-300);
 
   /* Neutrals — greige (11 stops, dark) */
