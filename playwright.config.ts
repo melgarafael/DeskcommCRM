@@ -86,12 +86,22 @@ export default defineConfig({
     // false: reusar um server que já ocupa a porta pode ser OUTRO processo
     // (ex.: bundle do Remotion na 3000) — o teste precisa do NOSSO next start.
     reuseExistingServer: false,
-    // NÃO declare `env:` aqui sem espalhar `process.env` junto. O default do
-    // Playwright é herdar o ambiente, e o CI depende disso: o teto de login por
-    // IP (`AUTH_RATE_LIMIT_LOGIN_IP`) é definido no passo do workflow e precisa
-    // chegar ao `next start`, porque quem aplica o rate limit é o SERVIDOR.
-    // Declarar `env` aqui substitui o ambiente inteiro e o teto volta a 60 —
-    // o sintoma seria "Muitas tentativas" numa spec tardia, não um erro de config.
+    // Sobre a precedência de `env`, MEDIDO (Playwright 1.5x, 2026-08-07) com um
+    // webServer que imprime o que recebeu:
+    //
+    //   var só no process.env        → CHEGA ao servidor (mescla, não substitui)
+    //   var só no `env:` do config   → chega
+    //   var nos DOIS, valores dif.   → vence a do `env:` do config
+    //
+    // A primeira linha é o que mantém `AUTH_RATE_LIMIT_LOGIN_IP` funcionando:
+    // ele é definido no passo do workflow e quem aplica o teto é o SERVIDOR.
+    //
+    // A terceira é a armadilha. Uma chave que exista no `.env.e2e` E no ambiente
+    // do CI silenciosamente resolve para valores DIFERENTES nos dois lados —
+    // servidor com um, processo de teste com outro. Foi assim que
+    // `INTERNAL_SECRET` derrubou 8 specs com 401. Por isso o workflow publica o
+    // `.env.e2e` inteiro no ambiente do job em vez de redigitar valores: uma
+    // fonte não colide consigo mesma.
     timeout: 120_000,
   },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],

@@ -87,8 +87,11 @@ SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 
 # Placeholders: 'next start' roda em NODE_ENV=production, e lib/env.ts exige
 # estas vars em produção. As specs não exercitam os serviços por trás delas.
-# Valores iguais aos do CI (.github/workflows/e2e.yml), para que local e CI
-# falhem pelos mesmos motivos.
+# Local e CI falham pelos mesmos motivos porque leem ESTE arquivo: o workflow
+# publica o `.env.e2e` no ambiente do job em vez de redigitar os valores. A
+# versão anterior desta linha prometia "valores iguais aos do CI" e eles não
+# eram iguais (`e2e-placeholder…` aqui, `ci-placeholder…` lá) — a promessa por
+# coincidência durou até a primeira divergência, que custou 8 specs em 401.
 INTERNAL_SECRET=e2e-placeholder-nao-e-segredo
 # As três abaixo são chaves de CIFRA de verdade: o app exige 32 bytes e recusa
 # um rótulo. Medido — com o placeholder, criar credencial de IA devolvia 500

@@ -99,6 +99,27 @@ jobs:
       - name: Gerar o .env.e2e (ambiente da suíte)
         run: pnpm e2e:env
 
+      # E publica o arquivo no ambiente do JOB, para que servidor e testes leiam
+      # literalmente a mesma fonte.
+      #
+      # Sem isto havia duas: o `.env.e2e` (que o playwright.config injeta no
+      # `next start`) e um bloco `env:` copiado à mão em cada passo de teste. As
+      # duas divergiram — `INTERNAL_SECRET` valia `e2e-placeholder…` no servidor
+      # e `ci-placeholder…` no processo de teste. Sintoma medido: 401 em toda
+      # chamada a rota interna, 8 specs vermelhas (6 de system-update no
+      # heartbeat, o drain do anti-SSRF, e o invite-lifecycle).
+      #
+      # Medido no Playwright 1.5x: `webServer.env` MESCLA com o ambiente herdado
+      # (uma var só do shell chega ao servidor) e VENCE nas colisões. Ou seja,
+      # copiar valores à mão nunca ia empatar com o arquivo — só uma fonte
+      # empata.
+      #
+      # De brinde, o processo de teste passa a ver as chaves de CIFRA de verdade
+      # (32 bytes, geradas pelo script) em vez do rótulo de 21 caracteres que o
+      # bloco `env:` fixava e que o app recusa.
+      - name: Publicar o .env.e2e no ambiente do job
+        run: grep -vE '^[[:space:]]*(#|$)' .env.e2e >> "$GITHUB_ENV"
+
       # `pnpm e2e:build`, não `pnpm build`: as três `NEXT_PUBLIC_*` são embutidas
       # no BUNDLE durante o build. Buildar com um env e trocar só no `next start`
       # deixaria a URL errada dentro do JavaScript que roda no browser — servidor
@@ -111,19 +132,23 @@ jobs:
       - name: Instalar o browser
         run: pnpm exec playwright install --with-deps chromium
 
-      # O seed lê `.env.local` do cwd (não de process.env), então o arquivo é
-      # escrito aqui. Ele cria 1 org + 4 usuários com os 4 papéis e um TOTP
-      # verified de secret conhecido no admin — sem isso, todo spec que loga
-      # fica de fora, que era a maior parte da suíte.
+      # `.env.local` é CÓPIA do `.env.e2e`, não uma terceira redação dele.
+      #
+      # O arquivo precisa existir porque alguns seeds leem `.env.local` do disco,
+      # não de `process.env`. Ele era montado à mão aqui, com os valores
+      # redigitados — e foi a terceira fonte do mesmo `INTERNAL_SECRET`, com o
+      # terceiro valor. Copiar não pode divergir; redigitar já divergiu.
+      #
+      # No CI as duas apontam para o mesmo stack local, então a cópia não
+      # reintroduz o risco que o `.env.e2e` existe para evitar (o `.env.local` de
+      # um checkout de trabalho apontar para produção).
+      #
+      # O seed cria 1 org + 4 usuários com os 4 papéis e um TOTP verified de
+      # secret conhecido no admin — sem ele, todo spec que loga fica de fora, que
+      # era a maior parte da suíte.
       - name: Semear credenciais de teste
         run: |
-          cat > .env.local <<EOF
-          NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-          NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
-          SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
-          INTERNAL_SECRET=ci-placeholder-nao-e-segredo
-          SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
-          EOF
+          cp .env.e2e .env.local
           pnpm exec tsx scripts/seed-e2e-credentials.ts
 
       # `SUPABASE_DB_URL` no `.env.local` (e não só no `env:` do passo de teste):
@@ -195,18 +220,10 @@ jobs:
             kanban-owner-filter.spec.ts queue-assign.spec.ts \
             risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
         env:
-          INTERNAL_SECRET: ci-placeholder-nao-e-segredo
-          CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          WAHA_BYO_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          AI_CRED_AES_KEY: ci-placeholder-nao-e-segredo
-          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
-          WAHA_API_BASE_URL: http://127.0.0.1:3999
-          WAHA_API_KEY: ci-placeholder-nao-e-segredo
-          WAHA_WEBHOOK_BASE_URL: http://127.0.0.1:3001
-          UPSTASH_REDIS_REST_URL: http://127.0.0.1:3998
-          UPSTASH_REDIS_REST_TOKEN: ci-placeholder-nao-e-segredo
-          # CI = 1 IP para todos os specs; o teto de produção (60/5min) é irreal aqui.
-          # O teto por CONTA (5 falhas) NÃO muda — é ele que barra brute force.
+          # Só o que NÃO vem do `.env.e2e`: isto é ajuste de CI, não config do
+          # produto. CI = 1 IP para todos os specs, e o teto de produção
+          # (60/5min) é irreal aqui. O teto por CONTA (5 falhas) NÃO muda — é
+          # ele que barra brute force.
           AUTH_RATE_LIMIT_LOGIN_IP: "1000"
 
       - name: E2E — parte 2 de 2 (processo novo, contador de login zerado)
@@ -222,18 +239,10 @@ jobs:
             webhooks.spec.ts \
             capacidades-do-agente.spec.ts
         env:
-          INTERNAL_SECRET: ci-placeholder-nao-e-segredo
-          CPF_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          WAHA_BYO_ENCRYPTION_KEY: ci-placeholder-nao-e-segredo
-          AI_CRED_AES_KEY: ci-placeholder-nao-e-segredo
-          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
-          WAHA_API_BASE_URL: http://127.0.0.1:3999
-          WAHA_API_KEY: ci-placeholder-nao-e-segredo
-          WAHA_WEBHOOK_BASE_URL: http://127.0.0.1:3001
-          UPSTASH_REDIS_REST_URL: http://127.0.0.1:3998
-          UPSTASH_REDIS_REST_TOKEN: ci-placeholder-nao-e-segredo
-          # CI = 1 IP para todos os specs; o teto de produção (60/5min) é irreal aqui.
-          # O teto por CONTA (5 falhas) NÃO muda — é ele que barra brute force.
+          # Só o que NÃO vem do `.env.e2e`: isto é ajuste de CI, não config do
+          # produto. CI = 1 IP para todos os specs, e o teto de produção
+          # (60/5min) é irreal aqui. O teto por CONTA (5 falhas) NÃO muda — é
+          # ele que barra brute force.
           AUTH_RATE_LIMIT_LOGIN_IP: "1000"
 
       - name: Declarar o que este job ainda NÃO cobre

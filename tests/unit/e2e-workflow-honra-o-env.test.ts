@@ -24,8 +24,19 @@
  *
  * ## O que se guarda
  *
- * A ORDEM, não a presença: existir um passo que gera o `.env.e2e` não adianta
- * se ele vier depois de quem consome. Por isso a asserção é sobre índices.
+ * Duas propriedades, e elas falham por motivos diferentes.
+ *
+ * **A ordem**, não a presença: existir um passo que gera o `.env.e2e` não
+ * adianta se ele vier depois de quem consome. Por isso a asserção é sobre
+ * índices.
+ *
+ * **A fonte única**, não a igualdade: o arquivo chegava ao servidor (via
+ * `playwright.config`) e um bloco `env:` copiado à mão chegava ao processo de
+ * teste. Medido no Playwright 1.5x — em colisão o `env:` do config vence — os
+ * dois lados resolviam `INTERNAL_SECRET` para valores diferentes e toda rota
+ * interna devolvia 401. Foram 8 specs, no run seguinte ao conserto da ordem: o
+ * mesmo refactor, a terceira ponta solta. Igualar as strings à mão consertaria
+ * o dia; publicar o arquivo consertou a classe.
  */
 import { describe, expect, it } from "vitest";
 import * as fs from "node:fs";
@@ -87,6 +98,48 @@ describe("o workflow do e2e honra o contrato de ambiente que a suíte exige", ()
       gera,
       "o .env.e2e é gerado DEPOIS de quem precisa dele — existir não basta, tem de vir antes",
     ).toBeLessThan(consome);
+  });
+
+  it("nenhum segredo do produto é redigitado no workflow", () => {
+    // O defeito que este caso guarda é DIFERENTE da ordem: o `.env.e2e` chegava
+    // ao servidor (via playwright.config) e um bloco `env:` copiado à mão
+    // chegava ao processo de teste. Medido no Playwright 1.5x: em colisão, o
+    // `env:` do config VENCE — então os dois lados resolviam `INTERNAL_SECRET`
+    // para valores diferentes e toda rota interna devolvia 401. Oito specs.
+    //
+    // A regra não é "não repita": é que a lista abaixo tem UMA fonte, o
+    // `.env.e2e`, e o workflow a publica em vez de reescrevê-la.
+    const DO_ENV_E2E = [
+      "INTERNAL_SECRET",
+      "CPF_ENCRYPTION_KEY",
+      "WAHA_BYO_ENCRYPTION_KEY",
+      "AI_CRED_AES_KEY",
+      "WAHA_API_KEY",
+      "UPSTASH_REDIS_REST_TOKEN",
+      "SUPABASE_DB_URL",
+    ];
+
+    // Só linhas de conteúdo: um comentário que MENCIONA a variável (e vários
+    // mencionam, é onde a história está escrita) não é uma segunda fonte.
+    const atribuicoes = workflow
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("#"))
+      .filter((l) => DO_ENV_E2E.some((k) => new RegExp(`(^|\\s)${k}\\s*[:=]`).test(l)));
+
+    expect(
+      atribuicoes,
+      "estas variáveis vêm do .env.e2e; redigitá-las cria uma segunda fonte que já divergiu uma vez",
+    ).toEqual([]);
+  });
+
+  it("o workflow publica o .env.e2e no ambiente do job (a fonte única de fato chega)", () => {
+    // Sem este caso, o anterior passaria trivialmente num workflow que
+    // simplesmente não define nada — verde por ausência, e a suíte sem segredo
+    // nenhum. É a guarda de vacuidade do par.
+    const publica = COMANDOS.some((l) => /\.env\.e2e.*GITHUB_ENV/.test(l));
+    expect(publica, "ninguém publica o .env.e2e — o processo de teste fica sem os segredos").toBe(
+      true,
+    );
   });
 
   it("o build do job é o que embute as NEXT_PUBLIC_* do ambiente de teste", () => {
