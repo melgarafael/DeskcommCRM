@@ -85,8 +85,26 @@ jobs:
             echo "SUPABASE_SERVICE_ROLE_KEY=$(grep '^SERVICE_ROLE_KEY=' /tmp/sb.env | cut -d'"' -f2)"
           } >> "$GITHUB_ENV"
 
-      - name: Build de produção
-        run: pnpm build
+      # O `.env.e2e` é o ambiente da suíte, e ele NASCE aqui — não é opcional.
+      #
+      # `playwright.config.ts` passou a exigi-lo e a falhar alto quando falta,
+      # de propósito: sem ele o `next start` carrega o `.env.local`, que num
+      # checkout de trabalho aponta para PRODUÇÃO. O modo de falha que isso
+      # substitui é a suíte escrever organizações e usuários de teste no banco
+      # real, passando verde.
+      #
+      # No CI o `.env.local` aponta para o Supabase local, então o risco não é o
+      # mesmo — mas o contrato é único, e um workflow que contorna o gate seria
+      # o começo de ele não valer para ninguém.
+      - name: Gerar o .env.e2e (ambiente da suíte)
+        run: pnpm e2e:env
+
+      # `pnpm e2e:build`, não `pnpm build`: as três `NEXT_PUBLIC_*` são embutidas
+      # no BUNDLE durante o build. Buildar com um env e trocar só no `next start`
+      # deixaria a URL errada dentro do JavaScript que roda no browser — servidor
+      # falando com um banco e cliente com outro, no mesmo teste.
+      - name: Build de produção (com o ambiente do E2E)
+        run: pnpm e2e:build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 

@@ -28,7 +28,14 @@ CHAVE_CPF=""; CHAVE_WAHA=""; CHAVE_AI=""
 
 cd "$(dirname "$0")/.."
 
-if ! npx supabase status >/dev/null 2>&1; then
+# `supabase` do PATH quando existe (é o que o CI instala, via supabase/setup-cli),
+# `npx supabase` como plano B para a máquina do dev. Insistir no `npx` custaria um
+# download do registry a cada uma das três chamadas abaixo — a CLI não é
+# dependência deste projeto.
+SUPABASE="supabase"
+command -v supabase >/dev/null 2>&1 || SUPABASE="npx supabase"
+
+if ! $SUPABASE status >/dev/null 2>&1; then
   echo "==> O Supabase local não está de pé. Rode 'npx supabase start' antes." >&2
   exit 1
 fi
@@ -45,7 +52,7 @@ fi
 [ "${#CHAVE_WAHA}" -ge 44 ] || CHAVE_WAHA="$(openssl rand -base64 32)"
 [ "${#CHAVE_AI}" -ge 44 ] || CHAVE_AI="$(openssl rand -base64 32)"
 
-ENVOUT="$(npx supabase status -o env 2>/dev/null)"
+ENVOUT="$($SUPABASE status -o env 2>/dev/null)"
 ler() { printf '%s\n' "$ENVOUT" | grep "^$1=" | cut -d= -f2- | tr -d '"'; }
 
 API_URL="$(ler API_URL)"
@@ -86,7 +93,7 @@ INTERNAL_SECRET=e2e-placeholder-nao-e-segredo
 # As três abaixo são chaves de CIFRA de verdade: o app exige 32 bytes e recusa
 # um rótulo. Medido — com o placeholder, criar credencial de IA devolvia 500
 # ("AI_CRED_AES_KEY deve ter exatamente 32 bytes (lido: 21)") e todo run do
-# agente morria em `credential_decrypt_failed`, o que aparecia como "o modelo
+# agente morria em \`credential_decrypt_failed\`, o que aparecia como "o modelo
 # não respondeu". Geradas na hora: são de teste, não precisam sobreviver.
 CPF_ENCRYPTION_KEY=$CHAVE_CPF
 WAHA_BYO_ENCRYPTION_KEY=$CHAVE_WAHA
