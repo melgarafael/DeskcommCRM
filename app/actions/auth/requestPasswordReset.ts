@@ -47,7 +47,11 @@ export async function requestPasswordReset(
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${origin}/auth/confirm`,
+    // ?type=recovery sobrevive ao redirect do GoTrue (preserva query string
+    // existente ao anexar `code=`/`token_hash=`) — sem SMTP customizado o
+    // Supabase usa o template padrão dele, que só devolve `code` (PKCE), sem
+    // `type`; /auth/confirm depende deste param pra saber que é recovery.
+    redirectTo: `${origin}/auth/confirm?type=recovery`,
   });
 
   if (error) {

@@ -52,7 +52,10 @@ export async function signUp(input: SignupInput): Promise<SignUpResult> {
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      emailRedirectTo: `${origin}/auth/confirm`,
+      // Ver comentário equivalente em requestPasswordReset.ts: ?type=signup
+      // sobrevive ao redirect do GoTrue e é o que distingue este fluxo do de
+      // recovery quando a verificação chega via `code` (PKCE), não `token_hash`.
+      emailRedirectTo: `${origin}/auth/confirm?type=signup`,
       data: { org_name: parsed.data.org_name },
     },
   });
