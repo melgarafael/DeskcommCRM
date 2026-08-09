@@ -24,6 +24,19 @@ export type AiDispatchMode = (typeof AI_DISPATCH_MODES)[number];
 export const aiDispatchModeSchema = z.enum(AI_DISPATCH_MODES).catch("native");
 
 /**
+ * organizations.settings.ui_layout — visual do CRM inteiro (não é preferência
+ * pessoal como o toggle claro/escuro em lib/theme.tsx, que fica no localStorage
+ * do navegador). 'default' = paleta Sage atual. 'elegant' = tema dark-glass
+ * (ver skill layout-elegant), aplicado via atributo `data-layout` no shell
+ * autenticado (app/app/layout.tsx) — nunca no RootLayout, então login/páginas
+ * públicas continuam no visual padrão independente da escolha da org.
+ * `.catch("default")` normaliza chave ausente/null/inválida para o default seguro.
+ */
+export const UI_LAYOUTS = ["default", "elegant"] as const;
+export type UiLayout = (typeof UI_LAYOUTS)[number];
+export const uiLayoutSchema = z.enum(UI_LAYOUTS).catch("default");
+
+/**
  * G3-05: vocabulário canônico de tags de conversa, persistido em
  * organizations.settings.canonical_conversation_tags (spec 13 §3.3 — org-scoped,
  * não pipeline-scoped). Schema declarativo; usado para validar o que o inbox lê
@@ -78,6 +91,7 @@ export const tenantSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => null)),
   lost_reasons_extra: z.array(z.string().min(1).max(80)).max(50).default([]),
+  ui_layout: uiLayoutSchema,
 });
 export type TenantInput = z.infer<typeof tenantSchema>;
 
