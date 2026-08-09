@@ -14,7 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateTenant } from "@/app/actions/settings/updateTenant";
-import { tenantSchema, type Locale, type TenantInput } from "@/lib/schemas/settings";
+import {
+  tenantSchema,
+  type Locale,
+  type TenantInput,
+  type UiLayout,
+} from "@/lib/schemas/settings";
 
 interface Props {
   initial: TenantInput;
@@ -148,6 +153,26 @@ export function TenantForm({ initial }: Props) {
               onChange={(e) => set("privacy_policy_url", e.target.value || null)}
             />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="ui_layout">Aparência do CRM</Label>
+          <Select
+            value={form.ui_layout}
+            onValueChange={(v) => set("ui_layout", v as UiLayout)}
+          >
+            <SelectTrigger id="ui_layout">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Padrão</SelectItem>
+              <SelectItem value="elegant">Elegante (escuro, vidro)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Vale para todo mundo da organização — não é uma preferência
+            pessoal (o alternador claro/escuro continua individual).
+          </p>
         </div>
 
         <div className="space-y-2">

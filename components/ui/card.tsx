@@ -5,13 +5,23 @@ import { cn } from "@/lib/utils";
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
+>(({ className, style, ...props }, ref) => (
   <div
     ref={ref}
     className={cn(
       "rounded-lg border border-border bg-surface text-text shadow-xs",
       className,
     )}
+    // backdrop-filter é dirigido pelo token --surface-blur (app/globals.css):
+    // "none" em todo tema normal, "blur(20px)" só sob [data-layout="elegant"].
+    // Sem isto o layout elegante mudaria só cores — o vidro é o que o
+    // diferencia, e ele nasce aqui pra propagar a TODO card do CRM sem
+    // precisar tocar cada tela consumidora.
+    style={{
+      backdropFilter: "var(--surface-blur)",
+      WebkitBackdropFilter: "var(--surface-blur)",
+      ...style,
+    }}
     {...props}
   />
 ));

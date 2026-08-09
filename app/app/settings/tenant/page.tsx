@@ -41,6 +41,10 @@ export default async function TenantSettingsPage() {
     (row?.settings && Array.isArray((row.settings as { lost_reasons_extra?: unknown }).lost_reasons_extra)
       ? ((row.settings as { lost_reasons_extra?: string[] }).lost_reasons_extra ?? [])
       : []) as string[];
+  const uiLayout =
+    (row?.settings as { ui_layout?: unknown } | null)?.ui_layout === "elegant"
+      ? "elegant"
+      : "default";
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -62,6 +66,7 @@ export default async function TenantSettingsPage() {
             dpo_email: row.dpo_email,
             privacy_policy_url: row.privacy_policy_url,
             lost_reasons_extra: lostReasonsExtra,
+            ui_layout: uiLayout,
           }}
         />
       )}

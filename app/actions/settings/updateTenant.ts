@@ -65,6 +65,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   const nextSettings = {
     ...currentSettings,
     lost_reasons_extra: parsed.data.lost_reasons_extra,
+    ui_layout: parsed.data.ui_layout,
   };
 
   const { error } = await supabase

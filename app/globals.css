@@ -2,11 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─────────────────────────────────────────────────────────────────────────
+/* ───────────────────────────────────────────────────────────────────────────────────────
    DeskcommCRM — Design System tokens (Sage palette · density Aerada)
    Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
    Light + dark drawn separately (NOT inverted).
-   ───────────────────────────────────────────────────────────────────────── */
+   ────────────────────────────────────────────────────────────────────────────────────── */
 
 :root {
   /* Surfaces (light) */
@@ -141,6 +141,11 @@
   --input: var(--color-border);
   --ring: var(--color-accent-500);
   --radius: var(--radius-md);
+
+  /* Backdrop blur do Card (ver components/ui/card.tsx) — inerte por padrão.
+     Só [data-layout="elegant"] liga isto; nenhuma outra combinação de tema
+     precisa de vidro. */
+  --surface-blur: none;
 }
 
 [data-theme="dark"] {
@@ -229,6 +234,110 @@
   --border: var(--color-border);
   --input: var(--color-border);
   --ring: var(--color-accent-400);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────
+   Layout "Elegante" — tema dark-glass opcional, escolhido pela ORGANIZAÇÃO
+   (organizations.settings.ui_layout, não uma preferência pessoal de navegador
+   como [data-theme]). Aplicado via atributo `data-layout` no shell autenticado
+   (app/app/layout.tsx) — nunca no <html> do RootLayout, então login e páginas
+   públicas nunca veem isto.
+
+   Desenhado à parte (como o dark acima), não derivado por filtro. Paleta e
+   componentes documentados na skill `layout-elegant` (dashboard AGV Financeira).
+
+   Vem DEPOIS de [data-theme="dark"] de propósito: os dois seletores têm a
+   mesma especificidade (um atributo cada), então ordem de origem decide quem
+   vence — a escolha da organização sempre sobrepõe o toggle claro/escuro
+   pessoal do usuário. Não são eixos combináveis; "elegante" já é escuro.
+   ────────────────────────────────────────────────────────────────────────────────────── */
+[data-layout="elegant"] {
+  --color-bg: #030712;
+  --color-surface: rgba(255, 255, 255, 0.10);
+  --color-surface-elevated: rgba(255, 255, 255, 0.14);
+  --color-overlay: rgba(0, 0, 0, 0.6);
+
+  --color-text: #ffffff;
+  --color-text-muted: #9ca3af;
+  --color-text-subtle: #6b7280;
+
+  --color-border: rgba(255, 255, 255, 0.20);
+  --color-border-strong: rgba(255, 255, 255, 0.32);
+
+  /* Accent — azul/índigo (gradiente da skill layout-elegant) */
+  --color-accent-50: #eff6ff;
+  --color-accent-100: #dbeafe;
+  --color-accent-200: #bfdbfe;
+  --color-accent-300: #93c5fd;
+  --color-accent-400: #60a5fa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
+  --color-accent-700: #4f46e5;
+  --color-accent-800: #4338ca;
+  --color-accent-900: #3730a3;
+  --color-accent-950: #1e1b4b;
+  --color-accent: var(--color-accent-500);
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: rgba(59, 130, 246, 0.16);
+  --color-accent-hover: var(--color-accent-400);
+
+  --color-neutral-50: #f9fafb;
+  --color-neutral-100: #f3f4f6;
+  --color-neutral-200: #e5e7eb;
+  --color-neutral-300: #d1d5db;
+  --color-neutral-400: #9ca3af;
+  --color-neutral-500: #6b7280;
+  --color-neutral-600: #4b5563;
+  --color-neutral-700: #374151;
+  --color-neutral-800: #1f2937;
+  --color-neutral-900: #111827;
+  --color-neutral-950: #030712;
+
+  --color-success: #34d399;
+  --color-success-bg: rgba(16, 185, 129, 0.16);
+  --color-success-fg: #6ee7b7;
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.16);
+  --color-warning-fg: #fcd34d;
+  --color-error: #fb7185;
+  --color-error-bg: rgba(244, 63, 94, 0.16);
+  --color-error-fg: #fda4af;
+  --color-info: #38bdf8;
+  --color-info-bg: rgba(56, 189, 248, 0.16);
+  --color-info-fg: #7dd3fc;
+
+  /* Vidro: sombras mais pesadas que o dark padrão, coerente com superfícies
+     translúcidas sobre fundo quase preto. */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.30);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.40), 0 1px 1px 0 rgba(0, 0, 0, 0.20);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.40);
+  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.50);
+
+  /* shadcn-compat aliases */
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-accent-fg);
+  --secondary: var(--color-surface-elevated);
+  --secondary-foreground: var(--color-text);
+  --muted: var(--color-surface-elevated);
+  --muted-foreground: var(--color-text-muted);
+  --accent-foreground: var(--color-accent-fg);
+  --destructive: var(--color-error);
+  --destructive-foreground: #ffffff;
+  --border: var(--color-border);
+  --input: var(--color-border);
+  --ring: var(--color-accent-400);
+
+  /* Liga o vidro — ver components/ui/card.tsx e a nota no :root acima. */
+  --surface-blur: blur(20px);
+
+  color-scheme: dark;
 }
 
 @layer base {
