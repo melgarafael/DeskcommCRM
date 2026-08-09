@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { PlatformModeBanner } from "./PlatformModeBanner";
 import { AdminSidebar } from "./AdminSidebar";
+import { AdminMobileBanner } from "./AdminMobileBanner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 interface AdminShellProps {
@@ -49,8 +50,14 @@ export function AdminShell({ userEmail, children }: AdminShellProps) {
     <TooltipProvider>
       <div className="flex min-h-screen w-full flex-col bg-background">
         <PlatformModeBanner />
+        <AdminMobileBanner />
         <div className="flex flex-1">
-          <AdminSidebar userEmail={userEmail} />
+          {/* Área cross-tenant: doc de responsividade degrada intencionalmente
+              em mobile (leitura só, ver AdminMobileBanner) — sem sidebar de
+              navegação completa num celular. */}
+          <div className="hidden md:flex">
+            <AdminSidebar userEmail={userEmail} />
+          </div>
           <main className="flex-1 overflow-auto p-6">{children}</main>
         </div>
       </div>

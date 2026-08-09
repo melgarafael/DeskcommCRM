@@ -34,6 +34,17 @@ export interface Stage {
   expected_duration_hours: number | null;
 }
 
+/**
+ * Base pro menu "Mover para…" do card em mobile (drag-drop fica desligado no
+ * toque). `lastPosition` é o `position_in_stage` do último card do stage —
+ * o menu sempre move para o FIM do destino, nunca pra um ponto específico.
+ */
+export interface StageOption {
+  id: string;
+  name: string;
+  lastPosition: number | null;
+}
+
 export interface BoardData {
   pipeline: Pipeline;
   stages: Stage[];

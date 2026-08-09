@@ -2,7 +2,9 @@
 import { Draggable } from "@hello-pangea/dnd";
 import type { MouseEvent } from "react";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { Lead } from "@/lib/types/leads";
+import type { StageOption } from "@/lib/kanban/types";
 import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
 import { KanbanCardActions } from "./KanbanCardActions";
 import { NextActionSlot } from "./NextActionSlot";
@@ -24,6 +26,8 @@ interface KanbanCardProps {
    * o segundo evento dentro da janela passar despercebido.
    */
   pulseCount?: number;
+  /** Todos os stages do pipeline — alimenta o menu "Mover para…" em mobile. */
+  stageOptions?: StageOption[];
   onSelect?: (leadId: string, additive: boolean) => void;
   /** Abrir o dossiê. Separado de `onSelect`: são gestos e intenções diferentes. */
   onOpen?: (leadId: string) => void;
@@ -61,12 +65,18 @@ export function KanbanCard({
   pipelineId,
   isSelected,
   pulseCount = 0,
+  stageOptions,
   onSelect,
   onOpen,
 }: KanbanCardProps) {
   const value = formatBRL(card.valueCents, card.currency);
   const state = resolveCardState(card);
   const age = stageAgeLabel(card.hoursInStage);
+  // Drag-drop desligado no toque: touch-drag do @hello-pangea/dnd disputa com
+  // scroll da página, e a alternativa (menu "Mover para…" abaixo) não tem
+  // esse conflito. Ver docs/design-system/screen-flow/07-responsive-strategy.md
+  // e a memória global sobre touch em mobile.
+  const isMobile = useIsMobile();
 
   // Clique ABRE o dossiê; ctrl/cmd+clique SELECIONA. "Clicar abre" é a
   // convenção mais forte, e seleção múltipla é recurso de poder, que tolera
@@ -81,7 +91,7 @@ export function KanbanCard({
   };
 
   return (
-    <Draggable draggableId={card.id} index={index}>
+    <Draggable draggableId={card.id} index={index} isDragDisabled={isMobile}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
@@ -162,7 +172,11 @@ export function KanbanCard({
                 </button>
               </h3>
             </div>
-            <KanbanCardActions lead={lead} pipelineId={pipelineId} />
+            <KanbanCardActions
+              lead={lead}
+              pipelineId={pipelineId}
+              stageOptions={stageOptions}
+            />
           </div>
 
           {/* ② valor — altura reservada mesmo sem valor, senão o card encolhe. */}

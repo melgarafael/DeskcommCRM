@@ -11,25 +11,44 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { DotsThree, PencilSimple, Users } from "@/lib/ui/icons";
+import { DotsThree, PencilSimple, Signpost, Users } from "@/lib/ui/icons";
 import { useWinLead, useEditLead } from "@/hooks/kanban/useUpdateLead";
+import { useMoveCard } from "@/hooks/kanban/useMoveCard";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAssignableAgents } from "@/hooks/kanban/useAssignableAgents";
 import { usePermission } from "@/hooks/auth/AuthProvider";
+import { midpoint } from "@/lib/kanban/fractional-indexing";
 import { LoseLeadDialog } from "./LoseLeadDialog";
 import { EditLeadDialog } from "./EditLeadDialog";
 import type { Lead } from "@/lib/types/leads";
+import type { StageOption } from "@/lib/kanban/types";
 
 interface KanbanCardActionsProps {
   lead: Lead;
   pipelineId: string;
+  /** Todos os stages do pipeline — só usado pelo menu "Mover para…" (mobile). */
+  stageOptions?: StageOption[];
 }
 
-export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) {
+export function KanbanCardActions({ lead, pipelineId, stageOptions }: KanbanCardActionsProps) {
   const [loseOpen, setLoseOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const winMutation = useWinLead(pipelineId);
   const editMutation = useEditLead(pipelineId);
+  // Equivalente ao drag-drop, só que por toque: mover pra SEMPRE o fim do
+  // stage de destino (midpoint com `null` do lado direito).
+  const moveCard = useMoveCard(pipelineId);
+  const moveToStage = (stageId: string, lastPosition: number | null) => {
+    if (stageId === lead.stage_id) return;
+    const positionInStage = midpoint(lastPosition, null);
+    if (Number.isNaN(positionInStage)) return;
+    moveCard.mutate({
+      leadId: lead.id,
+      stageId,
+      positionInStage,
+      expectedUpdatedAt: lead.updated_at,
+    });
+  };
   // spec 13 §4: escrita no funil é agent+ — viewer não reatribui (a rota
   // PATCH também recusa; aqui é só não oferecer o que seria negado).
   const canAssign = usePermission("pipeline.move_card");
@@ -119,6 +138,26 @@ export function KanbanCardActions({ lead, pipelineId }: KanbanCardActionsProps) 
                         v{a.version_number}
                       </span>
                     )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
+          {/* Equivalente por toque do drag-drop (desligado em mobile — ver
+              KanbanCard.tsx). Mesma permissão de escrita no funil. */}
+          {canAssign && stageOptions && stageOptions.length > 1 && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Signpost size={14} className="mr-2" /> Mover para
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {stageOptions.map((s) => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    disabled={moveCard.isPending || s.id === lead.stage_id}
+                    onSelect={() => moveToStage(s.id, s.lastPosition)}
+                  >
+                    {s.name}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuSubContent>

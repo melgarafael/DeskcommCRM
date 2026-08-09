@@ -73,7 +73,9 @@ export function ContactDetailClient({ contactId }: Props) {
         </div>
       )}
 
-      <header className="flex items-start justify-between gap-4">
+      {/* `flex-col` em mobile: nome longo + botão "Editar" lado a lado
+          apertava abaixo de ~360px. A partir de `sm` volta ao lado a lado. */}
+      <header className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-start sm:gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

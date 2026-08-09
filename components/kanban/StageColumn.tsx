@@ -3,7 +3,7 @@ import { Droppable } from "@hello-pangea/dnd";
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
-import type { Stage } from "@/lib/kanban/types";
+import type { Stage, StageOption } from "@/lib/kanban/types";
 import { buildCardInput } from "@/lib/kanban/card-state";
 import { KanbanCard } from "./KanbanCard";
 
@@ -22,6 +22,8 @@ interface StageColumnProps {
   selectedLeadIds?: Set<string>;
   /** leadId → quantos eventos remotos já chegaram (muda = pulsa de novo). */
   pulses?: Map<string, number>;
+  /** Todos os stages do pipeline — alimenta o menu "Mover para…" em mobile. */
+  stageOptions?: StageOption[];
   onSelect?: (leadId: string, additive: boolean) => void;
   /** Abrir o dossiê — atravessa o board até o card, como `pulses`. */
   onOpen?: (leadId: string) => void;
@@ -49,6 +51,7 @@ export function StageColumn({
   canonicalTags,
   selectedLeadIds,
   pulses,
+  stageOptions,
   onSelect,
   onOpen,
 }: StageColumnProps) {
@@ -58,7 +61,12 @@ export function StageColumn({
     : undefined;
 
   return (
-    <div className="flex w-80 shrink-0 flex-col rounded-lg border border-border bg-surface-muted/40">
+    <div
+      // Largura fixa (85vw) e `snap-center` só fazem efeito dentro do
+      // container `snap-x` do KanbanBoard, que só liga em mobile — em
+      // desktop a coluna continua exatamente `w-80` como sempre foi.
+      className="flex w-[85vw] shrink-0 snap-center flex-col rounded-lg border border-border bg-surface-muted/40 md:w-80"
+    >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
         <span
           className={cn(
@@ -107,6 +115,7 @@ export function StageColumn({
                 pipelineId={pipelineId}
                 isSelected={selectedLeadIds?.has(lead.id)}
                 pulseCount={pulses?.get(lead.id) ?? 0}
+                stageOptions={stageOptions}
                 onSelect={onSelect}
                 onOpen={onOpen}
               />

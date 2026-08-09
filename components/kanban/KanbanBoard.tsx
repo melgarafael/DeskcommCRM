@@ -10,7 +10,7 @@ import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
 import { midpoint } from "@/lib/kanban/fractional-indexing";
 import type { Lead } from "@/lib/types/leads";
-import type { Pipeline, Stage } from "@/lib/kanban/types";
+import type { Pipeline, Stage, StageOption } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
 
@@ -140,6 +140,19 @@ export function KanbanBoard({
     return groupLeadsByStage(data.stages, data.leads);
   }, [data]);
 
+  // Base pro menu "Mover para…" (mobile — drag-drop fica desligado no toque,
+  // ver KanbanCard.tsx). `lastPosition` é o `position_in_stage` do último card
+  // do stage; o menu sempre move para o FIM do stage de destino (midpoint com
+  // `null` do lado direito), nunca pra um ponto específico da lista.
+  const stageOptions = useMemo<StageOption[]>(() => {
+    if (!data || !grouped) return [];
+    return data.stages.map((s) => {
+      const list = grouped.get(s.id) ?? [];
+      const lastPosition = list.at(-1)?.position_in_stage ?? null;
+      return { id: s.id, name: s.name, lastPosition };
+    });
+  }, [data, grouped]);
+
   const handleSelect = useCallback(
     (leadId: string, additive: boolean) => {
       const apply = (prev: Set<string>): Set<string> => {
@@ -232,7 +245,10 @@ export function KanbanBoard({
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4">
+      {/* `snap-x` só entra em mobile (`md:snap-none` cancela em telas maiores)
+          — no desktop o scroll horizontal continua livre, como sempre foi.
+          Ver docs/design-system/screen-flow/07-responsive-strategy.md. */}
+      <div className="flex h-full gap-3 overflow-x-auto p-4 snap-x snap-mandatory md:snap-none">
         {data.stages.map((stage) => (
           <StageColumn
             key={stage.id}
@@ -245,6 +261,7 @@ export function KanbanBoard({
             pulses={pulsesProp ?? queryResult.pulses}
             canonicalTags={canonicalTags}
             selectedLeadIds={selectedLeadIds}
+            stageOptions={stageOptions}
             onSelect={handleSelect}
             onOpen={setDossieId}
           />

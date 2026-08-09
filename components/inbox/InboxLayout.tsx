@@ -2,6 +2,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { CaretLeft, Info } from "@/lib/ui/icons";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useCloseConversation } from "@/hooks/inbox/useCloseConversation";
 import {
@@ -89,7 +92,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const composerRef = useRef<ComposerHandle | null>(null);
+  const isMobile = useIsMobile();
 
   const filters: ConversationsFilters = useMemo(
     () => ({
@@ -150,43 +155,87 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       ? "Contato anonimizado — não é possível enviar mensagens."
       : null;
 
-  // Altura da grade: a conta desconta TUDO que fica acima e abaixo dela.
-  //   3.5rem            TopBar (`h-14`, em components/shell/TopBar.tsx)
-  //   2 * --space-6     padding do <main> do AppShell (`p-6`, em cima e embaixo)
+  // MOBILE: lista OU thread, nunca as duas — o grid `grid-cols-1` de baixo
+  // colapsava pra 1 coluna, mas lista e thread continuavam IRMÃS no mesmo
+  // grid (ambas montadas), então só a lista era alcançável. Aqui é um branch
+  // de verdade: decide o que MONTA, não só o que aparece via CSS.
   //
-  // Com `100vh-3.5rem` o padding ficava de fora e a grade media 48px a MAIS que a
-  // tela. Quem pagava a diferença era o composer, que fica no rodapé: nascia
-  // parcialmente abaixo da borda, atrapalhando justo na hora de escrever.
-  //
-  // As duas parcelas NÃO estão na mesma unidade, e por isso o padding entra pelo
-  // token e não como `3rem`: o `tailwind.config.ts` remapeia a escala de spacing
-  // para `var(--space-N)` — `--space-6` é `24px` LITERAL (app/globals.css) —, mas
-  // não remapeia o `14`, que segue sendo `3.5rem` de verdade. Escrever a soma como
-  // `6.5rem` só acerta enquanto a raiz for 16px; com acessibilidade de fonte maior
-  // ou menor o composer sai da tela de novo. Pelo token, a conta se auto-corrige
-  // se a escala de espaçamento mudar.
-  //
-  // `dvh` em vez de `vh` porque no celular a `vh` ignora a barra do navegador — o
-  // mesmo corte, só que pior e mudando conforme se rola a página.
+  // Não promovi `selectedId` pra URL (`?id=`) pra fazer o botão-voltar do
+  // navegador funcionar sozinho — teria que mudar de `useState` pra derivar
+  // de `useSearchParams`, um refactor maior num arquivo que já tem lógica
+  // fina de realtime/deep-link. Optei pelo caminho de menor risco: uma seta
+  // "voltar" explícita que limpa `selectedId` — mesmo resultado pro usuário,
+  // sem tocar em como a seleção é computada hoje.
+  if (isMobile) {
+    return (
+      <div className="flex h-[calc(100dvh-3.5rem)] w-full flex-col">
+        {selectedConversation ? (
+          <>
+            <div className="flex items-center gap-1 border-b border-border py-1 pl-1 pr-2">
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                aria-label="Voltar para a lista"
+                className="flex h-11 w-11 shrink-0 items-center justify-center text-muted-foreground"
+              >
+                <CaretLeft size={20} aria-hidden />
+              </button>
+              <div className="min-w-0 flex-1">
+                <ConversationHeader conversation={selectedConversation} />
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(true)}
+                aria-label="Detalhes do contato"
+                className="flex h-11 w-11 shrink-0 items-center justify-center text-muted-foreground"
+              >
+                <Info size={20} aria-hidden />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <ChatThread conversationId={selectedConversation.id} />
+            </div>
+            <RetentionNotice conversationId={selectedConversation.id} />
+            <Composer
+              ref={composerRef}
+              conversationId={selectedConversation.id}
+              blockedReason={blockedReason}
+              disabled={selectedConversation.status === "closed"}
+              contactName={selectedConversation.contacts?.name ?? null}
+            />
+            <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
+              <SheetContent
+                side="bottom"
+                className="flex max-h-[85dvh] flex-col overflow-y-auto"
+              >
+                <SheetTitle className="sr-only">Detalhes do contato</SheetTitle>
+                <CRMSidePanel conversation={selectedConversation} />
+              </SheetContent>
+            </Sheet>
+          </>
+        ) : selectionNotFound ? (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            Conversa não encontrada ou fora do seu acesso.
+          </div>
+        ) : (
+          <>
+            <InboxFilters value={filterValue} onChange={setFilterValue} />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <ConversationList
+                filters={filters}
+                orgId={orgId}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                clientFilter={clientFilter}
+                onVisibleChange={handleVisibleChange}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
-  // TRÊS COLUNAS QUE CABEM — medido, não estimado.
-  //
-  // O `xl` do Tailwind dispara em 1280px, e era ali que a terceira coluna
-  // nascia: no ponto exato em que não havia espaço para ela. Com a barra de
-  // navegação (240px) sobram 1040px, e o grid pedia 300 + 707 + 320 = 1327 —
-  // o painel de CRM ficava 311px FORA da viewport, alcançável só rolando o
-  // `main` de lado, que ninguém faz. Em 1280 o atendente simplesmente não via
-  // contexto nenhum do cliente.
-  //
-  // Os 707px eram o `min-content` do `ConversationHeader` (a barra de ações
-  // era `shrink-0`), e `1fr` é `minmax(auto, 1fr)`: não encolhe abaixo disso.
-  // Consertado o header, o `1fr` volta a encolher sozinho — `minmax(0,1fr)`
-  // foi medido aqui e não mudou um pixel, então não entrou.
-  //
-  // Duas faixas em vez de uma: compacta onde aperta, generosa onde há espaço.
-  // Em 1280 isso dá 424px de conversa em vez de 372 — 54px de folga sobre o
-  // piso do composer (370px), em vez dos 2px que a versão de uma faixa só
-  // deixava. Margem de 2px não é margem, é sorte.
   return (
     <div className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]">
       <div className="flex h-full min-h-0 flex-col border-r border-border">

@@ -159,7 +159,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     <>
       <div
         className={cn(
-          "relative border-t border-border bg-background px-3 py-2",
+          // pb usa env(safe-area-inset-bottom) somado ao padding normal —
+          // sem isso, o composer nasce sob o "chin" do iPhone (notch/home
+          // indicator). Ver docs/design-system/screen-flow/07-responsive-strategy.md.
+          "relative border-t border-border bg-background px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2",
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
@@ -231,16 +234,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             rows={1}
-            // O atalho saiu do placeholder e foi para o diálogo de atalhos (`?`)
-            // e para o `title` aqui. Dois motivos, nesta ordem: ele some assim
-            // que se digita a primeira letra — isto é, some justamente quando
-            // você ia quebrar linha —; e, com a coluna do inbox mais estreita
-            // depois do conserto do layout, a frase quebrava em duas linhas
-            // dentro de um campo de uma linha só.
-            //
-            // "(só o time vê)" FICA: não é atalho, é consequência. Quem escreve
-            // uma nota interna precisa saber que ela não vai para o cliente, e
-            // essa informação não pode depender de abrir um diálogo.
             placeholder={
               mode === "note" ? "Escreva uma nota interna… (só o time vê)" : "Escreva uma mensagem…"
             }
@@ -292,7 +285,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               { onSuccess: () => setPendingFile(null) },
             );
           } catch {
-            // toast já disparado pelo onError de useUploadMedia; dialog fica aberto p/ retry
             return;
           }
         }}

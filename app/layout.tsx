@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Atkinson_Hyperlegible, IBM_Plex_Mono } from "next/font/google";
-import { Toaster } from "sonner";
+import { ResponsiveToaster } from "@/components/app/ResponsiveToaster";
 import { branding } from "@/lib/branding";
 import { ThemeProvider } from "@/lib/theme";
 import { Providers } from "./providers";
@@ -53,6 +53,11 @@ export function generateMetadata(): Metadata {
 }
 
 export const viewport: Viewport = {
+  // width/initialScale explícitos e SEM maximumScale/userScalable: false de
+  // propósito — pinch-to-zoom tem que continuar funcionando em toda tela
+  // mobile do CRM. Não "conserte" isto travando o zoom.
+  width: "device-width",
+  initialScale: 1,
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#faf9f6" },
     { media: "(prefers-color-scheme: dark)", color: "#161510" },
@@ -81,12 +86,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-bg font-sans text-text antialiased">
         <Providers>
           <ThemeProvider>{children}</ThemeProvider>
-          <Toaster
-            position="top-right"
-            richColors
-            closeButton
-            duration={4000}
-          />
+          <ResponsiveToaster />
         </Providers>
       </body>
     </html>

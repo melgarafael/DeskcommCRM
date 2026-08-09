@@ -13,6 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  MobileCardList,
+  MobileCardRow,
+  MobileCardField,
+} from "@/components/ui/responsive-table";
 import { useAuditQuery, type AuditFilters } from "@/hooks/audit/useAuditQuery";
 
 function fmtDate(iso: string): string {
@@ -94,7 +99,9 @@ export function AuditClient() {
         </div>
       </Card>
 
-      <Card>
+      {/* Desktop/tablet: tabela cheia. Mobile: cards empilhados (mesmas
+          linhas, mesmos dados) — ver docs/design-system/screen-flow/07-responsive-strategy.md. */}
+      <Card className="hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -155,6 +162,41 @@ export function AuditClient() {
           </TableBody>
         </Table>
       </Card>
+
+      <MobileCardList className="md:hidden">
+        {q.isLoading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="p-3">
+              <Skeleton className="h-16 w-full" />
+            </Card>
+          ))
+        ) : rows.length === 0 ? (
+          <p className="p-4 text-center text-sm text-muted-foreground">
+            Nenhum log no período.
+          </p>
+        ) : (
+          rows.map((r) => (
+            <MobileCardRow key={r.id}>
+              <MobileCardField label="Quando">{fmtDate(r.created_at)}</MobileCardField>
+              <MobileCardField label="Ator">
+                {r.acting_as_platform_admin
+                  ? "platform_admin"
+                  : r.actor_user_id
+                    ? r.actor_user_id.slice(0, 8)
+                    : r.actor_api_token_id
+                      ? `token:${r.actor_api_token_id.slice(0, 8)}`
+                      : "system"}
+              </MobileCardField>
+              <MobileCardField label="Ação">{r.action}</MobileCardField>
+              <MobileCardField label="Recurso">
+                {r.resource_type ?? "—"}
+                {r.resource_id ? `:${r.resource_id.slice(0, 8)}` : ""}
+              </MobileCardField>
+              <MobileCardField label="Metadata">{truncJson(r.metadata, 40)}</MobileCardField>
+            </MobileCardRow>
+          ))
+        )}
+      </MobileCardList>
 
       {q.hasNextPage && (
         <div className="flex justify-center">

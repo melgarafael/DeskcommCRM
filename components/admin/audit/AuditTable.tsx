@@ -13,11 +13,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  MobileCardList,
+  MobileCardRow,
+  MobileCardField,
+} from "@/components/ui/responsive-table";
 import type { AdminAuditRow } from "@/hooks/useAdminAuditLog";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function maskEmail(email: string | null | undefined): string {
   if (!email) return "—";
@@ -41,10 +42,6 @@ function shortId(id: string | null | undefined): string {
   if (id.length <= 8) return id;
   return `${id.slice(0, 8)}…`;
 }
-
-// ---------------------------------------------------------------------------
-// Skeleton
-// ---------------------------------------------------------------------------
 
 export function AuditTableSkeleton() {
   return (
@@ -73,10 +70,6 @@ export function AuditTableSkeleton() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
@@ -89,10 +82,6 @@ function EmptyState() {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Table
-// ---------------------------------------------------------------------------
 
 interface AuditTableProps {
   data: AdminAuditRow[];
@@ -113,7 +102,10 @@ export function AuditTable({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-md border">
+      {/* Área super-admin degrada pra leitura em mobile (sem mutação aqui de
+          qualquer forma — só o link "Ver"); mesma troca tabela↔cards das
+          outras telas. */}
+      <div className="hidden rounded-md border md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -164,6 +156,32 @@ export function AuditTable({
           </TableBody>
         </Table>
       </div>
+
+      <MobileCardList className="md:hidden">
+        {data.map((row) => (
+          <MobileCardRow key={row.id}>
+            <MobileCardField label="Quando">{relativeDate(row.created_at)}</MobileCardField>
+            <MobileCardField label="Action">{row.action}</MobileCardField>
+            <MobileCardField label="Tenant">
+              {row.organizations ? row.organizations.slug : "—"}
+            </MobileCardField>
+            <MobileCardField label="Actor">
+              {maskEmail(row.actor_user_id ?? undefined)}
+            </MobileCardField>
+            <MobileCardField label="Recurso">
+              {row.resource_type
+                ? `${row.resource_type} ${shortId(row.resource_id)}`
+                : "—"}
+            </MobileCardField>
+            <Link
+              href={`/admin/audit/${row.id}`}
+              className="mt-1 text-right text-xs text-accent-foreground underline"
+            >
+              Ver detalhe
+            </Link>
+          </MobileCardRow>
+        ))}
+      </MobileCardList>
 
       {hasNextPage && (
         <div className="flex justify-center">

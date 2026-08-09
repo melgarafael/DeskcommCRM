@@ -29,11 +29,19 @@ const STEPS: StepDef[] = [
 export function Stepper() {
   const pathname = usePathname() ?? "";
   const idx = STEPS.findIndex((s) => pathname.includes(`/${s.segment}`));
+  const current = idx >= 0 ? idx : 0;
   return (
-    <ol
-      aria-label="onboarding steps"
-      className="flex w-full items-center justify-between gap-2 px-2 py-3"
-    >
+    <>
+      {/* Mobile: 6 rótulos + círculos numa fila `justify-between` não cabem
+          em ~360px sem virar sopa de letrinhas — vira um resumo de texto,
+          como o doc de responsividade pede ("Passo X de N"). */}
+      <p aria-label="onboarding steps" className="px-2 py-3 text-sm text-muted-foreground md:hidden">
+        Passo {current + 1} de {STEPS.length} — <span className="font-medium text-foreground">{STEPS[current]?.label}</span>
+      </p>
+      <ol
+        aria-label="onboarding steps"
+        className="hidden w-full items-center justify-between gap-2 px-2 py-3 md:flex"
+      >
       {STEPS.map((s, i) => {
         const isActive = i === idx;
         const isDone = i < idx;
@@ -64,6 +72,7 @@ export function Stepper() {
           </li>
         );
       })}
-    </ol>
+      </ol>
+    </>
   );
 }

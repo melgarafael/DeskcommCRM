@@ -21,6 +21,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  MobileCardList,
+  MobileCardRow,
+  MobileCardField,
+} from "@/components/ui/responsive-table";
 import { Warning } from "@/lib/ui/icons";
 import {
   useLgpdRequests,
@@ -29,8 +34,6 @@ import {
   type SlaBucket,
 } from "@/hooks/useLgpdRequests";
 import { SlaBanner } from "./SlaBanner";
-
-// ── Label helpers ─────────────────────────────────────────────────────────────
 
 const TYPE_LABELS: Record<LgpdRequestType, string> = {
   redact: "Anonimização cliente",
@@ -74,8 +77,6 @@ const SLA_LABELS: Record<SlaBucket, string> = {
   ok: "OK",
 };
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
-
 function fmtRelative(iso: string): string {
   try {
     const now = Date.now();
@@ -116,11 +117,7 @@ function fmtDistance(iso: string | null): { label: string; urgent: boolean } {
   }
 }
 
-// ── Select options ────────────────────────────────────────────────────────────
-
 const ALL = "__ALL__";
-
-// ── Component ─────────────────────────────────────────────────────────────────
 
 export function RequestsTable() {
   const [status, setStatus] = useState<LgpdRequestStatus | undefined>();
@@ -134,10 +131,8 @@ export function RequestsTable() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* SLA Banner — shown based on full current page data */}
       {!q.isLoading && rows.length > 0 && <SlaBanner requests={rows} />}
 
-      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
         <Select
           value={status ?? ALL}
@@ -218,8 +213,7 @@ export function RequestsTable() {
         )}
       </div>
 
-      {/* Table */}
-      <Card className="overflow-hidden">
+      <Card className="hidden overflow-hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -324,7 +318,70 @@ export function RequestsTable() {
         </Table>
       </Card>
 
-      {/* Pagination */}
+      <MobileCardList className="md:hidden">
+        {q.isLoading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="p-3">
+              <Skeleton className="h-20 w-full" />
+            </Card>
+          ))
+        ) : q.isError ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-sm text-muted-foreground">
+            <Warning size={24} weight="fill" className="text-red-500" aria-hidden />
+            <p>Erro ao carregar solicitações.</p>
+            <Button size="sm" variant="outline" onClick={() => q.refetch()}>
+              Tentar novamente
+            </Button>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-12 text-sm text-muted-foreground">
+            <Warning size={32} weight="thin" aria-hidden />
+            <p className="font-medium">Nenhuma solicitação LGPD</p>
+          </div>
+        ) : (
+          rows.map((r) => {
+            const due = fmtDistance(r.due_at);
+            const subject = r.external_customer_id
+              ? r.external_customer_id.slice(0, 16)
+              : r.contact_id
+                ? `ctt:${r.contact_id.slice(0, 8)}`
+                : "—";
+            return (
+              <MobileCardRow key={r.id}>
+                <MobileCardField label="Tipo">
+                  <Badge variant="secondary" className="text-xs">
+                    {TYPE_LABELS[r.request_type] ?? r.request_type}
+                  </Badge>
+                </MobileCardField>
+                <MobileCardField label="Sujeito">{subject}</MobileCardField>
+                <MobileCardField label="Recebido">{fmtRelative(r.received_at)}</MobileCardField>
+                <MobileCardField label="Vence">
+                  <span className={due.urgent ? "text-red-600 dark:text-red-400" : undefined}>
+                    {due.label}
+                  </span>
+                </MobileCardField>
+                <MobileCardField label="SLA">
+                  <Badge variant={SLA_VARIANT[r.sla_bucket]} className="text-xs">
+                    {SLA_LABELS[r.sla_bucket]}
+                  </Badge>
+                </MobileCardField>
+                <MobileCardField label="Status">
+                  <Badge variant={STATUS_VARIANT[r.status]} className="text-xs">
+                    {STATUS_LABELS[r.status] ?? r.status}
+                  </Badge>
+                </MobileCardField>
+                <Link
+                  href={`/app/lgpd/requests/${r.id}`}
+                  className="mt-1 text-right text-xs text-accent-foreground underline"
+                >
+                  Ver detalhe
+                </Link>
+              </MobileCardRow>
+            );
+          })
+        )}
+      </MobileCardList>
+
       {meta && (meta.page > 1 || meta.has_more) && (
         <div className="flex items-center justify-between text-sm">
           <Button
