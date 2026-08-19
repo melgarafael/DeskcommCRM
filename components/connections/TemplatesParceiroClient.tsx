@@ -377,7 +377,7 @@ export function TemplatesParceiroClient() {
             A plataforma revisa antes de aprovar — o modelo nasce pendente e some da lista de
             envio até ela decidir.
           </p>
-          <div className="flex justify-end">
+          <div className="flex sm:justify-end">
             <Button
               type="button"
               size="sm"
@@ -397,6 +397,7 @@ export function TemplatesParceiroClient() {
                   }),
                 })
               }
+              className="w-full sm:w-auto"
             >
               Enviar para revisão
             </Button>

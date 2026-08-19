@@ -50,9 +50,9 @@ export function RoutersClient({ initialState, channelSessions }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex sm:justify-end">
         {canManagePerm && (
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
             <Plus /> Novo roteador
           </Button>
         )}

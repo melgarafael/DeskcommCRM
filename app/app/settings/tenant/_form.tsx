@@ -163,8 +163,8 @@ export function TenantForm({ initial }: Props) {
           </p>
         </div>
 
-        <div className="flex justify-end">
-          <Button type="submit" disabled={isPending}>
+        <div className="flex sm:justify-end">
+          <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
             {isPending ? "Salvando…" : "Salvar"}
           </Button>
         </div>

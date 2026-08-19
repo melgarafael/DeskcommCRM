@@ -74,11 +74,15 @@ export function PipelinePageClient({
       data-refetch-divergencias={seguranca.divergencias}
       data-refetch-em={seguranca.ultimaVerificacao ?? ""}
     >
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">
+      {/* `flex-col` no mobile: nome de funil comprido (é texto livre, sem
+          limite curto) + botão na mesma linha sem quebra empurrava o botão pra
+          fora da viewport em telas estreitas. De `sm:` pra cima volta a ser
+          uma linha só, como sempre foi. */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
           {data?.pipeline.name ?? initialName}
         </h1>
-        <Button onClick={() => setNewOpen(true)} disabled={!data}>
+        <Button onClick={() => setNewOpen(true)} disabled={!data} className="shrink-0">
           <Plus size={16} className="mr-2" /> Novo Lead
         </Button>
       </header>

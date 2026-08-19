@@ -91,9 +91,40 @@ export const BACKOFF_MS = [30_000, 60_000, 300_000, 900_000, 3_600_000] as const
  *  looking again to see if the turn landed. Imported by engine.ts for the enqueue next_eval_at too. */
 export const ACTION_RECHECK_MS = 5 * 60_000;
 
-/** Dead-man bound: idle rechecks tolerated on an action node before a turn that never completes
- *  (worker down / permanently failing) is markDead — never re-enqueues, never waits forever. */
-export const MAX_ACTION_RECHECKS = 5;
+/** Teto do backoff entre rechecks — a partir daqui a espera não cresce mais. */
+export const ACTION_RECHECK_MAX_MS = 60 * 60_000;
+
+/**
+ * Dead-man bound: idle rechecks tolerated on an action node before a turn that never completes
+ * (worker down / permanently failing) is markDead — never re-enqueues, never waits forever.
+ *
+ * ⚠️ ERA 5, E 5 × 5min MATAVA TODO FOLLOW-UP DA NOITE. A espera do envio tem um
+ * motivo LEGÍTIMO e longo que este contador não distinguia de "worker morto": a
+ * janela anti-ban (7h–22h no padrão). Um toque que caísse às 22h ficava ~25 min
+ * em recheck e o enrollment morria com `action_turn_never_completed` — o lead
+ * nunca recebia, e o motivo registrado era falso. Medido em produção
+ * (2026-08-18): enrollment `dead` no nó de abertura, com o worker vivo e o turno
+ * apenas esperando a janela.
+ *
+ * Com o backoff de `atrasoDoRecheck`, este orçamento cobre ~11h — mais que a
+ * maior noite fechada — e ainda custa poucos ticks. O dead-man continua
+ * existindo: worker realmente morto termina em `dead`, só que depois de uma
+ * espera que não confunde noite com defeito.
+ */
+export const MAX_ACTION_RECHECKS = 14;
+
+/**
+ * Quanto esperar até o próximo recheck da ação: 5min dobrando até 1h.
+ *
+ * Exponencial e não fixo porque as duas causas de espera têm escalas
+ * diferentes: turno em voo volta em segundos (os primeiros rechecks são
+ * curtos), janela fechada volta em horas (e aí não faz sentido perguntar de 5
+ * em 5 minutos por 9 horas).
+ */
+export function atrasoDoRecheck(rechecksJaFeitos: number): number {
+  const passo = Math.max(0, rechecksJaFeitos);
+  return Math.min(ACTION_RECHECK_MS * 2 ** passo, ACTION_RECHECK_MAX_MS);
+}
 
 /**
  * Dead-man do PLANO de tempo: rechecks tolerados no `trigger` esperando o turno
@@ -391,7 +422,10 @@ export function processNode(input: {
       if ((actionRecheckCount ?? 0) >= MAX_ACTION_RECHECKS) {
         return { kind: "dead", reason: "action_turn_never_completed" };
       }
-      return { kind: "recheck", next_eval_at: new Date(clock().getTime() + ACTION_RECHECK_MS) };
+      return {
+        kind: "recheck",
+        next_eval_at: new Date(clock().getTime() + atrasoDoRecheck(actionRecheckCount ?? 0)),
+      };
     }
 
     case "end": {

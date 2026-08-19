@@ -96,8 +96,8 @@ export function ApiTokensClient() {
 
   return (
     <>
-      <div className="flex justify-end">
-        <Button onClick={() => setCreateOpen(true)}>Criar token</Button>
+      <div className="flex sm:justify-end">
+        <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">Criar token</Button>
       </div>
 
       {isLoading ? (

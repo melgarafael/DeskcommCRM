@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { AgentRow } from "@/hooks/ai/useAgent";
+import { modeloExibido } from "@/lib/ai/agents/modelo-exibido";
 import { AgentStatusBadge, deriveAgentStatus } from "./AgentStatusBadge";
 import { AgentRowMenu } from "./AgentRowMenu";
 
@@ -13,14 +14,10 @@ interface Props {
   canWrite: boolean;
 }
 
-function formatModel(model: string): string {
-  if (!model) return "—";
-  return model.includes("/") ? model.split("/").slice(1).join("/") : model;
-}
-
 export function AgentCard({ agent, canWrite }: Props) {
   const status = deriveAgentStatus(agent);
-  const provider = agent.model?.split("/")[0] ?? "?";
+  // A versão PUBLICADA vence a coluna legada do agente — é ela que o motor lê.
+  const { provider, model, origem } = modeloExibido(agent);
 
   return (
     <Card className="flex h-full flex-col gap-3 p-4">
@@ -29,8 +26,15 @@ export function AgentCard({ agent, canWrite }: Props) {
           <h3 className="truncate font-medium" title={agent.name}>
             {agent.name}
           </h3>
-          <p className="truncate text-xs text-muted-foreground">
-            {provider} · {formatModel(agent.model)}
+          <p
+            className="truncate text-xs text-muted-foreground"
+            title={
+              origem === "versao"
+                ? "Modelo da versão publicada — é o que atende o cliente."
+                : "Modelo do rascunho; nenhuma versão publicada ainda."
+            }
+          >
+            {provider} · {model}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">

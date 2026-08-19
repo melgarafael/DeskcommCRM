@@ -114,4 +114,6 @@ export {
   Key,
   UserCircle,
   ClockCounterClockwise,
+  // menu hambúrguer (nav mobile)
+  List,
 } from "@phosphor-icons/react/dist/ssr";

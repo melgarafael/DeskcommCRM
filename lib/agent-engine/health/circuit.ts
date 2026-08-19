@@ -174,8 +174,10 @@ function pct(fraction: number): string {
 function diagnosisBody(reason: HoldReason, rates: SessionRates, k: HealthKnobs): string {
   if (reason === 'go_live') {
     return (
-      'Número novo aguardando liberação (go-live). O outbound nasce em espera por segurança: ' +
-      'a fila retém as mensagens, nada é perdido. Resolva este item quando o número estiver pronto para disparar.'
+      'Número novo aguardando liberação (go-live). Os disparos que o sistema começa — follow-up ' +
+      'e cadência de prospecção — nascem em espera por segurança: a fila retém, nada é perdido. ' +
+      'RESPONDER quem te escreveu continua funcionando normalmente. Resolva este item quando o ' +
+      'número estiver pronto para disparar.'
     );
   }
   if (reason === 'block_rate') {

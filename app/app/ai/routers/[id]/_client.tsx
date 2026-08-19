@@ -235,7 +235,7 @@ export function RouterEditorClient({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <Link
             href="/app/ai/routers"
@@ -364,8 +364,8 @@ export function RouterEditorClient({
 
         <div className="space-y-4">
           <Card className="space-y-3 p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
                 <h3 className="text-sm font-medium">Intenções</h3>
                 <p className="text-xs text-muted-foreground">
                   Cada intenção descreve uma situação e diz qual agente deve assumir a conversa
@@ -373,7 +373,7 @@ export function RouterEditorClient({
                 </p>
               </div>
               {canManage && (
-                <Button variant="outline" size="sm" onClick={addMember}>
+                <Button variant="outline" size="sm" onClick={addMember} className="shrink-0">
                   <Plus /> Intenção
                 </Button>
               )}
@@ -404,8 +404,8 @@ export function RouterEditorClient({
           </Card>
 
           {canManage && (
-            <div className="flex justify-end">
-              <Button onClick={handleSave} disabled={!dirty || !isValid || saving}>
+            <div className="flex sm:justify-end">
+              <Button onClick={handleSave} disabled={!dirty || !isValid || saving} className="w-full sm:w-auto">
                 {saving ? "Salvando…" : "Salvar"}
               </Button>
             </div>

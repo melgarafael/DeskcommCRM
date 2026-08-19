@@ -34,7 +34,7 @@ export function AgentsListFilters({
         placeholder="Buscar por nome…"
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
-        className="w-64"
+        className="w-full sm:w-64"
         aria-label="Buscar agents"
       />
       <Select value={status} onValueChange={(v) => onStatusChange(v as StatusFilter)}>

@@ -5,6 +5,7 @@
  * return without waiting for the audit insert; failures bubble to logger only.
  */
 
+import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -86,7 +87,17 @@ export function logInvocation(row: LogInvocationInput): void {
           cost_cents: row.cost_cents,
           latency_ms: row.latency_ms,
           status: row.error_payload ? "erro" : "ok",
-          error_code: row.error_payload ? "erro_legado" : null,
+          // MESMA RÉGUA do motor (`normalizarErro`), e não um rótulo de balde.
+          //
+          // Aqui era `"erro_legado"` fixo para QUALQUER falha — o que apagava a
+          // causa justamente na tabela que a tela `/app/ai/runs` lê para dizer
+          // "o que aconteceu e o que fazer". Medido numa instalação real
+          // (2026-08-18): a chave da OpenRouter sem saldo devolvia
+          // `Insufficient credits`, a tela mostrava três vezes `erro_legado`
+          // sem uma linha de conserto, e o dono passou horas procurando bug de
+          // código num problema de fatura. `normalizarErro` já reconhece esse
+          // texto como `limite_ou_saldo`, que é a linha que resolve.
+          error_code: row.error_payload ? codigoDoErro(row.error_payload) : null,
           error_message: row.error_payload
             ? String(JSON.stringify(row.error_payload)).slice(0, 500)
             : null,
@@ -106,6 +117,33 @@ export function logInvocation(row: LogInvocationInput): void {
       }
     })();
   });
+}
+
+/**
+ * Classifica o payload de erro do caminho legado com a régua do motor.
+ *
+ * O payload é `{ message }` (ver `workers/ai-sentiment-worker.ts` e
+ * `ai-response-worker.ts`), às vezes com `status`/`statusCode` quando o
+ * chamador os repassou. `normalizarErro` lê exatamente esses campos, então o
+ * objeto é entregue como veio — sem inventar um `Error` que perderia o status.
+ *
+ * Exportada para o teste: é a única parte desta função com decisão, e o resto
+ * é um insert fire-and-forget que nenhum unit alcança.
+ */
+export function codigoDoErro(payload: Record<string, unknown>): string {
+  const mensagem =
+    typeof payload.message === "string" && payload.message.trim() !== ""
+      ? payload.message
+      : JSON.stringify(payload);
+  // `Error` de verdade, e não o objeto cru: `normalizarErro` lê a mensagem por
+  // `err instanceof Error ? err.message : String(err)` — um objeto simples
+  // viraria a string "[object Object]" e NENHUM padrão casaria, trocando um
+  // balde errado (`erro_legado`) por outro (`erro_desconhecido`).
+  const erro = Object.assign(new Error(mensagem), {
+    ...(typeof payload.status === "number" ? { status: payload.status } : {}),
+    ...(typeof payload.statusCode === "number" ? { statusCode: payload.statusCode } : {}),
+  });
+  return normalizarErro(erro).error_code;
 }
 
 /**

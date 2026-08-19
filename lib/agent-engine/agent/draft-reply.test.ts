@@ -45,6 +45,7 @@ const AGENT: PublishedAgentConfig = {
   activeKbVersionId: null,
   ragTopK: 5,
   ragSimilarityThreshold: 0.72,
+  janelaDeAtendimento: null,
   versionCreatedBy: null,
   operatorEnabled: false,
   operatorModel: null,

@@ -746,3 +746,27 @@ erro. É por isso que perguntar sem gravar é pior que não perguntar. Antes de 
 qualquer caso acima, rode `source .env && echo "$APP_NAME|$SUPPORT_EMAIL"` e confirme que o
 que você digitou está no arquivo — sintoma de marca ausente costuma ser isto, não o
 resolvedor.
+
+---
+
+## Por que uma IA publicada não responde — seis causas medidas numa VPS real (2026-08-18/19)
+
+Investigação dirigida pela tela numa instalação EasyPanel com WhatsApp real,
+agente publicado e o dono relatando "a IA não responde". Nenhuma das seis causas
+aparecia como erro para quem operava: a conversa mostrava **"IA atendendo"** o
+tempo todo. É a jornada `J3`/`J8` vista de perto, e o padrão é sempre o mesmo —
+**um lugar que engole a resposta e devolve sucesso**.
+
+| # | Onde | Defeito | Como foi provado | Correção |
+|---|---|---|---|---|
+| 1 | `edge/crm/session-watchdog.ts` | Hold `go_live` (número novo) mandava **todo `inbound_turn`** para `run_after='infinity'` — não só o disparo proativo. O único sinal era um item de Central `info` falando de "outbound" | item aberto na Central + zero `llm_calls` para a conversa | hold reason-aware: `go_live` retém só `followup_turn` |
+| 2 | `resolve-turn-agent.ts` | Roteador **ativo com zero membros e sem fallback** derrubava a sessão inteira no agente genérico, que caía em `settings.llm` sem credencial → `LlmNotConfiguredError` → 5 tentativas → job morto | `GET /api/v1/ai/routers` (`member_count: 0`) + aviso `Job descartado após esgotar tentativas` | sem fallback, atende o agente publicado da sessão |
+| 3 | `agent/inbound-turn.ts` | Fora da **janela anti-ban** (7h–22h) o veto do `pacingGate` virava erro de ensino ao modelo: turno terminava `ok`, sem envio e sem reagendamento | run `agent_turn` `ok` às 22:56 e **zero outbound** na conversa | reagenda o job para a abertura (doutrina `restricao-de-canal.md` §2) |
+| 4 | `agent/agent-config.ts` | **Horário de funcionamento** da versão publicada (08:00–18:00 seg–sex) não era lido por ninguém vivo — só pelo dispatcher legado, hoje NO-OP | agente respondendo 21:55 de uma terça | janela lida no turno; fora dela, adia |
+| 5 | `followup/node-handlers.ts` | Enrollment morria com `action_turn_never_completed` em ~25 min esperando a janela abrir | enrollment `dead` no nó de abertura com o worker vivo | backoff + orçamento de ~11h |
+| 6 | `ai/log-invocation.ts` + card do agente | Duas telas mentindo: `erro_legado` no lugar de `limite_ou_saldo` (chave sem saldo), e o card anunciando o modelo da **criação** (`claude-sonnet-5`) enquanto o motor rodava o da **versão publicada** (`nvidia/nemotron-…:free`) | `/app/ai/runs` + `GET /versions` | `normalizarErro` no caminho legado; card lê a versão publicada |
+
+**Lição para o mapa:** nenhum desses casos falha com tela vermelha. Todos falham
+com **status verde e mensagem ausente**. Um caso de jornada que só verifica "a
+tela não deu erro" passa em todos os seis — a prova precisa ser sempre *a
+mensagem chegou no WhatsApp do lead*.

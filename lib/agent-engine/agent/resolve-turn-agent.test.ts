@@ -27,6 +27,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     activeKbVersionId: null,
     ragTopK: 5,
     ragSimilarityThreshold: 0.72,
+    janelaDeAtendimento: null,
     versionCreatedBy: null,
     operatorEnabled: false,
   operatorModel: null,
@@ -160,16 +161,19 @@ describe('resolveTurnAgent', () => {
     expect(out.config?.agentId).toBe('agent-fallback');
   });
 
-  it('7. sem match + SEM fallback → no_match e config null (genérico)', async () => {
+  it('7. sem match + SEM fallback → no_match, mas atende o agente PUBLICADO DA SESSÃO', async () => {
     const r = router({ sticky: false, fallbackAgentId: null });
     const loadActiveRouter = vi.fn().mockResolvedValue(r);
     const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.1 });
     const loadPublishedAgentConfigById = vi.fn();
+    const loadPublishedAgentConfig = vi.fn().mockResolvedValue(fakeConfig('agent-da-sessao'));
     const out = await resolveTurnAgent({} as never, {} as never,
       { ...baseInput, signal: 'blablabla', stickyAgentId: null, stickyIntent: null },
-      makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfigById }));
+      makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfigById, loadPublishedAgentConfig }));
+    // O outcome continua contando a verdade (o router não casou nada)...
     expect(out.outcome).toBe('no_match');
-    expect(out.config).toBeNull();
+    // ...mas quem responde é quem responderia sem router — nunca o genérico.
+    expect(out.config?.agentId).toBe('agent-da-sessao');
     expect(loadPublishedAgentConfigById).not.toHaveBeenCalled();
   });
 
@@ -260,5 +264,36 @@ describe('resolveTurnAgent', () => {
       makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfigById }));
     expect(out.outcome).toBe('no_match');
     expect(out.config).toBeNull();
+  });
+
+  it('15. router ATIVO, ZERO membros e sem fallback NÃO sequestra a sessão (defeito medido 2026-08-18)', async () => {
+    // Estado que a tela deixa criar em dois cliques: roteador ligado, nenhum
+    // membro, nenhum fallback. Ele não classifica nada por construção — e antes
+    // deste conserto derrubava TODA mensagem do número para o agente genérico,
+    // que na instalação medida não tinha credencial: job morto, silêncio total
+    // com a tela dizendo "IA atendendo".
+    const r = router({ sticky: false, members: [], fallbackAgentId: null });
+    const loadActiveRouter = vi.fn().mockResolvedValue(r);
+    const classifyIntent = vi.fn().mockResolvedValue(null);
+    const loadPublishedAgentConfig = vi.fn().mockResolvedValue(fakeConfig('agent-publicado'));
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'Oi', stickyAgentId: null, stickyIntent: null },
+      makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfig }));
+    expect(out.config?.agentId).toBe('agent-publicado');
+    expect(out.outcome).toBe('classifier_failed');
+  });
+
+  it('16. router sem fallback E sessão sem agente publicado → config null (genérico) com aviso', async () => {
+    const r = router({ sticky: false, fallbackAgentId: null });
+    const loadActiveRouter = vi.fn().mockResolvedValue(r);
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: null, confidence: 0.1 });
+    const loadPublishedAgentConfig = vi.fn().mockResolvedValue(null);
+    const warn = vi.fn();
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'blablabla', stickyAgentId: null, stickyIntent: null },
+      { log: { info: vi.fn(), warn, error: vi.fn() }, loadActiveRouter, classifyIntent, loadPublishedAgentConfig } as never);
+    expect(out.config).toBeNull();
+    expect(out.outcome).toBe('no_match');
+    expect(warn).toHaveBeenCalled();
   });
 });

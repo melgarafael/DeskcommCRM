@@ -1,7 +1,12 @@
-import type { ReactNode } from "react";
+"use client";
+import { useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { PlatformModeBanner } from "./PlatformModeBanner";
 import { AdminSidebar } from "./AdminSidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { List } from "@/lib/ui/icons";
 
 interface AdminShellProps {
   userEmail: string;
@@ -9,8 +14,13 @@ interface AdminShellProps {
 }
 
 /**
- * Server component shell for /admin/*. Renders the cross-tenant banner
- * (sticky top), platform sidebar, and main content area.
+ * Shell for /admin/*. Renders the cross-tenant banner (sticky top), platform
+ * sidebar, and main content area. Client component (não mais Server) desde
+ * que ganhou o drawer de navegação mobile — precisa do estado de
+ * aberto/fechado, no mesmo padrão de `app/app/_components/AppShell.tsx`;
+ * `children` continua chegando como Server Component normalmente (React
+ * permite RSC como `children` de um Client Component sem forçar o subtree
+ * inteiro pro cliente).
  *
  * O `TooltipProvider` mora aqui, e não em cada componente, porque o Radix exige
  * um Provider ANCESTRAL de todo `Tooltip`: sem ele o componente lança
@@ -45,13 +55,51 @@ interface AdminShellProps {
  * recomendado pelo Radix (Provider perto da raiz, compartilhando o delay).
  */
 export function AdminShell({ userEmail, children }: AdminShellProps) {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Mesmo padrão de `app/app/_components/AppShell.tsx`: ajuste de estado
+  // durante o render, não em `useEffect` (ver comentário lá).
+  const pathname = usePathname();
+  const [ultimoPathname, setUltimoPathname] = useState(pathname);
+  if (pathname !== ultimoPathname) {
+    setUltimoPathname(pathname);
+    setMobileNavOpen(false);
+  }
+
   return (
     <TooltipProvider>
       <div className="flex min-h-screen w-full flex-col bg-background">
         <PlatformModeBanner />
         <div className="flex flex-1">
           <AdminSidebar userEmail={userEmail} />
-          <main className="flex-1 overflow-auto p-6">{children}</main>
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <SheetContent side="left" className="w-72 max-w-[85vw] gap-0 p-0 lg:hidden">
+              <SheetTitle className="sr-only">Menu de navegação</SheetTitle>
+              <AdminSidebar userEmail={userEmail} variant="mobile" />
+            </SheetContent>
+          </Sheet>
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Sem TopBar própria no admin (era só sidebar + main): esta barra
+                existe só pra carregar o hambúrguer abaixo de `lg`, onde a
+                sidebar fixa não está mais no DOM. */}
+            <header className="flex h-12 items-center gap-2 border-b bg-background px-3 lg:hidden">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Abrir menu de navegação"
+              >
+                <List size={20} aria-hidden />
+              </Button>
+              <span className="text-sm font-semibold tracking-tight">Admin Plataforma</span>
+            </header>
+            {/* `overflow-x-hidden` como rede de segurança — mesmo motivo do
+                `AppShell` (ver comentário lá): se algo estourar a largura, a
+                PÁGINA não rola de lado; quem precisa de scroll horizontal é
+                o componente específico, contido nele mesmo. */}
+            <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">{children}</main>
+          </div>
         </div>
       </div>
     </TooltipProvider>

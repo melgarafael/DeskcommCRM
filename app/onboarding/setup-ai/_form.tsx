@@ -237,13 +237,14 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
             o que falta é o cérebro, e isso se resolve depois sem travar o resto
             do wizard.
           */}
-          <div className="flex justify-end">
+          <div className="flex sm:justify-end">
             <Button
               type="button"
               variant="outline"
               onClick={() => {
                 window.location.href = "/onboarding";
               }}
+              className="w-full sm:w-auto"
             >
               Continuar sem publicar
             </Button>
@@ -280,13 +281,14 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
               <strong>IA › Agentes</strong>.
             </p>
           )}
-          <div className="flex justify-end">
+          <div className="flex sm:justify-end">
             <Button
               type="button"
               variant="outline"
               onClick={() => {
                 window.location.href = "/onboarding";
               }}
+              className="w-full sm:w-auto"
             >
               Continuar sem publicar
             </Button>
@@ -311,13 +313,14 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
             Tente de novo no botão abaixo (clicar de novo não cria um segundo agente) ou siga
             agora e publique depois em <strong>IA › Agentes</strong>.
           </p>
-          <div className="flex justify-end">
+          <div className="flex sm:justify-end">
             <Button
               type="button"
               variant="outline"
               onClick={() => {
                 window.location.href = "/onboarding";
               }}
+              className="w-full sm:w-auto"
             >
               Continuar sem publicar
             </Button>
@@ -325,7 +328,7 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
         </div>
       )}
 
-      <div className="flex justify-between gap-2">
+      <div className="flex flex-wrap justify-between gap-2">
         <Button
           type="button"
           variant="ghost"

@@ -146,10 +146,9 @@ export async function redriveQueued(
        -- conta as que ficaram sem resgate é o bloco logo abaixo — silêncio aqui
        -- é o que fez este defeito durar.
        and s.waha_session_name is not null
-       and m.created_at < now() - make_interval(secs => $1 / 1000.0)
      order by m.created_at
-     limit $2`,
-    [cfg.redriveMinAgeMs, cfg.redriveBatchSize],
+     limit $1`,
+    [cfg.redriveBatchSize],
   );
 
   // As que este resgate NÃO alcança. Não são reenviadas daqui — enviar em dobro
@@ -161,9 +160,7 @@ export async function redriveQueued(
      join channel_sessions s on s.id = m.channel_session_id
      where m.sent_via = 'ai' and m.status = 'queued'
        and s.status = 'WORKING'
-       and s.waha_session_name is null
-       and m.created_at < now() - make_interval(secs => $1 / 1000.0)`,
-    [cfg.redriveMinAgeMs],
+       and s.waha_session_name is null`
   );
   const presas = Number(foraDoAlcance[0]?.n ?? '0');
   if (presas > 0) {

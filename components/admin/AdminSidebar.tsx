@@ -43,9 +43,13 @@ const NAV_ITEMS: NavItem[] = [
 
 interface AdminSidebarProps {
   userEmail: string;
+  /** "mobile" = conteúdo desta MESMA navegação dentro do drawer que `AdminShell`
+   * abre abaixo de `lg` — mesmo padrão de `components/shell/Sidebar.tsx`. */
+  variant?: "desktop" | "mobile";
 }
 
-export function AdminSidebar({ userEmail }: AdminSidebarProps) {
+export function AdminSidebar({ userEmail, variant = "desktop" }: AdminSidebarProps) {
+  const isMobile = variant === "mobile";
   const pathname = usePathname();
   // Por PROP do servidor, e nunca `branding()`: aquela função lê fontes
   // diferentes nos dois lados da fronteira (`window.__PUBLIC_ENV__` no
@@ -55,7 +59,12 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
   const marca = useMarcaDaInstalacao();
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r bg-card">
+    <aside
+      className={cn(
+        "flex flex-col border-r bg-card",
+        isMobile ? "h-full w-full" : "hidden w-60 shrink-0 lg:flex",
+      )}
+    >
       <div className="flex h-14 items-center border-b px-4">
         <div className="flex flex-col">
           <span className="text-xs uppercase tracking-wider text-muted-foreground">

@@ -129,15 +129,15 @@ export function InviteTeamForm() {
               </li>
             ))}
           </ul>
-          <div className="flex justify-end">
-            <Button type="button" onClick={() => (window.location.href = "/onboarding")}>
+          <div className="flex sm:justify-end">
+            <Button type="button" onClick={() => (window.location.href = "/onboarding")} className="w-full sm:w-auto">
               Continuar
             </Button>
           </div>
         </div>
       )}
 
-      <div className="flex justify-between gap-2 pt-2">
+      <div className="flex flex-wrap justify-between gap-2 pt-2">
         <Button type="button" variant="ghost" disabled={pending} onClick={() => submit(true)}>
           Pular por enquanto
         </Button>

@@ -57,8 +57,11 @@ function ActionLine({ action, run }: { action: AutomationRuleRunActionResult; ru
         <span>{actionLabel(action.type)}</span>
       </div>
       {action.status === "failed" ? (
-        <div className="ml-6 flex items-center justify-between gap-2 rounded-sm bg-muted px-2 py-1.5">
-          <p className="text-xs text-muted-foreground">
+        // `action.error` é texto de fora (resposta do webhook externo) — sem
+        // tamanho garantido. `flex-wrap` + `break-words` impedem que um erro
+        // comprido empurre o botão "Reenviar" pra fora da tela.
+        <div className="ml-6 flex flex-wrap items-center justify-between gap-2 rounded-sm bg-muted px-2 py-1.5">
+          <p className="min-w-0 break-words text-xs text-muted-foreground">
             {action.error ?? "Essa ação não funcionou."}
           </p>
           {action.type === "call_webhook" ? (
@@ -66,6 +69,7 @@ function ActionLine({ action, run }: { action: AutomationRuleRunActionResult; ru
               type="button"
               variant="secondary"
               size="sm"
+              className="shrink-0"
               disabled={resend.isPending}
               onClick={() =>
                 resend.mutate(run.id, {
@@ -88,12 +92,13 @@ export function ActivityTab() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex justify-end">
+      <div className="flex sm:justify-end">
         <Button
           type="button"
           variant="secondary"
           onClick={() => refetch()}
           disabled={isRefetching}
+          className="w-full sm:w-auto"
         >
           <ArrowsClockwise className={cn(isRefetching && "animate-spin")} /> Atualizar
         </Button>

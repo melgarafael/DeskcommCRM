@@ -20,6 +20,9 @@ export interface AgentRow {
   kind?: "rag_bot" | "mcp_agent" | null;
   priority?: number | null;
   published_version_id?: string | null;
+  /** provider/model da VERSÃO PUBLICADA — o que o motor usa (ver lib/ai/agents/modelo-exibido.ts). */
+  published_provider?: string | null;
+  published_model?: string | null;
   archived_at?: string | null;
   created_at: string;
   updated_at: string;

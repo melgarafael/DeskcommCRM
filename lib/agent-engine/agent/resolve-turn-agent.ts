@@ -19,8 +19,22 @@
  *      (categoria própria, distinta de "classificou e não bateu" — ver
  *      task-4-report.md, review T4 finding 1).
  *   5. sem match / confiança baixa ⇒ fallback se houver (outcome 'fallback'),
- *      senão config:null + outcome 'no_match' ⇒ turno responde com o agente
- *      GENÉRICO (decisão do Rafael — não é silêncio).
+ *      senão o agente PUBLICADO DA SESSÃO — o mesmo que responderia se o router
+ *      não existisse. Só quando nem esse existe é que sai config:null e o turno
+ *      responde com o agente GENÉRICO (decisão do Rafael — não é silêncio).
+ *
+ *      ⚠️ ESTE DEGRAU DO MEIO NASCEU DE UM DEFEITO MEDIDO (2026-08-18). Antes,
+ *      "sem fallback" pulava direto para o genérico — e um router ATIVO com
+ *      ZERO membros e sem fallback (estado que a tela deixa criar em dois
+ *      cliques, e que classifica nada por construção) sequestrava a sessão
+ *      inteira: o agente publicado, com prompt, ferramentas e chave próprios,
+ *      deixava de atender TODA mensagem daquele número. Na instalação onde isso
+ *      foi medido o genérico caía em `organizations.settings.llm` (provider
+ *      'anthropic', sem credencial), então cada turno morria em
+ *      `LlmNotConfiguredError`, esgotava as 5 tentativas e virava job morto —
+ *      silêncio total, com a tela dizendo "IA atendendo". Um router vazio agora
+ *      é inócuo: não casa nada e o número segue atendido por quem estava
+ *      publicado.
  *   6. signal null (follow-up, sem mensagem inbound) ⇒ nunca classifica:
  *      sticky se houver, senão fallback, senão genérico.
  *   7. o agente casado (sticky, classificado ou fallback) pode não ter
@@ -102,7 +116,17 @@ export async function resolveTurnAgent(
       confidence: number | null,
     ): Promise<TurnAgentResolution> => {
       if (router.fallbackAgentId === null) {
-        return { config: null, routerId: router.id, intentName: null, confidence, outcome };
+        // Regra 5: sem fallback declarado, quem atende é o agente publicado da
+        // SESSÃO — o comportamento de antes do router existir. `null` aqui
+        // (nenhum publicado) segue caindo no genérico, como sempre.
+        const daSessao = await _loadAgentBySession(db, input.tenantId, input.channelSessionId);
+        if (daSessao === null) {
+          deps.log.warn('resolve-turn-agent: router sem fallback e sessão sem agente publicado — turno cai no genérico', {
+            routerId: router.id,
+            outcome,
+          });
+        }
+        return { config: daSessao, routerId: router.id, intentName: null, confidence, outcome };
       }
       const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
       if (config === null) {

@@ -123,8 +123,8 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
             Upload de arquivo — em breve. Cole uma URL pública.
           </p>
         </div>
-        <div className="flex justify-end">
-          <Button type="submit" disabled={isPending}>
+        <div className="flex sm:justify-end">
+          <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
             {isPending ? "Salvando…" : "Salvar"}
           </Button>
         </div>

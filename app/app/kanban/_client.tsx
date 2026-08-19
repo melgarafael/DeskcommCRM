@@ -189,9 +189,9 @@ export function FunisClient({
   return (
     <div className="flex flex-col gap-4">
       {podeGerenciar && (
-        <div className="flex justify-end">
+        <div className="flex sm:justify-end">
           {novo === null ? (
-            <Button onClick={() => setNovo("")} disabled={ocupado} data-testid="novo-funil">
+            <Button onClick={() => setNovo("")} disabled={ocupado} data-testid="novo-funil" className="w-full sm:w-auto">
               <Plus size={16} className="mr-2" aria-hidden /> Novo funil
             </Button>
           ) : null}
@@ -216,7 +216,7 @@ export function FunisClient({
             <li key={funil.id} className="flex flex-col gap-3 p-4" data-testid={`funil-${funil.id}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 {podeGerenciar && (
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 flex-wrap gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -291,7 +291,7 @@ export function FunisClient({
                 <span className="shrink-0 text-xs text-muted-foreground">/{funil.slug}</span>
 
                 {podeGerenciar && !renomeandoAqui && (
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 flex-wrap gap-1">
                     <Button
                       variant="ghost"
                       size="sm"

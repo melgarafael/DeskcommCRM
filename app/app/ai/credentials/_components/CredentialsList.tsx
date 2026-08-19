@@ -62,9 +62,9 @@ export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
+      <div className="flex sm:justify-end">
         {canWrite && (
-          <Button onClick={() => setAddOpen(true)}>
+          <Button onClick={() => setAddOpen(true)} className="w-full sm:w-auto">
             <Plus size={14} aria-hidden className="mr-2" /> Adicionar credencial
           </Button>
         )}

@@ -426,6 +426,19 @@ export async function sendMessageHandler(
       .select(MSG_COLS)
       .maybeSingle();
     if (updated) message = updated as unknown as Message;
+  } else if (message.sent_via === "ai") {
+    const { data: updated } = await supabase
+      .from("messages")
+      .update({
+        metadata: {
+          ...(message.metadata ?? {}),
+          queued_reason: "outbox_pacing",
+        },
+      })
+      .eq("id", message.id)
+      .select(MSG_COLS)
+      .maybeSingle();
+    if (updated) message = updated as unknown as Message;
   } else {
     try {
       // O que separa mídia de texto é a presença de `media` no envelope — o

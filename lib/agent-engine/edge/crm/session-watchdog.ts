@@ -21,9 +21,41 @@ export const SESSION_ESCALATION_STATUSES = ['SCAN_QR_CODE', 'FAILED'] as const;
 const SEND_JOB_KINDS = ['inbound_turn', 'followup_turn'] as const;
 
 /**
+ * O envio que o NEGÓCIO inicia — follow-up agendado, cadência de prospecção.
+ * É o que o hold de go-live existe para segurar.
+ *
+ * O irmão dele, `inbound_turn`, é RESPOSTA a quem acabou de escrever. Os dois
+ * mandam mensagem pelo mesmo número, e é só por isso que estavam na mesma
+ * regra — mas o risco que o aquecimento administra é o de disparar para quem
+ * não pediu. Responder quem chamou não queima número; ficar mudo com o cliente
+ * na tela queima o produto.
+ */
+const PROACTIVE_SEND_JOB_KIND = 'followup_turn';
+
+/**
  * Retém jobs 'pending' de sessão não-WORKING ou sob hold de saúde (run_after =
  * infinity, com o run_after original guardado no payload) e libera quando a
  * sessão volta. Idempotente por construção (marcador held_run_after no payload).
+ *
+ * ─── O hold é REASON-AWARE, e antes só dizia que era ─────────────────────────
+ * `health/circuit.ts` sempre descreveu esta primitiva como "reason-aware", mas
+ * a regra aqui olhava só o booleano `health_hold_active`. Efeito medido numa
+ * instalação real (2026-08-18): número novo nasce em hold `go_live` — que é
+ * fail-safe e correto —, e com ele TODO `inbound_turn` da sessão ia para
+ * `run_after = 'infinity'`. O lead mandava "Oi", a tela mostrava "IA
+ * atendendo", o agente publicado nunca rodava, e o único sinal era um item de
+ * Central marcado `info` falando de "outbound". Horas de silêncio com o
+ * diagnóstico invisível.
+ *
+ * A distinção que a regra passa a fazer:
+ *
+ *   * `s.status <> 'WORKING'` — o canal está fora do ar. Retém TUDO: não existe
+ *     mensagem que consiga sair, proativa ou não.
+ *   * hold `go_live` — o número é novo e ainda não foi liberado pelo humano.
+ *     Retém só o PROATIVO (`followup_turn`). Resposta a quem escreveu sai.
+ *   * hold `block_rate` / `response_rate` — o número já está sendo bloqueado
+ *     pelos destinatários. Retém TUDO, como antes: aqui a suspeita recai sobre
+ *     o próprio número, e não só sobre a iniciativa do disparo.
  */
 export async function enforceHolds(harness: pg.Pool): Promise<{ held: number; released: number }> {
   const hold = await harness.query(
@@ -33,13 +65,19 @@ export async function enforceHolds(harness: pg.Pool): Promise<{ held: number; re
      from channel_sessions s
      left join channel_session_health h
        on h.organization_id = s.organization_id and h.channel_session_id = s.id
-     where (s.status <> $1 or coalesce(h.health_hold_active, false))
+     where (
+             s.status <> $1
+             or (
+               coalesce(h.health_hold_active, false)
+               and (h.health_hold_reason is distinct from 'go_live' or j.kind = $3)
+             )
+           )
        and j.organization_id = s.organization_id
        and j.status = 'pending'
        and j.kind = any($2::text[])
        and j.payload->>'channel_session_id' = s.id::text
        and not (j.payload ? 'held_run_after')`,
-    [SESSION_HEALTHY_STATUS, [...SEND_JOB_KINDS]],
+    [SESSION_HEALTHY_STATUS, [...SEND_JOB_KINDS], PROACTIVE_SEND_JOB_KIND],
   );
   const release = await harness.query(
     `update job_queue j
@@ -49,12 +87,15 @@ export async function enforceHolds(harness: pg.Pool): Promise<{ held: number; re
      left join channel_session_health h
        on h.organization_id = s.organization_id and h.channel_session_id = s.id
      where s.status = $1
-       and not coalesce(h.health_hold_active, false)
+       and (
+         not coalesce(h.health_hold_active, false)
+         or (h.health_hold_reason = 'go_live' and j.kind is distinct from $2)
+       )
        and j.organization_id = s.organization_id
        and j.status = 'pending'
        and j.payload ? 'held_run_after'
        and j.payload->>'channel_session_id' = s.id::text`,
-    [SESSION_HEALTHY_STATUS],
+    [SESSION_HEALTHY_STATUS, PROACTIVE_SEND_JOB_KIND],
   );
   return { held: hold.rowCount ?? 0, released: release.rowCount ?? 0 };
 }

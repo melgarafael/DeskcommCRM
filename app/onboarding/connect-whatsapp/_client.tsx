@@ -83,6 +83,7 @@ export function ConnectWhatsappClient({ wahaConfigured, sessionName }: Props) {
   const [pending, startTransition] = useTransition();
   const [info, setInfo] = useState<SessionInfo>({ status: "INIT", session: sessionName });
   const [qrTick, setQrTick] = useState(0);
+  const [qrFailed, setQrFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const status = info.status;
@@ -212,6 +213,41 @@ export function ConnectWhatsappClient({ wahaConfigured, sessionName }: Props) {
           */}
           <p className="text-sm font-medium">{rotuloDoEstado(busy ? "STARTING" : status)}</p>
           <p className="mt-1 text-xs text-muted-foreground">{explicacaoDoEstado(busy ? "STARTING" : status)}</p>
+
+          {/*
+            O CÓDIGO EM SI. `showQr` já existia calculado (e o `qrTick` já era
+            mantido, incrementado a cada resposta SCAN_QR_CODE do polling,
+            especificamente para isto) — só faltava a tag que os usasse. O
+            texto acima dizia "Escaneie o código abaixo" para um "abaixo" que
+            não existia, e nenhum teste e2e passa por este estado (o
+            `wizard-do-funcionario.spec.ts` pula o WhatsApp), então o buraco
+            não aparecia em CI.
+
+            `/api/v1/onboarding/whatsapp/qr` é a rota que já fazia o proxy da
+            imagem do WAHA (existia, sem consumidor). `qrTick` na query invalida
+            o cache do navegador a cada novo código — sem ele, a mesma URL não
+            recarregaria a imagem quando o WAHA girasse o QR por trás.
+          */}
+          {showQr && (
+            <div className="mt-3 flex flex-col items-center gap-2">
+              {qrFailed ? (
+                <p className="text-xs text-muted-foreground">
+                  Não consegui carregar o código agora. Ele deve reaparecer sozinho em
+                  instantes — se não aparecer, gere outro abaixo.
+                </p>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={qrTick}
+                  src={`/api/v1/onboarding/whatsapp/qr?t=${qrTick}`}
+                  alt="Código QR para conectar o WhatsApp"
+                  className="h-48 w-48 rounded-md border bg-white object-contain sm:h-56 sm:w-56"
+                  onError={() => setQrFailed(true)}
+                  onLoad={() => setQrFailed(false)}
+                />
+              )}
+            </div>
+          )}
 
           {status === "WORKING" && (
             <p className="mt-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">

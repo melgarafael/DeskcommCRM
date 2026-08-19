@@ -56,9 +56,16 @@ export function Stepper({ passos }: { passos: PassoVisivel[] }) {
             >
               {i + 1}
             </div>
+            {/* Some visualmente abaixo de `sm`: os rótulos são frases (`Quem
+                trabalha com ele`, `Onde ele organiza`), não palavras — com 7
+                passos espremidos num celular de 375px, cada um ganha ~45px e
+                o `truncate` cortava quase tudo, sem nenhum jeito de ler o
+                resto. A tela de cada passo já mostra o título por extenso
+                (`<h2>`), então o rótulo aqui é reforço, não a única fonte —
+                `sr-only` mantém ele lido por leitor de tela mesmo escondido. */}
             <span
               className={cn(
-                "mt-1 truncate",
+                "sr-only mt-1 truncate sm:not-sr-only",
                 isActive ? "font-medium text-foreground" : "text-muted-foreground",
               )}
             >

@@ -1,18 +1,28 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { NodeType } from "@/lib/followup/graph-schema";
 import { NODE_VISUAL_LIST } from "./nodes/nodeVisuals";
 
 interface Props {
   onAdd: (type: NodeType) => void;
+  /** "mobile" = mesmo conteúdo dentro do Sheet que `FlowCanvas` abre abaixo de
+   * `lg` — a barra fixa de 224px não cabia perto do canvas num celular. */
+  variant?: "desktop" | "mobile";
 }
 
 /** Sidebar palette — click to add. Native HTML5 drag-and-drop wired in FlowCanvas (increment 3). */
-export function NodePalette({ onAdd }: Props) {
+export function NodePalette({ onAdd, variant = "desktop" }: Props) {
+  const isMobile = variant === "mobile";
   return (
     <aside
-      className="flex w-56 shrink-0 flex-col gap-1.5 overflow-y-auto border-r border-border bg-surface p-3"
+      className={cn(
+        "flex flex-col gap-1.5 overflow-y-auto p-3",
+        isMobile
+          ? "h-full w-full"
+          : "hidden w-56 shrink-0 border-r border-border bg-surface lg:flex",
+      )}
       data-testid="node-palette"
     >
       <h2 className="px-1 pb-1 text-xs font-medium uppercase tracking-wide text-text-muted">

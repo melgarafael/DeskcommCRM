@@ -148,7 +148,13 @@ export function TimelineView({ contactId, types }: Props) {
                         <span className="text-xs text-muted-foreground">{time}</span>
                       </div>
                       {corpo && (
-                        <p className="mt-1 truncate text-sm text-muted-foreground">{corpo}</p>
+                        // `title` dá o texto completo em hover/foco — sem ele o
+                        // truncamento de uma linha só cortava nota sem nenhum
+                        // jeito de ler o resto (o valor já vem limitado a 200
+                        // caracteres em `summarizePayload`, então nem é raro).
+                        <p className="mt-1 truncate text-sm text-muted-foreground" title={corpo}>
+                          {corpo}
+                        </p>
                       )}
                     </div>
                   </li>

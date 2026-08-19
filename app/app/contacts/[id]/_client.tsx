@@ -73,9 +73,12 @@ export function ContactDetailClient({ contactId }: Props) {
         </div>
       )}
 
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          {/* Sem truncar: nome é dado que a tela existe pra mostrar, e cortar
+              com reticências sem um jeito de ver o resto violaria o princípio
+              de nunca esconder informação crítica. Deixa quebrar linha. */}
+          <h1 className="text-2xl font-semibold tracking-tight break-words">{displayName}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             {contact.email && <span>{contact.email}</span>}
             {contact.email && contact.phone_number && <span>•</span>}
@@ -90,7 +93,7 @@ export function ContactDetailClient({ contactId }: Props) {
           </div>
         </div>
         {!contact.is_anonymized && (
-          <Button variant="outline" onClick={() => setEditOpen(true)}>
+          <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
             <PencilSimple size={16} weight="bold" aria-hidden />
             <span>Editar</span>
           </Button>

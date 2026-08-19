@@ -21,6 +21,29 @@ import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 import { ShortcutsHelpDialog } from "./ShortcutsHelpDialog";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { CaretLeft } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
+
+/** A volta pra lista quando a conversa não tem `ConversationHeader` montado
+ * (carregando ou não encontrada) — ver os dois usos abaixo. */
+function BarraDeVoltarMobile({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="flex h-14 shrink-0 items-center border-b border-border px-2 md:hidden">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-11 w-11"
+        onClick={onBack}
+        aria-label="Voltar para a lista de conversas"
+      >
+        <CaretLeft size={18} aria-hidden />
+      </Button>
+    </div>
+  );
+}
 
 /**
  * O QUE CADA ABA SIGNIFICA. Exportada porque é a definição em si — o defeito
@@ -91,6 +114,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [crmPanelOpen, setCrmPanelOpen] = useState(false);
   const composerRef = useRef<ComposerHandle | null>(null);
 
   const filters: ConversationsFilters = useMemo(
@@ -221,7 +245,19 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // deixava. Margem de 2px não é margem, é sorte.
   return (
     <div className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]">
-      <div className="flex h-full min-h-0 flex-col border-r border-border">
+      {/* Abaixo de `md` (768px) as duas colunas viram a MESMA coluna do grid —
+          sem alternar visibilidade, lista e conversa brigavam pela mesma altura
+          fixa (`h-[calc(100dvh-...)]`), uma em cima da outra. `selectedId` já
+          existia como estado; só faltava usá-lo pra decidir qual painel ocupa a
+          tela — o padrão de qualquer app de mensagem (lista OU conversa, nunca
+          as duas no celular). De `md` pra cima os dois voltam a ficar lado a
+          lado sempre. */}
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col border-r border-border",
+          selectedId && "hidden md:flex",
+        )}
+      >
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
@@ -235,10 +271,14 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         </div>
       </div>
 
-      <div className="flex h-full min-h-0 flex-col">
+      <div className={cn("flex h-full min-h-0 flex-col", !selectedId && "hidden md:flex")}>
         {selectedConversation ? (
           <>
-            <ConversationHeader conversation={selectedConversation} />
+            <ConversationHeader
+              conversation={selectedConversation}
+              onBack={() => setSelectedId(null)}
+              onOpenCrmPanel={() => setCrmPanelOpen(true)}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread conversationId={selectedConversation.id} />
             </div>
@@ -260,12 +300,23 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             />
           </>
         ) : selectionNotFound ? (
-          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-            Conversa não encontrada ou fora do seu acesso.
+          <div className="flex h-full flex-col">
+            <BarraDeVoltarMobile onBack={() => setSelectedId(null)} />
+            <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+              Conversa não encontrada ou fora do seu acesso.
+            </div>
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Selecione uma conversa
+          <div className="flex h-full flex-col">
+            {/* Só aparece com `selectedId` setado: é o instante de carregamento
+                entre escolher a conversa e `selectedConversation` resolver — sem
+                isto, quem estava no celular ficava preso aqui até os dados
+                chegarem, porque o botão de voltar de verdade mora dentro do
+                `ConversationHeader`, que só monta com a conversa já carregada. */}
+            {selectedId && <BarraDeVoltarMobile onBack={() => setSelectedId(null)} />}
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              Selecione uma conversa
+            </div>
           </div>
         )}
       </div>
@@ -273,6 +324,17 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
       <div className="hidden h-full min-h-0 xl:block">
         <CRMSidePanel conversation={selectedConversation} />
       </div>
+
+      {/* Mesmo painel, dentro de um Sheet — a porta pra contexto do cliente
+          abaixo de 1280px (onde a coluna fixa acima não existe). Substitui o
+          antigo link "Ver contato" que navegava pra fora da conversa: mesmo
+          conteúdo, sem perder o lugar no atendimento. */}
+      <Sheet open={crmPanelOpen} onOpenChange={setCrmPanelOpen}>
+        <SheetContent side="right" className="w-96 max-w-[90vw] gap-0 overflow-y-auto p-0 xl:hidden">
+          <SheetTitle className="sr-only">Contexto do cliente</SheetTitle>
+          <CRMSidePanel conversation={selectedConversation} />
+        </SheetContent>
+      </Sheet>
 
       <InboxKeyboardShortcuts
         visibleIds={visibleIds}

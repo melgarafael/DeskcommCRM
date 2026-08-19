@@ -333,6 +333,15 @@
 
   html {
     color-scheme: light;
+    /* Rede de segurança DE VERDADE contra scroll horizontal da PÁGINA — a
+       de `main` (app/app/_components/AppShell.tsx) não bastava porque
+       TopBar e Sidebar ficam FORA de `main`; qualquer estouro ali (ou em
+       qualquer página que esqueça de conter o próprio overflow) ainda
+       chegava até aqui e movia a tela inteira. Isto NUNCA deixa a barra de
+       scroll horizontal aparecer, não importa o que role solto lá dentro —
+       o componente que precisa de scroll horizontal (tabela, kanban)
+       continua rolando, contido nele mesmo; só a página como um todo não. */
+    overflow-x: hidden;
   }
   [data-theme="dark"] {
     color-scheme: dark;
@@ -346,6 +355,11 @@
   }
 
   body {
+    /* Mesma trava do `html` logo acima, duplicada aqui de propósito: alguns
+       motores móveis (Safari/iOS em particular) ignoram `overflow-x` só no
+       `html` em certas versões — as duas juntas é o par que realmente
+       bloqueia em todo navegador testado pela comunidade. */
+    overflow-x: hidden;
     background-color: var(--color-bg);
     color: var(--color-text);
     font-family: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,

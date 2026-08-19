@@ -1,6 +1,7 @@
 /**
  * GET  /api/v1/ai/agents  — list agents da org ativa (manager+).
- *                            Inclui kind, priority, published_version_id, archived_at.
+ *                            Inclui kind, priority, published_version_id, archived_at,
+ *                            e o provider/model da VERSÃO PUBLICADA (ver abaixo).
  *                            Filtro `?include_archived=true` opcional.
  * POST /api/v1/ai/agents  — create agent (admin).
  *                            Mode A (legacy rag_bot): body sem `version` → cria agent
@@ -54,7 +55,63 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) return fail("internal_error", "Erro ao listar agents.", 500, { requestId });
-  return ok(data ?? [], { requestId });
+
+  const agents = (data ?? []) as AgentListRow[];
+  return ok(await comModeloPublicado(supabase, activeOrg.orgId, agents), { requestId });
+}
+
+/** O que a listagem precisa saber de cada agente para resolver o modelo exibido. */
+interface AgentListRow {
+  id: string;
+  published_version_id?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Anexa `published_provider` / `published_model` — o que o MOTOR realmente usa.
+ *
+ * ⚠️ `ai_agents.model` NÃO é a verdade de um `mcp_agent`, e a tela acreditava
+ * que era. A coluna é escrita uma vez, na criação (`${provider}/${model}` da v1),
+ * e nada a atualiza quando outra versão é publicada — enquanto o runtime lê
+ * `ai_agent_versions.model` da versão publicada (`lib/agent-engine/agent/agent-config.ts`).
+ * Medido numa instalação real (2026-08-18): o card anunciava
+ * "anthropic · claude-sonnet-5" e o agente rodava `nvidia/nemotron-…:free`, com
+ * o dono do sistema depurando o modelo errado. É o anti-pattern nº 2 do
+ * CLAUDE.md (duplicação sem source of truth declarado); enquanto a coluna
+ * legada não morre, quem exibe passa a REFERENCIAR a versão em vez de duplicá-la.
+ *
+ * Uma query para o lote todo (`in`), não uma por agente. Falha de leitura aqui
+ * não derruba a lista: sem os campos, a tela cai no comportamento antigo.
+ */
+async function comModeloPublicado(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
+  agents: AgentListRow[],
+): Promise<AgentListRow[]> {
+  const versionIds = agents
+    .map((a) => a.published_version_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (versionIds.length === 0) return agents;
+
+  const { data: versions, error } = await supabase
+    .from("ai_agent_versions")
+    .select("id, provider, model")
+    .eq("organization_id", orgId)
+    .in("id", versionIds);
+  if (error || !versions) return agents;
+
+  const porId = new Map(
+    (versions as Array<{ id: string; provider: string | null; model: string | null }>).map((v) => [
+      v.id,
+      v,
+    ]),
+  );
+  return agents.map((a) => {
+    const v = a.published_version_id ? porId.get(a.published_version_id) : undefined;
+    return v === undefined
+      ? a
+      : { ...a, published_provider: v.provider, published_model: v.model };
+  });
 }
 
 // ---------------------------------------------------------------------------

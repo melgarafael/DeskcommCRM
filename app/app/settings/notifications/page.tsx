@@ -35,7 +35,11 @@ export default async function NotificationsPage() {
         email.
       </Card>
 
-      <Card className="p-0">
+      {/* `overflow-x-auto` isolado nesta tabela — sem ele, categoria + 3 canais
+          passava da largura de um celular pequeno e a PÁGINA inteira ganhava
+          scroll horizontal (esta era a única tabela do app fora do componente
+          `ui/table.tsx`, que já embrulha assim por padrão). */}
+      <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="border-b">
             <tr>

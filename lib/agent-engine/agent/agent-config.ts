@@ -15,6 +15,8 @@
  */
 import type pg from 'pg';
 
+import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
+
 export interface PublishedAgentConfig {
   agentId: string;
   versionId: string;
@@ -62,6 +64,13 @@ export interface PublishedAgentConfig {
    * Lido pelo gate em `lib/leads/escopo-de-funil.ts`.
    */
   pipelineIds: string[];
+  /**
+   * Horário de funcionamento declarado na tela (`trigger_config.filters.business_hours`).
+   * `null` = atende a qualquer hora. Quem obedece é o turno inbound, adiando o
+   * job para a abertura — ver `janela-de-atendimento.ts` para o defeito que isto
+   * conserta (o campo existia na tela e nenhum leitor vivo o consultava).
+   */
+  janelaDeAtendimento: JanelaDeAtendimento | null;
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
@@ -91,6 +100,7 @@ interface Row {
   operator_model: string | null;
   operator_tool_ids: string[] | null;
   pipeline_ids: string[] | null;
+  trigger_config: unknown;
   version_created_by: string | null;
   agent_created_by: string | null;
 }
@@ -118,6 +128,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.id as agent_id,
             v.operator_model,
             v.operator_tool_ids,
             v.pipeline_ids,
+            v.trigger_config,
             v.created_by as version_created_by,
             a.created_by as agent_created_by`;
 
@@ -166,6 +177,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? []` = NENHUM funil. O clone que ainda não aplicou a 0125 nasce
     // fechado — a direção segura é agir de menos (mesma decisão da linha acima).
     pipelineIds: r.pipeline_ids ?? [],
+    // Leitura DEFENSIVA e que falha ABERTA: jsonb livre com shape estranho vira
+    // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
+    janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };

@@ -22,14 +22,14 @@ export function TenantsClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Tenants</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {isLoading ? "Carregando..." : `${total} tenant${total !== 1 ? "s" : ""}${hasNextPage ? "+" : ""}`}
           </p>
         </div>
-        <Button asChild size="sm">
+        <Button asChild size="sm" className="shrink-0">
           <Link href="/admin/tenants/new">
             <Plus size={16} aria-hidden />
             Novo tenant

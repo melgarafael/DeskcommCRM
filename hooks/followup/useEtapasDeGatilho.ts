@@ -2,6 +2,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
+import { chaveDoFunil, type EstadoDoMapeamento } from "@/hooks/pipelines/useAgentMapping";
 import type { Pipeline } from "@/lib/kanban/types";
 
 /**
@@ -29,10 +30,6 @@ export interface EtapaDeGatilho {
   pipelineName: string;
 }
 
-interface RespostaDeEtapas {
-  data: { etapas: Array<{ id: string; name: string }> };
-}
-
 export interface EtapasDeGatilho {
   /** Todas as etapas ativas da org, agrupáveis por funil, na ordem do funil. */
   etapas: EtapaDeGatilho[];
@@ -54,13 +51,22 @@ export function useEtapasDeGatilho(habilitado = true): EtapasDeGatilho {
   // (uma rota nova que devolvesse todas as etapas de todos os funis) seria um
   // segundo contrato para o mesmo dado — que divergiria do primeiro no dia em
   // que alguém mudasse o critério de "etapa ativa".
+  // ⚠️ MESMA CHAVE, MESMO FORMATO que `useAgentMapping` — de propósito. As duas
+  // telas leem o mesmo endpoint; uma chave própria aqui (ou um formato que não
+  // desembrulha `.data` como o outro hook já faz) cria DOIS consumidores
+  // competindo pelo mesmo slot do cache do react-query com formas diferentes —
+  // quem visita a outra tela por último deixa esta com o objeto errado (e
+  // vice-versa). Não é uma escolha de estilo, é a causa raiz de um bug já visto
+  // em produção: consertar uma tela quebrava a outra.
   const porFunil = useQueries({
     queries: lista.map((funil) => ({
-      queryKey: ["agent-mapping", funil.id],
-      queryFn: async () =>
-        apiClient.get<RespostaDeEtapas>(
-          `/api/v1/pipelines/${encodeURIComponent(funil.id)}/agent-mapping`,
-        ),
+      queryKey: chaveDoFunil(funil.id),
+      queryFn: () =>
+        apiClient
+          .get<{ data: EstadoDoMapeamento }>(
+            `/api/v1/pipelines/${encodeURIComponent(funil.id)}/agent-mapping`,
+          )
+          .then((r) => r.data),
       staleTime: 60_000,
       enabled: habilitado,
     })),
@@ -68,7 +74,7 @@ export function useEtapasDeGatilho(habilitado = true): EtapasDeGatilho {
 
   const etapas: EtapaDeGatilho[] = [];
   lista.forEach((funil, i) => {
-    for (const etapa of porFunil[i]?.data?.data.etapas ?? []) {
+    for (const etapa of porFunil[i]?.data?.etapas ?? []) {
       etapas.push({
         stageId: etapa.id,
         stageName: etapa.name,

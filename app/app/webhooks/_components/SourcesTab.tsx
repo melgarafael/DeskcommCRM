@@ -67,8 +67,8 @@ export function SourcesTab() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setCreateOpen(true)}>
+      <div className="flex sm:justify-end">
+        <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
           <Plus /> Nova fonte
         </Button>
       </div>

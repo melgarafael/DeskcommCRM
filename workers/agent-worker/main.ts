@@ -448,6 +448,7 @@ export async function main(): Promise<void> {
       maxContextTokens: env.LEAD_CONTEXT_MAX_TOKENS,
       notesIndexMaxTokens: env.LEAD_NOTES_INDEX_MAX_TOKENS,
       maxSteps: env.AGENT_MAX_STEPS,
+      maxSendsPerTurn: env.MAX_SENDS_PER_TURN,
       queuedRetryDelayMs: env.SEND_QUEUED_RETRY_MS,
       breaker: {
         exactFailureWarn: env.TOOL_BREAKER_EXACT_WARN,

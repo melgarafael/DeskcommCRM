@@ -273,7 +273,7 @@ export function OrgMemoryClient({ initialState }: Props) {
                     <span className="ml-auto text-xs text-muted-foreground">{formatDate(entry.created_at)}</span>
                   </div>
                   <p className="whitespace-pre-wrap text-text-muted">{entry.body}</p>
-                  <div className="flex justify-end">
+                  <div className="flex sm:justify-end">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -281,6 +281,7 @@ export function OrgMemoryClient({ initialState }: Props) {
                       onClick={() =>
                         handleToggleArchive(entry.id, entry.status === "active" ? "archived" : "active")
                       }
+                      className="w-full sm:w-auto"
                     >
                       {entry.status === "active" ? (
                         <>

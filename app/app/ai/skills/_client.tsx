@@ -140,12 +140,13 @@ export function SkillsClient({ initialState }: Props) {
                   </div>
                   {skill.description && <p className="text-text-muted">{skill.description}</p>}
                   {canManage && (
-                    <div className="flex justify-end">
+                    <div className="flex sm:justify-end">
                       <Button
                         variant="ghost"
                         size="sm"
                         disabled={uninstall.isPending && pendingName === skill.name}
                         onClick={() => handleUninstall(skill.name)}
+                        className="w-full sm:w-auto"
                       >
                         <Trash /> Desinstalar
                       </Button>
@@ -193,11 +194,12 @@ export function SkillsClient({ initialState }: Props) {
                   </div>
                   {skill.description && <p className="text-text-muted">{skill.description}</p>}
                   {canManage && (
-                    <div className="flex justify-end">
+                    <div className="flex sm:justify-end">
                       <Button
                         size="sm"
                         disabled={install.isPending && pendingName === skill.name}
                         onClick={() => handleInstall(skill.name)}
+                        className="w-full sm:w-auto"
                       >
                         <DownloadSimple />
                         {install.isPending && pendingName === skill.name ? "Instalando…" : "Instalar"}

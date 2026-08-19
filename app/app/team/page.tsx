@@ -17,15 +17,15 @@ export default async function TeamPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header className="flex items-center justify-between">
-        <div>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
           <p className="text-sm text-muted-foreground">
             Gestão de membros, roles e atendimento do tenant.
           </p>
         </div>
         {isAdmin ? (
-          <Button asChild>
+          <Button asChild className="shrink-0">
             <Link href="/app/team/invite">Convidar membros</Link>
           </Button>
         ) : null}

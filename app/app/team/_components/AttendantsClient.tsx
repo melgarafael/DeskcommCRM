@@ -312,10 +312,11 @@ function RoutingCard({ canManage }: { canManage: boolean }) {
           </div>
         </div>
         {canManage ? (
-          <div className="flex justify-end">
+          <div className="flex sm:justify-end">
             <Button
               disabled={!dirty || update.isPending}
               onClick={() => update.mutate(current, { onSuccess: () => setDraft(null) })}
+              className="w-full sm:w-auto"
             >
               Salvar
             </Button>

@@ -29,7 +29,7 @@ export function FlowsList({ initialData, canWrite }: Props) {
   const flows = data ?? [];
 
   const newFlowButton = (
-    <Button onClick={() => setDialogOpen(true)}>
+    <Button onClick={() => setDialogOpen(true)} className="w-full sm:w-auto">
       <Plus size={14} aria-hidden className="mr-2" /> Novo fluxo
     </Button>
   );
@@ -54,7 +54,7 @@ export function FlowsList({ initialData, canWrite }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {canWrite && (
-        <div className="flex justify-end">{newFlowButton}</div>
+        <div className="flex sm:justify-end">{newFlowButton}</div>
       )}
 
       <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">

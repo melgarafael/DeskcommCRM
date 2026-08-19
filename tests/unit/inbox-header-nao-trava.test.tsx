@@ -69,7 +69,7 @@ function renderHeader() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <ConversationHeader conversation={conversation} />
+      <ConversationHeader conversation={conversation} onBack={() => {}} onOpenCrmPanel={() => {}} />
     </QueryClientProvider>,
   );
 }
@@ -111,14 +111,16 @@ describe("header do inbox — não trava a largura da tela", () => {
     }
   });
 
-  it('"Ver contato" existe no DOM e só se cala onde há outra porta', () => {
+  it('"Cliente" existe no DOM e só se cala onde há outra porta', () => {
     renderHeader();
     // Ele NÃO sai do markup: some por CSS a partir de `xl`, exatamente a largura
-    // em que o painel lateral entra na tela com um "Ver contato" próprio. A
-    // distinção importa — remover do DOM tiraria a ação de quem usa 1024px, que
-    // é onde o painel não existe e esta é a única porta para o contato.
-    const link = screen.getByText("Ver contato").closest("a, button") as HTMLElement;
-    expect(link, "o link para o contato sumiu do markup").toBeTruthy();
+    // em que o painel lateral entra na tela sozinho. A distinção importa —
+    // remover do DOM tiraria a ação de quem usa 1024px, que é onde o painel
+    // fixo não existe e este botão é a única porta pro contexto do contato
+    // (abre o mesmo CRMSidePanel dentro de um Sheet — não navega mais para
+    // /app/contacts/[id], ver commit 43639c76).
+    const link = screen.getByText("Cliente").closest("a, button") as HTMLElement;
+    expect(link, "o botão para o contato sumiu do markup").toBeTruthy();
     const classes = `${link.className} ${link.parentElement?.className ?? ""}`;
     expect(
       classes,

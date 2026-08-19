@@ -225,7 +225,10 @@ export function QuadroClient({
         )}
       </div>
 
-      <div className="flex items-center justify-between">
+      {/* `flex-wrap`: com o aviso "Dê um nome..." mais os dois botões, a linha
+          passava de 320-375px sem margem nenhuma — este é o rodapé de
+          navegação do wizard, o botão que a pessoa mais precisa achar. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button
           type="button"
           variant="ghost"
@@ -235,7 +238,7 @@ export function QuadroClient({
           Pular por enquanto
         </Button>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {semNome ? (
             <span className="text-xs text-amber-700 dark:text-amber-500">
               Dê um nome à coluna em branco.

@@ -20,7 +20,23 @@ import { GRUPO_NO_RODAPE, NAV_GROUPS, sidebarGroups } from "@/lib/navigation/reg
  * itens e sete `usePermission()` viviam aqui — e divergiam do hub de
  * Configurações e das abas de IA, que mantinham suas próprias listas.
  */
-export function Sidebar({ collapsed }: { collapsed: boolean }) {
+interface SidebarProps {
+  collapsed: boolean;
+  /**
+   * "mobile" é o conteúdo desta MESMA navegação dentro do drawer (Sheet) que
+   * `AppShell` abre abaixo de `lg`. Reaproveita tudo — grupos, tradução, ícone
+   * ativo — em vez de duplicar a lista em outro componente, que divergiria no
+   * primeiro ajuste (a mesma lição que `sidebarGroups()` já resolveu para os
+   * `usePermission()` espalhados). Nesta variante o toggle de recolher some
+   * (não faz sentido dentro de um drawer que já fecha sozinho) e os rótulos
+   * ficam sempre por extenso, mesmo se `collapsed` vier true por engano.
+   */
+  variant?: "desktop" | "mobile";
+}
+
+export function Sidebar({ collapsed, variant = "desktop" }: SidebarProps) {
+  const isMobile = variant === "mobile";
+  const efetivoCollapsed = isMobile ? false : collapsed;
   // A barra lateral aparece em TODA tela — traduzi-la aqui é o que faz a
   // escolha de idioma virar algo visível no primeiro clique.
   const t = useT();
@@ -67,12 +83,17 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-30 flex flex-col border-r bg-card transition-[width] duration-200",
-        collapsed ? "w-16" : "w-60",
+        "flex flex-col border-r bg-card",
+        isMobile
+          ? "h-full w-full"
+          : cn(
+              "fixed inset-y-0 left-0 z-30 hidden transition-[width] duration-200 lg:flex",
+              efetivoCollapsed ? "w-16" : "w-60",
+            ),
       )}
     >
-      <div className={cn("flex items-center border-b px-4 h-14", collapsed ? "justify-center" : "justify-start")}>
-        {logo && !collapsed ? (
+      <div className={cn("flex items-center border-b px-4 h-14", efetivoCollapsed ? "justify-center" : "justify-start")}>
+        {logo && !efetivoCollapsed ? (
           // <img> em vez de next/image de propósito: a URL vem de quem hospeda
           // (banco ou .env), e next/image exige allowlist de domínios fechada em
           // build — a imagem pré-buildada rejeitaria o domínio do self-hoster.
@@ -85,11 +106,11 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
             className="h-7 w-auto max-w-[10rem] object-contain"
           />
         ) : (
-          <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
+          <span className={cn("font-semibold tracking-tight", efetivoCollapsed && "sr-only")}>
             {nome}
           </span>
         )}
-        {collapsed && (
+        {efetivoCollapsed && (
           <span aria-hidden className="text-lg font-bold text-primary">
             {/* Spread e não `[0]`: nome começando com emoji ou acento composto
                 quebraria no meio do code point. Mesma regra de `resolveBranding`
@@ -106,7 +127,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
             <div key={group.id} className="space-y-1">
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
                   Vira um filete separador, que preserva o agrupamento sem texto. */}
-              {collapsed ? (
+              {efetivoCollapsed ? (
                 <div aria-hidden className="mx-2 border-t first:hidden" />
               ) : (
                 <h2
@@ -116,7 +137,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                   {t(group.label)}
                 </h2>
               )}
-              <ul aria-labelledby={collapsed ? undefined : tituloId} aria-label={collapsed ? t(group.label) : undefined} className="space-y-1">
+              <ul aria-labelledby={efetivoCollapsed ? undefined : tituloId} aria-label={efetivoCollapsed ? t(group.label) : undefined} className="space-y-1">
                 {items.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
                   const Icon = item.icon;
@@ -124,21 +145,21 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                     <li key={item.href}>
                       <Link
                         href={item.href}
-                        title={collapsed ? t(item.label) : undefined}
+                        title={efetivoCollapsed ? t(item.label) : undefined}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
                           "relative flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
                           isActive
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                          collapsed && "justify-center px-2",
+                          efetivoCollapsed && "justify-center px-2",
                         )}
                       >
                         <Icon size={18} weight={isActive ? "fill" : "regular"} aria-hidden />
-                        {!collapsed && <span className="truncate">{t(item.label)}</span>}
+                        {!efetivoCollapsed && <span className="truncate">{t(item.label)}</span>}
                         {item.healthDot && (
                           <ConnectionHealthDot
-                            className={cn(collapsed ? "absolute right-1.5 top-1.5" : "ml-auto")}
+                            className={cn(efetivoCollapsed ? "absolute right-1.5 top-1.5" : "ml-auto")}
                           />
                         )}
                       </Link>
@@ -149,18 +170,18 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                   <li>
                     <Link
                       href={group.hub.href}
-                      title={collapsed ? t(group.hub.label) : undefined}
+                      title={efetivoCollapsed ? t(group.hub.label) : undefined}
                       aria-current={pathname === group.hub.href ? "page" : undefined}
                       className={cn(
                         "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
                         pathname === group.hub.href
                           ? "bg-accent text-accent-foreground"
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                        collapsed && "justify-center px-2",
+                        efetivoCollapsed && "justify-center px-2",
                       )}
                     >
                       <ArrowRight size={18} aria-hidden />
-                      {!collapsed && <span className="truncate">{t(group.hub.label)}</span>}
+                      {!efetivoCollapsed && <span className="truncate">{t(group.hub.label)}</span>}
                     </Link>
                   </li>
                 )}
@@ -173,34 +194,39 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         {rodape && (
           <Link
             href={rodape.href}
-            title={collapsed ? t(rodape.label) : undefined}
+            title={efetivoCollapsed ? t(rodape.label) : undefined}
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             className={cn(
               "mb-1 flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              collapsed && "justify-center px-2",
+              efetivoCollapsed && "justify-center px-2",
             )}
           >
             <Gear size={18} aria-hidden />
-            {!collapsed && <span className="truncate">{rodape.label}</span>}
+            {!efetivoCollapsed && <span className="truncate">{rodape.label}</span>}
           </Link>
         )}
-        <VersionFooter collapsed={collapsed} />
-        <button
-          type="button"
-          onClick={() => startTransition(() => toggleSidebar(collapsed))}
-          disabled={isPending}
-          className={cn(
-            "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-            collapsed && "justify-center px-2",
-          )}
-          aria-label={collapsed ? "Expandir sidebar" : "Recolher sidebar"}
-        >
-          {collapsed ? <CaretDoubleRight size={14} aria-hidden /> : <CaretDoubleLeft size={14} aria-hidden />}
-          {!collapsed && <span>Recolher</span>}
-        </button>
+        <VersionFooter collapsed={efetivoCollapsed} />
+        {/* O toggle de recolher é conceito de sidebar FIXA — dentro do drawer
+            mobile ele fecha inteiro ao navegar (ver `AppShell`), então não há
+            estado "recolhido" para alternar ali. */}
+        {!isMobile && (
+          <button
+            type="button"
+            onClick={() => startTransition(() => toggleSidebar(collapsed))}
+            disabled={isPending}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              collapsed && "justify-center px-2",
+            )}
+            aria-label={collapsed ? "Expandir sidebar" : "Recolher sidebar"}
+          >
+            {collapsed ? <CaretDoubleRight size={14} aria-hidden /> : <CaretDoubleLeft size={14} aria-hidden />}
+            {!collapsed && <span>Recolher</span>}
+          </button>
+        )}
       </div>
     </aside>
   );

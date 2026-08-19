@@ -1,11 +1,10 @@
 "use client";
 import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
-import { Phone, ArrowRight } from "@/lib/ui/icons";
+import { Phone, CaretLeft, UserCircle } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -18,6 +17,12 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 interface Props {
   conversation: ConversationWithContact;
+  /** Some do DOM em `md:` pra cima — abaixo disso é o único jeito de voltar
+   * pra lista, já que a conversa ocupa a tela inteira (ver `InboxLayout`). */
+  onBack: () => void;
+  /** Abre o mesmo `CRMSidePanel` do desktop dentro de um Sheet — a porta pro
+   * contexto do cliente abaixo de `xl`, onde a coluna fixa não existe. */
+  onOpenCrmPanel: () => void;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -34,7 +39,7 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "Arquivada",
 };
 
-export function ConversationHeader({ conversation }: Props) {
+export function ConversationHeader({ conversation, onBack, onOpenCrmPanel }: Props) {
   const t = useT();
   const { user } = useAuth();
   const claim = useClaimConversation();
@@ -75,33 +80,47 @@ export function ConversationHeader({ conversation }: Props) {
     // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h2 className="truncate text-sm font-semibold">{displayName}</h2>
-          <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-            {t(STATUS_LABEL[status] ?? status)}
-          </Badge>
-          {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
-              escrever agora?" se faz ANTES de digitar, não depois de receber um
-              `failed` com um código de cinco dígitos. */}
-          <JanelaSelo
-            provider={conversation.channel_sessions?.provider ?? null}
-            lastInboundAt={conversation.last_inbound_at}
-          />
-          {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
-              a mesma cara de uma conversa normal — e ninguém entende por que as
-              respostas automáticas pararam. */}
-          {emAtendimentoHumano && (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid="badge-atendimento-humano">
-              Automático pausado
+      <div className="flex min-w-0 items-center gap-2">
+        {/* A volta pra lista — sem ela, abaixo de `md` a conversa ocupa a tela
+            inteira (ver `InboxLayout`) e não sobra jeito de sair dela. */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 shrink-0 md:hidden"
+          onClick={onBack}
+          aria-label="Voltar para a lista de conversas"
+        >
+          <CaretLeft size={18} aria-hidden />
+        </Button>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="truncate text-sm font-semibold">{displayName}</h2>
+            <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+              {t(STATUS_LABEL[status] ?? status)}
             </Badge>
+            {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
+                escrever agora?" se faz ANTES de digitar, não depois de receber um
+                `failed` com um código de cinco dígitos. */}
+            <JanelaSelo
+              provider={conversation.channel_sessions?.provider ?? null}
+              lastInboundAt={conversation.last_inbound_at}
+            />
+            {/* Sem esta marca, a conversa em que o robô está calado tem exatamente
+                a mesma cara de uma conversa normal — e ninguém entende por que as
+                respostas automáticas pararam. */}
+            {emAtendimentoHumano && (
+              <Badge variant="outline" className="h-4 px-1.5 text-[10px]" data-testid="badge-atendimento-humano">
+                Automático pausado
+              </Badge>
+            )}
+          </div>
+          {phone && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+              <Phone size={11} weight="regular" aria-hidden /> {phone}
+            </p>
           )}
         </div>
-        {phone && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-            <Phone size={11} weight="regular" aria-hidden /> {phone}
-          </p>
-        )}
       </div>
 
       {/* `shrink-0` saiu daqui: era ele que impunha o piso de largura. Agora a
@@ -171,23 +190,23 @@ export function ConversationHeader({ conversation }: Props) {
             {t("Fechar")}
           </Button>
         )}
-        {/* `xl:hidden` porque a partir de 1280px o painel lateral de CRM entra
-            na tela — e ele já tem um "Ver contato", para o MESMO contato, a um
-            palmo de distância. Duas portas idênticas na mesma tela não são
-            redundância inofensiva: são a linha a mais que empurrava a barra de
-            ações para uma segunda fileira justo na largura mais apertada.
-            Medido: sem a duplicata, os botões voltam a caber em UMA linha em
-            1280px.
-
-            Abaixo de 1280 o painel não existe, e aí esta é a única porta para o
-            contato — por isso a condição é a mesma do painel, e não um valor
-            escolhido à parte. Não é esconder ação; é não repeti-la. */}
+        {/* `xl:hidden` porque a partir de 1280px o painel lateral de CRM já
+            está fixo na tela. Abaixo disso, este botão abre o MESMO painel
+            (`CRMSidePanel`) dentro de um Sheet — era um link "Ver contato" que
+            navegava pra fora da conversa; agora o contexto abre por cima sem
+            perder o lugar no atendimento. Mesma condição de antes (só aparece
+            com contato vinculado) e mesmo motivo de ficar de fora da largura
+            mínima do header: uma porta só, não duas. */}
         {c?.id && (
-          <Button asChild size="sm" variant="ghost" className="xl:hidden">
-            <Link href={`/app/contacts/${c.id}`} className="flex items-center gap-1">
-              Ver contato
-              <ArrowRight size={12} weight="regular" aria-hidden />
-            </Link>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="xl:hidden"
+            onClick={onOpenCrmPanel}
+          >
+            <UserCircle size={14} weight="regular" aria-hidden className="mr-1" />
+            Cliente
           </Button>
         )}
       </div>

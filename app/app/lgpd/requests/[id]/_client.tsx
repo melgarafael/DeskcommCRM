@@ -114,9 +114,9 @@ export function LgpdRequestDetail({ id }: Props) {
 
       {/* PDF download if completed */}
       {signed_pdf_url && (
-        <div className="rounded-md border bg-muted/30 px-4 py-3 text-sm flex items-center justify-between gap-4">
+        <div className="rounded-md border bg-muted/30 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-4">
           <span>Relatório de exportação disponível (expira em 72h).</span>
-          <Button size="sm" variant="outline" asChild>
+          <Button size="sm" variant="outline" asChild className="shrink-0">
             <a href={signed_pdf_url} download>
               Baixar PDF
             </a>
@@ -215,7 +215,15 @@ function Row({
   return (
     <div className="flex justify-between gap-4">
       <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className={`text-right truncate ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+      {/* `title` dá o valor completo em hover — sem isso um uuid truncado
+          (id do contato, id externo) virava informação irrecuperável na
+          tela, justo num relatório que existe pra ser conferido. */}
+      <span
+        className={`text-right truncate ${mono ? "font-mono text-xs" : ""}`}
+        title={value}
+      >
+        {value}
+      </span>
     </div>
   );
 }

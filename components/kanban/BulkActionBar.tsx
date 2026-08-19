@@ -113,7 +113,13 @@ export function BulkActionBar({
 
   return (
     <>
-      <div className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 shadow-md">
+      {/* `w-fit` sozinho não tinha teto: seis itens (rótulo + 5 ações) numa
+          linha só passavam da largura da tela em qualquer smartphone e essa
+          barra `sticky` virava scroll horizontal da PÁGINA inteira — a barra
+          é `mx-auto`, então o excesso ficava invisível dos dois lados, não só
+          cortado. `max-w-[calc(100vw-2rem)]` + `flex-wrap` deixam a barra
+          quebrar em linhas em vez de vazar. */}
+      <div className="sticky bottom-4 z-30 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 shadow-md">
         <span className="text-sm font-medium">
           {selectedIds.length} selecionado{selectedIds.length > 1 ? "s" : ""}
         </span>

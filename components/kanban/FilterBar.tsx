@@ -117,7 +117,7 @@ export function FilterBar({ filters, onChange, leads }: FilterBarProps) {
         placeholder="Buscar por título…"
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
-        className="h-9 w-64"
+        className="h-9 w-full sm:w-64"
       />
 
       <DropdownMenu>

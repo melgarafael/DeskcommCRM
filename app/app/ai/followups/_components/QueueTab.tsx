@@ -131,7 +131,7 @@ export function QueueTab({ canWrite }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+        <div className="relative w-full sm:w-56">
           <MagnifyingGlass
             size={14}
             className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted"
@@ -141,7 +141,7 @@ export function QueueTab({ canWrite }: Props) {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Buscar contato…"
-            className="h-9 w-56 pl-8 text-sm"
+            className="h-9 w-full pl-8 text-sm"
             aria-label="Buscar contato"
           />
         </div>
