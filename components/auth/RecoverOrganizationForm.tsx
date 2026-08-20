@@ -34,7 +34,7 @@ export function RecoverOrganizationForm() {
   }
 
   return (
-    <form className="space-y-4" onSubmit={submit} noValidate>
+    <form method="post" className="space-y-4" onSubmit={submit} noValidate>
       <div className="space-y-1.5">
         <Label htmlFor="recovery-org-name">Nome da empresa</Label>
         <Input
