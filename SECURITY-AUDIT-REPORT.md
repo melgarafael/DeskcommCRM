@@ -100,3 +100,14 @@ A camada de comunicação com WAHA foi endurecida no commit `0f684930`. Todas as
 Também foi adicionada cobertura para timeout, não vazamento do corpo de erro e idempotência de parada de sessão inexistente (`404`). Os testes direcionados passaram com 13 casos. A suíte completa posterior passou com **424 arquivos e 4.729 testes**, sem vulnerabilidades conhecidas na auditoria de dependências, com typecheck aprovado e produção respondendo login HTTP 200 e healthcheck HTTP 200.
 
 Redis e WAHA continuam deliberadamente `degraded / nao_configurado` em produção porque não há credenciais/serviços reais ativos. O código não os marca como saudáveis artificialmente e não ativa envio, filas ou rate limit distribuído sem configuração válida.
+
+
+## Nova fase — Hardening do debounce Redis
+
+A camada de debounce usada pelo indexador RAG foi reforçada no commit `53038e0f`. O cliente Redis agora usa `retry: false`, evitando retries longos quando o serviço está indisponível. Como o debounce já possui fallback em memória, a falha de Redis é tratada de forma explícita, com aviso operacional e sem derrubar o worker. A chave usada pelo indexador continua escopada por organização, agente e tipo de evento: `rag:debounce:{organization_id}:{agent_id}:{event_type}`.
+
+A liberação de lock também passou a tolerar indisponibilidade do Redis e limpar o estado local quando aplicável. Foram adicionados testes para fallback quando o `SET NX EX` falha, preservação do TTL, segunda tentativa bloqueada no mesmo processo, `retry: false` e liberação sem exceção quando o Redis está fora.
+
+A validação direcionada passou com **17 testes** e o typecheck passou. A suíte completa desta fase passou com **425 arquivos e 4.731 testes aprovados**, a auditoria de dependências não encontrou vulnerabilidades conhecidas, o login público continuou HTTP 200 e o healthcheck continuou HTTP 200 com Supabase `ok` e Redis/WAHA `degraded / nao_configurado`. O branch permaneceu limpo e sincronizado com `origin/main`.
+
+Esta implementação não ativa Redis em produção por conta própria. Enquanto `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN` não forem configurados, o sistema sinaliza a limitação e o fallback permanece local, portanto não deve ser considerado rate limit ou lock distribuído entre múltiplas instâncias.
