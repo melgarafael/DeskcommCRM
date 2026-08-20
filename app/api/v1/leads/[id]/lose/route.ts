@@ -47,6 +47,10 @@ export async function POST(
     return ok(lead, { requestId });
   } catch (err) {
     if (err instanceof ApiError) {
+      const fieldErrors = (err.details as { fieldErrors?: Record<string, unknown> } | undefined)?.fieldErrors;
+      if (err.code === "validation_error" && fieldErrors && "lost_reason" in fieldErrors) {
+        return fail("lost_reason_required", "Informe o motivo da perda.", 422, { requestId });
+      }
       return fail(err.code, err.message, err.status, {
         details: err.details as Record<string, unknown> | undefined,
         requestId,

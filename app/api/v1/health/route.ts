@@ -27,6 +27,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
 import { isOptionalEndpointUnconfigured, overallHealth } from "@/lib/health/status";
+import { validarConfigRedisRest } from "@/lib/redis-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -38,7 +39,8 @@ type MotivoDeFalha =
   | FalhaDeAlcance
   | "credencial_recusada"
   | "resposta_inesperada"
-  | "nao_configurado";
+  | "nao_configurado"
+  | "configuracao_invalida";
 
 type Check = {
   status: CheckStatus;
@@ -104,8 +106,12 @@ async function checkRedis(): Promise<Check> {
   const t0 = Date.now();
   const url = env.UPSTASH_REDIS_REST_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token || isOptionalEndpointUnconfigured(url)) {
-    return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+  const config = validarConfigRedisRest(url, token);
+  if (!config.ok) {
+    if (config.reason === "nao_configurado" || isOptionalEndpointUnconfigured(url)) {
+      return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+    }
+    return { status: "down", latency_ms: 0, error: "invalid_configuration", reason: "configuracao_invalida" };
   }
   try {
     // Protocolo REST do Upstash (compatível com serverless-redis-http): comando no

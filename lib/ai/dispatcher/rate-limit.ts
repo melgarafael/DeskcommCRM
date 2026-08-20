@@ -12,6 +12,7 @@
 import { Redis } from "@upstash/redis";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { validarConfigRedisRest } from "@/lib/redis-config";
 
 let _redis: Redis | null = null;
 let _fallbackWarned = false;
@@ -20,9 +21,12 @@ function getRedis(): Redis | null {
   if (_redis) return _redis;
   const url = env.UPSTASH_REDIS_REST_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) {
+  const config = validarConfigRedisRest(url, token);
+  if (!config.ok) {
     if (!_fallbackWarned) {
-      logger.warn("[ai-dispatcher.rate-limit] Redis missing — using in-memory fallback (not safe for multi-instance)");
+      logger.warn(
+        `[ai-dispatcher.rate-limit] Redis ${config.reason} — using in-memory fallback (not safe for multi-instance)`,
+      );
       _fallbackWarned = true;
     }
     return null;

@@ -109,6 +109,8 @@ export async function encerraDemanda(
     .eq("organization_id", ctx.organization_id)
     .eq("pipeline_id", (lead as { pipeline_id: string }).pipeline_id)
     .eq(colunaTerminal, true)
+    .eq("is_archived", false)
+    .order("position", { ascending: true })
     .limit(1)
     .maybeSingle();
 
@@ -127,8 +129,27 @@ export async function encerraDemanda(
     );
   }
 
+  const terminalStageId = (stage as { id: string }).id;
+  const { data: maxPosition, error: maxPositionErr } = await supabase
+    .from("crm_leads")
+    .select("position_in_stage")
+    .eq("organization_id", ctx.organization_id)
+    .eq("stage_id", terminalStageId)
+    .order("position_in_stage", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (maxPositionErr) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, maxPositionErr.message);
+  }
+
+  const nextPosition =
+    maxPosition?.position_in_stage === null || maxPosition?.position_in_stage === undefined
+      ? 1000
+      : Number(maxPosition.position_in_stage) + 1000;
   const patch: Record<string, unknown> = {
-    stage_id: (stage as { id: string }).id,
+    stage_id: terminalStageId,
+    position_in_stage: nextPosition,
     updated_at: new Date().toISOString(),
   };
   if (input.desfecho === "lost") patch.lost_reason = input.motivo;
@@ -151,27 +172,11 @@ export async function encerraDemanda(
     .maybeSingle();
   const finalLead = (fresh ?? lead) as Record<string, unknown>;
 
+  // `fn_crm_lead_close_on_stage` atualiza o status e o trigger de eventos grava
+  // lead.won/lead.lost no event_log. Não emitir novamente via emit_event aqui:
+  // event_log não possui chave idempotente e isso duplicaria notificações.
   const a = actorAuditPayload(ctx.actor);
   const eventType = input.desfecho === "won" ? "lead.won" : "lead.lost";
-
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: eventType,
-      p_entity_kind: "crm_lead",
-      p_entity_id: input.leadId,
-      p_payload: {
-        from_stage_id: (lead as { stage_id: string }).stage_id,
-        to_stage_id: (stage as { id: string }).id,
-        ...(input.desfecho === "lost"
-          ? { lost_reason: input.motivo }
-          : { value_cents: finalLead.value_cents, currency: finalLead.currency }),
-      },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: ctx.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error(`[${eventType}] emit_event failed`, error.message);
-    });
 
   // A LINHA NA TIMELINE — o que faltava. `reason` nomeia o desfecho e, na perda,
   // carrega o motivo, que é justamente o que muda a decisão de quem lê depois
