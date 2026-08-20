@@ -30,6 +30,19 @@ describe("WahaClient", () => {
     ).rejects.not.toThrow("secret");
   });
 
+  it("trata parada de sessão inexistente como idempotente", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
+
+    await expect(
+      new WahaClient("https://waha.example", "api-key").stopSession("org/cliente"),
+    ).resolves.toBeUndefined();
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://waha.example/api/sessions/org%2Fcliente/stop",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("interrompe uma chamada que não responde dentro do timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
