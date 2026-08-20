@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { InboxLayout } from "@/components/inbox/InboxLayout";
 
@@ -14,8 +16,11 @@ export default async function InboxPage({
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Você não tem nenhuma organização ativa. Aceite um convite ou contate o admin.
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
+        <p>Você não tem nenhuma organização ativa. Aceite um convite ou contate o admin.</p>
+        <Link className="text-primary underline underline-offset-4" href="/app/settings/api-tokens">
+          Ver conexão MCP
+        </Link>
       </div>
     );
   }

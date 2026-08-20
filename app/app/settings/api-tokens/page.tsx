@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { McpConnectionInfo } from "./_components/McpConnectionInfo";
@@ -10,7 +8,24 @@ export const dynamic = "force-dynamic";
 export default async function ApiTokensPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) redirect("/403");
+
+  if (!activeOrg) {
+    return (
+      <div className="flex h-full flex-col gap-6 p-6">
+        <header>
+          <h1 className="text-2xl font-semibold tracking-tight">Conexão MCP</h1>
+          <p className="text-sm text-muted-foreground">
+            O endpoint já está disponível, mas sua conta ainda não tem uma organização ativa.
+          </p>
+        </header>
+        <McpConnectionInfo />
+        <p className="text-sm text-muted-foreground">
+          Aceite um convite de organização ou peça ao administrador para concluir seu cadastro antes
+          de solicitar um token MCP.
+        </p>
+      </div>
+    );
+  }
 
   const canManageTokens = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
