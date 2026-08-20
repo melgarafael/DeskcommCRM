@@ -45,6 +45,7 @@ A análise combinou revisão estática, testes unitários e de API, testes de in
 | BUG-08 | Baixa | O lint de restrição de canais classificou a nova prosa de `lib/health/status.ts` como menção a provider. | `pnpm lint:channels` reprovou o arquivo por uma menção textual a um provider em comentário. | A documentação foi reescrita de modo neutro, sem alterar o comportamento. | Corrigido no commit [`c85efe46`][8]. |
 | BUG-09 | Média | A tela de Conexão MCP devolvia 403 para uma conta autenticada sem organização ativa, embora o endpoint e as instruções fossem úteis antes do convite/onboarding. | A sessão de produção mostrava “Você não tem nenhuma organização ativa” na Inbox e recebia 403 ao abrir a rota de tokens. | A página passou a exibir endpoint e instruções para qualquer conta autenticada, sem permitir criação de token fora de uma organização. A Inbox também ganhou um link direto para essa orientação. | Corrigido nos commits [`0eb3a74c`][17] e [`f0f07778`][19]. |
 | BUG-10 | Alta para conclusão do produto | Uma conta self-signup sem membership ativa ficava presa: `/app/onboarding` redirecionava para `/login`, e a Inbox só informava que não havia organização, sem caminho de recuperação. | A sessão autenticada em produção não tinha organização; abrir `/onboarding` não permitia criar a primeira organização nem avançar ao wizard. | Criado `/get-started` com nome validado, autenticação server-side, verificação fechada de convite, limite anti-abuso e provisionamento idempotente; `/onboarding`, Inbox e MCP agora apontam para esse caminho. | Corrigido e publicado no commit [`765abc60`][20]. |
+| BUG-11 | Baixa | O novo formulário de recuperação inicialmente não declarava `method="post"`; com o JavaScript indisponível, o submit nativo poderia refletir o nome da empresa na URL. | A guarda `credencial-nunca-na-url` detectou o formulário no teste completo antes da publicação final. | Adicionado `method="post"` e o teste completo voltou a passar. | Corrigido no commit [`268326c7`][21]. |
 
 Não foi encontrado segredo persistido no repositório. A chave anon pública do Supabase aparece no HTML de login como configuração pública esperada; ela não é a `service_role` key. As credenciais privadas continuam pertencendo exclusivamente às variáveis de ambiente do servidor. A conexão MCP não exibe token em texto claro: a interface mostra apenas o endpoint e os escopos necessários; os tokens são gerenciados somente por administradores de uma organização.
 
@@ -86,14 +87,14 @@ A investigação da sessão do usuário confirmou que a conta autenticada não t
 
 ### 4.8 Recuperação segura do primeiro acesso
 
-O novo caminho `/get-started` é uma recuperação de provisionamento, não um atalho administrativo. O servidor resolve o usuário da sessão, ignora `organization_id` e `role` enviados pelo cliente, recusa tokens de convite válidos ou inválidos, limita tentativas por IP e usuário e chama o provisionamento idempotente com o nome validado. Em caso de sucesso, a pessoa é encaminhada a `/onboarding/welcome`, onde os templates de funil por nicho já existentes podem ser escolhidos. A interface publicada foi validada na sessão autenticada sem submeter dados reais.
+O novo caminho `/get-started` é uma recuperação de provisionamento, não um atalho administrativo. O servidor resolve o usuário da sessão, ignora `organization_id` e `role` enviados pelo cliente, recusa tokens de convite válidos ou inválidos, limita tentativas por IP e usuário e chama o provisionamento idempotente com o nome validado. Em caso de sucesso, a pessoa é encaminhada a `/onboarding/welcome`, onde os templates de funil por nicho já existentes podem ser escolhidos. A interface publicada foi validada na sessão autenticada sem submeter dados reais. A revisão também confirmou que o formulário usa `method="post"`, evitando exposição em URL caso o JavaScript não carregue.
 
 ## 5. Validações realizadas
 
 | Verificação | Resultado | Evidência final |
 |---|---:|---|
 | TypeScript | PASS | `pnpm typecheck`, código de saída 0. |
-| Vitest completo | PASS | 429 arquivos e 4.750 testes aprovados. |
+| Vitest completo | PASS | 429 arquivos e 4.751 testes aprovados. |
 | Testes de regressão desta sessão | PASS | 21 testes direcionados de auth, convite e rate limit passaram; os arquivos alterados também passaram no lint. |
 | Testes shell | PASS | `pnpm test:shell`, incluindo scheduler, update guard e validadores do instalador. |
 | ESLint | PASS | 0 erros e 247 avisos não bloqueantes no lint completo. Arquivos alterados também passaram no lint direcionado. |
@@ -166,6 +167,7 @@ Esse 503 não representa falha do login ou do Supabase. Ele comunica corretament
 | [`0eb3a74c`][17] | Acesso da orientação MCP para membros não administradores. |
 | [`f0f07778`][19] | Orientação MCP e link direto para contas sem organização ativa. |
 | [`765abc60`][20] | Recuperação segura da primeira organização e encaminhamento do onboarding. |
+| [`268326c7`][21] | Proteção do submit da recuperação com `method="post"`. |
 
 ## 9. Parecer final
 
@@ -195,3 +197,4 @@ A plataforma pode continuar recebendo desenvolvimento incremental. Não é corre
 [18]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/19a631c106673d45304fa6e3e3e58958f831591b "Commit 19a631c1"
 [19]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/f0f07778529be97681fab0d8e981287b788aa641 "Commit f0f07778"
 [20]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/765abc604c4867798d2a7dcda2a20693f1bf5276 "Commit 765abc60"
+[21]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/268326c781b32648b5648f4513b0e87f34540ad6 "Commit 268326c7"
