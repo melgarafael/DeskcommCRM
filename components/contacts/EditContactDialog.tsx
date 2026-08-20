@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { contactPatchSchema, type ContactPatch } from "@/lib/schemas/contacts";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
+import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import type { Contact } from "@/lib/types/contacts";
 
 interface FormShape {
@@ -22,15 +23,17 @@ interface FormShape {
   email?: string;
   phone_number?: string;
   tagsRaw?: string;
+  custom_fields?: Record<string, unknown>;
 }
 
 interface Props {
   contact: Contact;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  customFieldDefs?: CustomFieldDef[];
 }
 
-export function EditContactDialog({ contact, open, onOpenChange }: Props) {
+export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs = [] }: Props) {
   const update = useUpdateContact(contact.id);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -40,8 +43,11 @@ export function EditContactDialog({ contact, open, onOpenChange }: Props) {
       email: contact.email ?? "",
       phone_number: contact.phone_number ?? "",
       tagsRaw: contact.tags.join(", "),
+      custom_fields: contact.custom_fields ?? {},
     },
   });
+
+  const customFields = useWatch({ control: form.control, name: "custom_fields" });
 
   useEffect(() => {
     if (open) {
@@ -66,6 +72,7 @@ export function EditContactDialog({ contact, open, onOpenChange }: Props) {
     if (values.email?.trim()) payload.email = values.email.trim();
     if (values.phone_number?.trim()) payload.phone_number = values.phone_number.trim();
     payload.tags = tags;
+    payload.custom_fields = values.custom_fields ?? {};
 
     const parsed = contactPatchSchema.safeParse(payload);
     if (!parsed.success) {
@@ -105,6 +112,22 @@ export function EditContactDialog({ contact, open, onOpenChange }: Props) {
             <Label htmlFor="ec-tags">Tags</Label>
             <Input id="ec-tags" {...form.register("tagsRaw")} />
           </div>
+          {customFieldDefs.length > 0 && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div>
+                <h3 className="text-sm font-medium">Campos personalizados</h3>
+                <p className="text-xs text-muted-foreground">
+                  Campos definidos no pipeline padrão da organização.
+                </p>
+              </div>
+              <CustomFieldsEditor
+                fields={customFieldDefs}
+                mode="contact"
+                value={customFields ?? {}}
+                onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
+              />
+            </div>
+          )}
           {serverError && <p className="text-sm text-error-fg">{serverError}</p>}
           <DialogFooter>
             <Button

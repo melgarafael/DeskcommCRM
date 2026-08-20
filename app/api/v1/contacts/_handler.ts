@@ -22,7 +22,7 @@ import type {
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, created_at, updated_at, last_activity_at";
+  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at";
 
 const ROLE_RANK: Record<string, number> = {
   viewer: 1,
@@ -268,6 +268,7 @@ export async function createContactHandler(
     tags: input.tags ?? [],
     source: input.source,
     source_metadata: input.source_metadata ?? {},
+    custom_fields: input.custom_fields ?? {},
     consent: input.consent ?? {},
   };
 
@@ -339,7 +340,7 @@ export async function patchContactHandler(
     // e-mail foi substituído não tinha onde olhar. `consent` vem junto porque o
     // patch dele passou a ser MERGE (ver abaixo), e merge precisa do estado
     // anterior.
-    .select("id, organization_id, is_anonymized, tags, email, phone_number, name, display_name, consent")
+    .select("id, organization_id, is_anonymized, tags, email, phone_number, name, display_name, consent, custom_fields")
     .eq("id", contactId)
     .maybeSingle();
 
@@ -375,6 +376,9 @@ export async function patchContactHandler(
   if (input.tags !== undefined) patch.tags = input.tags;
   if (input.source !== undefined) patch.source = input.source;
   if (input.source_metadata !== undefined) patch.source_metadata = input.source_metadata;
+  if (input.custom_fields !== undefined) {
+    patch.custom_fields = input.custom_fields;
+  }
   if (input.consent !== undefined) {
     // MERGE por finalidade, nunca substituição.
     //

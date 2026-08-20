@@ -11,6 +11,13 @@ import { z } from "zod";
 
 const PHONE_REGEX = /^\+\d{8,15}$/;
 const CPF_DIGITS = /^\d{11}$/;
+const CUSTOM_FIELDS_MAX_BYTES = 32_768;
+
+const customFieldsSchema = z
+  .record(z.string().min(1).max(80), z.unknown())
+  .refine((value) => JSON.stringify(value).length <= CUSTOM_FIELDS_MAX_BYTES, {
+    message: "Campos personalizados excedem o limite de 32 KB",
+  });
 
 /**
  * CPF check-digit validator (algoritmo oficial Receita Federal).
@@ -48,6 +55,7 @@ export const contactCreateSchema = z.object({
   source: z.string().min(1).default("manual"),
   source_metadata: z.record(z.string(), z.unknown()).optional(),
   consent: z.record(z.string(), z.unknown()).optional(),
+  custom_fields: customFieldsSchema.optional(),
 });
 export type ContactCreate = z.infer<typeof contactCreateSchema>;
 

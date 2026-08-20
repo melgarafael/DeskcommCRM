@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import type { CustomFieldDef, CustomFieldType } from "@/components/contacts/CustomFieldsEditor";
 
 interface Props {
   contactId: string;
@@ -24,6 +26,7 @@ interface Props {
 export function ContactDetailClient({ contactId }: Props) {
   const q = useContact(contactId);
   const { user, activeOrg } = useAuth();
+  const pipelineQuery = useDefaultPipeline(Boolean(activeOrg));
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
 
@@ -55,6 +58,38 @@ export function ContactDetailClient({ contactId }: Props) {
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
   // aparecia como "Sem nome" aqui e com o número no inbox.
   const displayName = rotuloDoContato(contact);
+  const customFieldDefs: CustomFieldDef[] = (() => {
+    const raw = pipelineQuery.data?.pipeline.settings?.fields;
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((candidate) => {
+      if (!candidate || typeof candidate !== "object") return [];
+      const field = candidate as Record<string, unknown>;
+      if (field.deprecated === true) return [];
+      if (typeof field.key !== "string" || typeof field.label !== "string") return [];
+      const allowed: CustomFieldType[] = [
+        "text", "textarea", "number", "date", "select", "multiselect", "boolean", "email", "phone", "url",
+      ];
+      const type = typeof field.type === "string" && allowed.includes(field.type as CustomFieldType)
+        ? (field.type as CustomFieldType)
+        : "text";
+      const options = Array.isArray(field.options)
+        ? field.options.flatMap((option) => {
+            if (!option || typeof option !== "object") return [];
+            const item = option as Record<string, unknown>;
+            return typeof item.value === "string" && typeof item.label === "string"
+              ? [{ value: item.value, label: item.label }]
+              : [];
+          })
+        : undefined;
+      return [{
+        key: field.key,
+        label: field.label,
+        type,
+        required: field.required === true,
+        ...(options ? { options } : {}),
+      }];
+    });
+  })();
 
   return (
     <div className="space-y-4 p-6">
@@ -204,6 +239,7 @@ export function ContactDetailClient({ contactId }: Props) {
         contact={contact}
         open={editOpen}
         onOpenChange={setEditOpen}
+        customFieldDefs={customFieldDefs}
       />
       <AnonymizeDialog
         contactId={contactId}

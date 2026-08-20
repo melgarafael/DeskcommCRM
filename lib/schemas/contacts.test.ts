@@ -81,6 +81,20 @@ describe("contactCreateSchema", () => {
     const r = contactCreateSchema.safeParse({ birthdate: "01/01/1990" });
     expect(r.success).toBe(false);
   });
+
+  it("accepts custom fields as a JSON object", () => {
+    const r = contactCreateSchema.safeParse({
+      custom_fields: { segmento: "vip", score: 10, consentiu: true },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects custom fields above 32 KB", () => {
+    const r = contactCreateSchema.safeParse({
+      custom_fields: { observacao: "x".repeat(33_000) },
+    });
+    expect(r.success).toBe(false);
+  });
 });
 
 describe("contactPatchSchema", () => {
