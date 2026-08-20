@@ -18,7 +18,7 @@ export default async function ApiTokensPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">API Tokens</h1>
         <p className="text-sm text-muted-foreground">
-          Tokens server-to-server. Plaintext exibido <strong>uma única vez</strong> na criação.
+          Tokens server-to-server e conexões MCP. Plaintext exibido <strong>uma única vez</strong> na criação.
         </p>
       </header>
       <ApiTokensClient />
