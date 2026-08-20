@@ -91,3 +91,12 @@ O backend passou a incluir `custom_fields` no SELECT, criação e atualização 
 A migration foi aplicada com sucesso no projeto Supabase autorizado pelo usuário e verificada diretamente no banco: a coluna existe como `jsonb`, é `NOT NULL` e possui default `{}`. A implementação foi publicada nos commits `35726fee` e `4ed0abeb`.
 
 A validação final após a correção do manifesto ficou verde: **423 arquivos Vitest e 4.726 testes aprovados**, typecheck aprovado, auditoria de dependências sem vulnerabilidades conhecidas, testes shell aprovados, login público HTTP 200 e healthcheck público HTTP 200 com status `degraded` apenas para Redis e WAHA não configurados.
+
+
+## Implementação adicional — Hardening do cliente WAHA
+
+A camada de comunicação com WAHA foi endurecida no commit `0f684930`. Todas as chamadas do cliente agora usam timeout explícito de 10 segundos com `AbortController`, evitando que uma dependência externa offline prenda uma rota até o limite do runtime. Erros HTTP não incluem mais o corpo devolvido pelo WAHA, impedindo que tokens, telefones ou outros dados presentes na resposta acabem em exceções e logs.
+
+Também foi adicionada cobertura para timeout, não vazamento do corpo de erro e idempotência de parada de sessão inexistente (`404`). Os testes direcionados passaram com 13 casos. A suíte completa posterior passou com **424 arquivos e 4.729 testes**, sem vulnerabilidades conhecidas na auditoria de dependências, com typecheck aprovado e produção respondendo login HTTP 200 e healthcheck HTTP 200.
+
+Redis e WAHA continuam deliberadamente `degraded / nao_configurado` em produção porque não há credenciais/serviços reais ativos. O código não os marca como saudáveis artificialmente e não ativa envio, filas ou rate limit distribuído sem configuração válida.
