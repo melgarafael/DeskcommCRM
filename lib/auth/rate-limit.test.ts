@@ -61,6 +61,12 @@ describe("authRateLimited", () => {
     expect(await authRateLimited("teste_sep", "a@example.com", limites)).toBe(true);
   });
 
+  it("define limite próprio para recuperação de organização", async () => {
+    const { AUTH_LIMITS } = await import("./rate-limit");
+
+    expect(AUTH_LIMITS.org_recovery).toEqual({ ip: 5, id: 3, windowSec: 3600 });
+  });
+
   it("não põe o e-mail em claro na chave do contador", async () => {
     const rl = await import("@/lib/ai/dispatcher/rate-limit");
     const spy = vi.spyOn(rl, "checkRateLimit");

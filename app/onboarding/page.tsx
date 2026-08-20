@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function OnboardingIndex() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) redirect("/login");
+  if (!activeOrg) redirect("/get-started");
 
   const { state, onboardedAt } = await loadOnboardingState(activeOrg.orgId);
   if (onboardedAt) redirect("/app/inbox");

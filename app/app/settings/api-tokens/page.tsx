@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { McpConnectionInfo } from "./_components/McpConnectionInfo";
@@ -20,9 +22,11 @@ export default async function ApiTokensPage() {
         </header>
         <McpConnectionInfo />
         <p className="text-sm text-muted-foreground">
-          Aceite um convite de organização ou peça ao administrador para concluir seu cadastro antes
-          de solicitar um token MCP.
+          Configure sua organização ou aceite um convite antes de solicitar um token MCP.
         </p>
+        <Link className="w-fit text-sm text-primary underline underline-offset-4" href="/get-started">
+          Configurar minha organização
+        </Link>
       </div>
     );
   }

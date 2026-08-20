@@ -17,10 +17,15 @@ export default async function InboxPage({
   if (!activeOrg) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
-        <p>Você não tem nenhuma organização ativa. Aceite um convite ou contate o admin.</p>
-        <Link className="text-primary underline underline-offset-4" href="/app/settings/api-tokens">
-          Ver conexão MCP
-        </Link>
+        <p>Você não tem nenhuma organização ativa. Configure sua organização ou aceite um convite.</p>
+        <div className="flex flex-wrap justify-center gap-4">
+          <Link className="text-primary underline underline-offset-4" href="/get-started">
+            Configurar minha organização
+          </Link>
+          <Link className="text-primary underline underline-offset-4" href="/app/settings/api-tokens">
+            Ver conexão MCP
+          </Link>
+        </div>
       </div>
     );
   }
