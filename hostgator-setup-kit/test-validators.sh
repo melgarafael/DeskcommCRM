@@ -1384,12 +1384,13 @@ chegou_na_deteccao() {
 # → era 9 antes de APP_ACCENT_HEX entrar em FIELDS, é 10 agora.
 RESTO_DAS_PERGUNTAS=$'\n\n\n\n\n\n\n\n\n\nc\n'
 
-# A posição da cor DENTRO da fila acima — 1 provedor + APP_IMAGE + OPENAI +
-# APP_NAME e ela é a 5ª. Fica numa variável porque a fila com a cor RESPONDIDA
-# (abaixo) é DERIVADA da de cima em vez de copiada: duas filas posicionais
-# mantidas à mão desincronizam no primeiro campo novo, e aí uma passa e a outra
-# reprova com um nome que não é o dela.
-POSICAO_DA_COR=5
+# A posição da cor DENTRO da fila acima — a primeira linha é consumida pela
+# escolha do provedor; depois vêm APP_IMAGE, OPENAI_API_KEY opcional, APP_NAME,
+# e então APP_ACCENT_HEX é a 4ª linha da fila restante. Fica numa variável porque
+# a fila com a cor RESPONDIDA (abaixo) é DERIVADA da de cima em vez de copiada:
+# duas filas posicionais mantidas à mão desincronizam no primeiro campo novo, e aí
+# uma passa e a outra reprova com um nome que não é o dela.
+POSICAO_DA_COR=4
 COR_DE_TESTE='#f2c94c'
 # fila_com <fila> <posição> <valor> → a mesma fila, com uma resposta no lugar de
 # um Enter. `awk` porque a substituição é por NÚMERO DE LINHA: um `sed s///`

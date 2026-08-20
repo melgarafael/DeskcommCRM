@@ -48,7 +48,7 @@ const RAIZ = resolve(__dirname, "../..");
 function chamadoresDoResolver(): string[] {
   const saida = execFileSync(
     "git",
-    ["grep", "-l", "resolveLanguageModel", "--", "lib", "workers", "app", "scripts"],
+    ["grep", "--color=never", "-l", "resolveLanguageModel", "--", "lib", "workers", "app", "scripts"],
     { cwd: RAIZ, encoding: "utf8" },
   );
   return saida
