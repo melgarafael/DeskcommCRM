@@ -1,127 +1,164 @@
-# Relatório de Auditoria de Segurança e Bugs — DeskcommCRM
+# Relatório consolidado de segurança, bugs, implementação e produção — DeskcommCRM
 
 **Projeto:** DeskcommCRM  
-**Repositório:** [prevprocesso-maker/DeskcommCRM](https://github.com/prevprocesso-maker/DeskcommCRM)  
-**Ambiente público:** [deskcomm-crm-five.vercel.app](https://deskcomm-crm-five.vercel.app)  
-**Data da validação:** 20 de agosto de 2026  
+**Repositório:** [prevprocesso-maker/DeskcommCRM][1]
+
+**Ambiente permanente:** [deskcomm-crm-five.vercel.app][2]
+
+**Projeto Vercel:** `deskcomm-crm`
+
+**Data da validação final:** 20 de agosto de 2026
+
 **Responsável:** Manus AI
 
-## Sumário executivo
+## 1. Sumário executivo
 
-A auditoria foi conduzida sobre o repositório, a suíte de testes, os scripts de instalação, as rotas críticas e o ambiente público. A metodologia adotada foi inspirada na [Cloudflare Security Audit Skill](https://github.com/cloudflare/security-audit-skill), que recomenda reconhecimento, análise de superfícies, validação adversarial, correção e verificação independente. A seleção foi feita após comparar outras skills de segurança disponíveis no GitHub; a opção da Cloudflare foi escolhida por ser especificamente orientada a auditoria reproduzível, e não apenas a revisão genérica de código.
+O DeskcommCRM foi executado, publicado e auditado sobre o código-fonte, os handlers de API, os fluxos de autenticação, o isolamento multi-tenant, os scripts de instalação, as dependências, os testes automatizados e o ambiente público. A metodologia de segurança seguiu a abordagem de reconhecimento, análise de superfície, reprodução, correção e verificação independente inspirada na [Cloudflare Security Audit Skill][3].
 
-O resultado final é **aprovado para continuidade do desenvolvimento**, com duas correções de testes e uma correção de comportamento em produção. A suíte completa terminou com **423 arquivos de teste aprovados e 4.724 testes aprovados**. O TypeScript terminou sem erros, o ESLint terminou com código de saída zero e 247 avisos não bloqueantes, e `pnpm audit --audit-level=high` não reportou vulnerabilidades conhecidas. O login público respondeu HTTP 200 e os cabeçalhos de proteção foram observados. O healthcheck público passou de HTTP 503 para HTTP 200 com estado `degraded`, porque Redis e WAHA ainda não estão configurados, enquanto o Supabase respondeu `ok`.
+A versão final foi publicada na branch `main` e chegou à produção Vercel no deployment `dpl_3wt7v8mg3rrNG8UPDfoEVa5EqmBo`, associado ao commit `c85efe46`. O deployment terminou em estado **READY**, com o domínio permanente `deskcomm-crm-five.vercel.app` apontando para a nova versão. A página `/login` respondeu HTTP 200 e apresentou o formulário de autenticação e o link de cadastro.
 
-> **Conclusão operacional:** não restaram erros reproduzíveis bloqueantes nas verificações executadas. A implantação continua funcional para autenticação e para o núcleo Supabase. WhatsApp/WAHA, Redis e IA permanecem itens de configuração e validação funcional, não falhas silenciosas que devam ser tratadas como concluídas.
+O núcleo Supabase permanece saudável. O healthcheck público respondeu HTTP 503 porque o Redis está configurado com valor inválido e o WhatsApp/WAHA ainda não está configurado; essa resposta é **intencional e correta** para uma dependência real configurada, mas indisponível. A resposta não expõe URL, header, token, corpo de exceção ou mensagem bruta do upstream: o Redis aparece somente como `error: "invalid_configuration"` e `reason: "configuracao_invalida"`, enquanto o WAHA aparece como `not_configured`.
 
-## Escopo e metodologia
+> **Conclusão operacional:** não restaram erros reproduzíveis nos testes automatizados, no typecheck, no lint de canais, na auditoria de dependências ou no deployment Vercel. Permanecem pendências operacionais de credenciais e serviços externos, especialmente a substituição do token Redis malformado, a instalação de WAHA, a configuração da IA e a definição do segredo de impersonação.
 
-A análise cobriu a validação de ambiente, isolamento por organização e RLS já presentes no projeto, rotas de autenticação e healthcheck, proteção de headers, busca por segredos e chamadas a provedores de IA, dependências, testes unitários e de API, scripts shell do Hostgator, e a resposta HTTP do domínio publicado. As referências de integração do Supabase foram conferidas na documentação de [Auth Hooks](https://supabase.com/docs/guides/auth/auth-hooks) e [Database Webhooks](https://supabase.com/docs/guides/database/webhooks), que distinguem hooks de autenticação de webhooks acionados por eventos de tabela.
+## 2. Escopo e metodologia
 
-A validação foi feita em duas camadas. Primeiro, os problemas foram reproduzidos no repositório com comandos determinísticos. Depois, as correções foram publicadas na branch `main` e verificadas pelo domínio público. A API do Vercel retornou 403 para a listagem de deployments nesta sessão; por isso, a comprovação final usou a própria URL pública, o status HTTP, o corpo JSON e os cabeçalhos da aplicação, sem inferir sucesso a partir de uma API que não autorizou a consulta.
+A auditoria cobriu as rotas `/api/v1/health`, autenticação, handlers de leads, schema Zod, cliente Redis REST, rate limiter, debounce RAG, cliente WAHA, validações de configuração, emissão de eventos, auditoria, atividades de timeline e isolamento por `organization_id`. Também foram verificadas as políticas e decisões arquiteturais documentadas no repositório, incluindo a regra de que o trigger `fn_crm_lead_close_on_stage` é a fonte única de `status` e `closed_at` para transições terminais.
 
-## Achados e correções
+A análise combinou revisão estática, testes unitários e de API, testes de invariantes, testes shell, auditoria de dependências e verificação pública pós-deploy. Os achados de produção foram comparados com os logs de runtime da Vercel. Erros históricos de deployments antigos sem variáveis de ambiente foram separados dos resultados atuais: na janela recente de dez minutos após a publicação final, não houve clusters de erro de runtime.
 
-| ID | Severidade | Achado | Evidência | Correção | Estado |
+## 3. Inventário de bugs e vulnerabilidades
+
+| ID | Severidade | Achado | Reprodução ou evidência | Correção | Estado |
 |---|---:|---|---|---|---|
-| BUG-01 | Baixa | O teste de alcance do resolver de modelos era sensível à coloração ANSI do `git grep`; em ambientes que habilitavam cor, a comparação de caminhos falhava apesar do código estar correto. | `tests/unit/openrouter-alcance.test.ts` falhava por saída colorida do Git. | Foi adicionado `--color=never` à chamada controlada de `git grep`. | Corrigido e publicado no commit [`0d9e2097`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/0d9e2097). |
-| BUG-02 | Baixa | O teste do instalador interativo respondia à posição errada da pergunta `APP_ACCENT_HEX`, deixando a fila de respostas desalinhada. | `hostgator-setup-kit/test-validators.sh` falhava ao validar a posição da cor da marca. | A posição foi corrigida de 5 para 4, com comentários alinhados à ordem real da fila. | Corrigido e publicado no commit [`0d9e2097`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/0d9e2097). |
-| BUG-03 | Média | O healthcheck público retornava 503 quando Redis e WAHA tinham placeholders ou endereços locais, mesmo quando o Supabase estava saudável e as integrações opcionais ainda não haviam sido contratadas/configuradas. | `GET /api/v1/health` retornava `unhealthy`, Redis `endereco_nao_resolve` e WAHA `conexao_recusada`. | Endpoints sentinela são classificados como `degraded`/`nao_configurado`; falhas reais de serviços configurados continuam retornando 503. Foi criada uma função pura para a classificação e testes de regressão. | Corrigido e publicado no commit [`59dfd10b`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/59dfd10b). |
+| BUG-01 | Baixa | O teste de alcance do resolver de modelos era sensível a códigos ANSI produzidos pelo `git grep`. | A comparação de caminhos falhava quando a coloração do Git estava habilitada. | Adicionado `--color=never` ao `git grep` controlado. | Corrigido no commit [`0d9e2097`][4]. |
+| BUG-02 | Baixa | O teste do instalador interativo respondia à posição errada da pergunta de cor da marca. | A fila de respostas ficava desalinhada na validação de `APP_ACCENT_HEX`. | Corrigida a posição da pergunta e os comentários da fila. | Corrigido no commit [`0d9e2097`][4]. |
+| BUG-03 | Média | O healthcheck classificava placeholders e endpoints locais de serviços opcionais como indisponibilidade real. | Redis/WAHA sem configuração geravam 503 mesmo com Supabase saudável. | Criada classificação explícita `degraded`/`nao_configurado`; indisponibilidade de serviço real continua sendo `down`/503. | Corrigido no commit [`59dfd10b`][5]. |
+| SEC-01 | Alta | O healthcheck podia incluir a mensagem bruta de uma exceção Redis no JSON público. Uma credencial malformada havia sido refletida parcialmente na resposta. | A tentativa de ativar Upstash usou valor contendo aspas, nome da variável e quebras de linha; o upstream rejeitou o header e a exceção carregou parte do valor. | O healthcheck passou a responder apenas `request_failed` para exceções de upstream; não há mais exposição de URL, header, token ou corpo de resposta. | Corrigido e publicado no commit [`2207354f`][6]. |
+| SEC-02 | Alta | A configuração Redis podia ser passada ao cliente mesmo contendo formato de bloco `.env`, aspas ou quebras de linha. | Valores como `UPSTASH_REDIS_REST_TOKEN=...`, token entre aspas e token com newline chegavam à construção do request. | Criado `lib/redis-config.ts`, validador puro que rejeita URL inválida, token com aspas, newline, prefixo de variável e credenciais incompletas. O healthcheck e o rate limiter usam o mesmo validador. | Corrigido no commit [`0f802a92`][7]. |
+| BUG-04 | Média | O encerramento win/lose podia escolher stage terminal arquivado e colocar o lead fora do quadro ativo. | A consulta terminal não filtrava `is_archived=false`. | Stage terminal agora é filtrado por organização, pipeline, flag terminal, não arquivado e posição. | Corrigido no commit [`0f802a92`][7]. |
+| BUG-05 | Média | Win/lose não aplicava a regra de posicionamento `max(position_in_stage) + 1000`. | Leads encerrados poderiam entrar em posição indefinida ou não ocupar o fim lógico da coluna terminal. | O encerramento calcula a maior posição dentro da organização e stage destino e grava a próxima posição. | Corrigido no commit [`0f802a92`][7]. |
+| BUG-06 | Média | O endpoint REST de perda devolvia `validation_error` genérico quando `lost_reason` estava ausente. | `POST /api/v1/leads/[id]/lose` com `{}` não atendia o contrato `lost_reason_required` do épico. | A rota mapeia erro de campo Zod para HTTP 422 com `error.code="lost_reason_required"`, mantendo `validation_failed` no contrato interno/MCP para compatibilidade. | Corrigido no commit [`0f802a92`][7]. |
+| BUG-07 | Média | A capacidade compartilhada de encerramento emitia manualmente `lead.won`/`lead.lost` enquanto o trigger de banco já era a fonte de eventos para mudança de status. | O `event_log` não possui chave idempotente que impedisse duas linhas semanticamente iguais. | Removida a emissão manual; o trigger `fn_crm_lead_close_on_stage` permanece como fonte única para status, fechamento e evento. | Corrigido no commit [`0f802a92`][7]. |
+| BUG-08 | Baixa | O lint de restrição de canais classificou a nova prosa de `lib/health/status.ts` como menção a provider. | `pnpm lint:channels` reprovou o arquivo por uma menção textual a um provider em comentário. | A documentação foi reescrita de modo neutro, sem alterar o comportamento. | Corrigido no commit [`c85efe46`][8]. |
 
-A correção do healthcheck é deliberadamente conservadora. Ela não ignora indisponibilidade real: somente valores vazios, placeholders e endereços locais usados para setup são tratados como não configurados. Um Redis ou WAHA configurado com endereço real que responder com erro permanece `down` e mantém o status HTTP 503, preservando a capacidade de monitoramento.
+Não foi encontrado segredo persistido no repositório. A chave anon pública do Supabase aparece no HTML de login como configuração pública esperada; ela não é a `service_role` key. As credenciais privadas continuam pertencendo exclusivamente às variáveis de ambiente do servidor.
 
-## Validações executadas
+## 4. Implementações entregues
 
-| Verificação | Resultado | Observação |
+### 4.1 Configuração segura do Redis
+
+O módulo `lib/redis-config.ts` centraliza a validação de URL e token REST do Redis. Ele diferencia três situações: configuração válida, ausência de configuração e configuração inválida. A decisão é pura e testável, permitindo que o healthcheck recuse valores malformados antes de construir headers e que o rate limiter use fallback local sem tentar iniciar um cliente Redis inválido.
+
+O healthcheck agora preserva a diferença operacional entre serviço opcional ausente e serviço real indisponível. O fallback de rate limit continua explicitamente sinalizado como inadequado para múltiplas instâncias; ele não é apresentado como rate limit distribuído enquanto o Upstash não estiver configurado corretamente.
+
+### 4.2 Fluxo win/lose de leads
+
+A capacidade existente `lib/leads/encerramento.ts` foi endurecida e testada. A mutação filtra o lead por `organization_id`, busca o stage terminal no pipeline correto, exclui stages arquivados, calcula a posição final e atualiza apenas `stage_id`, `position_in_stage`, `lost_reason` quando aplicável e `updated_at`. A fonte de verdade para `status`, `closed_at` e eventos continua sendo o trigger de banco.
+
+O endpoint win permanece idempotente: se o lead já está ganho, retorna o registro atual sem nova mutação. O endpoint lose exige motivo não vazio. A validação REST devolve o código canônico `lost_reason_required`, enquanto a capacidade interna mantém `validation_failed` para não quebrar consumidores MCP que já dependiam desse contrato.
+
+As mutações continuam registrando `demand_closed` na timeline e auditando o fechamento. Falhas de timeline são tratadas como falha de baixa prioridade: não desfazem o fechamento, mas são registradas para observabilidade.
+
+### 4.3 Custom fields de Customer 360
+
+A implementação anterior de Customer 360 adicionou `contacts.custom_fields` como JSONB obrigatório com default `{}`, constraint de objeto JSON e validação Zod com limites de tamanho. O backend e a tela de detalhe foram integrados, e a migration foi registrada no baseline e no manifesto de migrações. Essa entrega foi publicada nos commits [`35726fee`][9], [`4ed0abeb`][10] e [`7203b3b9`][11].
+
+### 4.4 Hardening de WAHA e debounce RAG
+
+O cliente WAHA agora usa timeout de 10 segundos, não devolve corpo bruto de erro e trata parada de sessão inexistente de forma idempotente. O debounce Redis usa `retry:false`, fallback fail-fast e chaves com escopo por organização, agente e tipo de evento. Essas entregas foram publicadas nos commits [`0f684930`][12], [`c4add78f`][13] e [`53038e0f`][14].
+
+## 5. Validações realizadas
+
+| Verificação | Resultado | Evidência final |
 |---|---:|---|
-| TypeScript (`pnpm typecheck`) | PASS | Código de saída 0, sem erros de tipo. |
-| ESLint (`pnpm lint`) | PASS | Código de saída 0; 247 avisos, 0 erros. |
-| Auditoria de dependências (`pnpm audit --audit-level=high`) | PASS | “No known vulnerabilities found”. |
-| Vitest completo | PASS | 423 arquivos e 4.724 testes aprovados. |
-| Testes shell do Hostgator | PASS | Scheduler, update guard e validadores aprovados. |
-| Teste direcionado do healthcheck | PASS | 3 casos, incluindo placeholder, estado degradado e falha real. |
-| Teste direcionado do resolver OpenRouter | PASS | 6 casos aprovados. |
-| `/login` em produção | PASS | HTTP 200, marcação de login presente. |
-| `/api/v1/health` em produção | PASS | HTTP 200; Supabase `ok`, Redis/WAHA `degraded` e `nao_configurado`. |
-| Cabeçalhos HTTP | PASS | HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, Referrer-Policy e Permissions-Policy observados. |
-| Estado do Git | PASS | `main` sincronizada com `origin/main`, sem alterações pendentes. |
+| TypeScript | PASS | `pnpm typecheck`, código de saída 0. |
+| Vitest completo | PASS | 428 arquivos e 4.745 testes aprovados. |
+| Testes de regressão desta sessão | PASS | 51 testes em 5 arquivos direcionados, incluindo Redis, lose REST, schemas, encerramento e compatibilidade MCP. |
+| Testes shell | PASS | `pnpm test:shell`, incluindo scheduler, update guard e validadores do instalador. |
+| ESLint | PASS | 0 erros e 247 avisos não bloqueantes no lint completo. Arquivos alterados também passaram no lint direcionado. |
+| Lint de canais | PASS | `pnpm lint:channels`: 60 arquivos de dívida conhecida, nenhum arquivo novo infrator. |
+| Auditoria de dependências | PASS | `pnpm audit --audit-level=high`: “No known vulnerabilities found”. |
+| `git diff --check` | PASS | Nenhum whitespace problemático. |
+| Build Vercel | PASS | Build remoto concluiu e deployment `c85efe46` ficou READY. |
+| Build local | LIMITAÇÃO DO SANDBOX | Turbopack/Webpack locais foram encerrados por pressão de memória (`SIGTERM`/`SIGKILL`), sem erro de TypeScript ou rota; o build remoto da Vercel concluiu com a lista de rotas. |
+| Login em produção | PASS | `/login` respondeu HTTP 200 e exibiu o formulário. |
+| Healthcheck em produção | PASS COM DEGRADAÇÃO ESPERADA | Supabase `ok`; Redis `down`/`configuracao_invalida`; WAHA `degraded`/`nao_configurado`. |
+| Runtime Vercel recente | PASS | Nenhum erro agregado na janela de dez minutos após o deployment final. |
 
-Os avisos do ESLint são dívida de qualidade, não falhas de compilação ou de execução. Eles devem ser tratados em uma tarefa própria para evitar misturar limpeza ampla com correções de segurança já validadas.
+Os 247 avisos do ESLint são dívida de qualidade distribuída no repositório e não falhas bloqueantes. Recomenda-se corrigi-los em ondas pequenas, sem `--fix` global sem revisão.
 
-## Segurança observada
+## 6. Estado de produção
 
-A rota de healthcheck continua pública para permitir monitoramento externo, mas não expõe os alvos internos Redis/WAHA sem `verbose=1` acompanhado do segredo interno. A comparação do segredo usa comparação em tempo constante e rejeita credenciais vazias. Os cabeçalhos HTTP observados reduzem riscos de enquadramento, MIME sniffing, downgrade de transporte e uso indevido de recursos do navegador.
+O deployment final é o `dpl_3wt7v8mg3rrNG8UPDfoEVa5EqmBo`, associado ao commit `c85efe46`, com estado `READY` e alias permanente `deskcomm-crm-five.vercel.app`. O Supabase usado pela aplicação pública é `nzhfwgfpprjhlseutxhy.supabase.co`, conforme a configuração pública entregue pelo HTML de login.
 
-A análise também confirmou que o projeto possui testes de invariantes para roteamento de modelos, validações de upload, proteção de credenciais em URLs, isolamento organizacional e comportamento de funções autenticadas. A presença dos testes não substitui uma prova E2E com usuários reais em cada ambiente, mas diminui o risco de regressão durante a próxima etapa de desenvolvimento.
+A resposta observada em 20/08/2026 às 18:23 GMT-3 foi equivalente a:
 
-## Backlog residual e limites da conclusão
+```json
+{
+  "data": {
+    "status": "unhealthy",
+    "checks": {
+      "supabase": { "status": "ok" },
+      "redis": { "status": "down", "error": "invalid_configuration", "reason": "configuracao_invalida" },
+      "waha": { "status": "degraded", "error": "not_configured", "reason": "nao_configurado" }
+    }
+  }
+}
+```
 
-| Item | Impacto | Próxima ação recomendada |
+Esse 503 não representa falha do login ou do Supabase. Ele comunica corretamente que existe uma dependência Redis configurada, porém inválida. Depois da substituição do token por um valor limpo, o healthcheck deverá mudar para `redis: ok`; se o Redis for removido ou deixado vazio, a expectativa é `degraded`/`nao_configurado`, não 503.
+
+## 7. Pendências operacionais
+
+| Item | Situação | Próxima ação |
 |---|---|---|
-| WAHA/WhatsApp | A integração está `degraded` porque não há serviço WAHA ativo no Vercel. O login e o núcleo Supabase não dependem dessa prova. | Configurar WAHA em ambiente persistente, definir URL, chave, webhook e HMAC, e executar teste de sessão, envio, recebimento e assinatura. |
-| Redis | O healthcheck indica `nao_configurado`; recursos que dependem de rate limit ou filas distribuídas não devem ser considerados validados em produção. | Criar/configurar Upstash ou Redis compatível, verificar token, executar testes de concorrência e conferir o isolamento entre organizações. |
-| IA | As variáveis de provedores de IA estão ausentes ou não foram validadas nesta auditoria de integração externa. A aplicação degrada com aviso de `ai_gateway_key_missing`. | Escolher um provedor real, cadastrar a chave fora do repositório e executar testes de chat, fallback, custo, timeout e redaction de dados sensíveis. |
-| `IMPERSONATE_COOKIE_SECRET` | A aplicação registra aviso quando a chave está ausente ou tem menos de 32 caracteres; o fluxo correspondente retorna 503 até ser configurado. | Definir segredo aleatório com pelo menos 32 caracteres em produção e testar autorização, expiração e auditoria do fluxo. |
-| Avisos do ESLint | 247 avisos não bloqueantes reduzem a clareza da manutenção e podem esconder novos avisos. | Corrigir por grupos pequenos, começando por imports não usados e tipos inconsistentes, sem usar `--fix` em massa sem revisão. |
-| Fluxos reais de cadastro e RLS | Foram validados por testes e pela presença do Supabase saudável, mas o relatório não executou cadastro com dados pessoais do usuário nem criou registros reais em sua organização. | Executar manualmente um cadastro de teste, criação de organização e lead, depois confirmar que um segundo usuário não lê dados da primeira organização. |
+| Token Upstash Redis | Pendente e bloqueante para rate limit distribuído. O healthcheck atual identifica `configuracao_invalida`. | No console Upstash, abrir o banco configurado, copiar somente o valor do REST token e substituir `UPSTASH_REDIS_REST_TOKEN` na Vercel sem aspas, nome da variável, espaços ou quebras de linha. Salvar e redeployar. |
+| URL Redis | Deve corresponder ao mesmo banco do token. | Conferir `UPSTASH_REDIS_REST_URL` no formato `https://...upstash.io`, sem aspas e sem bloco `.env`. |
+| WhatsApp/WAHA | Não configurado no Vercel. | Hospedar WAHA em ambiente persistente, configurar URL, chave, webhook e HMAC e executar teste de sessão, QR, envio, recebimento e assinatura. |
+| IA | Chaves de gateway ausentes na validação local; o sistema degrada com `ai_gateway_key_missing`. | Escolher provedor, cadastrar chave no ambiente server-side e testar geração, fallback, timeout, custo e redaction de dados sensíveis. |
+| `IMPERSONATE_COOKIE_SECRET` | Ausente ou menor que 32 caracteres; o fluxo retorna 503 até ser configurado. | Criar segredo aleatório com pelo menos 32 caracteres, cadastrar na Vercel e testar autorização, expiração e auditoria. |
+| ESLint | 247 avisos não bloqueantes. | Corrigir por grupos, priorizando imports não usados e tipos inconsistentes. |
+| E2E com dados reais | Não foi realizado cadastro com dados pessoais nem criação de lead em organização real nesta sessão. | Executar cadastro de teste, criar organização e lead, e confirmar com segundo usuário que o isolamento por organização impede leitura cruzada. |
+| Build local no sandbox | Limitado pela memória disponível; o build remoto Vercel passou. | Para validação local completa, usar máquina com mais memória ou configurar um runner CI com memória suficiente. |
 
-Esses itens não foram marcados como “corrigidos” porque dependem de serviços, credenciais ou dados operacionais que não estavam disponíveis para uma validação segura nesta sessão. O comportamento da aplicação agora os sinaliza explicitamente em vez de confundir ausência de configuração com indisponibilidade inesperada.
+## 8. Histórico de commits relevantes
 
-## Commits entregues
+| Commit | Entrega |
+|---|---|
+| [`0d9e2097`][4] | Correções dos testes ANSI e da fila interativa do instalador. |
+| [`59dfd10b`][5] | Classificação correta do healthcheck com serviços opcionais ausentes. |
+| [`35726fee`][9] | Persistência de custom fields em contatos. |
+| [`4ed0abeb`][10] | Registro da migration de custom fields. |
+| [`7203b3b9`][11] | Integração da interface de custom fields. |
+| [`0f684930`][12] | Timeout e redaction do cliente WAHA. |
+| [`c4add78f`][13] | Teste de parada idempotente de sessão WAHA. |
+| [`53038e0f`][14] | Hardening do debounce Redis. |
+| [`2207354f`][6] | Redaction de exceções no healthcheck público. |
+| [`0e5754db`][15] | Documentação do redaction do healthcheck. |
+| [`0f802a92`][7] | Validador Redis, correções win/lose, testes de regressão e remoção de evento duplicado. |
+| [`c85efe46`][8] | Correção da menção textual detectada pelo lint de canais. |
 
-A primeira publicação, [`0d9e2097`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/0d9e2097), estabilizou os dois testes reproduzíveis encontrados na auditoria. A segunda, [`59dfd10b`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/59dfd10b), corrigiu o healthcheck, adicionou `lib/health/status.ts` e incluiu três testes de regressão. A branch `main` e `origin/main` estavam alinhadas na validação final.
+## 9. Parecer final
+
+O sistema está **publicado e funcional para autenticação, onboarding já configurado e núcleo Supabase**, com as correções de segurança e regressão desta sessão implantadas na produção. O fluxo de fechamento de leads agora respeita isolamento organizacional, stages ativos, posicionamento terminal, idempotência e contratos de erro. O healthcheck não deve ser alterado para esconder a falha atual do Redis: o próximo passo correto é corrigir a variável de ambiente com valor limpo e conferir a transição para `redis: ok`.
+
+A plataforma pode continuar recebendo desenvolvimento incremental. Não é correto declarar WhatsApp, rate limit distribuído, IA ou impersonação como prontos enquanto suas dependências operacionais permanecerem sem configuração válida. Com exceção dessas pendências externas e dos avisos de qualidade não bloqueantes, as verificações reproduzíveis executadas nesta sessão terminaram verdes.
 
 ## Referências
 
-[1]: https://github.com/cloudflare/security-audit-skill "Cloudflare Security Audit Skill"
-
-[2]: https://supabase.com/docs/guides/auth/auth-hooks "Supabase Auth Hooks"
-
-[3]: https://supabase.com/docs/guides/database/webhooks "Supabase Database Webhooks"
-
-[4]: https://github.com/prevprocesso-maker/DeskcommCRM "Repositório DeskcommCRM"
-
-
-## Implementação adicional — EPIC-05 / Custom Fields
-
-Após a auditoria, foi implementada a primeira tarefa funcional do backlog de Customer 360. A migration `20260820100000_0159_contact_custom_fields.sql` adiciona `contacts.custom_fields` como `jsonb NOT NULL`, com valor padrão `{}` e constraint que rejeita valores que não sejam objetos JSON. A mesma alteração foi registrada no `supabase/baseline.sql` e em `supabase/migrations/MANIFEST.md`, conforme o gate de consistência do repositório.
-
-O backend passou a incluir `custom_fields` no SELECT, criação e atualização de contatos. O schema Zod aceita mapas JSON com chaves de até 80 caracteres e limite de 32 KB, reduzindo risco de payload abusivo. A tela de detalhe reutiliza `crm_pipelines.settings.fields[]`, ignora campos marcados como `deprecated` e fornece essas definições ao `CustomFieldsEditor` no diálogo de edição de contato.
-
-A migration foi aplicada com sucesso no projeto Supabase autorizado pelo usuário e verificada diretamente no banco: a coluna existe como `jsonb`, é `NOT NULL` e possui default `{}`. A implementação foi publicada nos commits `35726fee` e `4ed0abeb`.
-
-A validação final após a correção do manifesto ficou verde: **423 arquivos Vitest e 4.726 testes aprovados**, typecheck aprovado, auditoria de dependências sem vulnerabilidades conhecidas, testes shell aprovados, login público HTTP 200 e healthcheck público HTTP 200 com status `degraded` apenas para Redis e WAHA não configurados.
-
-
-## Implementação adicional — Hardening do cliente WAHA
-
-A camada de comunicação com WAHA foi endurecida no commit `0f684930`. Todas as chamadas do cliente agora usam timeout explícito de 10 segundos com `AbortController`, evitando que uma dependência externa offline prenda uma rota até o limite do runtime. Erros HTTP não incluem mais o corpo devolvido pelo WAHA, impedindo que tokens, telefones ou outros dados presentes na resposta acabem em exceções e logs.
-
-Também foi adicionada cobertura para timeout, não vazamento do corpo de erro e idempotência de parada de sessão inexistente (`404`). Os testes direcionados passaram com 13 casos. A suíte completa posterior passou com **424 arquivos e 4.729 testes**, sem vulnerabilidades conhecidas na auditoria de dependências, com typecheck aprovado e produção respondendo login HTTP 200 e healthcheck HTTP 200.
-
-Redis e WAHA continuam deliberadamente `degraded / nao_configurado` em produção porque não há credenciais/serviços reais ativos. O código não os marca como saudáveis artificialmente e não ativa envio, filas ou rate limit distribuído sem configuração válida.
-
-
-## Nova fase — Hardening do debounce Redis
-
-A camada de debounce usada pelo indexador RAG foi reforçada no commit `53038e0f`. O cliente Redis agora usa `retry: false`, evitando retries longos quando o serviço está indisponível. Como o debounce já possui fallback em memória, a falha de Redis é tratada de forma explícita, com aviso operacional e sem derrubar o worker. A chave usada pelo indexador continua escopada por organização, agente e tipo de evento: `rag:debounce:{organization_id}:{agent_id}:{event_type}`.
-
-A liberação de lock também passou a tolerar indisponibilidade do Redis e limpar o estado local quando aplicável. Foram adicionados testes para fallback quando o `SET NX EX` falha, preservação do TTL, segunda tentativa bloqueada no mesmo processo, `retry: false` e liberação sem exceção quando o Redis está fora.
-
-A validação direcionada passou com **17 testes** e o typecheck passou. A suíte completa desta fase passou com **425 arquivos e 4.731 testes aprovados**, a auditoria de dependências não encontrou vulnerabilidades conhecidas, o login público continuou HTTP 200 e o healthcheck continuou HTTP 200 com Supabase `ok` e Redis/WAHA `degraded / nao_configurado`. O branch permaneceu limpo e sincronizado com `origin/main`.
-
-Esta implementação não ativa Redis em produção por conta própria. Enquanto `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN` não forem configurados, o sistema sinaliza a limitação e o fallback permanece local, portanto não deve ser considerado rate limit ou lock distribuído entre múltiplas instâncias.
-
-## Atualização — configuração Redis e correção de exposição de segredo
-
-Durante a ativação do Upstash em 20/08/2026, uma configuração inválida do ambiente juntou texto de configuração e credencial ao valor do token. O cliente Redis rejeitou a credencial, e a mensagem de exceção do `fetch` reproduziu parte do valor no JSON público do `/api/v1/health`. O token não foi salvo no repositório, mas a resposta pública configurou um achado de segurança de severidade alta por possível exposição de segredo.
-
-A correção foi aplicada em `app/api/v1/health/route.ts`: exceções de Supabase, Redis e WAHA agora retornam apenas `error: "request_failed"`, preservando a classificação segura em `reason` e ocultando detalhes de URL, headers, tokens e corpos de resposta. A configuração correta do Upstash deve conter exclusivamente a URL ou o token, sem nome da variável, aspas ou quebras de linha.
-
-A validação local do patch passou com typecheck, ESLint direcionado, 24 testes unitários de health/channel e `git diff --check`. O deployment público precisa receber este patch antes de considerar o achado encerrado.
-
-## Resultado final da correção de redaction
-
-O commit `2207354f` publicou a proteção do healthcheck. O deployment Vercel associado ao commit ficou `Ready` em Production. Após a publicação, o endpoint `/api/v1/health` continuou retornando HTTP 503 porque a credencial Redis configurada ainda foi rejeitada, mas o campo público passou a ser somente `error: "request_failed"`, sem URL, header, token ou corpo de exceção. O login público continuou respondendo HTTP 200 e o Supabase permaneceu `ok`.
-
-A bateria local final passou com **425 arquivos e 4.731 testes**, typecheck aprovado e `pnpm audit --audit-level=high` sem vulnerabilidades conhecidas. O achado de exposição de segredo foi corrigido no código; o item operacional restante é substituir o valor de `UPSTASH_REDIS_REST_TOKEN` por apenas o token REST completo do mesmo banco Upstash, sem aspas, nome de variável, espaços ou quebras de linha, e então redeployar novamente.
+[1]: https://github.com/prevprocesso-maker/DeskcommCRM "Repositório GitHub do DeskcommCRM"
+[2]: https://deskcomm-crm-five.vercel.app "Ambiente público permanente do DeskcommCRM"
+[3]: https://github.com/cloudflare/security-audit-skill "Cloudflare Security Audit Skill"
+[4]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/0d9e2097651487d02ee4be107edbe1dcc3ff1c33 "Commit 0d9e2097"
+[5]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/59dfd10be57a5e9e12b1d856ff5afd152274fe98 "Commit 59dfd10b"
+[6]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/2207354f3bfcf9139e25ee8b97423f42ecfbb575 "Commit 2207354f"
+[7]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/0f802a92939341a80a499f161859f703589e5495 "Commit 0f802a92"
+[8]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/c85efe4601164f7b25a9937f5fcad54781c9022c "Commit c85efe46"
+[9]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/35726feea7b57bab05f1fad3a056091f6d20be75 "Commit 35726fee"
+[10]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/4ed0abeb680f166c5ab413fcae34d726b4f8ce12 "Commit 4ed0abeb"
+[11]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/7203b3b968fa4b8c6bc650cf6a973f8fcfde4d11 "Commit 7203b3b9"
+[12]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/0f6849302d9bbdb2ec3e0a4700189ad9935845c3 "Commit 0f684930"
+[13]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/c4add78fe0d82388f5634bf1e576c7de6e89e818 "Commit c4add78f"
+[14]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/53038e0f8a3c297bd5424382fdb79827cae499a1 "Commit 53038e0f"
+[15]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/0e5754dbc9e59a79384e6d3f074436be6707de97 "Commit 0e5754db"
