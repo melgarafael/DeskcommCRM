@@ -17,7 +17,7 @@
 
 O DeskcommCRM foi executado, publicado e auditado sobre o código-fonte, os handlers de API, os fluxos de autenticação, o isolamento multi-tenant, os scripts de instalação, as dependências, os testes automatizados e o ambiente público. A metodologia de segurança seguiu a abordagem de reconhecimento, análise de superfície, reprodução, correção e verificação independente inspirada na [Cloudflare Security Audit Skill][3].
 
-A versão atual foi publicada na branch `main` e chegou à produção Vercel no deployment `dpl_EAE7nY1fFM5F3RkFE1WyMWXkeKJM`, associado ao commit [`f0f07778`][19]. O deployment terminou em estado **READY**, com o domínio permanente `deskcomm-crm-five.vercel.app` apontando para a nova versão. A página `/login` respondeu HTTP 200 e a rota autenticada `/app/settings/api-tokens` exibiu a seção **Conexão MCP** na sessão do usuário, mesmo sem organização ativa.
+A versão atual foi publicada na branch `main` e chegou à produção Vercel no deployment `dpl_Gq1WvDtSs8EhXXfUvzkZmxWYsYn9`, associado ao commit [`765abc60`][20]. O deployment terminou em estado **READY**, com o domínio permanente `deskcomm-crm-five.vercel.app` apontando para a nova versão. A página `/login` respondeu HTTP 200, a rota autenticada `/app/settings/api-tokens` exibiu a seção **Conexão MCP** e `/onboarding` passou a encaminhar contas sem organização para `/get-started`.
 
 O núcleo Supabase permanece saudável. O healthcheck público respondeu HTTP 503 porque o Redis está configurado com valor inválido e o WhatsApp/WAHA ainda não está configurado; essa resposta é **intencional e correta** para uma dependência real configurada, mas indisponível. A resposta não expõe URL, header, token, corpo de exceção ou mensagem bruta do upstream: o Redis aparece somente como `error: "invalid_configuration"` e `reason: "configuracao_invalida"`, enquanto o WAHA aparece como `not_configured`.
 
@@ -44,6 +44,7 @@ A análise combinou revisão estática, testes unitários e de API, testes de in
 | BUG-07 | Média | A capacidade compartilhada de encerramento emitia manualmente `lead.won`/`lead.lost` enquanto o trigger de banco já era a fonte de eventos para mudança de status. | O `event_log` não possui chave idempotente que impedisse duas linhas semanticamente iguais. | Removida a emissão manual; o trigger `fn_crm_lead_close_on_stage` permanece como fonte única para status, fechamento e evento. | Corrigido no commit [`0f802a92`][7]. |
 | BUG-08 | Baixa | O lint de restrição de canais classificou a nova prosa de `lib/health/status.ts` como menção a provider. | `pnpm lint:channels` reprovou o arquivo por uma menção textual a um provider em comentário. | A documentação foi reescrita de modo neutro, sem alterar o comportamento. | Corrigido no commit [`c85efe46`][8]. |
 | BUG-09 | Média | A tela de Conexão MCP devolvia 403 para uma conta autenticada sem organização ativa, embora o endpoint e as instruções fossem úteis antes do convite/onboarding. | A sessão de produção mostrava “Você não tem nenhuma organização ativa” na Inbox e recebia 403 ao abrir a rota de tokens. | A página passou a exibir endpoint e instruções para qualquer conta autenticada, sem permitir criação de token fora de uma organização. A Inbox também ganhou um link direto para essa orientação. | Corrigido nos commits [`0eb3a74c`][17] e [`f0f07778`][19]. |
+| BUG-10 | Alta para conclusão do produto | Uma conta self-signup sem membership ativa ficava presa: `/app/onboarding` redirecionava para `/login`, e a Inbox só informava que não havia organização, sem caminho de recuperação. | A sessão autenticada em produção não tinha organização; abrir `/onboarding` não permitia criar a primeira organização nem avançar ao wizard. | Criado `/get-started` com nome validado, autenticação server-side, verificação fechada de convite, limite anti-abuso e provisionamento idempotente; `/onboarding`, Inbox e MCP agora apontam para esse caminho. | Corrigido e publicado no commit [`765abc60`][20]. |
 
 Não foi encontrado segredo persistido no repositório. A chave anon pública do Supabase aparece no HTML de login como configuração pública esperada; ela não é a `service_role` key. As credenciais privadas continuam pertencendo exclusivamente às variáveis de ambiente do servidor. A conexão MCP não exibe token em texto claro: a interface mostra apenas o endpoint e os escopos necessários; os tokens são gerenciados somente por administradores de uma organização.
 
@@ -83,22 +84,27 @@ Foi criada uma seção de conexão MCP reutilizável com endpoint derivado da or
 
 A investigação da sessão do usuário confirmou que a conta autenticada não tem associação em nenhuma organização ativa. Isso explica a Inbox sem dados de CRM e o bloqueio de operações tenant-scoped; não é evidência de perda de dados nem falha do Supabase. O código agora orienta a pessoa a concluir `/onboarding` ou aceitar um convite, sem criar uma organização ou conceder privilégios automaticamente. Essa distinção preserva o isolamento multi-tenant.
 
+### 4.8 Recuperação segura do primeiro acesso
+
+O novo caminho `/get-started` é uma recuperação de provisionamento, não um atalho administrativo. O servidor resolve o usuário da sessão, ignora `organization_id` e `role` enviados pelo cliente, recusa tokens de convite válidos ou inválidos, limita tentativas por IP e usuário e chama o provisionamento idempotente com o nome validado. Em caso de sucesso, a pessoa é encaminhada a `/onboarding/welcome`, onde os templates de funil por nicho já existentes podem ser escolhidos. A interface publicada foi validada na sessão autenticada sem submeter dados reais.
+
 ## 5. Validações realizadas
 
 | Verificação | Resultado | Evidência final |
 |---|---:|---|
 | TypeScript | PASS | `pnpm typecheck`, código de saída 0. |
 | Vitest completo | PASS | 429 arquivos e 4.750 testes aprovados. |
-| Testes de regressão desta sessão | PASS | Testes direcionados de MCP, navegação, hub e validação Redis passaram; os arquivos alterados também passaram no lint. |
+| Testes de regressão desta sessão | PASS | 21 testes direcionados de auth, convite e rate limit passaram; os arquivos alterados também passaram no lint. |
 | Testes shell | PASS | `pnpm test:shell`, incluindo scheduler, update guard e validadores do instalador. |
 | ESLint | PASS | 0 erros e 247 avisos não bloqueantes no lint completo. Arquivos alterados também passaram no lint direcionado. |
 | Lint de canais | PASS | `pnpm lint:channels`: 60 arquivos de dívida conhecida, nenhum arquivo novo infrator. |
 | Auditoria de dependências | PASS | `pnpm audit --audit-level=high`: “No known vulnerabilities found”. |
 | `git diff --check` | PASS | Nenhum whitespace problemático. |
-| Build Vercel | PASS | Build remoto concluiu e deployment `dpl_EAE7nY1fFM5F3RkFE1WyMWXkeKJM` ficou READY. |
+| Build Vercel | PASS | Build remoto concluiu e deployment `dpl_Gq1WvDtSs8EhXXfUvzkZmxWYsYn9` ficou READY. |
 | Build local | LIMITAÇÃO DO SANDBOX | Turbopack/Webpack locais foram encerrados por pressão de memória (`SIGTERM`/`SIGKILL`), sem erro de TypeScript ou rota; o build remoto da Vercel concluiu com a lista de rotas. |
 | Login em produção | PASS | `/login` respondeu HTTP 200 e exibiu o formulário. |
 | Conexão MCP em produção | PASS | A sessão autenticada exibiu `Conexão MCP`, `/api/mcp` e as instruções sem exigir organização ativa; a emissão de token permaneceu protegida. |
+| Recuperação do primeiro acesso em produção | PASS PARCIAL | `/get-started` e o redirecionamento de `/onboarding` foram confirmados na sessão autenticada; a criação efetiva da organização aguarda o usuário informar o nome e confirmar o envio. |
 | Healthcheck em produção | PASS COM DEGRADAÇÃO ESPERADA | Supabase `ok`; Redis `down`/`configuracao_invalida`; WAHA `degraded`/`nao_configurado`. |
 | Runtime Vercel recente | PASS | Nenhum erro agregado na janela de dez minutos após o deployment final. |
 
@@ -106,7 +112,7 @@ Os 247 avisos do ESLint são dívida de qualidade distribuída no repositório e
 
 ## 6. Estado de produção
 
-O deployment final é o `dpl_EAE7nY1fFM5F3RkFE1WyMWXkeKJM`, associado ao commit `f0f07778`, com estado `READY` e aliases permanentes `deskcomm-crm-five.vercel.app` e `deskcomm-crm-carloscostaprev.vercel.app`. O Supabase usado pela aplicação pública é `nzhfwgfpprjhlseutxhy.supabase.co`, conforme a configuração pública entregue pelo HTML de login.
+O deployment final é o `dpl_Gq1WvDtSs8EhXXfUvzkZmxWYsYn9`, associado ao commit `765abc60`, com estado `READY` e aliases permanentes `deskcomm-crm-five.vercel.app` e `deskcomm-crm-carloscostaprev.vercel.app`. O Supabase usado pela aplicação pública é `nzhfwgfpprjhlseutxhy.supabase.co`, conforme a configuração pública entregue pelo HTML de login.
 
 A resposta observada em 20/08/2026 às 18:23 GMT-3 foi equivalente a:
 
@@ -135,7 +141,7 @@ Esse 503 não representa falha do login ou do Supabase. Ele comunica corretament
 | IA | Chaves de gateway ausentes na validação local; o sistema degrada com `ai_gateway_key_missing`. | Escolher provedor, cadastrar chave no ambiente server-side e testar geração, fallback, timeout, custo e redaction de dados sensíveis. |
 | `IMPERSONATE_COOKIE_SECRET` | Ausente ou menor que 32 caracteres; o fluxo retorna 503 até ser configurado. | Criar segredo aleatório com pelo menos 32 caracteres, cadastrar na Vercel e testar autorização, expiração e auditoria. |
 | ESLint | 247 avisos não bloqueantes. | Corrigir por grupos, priorizando imports não usados e tipos inconsistentes. |
-| Organização ativa da conta de teste | Pendente por ação do usuário. A sessão autenticada não tem associação a uma organização. | Acessar `/onboarding` para criar a organização, ou aceitar um convite de administrador; depois validar Inbox, contatos, pipelines e leads. |
+| Organização ativa da conta de teste | Caminho corrigido e aguardando ação do usuário. A sessão autenticada ainda não tem associação a uma organização. | Acessar `/get-started` (ou `/onboarding`), informar o nome da empresa e confirmar; se a conta for convidada, usar o link do convite. Depois validar Inbox, contatos, pipelines e leads. |
 | E2E com dados reais | Não foi realizado cadastro com dados pessoais nem criação de lead em organização real nesta sessão. | Após o onboarding, criar um lead de teste e confirmar com segundo usuário que o isolamento por organização impede leitura cruzada. |
 | Build local no sandbox | Limitado pela memória disponível; o build remoto Vercel passou. | Para validação local completa, usar máquina com mais memória ou configurar um runner CI com memória suficiente. |
 
@@ -159,10 +165,11 @@ Esse 503 não representa falha do login ou do Supabase. Ele comunica corretament
 | [`19a631c1`][18] | Seção de conexão MCP com endpoint seguro e instruções. |
 | [`0eb3a74c`][17] | Acesso da orientação MCP para membros não administradores. |
 | [`f0f07778`][19] | Orientação MCP e link direto para contas sem organização ativa. |
+| [`765abc60`][20] | Recuperação segura da primeira organização e encaminhamento do onboarding. |
 
 ## 9. Parecer final
 
-O sistema está **publicado e funcional para autenticação, núcleo Supabase, onboarding disponível e orientação MCP**, com as correções de segurança e regressão desta sessão implantadas na produção. A marca CarlosCostaPrev está ativa na interface sem alterar a estrutura técnica DeskcommCRM. O fluxo de fechamento de leads respeita isolamento organizacional, stages ativos, posicionamento terminal, idempotência e contratos de erro. A conta de teste atualmente não possui organização ativa; portanto, o próximo passo funcional é concluir `/onboarding` ou aceitar um convite antes de testar Inbox, Kanban, contatos e leads. O healthcheck não deve ser alterado para esconder a falha atual do Redis: o próximo passo operacional correto é corrigir a variável de ambiente com valor limpo e conferir a transição para `redis: ok`.
+O sistema está **publicado e funcional para autenticação, núcleo Supabase, recuperação do primeiro acesso, onboarding disponível e orientação MCP**, com as correções de segurança e regressão desta sessão implantadas na produção. A marca CarlosCostaPrev está ativa na interface sem alterar a estrutura técnica DeskcommCRM. O fluxo de fechamento de leads respeita isolamento organizacional, stages ativos, posicionamento terminal, idempotência e contratos de erro. A conta de teste ainda não possui organização ativa, mas agora tem o caminho `/get-started` para criá-la com segurança; o próximo passo do usuário é informar o nome da empresa e confirmar, ou aceitar um convite se essa conta for de membro. O healthcheck não deve ser alterado para esconder a falha atual do Redis: o próximo passo operacional correto é corrigir a variável de ambiente com valor limpo e conferir a transição para `redis: ok`.
 
 A plataforma pode continuar recebendo desenvolvimento incremental. Não é correto declarar WhatsApp, rate limit distribuído, IA ou impersonação como prontos enquanto suas dependências operacionais permanecerem sem configuração válida. Com exceção dessas pendências externas e dos avisos de qualidade não bloqueantes, as verificações reproduzíveis executadas nesta sessão terminaram verdes.
 
@@ -187,3 +194,4 @@ A plataforma pode continuar recebendo desenvolvimento incremental. Não é corre
 [17]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/0eb3a74cf4ee14d6be16284b7a6da4cc2f207c31 "Commit 0eb3a74c"
 [18]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/19a631c106673d45304fa6e3e3e58958f831591b "Commit 19a631c1"
 [19]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/f0f07778529be97681fab0d8e981287b788aa641 "Commit f0f07778"
+[20]: https://github.com/prevprocesso-maker/DeskcommCRM/commit/765abc604c4867798d2a7dcda2a20693f1bf5276 "Commit 765abc60"
