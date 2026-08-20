@@ -119,3 +119,9 @@ Durante a ativação do Upstash em 20/08/2026, uma configuração inválida do a
 A correção foi aplicada em `app/api/v1/health/route.ts`: exceções de Supabase, Redis e WAHA agora retornam apenas `error: "request_failed"`, preservando a classificação segura em `reason` e ocultando detalhes de URL, headers, tokens e corpos de resposta. A configuração correta do Upstash deve conter exclusivamente a URL ou o token, sem nome da variável, aspas ou quebras de linha.
 
 A validação local do patch passou com typecheck, ESLint direcionado, 24 testes unitários de health/channel e `git diff --check`. O deployment público precisa receber este patch antes de considerar o achado encerrado.
+
+## Resultado final da correção de redaction
+
+O commit `2207354f` publicou a proteção do healthcheck. O deployment Vercel associado ao commit ficou `Ready` em Production. Após a publicação, o endpoint `/api/v1/health` continuou retornando HTTP 503 porque a credencial Redis configurada ainda foi rejeitada, mas o campo público passou a ser somente `error: "request_failed"`, sem URL, header, token ou corpo de exceção. O login público continuou respondendo HTTP 200 e o Supabase permaneceu `ok`.
+
+A bateria local final passou com **425 arquivos e 4.731 testes**, typecheck aprovado e `pnpm audit --audit-level=high` sem vulnerabilidades conhecidas. O achado de exposição de segredo foi corrigido no código; o item operacional restante é substituir o valor de `UPSTASH_REDIS_REST_TOKEN` por apenas o token REST completo do mesmo banco Upstash, sem aspas, nome de variável, espaços ou quebras de linha, e então redeployar novamente.
