@@ -80,3 +80,14 @@ A primeira publicação, [`0d9e2097`](https://github.com/prevprocesso-maker/Desk
 [3]: https://supabase.com/docs/guides/database/webhooks "Supabase Database Webhooks"
 
 [4]: https://github.com/prevprocesso-maker/DeskcommCRM "Repositório DeskcommCRM"
+
+
+## Implementação adicional — EPIC-05 / Custom Fields
+
+Após a auditoria, foi implementada a primeira tarefa funcional do backlog de Customer 360. A migration `20260820100000_0159_contact_custom_fields.sql` adiciona `contacts.custom_fields` como `jsonb NOT NULL`, com valor padrão `{}` e constraint que rejeita valores que não sejam objetos JSON. A mesma alteração foi registrada no `supabase/baseline.sql` e em `supabase/migrations/MANIFEST.md`, conforme o gate de consistência do repositório.
+
+O backend passou a incluir `custom_fields` no SELECT, criação e atualização de contatos. O schema Zod aceita mapas JSON com chaves de até 80 caracteres e limite de 32 KB, reduzindo risco de payload abusivo. A tela de detalhe reutiliza `crm_pipelines.settings.fields[]`, ignora campos marcados como `deprecated` e fornece essas definições ao `CustomFieldsEditor` no diálogo de edição de contato.
+
+A migration foi aplicada com sucesso no projeto Supabase autorizado pelo usuário e verificada diretamente no banco: a coluna existe como `jsonb`, é `NOT NULL` e possui default `{}`. A implementação foi publicada nos commits `35726fee` e `4ed0abeb`.
+
+A validação final após a correção do manifesto ficou verde: **423 arquivos Vitest e 4.726 testes aprovados**, typecheck aprovado, auditoria de dependências sem vulnerabilidades conhecidas, testes shell aprovados, login público HTTP 200 e healthcheck público HTTP 200 com status `degraded` apenas para Redis e WAHA não configurados.
