@@ -26,6 +26,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
+import { isOptionalEndpointUnconfigured, overallHealth } from "@/lib/health/status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -103,7 +104,7 @@ async function checkRedis(): Promise<Check> {
   const t0 = Date.now();
   const url = env.UPSTASH_REDIS_REST_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) {
+  if (!url || !token || isOptionalEndpointUnconfigured(url)) {
     return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
   }
   try {
@@ -141,7 +142,7 @@ async function checkRedis(): Promise<Check> {
 async function checkWaha(): Promise<Check> {
   const t0 = Date.now();
   const base = env.WAHA_API_BASE_URL;
-  if (!base) {
+  if (!base || isOptionalEndpointUnconfigured(base)) {
     return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
   }
   try {
@@ -210,15 +211,7 @@ export async function GET(req: NextRequest) {
   const filtrar = verboso ? (c: Check) => c : semAlvo;
   const checks = { supabase: filtrar(supabase), redis: filtrar(redis), waha: filtrar(waha) };
 
-  const anyDown = Object.values(checks).some((c) => c.status === "down");
-  const anyDegraded = Object.values(checks).some((c) => c.status === "degraded");
-  const status: "healthy" | "degraded" | "unhealthy" = anyDown
-    ? "unhealthy"
-    : anyDegraded
-      ? "degraded"
-      : "healthy";
-
-  const httpStatus = status === "unhealthy" ? 503 : 200;
+  const { status, httpStatus } = overallHealth(Object.values(checks));
 
   return NextResponse.json(
     {
