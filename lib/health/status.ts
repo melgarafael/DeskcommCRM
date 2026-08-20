@@ -8,9 +8,9 @@ export type HealthOverallStatus = "healthy" | "degraded" | "unhealthy";
 
 /**
  * Endereços usados como placeholders pelo setup/local dev não representam uma
- * falha de um serviço opcional. Eles devem aparecer como "degraded" para que
- * o endpoint de liveness público não devolva 503 antes de Redis/WAHA serem
- * contratados/configurados.
+ * falha de um serviço opcional. Eles devem aparecer como "degraded" para que o
+ * endpoint de liveness público não devolva 503 antes das integrações opcionais
+ * serem contratadas/configuradas.
  */
 export function isOptionalEndpointUnconfigured(value: string | undefined): boolean {
   const normalized = value?.trim().toLowerCase() ?? "";
