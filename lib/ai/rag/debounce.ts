@@ -15,6 +15,7 @@ import { env } from "@/lib/env";
 
 let _redis: Redis | null = null;
 let _fallbackWarned = false;
+let _redisFailureWarned = false;
 
 function getRedis(): Redis | null {
   if (_redis) return _redis;
@@ -32,7 +33,8 @@ function getRedis(): Redis | null {
     return null;
   }
 
-  _redis = new Redis({ url, token });
+  // Falhar rápido: o fallback local já existe e retries do SDK só prendem o worker.
+  _redis = new Redis({ url, token, retry: false });
   return _redis;
 }
 
@@ -76,9 +78,19 @@ export async function acquireDebounce(key: string, ttlSec: number): Promise<bool
     return memAcquire(key, ttlSec);
   }
 
-  // SET NX EX — returns "OK" if set, null if key already exists
-  const result = await redis.set(key, "1", { nx: true, ex: ttlSec });
-  return result === "OK";
+  // SET NX EX — returns "OK" if set, null if key already exists.
+  try {
+    const result = await redis.set(key, "1", { nx: true, ex: ttlSec });
+    return result === "OK";
+  } catch (error) {
+    if (!_redisFailureWarned) {
+      console.warn("[rag-debounce] Redis unavailable — using in-memory fallback (not safe for multi-instance)", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      _redisFailureWarned = true;
+    }
+    return memAcquire(key, ttlSec);
+  }
 }
 
 /**
@@ -92,5 +104,12 @@ export async function releaseDebounce(key: string): Promise<void> {
     return;
   }
 
-  await redis.del(key);
+  try {
+    await redis.del(key);
+  } catch (error) {
+    console.warn("[rag-debounce] Redis release failed; continuing with local state", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    memRelease(key);
+  }
 }
