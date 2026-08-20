@@ -93,7 +93,7 @@ async function checkSupabase(): Promise<Check> {
     return {
       status: "down",
       latency_ms: Date.now() - t0,
-      error: e instanceof Error ? e.message : String(e),
+      error: "request_failed",
       reason: classificarFalhaDeAlcance(e),
       target: alvoDe(url),
     };
@@ -132,7 +132,7 @@ async function checkRedis(): Promise<Check> {
     return {
       status: "down",
       latency_ms: Date.now() - t0,
-      error: e instanceof Error ? e.message : String(e),
+      error: "request_failed",
       reason: classificarFalhaDeAlcance(e),
       target: alvoDe(url),
     };
@@ -168,7 +168,7 @@ async function checkWaha(): Promise<Check> {
     return {
       status: "down",
       latency_ms: Date.now() - t0,
-      error: e instanceof Error ? e.message : String(e),
+      error: "request_failed",
       reason: classificarFalhaDeAlcance(e),
       target: alvoDe(base),
     };

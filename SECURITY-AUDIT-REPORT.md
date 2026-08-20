@@ -111,3 +111,11 @@ A liberação de lock também passou a tolerar indisponibilidade do Redis e limp
 A validação direcionada passou com **17 testes** e o typecheck passou. A suíte completa desta fase passou com **425 arquivos e 4.731 testes aprovados**, a auditoria de dependências não encontrou vulnerabilidades conhecidas, o login público continuou HTTP 200 e o healthcheck continuou HTTP 200 com Supabase `ok` e Redis/WAHA `degraded / nao_configurado`. O branch permaneceu limpo e sincronizado com `origin/main`.
 
 Esta implementação não ativa Redis em produção por conta própria. Enquanto `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN` não forem configurados, o sistema sinaliza a limitação e o fallback permanece local, portanto não deve ser considerado rate limit ou lock distribuído entre múltiplas instâncias.
+
+## Atualização — configuração Redis e correção de exposição de segredo
+
+Durante a ativação do Upstash em 20/08/2026, uma configuração inválida do ambiente juntou texto de configuração e credencial ao valor do token. O cliente Redis rejeitou a credencial, e a mensagem de exceção do `fetch` reproduziu parte do valor no JSON público do `/api/v1/health`. O token não foi salvo no repositório, mas a resposta pública configurou um achado de segurança de severidade alta por possível exposição de segredo.
+
+A correção foi aplicada em `app/api/v1/health/route.ts`: exceções de Supabase, Redis e WAHA agora retornam apenas `error: "request_failed"`, preservando a classificação segura em `reason` e ocultando detalhes de URL, headers, tokens e corpos de resposta. A configuração correta do Upstash deve conter exclusivamente a URL ou o token, sem nome da variável, aspas ou quebras de linha.
+
+A validação local do patch passou com typecheck, ESLint direcionado, 24 testes unitários de health/channel e `git diff --check`. O deployment público precisa receber este patch antes de considerar o achado encerrado.
