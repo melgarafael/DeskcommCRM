@@ -10,6 +10,26 @@
  */
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
 
+const WAHA_REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * WAHA é uma dependência externa e pode ficar offline. O timeout explícito evita
+ * prender uma Server Action/rota até o limite do runtime e o wrapper não inclui
+ * o corpo devolvido pelo serviço nas exceções, pois ele pode conter PII.
+ */
+async function fetchWaha(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WAHA_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("waha_timeout");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class WahaClient {
   constructor(
     private readonly baseUrl: string,
@@ -24,18 +44,17 @@ export class WahaClient {
    */
   async startSession(name: string): Promise<{ qr?: string; status: string }> {
     // 1) Create session (ignore 422/409 = already exists)
-    const createRes = await fetch(`${this.baseUrl}/api/sessions`, {
+    const createRes = await fetchWaha(`${this.baseUrl}/api/sessions`, {
       method: "POST",
       headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ name, config: {} }),
     });
     if (!createRes.ok && createRes.status !== 422 && createRes.status !== 409) {
-      const body = await createRes.text().catch(() => "");
-      throw new Error(`waha_create_${createRes.status}: ${body.slice(0, 200)}`);
+      throw new Error(`waha_create_${createRes.status}`);
     }
 
     // 2) Start session
-    const startRes = await fetch(
+    const startRes = await fetchWaha(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/start`,
       {
         method: "POST",
@@ -44,8 +63,7 @@ export class WahaClient {
       },
     );
     if (!startRes.ok && startRes.status !== 422 && startRes.status !== 409) {
-      const body = await startRes.text().catch(() => "");
-      throw new Error(`waha_start_${startRes.status}: ${body.slice(0, 200)}`);
+      throw new Error(`waha_start_${startRes.status}`);
     }
     if (startRes.status === 422 || startRes.status === 409) {
       // Already started — fetch and return current state
@@ -59,7 +77,7 @@ export class WahaClient {
    * are treated as success so callers can compose reconnect = stop + start.
    */
   async stopSession(name: string): Promise<void> {
-    const res = await fetch(
+    const res = await fetchWaha(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/stop`,
       {
         method: "POST",
@@ -68,8 +86,7 @@ export class WahaClient {
       },
     );
     if (!res.ok && ![404, 422, 409].includes(res.status)) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`waha_stop_${res.status}: ${body.slice(0, 200)}`);
+      throw new Error(`waha_stop_${res.status}`);
     }
   }
 
@@ -87,7 +104,7 @@ export class WahaClient {
    * como sucesso — quem chama quer o efeito, não a transição.
    */
   async logoutSession(name: string): Promise<void> {
-    const res = await fetch(
+    const res = await fetchWaha(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/logout`,
       {
         method: "POST",
@@ -96,8 +113,7 @@ export class WahaClient {
       },
     );
     if (!res.ok && ![404, 422, 409].includes(res.status)) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`waha_logout_${res.status}: ${body.slice(0, 200)}`);
+      throw new Error(`waha_logout_${res.status}`);
     }
   }
 
@@ -106,7 +122,7 @@ export class WahaClient {
    * Idempotente pelo mesmo motivo do logout: 404 = já não existe = sucesso.
    */
   async deleteSession(name: string): Promise<void> {
-    const res = await fetch(
+    const res = await fetchWaha(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`,
       {
         method: "DELETE",
@@ -114,13 +130,12 @@ export class WahaClient {
       },
     );
     if (!res.ok && ![404, 422, 409].includes(res.status)) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`waha_delete_${res.status}: ${body.slice(0, 200)}`);
+      throw new Error(`waha_delete_${res.status}`);
     }
   }
 
   async getSessionQr(name: string): Promise<{ qr?: string; status: string }> {
-    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
+    const res = await fetchWaha(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
       headers: { "X-Api-Key": this.apiKey },
     });
     if (!res.ok) throw new Error(`waha_${res.status}`);
@@ -141,7 +156,7 @@ export class WahaClient {
    */
   async getProfilePictureUrl(session: string, chatId: string): Promise<string | null> {
     try {
-      const res = await fetch(
+      const res = await fetchWaha(
         `${this.baseUrl}/api/contacts/profile-picture` +
           `?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}`,
         { headers: { "X-Api-Key": this.apiKey } },
@@ -171,7 +186,7 @@ export class WahaClient {
    */
   async resolvePhoneForLid(session: string, lid: string): Promise<string | null> {
     try {
-      const res = await fetch(
+      const res = await fetchWaha(
         `${this.baseUrl}/api/${encodeURIComponent(session)}/lids/${encodeURIComponent(lid)}`,
         { headers: { "X-Api-Key": this.apiKey } },
       );
@@ -189,7 +204,7 @@ export class WahaClient {
   }
 
   async sendMessage(session: string, chatId: string, text: string): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}/api/sendText`, {
+    const res = await fetchWaha(`${this.baseUrl}/api/sendText`, {
       method: "POST",
       headers: {
         "X-Api-Key": this.apiKey,
@@ -206,14 +221,13 @@ export class WahaClient {
     chatId: string,
     plan: { endpoint: string; payload: Record<string, unknown> },
   ): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}/api/${plan.endpoint}`, {
+    const res = await fetchWaha(`${this.baseUrl}/api/${plan.endpoint}`, {
       method: "POST",
       headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ session, chatId, ...plan.payload }),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`waha_${res.status}: ${body.slice(0, 200)}`);
+      throw new Error(`waha_${res.status}`);
     }
     return res.json();
   }
