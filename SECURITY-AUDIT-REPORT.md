@@ -1,0 +1,82 @@
+# Relatório de Auditoria de Segurança e Bugs — DeskcommCRM
+
+**Projeto:** DeskcommCRM  
+**Repositório:** [prevprocesso-maker/DeskcommCRM](https://github.com/prevprocesso-maker/DeskcommCRM)  
+**Ambiente público:** [deskcomm-crm-five.vercel.app](https://deskcomm-crm-five.vercel.app)  
+**Data da validação:** 20 de agosto de 2026  
+**Responsável:** Manus AI
+
+## Sumário executivo
+
+A auditoria foi conduzida sobre o repositório, a suíte de testes, os scripts de instalação, as rotas críticas e o ambiente público. A metodologia adotada foi inspirada na [Cloudflare Security Audit Skill](https://github.com/cloudflare/security-audit-skill), que recomenda reconhecimento, análise de superfícies, validação adversarial, correção e verificação independente. A seleção foi feita após comparar outras skills de segurança disponíveis no GitHub; a opção da Cloudflare foi escolhida por ser especificamente orientada a auditoria reproduzível, e não apenas a revisão genérica de código.
+
+O resultado final é **aprovado para continuidade do desenvolvimento**, com duas correções de testes e uma correção de comportamento em produção. A suíte completa terminou com **423 arquivos de teste aprovados e 4.724 testes aprovados**. O TypeScript terminou sem erros, o ESLint terminou com código de saída zero e 247 avisos não bloqueantes, e `pnpm audit --audit-level=high` não reportou vulnerabilidades conhecidas. O login público respondeu HTTP 200 e os cabeçalhos de proteção foram observados. O healthcheck público passou de HTTP 503 para HTTP 200 com estado `degraded`, porque Redis e WAHA ainda não estão configurados, enquanto o Supabase respondeu `ok`.
+
+> **Conclusão operacional:** não restaram erros reproduzíveis bloqueantes nas verificações executadas. A implantação continua funcional para autenticação e para o núcleo Supabase. WhatsApp/WAHA, Redis e IA permanecem itens de configuração e validação funcional, não falhas silenciosas que devam ser tratadas como concluídas.
+
+## Escopo e metodologia
+
+A análise cobriu a validação de ambiente, isolamento por organização e RLS já presentes no projeto, rotas de autenticação e healthcheck, proteção de headers, busca por segredos e chamadas a provedores de IA, dependências, testes unitários e de API, scripts shell do Hostgator, e a resposta HTTP do domínio publicado. As referências de integração do Supabase foram conferidas na documentação de [Auth Hooks](https://supabase.com/docs/guides/auth/auth-hooks) e [Database Webhooks](https://supabase.com/docs/guides/database/webhooks), que distinguem hooks de autenticação de webhooks acionados por eventos de tabela.
+
+A validação foi feita em duas camadas. Primeiro, os problemas foram reproduzidos no repositório com comandos determinísticos. Depois, as correções foram publicadas na branch `main` e verificadas pelo domínio público. A API do Vercel retornou 403 para a listagem de deployments nesta sessão; por isso, a comprovação final usou a própria URL pública, o status HTTP, o corpo JSON e os cabeçalhos da aplicação, sem inferir sucesso a partir de uma API que não autorizou a consulta.
+
+## Achados e correções
+
+| ID | Severidade | Achado | Evidência | Correção | Estado |
+|---|---:|---|---|---|---|
+| BUG-01 | Baixa | O teste de alcance do resolver de modelos era sensível à coloração ANSI do `git grep`; em ambientes que habilitavam cor, a comparação de caminhos falhava apesar do código estar correto. | `tests/unit/openrouter-alcance.test.ts` falhava por saída colorida do Git. | Foi adicionado `--color=never` à chamada controlada de `git grep`. | Corrigido e publicado no commit [`0d9e2097`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/0d9e2097). |
+| BUG-02 | Baixa | O teste do instalador interativo respondia à posição errada da pergunta `APP_ACCENT_HEX`, deixando a fila de respostas desalinhada. | `hostgator-setup-kit/test-validators.sh` falhava ao validar a posição da cor da marca. | A posição foi corrigida de 5 para 4, com comentários alinhados à ordem real da fila. | Corrigido e publicado no commit [`0d9e2097`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/0d9e2097). |
+| BUG-03 | Média | O healthcheck público retornava 503 quando Redis e WAHA tinham placeholders ou endereços locais, mesmo quando o Supabase estava saudável e as integrações opcionais ainda não haviam sido contratadas/configuradas. | `GET /api/v1/health` retornava `unhealthy`, Redis `endereco_nao_resolve` e WAHA `conexao_recusada`. | Endpoints sentinela são classificados como `degraded`/`nao_configurado`; falhas reais de serviços configurados continuam retornando 503. Foi criada uma função pura para a classificação e testes de regressão. | Corrigido e publicado no commit [`59dfd10b`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/59dfd10b). |
+
+A correção do healthcheck é deliberadamente conservadora. Ela não ignora indisponibilidade real: somente valores vazios, placeholders e endereços locais usados para setup são tratados como não configurados. Um Redis ou WAHA configurado com endereço real que responder com erro permanece `down` e mantém o status HTTP 503, preservando a capacidade de monitoramento.
+
+## Validações executadas
+
+| Verificação | Resultado | Observação |
+|---|---:|---|
+| TypeScript (`pnpm typecheck`) | PASS | Código de saída 0, sem erros de tipo. |
+| ESLint (`pnpm lint`) | PASS | Código de saída 0; 247 avisos, 0 erros. |
+| Auditoria de dependências (`pnpm audit --audit-level=high`) | PASS | “No known vulnerabilities found”. |
+| Vitest completo | PASS | 423 arquivos e 4.724 testes aprovados. |
+| Testes shell do Hostgator | PASS | Scheduler, update guard e validadores aprovados. |
+| Teste direcionado do healthcheck | PASS | 3 casos, incluindo placeholder, estado degradado e falha real. |
+| Teste direcionado do resolver OpenRouter | PASS | 6 casos aprovados. |
+| `/login` em produção | PASS | HTTP 200, marcação de login presente. |
+| `/api/v1/health` em produção | PASS | HTTP 200; Supabase `ok`, Redis/WAHA `degraded` e `nao_configurado`. |
+| Cabeçalhos HTTP | PASS | HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, Referrer-Policy e Permissions-Policy observados. |
+| Estado do Git | PASS | `main` sincronizada com `origin/main`, sem alterações pendentes. |
+
+Os avisos do ESLint são dívida de qualidade, não falhas de compilação ou de execução. Eles devem ser tratados em uma tarefa própria para evitar misturar limpeza ampla com correções de segurança já validadas.
+
+## Segurança observada
+
+A rota de healthcheck continua pública para permitir monitoramento externo, mas não expõe os alvos internos Redis/WAHA sem `verbose=1` acompanhado do segredo interno. A comparação do segredo usa comparação em tempo constante e rejeita credenciais vazias. Os cabeçalhos HTTP observados reduzem riscos de enquadramento, MIME sniffing, downgrade de transporte e uso indevido de recursos do navegador.
+
+A análise também confirmou que o projeto possui testes de invariantes para roteamento de modelos, validações de upload, proteção de credenciais em URLs, isolamento organizacional e comportamento de funções autenticadas. A presença dos testes não substitui uma prova E2E com usuários reais em cada ambiente, mas diminui o risco de regressão durante a próxima etapa de desenvolvimento.
+
+## Backlog residual e limites da conclusão
+
+| Item | Impacto | Próxima ação recomendada |
+|---|---|---|
+| WAHA/WhatsApp | A integração está `degraded` porque não há serviço WAHA ativo no Vercel. O login e o núcleo Supabase não dependem dessa prova. | Configurar WAHA em ambiente persistente, definir URL, chave, webhook e HMAC, e executar teste de sessão, envio, recebimento e assinatura. |
+| Redis | O healthcheck indica `nao_configurado`; recursos que dependem de rate limit ou filas distribuídas não devem ser considerados validados em produção. | Criar/configurar Upstash ou Redis compatível, verificar token, executar testes de concorrência e conferir o isolamento entre organizações. |
+| IA | As variáveis de provedores de IA estão ausentes ou não foram validadas nesta auditoria de integração externa. A aplicação degrada com aviso de `ai_gateway_key_missing`. | Escolher um provedor real, cadastrar a chave fora do repositório e executar testes de chat, fallback, custo, timeout e redaction de dados sensíveis. |
+| `IMPERSONATE_COOKIE_SECRET` | A aplicação registra aviso quando a chave está ausente ou tem menos de 32 caracteres; o fluxo correspondente retorna 503 até ser configurado. | Definir segredo aleatório com pelo menos 32 caracteres em produção e testar autorização, expiração e auditoria do fluxo. |
+| Avisos do ESLint | 247 avisos não bloqueantes reduzem a clareza da manutenção e podem esconder novos avisos. | Corrigir por grupos pequenos, começando por imports não usados e tipos inconsistentes, sem usar `--fix` em massa sem revisão. |
+| Fluxos reais de cadastro e RLS | Foram validados por testes e pela presença do Supabase saudável, mas o relatório não executou cadastro com dados pessoais do usuário nem criou registros reais em sua organização. | Executar manualmente um cadastro de teste, criação de organização e lead, depois confirmar que um segundo usuário não lê dados da primeira organização. |
+
+Esses itens não foram marcados como “corrigidos” porque dependem de serviços, credenciais ou dados operacionais que não estavam disponíveis para uma validação segura nesta sessão. O comportamento da aplicação agora os sinaliza explicitamente em vez de confundir ausência de configuração com indisponibilidade inesperada.
+
+## Commits entregues
+
+A primeira publicação, [`0d9e2097`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/0d9e2097), estabilizou os dois testes reproduzíveis encontrados na auditoria. A segunda, [`59dfd10b`](https://github.com/prevprocesso-maker/DeskcommCRM/commit/59dfd10b), corrigiu o healthcheck, adicionou `lib/health/status.ts` e incluiu três testes de regressão. A branch `main` e `origin/main` estavam alinhadas na validação final.
+
+## Referências
+
+[1]: https://github.com/cloudflare/security-audit-skill "Cloudflare Security Audit Skill"
+
+[2]: https://supabase.com/docs/guides/auth/auth-hooks "Supabase Auth Hooks"
+
+[3]: https://supabase.com/docs/guides/database/webhooks "Supabase Database Webhooks"
+
+[4]: https://github.com/prevprocesso-maker/DeskcommCRM "Repositório DeskcommCRM"

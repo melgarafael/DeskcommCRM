@@ -1374,12 +1374,24 @@ CREATE TABLE IF NOT EXISTS "public"."contacts" (
     CONSTRAINT "contacts_email_format" CHECK ((("email" IS NULL) OR ("email" ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'::"text"))),
     CONSTRAINT "contacts_phone_e164_format" CHECK ((("phone_number" IS NULL) OR ("phone_number" ~ '^\+\d{8,15}$'::"text")))
 );
-
-
 ALTER TABLE "public"."contacts" OWNER TO "postgres";
-
-
 COMMENT ON TABLE "public"."contacts" IS 'Pessoa fisica no escopo de um tenant. CPF criptografado at-rest. is_anonymized irreversivel (L-04).';
+
+-- -----------------------------------------------------------------------------
+-- Forward migration 0159 — custom_fields em contacts (EPIC-05 S-05.06)
+-- -----------------------------------------------------------------------------
+alter table public.contacts
+  add column if not exists custom_fields jsonb not null default '{}'::jsonb;
+
+comment on column public.contacts.custom_fields is
+  'Valores de campos personalizados do contato. As definições são declaradas no settings.fields do pipeline e valores legados são preservados.';
+
+alter table public.contacts
+  drop constraint if exists contacts_custom_fields_object;
+
+alter table public.contacts
+  add constraint contacts_custom_fields_object
+  check (jsonb_typeof(custom_fields) = 'object');
 
 
 
