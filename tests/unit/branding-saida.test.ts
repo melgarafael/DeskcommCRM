@@ -176,7 +176,7 @@ describe("marcaDaSaida — NUNCA LANÇA", () => {
     clienteExplode = true;
 
     const marca = await marcaDaSaida("11111111-1111-4111-8111-111111111111");
-    expect(marca.nome).toBe("DeskcommCRM");
+    expect(marca.nome).toBe("CarlosCostaPrev – Sistema Integrado de Gestão");
     expect(marca.accent).toBe(ACCENT_DO_PRODUTO);
     expect(marca.accentFg).toBe(melhorFrenteSobre(ACCENT_DO_PRODUTO));
   });
@@ -199,7 +199,7 @@ describe("marcaDaSaida — NUNCA LANÇA", () => {
     for (const settings of ["texto", 42, [], { branding: "isto era um objeto" }, null]) {
       respostaDaOrganizacao = { data: { settings }, error: null };
       const marca = await marcaDaSaida("11111111-1111-4111-8111-111111111111");
-      expect(marca.nome).toBe("DeskcommCRM");
+      expect(marca.nome).toBe("CarlosCostaPrev – Sistema Integrado de Gestão");
     }
   });
 

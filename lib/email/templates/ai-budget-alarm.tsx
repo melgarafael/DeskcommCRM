@@ -1,3 +1,5 @@
+import { DEFAULT_APP_NAME } from "@/lib/branding";
+
 /**
  * AI budget alarm email (PT-BR). Plain HTML — no React Email runtime.
  *
@@ -27,7 +29,7 @@ export function buildBudgetAlarmEmail(opts: BudgetAlarmEmailOptions): {
   text: string;
 } {
   const pctStr = `${opts.pct.toFixed(2)}%`;
-  const subject = `Alerta IA: orçamento atingiu ${pctStr} — DeskcommCRM`;
+  const subject = `Alerta IA: orçamento atingiu ${pctStr} — ${DEFAULT_APP_NAME}`;
   const orgLine = opts.orgName
     ? `<p style="margin:0 0 16px;font-size:14px;color:#57534e">Organização: <strong>${escapeHtml(opts.orgName)}</strong></p>`
     : "";
