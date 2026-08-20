@@ -36,13 +36,14 @@ describe("NavHub", () => {
     expect(screen.getByRole("link", { name: /Agentes/ })).toBeTruthy();
   });
 
-  it("some com a seção inteira quando a permissão esvazia", () => {
+  it("mantém a seção com a conexão MCP para viewers", () => {
     render(
       <NavHub group="organizacao" isPlatformAdmin={false} role="viewer" title="Org" subtitle="" />,
     );
     const secoes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim());
     expect(secoes).toContain("Sua conta");
-    expect(secoes).not.toContain("Dados e acesso");
+    expect(secoes).toContain("Dados e acesso");
+    expect(screen.getByRole("link", { name: /Conexão MCP/ })).toBeTruthy();
   });
 
   it("agrupa os cards sob a própria seção, não numa lista solta", () => {

@@ -213,7 +213,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await inviteeCtx.close();
   });
 
-  test("2. escopo pós-aceite: agent vê inbox/kanban, bloqueado em billing/api-tokens", async ({ page }) => {
+  test("2. escopo pós-aceite: agent vê inbox/kanban/MCP, bloqueado em billing", async ({ page }) => {
     await login(page, inv.invitee_email);
 
     await page.goto("/app/settings/billing");
@@ -221,7 +221,9 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await expect(page.getByRole("heading", { name: /403/ })).toBeVisible();
 
     await page.goto("/app/settings/api-tokens");
-    await page.waitForURL(/\/403/);
+    await expect(page.getByRole("heading", { name: "Conexão MCP" })).toBeVisible();
+    await expect(page.getByText("Conectar um agente ao CRM via MCP")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Criar token" })).toHaveCount(0);
 
     await page.goto("/app/inbox");
     await expect(page.getByText("Selecione uma conversa", { exact: true })).toBeVisible();

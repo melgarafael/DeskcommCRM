@@ -500,12 +500,12 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
   {
     href: "/app/settings/api-tokens",
-    label: "API Tokens",
-    description: "Chaves para outro sistema conversar com o seu CRM.",
+    label: "Conexão MCP",
+    description: "Endpoint MCP e tokens para agentes conversarem com o seu CRM.",
     icon: Lock,
     group: "organizacao",
     section: "Dados e acesso",
-    minRole: "admin",
+    minRole: "viewer",
   },
 ];
 

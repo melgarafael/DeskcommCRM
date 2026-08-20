@@ -126,17 +126,17 @@ describe("hubSections", () => {
     expect(hrefs).toContain("/app/ai/knowledge/sources");
   });
 
-  it("não vaza destino acima do papel", () => {
+  it("mostra a conexão MCP sem vazar a administração de tokens", () => {
     const hrefs = hubSections("organizacao", VIEWER.platform, VIEWER.role).flatMap((s) =>
       s.items.map((i) => i.href),
     );
-    expect(hrefs).not.toContain("/app/settings/api-tokens");
+    expect(hrefs).toContain("/app/settings/api-tokens");
     expect(hrefs).toContain("/app/settings/profile");
   });
 
-  it("some com a seção que ficou vazia pela permissão", () => {
+  it("mantém Dados e acesso quando a conexão MCP é visível", () => {
     const secoes = hubSections("organizacao", VIEWER.platform, VIEWER.role).map((s) => s.section);
-    expect(secoes).not.toContain("Dados e acesso");
+    expect(secoes).toContain("Dados e acesso");
   });
 });
 

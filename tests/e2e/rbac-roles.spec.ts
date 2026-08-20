@@ -1,8 +1,9 @@
 /**
  * G2-04 — E2E da matriz role×recurso (spec 13 §4) com usuários seed reais.
  *
- * Papéis: agent bloqueado em /app/settings/api-tokens e /app/settings/billing;
- * admin (com MFA TOTP — secret conhecido do seed) acessa ambas; agent vê inbox
+ * Papéis: agent vê a informação MCP em /app/settings/api-tokens, mas continua
+ * bloqueado em billing; admin (com MFA TOTP — secret conhecido do seed) acessa
+ * a gestão de tokens e billing; agent vê inbox
  * e kanban; viewer não consegue enviar mensagem (403 server-side).
  *
  * Pré-requisito: `npx tsx scripts/seed-e2e-credentials.ts` (o spec roda o seed
@@ -46,7 +47,8 @@ const creds = loadCreds();
 // para pegá-la.
 //
 // ⚠️ MEDIDO antes de afirmar: as duas telas do caso do admin
-// (`app/app/settings/api-tokens/page.tsx:12` e `.../billing/page.tsx:20`)
+  // (`app/app/settings/api-tokens/page.tsx` e `.../billing/page.tsx:20`)
+
 // gateiam em `ROLE_RANK[activeOrg.role] < ROLE_RANK.admin` **sem** escape de
 // `is_platform_admin`, e `requireRole` só bypassa com `allowPlatformAdmin: true`
 // explícito. Hoje a promoção NÃO muda o desfecho deste arquivo. A precondição
@@ -101,12 +103,13 @@ async function expectNoBlockingA11y(page: Page, excludeSelector?: string): Promi
 }
 
 test.describe("rbac role matrix (spec 13 §4)", () => {
-  test("agent é bloqueado em api-tokens e billing (403)", async ({ page }) => {
+  test("agent vê conexão MCP, mas continua bloqueado em billing", async ({ page }) => {
     await login(page, creds.users.agent!.email);
 
     await page.goto("/app/settings/api-tokens");
-    await page.waitForURL(/\/403/);
-    await expect(page.getByRole("heading", { name: /403 — Sem permissão/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Conexão MCP" })).toBeVisible();
+    await expect(page.getByText("Conectar um agente ao CRM via MCP")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Criar token" })).toHaveCount(0);
 
     await page.goto("/app/settings/billing");
     await page.waitForURL(/\/403/);
