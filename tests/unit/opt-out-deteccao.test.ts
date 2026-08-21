@@ -65,6 +65,65 @@ const NAO_PEDE_PARA_SAIR = [
   "   ",
 ];
 
+/**
+ * ─── ESPANHOL, e por que ele não é "mais um idioma" ─────────────────────────
+ *
+ * `baja` é a palavra que a PLANTILLA pede. Medido numa instalação real: 6 das 9
+ * definições aprovadas terminam com "Respondé BAJA para no recibir más", todas
+ * de categoria MARKETING. Três clientes pediram e nenhum foi atendido, porque a
+ * lista só tinha português e inglês.
+ *
+ * A promessa está escrita na mensagem que a empresa manda, com aprovação da
+ * plataforma — e é no canal onde denúncia de spam derruba o quality rating e faz
+ * a plataforma recusar definições NOVAS. Perde-se as aprovadas, não só a linha.
+ *
+ * Os casos negativos são metade do valor: a âncora em verbo de comunicação é o
+ * que impede o falso positivo NOVO, e sem ela "no quiero recibir la factura por
+ * aqui" bloquearia um cliente que está pedindo para CONTINUAR sendo atendido.
+ */
+const ESPANHOL_PEDE_PARA_SAIR = [
+  "BAJA",
+  "Baja",
+  "baja.",
+  "darme de baja",
+  "dar de baja la suscripcion",
+  "quiero dar de baja la suscripcion",
+  "no quiero recibir mas mensajes",
+  "no quiero recibir más mensajes",
+  "por favor no me escriban mas",
+  "me desuscribo",
+  "sacame de la lista",
+  "cancelar la suscripcion",
+];
+
+const ESPANHOL_NAO_PEDE = [
+  // O caso que motivou os três estados: cliente ATIVO perguntando sobre pausar
+  // o anúncio dele. Bloqueá-lo tiraria as mensagens de quem está comprando.
+  "Doy de baja la pauta?",
+  "che, la baja temporada nos mato las ventas",
+  "necesito rebajar el precio",
+  "Y el abuelo subiendo y bajando bolsones",
+  "puedo cancelar el turno del martes?",
+  // Troca de canal, não descadastro — o mesmo raciocínio da regra de "ligação".
+  "no quiero recibir la factura por aqui, manda por email",
+  // Outra lista. Quem escreve isto QUER continuar sendo atendido.
+  "sacame de la lista de espera",
+];
+
+describe("espanhol — a palavra que a plantilla pede", () => {
+  for (const texto of ESPANHOL_PEDE_PARA_SAIR) {
+    it(`bloqueia: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(true);
+    });
+  }
+
+  for (const texto of ESPANHOL_NAO_PEDE) {
+    it(`NÃO bloqueia: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(false);
+    });
+  }
+});
+
 describe("ehPedidoDeOptOut — pedido INEQUÍVOCO, o que autoriza bloquear", () => {
   it.each(PEDE_PARA_SAIR)("respeita o pedido: %s", (texto) => {
     expect(ehPedidoDeOptOut(texto), `deveria ter reconhecido "${texto}"`).toBe(true);

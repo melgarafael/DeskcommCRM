@@ -64,6 +64,27 @@ export const PALAVRAS_DE_OPT_OUT: ReadonlySet<string> = new Set([
   "descadastrar",
   "remover",
   "unsubscribe",
+  // ── espanhol ──────────────────────────────────────────────────────────────
+  //
+  // `baja` não é preferência de vocabulário: é a palavra que a PLANTILLA pede.
+  // Medido numa instalação em espanhol — 6 das 9 definições aprovadas terminam
+  // com "Respondé BAJA para no recibir más", todas da categoria MARKETING:
+  //
+  //   "Baja"                              14/08   bloqueado: NÃO
+  //   "Doy de baja la pauta?"             12/08   bloqueado: NÃO
+  //   "quiero dar de baja la suscripcion" 02/08   bloqueado: NÃO
+  //
+  // Três pessoas pediram, nenhuma foi atendida — e a promessa está escrita na
+  // mensagem que a empresa mandou, com aprovação da plataforma. No canal onde
+  // denúncia de spam derruba o quality rating e faz a plataforma recusar
+  // definições novas: perde-se as aprovadas, não só a linha.
+  //
+  // `baja` sozinha É o pedido. "Doy de baja la pauta?" tem quatro palavras e
+  // cai no ambíguo, que é onde deve cair.
+  "baja",
+  "bajar",
+  "desuscribir",
+  "desuscribirme",
 ]);
 
 /**
@@ -73,7 +94,10 @@ export const PALAVRAS_DE_OPT_OUT: ReadonlySet<string> = new Set([
  */
 const VERBOS_DE_COMUNICACAO =
   "mandar|manda|mande|mandem|enviar|envia|envie|enviem|receber|recebe|escrever|escreve|" +
-  "chamar|chama|ligar|liga|perturbar|perturba|encher|enche|insistir|insiste";
+  "chamar|chama|ligar|liga|perturbar|perturba|encher|enche|insistir|insiste|" +
+  // espanhol — mesma âncora, outra língua. Sem eles "no quiero recibir mas
+  // mensajes" não casa nenhum padrão e o pedido se perde.
+  "recibir|recibe|escribir|escribe|escriban|molestar|molesta|llamar|llama|mandes|envien";
 
 /**
  * Pedidos INEQUÍVOCOS de descadastro escritos por extenso. Todos exigem o objeto
@@ -98,6 +122,33 @@ const FRASES_DE_OPT_OUT: readonly RegExp[] = [
   /\bcancelar?\s+(?:a\s+)?(?:inscricao|assinatura)\b/u,
   /\b(?:me\s+)?descadastr\w*\b/u,
   /\bdescadastro\b/u,
+  // ── espanhol ──────────────────────────────────────────────────────────────
+  //
+  // Mesma regra das de cima: TODAS exigem o objeto de comunicação. Sem isso
+  // "no quiero recibir la factura por aqui, manda por email" bloquearia um
+  // cliente que está pedindo justamente para CONTINUAR sendo atendido.
+  // O `(?!…)` é o mesmo recurso que a regra portuguesa usa para "ligação": o
+  // verbo sozinho não basta, porque o OBJETO pode ser outro. Medido — sem ele,
+  // "no quiero recibir la factura por aqui, manda por email" bloqueava um
+  // cliente que está pedindo justamente para CONTINUAR sendo atendido.
+  new RegExp(
+    `\\bno\\s+(?:quiero|deseo)\\s+(?:mas\\s+)?(?:${VERBOS_DE_COMUNICACAO})\\b` +
+      "(?!\\s+(?:la|el|los|las|mi|mis)?\\s*(?:factura|facturas|boleta|boletas|presupuesto|" +
+      "presupuestos|recibo|recibos|comprobante|comprobantes|llamada|llamadas|contrato|contratos)\\b)",
+    "u",
+  ),
+  /\bno\s+quiero\s+recibir\s+mas\b/u,
+  /\bno\s+me\s+(?:escriba|escriban|escribas|mande|manden|mandes|llame|llamen)\s+mas\b/u,
+  // "dar de baja" já É o pedido — a plantilla usa a palavra nesse sentido.
+  /\b(?:dar|darme|doy)\s+de\s+baja\s+(?:la\s+)?(?:suscripcion|lista|publicidad|promociones)\b/u,
+  /\bdarme\s+de\s+baja\b/u,
+  /\bme\s+desuscrib\w*\b/u,
+  // `lista` sozinha vale, MENOS quando o que vem depois diz que é outra lista.
+  // Medido: sem a exclusão, "sacame de la lista de espera" bloqueava alguém que
+  // quer continuar sendo atendido.
+  /\b(?:sacame|sacar|quitame|quitar|borrame|borrar|elimina|eliminame)\s+de\s+(?:la\s+)?lista\b(?!\s+de\s+(?:espera|precios|invitados))/u,
+  /\bsalir\s+de\s+(?:la\s+)?lista\b(?!\s+de\s+(?:espera|precios|invitados))/u,
+  /\bcancelar\s+(?:la\s+)?(?:suscripcion|inscripcion)\b/u,
 ];
 
 /**
