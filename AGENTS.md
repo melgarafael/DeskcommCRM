@@ -11,7 +11,10 @@
 
 Sistema operacional de vendas open source com agentes de IA nativos, multi-nicho,
 WhatsApp como canal primário (via WAHA). Multi-tenant com RLS desde o dia 1, LGPD
-nativa. Monetização = self-host em VPS, não assinatura. Posicionamento: [`VISION.md`](VISION.md).
+nativa. Monetização em duas vias: self-host em VPS (sem cobrança embutida) OU
+assinatura numa instância hospedada pela empresa (marca Genesisia Contabilidade,
+Asaas) — opt-in de plataforma, nunca dependência do self-host. Posicionamento:
+[`VISION.md`](VISION.md).
 
 **Consequência que muda como você trabalha:** o produto é distribuído como código.
 Quem instala numa VPS **é** o usuário. Uma mudança que funciona na máquina do dev e

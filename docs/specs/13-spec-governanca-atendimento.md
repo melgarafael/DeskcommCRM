@@ -221,7 +221,7 @@ escopo `own` na RLS.
 | pipelines (config) | org:read ⁴ | org:read ⁴ | org:read+write | org:read+write |
 | settings | none | none | atendimento/routing: org:read+write ⁵; demais: none ⁵ | org:read+write |
 | api_tokens | none | none | none ⁶ | org:read+write |
-| billing | none | none | none (admin-only; derivado: sem decisão explícita do dono, conservador) | org:read+write |
+| billing | none | none | none (admin-only — decisão explícita, ADR-0002: dinheiro do tenant é assunto de quem administra a organização) | org:read+write |
 | team (membros/papéis) | none | none | org:read ⁷ | org:read+write |
 | audit | none | none | org:read ⁸ | org:read |
 | métricas | none | own:read (decisão G1-06e: agent só as próprias) | org:read, incl. individuais de todos os atendentes (decisão G1-06e) | org:read |

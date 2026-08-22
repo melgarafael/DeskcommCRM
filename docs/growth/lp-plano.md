@@ -1,5 +1,12 @@
 # Plano da Landing Page — deskcomm.com.br
 
+> **SUPERSEDIDO em 2026-08-22 pelo pivot SaaS — ver `docs/adr/0002-pivot-saas-pago.md`.**
+> Este plano ainda vale para o site do projeto open source (`deskcomm.com.br`, sem tabela de
+> planos — a seção 11 abaixo, "sem versão paga", continua correta **para essa via**). A
+> instância paga (marca **Genesisia Contabilidade**) tem landing própria, construída no
+> monorepo em `app/(marketing)/`, dirigida pelo resolvedor de branding — ver Fase 4 do plano
+> de implementação do pivot. Os dois sites não são o mesmo artefato e não compartilham preço.
+
 > Plano de conteúdo, layout, narrativa e direção de arte. **Não é código.**
 > Decisões travadas: hero **A Mesa Viva** · eixo **dono do negócio** com trilhas paralelas para dev · banner HostGator **reconstruído responsivo** com a marca deles preservada.
 
