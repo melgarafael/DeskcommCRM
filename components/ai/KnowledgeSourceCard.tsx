@@ -43,7 +43,7 @@ const TYPE_META: Record<
   catalog: {
     label: "Catálogo",
     Icon: Package,
-    description: "Produtos sincronizados do e-commerce.",
+    description: "Produtos — sincronizados do e-commerce ou importados por planilha.",
   },
 };
 
