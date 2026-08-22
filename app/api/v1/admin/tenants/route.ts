@@ -5,6 +5,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
+import { env } from "@/lib/env";
+import { isBillingEnabled } from "@/lib/asaas/config";
+import { ensureAsaasCustomer } from "@/lib/asaas/customers";
+import { createOrganizationSubscription } from "@/lib/asaas/subscriptions";
+import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
+import { buildInviteEmail } from "@/lib/email/templates/invite";
+import { sendEmail } from "@/lib/email/resend";
+import { marcaDaSaida } from "@/lib/branding/saida";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -28,6 +37,14 @@ const createSchema = z.object({
   cnpj: z.string().optional(),
   plan: z.enum(["standard", "pro", "enterprise"]).default("standard"),
   owner_email: z.string().email(),
+  /**
+   * Plano de billing REAL (billing_plans.id) — opcional e SEPARADO do `plan`
+   * acima (rótulo livre, pré-existente, sem cobrança). Só tem efeito quando
+   * BILLING_MODE=asaas: cria customer+assinatura Asaas para o tenant. Em
+   * self-host (billing desligado) é ignorado silenciosamente — nenhum clone
+   * quebra por mandar ou não mandar este campo.
+   */
+  plan_id: z.string().uuid().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -188,8 +205,21 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { display_name, slug, legal_name, cnpj, plan, owner_email } = parsed.data;
+  const { display_name, slug, legal_name, cnpj, plan, owner_email, plan_id } = parsed.data;
   const admin = createAdminClient();
+
+  // Billing real exige CNPJ (a Asaas cadastra customer por CPF/CNPJ) — falha
+  // ANTES de criar a org, não depois: criar o tenant e só então descobrir que
+  // não dá para cobrar deixaria uma organização órfã de assinatura sem aviso
+  // nenhum na tela de quem está cadastrando.
+  if (plan_id && isBillingEnabled() && !cnpj) {
+    return fail(
+      "validation_error",
+      "CNPJ é obrigatório para vincular um plano de billing",
+      400,
+      { requestId },
+    );
+  }
 
   const { data: org, error: insertError } = await admin
     .from("organizations")
@@ -238,8 +268,123 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // ─── Convite do proprietário ────────────────────────────────────────────
+  //
+  // `owner_email` era coletado no formulário e só entrava no hash do audit —
+  // nenhum convite saía, e o tenant nascia sem ninguém capaz de logar nele. A
+  // plataforma (não um membro da org, que ainda não existe) assina o convite:
+  // mesmos primitivos de app/api/v1/team/invite (signInviteToken +
+  // buildInviteEmail + sendEmail), sem exigir um "convidador" já membro.
+  let ownerInviteDispatched = false;
+  let ownerInviteError: string | null = null;
+  try {
+    const exp = Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS;
+    const token = signInviteToken({
+      invite_id: randomUUID(),
+      email: owner_email.trim().toLowerCase(),
+      organization_id: org.id,
+      role: "admin",
+      exp,
+    });
+    const acceptUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/team/accept-invite/${token}`;
+    const marca = await marcaDaSaida(org.id);
+    const { subject, html, text } = buildInviteEmail({
+      inviterName: "Genesisia Contabilidade",
+      orgName: org.display_name,
+      acceptUrl,
+      role: "admin",
+      expiresAt: new Date(exp * 1000),
+      marca,
+    });
+    const result = await sendEmail({
+      to: owner_email,
+      subject,
+      html,
+      text,
+      fromName: marca.nome,
+      tags: [
+        { name: "kind", value: "tenant_owner_invite" },
+        { name: "org", value: org.id },
+      ],
+    });
+    ownerInviteDispatched = result.ok;
+    ownerInviteError = result.ok ? null : (result.error ?? "unknown");
+  } catch (err) {
+    // Convite falho NUNCA desfaz o tenant já criado — falha aberta e
+    // VISÍVEL (retorno + audit), não silenciosa. Um platform admin lendo a
+    // resposta sabe que precisa reenviar o convite manualmente.
+    ownerInviteError = (err as Error).message;
+  }
+
+  void audit({
+    action: "member.invited",
+    actorUserId: adminCtx.user.id,
+    actingAsPlatformAdmin: true,
+    bypassedRls: true,
+    organizationId: org.id,
+    resourceType: "membership",
+    resourceId: org.id,
+    requestId,
+    metadata: {
+      email: owner_email,
+      role: "admin",
+      email_dispatched: ownerInviteDispatched,
+      email_error: ownerInviteError,
+      via: "tenant_creation",
+    },
+  });
+
+  // ─── Assinatura de billing (só quando plan_id foi escolhido E a instância
+  // roda BILLING_MODE=asaas — self-host nunca entra aqui) ──────────────────
+  let billingError: string | null = null;
+  if (plan_id && isBillingEnabled()) {
+    try {
+      const { data: planRow } = await admin
+        .from("billing_plans")
+        .select("id, price_cents, billing_interval")
+        .eq("id", plan_id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!planRow) {
+        billingError = "plano não encontrado ou inativo";
+      } else {
+        const asaasCustomerId = await ensureAsaasCustomer({
+          organizationId: org.id,
+          legalName: legal_name ?? display_name,
+          email: owner_email,
+          cnpj: cnpj!,
+        });
+        await createOrganizationSubscription({
+          organizationId: org.id,
+          planId: planRow.id,
+          asaasCustomerId,
+          priceCents: planRow.price_cents,
+          billingInterval: planRow.billing_interval as "monthly" | "yearly",
+        });
+      }
+    } catch (err) {
+      // Mesmo raciocínio do convite: a org já existe e fica ATIVA mesmo se a
+      // Asaas falhar agora — um platform admin lê `billing_error` na resposta
+      // e tenta de novo pela tela de billing do tenant, sem tenant órfão.
+      billingError = (err as Error).message;
+      logger.error("[admin.tenants] falha ao criar assinatura Asaas", {
+        request_id: requestId,
+        organization_id: org.id,
+        error: billingError,
+      });
+    }
+  }
+
   return ok(
-    { id: org.id, slug: org.slug, display_name: org.display_name },
+    {
+      id: org.id,
+      slug: org.slug,
+      display_name: org.display_name,
+      owner_invite_dispatched: ownerInviteDispatched,
+      owner_invite_error: ownerInviteError,
+      billing_error: billingError,
+    },
     { status: 201, requestId },
   );
 }

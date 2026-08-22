@@ -17,24 +17,41 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCreateTenant } from "@/hooks/useCreateTenant";
+import { useBillingPlans } from "@/hooks/useBillingPlans";
 import { ApiError } from "@/lib/api/types";
 
 // ---------------------------------------------------------------------------
 // Schema (mirrors server Zod; client keeps it in sync)
 // ---------------------------------------------------------------------------
 
-const formSchema = z.object({
-  display_name: z.string().min(2, "Mínimo 2 caracteres").max(120, "Máximo 120 caracteres"),
-  slug: z
-    .string()
-    .min(2, "Mínimo 2 caracteres")
-    .max(40, "Máximo 40 caracteres")
-    .regex(/^[a-z0-9-]+$/, "Apenas letras minúsculas, números e hífens"),
-  legal_name: z.string().min(2).max(255).optional().or(z.literal("")),
-  cnpj: z.string().optional().or(z.literal("")),
-  plan: z.enum(["standard", "pro", "enterprise"]),
-  owner_email: z.string().email("E-mail inválido"),
-});
+const formSchema = z
+  .object({
+    display_name: z.string().min(2, "Mínimo 2 caracteres").max(120, "Máximo 120 caracteres"),
+    slug: z
+      .string()
+      .min(2, "Mínimo 2 caracteres")
+      .max(40, "Máximo 40 caracteres")
+      .regex(/^[a-z0-9-]+$/, "Apenas letras minúsculas, números e hífens"),
+    legal_name: z.string().min(2).max(255).optional().or(z.literal("")),
+    cnpj: z.string().optional().or(z.literal("")),
+    plan: z.enum(["standard", "pro", "enterprise"]),
+    owner_email: z.string().email("E-mail inválido"),
+    // "" (nenhum plano de cobrança selecionado) e não undefined — <Select>
+    // não tem estado "sem valor" limpo, então o vazio é o próprio default.
+    plan_id: z.string().optional().or(z.literal("")),
+  })
+  .superRefine((values, ctx) => {
+    // Espelha a mesma regra do servidor (app/api/v1/admin/tenants/route.ts):
+    // vincular um plano de cobrança real exige CNPJ, porque é o que a Asaas
+    // cadastra como customer.
+    if (values.plan_id && !values.cnpj) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cnpj"],
+        message: "CNPJ é obrigatório para vincular um plano de cobrança",
+      });
+    }
+  });
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -74,6 +91,7 @@ function maskCnpj(value: string): string {
 export function NewTenantForm() {
   const router = useRouter();
   const createTenant = useCreateTenant();
+  const { data: billingPlans } = useBillingPlans();
   const [slugLocked, setSlugLocked] = useState(false);
 
   const form = useForm<FormValues>({
@@ -85,6 +103,7 @@ export function NewTenantForm() {
       cnpj: "",
       plan: "standard",
       owner_email: "",
+      plan_id: "",
     },
   });
 
@@ -123,9 +142,18 @@ export function NewTenantForm() {
         cnpj: values.cnpj || undefined,
         plan: values.plan,
         owner_email: values.owner_email,
+        plan_id: values.plan_id || undefined,
       });
 
       toast.success("Tenant criado com sucesso!");
+      if (!result.data.owner_invite_dispatched) {
+        toast.warning(
+          `Convite ao responsável não foi enviado (${result.data.owner_invite_error ?? "motivo desconhecido"}) — reenvie pela tela de equipe do tenant.`,
+        );
+      }
+      if (result.data.billing_error) {
+        toast.warning(`Assinatura de cobrança não foi criada: ${result.data.billing_error}`);
+      }
       router.push(`/admin/tenants/${result.data.id}`);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -249,6 +277,40 @@ export function NewTenantForm() {
                 <p className="text-xs text-error-fg">{errors.plan.message}</p>
               )}
             </div>
+
+            {/*
+             * Plano de cobrança real (Asaas) — só aparece se a instalação tem
+             * algum billing_plans ativo. Self-host típico não tem nenhum: a
+             * lista vem vazia e este bloco simplesmente não renderiza, sem
+             * precisar perguntar BILLING_MODE ao front-end.
+             */}
+            {billingPlans && billingPlans.length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="plan_id">Plano de cobrança (Genesisia)</Label>
+                <Select
+                  value={watch("plan_id") || undefined}
+                  onValueChange={(v) => setValue("plan_id", v, { shouldValidate: true })}
+                >
+                  <SelectTrigger id="plan_id" aria-label="Plano de cobrança">
+                    <SelectValue placeholder="Sem cobrança (self-host)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {billingPlans.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} — {(p.price_cents / 100).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: p.currency,
+                        })}
+                        /{p.billing_interval === "monthly" ? "mês" : "ano"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Cria a assinatura na Asaas e vincula ao tenant. Exige CNPJ preenchido.
+                </p>
+              </div>
+            )}
 
             {/* owner_email */}
             <div className="space-y-1.5">
