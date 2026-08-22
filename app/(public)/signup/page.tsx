@@ -18,9 +18,9 @@ export const metadata = { title: "Criar conta" };
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invite?: string }>;
+  searchParams: Promise<{ invite?: string; plan?: string }>;
 }) {
-  const { invite } = await searchParams;
+  const { invite, plan } = await searchParams;
   const payload = invite ? verifyInviteToken(invite) : null;
   const convite = invite && payload ? { token: invite, email: payload.email } : undefined;
   const conviteExpirado = Boolean(invite) && !payload;
@@ -46,7 +46,7 @@ export default async function SignupPage({
         </p>
       )}
 
-      <SignupForm convite={convite} />
+      <SignupForm convite={convite} planId={!convite ? plan : undefined} />
 
       <p className="text-center text-sm text-muted-foreground">
         Já tem conta?{" "}

@@ -59,6 +59,10 @@ export const KIND_LABEL = {
   // respondendo; confundir os dois faria o dono do negócio correr atrás de uma
   // parada que não houve, ou ignorar a que houve.
   budget_warning: "O gasto de IA passou do aviso que você definiu",
+  // Diz o que falta fazer, não o mecanismo interno: o dono da organização não
+  // precisa saber que foi a Asaas que falhou, precisa saber que a cobrança do
+  // plano que ele escolheu ainda não está funcionando.
+  billing_subscription_pending: "A assinatura do plano escolhido ainda não foi confirmada",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

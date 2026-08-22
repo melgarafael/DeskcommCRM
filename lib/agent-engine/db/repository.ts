@@ -55,6 +55,10 @@ export type InboxKind =
   // `budget_exceeded` porque diz coisa diferente: um relata que algo
   // ACONTECEU e a IA segue; o outro, que ela parou. Severity 'warn'.
   | 'budget_warning'
+  // (migration 0169, ADR-0002) A assinatura Asaas do signup falhou depois que
+  // a organização já foi criada — ela segue ativa, e este kind é o que torna
+  // a pendência visível na Central de avisos.
+  | 'billing_subscription_pending'
   | 'other';
 
 export interface InboxItemRow {

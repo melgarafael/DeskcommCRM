@@ -13,7 +13,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { signUp } from "@/app/actions/auth/signUp";
+import { useBillingPlans } from "@/hooks/useBillingPlans";
+
+function maskCnpj(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 14);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  if (digits.length <= 12)
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
 
 /**
  * Convite em curso: a conta está sendo criada para ACEITAR um convite, não para
@@ -26,14 +44,25 @@ export interface ConviteDoSignup {
   email: string;
 }
 
-export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
+export function SignupForm({
+  convite,
+  planId,
+}: {
+  convite?: ConviteDoSignup;
+  /** Pré-seleciona o plano quando a pessoa vem de um link "Assinar X" da landing. */
+  planId?: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
+  const { data: billingPlans } = useBillingPlans();
+
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<SignupInput>({
     // O formulário tem UM tipo e DOIS contratos: no modo convite o campo de
@@ -48,6 +77,8 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
       email: convite?.email ?? "",
       password: "",
       password_confirm: "",
+      plan_id: planId ?? "",
+      cnpj: "",
     },
   });
 
@@ -106,6 +137,58 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
           <p className="text-xs text-destructive">{errors.org_name.message}</p>
         )}
       </div>
+      )}
+      {/*
+       * Plano de cobrança (Genesisia) — só aparece quando a instalação tem
+       * algum billing_plans ativo. Self-host típico: lista vazia, bloco
+       * inteiro não renderiza, ninguém vê seletor nenhum.
+       */}
+      {!convite && billingPlans && billingPlans.length > 0 && (
+        <>
+          <div className="space-y-1.5">
+            <Label htmlFor="plan_id">Plano</Label>
+            <Select
+              value={watch("plan_id") || undefined}
+              onValueChange={(v) => setValue("plan_id", v, { shouldValidate: true })}
+            >
+              <SelectTrigger id="plan_id" aria-label="Plano">
+                <SelectValue placeholder="Continuar sem assinatura" />
+              </SelectTrigger>
+              <SelectContent>
+                {billingPlans.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} —{" "}
+                    {(p.price_cents / 100).toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: p.currency,
+                    })}
+                    /{p.billing_interval === "monthly" ? "mês" : "ano"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {watch("plan_id") ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="cnpj">
+                CNPJ <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="cnpj"
+                placeholder="00.000.000/0000-00"
+                inputMode="numeric"
+                maxLength={18}
+                aria-invalid={errors.cnpj ? true : undefined}
+                {...register("cnpj")}
+                onChange={(e) => setValue("cnpj", maskCnpj(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Necessário para emitir a cobrança do plano escolhido.
+              </p>
+              {errors.cnpj && <p className="text-xs text-destructive">{errors.cnpj.message}</p>}
+            </div>
+          ) : null}
+        </>
       )}
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>

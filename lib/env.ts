@@ -271,6 +271,32 @@ const schema = z.object({
     .default("false")
     .transform((v) => v === "true"),
 
+  /**
+   * Billing pago (ADR-0002 — pivot SaaS Genesisia Contabilidade).
+   *
+   * `BILLING_MODE` decide se o produto cobra. Default `"disabled"`: self-host
+   * nunca depende de billing para funcionar — é a instância hospedada oficial
+   * que roda com `BILLING_MODE=asaas`. `z.string()` e NUNCA `z.enum`, mesmo
+   * raciocínio de `AI_BUDGET_ENFORCEMENT` acima: `safeParse` lança no import,
+   * que no Next derruba a PRIMEIRA requisição com o contêiner `healthy` (probe
+   * TCP puro). Um clone que digitasse errado no `.env` não pode perder o app
+   * inteiro por uma flag que, para ele, deveria estar simplesmente desligada —
+   * qualquer valor diferente de `"asaas"` já cai no lado seguro (desligado).
+   */
+  BILLING_MODE: z.string().optional().default("disabled"),
+  // Chave de API e token de webhook são opcionais SEMPRE — só lidos quando
+  // BILLING_MODE=asaas (isBillingEnabled(), lib/asaas/config.ts). Vazios em
+  // qualquer self-host, inclusive em produção: ninguém além da instância
+  // oficial hospedada os configura.
+  ASAAS_API_KEY: z.string().optional().default(""),
+  ASAAS_WEBHOOK_TOKEN: z.string().optional().default(""),
+  /**
+   * `"production"` usa a API real (cobra de verdade); qualquer outro valor —
+   * inclusive ausente ou digitado errado — cai em sandbox. Errar para o lado
+   * de NÃO cobrar é a direção segura de um typo nesta variável.
+   */
+  ASAAS_ENVIRONMENT: z.string().optional().default("sandbox"),
+
   // App URLs
   NEXT_PUBLIC_APP_URL: z
     .string()

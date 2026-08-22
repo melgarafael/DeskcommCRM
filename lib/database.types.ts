@@ -1634,6 +1634,112 @@ export type Database = {
           },
         ]
       }
+      // ---- billing_invoices / billing_plans: adicionadas à mão na migration
+      // 0168 (fundação de billing). Regenerar via `supabase gen types` contra o
+      // projeto real substitui este bloco; até lá, mantenha em sincronia manual
+      // com o schema da migration se ela mudar.
+      billing_invoices: {
+        Row: {
+          amount_cents: number
+          asaas_payment_id: string
+          created_at: string
+          currency: string
+          due_date: string | null
+          id: string
+          invoice_url: string | null
+          organization_id: string
+          paid_at: string | null
+          status: string
+          subscription_id: string | null
+        }
+        Insert: {
+          amount_cents: number
+          asaas_payment_id: string
+          created_at?: string
+          currency?: string
+          due_date?: string | null
+          id?: string
+          invoice_url?: string | null
+          organization_id: string
+          paid_at?: string | null
+          status: string
+          subscription_id?: string | null
+        }
+        Update: {
+          amount_cents?: number
+          asaas_payment_id?: string
+          created_at?: string
+          currency?: string
+          due_date?: string | null
+          id?: string
+          invoice_url?: string | null
+          organization_id?: string
+          paid_at?: string | null
+          status?: string
+          subscription_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_invoices_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_invoices_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "organization_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_plans: {
+        Row: {
+          billing_interval: string
+          code: string
+          created_at: string
+          currency: string
+          description: string | null
+          features: Json
+          id: string
+          is_active: boolean
+          name: string
+          price_cents: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          billing_interval: string
+          code: string
+          created_at?: string
+          currency?: string
+          description?: string | null
+          features?: Json
+          id?: string
+          is_active?: boolean
+          name: string
+          price_cents: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          billing_interval?: string
+          code?: string
+          created_at?: string
+          currency?: string
+          description?: string | null
+          features?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          price_cents?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       channel_knobs: {
         Row: {
           allow_sunday: boolean | null
@@ -4791,6 +4897,65 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      // ---- organization_subscriptions: adicionada à mão na migration 0168
+      // (fundação de billing). Ver nota em billing_invoices/billing_plans acima.
+      organization_subscriptions: {
+        Row: {
+          asaas_customer_id: string
+          asaas_subscription_id: string | null
+          canceled_at: string | null
+          created_at: string
+          current_period_end: string | null
+          id: string
+          organization_id: string
+          plan_id: string
+          status: string
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          asaas_customer_id: string
+          asaas_subscription_id?: string | null
+          canceled_at?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          organization_id: string
+          plan_id: string
+          status?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          asaas_customer_id?: string
+          asaas_subscription_id?: string | null
+          canceled_at?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          id?: string
+          organization_id?: string
+          plan_id?: string
+          status?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_subscriptions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "billing_plans"
             referencedColumns: ["id"]
           },
         ]

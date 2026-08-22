@@ -58,9 +58,11 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 
 ## Modelo do projeto (sem letra miúda)
 
-- **O software é 100% open source (MIT), completo, sem versão paga.** Não vendemos assinatura. Não existe feature travada.
-- **A monetização é por infraestrutura:** o projeto é desenvolvido em parceria com a **HostGator** — o caminho recomendado de produção é a VPS deles (datacenter em São Paulo), instalada pelo `hostgator-setup-kit` com 1 comando. Assinar pelo link de parceiro apoia o projeto e sai mais barato pra quem assina.
-- **O caminho genérico nunca é sabotado:** `docker compose` e o kit self-host funcionam em qualquer VPS. A parceria é o caminho recomendado, nunca o único. (Regra de ouro do open source sustentável: percepção de pegadinha mata a marca.)
+O projeto tem duas vias, e nenhuma sabota a outra:
+
+- **Via 1 — self-host MIT, como sempre foi.** O código é 100% open source (MIT), completo. Quem clona e roda a própria VPS (`hostgator-setup-kit`, `docker compose`) **nunca** paga por licença nem esbarra em feature travada — essa via não tem e não terá cobrança embutida. A monetização dela continua sendo só a parceria de infraestrutura com a **HostGator** (datacenter em São Paulo); assinar pelo link de parceiro apoia o projeto e sai mais barato pra quem assina, mas o caminho genérico (qualquer VPS) nunca é sabotado.
+- **Via 2 — instância hospedada por assinatura, sob a marca Genesisia Contabilidade.** Pra quem não quer administrar a própria VPS, a empresa por trás do Deskcomm opera uma instância própria, hospedada e mantida, cobrada por assinatura (Pix, boleto, cartão via Asaas). É a mesma base de código, com módulos de contabilidade (Contábil/Financeiro) somados ao CRM de vendas — mas é uma **oferta**, não uma mudança na natureza do software: quem prefere rodar de graça na própria VPS continua podendo, para sempre.
+- **A linha que nunca se cruza:** nenhuma instalação self-host passa a depender de um serviço pago de terceiro (Asaas incluso) pra funcionar. Billing é opt-in de plataforma (`BILLING_MODE`), nunca comportamento padrão de quem clona o repo. Ver `docs/adr/0002-pivot-saas-pago.md` para o racional completo da decisão.
 
 ## Princípios de comunicação
 
@@ -76,4 +78,4 @@ Ser a resposta padrão — do Google, do ChatGPT, do Reddit e do dev brasileiro 
 
 ---
 
-*Última revisão: 2026-07-19 — reposicionamento e-commerce → multi-nicho / AI Sales OS.*
+*Última revisão: 2026-08-22 — modelo do projeto passa a ter duas vias: self-host MIT (como sempre) + instância hospedada por assinatura sob a marca Genesisia Contabilidade. Ver `docs/adr/0002-pivot-saas-pago.md`.*

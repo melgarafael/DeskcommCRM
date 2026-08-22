@@ -331,6 +331,13 @@ export const AUDIT_ACTIONS = [
   // demais para a chamada seguinte do expurgo alcançar — a trilha registra
   // a própria erosão em vez de encolher sem deixar marca.
   "retention.sweep_run",
+
+  // Pivot SaaS pago (ADR-0002) — instância hospedada Genesisia Contabilidade.
+  // Só ocorrem com BILLING_MODE=asaas; self-host nunca emite estas linhas.
+  "billing.subscription_created",
+  "billing.subscription_suspended_overdue",
+  "billing.subscription_reactivated",
+  "billing.webhook_invalid_token",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

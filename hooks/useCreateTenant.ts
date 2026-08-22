@@ -13,6 +13,8 @@ export interface CreateTenantPayload {
   cnpj?: string;
   plan?: "standard" | "pro" | "enterprise";
   owner_email: string;
+  /** billing_plans.id — só tem efeito quando a instância roda BILLING_MODE=asaas. */
+  plan_id?: string;
 }
 
 export interface CreateTenantResponse {
@@ -20,6 +22,9 @@ export interface CreateTenantResponse {
     id: string;
     slug: string;
     display_name: string;
+    owner_invite_dispatched: boolean;
+    owner_invite_error: string | null;
+    billing_error: string | null;
   };
 }
 
