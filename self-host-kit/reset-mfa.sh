@@ -2,7 +2,7 @@
 # Emergência: remove o MFA (TOTP) de um usuário que perdeu o autenticador.
 # No próximo login ele será obrigado a cadastrar um novo (MFA é forçado p/ admin).
 #
-#   bash hostgator-setup-kit/reset-mfa.sh dono@empresa.com
+#   bash self-host-kit/reset-mfa.sh dono@empresa.com
 source "$(dirname "$0")/_common.sh"
 enter_project
 

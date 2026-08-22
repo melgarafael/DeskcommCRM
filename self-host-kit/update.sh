@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Atualiza o DeskcommCRM na VPS: código novo + banco + app — com BACKUP antes e
+# Atualiza o SonghaiCRM na VPS: código novo + banco + app — com BACKUP antes e
 # CHECAGEM DE SAÚDE depois. Um comando só, pensado pra quem não é técnico:
 #
-#   bash hostgator-setup-kit/update.sh
+#   bash self-host-kit/update.sh
 #
 # Flags:
 #   --force        instala a versão pedida mesmo que ela seja igual ou ANTERIOR
@@ -83,14 +83,14 @@ if [ -z "$FORCE" ] && [ -z "$MESMA_TAG" ]; then
      Instalar ela seria voltar no tempo e desligar coisas que você já tem.
      Não mexi em nada: nem no banco, nem no app — está tudo como estava.
      Se você REALMENTE quer voltar para a $TARGET_TAG, rode:
-       bash hostgator-setup-kit/update.sh --to $TARGET_TAG --force" ;;
+       bash self-host-kit/update.sh --to $TARGET_TAG --force" ;;
     2) refuse "Não consegui ter CERTEZA de que a versão $TARGET_TAG é mais nova que a instalada
      aqui — a cópia do código neste servidor veio abreviada e eu não consegui completá-la
      (o servidor precisa conseguir falar com o GitHub para isso).
      Prefiro não mexer a arriscar te levar para uma versão anterior sem querer.
      Não mexi em nada. Tente de novo em alguns minutos; se insistir, confira a internet do
      servidor. Para instalar assim mesmo, por sua conta:
-       bash hostgator-setup-kit/update.sh --to $TARGET_TAG --force" ;;
+       bash self-host-kit/update.sh --to $TARGET_TAG --force" ;;
   esac
 fi
 if [ -n "$MESMA_TAG" ]; then

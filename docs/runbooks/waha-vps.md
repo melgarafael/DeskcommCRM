@@ -1,13 +1,13 @@
 ---
-title: Runbook — WAHA em produção (VPS Hostgator)
+title: Runbook — WAHA em produção (VPS)
 status: canônico
-last_review: 2026-05-04
-owner: Rafael Melgaço
+last_review: 2026-08-21
+owner: Songhai, Lda
 ---
 
-# Runbook — WAHA em produção (VPS Hostgator)
+# Runbook — WAHA em produção (VPS)
 
-> Guia passo-a-passo pra subir, operar e recuperar a instância WAHA Plus em produção sobre VPS Hostgator. Hostgator é parceiro comercial; este runbook substitui qualquer doc histórico que mencionasse Hetzner.
+> Guia passo-a-passo pra subir, operar e recuperar a instância WAHA Plus em produção sobre qualquer VPS com Docker. Não há parceria comercial de hospedagem — o guia é genérico por provedor.
 
 ---
 
@@ -15,20 +15,20 @@ owner: Rafael Melgaço
 
 | Item | Valor recomendado | Notas |
 |---|---|---|
-| Plano Hostgator | **VPS Turing** (ou superior) | Cartesius (1 vCPU/2GB) é insuficiente — puppeteer/baileys + 5+ sessões saturam. |
+| Plano | **2 vCPU / 4 GB RAM** (ou superior) | Abaixo disso é insuficiente — puppeteer/baileys + 5+ sessões saturam. |
 | OS | Ubuntu 22.04 LTS ou 24.04 LTS | NOWEB engine testado em ambos. CentOS funciona mas docs do compose pressupõem Debian-family. |
 | CPU/RAM | mín. 2 vCPU / 4 GB RAM | NOWEB usa ~150 MB por sessão; +overhead Node ~300 MB. |
 | Disco | mín. 80 GB SSD | Mídia inline mínima (vai pro Supabase Storage), mas `.sessions` cresce com histórico WhatsApp Web. |
-| Datacenter | São Paulo (default Hostgator BR) | Latência <30ms pro Meta SP — relevante pra anti-banimento e UX de QR. |
-| IP público | Estático (incluso no plano) | Necessário pra DNS A record + egress allowlist. |
+| Datacenter | O mais próximo do seu público | Latência baixa pro Meta relevante pra anti-banimento e UX de QR — escolha o datacenter mais próximo de onde seus clientes estão. |
+| IP público | Estático (incluso na maioria dos planos) | Necessário pra DNS A record + egress allowlist. |
 
-> **Sem parceria com Hostgator?** Substitua por Hetzner CX22 (~$5/mês, datacenter EU) ou DigitalOcean Droplet 4GB (~$24/mês). Tudo neste runbook funciona idêntico — só não terá a vantagem de latência BR.
+> **Qualquer VPS com Docker serve.** Este runbook funciona idêntico em qualquer provedor (Hetzner, DigitalOcean, etc.) — escolha pelo custo/latência que fizer sentido pro seu público.
 
 ---
 
 ## 2. Pré-requisitos
 
-1. Acesso SSH ao VPS (Hostgator entrega via cPanel ou root SSH; preferir SSH-only).
+1. Acesso SSH ao VPS (a maioria dos provedores entrega via painel ou root SSH; preferir SSH-only).
 2. Domínio com DNS gerenciado em Cloudflare (ou outro provider) — ex.: `waha.deskcomm.com.br`.
 3. Conta Backblaze B2 com bucket `deskcomm-waha-backup` (R$0,06/GB/mês ≈ $0.005/GB).
 4. Licença ativa **WAHA Plus** (`https://waha.devlike.pro` — ~$30/mês).
@@ -106,7 +106,7 @@ sudo systemctl restart fail2ban
 
 No Cloudflare (ou seu DNS provider):
 
-- `waha.deskcomm.com.br` → A record → IP do VPS Hostgator
+- `waha.deskcomm.com.br` → A record → IP do VPS
 - Proxy = **DNS only** (cinza). Cloudflare Proxy (laranja) interfere em SSE/WebSocket que o WAHA usa.
 
 ```bash
@@ -128,7 +128,7 @@ sudo chown deskcomm:deskcomm /opt/deskcomm-waha
 cd /opt/deskcomm-waha
 ```
 
-Copiar (via `scp` ou `git clone`) o `docker-compose.yml` do repo (raiz do DeskcommCRM). Ajustes obrigatórios pra prod:
+Copiar (via `scp` ou `git clone`) o `docker-compose.yml` do repo (raiz do SonghaiCRM). Ajustes obrigatórios pra prod:
 
 ```yaml
 services:
@@ -350,18 +350,18 @@ Redeploy da branch `main` aplica.
 
 ---
 
-## 11. Diferenças operacionais Hostgator vs cloud-native (Hetzner/DO)
+## 11. Diferenças operacionais entre tipos de provedor (hospedagem com painel vs cloud-native)
 
-| Aspecto | Hostgator | Hetzner / DO |
+| Aspecto | Hospedagem com painel (cPanel/WHM) | Cloud-native (Hetzner/DO/etc.) |
 |---|---|---|
-| Volume snapshots nativos | ❌ não tem | ✅ tem |
-| Latência pro Meta BR | ✅ <30ms (SP) | ⚠️ 150-200ms (EU) ou 80ms (NYC) |
-| Custo (mín. 2 vCPU/4GB) | R$140/mês (~$28) | $5-10/mês |
+| Volume snapshots nativos | depende do provedor | geralmente ✅ tem |
+| Latência pro Meta BR | depende do datacenter | ⚠️ 150-200ms (EU) ou 80ms (NYC) se fora do BR |
+| Custo (mín. 2 vCPU/4GB) | varia bastante por provedor | $5-10/mês em cloud-native barato |
 | Painel | cPanel/WHM (web GUI) | Console + API |
-| Provisionamento via API | ❌ limitado | ✅ Terraform-friendly |
-| Suporte 24x7 PT-BR | ✅ incluso | ⚠️ EN-only, ticket lento |
+| Provisionamento via API | costuma ser limitado | ✅ Terraform-friendly |
+| Suporte 24x7 PT-BR | depende do provedor | ⚠️ geralmente EN-only, ticket lento |
 
-**Conclusão**: Hostgator paga prêmio pela parceria + suporte BR + datacenter SP. Pra MVP/scale-out até ~50 tenants é OK; acima disso, considerar diversificação (instância secundária Hetzner como DR cross-region).
+**Conclusão**: escolha o provedor pelo trio custo/latência/suporte que fizer sentido pro seu público. Pra MVP/scale-out até ~50 tenants qualquer VPS de 2 vCPU/4GB dá conta; acima disso, considerar diversificação (instância secundária em outro provedor/região como DR).
 
 ---
 
@@ -373,11 +373,13 @@ Redeploy da branch `main` aplica.
 | WAHA cria session mas não inicia | `start: true` ignorado em algumas versões | Chamar `POST /api/sessions/:name/start` explicitamente |
 | Webhook não chega | Nginx allowlist bloqueando, ou Cloudflare Proxy ON | `tail -f /var/log/nginx/access.log` + desligar proxy CF |
 | QR expira sempre | RTT alto, ou clock drift no VPS | `timedatectl set-ntp true`, conferir RTT pro `web.whatsapp.com` |
-| Container OOMKilled | Sessões demais pro plano | Upgrade Hostgator pra plano superior, ou particionar tenants em VPS secundário |
+| Container OOMKilled | Sessões demais pro plano | Upgrade pra plano superior, ou particionar tenants em VPS secundário |
 | Session WORKING mas mensagens não saem | Daily limit atingido, ou janela horária | Conferir `channel_sessions.daily_message_limit` + `lib/waha/throttle` |
 
 ---
 
 ## 13. Histórico de decisão
 
-- **2026-05-04** — Trocamos referências Hetzner→Hostgator nos docs por parceria comercial existente. Custo subiu (~$5 → ~$28) mas latência BR melhora pareamento e suporte ticketing fica em PT-BR. Hetzner mantido como plano B documentado em §1.
+- **2026-05-04** — Trocamos referências Hetzner→Hostgator nos docs por parceria comercial existente à época. Custo subiu (~$5 → ~$28) mas latência BR melhorava pareamento e suporte ticketing ficava em PT-BR. Hetzner mantido como plano B documentado em §1.
+- **2026-08-21** — Encerrada a parceria comercial de hospedagem. O runbook volta a ser genérico por provedor (qualquer VPS com Docker); a recomendação de datacenter em São Paulo permanece válida por latência, não por parceria.
+- **2026-08-22** — Produto passa a ser mantido pela Songhai, Lda (Moçambique); a recomendação de datacenter deixa de nomear São Paulo (§1) — nenhuma medição de latência real pro público moçambicano foi feita ainda para apontar uma região específica.

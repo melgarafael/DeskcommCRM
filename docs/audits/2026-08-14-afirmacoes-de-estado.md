@@ -365,7 +365,7 @@ ls tests/e2e/*.spec.ts | wc -l ; awk '/^      FORA_DO_CI:/{f=1;next} /^    steps
 **Mede com:**
 
 ```bash
-gh issue view 63 --repo melgarafael/DeskcommCRM --json number,title,state
+gh issue view 63 --repo melgarafael/SonghaiCRM --json number,title,state
 ```
 
 **Deu:**
@@ -844,10 +844,10 @@ ls .claude/skills/ ; test -e .claude/skills/epic-executor && echo existe || echo
 **Deu:**
 
 ```
-`.claude/skills/` do repo contém apenas `DeskcommCRM` e `sistema-vivo` → `AUSENTE_NO_REPO`. A skill só existe em `~/.claude/skills/epic-executor/` (instalação pessoal do mantenedor); os campos são de fato lidos lá (`init_epic_state.py:29,54,87,144`). Frontmatter: 15/15 arquivos `EPIC-*.md` têm `epic_id`, `priority`, `depends_on` e `status`.
+`.claude/skills/` do repo contém apenas `SonghaiCRM` e `sistema-vivo` → `AUSENTE_NO_REPO`. A skill só existe em `~/.claude/skills/epic-executor/` (instalação pessoal do mantenedor); os campos são de fato lidos lá (`init_epic_state.py:29,54,87,144`). Frontmatter: 15/15 arquivos `EPIC-*.md` têm `epic_id`, `priority`, `depends_on` e `status`.
 ```
 
-**Sugestão:** Remover a seção `### epic-executor`. Ela descreve uma ferramenta que **não está no repositório** (`.claude/skills/` só traz `DeskcommCRM` e `sistema-vivo`) e um fluxo parado desde 2026-05-06 — quem vem de fora não tem como executá-la e vai gastar tempo procurando. Se ficar, precisa dizer em uma linha: "ferramenta interna do mantenedor, não distribuída no clone".
+**Sugestão:** Remover a seção `### epic-executor`. Ela descreve uma ferramenta que **não está no repositório** (`.claude/skills/` só traz `SonghaiCRM` e `sistema-vivo`) e um fluxo parado desde 2026-05-06 — quem vem de fora não tem como executá-la e vai gastar tempo procurando. Se ficar, precisa dizer em uma linha: "ferramenta interna do mantenedor, não distribuída no clone".
 
 **Vira teste:** para cada ferramenta citada como parte do fluxo em CONTRIBUTING.md, assertar que ela existe no repositório (`.claude/skills/<nome>` ou `package.json` scripts)
 
@@ -1851,7 +1851,7 @@ Comentário no próprio arquivo: "O replay DE ERRO continua, porque é o que exp
 
 ### L5 · FALSA · gravidade media · sobre-o-codigo
 
-> O DeskcommCRM é distribuído em rolling release a partir da branch `main`.
+> O SonghaiCRM é distribuído em rolling release a partir da branch `main`.
 
 **Mede com:**
 
@@ -1865,7 +1865,7 @@ grep -n 'TARGET_TAG="$(git tag' hostgator-setup-kit/update.sh ; gh release list 
 update.sh:39 → `[ -n "$TARGET_TAG" ] || TARGET_TAG="$(git tag -l 'v*' --sort=-v:refname | head -1)"`. Releases: v1.3.0 (2026-08-13), v1.2.1, v1.2.0, v1.1.0, v1.0.0. README:163 → "**O alvo é a última versão publicada** (`v1.2.3`), não o topo da `main`".
 ```
 
-**Sugestão:** O DeskcommCRM é distribuído por **versões marcadas** (`v1.x.y`), publicadas como release e descritas no [`CHANGELOG.md`]\(CHANGELOG.md\). O `update.sh` sempre aponta para a última versão publicada — nunca para o topo da `main`. Correções de segurança entram na próxima versão; mantenha sua instalação atualizada (`bash hostgator-setup-kit/update.sh` em self-host). Para saber qual é a última: `gh release list --limit 1`.
+**Sugestão:** O SonghaiCRM é distribuído por **versões marcadas** (`v1.x.y`), publicadas como release e descritas no [`CHANGELOG.md`]\(CHANGELOG.md\). O `update.sh` sempre aponta para a última versão publicada — nunca para o topo da `main`. Correções de segurança entram na próxima versão; mantenha sua instalação atualizada (`bash hostgator-setup-kit/update.sh` em self-host). Para saber qual é a última: `gh release list --limit 1`.
 
 **Vira teste:** assertar que SECURITY.md não afirma "a partir da branch main" enquanto hostgator-setup-kit/update.sh resolver o alvo por `git tag -l 'v*'`
 
@@ -4494,7 +4494,7 @@ git ls-tree -r --name-only v1.0.0 hostgator-setup-kit/ ; git show v1.0.0:hostgat
 **Deu:**
 
 ```
-v1.0.0 tinha 8 arquivos `.sh`, mas um deles é `_common.sh` (biblioteca compartilhada, não operação); o README da tag documenta exatamente **7** scripts. O "assistente de instalação em IA" é `hostgator-setup-kit/CLAUDE.md` — um markdown ("# Você é o assistente de instalação do DeskcommCRM"), não um script. Portanto: 7 scripts + 1 documento, contados como 8 scripts. No HEAD a pasta tem 14 `.sh` (entram agent, comecar, diagnostico, marca-emails, supabase-provision, test-validators).
+v1.0.0 tinha 8 arquivos `.sh`, mas um deles é `_common.sh` (biblioteca compartilhada, não operação); o README da tag documenta exatamente **7** scripts. O "assistente de instalação em IA" é `hostgator-setup-kit/CLAUDE.md` — um markdown ("# Você é o assistente de instalação do SonghaiCRM"), não um script. Portanto: 7 scripts + 1 documento, contados como 8 scripts. No HEAD a pasta tem 14 `.sh` (entram agent, comecar, diagnostico, marca-emails, supabase-provision, test-validators).
 ```
 
 **Sugestão:** - 7 scripts de operação — `install`, `update`, `backup`, `restore`, `reset-password`, `reset-mfa` e `healthcheck` — mais `CLAUDE.md`, o roteiro que faz uma IA conduzir a instalação de ponta a ponta para quem não programa.

@@ -1,4 +1,4 @@
-# Atualizar o DeskcommCRM pela própria tela
+# Atualizar o SonghaiCRM pela própria tela
 
 **Data:** 2026-07-28
 **Branch:** `feat/atualizar-pela-ui`
@@ -8,7 +8,7 @@
 
 ## 1. Problema
 
-Quem hospeda o DeskcommCRM numa VPS atualiza hoje assim: abre um terminal, conecta por SSH
+Quem hospeda o SonghaiCRM numa VPS atualiza hoje assim: abre um terminal, conecta por SSH
 (`ssh -p 22022 root@IP`), entra na pasta do projeto e roda `bash hostgator-setup-kit/update.sh`.
 
 O produto é distribuído para pessoas que não programam. A maioria não sabe fazer isso — e não

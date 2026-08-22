@@ -4,7 +4,7 @@
 
 # Installing for clients (agencies and resellers)
 
-A guide for whoever installs DeskcommCRM **for other companies** — agency, consultancy, reseller — and charges for it.
+A guide for whoever installs SonghaiCRM **for other companies** — agency, consultancy, reseller — and charges for it.
 
 The license is MIT: you may modify it, host it for third parties, resell it and charge whatever you want. There is no royalty, no clause forbidding commercial hosting, and there is no paid edition that locks features away from your client.
 
@@ -40,7 +40,7 @@ APP_ACCENT_HEX=#7a5cd6
 
 > The color is asked with a validator: only `#` + 6 digits gets through. That is narrower than what the screen accepts, and deliberately so — the **access e-mails** (account confirmation and password recovery) read this key from the `.env`, and they recognize that form only. A `#abc` or a `7a5cd6` would paint the interface with your color and leave the product's green in the first e-mail your client opens.
 
-> ⚠️ **Changing the color from the screen afterwards does NOT rewrite the access e-mails.** Their text lives inside Supabase (GoTrue), not in the CRM, and what pushes it there is `marca-emails.sh` — which reads the **`.env`**, not the database. For the e-mails to follow a color changed in `/admin/marca`: adjust `APP_ACCENT_HEX` in the `.env` as well and run `bash hostgator-setup-kit/marca-emails.sh`. This is why the installer interview matters: it is the only moment when both ends are born identical without anyone having to know about this.
+> ⚠️ **Changing the color from the screen afterwards does NOT rewrite the access e-mails.** Their text lives inside Supabase (GoTrue), not in the CRM, and what pushes it there is `marca-emails.sh` — which reads the **`.env`**, not the database. For the e-mails to follow a color changed in `/admin/marca`: adjust `APP_ACCENT_HEX` in the `.env` as well and run `bash self-host-kit/marca-emails.sh`. This is why the installer interview matters: it is the only moment when both ends are born identical without anyone having to know about this.
 
 What these variables are, exactly: **seed and rollback floor.**
 
@@ -96,7 +96,7 @@ Account confirmation and password recovery **are not sent by the system**: what 
 That is why the kit ships a script of its own:
 
 ```bash
-bash hostgator-setup-kit/marca-emails.sh
+bash self-host-kit/marca-emails.sh
 ```
 
 It uploads the subject and the body of both e-mails with **your** name and **your** color, and on top of that configures the link's return address (which no script configured before, and which is a prerequisite for the link to work at all). `install.sh` calls it by itself, right after creating the Supabase project; `update.sh` calls it too, so that an old installation receives this on its first update.
@@ -173,7 +173,7 @@ Every client of yours who uses a foreign CRM performs such a transfer and needs 
 
 ## Operation
 
-Every installation ships the scripts in `hostgator-setup-kit/`:
+Every installation ships the scripts in `self-host-kit/`:
 
 | Command | What it does |
 |---|---|
@@ -191,7 +191,7 @@ Every installation ships the scripts in `hostgator-setup-kit/`:
 
 **4 GB of RAM recommended** (the stack comes up with 2 GB, but runs at the limit — WAHA uses ~150 MB per WhatsApp session), ports 80 and 443, Docker Compose v2 and a domain with an A record pointing to the IP. The VPS compiles nothing — it downloads a ready-made image. The HTTPS certificate is issued automatically on first access.
 
-Full installation guide: [`hostgator-setup-kit/README.md`](../hostgator-setup-kit/README.md).
+Full installation guide: [`self-host-kit/README.md`](../self-host-kit/README.md).
 
 ---
 

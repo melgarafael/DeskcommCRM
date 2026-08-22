@@ -192,7 +192,7 @@ BODY="{\"kind\":\"heartbeat\",\"current_version\":\"${CURRENT}\",\"current_sha\"
 # que é a definição de controle decorativo. Quando o app aprender o campo, aí
 # ele entra no BODY junto.
 if [ -n "$PIN_FALTANDO" ]; then
-  log_err "a versão de $PIN_FALTANDO está solta (seguindo um canal, não uma versão fixa) — rode 'bash hostgator-setup-kit/update.sh' mais uma vez para fixar"
+  log_err "a versão de $PIN_FALTANDO está solta (seguindo um canal, não uma versão fixa) — rode 'bash self-host-kit/update.sh' mais uma vez para fixar"
 fi
 RESP="$(post "$BODY")"
 

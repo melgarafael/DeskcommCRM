@@ -1,4 +1,4 @@
-# 🧭 Visão — DeskcommCRM
+# 🧭 Visão — SonghaiCRM
 
 > **O sistema operacional de vendas com agentes de IA, open source, nativo no WhatsApp.**
 > Este documento é a fonte da verdade do posicionamento do projeto. Tudo que for público (README, site, docs, descrições) deriva daqui.
@@ -10,7 +10,7 @@
 **Deskcomm** vem de **Desk** (mesa) + **comm** (comércio): **o comercial de mesa**.
 A ideia que o nome carrega: toda a operação comercial de um negócio — atendimento, qualificação, funil, pós-venda — operada a partir de uma única mesa, por pessoas e por agentes de IA trabalhando juntos.
 
-O "CRM" no nome é a categoria de entrada, não o teto. O DeskcommCRM é **mais que um CRM**: é o sistema onde a venda acontece.
+O "CRM" no nome é a categoria de entrada, não o teto. O SonghaiCRM é **mais que um CRM**: é o sistema onde a venda acontece.
 
 ## De onde viemos, pra onde vamos
 
@@ -37,10 +37,10 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 | **Agentes de IA nativos** | RAG por tenant, análise de sentimento, handoff IA→humano auditado, IA como assignee, budget por org |
 | **CRM automatizado pela IA** | O agente move leads, aplica tags, dispara automações QUANDO/SE/ENTÃO — o funil anda sozinho |
 | **Ferramentas de apoio ao comercial** | Inbox em tempo real, kanban com fractional indexing, customer 360, métricas por atendente, roteamento automático |
-| **WhatsApp-native** | WAHA multi-número, anti-banimento, mídia, STOP detection — o canal onde o Brasil vende |
+| **WhatsApp-native** | WAHA multi-número, anti-banimento, mídia, STOP detection — o canal onde o cliente já está |
 | **Multi-nicho por design** | `vocabulary` configurável por pipeline (lead = Cliente/Paciente/Comprador; won = Pago/Agendado/Fechado) — o mesmo core serve e-commerce, clínica, imobiliária, infoproduto |
 | **Self-hosted de verdade** | Seus dados na sua VPS, kit de instalação com 1 comando, `baseline.sql` auto-curativo, atualização com 1 script |
-| **Compliance nativo** | Multi-tenant com RLS testada em CI, LGPD by-design (redact, data_request, anonimização), audit append-only |
+| **Compliance nativo** | Multi-tenant com RLS testada em CI, proteção de dados by-design (redact, data_request, anonimização) — base legal Lei n.º 3/2017 (Moçambique) —, audit append-only |
 
 ## Posicionamento
 
@@ -49,7 +49,7 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 **Categoria própria (bandeira):** **sistema operacional de vendas com agentes de IA** — *AI Sales OS*. É pra onde a âncora nos leva: os incumbentes vendem assinatura de chat com bot acoplado; nós entregamos um sistema onde o agente de IA é operador nativo e o código é seu.
 
 **Uma frase (pt-br):**
-> DeskcommCRM é o sistema operacional de vendas open source com agentes de IA nativos e WhatsApp — self-hosted, multi-tenant, para qualquer negócio que vende conversando.
+> SonghaiCRM é o sistema operacional de vendas open source com agentes de IA nativos e WhatsApp — self-hosted, multi-tenant, para qualquer negócio que vende conversando.
 
 **One-liner (en):**
 > Open-source AI sales OS: a self-hosted CRM where AI agents natively operate sales and support over WhatsApp — an open alternative to Kommo, Octadesk and Intercom.
@@ -59,8 +59,8 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 ## Modelo do projeto (sem letra miúda)
 
 - **O software é 100% open source (MIT), completo, sem versão paga.** Não vendemos assinatura. Não existe feature travada.
-- **A monetização é por infraestrutura:** o projeto é desenvolvido em parceria com a **HostGator** — o caminho recomendado de produção é a VPS deles (datacenter em São Paulo), instalada pelo `hostgator-setup-kit` com 1 comando. Assinar pelo link de parceiro apoia o projeto e sai mais barato pra quem assina.
-- **O caminho genérico nunca é sabotado:** `docker compose` e o kit self-host funcionam em qualquer VPS. A parceria é o caminho recomendado, nunca o único. (Regra de ouro do open source sustentável: percepção de pegadinha mata a marca.)
+- **Não há monetização por infraestrutura:** não há parceria comercial de hospedagem. O caminho recomendado de produção é qualquer VPS com Docker, instalada pelo `self-host-kit` com 1 comando.
+- **O caminho genérico nunca é sabotado:** `docker compose` e o kit self-host funcionam em qualquer VPS, sem preferência por provedor. (Regra de ouro do open source sustentável: percepção de pegadinha mata a marca.)
 
 ## Princípios de comunicação
 
@@ -68,7 +68,7 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 2. **Mostrar, não descrever.** Screenshot/GIF do produto no primeiro scroll de qualquer página.
 3. **Âncora explícita.** "Alternativa open source a X" aparece no About do GitHub, no README e no site — é assim que a demanda dos incumbentes nos encontra (busca e LLMs).
 4. **E-commerce é exemplo, não definição.** Ao citar casos de uso, sempre em lista multi-nicho ("e-commerce, clínicas, imobiliárias...").
-5. **Transparência de modelo.** Parceria HostGator e telemetria declaradas em linguagem humana no README, nunca escondidas.
+5. **Transparência de modelo.** Modelo de monetização e telemetria declarados em linguagem humana no README, nunca escondidos.
 
 ## Norte de 3 anos
 

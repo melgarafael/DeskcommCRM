@@ -1,4 +1,4 @@
-# Contributing — DeskcommCRM
+# Contributing — SonghaiCRM
 
 ## Antes de começar
 
@@ -67,7 +67,7 @@ Ao finalizar um epic:
    - Mudança de schema saiu como **tripla**: arquivo em `supabase/migrations/`, apêndice idempotente
      no `supabase/baseline.sql` e linha no `MANIFEST.md`. O kit self-host aplica **só o baseline** —
      migration que não chega lá não chega em quem instalou numa VPS. Nenhum job de CI confere isso
-   - **Se você tocou `Dockerfile*`, `docker-compose*.yml` ou `hostgator-setup-kit/`:** a mudança
+   - **Se você tocou `Dockerfile*`, `docker-compose*.yml` ou `self-host-kit/`:** a mudança
      alcança quem **já** instalou. Lei em [`docs/doctrine/packaging.md`](docs/doctrine/packaging.md).
      O CI reprova serviço `build:`-only, instalação em tag móvel e imagem quebrada (`imagens-ok`);
      o que fica com você é o resto: variável nova com default que não quebre `.env` antigo, e a
@@ -149,7 +149,7 @@ Veja [`README.md`](README.md) §Como rodar local.
 funciona para qualquer pessoa e é onde a resposta fica registrada para quem vier depois. Para bug,
 [abra uma issue](https://github.com/melgarafael/DeskcommCRM/issues/new/choose).
 
-Se for algo que não cabe em público (segurança, por exemplo): `rafael@maudibrasil.com.br` — o mesmo
+Se for algo que não cabe em público (segurança, por exemplo): `info@songhai.cc` — o mesmo
 endereço do [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 > Esta seção apontava para um Discord interno cujo convite mora num Notion privado — inalcançável

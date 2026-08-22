@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DeskcommCRM — a porta de entrada.
+# SonghaiCRM — a porta de entrada.
 #
 # Diferente do install.sh, este script roda no SEU computador (macOS, Linux ou
 # WSL), antes de existir servidor. Ele responde a única pergunta que trava quem
@@ -9,14 +9,11 @@
 #
 # Uso:
 #   bash comecar.sh
-#   curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/self-host-kit/comecar.sh | bash
 #
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
-# Link de parceria com a HostGator. Mesma URL e mesmo rótulo do README: uma
-# promessa só, num lugar só — duas redações da mesma oferta viram duas ofertas.
-VPS_URL="https://www.hostgator.com.br/52708-141-3-52.html"
 COMUNIDADE_URL="https://lp-comunidade.automatiklabs.com.br"
 
 # ── Aparência ───────────────────────────────────────────────────────────────
@@ -112,7 +109,7 @@ abrir() {
 }
 
 # ── O que contratar ─────────────────────────────────────────────────────────
-# Os números não são chute: saem de docs/runbooks/waha-hostgator.md, que é o
+# Os números não são chute: saem de docs/runbooks/waha-vps.md, que é o
 # ambiente onde o CRM é operado de verdade. Nomear o PLANO é o que mais importa
 # aqui — "2 vCPU / 4 GB" ainda deixa a pessoa escolhendo entre seis caixinhas no
 # site, e escolher errado é descobrir o problema semanas depois, com o WhatsApp
@@ -127,16 +124,11 @@ mostrar_requisitos() {
       150 MB por número conectado, e a stack inteira não cabe.
     • 80 GB de disco
     • Ubuntu 22.04 LTS ou 24.04 LTS
-    • Datacenter em São Paulo — é o que segura a latência do WhatsApp no Brasil
-
-  Onde contratar:
-
-       ${VPS_URL}
+    • Datacenter perto do seu público — segura a latência do WhatsApp
 
 REQ
-  c_dim "  Esse é um link de parceria: assinar por ele sai com desconto e ajuda a"
-  c_dim "  manter o projeto. O CRM é MIT e roda em qualquer servidor — se você já"
-  c_dim "  tem um, ou prefere outro provedor, funciona igual."
+  c_dim "  O CRM é MIT e roda em qualquer VPS com Docker — escolha o provedor que"
+  c_dim "  preferir."
   printf '\n'
 }
 
@@ -147,7 +139,7 @@ comando_de_instalacao() {
 
        git clone ${REPO_URL} deskcommcrm
        cd deskcommcrm
-       bash hostgator-setup-kit/install.sh
+       bash self-host-kit/install.sh
 
   O instalador cuida do resto: instala o Docker se faltar, cria o banco,
   configura o domínio com HTTPS e sobe o CRM. Ele pergunta o que só você sabe
@@ -192,7 +184,6 @@ MENU
   case "$escolha" in
     1)
       mostrar_requisitos
-      abrir "$VPS_URL"
       c_dim "  Quando o servidor estiver de pé, rode este mesmo comando de novo e"
       c_dim "  escolha a opção 2 — eu te dou o passo seguinte."
       ;;

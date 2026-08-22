@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Backup do Postgres (Supabase) do DeskcommCRM — schema public completo
+# Backup do Postgres (Supabase) do SonghaiCRM — schema public completo
 # (CRM + harness do agente). Roda no host ou num cron da VPS:
 #   0 3 * * * /path/repo/scripts/backup-db.sh /var/backups/deskcomm
 # Requer: pg_dump no PATH (major compatível) e SUPABASE_DB_URL no .env/.env.local.

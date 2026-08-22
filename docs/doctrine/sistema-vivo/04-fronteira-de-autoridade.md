@@ -99,7 +99,7 @@ O item mais esquecido é o último. Ele transforma cada erro observado em uma me
 
 ---
 
-# Aplicação de referência — DeskcommCRM
+# Aplicação de referência — SonghaiCRM
 
 **Os três papéis, como desenhados:** o humano atendente (juiz e decisor final: cria estratégia, resolve o que a IA não pode, analisa métricas, otimiza os agentes, administra permissões); a IA (executa a conversão de etapas até onde consegue e onde não há restrição); o Sistema Operacional (fornece recursos, mostra o ocorrido, cuida da governança, permite a interação do humano com os processos gerados).
 

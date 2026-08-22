@@ -195,7 +195,7 @@ reprovações espera — reprovar menos que o previsto denuncia mecanismo redund
   (`pnpm e2e:env` + `pnpm e2e:build`, que ainda prova que o host de produção não
   sobreviveu no bundle do browser); estou usando essa receita, não uma minha.
 - **Porta**: `E2E_PORT=3101`. Há um `next` vivo de **outra sessão** no worktree
-  `DeskcommCRM-qa-main`; porta própria para não colidir, e não matei processo nenhum —
+  `SonghaiCRM-qa-main`; porta própria para não colidir, e não matei processo nenhum —
   `pkill` amplo nesta máquina mata o trabalho alheio.
 - **Ressalva declarada**: o Supabase local é **compartilhado** entre sessões. Não vou
   resetá-lo. As specs semeiam a própria org por rodada; se um vizinho rodar o seed no

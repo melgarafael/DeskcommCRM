@@ -32,7 +32,7 @@ export function buildBudgetAlarmEmail(opts: BudgetAlarmEmailOptions): {
   text: string;
 } {
   const pctStr = `${opts.pct.toFixed(2)}%`;
-  const subject = `Alerta IA: orçamento atingiu ${pctStr} — DeskcommCRM`;
+  const subject = `Alerta IA: orçamento atingiu ${pctStr} — SonghaiCRM`;
   const orgLine = opts.orgName
     ? `<p style="margin:0 0 16px;font-size:14px;color:#57534e">Organização: <strong>${escapeHtml(opts.orgName)}</strong></p>`
     : "";

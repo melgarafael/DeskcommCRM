@@ -4,7 +4,7 @@
 
 ## 1. Problema
 
-O DeskcommCRM é um sistema fechado: leads só nascem por ação interna (atendente ou mensagem WhatsApp via WAHA). Não há porta de entrada para sistemas externos (landing page, formulário de newsletter, Zapier) criarem leads, nem mecanismo para o sistema **agir** a partir desses eventos (ex.: novo lead → iniciar conversa). E quando sistemas têm isso, ninguém acha nem sabe configurar. Três requisitos:
+O SonghaiCRM é um sistema fechado: leads só nascem por ação interna (atendente ou mensagem WhatsApp via WAHA). Não há porta de entrada para sistemas externos (landing page, formulário de newsletter, Zapier) criarem leads, nem mecanismo para o sistema **agir** a partir desses eventos (ex.: novo lead → iniciar conversa). E quando sistemas têm isso, ninguém acha nem sabe configurar. Três requisitos:
 
 1. **Funcionalidade**: receber dados de fora (inbound) e notificar sistemas externos (outbound).
 2. **Reação**: mini motor de regras gatilho → condições → ações.

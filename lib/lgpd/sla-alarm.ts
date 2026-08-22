@@ -30,7 +30,7 @@ export interface TriggerSlaAlarmArgs {
    * borda de verdade — ao contrário do irmão em `email-delivery.ts`, o cron
    * SEMPRE passava este campo (`app/api/v1/cron/lgpd-sla-watcher/route.ts`), e
    * a coluna é `NOT NULL` no schema (`supabase/baseline.sql:1750`). Os dois
-   * `?? "DeskcommCRM"` se pareciam e não eram a mesma coisa; tratá-los com a
+   * `?? "SonghaiCRM"` se pareciam e não eram a mesma coisa; tratá-los com a
    * mesma urgência teria errado a prioridade.
    */
   organizationName?: string | null;
@@ -243,7 +243,7 @@ Base legal: LGPD Lei nº 13.709/2018, Art. 18.`;
  * O nome da organização e a marca passaram a vir de campos que uma pessoa
  * digita numa tela (`organizations.display_name`, `settings.branding`) — então
  * entram no HTML escapados. Antes desta fase o pior caso era o literal
- * `"DeskcommCRM"`.
+ * `"SonghaiCRM"`.
  */
 function escapeHtml(s: string): string {
   return s

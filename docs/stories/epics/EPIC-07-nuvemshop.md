@@ -34,7 +34,7 @@ exposes_contracts:
   - "route./app/integrations/nuvemshop"
 status: completed
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-07 — Nuvemshop Integration
@@ -43,7 +43,7 @@ owner: Rafael Melgaço
 
 ## 1. Objetivo
 
-Conectar tenant DeskcommCRM a uma loja Nuvemshop via OAuth, ingerir pedidos/clientes/produtos via 5 webhooks operacionais + 3 sync workers iniciais, e materializar cada pedido como lead no pipeline "Pedidos" (criado por T-05). Resultado mensurável: ao final do epic, conectar uma loja real → ver pedidos abertos virando cards no Kanban em <30s do `order/created`.
+Conectar tenant SonghaiCRM a uma loja Nuvemshop via OAuth, ingerir pedidos/clientes/produtos via 5 webhooks operacionais + 3 sync workers iniciais, e materializar cada pedido como lead no pipeline "Pedidos" (criado por T-05). Resultado mensurável: ao final do epic, conectar uma loja real → ver pedidos abertos virando cards no Kanban em <30s do `order/created`.
 
 ## 2. Resultado esperado (Definition of Done do Epic)
 

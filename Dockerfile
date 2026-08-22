@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# DeskcommCRM — imagem de produção self-host (Next.js standalone).
+# SonghaiCRM — imagem de produção self-host (Next.js standalone).
 # Build: docker build --build-arg NEXT_PUBLIC_SUPABASE_URL=... -t deskcomm-app .
 
 # ---- deps: instala dependências (layer cacheável) ----
@@ -54,7 +54,8 @@ WORKDIR /app
 # passa pelo metadata-action e sem isto sairia sem origem nenhuma.
 LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCRM" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.title="DeskcommCRM"
+      org.opencontainers.image.title="SonghaiCRM" \
+      org.opencontainers.image.vendor="Songhai, Lda"
 
 # A versão que /api/v1/health reporta (invariante 7). Precisa vir por ARG: a
 # alternativa anterior era `process.env.npm_package_version`, que é `undefined`

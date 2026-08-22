@@ -5,7 +5,7 @@ escopo: transversal
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço (DevOps/SRE)
+owner: Songhai, Lda
 referencias:
   - docs/prd/00-prd-master.md
   - docs/prd/01-prd-platform-base.md
@@ -44,8 +44,8 @@ referencias:
 ### 1.3 Estados e ambientes
 | Ambiente | Branch | Domínio | Supabase | WAHA | Sentry env |
 |---|---|---|---|---|---|
-| Production | `main` | `app.deskcomm.com.br` + `admin.deskcomm.com.br` | projeto Pro `deskcomm-prod` | `waha.deskcomm.com.br` (Hostgator) | `production` |
-| Staging | `staging` | `staging.deskcomm.com.br` | projeto Free `deskcomm-staging` | `waha-staging.deskcomm.com.br` (Hostgator mesmo VPS, container separado) | `staging` |
+| Production | `main` | `app.deskcomm.com.br` + `admin.deskcomm.com.br` | projeto Pro `deskcomm-prod` | `waha.deskcomm.com.br` (VPS própria) | `production` |
+| Staging | `staging` | `staging.deskcomm.com.br` | projeto Free `deskcomm-staging` | `waha-staging.deskcomm.com.br` (mesma VPS, container separado) | `staging` |
 | Preview | qualquer PR | `*.vercel.app` | projeto Free `deskcomm-preview` (compartilhado) | mock/staging | `preview` |
 | Local dev | local | `localhost:3000` | `supabase start` (Docker) | `localhost:3000` (compose) | `development` |
 
@@ -76,7 +76,7 @@ referencias:
   - pgvector + pg_cron + pgcrypto + uuid-ossp + pg_stat_statements
 - **Não usa Supabase Edge Functions no MVP** (toda lógica fica no Next.js pra colocação simples). Edge Function entra só se aparecer caso de processamento dentro do RLS Postgres não-replicável em Node.
 
-#### Hostgator VPS (WAHA Plus + Nginx + Let's Encrypt)
+#### VPS própria (WAHA Plus + Nginx + Let's Encrypt)
 - **Tipo:** Turing (3 vCPU AMD, 4GB RAM, 80GB NVMe) — €8.21/mês ≈ $10/mês.
 - **Localização:** `nbg1` (São Paulo). RTT pro Brasil ~210ms. Aceitável porque WAHA fala com servidores WhatsApp (Meta) majoritariamente em US/EU; latência cliente final é absorvida pelo Brazilian POP de WhatsApp.
 - **Stack:**
@@ -131,7 +131,7 @@ referencias:
              │                                              │
              ▼                                              ▼
    ┌──────────────────────┐                    ┌─────────────────────────┐
-   │  Vercel Functions    │                    │  Hostgator VPS (São Paulo)│
+   │  Vercel Functions    │                    │  VPS própria (São Paulo) │
    │  - Next.js App       │                    │  ┌──────────────────┐   │
    │  - /api/v1/*         │                    │  │ Nginx 443/TLS    │   │
    │  - 7 Crons           │                    │  └────────┬─────────┘   │
@@ -1088,7 +1088,7 @@ Lista canônica de métricas:
 
 ### 9.4 Dashboards essenciais
 
-**Sentry Dashboard "DeskcommCRM Ops":**
+**Sentry Dashboard "SonghaiCRM Ops":**
 - Errors per hour by environment
 - p50/p95/p99 latência por endpoint top-20
 - Top issues últimos 7d
@@ -1337,7 +1337,7 @@ Budget de erro: 0.05% / mês ≈ 21min downtime tolerado. Excedeu? Freeze de fea
 |---|---|---|---|
 | Falha Vercel region (gru1) | 0 | 5min | Auto-failover Vercel pra `iad1`; latência aumenta ~120ms mas funcional |
 | Supabase down (DB total) | 24h (sem PITR) / 5min (com PITR) | 4h | Restore daily backup em projeto novo; DNS swap |
-| Hostgator VPS down (WAHA) | 7d (snapshot semanal) | 2h | Subir docker-compose em VPS reserva (restic restore + cloud-init); re-QR todas sessões NÃO afetadas se sessions restoradas |
+| VPS própria down (WAHA) | 7d (snapshot semanal) | 2h | Subir docker-compose em VPS reserva (restic restore + cloud-init); re-QR todas sessões NÃO afetadas se sessions restoradas |
 | Upstash Redis down | 0 (não persistente crítico) | 1min | Fallback in-memory; rate limit fica permissivo, idempotency vira best-effort |
 | AI Gateway down | 0 | 1min | Failover automático Anthropic→OpenAI via Gateway; se Gateway todo cai, modo "humano-only" (banner UI) |
 
@@ -1352,7 +1352,7 @@ Feature flag `READ_ONLY_MODE` em Edge Config. Quando ativada:
 Trigger: manual via super-admin. Auto-trigger desligado (risco de flap).
 
 ### 13.3 Fallback strategies adicionais
-- **WAHA banimento generalizado da conta DeskcommCRM (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
+- **WAHA banimento generalizado da conta SonghaiCRM (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
 - **Nuvemshop deprecação de webhook:** adapter pattern + assinar feed de release notes; testes de contrato no CI dão alerta.
 
 ---
@@ -1364,7 +1364,7 @@ Trigger: manual via super-admin. Auto-trigger desligado (risco de flap).
 | Vercel Pro | 1 seat | $20 | seats adicionais $20/dev. Frontend + API + crons |
 | Supabase Pro | base | $25 | + ~$10 compute upgrade quando p95 >100ms |
 | Supabase PITR (opcional) | addon | $0 (MVP) → $100 | ativar quando primeiro tenant >R$50k/mês |
-| VPS Hostgator Turing | mensal | ~R$140 (~$28) | WAHA Plus + Nginx; datacenter São Paulo (latência baixa pro WhatsApp BR) |
+| VPS própria (equiv. Turing) | mensal | ~R$140 (~$28) | WAHA Plus + Nginx; datacenter São Paulo (latência baixa pro WhatsApp BR) |
 | WAHA Plus license | mensal | $30 | https://waha.devlike.pro pricing |
 | Upstash Redis | pay-as-you-go | $5–15 | rate limit + idempotency |
 | Sentry Team | base | $26 | 50k errors / 100k perf |

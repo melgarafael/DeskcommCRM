@@ -1,6 +1,6 @@
 # W3 — Passar para um humano (pacote `escalar`)
 
-**Worktree:** `/Users/rafaelmelgaco/DeskcommCRM-ia360-w3-escalar` (branch `feat/ia-360-w3-escalar`, base `d25cd1c`)
+**Worktree:** `/Users/rafaelmelgaco/SonghaiCRM-ia360-w3-escalar` (branch `feat/ia-360-w3-escalar`, base `d25cd1c`)
 **Pacote alvo:** `escalar` — hoje com **1 capacidade só** (abrir handoff). Falta a volta inteira.
 
 ---

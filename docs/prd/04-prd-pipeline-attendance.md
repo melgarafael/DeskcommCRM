@@ -5,7 +5,7 @@ depends_on: 01-prd-platform-base.md, 02-prd-customer-360.md, 03-prd-whatsapp-wah
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 

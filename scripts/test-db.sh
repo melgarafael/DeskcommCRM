@@ -86,7 +86,7 @@ $$;
 -- O `pg_dump` do baseline emite, na linha ~3960, o `ALTER DEFAULT PRIVILEGES ...
 -- GRANT ALL ON FUNCTIONS TO anon` — mas ele só o emite PORQUE a entrada já
 -- existia no projeto de origem. Num Supabase de verdade (nuvem, que é o que o
--- `hostgator-setup-kit/install.sh` manda o cliente usar, ou a CLI local) essa
+-- `self-host-kit/install.sh` manda o cliente usar, ou a CLI local) essa
 -- entrada em `pg_default_acl` é gravada pelo bootstrap do Supabase, ANTES de
 -- `install.sh`/`update.sh` rodarem. Consequência: toda função que o baseline cria
 -- — inclusive as ~27 do CORPO do dump — nasce com EXECUTE para anon.

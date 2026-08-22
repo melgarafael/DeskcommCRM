@@ -13,7 +13,7 @@
 # Nomes de tag/plataforma conferidos contra o campo `name:` de cada arquivo do
 # repositório em 28/07/2026 — não contra o nome do arquivo, que é diferente.
 
-name: DeskcommCRM
+name: SonghaiCRM
 website_url: https://deskcomm.com.br
 source_code_url: https://github.com/melgarafael/DeskcommCRM
 description: Sales CRM with built-in AI agents that answer, qualify and advance deals over WhatsApp. Multi-tenant with row-level isolation, a per-tenant RAG knowledge base, and an audit log of every action the AI takes.

@@ -23,7 +23,7 @@ exposes_contracts:
   - "cookie.sb-deskcomm-auth"
 status: completed
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-01 — Auth & App Shell
@@ -1183,6 +1183,6 @@ Concluído em 2026-04-28 (sessões 1-2).
 6. Service role placeholder — refatorado pra user-scoped client + RLS-safe queries
 
 ### Seed admin user
-- Email: `rafael@maudibrasil.com.br` / Senha: `DeskcommAdmin@2026` (TROCAR APÓS PRIMEIRO LOGIN)
+- Email: `info@songhai.cc` / Senha: `DeskcommAdmin@2026` (TROCAR APÓS PRIMEIRO LOGIN)
 - Criado via GoTrue REST signup + email confirmado via SQL + membership inserida
 - Role: admin → MfaEnrollGate aparece no primeiro login

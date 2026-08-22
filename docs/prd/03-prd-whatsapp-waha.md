@@ -5,13 +5,13 @@ depends_on: 01-prd-platform-base.md, 02-prd-customer-360.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
 # Sub-PRD 03 — Canal WhatsApp via WAHA Plus
 
-> Define como o DeskcommCRM se conecta ao WhatsApp via WAHA Plus (API não-oficial) — desde a conexão de número via QR code, recebimento e envio de mensagens, suporte a mídia, multi-número e multi-atendente, até as defesas anti-banimento que sustentam a operação. É o canal primário do produto; sem ele, o CRM não opera. Profundidade de schema, payloads exatos e código de handlers ficam pra `docs/specs/03-spec-whatsapp-waha.md`.
+> Define como o SonghaiCRM se conecta ao WhatsApp via WAHA Plus (API não-oficial) — desde a conexão de número via QR code, recebimento e envio de mensagens, suporte a mídia, multi-número e multi-atendente, até as defesas anti-banimento que sustentam a operação. É o canal primário do produto; sem ele, o CRM não opera. Profundidade de schema, payloads exatos e código de handlers ficam pra `docs/specs/03-spec-whatsapp-waha.md`.
 
 ---
 
@@ -19,7 +19,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 WhatsApp é o canal **dominante** no e-commerce brasileiro PME — onde 80%+ das interações cliente↔loja acontecem. A API oficial Meta (Cloud API) é restritiva (template aprovado pra mensagem proativa fora da janela de 24h, custo por conversa, latência de aprovação), inadequada pra operação BPO de alto volume com tráfego majoritariamente reativo.
 
-O DeskcommCRM adota **WAHA Plus** (não Core) como solução de canal: API não-oficial baseada em engenharia reversa do WhatsApp Web, **multi-tenant nativo** (1 instância suporta N sessões), com auth via SHA512 hash em `WAHA_API_KEY`. Trade-off explícito: WAHA não tem SLA contratual com Meta — números podem ser banidos a qualquer momento se o tráfego destoar de comportamento humano. **Toda a engenharia deste sub-PRD é, em última análise, defesa contra banimento.**
+O SonghaiCRM adota **WAHA Plus** (não Core) como solução de canal: API não-oficial baseada em engenharia reversa do WhatsApp Web, **multi-tenant nativo** (1 instância suporta N sessões), com auth via SHA512 hash em `WAHA_API_KEY`. Trade-off explícito: WAHA não tem SLA contratual com Meta — números podem ser banidos a qualquer momento se o tráfego destoar de comportamento humano. **Toda a engenharia deste sub-PRD é, em última análise, defesa contra banimento.**
 
 A arquitetura aqui definida governa: (a) sessões (1 sessão = 1 número WhatsApp por tenant); (b) ingestão de inbound via webhook HMAC-protegido com idempotência forte; (c) envio com persistência otimista; (d) anti-banimento por throttle + warm-up + spinning + STOP detection; (e) crons de auto-recovery; (f) suporte a multi-número e multi-atendente desde o dia 1.
 
@@ -41,7 +41,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 8. **Multi-número por tenant** (1-2 números no MVP-B), com health check próprio
 9. **Multi-atendente**: assinar `message.any` pra capturar mensagens enviadas por outros devices vinculados; tratamento de `fromMe=true`
 10. **Crons obrigatórios**: `sync-sessions`, `recover-stuck-messages`, `process-pending-webhooks`
-11. **Hospedagem WAHA** (Railway no MVP, VPS Hostgator em produção; BYO documentado como Fase 2)
+11. **Hospedagem WAHA** (Railway no MVP, VPS própria com Docker em produção; BYO documentado como Fase 2)
 12. Tratamento de **edge cases** críticos (sessão cai, QR expira, número banido, mensagem fora de ordem, mensagem duplicada, mídia grande, áudio Safari, texto >4096, grupos)
 
 ### Fora do escopo deste sub-PRD (referências cruzadas)
@@ -68,7 +68,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 - **Engine NOWEB por default** (mais leve, sem Chromium); **WEBJS apenas pra features específicas** (stickers animados, listas/botões interativos) — decisão por feature, não por sessão inteira; revisitar na Spec
 - `webhook_secret` é **único por sessão** (não global) — facilita revogação e rotação
 - 1 tenant pode ter N sessões (MVP-B: 1-2 por tenant; arquitetura suporta mais)
-- Auth WAHA: `WAHA_API_KEY` armazenada como **SHA512 do plaintext** no servidor WAHA; o backend DeskcommCRM guarda o plaintext em variável de ambiente segura (Vercel Encrypted Env Var)
+- Auth WAHA: `WAHA_API_KEY` armazenada como **SHA512 do plaintext** no servidor WAHA; o backend SonghaiCRM guarda o plaintext em variável de ambiente segura (Vercel Encrypted Env Var)
 - Mudança de status é evento de timeline + audit (`channel_session.status_changed`)
 
 **ACs principais.**
@@ -99,7 +99,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 
 ### 3.3 Recebimento de mensagens via webhook
 
-**O que provê.** Endpoint receptor do DeskcommCRM que valida HMAC, persiste mensagem inbound com idempotência forte, e dispara o pipeline de processamento (Customer 360, IA, automações).
+**O que provê.** Endpoint receptor do SonghaiCRM que valida HMAC, persiste mensagem inbound com idempotência forte, e dispara o pipeline de processamento (Customer 360, IA, automações).
 
 **Princípios.**
 - Endpoint canônico `/api/v1/webhooks/waha/:session_name` (ou path-token equivalente — decisão na Spec)
@@ -264,7 +264,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 
 **Princípios.**
 - WAHA permite assinar evento `message` (apenas inbound) ou `message.any` (inbound + outbound de qualquer device, incluindo `fromMe=true`)
-- DeskcommCRM **assina `message.any`** pra não perder contexto quando atendente responde fora do CRM
+- SonghaiCRM **assina `message.any`** pra não perder contexto quando atendente responde fora do CRM
 - Mensagens com `fromMe=true` são tratadas como outbound:
   - Se `external_id` corresponde a uma mensagem que o CRM mesmo enviou → no-op (já temos)
   - Se `external_id` é novo → INSERT como outbound com `metadata.sent_via='external_device'`
@@ -312,7 +312,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 - Idempotência forte de inbound: zero duplicatas observáveis em 30 dias de operação
 - Recovery automático de sessão `STOPPED` por crash WAHA: <5min via cron
 - Zero perda de mensagem: toda inbound vai pra `webhook_events_log` raw antes de qualquer processamento
-- SLA WAHA upstream: 99% (Railway/Hostgator não dão SLA forte; aceito como tradeoff)
+- SLA WAHA upstream: 99% (Railway/VPS própria não dão SLA forte; aceito como tradeoff)
 
 ### 4.3 Segurança
 - `WAHA_API_KEY` plaintext armazenada apenas em Vercel Encrypted Env Vars; SHA512 no servidor WAHA
@@ -366,7 +366,7 @@ O canal WhatsApp é considerado **MVP-completo** quando:
 - **Sub-PRD 05 (IA + RAG + Handoff)** consome o mesmo evento pra rodar sentiment + resposta automática
 
 ### Externas
-- **WAHA Plus** — instância hospedada (Railway $5-10/mês no MVP; VPS Hostgator plano Turing ~R$140/mês em produção com Nginx + Let's Encrypt; datacenter São Paulo)
+- **WAHA Plus** — instância hospedada (Railway $5-10/mês no MVP; VPS própria ~R$140/mês em produção com Nginx + Let's Encrypt; datacenter São Paulo)
 - **Supabase Storage** (bucket por tenant pra mídia)
 - **Vercel Cron** (3 jobs: sync-sessions, recover-stuck-messages, process-pending-webhooks)
 - **Fila de envio**: Inngest, Trigger.dev, ou pg_boss (decisão na Spec)
@@ -433,7 +433,7 @@ A serem decididas no spec correspondente (`docs/specs/03-spec-whatsapp-waha.md`)
 9. **Health check granularidade**: além de status WAHA, validar pareamento (chamada test) vs apenas status?
 10. **Rotação de `webhook_secret`**: procedimento manual com janela de overlap vs automatizado por cron
 11. **Política de retenção de `webhook_events_log`** (raw): 30 dias hot + cold storage S3 vs 90 dias hot
-12. **Estratégia de migração entre Railway (MVP) e Hostgator VPS (produção)** sem downtime de sessão
+12. **Estratégia de migração entre Railway (MVP) e VPS própria (produção)** sem downtime de sessão
 13. **Limite exato do hard-cap diário** por status de warm-up (50/100/200/500/1000)
 14. **Lista canônica de regex de STOP detection** (incluir variações regionais? português brasileiro)
 15. **UI específica do super-admin pra gestão cross-tenant de sessões** (mockups)

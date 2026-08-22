@@ -2,7 +2,7 @@
 # Emergência: redefine a senha de um usuário (ex: o dono se trancou pra fora).
 # Não há reset por e-mail sem SMTP, então isto usa a admin API do Supabase.
 #
-#   bash hostgator-setup-kit/reset-password.sh dono@empresa.com
+#   bash self-host-kit/reset-password.sh dono@empresa.com
 source "$(dirname "$0")/_common.sh"
 enter_project
 

@@ -1,13 +1,13 @@
 ---
-title: DeskcommCRM — PRD-Mestre
+title: SonghaiCRM — PRD-Mestre
 version: 0.2
 status: em revisão
 date: 2026-07-19
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
-# DeskcommCRM — PRD-Mestre
+# SonghaiCRM — PRD-Mestre
 
 > Documento-índice da visão, escopo e estrutura do produto. Cada subsistema é detalhado em sub-PRDs (`01-plataforma-base.md` ... `06-nuvemshop-lgpd.md`). Decisões arquiteturais herdadas estão em `docs/research/reference-synthesis.md`.
 
@@ -21,16 +21,16 @@ Este PRD nasceu (v0.1, abril/2026) com o produto posicionado como **CRM operacio
 
 Implicações de leitura deste documento e dos sub-PRDs:
 - **E-commerce passa de definição do produto a primeiro vertical.** Referências a Nuvemshop, pipeline de pedidos e vocabulário de e-commerce continuam válidas como o template do vertical de origem — o mecanismo que as generaliza é o `vocabulary` configurável por pipeline (Sub-PRD 02 §3.7).
-- **O modelo comercial é open source + infraestrutura** (parceria HostGator para self-host em VPS), não venda de assinatura. Menções a "modo SaaS" descrevem uma opção arquitetural preservada, não o plano comercial corrente.
+- **O modelo comercial é open source + self-host** (qualquer VPS com Docker), não venda de assinatura. Menções a "modo SaaS" descrevem uma opção arquitetural preservada, não o plano comercial corrente.
 - Requisitos, contratos e decisões técnicas dos sub-PRDs permanecem válidos — a arquitetura multi-tenant com `vocabulary` configurável foi o que permitiu a expansão multi-nicho sem refactor.
 
 ---
 
 ## 1. Sumário Executivo
 
-**O que é.** DeskcommCRM é um sistema operacional de vendas open source com agentes de IA nativos — um CRM operacional onde a IA atende, qualifica e move o funil junto com humanos. Unifica atendimento humano, agentes com RAG por tenant, gestão de pedidos/negócios e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial). Nasceu especializado em e-commerce (vertical de origem, com integração Nuvemshop); hoje serve qualquer negócio que vende conversando — ver Nota de transição (§0).
+**O que é.** SonghaiCRM é um sistema operacional de vendas open source com agentes de IA nativos — um CRM operacional onde a IA atende, qualifica e move o funil junto com humanos. Unifica atendimento humano, agentes com RAG por tenant, gestão de pedidos/negócios e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial). Nasceu especializado em e-commerce (vertical de origem, com integração Nuvemshop); hoje serve qualquer negócio que vende conversando — ver Nota de transição (§0).
 
-**Quem usa.** Hoje, em modo BPO: a empresa operadora (TBD) usa o DeskcommCRM internamente pra prestar atendimento como serviço aos e-commerces clientes contratados. Atendentes humanos operam múltiplos tenants através de uma "caixa de entrada unificada" via *super-admin role*. Amanhã, em modo SaaS: o mesmo produto será comercializado direto pra e-commerces operarem por conta própria. Toda a arquitetura é multi-tenant desde o dia 1, sem refactor previsto pro pivot.
+**Quem usa.** Hoje, em modo BPO: a empresa operadora (TBD) usa o SonghaiCRM internamente pra prestar atendimento como serviço aos e-commerces clientes contratados. Atendentes humanos operam múltiplos tenants através de uma "caixa de entrada unificada" via *super-admin role*. Amanhã, em modo SaaS: o mesmo produto será comercializado direto pra e-commerces operarem por conta própria. Toda a arquitetura é multi-tenant desde o dia 1, sem refactor previsto pro pivot.
 
 **Quem é o cliente alvo (tenant).** PME brasileira que vende pelo WhatsApp — e-commerce, clínica, imobiliária, infoprodutor, agência ou serviço — na faixa de ~300 atendimentos/dia, 2–5 atendentes humanos e 1–2 números WhatsApp. O perfil de calibração original (e-commerce Nuvemshop com ~5 mil pedidos/mês) segue sendo a referência de carga.
 
@@ -46,7 +46,7 @@ Implicações de leitura deste documento e dos sub-PRDs:
 
 ## 2. Problema & Visão
 
-### Problemas que o DeskcommCRM resolve
+### Problemas que o SonghaiCRM resolve
 
 1. **Atendimento desfragmentado.** PMEs hoje atendem via WhatsApp Web pessoal + planilha + memória do atendente. Sem histórico unificado, sem multi-atendente real, sem auditoria. Quando o atendente sai da empresa, o relacionamento com o cliente vai junto.
 
@@ -60,9 +60,9 @@ Implicações de leitura deste documento e dos sub-PRDs:
 
 ### Visão
 
-> "DeskcommCRM é o sistema operacional de vendas onde agentes de IA e humanos atendem juntos os clientes de qualquer negócio que vende pelo WhatsApp, com Customer 360° unificado, compliance LGPD nativa, operação multi-tenant pronta pra escala — e agentes que se auto-aprimoram a cada conversa resolvida."
+> "SonghaiCRM é o sistema operacional de vendas onde agentes de IA e humanos atendem juntos os clientes de qualquer negócio que vende pelo WhatsApp, com Customer 360° unificado, compliance LGPD nativa, operação multi-tenant pronta pra escala — e agentes que se auto-aprimoram a cada conversa resolvida."
 
-Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de IA e WhatsApp" — milhares de instâncias self-hosted (VPS HostGator como caminho recomendado), ecossistema de agentes plugados via MCP público, templates prontos por nicho (e-commerce, clínica, imobiliária, infoproduto), e o flywheel de auto-aprimoramento medido em produção. Posicionamento completo em [`VISION.md`](../../VISION.md).
+Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de IA e WhatsApp" — milhares de instâncias self-hosted (qualquer VPS com Docker), ecossistema de agentes plugados via MCP público, templates prontos por nicho (e-commerce, clínica, imobiliária, infoproduto), e o flywheel de auto-aprimoramento medido em produção. Posicionamento completo em [`VISION.md`](../../VISION.md).
 
 ---
 
@@ -171,7 +171,7 @@ Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de
 
 ## 5. Arquitetura de Referência Herdada
 
-DeskcommCRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
+SonghaiCRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
 
 **Pontos não negociáveis herdados:**
 - Stack Next.js + Supabase + WAHA Plus + Vercel
@@ -193,7 +193,7 @@ Toda decisão de spec/epic que conflitar com o bundle herdado **requer justifica
 
 ## 6. Capacidades Diferenciadoras (gaps sobre a referência)
 
-São os 6 deltas que o DeskcommCRM constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
+São os 6 deltas que o SonghaiCRM constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
 
 ### 6.1 Integração Nuvemshop nativa
 OAuth + 8+ webhooks (incluindo LGPD redact/data_request) + sync inicial. Adapter pattern (`EcommercePlatformAdapter`) abstrai a interface pra VTEX/Shopify entrarem em fases posteriores sem reescrita.
@@ -266,7 +266,7 @@ Interface `EcommercePlatformAdapter` define `fetchOrders`, `fetchCustomers`, `su
 - Tempo médio de ciclo de pipeline (carrinho → entregue)
 
 ### 8.3 Critério de sucesso geral do MVP
-DeskcommCRM é considerado MVP-validado quando:
+SonghaiCRM é considerado MVP-validado quando:
 1. Pelo menos **1 tenant real** está em produção atendendo clientes finais por **30 dias contínuos** sem incidente que cause banimento WAHA ou perda de dados.
 2. Pelo menos **5 KPIs dos 7 listados acima** estão sendo medidos automaticamente e dentro do target ou com plano de correção.
 3. Audit log e LGPD passam revisão manual sem encontrar lacuna crítica.
@@ -306,7 +306,7 @@ Roadmap revisado a cada 4 semanas. Estimativa otimista; recalibrar a cada milest
 
 ## 11. Glossário
 
-- **Tenant** — uma organização cliente do DeskcommCRM (um negócio que vende pelo WhatsApp: e-commerce, clínica, imobiliária, infoprodutor, etc.). No DB = `organizations`. Sinônimo: organização.
+- **Tenant** — uma organização cliente do SonghaiCRM (um negócio que vende pelo WhatsApp: e-commerce, clínica, imobiliária, infoprodutor, etc.). No DB = `organizations`. Sinônimo: organização.
 - **Operador BPO** — funcionário da empresa operadora que atende múltiplos tenants. Tem role super-admin de plataforma.
 - **Super-admin de plataforma** — role que cruza tenants. Distinto do `admin` de um tenant específico.
 - **Lead / Cliente** — registro central no CRM (`crm_leads`). No vocabulary de e-commerce, lead = "Cliente". Engloba cliente em qualquer estágio (interesse, comprou, pós-venda).

@@ -117,7 +117,7 @@ Doutrina morre de três jeitos, e vale reconhecê-los cedo:
 
 ---
 
-# Aplicação de referência — DeskcommCRM
+# Aplicação de referência — SonghaiCRM
 
 **Onde o checklist é cobrado:** item "Living System Checklist" do Definition of Done (`CLAUDE.md`) e a skill `sistema-vivo` (`.claude/skills/sistema-vivo/SKILL.md`), que o injeta em toda sessão de implementação.
 

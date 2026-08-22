@@ -1,5 +1,5 @@
 
-> deskcomm-crm@0.1.0 test:e2e /Users/rafaelmelgaco/DeskcommCRM-canais
+> deskcomm-crm@0.1.0 test:e2e /Users/rafaelmelgaco/SonghaiCRM-canais
 > playwright test
 
 [WebServer] ⚠ "next start" does not work with "output: standalone" configuration. Use "node .next/standalone/server.js" instead.
@@ -92,11 +92,11 @@ Running 58 tests using 5 workers
   -  58 [chromium] › tests/e2e/invite-lifecycle.spec.ts:317:7 › ciclo de vida do convite (ponta a ponta + adversarial) › 9. não autenticado → CTA de login, não o formulário de aceite
   ✘  49 [chromium] › tests/e2e/vps-webhook-outbound-ssrf.spec.ts:95:7 › J6.8 — anti-SSRF do outbound call_webhook (real, ponta a ponta) › regra call_webhook para host interno → run falha e receiver recebe ZERO hits (3.0m)
 cleanup: falha ao desativar o fluxo apiRequestContext.post: Test timeout of 300000ms exceeded.
-    at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-journey.spec.ts:603:28 {
+    at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-journey.spec.ts:603:28 {
   log: []
 }
 cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300000ms exceeded.
-    at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-journey.spec.ts:614:36 {
+    at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-journey.spec.ts:614:36 {
   log: []
 }
   ✘   2 [chromium] › tests/e2e/followup-journey.spec.ts:193:7 › followup — jornada completa (Task 8.3) › silêncio → enroll → trigger→wait→action→classify → resposta → outcome → fila (5.0m)
@@ -123,7 +123,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       19 |   });
       20 |
       21 |   test("/503 renders manutenção", async ({ page }) => {
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/error-pages.spec.ts:18:51
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/error-pages.spec.ts:18:51
 
     Error Context: test-results/error-pages-error-pages-500-renders-erro-interno-chromium/error-context.md
 
@@ -144,7 +144,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       251 |     await expect(page.locator(".react-flow")).toBeVisible();
       252 |
       253 |     await page.getByTestId("palette-add-wait").click();
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-builder.spec.ts:250:16
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-builder.spec.ts:250:16
 
     Error Context: test-results/followup-builder-followup--01d39-o-e-configura-o-prompt-hint-chromium/error-context.md
 
@@ -169,7 +169,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       340 |     await expect(page.locator(`[data-testid="node-error-${waitId}"]`)).toBeVisible();
       341 |     await expect(page.locator(`[data-testid="node-error-${actionId}"]`)).toBeVisible();
       342 |     await expect(page.locator(`[data-testid="node-error-${endId}"]`)).toBeVisible();
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-builder.spec.ts:339:61
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-builder.spec.ts:339:61
 
     Error Context: test-results/followup-builder-followup--a8b5b-regar-rollback-desabilitado-chromium/error-context.md
 
@@ -189,7 +189,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       463 |     const dialog = page.getByRole("dialog");
       464 |     await dialog.getByLabel("Nome").fill(flowName);
       465 |     await dialog.getByRole("button", { name: "Criar fluxo" }).click();
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-builder.spec.ts:462:60
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-builder.spec.ts:462:60
 
     Error Context: test-results/followup-builder-followup--bbcdc-always-nas-arestas-de-saída-chromium/error-context.md
 
@@ -214,7 +214,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       663 |
       664 |     const followupHeading = page.getByRole("heading", { name: "Follow-up", exact: true });
       665 |     await followupHeading.scrollIntoViewIfNeeded();
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-builder.spec.ts:662:66
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-builder.spec.ts:662:66
 
     Error Context: test-results/followup-builder-followup--46628-sistência-é-provada-via-API-chromium/error-context.md
 
@@ -239,7 +239,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       721 |
       722 |       // Draft novo nasce trigger_config={kind:'manual'} — o botão mostra isso sem precisar abrir o popover.
       723 |       const triggerButton = page.getByTestId("trigger-config-button");
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-builder.spec.ts:720:60
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-builder.spec.ts:720:60
 
     Error Context: test-results/followup-builder-followup--fd2c8--Silêncio-PATCH-round-trips-chromium/error-context.md
 
@@ -259,7 +259,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       583 |       await page.getByLabel("Buscar contato").fill(seed.contactName);
       584 |       const finalRow = page
       585 |         .locator('[data-testid="queue-row"]', { hasText: seed.contactName })
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-journey.spec.ts:582:53
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-journey.spec.ts:582:53
 
     Error Context: test-results/followup-journey-followup--2b3ab-→-resposta-→-outcome-→-fila-chromium/error-context.md
 
@@ -277,8 +277,8 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       125 |   const { data: contactResult } = (await createContactRes.json()) as ApiOk<{ contact: { id: string } }>;
       126 |
       127 |   const createEnrollmentRes = await page.request.post("/api/v1/ai/followups/enrollments", {
-        at createLiveEnrollment (/Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-queue.spec.ts:124:37)
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/followup-queue.spec.ts:254:18
+        at createLiveEnrollment (/Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-queue.spec.ts:124:37)
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/followup-queue.spec.ts:254:18
 
     Error Context: test-results/followup-queue-followup-qu-f68ba--—-403-client-E-server-side-chromium/error-context.md
 
@@ -298,7 +298,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       263 |     // sem duplicar membership
       264 |     expect(await membershipCount()).toBe(1);
       265 |     await ctx.close();
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/invite-lifecycle.spec.ts:262:16
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/invite-lifecycle.spec.ts:262:16
 
     Error Context: test-results/invite-lifecycle-ciclo-de--c26d1-e-sem-membership-duplicada--chromium/error-context.md
 
@@ -323,7 +323,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       58 |   await expect(unowned).toBeVisible();
       59 |   // A badge de ausência de dono está presente em ao menos um card.
       60 |   await expect(page.getByText("Sem responsável").first()).toBeVisible();
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/kanban-owner-filter.spec.ts:57:23
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/kanban-owner-filter.spec.ts:57:23
 
     Error Context: test-results/kanban-owner-filter-filtro-94327-RL-e-esconde-leads-com-dono-chromium/error-context.md
 
@@ -338,7 +338,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       55 |
       56 |   const { error: memberError } = await admin.from("user_organizations").insert({
       57 |     user_id: data.user.id,
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/password-recovery.spec.ts:54:31
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/password-recovery.spec.ts:54:31
 
     Error Context: test-results/password-recovery-recupera-d0a34-va-senha-→-login-com-a-nova-chromium/error-context.md
 
@@ -359,8 +359,8 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       52 |   await expect(page.getByRole("heading", { name: "Radar de risco" })).toBeVisible();
       53 | }
       54 |
-        at gotoRadar (/Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/risk-radar.spec.ts:51:14)
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/risk-radar.spec.ts:72:3
+        at gotoRadar (/Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/risk-radar.spec.ts:51:14)
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/risk-radar.spec.ts:72:3
 
     Error Context: test-results/risk-radar-o-atendente-ass-b35d9--Radar-e-vira-o-responsável-chromium/error-context.md
 
@@ -389,7 +389,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       106 |       await page.waitForURL(/\/app\/webhooks/);
       107 |       await page.getByRole("button", { name: /Nova fonte|Criar primeira fonte/ }).click();
       108 |       await page.locator("#src-name").fill(SOURCE_NAME);
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/vps-webhook-outbound-ssrf.spec.ts:105:58
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/vps-webhook-outbound-ssrf.spec.ts:105:58
 
     Error Context: test-results/vps-webhook-outbound-ssrf--e9f14-e-receiver-recebe-ZERO-hits-chromium/error-context.md
 
@@ -416,7 +416,7 @@ cleanup: falha ao arquivar o agent apiRequestContext.delete: Test timeout of 300
       115 |       await page.getByRole("link", { name: "Webhooks" }).click();
       116 |       await page.waitForURL(/\/app\/webhooks/);
       117 |
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/webhooks.spec.ts:114:66
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/webhooks.spec.ts:114:66
 
     Error Context: test-results/webhooks-webhooks-automaçõ-64c41-e-e-kanban-agent-sem-acesso-chromium/error-context.md
 

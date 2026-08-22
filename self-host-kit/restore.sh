@@ -2,7 +2,7 @@
 # Restaura o banco a partir de um dump gerado pelo backup.sh.
 # CUIDADO: sobrescreve o schema/dados atuais do banco.
 #
-#   bash hostgator-setup-kit/restore.sh backups/db-20260702-030000.sql.gz
+#   bash self-host-kit/restore.sh backups/db-20260702-030000.sql.gz
 source "$(dirname "$0")/_common.sh"
 enter_project
 

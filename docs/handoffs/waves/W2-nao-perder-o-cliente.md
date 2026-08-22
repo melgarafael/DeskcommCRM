@@ -1,6 +1,6 @@
 # W2 — Não perder o cliente (pacote `reter`)
 
-**Worktree:** `/Users/rafaelmelgaco/DeskcommCRM-ia360-w2-reter` (branch `feat/ia-360-w2-reter`, base `d25cd1c`)
+**Worktree:** `/Users/rafaelmelgaco/SonghaiCRM-ia360-w2-reter` (branch `feat/ia-360-w2-reter`, base `d25cd1c`)
 **Pacote alvo:** `reter` — hoje **vazio**. Esta é a wave mais importante do épico.
 
 ---

@@ -1,7 +1,7 @@
 /**
  * GATE DO PILAR 3 — o catalogo de tools fala com quem NAO programa.
  *
- * Quem configura um agente no DeskcommCRM e dono de clinica, de loja, de
+ * Quem configura um agente no SonghaiCRM e dono de clinica, de loja, de
  * imobiliaria. Sem este teste a regra apodrece na primeira pressa: alguem
  * adiciona a tool com `rotulo: "crm_archive_lead"` as 23h e ninguem percebe.
  *

@@ -20,7 +20,7 @@ exposes_contracts:
   - "db.organizations.onboarded_at"
 status: completed (partial: WhatsApp QR build-only — needs Docker up for E2E)
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 ## Wave Completion Log

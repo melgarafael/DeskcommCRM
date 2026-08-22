@@ -2,7 +2,7 @@
 
 > Spec: `docs/superpowers/specs/2026-08-03-gestao-funis-design.md`.
 > Execução **inline** nesta sessão (TDD, commit por tarefa). Branch `feat/gestao-funis`,
-> worktree `~/DeskcommCRM-funis`, base `origin/main@5a8f4a7`.
+> worktree `~/SonghaiCRM-funis`, base `origin/main@5a8f4a7`.
 
 **Goal:** dar ao usuário criar, renomear, reordenar, eleger padrão e arquivar funis
 pela tela do Kanban — e fazer essa tela mostrar só a organização ativa.

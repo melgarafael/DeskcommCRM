@@ -8,7 +8,8 @@ WORKDIR /app
 # Procedência (doutrina de packaging, invariante 2).
 LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCRM" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.title="DeskcommCRM worker"
+      org.opencontainers.image.title="SonghaiCRM worker" \
+      org.opencontainers.image.vendor="Songhai, Lda"
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION

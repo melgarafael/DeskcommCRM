@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "sequence",
   "meta": {
-    "title": "DeskcommCRM — Signup & Recuperação de Senha",
+    "title": "SonghaiCRM — Signup & Recuperação de Senha",
     "subtitle": "fluxo token_hash (@supabase/ssr) com provisionamento de tenant em /auth/confirm",
     "output": "auth-flows.html",
     "viewBox": [920, 990],

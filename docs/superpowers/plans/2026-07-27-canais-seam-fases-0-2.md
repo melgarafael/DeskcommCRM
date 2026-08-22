@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Abrir o seam de canal no DeskcommCRM — capabilities declarativas, WAHA como primeiro adapter, `provider` no schema e lint anti-vazamento — **sem alterar um único comportamento visível ao usuário**.
+**Goal:** Abrir o seam de canal no SonghaiCRM — capabilities declarativas, WAHA como primeiro adapter, `provider` no schema e lint anti-vazamento — **sem alterar um único comportamento visível ao usuário**.
 
 **Architecture:** Features param de conhecer providers e passam a perguntar **capacidades** (`lib/channels/capabilities.ts`). O WAHA vira o primeiro `ChannelAdapter`; toda a lógica de negócio (pacing, janela, gates) fica fora dos adapters. A cadeia `before_send` já existente ganha consciência de capability sem mudar de ordem nem de versão de comportamento. Ver a doutrina em `docs/doctrine/restricao-de-canal.md`.
 
@@ -73,7 +73,7 @@
 Receita da doutrina de QA Visual (`CLAUDE.md`). Postgres pg17 com `supabase/baseline.sql`, **não** as migrations:
 
 ```bash
-cd ~/DeskcommCRM-canais
+cd ~/SonghaiCRM-canais
 npm install
 npx supabase start                 # config.toml já em major_version = 17
 psql "$DATABASE_URL" -f supabase/baseline.sql

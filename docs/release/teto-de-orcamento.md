@@ -1,6 +1,6 @@
 # O limite de gasto com IA agora vale de verdade
 
-> Para quem opera um DeskcommCRM na própria VPS. Escrito em português comum, sem
+> Para quem opera um SonghaiCRM na própria VPS. Escrito em português comum, sem
 > jargão. Se você só quer a resposta curta, ela é: **você não precisa fazer nada.**
 
 ## O que estava errado

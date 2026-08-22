@@ -1,11 +1,11 @@
-# agent-engine — notas do porte Vendaval → DeskcommCRM (fusão)
+# agent-engine — notas do porte Vendaval → SonghaiCRM (fusão)
 
 > Doutrina do porte. TODO arquivo em `lib/agent-engine/` segue estas regras. Fonte original:
 > `~/vendaval/daemon/src/` (referência histórica; este diretório é o canônico daqui em diante).
 
 ## Mapeamento de schema (determinístico — código E migration seguem a MESMA regra)
 
-| Vendaval (antigo) | DeskcommCRM (canônico) |
+| Vendaval (antigo) | SonghaiCRM (canônico) |
 |---|---|
 | tabela `tenants` | **NÃO EXISTE** → `organizations` (tabela real do CRM) |
 | coluna `tenant_id` | `organization_id uuid not null references organizations(id) on delete cascade` |

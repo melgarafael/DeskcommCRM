@@ -4,7 +4,7 @@
 
 ## Contexto
 
-O DeskcommCRM hoje fala WhatsApp por três providers atrás do seam `lib/channels/`
+O SonghaiCRM hoje fala WhatsApp por três providers atrás do seam `lib/channels/`
 (`ChannelAdapter`): **WAHA** (não-oficial, engine Baileys, QR code, `banRisk: true`),
 **Meta Cloud** (BSP oficial da Meta) e **Zernio** (intermediário que fala com a mesma
 WABA da Meta). WAHA Plus — a versão exigida hoje pelo `CLAUDE.md` — é uma licença paga;

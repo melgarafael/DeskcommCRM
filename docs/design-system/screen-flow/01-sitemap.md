@@ -8,7 +8,7 @@ date: 2026-04-28
 
 # 01 — Sitemap
 
-> Árvore canônica de rotas do DeskcommCRM. Toda tela construída deve aparecer aqui. Persona, auth e prioridade por rota; layouts pais explícitos. Convenção Next.js 14 App Router.
+> Árvore canônica de rotas do SonghaiCRM. Toda tela construída deve aparecer aqui. Persona, auth e prioridade por rota; layouts pais explícitos. Convenção Next.js 14 App Router.
 
 ## Convenção de leitura
 

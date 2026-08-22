@@ -360,7 +360,7 @@ function marcasNoTexto(fonte: string): string[] {
     const inicio = linha.trimStart();
     if (inicio.startsWith("//") || inicio.startsWith("*") || inicio.startsWith("/*")) continue;
     for (const casada of linha.matchAll(/[\w@.-]*deskcomm[\w@.-]*/gi)) {
-      // Pontuação encostada (o ponto final de "no DeskcommCRM.") não faz parte
+      // Pontuação encostada (o ponto final de "no SonghaiCRM.") não faz parte
       // do identificador e faria a lista mudar por causa de uma vírgula.
       achadas.push(casada[0].toLowerCase().replace(/^[.-]+/, "").replace(/[.-]+$/, ""));
     }
@@ -413,10 +413,10 @@ describe("catraca de marca hardcoded", () => {
   it("ignora comentário, mas não confunde `//` de URL com comentário", () => {
     // A regra de comentário é uma exceção, e exceção sem guarda vira buraco:
     // procurar `//` em qualquer posição da linha esconderia justamente a URL.
-    expect(marcasNoTexto(`  // fala do DeskcommCRM`)).toEqual([]);
-    expect(marcasNoTexto(` * fala do DeskcommCRM`)).toEqual([]);
+    expect(marcasNoTexto(`  // fala do SonghaiCRM`)).toEqual([]);
+    expect(marcasNoTexto(` * fala do SonghaiCRM`)).toEqual([]);
     expect(marcasNoTexto(`const u = "https://deskcomm.app/x";`)).toEqual(["deskcomm.app"]);
-    expect(marcasNoTexto(`fetch(url); // manda pro DeskcommCRM`)).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(`fetch(url); // manda pro SonghaiCRM`)).toEqual(["deskcommcrm"]);
   });
 
   it("nenhum arquivo fora da lista fixa a marca", () => {
@@ -501,12 +501,12 @@ describe("catraca de marca hardcoded", () => {
  * o código que embarca na imagem. Ela é cega para `supabase/templates/*.html` e
  * `supabase/config.toml`, e essa cegueira tinha consequência medida: dava para
  * zerar a lista de dívidas, ver a suíte inteira verde, e o cliente do
- * revendedor continuar recebendo "Confirme seu e-mail — DeskcommCRM" no
+ * revendedor continuar recebendo "Confirme seu e-mail — SonghaiCRM" no
  * PRIMEIRO e-mail que ele abre na vida.
  *
  * Estes arquivos não são renderizados por nenhum TypeScript nosso: quem os
  * renderiza é o GoTrue, um processo de terceiro. Não há resolvedor a chamar —
- * o texto é empurrado por API pelo `hostgator-setup-kit/marca-emails.sh`, que
+ * o texto é empurrado por API pelo `self-host-kit/marca-emails.sh`, que
  * substitui os `__PLACEHOLDER__`. Por isso a guarda aqui é diferente em
  * NATUREZA da de cima: lá ela cobra `branding()`; aqui ela cobra placeholder.
  *
@@ -572,22 +572,22 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
   });
 
   it("comentário de HTML não conta, e `-->` no meio da linha não engole o resto", () => {
-    expect(marcasNoTexto(semComentariosHtml("<!-- fala do DeskcommCRM -->"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosHtml("<!-- fala do SonghaiCRM -->"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosHtml("<!--\n  SonghaiCRM\n  em várias linhas\n-->"))).toEqual([]);
     // O caso que a regra de `//` erraria: marca REAL depois do fecho.
-    expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no DeskcommCRM"))).toEqual([
+    expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no SonghaiCRM"))).toEqual([
       "deskcommcrm",
     ]);
     // E a marca fora de comentário nenhum continua contando.
-    expect(marcasNoTexto(semComentariosHtml("<p>conta no DeskcommCRM</p>"))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosHtml("<p>conta no SonghaiCRM</p>"))).toEqual(["deskcommcrm"]);
   });
 
   it("comentário de TOML não conta, mas `#` dentro de string não vira comentário", () => {
-    expect(marcasNoTexto(semComentariosToml("# Supabase CLI config — DeskcommCRM"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # DeskcommCRM'))).toEqual([
+    expect(marcasNoTexto(semComentariosToml("# Supabase CLI config — SonghaiCRM"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # SonghaiCRM'))).toEqual([
       "deskcommcrm",
     ]);
-    expect(marcasNoTexto(semComentariosToml('subject = "Olá — DeskcommCRM"'))).toEqual(["deskcommcrm"]);
+    expect(marcasNoTexto(semComentariosToml('subject = "Olá — SonghaiCRM"'))).toEqual(["deskcommcrm"]);
   });
 
   it("nenhum arquivo do GoTrue fixa a marca fora da lista", () => {
@@ -595,7 +595,7 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     expect(
       novos,
       `Marca hardcoded em arquivo que o GoTrue renderiza.\n` +
-        `Use o placeholder __APP_NAME__ (quem substitui é hostgator-setup-kit/marca-emails.sh):\n` +
+        `Use o placeholder __APP_NAME__ (quem substitui é self-host-kit/marca-emails.sh):\n` +
         novos.map((f) => `  ${f}  ${JSON.stringify(encontradoAqui.get(f))}`).join("\n"),
     ).toEqual([]);
   });
@@ -613,7 +613,7 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("os dois modelos de e-mail não têm marca nenhuma — é o estado que se defende", () => {
     // Explícito, e não só implícito na ausência de linha na allowlist: é ESTE
-    // caso que falha quando alguém reescreve "no DeskcommCRM" num template.
+    // caso que falha quando alguém reescreve "no SonghaiCRM" num template.
     expect(encontradoAqui.has("supabase/templates/confirmation.html")).toBe(false);
     expect(encontradoAqui.has("supabase/templates/recovery.html")).toBe(false);
   });

@@ -6,7 +6,7 @@
 > underscore). Se preferir o prefixo, renomeia e adicione um redirect
 > em `next.config.ts`.
 
-Painel navegável e isolado para iterar a direção visual do DeskcommCRM antes de
+Painel navegável e isolado para iterar a direção visual do SonghaiCRM antes de
 aplicar ao app real. Não toca em `app/layout.tsx` global; tem o seu próprio
 `layout.tsx` com `<VariantProvider>` e CSS escopado em `showcase.css`.
 

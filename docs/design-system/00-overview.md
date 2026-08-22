@@ -4,7 +4,7 @@
 
 ## Filosofia
 
-O DeskcommCRM é uma ferramenta operacional para **atendentes que ficam 8 horas por dia em frente à tela**. Toda decisão visual passa por esse filtro: o que reduz fadiga, o que acelera leitura, o que sustenta foco.
+O SonghaiCRM é uma ferramenta operacional para **atendentes que ficam 8 horas por dia em frente à tela**. Toda decisão visual passa por esse filtro: o que reduz fadiga, o que acelera leitura, o que sustenta foco.
 
 Por isso a direção é **soft-tech / calmo**:
 
@@ -12,7 +12,7 @@ Por isso a direção é **soft-tech / calmo**:
 - **Tech** — tipografia precisa, dados em mono tabular, hierarquia disciplinada, microinterações com propósito.
 - **Calmo** — sem decoração, sem celebração, sem AI-sparkle, sem gradientes. Confiança vem de consistência, não de efeito.
 
-A meta secundária é **não parecer genérico**. 80% dos CRMs SaaS atuais convergem para o mesmo molde (Inter + Lucide + slate + accent indigo + glassmorphism). DeskcommCRM diverge intencionalmente em todas essas escolhas.
+A meta secundária é **não parecer genérico**. 80% dos CRMs SaaS atuais convergem para o mesmo molde (Inter + Lucide + slate + accent indigo + glassmorphism). SonghaiCRM diverge intencionalmente em todas essas escolhas.
 
 ## Princípios canônicos
 
@@ -44,7 +44,7 @@ Leia 00 → 09 sequencial uma vez. Depois consulte por demanda via tabela do `RE
 
 ## Referências
 
-A linguagem do DeskcommCRM toma emprestado partes específicas (não estética inteira) de quatro produtos:
+A linguagem do SonghaiCRM toma emprestado partes específicas (não estética inteira) de quatro produtos:
 
 - **Arc browser** — sidebar como "casa", microinterações de hover com propósito espacial, paleta neutra com 1 accent destacado.
 - **Notion** — densidade aerada (row 56 / gap 24), tipografia humanista grande, hierarquia por peso e tamanho mais que por cor.

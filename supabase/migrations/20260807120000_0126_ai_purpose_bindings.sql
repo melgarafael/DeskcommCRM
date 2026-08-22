@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 0126 — ONDE A ESCOLHA DE MODELO DE CADA PONTO DO SISTEMA PASSA A MORAR.
 --
--- O problema: o DeskcommCRM chama modelo em 23 lugares (catalogados em
+-- O problema: o SonghaiCRM chama modelo em 23 lugares (catalogados em
 -- lib/ai/pontos/registro.ts) e a escolha de QUAL modelo estava espalhada por
 -- três pilhas que não se falam e por sete variáveis de ambiente. Não havia
 -- superfície para configurar, então o operador não conseguia nem descobrir

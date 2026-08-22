@@ -95,7 +95,7 @@ instrua_e_saia() {
 [ -f "$ENV_FILE" ] && load_env "$ENV_FILE"
 
 APP_NOME="${APP_NAME:-}"
-[ -n "${APP_NOME//[[:space:]]/}" ] || APP_NOME="DeskcommCRM"
+[ -n "${APP_NOME//[[:space:]]/}" ] || APP_NOME="SonghaiCRM"
 APP_URL="${NEXT_PUBLIC_APP_URL:-}"
 
 # `#506d48` é o accent do tema claro do produto (grau 600 da rampa em

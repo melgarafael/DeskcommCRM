@@ -18,7 +18,7 @@ build/
 # Env — ignora todo .env*, exceto os templates de exemplo
 .env*
 !.env.example
-!.env.hostgator.example
+!.env.selfhost.example
 
 # Testing & coverage
 coverage/

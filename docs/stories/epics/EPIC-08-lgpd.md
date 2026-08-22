@@ -24,7 +24,7 @@ exposes_contracts:
   - "route./app/lgpd/requests/[id]"
 status: pending
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-08 — LGPD Compliance

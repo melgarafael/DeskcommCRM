@@ -22,7 +22,7 @@ os bugs achados na causa raiz.
 - **App:** `next build` + `next start` na :3001, `NODE_ENV=production`.
 - **Realismo de VPS:** `RESEND_API_KEY` VAZIO de propósito (primeiro deploy não
   tem email) — é onde apareceram bugs de primeira impressão.
-- **Worktree:** `~/DeskcommCRM-qa` (branch `qa/vps-experience`), `node_modules`
+- **Worktree:** `~/SonghaiCRM-qa` (branch `qa/vps-experience`), `node_modules`
   REAL (não symlink), FORA de `/tmp` (foi limpo no meio da sessão 1x).
 - **Config de teste local (NÃO commitar):** `enable_signup = true` no config.toml
   local libera o password-grant do GoTrue local para o seed; em produção o login

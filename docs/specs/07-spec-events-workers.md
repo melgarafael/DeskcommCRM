@@ -19,7 +19,7 @@ related:
 
 # Spec 07 — Event Log + Workers + Crons (transversal)
 
-> Esta spec define o **bus interno** do DeskcommCRM: como módulos publicam eventos no banco, como workers consomem, quais crons rodam no Vercel, como tratamos retries, dead-letter, idempotência e observabilidade. É **transversal** — todos os outros sub-PRDs (02–06) emitem ou consomem deste bus.
+> Esta spec define o **bus interno** do SonghaiCRM: como módulos publicam eventos no banco, como workers consomem, quais crons rodam no Vercel, como tratamos retries, dead-letter, idempotência e observabilidade. É **transversal** — todos os outros sub-PRDs (02–06) emitem ou consomem deste bus.
 
 ---
 

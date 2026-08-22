@@ -1,5 +1,5 @@
 
-> deskcomm-crm@0.1.0 test:db /Users/rafaelmelgaco/DeskcommCRM-canais
+> deskcomm-crm@0.1.0 test:db /Users/rafaelmelgaco/SonghaiCRM-canais
 > bash scripts/test-db.sh
 
 ==> subindo pgvector/pgvector:pg17 como deskcomm-test-db-55295 (porta local 54329)
@@ -329,7 +329,7 @@ psql:<stdin>:4053: ERROR:  policy "tenant_read_lgpd_exports" for table "objects"
     ✓ update ok (re-apply terminou; erros tolerados por contrato)
 ==> invariantes: vitest (tests/invariants)
 
- RUN  v4.1.10 /Users/rafaelmelgaco/DeskcommCRM-canais
+ RUN  v4.1.10 /Users/rafaelmelgaco/SonghaiCRM-canais
 
 psql:<stdin>:3: ERROR:  new row for relation "channel_sessions" violates check constraint "channel_sessions_provider_ref_check"
 DETAIL:  Failing row contains (f202667d-ed1f-42c7-b0c3-e1665066be95, bb0bdcfa-5d0a-4ab0-89f1-ff7a84f5625d, null, NOWEB, 4bc0eaf4b21248bc9338cf045870bb17, \x00, STARTING, null, null, null, null, 2026-07-28 11:43:01.801178+00, 0, 300, null, null, f, {}, 2026-07-28 11:43:01.801178+00, 2026-07-28 11:43:01.801178+00, null, meta_cloud, null, null, null).

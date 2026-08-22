@@ -44,12 +44,12 @@ que quase sempre é esquecida: **como isto chega a um clone que JÁ RODA e vai a
 
 | | |
 |---|---|
-| **Worktree** | `/Users/rafaelmelgaco/DeskcommCRM-marca` |
+| **Worktree** | `/Users/rafaelmelgaco/SonghaiCRM-marca` |
 | **Branch** | `feat/marca-propria`, criada de `origin/main` @ `f9abedd0` |
 | **Banco** | Supabase local `127.0.0.1:54321` — **compartilhado com outras sessões**, checar antes de DDL |
 | **Blueprint** | https://claude.ai/code/artifact/1aa1b097-d6f4-4aff-b388-194b1e546ca2 |
 
-> ⚠️ O worktree principal (`/Users/rafaelmelgaco/DeskcommCRM`) é de **outra sessão** —
+> ⚠️ O worktree principal (`/Users/rafaelmelgaco/SonghaiCRM`) é de **outra sessão** —
 > mudou de `fix/alertas-de-seguranca-github` para `fix/issues-triadas` no meio desta.
 > Não commitar lá.
 
@@ -428,7 +428,7 @@ não remover da build. Grep sobre arquivo inexistente devolve vazio, indistingu�
 
 `lib/lgpd/pdf-renderer.tsx:277` imprime, no documento entregue ao **titular de dados**:
 
-> `DeskcommCRM · Relatório LGPD Art. 18 II · DPO: contato via canal oficial do controlador`
+> `SonghaiCRM · Relatório LGPD Art. 18 II · DPO: contato via canal oficial do controlador`
 
 Dois defeitos. O primeiro é o vazamento de marca (ângulo 3 pega). O segundo ninguém tocou:
 **o sistema já sabe o DPO e não o imprime** — `lib/env.ts:134` tem `LGPD_DPO_EMAIL` e
@@ -472,7 +472,7 @@ da própria razão social, aí sim é campo novo, e a razão estará escrita aqu
 
 | Achado | Evidência |
 |---|---|
-| **Todo projeto Supabase do revendedor nasce chamado "DeskcommCRM"** | `install.sh:918` usa `${APP_NAME:-DeskcommCRM}`; `APP_NAME` só é coletado em `:1024` — **106 linhas depois** |
+| **Todo projeto Supabase do revendedor nasce chamado "SonghaiCRM"** | `install.sh:918` usa `${APP_NAME:-SonghaiCRM}`; `APP_NAME` só é coletado em `:1024` — **106 linhas depois** |
 | **O primeiro e-mail que o cliente do revendedor recebe diz o nome do nosso produto** | `supabase/templates/confirmation.html:4` e `recovery.html:4`; e **nenhum script sobe esses templates** — só `config.toml` (Supabase local) e um teste |
 | **A tela de dinheiro entrega nosso contato ao cliente do revendedor** | `lib/navigation/registry.ts:453` (porta de 1ª classe, "Billing") → `app/app/settings/billing/page.tsx:26` mostra `suporte@deskcomm.app` |
 

@@ -25,7 +25,7 @@ step "Atualização pela tela (agente do host)"
 # minutos, com o erro indo só para o .update-agent.log e o `>/dev/null` do cron.
 # Para o dono, o sintoma é "o botão nunca apareceu": nenhuma pista, nenhum alarme.
 # Este bloco é a pista.
-if crontab -l 2>/dev/null | grep -q 'hostgator-setup-kit/agent.sh'; then
+if crontab -l 2>/dev/null | grep -q 'self-host-kit/agent.sh'; then
   c_grn "✓ agente instalado no cron (a cada 5 minutos)"
   log="$PROJECT_DIR/.update-agent.log"
   # Recência pela MTIME do arquivo, não parseando a data de dentro: `date -d` é
@@ -35,11 +35,11 @@ if crontab -l 2>/dev/null | grep -q 'hostgator-setup-kit/agent.sh'; then
     c_ylw "⚠ o agente falhou recentemente ao falar com o app:"
     c_ylw "  $(tail -2 "$log" | head -1)"
     c_ylw "  Se o botão de atualizar não aparece na tela, é por isto."
-    c_ylw "  Quase sempre resolve rodando: bash hostgator-setup-kit/update.sh"
+    c_ylw "  Quase sempre resolve rodando: bash self-host-kit/update.sh"
   else
     c_grn "✓ sem falhas recentes do agente"
   fi
 else
   c_ylw "⚠ o agente NÃO está no cron — o botão de atualizar não vai aparecer na tela."
-  c_ylw "  Ative rodando: bash hostgator-setup-kit/update.sh"
+  c_ylw "  Ative rodando: bash self-host-kit/update.sh"
 fi

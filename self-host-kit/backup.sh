@@ -2,7 +2,7 @@
 # Backup: dump do banco (Supabase) + snapshot das sessões do WhatsApp.
 # Supabase free NÃO tem backup automático — rode isto num cron diário.
 #
-#   crontab -e →  0 3 * * *  cd /caminho/deskcommcrm && bash hostgator-setup-kit/backup.sh
+#   crontab -e →  0 3 * * *  cd /caminho/deskcommcrm && bash self-host-kit/backup.sh
 source "$(dirname "$0")/_common.sh"
 enter_project
 

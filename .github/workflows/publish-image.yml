@@ -65,13 +65,13 @@ jobs:
         include:
           - name: deskcommcrm
             dockerfile: Dockerfile
-            title: DeskcommCRM
+            title: SonghaiCRM
           - name: deskcomm-worker
             dockerfile: Dockerfile.worker
-            title: DeskcommCRM worker
+            title: SonghaiCRM worker
           - name: deskcomm-scheduler
             dockerfile: Dockerfile.scheduler
-            title: DeskcommCRM scheduler
+            title: SonghaiCRM scheduler
 
     steps:
       - uses: actions/checkout@v7
@@ -136,7 +136,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          # linux/amd64: o VPS HostGator e a imagem do WAHA são amd64.
+          # linux/amd64: a VPS e a imagem do WAHA são amd64.
           platforms: linux/amd64
           # PR de fork não tem permissão de escrita no GHCR, e publicar imagem
           # de código não revisado seria pior que não gatear. Em PR: constrói

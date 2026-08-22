@@ -5,7 +5,7 @@ depends_on: 01-spec-platform-base.md, 02-spec-customer-360.md, 03-spec-whatsapp-
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 

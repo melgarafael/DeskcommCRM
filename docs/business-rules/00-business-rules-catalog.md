@@ -1,12 +1,12 @@
 ---
-title: DeskcommCRM — Catálogo de Regras de Negócio
+title: SonghaiCRM — Catálogo de Regras de Negócio
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
-# DeskcommCRM — Catálogo de Regras de Negócio
+# SonghaiCRM — Catálogo de Regras de Negócio
 
 > Regras de negócio normalizadas com IDs lookup-able. Cada regra documenta GIVEN/WHEN/THEN/EXCEPT, enforcement layer e política de override. Especificações técnicas (schema SQL, payloads) ficam nas Specs (Fase 3); aqui é onde a lógica de negócio vive.
 

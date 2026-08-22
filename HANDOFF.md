@@ -370,7 +370,7 @@
   escopo mínimo desta task (a UI de 6.1 já comunica status/versão sem o número). Fica pra quando 6.2/6.3
   precisarem mostrar fila viva.
   **PROVA (Playwright headed, `tests/e2e/followup-builder.spec.ts`, 2/2 verde):** dev server real
-  (`next dev --port 3022` — 3001 estava ocupado por OUTRO worktree, `DeskcommCRM-qa`, confirmado via
+  (`next dev --port 3022` — 3001 estava ocupado por OUTRO worktree, `SonghaiCRM-qa`, confirmado via
   `lsof`/`cwd` antes de escolher a porta) + DB remoto real + login real do manager seed
   (`.e2e-creds.json`). Caso 1: login manager → `/app/ai/followups` → heading "Follow-ups" visível →
   screenshot lista vazia → clica "Novo fluxo" → dialog abre com foco no input (`toBeFocused` via

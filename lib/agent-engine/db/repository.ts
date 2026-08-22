@@ -1,7 +1,7 @@
 /**
  * Acesso tipado às tabelas núcleo do harness. SQL cru, sem ORM.
  *
- * ponytail: fluxo de espelho morto no porte para o DeskcommCRM (mesmo banco agora) —
+ * ponytail: fluxo de espelho morto no porte para o SonghaiCRM (mesmo banco agora) —
  * removidos createTenant, upsertLead, getLead, listLeads, ingestCrmEvent,
  * listCrmEvents e os tipos TenantRow/LeadRow/EventInboxRow (organizations/contacts
  * são as tabelas reais do CRM; o drain lê event_log direto). Sobra o inbox de

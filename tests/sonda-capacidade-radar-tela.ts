@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 
 const BASE = process.env.E2E_PORT ? `http://127.0.0.1:${process.env.E2E_PORT}` : "http://127.0.0.1:3100";
 const AGENTE = "36ed74d7-3505-46ab-bc2b-9656626e118c"; // kind=mcp_agent — o rag_bot cai no editor legado, sem ToolPicker
-const c = JSON.parse(readFileSync("/Users/rafaelmelgaco/DeskcommCRM/.e2e-creds.json", "utf8"));
+const c = JSON.parse(readFileSync("/Users/rafaelmelgaco/SonghaiCRM/.e2e-creds.json", "utf8"));
 
 async function main(): Promise<void> {
   const b = await chromium.launch();

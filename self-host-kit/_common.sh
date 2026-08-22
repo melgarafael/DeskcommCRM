@@ -616,7 +616,7 @@ setup_update_agent_cron() {
   # morre calada a cada 5 minutos em qualquer REPO_DIR customizado ou /opt.
   # A assinatura legada inclui o PROJECT_DIR: é o que distingue a linha desta
   # instalação da linha de uma vizinha, que roda o mesmo agent.sh em outra pasta.
-  local legado="cd ${PROJECT_DIR} && bash hostgator-setup-kit/agent.sh"
+  local legado="cd ${PROJECT_DIR} && bash self-host-kit/agent.sh"
   local marcador; marcador="$(cron_tag agent)"
   local cron_line="*/5 * * * * ${legado} >/dev/null 2>&1 ${marcador}"
   ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -

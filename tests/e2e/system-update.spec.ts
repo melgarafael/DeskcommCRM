@@ -286,7 +286,7 @@ test("quando a atualização falha, a tela nomeia a versão certa, mostra o log 
   // E o comando leva de volta para a versão que FUNCIONAVA — reinstalar a 1.1.0,
   // que acabou de quebrar, não é saída nenhuma se o problema for a release.
   await expect(
-    page.getByText("bash hostgator-setup-kit/update.sh --to v1.0.0 --force"),
+    page.getByText("bash self-host-kit/update.sh --to v1.0.0 --force"),
   ).toBeVisible();
   await page.screenshot({ path: ".superpowers/evidence/final-1-falha-com-rollback.png" });
 
@@ -310,7 +310,7 @@ test("quando a atualização falha, a tela nomeia a versão certa, mostra o log 
   await expect(page.getByText(/não consegui/i)).toBeVisible();
   await expect(page.getByText(/Voltei o sistema para a versão/)).toHaveCount(0);
   await expect(
-    page.getByText("bash hostgator-setup-kit/update.sh --to v1.1.0 --force"),
+    page.getByText("bash self-host-kit/update.sh --to v1.1.0 --force"),
   ).toBeVisible();
   await page.screenshot({ path: ".superpowers/evidence/final-2-falha-sem-rollback.png" });
 
@@ -340,7 +340,7 @@ test("quando a atualização falha, a tela nomeia a versão certa, mostra o log 
     page.getByRole("heading", { name: /a atualização para a versão 1\.2\.0 não deu certo/i }),
   ).toBeVisible();
   await expect(
-    page.getByText("bash hostgator-setup-kit/update.sh --to v1.1.0 --force"),
+    page.getByText("bash self-host-kit/update.sh --to v1.1.0 --force"),
   ).toBeVisible();
   await page.getByText(/Detalhes técnicos/).click();
   await expect(page.getByText(/é ANTERIOR à que já está instalada/)).toBeVisible();
@@ -368,7 +368,7 @@ test("quando o host não conseguiu comparar, a tela não diz que está em dia", 
   await expect(page.getByRole("heading", { name: /não consegui checar/i })).toBeVisible();
   await expect(page.getByText(/é a mais recente/i)).toHaveCount(0);
   await expect(page.getByText(/quer dizer que eu não sei/i)).toBeVisible();
-  await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toBeVisible();
+  await expect(page.getByText("bash self-host-kit/update.sh")).toBeVisible();
   await page.screenshot({ path: ".superpowers/evidence/final-5-nao-consegui-checar.png" });
 });
 
@@ -393,7 +393,7 @@ test("instalação à frente da versão publicada não vira tela quebrada nem al
   ).toBeVisible();
   await expect(page.getByText(/não há nada a atualizar/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /atualizar agora/i })).toHaveCount(0);
-  await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toBeVisible();
+  await expect(page.getByText("bash self-host-kit/update.sh")).toBeVisible();
   await page.screenshot({ path: ".superpowers/evidence/final-3-a-frente-da-publicada.png" });
 });
 
@@ -419,7 +419,7 @@ test("fork sem nenhuma release publicada não afirma 'à frente' sem base", asyn
   await expect(page.getByRole("heading", { name: /à frente da versão publicada/i })).toHaveCount(0);
   await expect(page.getByText(/não há nada a atualizar agora/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /atualizar agora/i })).toHaveCount(0);
-  await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toBeVisible();
+  await expect(page.getByText("bash self-host-kit/update.sh")).toBeVisible();
   await page.screenshot({ path: ".superpowers/evidence/minors-1-sem-release-publicada.png" });
 });
 

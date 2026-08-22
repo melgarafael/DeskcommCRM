@@ -2,7 +2,7 @@
 
 > **Source of truth:** `components/ui/*` (shadcn customizado), `app/design/showcase.css` (`.ds-*` canônicos).
 
-Inventário completo dos componentes de UI do DeskcommCRM. Cada um tem variants finitos, states nomeados e regras de uso. Não fork, não custom-CSS solto: se um componente precisa de variant novo, ele entra aqui.
+Inventário completo dos componentes de UI do SonghaiCRM. Cada um tem variants finitos, states nomeados e regras de uso. Não fork, não custom-CSS solto: se um componente precisa de variant novo, ele entra aqui.
 
 ## Componentes shadcn instalados
 
@@ -223,7 +223,7 @@ Wrapper sobre Radix ScrollArea. Use SEMPRE em listas longas (inbox, kanban col).
 
 ---
 
-# Componentes custom DeskcommCRM
+# Componentes custom SonghaiCRM
 
 Componentes específicos do produto. Especificação detalhada em **Spec 04 §6** (`docs/specs/04-presentation.md`); resumo abaixo.
 

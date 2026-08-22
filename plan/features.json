@@ -1,7 +1,7 @@
 {
   "_meta": {
     "loop": "gov-loop",
-    "repo": "DeskcommCRM",
+    "repo": "SonghaiCRM",
     "active_phase": "G1",
     "loop_doctrine": "Máquina portada do vendaval-loop. Doutrina de DOMÍNIO soberana: CLAUDE.md deste repo + docs/specs/ (multi-tenancy, migrations em tripla, idempotência, RBAC, LGPD, anti-patterns). Este arquivo só muda nos campos 'passes' e 'verification', via node loop/update-feature.ts — nunca editor. Feature nova/alterada = proposta em loop/inbox.items.md + aprovação humana + commit com DESKCOMM_GOV_PLAN_EDIT=1.",
     "session_ritual": "Ler loop/LOOP.md e segui-lo à risca. Uma sessão = UMA feature. Maker≠checker: passes:true só com PASS do gov-verifier sob hash-check.",

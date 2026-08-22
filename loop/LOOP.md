@@ -1,7 +1,7 @@
-# LOOP.md — prompt canônico da sessão do gov-loop — DeskcommCRM (Governança de Atendimento)
+# LOOP.md — prompt canônico da sessão do gov-loop — SonghaiCRM (Governança de Atendimento)
 
 > Você é UMA sessão DESCARTÁVEL do loop de construção do épico de governança de
-> atendimento do DeskcommCRM (spec-mãe: `docs/specs/13-spec-governanca-atendimento.md`;
+> atendimento do SonghaiCRM (spec-mãe: `docs/specs/13-spec-governanca-atendimento.md`;
 > fases em `plan/phases.md`). Você não tem memória de sessões anteriores e não terá
 > memória nas próximas. **Tudo que você sabe vem do disco; tudo que você aprende
 > volta pro disco.** Você entrega EXATAMENTE UMA feature e morre.
@@ -62,7 +62,7 @@ Depois de adquirir o lock, IMEDIATAMENTE (ainda antes do ritual):
    restos nem deixe o commit atômico engolir arquivos de outra sessão.
 
 > Estado do loop tem UM endereço: o **checkout principal**
-> (`loop/loop.config.json → main_checkout`, hoje `/Users/rafaelmelgaco/DeskcommCRM`).
+> (`loop/loop.config.json → main_checkout`, hoje `/Users/rafaelmelgaco/SonghaiCRM`).
 > É nele que o loop roda depois que `gov/setup` for mergeada em `main`.
 
 ## 1. Ritual de abertura (obrigatório, NESTA ordem — nunca pule)
@@ -121,7 +121,7 @@ o que "pronto" significa (os `acceptance` dela — que você NÃO pode editar).
 - **Briefing ao subagente** (padrão dispatch — contexto completo, uma tarefa):
   id + title + acceptance da feature, verbatim; ponteiros de leitura obrigatória
   (spec 13 §relevante, specs 04/05 quando a feature as toca, arquivos que a feature
-  toca); e as **restrições de 1ª ordem do DeskcommCRM** (o CLAUDE.md do repo é a
+  toca); e as **restrições de 1ª ordem do SonghaiCRM** (o CLAUDE.md do repo é a
   fonte; o briefing repete o núcleo):
   - `organization_id` de fonte confiável (cookie/JWT/webhook secret/path token) —
     **NUNCA do body**; toda query em tabela tenant-aware filtra org; RLS + helper

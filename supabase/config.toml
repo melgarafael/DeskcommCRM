@@ -1,4 +1,4 @@
-# Supabase CLI config — DeskcommCRM
+# Supabase CLI config — SonghaiCRM
 # Docs: https://supabase.com/docs/guides/cli/config
 # Este arquivo é versionado. Segredos vivem em .env.local / Vercel.
 
@@ -60,11 +60,11 @@ enable_confirmations = true
 # Templates apontam para /auth/confirm (fluxo token_hash do @supabase/ssr).
 # Self-host GoTrue: ver docs/deploy-selfhost (GOTRUE_MAILER_TEMPLATES_*).
 [auth.email.template.confirmation]
-subject = "Confirme seu e-mail — DeskcommCRM"
+subject = "Confirme seu e-mail — SonghaiCRM"
 content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.recovery]
-subject = "Redefinir senha — DeskcommCRM"
+subject = "Redefinir senha — SonghaiCRM"
 content_path = "./supabase/templates/recovery.html"
 
 [auth.mfa]

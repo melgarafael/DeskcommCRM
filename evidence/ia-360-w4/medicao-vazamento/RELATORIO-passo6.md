@@ -1,6 +1,6 @@
 # O passo 6 levou os 30% a zero? **Não — mas levou a 10%.**
 
-> Medido em 2026-08-06, worktree `DeskcommCRM-tres-papeis`, SHA `d0ef5ec2` (árvore limpa).
+> Medido em 2026-08-06, worktree `SonghaiCRM-tres-papeis`, SHA `d0ef5ec2` (árvore limpa).
 > Modelo `gpt-5.6-terra`, chave OpenAI real, **ferramentas EXECUTADAS** contra o Supabase local.
 > Coletor: `tests/e2e/qa-agente-usa-as-maos.spec.ts` (o mesmo da linha de base) · contagem:
 > [`medir.ts`](./medir.ts) · turnos crus em [`turnos/`](./turnos/).

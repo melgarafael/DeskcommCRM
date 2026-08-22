@@ -5,19 +5,19 @@ depends_on: 01-prd-platform-base.md, 02-prd-customer-360.md, 03-prd-whatsapp-wah
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
 # Sub-PRD 05 — IA Conversacional + RAG por tenant + Sentiment Detection + Handoff
 
-> Camada de inteligência operacional do DeskcommCRM. Define como o chatbot responde inbounds com contexto rico (perfil + último pedido + base de conhecimento do tenant), como o sistema detecta frustração em tempo real, e como o produto orquestra a transição bot→humano sem perda de contexto. Sem essa camada, o produto vira CRM convencional com WhatsApp colado; com ela, é o diferencial que justifica a tese do AI Sales OS — agentes de IA operando a venda de verdade (ver `VISION.md`).
+> Camada de inteligência operacional do SonghaiCRM. Define como o chatbot responde inbounds com contexto rico (perfil + último pedido + base de conhecimento do tenant), como o sistema detecta frustração em tempo real, e como o produto orquestra a transição bot→humano sem perda de contexto. Sem essa camada, o produto vira CRM convencional com WhatsApp colado; com ela, é o diferencial que justifica a tese do AI Sales OS — agentes de IA operando a venda de verdade (ver `VISION.md`).
 
 ---
 
 ## 1. Contexto & Posicionamento
 
-PMEs de e-commerce recebem volume de atendimento que não fecha economicamente com humano puro: 60–70% das conversas são repetitivas (rastreio, prazo, troca, frete). Chatbot decorativo (FAQ em árvore) é pior que humano — frustra, escala reclamação, derruba reputação. A camada de IA do DeskcommCRM ocupa esse meio: bot que lê contexto real (últimas 20 mensagens + perfil + último pedido), conhece o tenant (FAQ + política + catálogo Nuvemshop + conversas resolvidas) e sabe a hora de chamar humano.
+PMEs de e-commerce recebem volume de atendimento que não fecha economicamente com humano puro: 60–70% das conversas são repetitivas (rastreio, prazo, troca, frete). Chatbot decorativo (FAQ em árvore) é pior que humano — frustra, escala reclamação, derruba reputação. A camada de IA do SonghaiCRM ocupa esse meio: bot que lê contexto real (últimas 20 mensagens + perfil + último pedido), conhece o tenant (FAQ + política + catálogo Nuvemshop + conversas resolvidas) e sabe a hora de chamar humano.
 
 Dentro da arquitetura herdada: bot é mais um produtor de activities na timeline polimórfica do Sub-PRD 02 (`crm_lead_activities` com `type='ai_responded' | 'handoff_triggered' | 'sentiment_alert'`); RAG é camada de leitura sobre fontes versionadas por tenant; sentiment roda fora do path crítico via `event_log` (doutrina §2: trigger nunca faz HTTP). Modelo default vem do PRD-mestre §6.5 — Vercel AI Gateway com strings `"anthropic/claude-sonnet-4-6"` e fallback Anthropic→OpenAI no Gateway, sem import direto de SDK. Camada invisível pro cliente final, mas é a maior alavanca de margem operacional do produto.
 

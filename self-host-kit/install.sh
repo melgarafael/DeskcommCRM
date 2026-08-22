@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DeskcommCRM — instalador self-host para VPS (HostGator).
+# SonghaiCRM — instalador self-host para VPS (Docker).
 #
 # Idempotente: pode rodar de novo sem estragar nada. Dependências no host:
 # só docker, docker compose, git, openssl, curl. psql/bootstrap rodam via Docker.
@@ -145,7 +145,7 @@ show_recovery() {
   printf '  %s\n' "cd ${dir}"
   printf '  %s\n' "rm -f .env                                    # apaga a configuração digitada"
   printf '  %s\n' "docker compose $(dc_files) down -v          # derruba o que subiu"
-  printf '  %s\n' "bash ${KIT_DIR:-hostgator-setup-kit}/install.sh   # começa de novo"
+  printf '  %s\n' "bash ${KIT_DIR:-self-host-kit}/install.sh   # começa de novo"
   printf '\n%s\n' "Se o schema chegou a ser aplicado e você quer o banco limpo de novo,"
   printf '%s\n'   "abra o Supabase > SQL Editor e rode (ATENÇÃO: apaga todos os dados):"
   printf '  %s\n\n' "drop schema public cascade; create schema public;"
@@ -683,7 +683,7 @@ step "Verificando dependências"
 # VPS "cru" (Hetzner, DigitalOcean, Contabo…) não vem com Docker. Antes isto era
 # um beco sem saída: o script morria dizendo "instale antes de continuar" e a
 # pessoa — que por definição não é técnica — ficava sem saber como. Hospedagens
-# com template (Hostinger, HostGator) já trazem Docker, então o caso nunca
+# com template pronto (Hostinger e afins) já trazem Docker, então o caso nunca
 # aparecia para quem escreveu o kit.
 #
 # O instalador oficial do Docker é o mesmo comando da documentação deles; não
@@ -732,7 +732,7 @@ if [ -r /proc/meminfo ]; then
   if ram_abaixo_do_recomendado "$mem_kb"; then
     c_ylw "⚠ Este servidor tem ~$((mem_kb/1024))MB de RAM. O CRM sobe, mas fica no limite:"
     c_ylw "  são 7 contêineres e o WhatsApp usa ~150MB por número conectado."
-    c_ylw "  Adicione swap antes de operar — ver docs/runbooks/waha-hostgator.md."
+    c_ylw "  Adicione swap antes de operar — ver docs/runbooks/waha-vps.md."
   fi
 fi
 
@@ -772,7 +772,7 @@ fi
 #
 # A varredura NÃO procura por "traefik": procura por QUEM PUBLICA as portas, e
 # só depois pergunta o que é. A versão anterior só reconhecia Traefik, então um
-# Caddy — inclusive o de outro DeskcommCRM instalado na mesma VPS — passava
+# Caddy — inclusive o de outro SonghaiCRM instalado na mesma VPS — passava
 # despercebido e a instalação escolhia `caddy`, garantindo o choque de portas.
 # Medido numa VPS com produção rodando: exatamente esse erro, na fase 4.
 #
@@ -889,8 +889,8 @@ e, se for mesmo um Traefik, ponha REVERSE_PROXY=traefik no .env e rode de novo."
     printf '\n%s\n'   "  O CRM precisa dessas duas portas para publicar o site com HTTPS. Subir um"
     printf '%s\n\n'   "  segundo proxy nelas não funciona: o Docker recusa e a instalação para."
     printf '%s\n'     "  Como resolver, na ordem do mais provável:"
-    printf '\n%s\n'   "  1. Já é outro DeskcommCRM neste servidor? Então use aquele — entre na"
-    printf '%s\n'     "     pasta dele e rode: bash hostgator-setup-kit/update.sh"
+    printf '\n%s\n'   "  1. Já é outro SonghaiCRM neste servidor? Então use aquele — entre na"
+    printf '%s\n'     "     pasta dele e rode: bash self-host-kit/update.sh"
     printf '\n%s\n'   "  2. Não usa mais o que está ocupando? Desligue e rode este instalador de novo:"
     [ -n "$dono_portas" ] && printf '%s\n' "       docker stop ${dono_portas}"
     printf '\n%s\n'   "  3. Quer manter os dois no ar? Aí o CRM tem de sair por um proxy só, e isso"
@@ -934,7 +934,7 @@ fi
 # colar. Sem o token, nada muda: seguem as perguntas de sempre.
 if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] && [ -n "${SUPABASE_ACCESS_TOKEN:-}" ]; then
   step "Criando o projeto Supabase automaticamente"
-  _sb_out="$(bash "$KIT_DIR/supabase-provision.sh" "${APP_NAME:-DeskcommCRM}" "${SUPABASE_REGION:-sa-east-1}")" \
+  _sb_out="$(bash "$KIT_DIR/supabase-provision.sh" "${APP_NAME:-SonghaiCRM}" "${SUPABASE_REGION:-sa-east-1}")" \
     || die "Não consegui criar o projeto Supabase. Crie no painel e rode de novo sem SUPABASE_ACCESS_TOKEN."
   # O script imprime `CHAVE='valor'` em stdout (o visual dele vai para stderr).
   # A leitura é por parse, não por `eval` — o porquê está em
@@ -1066,7 +1066,7 @@ elif [ -n "$VERSAO_ALVO" ]; then
   # calado: o dono precisa saber que duas peças dele saíram do fonte local.
   c_ylw "⚠ As imagens do worker e do agendador ainda não estão publicadas."
   c_ylw "  Elas serão construídas neste servidor — leva alguns minutos a mais."
-  c_ylw "  Rode 'bash hostgator-setup-kit/update.sh' quando a próxima versão sair."
+  c_ylw "  Rode 'bash self-host-kit/update.sh' quando a próxima versão sair."
 else
   # Falha ABERTA: sem rede ou sem tag no remoto, segue como antes. Travar a
   # instalação por não resolver um número seria trocar previsibilidade por
@@ -1074,7 +1074,7 @@ else
   # num canal móvel em vez de numa versão.
   VERSAO_ALVO="latest"
   c_ylw "⚠ Não consegui descobrir a última versão publicada (rede?)."
-  c_ylw "  Instalando pelo canal 'latest'. Depois rode: bash hostgator-setup-kit/update.sh"
+  c_ylw "  Instalando pelo canal 'latest'. Depois rode: bash self-host-kit/update.sh"
 fi
 IMAGEM_APP_DEFAULT="${IMG_APP}:${VERSAO_ALVO}"
 
@@ -1090,7 +1090,7 @@ FIELDS=(
   ${CAMPO_OPENAI_EXTRA:+"$CAMPO_OPENAI_EXTRA"}
   "OWNER_EMAIL|E-mail do primeiro admin (dono)||v_email||"
   "OWNER_PASSWORD|Senha do primeiro admin (mínimo 8 caracteres)||v_password|secret|"
-  "APP_NAME|Nome que aparece na interface (Enter para o padrão)|DeskcommCRM|||"
+  "APP_NAME|Nome que aparece na interface (Enter para o padrão)|SonghaiCRM|||"
   # Sem default, e `opcional`: em `--yes` o `ask_one` devolve 0 sem associar a
   # variável (campo sem default e sem `opcional` morre em `die`), e o `envq` lá
   # embaixo usa `${APP_ACCENT_HEX:-}`. Enter = a cor do produto, que é o
@@ -1762,7 +1762,7 @@ $(c_grn "═══════════════════════�
 
   4. Ao terminar o onboarding, o CRM pede a verificação em duas etapas:
        tenha o Google Authenticator/Authy à mão e GUARDE os códigos de
-       recuperação que aparecem. Perdeu o celular? bash hostgator-setup-kit/reset-mfa.sh ${OWNER_EMAIL}
+       recuperação que aparecem. Perdeu o celular? bash self-host-kit/reset-mfa.sh ${OWNER_EMAIL}
 
 $(c_grn "  ─── A comunidade ──────────────────────────────────────")
 
@@ -1778,9 +1778,9 @@ $(c_grn "  ─── A comunidade ───────────────�
   Comandos úteis:
     ver logs:      docker compose $(dc_files) logs -f app
     reiniciar:     docker compose $(dc_files) restart
-    atualizar:     bash hostgator-setup-kit/update.sh
-    backup:        bash hostgator-setup-kit/backup.sh
-    trocar config: bash hostgator-setup-kit/install.sh
+    atualizar:     bash self-host-kit/update.sh
+    backup:        bash self-host-kit/backup.sh
+    trocar config: bash self-host-kit/install.sh
                    (mostra tudo o que você respondeu e deixa corrigir por número)
     recomeçar:     docker compose $(dc_files) down -v && rm -f .env
                    (derruba tudo; depois rode o install.sh de novo)

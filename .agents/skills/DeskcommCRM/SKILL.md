@@ -1,10 +1,10 @@
 ```markdown
-# DeskcommCRM Development Patterns
+# SonghaiCRM Development Patterns
 
 > Auto-generated skill from repository analysis
 
 ## Overview
-This skill teaches the core development patterns and conventions used in the DeskcommCRM TypeScript codebase. It covers file organization, code style, commit message standards, and testing patterns, providing practical examples and command suggestions to streamline your workflow.
+This skill teaches the core development patterns and conventions used in the SonghaiCRM TypeScript codebase. It covers file organization, code style, commit message standards, and testing patterns, providing practical examples and command suggestions to streamline your workflow.
 
 ## Coding Conventions
 

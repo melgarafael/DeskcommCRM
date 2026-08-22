@@ -9,7 +9,7 @@
  * A primeira versão deste cabeçalho justificava a severidade dizendo que as duas
  * variáveis do Upstash são "opcionais no kit self-host". Isso é FALSO, e uma auditoria
  * pegou: `lib/env.ts:83-84` as declara `required()` — o app não sobe sem elas — e o
- * `.env.hostgator.example` as entrega apontando para o contêiner `srh`. O caminho em
+ * `.env.selfhost.example` as entrega apontando para o contêiner `srh`. O caminho em
  * memória é alcançado por Redis INALCANÇÁVEL (contêiner parado, rede caída, URL
  * errada), não por configuração ausente. A consequência para este teste é a mesma; o
  * que muda é não vender uma razão que o `env.ts` desmente.

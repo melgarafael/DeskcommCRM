@@ -79,13 +79,13 @@ atendeu o tempo todo; atendeu com o agente de dois meses atrás.
 Read-only, seguro em produção, não precisa de clone:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/diagnostico.sh | bash
+curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/self-host-kit/diagnostico.sh | bash
 ```
 
 Ou, se o operador já tem o projeto no disco:
 
 ```bash
-cd /caminho/do/projeto && bash hostgator-setup-kit/diagnostico.sh
+cd /caminho/do/projeto && bash self-host-kit/diagnostico.sh
 ```
 
 Códigos de saída: `0` não afetada · `1` afetada · `2` inconclusivo (Docker parado, stack
@@ -106,7 +106,7 @@ versão, `.env` com as chaves novas, `baseline.sql` re-aplicado, backup antes.
 
 ```bash
 cd /caminho/do/projeto
-bash hostgator-setup-kit/update.sh
+bash self-host-kit/update.sh
 ```
 
 ### Rota B — Cirúrgica: só o worker passa a puxar imagem publicada
@@ -210,7 +210,7 @@ mesma versão. Medido: `APP_IMAGE`, `WORKER_IMAGE` e `SCHEDULER_IMAGE` em `1.3.0
    > (2026-08-13), e a v1.3.0 continua sendo a tag mais recente:
    >
    > ```console
-   > $ git show v1.3.0:hostgator-setup-kit/_common.sh | grep -c completar_pin_ausente
+   > $ git show v1.3.0:self-host-kit/_common.sh | grep -c completar_pin_ausente
    > 0
    > ```
    >
@@ -219,7 +219,7 @@ mesma versão. Medido: `APP_IMAGE`, `WORKER_IMAGE` e `SCHEDULER_IMAGE` em `1.3.0
    > e nada aconteceria — para sempre. O erro é o mesmo que este runbook documenta em outro
    > lugar: **provei presença na `main` e afirmei comportamento na versão publicada.** O kit
    > que roda na VPS é o da tag (`update.sh` faz `git checkout "$TARGET_TAG"`), não o da
-   > `main`. Confira antes de prometer: `git show <tag>:hostgator-setup-kit/_common.sh`.
+   > `main`. Confira antes de prometer: `git show <tag>:self-host-kit/_common.sh`.
 
    **O que ele nunca faz:** sobrescrever valor que já existe no `.env`. Chave ausente é
    omissão do script antigo; chave presente é decisão de quem opera, inclusive a de seguir
@@ -239,7 +239,7 @@ mesma versão. Medido: `APP_IMAGE`, `WORKER_IMAGE` e `SCHEDULER_IMAGE` em `1.3.0
 
 ```bash
 cd /caminho/do/projeto
-bash hostgator-setup-kit/diagnostico.sh | tee /root/antes-remediacao.txt
+bash self-host-kit/diagnostico.sh | tee /root/antes-remediacao.txt
 docker compose -f docker-compose.prod.yml ps --format '{{.Service}}|{{.Image}}' >> /root/antes-remediacao.txt
 cp .env /root/.env.antes-remediacao        # o .env tem segredos: chmod 600
 chmod 600 /root/.env.antes-remediacao
@@ -263,7 +263,7 @@ pareada do WhatsApp.
 ### A3. Rodar o update `[ENSAIADO — ver §5.0: pode exigir duas execuções]`
 
 ```bash
-bash hostgator-setup-kit/update.sh
+bash self-host-kit/update.sh
 ```
 
 O que ele faz, na ordem (lido do script, não ensaiado ponta a ponta): instala o cron do
@@ -280,13 +280,13 @@ cp /root/.env.antes-remediacao .env
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-O banco **não** volta com isso. Para voltá-lo, `bash hostgator-setup-kit/restore.sh` com o
+O banco **não** volta com isso. Para voltá-lo, `bash self-host-kit/restore.sh` com o
 dump que o A3 gerou — e ele pede confirmação digitada, de propósito.
 
 ### A4. Verificar que o worker mudou de verdade `[ENSAIADO]`
 
 ```bash
-bash hostgator-setup-kit/diagnostico.sh          # esperado: exit 0, "NÃO está afetada"
+bash self-host-kit/diagnostico.sh          # esperado: exit 0, "NÃO está afetada"
 curl -s localhost:3000/api/v1/health | grep -o '"version":"[^"]*"'
 grep -E '^(APP|WORKER|SCHEDULER)_IMAGE=' .env    # as três na MESMA versão
 ```

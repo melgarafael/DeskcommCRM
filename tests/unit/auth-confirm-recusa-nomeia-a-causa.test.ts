@@ -13,7 +13,7 @@
  *    a TODO cookie do cliente — `@supabase/ssr/cookies.js:227,232`), e clique
  *    vindo de webmail é navegação cross-site: o cookie não viaja. Pedir outro
  *    link NÃO resolve — cada novo link falha igual. O conserto é configurar os
- *    templates (`hostgator-setup-kit/marca-emails.sh`).
+ *    templates (`self-host-kit/marca-emails.sh`).
  *
  * O sintoma enganoso mandava o operador caçar TTL e relógio do servidor. Este
  * teste prende a distinção nos DOIS sentidos: sem o segundo caso, alguém

@@ -1,4 +1,4 @@
-# AGENTS.md — DeskcommCRM
+# AGENTS.md — SonghaiCRM
 
 > Contrato para **qualquer** agente de código (Codex, Cursor, Copilot, Amp, Claude Code).
 > Este arquivo é o núcleo portável. A **doutrina completa e não-negociável vive em
@@ -10,8 +10,9 @@
 ## Objetivo do projeto
 
 Sistema operacional de vendas open source com agentes de IA nativos, multi-nicho,
-WhatsApp como canal primário (via WAHA). Multi-tenant com RLS desde o dia 1, LGPD
-nativa. Monetização = self-host em VPS, não assinatura. Posicionamento: [`VISION.md`](VISION.md).
+WhatsApp como canal primário (via WAHA). Multi-tenant com RLS desde o dia 1, proteção de dados pessoais nativa
+(base legal: Lei n.º 3/2017, Moçambique — mecanismo LGPD-like, sem prazo legal fixo).
+Monetização = self-host em VPS, não assinatura. Posicionamento: [`VISION.md`](VISION.md).
 
 **Consequência que muda como você trabalha:** o produto é distribuído como código.
 Quem instala numa VPS **é** o usuário. Uma mudança que funciona na máquina do dev e
@@ -104,7 +105,7 @@ verify, build-and-size, invariants, e2e, imagens-ok
 
 ### Marca própria (white-label) — o produto é revendido, e o nome não é seu
 
-- **Nunca escreva "Deskcomm"/"DeskcommCRM" em código que alcança o usuário.** `tests/unit/branding.test.ts` varre `app|components|lib|workers|hooks` e reprova; a allowlist **só encolhe**.
+- **Nunca escreva "Deskcomm"/"SonghaiCRM" em código que alcança o usuário.** `tests/unit/branding.test.ts` varre `app|components|lib|workers|hooks` e reprova; a allowlist **só encolhe**.
 - A marca resolve do **banco** (`platform_branding` para a instalação, `organizations.settings.branding` para a organização). `APP_NAME`/`APP_LOGO_URL`/`APP_ACCENT_HEX` no `.env` são **semente e piso de rollback**, não a fonte.
 - Precisa da marca **fora do DOM** (e-mail, remetente, ícone, `issuer` do MFA)? Use `marcaDaSaida()` de `lib/branding/saida.ts` — um hex e uma frente legível, tema claro. Nunca entregue `MarcaResolvida` a um template de e-mail.
 - Resolvedor de marca **nunca lança**: ele roda em `app/layout.tsx`, e um throw ali é 500 em todas as telas.
@@ -201,7 +202,7 @@ Medido em 2026-08-14 @ `741c4ec8`, com o comando ao lado de cada número:
   higieniza — não confie nele como única camada.
 - Não commite screenshot/dump com dado real de cliente.
 
-## Packaging — se você tocou `Dockerfile*`, `docker-compose*.yml` ou `hostgator-setup-kit/`
+## Packaging — se você tocou `Dockerfile*`, `docker-compose*.yml` ou `self-host-kit/`
 
 Lei completa em [`docs/doctrine/packaging.md`](docs/doctrine/packaging.md). O não-negociável:
 

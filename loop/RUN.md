@@ -3,9 +3,9 @@
 O loop é o mesmo em qualquer modo: uma sessão descartável executa `loop/LOOP.md`
 do zero, guiada só pelo estado em disco. O que muda é quem aperta o botão.
 
-**Onde o loop RODA: no checkout principal — `/Users/rafaelmelgaco/DeskcommCRM`
+**Onde o loop RODA: no checkout principal — `/Users/rafaelmelgaco/SonghaiCRM`
 (`loop/loop.config.json → main_checkout`) — DEPOIS que a branch `gov/setup` for
-mergeada em `main`.** O worktree `DeskcommCRM-gov` existe só para montar a
+mergeada em `main`.** O worktree `SonghaiCRM-gov` existe só para montar a
 maquinaria sem tocar o checkout principal; ele não é a casa do loop.
 
 ## Pré-requisitos (uma vez, no checkout principal pós-merge)
@@ -42,7 +42,7 @@ maquinaria sem tocar o checkout principal; ele não é a casa do loop.
   ```json
   {
     "max_sessions_per_day": 12,
-    "main_checkout": "/Users/rafaelmelgaco/DeskcommCRM",
+    "main_checkout": "/Users/rafaelmelgaco/SonghaiCRM",
     "parallel_ui_lane": false,
     "smoke": "pnpm typecheck && pnpm lint && pnpm test:unit"
   }
@@ -58,7 +58,7 @@ maquinaria sem tocar o checkout principal; ele não é a casa do loop.
 ## Modo interativo (você olhando)
 
 ```bash
-cd /Users/rafaelmelgaco/DeskcommCRM && claude
+cd /Users/rafaelmelgaco/SonghaiCRM && claude
 > /deskcomm-gov-loop
 ```
 Uma sessão = uma feature. Quer outra feature, abra OUTRA sessão (`claude` de novo
@@ -77,7 +77,7 @@ agendar) e agende com cadência ≥2h:
 ```bash
 #!/usr/bin/env bash
 set -u
-REPO="/Users/rafaelmelgaco/DeskcommCRM"; cd "$REPO" || exit 1
+REPO="/Users/rafaelmelgaco/SonghaiCRM"; cd "$REPO" || exit 1
 
 [ -f loop/STOP ] && exit 0
 # gate barato em bash: checkpoint pendente ou recusado => nem invoca o modelo
@@ -104,7 +104,7 @@ claude -p "Leia loop/LOOP.md e execute o protocolo à risca." \
 
 **launchd (macOS — a máquina do dono)** — mesmo padrão do vendaval-loop:
 `~/Library/LaunchAgents/com.deskcomm.gov-loop.plist` com `ProgramArguments`
-`/bin/bash -lc '/Users/rafaelmelgaco/DeskcommCRM/loop/run-session.sh'` e
+`/bin/bash -lc '/Users/rafaelmelgaco/SonghaiCRM/loop/run-session.sh'` e
 `StartCalendarInterval` de 2 em 2 horas na janela 7h-23h. Em Linux/VPS, cron
 (`CRON_TZ=America/Sao_Paulo` + `0 7-23/2 * * *`) ou systemd timer.
 

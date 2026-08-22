@@ -2,7 +2,9 @@
   "name": "deskcomm-crm",
   "version": "0.1.0",
   "private": true,
-  "description": "DeskcommCRM — sistema operacional de vendas open source com agentes de IA nativos e WhatsApp (WAHA). Self-hosted, multi-tenant, LGPD by-design.",
+  "description": "SonghaiCRM — sistema operacional de vendas open source com agentes de IA nativos e WhatsApp (WAHA). Self-hosted, multi-tenant, LGPD by-design.",
+  "author": "Songhai, Lda",
+  "license": "MIT",
   "engines": {
     "node": ">=22"
   },
@@ -24,7 +26,7 @@
     "test:journeys": "playwright test -c tests/journeys/playwright.config.ts",
     "test:unit": "vitest run",
     "test:db": "bash scripts/test-db.sh",
-    "test:shell": "bash tests/shell/update-guard.test.sh && bash tests/shell/scheduler-entrypoint.test.sh && bash hostgator-setup-kit/test-validators.sh",
+    "test:shell": "bash tests/shell/update-guard.test.sh && bash tests/shell/scheduler-entrypoint.test.sh && bash self-host-kit/test-validators.sh",
     "test:invariants": "bash scripts/test-db.sh",
     "lint:channels": "tsx scripts/lint-channels.ts",
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm test:unit",

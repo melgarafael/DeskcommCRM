@@ -4,7 +4,7 @@
  * Nenhum dos três templates de e-mail deste produto tinha teste (medido antes
  * desta fase: `grep` por `resend|invite|email-delivery` nos arquivos de teste só
  * achava a própria allowlist da catraca de marca). O resultado foi que 100% dos
- * e-mails de LGPD de todo clone diziam ter sido processados pelo DeskcommCRM, e
+ * e-mails de LGPD de todo clone diziam ter sido processados pelo SonghaiCRM, e
  * ninguém foi avisado por gate nenhum.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,7 +107,7 @@ describe("convite de time", () => {
 
   it("marca com HTML dentro é escapada no corpo", () => {
     // O nome vem de um campo que o operador digita numa tela; antes desta fase
-    // o pior caso era o literal "DeskcommCRM" e a questão não existia.
+    // o pior caso era o literal "SonghaiCRM" e a questão não existia.
     const { html } = buildInviteEmail({
       inviterName: "Ana",
       orgName: "Acme",

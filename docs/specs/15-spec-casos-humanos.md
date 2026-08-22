@@ -243,7 +243,7 @@ Reusa o shell `app/app/ai/inbox/` (assistente), **seção/tab própria "Casos"**
 ## 10. Riscos e questões abertas
 1. ~~Qual handoff é o canônico do engine~~ — **RESOLVIDO (§7):** `performHumanHandoff` (`human-handoff.ts:149`).
 2. **Detector `detectHumanPromise`** (§6) — calibração pra baixo falso-positivo/negativo é o ponto mais sensível; os golden adversariais (§11.1) são o gate. Bumpar `BEFORE_SEND_CHAIN_VERSION`.
-3. ~~Confirmar runtime em produção~~ — **RESOLVIDO (Wave 0):** `AGENT_DISPATCH_CONSUMER` faz default para `'engine'` (`lib/env.ts:85`, `lib/agent-engine/env.ts:46`) e `.env.example`/`.env.hostgator.example` setam `engine` → agent-engine é o runtime de produção.
+3. ~~Confirmar runtime em produção~~ — **RESOLVIDO (Wave 0):** `AGENT_DISPATCH_CONSUMER` faz default para `'engine'` (`lib/env.ts:85`, `lib/agent-engine/env.ts:46`) e `.env.example`/`.env.selfhost.example` setam `engine` → agent-engine é o runtime de produção.
 4. **N de follow-up** default = 2 tentativas antes de `lead_unresponsive` — número a validar em uso.
 
 ---

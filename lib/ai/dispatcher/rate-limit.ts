@@ -55,7 +55,7 @@ const _memBuckets = new Map<string, MemBucket>();
  * comentário afirmava. A versão anterior dizia que as duas variáveis do Upstash são
  * "opcionais no kit self-host, então sem elas este é o caminho normal": falso, e
  * medido — `lib/env.ts:83-84` as declara `required()`, o app não sobe sem elas, e o
- * `.env.hostgator.example` as entrega apontando para o contêiner `srh`.
+ * `.env.selfhost.example` as entrega apontando para o contêiner `srh`.
  *
  * O que de fato leva para cá é Redis INALCANÇÁVEL com a variável presente: contêiner
  * `srh` parado, rede caída, URL errada. O `catch` abaixo trata exatamente isso, e é o

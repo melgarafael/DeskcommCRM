@@ -1,4 +1,4 @@
-# Fusão Vendaval → DeskcommCRM — briefing de execução (Terminal B)
+# Fusão Vendaval → SonghaiCRM — briefing de execução (Terminal B)
 
 > Escrito pelo Maestro (grounded no código real dos dois repos, 2026-07-17). Terminal B executa;
 > o Maestro monitora e COBRA prova real a cada etapa.
@@ -22,15 +22,15 @@ canvas oco passou por "pronto". **NÃO REPITA ISSO.**
 
 ## 1. Objetivo
 
-**Um repositório só: o DeskcommCRM.** Fusão total do back-end do Vendaval (bom, mas nunca ligado à
-realidade) dentro do DeskcommCRM (Next.js + TS + Supabase + WAHA + AI SDK — CRM real com chat ao vivo,
+**Um repositório só: o SonghaiCRM.** Fusão total do back-end do Vendaval (bom, mas nunca ligado à
+realidade) dentro do SonghaiCRM (Next.js + TS + Supabase + WAHA + AI SDK — CRM real com chat ao vivo,
 pipelines, multi-atendimento, WhatsApp e um agente de IA simples). Alvo final: **CRM open-source que a
 comunidade roda numa VPS** (docker-compose). O canvas do Vendaval é JOGADO FORA.
 
 ## 2. Por que é viável (mesma stack, encaixes já existem)
 
 Os dois são TypeScript + Postgres + WAHA + AI SDK Anthropic. O Vendaval JÁ foi arquitetado com o
-DeskcommCRM como borda — o contrato exato está em `~/vendaval/docs/specs/edge-contract.md` (referencia
+SonghaiCRM como borda — o contrato exato está em `~/vendaval/docs/specs/edge-contract.md` (referencia
 arquivos e linhas reais do Deskcomm). Como agora é UM repo, a maquinaria de "dois sistemas" colapsa em
 chamadas internas.
 

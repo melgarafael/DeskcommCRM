@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Adicionar Evolution API (WhatsApp não-oficial, self-hosted, open source) como um
-quarto `ChannelProvider` no DeskcommCRM, ao lado de WAHA/Meta Cloud/Zernio, apontando para
+quarto `ChannelProvider` no SonghaiCRM, ao lado de WAHA/Meta Cloud/Zernio, apontando para
 uma instância já em produção do dono do produto (URL + API key, sem provisionar container
 novo neste repo).
 

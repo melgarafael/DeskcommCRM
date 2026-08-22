@@ -30,7 +30,7 @@ exposes_contracts:
 status: completed (partial: notification_prefs stubbed; sessions/storage/email change deferred)
 created_at: 2026-04-28
 completed_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 ## Wave Completion Log (2026-04-28)

@@ -15,7 +15,7 @@ import { env } from "@/lib/env";
  * o projeto Supabase está configurado:
  *
  * - `token_hash` + `type`: template de e-mail customizado (supabase/templates/,
- *   subidos por `hostgator-setup-kit/marca-emails.sh`) linkando direto pro app.
+ *   subidos por `self-host-kit/marca-emails.sh`) linkando direto pro app.
  *   NÃO exige SMTP customizado — a versão anterior deste comentário afirmava
  *   que sim ("sem isso o Supabase não deixa editar o corpo do e-mail") e isso
  *   foi MEDIDO como falso em 2026-08-14: `GET /v1/projects/{ref}/config/auth`
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
     // Dois códigos porque são duas causas e dois consertos. `link_invalido`
     // continua sendo "peça outro link". `template_padrao` diz o que a tela
     // antes escondia: o link veio do modelo padrão, pedir outro não adianta, e
-    // o conserto é configurar os templates (hostgator-setup-kit/marca-emails.sh).
+    // o conserto é configurar os templates (self-host-kit/marca-emails.sh).
     return redirectTo(viaTokenHash ? "/login?error=link_invalido" : "/login?error=template_padrao");
   }
 

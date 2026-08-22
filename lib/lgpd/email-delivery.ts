@@ -16,10 +16,10 @@
  * diferentes. Sem esta frase escrita, a próxima pessoa "uniformiza" os dois e
  * refaz o defeito — numa direção ou na outra.
  *
- * Antes desta fase o nome vinha de `args.organizationName ?? "DeskcommCRM"`, e
+ * Antes desta fase o nome vinha de `args.organizationName ?? "SonghaiCRM"`, e
  * isso NÃO era borda: o único chamador (`workers/lgpd-export-worker.ts`) nunca
  * passava o campo, então 100% dos e-mails de LGPD de todo clone diziam que a
- * solicitação tinha sido processada pelo DeskcommCRM. O campo agora é
+ * solicitação tinha sido processada pelo SonghaiCRM. O campo agora é
  * obrigatório e resolvido — não sobra fallback porque `marcaDaSaida` já desce
  * até o padrão do produto por conta própria.
  */
@@ -117,7 +117,7 @@ Base legal: LGPD Lei nº 13.709/2018, Art. 18, II.`;
 /**
  * A marca deixou de ser constante e passou a vir de um campo que o operador
  * digita numa tela — então ela entra no HTML escapada. Antes desta fase o valor
- * era o literal `"DeskcommCRM"` e a questão não existia.
+ * era o literal `"SonghaiCRM"` e a questão não existia.
  */
 function escapeHtml(s: string): string {
   return s
