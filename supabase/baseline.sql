@@ -14092,4 +14092,209 @@ create policy "organization_subscriptions_admin_read" on public.organization_sub
 drop policy if exists "billing_invoices_admin_read" on public.billing_invoices;
 create policy "billing_invoices_admin_read" on public.billing_invoices for select using (public.fn_role_at_least(organization_id, 'admin'::text) or public.fn_is_platform_admin());
 
+-- ---- fundação do módulo Contábil: empresas-cliente, plano de contas, lançamentos (migration 0170) ----
+-- Parte do pivot ADR-0002. "Empresa atendida pelo escritório contábil" é
+-- conceito novo, distinto de contacts (pessoa física) e crm_leads (funil de
+-- vendas do escritório). Partida dobrada: debit XOR credit por LINHA é CHECK;
+-- sum(debit)=sum(credit) por LANÇAMENTO é invariante de teste, não de schema
+-- (dívida declarada — ver cabeçalho completo na migration 0170).
+create table if not exists public.accounting_client_companies (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    legal_name text not null,
+    trade_name text,
+    cnpj text not null,
+    tax_regime text,
+    status text default 'active'::text not null,
+    created_by_user_id uuid,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'accounting_client_companies_pkey' and conrelid = '"public"."accounting_client_companies"'::regclass) then
+    alter table only public.accounting_client_companies add constraint accounting_client_companies_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_client_companies_organization_id_fkey' and conrelid = '"public"."accounting_client_companies"'::regclass) then
+    alter table only public.accounting_client_companies add constraint accounting_client_companies_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_client_companies_org_cnpj_key' and conrelid = '"public"."accounting_client_companies"'::regclass) then
+    alter table only public.accounting_client_companies add constraint accounting_client_companies_org_cnpj_key unique (organization_id, cnpj);
+  end if;
+end $$;
+
+comment on table public.accounting_client_companies is 'Empresas atendidas pelo escritório contábil (tenant). Entidade jurídica distinta de contacts e crm_leads.';
+
+create index if not exists idx_accounting_client_companies_org on public.accounting_client_companies using btree (organization_id);
+
+create table if not exists public.accounting_chart_of_accounts (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    client_company_id uuid not null,
+    code text not null,
+    name text not null,
+    account_type text not null,
+    parent_id uuid,
+    is_active boolean default true not null,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'accounting_chart_of_accounts_pkey' and conrelid = '"public"."accounting_chart_of_accounts"'::regclass) then
+    alter table only public.accounting_chart_of_accounts add constraint accounting_chart_of_accounts_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_chart_of_accounts_organization_id_fkey' and conrelid = '"public"."accounting_chart_of_accounts"'::regclass) then
+    alter table only public.accounting_chart_of_accounts add constraint accounting_chart_of_accounts_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_chart_of_accounts_client_company_id_fkey' and conrelid = '"public"."accounting_chart_of_accounts"'::regclass) then
+    alter table only public.accounting_chart_of_accounts add constraint accounting_chart_of_accounts_client_company_id_fkey foreign key (client_company_id) references public.accounting_client_companies(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_chart_of_accounts_parent_id_fkey' and conrelid = '"public"."accounting_chart_of_accounts"'::regclass) then
+    alter table only public.accounting_chart_of_accounts add constraint accounting_chart_of_accounts_parent_id_fkey foreign key (parent_id) references public.accounting_chart_of_accounts(id) on delete restrict;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_chart_of_accounts_company_code_key' and conrelid = '"public"."accounting_chart_of_accounts"'::regclass) then
+    alter table only public.accounting_chart_of_accounts add constraint accounting_chart_of_accounts_company_code_key unique (client_company_id, code);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_chart_of_accounts_account_type_check' and conrelid = '"public"."accounting_chart_of_accounts"'::regclass) then
+    alter table only public.accounting_chart_of_accounts add constraint accounting_chart_of_accounts_account_type_check check (account_type = any (array['asset'::text, 'liability'::text, 'equity'::text, 'revenue'::text, 'expense'::text]));
+  end if;
+end $$;
+
+comment on table public.accounting_chart_of_accounts is 'Plano de contas por empresa-cliente. parent_id ON DELETE RESTRICT: apagar conta com filhas quebraria a hierarquia em silêncio.';
+
+create index if not exists idx_accounting_chart_of_accounts_company on public.accounting_chart_of_accounts using btree (client_company_id);
+
+create table if not exists public.accounting_journal_entries (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    client_company_id uuid not null,
+    entry_date date not null,
+    description text not null,
+    status text default 'draft'::text not null,
+    created_by_user_id uuid,
+    posted_at timestamp with time zone,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'accounting_journal_entries_pkey' and conrelid = '"public"."accounting_journal_entries"'::regclass) then
+    alter table only public.accounting_journal_entries add constraint accounting_journal_entries_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_journal_entries_organization_id_fkey' and conrelid = '"public"."accounting_journal_entries"'::regclass) then
+    alter table only public.accounting_journal_entries add constraint accounting_journal_entries_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_journal_entries_client_company_id_fkey' and conrelid = '"public"."accounting_journal_entries"'::regclass) then
+    alter table only public.accounting_journal_entries add constraint accounting_journal_entries_client_company_id_fkey foreign key (client_company_id) references public.accounting_client_companies(id) on delete cascade;
+  end if;
+end $$;
+
+comment on table public.accounting_journal_entries is 'Cabeçalho do lançamento contábil. status vocabulário aberto (sem CHECK, doutrina DIRC).';
+
+create index if not exists idx_accounting_journal_entries_company_date on public.accounting_journal_entries using btree (client_company_id, entry_date desc);
+
+create table if not exists public.accounting_journal_entry_lines (
+    id uuid default gen_random_uuid() not null,
+    journal_entry_id uuid not null,
+    account_id uuid not null,
+    debit_cents bigint default 0 not null,
+    credit_cents bigint default 0 not null,
+    created_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'accounting_journal_entry_lines_pkey' and conrelid = '"public"."accounting_journal_entry_lines"'::regclass) then
+    alter table only public.accounting_journal_entry_lines add constraint accounting_journal_entry_lines_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_journal_entry_lines_journal_entry_id_fkey' and conrelid = '"public"."accounting_journal_entry_lines"'::regclass) then
+    alter table only public.accounting_journal_entry_lines add constraint accounting_journal_entry_lines_journal_entry_id_fkey foreign key (journal_entry_id) references public.accounting_journal_entries(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_journal_entry_lines_account_id_fkey' and conrelid = '"public"."accounting_journal_entry_lines"'::regclass) then
+    alter table only public.accounting_journal_entry_lines add constraint accounting_journal_entry_lines_account_id_fkey foreign key (account_id) references public.accounting_chart_of_accounts(id) on delete restrict;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_journal_entry_lines_debit_or_credit_check' and conrelid = '"public"."accounting_journal_entry_lines"'::regclass) then
+    alter table only public.accounting_journal_entry_lines add constraint accounting_journal_entry_lines_debit_or_credit_check check ((debit_cents >= 0) and (credit_cents >= 0) and ((debit_cents = 0) <> (credit_cents = 0)));
+  end if;
+end $$;
+
+comment on table public.accounting_journal_entry_lines is 'Linhas de partida dobrada. CHECK garante débito XOR crédito por linha; sum(debit)=sum(credit) por lançamento é invariante de teste.';
+
+create index if not exists idx_accounting_journal_entry_lines_entry on public.accounting_journal_entry_lines using btree (journal_entry_id);
+create index if not exists idx_accounting_journal_entry_lines_account on public.accounting_journal_entry_lines using btree (account_id);
+
+create table if not exists public.accounting_client_company_activities (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    client_company_id uuid not null,
+    source_module text not null,
+    source_id uuid,
+    type text not null,
+    payload jsonb default '{}'::jsonb not null,
+    metadata jsonb default '{}'::jsonb not null,
+    performed_at timestamp with time zone default now() not null,
+    performed_by_user_id uuid,
+    created_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'accounting_client_company_activities_pkey' and conrelid = '"public"."accounting_client_company_activities"'::regclass) then
+    alter table only public.accounting_client_company_activities add constraint accounting_client_company_activities_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_client_company_activities_organization_id_fkey' and conrelid = '"public"."accounting_client_company_activities"'::regclass) then
+    alter table only public.accounting_client_company_activities add constraint accounting_client_company_activities_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_client_company_activities_client_company_id_fkey' and conrelid = '"public"."accounting_client_company_activities"'::regclass) then
+    alter table only public.accounting_client_company_activities add constraint accounting_client_company_activities_client_company_id_fkey foreign key (client_company_id) references public.accounting_client_companies(id) on delete cascade;
+  end if;
+end $$;
+
+comment on table public.accounting_client_company_activities is 'Timeline da empresa-cliente — mesmo padrão de crm_lead_activities.';
+
+create index if not exists idx_accounting_client_company_activities_company on public.accounting_client_company_activities using btree (client_company_id, performed_at desc);
+
+alter table public.accounting_client_companies enable row level security;
+alter table public.accounting_chart_of_accounts enable row level security;
+alter table public.accounting_journal_entries enable row level security;
+alter table public.accounting_journal_entry_lines enable row level security;
+alter table public.accounting_client_company_activities enable row level security;
+
+-- RBAC de verdade (doutrina 0150): leitura viewer+, escrita manager+.
+-- tests/invariants/rbac-config-ia-canais.test.ts reprova tabela nova com
+-- policy ALL sem fn_role_at_least no corpo.
+drop policy if exists "tenant_isolation_accounting_client_companies_all" on public.accounting_client_companies;
+drop policy if exists "accounting_client_companies_select" on public.accounting_client_companies;
+create policy "accounting_client_companies_select" on public.accounting_client_companies for select using ((organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()));
+drop policy if exists "accounting_client_companies_write" on public.accounting_client_companies;
+create policy "accounting_client_companies_write" on public.accounting_client_companies for all using (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin())) with check (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin()));
+
+drop policy if exists "tenant_isolation_accounting_chart_of_accounts_all" on public.accounting_chart_of_accounts;
+drop policy if exists "accounting_chart_of_accounts_select" on public.accounting_chart_of_accounts;
+create policy "accounting_chart_of_accounts_select" on public.accounting_chart_of_accounts for select using ((organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()));
+drop policy if exists "accounting_chart_of_accounts_write" on public.accounting_chart_of_accounts;
+create policy "accounting_chart_of_accounts_write" on public.accounting_chart_of_accounts for all using (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin())) with check (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin()));
+
+drop policy if exists "tenant_isolation_accounting_journal_entries_all" on public.accounting_journal_entries;
+drop policy if exists "accounting_journal_entries_select" on public.accounting_journal_entries;
+create policy "accounting_journal_entries_select" on public.accounting_journal_entries for select using ((organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()));
+drop policy if exists "accounting_journal_entries_write" on public.accounting_journal_entries;
+create policy "accounting_journal_entries_write" on public.accounting_journal_entries for all using (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin())) with check (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin()));
+
+drop policy if exists "tenant_isolation_accounting_client_company_activities_all" on public.accounting_client_company_activities;
+drop policy if exists "accounting_client_company_activities_select" on public.accounting_client_company_activities;
+create policy "accounting_client_company_activities_select" on public.accounting_client_company_activities for select using ((organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()));
+drop policy if exists "accounting_client_company_activities_write" on public.accounting_client_company_activities;
+create policy "accounting_client_company_activities_write" on public.accounting_client_company_activities for all using (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin())) with check (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin()));
+
+drop policy if exists "tenant_isolation_accounting_journal_entry_lines_all" on public.accounting_journal_entry_lines;
+drop policy if exists "accounting_journal_entry_lines_select" on public.accounting_journal_entry_lines;
+create policy "accounting_journal_entry_lines_select" on public.accounting_journal_entry_lines for select using ((journal_entry_id in (select aje.id from public.accounting_journal_entries aje where (aje.organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()))));
+drop policy if exists "accounting_journal_entry_lines_write" on public.accounting_journal_entry_lines;
+create policy "accounting_journal_entry_lines_write" on public.accounting_journal_entry_lines for all using ((journal_entry_id in (select aje.id from public.accounting_journal_entries aje where (aje.organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(aje.organization_id, 'manager')) or public.fn_is_platform_admin()))) with check ((journal_entry_id in (select aje.id from public.accounting_journal_entries aje where (aje.organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(aje.organization_id, 'manager')) or public.fn_is_platform_admin())));
+
 notify pgrst, 'reload schema';
