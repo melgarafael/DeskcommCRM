@@ -25,6 +25,7 @@ export {
   House,
   // admin platform
   Buildings,
+  Calculator,
   FlowArrow,
   ChatsCircle,
   ClipboardText,

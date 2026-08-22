@@ -6,6 +6,7 @@ import {
   BookOpen,
   Brain,
   Buildings,
+  Calculator,
   ChartBar,
   ChartLineUp,
   ClipboardText,
@@ -53,7 +54,14 @@ import {
  * Doutrina: docs/doctrine/sistema-vivo.md — "por qual porta se chega até mim?"
  */
 
-export type NavGroupId = "atendimento" | "crm" | "ia" | "canais" | "analise" | "organizacao";
+export type NavGroupId =
+  | "atendimento"
+  | "crm"
+  | "contabilidade"
+  | "ia"
+  | "canais"
+  | "analise"
+  | "organizacao";
 
 export interface NavGroup {
   id: NavGroupId;
@@ -99,6 +107,10 @@ export interface NavDestination {
 export const NAV_GROUPS: NavGroup[] = [
   { id: "atendimento", label: "Atendimento" },
   { id: "crm", label: "CRM" },
+  // Módulo contábil (ADR-0002, Genesisia Contabilidade). Um destino só por
+  // enquanto (fundação) — sem hub, mesmo critério de "≤4 telas" do resto do
+  // arquivo.
+  { id: "contabilidade", label: "Contabilidade" },
   { id: "ia", label: "Agente de IA", hub: { href: "/app/ai", label: "Ver tudo em IA" } },
   { id: "canais", label: "Canais" },
   { id: "analise", label: "Análise" },
@@ -205,6 +217,18 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: Funnel,
     group: "crm",
     minRole: "manager",
+    sidebar: true,
+  },
+
+  // ---- Contabilidade — empresas atendidas pelo escritório ----
+  {
+    href: "/app/contabilidade/empresas",
+    label: "Empresas",
+    description:
+      "As empresas que seu escritório atende — plano de contas, lançamentos e contas a pagar/receber de cada uma.",
+    icon: Calculator,
+    group: "contabilidade",
+    minRole: "viewer",
     sidebar: true,
   },
 

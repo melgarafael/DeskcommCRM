@@ -338,6 +338,11 @@ export const AUDIT_ACTIONS = [
   "billing.subscription_suspended_overdue",
   "billing.subscription_reactivated",
   "billing.webhook_invalid_token",
+
+  // Módulo Contábil (ADR-0002, Fase 5) — mutações manager+.
+  "accounting.client_company_created",
+  "accounting.chart_of_accounts_created",
+  "accounting.journal_entry_created",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
