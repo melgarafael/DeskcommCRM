@@ -101,3 +101,38 @@ export function useUpdateAgent(id: string) {
     },
   });
 }
+
+interface PublishRagBotResponse {
+  data: {
+    agent_id: string;
+    version_id: string;
+    previous_version_id: string | null;
+    published_at: string;
+  };
+}
+
+/**
+ * Publica o rascunho de um agente `rag_bot` (POST /publish-rag-bot). Sem isso
+ * o "Salvar" do `AgentEditor.tsx` grava o rascunho mas o runtime continua
+ * respondendo com a última versão publicada — ver comentário da rota.
+ */
+export function usePublishRagBotAgent(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["ai", "agents", id, "publish-rag-bot"],
+    mutationFn: async () => {
+      const res = await apiClient.post<PublishRagBotResponse>(
+        `/api/v1/ai/agents/${id}/publish-rag-bot`,
+        {},
+      );
+      return res.data;
+    },
+    onError: (err) => {
+      showApiError(err);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentQueryKey(id) });
+      toast.success("Publicado");
+    },
+  });
+}
