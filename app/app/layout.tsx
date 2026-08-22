@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { isMfaEnrolled, loadAuthUser, requiresMfa, resolveActiveOrg } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, type VisibilityMode } from "@/lib/auth/types";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
@@ -45,11 +45,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const admin = createAdminClient();
     const { data: orgRow } = await admin
       .from("organizations")
-      .select("onboarded_at, status, settings")
+      .select("onboarded_at, status, settings, suspended_reason")
       .eq("id", activeOrg.orgId)
       .maybeSingle();
     if (orgRow && !orgRow.onboarded_at) redirect("/onboarding");
-    if (orgRow?.status === "suspended") redirect("/account-suspended");
+    if (orgRow?.status === "suspended") {
+      // Exceção ADR-0002 (Fase 3): inadimplência é a ÚNICA suspensão que o
+      // próprio tenant pode resolver, e a tela onde ele resolve
+      // (/app/settings/billing) vive sob ESTE MESMO layout — sem a exceção, o
+      // redirect abaixo a tornaria inalcançável bem na hora em que o admin
+      // mais precisa dela. Qualquer outro motivo de suspensão continua
+      // bloqueando 100% de /app/*, inclusive billing.
+      const pathname = (await headers()).get("x-pathname") ?? "";
+      const podeVerBilling =
+        orgRow.suspended_reason === "billing_overdue" &&
+        pathname.startsWith("/app/settings/billing");
+      if (!podeVerBilling) redirect("/account-suspended");
+    }
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
     // Fonte confiável (admin client, org do cookie validado) — nunca do body.
     const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)

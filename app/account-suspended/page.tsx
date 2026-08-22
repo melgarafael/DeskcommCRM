@@ -72,15 +72,12 @@ export default async function AccountSuspendedPage() {
             saber o motivo e como reativá-la.
           </p>
         )}
-        {/*
-         * Sem CTA "Atualizar pagamento" aqui de propósito (ainda): a tela de
-         * billing real (`/app/settings/billing`) vive sob `app/app/layout.tsx`,
-         * que redireciona QUALQUER rota `/app/*` para cá quando a org está
-         * suspensa — um link para lá hoje seria um beco sem saída. A Fase 3
-         * do pivot (tela de billing real) traz a exceção de rota no layout
-         * JUNTO com o botão, para as duas nascerem consistentes.
-         */}
         <div className="pt-2 flex justify-center gap-2">
+          {isBillingOverdue ? (
+            <Button asChild>
+              <Link href="/app/settings/billing">Atualizar pagamento</Link>
+            </Button>
+          ) : null}
           <Button asChild variant="outline">
             <Link href="/login">Sair</Link>
           </Button>
