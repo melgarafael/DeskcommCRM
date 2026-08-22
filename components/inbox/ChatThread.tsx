@@ -16,6 +16,8 @@ import type { Message, Note } from "@/lib/types/messaging";
 
 interface Props {
   conversationId: string | null;
+  /** Escolher uma mensagem para responder. Sobe até o composer. */
+  onResponder?: (m: Message) => void;
 }
 
 /** Onda 5.2: union de item do thread — mensagem real ou nota interna (nunca vai ao cliente). */
@@ -41,7 +43,7 @@ function dayLabel(d: Date): string {
   return format(d, "dd/MM/yyyy", { locale: ptBR });
 }
 
-export function ChatThread({ conversationId }: Props) {
+export function ChatThread({ conversationId, onResponder }: Props) {
   const q = useMessagesRealtime(conversationId);
   const notes = useConversationNotes(conversationId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -57,6 +59,16 @@ export function ChatThread({ conversationId }: Props) {
     () => q.data?.pages.flatMap((p) => p.data) ?? [],
     [q.data],
   );
+
+  /**
+   * As mensagens por id, para resolver a CITADA sem ir ao servidor.
+   *
+   * Uma consulta por bolha citada seria uma cascata de requisições numa
+   * conversa longa. Aqui o fio sai da lista que já está na tela — e quando a
+   * citada ficou fora da página carregada, ele simplesmente não aparece, que é
+   * melhor que segurar a conversa esperando por um texto de enfeite.
+   */
+  const porId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
 
   const items: ThreadItem[] = useMemo(
     () => mergeThreadItems(messages, notes),
@@ -188,6 +200,12 @@ export function ChatThread({ conversationId }: Props) {
                   key={`msg-${item.data.id}`}
                   message={item.data}
                   debugCitations={debugCitations}
+                  onResponder={onResponder}
+                  // A citada sai da MESMA lista já carregada: buscar no servidor
+                  // por cada citação faria uma consulta por bolha. Quando a
+                  // citada é antiga demais e ficou fora da página, o fio some —
+                  // que é melhor que segurar a conversa esperando.
+                  citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
                 />
               ),
             )}

@@ -19,6 +19,7 @@ import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
 import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { X } from "lucide-react";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
@@ -43,6 +44,16 @@ interface Props {
    * versão deste bloqueio usava `blockedReason` e levou a nota junto.
    */
   janelaFechada?: string | null;
+  /**
+   * A mensagem que esta resposta CITA, quando o atendente escolheu responder
+   * "em cima" de uma. `null` = envio solto, o caso comum.
+   *
+   * Vem de fora e não daqui porque quem escolhe é a lista de mensagens: o
+   * composer só precisa mostrar o que foi escolhido e mandá-lo junto.
+   */
+  respondendo?: { id: string; body: string | null; direction: string } | null;
+  /** Desfaz a escolha — o `x` da faixa de citação. */
+  onCancelarResposta?: () => void;
   /** Nome do contato da conversa, para interpolar {{nome}}/{{primeiro_nome}} do template escolhido. */
   contactName?: string | null;
   /** Contato da conversa — excluído do seletor de cartão compartilhado. */
@@ -50,7 +61,16 @@ interface Props {
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
-  { conversationId, disabled, blockedReason, janelaFechada, contactName, currentContactId },
+  {
+    conversationId,
+    disabled,
+    blockedReason,
+    janelaFechada,
+    contactName,
+    currentContactId,
+    respondendo,
+    onCancelarResposta,
+  },
   ref,
 ) {
   const t = useT();
@@ -103,8 +123,24 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       return;
     }
     send.mutate(
-      { conversation_id: conversationId, body, type: "text" },
-      { onError: restoreOnError },
+      {
+        conversation_id: conversationId,
+        body,
+        type: "text",
+        ...(respondendo ? { reply_to_message_id: respondendo.id } : {}),
+      },
+      {
+        onSuccess: () => {
+          setText("");
+          // A citação vale para UMA mensagem. Mantê-la depois do envio faria a
+          // próxima frase sair citando algo que o atendente já respondeu.
+          onCancelarResposta?.();
+          requestAnimationFrame(() => autoresize());
+        },
+        // Do upstream, e fica: sem isto o texto some quando o envio falha, e
+        // quem escreveu um parágrafo o perde sem ter como recuperá-lo.
+        onError: restoreOnError,
+      },
     );
   }
 
@@ -212,6 +248,36 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             {t("Nota interna")}
           </button>
         </div>
+        {/*
+          A FAIXA DA CITAÇÃO — o que o atendente escolheu responder.
+
+          Fica ACIMA do campo, como no WhatsApp, e não dentro dele: o texto
+          citado pode ter várias linhas, e empurrá-lo para dentro do campo faria
+          o que se digita disputar espaço com o que se cita.
+
+          `line-clamp-2` porque o objetivo é reconhecer qual mensagem é, não
+          relê-la — ela está logo acima, no fio.
+        */}
+        {respondendo && mode === "reply" && (
+          <div className="mb-1 flex items-start gap-2 rounded-md border-l-2 border-primary bg-muted/60 px-2 py-1.5">
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-medium text-primary">
+                {respondendo.direction === "outbound" ? t("Você") : t("Cliente")}
+              </div>
+              <div className="line-clamp-2 text-xs text-muted-foreground">
+                {respondendo.body?.trim() || t("(sem texto)")}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onCancelarResposta}
+              aria-label={t("Cancelar resposta")}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
           {mode === "reply" && (
             <AttachMenu

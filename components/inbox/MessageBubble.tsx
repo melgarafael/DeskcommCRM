@@ -1,7 +1,7 @@
 "use client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
@@ -16,6 +16,10 @@ import {
 interface Props {
   message: Message;
   debugCitations?: boolean;
+  /** Escolher esta mensagem para responder "em cima" dela. */
+  onResponder?: (m: Message) => void;
+  /** A mensagem citada por ESTA, quando houver — desenha o fio. */
+  citada?: Message | null;
 }
 
 function AckIndicator({ status }: { status: string }) {
@@ -31,7 +35,7 @@ function AckIndicator({ status }: { status: string }) {
   return null;
 }
 
-export function MessageBubble({ message, debugCitations }: Props) {
+export function MessageBubble({ message, debugCitations, onResponder, citada }: Props) {
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: ptBR });
   const isFailed = message.status === "failed";
@@ -56,7 +60,47 @@ export function MessageBubble({ message, debugCitations }: Props) {
   })();
 
   return (
-    <div className={cn("flex w-full px-4 py-1", isOutbound ? "justify-end" : "justify-start")}>
+    <div
+      className={cn(
+        "group flex w-full items-center gap-1 px-4 py-1",
+        isOutbound ? "justify-end" : "justify-start",
+      )}
+    >
+      {/*
+        RESPONDER — aparece ao passar o mouse, como no WhatsApp Web.
+        Fica FORA da bolha para não disputar espaço com o texto, e do lado de
+        dentro da conversa (à esquerda no que sai, à direita no que entra), que
+        é onde a mão já está.
+
+        `opacity` e não `hidden`: esconder de verdade faria o layout pular
+        quando o mouse entra. Em telas de toque não há hover — por isso
+        `focus-visible` também revela, e o teclado alcança.
+      */}
+      {onResponder && isOutbound && (
+        <button
+          type="button"
+          onClick={() => onResponder(message)}
+          aria-label="Responder a esta mensagem"
+          className={cn(
+            "rounded p-1 text-muted-foreground transition-opacity hover:bg-muted",
+            // VISÍVEL POR PADRÃO, e escondido só onde EXISTE hover.
+            //
+            // A primeira versão era `opacity-0` + `group-hover`, copiando o
+            // WhatsApp Web. No celular isso deixa o botão invisível para
+            // sempre: não há como passar o mouse, e `focus-visible` só chega
+            // por teclado. Ou seja, a função sumia exatamente onde o dono
+            // deste CRM mais atende.
+            //
+            // `@media (hover: hover)` pergunta pelo DISPOSITIVO, não pela
+            // largura: um tablet largo com toque continua mostrando, e um
+            // desktop estreito continua escondendo. Largura não é a pergunta.
+            "opacity-100 [@media(hover:hover)]:opacity-0",
+            "[@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100",
+          )}
+        >
+          <ArrowBendUpLeft size={14} />
+        </button>
+      )}
       <div
         className={cn(
           "max-w-[75%] text-sm",
@@ -71,6 +115,27 @@ export function MessageBubble({ message, debugCitations }: Props) {
           isFailed && "border border-destructive",
         )}
       >
+        {/*
+          A CITAÇÃO, dentro da bolha e acima do texto — o fio.
+
+          Mostra de quem era e um trecho. `line-clamp-2` porque serve para
+          reconhecer, não para reler: a original está logo acima no histórico.
+        */}
+        {citada && (
+          <div
+            className={cn(
+              "mb-1 rounded border-l-2 px-2 py-1 text-xs",
+              isOutbound
+                ? "border-primary-foreground/50 bg-primary-foreground/10"
+                : "border-primary bg-background/60",
+            )}
+          >
+            <div className="font-medium opacity-80">
+              {citada.direction === "outbound" ? "Você" : "Cliente"}
+            </div>
+            <div className="line-clamp-2 opacity-70">{citada.body?.trim() || "(sem texto)"}</div>
+          </div>
+        )}
         {senderLabel && (
           <div className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide opacity-80">
             {senderLabel === "IA" ? (
@@ -144,6 +209,31 @@ export function MessageBubble({ message, debugCitations }: Props) {
           )}
         </div>
       </div>
+      {onResponder && !isOutbound && (
+        <button
+          type="button"
+          onClick={() => onResponder(message)}
+          aria-label="Responder a esta mensagem"
+          className={cn(
+            "rounded p-1 text-muted-foreground transition-opacity hover:bg-muted",
+            // VISÍVEL POR PADRÃO, e escondido só onde EXISTE hover.
+            //
+            // A primeira versão era `opacity-0` + `group-hover`, copiando o
+            // WhatsApp Web. No celular isso deixa o botão invisível para
+            // sempre: não há como passar o mouse, e `focus-visible` só chega
+            // por teclado. Ou seja, a função sumia exatamente onde o dono
+            // deste CRM mais atende.
+            //
+            // `@media (hover: hover)` pergunta pelo DISPOSITIVO, não pela
+            // largura: um tablet largo com toque continua mostrando, e um
+            // desktop estreito continua escondendo. Largura não é a pergunta.
+            "opacity-100 [@media(hover:hover)]:opacity-0",
+            "[@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100",
+          )}
+        >
+          <ArrowBendUpLeft size={14} />
+        </button>
+      )}
     </div>
   );
 }

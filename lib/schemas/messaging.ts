@@ -61,6 +61,15 @@ export const sendMessageSchema = z
      * da tela usa. Chave montada de outro jeito é o mismatch voltando.
      */
     template_values: z.record(z.string(), z.string()).optional(),
+    /**
+     * A mensagem que esta responde — o id da NOSSA linha, não o do provider.
+     *
+     * Quem envia conhece o que está na tela, e na tela está o nosso id. A
+     * tradução para o id que a plataforma entende (`wamid`) é feita no handler,
+     * lendo a linha apontada: pedir o `wamid` aqui obrigaria a tela a conhecer
+     * o vocabulário do canal, que é justamente o que o seam existe para evitar.
+     */
+    reply_to_message_id: z.string().uuid().optional(),
   })
   .refine(
     (d) => {

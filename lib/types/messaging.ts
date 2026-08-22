@@ -68,6 +68,8 @@ export interface Message {
   edited_at: string | null;
   /** Quando o AUTOR apagou para todos. A linha fica; o texto não é mostrado. */
   revoked_at: string | null;
+  /** A mensagem que esta responde (citação). `null` = envio solto. */
+  reply_to_message_id: string | null;
   created_at: string;
 }
 

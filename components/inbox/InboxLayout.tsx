@@ -20,8 +20,13 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { ConversationHeader } from "./ConversationHeader";
 import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
+import type { Message as ConversationMensagem } from "@/lib/types/messaging";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 import { ShortcutsHelpDialog } from "./ShortcutsHelpDialog";
+import { ChevronLeft, PanelRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 /**
  * O QUE CADA ABA SIGNIFICA. Exportada porque é a definição em si — o defeito
@@ -92,6 +97,15 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
+  /** A ficha do contato como painel deslizante — só existe abaixo do `xl`. */
+  const [fichaAberta, setFichaAberta] = useState(false);
+  /**
+   * A mensagem escolhida para responder "em cima".
+   *
+   * Mora aqui, e não no composer, porque quem ESCOLHE é a lista de mensagens e
+   * quem MOSTRA é o composer — são irmãos, e o estado comum é do pai.
+   */
+  const [respondendo, setRespondendo] = useState<ConversationMensagem | null>(null);
   const composerRef = useRef<ComposerHandle | null>(null);
 
   const filters: ConversationsFilters = useMemo(
@@ -132,12 +146,27 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   const claim = useClaimConversation();
   const close = useCloseConversation();
 
+  // A leitura da conversa aberta é do upstream e fica: sem ela o contador de
+  // não-lidas nunca zera para quem abre a conversa.
   useMarkAsRead(
     selectedConversation?.id ?? null,
     selectedConversation?.unread_count_for_assignee ?? 0,
   );
 
-  const handleSelect = useCallback((id: string) => setSelectedId(id), []);
+  // Aceita `null`: é o VOLTAR do celular, que limpa a seleção e devolve a lista.
+  // É um SUPERCONJUNTO do `handleSelect` do upstream — o tipo dele não aceita
+  // `null`, e sem isso o botão de voltar não teria o que chamar.
+  //
+  // A seleção NÃO vive na URL (só o `?filter=` vive) — então este voltar é
+  // estado local, e o botão de voltar do navegador não desfaz a seleção. É a
+  // limitação conhecida deste caminho; trocar por URL mudaria o deep-link de
+  // conversa, que hoje entra por `initialSelectedId` vindo da rota.
+  const handleSelect = useCallback((id: string | null) => {
+    setSelectedId(id);
+    // Sem isto, escolher "responder" numa conversa e trocar para outra levaria
+    // a citação junto — e a resposta sairia citando mensagem de outro cliente.
+    setRespondendo(null);
+  }, []);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {
@@ -227,7 +256,25 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // deixava. Margem de 2px não é margem, é sorte.
   return (
     <div className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]">
-      <div className="flex h-full min-h-0 flex-col border-r border-border">
+      {/*
+        NO CELULAR, UMA COISA POR VEZ.
+
+        Antes as duas colunas caíam empilhadas em `grid-cols-1`: a lista inteira
+        primeiro e a conversa DEPOIS dela. Para responder era preciso rolar a
+        lista toda até o fim, e o composer ficava fora da tela — que é o
+        "incômodo" relatado por quem atende do telefone.
+
+        Sem media query em JavaScript de propósito: `useMediaQuery` decide DEPOIS
+        da hidratação, então a primeira pintura mostra o layout errado e pisca. A
+        classe condicional é resolvida pelo CSS, na primeira pintura, e some no
+        `md` — onde as duas colunas cabem juntas e a regra não se aplica.
+      */}
+      <div
+        className={cn(
+          "h-full min-h-0 flex-col border-r border-border md:flex",
+          selectedId ? "hidden" : "flex",
+        )}
+      >
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationList
@@ -241,12 +288,52 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         </div>
       </div>
 
-      <div className="flex h-full min-h-0 flex-col">
+      <div
+        className={cn(
+          "h-full min-h-0 flex-col md:flex",
+          selectedConversation ? "flex" : "hidden md:flex",
+        )}
+      >
         {selectedConversation ? (
           <>
+            {/*
+              A barra que só existe no celular: o caminho de VOLTA e a porta
+              para a ficha.
+
+              Sem o voltar, quem abre uma conversa no telefone fica preso nela —
+              a lista está escondida e não há gesto que a traga. E a ficha do
+              contato mora numa coluna que só aparece a partir do `xl`, então no
+              telefone ela seria inalcançável; aqui ela vira painel deslizante,
+              com o mesmo componente da coluna (nada de uma segunda versão que
+              diverge na primeira mudança).
+            */}
+            <div className="flex items-center gap-1 border-b border-border px-1 py-1 md:hidden">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 gap-1 px-2"
+                onClick={() => handleSelect(null)}
+              >
+                <ChevronLeft className="size-4" />
+                Conversas
+              </Button>
+              <div className="flex-1" />
+              <Sheet open={fichaAberta} onOpenChange={setFichaAberta}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-9 gap-1 px-2 xl:hidden">
+                    <PanelRight className="size-4" />
+                    Ficha
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
+                  <SheetTitle className="sr-only">Ficha do contato</SheetTitle>
+                  <CRMSidePanel conversation={selectedConversation} />
+                </SheetContent>
+              </Sheet>
+            </div>
             <ConversationHeader conversation={selectedConversation} />
             <div className="min-h-0 flex-1 overflow-hidden">
-              <ChatThread conversationId={selectedConversation.id} />
+              <ChatThread conversationId={selectedConversation.id} onResponder={setRespondendo} />
             </div>
             <RetentionNotice conversationId={selectedConversation.id} />
             {motivoDaJanela && (
@@ -263,6 +350,8 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               janelaFechada={motivoDaJanela}
               disabled={selectedConversation.status === "closed"}
               contactName={selectedConversation.contacts?.name ?? null}
+              respondendo={respondendo}
+              onCancelarResposta={() => setRespondendo(null)}
               currentContactId={selectedConversation.contact_id}
             />
           </>

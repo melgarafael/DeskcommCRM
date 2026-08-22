@@ -135,6 +135,11 @@ export const wahaAdapter: ChannelAdapter = {
     // comportamento visível — proibido nas Fases 0–2.
     if (!client) return { externalId: null };
 
+    // A estrutura de três caminhos é do upstream (o cartão de contato entrou
+    // depois da citação). O que se enxerta aqui é o `replyToExternalId` no
+    // caminho de TEXTO — os outros dois não citam: o WAHA aceita `reply_to` só
+    // no `sendText`, e mandá-lo nos outros seria pedir para a API ignorar em
+    // silêncio, que é como se perde uma feature sem ninguém notar.
     let res: unknown;
     if (envelope.kind === "contact" && envelope.contact) {
       const resolvedId = await resolveWhatsappIdForContactCard(
@@ -155,7 +160,14 @@ export const wahaAdapter: ChannelAdapter = {
         wahaSendPlanFor(envelope.kind, envelope.media),
       );
     } else {
-      res = await client.sendMessage(envelope.sessionRef, envelope.to, envelope.body ?? "");
+      res = await client.sendMessage(
+        envelope.sessionRef,
+        envelope.to,
+        envelope.body ?? "",
+        // A citação é enfeite da conversa, nunca condição de envio: quando não
+        // há, o envio segue igual. Ver `OutboundEnvelope.replyToExternalId`.
+        envelope.replyToExternalId,
+      );
     }
 
     return { externalId: parseWahaMessageId(res) };

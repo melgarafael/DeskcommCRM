@@ -111,7 +111,7 @@ async function removerEcoDoProprioEnvio(
 }
 
 const MSG_COLS =
-  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, sent_via, sent_by_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, created_at";
+  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, sent_via, sent_by_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at";
 
 function actorAuditPayload(actor: Actor): {
   actorUserId: string | null;
@@ -410,8 +410,43 @@ export async function sendMessageHandler(
   }
 
   const now = new Date().toISOString();
+  // ─── A CITAÇÃO, e a checagem que ela obriga ────────────────────────────────
+  //
+  // O id da citada vem do CLIENTE. Sem confirmar que ela é da MESMA conversa,
+  // alguém poderia citar uma mensagem de outra conversa — e a citação é
+  // renderizada com o texto, então isso vaza conteúdo de um atendimento para
+  // dentro de outro. O filtro de conversa é o que fecha isso; o de organização
+  // vem de brinde por `conversation_id` já ser desta org.
+  //
+  // Recusar em silêncio (citar nada) seria pior que recusar alto: quem clicou
+  // "responder" veria a mensagem sair sem o fio e não saberia por quê.
+  let citada: { id: string; external_id: string | null } | null = null;
+  if (input.reply_to_message_id) {
+    const { data: alvo } = await supabase
+      .from("messages")
+      .select("id, external_id")
+      .eq("id", input.reply_to_message_id)
+      .eq("organization_id", ctx.organization_id)
+      .eq("conversation_id", c.id)
+      .maybeSingle();
+
+    if (!alvo) {
+      throw new ApiError(
+        422,
+        "validation_error",
+        undefined,
+        ctx.requestId,
+        "A mensagem citada não é desta conversa.",
+      );
+    }
+    citada = alvo as { id: string; external_id: string | null };
+  }
+
   const insertRow = {
     organization_id: c.organization_id,
+    // Guardado mesmo quando o canal não sabe citar: o fio existe no NOSSO
+    // histórico de qualquer jeito, e é o que a tela desenha.
+    reply_to_message_id: citada?.id ?? null,
     conversation_id: c.id,
     channel_session_id: c.channel_session_id,
     contact_id: c.contact_id,
@@ -596,6 +631,9 @@ export async function sendMessageHandler(
             filename,
             caption: input.body ?? null,
           },
+          // O id que a PLATAFORMA conhece, lido da linha citada agora — não uma
+          // cópia guardada no envio, que poderia divergir da linha.
+          replyToExternalId: citada?.external_id ?? null,
         }));
       } else if (input.type === "contact") {
         const sc = outboundMetadata.shared_contact as
@@ -633,6 +671,7 @@ export async function sendMessageHandler(
           providerConversationId: c.provider_conversation_id,
           kind: input.type,
           body: input.body ?? "",
+          replyToExternalId: citada?.external_id ?? null,
         }));
       }
       await removerEcoDoProprioEnvio(

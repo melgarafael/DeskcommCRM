@@ -20,6 +20,8 @@ interface SendArgs {
   template_name?: string;
   template_language?: string;
   template_values?: Record<string, string>;
+  /** A mensagem citada — id da NOSSA linha; o handler traduz para o do canal. */
+  reply_to_message_id?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -59,6 +61,7 @@ export function useSendMessage() {
         media_mime: args.media_mime ?? null,
         media_size_bytes: null,
         media_storage_path: null,
+        reply_to_message_id: args.reply_to_message_id ?? null,
         sent_via: "user",
         sent_by_user_id: null,
         sent_at: new Date().toISOString(),
