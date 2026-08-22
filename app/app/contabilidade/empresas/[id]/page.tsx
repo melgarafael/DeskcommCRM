@@ -5,6 +5,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Card } from "@/components/ui/card";
 import { PlanoDeContas, Lancamentos, type AccountRow, type EntryRow } from "./_client";
+import { Financeiro, type LedgerRow } from "./_financeiro";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,13 @@ export default async function EmpresaDetailPage({
 
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
-  const [{ data: contas }, { data: lancamentos }, { data: activities }] = await Promise.all([
+  const [
+    { data: contas },
+    { data: lancamentos },
+    { data: activities },
+    { data: payables },
+    { data: receivables },
+  ] = await Promise.all([
     admin
       .from("accounting_chart_of_accounts")
       .select("id, code, name, account_type")
@@ -59,6 +66,16 @@ export default async function EmpresaDetailPage({
       .eq("client_company_id", id)
       .order("performed_at", { ascending: false })
       .limit(20),
+    admin
+      .from("accounting_payables")
+      .select("id, description, amount_cents, due_date, paid_at, status")
+      .eq("client_company_id", id)
+      .order("due_date", { ascending: true }),
+    admin
+      .from("accounting_receivables")
+      .select("id, description, amount_cents, due_date, paid_at, status")
+      .eq("client_company_id", id)
+      .order("due_date", { ascending: true }),
   ]);
 
   return (
@@ -82,6 +99,13 @@ export default async function EmpresaDetailPage({
         clientCompanyId={id}
         contas={(contas ?? []) as AccountRow[]}
         lancamentos={(lancamentos ?? []) as EntryRow[]}
+        canWrite={canWrite}
+      />
+
+      <Financeiro
+        clientCompanyId={id}
+        payables={(payables ?? []) as LedgerRow[]}
+        receivables={(receivables ?? []) as LedgerRow[]}
         canWrite={canWrite}
       />
 

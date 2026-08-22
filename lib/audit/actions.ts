@@ -343,6 +343,10 @@ export const AUDIT_ACTIONS = [
   "accounting.client_company_created",
   "accounting.chart_of_accounts_created",
   "accounting.journal_entry_created",
+  "accounting.payable_created",
+  "accounting.payable_paid",
+  "accounting.receivable_created",
+  "accounting.receivable_paid",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

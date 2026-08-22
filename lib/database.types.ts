@@ -6185,6 +6185,16 @@ export type Database = {
         Args: { p_from: string; p_org: string; p_owner?: string; p_to: string }
         Returns: Json
       }
+      // ---- fn_cash_flow_summary: adicionada à mão na migration 0171
+      // (fundação de financeiro). Ver nota em billing_invoices acima.
+      fn_cash_flow_summary: {
+        Args: { p_client_company_id: string; p_period_end: string; p_period_start: string }
+        Returns: {
+          total_received_cents: number
+          total_paid_cents: number
+          net_cents: number
+        }[]
+      }
       fn_can_view_conversation: {
         Args: { p_assigned_to_user_id: string; p_org: string }
         Returns: boolean

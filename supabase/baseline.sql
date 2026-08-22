@@ -14297,4 +14297,122 @@ create policy "accounting_journal_entry_lines_select" on public.accounting_journ
 drop policy if exists "accounting_journal_entry_lines_write" on public.accounting_journal_entry_lines;
 create policy "accounting_journal_entry_lines_write" on public.accounting_journal_entry_lines for all using ((journal_entry_id in (select aje.id from public.accounting_journal_entries aje where (aje.organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(aje.organization_id, 'manager')) or public.fn_is_platform_admin()))) with check ((journal_entry_id in (select aje.id from public.accounting_journal_entries aje where (aje.organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(aje.organization_id, 'manager')) or public.fn_is_platform_admin())));
 
+-- ---- fundação do módulo Financeiro: contas a pagar/receber, fluxo de caixa (migration 0171) ----
+-- Sobre a fundação Contábil (0170). journal_entry_id ON DELETE SET NULL, não
+-- CASCADE: apagar o lançamento contábil de uma baixa não pode apagar o
+-- registro financeiro que a originou (cascade fantasma). Fluxo de caixa é
+-- FUNÇÃO (doutrina DIRC "Calcular"), não tabela derivada.
+create table if not exists public.accounting_payables (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    client_company_id uuid not null,
+    description text not null,
+    amount_cents bigint not null,
+    due_date date not null,
+    paid_at timestamp with time zone,
+    status text default 'open'::text not null,
+    journal_entry_id uuid,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'accounting_payables_pkey' and conrelid = '"public"."accounting_payables"'::regclass) then
+    alter table only public.accounting_payables add constraint accounting_payables_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_payables_organization_id_fkey' and conrelid = '"public"."accounting_payables"'::regclass) then
+    alter table only public.accounting_payables add constraint accounting_payables_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_payables_client_company_id_fkey' and conrelid = '"public"."accounting_payables"'::regclass) then
+    alter table only public.accounting_payables add constraint accounting_payables_client_company_id_fkey foreign key (client_company_id) references public.accounting_client_companies(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_payables_journal_entry_id_fkey' and conrelid = '"public"."accounting_payables"'::regclass) then
+    alter table only public.accounting_payables add constraint accounting_payables_journal_entry_id_fkey foreign key (journal_entry_id) references public.accounting_journal_entries(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_payables_amount_cents_check' and conrelid = '"public"."accounting_payables"'::regclass) then
+    alter table only public.accounting_payables add constraint accounting_payables_amount_cents_check check (amount_cents > 0);
+  end if;
+end $$;
+
+comment on table public.accounting_payables is 'Contas a pagar por empresa-cliente. status vocabulário aberto. journal_entry_id ON DELETE SET NULL.';
+
+create index if not exists idx_accounting_payables_company_due on public.accounting_payables using btree (client_company_id, due_date);
+
+create table if not exists public.accounting_receivables (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    client_company_id uuid not null,
+    description text not null,
+    amount_cents bigint not null,
+    due_date date not null,
+    paid_at timestamp with time zone,
+    status text default 'open'::text not null,
+    journal_entry_id uuid,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'accounting_receivables_pkey' and conrelid = '"public"."accounting_receivables"'::regclass) then
+    alter table only public.accounting_receivables add constraint accounting_receivables_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_receivables_organization_id_fkey' and conrelid = '"public"."accounting_receivables"'::regclass) then
+    alter table only public.accounting_receivables add constraint accounting_receivables_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_receivables_client_company_id_fkey' and conrelid = '"public"."accounting_receivables"'::regclass) then
+    alter table only public.accounting_receivables add constraint accounting_receivables_client_company_id_fkey foreign key (client_company_id) references public.accounting_client_companies(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_receivables_journal_entry_id_fkey' and conrelid = '"public"."accounting_receivables"'::regclass) then
+    alter table only public.accounting_receivables add constraint accounting_receivables_journal_entry_id_fkey foreign key (journal_entry_id) references public.accounting_journal_entries(id) on delete set null;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'accounting_receivables_amount_cents_check' and conrelid = '"public"."accounting_receivables"'::regclass) then
+    alter table only public.accounting_receivables add constraint accounting_receivables_amount_cents_check check (amount_cents > 0);
+  end if;
+end $$;
+
+comment on table public.accounting_receivables is 'Contas a receber por empresa-cliente. Mesmo raciocínio de accounting_payables.';
+
+create index if not exists idx_accounting_receivables_company_due on public.accounting_receivables using btree (client_company_id, due_date);
+
+alter table public.accounting_payables enable row level security;
+alter table public.accounting_receivables enable row level security;
+
+drop policy if exists "accounting_payables_select" on public.accounting_payables;
+create policy "accounting_payables_select" on public.accounting_payables for select using ((organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()));
+drop policy if exists "accounting_payables_write" on public.accounting_payables;
+create policy "accounting_payables_write" on public.accounting_payables for all using (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin())) with check (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin()));
+
+drop policy if exists "accounting_receivables_select" on public.accounting_receivables;
+create policy "accounting_receivables_select" on public.accounting_receivables for select using ((organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()));
+drop policy if exists "accounting_receivables_write" on public.accounting_receivables;
+create policy "accounting_receivables_write" on public.accounting_receivables for all using (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin())) with check (((organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager')) or public.fn_is_platform_admin()));
+
+create or replace function public.fn_cash_flow_summary(p_client_company_id uuid, p_period_start date, p_period_end date)
+returns table(total_received_cents bigint, total_paid_cents bigint, net_cents bigint)
+language sql stable
+as $$
+  select
+    coalesce((select sum(amount_cents) from public.accounting_receivables
+      where client_company_id = p_client_company_id
+        and status = 'paid'
+        and paid_at::date between p_period_start and p_period_end), 0) as total_received_cents,
+    coalesce((select sum(amount_cents) from public.accounting_payables
+      where client_company_id = p_client_company_id
+        and status = 'paid'
+        and paid_at::date between p_period_start and p_period_end), 0) as total_paid_cents,
+    coalesce((select sum(amount_cents) from public.accounting_receivables
+      where client_company_id = p_client_company_id
+        and status = 'paid'
+        and paid_at::date between p_period_start and p_period_end), 0)
+    - coalesce((select sum(amount_cents) from public.accounting_payables
+      where client_company_id = p_client_company_id
+        and status = 'paid'
+        and paid_at::date between p_period_start and p_period_end), 0) as net_cents;
+$$;
+
+revoke execute on function public.fn_cash_flow_summary(uuid, date, date) from public, anon;
+grant execute on function public.fn_cash_flow_summary(uuid, date, date) to authenticated;
+
 notify pgrst, 'reload schema';
