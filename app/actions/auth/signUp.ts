@@ -95,7 +95,11 @@ export async function signUp(
       // decisão que importa acontece com o e-mail JÁ confirmado pelo provedor.
       data: convite
         ? { invite_token: convite }
-        : { org_name: (parsed.data as SignupInput).org_name },
+        : {
+            org_name: (parsed.data as SignupInput).org_name,
+            plan_id: (parsed.data as SignupInput).plan_id || undefined,
+            cnpj: (parsed.data as SignupInput).cnpj || undefined,
+          },
     },
   });
 

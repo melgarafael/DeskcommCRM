@@ -10115,6 +10115,14 @@ alter table public.agent_inbox_items
     -- janela e reprova um teste que não tem nada a ver com o kind novo (medido:
     -- offset 1532 -> 2275). Kind novo entra no fim da lista.
     'budget_warning',
+    -- (migration 0169, ADR-0002) A criação da assinatura Asaas no signup pode
+    -- falhar (rede, chave errada) DEPOIS que a organização já foi criada — e a
+    -- org não pode ficar travada esperando um terceiro responder. Ela nasce
+    -- `active` mesmo assim; este kind é o que torna a assinatura pendente
+    -- VISÍVEL na Central de avisos, em vez de um estado mudo que só um dump de
+    -- `organization_subscriptions` revelaria. Kind novo entra no fim da lista,
+    -- antes de 'other' (bloco único por constraint, #159).
+    'billing_subscription_pending',
     'other'
   ));
 

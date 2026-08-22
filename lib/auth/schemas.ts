@@ -16,6 +16,16 @@ export const signupSchema = z
     email: z.string().email("Email inválido"),
     password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
     password_confirm: z.string(),
+    // Billing pago (ADR-0002) — opcionais e SEPARADOS do resto do formulário.
+    // plan_id só chega da tela quando a instância tem billing_plans ativos
+    // (self-host: SignupForm nem renderiza o seletor, então isto nunca vem
+    // preenchido). cnpj é exigido pela Asaas para abrir o customer — a
+    // checagem real mora em lib/auth/provision.ts, não aqui: recusar no
+    // schema faria o cadastro inteiro falhar por causa de um campo de
+    // billing, quando o certo é a org nascer e o billing ficar pendente
+    // (ver "billing_subscription_pending" na Central de avisos).
+    plan_id: z.string().uuid().optional().or(z.literal("")),
+    cnpj: z.string().optional().or(z.literal("")),
   })
   .refine((v) => v.password === v.password_confirm, {
     path: ["password_confirm"],

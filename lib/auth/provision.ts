@@ -1,5 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
+import { isBillingEnabled } from "@/lib/asaas/config";
+import { ensureAsaasCustomer } from "@/lib/asaas/customers";
+import { createOrganizationSubscription } from "@/lib/asaas/subscriptions";
 
 /** Normaliza o nome da empresa para um slug candidato (citext unique no DB). */
 function slugify(name: string): string {
@@ -95,6 +99,60 @@ export async function ensureTenantForUser(
     bypassedRls: true,
     metadata: { slug: org.slug },
   });
+
+  // Assinatura Asaas — só quando a instância roda BILLING_MODE=asaas E o
+  // signup escolheu um plano (Fase 4 do pivot ADR-0002). Self-host nunca
+  // executa este bloco: plan_id nunca chega no user_metadata de quem usa o
+  // formulário sem seletor de plano (billing_plans vazio → SignupForm nem
+  // renderiza o campo).
+  const planId = user.user_metadata?.plan_id as string | undefined;
+  if (planId && isBillingEnabled()) {
+    const cnpj = user.user_metadata?.cnpj as string | undefined;
+    try {
+      if (!cnpj) throw new Error("cnpj ausente no metadata do signup");
+      const { data: planRow } = await admin
+        .from("billing_plans")
+        .select("id, price_cents, billing_interval")
+        .eq("id", planId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!planRow) throw new Error(`plano ${planId} não encontrado ou inativo`);
+
+      const asaasCustomerId = await ensureAsaasCustomer({
+        organizationId: org.id,
+        legalName: orgName,
+        email: user.email,
+        cnpj,
+      });
+      await createOrganizationSubscription({
+        organizationId: org.id,
+        planId: planRow.id,
+        asaasCustomerId,
+        priceCents: planRow.price_cents,
+        billingInterval: planRow.billing_interval as "monthly" | "yearly",
+      });
+    } catch (err) {
+      // A organização NUNCA fica travada por uma falha de rede/config da
+      // Asaas no instante exato do cadastro (invariante: o signup é o
+      // caminho mais barato de abandono do produto inteiro). Falha aberta na
+      // AÇÃO (org segue active) e fechada na INFORMAÇÃO (aviso concreto na
+      // Central, não um log que só quem sabe SQL acha).
+      const motivo = (err as Error).message;
+      logger.error("[signup] falha ao criar assinatura Asaas", {
+        organization_id: org.id,
+        plan_id: planId,
+        error: motivo,
+      });
+      await admin.from("agent_inbox_items").insert({
+        organization_id: org.id,
+        kind: "billing_subscription_pending",
+        title: "Assinatura de cobrança não foi criada",
+        body: `O cadastro escolheu um plano pago, mas a assinatura na Asaas não pôde ser criada (${motivo}). A organização continua ativa; configure a cobrança manualmente em Configurações > Billing ou pelo console admin.`,
+        ref_kind: "organization",
+        ref_id: org.id,
+      });
+    }
+  }
 
   return { provisioned: true, organizationId: org.id };
 }
