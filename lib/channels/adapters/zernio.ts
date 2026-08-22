@@ -361,21 +361,49 @@ export const zernioAdapter: ChannelAdapter = {
    * (`account.disconnected`, `number.suspended`); cego mesmo ele era para a
    * falha CALADA, que é justamente a que ninguém percebe.
    *
-   * Reusa a MESMA chamada da validação de credencial (`GET /v1/accounts`), com
-   * o mesmo casamento de conta (`_id ?? id`) — medido contra a API, não lido da
-   * doc: o endpoint por id aceita só `PUT` e responde 405 ao GET.
+   * ─── Perguntar pela CONTA não responde pela LINHA ──────────────────────────
    *
-   * ─── Os quatro desfechos, e por que a diferença importa ────────────────────
+   * A primeira versão varria `GET /v1/accounts` e dava WORKING quando a conta
+   * aparecia na lista. Isso responde "a chave presta e a conta existe" — e a
+   * pergunta do cron é outra: "dá para enviar por este número AGORA?". As duas
+   * divergem no caso que mais importa, e a própria doc do provedor o nomeia:
+   * *"The OAuth token can be perfectly valid while Meta refuses to serve the
+   * phone-number object (for example after a phone-side coexistence
+   * disconnect), so `tokenStatus` alone is not a liveness signal for
+   * WhatsApp."* Alguém desliga o aparelho do lado de lá, a conta segue na
+   * lista, e o CRM diz "conectado" para um número que não entrega mais nada.
    *
-   *   401/403      → a chave foi recusada. É FAILED: a credencial existe e não
-   *                  vale mais, que é exatamente a falha calada que se procura.
-   *   conta ausente→ a chave presta mas não alcança mais esta conta. STOPPED:
-   *                  a sessão não existe mais do lado de lá.
-   *   respondeu ok → WORKING.
-   *   qualquer erro→ NÃO sabemos. `reachable: false`, sem status. Inventar um
-   *                  faria uma oscilação de rede virar "canal caído", e o
-   *                  operador aprenderia a ignorar o aviso — que é pior que não
-   *                  ter aviso nenhum.
+   * `GET /v1/accounts/{id}/health` sonda o elo com a Meta na hora do pedido
+   * (`checkedAt` é sempre o agora, nunca cache). MEDIDO contra a API desta
+   * instalação, não lido da doc — que é a regra que o comentário anterior já
+   * seguia, e o motivo de ele registrar que o endpoint por id respondia 405 ao
+   * GET quando foi escrito. Hoje responde 200:
+   *
+   *   status: "healthy"
+   *   platformConnection: {"status":"connected","phoneStatus":"CONNECTED","metaError":null}
+   *
+   * ─── Os desfechos, e por que `unknown` não vira queda ──────────────────────
+   *
+   *   401/403        → a chave foi recusada. FAILED: a credencial existe e não
+   *                    vale mais — a falha calada que se procura.
+   *   404            → a conta sumiu do lado de lá. STOPPED. (O caminho existe:
+   *                    foi medido respondendo 200, então 404 aqui é sobre a
+   *                    CONTA, não sobre a rota.)
+   *   `disconnected` → a Meta recusou servir o objeto do número (Graph 100/33).
+   *                    FAILED, com o código dela no detalhe: é o que distingue
+   *                    "desligaram o aparelho" de "a chave venceu", e sem isso
+   *                    o operador lê "falhou" e não sabe o que fazer.
+   *   `unknown`      → a sonda não concluiu (timeout, erro transitório da Meta).
+   *                    A doc é explícita: *"not evidence either way"*. Então
+   *                    `reachable: false` e status NENHUM — o mesmo tratamento
+   *                    de uma oscilação de rede, que `julgarQueda` já absorve
+   *                    exigindo DUAS observações ruins seguidas. Traduzir
+   *                    "não sei" para "caiu" faria um soluço da Meta abrir aviso
+   *                    crítico, e aviso que grita à toa ensina a ignorar aviso.
+   *   sem o campo    → conta que não é WhatsApp, ou provedor que ainda não
+   *                    publicou a sonda. Cai no `status` geral em vez de falhar:
+   *                    campo ausente é ausência de informação, não más notícias.
+   *   qualquer outro → NÃO sabemos. `reachable: false`, sem status.
    */
   async checkHealth(
     input: ChannelTenantScope & { sessionRef: string },
@@ -391,10 +419,13 @@ export const zernioAdapter: ChannelAdapter = {
     try {
       // Teto de espera: sem ele, um provedor que pendura a conexão pendura o
       // cron junto, e a varredura de saúde deixa de rodar para TODAS as sessões.
-      res = await fetch(`${creds.baseUrl}/v1/accounts`, {
-        headers: { Authorization: `Bearer ${creds.apiKey}` },
-        signal: AbortSignal.timeout(15_000),
-      });
+      res = await fetch(
+        `${creds.baseUrl}/v1/accounts/${encodeURIComponent(creds.accountId)}/health`,
+        {
+          headers: { Authorization: `Bearer ${creds.apiKey}` },
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
     } catch (err) {
       const detail = err instanceof Error ? err.message : "erro_desconhecido";
       return { reachable: false, status: null, detail: detail.slice(0, 200) };
@@ -403,19 +434,42 @@ export const zernioAdapter: ChannelAdapter = {
     if (res.status === 401 || res.status === 403) {
       return { reachable: true, status: "FAILED", detail: null };
     }
+    if (res.status === 404) {
+      return { reachable: true, status: "STOPPED", detail: null };
+    }
     if (!res.ok) {
       return { reachable: false, status: null, detail: `provedor_respondeu_${res.status}` };
     }
 
     const json = (await res.json().catch(() => null)) as {
-      accounts?: Record<string, unknown>[];
+      status?: string;
+      platformConnection?: {
+        status?: string;
+        phoneStatus?: string | null;
+        metaError?: { code?: number; subcode?: number; message?: string } | null;
+      } | null;
     } | null;
-    const contas = Array.isArray(json?.accounts) ? json.accounts : [];
-    const conta = contas.find((c) => String(c._id ?? c.id) === creds.accountId) ?? null;
 
-    return conta
-      ? { reachable: true, status: "WORKING", detail: null }
-      : { reachable: true, status: "STOPPED", detail: null };
+    const elo = json?.platformConnection;
+
+    if (elo?.status === "disconnected") {
+      const e = elo.metaError;
+      // O código da Meta no detalhe, NUNCA a mensagem crua inteira: ela é longa
+      // e às vezes carrega identificadores que não têm por que entrar num aviso.
+      const detail = e?.code ? `meta_${e.code}${e.subcode ? `_${e.subcode}` : ""}` : "meta_recusou_o_numero";
+      return { reachable: true, status: "FAILED", detail };
+    }
+    if (elo?.status === "unknown") {
+      return { reachable: false, status: null, detail: "sonda_do_elo_meta_inconclusiva" };
+    }
+    if (elo?.status === "connected") {
+      return { reachable: true, status: "WORKING", detail: null };
+    }
+
+    // Sem `platformConnection`: decide pelo veredito geral da conta.
+    return json?.status === "error"
+      ? { reachable: true, status: "FAILED", detail: "conta_em_erro" }
+      : { reachable: true, status: "WORKING", detail: null };
   },
 
   /** Gestão das definições aprovadas — ver `../zernio/templates.ts`. */

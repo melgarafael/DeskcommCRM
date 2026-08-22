@@ -72,8 +72,19 @@ describe("canal intermediado", () => {
     return zernioAdapter.checkHealth!({ organizationId: ORG, sessionRef: "conta-1" });
   }
 
-  it("conta na lista → está de pé", async () => {
-    globalThis.fetch = respondeCom({ accounts: [{ _id: "conta-1", platform: "whatsapp" }] });
+  /**
+   * A forma abaixo é a MEDIDA nesta instalação, não uma inventada para o teste:
+   *
+   *   status: "healthy"
+   *   platformConnection: {"status":"connected","phoneStatus":"CONNECTED",...}
+   */
+  const ELO_VIVO = {
+    status: "healthy",
+    platformConnection: { status: "connected", phoneStatus: "CONNECTED", metaError: null },
+  };
+
+  it("elo com a Meta vivo → está de pé", async () => {
+    globalThis.fetch = respondeCom(ELO_VIVO);
     expect(await saude()).toEqual({ reachable: true, status: "WORKING", detail: null });
   });
 
@@ -84,17 +95,70 @@ describe("canal intermediado", () => {
     expect(await saude()).toMatchObject({ reachable: true, status: "FAILED" });
   });
 
-  it("chave válida mas conta sumiu da lista → STOPPED, não FAILED", async () => {
+  it("conta que sumiu do lado de lá → STOPPED, não FAILED", async () => {
     // São coisas diferentes e o operador faz coisas diferentes: credencial
     // recusada se troca, conta removida se reconecta. Um status só para os dois
     // mandaria metade das pessoas para o lugar errado.
-    globalThis.fetch = respondeCom({ accounts: [{ _id: "outra-conta" }] });
+    globalThis.fetch = respondeCom({}, { status: 404 });
     expect(await saude()).toMatchObject({ reachable: true, status: "STOPPED" });
   });
 
-  it("casa a conta por `_id` OU `id` — a API usa os dois", async () => {
-    globalThis.fetch = respondeCom({ accounts: [{ id: "conta-1" }] });
-    expect(await saude()).toMatchObject({ status: "WORKING" });
+  it("token VÁLIDO com o número desligado do lado do aparelho → FAILED", async () => {
+    // O caso que a varredura da lista de contas NÃO enxergava, e que a própria
+    // doc do provedor nomeia: a chave presta, a conta está lá, e a Meta recusa
+    // servir o objeto do número. Antes disto o CRM dizia "conectado" para um
+    // número que não entregava mais nada — em silêncio, para sempre.
+    globalThis.fetch = respondeCom({
+      status: "error",
+      platformConnection: {
+        status: "disconnected",
+        phoneStatus: null,
+        metaError: { code: 100, subcode: 33, message: "Unsupported get request" },
+      },
+    });
+    const r = await saude();
+    expect(r.status).toBe("FAILED");
+    expect(r.detail, "o código da Meta é o que diz ao operador o que fazer").toBe("meta_100_33");
+  });
+
+  it("o detalhe NÃO carrega a mensagem crua da Meta", async () => {
+    // Ela é longa e às vezes leva identificadores que não têm por que entrar
+    // num aviso que vai para a tela.
+    globalThis.fetch = respondeCom({
+      platformConnection: {
+        status: "disconnected",
+        metaError: { code: 100, subcode: 33, message: "objeto 1234567890 do usuário fulano" },
+      },
+    });
+    expect((await saude()).detail).not.toContain("fulano");
+  });
+
+  it("sonda inconclusiva é NÃO SEI — jamais 'caiu'", async () => {
+    // `unknown` é, nas palavras da doc, "not evidence either way". Traduzi-lo
+    // para queda faria um soluço da Meta abrir aviso crítico, e aviso que grita
+    // à toa ensina o operador a ignorar aviso — que é pior que não ter nenhum.
+    //
+    // Como `reachable: false`, `julgarQueda` ainda exige DUAS observações ruins
+    // seguidas antes de acreditar: um soluço isolado não escala.
+    globalThis.fetch = respondeCom({
+      status: "warning",
+      platformConnection: { status: "unknown", phoneStatus: null, metaError: null },
+    });
+    const r = await saude();
+    expect(r.reachable, "'não sei' virou queda de canal").toBe(false);
+    expect(r.status, "inventou um status que não mediu").toBeNull();
+  });
+
+  it("sem o campo do elo, decide pelo veredito geral — e ausência não é má notícia", async () => {
+    // Conta que não é WhatsApp, ou provedor que ainda não publicou a sonda.
+    // Falhar aqui derrubaria canais saudáveis no dia em que a resposta mudasse.
+    globalThis.fetch = respondeCom({ status: "healthy" });
+    expect(await saude()).toMatchObject({ reachable: true, status: "WORKING" });
+  });
+
+  it("sem o campo do elo, mas a conta em erro → FAILED", async () => {
+    globalThis.fetch = respondeCom({ status: "error", issues: ["token expiring"] });
+    expect(await saude()).toMatchObject({ reachable: true, status: "FAILED" });
   });
 
   it("rede caída é NÃO SEI, nunca 'canal caído'", async () => {
@@ -115,6 +179,25 @@ describe("canal intermediado", () => {
   it("sessão sem credencial não vira alarme de queda", async () => {
     zernioCreds.mockResolvedValue(null as never);
     expect(await saude()).toMatchObject({ reachable: false, status: null });
+  });
+
+  it("pergunta pela CONTA, no caminho de saúde — não varre a lista", async () => {
+    // A varredura de `GET /v1/accounts` respondia "a conta existe", que é outra
+    // pergunta. Se alguém voltar a ela, os casos acima passam a ser encenação.
+    // Restaura a credencial explicitamente: `mockClear` zera CHAMADAS, não a
+    // implementação, e o caso anterior deixou `null` — sem isto o teste passaria
+    // a depender da ordem de execução, que é o jeito de um teste mentir.
+    zernioCreds.mockResolvedValue({
+      accountId: "conta-1",
+      apiKey: "chave",
+      baseUrl: "https://z.example",
+      source: "session",
+    } as never);
+    const espia = respondeCom(ELO_VIVO);
+    globalThis.fetch = espia;
+    await saude();
+    const url = String((espia as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]![0]);
+    expect(url).toContain("/v1/accounts/conta-1/health");
   });
 });
 
