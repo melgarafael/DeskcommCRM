@@ -44,7 +44,14 @@ export interface ConviteDoSignup {
   email: string;
 }
 
-export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
+export function SignupForm({
+  convite,
+  planId,
+}: {
+  convite?: ConviteDoSignup;
+  /** Pré-seleciona o plano quando a pessoa vem de um link "Assinar X" da landing. */
+  planId?: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -70,7 +77,7 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
       email: convite?.email ?? "",
       password: "",
       password_confirm: "",
-      plan_id: "",
+      plan_id: planId ?? "",
       cnpj: "",
     },
   });
