@@ -13398,11 +13398,15 @@ create index if not exists meta_templates_sessao_idx
 --
 -- Alargamento puro: um CHECK que aceita MAIS valores não pode ser violado por
 -- linha que já passava pelo antigo, então não precisa de backfill antes.
+--
+-- 'asaas' entrou na migration 0168 (fundação de billing): o webhook de
+-- cobrança reaproveita esta mesma tabela para o corpo cru, em vez de criar uma
+-- tabela nova só para si.
 alter table public.webhook_events_log
   drop constraint if exists webhook_events_log_provider_check;
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
-    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio'
+    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'asaas'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----
@@ -13955,5 +13959,129 @@ update public.channel_sessions s
 create unique index if not exists channel_sessions_zernio_account_id_ativo_unique
   on public.channel_sessions (zernio_account_id)
   where archived_at is null and zernio_account_id is not null;
+
+-- ---- fundação de billing: billing_plans, organization_subscriptions, billing_invoices (migration 0168) ----
+-- Parte do pivot ADR-0002: a instância hospedada Genesisia Contabilidade cobra
+-- por assinatura via Asaas. Schema só — nenhuma integração ainda. Self-host
+-- nunca depende disto (BILLING_MODE=disabled é o default).
+--
+-- Asaas é fonte da verdade de cobrança; este schema é espelho de leitura + trava
+-- de acesso (mesmo raciocínio do anti-pattern "trigger faz HTTP": a request
+-- handler do tenant não pode depender de rede síncrona à Asaas). `status` nas
+-- duas tabelas tenant-aware é vocabulário aberto (sem CHECK) — mapeia os status
+-- que a Asaas emite, e ela pode introduzir um novo a qualquer momento; um CHECK
+-- aqui quebraria o update.sh de um clone com billing ligado. Nenhuma das duas
+-- tabelas tenant-aware recebe policy de escrita para authenticated: só o
+-- webhook, via service_role, grava status de pagamento.
+create table if not exists public.billing_plans (
+    id uuid default gen_random_uuid() not null,
+    code text not null,
+    name text not null,
+    description text,
+    price_cents bigint not null,
+    currency text default 'BRL'::text not null,
+    billing_interval text not null,
+    features jsonb default '{}'::jsonb not null,
+    is_active boolean default true not null,
+    sort_order integer default 0 not null,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'billing_plans_pkey' and conrelid = '"public"."billing_plans"'::regclass) then
+    alter table only public.billing_plans add constraint billing_plans_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'billing_plans_code_key' and conrelid = '"public"."billing_plans"'::regclass) then
+    alter table only public.billing_plans add constraint billing_plans_code_key unique (code);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'billing_plans_billing_interval_check' and conrelid = '"public"."billing_plans"'::regclass) then
+    alter table only public.billing_plans add constraint billing_plans_billing_interval_check check (billing_interval = any (array['monthly'::text, 'yearly'::text]));
+  end if;
+end $$;
+
+comment on table public.billing_plans is 'Catálogo global de planos pagos (Genesisia Contabilidade / Asaas). Sem organization_id, mesmo padrão de ai_pricing. Escrito por platform_admin ou migration; lido por qualquer autenticado.';
+
+create table if not exists public.organization_subscriptions (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    plan_id uuid not null,
+    asaas_customer_id text not null,
+    asaas_subscription_id text,
+    status text default 'incomplete'::text not null,
+    current_period_end timestamp with time zone,
+    trial_ends_at timestamp with time zone,
+    canceled_at timestamp with time zone,
+    created_at timestamp with time zone default now() not null,
+    updated_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'organization_subscriptions_pkey' and conrelid = '"public"."organization_subscriptions"'::regclass) then
+    alter table only public.organization_subscriptions add constraint organization_subscriptions_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'organization_subscriptions_asaas_subscription_id_key' and conrelid = '"public"."organization_subscriptions"'::regclass) then
+    alter table only public.organization_subscriptions add constraint organization_subscriptions_asaas_subscription_id_key unique (asaas_subscription_id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'organization_subscriptions_organization_id_fkey' and conrelid = '"public"."organization_subscriptions"'::regclass) then
+    alter table only public.organization_subscriptions add constraint organization_subscriptions_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'organization_subscriptions_plan_id_fkey' and conrelid = '"public"."organization_subscriptions"'::regclass) then
+    alter table only public.organization_subscriptions add constraint organization_subscriptions_plan_id_fkey foreign key (plan_id) references public.billing_plans(id);
+  end if;
+end $$;
+
+comment on table public.organization_subscriptions is 'Espelho local da assinatura Asaas de cada tenant. Asaas é fonte da verdade; aqui só o último status que o webhook confirmou.';
+
+create index if not exists idx_organization_subscriptions_org on public.organization_subscriptions using btree (organization_id);
+
+create table if not exists public.billing_invoices (
+    id uuid default gen_random_uuid() not null,
+    organization_id uuid not null,
+    subscription_id uuid,
+    asaas_payment_id text not null,
+    status text not null,
+    amount_cents bigint not null,
+    currency text default 'BRL'::text not null,
+    due_date date,
+    paid_at timestamp with time zone,
+    invoice_url text,
+    created_at timestamp with time zone default now() not null
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'billing_invoices_pkey' and conrelid = '"public"."billing_invoices"'::regclass) then
+    alter table only public.billing_invoices add constraint billing_invoices_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'billing_invoices_asaas_payment_id_key' and conrelid = '"public"."billing_invoices"'::regclass) then
+    alter table only public.billing_invoices add constraint billing_invoices_asaas_payment_id_key unique (asaas_payment_id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'billing_invoices_organization_id_fkey' and conrelid = '"public"."billing_invoices"'::regclass) then
+    alter table only public.billing_invoices add constraint billing_invoices_organization_id_fkey foreign key (organization_id) references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'billing_invoices_subscription_id_fkey' and conrelid = '"public"."billing_invoices"'::regclass) then
+    alter table only public.billing_invoices add constraint billing_invoices_subscription_id_fkey foreign key (subscription_id) references public.organization_subscriptions(id) on delete set null;
+  end if;
+end $$;
+
+comment on table public.billing_invoices is 'Espelho de cobranças individuais reportadas pelo webhook Asaas. subscription_id ON DELETE SET NULL: perder a assinatura não apaga o histórico financeiro.';
+
+create index if not exists idx_billing_invoices_org on public.billing_invoices using btree (organization_id, created_at desc);
+
+alter table public.billing_plans enable row level security;
+alter table public.organization_subscriptions enable row level security;
+alter table public.billing_invoices enable row level security;
+
+drop policy if exists "billing_plans_public_read" on public.billing_plans;
+create policy "billing_plans_public_read" on public.billing_plans for select to authenticated using ((is_active = true) or public.fn_is_platform_admin());
+
+drop policy if exists "organization_subscriptions_admin_read" on public.organization_subscriptions;
+create policy "organization_subscriptions_admin_read" on public.organization_subscriptions for select using (public.fn_role_at_least(organization_id, 'admin'::text) or public.fn_is_platform_admin());
+
+drop policy if exists "billing_invoices_admin_read" on public.billing_invoices;
+create policy "billing_invoices_admin_read" on public.billing_invoices for select using (public.fn_role_at_least(organization_id, 'admin'::text) or public.fn_is_platform_admin());
 
 notify pgrst, 'reload schema';
