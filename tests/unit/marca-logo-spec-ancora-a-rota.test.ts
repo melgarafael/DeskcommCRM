@@ -43,8 +43,20 @@ const RAIZ = process.cwd();
 const CAMINHO_SPEC = path.join(RAIZ, "tests/e2e/marca-logo.spec.ts");
 const CAMINHO_CONFIG = path.join(RAIZ, "playwright.config.ts");
 
-const SPEC = readFileSync(CAMINHO_SPEC, "utf8");
-const CONFIG = readFileSync(CAMINHO_CONFIG, "utf8");
+/**
+ * Lê normalizando o fim de linha.
+ *
+ * `corpoDaFuncao` procura `"\n}\n"` — o fecho na coluna zero. Num checkout
+ * Windows o arquivo tem `\r\n`, a busca não acha nada, e o `expect` de dentro do
+ * helper derruba a SUÍTE INTEIRA na coleta (0 teste rodado). Vermelho sem defeito,
+ * e sem sequer dizer qual asserção falhou.
+ */
+function lerNormalizado(caminho: string): string {
+  return readFileSync(caminho, "utf8").replace(/\r\n/g, "\n");
+}
+
+const SPEC = lerNormalizado(CAMINHO_SPEC);
+const CONFIG = lerNormalizado(CAMINHO_CONFIG);
 
 /** O corpo de uma função de topo de arquivo, do `{` ao `\n}` da coluna zero. */
 function corpoDaFuncao(fonte: string, assinatura: string): string {

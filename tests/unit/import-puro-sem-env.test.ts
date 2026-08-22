@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -32,6 +33,9 @@ import { describe, expect, it } from "vitest";
 
 const RAIZ = join(__dirname, "..", "..");
 
+/** O CLI do `tsx` resolvido pelo próprio node — sem depender de shim de shell. */
+const CLI_TSX = createRequire(__filename).resolve("tsx/cli");
+
 /**
  * Os módulos vigiados: os que um teste unitário importa por causa de função
  * pura. A lista é explícita porque a alternativa (varrer tudo) acusaria os
@@ -50,9 +54,19 @@ function importaComAmbienteLimpo(modulo: string): { ok: boolean; erro: string } 
   const limpo = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
+    // Windows: sem `SystemRoot` o processo filho do Node nem sobe (o loader usa
+    // APIs de sistema que o resolvem por ali). Não é variável do app — a ausência
+    // que este teste mede continua intacta.
+    ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot ?? "" } : {}),
   } as unknown as NodeJS.ProcessEnv;
   try {
-    const saida = execFileSync("npx", ["tsx", "--eval", script], {
+    // `process.execPath` + o CLI resolvido, e não `npx`: em checkout Windows o
+    // binário é `npx.cmd`, que `execFileSync` sem `shell: true` não consegue
+    // executar. O erro era `spawnSync npx ENOENT` — e ele passava pelo CONTROLE
+    // POSITIVO abaixo, que só exige que `@/lib/env` falhe, sem exigir que tenha
+    // falhado pelo motivo certo. Gate vermelho por não conseguir medir, com o
+    // controle dizendo que estava medindo.
+    const saida = execFileSync(process.execPath, [CLI_TSX, "--eval", script], {
       cwd: RAIZ,
       env: limpo,
       encoding: "utf8",
@@ -80,6 +94,14 @@ describe("módulo de função pura importa sem ambiente", () => {
     // `@/lib/env` DEVE falhar sem ambiente: é literalmente o trabalho dele.
     const controle = importaComAmbienteLimpo("@/lib/env");
     expect(controle.ok, `esperava @/lib/env FALHAR sem env, veio: ${controle.erro}`).toBe(false);
+    // E falhar pelo motivo CERTO. Sem esta linha, um runner que nem sobe (o
+    // `spawnSync npx ENOENT` do Windows) satisfaz o controle: ele só pede uma
+    // falha, e "não consegui medir" é uma falha. O controle passava a afirmar
+    // que o aparato funcionava exatamente quando ele não funcionava.
+    expect(
+      /spawnSync|ENOENT|not recognized/i.test(controle.erro),
+      `o processo filho nem chegou a rodar: ${controle.erro}`,
+    ).toBe(false);
   });
 
   it.each(MODULOS_PUROS)("%s importa com ambiente vazio", { timeout: 60_000 }, (modulo) => {

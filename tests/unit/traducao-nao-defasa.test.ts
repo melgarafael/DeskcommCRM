@@ -87,11 +87,15 @@ describe.each(TRADUCOES)("$traducao ($idioma)", (par) => {
   });
 
   it("tem um selo na linha 1", () => {
-    const primeira = readFileSync(raiz(par.traducao), "utf8").split("\n", 1)[0] ?? "";
-    expect(
-      primeira,
-      `${par.traducao} não começa com o selo. Rode: ${COMANDO_DE_RESELO}`,
-    ).toMatch(SELO);
+    // `.trimEnd()` pelo mesmo motivo que `lerSelo` o faz: num checkout Windows a
+    // linha 1 termina em `\r`, e `SELO` ancora em `$`. Sem isto o gate reprova as
+    // DUAS traduções — com o selo correto no arquivo — e manda re-selar, que é
+    // exatamente o hábito que `hashDoOriginal` normaliza CRLF para evitar. O teste
+    // guardava a regra e quebrava a própria regra.
+    const primeira = (readFileSync(raiz(par.traducao), "utf8").split("\n", 1)[0] ?? "").trimEnd();
+    expect(primeira, `${par.traducao} não começa com o selo. Rode: ${COMANDO_DE_RESELO}`).toMatch(
+      SELO,
+    );
   });
 
   it("o selo aponta para o original deste par, e não para outro arquivo", () => {
