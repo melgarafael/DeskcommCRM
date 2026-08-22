@@ -217,11 +217,65 @@ interface HealthRow {
 }
 
 /**
+ * O número já passou por go-live sob OUTRA sessão? (F2-26 forward-fix, bug
+ * medido em produção 2026-08-22, instalação MKT.)
+ *
+ * `channel_session_health` nasce por `channel_sessions.id` — uma linha por
+ * SESSÃO, não por NÚMERO. O caminho de recuperação sancionado para uma sessão
+ * morta é arquivar + conectar de novo (`channel-sessions/[id]/reconnect`
+ * recusa sessão arquivada e manda o operador reconectar criando uma nova —
+ * ver o cabeçalho daquela rota), e "conectar de novo" sempre gera um
+ * `channel_sessions.id` novo. Esse id novo nasce com `health_released_at
+ * is null` — o fail-safe "número novo" — mesmo quando o NÚMERO por trás
+ * (mesmo `phone_number`) já viveu dias no ar e já passou pelo go-live manual
+ * antes. Resultado medido: uma queda de WAHA banal (container reiniciou,
+ * sessão caiu STOPPED) obrigava o operador a "liberar" o mesmo número de
+ * novo, e enquanto ninguém achava esse aviso na Central o outbound ficava
+ * retido — mensagem de cliente sem resposta por horas.
+ *
+ * O fail-safe "número novo nasce em hold" continua valendo para número
+ * DE VERDADE novo (nenhuma sessão anterior com este `phone_number` nesta org
+ * jamais foi liberada). Ele só deixa de disparar quando existe EVIDÊNCIA
+ * concreta de que o número já foi aprovado: outra linha de
+ * `channel_session_health`, de OUTRA sessão do mesmo `phone_number` nesta
+ * org, com `health_released_at` preenchido — arquivada ou não (arquivar não
+ * apaga o histórico de aquecimento do número).
+ *
+ * `phone_number` pode ainda ser `null` na sessão nova (QR não pareado) — sem
+ * telefone conhecido não há como comparar, e o fail-safe original prevalece.
+ */
+async function foiLiberadoPorOutraSessaoDoMesmoNumero(
+  client: pg.PoolClient,
+  tenantId: string,
+  channelSessionId: string,
+): Promise<boolean> {
+  const { rows: phoneRows } = await client.query<{ phone_number: string | null }>(
+    `select phone_number from channel_sessions where organization_id = $1 and id = $2`,
+    [tenantId, channelSessionId],
+  );
+  const phone = phoneRows[0]?.phone_number;
+  if (!phone) return false;
+  const { rows } = await client.query<{ ja_liberado: boolean }>(
+    `select exists (
+       select 1
+       from channel_session_health h
+       join channel_sessions s on s.id = h.channel_session_id
+       where s.organization_id = $1
+         and s.phone_number = $2
+         and s.id <> $3
+         and h.health_released_at is not null
+     ) as ja_liberado`,
+    [tenantId, phone, channelSessionId],
+  );
+  return rows[0]?.ja_liberado ?? false;
+}
+
+/**
  * Decide e aplica a transição de UMA sessão sob lock (FOR UPDATE) — dois ticks
  * concorrentes serializam na row do espelho, então nunca duplicam item nem hold.
  * Devolve o delta {held, released, alerts} desta sessão.
  */
-async function evaluateSession(
+export async function evaluateSession(
   harness: pg.Pool,
   tenantId: string,
   channelSessionId: string,
@@ -308,9 +362,22 @@ async function evaluateSession(
 
     if (row.health_released_at === null) {
       // Número novo (fail-safe): nasce em hold com razão go_live; libera SÓ por ato
-      // explícito (humano resolve o item = liberação inicial de go-live).
+      // explícito (humano resolve o item = liberação inicial de go-live) — EXCETO
+      // quando este mesmo phone_number já foi liberado sob outra sessão (reconexão
+      // que trocou o id): aí o go-live já foi feito, e repeti-lo só derruba o
+      // outbound de um número que já está aprovado (ver o cabeçalho da função acima).
       if (!row.health_hold_active) {
-        await engageHold('go_live');
+        if (await foiLiberadoPorOutraSessaoDoMesmoNumero(client, tenantId, channelSessionId)) {
+          await client.query(
+            `update channel_session_health
+             set health_released_at = now(), health_hold_active = false, health_hold_reason = null, updated_at = now()
+             where organization_id = $1 and channel_session_id = $2`,
+            [tenantId, channelSessionId],
+          );
+          delta.released = 1;
+        } else {
+          await engageHold('go_live');
+        }
       } else if (!row.has_open_item) {
         await client.query(
           `update channel_session_health
