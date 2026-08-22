@@ -11,6 +11,7 @@ import {
   ClipboardText,
   ClockCountdown,
   ClockCounterClockwise,
+  CreditCard,
   FileText,
   Flag,
   FlowArrow,
@@ -369,6 +370,17 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     group: "canais",
     // A página não filtra por papel, mas as Server Actions de conectar e
     // desconectar exigem admin — mostrar a um viewer seria oferecer botão morto.
+    minRole: "admin",
+    sidebar: true,
+  },
+  {
+    href: "/app/integrations/paysuite",
+    label: "PaySuite",
+    description: "Cobre por M-Pesa, e-Mola e cartão diretamente dos negócios do CRM.",
+    icon: CreditCard,
+    group: "canais",
+    // A página não filtra por papel, mas salvar credenciais exige admin —
+    // mostrar a um viewer seria oferecer um formulário morto (mesma regra da Nuvemshop).
     minRole: "admin",
     sidebar: true,
   },

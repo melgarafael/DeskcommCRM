@@ -19,7 +19,7 @@ CREATE SCHEMA IF NOT EXISTS "public";
 ALTER SCHEMA "public" OWNER TO "pg_database_owner";
 
 
-COMMENT ON SCHEMA "public" IS 'DeskcommCRM v0.1 - Migration 0001 platform_base applied 2026-04-28';
+COMMENT ON SCHEMA "public" IS 'SonghaiCRM v0.1 - Migration 0001 platform_base applied 2026-04-28';
 
 
 
@@ -1471,7 +1471,7 @@ CREATE TABLE IF NOT EXISTS "public"."crm_leads" (
     "lost_reason" "text",
     "position_in_stage" numeric DEFAULT 1000 NOT NULL,
     "value_cents" bigint,
-    "currency" "text" DEFAULT 'BRL'::"text",
+    "currency" "text" DEFAULT 'MZN'::"text",
     "owner_user_id" "uuid",
     "assigned_at" timestamp with time zone,
     "last_activity_at" timestamp with time zone,
@@ -1774,7 +1774,7 @@ CREATE TABLE IF NOT EXISTS "public"."organizations" (
 ALTER TABLE "public"."organizations" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."organizations" IS 'Tenants do DeskcommCRM. Cada linha = 1 e-commerce cliente.';
+COMMENT ON TABLE "public"."organizations" IS 'Tenants do SonghaiCRM. Cada linha = 1 e-commerce cliente.';
 
 
 
@@ -13491,3 +13491,102 @@ notify pgrst, 'reload schema';
 revoke insert, update, delete on table public.ai_budgets from authenticated, anon;
 
 notify pgrst, 'reload schema';
+
+
+-- ---- moeda padrão do negócio passa para MZN (migration 0161) ----
+--
+-- Esta instalação opera em Moçambique; lead criado sem moeda explícita deve
+-- nascer em Metical (MZN), não em Real (BRL). `crm_leads.currency` só tem
+-- CHECK de FORMA (`crm_leads_currency_iso`, `^[A-Z]{3}$`) — nenhuma lista de
+-- valores para editar, só o piso da coluna.
+--
+-- `orders.currency` (Nuvemshop, plataforma brasileira) fica de fora: aquele
+-- valor normalmente vem do payload real do pedido, e mudar o default ali
+-- arriscaria rotular pedido em BRL como MZN quando o webhook não informar a
+-- moeda.
+--
+-- Não reescreve nenhuma linha existente — lead antigo com 'BRL' gravado
+-- continua 'BRL', é o valor real do negócio na época. `alter column ... set
+-- default` é idempotente por natureza.
+alter table public.crm_leads alter column currency set default 'MZN';
+
+
+-- ---- pagamentos: PaySuite (M-Pesa, e-Mola, cartão) (migration 0162) ----
+--
+-- `payment_credentials` só guarda segredo (token de API cifrado, segredo de
+-- webhook cifrado) — RLS ligada com ZERO policies + revoke all from anon,
+-- authenticated (molde da 0155 platform_branding), porque nenhuma tela lê
+-- essa tabela direto pelo PostgREST; a rota (service role) decifra e devolve
+-- uma resposta já sanitizada.
+--
+-- `payments` é o log de transação — a tela do lead precisa mostrar histórico
+-- de cobrança, então tem policy de SELECT escopada por organização; escrita
+-- só pela rota (criação de cobrança e confirmação por webhook rodam com
+-- service role), por isso revoke insert/update/delete from anon,
+-- authenticated (molde da 0160 ai_budgets, aplicado desde o nascimento da
+-- tabela em vez de precisar de correção depois).
+--
+-- `reference` é a chave de idempotência do NOSSO lado (duplo-clique no botão
+-- "Cobrar" não duplica linha); `provider_payment_id` é a do OUTRO lado
+-- (webhook reentregue por timeout não duplica confirmação).
+create table if not exists public.payment_credentials (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  provider text not null default 'paysuite' check (provider = 'paysuite'),
+  api_token_encrypted bytea not null,
+  webhook_secret_encrypted bytea not null,
+  webhook_path_token text not null default encode(gen_random_bytes(24), 'hex'),
+  status text not null default 'connecting' check (status in ('connecting', 'healthy', 'error')),
+  status_reason text,
+  last_health_check_at timestamp with time zone,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  unique (organization_id, provider)
+);
+
+create unique index if not exists payment_credentials_webhook_path_token_idx
+  on public.payment_credentials using btree (webhook_path_token);
+
+alter table public.payment_credentials enable row level security;
+revoke all on public.payment_credentials from anon, authenticated;
+grant select, insert, update on public.payment_credentials to service_role;
+
+create or replace trigger trg_payment_credentials_updated_at
+  before update on public.payment_credentials
+  for each row execute function public.fn_set_updated_at();
+
+
+create table if not exists public.payments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  provider text not null default 'paysuite' check (provider = 'paysuite'),
+  provider_payment_id text not null,
+  reference text not null,
+  method text check (method in ('mpesa', 'emola', 'credit_card')),
+  amount_cents bigint not null check (amount_cents > 0),
+  currency text not null default 'MZN' check (currency ~ '^[A-Z]{3}$'),
+  status text not null default 'pending' check (status in ('pending', 'paid', 'failed')),
+  checkout_url text,
+  raw_webhook_payload jsonb,
+  created_by_user_id uuid,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  unique (organization_id, reference),
+  unique (organization_id, provider_payment_id)
+);
+
+create index if not exists payments_org_idx on public.payments using btree (organization_id);
+create index if not exists payments_lead_idx on public.payments using btree (lead_id) where lead_id is not null;
+
+alter table public.payments enable row level security;
+revoke insert, update, delete on public.payments from anon, authenticated;
+
+create policy payments_select on public.payments
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+create or replace trigger trg_payments_updated_at
+  before update on public.payments
+  for each row execute function public.fn_set_updated_at();

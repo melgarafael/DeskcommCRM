@@ -50,7 +50,15 @@ export type ActivityType =
   | "followup_snoozed"
   | "followup_step_skipped"
   | "demand_closed"
-  | "promise_unowned";
+  | "promise_unowned"
+  /**
+   * As duas pontas de uma cobrança PaySuite: gerar o link é reversível (o
+   * cliente pode nunca pagar), então precisa da PRÓPRIA linha — não dá para
+   * inferir "foi cobrado" a partir de "foi confirmado" quando o segundo nunca
+   * chega. `payment_confirmed` é gravado só pelo webhook (nunca otimista).
+   */
+  | "payment_charge_created"
+  | "payment_confirmed";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou pelo WhatsApp",
@@ -117,6 +125,8 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // invisível na timeline — só existia em audit e event_log, que ninguém lê na
   // tela — e o dossiê de um negócio fechado terminava sem dizer que fechou.
   demand_closed: "Demanda encerrada",
+  payment_charge_created: "Link de pagamento gerado",
+  payment_confirmed: "Pagamento confirmado",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

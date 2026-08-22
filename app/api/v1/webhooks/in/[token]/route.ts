@@ -241,7 +241,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     stage_id: source.default_stage_id,
     title: mapped.name ?? mapped.phone ?? mapped.email ?? "Lead sem nome",
     contact_id: contactId,
-    currency: "BRL",
+    currency: "MZN",
     tags: [],
     source: "webhook",
     custom_fields: mapped.custom_fields,

@@ -114,4 +114,6 @@ export {
   Key,
   UserCircle,
   ClockCounterClockwise,
+  // integração de pagamento (PaySuite)
+  CreditCard,
 } from "@phosphor-icons/react/dist/ssr";

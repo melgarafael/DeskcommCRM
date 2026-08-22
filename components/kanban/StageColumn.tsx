@@ -29,13 +29,13 @@ interface StageColumnProps {
 
 function formatBRL(cents: number): string {
   try {
-    return new Intl.NumberFormat("pt-BR", {
+    return new Intl.NumberFormat("pt-MZ", {
       style: "currency",
-      currency: "BRL",
+      currency: "MZN",
       maximumFractionDigits: 0,
     }).format(cents / 100);
   } catch {
-    return `R$ ${(cents / 100).toFixed(0)}`;
+    return `${(cents / 100).toFixed(0)} MZN`;
   }
 }
 

@@ -9,6 +9,7 @@ import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
 import { LeadTimeline } from "./LeadTimeline";
 import { OwnerBadge } from "./OwnerBadge";
+import { CobrarButton } from "./CobrarButton";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 
 interface Props {
@@ -23,13 +24,13 @@ interface Props {
 function formatBRL(cents: number | null, currency: string | null): string {
   if (cents === null) return "—";
   try {
-    return new Intl.NumberFormat("pt-BR", {
+    return new Intl.NumberFormat("pt-MZ", {
       style: "currency",
-      currency: currency ?? "BRL",
+      currency: currency ?? "MZN",
       maximumFractionDigits: 0,
     }).format(cents / 100);
   } catch {
-    return `R$ ${(cents / 100).toFixed(0)}`;
+    return `${(cents / 100).toFixed(0)} ${currency ?? "MZN"}`;
   }
 }
 
@@ -81,6 +82,7 @@ export function LeadDossier({
           <span className="font-medium tabular-nums text-text">
             {formatBRL(lead.value_cents, lead.currency)}
           </span>
+          <CobrarButton leadId={lead.id} hasValue={lead.value_cents !== null} />
           <span className="text-text-muted">{stageName}</span>
           <OwnerBadge
             ownerKind={owner.kind}

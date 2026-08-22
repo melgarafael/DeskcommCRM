@@ -207,6 +207,28 @@ const PARES: Array<{
     arquivo: "lib/agent-engine/edge/llm/orcamento.ts",
     simbolo: "ModoDeOrcamento",
   },
+  {
+    tabela: "payment_credentials",
+    coluna: "status",
+    // lib/payments/paysuite/client.ts → PaymentCredentialStatus (migration 0162).
+    arquivo: "lib/payments/paysuite/client.ts",
+    simbolo: "PaymentCredentialStatus",
+  },
+  {
+    tabela: "payments",
+    coluna: "status",
+    // lib/payments/paysuite/client.ts → PaymentStatus (migration 0162).
+    arquivo: "lib/payments/paysuite/client.ts",
+    simbolo: "PaymentStatus",
+  },
+  {
+    tabela: "payments",
+    coluna: "method",
+    // lib/payments/paysuite/client.ts → PaySuiteMethod (migration 0162). NULL é
+    // "método ainda não escolhido no checkout hospedado" — não é valor do CHECK.
+    arquivo: "lib/payments/paysuite/client.ts",
+    simbolo: "PaySuiteMethod",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

@@ -282,7 +282,7 @@ export async function createLeadHandler(
       description: input.description ?? null,
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
-      currency: input.currency ?? "BRL",
+      currency: input.currency ?? "MZN",
       ...ownerPatch,
       assigned_at:
         ownerPatch.owner_kind === null ? null : new Date().toISOString(),

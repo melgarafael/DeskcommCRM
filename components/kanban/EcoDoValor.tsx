@@ -2,7 +2,7 @@
 
 import { useWatch, type Control, type FieldValues, type Path } from "react-hook-form";
 
-import { parseReaisToCents, formatCentsBRL } from "@/lib/money";
+import { parseReaisToCents, formatCentsMZN } from "@/lib/money";
 
 /**
  * Mostra, embaixo do campo, como o valor digitado foi entendido.
@@ -21,5 +21,5 @@ export function EcoDoValor<T extends FieldValues>({ control }: { control: Contro
     | undefined;
   const centavos = parseReaisToCents(digitado ?? "");
   if (centavos === null) return null;
-  return <p className="text-xs text-muted-foreground">= {formatCentsBRL(centavos)}</p>;
+  return <p className="text-xs text-muted-foreground">= {formatCentsMZN(centavos)}</p>;
 }
