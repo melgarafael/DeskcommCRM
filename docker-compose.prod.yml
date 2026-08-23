@@ -32,7 +32,7 @@ services:
     # default é quem NÃO tem APP_IMAGE no .env — avaliação, ou um .env que
     # perdeu a chave. Nenhum desses casos quer código não lançado; quem quiser o
     # topo da main pede `APP_IMAGE=…:latest` explicitamente.
-    image: ${APP_IMAGE:-ghcr.io/melgarafael/deskcommcrm:stable}
+    image: ${APP_IMAGE:-ghcr.io/maugarciasa/deskcommcrm:stable}
     pull_policy: ${APP_PULL_POLICY:-always}
     restart: unless-stopped
     env_file: .env
@@ -89,7 +89,7 @@ services:
     # default): o app pinado numa release e o runtime do agente de
     # IA rodando código não lançado, sobre o banco da release. `:stable` é a
     # última release publicada — pareia com o app em vez de correr na frente.
-    image: ${WORKER_IMAGE:-ghcr.io/melgarafael/deskcomm-worker:stable}
+    image: ${WORKER_IMAGE:-ghcr.io/maugarciasa/deskcomm-worker:stable}
     pull_policy: ${WORKER_PULL_POLICY:-always}
     build:
       context: .
@@ -209,7 +209,7 @@ services:
     # serviço `restart: unless-stopped`, isso significa que o cron do cliente só
     # voltava se a VPS tivesse internet e o mirror do Alpine estivesse de pé,
     # justamente no momento em que a máquina está se recuperando de algo.
-    image: ${SCHEDULER_IMAGE:-ghcr.io/melgarafael/deskcomm-scheduler:stable}
+    image: ${SCHEDULER_IMAGE:-ghcr.io/maugarciasa/deskcomm-scheduler:stable}
     pull_policy: ${SCHEDULER_PULL_POLICY:-always}
     build:
       context: .
