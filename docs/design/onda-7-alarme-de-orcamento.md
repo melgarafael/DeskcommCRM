@@ -7,7 +7,9 @@
 > **Alvo em movimento, declarado:** durante a redação a branch avançou para
 > `a875faa7`. `git diff --name-only 8c7a8dc6..a875faa7` devolve **um** arquivo,
 > `HANDOFF-marca-propria.md` — nenhum arquivo medido nesta página mudou, e as
-> citações de `HANDOFF-marca-propria.md:1038-1043` foram reconferidas no HEAD
+> citações de `HANDOFF-marca-propria.md:1038-1043` (hoje arquivado em
+> [`docs/handoffs/HANDOFF-marca-propria.md`](../handoffs/HANDOFF-marca-propria.md), mesmas linhas)
+> foram reconferidas no HEAD
 > novo (seguem nessas linhas). A medição vale para os dois SHAs. Também apareceu
 > `M tests/invariants/marca-logo.test.ts` no working tree, de outra sessão; não
 > foi tocado aqui.
@@ -228,7 +230,7 @@ tem fallback silencioso (`:98-102`).
 
 ## (b) O risco: o que se confirma e o que se desmente
 
-O risco herdado (`HANDOFF-marca-propria.md:1038-1043`) diz:
+O risco herdado (agora [`docs/handoffs/HANDOFF-marca-propria.md:1038-1043`](../handoffs/HANDOFF-marca-propria.md)) diz:
 
 > *"Numa instalação em que alguém preencheu `monthly_limit_cents` há meses — com
 > o contador travado em 0 — o primeiro tick estrangula a IA da organização, e o

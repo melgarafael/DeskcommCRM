@@ -225,7 +225,7 @@ Evidência: `.superpowers/evidence/ia-360-w3/`.
 | J8.8 | O agente retoma **sabendo** o que a pessoa fez | a abertura do turno (`ritualBlocks`) cita a decisão dela, sem apagar o acumulado anterior | PASS |
 | J8.9 | Status da conversa escalada em português | o cabeçalho mostrava `pending` cru | FAIL → PASS |
 
-Bugs desta jornada estão detalhados em `HANDOFF-ia-360.md` (BUG-01 a BUG-05).
+Bugs desta jornada estão detalhados em [`docs/handoffs/HANDOFF-ia-360.md`](../handoffs/HANDOFF-ia-360.md) (BUG-01 a BUG-05, arquivado — epico IA 360 mergeado no PR #145).
 
 ---
 
