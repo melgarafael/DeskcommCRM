@@ -1471,6 +1471,10 @@ esac
   envq NODE_ENV "production"
   envq NUVEMSHOP_ENABLED "false"
   envq INTERNAL_AGENT_RUN_STUB "false"
+  # Hora do backup diário (0-23; default 03h). setup_backup_cron() em
+  # _common.sh já cai em 3 quando ausente/inválida — grava aqui só para
+  # persistir a escolha real e não sumir com ela no próximo update.sh.
+  envq BACKUP_CRON_HOUR "${BACKUP_CRON_HOUR:-3}"
   envq OWNER_EMAIL "$OWNER_EMAIL"
   envq OWNER_PASSWORD "$OWNER_PASSWORD"
   # As variáveis que você acrescentou à mão, de volta — já no formato em que
