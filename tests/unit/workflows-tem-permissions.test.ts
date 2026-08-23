@@ -54,6 +54,8 @@ const DIR = join(process.cwd(), ".github/workflows");
 const ESCRITA_JUSTIFICADA: Record<string, string> = {
   "publish-image.yml::packages: write":
     "publica a imagem do app no GHCR — é o artefato que o self-hoster instala",
+  "codeql.yml::security-events: write":
+    "github/codeql-action/analyze sobe o resultado do scan (SARIF) pra aba Security — é o único passo do workflow que precisa escrever; init/checkout ficam só com o contents: read do topo",
 };
 
 interface Workflow {
