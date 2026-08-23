@@ -13284,6 +13284,401 @@ comment on table public.api_audit_log is
   'app/api/v1/cron/data-retention. Não há camada cold/S3.';
 
 notify pgrst, 'reload schema';
+-- ---- fn_publish_rag_bot_version (migration 0168) ----
+--
+-- O editor de agente `rag_bot` (`components/ai/AgentEditor.tsx`, "caminho legado
+-- pré-EPIC-13") só grava o rascunho em `ai_agents` — nunca cria nem publica uma
+-- linha em `ai_agent_versions`. O runtime lê `system_prompt`/`provider`/`model`
+-- da versão apontada por `ai_agents.published_version_id`, não do rascunho:
+-- editar pela tela não tinha NENHUM efeito, em silêncio.
+--
+-- `fn_publish_ai_agent_version` (0024/0025/0026) não serve aqui: exige
+-- `credential_id` não-nulo na versão e canal `WORKING` — nenhum dos dois é como
+-- `rag_bot` opera. Esta função copia os campos de infraestrutura da versão
+-- publicada atual (canal, ferramentas, orçamento — nada disso é editável pelo
+-- `AgentEditor.tsx`) e só troca `system_prompt`/`provider`/`model`, vindos do
+-- rascunho. `provider` NUNCA é hardcoded: resolve de
+-- `organizations.settings.llm.provider` (o mesmo campo que
+-- `scripts/bootstrap-owner.ts` grava a partir do `AI_PROVIDER` do instalador).
+create or replace function public.fn_publish_rag_bot_version(
+  p_org_id uuid,
+  p_agent_id uuid,
+  p_created_by uuid default null
+)
+returns table (
+  agent_id uuid,
+  version_id uuid,
+  previous_version_id uuid,
+  published_at timestamptz
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_agent record;
+  v_old_version record;
+  v_provider text;
+  v_model_count integer;
+  v_new_version_id uuid;
+  v_new_version_number integer;
+  v_published_at timestamptz := now();
+begin
+  select a.id, a.organization_id, a.kind, a.archived_at, a.published_version_id,
+         a.system_prompt, a.model
+    into v_agent
+  from public.ai_agents a
+  where a.id = p_agent_id
+  for update;
+
+  if not found then
+    raise exception 'agent_not_found' using errcode = 'P0001';
+  end if;
+  if v_agent.organization_id <> p_org_id then
+    raise exception 'agent_not_found' using errcode = 'P0001';
+  end if;
+  if v_agent.kind is distinct from 'rag_bot' then
+    raise exception 'agent_kind_invalid' using errcode = 'P0001';
+  end if;
+  if v_agent.archived_at is not null then
+    raise exception 'agent_archived' using errcode = 'P0001';
+  end if;
+  if v_agent.published_version_id is null then
+    raise exception 'no_existing_version' using errcode = 'P0001';
+  end if;
+
+  select v.id, v.organization_id, v.agent_id, v.version_number, v.credential_id,
+         v.tool_ids, v.trigger_config, v.channel_session_id, v.max_steps,
+         v.token_budget, v.cost_budget_cents, v.history_message_window,
+         v.history_token_window, v.handoff_keywords, v.handoff_tool_enabled,
+         v.followup, v.multimodal_input, v.video_frames_enabled, v.split_messages,
+         v.split_max_chars, v.cases_enabled, v.operator_enabled, v.operator_model,
+         v.operator_tool_ids, v.pipeline_ids
+    into v_old_version
+  from public.ai_agent_versions v
+  where v.id = v_agent.published_version_id
+  for update;
+
+  if not found or v_old_version.agent_id <> p_agent_id or v_old_version.organization_id <> p_org_id then
+    raise exception 'version_not_found' using errcode = 'P0001';
+  end if;
+
+  select coalesce(o.settings #>> '{llm,provider}', 'anthropic')
+    into v_provider
+  from public.organizations o
+  where o.id = p_org_id;
+
+  if v_provider is null then
+    raise exception 'org_not_found' using errcode = 'P0001';
+  end if;
+
+  select count(*)
+    into v_model_count
+  from public.ai_models m
+  where m.provider = v_provider
+    and m.model_id = v_agent.model
+    and m.deprecated_at is null;
+
+  if v_model_count = 0 then
+    raise exception 'model_not_found' using errcode = 'P0001';
+  end if;
+
+  v_new_version_number := v_old_version.version_number + 1;
+
+  update public.ai_agent_versions
+     set status = 'superseded', superseded_at = v_published_at
+   where id = v_old_version.id;
+
+  insert into public.ai_agent_versions (
+    organization_id, agent_id, version_number, system_prompt, provider, model,
+    credential_id, tool_ids, trigger_config, channel_session_id, max_steps,
+    token_budget, cost_budget_cents, history_message_window, history_token_window,
+    handoff_keywords, handoff_tool_enabled, status, published_at, created_by,
+    followup, multimodal_input, video_frames_enabled, split_messages, split_max_chars,
+    cases_enabled, operator_enabled, operator_model, operator_tool_ids, pipeline_ids
+  ) values (
+    p_org_id, p_agent_id, v_new_version_number, v_agent.system_prompt, v_provider, v_agent.model,
+    v_old_version.credential_id, v_old_version.tool_ids, v_old_version.trigger_config,
+    v_old_version.channel_session_id, v_old_version.max_steps,
+    v_old_version.token_budget, v_old_version.cost_budget_cents,
+    v_old_version.history_message_window, v_old_version.history_token_window,
+    v_old_version.handoff_keywords, v_old_version.handoff_tool_enabled,
+    'published', v_published_at, p_created_by,
+    v_old_version.followup, v_old_version.multimodal_input, v_old_version.video_frames_enabled,
+    v_old_version.split_messages, v_old_version.split_max_chars,
+    v_old_version.cases_enabled, v_old_version.operator_enabled, v_old_version.operator_model,
+    v_old_version.operator_tool_ids, v_old_version.pipeline_ids
+  )
+  returning id into v_new_version_id;
+
+  update public.ai_agents
+     set published_version_id = v_new_version_id,
+         updated_at = v_published_at
+   where id = p_agent_id;
+
+  return query
+    select p_agent_id, v_new_version_id, v_old_version.id, v_published_at;
+end;
+$$;
+
+comment on function public.fn_publish_rag_bot_version(uuid, uuid, uuid) is
+  'Publica o rascunho de um agente rag_bot (system_prompt/model) copiando os campos de infraestrutura da versão publicada atual. Ver comentário da migration 0168 para o porquê de não reusar fn_publish_ai_agent_version.';
+
+-- Função nova em public nasce exposta a anon/authenticated (as duas origens:
+-- ALTER DEFAULT PRIVILEGES do baseline + GRANT a PUBLIC implícito do Postgres
+-- ao criar). Só service_role chama esta função (sempre via createAdminClient()
+-- na server action).
+revoke execute on function public.fn_publish_rag_bot_version(uuid, uuid, uuid) from public, anon;
+revoke execute on function public.fn_publish_rag_bot_version(uuid, uuid, uuid) from authenticated;
+grant execute on function public.fn_publish_rag_bot_version(uuid, uuid, uuid) to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- RLS de papel em contacts (migration 0169) ----
+--
+-- `contacts` é o dado mais crítico do produto e sua única policy sempre foi
+-- tenancy-only, com GRANT ALL a authenticated — qualquer membro do tenant,
+-- inclusive viewer, lia/gravava/apagava contato direto pelo PostgREST. Mesmo
+-- par da 0150 (SELECT só-tenancy + escrita com fn_role_at_least), piso
+-- 'agent' porque é o que app/api/v1/contacts/route.ts e [id]/route.ts já
+-- exigem no POST/PATCH/DELETE. Ver comentário completo na migration 0169.
+
+drop policy if exists "tenant_isolation_contacts_all" on public.contacts;
+
+drop policy if exists "contacts_select" on public.contacts;
+create policy "contacts_select" on public.contacts
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "contacts_write" on public.contacts;
+create policy "contacts_write" on public.contacts
+  for all using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  );
+
+notify pgrst, 'reload schema';
+
+-- ---- RLS de papel em messages (migration 0170) ----
+--
+-- Mesma classe de falha que a 0169 já corrigiu para contacts: messages_insert/
+-- update/delete checavam só organization_id, sem fn_role_at_least — qualquer
+-- membro do tenant, inclusive viewer, apagava/alterava mensagem de WhatsApp
+-- direto pelo PostgREST. Piso 'agent' porque é o que
+-- app/api/v1/messages/route.ts já exige no POST. Ver comentário completo na
+-- migration 0170. messages_select fica como está (já delega ao RLS de
+-- conversations via EXISTS).
+
+drop policy if exists "messages_insert" on public.messages;
+create policy "messages_insert" on public.messages
+  for insert with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists "messages_update" on public.messages;
+create policy "messages_update" on public.messages
+  for update using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  ) with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists "messages_delete" on public.messages;
+create policy "messages_delete" on public.messages
+  for delete using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+notify pgrst, 'reload schema';
+
+-- ---- RLS de papel em agent_harness — as ~29 tabelas do motor (migration 0171) ----
+--
+-- A 0169/0170 fecharam contacts/messages e deixaram de propósito as tabelas
+-- da migration 0050 (job_queue, send_ledger, lead_checkpoints, metrics etc.)
+-- "para uma migration seguinte, com verificação por tabela". Esta é essa
+-- migration: para cada uma das 31 tabelas, grep em app/lib/workers/components
+-- por escrita via client de SESSÃO (cookie/RLS), nunca admin. Comentário
+-- completo (achado, decisão por tabela, piso de cada rota) na migration 0171.
+--
+-- 4 tabelas TÊM escrita por sessão confirmada, com o piso da rota que já a
+-- exige: agent_inbox_items (INSERT em 'viewer' — o board GET não tem
+-- requireRole nenhum hoje; UPDATE/DELETE em 'agent', defesa em profundidade),
+-- lead_checkpoints (reactivate-bot, 'agent'), lead_state (next-action,
+-- 'agent'), cron_jobs (leads/[id]/reactivation, 'agent'). As outras 26
+-- tabelas do loop, sem escrita por sessão encontrada, ganham piso 'agent' por
+-- defesa em profundidade (service_role sempre ignorou RLS; quem a policy nova
+-- passa a barrar é a chave anon/authenticated direto no PostgREST).
+-- watchdog_cursors (31ª) não muda: já tem RLS habilitada e ZERO policies —
+-- mais restritivo que qualquer piso de papel poderia ser.
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'job_queue', 'send_ledger',
+    'playbook_versions', 'playbook_pointers',
+    'channel_session_health', 'llm_calls',
+    'lead_checkpoints', 'lead_state', 'lead_state_transitions',
+    'metrics', 'channel_knobs', 'pacing_ledger', 'outbound_copies',
+    'cron_jobs',
+    'reentry_template_versions', 'reentry_template_pointers',
+    'lead_notes', 'skill_versions', 'skill_pointers',
+    'promise_table_versions', 'promise_table_pointers',
+    'disclosure_template_versions', 'disclosure_template_pointers',
+    'before_send_traces',
+    'flywheel_judge_verdicts', 'flywheel_distiller_proposals',
+    'judge_alignment_pool',
+    'reentry_knob_versions', 'reentry_knob_pointers'
+  ]
+  loop
+    execute format('drop policy if exists tenant_isolation_%s_all on public.%I', t, t);
+
+    execute format('drop policy if exists %s_select on public.%I', t, t);
+    execute format(
+      'create policy %s_select on public.%I for select
+         using (organization_id in (select public.fn_user_org_ids())
+                or public.fn_is_platform_admin())',
+      t, t
+    );
+
+    execute format('drop policy if exists %s_write on public.%I', t, t);
+    execute format(
+      'create policy %s_write on public.%I for all
+         using (
+           (organization_id in (select public.fn_user_org_ids())
+             and public.fn_role_at_least(organization_id, ''agent''))
+           or public.fn_is_platform_admin()
+         )
+         with check (
+           (organization_id in (select public.fn_user_org_ids())
+             and public.fn_role_at_least(organization_id, ''agent''))
+           or public.fn_is_platform_admin()
+         )',
+      t, t
+    );
+  end loop;
+end
+$$;
+
+drop policy if exists "tenant_isolation_agent_inbox_items_all" on public.agent_inbox_items;
+
+drop policy if exists "agent_inbox_items_select" on public.agent_inbox_items;
+create policy "agent_inbox_items_select" on public.agent_inbox_items
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "agent_inbox_items_insert" on public.agent_inbox_items;
+create policy "agent_inbox_items_insert" on public.agent_inbox_items
+  for insert with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'viewer'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "agent_inbox_items_update" on public.agent_inbox_items;
+create policy "agent_inbox_items_update" on public.agent_inbox_items
+  for update using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "agent_inbox_items_delete" on public.agent_inbox_items;
+create policy "agent_inbox_items_delete" on public.agent_inbox_items
+  for delete using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  );
+
+notify pgrst, 'reload schema';
+
+-- ---- poda do event_log (migration 0172) ----
+--
+-- Terceira tabela da mesma família de crescimento sem poda que a 0167 já
+-- resolveu para job_queue/api_audit_log (issue #261) — `event_log` ficou fora
+-- daquela issue de propósito. Argumento completo, incluindo por que os
+-- event_type SEM handler registrado (message.sending/sent/failed/outbound,
+-- lead.won/lost/reopened/assigned) ficam pending para sempre e por que este
+-- expurgo NÃO os alcança (mesma regra "o que tem dono não sai" da 0167,
+-- aplicada aqui), no cabeçalho de
+-- supabase/migrations/20260823130000_0172_poda_do_event_log.sql.
+--
+-- `automation_rule_runs.event_id references event_log(id) on delete set null`
+-- é a ÚNICA FK apontando para event_log — apagar nunca falha nem leva o run
+-- junto, e app/api/v1/automation-rules/runs/[runId]/resend/route.ts já trata
+-- event_id nulo (409 event_gone) antes desta migration existir.
+create index if not exists idx_event_log_poda
+  on public.event_log (created_at)
+  where status in ('done', 'dead');
+
+create or replace function public.fn_podar_event_log(
+  p_retencao_dias int default null,
+  p_limite int default null
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  -- Piso de 7 dias: health/circuit.ts é o único consumidor de event_log sem
+  -- janela própria, e a dele (windowMs, default 6h) fica bem abaixo disso.
+  v_dias int := greatest(coalesce(p_retencao_dias, 90), 7);
+  v_limite int := least(greatest(coalesce(p_limite, 1000), 1), 10000);
+  v_apagados int;
+begin
+  with candidatos as (
+    select e.id
+      from public.event_log e
+     where e.status in ('done', 'dead')
+       and e.created_at < now() - make_interval(days => v_dias)
+     order by e.created_at
+     limit v_limite
+  )
+  delete from public.event_log e
+   using candidatos c
+   where e.id = c.id;
+  get diagnostics v_apagados = row_count;
+  return v_apagados;
+end;
+$$;
+
+revoke execute on function public.fn_podar_event_log(int, int)
+  from public, anon, authenticated;
+grant execute on function public.fn_podar_event_log(int, int) to service_role;
+
+comment on table public.event_log is
+  'Bus interno do CRM. Triggers e ServerActions inserem via emit_event(). Workers '
+  'consomem via lib/event-log/drain.ts (ou worker dedicado) e marcam status. '
+  'done/dead expurgados por public.fn_podar_event_log (piso de 7 dias) a partir do '
+  'cron app/api/v1/cron/data-retention. pending/processing nunca saem — inclusive '
+  'os event_type sem handler registrado, que por isso ficam pending para sempre '
+  '(achado documentado no cabeçalho da migration 0172).';
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

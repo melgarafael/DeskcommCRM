@@ -34,6 +34,7 @@ const RAIZ = path.resolve(__dirname, "../..");
 
 /** Documentos que alguém lê para DECIDIR. Ampliar esta lista é sempre bem-vindo. */
 const AUTORIDADE = [
+  ".ai/AI_BOOTSTRAP.md",
   "CLAUDE.md",
   "AGENTS.md",
   "CONTRIBUTING.md",

@@ -29,7 +29,7 @@
  * silenciosa — se você precisar acrescentar uma, escreva o porquê junto.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 // O padrão vive em módulo próprio para poder ser testado sem executar o lint —
 // ver a justificativa das duas fronteiras (issue #118) lá.
@@ -189,7 +189,11 @@ function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
     if (e.isDirectory()) return e.name === "node_modules" ? [] : walk(p);
-    return /\.tsx?$/.test(e.name) ? [p] : [];
+    // KNOWN_DEBT e ALLOWED usam "/" (o repo é escrito e lido por gente em
+    // qualquer SO); `path.join` no Windows devolve "\", o que desencontrava
+    // tudo — arquivo legítimo de lib/channels/ virava "violação nova", e
+    // toda a lista de dívida aparecia "stale" ao mesmo tempo.
+    return /\.tsx?$/.test(e.name) ? [p.split(sep).join("/")] : [];
   });
 }
 

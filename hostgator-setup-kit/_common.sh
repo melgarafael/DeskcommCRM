@@ -348,7 +348,7 @@ psql_run() { docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -v ON
 # O namespace é constante e literal de propósito: ele está gravado no .env de
 # toda instalação viva, e derivá-lo de variável faria o kit antigo (que já está
 # no disco do cliente) e o novo montarem strings diferentes.
-IMG_NS="ghcr.io/melgarafael"
+IMG_NS="ghcr.io/maugarciasa"
 IMG_APP="${IMG_NS}/deskcommcrm"
 IMG_WORKER="${IMG_NS}/deskcomm-worker"
 IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
@@ -365,7 +365,7 @@ IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
 # alguém porque não deu para resolver um número de versão seria trocar um
 # problema de previsibilidade por um de disponibilidade.
 ultima_versao_publicada() {
-  local url="${1:-https://github.com/melgarafael/DeskcommCRM.git}" ref
+  local url="${1:-https://github.com/maugarciasa/DeskcommCRM.git}" ref
   command -v git >/dev/null 2>&1 || return 0
   # `grep -v -- -` descarta PRERELEASE (v1.11.0-rc1, v1.1.1-jmpo.1 — esta última
   # existe de verdade neste repo). O `--sort=-v:refname` do git põe o prerelease
@@ -387,13 +387,13 @@ ultima_versao_publicada() {
 ghcr_status() {
   local img="$1" tag="$2" tok
   tok="$(curl -fsS --max-time 6 \
-          "https://ghcr.io/token?scope=repository:melgarafael/${img}:pull&service=ghcr.io" 2>/dev/null \
+          "https://ghcr.io/token?scope=repository:maugarciasa/${img}:pull&service=ghcr.io" 2>/dev/null \
         | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')" || true
   if [ -z "$tok" ]; then printf '000'; return 0; fi
   curl -s -o /dev/null --max-time 6 -w '%{http_code}' \
     -H "Authorization: Bearer $tok" \
     -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json' \
-    "https://ghcr.io/v2/melgarafael/${img}/manifests/${tag}" 2>/dev/null || printf '000'
+    "https://ghcr.io/v2/maugarciasa/${img}/manifests/${tag}" 2>/dev/null || printf '000'
 }
 
 # As TRÊS imagens existem e são públicas nesta referência?
@@ -584,7 +584,7 @@ owner_id_by_email() {
 # primeira (o filtro remove tudo que casa com o marcador, e as duas linhas
 # casavam). Medido na VPS: depois de instalar, sobrava só o agente e o CRM ficava
 # SEM o drain de eventos — a automação inteira parada, em silêncio.
-cron_tag() { printf '# deskcomm:%s:%s' "${PROJECT_DIR:-$PWD}" "${1:?papel da linha (drain|agent)}"; }
+cron_tag() { printf '# deskcomm:%s:%s' "${PROJECT_DIR:-$PWD}" "${1:?papel da linha (drain|agent|backup)}"; }
 
 # Puro (testável sem tocar no crontab real): lê o crontab atual em stdin e
 # imprime o novo. Tira as linhas DESTA instalação — pelo marcador, e também
@@ -655,6 +655,45 @@ setup_update_agent_cron() {
   local cron_line="*/5 * * * * ${legado} >/dev/null 2>&1 ${marcador}"
   ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
   c_grn "✓ atualização pela tela ativa (agente a cada 5 minutos)"
+}
+
+# Ativa (idempotente) o cron do backup diário (banco + sessões do WhatsApp).
+#
+# Por que HOST, e não o container `scheduler`: o `backup.sh` faz `docker run
+# postgres:17-alpine pg_dump` e `docker run -v waha-data:/data alpine tar`, e o
+# `scheduler` é DELIBERADAMENTE sem docker.sock ("Cron sem docker.sock: crond
+# interno batendo curl na rede interna" — ver docker-compose.prod.yml). Dar
+# socket a ele só para isto seria abrir root-no-host a um container cujo
+# desenho inteiro é não ter esse alcance. O crontab do HOST é o mecanismo que
+# este kit já usa para automação que também exige Docker: mesma função
+# (setup_update_agent_cron, acima) roda `agent.sh`, que também chama `docker`.
+#
+# Sem isto o backup existia só como script MANUAL (cabeçalho do backup.sh
+# ensinava "crontab -e" à mão) — numa instalação self-host real, onde quem
+# instala não é a mesma pessoa que sabe editar crontab, isso é "nunca ter
+# backup rodando". É achado de auditoria: Supabase free não faz backup
+# sozinho, e depender do dono lembrar de agendar é depender do pior caso.
+#
+# Chamada por install.sh e update.sh, junto das outras automações — re-rodar
+# não duplica a linha do crontab (mesmo cron_merge por marcador das outras).
+# Horário configurável por BACKUP_CRON_HOUR (0-23; default 3 = 03h, fora do
+# expediente); minuto fixo em :00 — não é knob, é o que o próprio cabeçalho do
+# backup.sh já ensinava como receita manual.
+setup_backup_cron() {
+  command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — o backup diário não foi agendado. Rode 'bash hostgator-setup-kit/backup.sh' manualmente, ou instale o pacote 'cron' e rode de novo."; return 0; }
+
+  local hora="${BACKUP_CRON_HOUR:-3}"
+  case "$hora" in ''|*[!0-9]*) hora=3;; esac
+  [ "$hora" -le 23 ] || hora=3
+
+  # Mesmo `cd` explícito de setup_update_agent_cron, e pelo mesmo motivo: o
+  # backup.sh chama enter_project(), que acha o projeto pelo CWD, e no cron o
+  # CWD é o home de quem é dono do crontab (não a pasta do projeto).
+  local legado="cd ${PROJECT_DIR} && bash hostgator-setup-kit/backup.sh"
+  local marcador; marcador="$(cron_tag backup)"
+  local cron_line="0 ${hora} * * * ${legado} >/dev/null 2>&1 ${marcador}"
+  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
+  c_grn "✓ backup diário agendado (todo dia às $(printf '%02d' "$hora"):00)"
 }
 
 # Garante a chave de cifra dos segredos (webhooks/Nuvemshop) e a semeia no

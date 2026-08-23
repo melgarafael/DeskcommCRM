@@ -91,7 +91,7 @@ const tokenOutbound = extractFn(tokenSrc, "handleOutboundFromUserPhone");
     const reBlock = /p_event_type:\s*"ai_agent\.dispatch_requested"[\s\S]*?p_payload:\s*\{([\s\S]*?)\}/;
     const m = body.match(reBlock);
     if (!m) return { ok: false, missing: required };
-    const block = m[1];
+    const block = m[1] ?? "";
     const missing = required.filter((k) => !new RegExp(`\\b${k}\\s*:`).test(block));
     return { ok: missing.length === 0, missing };
   }

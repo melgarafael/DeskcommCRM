@@ -26,7 +26,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -48,10 +48,11 @@ const TAMANHO_MAX = 5 * 1024 * 1024;
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const user = await loadAuthUser();
-  if (!user) return fail("unauthenticated", "Faça login.", 401, { requestId });
-  const org = await resolveActiveOrg(user);
-  if (!org) return fail("forbidden", "Sem organização ativa.", 403, { requestId });
+  // Sobe pro storage o cabeçalho de uma definição aprovada pela Meta — mesmo
+  // piso de "channels/templates" e "channels/partner/templates" (admin).
+  const authz = await requireRole("admin", { requestId, resource: "channel_partner_templates_media" });
+  if (!authz.ok) return authz.response;
+  const org = authz.org;
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");

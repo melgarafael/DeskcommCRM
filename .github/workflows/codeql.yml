@@ -1,0 +1,40 @@
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Segunda 06h UTC — pega vulnerabilidade nova em código que não mudou.
+    - cron: "0 6 * * 1"
+
+# contents: read no topo pelo mesmo motivo do ci.yml: os dois jobs herdariam o
+# default do repositório se não fosse fixado aqui. security-events: write só
+# entra por job (analyze), que é o único passo que precisa escrever o
+# resultado do scan — menor escopo que precisa, mesma regra do publish-image.yml.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["javascript-typescript"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

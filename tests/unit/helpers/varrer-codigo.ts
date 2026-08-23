@@ -40,3 +40,23 @@ function varrer(dir: string): string[] {
 export function arquivosDeCodigo(raizes: readonly string[]): string[] {
   return raizes.flatMap((r) => varrer(path.join(RAIZ_DO_REPO, r)));
 }
+
+/**
+ * Caminho relativo à raiz do repo, SEMPRE com `/`.
+ *
+ * `path.relative` devolve `lib\ai\log-invocation.ts` num checkout Windows, e toda
+ * allowlist deste repo é escrita com `/`. Comparar os dois não dá erro: dá o
+ * silêncio errado. Medido em 2026-08-22, com a varredura crua:
+ *
+ * - `telemetria-tem-um-leitor-so`: o controle positivo falha, a allowlist inteira
+ *   parece morta e um arquivo PERMITIDO vira infrator — vermelho sem defeito.
+ * - `provedores-x-registry`: o mesmo desencontro deixa a allowlist INERTE, e o
+ *   teste segue verde só porque nenhum arquivo isento casa o padrão hoje. É o
+ *   modo pior: o gate perde a isenção sem avisar ninguém.
+ *
+ * Quem compara caminho com literal escrito à mão usa esta função, nunca
+ * `path.relative` cru.
+ */
+export function caminhoRelativo(absoluto: string): string {
+  return path.relative(RAIZ_DO_REPO, absoluto).split(path.sep).join("/");
+}

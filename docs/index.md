@@ -143,7 +143,7 @@ Documentação de *processo*. Alta rotatividade; trate como estado, não como co
 **encerrado** é arquivado em [`handoffs/`](handoffs/). Use isso para saber o que está em voo.
 
 - **Raiz (em voo):** `HANDOFF.md` (follow-up), `HANDOFF-harness-evolution.md`, `HANDOFF-operacao-visivel.md`
-- [`handoffs/`](handoffs/) — arquivados: casos humanos, inbox multimodal, CRM vivo, LGPD, wave1-devvivo, contrato wave5, briefing CRM vivo
+- [`handoffs/`](handoffs/) — arquivados: casos humanos, inbox multimodal, CRM vivo, LGPD, wave1-devvivo, contrato wave5, briefing CRM vivo, conversa vira lead (spec 17, PR #194), fv-w1-fila (follow-up vivo, PR #223), IA 360 (PR #145), marca própria/whitelabel (PR #248/#252), consertos do Sistema Vivo pós-#181 (PR #218/#222), três papéis do agente (spec 16, PR #181)
 - [`stories/`](stories/) — épicos e stories (`epics/MASTER.md` = plano por epic/wave)
 - [`superpowers/`](superpowers/) — `plans/` e `specs/` datados por onda, mais `handoffs/`
 - [`growth/`](growth/) — material de crescimento · [`brand/`](brand/) — marca · [`white-label.md`](white-label.md) — instalação com marca própria, também em [en](white-label.en.md) e [es](white-label.es.md) (traduções seladas pelo hash do original; ver `scripts/selar-traducao.ts`)

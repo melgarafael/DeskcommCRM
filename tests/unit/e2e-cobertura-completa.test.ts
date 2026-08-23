@@ -57,8 +57,16 @@ const DIR_SPECS = path.join(RAIZ, "tests", "e2e");
  * em vez de devolver lista vazia.
  */
 function listaDoWorkflow(yml: string, chave: string): string[] {
+  // CRLF primeiro, senão o parser devolve lista VAZIA em qualquer checkout
+  // Windows (git converte o workflow para `\r\n` por default). Em JS, `.` não
+  // casa `\r` — ele é terminador de linha —, então `\S.*\n` para antes do `\r`
+  // e a alternativa `\n` nunca chega. As três listas voltam vazias, e o efeito é
+  // o pior possível: o controle positivo estoura e a asserção de completude acusa
+  // TODAS as specs de uma vez, num repositório onde nada está errado. Um gate que
+  // acende sem defeito é um gate que se aprende a ignorar.
+  const conteudo = yml.replace(/\r\n/g, "\n");
   const re = new RegExp(`^\\s*${chave}:\\s*>-\\s*\\n((?:\\s{8,}\\S.*\\n)+)`, "m");
-  const m = re.exec(yml);
+  const m = re.exec(conteudo);
   if (m === null) return [];
   return m[1]!
     .split(/\s+/)
@@ -79,7 +87,9 @@ describe("cobertura do e2e no CI", () => {
     // Sem isto, um regex que parou de casar devolveria três listas vazias e a
     // asserção de vigência passaria por vacuidade, enquanto a de completude
     // acusaria as 39 specs de uma vez. Verde e vermelho errados pelo mesmo motivo.
-    expect(noDisco.length, "nenhuma spec no disco — o diretório mudou de lugar?").toBeGreaterThan(30);
+    expect(noDisco.length, "nenhuma spec no disco — o diretório mudou de lugar?").toBeGreaterThan(
+      30,
+    );
     expect(parte1.length, "SPECS_PARTE_1 não foi lida do workflow").toBeGreaterThan(10);
     expect(parte2.length, "SPECS_PARTE_2 não foi lida do workflow").toBeGreaterThan(10);
     expect(foraDoCi.length, "FORA_DO_CI não foi lida do workflow").toBeGreaterThan(0);
@@ -106,7 +116,9 @@ describe("cobertura do e2e no CI", () => {
     // acha nada e o job termina VERDE. Uma renomeação silenciosamente desliga a
     // cobertura daquele arquivo.
     const fantasmas = [...parte1, ...parte2, ...foraDoCi].filter((f) => !noDisco.includes(f));
-    expect(fantasmas, "lista do CI aponta para spec inexistente — renomeada ou apagada").toEqual([]);
+    expect(fantasmas, "lista do CI aponta para spec inexistente — renomeada ou apagada").toEqual(
+      [],
+    );
   });
 
   it("as listas são de fato passadas ao Playwright", () => {

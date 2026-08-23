@@ -184,9 +184,12 @@ Se mesmo assim aparecerem, aqui está o diagnóstico pronto:
 - **Numa instalação que ainda não tem o agente da tela**, rodar `bash update.sh` **duas
   vezes** liga o botão: a primeira execução ainda é a do script antigo (que baixa o novo,
   mas não conhece o agente); a segunda instala o cron do agente.
-- **Backup** (importante! o Supabase grátis não faz sozinho): `bash backup.sh`,
-  e sugira agendar um backup diário no cron. O `update.sh` já roda um backup sozinho
-  antes de cada atualização.
+- **Backup** (importante! o Supabase grátis não faz sozinho): já é automático — o
+  `install.sh` (e o `update.sh`) agenda sozinho um cron diário de `bash backup.sh`
+  no servidor (03h por padrão; ajustável por `BACKUP_CRON_HOUR` no `.env`). Não
+  precisa orientar a pessoa a agendar nada. `bash backup.sh` continua existindo
+  para rodar um backup avulso na hora. O `update.sh` também roda um backup sozinho
+  antes de cada atualização, além do cron diário.
 
 ## O que você NÃO faz
 

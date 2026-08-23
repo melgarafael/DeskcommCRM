@@ -61,7 +61,23 @@ const PROIBIDAS = /\b(pipelines?|kanban)\b/i;
 function textosVisiveis(src: string): string[] {
   const achados: string[] = [];
 
-  for (const m of src.matchAll(/>([^<>{}\n][^<>{}]*)</g)) {
+  // O `\n` NÃO pode estar na primeira classe. Ele estava, e o efeito medido em
+  // 2026-08-22 foi cegueira total ao caso mais comum de JSX: texto na própria
+  // linha, entre a tag de abertura e a de fechamento.
+  //
+  //     <Card className="…">
+  //       Nenhum lead nesta pipeline ainda.
+  //     </Card>
+  //
+  // Depois do `>` vem `\n`, a classe o proibia como primeiro caractere, e o
+  // trecho inteiro ficava invisível. Num checkout Windows o primeiro caractere é
+  // `\r` — permitido —, então o mesmo teste acusava no Linux ZERO e no Windows
+  // QUATRO infrações reais. Não era o Windows exagerando: era o CI que não
+  // enxergava. Com a classe aberta, os dois medem 4, que é o número certo.
+  //
+  // O `{`/`}` seguem fora da classe e são o que segura o falso positivo: qualquer
+  // expressão JSX interrompe o casamento em vez de virar "texto de tela".
+  for (const m of src.matchAll(/>([^<>{}]+)</g)) {
     const t = (m[1] ?? "").trim();
     // Comentário não é texto de tela. Sem este filtro, um `/** … do pipeline */`
     // logo depois de um `>` (de um genérico ou de um JSX acima) entra como se
@@ -70,7 +86,8 @@ function textosVisiveis(src: string): string[] {
     if (t.length > 2) achados.push(t);
   }
 
-  const props = /\b(headline|subcopy|placeholder|title|label|aria-label|description|alt)\s*=\s*"([^"]+)"/g;
+  const props =
+    /\b(headline|subcopy|placeholder|title|label|aria-label|description|alt)\s*=\s*"([^"]+)"/g;
   for (const m of src.matchAll(props)) achados.push(m[2] ?? "");
 
   return achados;
@@ -80,9 +97,13 @@ describe("o vocabulário do funil na interface", () => {
   it("nenhuma tela mostra 'pipeline' ou 'kanban' ao usuário", () => {
     const infratores: string[] = [];
     for (const f of ARQUIVOS) {
-      const src = readFileSync(f, "utf8");
+      // Normaliza o fim de linha para que a varredura meça o MESMO em qualquer
+      // checkout — foi a divergência CRLF × LF que expôs o buraco acima.
+      const src = readFileSync(f, "utf8").replace(/\r\n/g, "\n");
       for (const t of textosVisiveis(src)) {
-        if (PROIBIDAS.test(t)) infratores.push(`${f} → ${t.slice(0, 80)}`);
+        // Caminho sempre com `/`: a mensagem é para ser colada num editor, e no
+        // Windows `join` devolve `components\kanban\…`, que nenhum grep aceita.
+        if (PROIBIDAS.test(t)) infratores.push(`${f.replace(/\\/g, "/")} → ${t.slice(0, 80)}`);
       }
     }
     expect(

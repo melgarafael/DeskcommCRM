@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Backup: dump do banco (Supabase) + snapshot das sessões do WhatsApp.
-# Supabase free NÃO tem backup automático — rode isto num cron diário.
+# Supabase free NÃO tem backup automático — mas o install.sh/update.sh já
+# agendam isto sozinhos num cron diário do HOST (setup_backup_cron, em
+# _common.sh; horário em BACKUP_CRON_HOUR no .env, default 03h). Não precisa
+# agendar à mão. Para rodar manual, ou com outro horário próprio:
 #
 #   crontab -e →  0 3 * * *  cd /caminho/deskcommcrm && bash hostgator-setup-kit/backup.sh
 source "$(dirname "$0")/_common.sh"

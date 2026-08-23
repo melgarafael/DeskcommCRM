@@ -15,7 +15,7 @@ set -euo pipefail
 # de qualquer 'cd' (step 2 pode entrar num repo clonado à parte).
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/maugarciasa/DeskcommCRM.git}"
 # Uma constante, dois usos (o fim feliz e o fim travado) — e o comecar.sh tem a
 # gêmea. Link repetido à mão vira link divergente na primeira troca.
 COMUNIDADE_URL="https://lp-comunidade.automatiklabs.com.br"
@@ -1471,6 +1471,10 @@ esac
   envq NODE_ENV "production"
   envq NUVEMSHOP_ENABLED "false"
   envq INTERNAL_AGENT_RUN_STUB "false"
+  # Hora do backup diário (0-23; default 03h). setup_backup_cron() em
+  # _common.sh já cai em 3 quando ausente/inválida — grava aqui só para
+  # persistir a escolha real e não sumir com ela no próximo update.sh.
+  envq BACKUP_CRON_HOUR "${BACKUP_CRON_HOUR:-3}"
   envq OWNER_EMAIL "$OWNER_EMAIL"
   envq OWNER_PASSWORD "$OWNER_PASSWORD"
   # As variáveis que você acrescentou à mão, de volta — já no formato em que
@@ -1711,11 +1715,12 @@ else
   [ -n "$health_body" ] && c_dim "  última resposta: $(printf '%s' "$health_body" | head -c 200 || true)"
 fi
 
-# ── 11. Automações (cron do drain de eventos) ───────────────────────────────
+# ── 11. Automações (cron do drain de eventos + backup diário) ───────────────
 step "Ativando as automações"
 ensure_encryption_key .env
 setup_event_log_drain_cron
 setup_update_agent_cron
+setup_backup_cron
 
 # ── Final ───────────────────────────────────────────────────────────────────
 # O app não confirmou que está de pé: dizer "Instalação concluída!" aqui seria

@@ -108,8 +108,9 @@ export async function GET(req: NextRequest) {
   }
 
   if (q) {
+    const safeQ = q.replace(/[%_]/g, (m) => `\\${m}`).replace(/[,()]/g, " ");
     query = query.or(
-      `display_name.ilike.%${q}%,slug::text.ilike.%${q}%,cnpj.ilike.%${q}%`,
+      `display_name.ilike.%${safeQ}%,slug::text.ilike.%${safeQ}%,cnpj.ilike.%${safeQ}%`,
     );
   }
 

@@ -78,7 +78,7 @@ import { DECLARACAO_INSTRUCTION, declaracaoDoTurnoSchema, promessasEmAberto, typ
 import { projetarContexto, projetarRetornoDeTool, turnoProjeta, type ContextoProjetado } from './projecao';
 import { capacidadesEntreguesAoOperador, catalogoEntregueAoOperador } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
-import { matchesHandoffKeyword } from './agent-config';
+import { matchesHandoffKeyword, type PublishedAgentConfig } from './agent-config';
 import { resolveTurnAgent } from './resolve-turn-agent';
 import {
   hasOpenCaseForContact,
@@ -89,7 +89,7 @@ import {
   provideCaseUpdateInputSchema,
 } from './human-cases';
 import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
-import { cancelPendingCronsForLead } from '../cron/scheduler';
+import { cancelPendingCronsForLead, scheduleCronJob } from '../cron/scheduler';
 import {
   latestInboundSignal,
   loadSkills,
@@ -97,6 +97,7 @@ import {
   recordSkillMissCandidates,
   renderMatchedSkillBodies,
   renderSkillIndex,
+  type LoadedSkill,
 } from './skills';
 import { readSkillReference, skillHasReferences } from './skill-references';
 import { READ_ONLY_TOOLS, wrapToolsWithBreaker, type ToolBreakerThresholds } from './tool-breaker';
@@ -932,6 +933,64 @@ export async function avisarCapacidadesAusentes(
 }
 
 /**
+ * Veto do gate `pacing` não pode virar silêncio para o lead (mesmo argumento de
+ * `comHandoffSeOrcamentoAcabar`, aplicado a um gate diferente).
+ *
+ * `runBeforeSend` veta em `outside_window`/`warmup_cap`/`daily_cap` com
+ * `nextAllowedAt` já calculado (`decidePacing`, `pacing/engine.ts`) — mas até aqui
+ * o `send_message` do turno só ENSINAVA o modelo (retornava o erro pro loop de
+ * tools) e o run fechava com `messages_sent: 0`, sem reagendar nada. Fora do
+ * caminho determinístico de re-entrada (`runDeterministicReentry`, que só cobre
+ * `outside_window`), NADA reagendava — medido em produção (instalação MKT,
+ * 2026-08-22): `warmup_cap` bateu com o cliente NO MEIO da conversa, o turno
+ * terminou "concluído" e a próxima tentativa só aconteceria se o cliente
+ * mandasse OUTRA mensagem.
+ *
+ * A saída é reusar `followup_turn` como o "volte e tente de novo" — é a MESMA
+ * peça que a re-entrada determinística já usa para `outside_window`
+ * (`rescheduleReentry`, followup-turn.ts), só que agora coberta para os TRÊS
+ * códigos de veto do pacing (todos carregam `nextAllowedAt`; nenhum outro gate
+ * carrega). `followup_turn` resolve conversa/sessão pela ROW do lead (nunca do
+ * payload), então reagendar só precisa do `leadId` e do instante.
+ *
+ * Idempotente por job de origem (mesmo padrão de `rescheduleReentry`): dois sends
+ * vetados no MESMO turno (o modelo tenta de novo após o erro de ensino) não
+ * duplicam o reagendamento — cabe UM followup_turn por job que sofreu o veto.
+ *
+ * Best-effort: falhar aqui não pode derrubar o erro de ensino que o modelo já
+ * está recebendo — o pior caso vira "sem reagendamento" (o defeito de antes),
+ * nunca uma exceção que descarta o turno inteiro por causa do agendamento.
+ */
+export async function reagendarTurnoPorVetoDePacing(
+  pool: pg.Pool,
+  log: Logger,
+  input: { tenantId: string; leadId: string; jobId: string; at: Date },
+): Promise<void> {
+  try {
+    const { rowCount } = await pool.query(
+      `select 1 from cron_jobs
+       where organization_id = $1 and contact_id = $2 and payload->>'reschedule_of' = $3`,
+      [input.tenantId, input.leadId, input.jobId],
+    );
+    if (rowCount !== null && rowCount > 0) return; // já reagendado para este job
+    await scheduleCronJob(pool, input.tenantId, {
+      leadId: input.leadId,
+      spec: { kind: 'at', at: input.at },
+      jobKind: 'followup_turn',
+      payload: { reschedule_of: input.jobId },
+      staggerWindowMs: 0,
+    });
+    log.info('turno reagendado após veto do pacing — lead não fica sem próximo passo', {
+      next_run_at: input.at.toISOString(),
+    });
+  } catch (err) {
+    log.warn('reagendamento pós-veto de pacing falhou — turno segue sem retry automático', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
+
+/**
  * O NÚCLEO DO TURNO, SEMPRE SOB A ESCOLTA DO ORÇAMENTO.
  *
  * Esta função é o único ponto do produto por onde os três kinds de turno de
@@ -976,43 +1035,22 @@ export async function runAgentTurn(
   );
 }
 
-async function executarTurnoDoAgente(
+/**
+ * Fase 3: resolve o agente publicado desta sessão (stickiness do router + sinal de
+ * roteamento do inbound) e grava a decisão em `ai_router_decisions` (fire-and-forget —
+ * falha de telemetria nunca derruba o turno). Extraída de `executarTurnoDoAgente` só
+ * por tamanho: o único valor que sobrevive depois deste passo é o `PublishedAgentConfig`
+ * devolvido (ou `null`, sem agente publicado para esta sessão).
+ */
+async function resolverAgenteDoTurno(
+  pool: pg.Pool,
   deps: InboundTurnDeps,
   job: JobRow,
-  pool: pg.Pool,
-  ctx: { workerId: string },
+  tenantId: string,
+  leadId: string,
   input: AgentTurnInput,
-): Promise<void> {
-  const tenantId = job.organization_id;
-  const leadId = job.contact_id;
-  if (leadId === null) {
-    throw new Error('job de turno sem contact_id — o CHECK da fila deveria impedir');
-  }
-  const contextKnobs = { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens };
-  // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
-  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
-
-  // AS DUAS CAMADAS QUE CUSTAM DINHEIRO, resolvidas UMA vez por turno.
-  //
-  // Os knobs (`deps.knobs.jailbreak`, `deps.knobs.promiseSemantic`) nascem no boot
-  // do worker e valem para a instalação inteira; a linha em `org_guardrail_layers`
-  // é a preferência de QUEM PAGA a consulta. Sem linha, `camadaLigada` devolve o
-  // padrão do ambiente — aplicar a migration não muda o comportamento de quem já
-  // decidiu no `.env`.
-  //
-  // Lido aqui, e não em cada ponto de uso: os dois consumidores ficam a ~900
-  // linhas de distância um do outro, e duas queries para a mesma pergunta viram,
-  // com o tempo, duas respostas.
-  const camadas = await lerCamadasDaOrg(pool, tenantId);
-
-  // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
-  // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
-  // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
-  if (await isLeadInHandoff(pool, tenantId, leadId)) {
-    runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: job.kind });
-    return;
-  }
-
+  runLog: Logger,
+): Promise<PublishedAgentConfig | null> {
   // Fase 3: stickiness do router — qual agente já atende esta conversa. Leituras
   // tolerantes a falha (ex.: clone self-host ainda sem a migration 0085 aplicada) —
   // um erro aqui degrada pro fluxo sem router, nunca derruba o turno (review T5).
@@ -1101,6 +1139,89 @@ async function executarTurnoDoAgente(
       runLog.warn('decisão do router não gravada', { error: (err instanceof Error ? err.message : String(err)).slice(0, 120) });
     }
   }
+  return agentConfig;
+}
+
+/**
+ * Playbook (por ponteiro) + skills residentes + memória da org, compostos no prefixo
+ * estável do system prompt (F2-17). `skills` sobrevive ao retorno: o matching por
+ * sinal (`matchSkills`) roda mais abaixo, sobre a mesma lista carregada aqui.
+ */
+async function montarPromptDoSistema(
+  pool: pg.Pool,
+  tenantId: string,
+  agentConfig: PublishedAgentConfig | null,
+): Promise<{ system: string; skills: LoadedSkill[] }> {
+  // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
+  // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
+  // compliance continua à frente, sempre).
+  const playbook = await loadPlaybook(
+    pool,
+    tenantId,
+    agentConfig !== null ? { agentLayer: agentConfig.systemPrompt } : undefined,
+  );
+  // Skills situacionais (F3-09): índice (name+description) SEMPRE residente — vai junto do
+  // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).
+  // O CORPO só carrega no match, no sufixo por-lead (mais abaixo). loadSkills resolve os
+  // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
+  const skills = await loadSkills(pool, tenantId);
+  const skillIndex = renderSkillIndex(skills);
+  // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
+  // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
+  // encaixa playbook + memória + índice de skills no prefixo cacheável.
+  const orgMemory = await loadOrgMemory(pool, tenantId);
+  const systemWithMemory = composeSystemPrompt({
+    playbookPrompt: playbook.prompt,
+    orgMemoryBlock: renderOrgMemory(orgMemory),
+    skillIndex,
+  });
+  // Spec 15 §5.2: bloco das tools de caso SEMPRE residente (não invalida o prefixo
+  // cacheável — mesmo espírito do índice de skills) quando a tela habilita.
+  const system =
+    agentConfig !== null && agentConfig.casesEnabled
+      ? `${systemWithMemory}\n\n${CASES_SYSTEM_BLOCK}`
+      : systemWithMemory;
+  return { system, skills };
+}
+
+async function executarTurnoDoAgente(
+  deps: InboundTurnDeps,
+  job: JobRow,
+  pool: pg.Pool,
+  ctx: { workerId: string },
+  input: AgentTurnInput,
+): Promise<void> {
+  const tenantId = job.organization_id;
+  const leadId = job.contact_id;
+  if (leadId === null) {
+    throw new Error('job de turno sem contact_id — o CHECK da fila deveria impedir');
+  }
+  const contextKnobs = { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens };
+  // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
+  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+
+  // AS DUAS CAMADAS QUE CUSTAM DINHEIRO, resolvidas UMA vez por turno.
+  //
+  // Os knobs (`deps.knobs.jailbreak`, `deps.knobs.promiseSemantic`) nascem no boot
+  // do worker e valem para a instalação inteira; a linha em `org_guardrail_layers`
+  // é a preferência de QUEM PAGA a consulta. Sem linha, `camadaLigada` devolve o
+  // padrão do ambiente — aplicar a migration não muda o comportamento de quem já
+  // decidiu no `.env`.
+  //
+  // Lido aqui, e não em cada ponto de uso: os dois consumidores ficam a ~900
+  // linhas de distância um do outro, e duas queries para a mesma pergunta viram,
+  // com o tempo, duas respostas.
+  const camadas = await lerCamadasDaOrg(pool, tenantId);
+
+  // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
+  // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
+  // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
+  if (await isLeadInHandoff(pool, tenantId, leadId)) {
+    runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: job.kind });
+    return;
+  }
+
+  const agentConfig = await resolverAgenteDoTurno(pool, deps, job, tenantId, leadId, input, runLog);
   // Knobs por-turno: a versão publicada vence o env; sem ela, env (main.ts).
   const maxSteps = agentConfig?.maxSteps ?? deps.knobs.maxSteps;
   // Fallback de modelo das chamadas AUXILIARES (classificadores/compaction/promessa):
@@ -1136,35 +1257,7 @@ async function executarTurnoDoAgente(
       ? { historyLimit: agentConfig.historyMessageWindow, maxTokens: agentConfig.historyTokenWindow }
       : contextKnobs;
 
-  // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
-  // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
-  // compliance continua à frente, sempre).
-  const playbook = await loadPlaybook(
-    pool,
-    tenantId,
-    agentConfig !== null ? { agentLayer: agentConfig.systemPrompt } : undefined,
-  );
-  // Skills situacionais (F3-09): índice (name+description) SEMPRE residente — vai junto do
-  // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).
-  // O CORPO só carrega no match, no sufixo por-lead (mais abaixo). loadSkills resolve os
-  // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
-  const skills = await loadSkills(pool, tenantId);
-  const skillIndex = renderSkillIndex(skills);
-  // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
-  // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
-  // encaixa playbook + memória + índice de skills no prefixo cacheável.
-  const orgMemory = await loadOrgMemory(pool, tenantId);
-  const systemWithMemory = composeSystemPrompt({
-    playbookPrompt: playbook.prompt,
-    orgMemoryBlock: renderOrgMemory(orgMemory),
-    skillIndex,
-  });
-  // Spec 15 §5.2: bloco das tools de caso SEMPRE residente (não invalida o prefixo
-  // cacheável — mesmo espírito do índice de skills) quando a tela habilita.
-  const system =
-    agentConfig !== null && agentConfig.casesEnabled
-      ? `${systemWithMemory}\n\n${CASES_SYSTEM_BLOCK}`
-      : systemWithMemory;
+  const { system, skills } = await montarPromptDoSistema(pool, tenantId, agentConfig);
   const previous = await latestCheckpoint(pool, tenantId, leadId);
   const leadState = await getLeadState(pool, tenantId, leadId);
   const openingContext = await getLeadContext(
@@ -1222,60 +1315,12 @@ async function executarTurnoDoAgente(
     return; // bot silencia: sem modelo, sem envio neste turno
   }
 
-  // F3-07: compaction + flush pré-compaction. Quando o histórico cresce além do limiar,
-  // o FLUSH grava as notas duráveis (lead_notes) e a compaction resume a conversa com o
-  // modelo BARATO; o resumo compactado entra no lugar do rolling summary e o transcript
-  // integral é trocado por uma cauda recente sob orçamento (regra de cache 15). O rolling
-  // summary DURÁVEL segue vindo do checkpoint de fechamento; aqui ele só alimenta o prompt.
-  let effectivePrevious = previous;
-  let effectiveContext = openingContext.context;
-  if (deps.knobs.compaction !== undefined) {
-    const compacted = await maybeCompact(
-      pool,
-      deps.llmCfg,
-      { tenantId, leadId, jobId: job.id },
-      {
-        context: openingContext.context,
-        previousSummary: previous?.rolling_summary ?? '',
-        // A compactação é o QUARTO call site da mesma regra, e o #151 só cobriu
-        // três: ela também pedia o modelo do agente ao provider default da org.
-        // Mesmo 404, mesma morte de turno — só que num caminho que roda quando a
-        // conversa já é longa, ou seja, mais tarde e com menos gente olhando.
-        knobs: { ...deps.knobs.compaction, ...argsAux(deps.knobs.compaction.model) },
-        notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
-      },
-      { registry: deps.registry, log: runLog },
-    );
-    if (compacted !== null) {
-      // Só o rolling_summary é sobrescrito (o resumo compactado carrega compromissos/
-      // objeções/estágio/dados pessoais planificados). O `previous` sintético do 1º
-      // turno com histórico importado é local — nunca persistido; o fechamento grava o
-      // checkpoint real.
-      const base: LeadCheckpointRow =
-        previous ??
-        {
-          id: '',
-          seq: '0',
-          organization_id: tenantId,
-          contact_id: leadId,
-          job_id: null,
-          created_at: new Date(),
-          commitments: [],
-          objections: [],
-          next_action: null,
-          rolling_summary: '',
-          // Este `previous` é sintetizado a partir de histórico IMPORTADO — não
-          // houve turno nosso, logo ninguém declarou nada. `null` é o valor
-          // honesto; um objeto vazio afirmaria uma avaliação que não aconteceu.
-          declaracao: null,
-        };
-      effectivePrevious = { ...base, rolling_summary: renderCompactedSummary(compacted) };
-      effectiveContext = {
-        ...openingContext.context,
-        messages: trimTranscriptToBudget(openingContext.context.messages, deps.knobs.compaction.transcriptMaxTokens),
-      };
-    }
-  }
+  const { effectivePrevious, effectiveContext } = await compactarSeNecessario(
+    pool,
+    deps,
+    { tenantId, leadId, jobId: job.id },
+    { previous, openingContext, argsAux, runLog },
+  );
 
   // Índice da memória durável do lead (F3-05) — headlines dentro do orçamento fixo,
   // injetado no SUFIXO da abertura (não invalida o prefixo cacheável F2-17). Montado
@@ -1746,6 +1791,18 @@ async function executarTurnoDoAgente(
             });
           }
           if (chain.status === 'vetoed') {
+            // pacing (outside_window/warmup_cap/daily_cap) é o ÚNICO gate que calcula
+            // nextAllowedAt — veto dele não pode virar silêncio: reagenda um
+            // followup_turn pra tentar de novo na próxima janela válida (ver o
+            // cabeçalho de reagendarTurnoPorVetoDePacing).
+            if (chain.gate === 'pacing' && chain.nextAllowedAt !== undefined) {
+              await reagendarTurnoPorVetoDePacing(pool, runLog, {
+                tenantId,
+                leadId,
+                jobId: job.id,
+                at: chain.nextAllowedAt,
+              });
+            }
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
             // modelo o vê no turno seguinte. NÃO é exceção — não derruba o run.
             return { ok: false, error: { code: chain.code, message: chain.message } };
@@ -2346,20 +2403,7 @@ async function executarTurnoDoAgente(
     { registry: deps.registry, log: runLog },
   );
 
-  // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
-  // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
-  // abertura; as tentativas de envio já passaram pelo loop). Dispara escalação humana em
-  // inbox_items (dedup por episódio). Advisório: o classifier sozinho nunca escala — o gate
-  // determinístico é que confirma a promessa indevida. Feito antes do runError/veto para
-  // não se perder num turno que falha o envio depois.
-  if (jailbreakLevel === JAILBREAK_ESCALATION_LEVEL && outOfTablePromiseAttempted) {
-    const created = await escalateJailbreakPromise(pool, { tenantId, leadId, level: jailbreakLevel });
-    if (created > 0) {
-      runLog.warn('jailbreak: escalação humana criada (flag alta + promessa fora de tabela no turno)', {
-        jailbreak_level: jailbreakLevel,
-      });
-    }
-  }
+  await escalarSeJailbreakComPromessaForaDeTabela(pool, { tenantId, leadId, jailbreakLevel, outOfTablePromiseAttempted }, runLog);
 
   if (runError !== null) {
     throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
@@ -2370,55 +2414,12 @@ async function executarTurnoDoAgente(
     throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
   }
 
-  // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
-  // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
-  // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
-  // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
-  const responseMessages =
-    deps.knobs.prune !== undefined
-      ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
-      : turn.result.response.messages;
-
-  // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
-  //
-  // Também sob o handoff (o do turno inteiro, em `runAgentTurn`): o teto pode
-  // ser cruzado ENTRE as duas chamadas — a primeira é que gasta o grosso do
-  // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
-  // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
-  // sem nada tendo mudado no meio.
-  const closing = await runModelCall(
+  const { content, checkpointAnterior, closingCallId } = await fecharTurnoEGravarCheckpoint(
     pool,
-    deps.llmCfg,
-    {
-      tenantId,
-      leadId,
-      jobId: job.id,
-      purpose: 'checkpoint',
-      ...(agentConfig !== null
-        ? {
-            model: agentConfig.model,
-            llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
-          }
-        : {}),
-      system,
-      messages: [
-        // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-        // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-        ...openingTextOnly,
-        ...responseMessages,
-        { role: 'user', content: CHECKPOINT_INSTRUCTION },
-      ],
-    },
-    { registry: deps.registry, log: runLog },
+    deps,
+    { tenantId, leadId, jobId: job.id },
+    { agentConfig, system, openingTextOnly, turn, runLog },
   );
-  const content = parseCheckpointText(closing.result.text);
-
-  // Wave 3 (2.4): o checkpoint anterior é lido ANTES de gravar o novo — a
-  // timeline recebe o DIFF, nunca o snapshot. Emitir a cada turno encheria a
-  // tela com "a IA pensou" e enterraria a única linha que muda o que alguém
-  // faria a seguir.
-  const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
-  await insertCheckpoint(pool, { tenantId, leadId, jobId: job.id, content });
 
   // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
   //
@@ -2434,6 +2435,239 @@ async function executarTurnoDoAgente(
   // Fire-and-forget: falha ao enfileirar NÃO derruba um turno que já respondeu
   // ao cliente. O `sourceEventId` é o job do Conversador, então o retry da fila
   // não gera um segundo Operador para o mesmo turno.
+  await enfileirarTurnoDoOperador(pool, { tenantId, leadId, job, input, agentConfig, content, runLog });
+
+  await registrarAtividadeDeCheckpoint(pool, {
+    tenantId,
+    leadId,
+    job,
+    agentConfig,
+    checkpointAnterior,
+    content,
+    closingCallId,
+    runLog,
+  });
+
+  // ── A NOTA DO NEGÓCIO ──────────────────────────────────────────────────────
+  //
+  // O turno acabou de mexer em TUDO que a fórmula lê: compromissos e objeções
+  // (o checkpoint acima) e a qualificação BANT (`lead_state`, escrita pelo
+  // update_lead_state do modelo). Recalcular aqui é recalcular no instante em
+  // que os sinais mudaram — não há evento melhor.
+  //
+  // ⚠️ POR QUE ISTO EXISTE: `recalculaScoreDoLead` estava escrita, testada e
+  // com constraint no banco exigindo o `reason` — e SEM UM ÚNICO CHAMADOR no
+  // repositório inteiro. Nenhuma nota jamais foi calculada. O modo de falha era
+  // mudo: o card simplesmente não mostrava número, e "não tem nota ainda" é
+  // indistinguível de "ninguém nunca calcula".
+  //
+  // Fora do `if (mudanca.emit)` DE PROPÓSITO: o BANT muda em turnos que não
+  // mexem no checkpoint, e esses turnos também mudam a nota. Amarrar o cálculo
+  // à emissão da atividade faria a nota envelhecer em silêncio — o mesmo
+  // defeito, um andar acima.
+  //
+  // Falha aqui não derruba o turno: nota é derivado, e o próximo turno
+  // recalcula. O que não pode é o cliente ficar sem resposta por causa dela.
+  await recalcularScoreDoNegocio(pool, { tenantId, leadId, runLog });
+
+  await registrarDivergenciaDeEstagio(deps, {
+    tenantId,
+    leadId,
+    job,
+    skillSignal,
+    stageSuggestion,
+    confirmedStage,
+    runLog,
+  });
+
+  const blocked = outcomes.find((o) => o.kind === 'blocked');
+  if (blocked !== undefined) {
+    // veto permanente (regra dura nº 2): cancela o job e cacheia o opt-out —
+    // depois do checkpoint (o artefato do turno fica registrado mesmo em veto).
+    await applySendOutcome(
+      pool,
+      blocked,
+      { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
+      { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+    );
+    throw new JobSettledError(
+      'turno encerrado com veto do sink (is_blocked) — job cancelado em definitivo, checkpoint gravado',
+    );
+  }
+
+  await mcpCleanup?.();
+
+  runLog.info('turno do agente concluído', {
+    kind: job.kind,
+    messages_sent: outcomes.length,
+    model: turn.model,
+  });
+}
+
+/**
+ * F3-11: divergência classificador×modelo. O classificador sugeriu um estágio; se
+ * o modelo confirmou (via update_lead_state — a máquina F2-10) um estágio
+ * DIFERENTE, o desacordo vira candidato ao golden set (fs em runtime — reuso do
+ * dir da F3-09). Sem sugestão, sem confirmação, ou concordância ⇒ nenhum arquivo.
+ */
+async function registrarDivergenciaDeEstagio(
+  deps: InboundTurnDeps,
+  args: {
+    tenantId: string;
+    leadId: string;
+    job: JobRow;
+    skillSignal: string;
+    stageSuggestion: LeadStage | null;
+    confirmedStage: LeadStage | null;
+    runLog: Logger;
+  },
+): Promise<void> {
+  const { tenantId, leadId, job, skillSignal, stageSuggestion, confirmedStage, runLog } = args;
+  if (
+    deps.knobs.goldenCandidatesDir !== undefined &&
+    stageSuggestion !== null &&
+    confirmedStage !== null &&
+    stageSuggestion !== confirmedStage
+  ) {
+    await recordStageDivergenceCandidate(
+      deps.knobs.goldenCandidatesDir,
+      {
+        tenantId,
+        leadId,
+        jobId: job.id,
+        signal: skillSignal,
+        divergence: { suggested: stageSuggestion, confirmed: confirmedStage },
+      },
+      runLog,
+    );
+  }
+}
+
+/**
+ * A NOTA DO NEGÓCIO: o turno acabou de mexer em tudo que a fórmula lê
+ * (compromissos/objeções via checkpoint, qualificação BANT via `lead_state`) —
+ * recalcular aqui é recalcular no instante em que os sinais mudaram. Falha não
+ * derruba o turno: nota é derivado, e o próximo turno recalcula.
+ */
+async function recalcularScoreDoNegocio(
+  pool: pg.Pool,
+  args: { tenantId: string; leadId: string; runLog: Logger },
+): Promise<void> {
+  const { tenantId, leadId, runLog } = args;
+  try {
+    const alvo = await resolveActiveLeadForContact(
+      (
+        await pool.query<LeadCandidate>(
+          `select l.id, l.organization_id, l.pipeline_id, l.status,
+                  l.last_activity_at, l.created_at
+             from crm_leads l
+            where l.organization_id = $1 and l.contact_id = $2`,
+          [tenantId, leadId],
+        )
+      ).rows,
+    );
+    if (alvo.routed) {
+      const r = await recalculaScoreDoLead(pool, tenantId, alvo.leadId);
+      runLog.info('score do negócio recalculado', {
+        lead_id: alvo.leadId,
+        gravou: r.gravou,
+        ...(r.motivo !== undefined ? { motivo: r.motivo } : {}),
+      });
+    }
+  } catch (err) {
+    runLog.error('falha ao recalcular score (segue)', {
+      error: err instanceof Error ? err.name : 'unknown',
+    });
+  }
+}
+
+/**
+ * Wave 3 (2.4): diff do checkpoint (compromissos/objeções/next_action) contra o
+ * anterior — a timeline recebe o DIFF, nunca o snapshot. Emitir a cada turno
+ * encheria a tela com "a IA pensou" e enterraria a única linha que muda o que
+ * alguém faria a seguir. A timeline não pode derrubar o turno: falha só loga.
+ */
+async function registrarAtividadeDeCheckpoint(
+  pool: pg.Pool,
+  args: {
+    tenantId: string;
+    leadId: string;
+    job: JobRow;
+    agentConfig: PublishedAgentConfig | null;
+    checkpointAnterior: LeadCheckpointRow | null;
+    content: CheckpointContent;
+    closingCallId: string | null;
+    runLog: Logger;
+  },
+): Promise<void> {
+  const { tenantId, leadId, job, agentConfig, checkpointAnterior, content, closingCallId, runLog } = args;
+  const mudanca = diffCheckpoint(
+    checkpointAnterior
+      ? {
+          commitments: (checkpointAnterior.commitments ?? []) as string[],
+          objections: (checkpointAnterior.objections ?? []) as string[],
+          next_action: checkpointAnterior.next_action ?? null,
+          rolling_summary: checkpointAnterior.rolling_summary ?? null,
+        }
+      : null,
+    content,
+  );
+
+  if (mudanca.emit) {
+    try {
+      const r = await emitAgentActivityForContact({
+        pool,
+        organizationId: tenantId,
+        contactId: leadId,
+        type: "ai_turn",
+        sourceModule: "agent",
+        sourceId: job.id,
+        // O lastro é a chamada de modelo que PRODUZIU este checkpoint
+        // (llm_calls.id). Sem ele a linha entraria como 'system' e perderia a
+        // autoria justamente no evento mais "de IA" que existe.
+        ...(closingCallId ? { evidence: { llm_call_ids: [closingCallId] } } : {}),
+        ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
+        reason: mudanca.reason,
+        payload: {
+          added_commitments: mudanca.addedCommitments,
+          added_objections: mudanca.addedObjections,
+          next_action_changed: mudanca.nextActionChanged,
+        },
+      });
+      if (!r.routed) {
+        runLog.info('checkpoint sem negócio para pendurar: registrado no event_log', {
+          reason: r.reason,
+        });
+      }
+    } catch (err) {
+      // A timeline do turno não pode derrubar o turno.
+      runLog.error('falha ao registrar atividade de checkpoint (segue)', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+    }
+  }
+}
+
+/**
+ * O TURNO DO OPERADOR (spec 16 §3.2) — enfileirado AQUI, pelo RUNTIME, logo depois
+ * de o checkpoint existir, nunca por decisão do modelo. Fire-and-forget: falha ao
+ * enfileirar não derruba um turno que já respondeu ao cliente, mas quando havia
+ * PROMESSA em aberto vira aviso na Central (só quando há promessa — sem ela o
+ * Operador teria decidido "nada a fazer", e item sem ação é ruído).
+ */
+async function enfileirarTurnoDoOperador(
+  pool: pg.Pool,
+  args: {
+    tenantId: string;
+    leadId: string;
+    job: JobRow;
+    input: AgentTurnInput;
+    agentConfig: PublishedAgentConfig | null;
+    content: CheckpointContent;
+    runLog: Logger;
+  },
+): Promise<void> {
+  const { tenantId, leadId, job, input, agentConfig, content, runLog } = args;
   const disparo = decidirSeEnfileiraOperador({
     temAgentePublicado: agentConfig !== null,
     papelLigado: agentConfig?.operatorEnabled ?? false,
@@ -2497,144 +2731,187 @@ async function executarTurnoDoAgente(
       }
     }
   }
+}
 
-  const mudanca = diffCheckpoint(
-    checkpointAnterior
-      ? {
-          commitments: (checkpointAnterior.commitments ?? []) as string[],
-          objections: (checkpointAnterior.objections ?? []) as string[],
-          next_action: checkpointAnterior.next_action ?? null,
-          rolling_summary: checkpointAnterior.rolling_summary ?? null,
-        }
-      : null,
-    content,
+/**
+ * F3-10 (prune) + fechamento imposto pelo runtime (2ª chamada de modelo, só o
+ * checkpoint) + a persistência dele. Devolve `content` (o que o modelo declarou)
+ * e `checkpointAnterior` (lido ANTES de gravar o novo) — os dois alimentam o
+ * enfileiramento do Operador e o diff da timeline, mais abaixo.
+ */
+async function fecharTurnoEGravarCheckpoint(
+  pool: pg.Pool,
+  deps: InboundTurnDeps,
+  ids: { tenantId: string; leadId: string; jobId: string },
+  args: {
+    agentConfig: PublishedAgentConfig | null;
+    system: string;
+    openingTextOnly: ModelMessage[];
+    turn: Awaited<ReturnType<typeof runModelCall>>;
+    runLog: Logger;
+  },
+): Promise<{ content: CheckpointContent; checkpointAnterior: LeadCheckpointRow | null; closingCallId: string | null }> {
+  const { tenantId, leadId, jobId } = ids;
+  const { agentConfig, system, openingTextOnly, turn, runLog } = args;
+
+  // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
+  // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
+  // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
+  // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
+  const responseMessages =
+    deps.knobs.prune !== undefined
+      ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
+      : turn.result.response.messages;
+
+  // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
+  //
+  // Também sob o handoff (o do turno inteiro, em `runAgentTurn`): o teto pode
+  // ser cruzado ENTRE as duas chamadas — a primeira é que gasta o grosso do
+  // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
+  // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
+  // sem nada tendo mudado no meio.
+  const closing = await runModelCall(
+    pool,
+    deps.llmCfg,
+    {
+      tenantId,
+      leadId,
+      jobId,
+      purpose: 'checkpoint',
+      ...(agentConfig !== null
+        ? {
+            model: agentConfig.model,
+            llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
+          }
+        : {}),
+      system,
+      messages: [
+        // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+        // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+        ...openingTextOnly,
+        ...responseMessages,
+        { role: 'user', content: CHECKPOINT_INSTRUCTION },
+      ],
+    },
+    { registry: deps.registry, log: runLog },
   );
+  const content = parseCheckpointText(closing.result.text);
 
-  if (mudanca.emit) {
-    try {
-      const r = await emitAgentActivityForContact({
-        pool,
-        organizationId: tenantId,
-        contactId: leadId,
-        type: "ai_turn",
-        sourceModule: "agent",
-        sourceId: job.id,
-        // O lastro é a chamada de modelo que PRODUZIU este checkpoint
-        // (llm_calls.id). Sem ele a linha entraria como 'system' e perderia a
-        // autoria justamente no evento mais "de IA" que existe.
-        ...(closing.callId ? { evidence: { llm_call_ids: [closing.callId] } } : {}),
-        ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
-        reason: mudanca.reason,
-        payload: {
-          added_commitments: mudanca.addedCommitments,
-          added_objections: mudanca.addedObjections,
-          next_action_changed: mudanca.nextActionChanged,
-        },
-      });
-      if (!r.routed) {
-        runLog.info('checkpoint sem negócio para pendurar: registrado no event_log', {
-          reason: r.reason,
-        });
-      }
-    } catch (err) {
-      // A timeline do turno não pode derrubar o turno.
-      runLog.error('falha ao registrar atividade de checkpoint (segue)', {
-        error: err instanceof Error ? err.name : 'unknown',
-      });
-    }
-  }
+  // Wave 3 (2.4): o checkpoint anterior é lido ANTES de gravar o novo — a
+  // timeline recebe o DIFF, nunca o snapshot. Emitir a cada turno encheria a
+  // tela com "a IA pensou" e enterraria a única linha que muda o que alguém
+  // faria a seguir.
+  const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
+  await insertCheckpoint(pool, { tenantId, leadId, jobId, content });
 
-  // ── A NOTA DO NEGÓCIO ──────────────────────────────────────────────────────
-  //
-  // O turno acabou de mexer em TUDO que a fórmula lê: compromissos e objeções
-  // (o checkpoint acima) e a qualificação BANT (`lead_state`, escrita pelo
-  // update_lead_state do modelo). Recalcular aqui é recalcular no instante em
-  // que os sinais mudaram — não há evento melhor.
-  //
-  // ⚠️ POR QUE ISTO EXISTE: `recalculaScoreDoLead` estava escrita, testada e
-  // com constraint no banco exigindo o `reason` — e SEM UM ÚNICO CHAMADOR no
-  // repositório inteiro. Nenhuma nota jamais foi calculada. O modo de falha era
-  // mudo: o card simplesmente não mostrava número, e "não tem nota ainda" é
-  // indistinguível de "ninguém nunca calcula".
-  //
-  // Fora do `if (mudanca.emit)` DE PROPÓSITO: o BANT muda em turnos que não
-  // mexem no checkpoint, e esses turnos também mudam a nota. Amarrar o cálculo
-  // à emissão da atividade faria a nota envelhecer em silêncio — o mesmo
-  // defeito, um andar acima.
-  //
-  // Falha aqui não derruba o turno: nota é derivado, e o próximo turno
-  // recalcula. O que não pode é o cliente ficar sem resposta por causa dela.
-  try {
-    const alvo = await resolveActiveLeadForContact(
-      (
-        await pool.query<LeadCandidate>(
-          `select l.id, l.organization_id, l.pipeline_id, l.status,
-                  l.last_activity_at, l.created_at
-             from crm_leads l
-            where l.organization_id = $1 and l.contact_id = $2`,
-          [tenantId, leadId],
-        )
-      ).rows,
-    );
-    if (alvo.routed) {
-      const r = await recalculaScoreDoLead(pool, tenantId, alvo.leadId);
-      runLog.info('score do negócio recalculado', {
-        lead_id: alvo.leadId,
-        gravou: r.gravou,
-        ...(r.motivo !== undefined ? { motivo: r.motivo } : {}),
+  return { content, checkpointAnterior, closingCallId: closing.callId };
+}
+
+/**
+ * F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
+ * promessa fora de tabela (F4-01). Ambos já estão determinados quando este passo
+ * roda (o jailbreak rodou na abertura; as tentativas de envio já passaram pelo
+ * loop). Dispara escalação humana em inbox_items (dedup por episódio). Advisório:
+ * o classifier sozinho nunca escala — o gate determinístico é que confirma a
+ * promessa indevida. Chamada ANTES do runError/veto para não se perder num turno
+ * que falha o envio depois.
+ */
+async function escalarSeJailbreakComPromessaForaDeTabela(
+  pool: pg.Pool,
+  args: { tenantId: string; leadId: string; jailbreakLevel: JailbreakLevel; outOfTablePromiseAttempted: boolean },
+  runLog: Logger,
+): Promise<void> {
+  const { tenantId, leadId, jailbreakLevel, outOfTablePromiseAttempted } = args;
+  if (jailbreakLevel === JAILBREAK_ESCALATION_LEVEL && outOfTablePromiseAttempted) {
+    const created = await escalateJailbreakPromise(pool, { tenantId, leadId, level: jailbreakLevel });
+    if (created > 0) {
+      runLog.warn('jailbreak: escalação humana criada (flag alta + promessa fora de tabela no turno)', {
+        jailbreak_level: jailbreakLevel,
       });
     }
-  } catch (err) {
-    runLog.error('falha ao recalcular score (segue)', {
-      error: err instanceof Error ? err.name : 'unknown',
-    });
   }
+}
 
-  // F3-11: divergência classificador×modelo. O classificador sugeriu um estágio; se o
-  // modelo confirmou (via update_lead_state — a máquina F2-10) um estágio DIFERENTE, o
-  // desacordo vira candidato ao golden set (fs em runtime — reuso do dir da F3-09). Sem
-  // sugestão, sem confirmação, ou concordância ⇒ nenhum arquivo (zero divergência).
-  if (
-    deps.knobs.goldenCandidatesDir !== undefined &&
-    stageSuggestion !== null &&
-    confirmedStage !== null &&
-    stageSuggestion !== confirmedStage
-  ) {
-    await recordStageDivergenceCandidate(
-      deps.knobs.goldenCandidatesDir,
-      {
-        tenantId,
-        leadId,
-        jobId: job.id,
-        signal: skillSignal,
-        divergence: { suggested: stageSuggestion, confirmed: confirmedStage },
-      },
-      runLog,
-    );
-  }
-
-  const blocked = outcomes.find((o) => o.kind === 'blocked');
-  if (blocked !== undefined) {
-    // veto permanente (regra dura nº 2): cancela o job e cacheia o opt-out —
-    // depois do checkpoint (o artefato do turno fica registrado mesmo em veto).
-    await applySendOutcome(
+/**
+ * F3-07: compaction + flush pré-compaction. Sem `deps.knobs.compaction` (ou sem
+ * resumo compactado devolvido), `effectivePrevious`/`effectiveContext` saem iguais
+ * aos de entrada — o resto do turno nunca precisa saber se compactou.
+ *
+ * Definida DEPOIS de `executarTurnoDoAgente` de propósito: a chamada de modelo
+ * (`maybeCompact`) precisa continuar aparecendo, no texto, DENTRO do núcleo
+ * escoltado por `comHandoffSeOrcamentoAcabar` — é isso que
+ * `tests/unit/handoff-por-orcamento.test.ts` mede (a escolta cobre até as
+ * chamadas indiretas, que rodam primeiro). `function` é hoisted, então a ordem
+ * textual não muda quem chama quem.
+ */
+async function compactarSeNecessario(
+  pool: pg.Pool,
+  deps: InboundTurnDeps,
+  ids: { tenantId: string; leadId: string; jobId: string },
+  args: {
+    previous: LeadCheckpointRow | null;
+    openingContext: { context: LeadContext };
+    argsAux: (configuredModel: string | undefined) => AuxModelArgs;
+    runLog: Logger;
+  },
+): Promise<{ effectivePrevious: LeadCheckpointRow | null; effectiveContext: LeadContext }> {
+  const { tenantId, leadId, jobId } = ids;
+  const { previous, openingContext, argsAux, runLog } = args;
+  // F3-07: compaction + flush pré-compaction. Quando o histórico cresce além do limiar,
+  // o FLUSH grava as notas duráveis (lead_notes) e a compaction resume a conversa com o
+  // modelo BARATO; o resumo compactado entra no lugar do rolling summary e o transcript
+  // integral é trocado por uma cauda recente sob orçamento (regra de cache 15). O rolling
+  // summary DURÁVEL segue vindo do checkpoint de fechamento; aqui ele só alimenta o prompt.
+  let effectivePrevious = previous;
+  let effectiveContext = openingContext.context;
+  if (deps.knobs.compaction !== undefined) {
+    const compacted = await maybeCompact(
       pool,
-      blocked,
-      { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
-      { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+      deps.llmCfg,
+      { tenantId, leadId, jobId },
+      {
+        context: openingContext.context,
+        previousSummary: previous?.rolling_summary ?? '',
+        // A compactação é o QUARTO call site da mesma regra, e o #151 só cobriu
+        // três: ela também pedia o modelo do agente ao provider default da org.
+        // Mesmo 404, mesma morte de turno — só que num caminho que roda quando a
+        // conversa já é longa, ou seja, mais tarde e com menos gente olhando.
+        knobs: { ...deps.knobs.compaction, ...argsAux(deps.knobs.compaction.model) },
+        notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
+      },
+      { registry: deps.registry, log: runLog },
     );
-    throw new JobSettledError(
-      'turno encerrado com veto do sink (is_blocked) — job cancelado em definitivo, checkpoint gravado',
-    );
+    if (compacted !== null) {
+      // Só o rolling_summary é sobrescrito (o resumo compactado carrega compromissos/
+      // objeções/estágio/dados pessoais planificados). O `previous` sintético do 1º
+      // turno com histórico importado é local — nunca persistido; o fechamento grava o
+      // checkpoint real.
+      const base: LeadCheckpointRow =
+        previous ??
+        {
+          id: '',
+          seq: '0',
+          organization_id: tenantId,
+          contact_id: leadId,
+          job_id: null,
+          created_at: new Date(),
+          commitments: [],
+          objections: [],
+          next_action: null,
+          rolling_summary: '',
+          // Este `previous` é sintetizado a partir de histórico IMPORTADO — não
+          // houve turno nosso, logo ninguém declarou nada. `null` é o valor
+          // honesto; um objeto vazio afirmaria uma avaliação que não aconteceu.
+          declaracao: null,
+        };
+      effectivePrevious = { ...base, rolling_summary: renderCompactedSummary(compacted) };
+      effectiveContext = {
+        ...openingContext.context,
+        messages: trimTranscriptToBudget(openingContext.context.messages, deps.knobs.compaction.transcriptMaxTokens),
+      };
+    }
   }
-
-  await mcpCleanup?.();
-
-  runLog.info('turno do agente concluído', {
-    kind: job.kind,
-    messages_sent: outcomes.length,
-    model: turn.model,
-  });
+  return { effectivePrevious, effectiveContext };
 }
 
 /**

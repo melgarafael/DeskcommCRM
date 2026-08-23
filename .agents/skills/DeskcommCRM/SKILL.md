@@ -1,79 +1,43 @@
-```markdown
-# DeskcommCRM Development Patterns
+# DeskcommCRM — doutrina de código
 
-> Auto-generated skill from repository analysis
+> A fonte da verdade é o `CLAUDE.md` da raiz, lido do `origin/main` e não de um resumo. Este
+> arquivo existe para te fazer abri-lo na hora certa e para carregar as três regras que mais
+> custam caro quando esquecidas.
 
-## Overview
-This skill teaches the core development patterns and conventions used in the DeskcommCRM TypeScript codebase. It covers file organization, code style, commit message standards, and testing patterns, providing practical examples and command suggestions to streamline your workflow.
+## 1. Leia antes de escrever
 
-## Coding Conventions
+| arquivo | quando |
+|---|---|
+| `CLAUDE.md` | **sempre**, antes de qualquer código — contém a Definition of Done, que muda |
+| `VISION.md` | antes de decidir escopo, ou de dizer não a uma feature |
+| `docs/doctrine/` | ao mexer em canal, agente, ou peça que se conecte a outra |
+| `ARCHITECTURE.md` | para a visão de uma página |
 
-### File Naming
-- Use **snake_case** for all file names.
-  - Example:  
-    ```
-    user_profile.ts
-    customer_data_manager.ts
-    ```
+**Não confie em resumo de doutrina — nem neste arquivo.** Abra o `CLAUDE.md`.
 
-### Import Style
-- Use **relative imports** for referencing modules.
-  - Example:
-    ```typescript
-    import { getUser } from './user_utils';
-    import { Customer } from '../models/customer';
-    ```
+## 2. As três que mais custam
 
-### Export Style
-- Use **named exports** for all modules.
-  - Example:
-    ```typescript
-    // In user_utils.ts
-    export function getUser(id: string) { ... }
-    export const USER_ROLE = 'admin';
-    ```
+**Multi-tenancy.** Toda tabela tenant-aware leva `organization_id uuid not null` e RLS com policy
+`tenant_isolation_<tabela>_all` via `fn_user_org_ids()`. Service role bypassa RLS — handler que o
+usa filtra `organization_id` **manualmente**, resolvido de fonte confiável (cookie, JWT, segredo de
+webhook, token de path), **nunca do body**. No backend é sempre `getUser()`, nunca `getSession()`.
 
-### Commit Messages
-- Follow **conventional commits** with the `fix` prefix for bug fixes.
-  - Example:
-    ```
-    fix: correct customer email validation logic
-    ```
+**Schema sai em tripla.** Arquivo em `supabase/migrations/`, apêndice **idempotente** no
+`supabase/baseline.sql`, e linha no `MANIFEST.md`. O kit self-host aplica **só o baseline** — o que
+não chega lá não chega em quem instalou numa VPS, que é o cliente que paga.
 
-## Workflows
+**Nenhuma feature nomeia um provider.** Provider vive em `lib/channels/`. `pnpm lint:channels` é
+catraca com lista de dívida.
 
-### Bug Fix Workflow
-**Trigger:** When you need to fix a bug in the codebase  
-**Command:** `/fix-bug`
+## 3. Convenção de arquivo — o oposto do que a versão anterior ensinava
 
-1. Identify the bug and create a new branch.
-2. Make code changes following the coding conventions.
-3. Write or update relevant tests (`*.test.*` files).
-4. Commit your changes using the `fix:` prefix and a concise description.
-    - Example: `fix: resolve crash on empty customer list`
-5. Push your branch and open a pull request.
+A versão anterior deste arquivo era gerada automaticamente por análise de repositório e ensinava
+`snake_case` para nome de arquivo e imports relativos. **O repo usa o oposto**: `kebab-case` para
+nome de arquivo (`user-profile.ts`, não `user_profile.ts`) e o alias `@/` para import
+(`import { getUser } from "@/lib/auth/get-user"`, não `./user_utils`). Nenhum comando de fluxo
+(`/fix-bug`, `/add-module`) existe neste repo — não invente um.
 
-### Adding a New Module
-**Trigger:** When you need to add a new feature or module  
-**Command:** `/add-module`
+## 4. Antes de dizer "pronto"
 
-1. Create new files using snake_case naming.
-2. Use relative imports to connect new and existing modules.
-3. Export functions and constants using named exports.
-4. Write corresponding tests in `*.test.*` files.
-5. Commit with an appropriate message (e.g., `feat: add customer notes module`).
-
-## Testing Patterns
-
-- Test files follow the `*.test.*` naming pattern.
-  - Example: `user_utils.test.ts`
-- The testing framework is not explicitly specified; check existing test files for structure.
-- Place tests alongside or near the modules they test.
-- Ensure all new features and bug fixes are covered by tests.
-
-## Commands
-| Command      | Purpose                                 |
-|--------------|-----------------------------------------|
-| /fix-bug     | Start the bug fix workflow              |
-| /add-module  | Start the new module addition workflow  |
-```
+Verde de teste não é prova de comportamento. Sabote a linha que você corrigiu e confirme que a
+suíte fica **vermelha**. Declare o que **não** mediu.
