@@ -29,6 +29,7 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
@@ -138,6 +139,12 @@ export async function GET(): Promise<Response> {
  */
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  // Cria/sincroniza definição aprovada pela Meta e pode derrubar a sessão de
+  // WhatsApp indiretamente (uploads e mensagens dependem da mesma conexão) —
+  // mesmo piso de "channels/templates" e "channels/official" (admin).
+  const authz = await requireRole("admin", { requestId, resource: "channel_partner_templates" });
+  if (!authz.ok) return authz.response;
+
   const r = await contexto(requestId);
   if (!r.ok) return r.res;
 

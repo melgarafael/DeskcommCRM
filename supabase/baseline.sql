@@ -13434,6 +13434,38 @@ grant execute on function public.fn_publish_rag_bot_version(uuid, uuid, uuid) to
 
 notify pgrst, 'reload schema';
 
+-- ---- RLS de papel em contacts (migration 0169) ----
+--
+-- `contacts` é o dado mais crítico do produto e sua única policy sempre foi
+-- tenancy-only, com GRANT ALL a authenticated — qualquer membro do tenant,
+-- inclusive viewer, lia/gravava/apagava contato direto pelo PostgREST. Mesmo
+-- par da 0150 (SELECT só-tenancy + escrita com fn_role_at_least), piso
+-- 'agent' porque é o que app/api/v1/contacts/route.ts e [id]/route.ts já
+-- exigem no POST/PATCH/DELETE. Ver comentário completo na migration 0169.
+
+drop policy if exists "tenant_isolation_contacts_all" on public.contacts;
+
+drop policy if exists "contacts_select" on public.contacts;
+create policy "contacts_select" on public.contacts
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "contacts_write" on public.contacts;
+create policy "contacts_write" on public.contacts
+  for all using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  );
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

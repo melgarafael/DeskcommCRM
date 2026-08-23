@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import {
@@ -132,10 +133,13 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const requestId = randomUUID();
-  const user = await loadAuthUser();
-  if (!user) return fail("unauthenticated", "Sessão expirada", 401);
-  const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) return fail("tenant_not_found", "Sem organização ativa", 404);
+  // Inicia/reinicia a sessão oficial de WhatsApp do tenant — `?restart=1`
+  // derruba a sessão antes de reabrir. Mesmo piso de "channels/official"
+  // (admin): reconectar o canal não é operação de agente.
+  const authz = await requireRole("admin", { requestId, resource: "onboarding_whatsapp_session" });
+  if (!authz.ok) return authz.response;
+  const user = authz.user;
+  const activeOrg = authz.org;
   const waha = getWahaClient();
   if (!waha) return fail("waha_not_configured", "Suba o Docker (docker compose up -d waha) e tente novamente.", 503);
   const sessionName = defaultSessionName(activeOrg.orgId);

@@ -182,7 +182,7 @@ const DIVIDA_RBAC_CONHECIDA = new Set([
   "agent_cases", "agent_inbox_items", "ai_agent_runs", "ai_chunks", "ai_faq_items",
   "ai_invocations", "ai_knowledge_sources", "ai_knowledge_versions", "ai_router_decisions",
   "before_send_traces", "channel_knobs", "channel_session_health", "channel_session_warmup",
-  "contact_field_proposals", "contacts", "crm_lead_reactivations", "crm_lead_risk_states",
+  "contact_field_proposals", "crm_lead_reactivations", "crm_lead_risk_states",
   "crm_lead_scores", "cron_jobs", "demanda_conversas", "demandas",
   "disclosure_template_pointers", "disclosure_template_versions",
   "flywheel_distiller_proposals", "flywheel_judge_verdicts", "followup_enrollment_events",
