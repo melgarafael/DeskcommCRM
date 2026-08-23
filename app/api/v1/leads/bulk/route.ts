@@ -249,34 +249,48 @@ export async function POST(req: NextRequest): Promise<Response> {
       const add = input.params.add ?? [];
       const remove = new Set(input.params.remove ?? []);
       // Compute next tags per row from already-fetched `scoped`.
-      for (const row of visible) {
+      const rows = visible.map((row) => {
         const current = (row.tags ?? []) as string[];
         const next = Array.from(new Set([...current.filter((t) => !remove.has(t)), ...add]));
-        const { error } = await supabase
-          .from("crm_leads")
-          .update({ tags: next, updated_at: nowIso })
-          .eq("id", row.id);
-        if (error) return fail("internal_error", error.message, 500, { requestId });
-        updatedCount += 1;
-
-        // Per-lead lead.tag_added (only-when-added), same contract as
-        // updateLeadHandler, so the automation engine fires for bulk tags too.
         const addedTags = add.filter((t) => !current.includes(t));
-        if (addedTags.length) {
-          await supabase
-            .rpc("emit_event", {
-              p_event_type: "lead.tag_added",
-              p_entity_kind: "crm_lead",
-              p_entity_id: row.id,
-              p_payload: { added_tags: addedTags, tags: next },
-              p_metadata: { request_id: requestId, actor_user_id: user.id },
-              p_organization_id: organizationId,
-            })
-            .then(({ error: emitError }) => {
-              if (emitError) console.error("[lead.bulk_tagged] emit_event failed", emitError.message);
-            });
-        }
-      }
+        return { row, next, addedTags };
+      });
+
+      // Wave 3 (CORE 2): parallelize like the `move` case above — a
+      // sequential await-per-row here turned into an N+1 that made bulk tag
+      // take seconds where bulk move/assign/delete are near-instant.
+      const results = await Promise.all(
+        rows.map(({ row, next }) =>
+          supabase
+            .from("crm_leads")
+            .update({ tags: next, updated_at: nowIso })
+            .eq("id", row.id),
+        ),
+      );
+      const firstError = results.find((r) => r.error)?.error;
+      if (firstError) return fail("internal_error", firstError.message, 500, { requestId });
+      updatedCount = rows.length;
+
+      // Per-lead lead.tag_added (only-when-added), same contract as
+      // updateLeadHandler, so the automation engine fires for bulk tags too.
+      await Promise.all(
+        rows
+          .filter(({ addedTags }) => addedTags.length)
+          .map(({ row, next, addedTags }) =>
+            supabase
+              .rpc("emit_event", {
+                p_event_type: "lead.tag_added",
+                p_entity_kind: "crm_lead",
+                p_entity_id: row.id,
+                p_payload: { added_tags: addedTags, tags: next },
+                p_metadata: { request_id: requestId, actor_user_id: user.id },
+                p_organization_id: organizationId,
+              })
+              .then(({ error: emitError }) => {
+                if (emitError) console.error("[lead.bulk_tagged] emit_event failed", emitError.message);
+              }),
+          ),
+      );
       break;
     }
     case "delete": {
