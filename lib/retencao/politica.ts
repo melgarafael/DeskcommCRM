@@ -31,6 +31,22 @@ export const RETENCAO_FILA_DIAS_PISO = 7;
 export const RETENCAO_AUDITORIA_DIAS_PADRAO = 1825;
 /** Piso da auditoria: o knob nunca vira apagador de rastro recente. */
 export const RETENCAO_AUDITORIA_DIAS_PISO = 90;
+/**
+ * `event_log` é o mesmo tipo de dado que `job_queue` — bus interno operacional,
+ * não trilha legal/LGPD (isso é `api_audit_log`) — por isso herda os MESMOS
+ * números, não os da auditoria. Knob próprio (não o de `job_queue`) porque as
+ * duas tabelas crescem em ritmos diferentes: um clone com muito tráfego de
+ * WhatsApp gera `event_log` (um evento por mensagem, `message.*`) muito mais
+ * rápido que `job_queue` (um job por turno de conversa).
+ */
+export const RETENCAO_EVENT_LOG_DIAS_PADRAO = 90;
+/**
+ * Piso de 7 dias — mesmo horizonte da `job_queue` (migration 0167): o único
+ * consumidor de `event_log` sem janela própria é `health/circuit.ts`, que já é
+ * janelado (`windowMs`, default 6h — muito abaixo de 7 dias) e lê exatamente os
+ * eventos `ai_agent.dispatch_requested` que este expurgo também alcança.
+ */
+export const RETENCAO_EVENT_LOG_DIAS_PISO = 7;
 
 export interface RetencaoInterpretada {
   /** Dias a pedir ao banco. Nunca abaixo do piso, nunca `NaN`. */

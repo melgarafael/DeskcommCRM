@@ -12,6 +12,8 @@ import {
 import {
   RETENCAO_AUDITORIA_DIAS_PADRAO,
   RETENCAO_AUDITORIA_DIAS_PISO,
+  RETENCAO_EVENT_LOG_DIAS_PADRAO,
+  RETENCAO_EVENT_LOG_DIAS_PISO,
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
   interpretarRetencao,
@@ -23,6 +25,7 @@ vi.mock("@/lib/env", () => ({
     INTERNAL_SECRET: "",
     JOB_QUEUE_RETENTION_DAYS: "",
     AUDIT_LOG_RETENTION_DAYS: "",
+    EVENT_LOG_RETENTION_DAYS: "",
   },
 }));
 const auditou = vi.fn();
@@ -60,13 +63,23 @@ vi.mock("@/lib/supabase/admin", () => ({
 function bancoQueDevolve(sequencias: {
   fila: number[];
   auditoria: number[];
+  eventLog?: number[];
 }): { db: PodaDb; chamadas: { nome: string; dias: number; limite: number }[] } {
   const chamadas: { nome: string; dias: number; limite: number }[] = [];
-  const restante = { fila: [...sequencias.fila], auditoria: [...sequencias.auditoria] };
+  const restante = {
+    fila: [...sequencias.fila],
+    auditoria: [...sequencias.auditoria],
+    eventLog: [...(sequencias.eventLog ?? [0])],
+  };
   const db: PodaDb = {
     async rpc(nome, args) {
       chamadas.push({ nome, dias: args.p_retencao_dias, limite: args.p_limite });
-      const balde = nome === "fn_podar_fila_de_jobs" ? restante.fila : restante.auditoria;
+      const balde =
+        nome === "fn_podar_fila_de_jobs"
+          ? restante.fila
+          : nome === "fn_expurgar_auditoria_vencida"
+            ? restante.auditoria
+            : restante.eventLog;
       return { data: balde.shift() ?? 0, error: null };
     },
   };
@@ -133,7 +146,7 @@ describe("podarHistorico — o laço de lotes", () => {
   });
 
   it("pede ao banco os dias do padrão quando o .env está intocado", async () => {
-    const { db, chamadas } = bancoQueDevolve({ fila: [0], auditoria: [0] });
+    const { db, chamadas } = bancoQueDevolve({ fila: [0], auditoria: [0], eventLog: [0] });
     const r = await podarHistorico(db, {});
     expect(chamadas[0]).toEqual({
       nome: "fn_podar_fila_de_jobs",
@@ -145,20 +158,27 @@ describe("podarHistorico — o laço de lotes", () => {
       dias: RETENCAO_AUDITORIA_DIAS_PADRAO,
       limite: TAMANHO_DO_LOTE,
     });
+    expect(chamadas[2]).toEqual({
+      nome: "fn_podar_event_log",
+      dias: RETENCAO_EVENT_LOG_DIAS_PADRAO,
+      limite: TAMANHO_DO_LOTE,
+    });
     expect(r.avisos).toEqual([]);
   });
 
   it("eleva ao piso o knob abaixo dele e devolve o aviso", async () => {
-    const { db, chamadas } = bancoQueDevolve({ fila: [0], auditoria: [0] });
+    const { db, chamadas } = bancoQueDevolve({ fila: [0], auditoria: [0], eventLog: [0] });
     const r = await podarHistorico(db, {
       JOB_QUEUE_RETENTION_DAYS: "1",
       AUDIT_LOG_RETENTION_DAYS: "0",
+      EVENT_LOG_RETENTION_DAYS: "1",
     });
     expect(chamadas[0]?.dias).toBe(RETENCAO_FILA_DIAS_PISO);
     // "0" é lixo (não-positivo), então cai no PADRÃO, não no piso — é a
     // diferença entre "escolheu pouco" e "escreveu bobagem".
     expect(chamadas[1]?.dias).toBe(RETENCAO_AUDITORIA_DIAS_PADRAO);
-    expect(r.avisos).toHaveLength(2);
+    expect(chamadas[2]?.dias).toBe(RETENCAO_EVENT_LOG_DIAS_PISO);
+    expect(r.avisos).toHaveLength(3);
   });
 
   it("erro do banco sobe — a poda não engole falha em silêncio", async () => {
@@ -171,16 +191,20 @@ describe("podarHistorico — o laço de lotes", () => {
   });
 });
 
-describe("houveEfeito — as duas direções", () => {
+describe("houveEfeito — as três direções", () => {
   const base = {
     jobs_apagados: 0,
     auditoria_apagada: 0,
+    event_log_apagado: 0,
     lotes_fila: 1,
     lotes_auditoria: 1,
+    lotes_event_log: 1,
     fila_tem_resto: false,
     auditoria_tem_resto: false,
+    event_log_tem_resto: false,
     retencao_fila_dias: RETENCAO_FILA_DIAS_PADRAO,
     retencao_auditoria_dias: RETENCAO_AUDITORIA_DIAS_PADRAO,
+    retencao_event_log_dias: RETENCAO_EVENT_LOG_DIAS_PADRAO,
     avisos: [] as string[],
   };
 
@@ -188,16 +212,17 @@ describe("houveEfeito — as duas direções", () => {
     expect(houveEfeito(base)).toBe(false);
   });
 
-  it("apagou job → audita; apagou auditoria → audita", () => {
+  it("apagou job → audita; apagou auditoria → audita; apagou event_log → audita", () => {
     // A segunda é a que não pode se perder: é ela que faz o expurgo do audit
     // deixar rastro em vez de encolher a trilha em silêncio.
     expect(houveEfeito({ ...base, jobs_apagados: 1 })).toBe(true);
     expect(houveEfeito({ ...base, auditoria_apagada: 1 })).toBe(true);
+    expect(houveEfeito({ ...base, event_log_apagado: 1 })).toBe(true);
   });
 });
 
 describe("os pisos do TypeScript e os do SQL são os mesmos números", () => {
-  it("os quatro valores da política aparecem literalmente no baseline.sql", async () => {
+  it("os quatro valores de fila/auditoria aparecem literalmente no baseline.sql", async () => {
     // Duas cópias de um piso é como um piso vira decorativo: o `.env.example`
     // documenta um número, a função do banco aplica outro, e ninguém percebe
     // porque os dois lados continuam "funcionando".
@@ -209,6 +234,17 @@ describe("os pisos do TypeScript e os do SQL são os mesmos números", () => {
     expect(bloco).toContain(`greatest(coalesce(p_retencao_dias, ${RETENCAO_FILA_DIAS_PADRAO}), ${RETENCAO_FILA_DIAS_PISO})`);
     expect(bloco).toContain(
       `greatest(coalesce(p_retencao_dias, ${RETENCAO_AUDITORIA_DIAS_PADRAO}), ${RETENCAO_AUDITORIA_DIAS_PISO})`,
+    );
+  });
+
+  it("os dois valores do event_log aparecem literalmente no baseline.sql", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const sql = readFileSync(join(__dirname, "..", "..", "supabase", "baseline.sql"), "utf8");
+    const bloco = sql.slice(sql.indexOf("-- ---- poda do event_log (migration 0172)"));
+    expect(bloco.length).toBeGreaterThan(500);
+    expect(bloco).toContain(
+      `greatest(coalesce(p_retencao_dias, ${RETENCAO_EVENT_LOG_DIAS_PADRAO}), ${RETENCAO_EVENT_LOG_DIAS_PISO})`,
     );
   });
 });

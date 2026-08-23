@@ -13615,6 +13615,70 @@ create policy "agent_inbox_items_delete" on public.agent_inbox_items
 
 notify pgrst, 'reload schema';
 
+-- ---- poda do event_log (migration 0172) ----
+--
+-- Terceira tabela da mesma família de crescimento sem poda que a 0167 já
+-- resolveu para job_queue/api_audit_log (issue #261) — `event_log` ficou fora
+-- daquela issue de propósito. Argumento completo, incluindo por que os
+-- event_type SEM handler registrado (message.sending/sent/failed/outbound,
+-- lead.won/lost/reopened/assigned) ficam pending para sempre e por que este
+-- expurgo NÃO os alcança (mesma regra "o que tem dono não sai" da 0167,
+-- aplicada aqui), no cabeçalho de
+-- supabase/migrations/20260823130000_0172_poda_do_event_log.sql.
+--
+-- `automation_rule_runs.event_id references event_log(id) on delete set null`
+-- é a ÚNICA FK apontando para event_log — apagar nunca falha nem leva o run
+-- junto, e app/api/v1/automation-rules/runs/[runId]/resend/route.ts já trata
+-- event_id nulo (409 event_gone) antes desta migration existir.
+create index if not exists idx_event_log_poda
+  on public.event_log (created_at)
+  where status in ('done', 'dead');
+
+create or replace function public.fn_podar_event_log(
+  p_retencao_dias int default null,
+  p_limite int default null
+) returns int
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  -- Piso de 7 dias: health/circuit.ts é o único consumidor de event_log sem
+  -- janela própria, e a dele (windowMs, default 6h) fica bem abaixo disso.
+  v_dias int := greatest(coalesce(p_retencao_dias, 90), 7);
+  v_limite int := least(greatest(coalesce(p_limite, 1000), 1), 10000);
+  v_apagados int;
+begin
+  with candidatos as (
+    select e.id
+      from public.event_log e
+     where e.status in ('done', 'dead')
+       and e.created_at < now() - make_interval(days => v_dias)
+     order by e.created_at
+     limit v_limite
+  )
+  delete from public.event_log e
+   using candidatos c
+   where e.id = c.id;
+  get diagnostics v_apagados = row_count;
+  return v_apagados;
+end;
+$$;
+
+revoke execute on function public.fn_podar_event_log(int, int)
+  from public, anon, authenticated;
+grant execute on function public.fn_podar_event_log(int, int) to service_role;
+
+comment on table public.event_log is
+  'Bus interno do CRM. Triggers e ServerActions inserem via emit_event(). Workers '
+  'consomem via lib/event-log/drain.ts (ou worker dedicado) e marcam status. '
+  'done/dead expurgados por public.fn_podar_event_log (piso de 7 dias) a partir do '
+  'cron app/api/v1/cron/data-retention. pending/processing nunca saem — inclusive '
+  'os event_type sem handler registrado, que por isso ficam pending para sempre '
+  '(achado documentado no cabeçalho da migration 0172).';
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

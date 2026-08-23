@@ -1,23 +1,28 @@
 /**
  * GET/POST /api/v1/cron/data-retention — issue #261.
  *
- * As duas tabelas que crescem sozinhas numa instalação parada — `job_queue` e
- * `api_audit_log` — não tinham poda nenhuma. Medido no HEAD anterior:
+ * As tabelas que crescem sozinhas numa instalação parada — `job_queue` e
+ * `api_audit_log` (issue #261) e, desde a migration 0172, `event_log` — não
+ * tinham poda nenhuma. Medido no HEAD anterior à 0167:
  *
  *     $ grep -rn "from job_queue" lib workers app supabase scripts | grep -i delete
  *     (zero linhas)
  *
  * E a retenção de 5 anos do audit existia só no `COMMENT ON TABLE` e em seis
- * documentos. O plano free do Supabase limita **500 MB de banco**: estas duas
- * estouram antes de qualquer tabela de negócio, e o bloat ainda cobra CPU (715
- * buffers varridos no `count(*)` do claim com zero linhas vivas, issue #260).
+ * documentos. O plano free do Supabase limita **500 MB de banco**: estas
+ * tabelas estouram antes de qualquer tabela de negócio, e o bloat ainda cobra
+ * CPU (715 buffers varridos no `count(*)` do claim com zero linhas vivas,
+ * issue #260). `event_log` some do resto do produto de propósito nesta
+ * migration: ela só some `done`/`dead` — os `event_type` sem consumer nunca
+ * chegam lá e continuam pending (achado documentado na 0172).
  *
  * O que ele faz, e o que deliberadamente NÃO faz:
  *
- *   - chama `fn_podar_fila_de_jobs` e `fn_expurgar_auditoria_vencida` EM LOTES.
- *     Um DELETE grande num banco de cliente trava a tabela e o tempo do lock
- *     cresce com o backlog; lotes de `TAMANHO_DO_LOTE` fecham a transação a cada
- *     rodada e o backlog drena ao longo de vários dias, sem janela de manutenção;
+ *   - chama `fn_podar_fila_de_jobs`, `fn_expurgar_auditoria_vencida` e
+ *     `fn_podar_event_log` EM LOTES. Um DELETE grande num banco de cliente
+ *     trava a tabela e o tempo do lock cresce com o backlog; lotes de
+ *     `TAMANHO_DO_LOTE` fecham a transação a cada rodada e o backlog drena ao
+ *     longo de vários dias, sem janela de manutenção;
  *   - **não decide o que é podável.** As duas regras (quais status são terminais,
  *     o que ainda tem dono, o piso da retenção) moram DENTRO das funções do
  *     banco, porque lá elas valem para qualquer chamador — inclusive um `psql`
@@ -57,6 +62,8 @@ import { logger } from "@/lib/logger";
 import {
   RETENCAO_AUDITORIA_DIAS_PADRAO,
   RETENCAO_AUDITORIA_DIAS_PISO,
+  RETENCAO_EVENT_LOG_DIAS_PADRAO,
+  RETENCAO_EVENT_LOG_DIAS_PISO,
   RETENCAO_FILA_DIAS_PADRAO,
   RETENCAO_FILA_DIAS_PISO,
   interpretarRetencao,
@@ -83,13 +90,17 @@ export const MAX_LOTES = 20;
 export interface ResultadoDaRetencao {
   jobs_apagados: number;
   auditoria_apagada: number;
+  event_log_apagado: number;
   lotes_fila: number;
   lotes_auditoria: number;
+  lotes_event_log: number;
   /** O último lote veio cheio e o teto foi atingido: sobrou trabalho para amanhã. */
   fila_tem_resto: boolean;
   auditoria_tem_resto: boolean;
+  event_log_tem_resto: boolean;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
+  retencao_event_log_dias: number;
   /** Avisos de configuração — nunca ausentes em silêncio quando existem. */
   avisos: string[];
 }
@@ -97,14 +108,14 @@ export interface ResultadoDaRetencao {
 /** Só a superfície que este cron usa — o teste injeta uma implementação. */
 export interface PodaDb {
   rpc(
-    nome: "fn_podar_fila_de_jobs" | "fn_expurgar_auditoria_vencida",
+    nome: "fn_podar_fila_de_jobs" | "fn_expurgar_auditoria_vencida" | "fn_podar_event_log",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
 }
 
 async function drenar(
   db: PodaDb,
-  nome: "fn_podar_fila_de_jobs" | "fn_expurgar_auditoria_vencida",
+  nome: "fn_podar_fila_de_jobs" | "fn_expurgar_auditoria_vencida" | "fn_podar_event_log",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -132,7 +143,11 @@ async function drenar(
  */
 export async function podarHistorico(
   db: PodaDb,
-  ambiente: { JOB_QUEUE_RETENTION_DAYS?: string; AUDIT_LOG_RETENTION_DAYS?: string },
+  ambiente: {
+    JOB_QUEUE_RETENTION_DAYS?: string;
+    AUDIT_LOG_RETENTION_DAYS?: string;
+    EVENT_LOG_RETENTION_DAYS?: string;
+  },
 ): Promise<ResultadoDaRetencao> {
   const fila = interpretarRetencao(ambiente.JOB_QUEUE_RETENTION_DAYS, {
     chave: "JOB_QUEUE_RETENTION_DAYS",
@@ -144,20 +159,30 @@ export async function podarHistorico(
     padrao: RETENCAO_AUDITORIA_DIAS_PADRAO,
     piso: RETENCAO_AUDITORIA_DIAS_PISO,
   });
+  const eventLog = interpretarRetencao(ambiente.EVENT_LOG_RETENTION_DAYS, {
+    chave: "EVENT_LOG_RETENTION_DAYS",
+    padrao: RETENCAO_EVENT_LOG_DIAS_PADRAO,
+    piso: RETENCAO_EVENT_LOG_DIAS_PISO,
+  });
 
   const jobs = await drenar(db, "fn_podar_fila_de_jobs", fila.dias);
   const linhas = await drenar(db, "fn_expurgar_auditoria_vencida", auditoria.dias);
+  const eventos = await drenar(db, "fn_podar_event_log", eventLog.dias);
 
   return {
     jobs_apagados: jobs.apagadas,
     auditoria_apagada: linhas.apagadas,
+    event_log_apagado: eventos.apagadas,
     lotes_fila: jobs.lotes,
     lotes_auditoria: linhas.lotes,
+    lotes_event_log: eventos.lotes,
     fila_tem_resto: jobs.temResto,
     auditoria_tem_resto: linhas.temResto,
+    event_log_tem_resto: eventos.temResto,
     retencao_fila_dias: fila.dias,
     retencao_auditoria_dias: auditoria.dias,
-    avisos: [fila.aviso, auditoria.aviso].filter((a): a is string => a !== null),
+    retencao_event_log_dias: eventLog.dias,
+    avisos: [fila.aviso, auditoria.aviso, eventLog.aviso].filter((a): a is string => a !== null),
   };
 }
 
@@ -167,7 +192,11 @@ export async function podarHistorico(
  * não fez nada" sozinho é satisfeito por um cron que nunca audita.
  */
 export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
-  return resultado.jobs_apagados > 0 || resultado.auditoria_apagada > 0;
+  return (
+    resultado.jobs_apagados > 0 ||
+    resultado.auditoria_apagada > 0 ||
+    resultado.event_log_apagado > 0
+  );
 }
 
 async function handle(req: NextRequest): Promise<Response> {
@@ -183,8 +212,8 @@ async function handle(req: NextRequest): Promise<Response> {
   let resultado: ResultadoDaRetencao;
   try {
     const admin = createAdminClient();
-    // As duas funções são novas e não estão em `lib/database.types.ts` (gerado a
-    // partir de um projeto Supabase vivo) — mesmo tratamento que
+    // As três funções são novas e não estão em `lib/database.types.ts` (gerado
+    // a partir de um projeto Supabase vivo) — mesmo tratamento que
     // `recover-stuck-messages` dá a `emit_event`.
     const db: PodaDb = {
       async rpc(nome, args) {
@@ -195,6 +224,7 @@ async function handle(req: NextRequest): Promise<Response> {
     resultado = await podarHistorico(db, {
       JOB_QUEUE_RETENTION_DAYS: env.JOB_QUEUE_RETENTION_DAYS,
       AUDIT_LOG_RETENTION_DAYS: env.AUDIT_LOG_RETENTION_DAYS,
+      EVENT_LOG_RETENTION_DAYS: env.EVENT_LOG_RETENTION_DAYS,
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

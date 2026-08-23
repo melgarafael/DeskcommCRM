@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { lastLine, sql } from "./gov-helpers";
 
 /**
- * A PODA DA FILA E O EXPURGO DA AUDITORIA CONTRA UM POSTGRES DE VERDADE — issue #261.
+ * A PODA DA FILA, O EXPURGO DA AUDITORIA E A PODA DO EVENT_LOG CONTRA UM
+ * POSTGRES DE VERDADE — issue #261 (job_queue/api_audit_log) e migration 0172
+ * (event_log, mesmo molde).
  *
  * ─── Por que invariante e não unidade ───────────────────────────────────────
  *
@@ -67,6 +69,9 @@ beforeEach(() => {
     delete from agent_inbox_items where organization_id = '${ORG}';
     delete from job_queue where organization_id = '${ORG}';
     delete from api_audit_log where organization_id = '${ORG}';
+    delete from automation_rule_runs where organization_id = '${ORG}';
+    delete from automation_rules where organization_id = '${ORG}';
+    delete from event_log where organization_id = '${ORG}';
   `);
 });
 
@@ -204,6 +209,84 @@ describe("fn_expurgar_auditoria_vencida — a retenção que a doutrina prometia
   });
 });
 
+describe("fn_podar_event_log — mesma regra, terceira tabela (migration 0172)", () => {
+  /** `entity_kind` deriva do prefixo do `event_type`, igual `fn_log_event`. */
+  function emitir(opts: { id: string; status: string; idadeDias: number; eventType?: string }): void {
+    const eventType = opts.eventType ?? "lead.created";
+    const entityKind = eventType.split(".")[0];
+    sql(`
+      insert into event_log (id, organization_id, event_type, entity_kind, status, created_at)
+      values ('${opts.id}', '${ORG}', '${eventType}', '${entityKind}', '${opts.status}',
+              now() - interval '${opts.idadeDias} days');
+    `);
+  }
+
+  it("controle positivo: a função existe e devolve inteiro", () => {
+    expect(conta(`select public.fn_podar_event_log(90, 100)`)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("apaga done/dead velhos e NÃO toca em pending/processing", () => {
+    emitir({ id: id(70), status: "done", idadeDias: 200 });
+    emitir({ id: id(71), status: "dead", idadeDias: 200 });
+    // Mesma idade dos dois terminais — se a regra fosse só idade, os quatro
+    // sairiam juntos. É o corte por status que este caso mede. `pending` aqui
+    // é EXATAMENTE o estado em que um event_type sem handler registrado fica
+    // para sempre (achado da migration 0172) — não pode ser varrido por idade.
+    emitir({ id: id(72), status: "pending", idadeDias: 200 });
+    emitir({ id: id(73), status: "processing", idadeDias: 200 });
+
+    const apagados = conta(`select public.fn_podar_event_log(90, 1000)`);
+    expect(apagados).toBe(2);
+
+    const sobraram = sql(
+      `select string_agg(status, ',' order by status) from event_log where organization_id = '${ORG}'`,
+    );
+    expect(lastLine(sobraram)).toBe("pending,processing");
+  });
+
+  it("NÃO apaga terminal recente (o corte é por idade, e é por created_at)", () => {
+    emitir({ id: id(74), status: "done", idadeDias: 10 });
+    expect(conta(`select public.fn_podar_event_log(90, 1000)`)).toBe(0);
+    expect(conta(`select count(*) from event_log where id = '${id(74)}'`)).toBe(1);
+  });
+
+  it("respeita o `p_limite`", () => {
+    for (let i = 0; i < 5; i += 1) {
+      emitir({ id: id(80 + i), status: "done", idadeDias: 300 });
+    }
+    expect(conta(`select public.fn_podar_event_log(90, 2)`)).toBe(2);
+    expect(conta(`select count(*) from event_log where organization_id = '${ORG}'`)).toBe(3);
+  });
+
+  it("o PISO de 7 dias mora na função: p_retencao_dias = 0 não apaga o de ontem", () => {
+    emitir({ id: id(90), status: "done", idadeDias: 1 });
+    emitir({ id: id(91), status: "done", idadeDias: 30 });
+    expect(conta(`select public.fn_podar_event_log(0, 1000)`)).toBe(1);
+    expect(conta(`select count(*) from event_log where id = '${id(90)}'`)).toBe(1);
+  });
+
+  it("automation_rule_runs.event_id vira NULL (on delete set null) — o run fica", () => {
+    // A ÚNICA FK que aponta para event_log. Ao contrário de job_queue (cascade),
+    // apagar o evento NUNCA leva o run junto — só zera o ponteiro, e a rota de
+    // resend já trata event_id nulo (409 event_gone) antes desta migration existir.
+    emitir({ id: id(92), status: "done", idadeDias: 300 });
+    sql(`
+      insert into automation_rules (id, organization_id, name, trigger_event)
+      values ('${id(93)}', '${ORG}', 'Regra da poda 261', 'lead.created');
+      insert into automation_rule_runs (id, organization_id, rule_id, event_id, status)
+      values ('${id(94)}', '${ORG}', '${id(93)}', '${id(92)}', 'success');
+    `);
+
+    conta(`select public.fn_podar_event_log(90, 1000)`);
+
+    expect(conta(`select count(*) from automation_rule_runs where id = '${id(94)}'`)).toBe(1);
+    const eventId = sql(
+      `select coalesce(event_id::text, 'null') from automation_rule_runs where id = '${id(94)}'`,
+    );
+    expect(lastLine(eventId)).toBe("null");
+  });
+});
+
 describe("append-only: por onde o expurgo pode passar, e por onde não pode", () => {
   it("NINGUÉM tem GRANT de DELETE/UPDATE em api_audit_log — nem service_role", () => {
     // É por isso que o expurgo precisa de uma `security definer`: o admin client
@@ -218,11 +301,11 @@ describe("append-only: por onde o expurgo pode passar, e por onde não pode", ()
     expect(lastLine(linhas)).toBe("");
   });
 
-  it("as duas funções não são executáveis por anon nem por authenticated", () => {
+  it("as três funções não são executáveis por anon nem por authenticated", () => {
     // As DUAS origens de EXECUTE: o grant direto do `ALTER DEFAULT PRIVILEGES
     // ... TO anon` do baseline, e o grant a PUBLIC que o Postgres dá na criação.
     // Tratar só uma deixa a função alcançável pela anon key, que vai ao browser.
-    for (const fn of ["fn_podar_fila_de_jobs", "fn_expurgar_auditoria_vencida"]) {
+    for (const fn of ["fn_podar_fila_de_jobs", "fn_expurgar_auditoria_vencida", "fn_podar_event_log"]) {
       for (const papel of ["anon", "authenticated"]) {
         const pode = lastLine(
           sql(`select has_function_privilege('${papel}', 'public.${fn}(int,int)', 'EXECUTE')`),
@@ -232,10 +315,10 @@ describe("append-only: por onde o expurgo pode passar, e por onde não pode", ()
     }
   });
 
-  it("service_role PODE executar as duas (controle positivo do revoke)", () => {
+  it("service_role PODE executar as três (controle positivo do revoke)", () => {
     // Sem este caso, um `revoke` largo demais deixaria a suíte verde e a poda
     // morta: ninguém apagaria nada e o teste de exposição continuaria passando.
-    for (const fn of ["fn_podar_fila_de_jobs", "fn_expurgar_auditoria_vencida"]) {
+    for (const fn of ["fn_podar_fila_de_jobs", "fn_expurgar_auditoria_vencida", "fn_podar_event_log"]) {
       const pode = lastLine(
         sql(`select has_function_privilege('service_role', 'public.${fn}(int,int)', 'EXECUTE')`),
       );
