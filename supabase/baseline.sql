@@ -13466,6 +13466,155 @@ create policy "contacts_write" on public.contacts
 
 notify pgrst, 'reload schema';
 
+-- ---- RLS de papel em messages (migration 0170) ----
+--
+-- Mesma classe de falha que a 0169 já corrigiu para contacts: messages_insert/
+-- update/delete checavam só organization_id, sem fn_role_at_least — qualquer
+-- membro do tenant, inclusive viewer, apagava/alterava mensagem de WhatsApp
+-- direto pelo PostgREST. Piso 'agent' porque é o que
+-- app/api/v1/messages/route.ts já exige no POST. Ver comentário completo na
+-- migration 0170. messages_select fica como está (já delega ao RLS de
+-- conversations via EXISTS).
+
+drop policy if exists "messages_insert" on public.messages;
+create policy "messages_insert" on public.messages
+  for insert with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists "messages_update" on public.messages;
+create policy "messages_update" on public.messages
+  for update using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  ) with check (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+drop policy if exists "messages_delete" on public.messages;
+create policy "messages_delete" on public.messages
+  for delete using (
+    public.fn_is_platform_admin()
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'agent'))
+  );
+
+notify pgrst, 'reload schema';
+
+-- ---- RLS de papel em agent_harness — as ~29 tabelas do motor (migration 0171) ----
+--
+-- A 0169/0170 fecharam contacts/messages e deixaram de propósito as tabelas
+-- da migration 0050 (job_queue, send_ledger, lead_checkpoints, metrics etc.)
+-- "para uma migration seguinte, com verificação por tabela". Esta é essa
+-- migration: para cada uma das 31 tabelas, grep em app/lib/workers/components
+-- por escrita via client de SESSÃO (cookie/RLS), nunca admin. Comentário
+-- completo (achado, decisão por tabela, piso de cada rota) na migration 0171.
+--
+-- 4 tabelas TÊM escrita por sessão confirmada, com o piso da rota que já a
+-- exige: agent_inbox_items (INSERT em 'viewer' — o board GET não tem
+-- requireRole nenhum hoje; UPDATE/DELETE em 'agent', defesa em profundidade),
+-- lead_checkpoints (reactivate-bot, 'agent'), lead_state (next-action,
+-- 'agent'), cron_jobs (leads/[id]/reactivation, 'agent'). As outras 26
+-- tabelas do loop, sem escrita por sessão encontrada, ganham piso 'agent' por
+-- defesa em profundidade (service_role sempre ignorou RLS; quem a policy nova
+-- passa a barrar é a chave anon/authenticated direto no PostgREST).
+-- watchdog_cursors (31ª) não muda: já tem RLS habilitada e ZERO policies —
+-- mais restritivo que qualquer piso de papel poderia ser.
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'job_queue', 'send_ledger',
+    'playbook_versions', 'playbook_pointers',
+    'channel_session_health', 'llm_calls',
+    'lead_checkpoints', 'lead_state', 'lead_state_transitions',
+    'metrics', 'channel_knobs', 'pacing_ledger', 'outbound_copies',
+    'cron_jobs',
+    'reentry_template_versions', 'reentry_template_pointers',
+    'lead_notes', 'skill_versions', 'skill_pointers',
+    'promise_table_versions', 'promise_table_pointers',
+    'disclosure_template_versions', 'disclosure_template_pointers',
+    'before_send_traces',
+    'flywheel_judge_verdicts', 'flywheel_distiller_proposals',
+    'judge_alignment_pool',
+    'reentry_knob_versions', 'reentry_knob_pointers'
+  ]
+  loop
+    execute format('drop policy if exists tenant_isolation_%s_all on public.%I', t, t);
+
+    execute format('drop policy if exists %s_select on public.%I', t, t);
+    execute format(
+      'create policy %s_select on public.%I for select
+         using (organization_id in (select public.fn_user_org_ids())
+                or public.fn_is_platform_admin())',
+      t, t
+    );
+
+    execute format('drop policy if exists %s_write on public.%I', t, t);
+    execute format(
+      'create policy %s_write on public.%I for all
+         using (
+           (organization_id in (select public.fn_user_org_ids())
+             and public.fn_role_at_least(organization_id, ''agent''))
+           or public.fn_is_platform_admin()
+         )
+         with check (
+           (organization_id in (select public.fn_user_org_ids())
+             and public.fn_role_at_least(organization_id, ''agent''))
+           or public.fn_is_platform_admin()
+         )',
+      t, t
+    );
+  end loop;
+end
+$$;
+
+drop policy if exists "tenant_isolation_agent_inbox_items_all" on public.agent_inbox_items;
+
+drop policy if exists "agent_inbox_items_select" on public.agent_inbox_items;
+create policy "agent_inbox_items_select" on public.agent_inbox_items
+  for select using (
+    organization_id in (select public.fn_user_org_ids())
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "agent_inbox_items_insert" on public.agent_inbox_items;
+create policy "agent_inbox_items_insert" on public.agent_inbox_items
+  for insert with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'viewer'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "agent_inbox_items_update" on public.agent_inbox_items;
+create policy "agent_inbox_items_update" on public.agent_inbox_items
+  for update using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists "agent_inbox_items_delete" on public.agent_inbox_items;
+create policy "agent_inbox_items_delete" on public.agent_inbox_items
+  for delete using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'agent'))
+    or public.fn_is_platform_admin()
+  );
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
