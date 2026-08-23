@@ -54,11 +54,15 @@ export async function GET(
     .eq("id", request.organization_id)
     .maybeSingle();
 
-  // Fetch audit trail for this request (cross-tenant)
+  // Fetch audit trail for this request (cross-tenant). `id` já foi confirmado
+  // como UUID existente pelo .eq() acima (comparação literal, não sujeita a
+  // injeção de filtro), mas escapamos aqui também por segurança-em-camadas —
+  // esta chamada usa .or(), cujo DSL é sensível a `,`/`(`/`)`.
+  const safeId = id.replace(/[,()]/g, "");
   const { data: auditRows, error: auditErr } = await admin
     .from("api_audit_log")
     .select("id, action, actor_user_id, resource_type, resource_id, metadata, created_at")
-    .or(`resource_id.eq.${id},metadata->>request_id.eq.${id}`)
+    .or(`resource_id.eq.${safeId},metadata->>request_id.eq.${safeId}`)
     .order("created_at", { ascending: true })
     .limit(50);
 
