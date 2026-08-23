@@ -22,17 +22,29 @@ export interface RouterMember {
 export interface LoadedRouter {
   id: string;
   name: string;
-  classifierModel: string;
+  /**
+   * `null` = sem override — `classifyIntent` não passa `model` ao seam, que
+   * herda `defaultModel` da própria organização (sempre pareado com o
+   * provider dela, nunca inventado). Ver `classifierProvider` para o porquê
+   * de model e provider serem lidos como PAR, nunca soltos.
+   */
+  classifierModel: string | null;
   /**
    * Provedor do classificador, quando o roteador escolhe um diferente do da org.
    *
-   * O modelo sozinho não basta: `resolveOrgLlmConfig` decide o provedor por
-   * `organizations.settings.llm.provider`, então gravar só `classifier_model`
-   * com um id de outro provedor manda o modelo para a casa errada. Uma
-   * organização com provedor Anthropic e crédito só na OpenAI ficava sem saída
-   * — o classificador falhava e TODO turno caía no fallback.
+   * Modelo e provider viajam sempre do MESMO lugar (mesma regra de
+   * `lib/agent-engine/agent/aux-model-args.ts`, PR #151): `resolveOrgLlmConfig`
+   * decide o provider por `organizations.settings.llm.provider`, então um
+   * `classifier_model` sem `classifier_provider` par é um id que pode não
+   * existir no catálogo do provider errado — ex.: o default de banco
+   * `'claude-haiku-4-5'` só existe no catálogo `anthropic`; numa org OpenRouter
+   * ele não bate com nenhuma linha de `ai_models` e o classificador falha
+   * SEMPRE, silenciosamente (confidence 0 em toda mensagem). Por isso
+   * `classifierModel` só é honrado abaixo quando vem PAREADO com
+   * `classifierProvider` — sem os dois, os dois viram `null` e o seam herda
+   * o par (provider + modelo) já validado da organização.
    *
-   * `null` = usa o provedor da organização (o comportamento de antes).
+   * `null` = usa o provedor (e o modelo) da organização.
    */
   classifierProvider: string | null;
   sticky: boolean;
@@ -86,13 +98,18 @@ export async function loadActiveRouter(
     sticky?: unknown;
     min_confidence?: unknown;
   };
-  const classifierModel =
-    typeof cfg.classifier_model === 'string' && cfg.classifier_model.trim() !== ''
-      ? cfg.classifier_model
-      : 'claude-haiku-4-5';
   const classifierProvider =
     typeof cfg.classifier_provider === 'string' && cfg.classifier_provider.trim() !== ''
       ? cfg.classifier_provider
+      : null;
+  // Só honra o modelo quando ele vem PAREADO com o provider (ver doc-comment
+  // de classifierProvider acima) — sem par, os dois ficam null e o seam herda
+  // modelo+provider já consistentes da organização.
+  const classifierModel =
+    classifierProvider !== null &&
+    typeof cfg.classifier_model === 'string' &&
+    cfg.classifier_model.trim() !== ''
+      ? cfg.classifier_model
       : null;
   const sticky = typeof cfg.sticky === 'boolean' ? cfg.sticky : true;
   const minConfidence =

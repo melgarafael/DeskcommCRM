@@ -1,8 +1,9 @@
 /**
  * Classificador de intenção do Intent Router (Fase 3 — Task 3). Roda um modelo
- * BARATO (router.classifierModel, config da org via ai_routers) pelo MESMO seam
- * agnóstico (runModelCall, purpose 'intent_router') pra decidir pra qual agente
- * do router o turno deve ir. Mesmo padrão de stage-classifier.ts: o classificador
+ * (router.classifierModel, config da org via ai_routers — `null` = herda
+ * modelo+provider default da organização) pelo MESMO seam agnóstico
+ * (runModelCall, purpose 'intent_router') pra decidir pra qual agente do
+ * router o turno deve ir. Mesmo padrão de stage-classifier.ts: o classificador
  * SUGERE, nunca escreve estado — quem decide o roteamento é o chamador (Task 4).
  *
  * Defesa contra saída de modelo (não-confiável): parseIntentVerdict NUNCA lança —
@@ -111,10 +112,12 @@ export async function classifyIntent(
         leadId: input.leadId,
         jobId: input.jobId,
         purpose: 'intent_router',
-        model: input.router.classifierModel,
-        // Sem isto, o modelo do roteador viaja para o provedor da ORG: escolher
-        // um modelo OpenAI numa org configurada como Anthropic mandava o id para
-        // o lugar errado, e a classificação falhava sempre.
+        // `classifierModel`/`classifierProvider` são lidos como PAR por
+        // router-config.ts — sem os dois, ambos null aqui, e omitir `model`
+        // faz o seam herdar defaultModel+provider da org (sempre consistentes
+        // entre si). Mandar um `model` solto sem o provider correspondente é o
+        // defeito de origem (PR #151): id válido para o provider errado.
+        ...(input.router.classifierModel ? { model: input.router.classifierModel } : {}),
         ...(input.router.classifierProvider
           ? { llmOverride: { provider: input.router.classifierProvider } }
           : {}),

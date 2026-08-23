@@ -91,4 +91,20 @@ describe('classifyIntent — provedor do classificador', () => {
       { log: log(), runModelCall } as never);
     expect(runModelCall.mock.calls[0]![2]).not.toHaveProperty('llmOverride');
   });
+
+  it('classifierModel null (Automático) NÃO manda "model" — o seam herda defaultModel da org, sempre pareado com o provider dela', async () => {
+    // Bug real: mandar um id fixo (ex.: 'claude-haiku-4-5') sem provider par
+    // pode não existir no catálogo do provider da org (OpenRouter, OpenAI,
+    // Google) — a chamada falhava sempre, silenciosamente (confidence 0).
+    const runModelCall = vi.fn().mockResolvedValue({ result: { text: '{"intent":"vendas","confidence":0.9}' } });
+    await classifyIntent({} as never, {} as never,
+      {
+        tenantId: 'o1', leadId: null, jobId: null, signal: 'oi',
+        router: { ...router, classifierModel: null, classifierProvider: null },
+      },
+      { log: log(), runModelCall } as never);
+    const call = runModelCall.mock.calls[0]![2];
+    expect(call).not.toHaveProperty('model');
+    expect(call).not.toHaveProperty('llmOverride');
+  });
 });
