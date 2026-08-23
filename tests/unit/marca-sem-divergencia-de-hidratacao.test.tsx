@@ -52,6 +52,8 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 
+import { caminhoRelativo } from "./helpers/varrer-codigo";
+
 vi.mock("next/navigation", () => ({ usePathname: () => "/app/ai/agents" }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({ toggleSidebar: vi.fn() }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
@@ -218,7 +220,9 @@ describe("catraca: `branding()` é server-only", () => {
     // Uma lista vazia faria a asserção principal passar sem medir nada — que é o
     // modo nº 1 de um gate ficar verde por engano.
     expect(varridos.length).toBeGreaterThan(500);
-    const clientes = varridos.filter((f) => /^["']use client["']/m.test(fs.readFileSync(f, "utf8")));
+    const clientes = varridos.filter((f) =>
+      /^["']use client["']/m.test(fs.readFileSync(f, "utf8")),
+    );
     expect(clientes.length).toBeGreaterThan(100);
   });
 
@@ -227,7 +231,9 @@ describe("catraca: `branding()` é server-only", () => {
     expect(semComentarios(`{/*\n  fala de branding() na prosa\n*/}\nconst x = 1;`)).not.toMatch(
       /\bbranding\(\)/,
     );
-    expect(semComentarios(`const nome = branding().name; // usa a marca`)).toMatch(/\bbranding\(\)/);
+    expect(semComentarios(`const nome = branding().name; // usa a marca`)).toMatch(
+      /\bbranding\(\)/,
+    );
   });
 
   it("os call sites REAIS de `branding()` continuam visíveis à varredura", () => {
@@ -241,18 +247,18 @@ describe("catraca: `branding()` é server-only", () => {
       "app/onboarding/layout.tsx",
       "lib/legal/operador.ts",
     ];
-    const vistos = varridos.filter(chamaBranding).map((f) => path.relative(RAIZ, f));
+    const vistos = varridos.filter(chamaBranding).map((f) => caminhoRelativo(f));
     expect(esperados.filter((e) => !vistos.includes(e))).toEqual([]);
   });
 
-  it("nenhum componente `\"use client\"` chama `branding()`", () => {
+  it('nenhum componente `"use client"` chama `branding()`', () => {
     const infratores = varridos.filter(
       (arquivo) =>
         /^["']use client["']/m.test(fs.readFileSync(arquivo, "utf8")) && chamaBranding(arquivo),
     );
 
     expect(
-      infratores.map((f) => path.relative(RAIZ, f)),
+      infratores.map((f) => caminhoRelativo(f)),
       "`branding()` lê `window.__PUBLIC_ENV__` no navegador e `process.env` no\n" +
         "servidor, e as duas fontes divergem desde que o layout raiz passou a\n" +
         "injetar a marca do BANCO. Num client component isso é hydration mismatch\n" +

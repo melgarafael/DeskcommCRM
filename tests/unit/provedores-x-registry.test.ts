@@ -94,7 +94,11 @@ describe("o endpoint próprio chega até a fábrica", () => {
     // A assinatura precisa aceitar baseUrl, senão `ai_purpose_bindings.base_url`
     // seria uma coluna que a tela preenche e o runtime ignora — configuração
     // que não configura nada.
-    const modelo = registry["openrouter"]!("chave-de-teste", "meta-llama/llama-3.3-70b-instruct", "https://gateway.exemplo/v1");
+    const modelo = registry["openrouter"]!(
+      "chave-de-teste",
+      "meta-llama/llama-3.3-70b-instruct",
+      "https://gateway.exemplo/v1",
+    );
     expect(modelo).toBeDefined();
   });
 
@@ -157,8 +161,7 @@ describe("lista de provedores × os pontos de ESCRITA", () => {
     // atravessa. A allowlist existe para os casos onde os três SÃO o assunto
     // (ex.: derivar provider do prefixo de um id de modelo legado).
     const { readFileSync } = await import("node:fs");
-    const { relative } = await import("node:path");
-    const { RAIZ_DO_REPO, arquivosDeCodigo } = await import("./helpers/varrer-codigo");
+    const { arquivosDeCodigo, caminhoRelativo } = await import("./helpers/varrer-codigo");
 
     const PERMITIDOS = new Set([
       // Deriva o provedor do PREFIXO de um id de modelo legado — não é uma
@@ -172,7 +175,7 @@ describe("lista de provedores × os pontos de ESCRITA", () => {
     expect(arquivos.length, "a varredura não enxergou o código").toBeGreaterThan(200);
 
     const sobras = arquivos
-      .map((a) => relative(RAIZ_DO_REPO, a))
+      .map((a) => caminhoRelativo(a))
       .filter((caminho) => !PERMITIDOS.has(caminho))
       .filter((caminho) => TRINCA.test(readFileSync(caminho, "utf8")));
 

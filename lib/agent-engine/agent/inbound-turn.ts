@@ -89,7 +89,7 @@ import {
   provideCaseUpdateInputSchema,
 } from './human-cases';
 import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
-import { cancelPendingCronsForLead } from '../cron/scheduler';
+import { cancelPendingCronsForLead, scheduleCronJob } from '../cron/scheduler';
 import {
   latestInboundSignal,
   loadSkills,
@@ -932,6 +932,64 @@ export async function avisarCapacidadesAusentes(
 }
 
 /**
+ * Veto do gate `pacing` não pode virar silêncio para o lead (mesmo argumento de
+ * `comHandoffSeOrcamentoAcabar`, aplicado a um gate diferente).
+ *
+ * `runBeforeSend` veta em `outside_window`/`warmup_cap`/`daily_cap` com
+ * `nextAllowedAt` já calculado (`decidePacing`, `pacing/engine.ts`) — mas até aqui
+ * o `send_message` do turno só ENSINAVA o modelo (retornava o erro pro loop de
+ * tools) e o run fechava com `messages_sent: 0`, sem reagendar nada. Fora do
+ * caminho determinístico de re-entrada (`runDeterministicReentry`, que só cobre
+ * `outside_window`), NADA reagendava — medido em produção (instalação MKT,
+ * 2026-08-22): `warmup_cap` bateu com o cliente NO MEIO da conversa, o turno
+ * terminou "concluído" e a próxima tentativa só aconteceria se o cliente
+ * mandasse OUTRA mensagem.
+ *
+ * A saída é reusar `followup_turn` como o "volte e tente de novo" — é a MESMA
+ * peça que a re-entrada determinística já usa para `outside_window`
+ * (`rescheduleReentry`, followup-turn.ts), só que agora coberta para os TRÊS
+ * códigos de veto do pacing (todos carregam `nextAllowedAt`; nenhum outro gate
+ * carrega). `followup_turn` resolve conversa/sessão pela ROW do lead (nunca do
+ * payload), então reagendar só precisa do `leadId` e do instante.
+ *
+ * Idempotente por job de origem (mesmo padrão de `rescheduleReentry`): dois sends
+ * vetados no MESMO turno (o modelo tenta de novo após o erro de ensino) não
+ * duplicam o reagendamento — cabe UM followup_turn por job que sofreu o veto.
+ *
+ * Best-effort: falhar aqui não pode derrubar o erro de ensino que o modelo já
+ * está recebendo — o pior caso vira "sem reagendamento" (o defeito de antes),
+ * nunca uma exceção que descarta o turno inteiro por causa do agendamento.
+ */
+export async function reagendarTurnoPorVetoDePacing(
+  pool: pg.Pool,
+  log: Logger,
+  input: { tenantId: string; leadId: string; jobId: string; at: Date },
+): Promise<void> {
+  try {
+    const { rowCount } = await pool.query(
+      `select 1 from cron_jobs
+       where organization_id = $1 and contact_id = $2 and payload->>'reschedule_of' = $3`,
+      [input.tenantId, input.leadId, input.jobId],
+    );
+    if (rowCount !== null && rowCount > 0) return; // já reagendado para este job
+    await scheduleCronJob(pool, input.tenantId, {
+      leadId: input.leadId,
+      spec: { kind: 'at', at: input.at },
+      jobKind: 'followup_turn',
+      payload: { reschedule_of: input.jobId },
+      staggerWindowMs: 0,
+    });
+    log.info('turno reagendado após veto do pacing — lead não fica sem próximo passo', {
+      next_run_at: input.at.toISOString(),
+    });
+  } catch (err) {
+    log.warn('reagendamento pós-veto de pacing falhou — turno segue sem retry automático', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
+
+/**
  * O NÚCLEO DO TURNO, SEMPRE SOB A ESCOLTA DO ORÇAMENTO.
  *
  * Esta função é o único ponto do produto por onde os três kinds de turno de
@@ -1746,6 +1804,18 @@ async function executarTurnoDoAgente(
             });
           }
           if (chain.status === 'vetoed') {
+            // pacing (outside_window/warmup_cap/daily_cap) é o ÚNICO gate que calcula
+            // nextAllowedAt — veto dele não pode virar silêncio: reagenda um
+            // followup_turn pra tentar de novo na próxima janela válida (ver o
+            // cabeçalho de reagendarTurnoPorVetoDePacing).
+            if (chain.gate === 'pacing' && chain.nextAllowedAt !== undefined) {
+              await reagendarTurnoPorVetoDePacing(pool, runLog, {
+                tenantId,
+                leadId,
+                jobId: job.id,
+                at: chain.nextAllowedAt,
+              });
+            }
             // Erro de ENSINO pt-br (mesmo shape de get_lead_context/breaker): o
             // modelo o vê no turno seguinte. NÃO é exceção — não derruba o run.
             return { ok: false, error: { code: chain.code, message: chain.message } };

@@ -17,7 +17,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { GuardrailsEditor } from "@/components/ai/GuardrailsEditor";
 import { SystemPromptEditor } from "@/components/ai/SystemPromptEditor";
-import { useAgent, useUpdateAgent, type AgentRow } from "@/hooks/ai/useAgent";
+import {
+  useAgent,
+  useUpdateAgent,
+  usePublishRagBotAgent,
+  type AgentRow,
+} from "@/hooks/ai/useAgent";
 import {
   AGENT_CONFIG_DEFAULTS,
   AGENT_MODELS,
@@ -91,6 +96,7 @@ function diffPatch(initial: FormState, current: FormState): AgentPatch {
 export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
   const query = useAgent(agentId, { initialData });
   const update = useUpdateAgent(agentId);
+  const publish = usePublishRagBotAgent(agentId);
 
   const agent = query.data;
 
@@ -164,7 +170,13 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
     setFormState(baselineState);
   }
 
-  const disabled = readOnly || update.isPending;
+  async function handlePublish() {
+    await publish.mutateAsync().catch(() => {
+      // toast já mostrado em onError do hook
+    });
+  }
+
+  const disabled = readOnly || update.isPending || publish.isPending;
 
   return (
     <div className="flex flex-col gap-4">
@@ -183,8 +195,17 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
           <Button onClick={handleSave} disabled={!dirty || disabled}>
             {update.isPending ? "Salvando…" : "Salvar"}
           </Button>
+          <span title={dirty ? "Salve as alterações antes de publicar." : undefined}>
+            <Button variant="default" onClick={handlePublish} disabled={dirty || disabled}>
+              {publish.isPending ? "Publicando…" : "Publicar"}
+            </Button>
+          </span>
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        &quot;Salvar&quot; grava o rascunho. O agente só responde com o prompt/modelo salvos
+        depois de &quot;Publicar&quot;.
+      </p>
 
       <Tabs defaultValue="general">
         <TabsList>
