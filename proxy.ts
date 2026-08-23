@@ -63,8 +63,13 @@ export async function proxy(request: NextRequest) {
     // https: (not just Supabase) because APP_LOGO_URL is an admin-set
     // white-label logo that can point at ANY reseller's own domain — see
     // lib/branding, app/app/settings/marca. data:/blob: for inline
-    // placeholders and local previews.
-    "img-src 'self' data: blob: https:",
+    // placeholders and local previews. supabaseUrl.origin ALSO listed
+    // explicitly (not just covered by `https:`): a local/e2e Supabase
+    // (`supabase start`) serves Storage over plain http, and `https:` alone
+    // silently drops those <img> loads — measured breaking
+    // tests/e2e/marca-logo.spec.ts (logo bitmap came back empty, CSP-blocked)
+    // the first time this policy shipped.
+    `img-src 'self' data: blob: https: ${supabaseUrl.origin}`,
     "font-src 'self' data:",
     // WhatsApp media (voice notes, video) plays from Supabase Storage
     // signed URLs; blob: covers local previews before upload
