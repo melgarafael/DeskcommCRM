@@ -201,6 +201,7 @@ async function main(): Promise<void> {
       lead_id: leadId,
       contact_id: undefined,
       promised_at: daquiADoisDias,
+      in_hours: undefined,
       reason: MOTIVO,
       promise: "volto a falar com você depois de amanhã",
       context: undefined,

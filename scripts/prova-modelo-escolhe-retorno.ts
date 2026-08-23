@@ -186,7 +186,7 @@ async function main(): Promise<void> {
 
   // O que interessa é a ESCOLHA: quais ferramentas o modelo chamou, em que ordem
   // e com que argumentos.
-  const chamadas = (resultado.tool_calls ?? []) as Array<Record<string, unknown>>;
+  const chamadas = resultado.tool_calls ?? [];
   console.info(
     `PROVA_DO_MODELO=${JSON.stringify(
       {
