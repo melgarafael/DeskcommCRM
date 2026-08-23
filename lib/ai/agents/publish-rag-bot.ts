@@ -72,11 +72,20 @@ export async function publishRagBotVersion(
     if (RAG_BOT_PUBLISH_ERROR_CODES.has(raw)) {
       return { ok: false, code: raw as RagBotPublishErrorCode, message: raw };
     }
+    // Erro não mapeado (constraint, FK, etc) — sem isto, o 500 chega ao
+    // cliente sem nenhuma pista da causa nos logs do container.
+    console.error("[publishRagBotVersion] fn_publish_rag_bot_version failed", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
     return { ok: false, code: "internal_error", message: raw || "publish_failed" };
   }
 
   const row = Array.isArray(data) ? (data[0] as PublishRow | undefined) : (data as PublishRow | null);
   if (!row) {
+    console.error("[publishRagBotVersion] fn_publish_rag_bot_version returned no row");
     return { ok: false, code: "internal_error", message: "no_row_returned" };
   }
   return {

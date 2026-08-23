@@ -252,19 +252,20 @@ export async function publishAgentAction(
   }
 
   void admin
-    .from("event_log")
-    .insert({
-      organization_id: activeOrg.orgId,
-      event_type: "ai_agent.published",
-      payload: {
+    .rpc("emit_event" as never, {
+      p_event_type: "ai_agent.published",
+      p_entity_kind: "ai_agent",
+      p_entity_id: result.agent_id,
+      p_payload: {
         agent_id: result.agent_id,
         version_id: result.version_id,
         previous_version_id: result.previous_version_id,
         published_at: result.published_at,
       },
-    })
+      p_organization_id: activeOrg.orgId,
+    } as never)
     .then(({ error }) => {
-      if (error) console.error("[saveAgentDraftAction/publish] event_log error", error.message);
+      if (error) console.error("[saveAgentDraftAction/publish] emit_event error", error.message);
     });
 
   void audit({
@@ -448,19 +449,20 @@ export async function revertToVersionAction(
   }
 
   void admin
-    .from("event_log")
-    .insert({
-      organization_id: activeOrg.orgId,
-      event_type: "ai_agent.published",
-      payload: {
+    .rpc("emit_event" as never, {
+      p_event_type: "ai_agent.published",
+      p_entity_kind: "ai_agent",
+      p_entity_id: result.agent_id,
+      p_payload: {
         agent_id: result.agent_id,
         version_id: result.version_id,
         previous_version_id: result.previous_version_id,
         published_at: result.published_at,
       },
-    })
+      p_organization_id: activeOrg.orgId,
+    } as never)
     .then(({ error }) => {
-      if (error) console.error("[revertToVersionAction/event_log] error", error.message);
+      if (error) console.error("[revertToVersionAction/emit_event] error", error.message);
     });
 
   void audit({
