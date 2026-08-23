@@ -26,7 +26,7 @@ ser fonte sem ninguém decidir isso.
 | `followup-dossie.architecture.json` | dossiê do follow-up e intervenção humana — 20 peças, 30 arestas; as **duas metades** da corrida contra o motor (o tick reclamado e o turno em voo) e quatro não-ligações declaradas |
 | `indice-de-atrito.architecture.json` | índice de atrito — 24 peças, 31 arestas; a régua do atrito, o rádio que a lê e as demandas que entram nela |
 | `marca-propria.architecture.json` | marca própria (white-label) — 37 peças, 54 arestas, 6 faixas; a pilha org → instalação → `.env` → padrão, as saídas SEM DOM (`marcaDaSaida`) e a **não-ligação declarada** do PDF de LGPD, que imprime o CONTROLADOR e nunca a marca de quem revende |
-| `retencao-de-historico.architecture.json` | poda do histórico (issue #261) — 16 peças, 18 arestas, 6 faixas; o que sai (`done`/`failed`/`dead` velho), o que tem dono e **não** sai (`pending`/`running`, e `dead` com aviso ainda aberto), e por que o expurgo do audit é uma `security definer` sem seletor de linha em vez de uma porta |
+| `retencao-de-historico.architecture.json` | poda do histórico (issue #261 + migration 0172) — 18 peças, 20 arestas, 6 faixas; o que sai (`done`/`failed`/`dead` velho em `job_queue`/`api_audit_log`/`event_log`), o que tem dono e **não** sai (`pending`/`running`/`processing`, e `dead` com aviso ainda aberto), e por que o expurgo do audit é uma `security definer` sem seletor de linha em vez de uma porta |
 
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
 > `indice-de-atrito`. Nenhum teste lê este README (o gate lê os `.json`), então mapa novo que

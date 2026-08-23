@@ -2,8 +2,8 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "A poda do histórico — as duas tabelas que cresciam sozinhas",
-    "subtitle": "issue #261: o que sai, o que tem dono e não sai, e por que o expurgo da auditoria não é uma porta",
+    "title": "A poda do histórico — as três tabelas que cresciam sozinhas",
+    "subtitle": "issue #261 (job_queue/api_audit_log) + migration 0172 (event_log): o que sai, o que tem dono e não sai, e por que o expurgo da auditoria não é uma porta",
     "output": "retencao-de-historico.html",
     "quality_profile": "standard"
   },
@@ -17,7 +17,7 @@
   ],
   "mainPath": ["scheduler", "rota", "podar", "fnpoda", "fila", "trilha"],
   "nodes": [
-    { "id": "envs", "lane": "humano", "col": 1, "type": "frontend", "label": "JOB_QUEUE_RETENTION_DAYS / AUDIT_LOG_RETENTION_DAYS", "sublabel": "opcionais; os defaults valem sem editar .env (doutrina de packaging)" },
+    { "id": "envs", "lane": "humano", "col": 1, "type": "frontend", "label": "JOB_QUEUE_RETENTION_DAYS / AUDIT_LOG_RETENTION_DAYS / EVENT_LOG_RETENTION_DAYS", "sublabel": "opcionais; os defaults valem sem editar .env (doutrina de packaging)" },
     { "id": "runbook", "lane": "humano", "col": 2, "type": "frontend", "label": "docs/runbooks/custo-e-cota-do-supabase.md §4", "sublabel": "comandos: medir tamanho, ver a última poda, separar 'nada vencido' de 'cron parado'" },
     { "id": "painel", "lane": "humano", "col": 3, "type": "frontend", "label": "Painel de auditoria (/admin/audit)", "sublabel": "retention.sweep_run entra no filtro por vir de AUDIT_ACTIONS" },
 
@@ -35,6 +35,8 @@
     { "id": "auditlog", "lane": "banco", "col": 4, "type": "database", "label": "api_audit_log", "sublabel": "append-only no SCHEMA: ninguém tem GRANT de DELETE, nem service_role" },
     { "id": "cascata", "lane": "banco", "col": 5, "type": "database", "label": "send_ledger / before_send_traces", "sublabel": "on delete cascade — parte do conserto, e os consumidores falham FECHADO" },
     { "id": "avisos", "lane": "banco", "col": 6, "type": "database", "label": "agent_inbox_items (job_dead, status='open')", "sublabel": "o aviso aberto É o dono: o job que ele aponta não é podado" },
+    { "id": "fnpodaevento", "lane": "banco", "col": 7, "type": "database", "label": "fn_podar_event_log (definer)", "sublabel": "migration 0172 · só done/dead · piso 7d no corpo · pending/processing nunca saem" },
+    { "id": "eventlog", "lane": "banco", "col": 8, "type": "database", "label": "event_log", "sublabel": "8 event_type órfãos (sem handler) ficam pending para sempre — fora do alcance desta poda" },
 
     { "id": "trilha", "lane": "volta", "col": 2, "type": "service", "label": "audit('retention.sweep_run')", "sublabel": "contagem + retenção em vigor; linha nova demais para o próprio expurgo alcançar" },
     { "id": "log", "lane": "volta", "col": 1, "type": "service", "label": "logger.warn / logger.error", "sublabel": "knob ajustado e falha de RPC saem alto — nunca a frase tranquilizadora" }
@@ -46,6 +48,8 @@
     { "id": "e4", "from": "rota", "to": "podar", "label": "invoca a regra" },
     { "id": "e5", "from": "podar", "to": "fnpoda", "label": "rpc em lote" },
     { "id": "e6", "from": "podar", "to": "fnexpurgo", "label": "rpc em lote" },
+    { "id": "e19", "from": "podar", "to": "fnpodaevento", "label": "rpc em lote" },
+    { "id": "e20", "from": "fnpodaevento", "to": "eventlog", "label": "delete de done/dead vencidos" },
     { "id": "e7", "from": "fnpoda", "to": "fila", "label": "delete dos terminais velhos" },
     { "id": "e8", "from": "avisos", "to": "fnpoda", "label": "aviso aberto ⇒ não pode podar" },
     { "id": "e9", "from": "fila", "to": "cascata", "label": "FK on delete cascade" },
