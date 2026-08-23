@@ -584,7 +584,7 @@ owner_id_by_email() {
 # primeira (o filtro remove tudo que casa com o marcador, e as duas linhas
 # casavam). Medido na VPS: depois de instalar, sobrava só o agente e o CRM ficava
 # SEM o drain de eventos — a automação inteira parada, em silêncio.
-cron_tag() { printf '# deskcomm:%s:%s' "${PROJECT_DIR:-$PWD}" "${1:?papel da linha (drain|agent)}"; }
+cron_tag() { printf '# deskcomm:%s:%s' "${PROJECT_DIR:-$PWD}" "${1:?papel da linha (drain|agent|backup)}"; }
 
 # Puro (testável sem tocar no crontab real): lê o crontab atual em stdin e
 # imprime o novo. Tira as linhas DESTA instalação — pelo marcador, e também
@@ -655,6 +655,45 @@ setup_update_agent_cron() {
   local cron_line="*/5 * * * * ${legado} >/dev/null 2>&1 ${marcador}"
   ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
   c_grn "✓ atualização pela tela ativa (agente a cada 5 minutos)"
+}
+
+# Ativa (idempotente) o cron do backup diário (banco + sessões do WhatsApp).
+#
+# Por que HOST, e não o container `scheduler`: o `backup.sh` faz `docker run
+# postgres:17-alpine pg_dump` e `docker run -v waha-data:/data alpine tar`, e o
+# `scheduler` é DELIBERADAMENTE sem docker.sock ("Cron sem docker.sock: crond
+# interno batendo curl na rede interna" — ver docker-compose.prod.yml). Dar
+# socket a ele só para isto seria abrir root-no-host a um container cujo
+# desenho inteiro é não ter esse alcance. O crontab do HOST é o mecanismo que
+# este kit já usa para automação que também exige Docker: mesma função
+# (setup_update_agent_cron, acima) roda `agent.sh`, que também chama `docker`.
+#
+# Sem isto o backup existia só como script MANUAL (cabeçalho do backup.sh
+# ensinava "crontab -e" à mão) — numa instalação self-host real, onde quem
+# instala não é a mesma pessoa que sabe editar crontab, isso é "nunca ter
+# backup rodando". É achado de auditoria: Supabase free não faz backup
+# sozinho, e depender do dono lembrar de agendar é depender do pior caso.
+#
+# Chamada por install.sh e update.sh, junto das outras automações — re-rodar
+# não duplica a linha do crontab (mesmo cron_merge por marcador das outras).
+# Horário configurável por BACKUP_CRON_HOUR (0-23; default 3 = 03h, fora do
+# expediente); minuto fixo em :00 — não é knob, é o que o próprio cabeçalho do
+# backup.sh já ensinava como receita manual.
+setup_backup_cron() {
+  command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — o backup diário não foi agendado. Rode 'bash hostgator-setup-kit/backup.sh' manualmente, ou instale o pacote 'cron' e rode de novo."; return 0; }
+
+  local hora="${BACKUP_CRON_HOUR:-3}"
+  case "$hora" in ''|*[!0-9]*) hora=3;; esac
+  [ "$hora" -le 23 ] || hora=3
+
+  # Mesmo `cd` explícito de setup_update_agent_cron, e pelo mesmo motivo: o
+  # backup.sh chama enter_project(), que acha o projeto pelo CWD, e no cron o
+  # CWD é o home de quem é dono do crontab (não a pasta do projeto).
+  local legado="cd ${PROJECT_DIR} && bash hostgator-setup-kit/backup.sh"
+  local marcador; marcador="$(cron_tag backup)"
+  local cron_line="0 ${hora} * * * ${legado} >/dev/null 2>&1 ${marcador}"
+  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
+  c_grn "✓ backup diário agendado (todo dia às $(printf '%02d' "$hora"):00)"
 }
 
 # Garante a chave de cifra dos segredos (webhooks/Nuvemshop) e a semeia no

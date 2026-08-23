@@ -1711,11 +1711,12 @@ else
   [ -n "$health_body" ] && c_dim "  última resposta: $(printf '%s' "$health_body" | head -c 200 || true)"
 fi
 
-# ── 11. Automações (cron do drain de eventos) ───────────────────────────────
+# ── 11. Automações (cron do drain de eventos + backup diário) ───────────────
 step "Ativando as automações"
 ensure_encryption_key .env
 setup_event_log_drain_cron
 setup_update_agent_cron
+setup_backup_cron
 
 # ── Final ───────────────────────────────────────────────────────────────────
 # O app não confirmou que está de pé: dizer "Instalação concluída!" aqui seria
