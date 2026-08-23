@@ -8,6 +8,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.3.1] — 2026-08-23
+
 ### Adicionado
 
 - **O agente de atualização passa a fixar sozinho a versão que ficou solta**, em até 5
@@ -57,6 +59,19 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **No painel de administração, o alerta de orçamento parou de gritar "crítico" sobre um
   número que não é o do mês.** Ele continua avisando, com o rótulo dizendo que o valor é
   acumulado, e leva direto para a tela de saúde do cliente, que mostra o número real.
+- **A tela de editar o agente de IA salvava sem publicar nada.** O botão "Salvar" gravava só
+  o rascunho; o atendimento continuava usando a versão publicada antiga (ou o prompt genérico
+  do primeiro instalador), mesmo depois de várias edições — sem erro nenhum na tela. Agora
+  existe um botão "Publicar": o rascunho só entra em uso depois que você aperta ele.
+- **Reconectar o WhatsApp podia travar o atendimento por horas, sem nenhum aviso na
+  conversa.** Toda reconexão (celular caiu, precisou escanear o QR de novo) tratava o número
+  como se fosse novo e passava a segurar toda mensagem, esperando alguém achar e resolver um
+  aviso escondido na Central de avisos. Agora o sistema reconhece quando é o MESMO número já
+  aprovado antes e libera sozinho.
+- **Quando o limite diário de envio (anti-banimento) travava uma resposta, a conversa
+  morria ali** — o cliente não recebia nada, nem depois de o limite abrir de novo, a menos
+  que mandasse outra mensagem por conta própria. Agora o sistema reagenda a resposta sozinho
+  para o próximo horário permitido.
 
 ## [1.3.0] — 2026-08-13
 
@@ -396,7 +411,9 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.2.1...HEAD
+[Não lançado]: https://github.com/maugarciasa/DeskcommCRM/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/maugarciasa/DeskcommCRM/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/maugarciasa/DeskcommCRM/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.0.0...v1.1.0
