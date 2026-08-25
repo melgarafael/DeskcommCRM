@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
+import { abreJanelaDeEnvio } from "./janela-de-envio";
 
 /**
  * Fase 4B (robustez BYOK) — turno SEM credencial nenhuma (nem env, nem BYOK).
@@ -70,6 +71,10 @@ beforeAll(async () => {
      values ($1, $2, 'nocred-session', 'WORKING', '\\x00'::bytea) on conflict (id) do nothing`,
     [SESSION, ORG],
   );
+  // Sem isto o turno é ADIADO fora de 7h–22h e este arquivo mede a janela em vez
+  // do que ele diz medir — verde de dia, vermelho de madrugada. Ver o cabeçalho
+  // de janela-de-envio.ts.
+  await abreJanelaDeEnvio(pool, ORG, SESSION);
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1, $2, $3, $4, 'open', false) on conflict (id) do nothing`,

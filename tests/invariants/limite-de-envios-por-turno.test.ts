@@ -5,6 +5,7 @@ import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
 import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
 import type * as Queue from "@/lib/agent-engine/queue/queue";
 import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
+import { abreJanelaDeEnvio } from "./janela-de-envio";
 
 /**
  * O turno COMPLETO chamando `send_message` VÁRIAS vezes — defeito medido em
@@ -200,6 +201,10 @@ beforeAll(async () => {
      values ($1,$2,'limite-envios-session','WORKING','\\x00'::bytea) on conflict (id) do nothing`,
     [SESSION, ORG],
   );
+  // Sem isto o turno é ADIADO fora de 7h–22h e este arquivo mede a janela em vez
+  // do que ele diz medir — verde de dia, vermelho de madrugada. Ver o cabeçalho
+  // de janela-de-envio.ts.
+  await abreJanelaDeEnvio(pool, ORG, SESSION);
   await pool.query(
     `insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
      values ($1,$2,$3,$4,'ai_handling',false) on conflict (id) do nothing`,

@@ -5,6 +5,7 @@ import type * as InboundTurn from "@/lib/agent-engine/agent/inbound-turn";
 import type * as Providers from "@/lib/agent-engine/edge/llm/providers";
 import type * as Queue from "@/lib/agent-engine/queue/queue";
 import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
+import { abreJanelaDeEnvio } from "./janela-de-envio";
 
 /**
  * O turno COMPLETO enviando template — o que `send-template-wiring.test.ts` declarava
@@ -236,6 +237,10 @@ beforeAll(async () => {
      on conflict (id) do nothing`,
     [SESSION_META, ORG],
   );
+  // Sem isto o turno é ADIADO fora de 7h–22h e este arquivo mede a janela em vez
+  // do que ele diz medir — verde de dia, vermelho de madrugada. Ver o cabeçalho
+  // de janela-de-envio.ts.
+  await abreJanelaDeEnvio(pool, ORG, SESSION_META);
   await pool.query(
     `insert into channel_sessions (id, organization_id, provider, waha_session_name,
                                    status, webhook_secret_encrypted)
