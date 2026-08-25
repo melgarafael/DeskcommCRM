@@ -692,7 +692,14 @@ setup_event_log_drain_cron() {
   if crontab -l 2>/dev/null | grep -qF -e "$url_drain"; then first_time=0; fi
 
   local cron_line="* * * * * curl -fsS -H \"Authorization: Bearer ${secret}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
-  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
+  # `crontab -l` sai 1 (sem stdout) quando o dono ainda não tem NENHUM
+  # crontab — caso comum de VPS nova. O `2>/dev/null` só cala o aviso; com
+  # `pipefail` (script inteiro roda sob `set -euo pipefail`) esse 1 se
+  # propaga pelo pipe e mata a instalação bem aqui, DEPOIS de banco e app já
+  # estarem de pé — sem nenhuma mensagem de erro, só o recovery genérico do
+  # trap. O `|| true` faz uma ausência de crontab virar "lista vazia", que é
+  # o que ela é.
+  ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
   c_grn "✓ automações ativas (cron do event-log-drain, a cada minuto)"
 
   if [ "$first_time" = 1 ]; then
@@ -731,7 +738,9 @@ setup_update_agent_cron() {
   local legado="cd ${PROJECT_DIR} && bash hostgator-setup-kit/agent.sh"
   local marcador; marcador="$(cron_tag agent)"
   local cron_line="*/5 * * * * ${legado} >/dev/null 2>&1 ${marcador}"
-  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
+  # Mesmo motivo do event-log-drain acima: `crontab -l` sem crontab existente
+  # sai 1, e sob `pipefail` isso derrubava a instalação em silêncio.
+  ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
   c_grn "✓ atualização pela tela ativa (agente a cada 5 minutos)"
 }
 
