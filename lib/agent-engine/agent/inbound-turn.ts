@@ -1074,7 +1074,14 @@ async function executarTurnoDoAgente(
   // hora do envio, teria passado.
   if (turnoVaiFalarComOLead(job)) {
     const { knobs } = await loadChannelKnobs(pool, tenantId, input.channelSessionId, runLog);
-    const agora = new Date();
+    // O relógio INJETADO, não o de parede. `InboutTurnDeps.clock` documenta
+    // exatamente este uso — "a janela horária do gate anti-ban é avaliada nele"
+    // —, e ler `new Date()` aqui rompia esse contrato: o teste fixava um
+    // instante dentro da janela e este gate continuava consultando a hora real.
+    // Efeito medido: `tests/invariants/limite-de-envios-por-turno.test.ts`
+    // reprovava 3 casos sempre que o CI rodasse entre 22h e 7h — um gate
+    // obrigatório que dependia da hora do dia em que alguém abrisse o PR.
+    const agora = (deps.clock ?? ((): Date => new Date()))();
     if (!janelaDeEnvioAberta(agora, knobs)) {
       const abertura = proximaAberturaDaJanela(agora, knobs);
       await rescheduleJob(pool, job.id, ctx.workerId, {
@@ -1166,7 +1173,15 @@ async function executarTurnoDoAgente(
   // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
   // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
   if (job.kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
-    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, new Date());
+    // Mesma correção da janela anti-ban, poucas linhas acima: este é o OUTRO
+    // portão de horário do turno (o horário de funcionamento que o dono
+    // configura), e ele lia o relógio de parede pelo mesmo descuido. Consertar
+    // só o irmão que estava vermelho deixaria a mesma armadilha montada aqui,
+    // esperando o primeiro teste que quisesse exercitar este caminho.
+    const esperaMs = msAteAJanelaAbrir(
+      agentConfig.janelaDeAtendimento,
+      (deps.clock ?? ((): Date => new Date()))(),
+    );
     if (esperaMs !== null) {
       await rescheduleJob(pool, job.id, ctx.workerId, {
         delayMs: esperaMs,
