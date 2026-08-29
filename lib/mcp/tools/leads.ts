@@ -227,6 +227,21 @@ const updateInputShape = {
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   tags: z.array(z.string()).optional(),
+  /**
+   * Os campos que o DONO declarou em `pipeline.settings.fields`.
+   *
+   * Faltava aqui, e só aqui: `updateLeadSchema` já aceita a chave, o
+   * `updateLeadHandler` já faz o merge com o que existe, e a mudança já vira
+   * atividade na linha do tempo ("os campos personalizados"). Como o handler
+   * monta `{...rest}` a partir DESTE shape, e `z.object` descarta chave que não
+   * declarou, o valor morria antes de chegar ao schema que o aceitaria.
+   *
+   * Efeito da ausência: o produto deixa criar até 50 campos por funil, desenha
+   * todos na ficha do lead — e nenhum agente conseguia preencher um. Quem
+   * modelou o funil no vocabulário do próprio nicho recebia a IA como leitora,
+   * nunca como escrivã.
+   */
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 };
 
 export const crmUpdateLead: McpToolDefinition<typeof updateInputShape> = {
