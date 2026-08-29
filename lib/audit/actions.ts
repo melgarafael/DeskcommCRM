@@ -367,6 +367,10 @@ export const AUDIT_ACTIONS = [
   "agenda.tipo_criado",
   "agenda.tipo_alterado",
   "agenda.tipo_desativado",
+  // A rodada que AVISOU alguém do próprio compromisso. Mensagem que saiu para o
+  // telefone de um cliente é efeito, e efeito audita — mas só a rodada que
+  // enviou: a que varreu e não achou ninguém a avisar não é mutação.
+  "agenda.lembrete_enviado",
   // A rodada de renovação — e ela só audita quando FEZ algo, como manda a regra
   // do cron desta base. Uma linha por rodada com efeito, carregando a contagem:
   // é o que permite responder "quantas agendas precisaram reconectar esta
