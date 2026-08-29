@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 
 import { letraDoIcone } from "@/lib/branding/icone";
+import { resolverIconeLocal } from "@/lib/branding/icone-local";
 import { marcaDaSaida } from "@/lib/branding/saida";
 
 /**
@@ -23,7 +24,7 @@ import { marcaDaSaida } from "@/lib/branding/saida";
  * documenta para `NEXT_PUBLIC_*`: verde em dev, verde no CI, verde na Vercel, e
  * errado exatamente na VPS de quem a feature existe para servir.
  *
- * ─── Cor + inicial, NUNCA o `logo_url` ──────────────────────────────────────
+ * ─── Cor + inicial, NUNCA um `logo_url` remoto ──────────────────────────────
  *
  * `platform_branding.logo_url` é `text` livre, sem CHECK de host
  * (`supabase/baseline.sql:11832-11848`). Buscá-la aqui seria uma requisição de
@@ -32,6 +33,14 @@ import { marcaDaSaida } from "@/lib/branding/saida";
  * cor + inicial não toca a rede: o accent vem do mesmo resolvedor que pinta os
  * e-mails (`marcaDaSaida`) e a fonte (`Geist-Regular.ttf`) vem embutida no
  * `@vercel/og` que o Next já traz — nenhuma dependência nova, nenhum download.
+ *
+ * A ÚNICA exceção é `resolverIconeLocal` (`lib/branding/icone-local.ts`): um
+ * `logoUrl` na forma exata `/arquivo.png` (raiz-relativo, sem segunda barra)
+ * não é buscado na rede — é LIDO DO DISCO, de dentro de `public/`, que é onde
+ * o próprio Next já serve esses arquivos. Zero requisição de saída, então o
+ * SSRF que justifica ignorar uma URL remota não se aplica. Uma URL absoluta
+ * (`http://…`, `https://…`) continua caindo no padrão cor + letra, sem mudança
+ * nenhuma de comportamento.
  *
  * ─── `force-dynamic` não é zelo ─────────────────────────────────────────────
  *
@@ -65,6 +74,22 @@ export const contentType = "image/png";
 
 export default async function Icon() {
   const marca = await marcaDaSaida(null);
+
+  // Arquivo local em `public/` (ver `lib/branding/icone-local.ts`) vence o
+  // desenho cor + letra: é o LOGO de verdade, não uma URL buscada na rede.
+  const local = resolverIconeLocal(marca.logoUrl);
+  if (local) {
+    // `BodyInit` não aceita `Buffer` diretamente sob os tipos estritos do
+    // runtime de rota; a cópia para `Uint8Array` é o cast que os tipos pedem,
+    // não uma cópia de mais bytes que os do arquivo.
+    return new Response(new Uint8Array(local.bytes), {
+      headers: {
+        "content-type": local.contentType,
+        "cache-control": "public, max-age=60, stale-while-revalidate=600",
+      },
+    });
+  }
+
   const letra = letraDoIcone(marca.nome);
 
   return new ImageResponse(
