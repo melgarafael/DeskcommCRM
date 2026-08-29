@@ -14,6 +14,10 @@ import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
 import { FiltroDePessoas } from "@/components/agenda/FiltroDePessoas";
 import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
+import {
+  ContactPickerDialog,
+  type ContactPickPayload,
+} from "@/components/inbox/composer/ContactPickerDialog";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import { Button } from "@/components/ui/button";
@@ -118,6 +122,21 @@ export function AgendaClient({
   // uma. Achado escrevendo a spec de marcar, não lendo o código.
   const [tipoId, setTipoId] = React.useState<string | null>(() => tiposIniciais[0]?.id ?? null);
   const tipo = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
+  /**
+   * QUEM vai ser atendido.
+   *
+   * `NovoAgendamento.contact_id` existe desde que o hook nasceu, a rota o
+   * resolve contra a organização, e a listagem já lê `contacts(name)` para
+   * exibir. A ferramenta do agente (`crm_book_appointment`) chega a exigi-lo —
+   * "quem vai ser atendido". Só ESTA tela não perguntava, e o resultado é o
+   * inverso do esperado: a IA marcava com pessoa vinculada e o humano marcava
+   * órfão, fora do alcance de qualquer lembrete (que sai para `contact_id`).
+   *
+   * Opcional de propósito: bloqueio interno da equipe — inventário, reunião —
+   * continua podendo ser marcado sem ninguém do outro lado.
+   */
+  const [contato, setContato] = React.useState<ContactPickPayload | null>(null);
+  const [escolhendoContato, setEscolhendoContato] = React.useState(false);
   const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
   const [isolada, setIsolada] = React.useState<string | null>(null);
   const [ancora, setAncora] = React.useState(() => new Date());
@@ -468,6 +487,52 @@ export function AgendaClient({
               </div>
             </div>
           )}
+          {/*
+            QUEM vai ser atendido. Fica FORA do `remarcandoId`: remarcar move o
+            horário de um compromisso que já tem (ou não tem) pessoa, e trocar o
+            contato ali seria outra operação — o PATCH de remarcar só manda
+            `starts_at`.
+          */}
+          {!remarcandoId && (
+            <div className="mt-4" data-testid="contato-do-agendamento">
+              <p className="mb-2 text-xs font-medium text-text-muted">{t("Quem vai ser atendido")}</p>
+              {contato ? (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+                  <span className="min-w-0 truncate text-sm">
+                    {contato.name}
+                    <span className="ml-2 text-text-muted tabular-nums">{contato.phone_number}</span>
+                  </span>
+                  <div className="flex shrink-0 gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => setEscolhendoContato(true)}>
+                      {t("Trocar")}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setContato(null)}>
+                      {t("Remover")}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid="escolher-contato"
+                    onClick={() => setEscolhendoContato(true)}
+                  >
+                    {t("Escolher contato")}
+                  </Button>
+                  {/*
+                    Dizer o que se perde é melhor que exigir. Bloqueio interno da
+                    equipe não tem paciente do outro lado, e obrigar um contato
+                    aqui inventaria um.
+                  */}
+                  <span className="text-xs text-text-muted">
+                    {t("Opcional — sem contato, ninguém recebe lembrete deste compromisso.")}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           {tipo && (
             <div className="mt-4 lg:min-h-0 lg:flex-1">
               <PainelDeMarcacao
@@ -529,7 +594,22 @@ export function AgendaClient({
                         return r;
                       });
                   }
-                  return marcar.mutateAsync({ event_type_id: tipo.id, starts_at: instante });
+                  return marcar
+                    .mutateAsync({
+                      event_type_id: tipo.id,
+                      starts_at: instante,
+                      // `undefined` e não `null`: o schema da rota trata ausência
+                      // como "sem pessoa", e um `null` explícito seria outro
+                      // caso a validar sem ganho nenhum.
+                      contact_id: contato?.contactId ?? undefined,
+                    })
+                    .then((r) => {
+                      // O contato é do compromisso que acabou de nascer, não do
+                      // painel: deixá-lo grudado faria o próximo agendamento
+                      // herdar a pessoa do anterior em silêncio.
+                      setContato(null);
+                      return r;
+                    });
                 }}
                 // "VER NA AGENDA" — o botão que não fazia nada.
                 //
@@ -555,6 +635,23 @@ export function AgendaClient({
           )}
         </SheetContent>
       </Sheet>
+
+      {/*
+        O MESMO seletor do inbox, não um segundo.
+        Ele já busca por nome e telefone sob a sessão do usuário (RLS), já
+        formata o rótulo com `rotuloDoContato` e já trata o vazio. Um seletor
+        próprio aqui seria uma segunda régua de "como se escreve o nome de um
+        contato", e no dia em que discordassem a mesma pessoa apareceria de dois
+        jeitos em duas telas.
+      */}
+      <ContactPickerDialog
+        open={escolhendoContato}
+        onOpenChange={setEscolhendoContato}
+        onPick={(escolhido) => {
+          setContato(escolhido);
+          setEscolhendoContato(false);
+        }}
+      />
 
       {/* CANCELAR pede motivo, e o motivo é OBRIGATÓRIO na rota (mínimo 3).
           Não é burocracia: é o que a equipe lê ao ver o horário vago. "Cancelado"
