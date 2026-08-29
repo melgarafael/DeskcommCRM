@@ -49,7 +49,11 @@ describe("cor da barra do navegador", () => {
     // acima comparar `[]` com `[]` e passar como se estivesse vigiando.
     expect(bg(REGUA_DO_PRODUTO.claro)).toMatch(/^#[0-9a-f]{6}$/);
     expect(bg(REGUA_DO_PRODUTO.escuro)).toMatch(/^#[0-9a-f]{6}$/);
-    expect(bg(REGUA_DO_PRODUTO.claro)).not.toBe(bg(REGUA_DO_PRODUTO.escuro));
+    // Tema único, sempre escuro (paleta Ink): os dois fundos são DELIBERADAMENTE
+    // iguais agora — a barra do navegador deve ficar na mesma cor Ink
+    // independente do `prefers-color-scheme` do sistema, já que o produto não
+    // tem mais aparência clara. Ver comentário no topo do `app/globals.css`.
+    expect(bg(REGUA_DO_PRODUTO.claro)).toBe(bg(REGUA_DO_PRODUTO.escuro));
   });
 
   it("tema sem `--color-bg` some da lista em vez de derrubar toda tela", () => {

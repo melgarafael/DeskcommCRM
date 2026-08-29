@@ -85,9 +85,11 @@ describe("tema claro escopável em subárvore", () => {
   });
 
   it("o `color-scheme` acompanha o escopo", () => {
-    // Sem isto a subárvore recebe os tokens claros mas o navegador continua
-    // pintando scrollbar, `<input>` e menu nativo em escuro dentro dela.
-    expect(CSS).toMatch(/\[data-theme="light"\]\s*\{\s*color-scheme:\s*light;/);
+    // Tema único, sempre escuro: `[data-theme="light"]` pinta os MESMOS tokens
+    // escuros que `:root`/`[data-theme="dark"]` agora, então o `color-scheme`
+    // também é `dark` — widgets nativos (scrollbar, <input>, menu) têm de
+    // acompanhar a paleta real, não o nome histórico do atributo.
+    expect(CSS).toMatch(/\[data-theme="light"\]\s*\{\s*color-scheme:\s*dark;/);
   });
 });
 

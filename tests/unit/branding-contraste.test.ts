@@ -58,9 +58,9 @@ const FIXTURE = [
 describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão", () => {
   it("acha os dois temas, a rampa do produto e os neutros", () => {
     expect(REGUA.rampaDoProduto).toHaveLength(11);
-    expect(REGUA.rampaDoProduto[6]).toBe("#506d48");
+    expect(REGUA.rampaDoProduto[6]).toBe("#3b6fd4");
     expect(REGUA.claro.neutros).toHaveLength(11);
-    expect(REGUA.escuro.neutros[9]).toBe("#161510");
+    expect(REGUA.escuro.neutros[9]).toBe("#141e30");
     expect(REGUA.claro.base.map((b) => b.chave)).toEqual([
       "--color-bg",
       "--color-surface",
@@ -69,26 +69,28 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
   });
 
   it("alcança o anel de foco, que mora em @layer base e uma lista à mão perderia", () => {
-    // ESTE é o par do relato: `accent-600` contra bg dá 5,51 e passaria qualquer gate
-    // ingênuo, mas quem pinta o anel é `accent-500` — e ele dá 3,79. Uma régua que só
-    // olhasse o stop da semente deixaria o anel pousar em ~2,07 com o gate verde.
+    // Tema único agora: claro e escuro pintam o MESMO anel — `accent-600`, a própria
+    // Signal Blue — e ele dá 4,06 contra bg, folgado acima do piso 3,0.
     const foco = REGUA.claro.papeis.find((p) => p.token.includes(":focus-visible"));
     expect(foco, "o anel de foco sumiu da régua").toBeDefined();
     expect(foco?.tipo).toBe("componente");
-    expect(foco?.fonte).toMatchObject({ tipo: "grau", indice: 5 });
+    expect(foco?.fonte).toMatchObject({ tipo: "grau", indice: 6 });
 
     const focoEscuro = REGUA.escuro.papeis.find((p) => p.token.includes(":focus-visible"));
-    expect(focoEscuro?.fonte).toMatchObject({ tipo: "grau", indice: 4 });
+    expect(focoEscuro?.fonte).toMatchObject({ tipo: "grau", indice: 6 });
   });
 
   it("classifica -fg como texto e -soft como superfície", () => {
     const fg = REGUA.claro.papeis.find((p) => p.token === "--color-accent-fg");
     expect(fg?.tipo).toBe("texto");
     expect(REGUA.claro.tingidas.map((t) => t.chave)).toEqual(["--color-accent-soft"]);
-    // No escuro o token é o literal `rgba(130,160,119,0.16)` — verde Sage cru, sem
-    // referência à rampa. É por isso que ele precisa ser REANCORADO na derivação.
+    // Tema único: os dois blocos usam o mesmo literal translúcido `rgba(13,27,54,0.08)`
+    // — a cor cai reancorada no accent (ver `resolverSoft`), a alfa é a que sobrevive.
+    // 0,08 e não 0,16 (convenção antiga): medido — em 0,16 o par accent×accent-soft
+    // sobre `surface-elevated` (Oxford Blue, próxima do accent em matiz) cai a 2,87,
+    // abaixo do piso 3,0.
     expect(REGUA.escuro.indices.soft).toBeNull();
-    expect(REGUA.escuro.alfaDoSoft).toBeCloseTo(0.16, 6);
+    expect(REGUA.escuro.alfaDoSoft).toBeCloseTo(0.08, 6);
   });
 
   it("enumera o conjunto esperado de papéis e pares (guarda de vacuidade)", () => {
@@ -105,12 +107,13 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     ]);
     expect(REGUA.escuro.papeis).toHaveLength(6);
 
-    expect(superficiesDoTema(REGUA.claro, REGUA.rampaDoProduto, 0)).toHaveLength(4);
-    // 6 no escuro e não 4: o `-soft` translúcido compõe sobre CADA base, e as três
-    // razões diferem (4,99 · 4,59 · 4,02). Medir uma só escolheria a mais folgada.
+    // Tema único: claro agora usa o MESMO accent-soft translúcido do escuro, então as
+    // duas contagens batem — 6 superfícies (3 bases + 3 composições tingidas) e 26
+    // pares, em vez do 4/18 de quando o claro era opaco.
+    expect(superficiesDoTema(REGUA.claro, REGUA.rampaDoProduto, 0)).toHaveLength(6);
     expect(superficiesDoTema(REGUA.escuro, REGUA.rampaDoProduto, 0)).toHaveLength(6);
 
-    expect(medirPares(REGUA.claro, REGUA.rampaDoProduto, 0)).toHaveLength(18);
+    expect(medirPares(REGUA.claro, REGUA.rampaDoProduto, 0)).toHaveLength(26);
     expect(medirPares(REGUA.escuro, REGUA.rampaDoProduto, 0)).toHaveLength(26);
   });
 
@@ -119,12 +122,12 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     const razao = (papel: string, superficie: string) =>
       pares.find((p) => p.papel === papel && p.superficie === superficie)?.razao ?? 0;
 
-    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(5.51, 2);
-    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(3.79, 2);
-    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(3.6, 2);
+    expect(razao("--color-accent", "--color-bg")).toBeCloseTo(4.06, 2);
+    expect(razao(":focus-visible/outline", "--color-bg")).toBeCloseTo(4.06, 2);
+    expect(razao(":focus-visible/outline", "--color-surface-elevated")).toBeCloseTo(3.41, 2);
   });
 
-  it("a Sage inteira, como está no CSS, cabe nos pisos", () => {
+  it("a paleta Ink inteira, como está no CSS, cabe nos pisos", () => {
     for (const tema of [REGUA.claro, REGUA.escuro]) {
       const reprovas = medirPares(tema, REGUA.rampaDoProduto, 0).filter((p) => !p.passa);
       expect(reprovas, `${tema.nome}: ${JSON.stringify(reprovas)}`).toEqual([]);
@@ -224,15 +227,22 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
         .map((t) => `${semente}/${t.deslocamento}`),
     );
     expect(deslocados.length).toBeGreaterThan(0);
-    expect(deslocados).toHaveLength(13);
+    // Tema único: claro e escuro têm a MESMA régua agora, então toda semente que anda
+    // num tema anda IGUAL no outro — o total dobrou de propósito (13 → 20, os casos que
+    // antes só precisavam andar num tema, ou já ficaram assimétricos, agora somam nos
+    // dois; nem toda semente colide, por isso não é exatamente 2×13).
+    expect(deslocados).toHaveLength(20);
 
-    // O amarelo é o caso que NÃO tem escapatória física: nenhum stop claro de amarelo
-    // alcança 3:1 contra `#ffffff`. Se ele parar de andar, a caminhada quebrou.
+    // O amarelo é o caso que NÃO tem escapatória física: nenhum stop de amarelo alcança
+    // 3:1 contra o fundo Ink. Se ele parar de andar, a caminhada quebrou. Com os dois
+    // temas iguais, ele anda IGUAL nos dois agora — não sobra mais um tema "folgado" em
+    // que o hex do cliente sobrevive intacto.
     const amarelo = resultados.find((r) => r.semente === "#f5c518")!.marca;
     expect(amarelo.claro.deslocamento).toBeGreaterThan(0);
-    expect(amarelo.claro.grauDoAccent).toBe(900);
-    // …e o hex EXATO do cliente reaparece como accent do tema escuro.
-    expect(amarelo.escuro.accent).toBe("#f5c518");
+    expect(amarelo.claro.grauDoAccent).toBe(800);
+    expect(amarelo.escuro.deslocamento).toBeGreaterThan(0);
+    expect(amarelo.escuro.grauDoAccent).toBe(800);
+    expect(amarelo.escuro.accent).not.toBe("#f5c518");
   });
 
   it("nunca torce o accent: ele é sempre um stop da rampa da marca", () => {
@@ -291,48 +301,53 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
     }
   });
 
-  it("--color-accent-soft do tema escuro é derivado, não o verde Sage cru", () => {
-    // O literal `rgba(130, 160, 119, 0.16)` sobreviveria intacto a qualquer override da
+  it("--color-accent-soft é derivado, não o azul Signal cru", () => {
+    // O literal `rgba(13, 27, 54, 0.08)` sobreviveria intacto a qualquer override da
     // rampa — seria um pedaço da NOSSA marca dentro da instalação do cliente.
-    const azul = derivarMarca("#2563eb", REGUA);
-    expect(azul.escuro.accentSoft).toMatch(/^rgba\(\d+, \d+, \d+, 0\.16\)$/);
-    expect(azul.escuro.accentSoft).not.toContain("130, 160, 119");
-    // E o claro continua opaco, como o tema declara.
-    expect(azul.claro.accentSoft).toMatch(/^#[0-9a-f]{6}$/);
+    const roxo = derivarMarca("#7c3aed", REGUA);
+    expect(roxo.escuro.accentSoft).toMatch(/^rgba\(\d+, \d+, \d+, 0\.08\)$/);
+    expect(roxo.escuro.accentSoft).not.toContain("13, 27, 54");
+    // Tema único: claro agora TAMBÉM é translúcido, como o escuro (globals.css declara
+    // o mesmo literal `rgba(...)` nos dois blocos).
+    expect(roxo.claro.accentSoft).toMatch(/^rgba\(\d+, \d+, \d+, 0\.08\)$/);
+    expect(roxo.claro.accentSoft).not.toContain("13, 27, 54");
   });
 });
 
 describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
-  it("a Sage pura já nasce colidida e dispara a reconciliação (controle positivo)", () => {
-    // `--color-success` do bloco escuro é `#82a077`, a MESMA string de
-    // `--color-accent-400` (globals.css:167 e :193). Δ = 0,0°. Se o mecanismo não
-    // disparasse aqui, ele não dispararia em lugar nenhum.
-    expect(REGUA.escuro.semanticas.find((s) => s.nome === "success")?.hex).toBe(
-      REGUA.rampaDoProduto[4],
-    );
-
+  it("a Sage, agora só uma marca de CLIENTE, colide com --color-error e dispara a reconciliação", () => {
+    // Com o produto na paleta Ink, `--color-success` (#82a077) NÃO é mais igual a nenhum
+    // stop do accent (que agora é azul) — a Sage não colide mais consigo mesma. O
+    // controle positivo passou a ser outra sobreposição real: um CLIENTE que cola a
+    // Sage como marca cai, depois da caminhada de contraste, num verde (`#67885d`,
+    // deslocamento -1 nos dois temas — iguais agora) próximo o bastante de
+    // `--color-error` (#c87263) sob dicromacia para disparar o mecanismo.
     const sage = derivarMarca("#506d48", REGUA);
+    expect(sage.claro.accent).toBe("#67885d");
+    expect(sage.escuro.accent).toBe("#67885d");
     const movidas = sage.motivos.filter((m) => m.codigo === "semantica_deslocada");
     expect(movidas.length).toBeGreaterThan(0);
-    expect(movidas).toHaveLength(3);
-    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual([
-      "claro/error",
-      "escuro/warning",
-      "escuro/error",
-    ]);
+    expect(movidas).toHaveLength(2);
+    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual(["claro/error", "escuro/error"]);
   });
 
   it("devolve sinal — e não distorção — quando não há rotação que resolva", () => {
     // O laço de retorno do invariante 7 da doutrina Sistema Vivo: a peça diz o que muda
-    // no sistema quando ela não consegue resolver. Na Sage, `success` do tema escuro é
-    // literalmente o accent; girar até 60° ou colide com o accent ou colide com `info`.
-    const sage = derivarMarca("#506d48", REGUA);
-    const sinais = sage.motivos.filter(
-      (m) => m.codigo === "redundancia_nao_cromatica_necessaria",
-    );
-    expect(sinais).toHaveLength(1);
-    expect(sinais[0]).toMatchObject({ tema: "escuro", alvo: "success" });
-    expect(sinais[0]!.detalhe).toMatch(/ícone|rótulo/);
+    // no sistema quando ela não consegue resolver. Com o produto na paleta Ink nenhuma
+    // das 16 sementes adversariais produz mais esse caso organicamente (a Sage não
+    // colide mais consigo mesma — teste acima), então este teste chama
+    // `reconciliarSemanticas` DIRETO com um par construído para não ter saída: `success`
+    // começa idêntico ao accent (Δ 0) e `info` fica a 65° de distância — perto o
+    // bastante para que TODA rotação de `success` dentro do orçamento de 60° também
+    // colida com `info`. `info65graus` saiu de varredura (5° em 5° até 90°), não chute.
+    const accent = "#3b6fd4";
+    const info65graus = "#a54aa6";
+    const r = reconciliarSemanticas(accent, [
+      { nome: "success", hex: accent },
+      { nome: "info", hex: info65graus },
+    ]);
+    expect(r.semSaida).toHaveLength(1);
+    expect(r.semSaida[0]).toMatchObject({ nome: "success", separacao: 0 });
   });
 
   it("não inventa rotação impossível numa semântica sem croma", () => {
@@ -375,8 +390,9 @@ describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
         }
       }
     }
-    // Guarda de vacuidade do run inteiro: 23 movimentos medidos nas 16 sementes.
-    expect(movimentosNoRun).toBe(23);
+    // Guarda de vacuidade do run inteiro: 4 movimentos medidos nas 16 sementes contra a
+    // paleta Ink (o accent azul colide MENOS com as semânticas do que a Sage colidia).
+    expect(movimentosNoRun).toBe(4);
   });
 });
 
@@ -407,13 +423,11 @@ describe("marca acromática — o accent do produto permanece", () => {
         separacaoDoNeutro(regua, tema.grauDoAccent, tema.accent),
       ).toBeGreaterThanOrEqual(PISO_DE_SEPARACAO_DO_NEUTRO);
     }
-    // Os números exatos, fixados: 0,0681 no claro (accent-600 × neutral-600) e 0,1994 no
-    // escuro (accent-400 × neutral-400). São eles que mostram por que o piso do briefing
-    // (8, na convenção ×100 — ou seja 0,08 aqui) não podia ser aceito sem medir: ele
-    // reprovaria o controle positivo do próprio produto no tema claro.
-    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeCloseTo(0.0681, 4);
-    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.1994, 4);
-    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeLessThan(0.08);
+    // Número exato, fixado: 0,3261 nos dois temas (accent-600 × neutral-600) — tema único
+    // agora, então claro e escuro medem o mesmo par. Bem acima do piso 0,05: o accent azul
+    // e o neutro azul-Oxford do mesmo grau são bem mais separados do que Sage×greige eram.
+    expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeCloseTo(0.3261, 4);
+    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.3261, 4);
 
     // Controle negativo: um accent cinza reprovaria as duas guardas. Sem esta linha, os
     // pisos acima poderiam ser satisfeitos por qualquer coisa.
@@ -435,7 +449,11 @@ describe("marca acromática — o accent do produto permanece", () => {
       const marca = derivarMarca(navy, REGUA);
       expect(hexParaOklch(navy).C, navy).toBeGreaterThan(LIMIAR_ACROMATICO);
       expect(marca.origemDaRampa, navy).toBe("semente");
-      expect(marca.claro.accent, navy).toBe(navy);
+      // Tema único: navy (muito escura) não tem mais um tema "claro" folgado onde
+      // sobrevive literal — os dois temas são o mesmo fundo escuro agora, e a navy
+      // precisa andar nos dois. O que continua garantido (e é o que este teste
+      // realmente prova) é que o resultado nunca sai da rampa DA PRÓPRIA marca.
+      expect(rampaDeSemente(navy), navy).toContain(marca.claro.accent);
     }
   });
 });

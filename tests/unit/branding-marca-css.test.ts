@@ -104,12 +104,19 @@ describe("serialização — os dois blocos", () => {
     expect(claro["--color-brand"]).toBe("#2563eb");
   });
 
-  it("o valor por tema difere — senão a alternância estaria morta", () => {
-    // Guarda de vacuidade: dois blocos idênticos passariam em tudo acima e
-    // deixariam o tema escuro com a cor do claro.
+  it("os dois blocos existem e cada um reflete a derivação do PRÓPRIO tema", () => {
+    // Tema único, sempre escuro: `REGUA.claro` e `REGUA.escuro` leem os MESMOS
+    // valores de `app/globals.css` agora, então os dois blocos legitimamente
+    // convergem para o mesmo hex — isso deixou de ser bug. A guarda de
+    // vacuidade que valia (dois blocos idênticos por CÓPIA, não por cálculo)
+    // agora compara cada bloco contra a saída de `derivarMarca` para o SEU
+    // próprio tema: se um dia `claro`/`escuro` voltarem a divergir, um bug que
+    // copiasse o claro pro escuro ainda reprovaria aqui.
+    const marca = derivarMarca("#2563eb", REGUA);
     const blocos = lerBlocos(cssDaMarca(corDe("#2563eb")).css ?? "");
-    expect(blocos[":root:root"]?.["--color-accent"]).not.toBe(
-      blocos[':root:root[data-theme="dark"]']?.["--color-accent"],
+    expect(blocos[":root:root"]?.["--color-accent"]).toBe(marca.claro.accent);
+    expect(blocos[':root:root[data-theme="dark"]']?.["--color-accent"]).toBe(
+      marca.escuro.accent,
     );
   });
 
@@ -205,11 +212,15 @@ describe("o escopo da organização", () => {
     }
   });
 
-  it("o valor por tema difere também no escopo da organização", () => {
-    // Guarda de vacuidade do caso acima: dois blocos idênticos passariam nele e
-    // deixariam o tema escuro do tenant com a cor do claro.
+  it("os dois blocos da organização refletem a derivação do PRÓPRIO tema", () => {
+    // Tema único, sempre escuro: mesma ressalva do teste equivalente acima em
+    // "serialização — os dois blocos" — claro/escuro convergem para o mesmo
+    // hex por design agora, então a guarda compara contra `derivarMarca` em
+    // vez de exigir divergência.
+    const marca = derivarMarca("#2563eb", REGUA);
     const blocos = lerBlocos(cssDaMarca(corDe("#2563eb"), ESCOPO_DA_ORGANIZACAO).css ?? "");
-    expect(blocos[CLARO]?.["--color-accent"]).not.toBe(blocos[ESCURO]?.["--color-accent"]);
+    expect(blocos[CLARO]?.["--color-accent"]).toBe(marca.claro.accent);
+    expect(blocos[ESCURO]?.["--color-accent"]).toBe(marca.escuro.accent);
   });
 
   it("a allowlist vale igual no escopo novo", () => {
@@ -275,10 +286,11 @@ describe("allowlist de FORMA de valor", () => {
 
 describe("o que a derivação move e o CSS ainda não emite", () => {
   it("toda semântica deslocada vira um motivo de não-serialização", () => {
-    // O par com rótulo: a derivação DIZ que girou `--color-success`; se o CSS
-    // não a emite, o log precisa dizer isso também — senão o motivo descreve um
-    // movimento que a tela não faz.
-    const cor = corDe("#22c55e");
+    // O par com rótulo: a derivação DIZ que girou `--color-error` (com a
+    // paleta Ink, `#14b8a6` — turquesa — é uma das sementes que dispara isso,
+    // não mais `#22c55e`); se o CSS não a emite, o log precisa dizer isso
+    // também — senão o motivo descreve um movimento que a tela não faz.
+    const cor = corDe("#14b8a6");
     const movidas = (cor.derivada?.motivos ?? []).filter(
       (m) => m.codigo === "semantica_deslocada",
     );

@@ -262,7 +262,10 @@ describe("diagnóstico não vaza identidade", () => {
     // Mesma disciplina de `contraste.ts`: com a tabela por organização, esses
     // motivos passam a conviver num log só, e a cor de uma empresa não tem por
     // que aparecer no diagnóstico de outra.
-    const sementes = ["#f5c518", "#808080", "#0f172a", "#dc2626"];
+    // `#dc2626` saiu da lista: com a paleta Ink ela não desloca nem colide com
+    // nenhuma semântica (0 motivos) — deixou de servir de exemplo aqui.
+    // `#14b8a6` colide com `--color-error` sob dicromacia e sempre emite motivo.
+    const sementes = ["#f5c518", "#808080", "#0f172a", "#14b8a6"];
     for (const hex of sementes) {
       const marca = resolverMarca([camadaDoAmbiente({ APP_ACCENT_HEX: hex })], REGUA);
       expect(marca.motivos.length).toBeGreaterThan(0);
