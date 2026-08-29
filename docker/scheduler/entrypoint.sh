@@ -75,6 +75,11 @@ CRONS="
 # manda o que mudou). A volta é cara — varre calendário inteiro — e por isso
 # roda a cada 15.
 */5 * * * *|60|api/v1/cron/agenda-google-push
+# O LEMBRETE. A cada 5 minutos porque a antecedência é escolhida pelo dono no
+# tipo de agendamento; uma varredura mais lenta transformaria avisar 30 minutos
+# antes em avisar entre 30 e 45 minutos antes. Barato: só olha compromisso
+# confirmado, futuro e ainda não avisado.
+*/5 * * * *|45|api/v1/cron/agenda-reminder
 */15 * * * *|60|api/v1/cron/risk-watcher
 */30 * * * *|60|api/v1/cron/contact-phones
 17 * * * *|60|api/v1/cron/contact-proposals-watcher
