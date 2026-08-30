@@ -108,3 +108,6 @@ evidence/.sonda-score-residuo.json
 
 # sessão reusada pelas jornadas (contém tokens)
 .auth/
+
+# worktrees isolados de subagent-driven-development
+.worktrees/
