@@ -59,7 +59,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { classificarErroDoGoogle } from "@/lib/agenda/google/erros";
-import { doEventoDoGoogle, ehIcalUidNosso } from "@/lib/agenda/google/evento";
+import { doEventoDoGoogle, ehEventoNosso } from "@/lib/agenda/google/evento";
 import { listarEventos } from "@/lib/agenda/google/eventos-remotos";
 import { env } from "@/lib/env";
 
@@ -210,8 +210,14 @@ export async function sincronizarAgendasDoGoogle(
 
       // ⚠️ O FILTRO ANTI-ECO. Ver o cabeçalho: gravar o que nós mesmos criamos
       // faz o mesmo compromisso ocupar dois horários.
+      //
+      // Pergunta ao `bruto`, e não ao `lido`, de propósito: os três sinais que
+      // `ehEventoNosso` usa incluem as `extendedProperties`, que a tradução para
+      // `EventoExternoLido` não carrega (ela guarda o que vira COLUNA). O evento
+      // cru já está aqui, na variável do laço — perguntar a ele custa nada e não
+      // obriga a alargar a linha guardada por causa de uma decisão de leitura.
 
-      if (ehIcalUidNosso(lido.evento.ical_uid)) {
+      if (ehEventoNosso(bruto)) {
         resumo.nossosIgnorados += 1;
         continue;
       }

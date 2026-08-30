@@ -54,6 +54,8 @@ interface LinhaParaIda {
   location_kind: string;
   location_details: string | null;
   google_event_id: string | null;
+  /** O convidado externo (migration 0203). Nulo = evento sem `attendees`. */
+  guest_email: string | null;
 }
 
 function autorizado(req: NextRequest): boolean {
@@ -93,7 +95,7 @@ async function executar(req: NextRequest): Promise<Response> {
   const { data: pendentes, error: erroLeitura } = await admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, owner_user_id, title, description, starts_at, ends_at, time_zone, status, location_kind, location_details, google_event_id",
+      "id, organization_id, owner_user_id, title, description, starts_at, ends_at, time_zone, status, location_kind, location_details, google_event_id, guest_email",
     )
     // ⚠️ NÃO volte a `.or("…,updated_at.gt.google_synced_at")`.
     //
@@ -188,6 +190,24 @@ async function executar(req: NextRequest): Promise<Response> {
           status: linha.status,
           location_kind: linha.location_kind,
           location_details: linha.location_details,
+          // O CONVIDADO, e a razão de o organizador vir junto.
+          //
+          // Uma lista com só o convidado faria o Google inferir o organizador
+          // sozinho — ele acerta (é o dono do calendário em que escrevemos),
+          // mas o evento voltaria da leitura com um participante que nós nunca
+          // mandamos, e `ehIcalUidNosso` não é a única coisa que compara os dois
+          // lados. Mandar os dois explicitamente é dizer o que já é verdade.
+          //
+          // `calendario` É o e-mail da conta conectada (`account_email`), que é
+          // o id do calendário primário — a mesma identidade dos dois lados.
+          participantes: linha.guest_email
+            ? [
+                { email: calendario, organizador: true },
+                // Digitado à mão por quem marcou: nunca confirmou nada aqui, e
+                // por isso recebe RSVP de verdade em vez de chegar "aceito".
+                { email: linha.guest_email, aguardandoResposta: true },
+              ]
+            : undefined,
         } as AgendamentoParaGoogle,
         // O ID QUE JÁ TEMOS decide o verbo: sem ele, `publicarNoGoogle` cria com
         // POST; com ele, atualiza com PUT. A linha já trazia a coluna no

@@ -14,6 +14,11 @@ export interface NovoAgendamento {
   contact_id?: string;
   title?: string;
   notes?: string;
+  /**
+   * Convidado externo. Vazio ou ausente cria o evento como sempre foi — sem
+   * `attendees` e sem convite nenhum saindo do Google.
+   */
+  guest_email?: string;
 }
 
 /**

@@ -90,6 +90,20 @@ export interface ParticipanteDoAgendamento {
   nome?: string | null;
   /** O dono da agenda. Exatamente um participante deve marcar isto. */
   organizador?: boolean;
+  /**
+   * Este participante ainda NÃO confirmou nada aqui — o Google deve perguntar.
+   *
+   * O default (`false` ⇒ `responseStatus: "accepted"`) descreve o participante
+   * que já confirmou do nosso lado, e é por isso que ele é o default: cobrar
+   * RSVP de quem já disse sim no CRM seria pedir a mesma resposta duas vezes.
+   *
+   * O convidado DIGITADO À MÃO na tela é o caso oposto e por isso existe esta
+   * chave: ele nunca falou com o CRM, não confirmou coisa nenhuma, e mandá-lo
+   * como `accepted` produziria um convite que chega na caixa de entrada dele já
+   * respondido em seu nome — sem os botões "Sim / Talvez / Não", que são o
+   * motivo de se mandar convite do Google em vez de um e-mail comum.
+   */
+  aguardandoResposta?: boolean;
 }
 
 /** O subconjunto de `calendar_appointments` que o Google entende. */
@@ -196,6 +210,56 @@ export function ehIcalUidNosso(icalUid: string | null | undefined): boolean {
 }
 
 /**
+ * O prefixo dos ids de evento que NÓS criamos no Google.
+ *
+ * Mesma derivação que `escrita.ts` faz para montar o id (`idDeEventoDoGoogle`):
+ * o Google aceita só `[a-v0-9]`, então a identidade do produto entra sem o
+ * ponto. Ela mora aqui porque quem RECONHECE o evento é este arquivo; a
+ * duplicação da linha em `escrita.ts` é conhecida e ambas saem do MESMO
+ * `SUFIXO_ICAL_UID`, então não têm como divergir de valor — unificar as duas
+ * fica para quando `escrita.ts` for tocado por outro motivo.
+ */
+export const PREFIXO_DE_EVENTO = SUFIXO_ICAL_UID.toLowerCase().replace(/[^a-v0-9]/g, "");
+
+/**
+ * Este evento é ECO da nossa própria escrita? — a pergunta completa.
+ *
+ * ⚠️ O SUFIXO DO `iCalUID` DEIXOU DE BASTAR, e isto foi MEDIDO em produção.
+ *
+ * O `events.insert` do Google recusa `id` e `iCalUID` no mesmo corpo (400
+ * "Invalid resource id value."), então o POST passou a ir sem o nosso iCalUID —
+ * e o Google gera o dele, no formato `<id>@google.com`. O filtro que olhava só
+ * o sufixo `@deskcomm.app` passou a responder `false` para eventos que são
+ * nossos: uma rodada do cron de leitura devolveu `nossosIgnorados: 0` e
+ * `gravados: 3`, gravando os três compromissos do CRM como se fossem
+ * compromissos de terceiros — o mesmo horário ocupado duas vezes.
+ *
+ * São TRÊS sinais, e a ordem é a da confiança:
+ *
+ * 1. `iCalUID` com o nosso sufixo — o que já existia, e continua valendo para
+ *    todo evento que já passou por um PUT nosso (o PUT ainda manda o iCalUID).
+ * 2. `id` com o nosso prefixo — o id é DERIVADO do id do agendamento e é escrito
+ *    por nós no POST, então ele identifica exatamente o que o iCalUID deixou de
+ *    identificar. É o sinal que cobre o evento recém-criado.
+ * 3. `extendedProperties.private.deskcomm_appointment` — a marca que
+ *    `paraEventoDoGoogle` grava em TODO evento nosso, POST e PUT. É a mais
+ *    específica das três: carrega o id do agendamento, não só um formato.
+ *
+ * Três e não uma porque cada uma cobre um buraco da outra: quem editar o evento
+ * no Google pode mexer no título e no horário, mas não no id nem nas
+ * propriedades privadas do nosso app.
+ */
+export function ehEventoNosso(evento: EventoDoGoogle): boolean {
+  if (ehIcalUidNosso(evento.iCalUID)) return true;
+
+  const id = typeof evento.id === "string" ? evento.id.trim().toLowerCase() : "";
+  if (id && id.startsWith(PREFIXO_DE_EVENTO)) return true;
+
+  const marca = evento.extendedProperties?.private?.[`${PREFIXO_PROPRIEDADE}_appointment`];
+  return typeof marca === "string" && marca.trim().length > 0;
+}
+
+/**
  * O que escrever no campo `location`, que é o que a pessoa lê no calendário.
  *
  * `google_meet` não aparece aqui enquanto o link não existe: ele só nasce
@@ -252,10 +316,15 @@ export function paraEventoDoGoogle(a: AgendamentoParaGoogle): CorpoDeEventoDoGoo
     if (!email) {
       throw new Error("participante sem e-mail: o Google recusa o evento inteiro, não só o convidado");
     }
-    // `responseStatus: "accepted"` de propósito: sem isso o Google trata o
-    // convite como pendente e passa a cobrar RSVP de quem já confirmou aqui.
-    // Quem silencia o e-mail do convite é `sendUpdates: "none"`, na chamada.
-    const convidado: ParticipanteDoGoogle = { email, responseStatus: "accepted" };
+    // `responseStatus: "accepted"` é o DEFAULT, e continua sendo de propósito:
+    // sem isso o Google trata o convite como pendente e passa a cobrar RSVP de
+    // quem já confirmou aqui. Quem digitou um convidado à mão na tela não
+    // confirmou nada — esse manda `aguardandoResposta` e recebe os botões de
+    // RSVP. Quem silencia o e-mail do convite é `sendUpdates`, na chamada.
+    const convidado: ParticipanteDoGoogle = {
+      email,
+      responseStatus: p.aguardandoResposta ? "needsAction" : "accepted",
+    };
     if (p.nome?.trim()) convidado.displayName = p.nome.trim();
     if (p.organizador) convidado.organizer = true;
     return convidado;

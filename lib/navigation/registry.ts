@@ -510,6 +510,24 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     minRole: "admin",
   },
   {
+    // Mora em Organização e não em Canais de propósito: o que se configura aqui
+    // é a CONTA DE ANÚNCIOS da empresa — dinheiro e identidade comercial, ao lado
+    // de billing e API tokens. Canais é por onde se FALA com o cliente, e os dois
+    // eixos são independentes (dá para receber lead de anúncio num número servido
+    // por qualquer transporte). Ver `lib/plataformas-de-anuncio/types.ts`.
+    href: "/app/settings/conversoes",
+    label: "Conversões",
+    description:
+      "Devolver ao anúncio as vendas que ele trouxe, para ele aprender a procurar mais clientes parecidos.",
+    icon: ChartLineUp,
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin` pelo mesmo critério das vizinhas: o token grava na conta de
+    // anúncios da empresa, e quem o troca decide para onde vai o dinheiro de
+    // mídia. Um `manager` ficaria acima de billing na mesma prancheta.
+    minRole: "admin",
+  },
+  {
     href: "/app/settings/marca",
     label: "Marca",
     description: "O nome e a cor que sua empresa mostra dentro do sistema.",

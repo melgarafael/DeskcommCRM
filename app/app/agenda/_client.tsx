@@ -106,6 +106,16 @@ export function AgendaClient({
   // o que a equipe lê ao ver o horário vago.
   const [cancelandoId, setCancelandoId] = React.useState<string | null>(null);
   const [motivo, setMotivo] = React.useState("");
+  // O CONVIDADO, opcional. Vazio mantém o comportamento de sempre: evento no
+  // Google do atendente, sem `attendees` e sem convite saindo para ninguém.
+  const [emailConvidado, setEmailConvidado] = React.useState("");
+  const emailConvidadoLimpo = emailConvidado.trim();
+  // A MESMA pergunta que a rota faz, feita aqui só para não gastar um 422 com
+  // uma letra faltando no domínio. A rota continua sendo a dona da recusa — esta
+  // checagem é conveniência, não autoridade, e por isso é deliberadamente frouxa
+  // (o e-mail de verdade se prova entregando, não com regex).
+  const emailConvidadoInvalido =
+    emailConvidadoLimpo.length > 0 && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailConvidadoLimpo);
   const marcar = useMarcarAgendamento();
   const remarcar = useRemarcarAgendamento();
   const cancelar = useCancelarAgendamento();
@@ -223,6 +233,15 @@ export function AgendaClient({
   const agendamentos = React.useMemo(
     () => (isolada === null ? todos : todos.filter((a) => a.responsavelId === isolada)),
     [isolada, todos],
+  );
+
+  // A GRADE não mostra cancelado — ele fica só na aba "Cancelados" do
+  // histórico, que lê `agendamentos` (cheio) e o separa sozinha em `separar()`.
+  // Mesma fonte, dois recortes: a grade responde "o que está de pé", o
+  // histórico responde "o que aconteceu", cancelado incluso.
+  const agendamentosDaGrade = React.useMemo(
+    () => agendamentos.filter((a) => a.situacao !== "cancelled"),
+    [agendamentos],
   );
 
   const passo = visao === "mes" ? 30 : visao === "semana" ? 7 : 1;
@@ -403,6 +422,10 @@ export function AgendaClient({
           if (!aberto) {
             setRemarcandoId(null);
             setHorarioEscolhido(null);
+            // Pelo mesmo motivo das duas linhas acima: um convidado digitado e
+            // não usado reapareceria na PRÓXIMA marcação, que é de outro
+            // cliente — convite para a pessoa errada, sem ninguém ter pedido.
+            setEmailConvidado("");
           }
         }}
       >
@@ -468,6 +491,44 @@ export function AgendaClient({
               </div>
             </div>
           )}
+          {/*
+            O CONVIDADO — opcional, e é o que faz o convite do Google existir.
+            Sem e-mail aqui o evento nasce só na agenda do atendente, que é o
+            comportamento que este produto teve desde sempre.
+
+            Fica ACIMA do painel de horários de propósito: quem vai convidar
+            alguém decide isso ANTES de escolher o horário, e um campo abaixo de
+            uma lista rolável de horários é um campo que ninguém vê.
+          */}
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-text-muted" htmlFor="email-do-convidado">
+              {t("E-mail do convidado")}{" "}
+              <span className="font-normal opacity-70">({t("opcional")})</span>
+            </label>
+            <input
+              id="email-do-convidado"
+              data-testid="email-do-convidado"
+              type="email"
+              inputMode="email"
+              autoComplete="off"
+              value={emailConvidado}
+              onChange={(e) => setEmailConvidado(e.target.value)}
+              className={cn(
+                "mt-1 w-full rounded-md border bg-surface p-2 text-sm outline-none",
+                emailConvidadoInvalido
+                  ? "border-danger focus:border-danger"
+                  : "border-border focus:border-border-strong",
+              )}
+              placeholder={t("cliente@empresa.com")}
+              aria-invalid={emailConvidadoInvalido || undefined}
+              aria-describedby="ajuda-do-convidado"
+            />
+            <p id="ajuda-do-convidado" className="mt-1 text-xs text-text-muted">
+              {emailConvidadoInvalido
+                ? t("Endereço inválido — confira antes de marcar.")
+                : t("Preenchido, o Google envia o convite por e-mail para esta pessoa.")}
+            </p>
+          </div>
           {tipo && (
             <div className="mt-4 lg:min-h-0 lg:flex-1">
               <PainelDeMarcacao
@@ -520,16 +581,36 @@ export function AgendaClient({
                   // MESMA regra (`_handler.ts:96`), por construção e não por sorte.
                   // Remarcar é PATCH com o id; marcar é POST. A escolha do
                   // horário é o mesmo gesto, e por isso o mesmo painel.
+                  // Recusa ANTES da rede: o painel já pintou "Marcado ✓" quando
+                  // o 422 voltasse, e desfazer aquilo é pior do que não deixar
+                  // sair. O campo já está vermelho e explicado quando isto corta.
+                  if (emailConvidadoInvalido) {
+                    return Promise.reject(new Error("e-mail do convidado inválido"));
+                  }
+                  // `|| undefined` e não a string vazia: campo em branco tem de
+                  // ficar FORA do corpo, senão o PATCH leria "" como "apague o
+                  // convidado" e desconvidaria alguém a cada remarcação.
+                  const convidado = emailConvidadoLimpo || undefined;
                   if (remarcandoId) {
                     return remarcar
-                      .mutateAsync({ id: remarcandoId, starts_at: instante })
+                      .mutateAsync({ id: remarcandoId, starts_at: instante, guest_email: convidado })
                       .then((r) => {
                         setRemarcandoId(null);
                         setMarcando(false);
+                        setEmailConvidado("");
                         return r;
                       });
                   }
-                  return marcar.mutateAsync({ event_type_id: tipo.id, starts_at: instante });
+                  return marcar
+                    .mutateAsync({
+                      event_type_id: tipo.id,
+                      starts_at: instante,
+                      guest_email: convidado,
+                    })
+                    .then((r) => {
+                      setEmailConvidado("");
+                      return r;
+                    });
                 }}
                 // "VER NA AGENDA" — o botão que não fazia nada.
                 //
@@ -676,7 +757,7 @@ export function AgendaClient({
         ancora={ancora}
         agora={new Date()}
         pessoas={pessoas}
-        agendamentos={agendamentos}
+        agendamentos={agendamentosDaGrade}
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}
         tipo={tipo ? { id: tipo.id, duracaoMin: tipo.duracaoMin } : null}

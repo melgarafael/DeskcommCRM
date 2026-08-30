@@ -38,6 +38,20 @@ import { nomeiaProvider } from "./lint-channels.pattern";
 const ROOTS = ["app", "lib", "components", "workers"];
 const ALLOWED = [
   /^lib\/channels\//,
+  // SEGUNDA FRONTEIRA, não exceção de feature — e a diferença é o que mantém a
+  // catraca honesta. `lib/channels/` é onde vive quem ENTREGA MENSAGEM, com as
+  // capabilities que descrevem o que a plataforma deixa dizer (janela, template,
+  // ban, intervalo). Reportar conversão para a plataforma de anúncio não tem
+  // nenhuma dessas físicas, e os dois eixos são independentes: dá para receber
+  // lead de anúncio clique-para-WhatsApp num número servido por qualquer
+  // transporte. Enfiar o transporte de conversões em `lib/channels/` amarraria
+  // "reportar venda" a "ter canal oficial conectado".
+  //
+  // O que NÃO muda: continua valendo que só a fronteira nomeia o transporte.
+  // Nenhuma feature (`lib/conversoes/` inclusive) importa `meta/conversions` —
+  // ela pede ao registro pelo slug da plataforma. Ver o cabeçalho de
+  // `lib/plataformas-de-anuncio/types.ts`.
+  /^lib\/plataformas-de-anuncio\//,
   // O transporte que o adapter embrulha; some quando a Fase 3 o absorver.
   /^lib\/waha\//,
   // Saída de `supabase gen types`: os nomes são COLUNAS. Editar à mão é o defeito.

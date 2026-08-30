@@ -284,6 +284,15 @@ export const AUDIT_ACTIONS = [
   // event_log (nenhum handler consumiria o tipo — ver register-handlers.ts).
   "platform_branding.updated",
   "platform_google_oauth.updated",
+  // A conexão da ORGANIZAÇÃO com a conta de anúncios (migration 0204).
+  // Auditável porque o token gravado aqui escreve conversões na conta de
+  // mídia do cliente: "quem apontou minhas vendas para este destino?" só tem
+  // resposta nesta trilha. COM `organization_id`, diferente das duas linhas
+  // acima — é mutação de tenant, e cada organização tem a sua conta.
+  //
+  // O `metadata` carrega o dataset (identificador, não segredo) e um booleano
+  // dizendo se o token foi trocado. O token, nem em metadata.
+  "ad_platform_connection.updated",
   // A marca da ORGANIZAÇÃO (nome + cor) trocada em `organizations.settings.branding`
   // — mutação de TENANT, e por isso COM `organization_id` e com `resource_id` =
   // o uuid da org. É outra ação, e não `org.updated`, porque a pergunta que a

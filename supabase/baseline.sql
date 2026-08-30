@@ -17077,3 +17077,76 @@ grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
 grant execute on function public.fn_encrypt_oauth(text) to service_role;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_update_budget_consumption() to service_role;
+
+-- ---- conversões de anúncio: conexão + livro-razão (migration 0204) ----
+-- Idempotente e auto-curativo, como o kit exige: `update.sh` re-aplica este
+-- arquivo inteiro num banco existente e sem `ON_ERROR_STOP`.
+
+create table if not exists public.ad_platform_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  platform text not null,
+  dataset_id text,
+  access_token_encrypted bytea,
+  test_event_code text,
+  enabled boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by uuid,
+  constraint ad_platform_connections_platform_conhecida
+    check (platform in ('meta_ads', 'google_ads'))
+);
+
+create unique index if not exists ad_platform_connections_org_platform_uk
+  on public.ad_platform_connections (organization_id, platform);
+
+alter table public.ad_platform_connections enable row level security;
+revoke all on public.ad_platform_connections from anon, authenticated;
+grant select, insert, update, delete on public.ad_platform_connections to service_role;
+
+drop trigger if exists trg_ad_platform_connections_updated_at on public.ad_platform_connections;
+create trigger trg_ad_platform_connections_updated_at
+  before update on public.ad_platform_connections
+  for each row execute function public.fn_set_updated_at();
+
+create table if not exists public.ad_conversion_dispatches (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid not null references public.crm_leads(id) on delete cascade,
+  platform text not null,
+  event_name text not null,
+  status text not null,
+  reason text,
+  event_id text,
+  value_cents bigint,
+  currency text,
+  detail text,
+  attempted_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Dedup ANTES do índice único (doutrina de migrations §8): num clone que já
+-- tenha rodado uma versão sem o índice, duas linhas para o mesmo par fariam o
+-- `update.sh` quebrar aqui. Mantém a mais recente, que é o estado atual.
+delete from public.ad_conversion_dispatches a
+  using public.ad_conversion_dispatches b
+ where a.organization_id = b.organization_id
+   and a.lead_id = b.lead_id
+   and a.event_name = b.event_name
+   and a.attempted_at < b.attempted_at;
+
+create unique index if not exists ad_conversion_dispatches_lead_event_uk
+  on public.ad_conversion_dispatches (organization_id, lead_id, event_name);
+
+create index if not exists ad_conversion_dispatches_org_status_idx
+  on public.ad_conversion_dispatches (organization_id, status, attempted_at desc);
+
+alter table public.ad_conversion_dispatches enable row level security;
+revoke all on public.ad_conversion_dispatches from anon, authenticated;
+grant select, insert, update, delete on public.ad_conversion_dispatches to service_role;
+
+drop trigger if exists trg_ad_conversion_dispatches_updated_at on public.ad_conversion_dispatches;
+create trigger trg_ad_conversion_dispatches_updated_at
+  before update on public.ad_conversion_dispatches
+  for each row execute function public.fn_set_updated_at();
