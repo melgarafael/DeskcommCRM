@@ -34,16 +34,32 @@ create policy "appointment_types_select" on public.appointment_types
     or organization_id in (select public.fn_user_org_ids())
   );
 
+-- `responsible_user_id` precisa ser MEMBRO da mesma organização (não só um
+-- usuário existente em algum lugar do banco) — sem isso um manager podia
+-- gravar tipo de agendamento apontando para usuário de outra organização, ou
+-- para membro já removido (`revoked_at` preenchido).
 drop policy if exists "appointment_types_write" on public.appointment_types;
 create policy "appointment_types_write" on public.appointment_types
   for all using (
     public.fn_is_platform_admin()
     or (organization_id in (select public.fn_user_org_ids())
-        and public.fn_role_at_least(organization_id, 'manager'))
+        and public.fn_role_at_least(organization_id, 'manager')
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = appointment_types.responsible_user_id
+            and uo.organization_id = appointment_types.organization_id
+            and uo.revoked_at is null
+        ))
   ) with check (
     public.fn_is_platform_admin()
     or (organization_id in (select public.fn_user_org_ids())
-        and public.fn_role_at_least(organization_id, 'manager'))
+        and public.fn_role_at_least(organization_id, 'manager')
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = appointment_types.responsible_user_id
+            and uo.organization_id = appointment_types.organization_id
+            and uo.revoked_at is null
+        ))
   );
 
 create or replace trigger trg_appointment_types_updated_at
@@ -76,16 +92,33 @@ create policy "attendant_schedule_select" on public.attendant_schedule
     or organization_id in (select public.fn_user_org_ids())
   );
 
+-- `user_id` precisa ser MEMBRO da mesma organização, pelo mesmo motivo da
+-- `appointment_types_write` acima. Quando `user_id = auth.uid()` a checagem é
+-- redundante (a sessão já é membro da org, por `fn_user_org_ids()`), mas
+-- aplicá-la sem exceção evita que um manager grave horário para usuário de
+-- outra organização ou já removido (`revoked_at` preenchido).
 drop policy if exists "attendant_schedule_write" on public.attendant_schedule;
 create policy "attendant_schedule_write" on public.attendant_schedule
   for all using (
     public.fn_is_platform_admin()
     or (organization_id in (select public.fn_user_org_ids())
-        and (user_id = auth.uid() or public.fn_role_at_least(organization_id, 'manager')))
+        and (user_id = auth.uid() or public.fn_role_at_least(organization_id, 'manager'))
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = attendant_schedule.user_id
+            and uo.organization_id = attendant_schedule.organization_id
+            and uo.revoked_at is null
+        ))
   ) with check (
     public.fn_is_platform_admin()
     or (organization_id in (select public.fn_user_org_ids())
-        and (user_id = auth.uid() or public.fn_role_at_least(organization_id, 'manager')))
+        and (user_id = auth.uid() or public.fn_role_at_least(organization_id, 'manager'))
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = attendant_schedule.user_id
+            and uo.organization_id = attendant_schedule.organization_id
+            and uo.revoked_at is null
+        ))
   );
 
 create or replace trigger trg_attendant_schedule_updated_at
@@ -138,16 +171,49 @@ create policy "appointments_select" on public.appointments
     )
   );
 
+-- `lead_id` e `appointment_type_id` precisam apontar para linhas da MESMA
+-- organização do agendamento — FK sozinha só garante que a linha existe em
+-- ALGUMA organização, não na organização certa. Sem isto um agent da org A
+-- conseguia gravar `organization_id = org_A` com `lead_id`/`appointment_type_id`
+-- de outra organização, e como a exclusion constraint abaixo (`gist`, escopo
+-- só por `responsible_user_id` + intervalo) não é escopada por organização,
+-- isso vira vetor cross-tenant de probing/DoS contra a agenda de um
+-- `responsible_user_id` de outra org. **`appointments.responsible_user_id`
+-- fica FORA do escopo desta checagem de propósito** — nada aqui garante que
+-- ele seja membro da organização (pode divergir do `responsible_user_id` do
+-- `appointment_type` referenciado); é uma lacuna conhecida, deliberadamente
+-- não coberta por este fix para não misturar o escopo do achado de referência
+-- cruzada (lead/tipo) com o de membership do responsável.
 drop policy if exists "appointments_write" on public.appointments;
 create policy "appointments_write" on public.appointments
   for all using (
     public.fn_is_platform_admin()
     or (organization_id in (select public.fn_user_org_ids())
-        and public.fn_role_at_least(organization_id, 'agent'))
+        and public.fn_role_at_least(organization_id, 'agent')
+        and exists (
+          select 1 from public.crm_leads l
+          where l.id = appointments.lead_id
+            and l.organization_id = appointments.organization_id
+        )
+        and exists (
+          select 1 from public.appointment_types t
+          where t.id = appointments.appointment_type_id
+            and t.organization_id = appointments.organization_id
+        ))
   ) with check (
     public.fn_is_platform_admin()
     or (organization_id in (select public.fn_user_org_ids())
-        and public.fn_role_at_least(organization_id, 'agent'))
+        and public.fn_role_at_least(organization_id, 'agent')
+        and exists (
+          select 1 from public.crm_leads l
+          where l.id = appointments.lead_id
+            and l.organization_id = appointments.organization_id
+        )
+        and exists (
+          select 1 from public.appointment_types t
+          where t.id = appointments.appointment_type_id
+            and t.organization_id = appointments.organization_id
+        ))
   );
 
 create or replace trigger trg_appointments_updated_at
