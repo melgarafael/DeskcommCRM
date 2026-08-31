@@ -217,6 +217,15 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     group: "crm",
     sidebar: true,
   },
+  {
+    href: "/app/settings/appointment-types",
+    label: "Tipos de agendamento",
+    description: "Os tipos de horário que a equipe pode marcar, e quem é o responsável de cada um.",
+    icon: CalendarBlank,
+    group: "crm",
+    minRole: "manager",
+    sidebar: false,
+  },
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
