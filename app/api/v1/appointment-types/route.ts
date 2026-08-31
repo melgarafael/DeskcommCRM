@@ -52,6 +52,26 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
+
+  // responsible_user_id vem do body — nunca confiar sem provar que é membro
+  // ativo desta org (mesmo padrão de app/api/v1/conversations/[id]/transfer/route.ts).
+  const { data: member, error: memberErr } = await admin
+    .from("user_organizations")
+    .select("role")
+    .eq("organization_id", authz.org.orgId)
+    .eq("user_id", parsed.data.responsible_user_id)
+    .is("revoked_at", null)
+    .maybeSingle();
+  if (memberErr) return fail("internal_error", memberErr.message, 500, { requestId });
+  if (!member) {
+    return fail(
+      "unprocessable_entity",
+      "responsible_user_id não é membro ativo desta organização.",
+      422,
+      { requestId },
+    );
+  }
+
   const { data, error } = await admin
     .from("appointment_types")
     .insert({ organization_id: authz.org.orgId, ...parsed.data })

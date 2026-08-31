@@ -63,6 +63,16 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
 
+  // lead_id vem do body — nunca confiar sem provar que pertence a esta org
+  // (mesma exigência já aplicada abaixo ao appointment_type_id).
+  const { data: lead, error: leadErr } = await admin
+    .from("crm_leads")
+    .select("id")
+    .eq("id", parsed.data.lead_id)
+    .eq("organization_id", authz.org.orgId)
+    .single();
+  if (leadErr || !lead) return fail("not_found", "Lead não encontrado nesta organização.", 404, { requestId });
+
   const { data: type, error: typeErr } = await admin
     .from("appointment_types")
     .select("duration_minutes, responsible_user_id")

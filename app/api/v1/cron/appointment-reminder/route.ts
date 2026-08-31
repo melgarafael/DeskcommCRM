@@ -42,6 +42,7 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runBeforeSend } from "@/lib/agent-engine/guardrails/before-send";
+import { deriveLgpdFromContact, type LgpdContactFields } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { crmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/crm/mcp-client";
 import { WahaChannelAdapter } from "@/lib/agent-engine/edge/channel/waha-adapter";
@@ -134,6 +135,22 @@ async function sendOneReminder(
   const contactId = (lead as { contact_id: string } | null)?.contact_id;
   if (!contactId) return; // lead sem contato vinculado: nada a fazer, próxima rodada tenta de novo
 
+  // Base legal LGPD do contato — fonte confiável (mesma leitura que
+  // get-lead-context.ts faz para o resto do agent-engine). Sem isto,
+  // `ctx.lgpd` fica null dentro do runBeforeSend e o lgpdGate vira no-op:
+  // um contato JÁ anonimizado (fn_lgpd_cascade_redact_contact, que não toca
+  // `appointments`) receberia o lembrete mesmo assim.
+  const { data: contactRow, error: contactErr } = await admin
+    .from("contacts")
+    .select("source, consent, is_anonymized")
+    .eq("id", contactId)
+    .eq("organization_id", appt.organization_id)
+    .maybeSingle();
+  if (contactErr || !contactRow) return; // contato não resolvível: pula, próxima rodada tenta de novo
+  // isProspecting=false: lembrete responde a um agendamento já existente do
+  // lead, nunca é 1º toque frio (mesma justificativa de get-lead-context.ts).
+  const lgpd = deriveLgpdFromContact(contactRow as LgpdContactFields, false);
+
   // Conversa mais recente do lead NESTA organização — nunca inventada
   // (regra dura nº 1). Sem conversa nenhuma não há channel_session_id nem
   // conversation_id para montar o envio: pula, a próxima rodada tenta de novo.
@@ -162,6 +179,7 @@ async function sendOneReminder(
     optedOutThisTurn: false,
     crmDailyLimit: null,
     now,
+    lgpd,
     // Mesmo ChannelAdapter (WAHA via CRM) que o resto do engine usa — o
     // (appointment_id, seq=1) é a chave de idempotência do send_ledger, então
     // um retry deste cron para o MESMO agendamento nunca duplica o WhatsApp.

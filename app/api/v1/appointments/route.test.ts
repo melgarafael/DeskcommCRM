@@ -95,7 +95,7 @@ describe("POST /api/v1/appointments", () => {
     reqOk();
     vi.mocked(createAdminClient).mockReturnValue({
       from: (table: string) => {
-        if (table === "appointment_types") {
+        if (table === "crm_leads" || table === "appointment_types") {
           return {
             select: () => ({
               eq: () => ({
@@ -174,7 +174,7 @@ describe("POST /api/v1/appointments", () => {
     reqOk();
     vi.mocked(createAdminClient).mockReturnValue({
       from: (table: string) =>
-        table === "appointment_types"
+        table === "crm_leads" || table === "appointment_types"
           ? {
               select: () => ({
                 eq: () => ({
@@ -206,6 +206,36 @@ describe("POST /api/v1/appointments", () => {
       }) as never,
     );
     expect(res.status).toBe(409);
+  });
+
+  it("404 quando lead_id não pertence a esta organização (cross-tenant)", async () => {
+    reqOk();
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: (table: string) => {
+        if (table === "crm_leads") {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({ single: () => Promise.resolve({ data: null, error: null }) }),
+              }),
+            }),
+          };
+        }
+        throw new Error(`tabela inesperada nesta rota do teste: ${table}`);
+      },
+    } as never);
+
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          lead_id: LEAD_ID,
+          appointment_type_id: TYPE_ID,
+          scheduled_at: "2026-09-01T09:00:00.000Z",
+        }),
+      }) as never,
+    );
+    expect(res.status).toBe(404);
   });
 
   it("422 sem lead_id", async () => {

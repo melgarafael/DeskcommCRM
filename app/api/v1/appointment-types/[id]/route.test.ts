@@ -105,4 +105,24 @@ describe("PATCH /api/v1/appointment-types/[id]", () => {
     );
     expect(res.status).toBe(422);
   });
+
+  it("422 quando responsible_user_id não é membro ativo desta organização (cross-tenant)", async () => {
+    reqOk();
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      is: () => chain,
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    };
+    vi.mocked(createAdminClient).mockReturnValue({ from: () => chain } as never);
+
+    const res = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        body: JSON.stringify({ responsible_user_id: "99999999-9999-4999-8999-999999999999" }),
+      }) as never,
+      { params: Promise.resolve({ id: TYPE_ID }) } as never,
+    );
+    expect(res.status).toBe(422);
+  });
 });

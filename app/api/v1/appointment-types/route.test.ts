@@ -23,7 +23,10 @@ function stubAdmin(rows: unknown[] = [], insertResult: { data: unknown; error: u
   const chain = {
     select: () => chain,
     eq: () => chain,
+    is: () => chain,
     order: () => Promise.resolve({ data: rows, error: null }),
+    // responsible_user_id: membro ativo por default (POST feliz-caminho).
+    maybeSingle: () => Promise.resolve({ data: { role: "agent" }, error: null }),
     insert: () => ({
       select: () => ({ single: () => Promise.resolve(insertResult) }),
     }),
@@ -88,6 +91,29 @@ describe("POST /api/v1/appointment-types", () => {
       new Request("http://x", {
         method: "POST",
         body: JSON.stringify({ duration_minutes: 30, responsible_user_id: USER_ID }),
+      }) as never,
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it("422 quando responsible_user_id não é membro ativo desta organização (cross-tenant)", async () => {
+    reqOk("manager");
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      is: () => chain,
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    };
+    vi.mocked(createAdminClient).mockReturnValue({ from: () => chain } as never);
+
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "Consulta",
+          duration_minutes: 30,
+          responsible_user_id: USER_ID,
+        }),
       }) as never,
     );
     expect(res.status).toBe(422);

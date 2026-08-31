@@ -81,6 +81,24 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
 
+  // user_id vem do body — quando é edição de terceiro (só manager/admin chega
+  // aqui), prova que o alvo é membro ativo desta org antes de gravar (mesmo
+  // padrão de app/api/v1/conversations/[id]/transfer/route.ts). Edição do
+  // próprio horário não precisa: authz já garantiu que o autor é membro.
+  if (editandoOutraPessoa) {
+    const { data: member, error: memberErr } = await admin
+      .from("user_organizations")
+      .select("role")
+      .eq("organization_id", authz.org.orgId)
+      .eq("user_id", parsed.data.user_id)
+      .is("revoked_at", null)
+      .maybeSingle();
+    if (memberErr) return fail("internal_error", memberErr.message, 500, { requestId });
+    if (!member) {
+      return fail("unprocessable_entity", "user_id não é membro ativo desta organização.", 422, { requestId });
+    }
+  }
+
   // Substitui o conjunto inteiro da semana desta pessoa — mais simples que
   // diff incremental, e o payload já vem com a semana completa da tela.
   const { error: delErr } = await admin

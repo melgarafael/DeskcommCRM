@@ -78,9 +78,13 @@ describe("PUT /api/v1/attendant-schedule", () => {
     expect(inserted).toHaveLength(1);
   });
 
-  it("manager PODE editar horário de outra pessoa", async () => {
+  it("manager PODE editar horário de outra pessoa (membro ativo da org)", async () => {
     reqOk("manager");
     const chain = {
+      select: () => chain,
+      eq: () => chain,
+      is: () => chain,
+      maybeSingle: () => Promise.resolve({ data: { role: "agent" }, error: null }),
       delete: () => ({ eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
       insert: () => Promise.resolve({ error: null }),
     };
@@ -93,6 +97,25 @@ describe("PUT /api/v1/attendant-schedule", () => {
       }) as never,
     );
     expect(res.status).toBe(200);
+  });
+
+  it("422 quando o alvo de terceiro não é membro ativo desta organização (cross-tenant)", async () => {
+    reqOk("manager");
+    const chain = {
+      select: () => chain,
+      eq: () => chain,
+      is: () => chain,
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    };
+    vi.mocked(createAdminClient).mockReturnValue({ from: () => chain } as never);
+
+    const res = await PUT(
+      new Request("http://x", {
+        method: "PUT",
+        body: JSON.stringify({ user_id: OUTRO_USER_ID, blocks: [] }),
+      }) as never,
+    );
+    expect(res.status).toBe(422);
   });
 
   it("rejeita bloco com ends_at <= starts_at", async () => {
