@@ -22,6 +22,16 @@ function reqOk(role: "agent" | "manager" = "agent") {
 
 beforeEach(() => vi.clearAllMocks());
 
+describe("GET /api/v1/attendant-schedule", () => {
+  it("rejeita ?user_id= malformado com 422 (não 500)", async () => {
+    reqOk("agent");
+    const res = await GET(
+      new Request("http://x?user_id=not-a-uuid", { method: "GET" }) as never,
+    );
+    expect(res.status).toBe(422);
+  });
+});
+
 describe("PUT /api/v1/attendant-schedule", () => {
   it("agent NÃO pode editar horário de OUTRA pessoa (403)", async () => {
     reqOk("agent");

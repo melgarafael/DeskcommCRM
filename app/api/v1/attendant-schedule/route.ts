@@ -24,13 +24,26 @@ const putSchema = z.object({
   blocks: z.array(blockSchema),
 });
 
+const getQuerySchema = z.object({
+  user_id: z.string().uuid().optional(),
+});
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "attendant_schedule" });
   if (!authz.ok) return authz.response;
 
   const url = new URL(req.url);
-  const userId = url.searchParams.get("user_id") ?? authz.user.id;
+  const parsedQuery = getQuerySchema.safeParse({
+    user_id: url.searchParams.get("user_id") ?? undefined,
+  });
+  if (!parsedQuery.success) {
+    return fail("validation_failed", "Query inválida.", 422, {
+      details: parsedQuery.error.flatten().fieldErrors as Record<string, unknown>,
+      requestId,
+    });
+  }
+  const userId = parsedQuery.data.user_id ?? authz.user.id;
 
   const admin = createAdminClient();
   const { data, error } = await admin
