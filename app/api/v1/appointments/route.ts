@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -99,14 +100,25 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Vínculo lead↔agendamento — `target_kind='appointment'` já reservado no
   // CHECK de `crm_lead_links`, nunca usado até aqui (DIRC: referenciar, não duplicar).
-  await admin.from("crm_lead_links").insert({
+  // `link_kind` é `text not null` sem default; "reference" segue o precedente
+  // existente (target_kind='external' + link_kind='reference').
+  const { error: linkErr } = await admin.from("crm_lead_links").insert({
     organization_id: authz.org.orgId,
     lead_id: parsed.data.lead_id,
     target_kind: "appointment",
     target_id: appointmentId,
+    link_kind: "reference",
   });
+  if (linkErr) {
+    logger.warn("[appointments] crm_lead_links insert falhou", {
+      error: linkErr.message,
+      appointment_id: appointmentId,
+      lead_id: parsed.data.lead_id,
+      requestId,
+    });
+  }
 
-  await emitLeadActivity(admin as never, {
+  const activityResult = await emitLeadActivity(admin as never, {
     organizationId: authz.org.orgId,
     leadId: parsed.data.lead_id,
     type: "appointment_scheduled",
@@ -115,6 +127,14 @@ export async function POST(req: NextRequest): Promise<Response> {
     actor: { type: "user", id: authz.user.id },
     reason: `Agendamento marcado para ${new Date(parsed.data.scheduled_at).toLocaleString("pt-BR")}`,
   });
+  if (!activityResult.ok) {
+    logger.warn("[appointments] emitLeadActivity falhou", {
+      error: activityResult.error,
+      appointment_id: appointmentId,
+      lead_id: parsed.data.lead_id,
+      requestId,
+    });
+  }
 
   void audit({
     action: "appointment.created",

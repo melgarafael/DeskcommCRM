@@ -4,10 +4,13 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/leads/activity-emitter", () => ({ emitLeadActivity: vi.fn().mockResolvedValue({ ok: true }) }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 
 import { GET, POST } from "./route";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logger } from "@/lib/logger";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const LEAD_ID = "55555555-5555-4555-8555-555555555555";
@@ -57,7 +60,93 @@ describe("POST /api/v1/appointments", () => {
 
     expect(res.status).toBe(201);
     expect(inserts.some((i) => i.table === "appointments")).toBe(true);
-    expect(inserts.some((i) => i.table === "crm_lead_links")).toBe(true);
+    const linkInsert = inserts.find((i) => i.table === "crm_lead_links");
+    expect(linkInsert).toBeDefined();
+    expect(linkInsert?.row).toMatchObject({
+      organization_id: ORG_ID,
+      lead_id: LEAD_ID,
+      target_kind: "appointment",
+      link_kind: "reference",
+    });
+  });
+
+  it("loga aviso (sem derrubar a resposta) quando o insert de crm_lead_links falha", async () => {
+    reqOk();
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: (table: string) => {
+        if (table === "appointment_types") {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({ single: () => Promise.resolve({ data: { duration_minutes: 30, responsible_user_id: USER_ID }, error: null }) }),
+              }),
+            }),
+          };
+        }
+        if (table === "appointments") {
+          return {
+            insert: () => ({
+              select: () => ({ single: () => Promise.resolve({ data: { id: "novo-agendamento" }, error: null }) }),
+            }),
+          };
+        }
+        // crm_lead_links: insert falha (sem .select().single() no fluxo real).
+        return {
+          insert: () => Promise.resolve({ error: { message: "constraint violation" } }),
+        };
+      },
+    } as never);
+
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          lead_id: LEAD_ID,
+          appointment_type_id: TYPE_ID,
+          scheduled_at: "2026-09-01T09:00:00.000Z",
+        }),
+      }) as never,
+    );
+
+    expect(res.status).toBe(201);
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.stringContaining("crm_lead_links"),
+      expect.objectContaining({ error: "constraint violation" }),
+    );
+  });
+
+  it("loga aviso quando emitLeadActivity falha, sem derrubar a resposta", async () => {
+    reqOk();
+    vi.mocked(emitLeadActivity).mockResolvedValueOnce({ ok: false, error: "falha simulada" });
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: (table: string) => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({ single: () => Promise.resolve({ data: { duration_minutes: 30, responsible_user_id: USER_ID }, error: null }) }),
+          }),
+        }),
+        insert: () => ({
+          select: () => ({ single: () => Promise.resolve({ data: { id: "novo-agendamento" }, error: null }) }),
+        }),
+      }),
+    } as never);
+
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          lead_id: LEAD_ID,
+          appointment_type_id: TYPE_ID,
+          scheduled_at: "2026-09-01T09:00:00.000Z",
+        }),
+      }) as never,
+    );
+
+    expect(res.status).toBe(201);
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.stringContaining("emitLeadActivity"),
+      expect.objectContaining({ error: "falha simulada" }),
+    );
   });
 
   it("409 quando o banco recusa por sobreposição de horário (exclusion constraint, código 23P01)", async () => {
