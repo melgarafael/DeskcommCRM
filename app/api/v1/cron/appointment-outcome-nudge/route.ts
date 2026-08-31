@@ -12,6 +12,19 @@
  * `scheduled_at` puro — um agendamento de 2h "termina" bem depois de começar.
  * `ends_at` foi adicionada em migration NOVA (0166), nunca editando a 0165 já
  * commitada (doutrina de migrations: "nunca edite migration já aplicada").
+ *
+ * `agent_inbox_items.kind = 'appointment_outcome_pending'` também entrou na
+ * 0166 (extensão do bloco único de `agent_inbox_items_kind_check`) — sem
+ * isso, todo INSERT deste cron falharia com 23514 num Postgres real.
+ *
+ * Dedup contra reaviso: o cron roda de hora em hora e o mesmo agendamento
+ * atrasado continuaria candidato enquanto ninguém mudar o status (que este
+ * cron nunca faz sozinho) — sem checar se já existe um aviso `open` para o
+ * MESMO agendamento, a Central ganharia um item novo por hora, para sempre.
+ * Mesmo padrão de dedup já usado no baseline para `budget_warning`
+ * (`not exists (select 1 from agent_inbox_items i where ... and i.status =
+ * 'open')`), aqui feito como um SELECT em lote (`ref_id in (...)`) antes do
+ * loop de insert, para não disparar uma query por candidato.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -25,6 +38,7 @@ export const dynamic = "force-dynamic";
 
 const GRACE_MS = 60 * 60 * 1000; // 1h após o fim do agendamento
 const BATCH_LIMIT = 100;
+const KIND = "appointment_outcome_pending";
 
 export interface NudgeResult {
   nudged: number;
@@ -42,33 +56,51 @@ export async function nudgePendingOutcomes(
 ): Promise<NudgeResult> {
   const cutoff = new Date(now.getTime() - GRACE_MS).toISOString();
 
+  // Corte real no banco (não pós-fetch): esta varredura é cross-tenant por
+  // desenho (sem filtro de organization_id — é uma manutenção de plataforma,
+  // não uma leitura de tela) e roda a cada hora, então um `.limit()` fora do
+  // SQL seria uma leitura ilimitada recorrente numa instância movimentada.
   const { data, error } = await admin
     .from("appointments")
     .select("id, organization_id, lead_id")
     .eq("status", "scheduled")
-    .lt("ends_at", cutoff);
+    .lt("ends_at", cutoff)
+    .limit(BATCH_LIMIT);
   if (error) throw new Error(`select_past_failed: ${error.message}`);
 
-  // BATCH_LIMIT aplicado no app (não via `.limit()` do query builder): mantém
-  // este caminho compatível com o dublê de teste, que resolve a Promise em
-  // `.lt()` — o mesmo formato usado no cron-irmão `appointment-reminder`
-  // teria `.limit()` encadeado antes do await, mas aqui o filtro real
-  // (`ends_at`) já limita bem o conjunto por natureza (agendamentos vencidos
-  // há mais de 1h), então um corte pós-fetch é seguro.
-  const past = ((data ?? []) as PastAppointment[]).slice(0, BATCH_LIMIT);
+  const past = (data ?? []) as PastAppointment[];
+  if (past.length === 0) return { nudged: 0 };
+
+  // Quem já tem aviso ABERTO para o mesmo agendamento não recebe outro nesta
+  // rodada — sem isto, o mesmo atraso ganharia um item novo por hora até um
+  // humano agir, e o conjunto de candidatos nunca encolheria.
+  const ids = past.map((appt) => appt.id);
+  const { data: existentes, error: existentesError } = await admin
+    .from("agent_inbox_items")
+    .select("ref_id")
+    .eq("kind", KIND)
+    .eq("status", "open")
+    .in("ref_id", ids);
+  if (existentesError) throw new Error(`select_existing_failed: ${existentesError.message}`);
+
+  const jaAvisados = new Set(((existentes ?? []) as { ref_id: string }[]).map((r) => r.ref_id));
+
+  let nudged = 0;
   for (const appt of past) {
+    if (jaAvisados.has(appt.id)) continue;
     await admin.from("agent_inbox_items").insert({
       organization_id: appt.organization_id,
-      kind: "appointment_outcome_pending",
+      kind: KIND,
       severity: "info",
       title: "Confirme o desfecho de um agendamento",
       body: "Um horário marcado já passou e ainda não foi marcado como concluído, cancelado ou falta.",
       ref_kind: "appointment",
       ref_id: appt.id,
     });
+    nudged += 1;
   }
 
-  return { nudged: past.length };
+  return { nudged };
 }
 
 async function handle(req: NextRequest): Promise<Response> {

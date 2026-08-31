@@ -10111,6 +10111,12 @@ alter table public.agent_inbox_items
     -- janela e reprova um teste que não tem nada a ver com o kind novo (medido:
     -- offset 1532 -> 2275). Kind novo entra no fim da lista.
     'budget_warning',
+    -- (migration 0166) Cron appointment-outcome-nudge: agendamento (`appointments`)
+    -- que passou de `scheduled` para "deveria ter terminado há mais de 1h" e
+    -- ninguém confirmou o desfecho (compareceu / faltou / cancelou). Entra
+    -- NESTA lista, no fim, pela mesma razão das entradas acima (bloco único
+    -- por constraint, #159) — e antes de 'other' pela mesma convenção.
+    'appointment_outcome_pending',
     'other'
   ));
 

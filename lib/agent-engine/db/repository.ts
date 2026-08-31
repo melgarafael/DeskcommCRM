@@ -55,6 +55,10 @@ export type InboxKind =
   // `budget_exceeded` porque diz coisa diferente: um relata que algo
   // ACONTECEU e a IA segue; o outro, que ela parou. Severity 'warn'.
   | 'budget_warning'
+  // (migration 0166) Agendamento (`appointments`) que passou de `scheduled`
+  // para "deveria ter terminado há mais de 1h" e ninguém confirmou o
+  // desfecho. Emitido só pelo cron appointment-outcome-nudge.
+  | 'appointment_outcome_pending'
   | 'other';
 
 export interface InboxItemRow {
