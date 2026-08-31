@@ -26,17 +26,19 @@ export async function GET(req: NextRequest): Promise<Response> {
   const from = url.searchParams.get("from"); // ISO
   const to = url.searchParams.get("to"); // ISO
   const responsibleUserId = url.searchParams.get("responsible_user_id");
+  const leadId = url.searchParams.get("lead_id");
 
   const admin = createAdminClient();
   let query = admin
     .from("appointments")
     .select("id, lead_id, appointment_type_id, responsible_user_id, scheduled_at, duration_minutes, status")
-    .eq("organization_id", authz.org.orgId)
-    .order("scheduled_at", { ascending: true });
+    .eq("organization_id", authz.org.orgId);
 
   if (from) query = query.gte("scheduled_at", from);
   if (to) query = query.lt("scheduled_at", to);
   if (responsibleUserId) query = query.eq("responsible_user_id", responsibleUserId);
+  if (leadId) query = query.eq("lead_id", leadId);
+  query = query.order("scheduled_at", { ascending: true });
 
   const { data, error } = await query;
   if (error) return fail("internal_error", "Erro ao listar agendamentos.", 500, { requestId });
