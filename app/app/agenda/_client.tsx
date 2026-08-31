@@ -28,16 +28,30 @@ export function AgendaClient() {
   const [date, setDate] = useState(() => toDateInputValue(new Date()));
   const [items, setItems] = useState<AppointmentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
     setLoading(true);
     const from = `${date}T00:00:00.000Z`;
-    const to = `${date}T23:59:59.999Z`;
+    // Início do dia SEGUINTE como limite exclusivo — evita o off-by-one de
+    // `23:59:59.999Z` (um agendamento no milissegundo exato ficaria de fora).
+    const proximoDia = new Date(`${date}T00:00:00.000Z`);
+    proximoDia.setUTCDate(proximoDia.getUTCDate() + 1);
+    const to = proximoDia.toISOString();
     fetch(`/api/v1/appointments?from=${from}&to=${to}`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        return r.json();
+      })
       .then((json: { data?: AppointmentRow[] }) => {
-        if (!cancelado) setItems(json.data ?? []);
+        if (!cancelado) {
+          setItems(json.data ?? []);
+          setErro(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelado) setErro(true);
       })
       .finally(() => {
         if (!cancelado) setLoading(false);
@@ -71,7 +85,10 @@ export function AgendaClient() {
       </div>
 
       {loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
-      {!loading && items.length === 0 && (
+      {!loading && erro && (
+        <p className="text-sm text-destructive">Erro ao carregar agenda. Tente novamente.</p>
+      )}
+      {!loading && !erro && items.length === 0 && (
         <p className="text-sm text-muted-foreground">Nenhum agendamento neste dia.</p>
       )}
       <div className="flex flex-col gap-2">
