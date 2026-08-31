@@ -13816,3 +13816,13 @@ create or replace trigger trg_appointments_updated_at
 revoke all on public.appointment_types from anon;
 revoke all on public.attendant_schedule from anon;
 revoke all on public.appointments from anon;
+
+-- ---- Agenda nativa: coluna gerada ends_at em appointments (migration 0166) ----
+
+alter table public.appointments
+  add column if not exists ends_at timestamptz
+  generated always as (scheduled_at + (duration_minutes || ' minutes')::interval) stored;
+
+create index if not exists idx_appointments_ends_at
+  on public.appointments (ends_at)
+  where status = 'scheduled';
