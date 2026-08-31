@@ -6,6 +6,7 @@ import {
   BookOpen,
   Brain,
   Buildings,
+  CalendarBlank,
   ChartBar,
   ChartLineUp,
   ClipboardText,
@@ -206,6 +207,14 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: Funnel,
     group: "crm",
     minRole: "manager",
+    sidebar: true,
+  },
+  {
+    href: "/app/agenda",
+    label: "Agenda",
+    description: "Horários marcados — hoje e os próximos dias.",
+    icon: CalendarBlank,
+    group: "crm",
     sidebar: true,
   },
 
