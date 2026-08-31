@@ -88,7 +88,11 @@ CRONS="
 # Sem ele este script só seria exercitável dentro de um contêiner — e o único
 # artefato executável novo desta entrega ficaria sem gate nenhum, que foi
 # exatamente o achado da revisão adversarial.
-DESTINO="${CRONTAB_PATH:-/etc/crontabs/root}"
+#
+# O nome do arquivo casa com o usuário não-root "scheduler" do Dockerfile: o
+# busybox crond, rodando sem privilégio, só executa o crontab do PRÓPRIO
+# usuário (/etc/crontabs/<nome> — não mais "root").
+DESTINO="${CRONTAB_PATH:-/etc/crontabs/scheduler}"
 
 umask 077
 : > "$DESTINO"

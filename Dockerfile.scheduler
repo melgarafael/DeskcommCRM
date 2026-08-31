@@ -20,6 +20,13 @@ RUN apk add --no-cache curl tzdata
 COPY docker/scheduler/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# non-root: busybox crond, sem privilégio, só lê o crontab do PRÓPRIO usuário
+# (/etc/crontabs/<nome>) — por isso o diretório precisa ser dono do "scheduler"
+# e o CRONTAB_PATH default do entrypoint.sh aponta pro arquivo com esse nome.
+RUN addgroup -g 1001 -S scheduler && adduser -S -G scheduler scheduler -u 1001 \
+    && mkdir -p /etc/crontabs && chown -R scheduler:scheduler /etc/crontabs
+USER scheduler
+
 # Prova de vida: se o crond morrer, o contêiner cai e o `restart: unless-stopped`
 # o traz de volta. Sem isto, um crond morto fica indistinguível de um cron ocioso.
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=3 \
