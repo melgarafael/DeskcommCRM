@@ -22,10 +22,20 @@ function reqOk() {
 beforeEach(() => vi.clearAllMocks());
 
 describe("GET /api/v1/appointments/available-slots", () => {
-  it("400 sem type_id ou date", async () => {
+  it("422 sem type_id ou date", async () => {
     reqOk();
     const res = await GET(new Request("http://x/api/v1/appointments/available-slots") as never);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
+  });
+
+  it("422 com type_id não-UUID ou date malformada (sem lançar 500)", async () => {
+    reqOk();
+    const res = await GET(
+      new Request("http://x/api/v1/appointments/available-slots?type_id=not-a-uuid&date=notadate") as never,
+    );
+    expect(res.status).toBe(422);
+    const json = await res.json();
+    expect(json.error.code).toBe("validation_failed");
   });
 
   it("devolve slots calculados a partir do tipo + horário do atendente + fuso da org", async () => {

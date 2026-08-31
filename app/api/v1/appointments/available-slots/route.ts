@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
@@ -9,17 +10,28 @@ import { wallClockParts } from "@/lib/tempo/zoned-clock";
 
 export const dynamic = "force-dynamic";
 
+const querySchema = z.object({
+  type_id: z.string().uuid(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "appointments" });
   if (!authz.ok) return authz.response;
 
   const url = new URL(req.url);
-  const typeId = url.searchParams.get("type_id");
-  const date = url.searchParams.get("date"); // "YYYY-MM-DD"
-  if (!typeId || !date) {
-    return fail("invalid_request", "type_id e date são obrigatórios.", 400, { requestId });
+  const parsedQuery = querySchema.safeParse({
+    type_id: url.searchParams.get("type_id"),
+    date: url.searchParams.get("date"), // "YYYY-MM-DD"
+  });
+  if (!parsedQuery.success) {
+    return fail("validation_failed", "type_id e date são obrigatórios e devem ser válidos.", 422, {
+      requestId,
+      details: parsedQuery.error.flatten(),
+    });
   }
+  const { type_id: typeId, date } = parsedQuery.data;
 
   const admin = createAdminClient();
 
