@@ -51,6 +51,7 @@ CRONS="
 */5 * * * *|25|api/v1/cron/attendant-heartbeat
 */5 * * * *|45|api/v1/cron/channel-health
 */10 * * * *|60|api/v1/cron/contact-avatars
+*/10 * * * *|60|api/v1/cron/appointment-reminder
 */15 * * * *|60|api/v1/cron/risk-watcher
 */30 * * * *|60|api/v1/cron/contact-phones
 17 * * * *|60|api/v1/cron/contact-proposals-watcher
