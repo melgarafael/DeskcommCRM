@@ -62,3 +62,47 @@ describe("DELETE /api/v1/appointment-types/[id]", () => {
     expect(deletado).toBe(true);
   });
 });
+
+describe("PATCH /api/v1/appointment-types/[id]", () => {
+  it("exige manager+ (role insuficiente devolve a resposta do requireRole)", async () => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: false,
+      response: new Response(JSON.stringify({ error: { code: "forbidden_role" } }), { status: 403 }) as never,
+    });
+    const res = await PATCH(
+      new Request("http://x", { method: "PATCH", body: JSON.stringify({ name: "Novo nome" }) }) as never,
+      { params: Promise.resolve({ id: TYPE_ID }) } as never,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("atualiza com payload parcial válido, escopado por id e organization_id", async () => {
+    reqOk();
+    const eqCalls: unknown[][] = [];
+    const chain = {
+      update: () => chain,
+      eq: (...args: unknown[]) => {
+        eqCalls.push(args);
+        return eqCalls.length >= 2 ? Promise.resolve({ error: null }) : chain;
+      },
+    };
+    vi.mocked(createAdminClient).mockReturnValue({ from: () => chain } as never);
+
+    const res = await PATCH(
+      new Request("http://x", { method: "PATCH", body: JSON.stringify({ name: "Novo nome" }) }) as never,
+      { params: Promise.resolve({ id: TYPE_ID }) } as never,
+    );
+    expect(res.status).toBe(200);
+    expect(eqCalls).toContainEqual(["id", TYPE_ID]);
+    expect(eqCalls).toContainEqual(["organization_id", ORG_ID]);
+  });
+
+  it("rejeita (422) payload parcial inválido (color fora do formato hex)", async () => {
+    reqOk();
+    const res = await PATCH(
+      new Request("http://x", { method: "PATCH", body: JSON.stringify({ color: "not-a-color" }) }) as never,
+      { params: Promise.resolve({ id: TYPE_ID }) } as never,
+    );
+    expect(res.status).toBe(422);
+  });
+});
