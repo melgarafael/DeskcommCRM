@@ -30,11 +30,11 @@ beforeEach(() => vi.clearAllMocks());
 describe("GET /api/v1/appointments", () => {
   it("filtra por lead_id quando informado", async () => {
     reqOk();
-    let filtroAplicado: unknown;
+    const eqCalls: Array<{ col: string; val: unknown }> = [];
     const chain: Record<string, unknown> = {
       select: () => chain,
-      eq: (_col: string, val: unknown) => {
-        filtroAplicado = val;
+      eq: (col: string, val: unknown) => {
+        eqCalls.push({ col, val });
         return chain;
       },
       order: () => Promise.resolve({ data: [], error: null }),
@@ -42,7 +42,9 @@ describe("GET /api/v1/appointments", () => {
     vi.mocked(createAdminClient).mockReturnValue({ from: () => chain } as never);
 
     await GET(new Request("http://x/api/v1/appointments?lead_id=lead-1") as never);
-    expect(filtroAplicado).toBeDefined();
+
+    expect(eqCalls).toContainEqual({ col: "organization_id", val: ORG_ID });
+    expect(eqCalls).toContainEqual({ col: "lead_id", val: "lead-1" });
   });
 });
 
