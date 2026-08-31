@@ -226,6 +226,14 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     minRole: "manager",
     sidebar: false,
   },
+  {
+    href: "/app/settings/meu-horario",
+    label: "Meu horário de agendamento",
+    description: "Os dias e horários em que você pode ser agendado pela equipe.",
+    icon: CalendarBlank,
+    group: "crm",
+    sidebar: false,
+  },
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
