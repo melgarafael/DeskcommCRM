@@ -21,6 +21,8 @@ export function AppointmentTypesClient() {
   const [duration, setDuration] = useState(30);
   const [responsibleUserId, setResponsibleUserId] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(false);
 
   async function carregar() {
     const res = await fetch("/api/v1/appointment-types");
@@ -30,6 +32,7 @@ export function AppointmentTypesClient() {
 
   useEffect(() => {
     let cancelado = false;
+    setLoading(true);
     fetch("/api/v1/appointment-types")
       .then((r) => {
         if (!r.ok) throw new Error(`status ${r.status}`);
@@ -38,7 +41,14 @@ export function AppointmentTypesClient() {
       .then((json: { data?: AppointmentType[] }) => {
         if (!cancelado) {
           setItems(json.data ?? []);
+          setErro(false);
         }
+      })
+      .catch(() => {
+        if (!cancelado) setErro(true);
+      })
+      .finally(() => {
+        if (!cancelado) setLoading(false);
       });
     return () => {
       cancelado = true;
@@ -115,6 +125,14 @@ export function AppointmentTypesClient() {
           </Button>
         </CardContent>
       </Card>
+
+      {loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+      {!loading && erro && (
+        <p className="text-sm text-destructive">Erro ao carregar tipos de agendamento. Tente novamente.</p>
+      )}
+      {!loading && !erro && items.length === 0 && (
+        <p className="text-sm text-muted-foreground">Nenhum tipo de agendamento cadastrado.</p>
+      )}
 
       <div className="flex flex-col gap-2">
         {items.map((item) => (
