@@ -1982,7 +1982,7 @@ np_ok() {  # np_ok <caminho> <esperado>
   else printf '  ✗ %s → deu [%s], esperava [%s]\n' "$1" "$real" "$2"; fail=1; fi
 }
 np_ok /root/deskcommcrm  deskcommcrm
-np_ok /root/SonghaiCRM  deskcommcrm
+np_ok /root/SonghaiCRM  songhaicrm
 np_ok /root/_deskcomm    deskcomm
 np_ok /root/-deskcomm    deskcomm
 np_ok /root/_-_crm       crm
