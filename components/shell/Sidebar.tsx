@@ -99,7 +99,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           </span>
         )}
       </div>
-      <nav className="flex-1 space-y-3 overflow-y-auto p-2" aria-label="Navegação principal">
+      <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label="Navegação principal">
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
           return (
@@ -127,7 +127,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                         title={collapsed ? t(item.label) : undefined}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
-                          "relative flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
+                          "relative flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
                           isActive
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -152,7 +152,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                       title={collapsed ? t(group.hub.label) : undefined}
                       aria-current={pathname === group.hub.href ? "page" : undefined}
                       className={cn(
-                        "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
+                        "flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
                         pathname === group.hub.href
                           ? "bg-accent text-accent-foreground"
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
