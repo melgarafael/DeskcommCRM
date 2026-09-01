@@ -10,10 +10,11 @@
  * kanban só precisa achar o card, não criá-lo, e um INSERT à mão provaria
  * menos do que a rota pública que qualquer cliente usa.
  *
- * ⚠️ NÃO RODADO nesta sessão — sem Docker/Supabase local/dev server
- * disponíveis aqui. Ver doutrina de QA Visual do CLAUDE.md: precisa rodar
- * `pnpm test:e2e -- agenda-nativa.spec.ts` com o ambiente completo antes do
- * merge.
+ * Rodado no CI real (`e2e` do PR): a 1ª execução pegou uma corrida na própria
+ * spec — a tela "Meu horário" busca o horário existente (GET) antes de
+ * renderizar os 7 dias, e contar `input[type="time"]` antes desse fetch
+ * terminar dá total=0, salvando uma agenda VAZIA em silêncio (o toast
+ * "Horário salvo." aparece do mesmo jeito, porque 0 blocos é payload válido).
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -82,7 +83,14 @@ test.describe("Agenda nativa — fluxo completo", () => {
     // em que este teste rode, sem depender de `new Date().getDay()` bater com
     // o dia da semana calculado no fuso da organização.
     await page.goto("/app/settings/meu-horario");
+    // A tela busca o horário existente (GET) antes de renderizar os 7 dias —
+    // contar `input[type="time"]` antes desse fetch terminar dá total=0 e o
+    // loop abaixo não roda nada, salvando uma agenda VAZIA em silêncio (o
+    // "Horário salvo." aparece do mesmo jeito, porque 0 blocos é payload
+    // válido). `toHaveCount` espera até os 14 campos (7 dias × início/fim)
+    // existirem de verdade.
     const horarios = page.locator('input[type="time"]');
+    await expect(horarios).toHaveCount(14);
     const total = await horarios.count();
     for (let i = 0; i < total; i += 2) {
       await horarios.nth(i).fill("07:00");
