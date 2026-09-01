@@ -50,10 +50,10 @@ function sql(script: string): string {
 }
 
 // UUIDs fixos deixam o seed idempotente (on conflict do nothing).
-const ORG_A = "aaaaaaaa-0000-4000-8000-0000a9e17d001";
-const ORG_B = "bbbbbbbb-0000-4000-8000-0000a9e17d002";
-const USER_A = "aaaaaaaa-1111-4000-8000-0000a9e17d001";
-const USER_B = "bbbbbbbb-1111-4000-8000-0000a9e17d002";
+const ORG_A = "aaaaaaaa-0000-4000-8000-000a9e17d001";
+const ORG_B = "bbbbbbbb-0000-4000-8000-000a9e17d002";
+const USER_A = "aaaaaaaa-1111-4000-8000-000a9e17d001";
+const USER_B = "bbbbbbbb-1111-4000-8000-000a9e17d002";
 
 /**
  * Roda SELECTs como o role `authenticated` com o JWT do usuário dado, do mesmo
@@ -272,6 +272,10 @@ describe("RLS — appointment_types/attendant_schedule/appointments isolam por o
 
       select current_setting('test.exclusion_result');
     `);
-    expect(out.trim()).toBe("23P01");
+    // `psql -tA` suprime cabeçalho/rodapé de SELECT, mas não a tag de conclusão
+    // do `DO $$ ... $$;` ("DO", numa linha própria antes do resultado do SELECT
+    // seguinte) — por isso a última linha, não o texto inteiro, é o resultado.
+    const linhas = out.trim().split("\n");
+    expect(linhas[linhas.length - 1]).toBe("23P01");
   });
 });
