@@ -159,7 +159,7 @@ export function TenantForm({ initial }: Props) {
             placeholder="ex: Sem orçamento, Concorrente"
           />
           <p className="text-xs text-muted-foreground">
-            Adicionados ao set padrão. Cada pipeline pode ter seus próprios motivos.
+            Adicionados ao set padrão. Cada funil pode ter seus próprios motivos.
           </p>
         </div>
 
