@@ -8,7 +8,7 @@
 -- backfill: o Postgres calcula automaticamente para as linhas que já existem.
 alter table public.appointments
   add column if not exists ends_at timestamptz
-  generated always as (scheduled_at + (duration_minutes || ' minutes')::interval) stored;
+  generated always as (public.fn_appointment_ends_at(scheduled_at, duration_minutes)) stored;
 
 create index if not exists idx_appointments_ends_at
   on public.appointments (ends_at)

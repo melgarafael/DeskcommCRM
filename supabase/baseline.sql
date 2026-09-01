@@ -13609,6 +13609,28 @@ create or replace trigger trg_payments_updated_at
 
 create extension if not exists btree_gist with schema extensions;
 
+-- Wrapper IMMUTABLE do `scheduled_at + (duration_minutes || ' minutos')::interval`.
+-- O operador `timestamptz + interval` do Postgres é marcado STABLE (não
+-- IMMUTABLE) porque em geral um `interval` pode carregar meses/anos, cuja
+-- duração depende de calendário/timezone — mas aqui `duration_minutes` é
+-- SEMPRE um interval puro de minutos, sem ambiguidade de calendário. Esta
+-- função é a asserção explícita e documentada dessa garantia, permitindo usar
+-- a expressão numa exclusion constraint (`gist`) e numa coluna gerada — ambos
+-- exigem IMMUTABLE, e o Postgres não tem como provar isso sozinho a partir do
+-- operador genérico.
+create or replace function public.fn_appointment_ends_at(p_scheduled_at timestamptz, p_duration_minutes integer)
+returns timestamptz
+language sql
+immutable
+set search_path = public
+as $$
+  select p_scheduled_at + (p_duration_minutes || ' minutes')::interval
+$$;
+
+revoke all     on function public.fn_appointment_ends_at(timestamptz, integer) from public;
+revoke execute on function public.fn_appointment_ends_at(timestamptz, integer) from anon;
+grant  execute on function public.fn_appointment_ends_at(timestamptz, integer) to authenticated, service_role;
+
 create table if not exists public.appointment_types (
   id                  uuid primary key default gen_random_uuid(),
   organization_id     uuid not null references public.organizations(id) on delete cascade,
@@ -13744,7 +13766,7 @@ create table if not exists public.appointments (
   -- sobrepostos, mesmo com duas requisições concorrentes.
   exclude using gist (
     responsible_user_id with =,
-    tstzrange(scheduled_at, scheduled_at + (duration_minutes || ' minutes')::interval) with &&
+    tstzrange(scheduled_at, public.fn_appointment_ends_at(scheduled_at, duration_minutes)) with &&
   ) where (status = 'scheduled')
 );
 
@@ -13827,7 +13849,7 @@ revoke all on public.appointments from anon;
 
 alter table public.appointments
   add column if not exists ends_at timestamptz
-  generated always as (scheduled_at + (duration_minutes || ' minutes')::interval) stored;
+  generated always as (public.fn_appointment_ends_at(scheduled_at, duration_minutes)) stored;
 
 create index if not exists idx_appointments_ends_at
   on public.appointments (ends_at)
