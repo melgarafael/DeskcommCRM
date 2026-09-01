@@ -153,7 +153,7 @@ describe("appointment-reminder — a regra", () => {
 
     expect(marcados).toEqual([]);
     const calls = vi.mocked(runBeforeSend).mock.calls;
-    const call = calls[calls.length - 1][0] as { lgpd: { isAnonymized: boolean } | null };
+    const call = calls[calls.length - 1]![0] as { lgpd: { isAnonymized: boolean } | null };
     expect(call.lgpd?.isAnonymized).toBe(true);
   });
 });
