@@ -1470,7 +1470,7 @@ STUB
   tag_app="${img_app##*:}"
   for par in "WORKER_IMAGE:deskcomm-worker" "SCHEDULER_IMAGE:deskcomm-scheduler"; do
     chave="${par%%:*}"; repo="${par##*:}"
-    if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "ghcr.io/melgarafael/${repo}:${tag_app}" ]; then
+    if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "ghcr.io/mutambe/${repo}:${tag_app}" ]; then
       printf '  ✗ %s não acompanha a versão do app (%s): %s\n' "$chave" "$tag_app" \
         "$(grep -E "^${chave}=" "$VPS_PROJ/.env" || echo '(ausente)')"
       printf '     app numa versão e worker em outra é a matriz que ninguém testou.\n'; exit 1
@@ -1629,7 +1629,7 @@ STUB
 
   for par in "APP_IMAGE:deskcommcrm" "WORKER_IMAGE:deskcomm-worker" "SCHEDULER_IMAGE:deskcomm-scheduler"; do
     chave="${par%%:*}"; repo="${par##*:}"
-    if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "ghcr.io/melgarafael/${repo}:1.10.0" ]; then
+    if [ "$(valor_no_env "$VPS_PROJ/.env" "$chave")" != "ghcr.io/mutambe/${repo}:1.10.0" ]; then
       printf '  ✗ %s não foi pinado na versão resolvida (1.10.0): %s\n' "$chave" \
         "$(grep -E "^${chave}=" "$VPS_PROJ/.env" || echo '(ausente)')"
       printf '     instalação de cliente NUNCA nasce em tag móvel — docs/doctrine/packaging.md, invariante 3.\n'
@@ -1654,6 +1654,23 @@ echo "packaging: a tag do git não basta — as imagens têm de existir"
 # GHCR nasce privado, e repositório público não muda isso.
 TMP_PRIV="$(mktemp -d)"
 (
+  # Mesmo motivo do teste de pinagem acima: REPO_URL precisa resolver uma
+  # versão de verdade para este cenário existir ("achei a tag, mas a imagem
+  # daquela tag está privada/inacessível"). Um fork sem release publicada
+  # ainda (git ls-remote real devolve vazio) cairia no ramo "não consegui
+  # descobrir a versão" em vez do ramo que este teste mede — repo local e
+  # offline, como o vizinho, para não depender do estado de tags do fork.
+  origem="$TMP_PRIV/origem.git"
+  git init --quiet --bare "$origem"
+  (
+    cd "$TMP_PRIV" || exit 1
+    git clone --quiet "$origem" w 2>/dev/null
+    cd w || exit 1
+    git config user.email t@t; git config user.name t
+    echo x > a; git add -A; git commit --quiet -m init
+    git tag v1.0.0
+    git push --quiet origin HEAD --tags 2>/dev/null
+  )
   montar_vps "$TMP_PRIV/vps" "crmpriv" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$DOCKER_LOG"
@@ -1662,9 +1679,11 @@ case "$1" in
 esac
 exit 0
 STUB
+  export REPO_URL="$origem"
   export DUBLE_GHCR=403          # pacote existe mas está PRIVADO
   saida="$(rodar install.sh --yes)"
   unset DUBLE_GHCR
+  unset REPO_URL
 
   if ! printf '%s' "$saida" | grep -q "construídas neste servidor"; then
     printf '  ✗ com as imagens inalcançáveis, o instalador não avisou que ia construir aqui\n'
