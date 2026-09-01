@@ -1,5 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible, IBM_Plex_Mono } from "next/font/google";
+import {
+  Archivo,
+  Atkinson_Hyperlegible,
+  IBM_Plex_Mono,
+  Public_Sans,
+} from "next/font/google";
 import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
@@ -30,6 +35,31 @@ const atkinson = Atkinson_Hyperlegible({
   weight: ["400", "700"],
   display: "swap",
   variable: "--font-atkinson",
+});
+
+/*
+ * As duas fontes da FACHADA (as telas de antes de entrar), do arquivo de
+ * referência do desenho: Archivo nos títulos, Public Sans no corpo.
+ *
+ * Elas são carregadas aqui porque `next/font` só funciona no escopo do módulo —
+ * mas NÃO são aplicadas ao produto: o `<body>` continua em `font-sans`, que é a
+ * Atkinson Hyperlegible. Trocar a fonte do produto inteiro por causa da tela de
+ * login seria decidir, de carona, uma questão de legibilidade que ninguém pediu
+ * (a Atkinson está aqui exatamente por isso). Estas duas entram só onde o
+ * desenho as pede, por `font-display` / `font-fachada` no `/login`.
+ */
+const archivo = Archivo({
+  subsets: ["latin", "latin-ext"],
+  weight: ["600", "700", "800"],
+  display: "swap",
+  variable: "--font-archivo",
+});
+
+const publicSans = Public_Sans({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600"],
+  display: "swap",
+  variable: "--font-public-sans",
 });
 
 const plexMono = IBM_Plex_Mono({
@@ -278,7 +308,7 @@ export default function RootLayout({
       lang="pt-BR"
       data-theme="light"
       suppressHydrationWarning
-      className={`${atkinson.variable} ${plexMono.variable}`}
+      className={`${atkinson.variable} ${plexMono.variable} ${archivo.variable} ${publicSans.variable}`}
     >
       <head>
         {/* Primeiro de tudo: a cor da instalação, antes do CSS e do script de tema. */}

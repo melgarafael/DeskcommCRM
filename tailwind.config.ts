@@ -119,6 +119,21 @@ const config: Config = {
         },
       },
       fontFamily: {
+        // Fachada (telas de antes de entrar) — ver o bloco das fontes em
+        // `app/layout.tsx`. Não são a fonte do produto; são as do desenho do
+        // `/login`, e só ele as usa.
+        display: [
+          "var(--font-archivo)",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
+        fachada: [
+          "var(--font-public-sans)",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
         sans: [
           "var(--font-atkinson)",
           "ui-sans-serif",

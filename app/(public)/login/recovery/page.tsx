@@ -4,6 +4,7 @@ import { RecoveryForm } from "@/components/auth/RecoveryForm";
 import { createClient } from "@/lib/supabase/server";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { FachadaCentrada } from "@/components/auth/FachadaCentrada";
 
 export const metadata = { title: "Recuperar acesso" };
 
@@ -23,22 +24,24 @@ export default async function RecoveryPage({
   const t = (texto: string) => traduzir(texto, idioma);
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-1.5 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Recuperar acesso")}</h1>
-        <p className="text-sm text-muted-foreground">
-          {t("Use um código de recuperação para reconfigurar sua autenticação em duas etapas.")}
-        </p>
+    <FachadaCentrada>
+      <div className="space-y-6">
+        <div className="space-y-1.5 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("Recuperar acesso")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("Use um código de recuperação para reconfigurar sua autenticação em duas etapas.")}
+          </p>
+        </div>
+        <RecoveryForm next={next} />
+        <div className="text-center text-sm">
+          <Link
+            href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
+            className="text-muted-foreground underline-offset-4 hover:underline"
+          >
+            {t("Voltar ao login")}
+          </Link>
+        </div>
       </div>
-      <RecoveryForm next={next} />
-      <div className="text-center text-sm">
-        <Link
-          href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
-          className="text-muted-foreground underline-offset-4 hover:underline"
-        >
-          {t("Voltar ao login")}
-        </Link>
-      </div>
-    </div>
+    </FachadaCentrada>
   );
 }

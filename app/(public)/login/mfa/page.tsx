@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MfaForm } from "@/components/auth/MfaForm";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { FachadaCentrada } from "@/components/auth/FachadaCentrada";
 
 export const metadata = { title: "Verificação em duas etapas" };
 
@@ -29,14 +30,16 @@ export default async function MfaChallengePage({
   const t = (texto: string) => traduzir(texto, idioma);
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-1.5 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Verificação em duas etapas")}</h1>
-        <p className="text-sm text-muted-foreground">
-          {t("Digite o código de 6 dígitos do seu autenticador.")}
-        </p>
+    <FachadaCentrada>
+      <div className="space-y-6">
+        <div className="space-y-1.5 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("Verificação em duas etapas")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("Digite o código de 6 dígitos do seu autenticador.")}
+          </p>
+        </div>
+        <MfaForm next={next} />
       </div>
-      <MfaForm next={next} />
-    </div>
+    </FachadaCentrada>
   );
 }

@@ -19,15 +19,36 @@ test.describe("auth flow", () => {
     expect(page.url()).not.toMatch(/\/app\//);
   });
 
+  /**
+   * O redesenho do `/login` pôs DOIS controles novos entre a senha e o "Entrar":
+   * o olho que revela a senha e o link "Esqueci minha senha". (A maquete tinha um
+   * terceiro, a caixa "Manter conectado"; ela não entrou enquanto a duração da
+   * sessão não for tratada.) A versão anterior desta spec ia de `#password` direto
+   * ao botão — ela
+   * não passou a estar errada por capricho do desenho: aquele caminho deixou de
+   * existir, e mantê-la verde exigiria tirar do teclado justamente os controles
+   * que acabaram de entrar.
+   *
+   * O que continua sendo medido é o que importava antes e importa agora: dá para
+   * percorrer o formulário inteiro pelo teclado, na ordem em que ele aparece na
+   * tela, sem cair em nada fora dele nem pular o botão que envia.
+   */
   test("login form is keyboard navigable in tab order", async ({ page }) => {
     await page.goto("/login");
     await page.locator("#email").focus();
     await expect(page.locator("#email")).toBeFocused();
+
     await page.keyboard.press("Tab");
     await expect(page.locator("#password")).toBeFocused();
+
     await page.keyboard.press("Tab");
-    // Next focusable is the submit button
-    const submit = page.getByRole("button", { name: /entrar/i });
+    await expect(page.getByRole("button", { name: /mostrar senha/i })).toBeFocused();
+
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: /esqueci minha senha/i })).toBeFocused();
+
+    await page.keyboard.press("Tab");
+    const submit = page.getByRole("button", { name: /^entrar$/i });
     await expect(submit).toBeFocused();
   });
 
