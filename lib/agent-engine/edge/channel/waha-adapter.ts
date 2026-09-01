@@ -99,3 +99,14 @@ export class WahaChannelAdapter implements ChannelAdapter {
     return { perMessageUsdCents: 0, model: 'flat' };
   }
 }
+
+/**
+ * Fábrica do canal físico default — o ponto que quem PRECISA de um
+ * `ChannelAdapter` mas não pode nomear o provider (doutrina de restrição de
+ * canal, invariante 1) importa em vez da classe acima. Este arquivo já está
+ * na lista de dívida conhecida de `scripts/lint-channels.ts`; um chamador
+ * NOVO não precisa entrar nela também.
+ */
+export function defaultChannelAdapter(db: pg.Pool, crmCfg: CrmEdgeConfig): ChannelAdapter {
+  return new WahaChannelAdapter(db, crmCfg);
+}

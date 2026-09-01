@@ -5,14 +5,17 @@
  * da Agenda nativa, migration 0165). NÃO é um envio cru: passa pela MESMA
  * cadeia `runBeforeSend` (`lib/agent-engine/guardrails/before-send.ts`) que o
  * resto do agent-engine usa — sem ela, mandaria mensagem pra lead que pediu
- * STOP, ignoraria janela de 24h e anti-ban (doutrina WAHA W-01..12).
+ * STOP, ignoraria janela de 24h e anti-ban (doutrina de restrição de canal,
+ * regras W-01..12).
  *
  * O ENVIO FÍSICO reusa a mesma peça que `followup-turn.ts` usa para a
  * re-entrada determinística (`runDeterministicReentry`,
- * lib/agent-engine/agent/followup-turn.ts:445-573): `WahaChannelAdapter`
- * (lib/agent-engine/edge/channel/waha-adapter.ts) sobre o MESMO `pg.Pool` que
- * `runBeforeSend` recebe — não um novo caminho de rede pro WAHA. O `pool` em
- * si vem de `getRequestPool()` (lib/agent-engine/db/request-pool.ts), o
+ * lib/agent-engine/agent/followup-turn.ts:445-573): `defaultChannelAdapter()`
+ * (lib/channels/pre-seam-adapter.ts — nunca importe o adapter concreto do
+ * agent-engine direto, doutrina de restrição de canal invariante 1) sobre o
+ * MESMO `pg.Pool` que `runBeforeSend` recebe — não um novo caminho de rede
+ * pro canal físico. O `pool` em si vem de `getRequestPool()`
+ * (lib/agent-engine/db/request-pool.ts), o
  * singleton lazy que as rotas `/api/v1` já usam para falar com o engine
  * (ex.: app/api/v1/ai/cases/[id]/reply/route.ts) — diferente do worker
  * (`workers/agent-worker/main.ts`), que cria o pool uma vez no `main()`; uma
@@ -45,7 +48,8 @@ import { runBeforeSend } from "@/lib/agent-engine/guardrails/before-send";
 import { deriveLgpdFromContact, type LgpdContactFields } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { crmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/crm/mcp-client";
-import { WahaChannelAdapter } from "@/lib/agent-engine/edge/channel/waha-adapter";
+import { defaultChannelAdapter } from "@/lib/channels/pre-seam-adapter";
+import type { ChannelAdapter } from "@/lib/agent-engine/channel-adapter";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +93,7 @@ export async function sendAppointmentReminders(
     SUPABASE_URL: env.NEXT_PUBLIC_SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
   });
-  const channel = new WahaChannelAdapter(pool, crmCfg);
+  const channel = defaultChannelAdapter(pool, crmCfg);
 
   const result: ReminderResult = { scanned: 0, sent: 0, vetoed: 0, failed: 0 };
   for (const appt of (due ?? []) as DueAppointment[]) {
@@ -121,7 +125,7 @@ export async function sendAppointmentReminders(
 async function sendOneReminder(
   admin: ReturnType<typeof createAdminClient>,
   pool: pg.Pool,
-  channel: WahaChannelAdapter,
+  channel: ChannelAdapter,
   appt: DueAppointment,
   now: Date,
   result: ReminderResult,
@@ -180,7 +184,7 @@ async function sendOneReminder(
     crmDailyLimit: null,
     now,
     lgpd,
-    // Mesmo ChannelAdapter (WAHA via CRM) que o resto do engine usa — o
+    // Mesmo ChannelAdapter (canal físico via CRM) que o resto do engine usa — o
     // (appointment_id, seq=1) é a chave de idempotência do send_ledger, então
     // um retry deste cron para o MESMO agendamento nunca duplica o WhatsApp.
     send: (finalBody: string) =>
