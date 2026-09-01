@@ -53,6 +53,8 @@ export const DICIONARIO: Traducoes = {
   // da tela de configuração, que antes disputava "Funis" com ela.
   Funis: { es: "Embudos" },
   "Etapas do funil": { es: "Etapas del embudo" },
+  Agenda: { es: "Agenda" },
+  PaySuite: { es: "PaySuite" },
   Agentes: { es: "Agentes" },
   "Follow-ups": { es: "Seguimientos" },
   Roteadores: { es: "Enrutadores" },

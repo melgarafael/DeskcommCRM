@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { copyToClipboard } from "@/lib/clipboard";
 import { CreditCard } from "@/lib/ui/icons";
 
 interface Props {
@@ -40,10 +41,10 @@ export function CobrarButton({ leadId, hasValue }: Props) {
         toast.error("PaySuite não devolveu o link de pagamento.");
         return;
       }
-      try {
-        await navigator.clipboard.writeText(url);
+      const copiado = await copyToClipboard(url);
+      if (copiado) {
         toast.success("Link de pagamento copiado — cole no WhatsApp.");
-      } catch {
+      } else {
         toast.success("Link gerado.", { description: url });
       }
     } catch {
