@@ -19,7 +19,7 @@
 # depender dele seria diagnosticar o passado com a ferramenta do passado. E
 # precisa poder ser baixado avulso, sem clonar nada:
 #
-#   curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/self-host-kit/diagnostico.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/mutambe/DeskcommCRM/main/self-host-kit/diagnostico.sh | bash
 #
 # ── O que ele pode assumir que existe ────────────────────────────────────────
 # Medido numa VPS real: bash 5.1, docker, docker compose, curl, sed/awk/grep.
@@ -110,7 +110,7 @@ IMG_APP="$(imagem_do_servico app)"
 #     A primeira versão deste detector decidia pelo NOME da imagem ("tem host,
 #     logo veio de registro") e só consultava os labels quando o nome não tinha
 #     host. Uma sabotagem derrubou isso em um comando: construí local, taguei
-#     como `ghcr.io/melgarafael/deskcomm-worker:falsificado`, e o diagnóstico
+#     como `ghcr.io/mutambe/deskcomm-worker:falsificado`, e o diagnóstico
 #     deu "NÃO afetada" numa instalação afetada. Pior: o comentário ao lado do
 #     código afirmava que os labels pegariam esse caso — a prosa descrevia uma
 #     proteção que o código não implementava.
