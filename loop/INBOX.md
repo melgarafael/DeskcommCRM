@@ -5,7 +5,7 @@ resolve o que consegue, e o que não consegue chega ao dono **mastigado** — nu
 um erro cru.
 
 **Escopo**: esta inbox é EXCLUSIVA do **gov-loop** (loop de construção do épico de
-governança). Alertas de runtime do produto seguem os canais do próprio DeskcommCRM
+governança). Alertas de runtime do produto seguem os canais do próprio SonghaiCRM
 (Sentry, audit log) — misturar os dois canais é defeito.
 
 **Onde vive**: `loop/inbox.items.md` — não `loop/inbox.md`, porque em filesystem

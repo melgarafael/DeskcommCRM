@@ -111,7 +111,7 @@ Se as métricas de área podem melhorar enquanto o número do topo piora, o dese
 
 ---
 
-# Aplicação de referência — DeskcommCRM
+# Aplicação de referência — SonghaiCRM
 
 **Propósito em estado terminal, já declarado:** venda fechada · suporte resolvido/concluído · agendamento feito. É a base do índice; a definição existe desde o desenho original do sistema.
 

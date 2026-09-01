@@ -5,7 +5,7 @@
 # High-confidence manually curated instincts should be preserved alongside these.
 
 ---
-id: DeskcommCRM-commit-conventional
+id: SonghaiCRM-commit-conventional
 trigger: "when writing a commit message"
 confidence: 0.85
 domain: git
@@ -13,7 +13,7 @@ source: repo-analysis
 source_repo: https://github.com/melgarafael/DeskcommCRM
 ---
 
-# DeskcommCRM Commit Conventional
+# SonghaiCRM Commit Conventional
 
 ## Action
 
@@ -26,7 +26,7 @@ Use conventional commit format with prefixes: fix
 - Examples: fix(supabase): compara channel_sessions.status contra WORKING (maiúsculo)
 
 ---
-id: DeskcommCRM-commit-length
+id: SonghaiCRM-commit-length
 trigger: "when writing a commit message"
 confidence: 0.6
 domain: git
@@ -34,7 +34,7 @@ source: repo-analysis
 source_repo: https://github.com/melgarafael/DeskcommCRM
 ---
 
-# DeskcommCRM Commit Length
+# SonghaiCRM Commit Length
 
 ## Action
 
@@ -46,7 +46,7 @@ Write moderate-length commit messages (~73 characters)
 - Based on 1 commits
 
 ---
-id: DeskcommCRM-naming-files
+id: SonghaiCRM-naming-files
 trigger: "when creating a new file"
 confidence: 0.8
 domain: code-style
@@ -54,7 +54,7 @@ source: repo-analysis
 source_repo: https://github.com/melgarafael/DeskcommCRM
 ---
 
-# DeskcommCRM Naming Files
+# SonghaiCRM Naming Files
 
 ## Action
 
@@ -66,7 +66,7 @@ Use snake_case naming convention
 - Dominant pattern: snake_case
 
 ---
-id: DeskcommCRM-import-relative
+id: SonghaiCRM-import-relative
 trigger: "when importing modules"
 confidence: 0.75
 domain: code-style
@@ -74,7 +74,7 @@ source: repo-analysis
 source_repo: https://github.com/melgarafael/DeskcommCRM
 ---
 
-# DeskcommCRM Import Relative
+# SonghaiCRM Import Relative
 
 ## Action
 
@@ -86,7 +86,7 @@ Use relative imports for project files
 - Example: import { x } from '../lib/x'
 
 ---
-id: DeskcommCRM-export-style
+id: SonghaiCRM-export-style
 trigger: "when exporting from a module"
 confidence: 0.7
 domain: code-style
@@ -94,7 +94,7 @@ source: repo-analysis
 source_repo: https://github.com/melgarafael/DeskcommCRM
 ---
 
-# DeskcommCRM Export Style
+# SonghaiCRM Export Style
 
 ## Action
 
@@ -106,7 +106,7 @@ Prefer named exports
 - Dominant style: named
 
 ---
-id: DeskcommCRM-test-separate
+id: SonghaiCRM-test-separate
 trigger: "when writing tests"
 confidence: 0.8
 domain: testing
@@ -114,7 +114,7 @@ source: repo-analysis
 source_repo: https://github.com/melgarafael/DeskcommCRM
 ---
 
-# DeskcommCRM Test Separate
+# SonghaiCRM Test Separate
 
 ## Action
 
@@ -131,7 +131,7 @@ trigger: "When creating a new file"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct File Naming
@@ -150,7 +150,7 @@ trigger: "When defining a new function"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Function Naming
@@ -169,7 +169,7 @@ trigger: "When defining a new class"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Class Naming
@@ -188,7 +188,7 @@ trigger: "When defining a new constant"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Constant Naming
@@ -207,7 +207,7 @@ trigger: "When importing modules"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Import Style
@@ -226,7 +226,7 @@ trigger: "When exporting modules or functions"
 confidence: 0.9
 domain: code-style
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Export Style
@@ -245,7 +245,7 @@ trigger: "When writing a commit message for a bug fix"
 confidence: 0.9
 domain: git
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Git Commit Prefix
@@ -265,7 +265,7 @@ trigger: "When writing a commit message"
 confidence: 0.9
 domain: git
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Git Commit Format
@@ -285,7 +285,7 @@ trigger: "When adding or updating tests"
 confidence: 0.8
 domain: testing
 source: repo-analysis
-source_repo: melgarafael/DeskcommCRM
+source_repo: melgarafael/SonghaiCRM
 ---
 
 # Deskcommcrm Instinct Test Location

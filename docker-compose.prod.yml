@@ -1,4 +1,4 @@
-# DeskcommCRM — stack de produção self-host (VPS HostGator).
+# SonghaiCRM — stack de produção self-host (qualquer VPS com Docker).
 # Sobe: caddy (HTTPS) → app (Next standalone) + waha + redis+srh + scheduler.
 # Só o Caddy publica portas (80/443). Todo o resto vive na rede interna.
 #

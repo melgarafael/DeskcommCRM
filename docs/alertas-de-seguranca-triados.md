@@ -58,7 +58,7 @@ herda a classificação do objeto todo.
    definiu)`, linha 1553). O CodeQL não analisa shell: o `default-setup` cobre
    `actions`/`javascript-typescript`, e não há analisador de bash. **O scanner flagrou a
    cópia que ninguém executa e é cego para a original que todo mundo executa** —
-   `grep bootstrap-owner hostgator-setup-kit/` devolve zero ocorrências; o kit reimplementa
+   `grep bootstrap-owner self-host-kit/` devolve zero ocorrências; o kit reimplementa
    o bootstrap inline com `curl` + `psql`.
 2. **A linha tem valor de diagnóstico real.** O script é create-**or-update**: ele
    sobrescreve a senha de um usuário existente. O eco do e-mail é o único sinal de que se

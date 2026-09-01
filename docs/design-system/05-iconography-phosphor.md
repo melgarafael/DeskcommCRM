@@ -4,7 +4,7 @@
 
 ## Por que Phosphor
 
-A iconografia canônica do DeskcommCRM é **Phosphor Icons** com peso **duotone** como default, **regular** como secundário.
+A iconografia canônica do SonghaiCRM é **Phosphor Icons** com peso **duotone** como default, **regular** como secundário.
 
 Razões:
 

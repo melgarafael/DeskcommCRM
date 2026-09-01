@@ -38,7 +38,7 @@ exposes_contracts:
   - "event.conversation.resolved"
 status: completed (partial: WhatsApp E2E send/receive precisa WAHA com sessão WhatsApp ativa)
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-03 — Inbox + Messaging

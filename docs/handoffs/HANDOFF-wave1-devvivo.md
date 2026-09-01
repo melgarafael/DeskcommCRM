@@ -50,7 +50,7 @@ Instância própria do Playwright (o browser MCP estava com o QA), dev server da
 | D | Transferência de volta | Volta a "Sem responsável" e persiste | `wave-1-devvivo-revertido.png` |
 | E | Board inteiro | Humanos (`EM`, `EA` preenchidos) e agentes (`LA`, `BE` vazados) lado a lado | `wave-1-devvivo-dono-agente.png` |
 
-Screenshots em `/private/tmp/claude-501/-Users-rafaelmelgaco-DeskcommCRM/9579c957-fb23-4342-9df1-c208137c2c03/scratchpad/` (não escrevi em `evidence/`, que é do QA — copiar para lá se quiser referenciar no handoff oficial).
+Screenshots em `/private/tmp/claude-501/-Users-rafaelmelgaco-SonghaiCRM/9579c957-fb23-4342-9df1-c208137c2c03/scratchpad/` (não escrevi em `evidence/`, que é do QA — copiar para lá se quiser referenciar no handoff oficial).
 
 Qualidade: `pnpm typecheck` **0**, `pnpm lint` **0 errors** (151 warnings pré-existentes do repo), `npm run test:unit` **807/807** (113 arquivos), incluindo 16 testes novos/atualizados de `OwnerBadge` e `resolveLeadOwner`. Exit codes lidos **sem** `| tail`.
 

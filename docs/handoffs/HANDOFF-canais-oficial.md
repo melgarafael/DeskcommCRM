@@ -3,7 +3,7 @@
 > Registro contínuo. **Cada passo, cada evolução, cada pulo, cada acréscimo entra aqui** —
 > nada avança sem anotação. Quem retomar esta branch lê só este arquivo e sabe onde está.
 
-**Branch:** `feat/canais-oficial` · **Worktree:** `~/DeskcommCRM-canais`
+**Branch:** `feat/canais-oficial` · **Worktree:** `~/SonghaiCRM-canais`
 **Base:** `origin/main` @ `0ea9f4b` (árvore limpa, `0 0` contra a main na criação)
 **Plano:** `docs/superpowers/plans/2026-07-27-canais-seam-fases-0-2.md`
 **Doutrina:** `docs/doctrine/restricao-de-canal.md` + invariante 6 de `sistema-vivo.md`

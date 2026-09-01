@@ -1,6 +1,6 @@
-# DeskcommCRM
+# SonghaiCRM
 
-> Open-source AI sales OS: a self-hosted, multi-tenant CRM where AI agents natively operate sales and support over WhatsApp. An open alternative to Kommo, Octadesk and Intercom — for any business that sells through conversations (e-commerce, clinics, real estate, info-products, agencies, services). MIT-licensed, no paid tier; the recommended production path is a one-command install on a HostGator VPS.
+> Open-source AI sales OS: a self-hosted, multi-tenant CRM where AI agents natively operate sales and support over WhatsApp. An open alternative to Kommo, Octadesk and Intercom — for any business that sells through conversations (e-commerce, clinics, real estate, info-products, agencies, services). MIT-licensed, no paid tier; the recommended production path is a one-command install on any VPS with Docker.
 
 Key facts:
 - Category: open-source CRM / AI sales operating system / WhatsApp customer platform

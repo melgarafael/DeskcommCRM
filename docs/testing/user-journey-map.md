@@ -1,6 +1,6 @@
 # Mapa de Jornadas & Testes E2E — Experiência do usuário em VPS fresca
 
-> Fonte da verdade do QA de produto do DeskcommCRM open-source. Cada caso aqui é
+> Fonte da verdade do QA de produto do SonghaiCRM open-source. Cada caso aqui é
 > exercitado **pelo frontend real** (Playwright), com contas de teste reais e
 > recursos reais (banco fresco do `baseline.sql`, WAHA local, receiver de webhook
 > real). Curl/API só como diagnóstico, nunca como prova de UX.
@@ -434,7 +434,7 @@ espaço e acento, que era o gatilho do defeito #6.
   alguém passa a escutar, ou o trigger sai. Não inventei consumidor.
 - Tela de Conexões diz "1 número conectado" mesmo com o número **caído** (conta
   sessões, não conectados).
-- ~~O autenticador registra o nome fixo "DeskcommCRM", ignorando o `APP_NAME` que o
+- ~~O autenticador registra o nome fixo "SonghaiCRM", ignorando o `APP_NAME` que o
   instalador vende como marca de toda a interface.~~ **RESOLVIDO em 2026-08-14** — virou o
   caso `M4` da jornada de marca própria (no fim deste arquivo). E a justificativa que estava
   aqui era **falsa em duas metades**: o problema não era "o nome fixo aparece no celular do
@@ -628,7 +628,7 @@ worker)"*. O fato estava medido; a pergunta é que faltava.
 
 | # | Caso | Estado |
 |---|---|---|
-| U1 `[P0]` | Instalação nova nasce pinada numa VERSÃO, não em canal móvel | coberto — `hostgator-setup-kit/test-validators.sh` roda o `install.sh` contra um remoto local com tags e cobra o `.env` |
+| U1 `[P0]` | Instalação nova nasce pinada numa VERSÃO, não em canal móvel | coberto — `self-host-kit/test-validators.sh` roda o `install.sh` contra um remoto local com tags e cobra o `.env` |
 | U2 `[P0]` | `update.sh` grava as TRÊS imagens na mesma versão | coberto — `tests/shell/update-guard.test.sh` §4b |
 | U3 `[P0]` | Nenhum serviço de produção fica `build:`-only | coberto — `tests/unit/packaging-artefato-do-cliente.test.ts` |
 | U4 | O crontab do scheduler não perde rota ao mudar de arquivo | coberto — `tests/shell/scheduler-entrypoint.test.sh` + `tests/unit/cron-routes-scheduled.test.ts` |
@@ -668,7 +668,7 @@ software que ele não contratou. Não há gravidade média nisso.
 
 **Onde o código vive:** `lib/branding/` (resolvedor, rampa, contraste, saída sem DOM),
 `app/admin/(protected)/marca/` e `app/app/settings/marca/` (as duas telas),
-`hostgator-setup-kit/marca-emails.sh` (os e-mails de acesso) e o mapa
+`self-host-kit/marca-emails.sh` (os e-mails de acesso) e o mapa
 [`../architecture/marca-propria.architecture.json`](../architecture/marca-propria.architecture.json).
 
 | # | Caso | Estado |

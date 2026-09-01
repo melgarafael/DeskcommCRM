@@ -60,7 +60,7 @@ describe("loadEnv — a chave da OpenAI existe no contrato do worker", () => {
 
 /**
  * A TERCEIRA irmã — e a pior das três para ficar de fora, porque é a opção
- * **[1]** do menu do instalador (`hostgator-setup-kit/install.sh`), a que ele
+ * **[1]** do menu do instalador (`self-host-kit/install.sh`), a que ele
  * apresenta como o caminho mais simples.
  *
  * `llmEdgeConfigFromEnv` (edge/llm/credentials.ts) lê `env.OPENROUTER_API_KEY`

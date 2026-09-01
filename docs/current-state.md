@@ -1,6 +1,6 @@
 ---
 type: current-state
-project: DeskcommCRM
+project: SonghaiCRM
 status: draft
 last_updated: 2026-07-29
 generated_by: auditoria documental (Claude Code) — leitura de código, HANDOFFs, plan/, loop/, CI
@@ -8,7 +8,7 @@ confidence: média-alta (métricas de código são CONFIRMADO; estado de épico 
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-29)
 ---
 
-# Estado atual — DeskcommCRM
+# Estado atual — SonghaiCRM
 
 > # ⚠️ ESTE DOCUMENTO É UM RETRATO, NÃO O ESTADO DE HOJE
 >
@@ -97,7 +97,7 @@ correspondentes localizados no repo):
 - **IA nativa** — agentes com RAG por tenant (pgvector), sentiment, handoff IA→humano,
   budget por org, MCP server interno.
 - **LGPD** — export e redact via workers, anonimização em cascata, consentimento auditado.
-- **Self-host** — `hostgator-setup-kit`, `baseline.sql` auto-curativo, runbook de produção.
+- **Self-host** — `self-host-kit`, `baseline.sql` auto-curativo, runbook de produção.
 - **Webhooks & automação** — captação + regras QUANDO/SE/ENTÃO + gatilhos externos.
 - **Operação visível** — transparência do motivo de retenção anti-ban, central de avisos,
   knobs de proteção de envio, propostas do flywheel com gate humano.

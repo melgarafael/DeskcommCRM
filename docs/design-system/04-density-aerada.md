@@ -19,7 +19,7 @@ CSS vars são consumidas por componentes de lista, kanban e cards de inbox. Comp
 
 ## Por que Aerada (e não Equilibrada/Compacta)
 
-DeskcommCRM tem como persona principal o **atendente que passa 8h/dia na ferramenta**. Decisões importantes:
+SonghaiCRM tem como persona principal o **atendente que passa 8h/dia na ferramenta**. Decisões importantes:
 
 1. **Fadiga visual cumulativa.** Densidade alta (Linear-like, 32px row) é eficiente em sessões curtas; em sessões longas, gera tensão e erros. Aerada respira.
 2. **Não é banking ou planilha.** Em CRM de e-commerce, precisão extrema (ver 200 linhas em uma tela) importa menos que **conforto e velocidade na linha que você está lendo agora**.
@@ -31,7 +31,7 @@ Comparativo:
 
 | Densidade | Row | Gap | Quando faria sentido |
 |-----------|-----|-----|----------------------|
-| Aerada | 56 | 24 | **DeskcommCRM (default)** — uso prolongado, atendimento, navegação tranquila |
+| Aerada | 56 | 24 | **SonghaiCRM (default)** — uso prolongado, atendimento, navegação tranquila |
 | Equilibrada | 44 | 16 | Things-like; produtividade pessoal, sessões curtas |
 | Compacta | 32 | 8 | Linear-like; uso intenso de teclado, navegação por engenharia |
 
@@ -77,7 +77,7 @@ Aerada nos campos:
 
 ## O que Aerada NÃO é
 
-❌ **Não é Notion exato.** Notion tem padding muito maior em containers (32px+) e linhas aerated principalmente em prose. DeskcommCRM aplica Aerada em componentes operacionais (inbox, kanban) e usa space-5/6 em containers.
+❌ **Não é Notion exato.** Notion tem padding muito maior em containers (32px+) e linhas aerated principalmente em prose. SonghaiCRM aplica Aerada em componentes operacionais (inbox, kanban) e usa space-5/6 em containers.
 
 ❌ **Não é "tudo grande".** Botões, inputs, badges mantêm altura proporcional (36, 22, etc.). Aerada é sobre **rows clicáveis em listas**, não sobre tudo.
 
@@ -92,7 +92,7 @@ Aerada nos campos:
   - Padding-x: 16px (reduz de 20)
   - Padding-y: 14px (reduz de 16)
 
-DeskcommCRM v1.0 prioriza desktop/tablet. Phone é "view-only mode" (atendente não opera plenamente em phone).
+SonghaiCRM v1.0 prioriza desktop/tablet. Phone é "view-only mode" (atendente não opera plenamente em phone).
 
 ## Como consumir
 

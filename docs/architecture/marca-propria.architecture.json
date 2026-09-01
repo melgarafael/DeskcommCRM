@@ -47,7 +47,7 @@
       "lane": "config",
       "col": 6,
       "type": "service",
-      "label": "hostgator-setup-kit/marca-emails.sh",
+      "label": "self-host-kit/marca-emails.sh",
       "sublabel": "sem SUPABASE_ACCESS_TOKEN imprime o passo manual e SAI 0 — nunca derruba instalação"
     },
     {
@@ -95,7 +95,7 @@
     { "id": "marcacliente", "lane": "saida", "col": 8, "type": "frontend", "label": "lib/branding/contexto.tsx", "sublabel": "a marca atravessa por PROP do servidor (useMarcaDaInstalacao) — era branding(), que lê window.__PUBLIC_ENV__ no navegador e process.env no SSR: com logo no banco e APP_LOGO_URL vazio, o servidor desenhava <span> e o cliente <img> (React #418)" },
     { "id": "iconroute", "lane": "saida", "col": 7, "type": "api", "label": "app/icon.tsx", "sublabel": "ImageResponse em runtime · force-dynamic · /icon em PUBLIC_PATHS (sem isso, 307 para /login)" },
     { "id": "invite", "lane": "saida", "col": 7, "type": "service", "label": "lib/email/templates/invite.ts", "sublabel": "assunto + corpo + botão com a marca de quem convidou" },
-    { "id": "lgpdemail", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/email-delivery.ts", "sublabel": "diz quem PROCESSOU a solicitação — era 'DeskcommCRM' em 100% dos casos, não em borda" },
+    { "id": "lgpdemail", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/email-delivery.ts", "sublabel": "diz quem PROCESSOU a solicitação — era 'SonghaiCRM' em 100% dos casos, não em borda" },
     { "id": "slaalarm", "lane": "saida", "col": 7, "type": "service", "label": "lib/lgpd/sla-alarm.ts", "sublabel": "marca resolvida no cabeçalho; o #dc2626 do alerta FICA — é semântica de urgência, não marca" },
     { "id": "enrollmfa", "lane": "saida", "col": 7, "type": "api", "label": "app/actions/auth/enrollMfa.ts", "sublabel": "issuer (o campo que o celular grava), não friendlyName — medido contra GoTrue v2.188.1" },
     { "id": "resend", "lane": "saida", "col": 7, "type": "service", "label": "lib/email/resend.ts", "sublabel": "nome de exibição = marca; endereço = do OPERADOR (domínio verificado). Vazio = not_configured" },
@@ -175,7 +175,7 @@
       "items": [
         "não existe aresta saida → pdf, e a ausência é o conteúdo: `lib/branding/saida.ts` alcança e-mail, remetente, ícone e autenticador, e para no relatório do titular",
         "o motivo é jurídico, não estético: o revendedor é OPERADOR; quem responde pelos dados é o CONTROLADOR, que é a organização (organizations.legal_name)",
-        "trocar 'DeskcommCRM' pela marca do revendedor ali PIORARIA o defeito — hoje o nome é obviamente do software; depois pareceria a declaração de quem responde legalmente",
+        "trocar 'SonghaiCRM' pela marca do revendedor ali PIORARIA o defeito — hoje o nome é obviamente do software; depois pareceria a declaração de quem responde legalmente",
         "consequência boa e deliberada: a armadilha do @react-pdf deixa de existir para nós. Ele aceita var(--x) e oklch(), NÃO lança, e devolve PDF válido com a cor descartada (1514 bytes contra 1538 do hex) — qualquer prova do tipo 'gerei e abriu' passaria com a marca perdida",
         "e o e-mail de LGPD (e54) leva marca DE PROPÓSITO: ele diz quem OPEROU. São dois papéis distintos na mesma jornada, e é por isso que as duas saídas carregam nomes diferentes",
         "armadilha aberta: legal_name NASCE igual a display_name (scripts/bootstrap-owner.ts) — o caso ruim é o valor plausível e errado, não o nulo. Quem resolve é a tela (e9), não um fallback"

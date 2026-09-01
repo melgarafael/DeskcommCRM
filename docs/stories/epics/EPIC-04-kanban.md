@@ -22,7 +22,7 @@ exposes_contracts:
   - "event.lead.lost"
 status: completed
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-04 — Pipeline Kanban

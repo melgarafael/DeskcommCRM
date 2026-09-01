@@ -23,7 +23,7 @@
  *     `camadaDoAmbiente` → `resolverMarca` → `motivoDoFallback`, e acende o
  *     alarme.
  *
- * Medido em `214f47f0`: `grep -c APP_ACCENT_HEX hostgator-setup-kit/install.sh` →
+ * Medido em `214f47f0`: `grep -c APP_ACCENT_HEX self-host-kit/install.sh` →
  * **0** — o instalador não perguntava a cor, e o único jeito de a chave existir
  * no `.env` era alguém escrevê-la à mão. Desde então o `install.sh` **pergunta e
  * grava**, com o validador `v_hex` (só `#` + 6 dígitos), e esse caminho ficou

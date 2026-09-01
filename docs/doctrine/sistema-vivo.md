@@ -1,4 +1,4 @@
-# Doutrina do Sistema Vivo — DeskcommCRM
+# Doutrina do Sistema Vivo — SonghaiCRM
 
 > Lei de arquitetura. Todo desenvolvimento neste repo obedece a isto — não é aspiração, é critério de aceite (ver o item "Living System Checklist" no Definition of Done, `CLAUDE.md`).
 
@@ -16,7 +16,7 @@ Ao mudar um invariante aqui, atualize [`sistema-vivo/02-lei-dos-invariantes.md`]
 
 ## O princípio-raiz
 
-O DeskcommCRM é um **sistema vivo**, não um CRUD com telas. Ele existe para uma única missão:
+O SonghaiCRM é um **sistema vivo**, não um CRUD com telas. Ele existe para uma única missão:
 
 > Chegou uma demanda — um lead interessado ou um usuário com um problema — e o sistema é **responsável pela linha do tempo inteira dessa demanda até a resolução ou o encerramento declarado pelo próprio lead.**
 

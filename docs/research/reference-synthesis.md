@@ -2,9 +2,9 @@
 
 **Origem:** `/Users/rafaelmelgaco/Documents/Obsidian Vault/Ecossistema Labs/AutomatikLabs/Treinamentos e Cursos/Aula - CRM Nichado com WhatsApp (WAHA)/`
 
-**Status:** Adotada integralmente como linha de base arquitetural do DeskcommCRM (decisão registrada em memória do projeto).
+**Status:** Adotada integralmente como linha de base arquitetural do SonghaiCRM (decisão registrada em memória do projeto).
 
-Esse documento extrai apenas as decisões e padrões da referência que o DeskcommCRM herda. Para citações literais, schema SQL completo e edge cases detalhados, consultar a fonte original.
+Esse documento extrai apenas as decisões e padrões da referência que o SonghaiCRM herda. Para citações literais, schema SQL completo e edge cases detalhados, consultar a fonte original.
 
 ---
 
@@ -20,7 +20,7 @@ Esse documento extrai apenas as decisões e padrões da referência que o Deskco
 | Storage | Supabase Storage (bucket `whatsapp-media` privado, URLs assinadas) |
 | WhatsApp | WAHA Plus (multi-tenant); engine NOWEB |
 | Hospedagem app | Vercel |
-| Hospedagem WAHA | Railway (MVP) → VPS Hostgator (produção) |
+| Hospedagem WAHA | Railway (MVP) → VPS própria (produção) |
 | Validação | Zod em todo input |
 | Rate limit | Upstash Redis (sliding window) com fallback in-memory |
 | Cron | Vercel Cron |
@@ -214,7 +214,7 @@ Write: `create_lead`, `update_lead`, `move_lead_to_stage`, `delete_lead`, `mark_
 
 ---
 
-## 11. Gaps a desenhar do DeskcommCRM (não cobertos pela referência)
+## 11. Gaps a desenhar do SonghaiCRM (não cobertos pela referência)
 
 1. **Integração Nuvemshop** — OAuth, webhooks `order/created|paid|cancelled|fulfilled|cart_abandoned|customer/redact|customer/data_request`, sync inicial, tabela `orders` linkada a `crm_leads`
 2. **LGPD webhooks Nuvemshop específicos** — pseudonimização vs delete, audit trail, export estruturado

@@ -3,7 +3,7 @@
 > Documento **vivo**. Atualizado a cada avanço, cada bug encontrado e cada
 > atividade deixada para trás. Quem assumir esta frente lê daqui.
 
-- **Branch:** `feat/provedores-de-ia` · **Worktree:** `~/DeskcommCRM-provedores`
+- **Branch:** `feat/provedores-de-ia` · **Worktree:** `~/SonghaiCRM-provedores`
 - **Base:** `9249e6f2` (`origin/main` em 2026-08-07)
 - **Última atualização:** 2026-08-08 — quatro frentes entregues e **provadas na tela**; `test:db` completo verde
 
@@ -273,7 +273,7 @@ quem instalou. Tokens em zero e custo em NULL na linha de erro.
 ## Como retomar
 
 ```bash
-cd ~/DeskcommCRM-provedores
+cd ~/SonghaiCRM-provedores
 git fetch origin && git merge origin/main     # doutrina de higiene de branches
 npx vitest run tests/unit/pontos-de-ia-completude.test.ts
 ```

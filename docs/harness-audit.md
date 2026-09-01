@@ -1,6 +1,6 @@
 ---
 type: harness-audit
-project: DeskcommCRM
+project: SonghaiCRM
 status: draft
 last_updated: 2026-07-29
 generated_by: auditoria documental (Claude Code) — verificação de arquivos, CI e configs
@@ -8,7 +8,7 @@ confidence: alta (todos os itens verificados por leitura direta de arquivo/confi
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-29)
 ---
 
-# Auditoria do harness — DeskcommCRM
+# Auditoria do harness — SonghaiCRM
 
 > # ⚠️ ESTE DOCUMENTO É UM RETRATO, NÃO O ESTADO DE HOJE
 >
@@ -82,10 +82,10 @@ Legenda: ✅ existente e funcional · ⚠️ existente mas incompleto · ❌ nã
 | # | Item | Status | Evidência / lacuna |
 |---|---|---|---|
 | 1 | README útil | ✅ | 302 linhas: o que é, quickstart de 5 min, stack, estrutura, testes, roadmap, suporte. Traduzido (EN/ES). Mais `CHANGELOG.md` com aviso de "⚠️ Requer atenção" por versão, voltado a quem roda VPS |
-| 2 | Instruções de instalação | ✅ | README §Quickstart + `docs/SETUP.md` + `docs/deploy-selfhost/` + `docs/deploy-hostgator/` + `install.sh` |
+| 2 | Instruções de instalação | ✅ | README §Quickstart + `docs/SETUP.md` + `docs/deploy-selfhost/` + `install.sh` |
 | 3 | Versão de runtime definida | ✅ | `.nvmrc` = 22, `engines.node >=22`, `packageManager: pnpm@9.15.9`, e o CI usa `setup-node@v7` com Node 22 — alinhados |
 | 4 | Lockfile | ✅ | `pnpm-lock.yaml`, e ambos os jobs do CI usam `--frozen-lockfile` |
-| 5 | `.env.example` | ⚠️ | Existe (+ `.env.hostgator.example`), mas **6 vars de `lib/env.ts` continuam ausentes**, entre elas 3 secrets: `IMPERSONATE_COOKIE_SECRET`, `INTERNAL_CRON_SECRET`, `LGPD_SIGNING_KEY` (+ `LGPD_DPO_EMAIL`, `LGPD_EXPORT_EXPIRES_HOURS`, `NUVEMSHOP_ENABLED`) |
+| 5 | `.env.example` | ⚠️ | Existe (+ `.env.selfhost.example`), mas **6 vars de `lib/env.ts` continuam ausentes**, entre elas 3 secrets: `IMPERSONATE_COOKIE_SECRET`, `INTERNAL_CRON_SECRET`, `LGPD_SIGNING_KEY` (+ `LGPD_DPO_EMAIL`, `LGPD_EXPORT_EXPIRES_HOURS`, `NUVEMSHOP_ENABLED`) |
 | 6 | Comando de desenvolvimento | ✅ | `pnpm dev`. Nota: `docs/testing/` documenta que E2E fresco exige `build` + `start`, não `dev` |
 | 7 | Comando de build | ✅ | `pnpm build`; exercitado no workflow `perf.yml` |
 | 8 | Comando de lint | ✅ | `pnpm lint` (eslint), roda no CI |

@@ -12,7 +12,7 @@ describe("resolveBranding", () => {
     expect(resolveBranding(undefined, undefined)).toEqual({
       name: DEFAULT_APP_NAME,
       logoUrl: null,
-      initial: "D",
+      initial: "S",
     });
   });
 
@@ -131,7 +131,7 @@ describe("nome do arquivo de códigos de recuperação", () => {
   it("deriva o prefixo da marca, sem acento e sem espaço", () => {
     expect(prefixoDoArquivo("Vendas Turbo")).toBe("vendas-turbo");
     expect(prefixoDoArquivo("Ótima Gestão")).toBe("otima-gestao");
-    expect(prefixoDoArquivo(DEFAULT_APP_NAME)).toBe("deskcommcrm");
+    expect(prefixoDoArquivo(DEFAULT_APP_NAME)).toBe("songhaicrm");
   });
 
   it("não devolve hífen pendurado nem repetido", () => {
@@ -239,13 +239,6 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "`X-Client-Info` enviado ao Supabase — identifica o cliente nos logs e na telemetria DELES. Não é texto de interface e nunca chega ao usuário",
     marcas: ["deskcomm-crm"],
   },
-  "lib/nuvemshop/config.ts": {
-    categoria: "PROTOCOLO",
-    motivo:
-      "User-Agent exigido pela Nuvemshop, que identifica a aplicação registrada na plataforma deles. Trocar pelo nome do revendedor descreveria uma aplicação que não existe lá",
-    marcas: ["deskcommcrm"],
-  },
-
   // ─── INFRA — cookie/storage/contêiner. Renomear desloga ou perde estado. ───
   "app/layout.tsx": {
     categoria: "INFRA",
@@ -288,15 +281,6 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     marcas: ["deskcomm.show_ai_citations"],
   },
 
-  // ─── DIVIDA — vazamento real. Cada linha declara a fase que a apaga. ───
-  "lib/email/templates/ai-budget-alarm.tsx": {
-    categoria: "DIVIDA",
-    fase: 7,
-    motivo:
-      "template sem caminho de produção: sem rota em app/api/v1/cron/, sem linha no docker/scheduler/entrypoint.sh e, desde a limpeza do teto de orçamento (0159), sem chamador NENHUM — o único era workers/ai-budget-checker.cron.ts, que foi apagado por nunca ter tido agendador. Marcar isto não muda nada que um usuário veja, e a única 'prova' possível seria invocar a função à mão — o que prova a função, não o produto. Sai quando o alarme ganhar cron de verdade (ou quando o template for apagado junto)",
-    marcas: ["deskcommcrm"],
-  },
-
   // ─── DEV — fixture de teste; não embarca. ───
   "lib/agent-engine/agent/draft-reply.test.ts": {
     categoria: "DEV",
@@ -307,15 +291,7 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     categoria: "DEV",
     motivo:
       "fixture que reproduz o CHANGELOG real, incluindo as URLs do repositório no GitHub. A marca aqui é o nome do repositório upstream, que o clone não renomeia",
-    marcas: ["deskcommcrm", "deskcommcrm", "deskcommcrm"],
-  },
-
-  // ─── PADRAO — a marca padrão precisa existir em algum lugar. ───
-  "lib/branding.ts": {
-    categoria: "PADRAO",
-    motivo:
-      "é a DEFINIÇÃO de DEFAULT_APP_NAME — o valor que aparece quando o operador não configurou marca nenhuma. Se esta linha sumir, some o padrão",
-    marcas: ["deskcommcrm"],
+    marcas: ["deskcommcrm", "deskcommcrm"],
   },
 };
 
@@ -360,7 +336,7 @@ function marcasNoTexto(fonte: string): string[] {
     const inicio = linha.trimStart();
     if (inicio.startsWith("//") || inicio.startsWith("*") || inicio.startsWith("/*")) continue;
     for (const casada of linha.matchAll(/[\w@.-]*deskcomm[\w@.-]*/gi)) {
-      // Pontuação encostada (o ponto final de "no DeskcommCRM.") não faz parte
+      // Pontuação encostada (o ponto final de "no SonghaiCRM.") não faz parte
       // do identificador e faria a lista mudar por causa de uma vírgula.
       achadas.push(casada[0].toLowerCase().replace(/^[.-]+/, "").replace(/[.-]+$/, ""));
     }
@@ -413,8 +389,8 @@ describe("catraca de marca hardcoded", () => {
   it("ignora comentário, mas não confunde `//` de URL com comentário", () => {
     // A regra de comentário é uma exceção, e exceção sem guarda vira buraco:
     // procurar `//` em qualquer posição da linha esconderia justamente a URL.
-    expect(marcasNoTexto(`  // fala do DeskcommCRM`)).toEqual([]);
-    expect(marcasNoTexto(` * fala do DeskcommCRM`)).toEqual([]);
+    expect(marcasNoTexto(`  // fala do SonghaiCRM`)).toEqual([]);
+    expect(marcasNoTexto(` * fala do SonghaiCRM`)).toEqual([]);
     expect(marcasNoTexto(`const u = "https://deskcomm.app/x";`)).toEqual(["deskcomm.app"]);
     expect(marcasNoTexto(`fetch(url); // manda pro DeskcommCRM`)).toEqual(["deskcommcrm"]);
   });
@@ -478,10 +454,10 @@ describe("catraca de marca hardcoded", () => {
       .map(([arquivo]) => arquivo);
     expect(
       dividas,
-      "a Fase 4 zerou as dívidas de marca, exceto o alarme de orçamento de IA " +
-        "(que não tem caminho de produção). Dívida nova aqui precisa de decisão, " +
-        "não de mais uma linha na lista.",
-    ).toEqual(["lib/email/templates/ai-budget-alarm.tsx"]);
+      "a Fase 4 zerou as dívidas de marca (o rebrand SonghaiCRM levou junto o " +
+        "último caso, o alarme de orçamento de IA). Dívida nova aqui precisa de " +
+        "decisão, não de mais uma linha na lista.",
+    ).toEqual([]);
   });
 
   it("toda DIVIDA nomeia a fase que a resolve, e só DIVIDA tem fase", () => {
@@ -501,12 +477,12 @@ describe("catraca de marca hardcoded", () => {
  * o código que embarca na imagem. Ela é cega para `supabase/templates/*.html` e
  * `supabase/config.toml`, e essa cegueira tinha consequência medida: dava para
  * zerar a lista de dívidas, ver a suíte inteira verde, e o cliente do
- * revendedor continuar recebendo "Confirme seu e-mail — DeskcommCRM" no
+ * revendedor continuar recebendo "Confirme seu e-mail — SonghaiCRM" no
  * PRIMEIRO e-mail que ele abre na vida.
  *
  * Estes arquivos não são renderizados por nenhum TypeScript nosso: quem os
  * renderiza é o GoTrue, um processo de terceiro. Não há resolvedor a chamar —
- * o texto é empurrado por API pelo `hostgator-setup-kit/marca-emails.sh`, que
+ * o texto é empurrado por API pelo `self-host-kit/marca-emails.sh`, que
  * substitui os `__PLACEHOLDER__`. Por isso a guarda aqui é diferente em
  * NATUREZA da de cima: lá ela cobra `branding()`; aqui ela cobra placeholder.
  *
@@ -545,8 +521,8 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     "supabase/config.toml": {
       categoria: "DEV",
       motivo:
-        "config do Supabase LOCAL (o `supabase start` de dev e do CI). NÃO embarca na imagem e NÃO alcança clone nenhum: um self-hoster usa um projeto na nuvem do Supabase, cuja config de auth vem do marca-emails.sh, ou um GoTrue próprio, que lê env. `project_id` ainda nomeia os contêineres locais (supabase_auth_deskcomm-crm) e os assuntos são o que a suíte local envia",
-      marcas: ["deskcomm-crm", "deskcommcrm", "deskcommcrm"],
+        "config do Supabase LOCAL (o `supabase start` de dev e do CI). NÃO embarca na imagem e NÃO alcança clone nenhum: um self-hoster usa um projeto na nuvem do Supabase, cuja config de auth vem do marca-emails.sh, ou um GoTrue próprio, que lê env. `project_id` ainda nomeia os contêineres locais (supabase_auth_deskcomm-crm)",
+      marcas: ["deskcomm-crm"],
     },
   };
 
@@ -572,8 +548,8 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
   });
 
   it("comentário de HTML não conta, e `-->` no meio da linha não engole o resto", () => {
-    expect(marcasNoTexto(semComentariosHtml("<!-- fala do DeskcommCRM -->"))).toEqual([]);
-    expect(marcasNoTexto(semComentariosHtml("<!--\n  DeskcommCRM\n  em várias linhas\n-->"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosHtml("<!-- fala do SonghaiCRM -->"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosHtml("<!--\n  SonghaiCRM\n  em várias linhas\n-->"))).toEqual([]);
     // O caso que a regra de `//` erraria: marca REAL depois do fecho.
     expect(marcasNoTexto(semComentariosHtml("<!-- nota --> Sua conta no DeskcommCRM"))).toEqual([
       "deskcommcrm",
@@ -583,7 +559,7 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
   });
 
   it("comentário de TOML não conta, mas `#` dentro de string não vira comentário", () => {
-    expect(marcasNoTexto(semComentariosToml("# Supabase CLI config — DeskcommCRM"))).toEqual([]);
+    expect(marcasNoTexto(semComentariosToml("# Supabase CLI config — SonghaiCRM"))).toEqual([]);
     expect(marcasNoTexto(semComentariosToml('cor = "#506d48"  # DeskcommCRM'))).toEqual([
       "deskcommcrm",
     ]);
@@ -595,7 +571,7 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
     expect(
       novos,
       `Marca hardcoded em arquivo que o GoTrue renderiza.\n` +
-        `Use o placeholder __APP_NAME__ (quem substitui é hostgator-setup-kit/marca-emails.sh):\n` +
+        `Use o placeholder __APP_NAME__ (quem substitui é self-host-kit/marca-emails.sh):\n` +
         novos.map((f) => `  ${f}  ${JSON.stringify(encontradoAqui.get(f))}`).join("\n"),
     ).toEqual([]);
   });
@@ -613,7 +589,7 @@ describe("catraca de marca no que o GoTrue renderiza", () => {
 
   it("os dois modelos de e-mail não têm marca nenhuma — é o estado que se defende", () => {
     // Explícito, e não só implícito na ausência de linha na allowlist: é ESTE
-    // caso que falha quando alguém reescreve "no DeskcommCRM" num template.
+    // caso que falha quando alguém reescreve "no SonghaiCRM" num template.
     expect(encontradoAqui.has("supabase/templates/confirmation.html")).toBe(false);
     expect(encontradoAqui.has("supabase/templates/recovery.html")).toBe(false);
   });

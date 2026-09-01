@@ -7,7 +7,7 @@ related: 11-spec-mcp-server-internal.md, 12-spec-ai-agents-ui.md
 version: 0.1
 status: draft (pre-implementation)
 date: 2026-05-05
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # Spec 10 — AI Agents Module (Runtime, Schema, Endpoints)

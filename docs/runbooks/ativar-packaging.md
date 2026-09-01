@@ -147,7 +147,7 @@ O item 11 do checklist de release, e o único que o CI não exercita. Numa insta
 fresca**, a partir da versão anterior:
 
 ```bash
-bash hostgator-setup-kit/update.sh
+bash self-host-kit/update.sh
 curl -s https://<DOMAIN>/api/v1/health | jq -r '.data.version'   # esperado: X.Y.Z
 curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/       # esperado: 307
 grep -E '^(APP|WORKER|SCHEDULER)_IMAGE=' .env                    # esperado: as três em X.Y.Z

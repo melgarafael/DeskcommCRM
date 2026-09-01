@@ -1,9 +1,9 @@
-# Spec — DeskcommCRM como template self-hosted na HostGator
+# Spec — SonghaiCRM como template self-hosted na HostGator
 
 **Data:** 2026-07-02
 **Autor:** Maestro (sessão Claude Code) + investigação multi-agente
 **Status:** aguardando revisão do Rafael
-**Objetivo:** transformar o DeskcommCRM num **template open-source auto-hospedável** cuja rota de deploy oficial é a infra da HostGator (via links de afiliado), com (1) adaptação técnica do projeto, (2) tutorial passo-a-passo para leigos e (3) um `.zip` "Setup Kit" que a pessoa joga no Claude Code dela e ele conduz a configuração.
+**Objetivo:** transformar o SonghaiCRM num **template open-source auto-hospedável** cuja rota de deploy oficial é a infra da HostGator (via links de afiliado), com (1) adaptação técnica do projeto, (2) tutorial passo-a-passo para leigos e (3) um `.zip` "Setup Kit" que a pessoa joga no Claude Code dela e ele conduz a configuração.
 
 ---
 

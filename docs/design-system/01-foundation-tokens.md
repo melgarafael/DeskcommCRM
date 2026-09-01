@@ -2,7 +2,7 @@
 
 > **Source of truth:** `app/design/lib/tokens.ts` (`SPACING`, `RADII`, `BORDERS`, `SHADOWS`, `Z_INDEX`, `MOTION`)
 
-Todos os tokens primitivos do DeskcommCRM. Componentes compõem **só** a partir desta camada — nunca digite valores literais (`16px`, `#000`, `300ms`) em CSS de feature.
+Todos os tokens primitivos do SonghaiCRM. Componentes compõem **só** a partir desta camada — nunca digite valores literais (`16px`, `#000`, `300ms`) em CSS de feature.
 
 ## Spacing
 

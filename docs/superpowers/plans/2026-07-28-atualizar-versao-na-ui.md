@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** O dono de uma instalação self-host atualiza o DeskcommCRM clicando num botão na própria tela, sem abrir terminal nem SSH.
+**Goal:** O dono de uma instalação self-host atualiza o SonghaiCRM clicando num botão na própria tela, sem abrir terminal nem SSH.
 
 **Architecture:** O app roda em container sem acesso ao host, então ele não executa a atualização — ele **publica uma intenção** em duas tabelas de instância. Um agente no host (`agent.sh`, cron a cada 5 min, mesmo mecanismo do cron do `event-log-drain` que já existe) faz `POST` de heartbeat para o app, lê na resposta se alguém pediu atualização e, se sim, roda `bash update.sh --to <tag>` sob `flock`, reportando cada passo. O que atravessa a fronteira é um booleano, nunca um comando.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Worktree:** `~/DeskcommCRM-update`, branch `feat/atualizar-pela-ui` (já criada a partir de `origin/main`). Não trabalhe no clone principal — ele está sujo com trabalho de outra sessão.
+- **Worktree:** `~/SonghaiCRM-update`, branch `feat/atualizar-pela-ui` (já criada a partir de `origin/main`). Não trabalhe no clone principal — ele está sujo com trabalho de outra sessão.
 - **Idioma:** toda cópia de tela, mensagem de erro e comentário em **pt-BR**, para pessoa que não programa. Sem jargão de container/deploy na UI.
 - **Wrappers obrigatórios:** toda rota `/api/v1/*` usa `ok()` / `fail()` de `lib/api/wrappers.ts`. `ok()` já envelopa em `{data}` — nunca `ok({data: x})`. A assinatura de `fail` é **posicional no status**: `fail(code, message, status, opts?)`, onde `opts` aceita `{ details, requestId, headers }`.
 - **Auth:** sempre `loadAuthUser()` (que usa `supabase.auth.getUser()`); **nunca** `getSession()`.
@@ -211,7 +211,7 @@ Expected: PASS — os 3 casos novos verdes e nenhuma regressão nos demais invar
 - [ ] **Step 7: Commit**
 
 ```bash
-cd ~/DeskcommCRM-update
+cd ~/SonghaiCRM-update
 git add supabase/migrations/20260728120000_0085_system_self_update.sql \
         supabase/baseline.sql supabase/migrations/MANIFEST.md \
         tests/invariants/system-self-update.test.ts
@@ -279,7 +279,7 @@ Se você usa número próprio no WhatsApp, reconecte depois de atualizar.
 
 ## [1.0.0] — 2026-07-27
 
-Primeira versão marcada do DeskcommCRM.
+Primeira versão marcada do SonghaiCRM.
 `;
 
 describe("extractChangelogSection", () => {
@@ -1550,7 +1550,7 @@ import { apiClient } from "@/lib/api/client";
 import { useSystemVersion } from "@/hooks/system/useSystemVersion";
 import { Button } from "@/components/ui/button";
 
-const COMANDO_MANUAL = "cd DeskcommCRM && bash hostgator-setup-kit/update.sh";
+const COMANDO_MANUAL = "cd SonghaiCRM && bash hostgator-setup-kit/update.sh";
 
 const PASSOS = [
   { chave: "backup", texto: "Guardando uma cópia de segurança dos seus dados" },

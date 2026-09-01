@@ -1,6 +1,6 @@
 # Fix: `isServiceRoleConfigured()` inferia validade da chave pelo comprimento
 
-**Branch:** `fix/service-role-key-formato-novo` (worktree `/Users/rafaelmelgaco/DeskcommCRM-svckey`)
+**Branch:** `fix/service-role-key-formato-novo` (worktree `/Users/rafaelmelgaco/SonghaiCRM-svckey`)
 **Arquivo alterado:** `lib/audit/index.ts`
 **Teste novo:** `lib/audit/service-role-configured.test.ts`
 

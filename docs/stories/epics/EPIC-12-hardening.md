@@ -14,7 +14,7 @@ exposes_contracts:
   - "infra.web-vitals-budget"
 status: completed (partial: Lighthouse CI + bundle-analyzer + /app/* E2E deferred)
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-12 — Hardening + E2E + Polish

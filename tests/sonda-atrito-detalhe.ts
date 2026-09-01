@@ -1,7 +1,7 @@
 import { chromium } from "@playwright/test";
 import { readFileSync } from "node:fs";
 const BASE = "http://127.0.0.1:3100";
-const c = JSON.parse(readFileSync("/Users/rafaelmelgaco/DeskcommCRM/.e2e-creds.json", "utf8"));
+const c = JSON.parse(readFileSync("/Users/rafaelmelgaco/SonghaiCRM/.e2e-creds.json", "utf8"));
 async function main() {
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1280, height: 900 } });
@@ -28,7 +28,7 @@ async function main() {
     };
   })()`);
   console.log(JSON.stringify(m, null, 2));
-  await p.screenshot({ path: "/private/tmp/claude-501/-Users-rafaelmelgaco-DeskcommCRM/10ffaf65-ac1a-4b1b-b62d-368cbdeef6c5/scratchpad/atrito-final.png", fullPage: false });
+  await p.screenshot({ path: "/private/tmp/claude-501/-Users-rafaelmelgaco-SonghaiCRM/10ffaf65-ac1a-4b1b-b62d-368cbdeef6c5/scratchpad/atrito-final.png", fullPage: false });
   await b.close();
 }
 main().catch((e) => { console.error(e); process.exit(1); });

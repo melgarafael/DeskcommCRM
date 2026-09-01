@@ -3,18 +3,18 @@ marp: true
 theme: default
 class: invert
 paginate: true
-title: DeskcommCRM — Pitch Deck v0.1
-description: CRM operacional com IA pra e-commerce brasileiro
+title: SonghaiCRM — Pitch Deck v0.1
+description: CRM operacional com IA pra e-commerce moçambicano
 date: 2026-04-29
 ---
 
-# DeskcommCRM
+# SonghaiCRM
 
 ### O CRM operacional onde **IA e humanos atendem juntos** os clientes finais de PMEs de e-commerce no WhatsApp.
 
-**Multi-tenant · LGPD-nativo · MCP-ready · Brasil-first**
+**Multi-tenant · LGPD-nativo · MCP-ready · Moçambique-first**
 
-<sub>Rafael Melgaço — São Paulo, 29 de abril de 2026</sub>
+<sub>Songhai, Lda — Maputo, 29 de abril de 2026</sub>
 
 ---
 
@@ -34,7 +34,7 @@ PME de e-commerce brasileiro hoje atende cliente final num caos:
 
 ## 2. A nossa visão
 
-DeskcommCRM é a plataforma onde:
+SonghaiCRM é a plataforma onde:
 
 | Atendimento | Tecnologia | Compliance |
 |---|---|---|
@@ -287,8 +287,8 @@ Adotamos integralmente o **bundle herdado** da referência *Aula CRM Nichado WAH
 
 > "**Não é mais um CRM. É a plataforma onde IA e humanos atendem juntos.**"
 
-📧 rafael@maudibrasil.com.br
-📍 São Paulo, BR
+📧 info@songhai.cc
+📍 Maputo, Moçambique
 🔗 docs: github.com/melgarafael/DeskcommCRM (em breve)
 
 **Perguntas?**

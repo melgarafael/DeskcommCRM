@@ -1,11 +1,11 @@
 <!--
-  MODELO — os `__PLACEHOLDER__` são substituídos por hostgator-setup-kit/marca-emails.sh,
+  MODELO — os `__PLACEHOLDER__` são substituídos por self-host-kit/marca-emails.sh,
   que lê APP_NAME e APP_ACCENT_HEX do .env da instalação e sobe o resultado pela
   Management API do Supabase (PATCH /v1/projects/{ref}/config/auth).
 
   Quem roda GoTrue self-hosted (GOTRUE_MAILER_TEMPLATES_CONFIRMATION) NÃO pode
   apontar para ESTE arquivo: ele carrega placeholder. Renderize primeiro —
-  `bash hostgator-setup-kit/marca-emails.sh --render-em /caminho/` — e aponte
+  `bash self-host-kit/marca-emails.sh --render-em /caminho/` — e aponte
   para o arquivo gerado.
 
   As cores do botão vêm em PAR (`background: <fallback>; background: __ACCENT__;`)

@@ -7,7 +7,7 @@ async function main() {
   });
   console.info("destinatario resolvido:", to);
   try {
-    const r = await a.send({ sessionRef: "ignorado", to: to!, kind: "text", body: "Teste do adapter oficial do DeskcommCRM." });
+    const r = await a.send({ sessionRef: "ignorado", to: to!, kind: "text", body: "Teste do adapter oficial do SonghaiCRM." });
     console.info("ENVIADO:", JSON.stringify(r));
   } catch (e) {
     console.info("RECUSADO:", e instanceof Error ? e.message : String(e));

@@ -70,7 +70,7 @@ commit → push → PR → merge na main → CI publica imagem → VPS puxa
    tag `v*`) e publica **três** imagens — `deskcommcrm`, `deskcomm-worker` e
    `deskcomm-scheduler` — sempre na mesma versão. O build pesado roda nos
    runners do GitHub, nunca na VPS do usuário.
-3. **Deploy na VPS.** Numa instalação real isto é `bash hostgator-setup-kit/update.sh`,
+3. **Deploy na VPS.** Numa instalação real isto é `bash self-host-kit/update.sh`,
    não um `up -d` na mão: ele puxa a tag publicada, re-aplica o `baseline.sql`,
    faz backup antes e grava as três imagens no `.env`.
 

@@ -104,7 +104,7 @@ descobre é o self-hoster, no primeiro deploy.
 
 ## 6. Kit self-host — nenhum job o testa
 
-**Gatilho:** `hostgator-setup-kit/**`, `docker-compose*`, `Dockerfile`, `scripts/*.sh`.
+**Gatilho:** `self-host-kit/**`, `docker-compose*`, `Dockerfile`, `scripts/*.sh`.
 
 **Checagem:**
 

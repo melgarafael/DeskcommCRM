@@ -119,7 +119,7 @@ verify, build-and-size, invariants, e2e
 
 **E a origem da crença não é descuido de quem repetiu — é estrutural.** O
 `CLAUDE.md` que chega ao contexto de uma sessão vem do DIRETÓRIO PRINCIPAL
-(`/Users/rafaelmelgaco/DeskcommCRM`), não do worktree onde se trabalha. Medido
+(`/Users/rafaelmelgaco/SonghaiCRM`), não do worktree onde se trabalha. Medido
 agora: o principal está na branch `feat/indice-de-atrito` e o arquivo lá ainda
 diz, na linha 215, `Check **não-obrigatório** (roda, mas não segura merge)`. O
 `CLAUDE.md` do worktree `fv-fila` **já estava corrigido** — inclusive na base

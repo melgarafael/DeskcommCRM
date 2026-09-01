@@ -4,7 +4,7 @@
 
 ## RÉGUA DA MEDIÇÃO (leia antes de qualquer número)
 
-Worktree `/Users/rafaelmelgaco/DeskcommCRM-marca`, branch `fix/auth-getuser-erro-mudo`
+Worktree `/Users/rafaelmelgaco/SonghaiCRM-marca`, branch `fix/auth-getuser-erro-mudo`
 (**não `main`**), working tree limpo, **HEAD `760b3d17`** — não `fe323354` como diz o
 briefing, nem `bcf5875c` como diziam os desenhos. A árvore avançou 2 commits durante a
 fase de desenho. Medi o delta:

@@ -11,20 +11,20 @@
 
 ## 0. Onde o trabalho acontece
 
-- **Worktree:** `/Users/rafaelmelgaco/DeskcommCRM-crm-vivo`
+- **Worktree:** `/Users/rafaelmelgaco/SonghaiCRM-crm-vivo`
 - **Branch:** `feat/crm-vivo`, criada de `origin/main` (`3b4c193`)
 - **Próxima migration livre:** `0070` (a base vai até `0067`)
 - **Dev server desta entrega:** porta **3020** (3000/3001/3010 são de outras sessões — **não encoste**)
 - **Worker alheio vivo na 8787:** de outra sessão. **Não mate, não reinicie.**
 
-Existem outros worktrees vivos (`.claude/worktrees/*`, `DeskcommCRM-qa`, `DeskcommCRM-main-preview`,
-`DeskcommCRM-vendaval*`). **Nenhum deles é seu.** Trabalhe só no worktree acima.
+Existem outros worktrees vivos (`.claude/worktrees/*`, `SonghaiCRM-qa`, `SonghaiCRM-main-preview`,
+`SonghaiCRM-vendaval*`). **Nenhum deles é seu.** Trabalhe só no worktree acima.
 
 ---
 
 ## 1. A missão
 
-O DeskcommCRM existe para que **todo lead que entra vire uma venda feita ou um problema
+O SonghaiCRM existe para que **todo lead que entra vire uma venda feita ou um problema
 resolvido** — nunca um card parado que ninguém viu.
 
 O sistema tem duas metades que funcionam e não se conhecem: uma **pensa** (harness:

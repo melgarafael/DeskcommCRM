@@ -1,5 +1,5 @@
 
-> deskcomm-crm@0.1.0 lint:channels /Users/rafaelmelgaco/DeskcommCRM-canais
+> deskcomm-crm@0.1.0 lint:channels /Users/rafaelmelgaco/SonghaiCRM-canais
 > tsx scripts/lint-channels.ts
 
 lint-channels: ok (53 arquivos de dívida conhecida, nenhum novo)

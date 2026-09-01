@@ -1,9 +1,9 @@
 
-> deskcomm-crm@0.1.0 test:unit /Users/rafaelmelgaco/DeskcommCRM-canais
+> deskcomm-crm@0.1.0 test:unit /Users/rafaelmelgaco/SonghaiCRM-canais
 > vitest run
 
 
- RUN  v4.1.10 /Users/rafaelmelgaco/DeskcommCRM-canais
+ RUN  v4.1.10 /Users/rafaelmelgaco/SonghaiCRM-canais
 
 
  Test Files  136 passed (136)

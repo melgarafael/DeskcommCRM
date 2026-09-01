@@ -203,7 +203,7 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
             {testOk ? (
               <p className="text-sm">
                 <Link href="/app/kanban" className="text-accent underline underline-offset-4">
-                  Ver no Kanban
+                  Ver no funil
                 </Link>
               </p>
             ) : null}

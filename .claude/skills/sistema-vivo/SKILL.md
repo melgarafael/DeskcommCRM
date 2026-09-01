@@ -108,7 +108,7 @@ Nunca escreva "tudo em realtime" numa spec. Diga *quem observa* e *o que age*.
 
 ---
 
-## 7. Binding — DeskcommCRM
+## 7. Binding — SonghaiCRM
 
 > Reescreva **apenas esta seção** ao levar a skill para outro sistema.
 

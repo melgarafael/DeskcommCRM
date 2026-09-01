@@ -5,13 +5,13 @@ depends_on: 01-prd-platform-base.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
 # Sub-PRD 02 — Customer 360° + Identity Resolution
 
-> O coração do DeskcommCRM. Define como o sistema enxerga uma pessoa, como reconcilia identidades vindas de fontes diferentes (WhatsApp, Nuvemshop, manual) e como acumula histórico cross-canal numa timeline única. Toda outra capacidade do produto (atendimento, IA, pipeline) opera sobre as estruturas definidas aqui.
+> O coração do SonghaiCRM. Define como o sistema enxerga uma pessoa, como reconcilia identidades vindas de fontes diferentes (WhatsApp, Nuvemshop, manual) e como acumula histórico cross-canal numa timeline única. Toda outra capacidade do produto (atendimento, IA, pipeline) opera sobre as estruturas definidas aqui.
 
 ---
 

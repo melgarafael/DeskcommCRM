@@ -6,7 +6,7 @@ related: 10-spec-ai-agents-runtime.md, 11-spec-mcp-server-internal.md
 version: 0.1
 status: draft (pre-implementation)
 date: 2026-05-05
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # Spec 12 — AI Agents UI (Telas, Fluxos, Wireframes)

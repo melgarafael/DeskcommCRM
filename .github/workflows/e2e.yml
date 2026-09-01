@@ -148,6 +148,7 @@ jobs:
         agente-papeis-operador.spec.ts prova-painel-provedores.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts
+        agenda-nativa.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava

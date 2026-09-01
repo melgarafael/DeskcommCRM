@@ -2,7 +2,7 @@
 
 > **Quando em dúvida, consulte aqui antes de implementar.** Cada item tem o "por quê" curto.
 
-Lista canônica do que **não fazer** no DeskcommCRM. Anti-patterns ficam aqui pra preservar identidade visual e evitar convergência ao padrão SaaS genérico.
+Lista canônica do que **não fazer** no SonghaiCRM. Anti-patterns ficam aqui pra preservar identidade visual e evitar convergência ao padrão SaaS genérico.
 
 ---
 

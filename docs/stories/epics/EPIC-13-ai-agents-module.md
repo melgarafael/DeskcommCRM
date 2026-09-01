@@ -34,7 +34,7 @@ exposes_contracts:
   - "realtime.ai_agent_runs-{org_id}"
 status: pending
 created_at: 2026-05-05
-owner: Rafael Melgaço
+owner: Songhai, Lda
 research_dossier: ~/tino-ai/Tino/research/pre-development/ai-agent-framework-deskcomm-whatsapp/
 specs:
   - docs/specs/10-spec-ai-agents-runtime.md
@@ -73,7 +73,7 @@ specs:
 
 ## 1. Objetivo
 
-Entregar o **módulo de agentes configuráveis de IA** do DeskcommCRM: cada tenant configura N agentes com prompt + provider/model + chave BYO + tools MCP + sessão WhatsApp + gatilhos + prioridade. Um webhook WAHA inbound dispara o dispatcher que seleciona o agente top-priority cujo gatilho match, executa o `ToolLoopAgent` (Vercel AI SDK v6) contra MCP server interno (que expõe os endpoints REST existentes do CRM), e devolve a resposta via `WAHA sendText` na mesma sessão. UI permite Save/Publish com versionamento atômico, test mode com trace, log de execuções em realtime.
+Entregar o **módulo de agentes configuráveis de IA** do SonghaiCRM: cada tenant configura N agentes com prompt + provider/model + chave BYO + tools MCP + sessão WhatsApp + gatilhos + prioridade. Um webhook WAHA inbound dispara o dispatcher que seleciona o agente top-priority cujo gatilho match, executa o `ToolLoopAgent` (Vercel AI SDK v6) contra MCP server interno (que expõe os endpoints REST existentes do CRM), e devolve a resposta via `WAHA sendText` na mesma sessão. UI permite Save/Publish com versionamento atômico, test mode com trace, log de execuções em realtime.
 
 ## 2. Resultado esperado (Definition of Done do Epic)
 

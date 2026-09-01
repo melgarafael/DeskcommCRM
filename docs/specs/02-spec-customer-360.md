@@ -5,7 +5,7 @@ depends_on: 01-spec-platform-base.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 escopo: Schema SQL completo, RLS, triggers, identity resolution, merge, custom fields, vocabulary, search & filters, eventos canônicos.
 ---
@@ -20,7 +20,7 @@ escopo: Schema SQL completo, RLS, triggers, identity resolution, merge, custom f
 
 ### 1.1 Posicionamento da Spec
 
-A Spec 02 materializa o **núcleo gravitacional** do DeskcommCRM: as 5 tabelas core CRM herdadas do bundle (`crm_pipelines`, `crm_stages`, `crm_leads`, `crm_lead_activities`, `crm_lead_links`) + a tabela `contacts` (fonte canônica de identidade) + tabela auxiliar `merge_queue`. Toda capacidade subsequente do produto (atendimento WhatsApp, IA conversacional, integração Nuvemshop, MCP server) **opera sobre** estas estruturas, nunca em paralelo a elas. Mudanças de schema aqui têm efeito-cascade pra toda a arquitetura.
+A Spec 02 materializa o **núcleo gravitacional** do SonghaiCRM: as 5 tabelas core CRM herdadas do bundle (`crm_pipelines`, `crm_stages`, `crm_leads`, `crm_lead_activities`, `crm_lead_links`) + a tabela `contacts` (fonte canônica de identidade) + tabela auxiliar `merge_queue`. Toda capacidade subsequente do produto (atendimento WhatsApp, IA conversacional, integração Nuvemshop, MCP server) **opera sobre** estas estruturas, nunca em paralelo a elas. Mudanças de schema aqui têm efeito-cascade pra toda a arquitetura.
 
 ### 1.2 Decisões consolidadas nesta Spec
 
@@ -325,7 +325,7 @@ create table public.crm_leads (
 
   -- Valor
   value_cents         bigint,
-  currency            text default 'BRL',
+  currency            text default 'MZN',  -- moeda padrão do negócio (migration 0161); ver MANIFEST.md
 
   -- Atribuição
   owner_user_id       uuid,                          -- soft FK auth.users

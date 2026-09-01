@@ -5,21 +5,21 @@ depends_on: 01-prd-platform-base.md, 02-prd-customer-360.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
 # Sub-PRD 06 — Integração Nuvemshop + Webhooks LGPD
 
-> Camada que conecta o DeskcommCRM ao backend de e-commerce do tenant. No MVP, o único provedor é a Nuvemshop. Toda a integração foi pensada por trás de um adapter abstrato (`EcommercePlatformAdapter`) pra que VTEX e Shopify entrem em fases posteriores sem alterar a camada de domínio (`crm_leads`, `contacts`, `orders`). Aqui também moram os 3 webhooks LGPD obrigatórios (`customer/redact`, `customer/data_request`, `store/redact`) — contrato regulatório de primeira classe, não afterthought.
+> Camada que conecta o SonghaiCRM ao backend de e-commerce do tenant. No MVP, o único provedor é a Nuvemshop. Toda a integração foi pensada por trás de um adapter abstrato (`EcommercePlatformAdapter`) pra que VTEX e Shopify entrem em fases posteriores sem alterar a camada de domínio (`crm_leads`, `contacts`, `orders`). Aqui também moram os 3 webhooks LGPD obrigatórios (`customer/redact`, `customer/data_request`, `store/redact`) — contrato regulatório de primeira classe, não afterthought.
 
 ---
 
 ## 1. Contexto & Posicionamento
 
-A Nuvemshop é a fonte canônica de pedidos, clientes e catálogo do tenant. Sem essa integração, o DeskcommCRM vira inbox WhatsApp sem contexto de pedido — o que os concorrentes B2B genéricos já entregam. **A integração é o que transforma "atendimento" em "atendimento e-commerce-native"**: cada conversa carrega visibilidade do último pedido, status de pagamento, rastreio e carrinho abandonado.
+A Nuvemshop é a fonte canônica de pedidos, clientes e catálogo do tenant. Sem essa integração, o SonghaiCRM vira inbox WhatsApp sem contexto de pedido — o que os concorrentes B2B genéricos já entregam. **A integração é o que transforma "atendimento" em "atendimento e-commerce-native"**: cada conversa carrega visibilidade do último pedido, status de pagamento, rastreio e carrinho abandonado.
 
-Três responsabilidades acopladas justificam viver no mesmo sub-PRD: (a) **sincronização operacional** (pedidos viram leads no pipeline "Pedidos"; transições de status movem o card); (b) **hidratação de identity resolution** (Sub-PRD 02 §3.3): clientes Nuvemshop alimentam `contacts`; conflitos com contacts vindos do WhatsApp caem em `merge_queue`; (c) **conformidade LGPD reativa**: quando a Nuvemshop emite `customer/redact`, `customer/data_request` ou `store/redact`, o DeskcommCRM **deve** responder dentro de SLA (D+7 / D+15) com audit denso e cascade correto.
+Três responsabilidades acopladas justificam viver no mesmo sub-PRD: (a) **sincronização operacional** (pedidos viram leads no pipeline "Pedidos"; transições de status movem o card); (b) **hidratação de identity resolution** (Sub-PRD 02 §3.3): clientes Nuvemshop alimentam `contacts`; conflitos com contacts vindos do WhatsApp caem em `merge_queue`; (c) **conformidade LGPD reativa**: quando a Nuvemshop emite `customer/redact`, `customer/data_request` ou `store/redact`, o SonghaiCRM **deve** responder dentro de SLA (D+7 / D+15) com audit denso e cascade correto.
 
 A camada precisa ser **plugável** (Nuvemshop é a primeira impl) e **resiliente** (webhook que não chega = perda silenciosa de pedido). É uma das três superfícies do produto onde defeito vira incidente regulatório direto (junto com Plataforma Base e WhatsApp WAHA).
 
@@ -72,7 +72,7 @@ A camada precisa ser **plugável** (Nuvemshop é a primeira impl) e **resiliente
 
 ### 3.2 OAuth Nuvemshop
 
-**O que provê.** Fluxo OAuth 2.0 padrão da Nuvemshop pra autorizar o DeskcommCRM a operar a loja. App embedded vs External **deferido pra Spec**.
+**O que provê.** Fluxo OAuth 2.0 padrão da Nuvemshop pra autorizar o SonghaiCRM a operar a loja. App embedded vs External **deferido pra Spec**.
 
 **Princípios.**
 - Tokens encrypted-at-rest via `pgcrypto`, chave **separada** (`NUVEMSHOP_OAUTH_ENCRYPTION_KEY`) pra reduzir blast radius
@@ -109,7 +109,7 @@ A camada precisa ser **plugável** (Nuvemshop é a primeira impl) e **resiliente
 
 **Eventos cobertos no MVP.**
 
-| Evento Nuvemshop | Ação no DeskcommCRM |
+| Evento Nuvemshop | Ação no SonghaiCRM |
 |---|---|
 | `order/created` | Cria lead em pipeline "Pedidos", stage "Aguardando pagamento"; cria/resolve contact via §3.6; activity `nuvemshop_order_created` |
 | `order/paid` | Move lead pra stage "Pago" (default; configurável §3.10); activity `nuvemshop_order_paid`; transição automática de `status` segue Sub-PRD 02 §3.8 |
@@ -164,7 +164,7 @@ A camada precisa ser **plugável** (Nuvemshop é a primeira impl) e **resiliente
 
 ### 3.7 Sync inicial após conexão
 
-**O que provê.** Quando o tenant conecta (ou solicita re-sync), o DeskcommCRM puxa estado relevante da Nuvemshop pra hidratar o CRM.
+**O que provê.** Quando o tenant conecta (ou solicita re-sync), o SonghaiCRM puxa estado relevante da Nuvemshop pra hidratar o CRM.
 
 **Domínios sincronizados.**
 - **Produtos** — feed pro RAG (Sub-PRD 05); paginação cursor; throttle pra rate limit
@@ -375,7 +375,7 @@ A integração Nuvemshop + LGPD é considerada **MVP-completa** quando:
 - Multi-loja por tenant (1 tenant conectando a N lojas Nuvemshop) — pós-MVP
 - Webhooks Nuvemshop além dos 8 listados (ex: `category/created`, `coupon/used`) — adicionar quando demanda real surgir
 - Dashboard analítico de pedidos (top produtos, conversion rate, etc.) — pós-MVP, possivelmente Sub-PRD futuro
-- Sincronização bidirecional (DeskcommCRM atualizando pedidos na Nuvemshop) — pós-MVP
+- Sincronização bidirecional (SonghaiCRM atualizando pedidos na Nuvemshop) — pós-MVP
 - Suporte a sandbox Nuvemshop em produção (cada tenant prod usa só prod) — sandbox restrito a CI/dev
 - Autoria de campanhas de recovery a partir de `cart/abandoned` — Sub-PRD 05 cobre handoff IA; campanha estruturada é pós-MVP
 - Métricas avançadas LGPD (dashboard de jobs pendentes por tenant, SLA tracking detalhado) — pós-MVP

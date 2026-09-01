@@ -6,11 +6,13 @@ import {
   BookOpen,
   Brain,
   Buildings,
+  CalendarBlank,
   ChartBar,
   ChartLineUp,
   ClipboardText,
   ClockCountdown,
   ClockCounterClockwise,
+  CreditCard,
   FileText,
   Flag,
   FlowArrow,
@@ -207,6 +209,31 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     minRole: "manager",
     sidebar: true,
   },
+  {
+    href: "/app/agenda",
+    label: "Agenda",
+    description: "Horários marcados — hoje e os próximos dias.",
+    icon: CalendarBlank,
+    group: "crm",
+    sidebar: true,
+  },
+  {
+    href: "/app/settings/appointment-types",
+    label: "Tipos de agendamento",
+    description: "Os tipos de horário que a equipe pode marcar, e quem é o responsável de cada um.",
+    icon: CalendarBlank,
+    group: "crm",
+    minRole: "manager",
+    sidebar: false,
+  },
+  {
+    href: "/app/settings/meu-horario",
+    label: "Meu horário de agendamento",
+    description: "Os dias e horários em que você pode ser agendado pela equipe.",
+    icon: CalendarBlank,
+    group: "crm",
+    sidebar: false,
+  },
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
   {
@@ -369,6 +396,17 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     group: "canais",
     // A página não filtra por papel, mas as Server Actions de conectar e
     // desconectar exigem admin — mostrar a um viewer seria oferecer botão morto.
+    minRole: "admin",
+    sidebar: true,
+  },
+  {
+    href: "/app/integrations/paysuite",
+    label: "PaySuite",
+    description: "Cobre por M-Pesa, e-Mola e cartão diretamente dos negócios do CRM.",
+    icon: CreditCard,
+    group: "canais",
+    // A página não filtra por papel, mas salvar credenciais exige admin —
+    // mostrar a um viewer seria oferecer um formulário morto (mesma regra da Nuvemshop).
     minRole: "admin",
     sidebar: true,
   },

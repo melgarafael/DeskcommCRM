@@ -22,7 +22,7 @@ exposes_contracts:
   - "event.ai.budget_throttled"
 status: pending
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-06 — AI Agent + RAG + Sentiment + Handoff
@@ -31,7 +31,7 @@ owner: Rafael Melgaço
 
 ## 1. Objetivo
 
-Entregar a camada de IA conversacional do DeskcommCRM: bot que responde inbounds via Sonnet 4.6 com contexto RAG (4 fontes), sentiment classifier paralelo via Haiku 4.5, orquestrador de handoff com 4 gatilhos OR-lógicos (IA-05), pipeline de ingestão versionado para FAQ/Policy/Catálogo Nuvemshop/Conversas resolvidas, UI de configuração de agents/knowledge/usage e enforcement de orçamento mensal por tenant (alarme 80%, throttle 100%). Ao final, um inbound em conversation com bot ativo recebe resposta IA em <3s p95 ou um handoff registrado em activity, com custo rateado por tenant em `ai_invocations`.
+Entregar a camada de IA conversacional do SonghaiCRM: bot que responde inbounds via Sonnet 4.6 com contexto RAG (4 fontes), sentiment classifier paralelo via Haiku 4.5, orquestrador de handoff com 4 gatilhos OR-lógicos (IA-05), pipeline de ingestão versionado para FAQ/Policy/Catálogo Nuvemshop/Conversas resolvidas, UI de configuração de agents/knowledge/usage e enforcement de orçamento mensal por tenant (alarme 80%, throttle 100%). Ao final, um inbound em conversation com bot ativo recebe resposta IA em <3s p95 ou um handoff registrado em activity, com custo rateado por tenant em `ai_invocations`.
 
 ## 2. Resultado esperado (Definition of Done do Epic)
 

@@ -59,6 +59,9 @@ export const KIND_LABEL = {
   // respondendo; confundir os dois faria o dono do negócio correr atrás de uma
   // parada que não houve, ou ignorar a que houve.
   budget_warning: "O gasto de IA passou do aviso que você definiu",
+  // Diz o que falta SABER, não o que faltou fazer: ninguém sabe ainda se o
+  // cliente veio, faltou ou cancelou — o sistema não decide isso sozinho.
+  appointment_outcome_pending: "Confirme o desfecho de um agendamento que já passou",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

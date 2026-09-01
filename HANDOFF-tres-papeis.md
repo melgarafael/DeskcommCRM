@@ -6,7 +6,7 @@
 > Contrato: [`docs/specs/16-spec-tres-papeis-do-agente.md`](docs/specs/16-spec-tres-papeis-do-agente.md)
 > Doutrina: [`docs/doctrine/separacao-fala-e-operacao.md`](docs/doctrine/separacao-fala-e-operacao.md)
 > Branch: `feat/tres-papeis-do-agente` · Base: `origin/main` = `0a85d251`
-> **Worktree dedicado:** `/Users/rafaelmelgaco/DeskcommCRM-tres-papeis` — a árvore principal foi
+> **Worktree dedicado:** `/Users/rafaelmelgaco/SonghaiCRM-tres-papeis` — a árvore principal foi
 > trocada por outra sessão duas vezes no meio do trabalho, e o worktree acabou com a disputa.
 > Ele **não tem `.env.local`**, e isso é uma proteção, não um detalhe (ver Passo 5 abaixo).
 

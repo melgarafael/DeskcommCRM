@@ -1,7 +1,7 @@
 ---
-description: Executa UMA sessão do gov-loop do DeskcommCRM (uma feature de governança, depois morre)
+description: Executa UMA sessão do gov-loop do SonghaiCRM (uma feature de governança, depois morre)
 ---
-Execute o protocolo do gov-loop — DeskcommCRM (Governança de Atendimento): leia
+Execute o protocolo do gov-loop — SonghaiCRM (Governança de Atendimento): leia
 loop/LOOP.md e siga-o à risca. Lane única: core.
 
 Lembretes que valem antes mesmo de ler o arquivo: uma sessão entrega UMA feature;

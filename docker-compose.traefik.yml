@@ -1,4 +1,4 @@
-# DeskcommCRM — override para VPS que JÁ TEM um proxy reverso Traefik.
+# SonghaiCRM — override para VPS que JÁ TEM um proxy reverso Traefik.
 #
 #   docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml up -d
 #
@@ -40,7 +40,7 @@
 # A REDE onde o Traefik encontra o app é TRAEFIK_NETWORK, e ela varia por
 # instalação. O install.sh a descobre e grava no .env — são dois cenários com
 # respostas OPOSTAS, ambos medidos (o porquê de cada um está na função
-# `rede_do_traefik`, em hostgator-setup-kit/install.sh):
+# `rede_do_traefik`, em self-host-kit/install.sh):
 #
 #   Traefik numa bridge PRÓPRIA (Coolify, Dokploy) → a rede DELE, que já existe.
 #   Traefik em `--network host` (Hostinger)        → uma bridge "<projeto>_proxy"

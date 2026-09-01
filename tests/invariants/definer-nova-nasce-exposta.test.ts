@@ -16,7 +16,7 @@ import { sql } from "./gov-helpers";
  * tinha **6 delas executáveis por `anon`** — porque o banco onde ele roda não era
  * o banco do produto.
  *
- * Todo projeto Supabase (nuvem — que é o que `hostgator-setup-kit/install.sh`
+ * Todo projeto Supabase (nuvem — que é o que `self-host-kit/install.sh`
  * manda o cliente criar — e a CLI local) grava no bootstrap, ANTES de qualquer
  * SQL nosso:
  *

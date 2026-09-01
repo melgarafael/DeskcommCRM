@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prova do `hostgator-setup-kit/update.sh` num repositório git descartável, com
+# Prova do `self-host-kit/update.sh` num repositório git descartável, com
 # `docker` e `crontab` substituídos por dublês — nada aqui toca a máquina de
 # quem roda (nenhum container sobe, nenhum crontab real é escrito).
 #
@@ -27,7 +27,7 @@ set -uo pipefail
 # Capturado ANTES de qualquer `cd`: o script muda de diretório várias vezes, e
 # `${BASH_SOURCE[0]}` é relativo ao cwd de quem invocou. Resolvê-lo lá embaixo
 # devolvia string vazia, e o `.` virava `/_common.sh`.
-KIT_DIR_TESTE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../hostgator-setup-kit" && pwd)"
+KIT_DIR_TESTE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../self-host-kit" && pwd)"
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
@@ -118,13 +118,13 @@ export PATH="$WORK/bin:$PATH"
 
 # ── Instalação de mentira: repo git + kit + .env ─────────────────────────────
 PROJ="$WORK/deskcommcrm"
-mkdir -p "$PROJ/hostgator-setup-kit" "$PROJ/supabase"
-cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/update.sh" \
-   "$REPO_ROOT/hostgator-setup-kit/agent.sh" "$PROJ/hostgator-setup-kit/"
+mkdir -p "$PROJ/self-host-kit" "$PROJ/supabase"
+cp "$REPO_ROOT/self-host-kit/_common.sh" "$REPO_ROOT/self-host-kit/update.sh" \
+   "$REPO_ROOT/self-host-kit/agent.sh" "$PROJ/self-host-kit/"
 # backup.sh de mentira: deixa um rastro. É o marco "o script já começou a
 # mexer" — a guarda de retrocesso só vale se abortar ANTES dele.
 BACKUP_MARK="$WORK/backup-rodou"
-cat > "$PROJ/hostgator-setup-kit/backup.sh" <<STUB
+cat > "$PROJ/self-host-kit/backup.sh" <<STUB
 #!/usr/bin/env bash
 touch "$BACKUP_MARK"
 STUB
@@ -153,7 +153,7 @@ echo topo > topo.txt; git add -A; git commit --quiet -m "topo da main"
 OUTFILE="$WORK/saida.txt"
 run_update() {  # run_update <args...> → saída em $OUTFILE, status em $RC
   rm -f "$BACKUP_MARK"
-  bash hostgator-setup-kit/update.sh "$@" > "$OUTFILE" 2>&1
+  bash self-host-kit/update.sh "$@" > "$OUTFILE" 2>&1
   RC=$?
 }
 
@@ -169,7 +169,7 @@ run_update
 check "aborta com status != 0" test "$RC" -ne 0
 check "não chegou a rodar o backup" test ! -f "$BACKUP_MARK"
 check "mesmo recusando, deixou o agente da tela instalado (com cd no diretório do projeto)" \
-  grep -q "cd ${PROJ} && bash hostgator-setup-kit/agent.sh" "$FAKE_CRONTAB"
+  grep -q "cd ${PROJ} && bash self-host-kit/agent.sh" "$FAKE_CRONTAB"
 
 echo "── 3. --force é a saída explícita de quem quer mesmo voltar"
 run_update --to v0.9.0 --force
@@ -233,7 +233,7 @@ check "nenhuma das chaves novas duplicou" \
 # completo) não tinha como pegar.
 SRC="$WORK/src"
 mkdir -p "$SRC"
-cp -R "$PROJ/hostgator-setup-kit" "$SRC/"
+cp -R "$PROJ/self-host-kit" "$SRC/"
 mkdir -p "$SRC/supabase"; printf 'select 1;\n' > "$SRC/supabase/baseline.sql"
 # shellcheck disable=SC2016  # o ${APP_IMAGE} é literal DENTRO do compose
 printf 'services:\n  app:\n    image: \${APP_IMAGE:-x}\n' > "$SRC/docker-compose.prod.yml"
@@ -293,7 +293,7 @@ AGENTE="$WORK/agente"
 clona_raso "$AGENTE"
 cd "$AGENTE" || exit 1
 : > "$DOCKER_LOG"; : > "$CURL_LOG"; rm -f "$BACKUP_MARK"
-bash hostgator-setup-kit/agent.sh > "$WORK/agente.out" 2>&1
+bash self-host-kit/agent.sh > "$WORK/agente.out" 2>&1
 check "o agente chegou a executar o update (o app de mentira pediu)" \
   grep -q '"kind":"run_progress"\|"kind":"run_result"' "$CURL_LOG"
 check "NÃO reiniciou o container" test -z "$(grep -F 'up -d app' "$DOCKER_LOG" || true)"
@@ -319,7 +319,7 @@ cd "$CONTIDA2" || exit 1
 check "fixture: ainda é raso, e a origin CONTINUA alcançável (nada quebrado)" \
   test "$(git rev-parse --is-shallow-repository)" = "true"
 : > "$CURL_LOG"
-FORCE_UNSHALLOW_FAIL=1 bash hostgator-setup-kit/agent.sh > "$WORK/agente-contida2.out" 2>&1
+FORCE_UNSHALLOW_FAIL=1 bash self-host-kit/agent.sh > "$WORK/agente-contida2.out" 2>&1
 check "o heartbeat diz explicitamente que não conseguiu comparar (CONTIDA=2 isolado)" \
   grep -q '"compare_failed":true' "$CURL_LOG"
 check "e não anuncia a tag que não conseguiu confirmar" \
@@ -338,7 +338,7 @@ cd "$SEM_TAG" || exit 1
 check "fixture: nenhuma tag v* conhecida localmente" test -z "$(git tag -l 'v*')"
 git remote set-url origin "$WORK/nao-existe"   # fetch --tags vai falhar (FETCH_OK=0)
 : > "$CURL_LOG"
-bash hostgator-setup-kit/agent.sh > "$WORK/agente-sem-tag.out" 2>&1
+bash self-host-kit/agent.sh > "$WORK/agente-sem-tag.out" 2>&1
 check "sem tag nenhuma conhecida e sem conseguir buscar, o heartbeat diz que não sabe (fallback isolado)" \
   grep -q '"compare_failed":true' "$CURL_LOG"
 check "e não anuncia versão nenhuma" \

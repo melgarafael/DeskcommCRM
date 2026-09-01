@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { parseReaisToCents, formatCentsBRL } from "./money";
+import { parseReaisToCents, formatCentsMZN } from "./money";
 
 describe("parseReaisToCents", () => {
   it("lê ponto como decimal quando o grupo final não é de milhar", () => {
@@ -39,9 +39,9 @@ describe("parseReaisToCents", () => {
   });
 });
 
-describe("formatCentsBRL", () => {
-  it("mostra em reais o que está guardado em centavos", () => {
-    expect(formatCentsBRL(24990).replace(/ /g, " ")).toBe("R$ 249,90");
-    expect(formatCentsBRL(0).replace(/ /g, " ")).toBe("R$ 0,00");
+describe("formatCentsMZN", () => {
+  it("mostra em meticais o que está guardado em centavos", () => {
+    expect(formatCentsMZN(24990).replace(/ /g, " ")).toBe("249,90 MTn");
+    expect(formatCentsMZN(0).replace(/ /g, " ")).toBe("0,00 MTn");
   });
 });

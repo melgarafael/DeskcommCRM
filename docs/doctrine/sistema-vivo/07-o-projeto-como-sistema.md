@@ -116,7 +116,7 @@ Consequências práticas:
 
 ---
 
-# Aplicação de referência — DeskcommCRM
+# Aplicação de referência — SonghaiCRM
 
 **Modelo:** distribuição aberta, instalação em infraestrutura própria, monetização por patrocínio de empresas que se beneficiam do crescimento da base instalada — notadamente provedores de infraestrutura, cujo produto é vendido por quem sobe a aplicação. O alinhamento passa no teste de 7.7: quanto melhor o produto para o usuário, mais instalações, mais benefício para o patrocinador.
 

@@ -1,11 +1,11 @@
-# Design System DeskcommCRM — Documentação Canônica
+# Design System SonghaiCRM — Documentação Canônica
 
 > **Versão:** v1.0 (lockada em 2026-04-28)
 > **Status:** Ativa
 > **Direção:** Soft-tech / calmo, anti-genérico
 > **Stack visual:** Sage + Atkinson Hyperlegible + IBM Plex Mono + Aerada + Phosphor (duotone)
 
-Esta pasta é a **fonte canônica** da linguagem visual do DeskcommCRM. Toda decisão de UI deve consultar estes documentos antes de implementação. Quando houver conflito entre código e doc, **a doc vence** — ajuste o código.
+Esta pasta é a **fonte canônica** da linguagem visual do SonghaiCRM. Toda decisão de UI deve consultar estes documentos antes de implementação. Quando houver conflito entre código e doc, **a doc vence** — ajuste o código.
 
 ## Índice
 

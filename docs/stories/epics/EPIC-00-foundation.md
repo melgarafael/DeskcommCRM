@@ -16,7 +16,7 @@ exposes_contracts:
   - "lib.schemas — registry `lib/schemas/index.ts` + helper `validateRequest<T>(schema, request)`"
 status: completed
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-00 — Foundation & Tooling

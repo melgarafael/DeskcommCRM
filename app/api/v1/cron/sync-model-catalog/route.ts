@@ -3,7 +3,7 @@
  *
  * A OpenRouter publica ~400 modelos de ~58 fabricantes e a lista muda sozinha.
  * Até aqui, `ai_models` era semeada por migration: a cada modelo novo do
- * mercado, o self-hoster precisava esperar uma release do DeskcommCRM para
+ * mercado, o self-hoster precisava esperar uma release do SonghaiCRM para
  * poder escolhê-lo — e o preço da tabela envelhecia junto, o que não é
  * cosmético: é o número que faz o teto de orçamento da organização disparar na
  * hora certa, ou não disparar.

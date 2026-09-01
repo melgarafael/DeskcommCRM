@@ -4,14 +4,14 @@ parent: 01-prd-platform-base.md
 version: 0.1
 status: v0.1
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 regras_aplicadas: [T-01, T-02, T-03, T-04, T-05, T-06, T-07, T-08, L-04, L-06, L-07, L-08, L-10, B-04]
 ---
 
 # Spec Técnica 01 — Plataforma Base
 
-> Spec foundational do DeskcommCRM. Define schema SQL completo, RLS policies, fluxos de auth, contratos de API REST `/api/v1/`, endpoints LGPD e onboarding de tenant. Toda spec posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) **depende** desta. Divergências exigem ADR explícito.
+> Spec foundational do SonghaiCRM. Define schema SQL completo, RLS policies, fluxos de auth, contratos de API REST `/api/v1/`, endpoints LGPD e onboarding de tenant. Toda spec posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) **depende** desta. Divergências exigem ADR explícito.
 
 ---
 
@@ -119,7 +119,7 @@ create trigger trg_organizations_touch
   before update on public.organizations
   for each row execute function public.fn_touch_updated_at();
 
-comment on table public.organizations is 'Tenants do DeskcommCRM. Cada linha = 1 e-commerce cliente.';
+comment on table public.organizations is 'Tenants do SonghaiCRM. Cada linha = 1 e-commerce cliente.';
 comment on column public.organizations.cnpj is 'CNPJ formatado XX.XXX.XXX/XXXX-XX. Único por tenant ativo.';
 comment on column public.organizations.status is 'active=operando | suspended=pausado por admin | redacted=LGPD store/redact aplicado | archived=cancelado.';
 ```

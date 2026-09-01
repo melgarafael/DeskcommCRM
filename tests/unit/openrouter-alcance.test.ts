@@ -73,7 +73,7 @@ describe("alcance da OPENROUTER_API_KEY", () => {
       comFerramentas,
       comFerramentas.length
         ? `${comFerramentas.join(", ")} passa(m) ferramentas ao modelo E resolve(m) pela OpenRouter. ` +
-            "O aviso sobre tool calling em .env.example / .env.hostgator.example foi escrito quando " +
+            "O aviso sobre tool calling em .env.example / .env.selfhost.example foi escrito quando " +
             "isso NÃO acontecia e agora está desatualizado: reescreva-o antes de liberar este caminho."
         : undefined,
     ).toEqual([]);

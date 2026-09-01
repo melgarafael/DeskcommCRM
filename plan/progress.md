@@ -1,4 +1,4 @@
-# Progress — gov-loop (DeskcommCRM · Governança de Atendimento)
+# Progress — gov-loop (SonghaiCRM · Governança de Atendimento)
 
 > Diário de bordo append-only. Cada sessão do loop fecha com 3-5 linhas aqui:
 > o que fez, evidência observada (output real, não intenção), o que ficou.
@@ -144,7 +144,7 @@
 - INB-03 aberto (follow-ups: onboarding/whatsapp/session sem gate de role;
   nota pro bulk-assign ≥manager na G3-04).
 - Handoff: próximas sessões (G2-02+) delegadas ao terminal Arquiteto e Executor
-  (cooperação A2A retomada pelo dono); Maestro-DeskcommCRM vira watchdog.
+  (cooperação A2A retomada pelo dono); Maestro-SonghaiCRM vira watchdog.
 
 ## 2026-07-16 — sessão 10 do loop (core) — G2-02
 
@@ -429,7 +429,7 @@
 - Watchdog liberou 6.5Gi (caches npm/uv/puppeteer/pnpm) → 8Gi livres.
 - 17:11: Terminal B criou loop/STOP alegando git clean ~17h apagando trabalho
   da fusão. Apuração: gov-loop usa stash (não clean); trabalho confirmado salvo
-  no worktree ../DeskcommCRM-vendaval. Principal chegou a ser trocado pra
+  no worktree ../SonghaiCRM-vendaval. Principal chegou a ser trocado pra
   fusion/vendaval por engano e foi revertido pelo Maestro do Vendaval.
 - Acordo de convivência: fusão vive no worktree (branch vendaval-fusion);
   NNNN 0038-0049 reservados pro gov-loop, fusão renumera 0050+.

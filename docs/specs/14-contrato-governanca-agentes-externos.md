@@ -6,7 +6,7 @@
 >
 > **Autocontido.** Um agente externo (o **Vendaval** — runtime de agentes de IA
 > 1:N, fora deste repo) lê SÓ este documento para saber como falar com o
-> DeskcommCRM via MCP: quais tools existem, o input/output exato de cada uma, a
+> SonghaiCRM via MCP: quais tools existem, o input/output exato de cada uma, a
 > semântica de governança que ele precisa respeitar e o que ele **nunca** pode
 > fazer. Estilo edge-contract: refs reais, proibições explícitas, zero remissão
 > obrigatória a outro doc.
@@ -19,7 +19,7 @@
 
 ## 0. Modelo mental (leia primeiro)
 
-O DeskcommCRM expõe um **servidor MCP org-scoped**. O agente externo se autentica
+O SonghaiCRM expõe um **servidor MCP org-scoped**. O agente externo se autentica
 com um bearer token que carrega **uma organização** e **um conjunto de scopes**
 (`mcp:read` / `mcp:write`) + um **role** (`viewer`<`agent`<`manager`<`admin`). A
 partir daí:
@@ -418,7 +418,7 @@ O que o **Vendaval** precisa fazer do seu lado para consumir este contrato:
 > **Fora do escopo deste contrato (decisões do FG do Vendaval):** o modelo de claim
 > do Vendaval sobre o `event_log` (visibilidade/lock do consumo externo) e o
 > mapeamento de credenciais org→token. Este contrato define **a superfície do
-> DeskcommCRM**; o lado do Vendaval é o FG-01.
+> SonghaiCRM**; o lado do Vendaval é o FG-01.
 
 ---
 

@@ -2,7 +2,7 @@
 
 # Instalar para clientes (agências e revendedores)
 
-Guia para quem instala o DeskcommCRM **para outras empresas** — agência, consultoria, revendedor — e cobra por isso.
+Guia para quem instala o SonghaiCRM **para outras empresas** — agência, consultoria, revendedor — e cobra por isso.
 
 A licença é MIT: você pode modificar, hospedar para terceiros, revender e cobrar o que quiser. Não há royalty, não há cláusula proibindo hospedagem comercial e não existe versão paga que trave funcionalidade do seu cliente.
 
@@ -38,7 +38,7 @@ O `install.sh` pergunta **duas** delas e as grava: o `APP_NAME` (Enter mantém o
 
 > A cor é pedida com validador: só `#` + 6 dígitos passa. É mais estreito do que a tela aceita, e de propósito — os **e-mails de acesso** (confirmação de conta e recuperação de senha) leem essa chave do `.env`, e eles só reconhecem essa forma. Um `#abc` ou um `7a5cd6` pintaria a interface com a sua cor e deixaria o verde do produto no primeiro e-mail que o seu cliente abre.
 
-> ⚠️ **Trocar a cor pela tela depois NÃO reescreve os e-mails de acesso.** O texto deles vive dentro do Supabase (GoTrue), não no CRM, e quem o empurra para lá é o `marca-emails.sh` — que lê o **`.env`**, não o banco. Para os e-mails acompanharem uma cor trocada em `/admin/marca`: ajuste também o `APP_ACCENT_HEX` no `.env` e rode `bash hostgator-setup-kit/marca-emails.sh`. É por isso que a entrevista do instalador importa: ela é o único momento em que as duas pontas nascem iguais sem ninguém precisar saber disso.
+> ⚠️ **Trocar a cor pela tela depois NÃO reescreve os e-mails de acesso.** O texto deles vive dentro do Supabase (GoTrue), não no CRM, e quem o empurra para lá é o `marca-emails.sh` — que lê o **`.env`**, não o banco. Para os e-mails acompanharem uma cor trocada em `/admin/marca`: ajuste também o `APP_ACCENT_HEX` no `.env` e rode `bash self-host-kit/marca-emails.sh`. É por isso que a entrevista do instalador importa: ela é o único momento em que as duas pontas nascem iguais sem ninguém precisar saber disso.
 
 O que essas variáveis são, exatamente: **semente e piso de rollback.**
 
@@ -94,7 +94,7 @@ Confirmação de conta e recuperação de senha **não são enviados pelo sistem
 Por isso o kit traz um script próprio:
 
 ```bash
-bash hostgator-setup-kit/marca-emails.sh
+bash self-host-kit/marca-emails.sh
 ```
 
 Ele sobe o assunto e o corpo dos dois e-mails com o **seu** nome e a **sua** cor, e de quebra configura o endereço de retorno do link (que nenhum script configurava antes, e é pré-requisito do link funcionar). O `install.sh` o chama sozinho, logo depois de criar o projeto Supabase; o `update.sh` também o chama, para que uma instalação antiga receba isso na primeira atualização.
@@ -171,7 +171,7 @@ Todo cliente seu que usa um CRM estrangeiro realiza essa transferência e precis
 
 ## Operação
 
-Cada instalação traz os scripts em `hostgator-setup-kit/`:
+Cada instalação traz os scripts em `self-host-kit/`:
 
 | Comando | O que faz |
 |---|---|
@@ -189,7 +189,7 @@ O `reset-mfa.sh` é o que você mais vai usar: a verificação em duas etapas é
 
 **4 GB de RAM recomendados** (a stack sobe com 2 GB, mas opera no limite — o WAHA usa ~150 MB por sessão de WhatsApp), portas 80 e 443, Docker Compose v2 e um domínio com registro A apontando para o IP. A VPS não compila nada — baixa uma imagem pronta. O certificado HTTPS é emitido automaticamente no primeiro acesso.
 
-Guia completo de instalação: [`hostgator-setup-kit/README.md`](../hostgator-setup-kit/README.md).
+Guia completo de instalação: [`self-host-kit/README.md`](../self-host-kit/README.md).
 
 ---
 

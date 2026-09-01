@@ -3,7 +3,7 @@
  *
  * ## Por que este arquivo existe
  *
- * O DeskcommCRM chama modelo de linguagem em 23 lugares. Até aqui, QUAL modelo
+ * O SonghaiCRM chama modelo de linguagem em 23 lugares. Até aqui, QUAL modelo
  * cada um usava estava espalhado por três pilhas que não se falavam
  * (`runModelCall` com BYOK por org, `lib/ai/gateway.ts` por variável de
  * ambiente, `lib/ai/runtime/agent.ts` com um terceiro `switch`) e por sete

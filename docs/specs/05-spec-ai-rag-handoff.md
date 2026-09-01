@@ -5,13 +5,13 @@ depends_on: 01-spec-platform-base.md, 02-spec-customer-360.md, 03-spec-whatsapp-
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
 # Spec 05 — IA Conversacional + RAG + Sentiment + Handoff
 
-> Detalhamento técnico da camada de IA do DeskcommCRM. Define schema SQL completo das tabelas `ai_*`, pipeline de ingestão das 4 fontes de RAG, roteamento da chamada do bot via Vercel AI SDK + AI Gateway, sentiment detection paralelo, 4 gatilhos de handoff, guardrails declarativos e prompts canônicos em PT-BR. Esta spec assume a fundação herdada (event_log, RLS, audit, polimorfismo de activities) das specs 01–04.
+> Detalhamento técnico da camada de IA do SonghaiCRM. Define schema SQL completo das tabelas `ai_*`, pipeline de ingestão das 4 fontes de RAG, roteamento da chamada do bot via Vercel AI SDK + AI Gateway, sentiment detection paralelo, 4 gatilhos de handoff, guardrails declarativos e prompts canônicos em PT-BR. Esta spec assume a fundação herdada (event_log, RLS, audit, polimorfismo de activities) das specs 01–04.
 
 ---
 

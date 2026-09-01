@@ -1,5 +1,5 @@
 /**
- * Bootstrap do 1º dono de uma instância self-host do DeskcommCRM.
+ * Bootstrap do 1º dono de uma instância self-host do SonghaiCRM.
  *
  * O app NÃO tem tela de cadastro — este script cria, de forma idempotente:
  *   1. o usuário dono (auth) com e-mail confirmado
@@ -13,7 +13,7 @@
  *
  * Uso (o install.sh exporta as vars; localmente lê .env/.env.local):
  *   OWNER_EMAIL=dono@empresa.com OWNER_PASSWORD='senha-forte' \
- *   OWNER_ORG_NAME='Minha Empresa' npx tsx scripts/bootstrap-owner.ts
+ *   OWNER_ORG_NAME='Songhai, Lda' npx tsx scripts/bootstrap-owner.ts
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -40,7 +40,7 @@ const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE = env.SUPABASE_SERVICE_ROLE_KEY;
 const OWNER_EMAIL = env.OWNER_EMAIL;
 const OWNER_PASSWORD = env.OWNER_PASSWORD;
-const ORG_NAME = env.OWNER_ORG_NAME || "Minha Empresa";
+const ORG_NAME = env.OWNER_ORG_NAME || "Songhai, Lda";
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   throw new Error("Faltam NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.");
@@ -57,7 +57,7 @@ function slugify(s: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 40) || "minha-empresa";
+    .slice(0, 40) || "songhai-lda";
 }
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {

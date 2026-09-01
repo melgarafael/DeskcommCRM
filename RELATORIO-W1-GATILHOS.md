@@ -108,7 +108,7 @@ existe é:
 - `lib/leads/next-action.ts`, onde "proposta" significa outra coisa — a **próxima
   ação proposta pela IA** ao humano. Homônimo, não sinônimo.
 
-Ou seja: **"proposta feita" já é uma etapa do funil.** No DeskcommCRM o negócio
+Ou seja: **"proposta feita" já é uma etapa do funil.** No SonghaiCRM o negócio
 que teve proposta é o negócio que está na coluna "Proposta enviada" (ou o nome
 que o clone deu a ela). Aplicando DIRC, é caso de **Calcular/Referenciar**, não de
 Duplicar: modelar uma tabela `propostas` criaria uma segunda verdade sobre um

@@ -1,5 +1,5 @@
 /**
- * Códigos de erro canônicos da API DeskcommCRM.
+ * Códigos de erro canônicos da API SonghaiCRM.
  *
  * Adicionar novo código:
  *  1. Adicionar à enum/constante abaixo

@@ -3,6 +3,8 @@ import { NextRequest } from "next/server";
 
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
 
 /**
@@ -91,5 +93,108 @@ describe("GET /api/v1/ai/knowledge/sources", () => {
     // isto estoura com "filter is not a function".
     expect(() => body.data.filter((s) => s.agent_id === AGENT_ID)).not.toThrow();
     expect(body.data.filter((s) => s.agent_id === AGENT_ID)).toHaveLength(1);
+  });
+});
+
+describe("POST /api/v1/ai/knowledge/sources (catalog via CSV)", () => {
+  beforeEach(() => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: "11111111-1111-4111-8111-111111111111" } as AuthUser,
+      org: { orgId: ORG_ID, name: "Org", role: "manager" },
+    } as never);
+
+    // Lookup do agent (via createClient, user-scoped) — sempre encontra.
+    vi.mocked(createClient).mockResolvedValue({
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: { id: AGENT_ID }, error: null }),
+            }),
+          }),
+        }),
+      }),
+    } as never);
+  });
+
+  function makeAdminStub() {
+    const faqRowsInserted: unknown[] = [];
+    return {
+      stub: {
+        from(table: string) {
+          if (table === "ai_knowledge_sources") {
+            return {
+              insert: () => ({
+                select: () => ({
+                  single: async () => ({ data: { id: SOURCE.id }, error: null }),
+                }),
+              }),
+            };
+          }
+          if (table === "ai_faq_items") {
+            return {
+              insert: async (rows: unknown[]) => {
+                faqRowsInserted.push(...rows);
+                return { error: null };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        },
+        rpc: async () => ({ error: null }),
+      },
+      faqRowsInserted,
+    };
+  }
+
+  it("cria a fonte com as linhas válidas e devolve row_errors das inválidas", async () => {
+    const { stub, faqRowsInserted } = makeAdminStub();
+    vi.mocked(createAdminClient).mockReturnValue(stub as never);
+
+    const { POST } = await import("./route");
+    const csv = ["nome,preco", "Produto A,100", "Produto B,não é número"].join("\n");
+    const res = await POST(
+      new NextRequest("http://localhost/api/v1/ai/knowledge/sources", {
+        method: "POST",
+        body: JSON.stringify({
+          agent_id: AGENT_ID,
+          source_type: "catalog",
+          name: "Catálogo da loja",
+          csv_blob: csv,
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      data: { items_count: number; row_errors?: Array<{ row: number; reason: string }> };
+    };
+    expect(body.data.items_count).toBe(1);
+    expect(body.data.row_errors).toEqual([
+      { row: 3, reason: 'Preço "não é número" não é um valor válido.' },
+    ]);
+    expect(faqRowsInserted).toHaveLength(1);
+  });
+
+  it("recusa quando NENHUMA linha da planilha é válida", async () => {
+    const { stub } = makeAdminStub();
+    vi.mocked(createAdminClient).mockReturnValue(stub as never);
+
+    const { POST } = await import("./route");
+    const csv = ["nome,preco", ",100"].join("\n");
+    const res = await POST(
+      new NextRequest("http://localhost/api/v1/ai/knowledge/sources", {
+        method: "POST",
+        body: JSON.stringify({
+          agent_id: AGENT_ID,
+          source_type: "catalog",
+          name: "Catálogo da loja",
+          csv_blob: csv,
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
   });
 });

@@ -1,7 +1,7 @@
 import { chromium } from "@playwright/test";
 import { readFileSync } from "node:fs";
 const BASE = "http://127.0.0.1:3100";
-const creds = JSON.parse(readFileSync("/Users/rafaelmelgaco/DeskcommCRM/.e2e-creds.json", "utf8"));
+const creds = JSON.parse(readFileSync("/Users/rafaelmelgaco/SonghaiCRM/.e2e-creds.json", "utf8"));
 async function main() {
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 390, height: 844 } });

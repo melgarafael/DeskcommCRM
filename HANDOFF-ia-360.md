@@ -5,7 +5,7 @@
 >
 > Contrato e motivos: `docs/handoffs/BRIEFING-ia-360.md` — leia antes de tocar em código.
 > Branch: `feat/ia-360-mcp` · Base: `origin/main` = `687716a`
-> Worktree do Maestro: `/Users/rafaelmelgaco/DeskcommCRM-ia360`
+> Worktree do Maestro: `/Users/rafaelmelgaco/SonghaiCRM-ia360`
 
 ---
 
@@ -87,12 +87,12 @@ envelhecer — se a wave entregar as tools e ninguém tirar o pacote da dívida,
 
 ### Wave 4 — Organizar a operação · EM ANDAMENTO
 
-**Terminal:** MaestroConexoes · worktree `/Users/rafaelmelgaco/DeskcommCRM-ia360-w4-organizar`
+**Terminal:** MaestroConexoes · worktree `/Users/rafaelmelgaco/SonghaiCRM-ia360-w4-organizar`
 · branch `feat/ia-360-w4-organizar` · base `99cd0fc` (contém `origin/main` = `687716a`;
 `git log HEAD..origin/main` vazio, medido antes de começar).
 ### Wave 1 — o painel do humano · CONCLUÍDA
 
-**Entregue por:** Arquiteto (worktree `DeskcommCRM-ia360-w1-painel`, branch `feat/ia-360-w1-painel`)
+**Entregue por:** Arquiteto (worktree `SonghaiCRM-ia360-w1-painel`, branch `feat/ia-360-w1-painel`)
 **Commits:** `ddb53bd` (rota) · `259567e` (tela) · `032f038` (observabilidade) · `41e61b2` (prova em tela + mapa vivo)
 
 #### O que mudou
@@ -236,7 +236,7 @@ eu esbarrei deixaria as irmãs quebradas com um álibi de "já foi tratado".
 em 390px o app é inutilizável — o sidebar é fixo em **240px** e não colapsa, sobrando
 ~150px de conteúdo, com campos de formulário de uma letra por linha. Vale para toda
 tela do produto, não só esta. Ponto de quebra medido: **768px é o menor tamanho usável**
-(estouro 0). Isto é decisão de produto (o DeskcommCRM é ferramenta de operação em
+(estouro 0). Isto é decisão de produto (o SonghaiCRM é ferramenta de operação em
 desktop?) e mexe no shell de todos — **item para o Maestro**, não conserto de wave.
 
 Regressão dos dois fixes: `capacidades-do-agente` + `navegacao` = **14 passed** (o
@@ -393,7 +393,7 @@ dos describes subiu para 240 s para caber essa recuperação.
 ### Wave 2 — Não perder o cliente (pacote `reter`) · CONCLUÍDA
 
 **Entregue por:** DevVivo · branch `feat/ia-360-w2-reter` · worktree
-`/Users/rafaelmelgaco/DeskcommCRM-ia360-w2-reter` · base `99cd0fc`
+`/Users/rafaelmelgaco/SonghaiCRM-ia360-w2-reter` · base `99cd0fc`
 
 | Medida | Antes (`99cd0fc`) | Depois (`02904498`) |
 |---|---|---|
@@ -455,7 +455,7 @@ anterior à wave. Cada uma produziu exatamente uma reprovação; o controle rest
 
 ### Wave 3 — passar para um humano (pacote `escalar`) · CÓDIGO E TESTES CONCLUÍDOS
 
-**Entregue por:** terminal "Maestro" · worktree `/Users/rafaelmelgaco/DeskcommCRM-ia360-w3-escalar`
+**Entregue por:** terminal "Maestro" · worktree `/Users/rafaelmelgaco/SonghaiCRM-ia360-w3-escalar`
 **Branch:** `feat/ia-360-w3-escalar` · **SHA do marco:** `c0db6aa` (árvore limpa) · base `99cd0fc`
 
 O pacote tinha **1** capacidade (chamar um atendente) e agora tem **7**. Mais

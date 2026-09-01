@@ -28,7 +28,7 @@ const CONVERSA = "8b9fcd5f-252d-4f6b-9538-f7c2c538807f";
 const CONTATO = "564d1c58-52a1-4610-bd43-2d88df13064c";
 const ORG = "ad365e5b-45e5-45d3-99fa-33b388501fec";
 const MARCA = "sonda-inbox-demanda";
-const c = JSON.parse(readFileSync("/Users/rafaelmelgaco/DeskcommCRM/.e2e-creds.json", "utf8"));
+const c = JSON.parse(readFileSync("/Users/rafaelmelgaco/SonghaiCRM/.e2e-creds.json", "utf8"));
 
 function psql(script: string): string {
   return execFileSync(

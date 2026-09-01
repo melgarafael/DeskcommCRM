@@ -4,19 +4,19 @@ parent: 00-prd-master.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
 # Sub-PRD 01 — Plataforma Base
 
-> Foundation do DeskcommCRM. Todo subsistema posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) depende das capacidades aqui definidas. Profundidade técnica (schema, RLS policies, payloads de API) vai pra `docs/specs/` na próxima fase.
+> Foundation do SonghaiCRM. Todo subsistema posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) depende das capacidades aqui definidas. Profundidade técnica (schema, RLS policies, payloads de API) vai pra `docs/specs/` na próxima fase.
 
 ---
 
 ## 1. Contexto & Posicionamento
 
-A Plataforma Base resolve o **problema fundacional**: todo dado tocado pelo DeskcommCRM precisa estar autenticado, isolado por tenant, autorizado por role, auditado por mutação, e respeitar LGPD desde o primeiro request. Sem isso, qualquer feature em cima vira risco regulatório e operacional.
+A Plataforma Base resolve o **problema fundacional**: todo dado tocado pelo SonghaiCRM precisa estar autenticado, isolado por tenant, autorizado por role, auditado por mutação, e respeitar LGPD desde o primeiro request. Sem isso, qualquer feature em cima vira risco regulatório e operacional.
 
 No modo BPO atual, a Plataforma Base também sustenta a **operação cross-tenant** da empresa operadora (super-admin que cruza tenants). No modo SaaS futuro, é o que permite cada lojista operar seu próprio tenant sem reescrita.
 
@@ -105,7 +105,7 @@ Esta camada **é invisível pro cliente final** mas governa todas as garantias d
 
 ### 3.4 Super-admin de plataforma
 
-**O que provê.** Role especial que atravessa tenants, exclusiva da empresa operadora (modo BPO). No modo SaaS futuro, continua existindo mas restrita à equipe DeskcommCRM como suporte.
+**O que provê.** Role especial que atravessa tenants, exclusiva da empresa operadora (modo BPO). No modo SaaS futuro, continua existindo mas restrita à equipe SonghaiCRM como suporte.
 
 **Princípios.**
 - Marcação via coluna `is_platform_admin boolean not null default false` em `auth.users` ou tabela auxiliar `platform_admins` (decisão na Spec)

@@ -1,7 +1,7 @@
 /**
  * Camada de apresentacao do catalogo de tools — pacotes de capacidade e risco.
  *
- * Existe porque o publico que configura um agente no DeskcommCRM e dono de
+ * Existe porque o publico que configura um agente no SonghaiCRM e dono de
  * clinica, de loja, de imobiliaria — nao engenheiro. `crm_move_lead_stage` nao
  * configura nada para essa pessoa.
  *

@@ -2,7 +2,7 @@
 
 [🇧🇷 Português](README.md) · [🇺🇸 English](README.en.md) · 🇪🇸 Español
 
-# 🛠️ DeskcommCRM — el Sistema Operativo de Ventas con IA, open source, para WhatsApp
+# 🛠️ SonghaiCRM — el Sistema Operativo de Ventas con IA, open source, para WhatsApp
 
 **Agentes de IA que atienden, califican y venden en WhatsApp — dentro de un CRM open source que corre en tu propio servidor.**
 **Sin mensualidad, sin funciones bloqueadas, tus datos siguen siendo tuyos. La alternativa abierta a Kommo, Octadesk e Intercom.**
@@ -10,7 +10,7 @@
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript)](https://www.typescriptlang.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
-[![Self-hosted](https://img.shields.io/badge/self--hosted-1%20comando-orange)](hostgator-setup-kit/)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-1%20comando-orange)](self-host-kit/)
 [![CI](https://github.com/melgarafael/DeskcommCRM/actions/workflows/ci.yml/badge.svg)](https://github.com/melgarafael/DeskcommCRM/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -22,22 +22,19 @@
 
 > ### ☁️ Corre este CRM en producción con 1 comando
 >
-> DeskcommCRM se desarrolla en **alianza con HostGator**: el [`hostgator-setup-kit/`](hostgator-setup-kit/)
-> instala el CRM completo (app + WhatsApp + base de datos) en un VPS con un único comando, y el
-> [runbook de producción](docs/runbooks/waha-hostgator.md) ya asume ese entorno.
->
-> **[👉 Contratar el VPS de HostGator con el descuento de la alianza](https://www.hostgator.com.br/52708-141-3-52.html)** —
-> datacenter en São Paulo, ideal para WhatsApp funcionando 24/7. *(enlace de partner — contratar por él apoya el proyecto y te sale más barato)*
+> El [`self-host-kit/`](self-host-kit/) instala el CRM completo (app + WhatsApp + base de datos)
+> en cualquier VPS con Docker con un único comando, y el
+> [runbook de producción](docs/runbooks/waha-vps.md) ya asume ese entorno.
 >
 > **¿Todavía no tienes servidor?** Ejecuta esto **en tu propia computadora** (macOS, Linux o WSL).
 > Te dice qué plan contratar — con los números reales del runbook, no un "depende" — y te
 > devuelve el comando exacto para tu caso:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh | bash
+> curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/self-host-kit/comecar.sh | bash
 > ```
 >
-> *(¿prefieres leer antes de ejecutar? clona el repo y corre `bash hostgator-setup-kit/comecar.sh` —
+> *(¿prefieres leer antes de ejecutar? clona el repo y corre `bash self-host-kit/comecar.sh` —
 > no instala nada sin que confirmes.)*
 
 ---
@@ -70,7 +67,7 @@ Ya dentro del VPS:
 ```bash
 git clone https://github.com/melgarafael/DeskcommCRM.git
 cd DeskcommCRM
-bash hostgator-setup-kit/install.sh
+bash self-host-kit/install.sh
 ```
 
 Eso es todo. **No instalas Node, ni pnpm, ni compilas nada** — la imagen de la app ya viene
@@ -80,7 +77,7 @@ lista. Si falta Docker, el instalador pregunta y lo instala solo.
 
 | Ítem | Dónde conseguirlo |
 |---|---|
-| **VPS con Docker** | [HostGator](https://www.hostgator.com.br/52708-141-3-52.html) (alianza) — o cualquier VPS con Docker. 4 GB de RAM recomendados |
+| **VPS con Docker** | Cualquier proveedor de VPS con Docker. 4 GB de RAM recomendados |
 | **Dominio** | Un registro **A** apuntando a la IP del VPS (ej.: `crm.tuempresa.com`) |
 | **Base de datos** | Cuenta gratis en [supabase.com](https://supabase.com) — 3 claves + la cadena de conexión del **Session pooler** |
 | **IA** | Una clave de **OpenRouter**, **Anthropic** u **OpenAI** — el instalador pregunta cuál quieres |
@@ -107,8 +104,8 @@ después — y se encarga del resto:
 **Volver a ejecutarlo no rompe nada** — `install.sh` es idempotente: no duplica el cron, no
 recrea el usuario y retoma donde se quedó.
 
-> **Modo no interactivo:** copia `.env.hostgator.example` a `.env`, complétalo y ejecuta
-> `bash hostgator-setup-kit/install.sh --yes`.
+> **Modo no interactivo:** copia `.env.selfhost.example` a `.env`, complétalo y ejecuta
+> `bash self-host-kit/install.sh --yes`.
 
 ### ¿Otro hosting? (Hostinger, Coolify, Dokploy, CapRover…)
 
@@ -116,7 +113,7 @@ Funciona. Si tu VPS ya viene con un **proxy inverso propio** ocupando los puerto
 instalador **lo detecta solo** y publica el CRM a través de él, en vez de intentar levantar un
 Caddy que no cabría. En un caso específico — proxy en `--network host`, como hace Hostinger —
 **pregunta en vez de adivinar**, porque publicar detrás del proxy equivocado instala "con éxito"
-un sitio mudo. Detalles en [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md).
+un sitio mudo. Detalles en [`self-host-kit/README.md`](self-host-kit/README.md).
 
 ### Primer acceso
 
@@ -126,8 +123,8 @@ onboarding, escanea el código QR con el WhatsApp de tu número.
 
 ### 🤖 ¿Prefieres que una IA lo instale por ti?
 
-Suelta la carpeta `hostgator-setup-kit/` en el chat de **Claude Code** corriendo dentro del VPS
-y dile *"instálame el DeskcommCRM"*. Lee el [`CLAUDE.md`](hostgator-setup-kit/CLAUDE.md) del kit
+Suelta la carpeta `self-host-kit/` en el chat de **Claude Code** corriendo dentro del VPS
+y dile *"instálame el SonghaiCRM"*. Lee el [`CLAUDE.md`](self-host-kit/CLAUDE.md) del kit
 — que trae el paso a paso y las trampas ya mapeadas — y conduce todo.
 
 ---
@@ -154,8 +151,8 @@ vuelta en el `.env` — sin eso, el siguiente reinicio traería la app rota de n
 ### Desde la terminal
 
 ```bash
-cd /ruta/al/DeskcommCRM
-bash hostgator-setup-kit/update.sh
+cd /ruta/al/SonghaiCRM
+bash self-host-kit/update.sh
 ```
 
 El comando hace, en este orden: (1) verifica si de verdad hay versión nueva — si no, sale de
@@ -174,8 +171,8 @@ parte de la base — **es esperado e inofensivo**, son cosas que ya existían. E
 ruido y muestra `✓ banco atualizado`. Si aparece `⚠ avisos que não são os esperados`, ahí sí
 guarda el mensaje.
 
-**¿Salió mal?** `bash hostgator-setup-kit/restore.sh` vuelve al backup.
-**¿Solo quieres diagnosticar?** `bash hostgator-setup-kit/healthcheck.sh`.
+**¿Salió mal?** `bash self-host-kit/restore.sh` vuelve al backup.
+**¿Solo quieres diagnosticar?** `bash self-host-kit/healthcheck.sh`.
 
 > ⚠️ **En una instalación vieja que todavía no tiene el agente de la pantalla**, ejecuta
 > `update.sh` **dos veces**: la primera es todavía el script viejo (que baja el nuevo); la
@@ -214,7 +211,7 @@ El proyecto nació como CRM de e-commerce y la comunidad lo llevó mucho más le
 - 💬 **WhatsApp de dos formas** — por **código QR** (WAHA, multinúmero, con anti-baneo: throttle + jitter + ventana horaria) o por el **canal oficial de Meta** (Cloud API, con plantillas aprobadas y sincronizadas). Medios vía Storage, detección de STOP.
 - 🔀 **Elige tu IA** — OpenRouter, Anthropic u OpenAI, decidido en la instalación y cambiable después desde la pantalla, **por parte del sistema** (lo que conversa no tiene que ser lo que indexa).
 - 👥 **Gobernanza de atención** — RBAC server-side de verdad, asignación/transferencia auditada, cola con rotación, enrutamiento automático por intención y alcance de visualización por rol.
-- 🏢 **Multi-tenant + privacidad por diseño (LGPD)** — RLS en toda tabla tenant-aware con test de aislamiento como gate de CI; anonimización preferida sobre borrado; audit log append-only con retención de 5 años.
+- 🏢 **Multi-tenant + privacidad por diseño** — RLS en toda tabla tenant-aware con test de aislamiento como gate de CI; anonimización preferida sobre borrado; audit log append-only con retención de 5 años. Base legal: Ley n.º 3/2017 (Mozambique).
 - 🖥️ **Self-hosted de verdad** — tus datos en tu VPS; instalación y actualización con 1 comando (o 1 clic); sin versión paga, sin funciones bloqueadas.
 
 ### 🔌 Webhooks y Automatizaciones
@@ -258,7 +255,7 @@ Toda pantalla tiene puerta en la navegación — el CI reprueba una pantalla que
 | **IA** | Vercel AI SDK v7 — OpenRouter, Anthropic, OpenAI y Google | El instalador pregunta cuál; se cambia después desde la pantalla |
 | **Validación** | Zod | Input externo, env, payloads |
 | **Observabilidad** | Sentry (scrub en error, transacción, span y breadcrumb) | Telemetría opt-in en la instalación |
-| **Hosting** | Cualquier VPS con Docker (HostGator/SP en la alianza) | App + WhatsApp + workers en tu propia máquina |
+| **Hosting** | Cualquier VPS con Docker | App + WhatsApp + workers en tu propia máquina |
 
 Detalles: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
@@ -332,13 +329,13 @@ Entre los invariantes está el **test de aislamiento RLS**: crea 2 organizacione
 
 | Doc | Qué tiene |
 |---|---|
-| [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md) | **Instalación self-host** — el kit, los scripts, los hostings con proxy propio |
+| [`self-host-kit/README.md`](self-host-kit/README.md) | **Instalación self-host** — el kit, los scripts, los hostings con proxy propio |
 | [`docs/ATUALIZANDO.md`](docs/ATUALIZANDO.md) | **Cómo actualizar** tu instalación, en lenguaje simple |
 | [`VISION.md`](VISION.md) | **Visión y posicionamiento** — qué es el proyecto, en qué cree y hacia dónde va |
 | [`CHANGELOG.md`](CHANGELOG.md) | Qué cambió en cada versión — **lee la sección de tu versión antes de actualizar** |
 | [`docs/SETUP.md`](docs/SETUP.md) | Setup de desarrollo, paso a paso, de todas las integraciones |
 | [`docs/white-label.es.md`](docs/white-label.es.md) | **Instalar para clientes** — cambiar la marca, una instalación por cliente vs compartida, reventa |
-| [`docs/runbooks/waha-hostgator.md`](docs/runbooks/waha-hostgator.md) | Runbook de WAHA en producción (dimensionamiento, recuperación) |
+| [`docs/runbooks/waha-vps.md`](docs/runbooks/waha-vps.md) | Runbook de WAHA en producción (dimensionamiento, recuperación) |
 | [`CLAUDE.md`](CLAUDE.md) | Convenciones no negociables (lectura obligatoria para contribuir) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Visión de 1 página de la arquitectura |
 | [`docs/index.md`](docs/index.md) | Índice de los 157 documentos, con regla de precedencia |
@@ -376,7 +373,7 @@ Dos gates obligatorios **no** entran ahí y solo corren en CI: `e2e` (necesita u
 
 ## 🐛 Reportar bugs
 
-Abre un [issue](https://github.com/melgarafael/DeskcommCRM/issues/new/choose) — la plantilla pide lo que necesitamos (entorno, `/api/v1/health`, pasos). Correr `bash hostgator-setup-kit/healthcheck.sh` y pegar la salida ayuda mucho.
+Abre un [issue](https://github.com/melgarafael/DeskcommCRM/issues/new/choose) — la plantilla pide lo que necesitamos (entorno, `/api/v1/health`, pasos). Correr `bash self-host-kit/healthcheck.sh` y pegar la salida ayuda mucho.
 
 Para **vulnerabilidades de seguridad**, **NO abras un issue público** — usa el [reporte privado de vulnerabilidades](https://github.com/melgarafael/DeskcommCRM/security/advisories/new). Detalles en [`SECURITY.md`](SECURITY.md).
 
@@ -393,7 +390,7 @@ Para **vulnerabilidades de seguridad**, **NO abras un issue público** — usa e
 - **Elección de proveedor de IA** — OpenRouter, Anthropic u OpenAI, decidido en la instalación y cambiable por parte del sistema desde la pantalla.
 - **Follow-up vivo** — retomar conversaciones enfriadas con tiempo adaptativo, disparadores por etapa y por caso, cola con rotación, y el Radar de lo que corre riesgo de morir sin respuesta.
 - **LGPD** — export y redact vía workers, anonimización en cascada, consentimiento auditado.
-- **Self-host** — `hostgator-setup-kit` (app + WhatsApp + base con 1 comando), `baseline.sql` auto-curativo, **actualización desde la pantalla** con backup automático, runbook de producción.
+- **Self-host** — `self-host-kit` (app + WhatsApp + base con 1 comando), `baseline.sql` auto-curativo, **actualización desde la pantalla** con backup automático, runbook de producción.
 - **Webhooks y automatización** — fuentes de captación + reglas CUANDO/SI/ENTONCES + disparadores para sistemas externos.
 - **Gobernanza de atención** — RBAC server-side en toda la API, asignación y transferencia auditadas (IA como responsable de 1ª clase), visualización por rol (RLS) + métricas por agente, enrutamiento automático con cola y panel de gestión, y contrato de gobernanza para agentes de IA externos ([`docs/specs/14`](docs/specs/14-contrato-governanca-agentes-externos.md)).
 - **Operación visible** — motivo de la retención anti-baneo traducido en la conversación, central de avisos con severidad, aviso de mensaje trabada, control de protección de envío (ventana/ritmo/tope), capacidades declaradas del agente y propuestas del flywheel aplicables como versión nueva (con gate humano).
@@ -437,7 +434,6 @@ Este es un proyecto **self-host**: cada persona corre el CRM en su **propia infr
 
 - **WAHA** ([devlikeapro](https://waha.devlikeapro.com/)) — motor de WhatsApp.
 - **Supabase** — Postgres + Auth + Storage + Realtime en una sola stack.
-- **HostGator** — la alianza de infraestructura que hizo posible el self-host de 1 comando.
 - **Anthropic**, **OpenAI** y **OpenRouter** — los proveedores de IA que el CRM sabe usar.
 - **shadcn/ui** — base de componentes.
 - La comunidad que nos llevó del e-commerce a clínicas, inmobiliarias, infoproductos y más allá — ustedes definieron lo que es este proyecto.
@@ -446,6 +442,6 @@ Este es un proyecto **self-host**: cada persona corre el CRM en su **propia infr
 
 <div align="center">
 
-**Built with ☕ in Brasil** · **Made for the community**
+**Built with ☕ in Moçambique** · **Made for the community**
 
 </div>

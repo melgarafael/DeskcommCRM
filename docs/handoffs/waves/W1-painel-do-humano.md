@@ -1,6 +1,6 @@
 # W1 — O painel de quem configura o agente
 
-**Worktree:** `/Users/rafaelmelgaco/DeskcommCRM-ia360-w1-painel` (branch `feat/ia-360-w1-painel`, base `d25cd1c`)
+**Worktree:** `/Users/rafaelmelgaco/SonghaiCRM-ia360-w1-painel` (branch `feat/ia-360-w1-painel`, base `d25cd1c`)
 **Pacote alvo:** infraestrutura de apresentação — serve todas as outras waves.
 
 ---
@@ -13,7 +13,7 @@ Leia **antes de tudo**, nesta ordem:
 2. `docs/doctrine/sistema-vivo.md` — a lei de arquitetura do repo.
 3. `HANDOFF-ia-360.md` — a linha de base medida e o que a Wave 0 já entregou.
 
-O resumo do porquê: o DeskcommCRM tem um agente de IA que sabe conversar mas não sabe operar, e o
+O resumo do porquê: o SonghaiCRM tem um agente de IA que sabe conversar mas não sabe operar, e o
 humano que configura esse agente é dono de clínica, de loja, de imobiliária — não engenheiro. Hoje
 a tela de configuração mostra `crm_search_contacts` em fonte monoespaçada, agrupado por
 "Leitura / Escrita / Especiais", sem dizer o que a capacidade toca, o que ela pode estragar, nem

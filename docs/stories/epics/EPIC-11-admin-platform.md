@@ -35,7 +35,7 @@ exposes_contracts:
   - "middleware.requirePlatformAdmin"
 status: pending
 created_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # EPIC-11 — Super-Admin Platform

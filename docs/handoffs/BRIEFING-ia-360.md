@@ -1,4 +1,4 @@
-# BRIEFING — IA 360 no DeskcommCRM
+# BRIEFING — IA 360 no SonghaiCRM
 
 > **Leia isto inteiro antes de escrever uma linha de código.** Este documento é o contrato.
 > Quem implementar sem ler vai divergir do resto do time e o trabalho será rejeitado no review.
@@ -9,7 +9,7 @@
 
 ## 1. Por que estamos fazendo isto (o motivo, não a tarefa)
 
-O DeskcommCRM tem hoje **um agente de IA que sabe conversar, mas não sabe operar**.
+O SonghaiCRM tem hoje **um agente de IA que sabe conversar, mas não sabe operar**.
 
 Ele lê contatos, lê conversas, mexe em lead, pede socorro humano — e para. Toda a máquina que
 mantém o cliente vivo (follow-up, casos, webhooks, automações, skills, propostas, conhecimento,

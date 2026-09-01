@@ -76,7 +76,7 @@ Todo comentário desta triagem abre com a âncora invisível `<!-- triagem-de-pr
 | só `package.json`/lockfile | 3, 4 (linha de dependência), 9, 10 |
 | `app/`, `components/`, `lib/` | todos |
 | `supabase/` | todos, com o passe 4 reforçado |
-| `hostgator-setup-kit/`, `docker-compose*`, `Dockerfile` | todos + instalação do zero + **GET externo** |
+| `self-host-kit/`, `docker-compose*`, `Dockerfile` | todos + instalação do zero + **GET externo** |
 | `.github/workflows/` vindo de fork | todos + leitura linha a linha |
 
 PR pequeno não paga pipeline caro. Isso não é economia: triagem lenta reintroduz exatamente a

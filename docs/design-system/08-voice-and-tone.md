@@ -4,7 +4,7 @@
 
 ## Personalidade
 
-A voz do DeskcommCRM é **profissional sem ser formal, direta sem ser seca, humana sem ser casual**. A pessoa que está lendo é um atendente em meio a 40 conversas — ela precisa de clareza imediata, não de companhia.
+A voz do SonghaiCRM é **profissional sem ser formal, direta sem ser seca, humana sem ser casual**. A pessoa que está lendo é um atendente em meio a 40 conversas — ela precisa de clareza imediata, não de companhia.
 
 Os 4 atributos canônicos:
 

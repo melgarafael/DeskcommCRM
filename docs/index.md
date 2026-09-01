@@ -1,6 +1,6 @@
 ---
 type: index
-project: DeskcommCRM
+project: SonghaiCRM
 status: draft
 last_updated: 2026-07-29
 generated_by: auditoria documental (Claude Code)
@@ -8,7 +8,7 @@ confidence: alta (inventário de arquivos é CONFIRMADO; agrupamento temático �
 audited_against: origin/main @ 789dfa6 (v1.0.0, 2026-07-27)
 ---
 
-# Índice da documentação — DeskcommCRM
+# Índice da documentação — SonghaiCRM
 
 Mapa dos **154** arquivos `.md` de `docs/`, espalhados por **20** subpastas — medido em
 2026-08-14, com as réguas ao lado: `git ls-files 'docs/**/*.md' | wc -l` e
@@ -112,15 +112,14 @@ acessibilidade).
 | Doc | Conteúdo |
 |---|---|
 | [`SETUP.md`](SETUP.md) | Guia completo de env vars e setup local |
-| [`deploy-selfhost/README.md`](deploy-selfhost/README.md) | Self-host genérico |
-| [`deploy-hostgator/README.md`](deploy-hostgator/README.md) | VPS HostGator (`install.sh`, `backup.sh`, `reset-mfa.sh`) |
+| [`deploy-selfhost/README.md`](deploy-selfhost/README.md) | Self-host em VPS (`install.sh`, `backup.sh`, `reset-mfa.sh`) |
 | [`DEPLOY-CHECKLIST.md`](DEPLOY-CHECKLIST.md) | Checklist de deploy |
 | [`ATUALIZANDO.md`](ATUALIZANDO.md) | `update.sh`, `restore.sh`, `healthcheck.sh` |
 | [`runbooks/deploy.md`](runbooks/deploy.md) | **Deploy em produção — os dois `-f` do compose, verificação pós-deploy** |
 | [`runbooks/remediar-worker-congelado.md`](runbooks/remediar-worker-congelado.md) | **Incidente: o worker congelado** — diagnóstico (`diagnostico.sh`), impacto medido e as duas rotas de remediação. **Ainda não ensaiado** |
 | [`runbooks/ativar-packaging.md`](runbooks/ativar-packaging.md) | **Ativação da doutrina de packaging** — os 3 passos que não cabem num PR (pacote público, check obrigatório, primeira release) |
 | [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — como medir a origem do consumo, os dois intervalos da fila e as duas tabelas que só crescem |
-| [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA em produção |
+| [`runbooks/waha-vps.md`](runbooks/waha-vps.md) | Runbook do WAHA em produção |
 | [`runbooks/ai-credentials-rotation.md`](runbooks/ai-credentials-rotation.md) | Rotação de credenciais de IA |
 | [`../SECURITY.md`](../SECURITY.md) | Política de reporte de vulnerabilidade |
 

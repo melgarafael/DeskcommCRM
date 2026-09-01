@@ -28,7 +28,7 @@ status: completed
 completion: partial
 created_at: 2026-04-28
 completed_at: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 deferred:
   - "S-05.01: CPF at-rest encryption (encrypt_cpf RPC missing) — deferred from Combo-A"
   - "S-05.01: Cursor HMAC signing — deferred"

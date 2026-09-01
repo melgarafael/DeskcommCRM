@@ -1,6 +1,6 @@
 # Fases — gov-loop (Governança de Atendimento)
 
-> Loop de construção do épico de governança de atendimento do DeskcommCRM.
+> Loop de construção do épico de governança de atendimento do SonghaiCRM.
 > Máquina portada do vendaval-loop; doutrina de DOMÍNIO soberana é o `CLAUDE.md`
 > deste repo (+ `docs/specs/`). Este plano só governa PROCESSO (maker≠checker,
 > features, gates). Ordem inegociável: **provas antes de comportamento** —

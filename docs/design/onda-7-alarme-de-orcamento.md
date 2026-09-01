@@ -1,6 +1,6 @@
 # Onda 7 — Alarme de orçamento de IA: medição, risco e desenho da ligação
 
-> **Régua desta medição.** Worktree `/Users/rafaelmelgaco/DeskcommCRM-marca`,
+> **Régua desta medição.** Worktree `/Users/rafaelmelgaco/SonghaiCRM-marca`,
 > branch `feat/marca-o-que-faltou`, SHA `8c7a8dc6`, working tree limpo no início
 > da sessão. Tudo abaixo é leitura estática de código (grep/read).
 >
@@ -23,7 +23,7 @@
 ### a.1 — A função morta e o que ela faz
 
 `runBudgetChecker()` está em
-`/Users/rafaelmelgaco/DeskcommCRM-marca/workers/ai-budget-checker.cron.ts:114`.
+`/Users/rafaelmelgaco/SonghaiCRM-marca/workers/ai-budget-checker.cron.ts:114`.
 
 Ela faz **duas coisas distintas**, e a distinção é o eixo do desenho:
 

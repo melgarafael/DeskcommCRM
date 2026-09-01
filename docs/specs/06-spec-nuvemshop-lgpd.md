@@ -5,7 +5,7 @@ depends_on: 01-spec-platform-base.md, 02-spec-customer-360.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 business_rules: L-01, L-02, L-03, L-04, L-05, L-06, L-07, L-08, L-09, L-10, B-05
 ---
@@ -20,7 +20,7 @@ business_rules: L-01, L-02, L-03, L-04, L-05, L-06, L-07, L-08, L-09, L-10, B-05
 
 ### 1.1 Objetivo
 
-Conectar o DeskcommCRM ao backend de e-commerce do tenant (Nuvemshop no MVP) de forma **plugável**, **resiliente** e **LGPD-compliant**. Tudo o que entra ou sai pra um provedor e-commerce passa por uma camada de abstração (`EcommercePlatformAdapter`) que isola o domínio (`crm_leads`, `contacts`, `orders`) de qualquer mudança contratual ou substituição de provedor.
+Conectar o SonghaiCRM ao backend de e-commerce do tenant (Nuvemshop no MVP) de forma **plugável**, **resiliente** e **LGPD-compliant**. Tudo o que entra ou sai pra um provedor e-commerce passa por uma camada de abstração (`EcommercePlatformAdapter`) que isola o domínio (`crm_leads`, `contacts`, `orders`) de qualquer mudança contratual ou substituição de provedor.
 
 ### 1.2 Componentes
 
@@ -67,7 +67,7 @@ Conectar o DeskcommCRM ao backend de e-commerce do tenant (Nuvemshop no MVP) de 
 
 | Decisão | Escolha | Justificativa |
 |---|---|---|
-| App embedded vs External | **External** | Mais flexibilidade de UI custom (admin DeskcommCRM tem UX própria); evita iframe sandbox; consent renderizado no domínio Nuvemshop é suficiente |
+| App embedded vs External | **External** | Mais flexibilidade de UI custom (admin SonghaiCRM tem UX própria); evita iframe sandbox; consent renderizado no domínio Nuvemshop é suficiente |
 | Lib Nuvemshop | **Wrapper próprio em `lib/nuvemshop/`** | SDK oficial PT-BR é incompleto pra webhooks LGPD; wrapper fino sobre `fetch` permite tipagem rigorosa e telemetria custom |
 | Worker runtime | **Vercel Cron + Upstash QStash** pra jobs longos (>30s); Edge Functions pros receivers | Hobby/Pro têm limite de 5/15 min; QStash dá retry e dedupe de fila; mantém stack Vercel-only |
 | Particionamento `webhook_events_log` | **Por mês (`PARTITION BY RANGE (received_at)`)** | Hot 90 dias acessível; partições antigas detacháveis pra cold S3 |
@@ -255,7 +255,7 @@ export class NuvemshopAdapter implements EcommercePlatformAdapter {
     const url = `${NS_API_BASE}/${storeId}${path}`;
     const headers: Record<string, string> = {
       'Authentication': `bearer ${ctx.credentials.accessToken}`,
-      'User-Agent': 'DeskcommCRM/1.0 (rafael@maudibrasil.com.br)',
+      'User-Agent': 'SonghaiCRM/1.0 (info@songhai.cc)',
       'Content-Type': 'application/json',
       ...(init.idempotencyKey ? { 'Idempotency-Key': init.idempotencyKey } : {}),
     };
@@ -625,8 +625,8 @@ Já listados inline. Critério: cada query do hot path tem index dedicado.
 ### 4.1 Decisão: External app
 
 **External** (não embedded). Justificativa:
-- UI custom no admin DeskcommCRM (sem iframe Nuvemshop sandbox)
-- Permite callback em domínio próprio com cookie de sessão DeskcommCRM
+- UI custom no admin SonghaiCRM (sem iframe Nuvemshop sandbox)
+- Permite callback em domínio próprio com cookie de sessão SonghaiCRM
 - Mantém scopes mínimos visíveis ao admin antes do consent
 - Fluxo idêntico pra reconexão (caso de primeira classe — PRD §3.3)
 
@@ -1495,7 +1495,7 @@ Retenção 5 anos (L-10).
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "DeskcommCRM LGPD Export v1",
+  "title": "SonghaiCRM LGPD Export v1",
   "type": "object",
   "required": ["meta", "subject", "data"],
   "properties": {
@@ -1535,11 +1535,11 @@ Retenção 5 anos (L-10).
 
 ---
 
-## 8. Mapping Nuvemshop → DeskcommCRM
+## 8. Mapping Nuvemshop → SonghaiCRM
 
 ### 8.1 `customer.email/phone/identification` → `contacts`
 
-| Campo Nuvemshop | Campo DeskcommCRM | Notas |
+| Campo Nuvemshop | Campo SonghaiCRM | Notas |
 |---|---|---|
 | `customer.email` | `contacts.email` | Normalizar lowercase |
 | `customer.phone` | `contacts.phone_number` | Normalizar E.164 (default BR +55) |

@@ -78,7 +78,7 @@ const EH_PLACEHOLDER =
 
 const LINK_RELATIVO = /\[[^\]]*\]\((?!https?:|#|mailto:)([^)#\s]+)/g;
 const PATH_EM_CRASE =
-  /`((?:app|lib|components|workers|scripts|tests|supabase|hooks|docs|hostgator-setup-kit|triagem|\.github)\/[A-Za-z0-9_./[\]-]+\.(?:ts|tsx|sql|sh|yml|yaml|json|md))`/g;
+  /`((?:app|lib|components|workers|scripts|tests|supabase|hooks|docs|self-host-kit|triagem|\.github)\/[A-Za-z0-9_./[\]-]+\.(?:ts|tsx|sql|sh|yml|yaml|json|md))`/g;
 
 function markdownsRastreados(): string[] {
   const saida = execFileSync("git", ["ls-files", "*.md"], { cwd: RAIZ, encoding: "utf8" });

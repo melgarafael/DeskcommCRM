@@ -251,7 +251,7 @@ export async function resolveOrgLlmConfig(
 ): Promise<OrgLlmConfig> {
   // ⚠️ O RESOLVEDOR NUNCA LANÇA POR SCHEMA DESATUALIZADO.
   //
-  // `hostgator-setup-kit/update.sh` aplica o baseline com `|| true` e SEM
+  // `self-host-kit/update.sh` aplica o baseline com `|| true` e SEM
   // `ON_ERROR_STOP`, e só depois sobe a imagem nova. Um apêndice parcialmente
   // aplicado deixa a imagem nova consultando uma coluna que não existe — e um
   // throw aqui derrubaria TODA chamada de LLM de TODA organização daquele

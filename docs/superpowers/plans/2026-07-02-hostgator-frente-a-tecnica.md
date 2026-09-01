@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Tornar o DeskcommCRM rodável 100% via `docker compose up` num VPS HostGator, sem quebrar o deploy Vercel atual.
+**Goal:** Tornar o SonghaiCRM rodável 100% via `docker compose up` num VPS HostGator, sem quebrar o deploy Vercel atual.
 
 **Architecture:** Híbrido — compute no VPS (containers app+waha+redis+srh+scheduler+caddy), DB no Supabase Cloud. Mudanças de código mínimas e aditivas (atrás de config/flag); infra nova em arquivos novos.
 

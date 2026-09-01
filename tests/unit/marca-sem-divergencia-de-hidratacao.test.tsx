@@ -13,7 +13,7 @@
  *
  * Medido no HEAD anterior a esta correção, com exatamente esse estado:
  *
- *   servidor  → <span class="font-semibold …">DeskcommCRM</span>
+ *   servidor  → <span class="font-semibold …">SonghaiCRM</span>
  *   navegador → <link rel="preload" as="image" …><img src="…/logo.png" …>
  *
  * Trocar o TIPO do elemento entre SSR e hidratação é React #418: o CI acusou em

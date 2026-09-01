@@ -2,10 +2,10 @@ import { chromium } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
 const BASE = "http://127.0.0.1:3100";
-const creds = JSON.parse(readFileSync("/Users/rafaelmelgaco/DeskcommCRM/.e2e-creds.json", "utf8"));
+const creds = JSON.parse(readFileSync("/Users/rafaelmelgaco/SonghaiCRM/.e2e-creds.json", "utf8"));
 const EMAIL = creds.users.manager.email;
 const SENHA = creds.password;
-const OUT = "/private/tmp/claude-501/-Users-rafaelmelgaco-DeskcommCRM/10ffaf65-ac1a-4b1b-b62d-368cbdeef6c5/scratchpad";
+const OUT = "/private/tmp/claude-501/-Users-rafaelmelgaco-SonghaiCRM/10ffaf65-ac1a-4b1b-b62d-368cbdeef6c5/scratchpad";
 
 async function main() {
   const browser = await chromium.launch();

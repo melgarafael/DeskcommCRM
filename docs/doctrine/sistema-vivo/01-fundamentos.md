@@ -165,7 +165,7 @@ E é por isso que a doutrina precisa distinguir o que é enumerável do que exig
 
 ---
 
-# Aplicação de referência — DeskcommCRM
+# Aplicação de referência — SonghaiCRM
 
 **O propósito, em estado terminal.** Resolver todo o relacionamento cliente↔empresa com o menor atrito possível para os dois lados. O sistema é responsável pela linha do tempo inteira de cada demanda até resolução ou encerramento declarado pelo próprio cliente. Os desfechos são concretos: venda fechada, suporte resolvido, agendamento cumprido.
 

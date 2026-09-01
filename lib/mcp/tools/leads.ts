@@ -188,7 +188,7 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       description: input.description ?? null,
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
-      currency: input.currency ?? "BRL",
+      currency: input.currency ?? "MZN",
       owner_user_id: input.owner_user_id ?? null,
       owner_agent_id: input.owner_agent_id ?? null,
       expected_close_date: input.expected_close_date ?? null,

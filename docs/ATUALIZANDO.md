@@ -1,4 +1,4 @@
-# Atualizando o DeskcommCRM na sua VPS
+# Atualizando o SonghaiCRM na sua VPS
 
 Saiu uma versão nova? Atualizar é **um comando só**. Você não precisa saber se a
 novidade é no código, no banco de dados ou nos dois — o comando cuida de tudo, na
@@ -10,7 +10,7 @@ Entre no seu servidor (o mesmo acesso SSH que você usou pra instalar), vá até
 do projeto e rode:
 
 ```bash
-bash hostgator-setup-kit/update.sh
+bash self-host-kit/update.sh
 ```
 
 Pronto. Pode deixar rodando — leva alguns minutos. No fim, você vê **`✓ Atualização
@@ -34,7 +34,7 @@ recente**, é porque não havia nada novo pra baixar; está tudo certo.
   esse ruído e, se estiver tudo certo, mostra **`✓ banco atualizado`**.
 - Se aparecer **`⚠ avisos que não são os esperados`**, aí sim vale prestar atenção: o app
   provavelmente ainda funciona, mas guarde a mensagem. Em último caso, dá pra voltar ao
-  estado anterior com o backup: `bash hostgator-setup-kit/restore.sh`.
+  estado anterior com o backup: `bash self-host-kit/restore.sh`.
 
 ## Dicas
 
@@ -43,8 +43,8 @@ recente**, é porque não havia nada novo pra baixar; está tudo certo.
 - **Automático (opcional):** dá pra agendar pra toda semana. Rode `crontab -e` e adicione
   (troque o caminho pela pasta do seu projeto):
   ```
-  0 4 * * 0  cd /caminho/do/deskcommcrm && bash hostgator-setup-kit/update.sh
+  0 4 * * 0  cd /caminho/do/deskcommcrm && bash self-host-kit/update.sh
   ```
   Isso atualiza todo domingo às 4h da manhã, já com backup automático.
-- **Deu algo estranho?** Rode `bash hostgator-setup-kit/healthcheck.sh` pra ver o estado
+- **Deu algo estranho?** Rode `bash self-host-kit/healthcheck.sh` pra ver o estado
   de tudo de uma vez.

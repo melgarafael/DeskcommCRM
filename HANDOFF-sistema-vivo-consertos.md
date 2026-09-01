@@ -2,7 +2,7 @@
 
 > Documento **vivo**. Toda afirmação declara o SHA de onde foi medida. Número sem SHA não compara.
 >
-> Base: `origin/main` = **`b9f2ca51`** · branch `fix/sistema-vivo-operador` · worktree `DeskcommCRM-sv`
+> Base: `origin/main` = **`b9f2ca51`** · branch `fix/sistema-vivo-operador` · worktree `SonghaiCRM-sv`
 > Origem: auditoria do PR #181 ("os três papéis do agente", squash `9249e6f2`) contra
 > [`docs/doctrine/sistema-vivo.md`](docs/doctrine/sistema-vivo.md) — 13 agentes, 86 achados,
 > **79 sobreviveram** ao cético, mais 8 do crítico de completude.

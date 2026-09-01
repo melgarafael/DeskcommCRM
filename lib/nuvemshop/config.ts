@@ -10,7 +10,7 @@
 
 export const NUVEMSHOP_AUTH_BASE = "https://www.tiendanube.com";
 export const NUVEMSHOP_API_BASE = "https://api.tiendanube.com/v1";
-export const APP_USER_AGENT = "DeskcommCRM (rafael@maudibrasil.com.br)";
+export const APP_USER_AGENT = "SonghaiCRM (info@songhai.cc)";
 
 export interface NuvemshopConfig {
   appId: string;

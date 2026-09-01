@@ -19,7 +19,7 @@ CREATE SCHEMA IF NOT EXISTS "public";
 ALTER SCHEMA "public" OWNER TO "pg_database_owner";
 
 
-COMMENT ON SCHEMA "public" IS 'DeskcommCRM v0.1 - Migration 0001 platform_base applied 2026-04-28';
+COMMENT ON SCHEMA "public" IS 'SonghaiCRM v0.1 - Migration 0001 platform_base applied 2026-04-28';
 
 
 
@@ -1471,7 +1471,7 @@ CREATE TABLE IF NOT EXISTS "public"."crm_leads" (
     "lost_reason" "text",
     "position_in_stage" numeric DEFAULT 1000 NOT NULL,
     "value_cents" bigint,
-    "currency" "text" DEFAULT 'BRL'::"text",
+    "currency" "text" DEFAULT 'MZN'::"text",
     "owner_user_id" "uuid",
     "assigned_at" timestamp with time zone,
     "last_activity_at" timestamp with time zone,
@@ -1774,7 +1774,7 @@ CREATE TABLE IF NOT EXISTS "public"."organizations" (
 ALTER TABLE "public"."organizations" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."organizations" IS 'Tenants do DeskcommCRM. Cada linha = 1 e-commerce cliente.';
+COMMENT ON TABLE "public"."organizations" IS 'Tenants do SonghaiCRM. Cada linha = 1 e-commerce cliente.';
 
 
 
@@ -10111,6 +10111,12 @@ alter table public.agent_inbox_items
     -- janela e reprova um teste que não tem nada a ver com o kind novo (medido:
     -- offset 1532 -> 2275). Kind novo entra no fim da lista.
     'budget_warning',
+    -- (migration 0166) Cron appointment-outcome-nudge: agendamento (`appointments`)
+    -- que passou de `scheduled` para "deveria ter terminado há mais de 1h" e
+    -- ninguém confirmou o desfecho (compareceu / faltou / cancelou). Entra
+    -- NESTA lista, no fim, pela mesma razão das entradas acima (bloco único
+    -- por constraint, #159) — e antes de 'other' pela mesma convenção.
+    'appointment_outcome_pending',
     'other'
   ));
 
@@ -13013,80 +13019,6 @@ grant  execute on function public.fn_gasto_de_ia_do_mes(uuid)
 notify pgrst, 'reload schema';
 
 
--- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
---
--- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
--- dele — quem o empurrar para o meio desarma a cura para tudo que vier depois.
--- Vigiado por `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`.
---
--- A 0108 revogou anon numa LISTA de 8 funções, medida num banco instalado do
--- ZERO. Quem ATUALIZA tem outro estado: o `ALTER DEFAULT PRIVILEGES ... GRANT
--- ALL ON FUNCTIONS TO anon` do corpo deste arquivo grava uma entrada em
--- `pg_default_acl` que fica no catálogo PARA SEMPRE, e a partir daí toda função
--- criada em `public` nasce com EXECUTE para anon — inclusive as deste apêndice.
---
--- Medido numa VPS real (2026-08-07), comparando com o que um install fresco
--- produz: 6 definer expostas a anon e 5 a authenticated, entre elas
--- `fn_decrypt_oauth` — alcançável pela anon key, que vai para o browser.
---
--- Lista conserta o estoque e reabre no próximo `create function`. Esta varredura
--- é auto-curativa e roda DEPOIS de tudo que cria função, então cura no mesmo run
--- em que o defeito nasceria. Desfazer o ALTER DEFAULT PRIVILEGES não serve: ele
--- vem do `pg_dump` do Supabase e é reescrito a cada re-aplicação.
---
--- As duas origens de EXECUTE (a mesma lição da 0108): grant DIRETO a anon, que
--- `revoke from public` não remove; e grant a PUBLIC, do qual anon HERDA, que
--- `revoke from anon` não remove. O privilégio EFETIVO de authenticated e
--- service_role é medido ANTES e devolvido depois — tira anon sem tirar leitura.
-do $$
-declare
-  f record;
-  tinha_auth boolean;
-  tinha_service boolean;
-begin
-  if to_regrole('anon') is null then
-    return;
-  end if;
-
-  for f in
-    select p.oid, p.oid::regprocedure as assinatura
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public'
-       and p.prosecdef
-  loop
-    tinha_auth := to_regrole('authenticated') is not null
-                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
-    tinha_service := to_regrole('service_role') is not null
-                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
-
-    execute format('revoke execute on function %s from public, anon', f.assinatura);
-
-    if tinha_auth then
-      execute format('grant execute on function %s to authenticated', f.assinatura);
-    end if;
-    if tinha_service then
-      execute format('grant execute on function %s to service_role', f.assinatura);
-    end if;
-  end loop;
-end $$;
-
--- regra 2 (authenticated): as 5 que o update abriu e o install não abre. Aqui não
--- cabe varredura — `authenticated` PRECISA de EXECUTE nos helpers de RLS e em
--- `retrieve_top_k_chunks` (num install fresco ele tem). É julgamento por função,
--- e o alvo de cada linha é o valor que um install fresco produz, medido.
-revoke execute on function public.fn_audit_log_row() from authenticated;
-revoke execute on function public.fn_decrypt_oauth(bytea) from authenticated;
-revoke execute on function public.fn_encrypt_oauth(text) from authenticated;
-revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from authenticated;
-revoke execute on function public.fn_update_budget_consumption() from authenticated;
-
-grant execute on function public.fn_audit_log_row() to service_role;
-grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
-grant execute on function public.fn_encrypt_oauth(text) to service_role;
-grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
-grant execute on function public.fn_update_budget_consumption() to service_role;
-
 -- ---- mensagem editada e mensagem apagada (migration 0153) ----
 -- O cliente edita ou apaga no aplicativo e o CRM seguia mostrando a versão
 -- velha — sem erro em lugar nenhum. Combinar preço ou endereço a partir de um
@@ -13491,3 +13423,442 @@ notify pgrst, 'reload schema';
 revoke insert, update, delete on table public.ai_budgets from authenticated, anon;
 
 notify pgrst, 'reload schema';
+
+
+-- ---- moeda padrão do negócio passa para MZN (migration 0161) ----
+--
+-- Esta instalação opera em Moçambique; lead criado sem moeda explícita deve
+-- nascer em Metical (MZN), não em Real (BRL). `crm_leads.currency` só tem
+-- CHECK de FORMA (`crm_leads_currency_iso`, `^[A-Z]{3}$`) — nenhuma lista de
+-- valores para editar, só o piso da coluna.
+--
+-- `orders.currency` (Nuvemshop, plataforma brasileira) fica de fora: aquele
+-- valor normalmente vem do payload real do pedido, e mudar o default ali
+-- arriscaria rotular pedido em BRL como MZN quando o webhook não informar a
+-- moeda.
+--
+-- Não reescreve nenhuma linha existente — lead antigo com 'BRL' gravado
+-- continua 'BRL', é o valor real do negócio na época. `alter column ... set
+-- default` é idempotente por natureza.
+alter table public.crm_leads alter column currency set default 'MZN';
+
+
+-- ---- pagamentos: PaySuite (M-Pesa, e-Mola, cartão) (migration 0162) ----
+--
+-- `payment_credentials` só guarda segredo (token de API cifrado, segredo de
+-- webhook cifrado) — RLS ligada com ZERO policies + revoke all from anon,
+-- authenticated (molde da 0155 platform_branding), porque nenhuma tela lê
+-- essa tabela direto pelo PostgREST; a rota (service role) decifra e devolve
+-- uma resposta já sanitizada.
+--
+-- `payments` é o log de transação — a tela do lead precisa mostrar histórico
+-- de cobrança, então tem policy de SELECT escopada por organização; escrita
+-- só pela rota (criação de cobrança e confirmação por webhook rodam com
+-- service role), por isso revoke insert/update/delete from anon,
+-- authenticated (molde da 0160 ai_budgets, aplicado desde o nascimento da
+-- tabela em vez de precisar de correção depois).
+--
+-- `reference` é a chave de idempotência do NOSSO lado (duplo-clique no botão
+-- "Cobrar" não duplica linha); `provider_payment_id` é a do OUTRO lado
+-- (webhook reentregue por timeout não duplica confirmação).
+create table if not exists public.payment_credentials (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  provider text not null default 'paysuite' check (provider = 'paysuite'),
+  api_token_encrypted bytea not null,
+  webhook_secret_encrypted bytea not null,
+  webhook_path_token text not null default encode(gen_random_bytes(24), 'hex'),
+  status text not null default 'connecting' check (status in ('connecting', 'healthy', 'error')),
+  status_reason text,
+  last_health_check_at timestamp with time zone,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  unique (organization_id, provider)
+);
+
+create unique index if not exists payment_credentials_webhook_path_token_idx
+  on public.payment_credentials using btree (webhook_path_token);
+
+alter table public.payment_credentials enable row level security;
+revoke all on public.payment_credentials from anon, authenticated;
+grant select, insert, update on public.payment_credentials to service_role;
+
+create or replace trigger trg_payment_credentials_updated_at
+  before update on public.payment_credentials
+  for each row execute function public.fn_set_updated_at();
+
+
+create table if not exists public.payments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  lead_id uuid references public.crm_leads(id) on delete set null,
+  provider text not null default 'paysuite' check (provider = 'paysuite'),
+  provider_payment_id text not null,
+  reference text not null,
+  method text check (method in ('mpesa', 'emola', 'credit_card')),
+  amount_cents bigint not null check (amount_cents > 0),
+  currency text not null default 'MZN' check (currency ~ '^[A-Z]{3}$'),
+  status text not null default 'pending' check (status in ('pending', 'paid', 'failed')),
+  checkout_url text,
+  raw_webhook_payload jsonb,
+  created_by_user_id uuid,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  unique (organization_id, reference),
+  unique (organization_id, provider_payment_id)
+);
+
+create index if not exists payments_org_idx on public.payments using btree (organization_id);
+create index if not exists payments_lead_idx on public.payments using btree (lead_id) where lead_id is not null;
+
+alter table public.payments enable row level security;
+revoke insert, update, delete on public.payments from anon, authenticated;
+
+-- drop guard adicionado pela migration 0167: a 0162 criava esta policy sem
+-- `drop policy if exists`, então reaplicar o baseline (update.sh) falhava
+-- com "policy already exists" — o guard tem que ficar aqui, na primeira
+-- ocorrência, porque psql roda com ON_ERROR_STOP=1 e para antes de alcançar
+-- qualquer bloco de apêndice mais abaixo no arquivo.
+drop policy if exists "payments_select" on public.payments;
+create policy payments_select on public.payments
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+
+create or replace trigger trg_payments_updated_at
+  before update on public.payments
+  for each row execute function public.fn_set_updated_at();
+
+
+-- ---- Agenda nativa: appointment_types, attendant_schedule, appointments (migration 0165) ----
+--
+-- Três tabelas, organization_id + RLS desde o nascimento (doutrina de
+-- multi-tenancy). `attendant_schedule` é DELIBERADAMENTE separada de
+-- `attendant_availability` (migration 0039/epic de Governança) — aquela é o
+-- toggle efêmero de fila de chat, esta é o horário estrutural de agendamento.
+-- Acoplar os dois faria conceitos de negócio diferentes evoluírem juntos sem
+-- necessidade.
+
+create extension if not exists btree_gist with schema extensions;
+
+-- Wrapper IMMUTABLE do `scheduled_at + (duration_minutes || ' minutos')::interval`.
+-- O operador `timestamptz + interval` do Postgres é marcado STABLE (não
+-- IMMUTABLE) porque em geral um `interval` pode carregar meses/anos, cuja
+-- duração depende de calendário/timezone — mas aqui `duration_minutes` é
+-- SEMPRE um interval puro de minutos, sem ambiguidade de calendário. Esta
+-- função é a asserção explícita e documentada dessa garantia, permitindo usar
+-- a expressão numa exclusion constraint (`gist`) e numa coluna gerada — ambos
+-- exigem IMMUTABLE, e o Postgres não tem como provar isso sozinho a partir do
+-- operador genérico.
+create or replace function public.fn_appointment_ends_at(p_scheduled_at timestamptz, p_duration_minutes integer)
+returns timestamptz
+language sql
+immutable
+set search_path = public
+as $$
+  select p_scheduled_at + (p_duration_minutes || ' minutes')::interval
+$$;
+
+revoke all     on function public.fn_appointment_ends_at(timestamptz, integer) from public;
+revoke execute on function public.fn_appointment_ends_at(timestamptz, integer) from anon;
+grant  execute on function public.fn_appointment_ends_at(timestamptz, integer) to authenticated, service_role;
+
+create table if not exists public.appointment_types (
+  id                  uuid primary key default gen_random_uuid(),
+  organization_id     uuid not null references public.organizations(id) on delete cascade,
+  name                text not null check (length(name) > 0),
+  duration_minutes    integer not null check (duration_minutes > 0),
+  responsible_user_id uuid not null references auth.users(id),
+  color               text check (color is null or color ~ '^#[0-9a-f]{6}$'),
+  is_active           boolean not null default true,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
+create index if not exists idx_appointment_types_org
+  on public.appointment_types (organization_id);
+
+alter table public.appointment_types enable row level security;
+
+drop policy if exists "appointment_types_select" on public.appointment_types;
+create policy "appointment_types_select" on public.appointment_types
+  for select using (
+    public.fn_is_platform_admin()
+    or organization_id in (select public.fn_user_org_ids())
+  );
+
+-- `responsible_user_id` precisa ser MEMBRO da mesma organização (não só um
+-- usuário existente em algum lugar do banco) — sem isso um manager podia
+-- gravar tipo de agendamento apontando para usuário de outra organização, ou
+-- para membro já removido (`revoked_at` preenchido).
+drop policy if exists "appointment_types_write" on public.appointment_types;
+create policy "appointment_types_write" on public.appointment_types
+  for all using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and public.fn_role_at_least(organization_id, 'manager')
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = appointment_types.responsible_user_id
+            and uo.organization_id = appointment_types.organization_id
+            and uo.revoked_at is null
+        ))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and public.fn_role_at_least(organization_id, 'manager')
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = appointment_types.responsible_user_id
+            and uo.organization_id = appointment_types.organization_id
+            and uo.revoked_at is null
+        ))
+  );
+
+create or replace trigger trg_appointment_types_updated_at
+  before update on public.appointment_types
+  for each row execute function public.fn_set_updated_at();
+
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.attendant_schedule (
+  id              uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  day_of_week     smallint not null check (day_of_week between 0 and 6),
+  starts_at       time not null,
+  ends_at         time not null check (ends_at > starts_at),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  unique (organization_id, user_id, day_of_week, starts_at)
+);
+
+create index if not exists idx_attendant_schedule_org_user
+  on public.attendant_schedule (organization_id, user_id);
+
+alter table public.attendant_schedule enable row level security;
+
+drop policy if exists "attendant_schedule_select" on public.attendant_schedule;
+create policy "attendant_schedule_select" on public.attendant_schedule
+  for select using (
+    public.fn_is_platform_admin()
+    or organization_id in (select public.fn_user_org_ids())
+  );
+
+-- `user_id` precisa ser MEMBRO da mesma organização, pelo mesmo motivo da
+-- `appointment_types_write` acima. Quando `user_id = auth.uid()` a checagem é
+-- redundante (a sessão já é membro da org, por `fn_user_org_ids()`), mas
+-- aplicá-la sem exceção evita que um manager grave horário para usuário de
+-- outra organização ou já removido (`revoked_at` preenchido).
+drop policy if exists "attendant_schedule_write" on public.attendant_schedule;
+create policy "attendant_schedule_write" on public.attendant_schedule
+  for all using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid() or public.fn_role_at_least(organization_id, 'manager'))
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = attendant_schedule.user_id
+            and uo.organization_id = attendant_schedule.organization_id
+            and uo.revoked_at is null
+        ))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and (user_id = auth.uid() or public.fn_role_at_least(organization_id, 'manager'))
+        and exists (
+          select 1 from public.user_organizations uo
+          where uo.user_id = attendant_schedule.user_id
+            and uo.organization_id = attendant_schedule.organization_id
+            and uo.revoked_at is null
+        ))
+  );
+
+create or replace trigger trg_attendant_schedule_updated_at
+  before update on public.attendant_schedule
+  for each row execute function public.fn_set_updated_at();
+
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.appointments (
+  id                   uuid primary key default gen_random_uuid(),
+  organization_id      uuid not null references public.organizations(id) on delete cascade,
+  lead_id              uuid not null references public.crm_leads(id) on delete cascade,
+  appointment_type_id  uuid not null references public.appointment_types(id),
+  responsible_user_id  uuid not null references auth.users(id),
+  scheduled_at         timestamptz not null,
+  duration_minutes     integer not null check (duration_minutes > 0),
+  status               text not null default 'scheduled'
+                       check (status in ('scheduled','completed','cancelled','no_show')),
+  reminder_sent_at     timestamptz,
+  created_by_user_id   uuid not null references auth.users(id),
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now(),
+  -- Regra dura, no banco: a mesma pessoa nunca tem 2 agendamentos `scheduled`
+  -- sobrepostos, mesmo com duas requisições concorrentes.
+  exclude using gist (
+    responsible_user_id with =,
+    tstzrange(scheduled_at, public.fn_appointment_ends_at(scheduled_at, duration_minutes)) with &&
+  ) where (status = 'scheduled')
+);
+
+create index if not exists idx_appointments_org_lead on public.appointments (organization_id, lead_id);
+create index if not exists idx_appointments_org_responsible_date
+  on public.appointments (organization_id, responsible_user_id, scheduled_at);
+create index if not exists idx_appointments_reminder_pending
+  on public.appointments (scheduled_at)
+  where status = 'scheduled' and reminder_sent_at is null;
+
+alter table public.appointments enable row level security;
+
+-- SELECT herda a visibilidade do lead-pai (mesmo idioma de
+-- `crm_lead_activities_select`, migration 0042) — quem não pode ver o lead
+-- não pode ver o agendamento dele.
+drop policy if exists "appointments_select" on public.appointments;
+create policy "appointments_select" on public.appointments
+  for select using (
+    exists (
+      select 1 from public.crm_leads l
+      where l.id = appointments.lead_id
+        and public.fn_can_view_lead(l.organization_id, l.owner_user_id)
+    )
+  );
+
+-- `lead_id` e `appointment_type_id` precisam apontar para linhas da MESMA
+-- organização do agendamento — FK sozinha só garante que a linha existe em
+-- ALGUMA organização, não na organização certa. Sem isto um agent da org A
+-- conseguia gravar `organization_id = org_A` com `lead_id`/`appointment_type_id`
+-- de outra organização, e como a exclusion constraint abaixo (`gist`, escopo
+-- só por `responsible_user_id` + intervalo) não é escopada por organização,
+-- isso vira vetor cross-tenant de probing/DoS contra a agenda de um
+-- `responsible_user_id` de outra org. **`appointments.responsible_user_id`
+-- fica FORA do escopo desta checagem de propósito** — nada aqui garante que
+-- ele seja membro da organização (pode divergir do `responsible_user_id` do
+-- `appointment_type` referenciado); é uma lacuna conhecida, deliberadamente
+-- não coberta por este fix para não misturar o escopo do achado de referência
+-- cruzada (lead/tipo) com o de membership do responsável.
+drop policy if exists "appointments_write" on public.appointments;
+create policy "appointments_write" on public.appointments
+  for all using (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and public.fn_role_at_least(organization_id, 'agent')
+        and exists (
+          select 1 from public.crm_leads l
+          where l.id = appointments.lead_id
+            and l.organization_id = appointments.organization_id
+        )
+        and exists (
+          select 1 from public.appointment_types t
+          where t.id = appointments.appointment_type_id
+            and t.organization_id = appointments.organization_id
+        ))
+  ) with check (
+    public.fn_is_platform_admin()
+    or (organization_id in (select public.fn_user_org_ids())
+        and public.fn_role_at_least(organization_id, 'agent')
+        and exists (
+          select 1 from public.crm_leads l
+          where l.id = appointments.lead_id
+            and l.organization_id = appointments.organization_id
+        )
+        and exists (
+          select 1 from public.appointment_types t
+          where t.id = appointments.appointment_type_id
+            and t.organization_id = appointments.organization_id
+        ))
+  );
+
+create or replace trigger trg_appointments_updated_at
+  before update on public.appointments
+  for each row execute function public.fn_set_updated_at();
+
+revoke all on public.appointment_types from anon;
+revoke all on public.attendant_schedule from anon;
+revoke all on public.appointments from anon;
+
+-- ---- Agenda nativa: coluna gerada ends_at em appointments (migration 0166) ----
+
+alter table public.appointments
+  add column if not exists ends_at timestamptz
+  generated always as (public.fn_appointment_ends_at(scheduled_at, duration_minutes)) stored;
+
+create index if not exists idx_appointments_ends_at
+  on public.appointments (ends_at)
+  where status = 'scheduled';
+
+
+-- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
+--
+-- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
+-- dele — quem o empurrar para o meio desarma a cura para tudo que vier depois.
+-- Vigiado por `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`.
+--
+-- A 0108 revogou anon numa LISTA de 8 funções, medida num banco instalado do
+-- ZERO. Quem ATUALIZA tem outro estado: o `ALTER DEFAULT PRIVILEGES ... GRANT
+-- ALL ON FUNCTIONS TO anon` do corpo deste arquivo grava uma entrada em
+-- `pg_default_acl` que fica no catálogo PARA SEMPRE, e a partir daí toda função
+-- criada em `public` nasce com EXECUTE para anon — inclusive as deste apêndice.
+--
+-- Medido numa VPS real (2026-08-07), comparando com o que um install fresco
+-- produz: 6 definer expostas a anon e 5 a authenticated, entre elas
+-- `fn_decrypt_oauth` — alcançável pela anon key, que vai para o browser.
+--
+-- Lista conserta o estoque e reabre no próximo `create function`. Esta varredura
+-- é auto-curativa e roda DEPOIS de tudo que cria função, então cura no mesmo run
+-- em que o defeito nasceria. Desfazer o ALTER DEFAULT PRIVILEGES não serve: ele
+-- vem do `pg_dump` do Supabase e é reescrito a cada re-aplicação.
+--
+-- As duas origens de EXECUTE (a mesma lição da 0108): grant DIRETO a anon, que
+-- `revoke from public` não remove; e grant a PUBLIC, do qual anon HERDA, que
+-- `revoke from anon` não remove. O privilégio EFETIVO de authenticated e
+-- service_role é medido ANTES e devolvido depois — tira anon sem tirar leitura.
+do $$
+declare
+  f record;
+  tinha_auth boolean;
+  tinha_service boolean;
+begin
+  if to_regrole('anon') is null then
+    return;
+  end if;
+
+  for f in
+    select p.oid, p.oid::regprocedure as assinatura
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosecdef
+  loop
+    tinha_auth := to_regrole('authenticated') is not null
+                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
+    tinha_service := to_regrole('service_role') is not null
+                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
+
+    execute format('revoke execute on function %s from public, anon', f.assinatura);
+
+    if tinha_auth then
+      execute format('grant execute on function %s to authenticated', f.assinatura);
+    end if;
+    if tinha_service then
+      execute format('grant execute on function %s to service_role', f.assinatura);
+    end if;
+  end loop;
+end $$;
+
+-- regra 2 (authenticated): as 5 que o update abriu e o install não abre. Aqui não
+-- cabe varredura — `authenticated` PRECISA de EXECUTE nos helpers de RLS e em
+-- `retrieve_top_k_chunks` (num install fresco ele tem). É julgamento por função,
+-- e o alvo de cada linha é o valor que um install fresco produz, medido.
+revoke execute on function public.fn_audit_log_row() from authenticated;
+revoke execute on function public.fn_decrypt_oauth(bytea) from authenticated;
+revoke execute on function public.fn_encrypt_oauth(text) from authenticated;
+revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from authenticated;
+revoke execute on function public.fn_update_budget_consumption() from authenticated;
+
+grant execute on function public.fn_audit_log_row() to service_role;
+grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
+grant execute on function public.fn_encrypt_oauth(text) to service_role;
+grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
+grant execute on function public.fn_update_budget_consumption() to service_role;
+

@@ -80,7 +80,7 @@ E diga o que **não** é bloqueador, para ele não gastar tempo com o que já es
 <!-- triagem-de-pr:v1:pass=10 -->
 Medi, e tem um bloqueador — o resto está bom e eu digo o que está bom, para você não mexer à toa.
 
-**Bloqueia:** `hostgator-setup-kit/install.sh:412` — o script termina com "Instalação concluída"
+**Bloqueia:** `self-host-kit/install.sh:412` — o script termina com "Instalação concluída"
 mesmo quando o site não responde de fora, porque a sonda roda dentro do contêiner. Reproduzi assim:
 <comando> → <saída>. Num produto que a pessoa instala sozinha, isso é o pior desfecho: ela não
 descobre que quebrou.

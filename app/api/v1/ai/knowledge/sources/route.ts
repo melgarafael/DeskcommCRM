@@ -15,6 +15,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseFaqMarkdown } from "@/lib/ai/rag/ingest/faq";
+import { parseCatalogCsv } from "@/lib/ai/rag/ingest/catalog-csv";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ const createSourceSchema = z.object({
   name: z.string().min(2).max(120),
   items: z.array(faqItemSchema).optional(),
   markdown_blob: z.string().optional(),
+  /** Só para source_type "catalog": planilha CSV (nome,preco,sku,categoria,variantes,estoque). */
+  csv_blob: z.string().optional(),
   source_metadata: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
@@ -129,14 +132,32 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("not_found", "Agent não encontrado nesta organização.", 404, { requestId });
   }
 
-  // Itens de conteúdo: valem para 'faq' E 'policy'. Antes só 'faq' era tratado,
-  // e uma política enviada com markdown_blob era ACEITA e descartada em
-  // silêncio — a fonte nascia vazia, sem erro, e o indexador depois a marcava
-  // como falha sem que ninguém entendesse por quê. Os dois tipos guardam
-  // pergunta/resposta na mesma tabela.
+  // Itens de conteúdo: valem para 'faq', 'policy' E 'catalog'. Antes só 'faq'
+  // era tratado, e uma política enviada com markdown_blob era ACEITA e
+  // descartada em silêncio — a fonte nascia vazia, sem erro, e o indexador
+  // depois a marcava como falha sem que ninguém entendesse por quê. Os três
+  // tipos guardam pergunta/resposta na mesma tabela.
   let faqItems: Array<{ question: string; answer: string; tags: string[]; locale: string }> = [];
+  let catalogRowErrors: Array<{ row: number; reason: string }> = [];
 
-  if (input.source_type === "faq" || input.source_type === "policy") {
+  if (input.source_type === "catalog" && input.csv_blob) {
+    // Erro é POR LINHA: uma planilha de 200 produtos com um preço mal digitado
+    // não pode perder as outras 199 (quem importa isso não é dev). Só falha a
+    // fonte inteira se NENHUMA linha deu certo.
+    const parsed = parseCatalogCsv(input.csv_blob, "MZN");
+    catalogRowErrors = parsed.errors;
+    faqItems = parsed.items;
+    if (faqItems.length === 0) {
+      return fail("invalid_request", "Nenhuma linha válida na planilha.", 400, {
+        requestId,
+        details: { row_errors: catalogRowErrors },
+      });
+    }
+  } else if (
+    input.source_type === "faq" ||
+    input.source_type === "policy" ||
+    input.source_type === "catalog"
+  ) {
     if (input.items && input.items.length > 0) {
       faqItems = input.items.map((it) => ({
         question: it.question,
@@ -226,5 +247,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     console.warn("[ai-knowledge-sources] emit_event failed (non-blocking):", emitErr.message);
   }
 
-  return ok({ id: ksId, items_count: itemsCount }, { status: 201, requestId });
+  return ok(
+    {
+      id: ksId,
+      items_count: itemsCount,
+      ...(catalogRowErrors.length > 0 ? { row_errors: catalogRowErrors } : {}),
+    },
+    { status: 201, requestId },
+  );
 }

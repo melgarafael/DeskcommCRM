@@ -21,7 +21,7 @@ Cada capítulo tem duas partes, sempre nesta ordem:
 | Parte | Conteúdo | Ao publicar | Ao adotar |
 |---|---|---|---|
 | **Princípio** | Universal. Vale para qualquer software que atenda pessoas. Não cita tabela, arquivo ou framework. | É isto que sai. | É isto que você lê. |
-| **Aplicação de referência** | Como o DeskcommCRM materializa o princípio. Cita tabela, arquivo, teste. | Fica de fora, ou entra como estudo de caso nomeado. | Você **reescreve** esta seção para o seu sistema. |
+| **Aplicação de referência** | Como o SonghaiCRM materializa o princípio. Cita tabela, arquivo, teste. | Fica de fora, ou entra como estudo de caso nomeado. | Você **reescreve** esta seção para o seu sistema. |
 
 A separação não é estética. É o que permite que a doutrina seja verdadeira em mais de um lugar: um princípio que só se sustenta citando `crm_leads` nunca foi um princípio, era uma descrição.
 
@@ -63,7 +63,7 @@ Se o manual contradiz a lei, a lei ganha e **o manual está com defeito** — co
 O manual foi escrito para viajar. O caminho mínimo:
 
 1. Copie `docs/doctrine/sistema-vivo/` e `docs/doctrine/sistema-vivo.md`.
-2. **Reescreva todas as seções "Aplicação de referência"** para os artefatos do seu sistema. Enquanto elas citarem o DeskcommCRM, a doutrina é decoração.
+2. **Reescreva todas as seções "Aplicação de referência"** para os artefatos do seu sistema. Enquanto elas citarem o SonghaiCRM, a doutrina é decoração.
 3. Declare o propósito do seu sistema em **estado terminal**, não em atividade (capítulo 3). Sem isso, nada mais funciona.
 4. Escolha a sua unidade de demanda (capítulo 5).
 5. Ligue **um** gate mecânico no CI antes de qualquer outro — o mais barato que reprova de verdade (capítulo 8). Doutrina sem gate é intenção.
@@ -80,6 +80,6 @@ Do 1 ao 5 é meio dia de trabalho e é o que separa "temos uma doutrina" de "a d
 | **Criado** | 2026-08-06 |
 | **Lei correspondente** | [`../sistema-vivo.md`](../sistema-vivo.md) |
 | **Skill operacional** | `.claude/skills/sistema-vivo/SKILL.md` |
-| **Implementação de referência** | DeskcommCRM |
+| **Implementação de referência** | SonghaiCRM |
 
 **Ao mudar a lei, este manual desatualiza.** O capítulo 2 é o espelho direto de `../sistema-vivo.md` — mudou um invariante lá, atualize aqui na mesma sessão, ou os dois textos começam a mentir um sobre o outro.

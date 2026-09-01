@@ -321,6 +321,13 @@ export const AUDIT_ACTIONS = [
   "ai.budget_limit_changed",
   "ai.budget_enforcement_armed",
   "ai.budget_enforcement_disarmed",
+  "appointment_type.created",
+  "appointment_type.updated",
+  "appointment_type.deleted",
+  "attendant_schedule.updated",
+  "appointment.created",
+  "appointment.rescheduled",
+  "appointment.status_changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -1,13 +1,13 @@
 /**
  * Quem é o responsável legal por ESTA instalação.
  *
- * O DeskcommCRM é MIT e self-host: quem instala numa VPS opera o próprio
+ * O SonghaiCRM é MIT e self-host: quem instala numa VPS opera o próprio
  * sistema, decide o que fazer com os dados dos clientes dele e responde por
  * eles. Os mantenedores do projeto não têm acesso ao banco de ninguém e não são
  * parte de nenhum contrato entre o operador e os clientes dele.
  *
  * Por isso os documentos legais não podem ser um texto fixo se apresentando
- * como "serviço prestado pelo DeskcommCRM": isso seria literalmente falso em
+ * como "serviço prestado pelo SonghaiCRM": isso seria literalmente falso em
  * toda instalação de terceiro, e criaria obrigação para quem não pode cumpri-la.
  * O documento nomeia o OPERADOR — e, quando ele publicou a política dele, é a
  * dele que vale.

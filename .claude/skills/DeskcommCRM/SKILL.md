@@ -1,9 +1,9 @@
 ---
-name: DeskcommCRM
-description: Doutrina de código do DeskcommCRM — multi-tenancy com RLS, tripla de migration, restrição de canal, eixo self-host. USE SEMPRE ao escrever ou revisar código neste repositório, e antes de responder pergunta sobre convenção, schema, tenancy, WhatsApp/WAHA, instalador ou Definition of Done. É o ponteiro para a doutrina viva do repo; não substitui ler o CLAUDE.md.
+name: SonghaiCRM
+description: Doutrina de código do SonghaiCRM — multi-tenancy com RLS, tripla de migration, restrição de canal, eixo self-host. USE SEMPRE ao escrever ou revisar código neste repositório, e antes de responder pergunta sobre convenção, schema, tenancy, WhatsApp/WAHA, instalador ou Definition of Done. É o ponteiro para a doutrina viva do repo; não substitui ler o CLAUDE.md.
 ---
 
-# DeskcommCRM — doutrina de código
+# SonghaiCRM — doutrina de código
 
 > A fonte da verdade é o `CLAUDE.md` da raiz, lido do `origin/main` e não de um resumo. Esta skill
 > existe para te fazer abri-lo na hora certa e para carregar as três regras que mais custam caro

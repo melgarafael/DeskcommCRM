@@ -4,7 +4,7 @@
 
 ## Filosofia
 
-Motion no DeskcommCRM **comunica continuidade espacial** — a interface não "aparece", ela "se desloca" da posição anterior pra atual. Não é decoração, não é celebração, não é "modernidade". Cada animação tem propósito; o que não tem, sai.
+Motion no SonghaiCRM **comunica continuidade espacial** — a interface não "aparece", ela "se desloca" da posição anterior pra atual. Não é decoração, não é celebração, não é "modernidade". Cada animação tem propósito; o que não tem, sai.
 
 Quatro testes pra cada animação:
 

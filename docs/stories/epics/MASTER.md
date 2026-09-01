@@ -1,16 +1,16 @@
 ---
-title: Master Plan — DeskcommCRM MVP-B Implementation
+title: Master Plan — SonghaiCRM MVP-B Implementation
 version: 1.0
 status: ativo
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 total_epics: 13
 estimated_total_stories: 128
 estimated_total_points: 380
 estimated_calendar: 8-12 semanas
 ---
 
-# Master Plan — DeskcommCRM MVP-B Implementation
+# Master Plan — SonghaiCRM MVP-B Implementation
 
 > **Para Rafael (humano)**: este é o índice de TODOS os epics do MVP-B. Pra rodar autônomo: `clear` o chat, abra novo, e mande `Execute o EPIC-NN-name conforme docs/stories/epics/EPIC-NN-name.md` invocando o skill `epic-executor`.
 >

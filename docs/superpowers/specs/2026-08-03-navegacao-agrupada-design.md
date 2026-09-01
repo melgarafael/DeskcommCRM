@@ -44,7 +44,7 @@ A feature tem tela. A tela não tem porta. O checklist não pede a porta — e n
 | # | Decisão | Quem decidiu |
 |---|---|---|
 | D1 | Sidebar **híbrido**: grupos rotulados com o uso diário + página-hub por grupo grande | usuário |
-| D2 | Base: **branch nova de `origin/main`, worktree próprio** (`~/DeskcommCRM-nav`) | usuário |
+| D2 | Base: **branch nova de `origin/main`, worktree próprio** (`~/SonghaiCRM-nav`) | usuário |
 | D3 | IA no sidebar: **Agentes → Follow-ups → Roteadores**, nessa ordem de uso | usuário |
 | D4 | **Evolução da IA sai do grupo de IA** e vai para Análise — é observabilidade do sistema, não configuração do agente | usuário |
 | D5 | Hub precisa ser **organizado por jornada**, não uma grade de cards | usuário |

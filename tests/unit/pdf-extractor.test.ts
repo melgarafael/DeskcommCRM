@@ -14,6 +14,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const FIXTURE = join(process.cwd(), "tests/fixtures/sample-text.pdf");
+// O texto embutido no PDF binário de tests/fixtures/sample-text.pdf não foi
+// regerado pelo rebrand (é um asset binário, não texto grep-ável) — o
+// esperado aqui precisa continuar batendo com o que está DENTRO do arquivo.
 const TEXTO_ESPERADO = "DeskcommCRM RAG fixture";
 
 afterEach(() => {

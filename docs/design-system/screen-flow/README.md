@@ -1,10 +1,10 @@
 ---
-title: Screen Flow — Mapa de Jornadas e Telas do DeskcommCRM
+title: Screen Flow — Mapa de Jornadas e Telas do SonghaiCRM
 parent: docs/design-system/00-overview.md
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # Screen Flow — Índice

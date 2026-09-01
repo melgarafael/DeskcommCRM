@@ -1,4 +1,4 @@
-# Architecture — DeskcommCRM
+# Architecture — SonghaiCRM
 
 > Visão de 1 página. Profundidade vive em `docs/specs/` e `docs/stories/epics/MASTER.md`.
 > Mapa de toda a documentação: [`docs/index.md`](docs/index.md).

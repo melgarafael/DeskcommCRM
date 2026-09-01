@@ -1,4 +1,4 @@
-# Guia de Setup — DeskcommCRM
+# Guia de Setup — SonghaiCRM
 
 > **Pra quem é este doc?** Você acabou de clonar o repo, copiou `.env.example` pra `.env.local`, abriu o arquivo e bateu o desespero: "o que é cada uma dessas chaves e onde eu pego?". Este guia resolve isso. Sem pular etapas, sem assumir que você já configurou nada antes.
 >
@@ -38,7 +38,7 @@
 - **Cartão de crédito** 💳 — alguns serviços pedem só pra "comprovar identidade" mesmo no plano grátis (Supabase, Sentry). Se ficar dentro do free tier, **não cobram nada**.
 
 **Como o `.env.local` funciona:**
-- Fica na **raiz do projeto**: `/seu-caminho/DeskcommCRM/.env.local`.
+- Fica na **raiz do projeto**: `/seu-caminho/SonghaiCRM/.env.local`.
 - Cada linha é `NOME_DA_VARIAVEL=valor` — sem espaço antes/depois do `=`.
 - Strings com caracteres especiais: envolva em aspas duplas (`"valor com espaço"`).
 - Variáveis com `NEXT_PUBLIC_` no nome são **expostas no browser** — nunca coloque secret aí.
@@ -81,7 +81,7 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 2. No dashboard, clique **New project**.
    - **Name:** `deskcomm-dev` (ou o que quiser).
    - **Database password:** clique no ícone de dado pra gerar. **Salve essa senha num gerenciador (1Password, Bitwarden)** — você vai precisar pra rodar migrations e nunca verá ela de novo no dashboard.
-   - **Region:** `South America (São Paulo)` — latência mínima pro Brasil.
+   - **Region:** escolha a mais próxima do seu público — é ela que determina a latência.
    - **Pricing plan:** Free.
 3. Clique **Create new project**. Aguarde ~2 minutos enquanto provisiona.
 4. Quando carregar, vá em **Project Settings** (engrenagem no menu lateral) → **API**.
@@ -129,7 +129,7 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/baseline.sql
 > são stubs `SELECT 1;` — o schema fundacional não está nelas, e a cadeia não sobe do
 > zero. O `db push` **passa sem erro** e te deixa com um banco vazio, e você só descobre
 > muito depois, num erro que não aponta pra cá. O `supabase/baseline.sql` é o schema real
-> e é exatamente o que o `hostgator-setup-kit/install.sh` aplica na VPS.
+> e é exatamente o que o `self-host-kit/install.sh` aplica na VPS.
 >
 > As migrations continuam sendo a fonte da verdade para quem **já tem** um banco e está
 > atualizando — é o baseline que serve pra criar do zero.
@@ -155,7 +155,7 @@ No menu lateral → **Storage** → **New bucket**:
 2. No dashboard, clique **Create Database**.
    - **Name:** `deskcomm-dev`
    - **Type:** Regional (mais barato que Global pra dev)
-   - **Region:** `sa-east-1` (São Paulo) — ou `us-east-1` se SP não estiver disponível no free tier.
+   - **Region:** a mais próxima da região que você escolheu no Supabase — ou `us-east-1` se a sua não estiver disponível no free tier.
    - **Eviction:** habilitado (default).
 3. Clique **Create**.
 4. Na tela do banco criado, role até a seção **REST API**. Você vai ver:
@@ -356,7 +356,7 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 
 1. Acesse <https://partners.tiendanube.com/> → **Sign up** como parceiro (gratuito).
 2. No dashboard de parceiro → **Apps → Create new app**.
-   - **App name:** `DeskcommCRM Dev`.
+   - **App name:** `SonghaiCRM Dev`.
    - **Redirect URI:** `https://<sua-url-ngrok>.ngrok-free.app/api/v1/integrations/nuvemshop/callback` (mesmo ngrok do WAHA, ou outro).
    - **Scopes:** marque tudo relacionado a `read_orders`, `read_customers`, `read_products`, `write_orders` (pra atualizar status).
 3. Após criar, a tela do app mostra:
@@ -515,7 +515,7 @@ Com tudo verde no `/api/v1/health`:
 3. Leia [`CLAUDE.md`](../CLAUDE.md) pra convenções do projeto.
 4. Veja [`tasks/todo.md`](../tasks/todo.md) pra entender o backlog atual.
 
-Bem-vindo ao DeskcommCRM. 🛠️
+Bem-vindo ao SonghaiCRM. 🛠️
 
 ---
 

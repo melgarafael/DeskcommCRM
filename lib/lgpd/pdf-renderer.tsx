@@ -12,7 +12,7 @@
  *
  * O motivo: o relatório do Art. 18 II responde a um DIREITO LEGAL do titular.
  * Nomear ali o revendedor — que é OPERADOR, não controlador — inverteria os
- * papéis num documento jurídico. Trocar `DeskcommCRM` por `Vendas Turbo CRM`
+ * papéis num documento jurídico. Trocar `SonghaiCRM` por `Vendas Turbo CRM`
  * no rodapé não é "completar o white-label": é piorar o defeito, porque hoje o
  * nome é obviamente o do software, e depois passaria a parecer a declaração de
  * quem responde pelos dados.
@@ -107,7 +107,7 @@ function fmtDate(s: string | null | undefined): string {
 function fmtMoney(cents: number | null | undefined, currency: string | null | undefined): string {
   if (cents == null) return "—";
   const v = cents / 100;
-  return `${currency ?? "BRL"} ${v.toFixed(2)}`;
+  return `${currency ?? "MZN"} ${v.toFixed(2)}`;
 }
 
 /**

@@ -1,8 +1,10 @@
 # Política de Segurança
 
+Mantido pela Songhai, Lda (Moçambique).
+
 ## Versões suportadas
 
-O DeskcommCRM é distribuído em rolling release a partir da branch `main`. Correções de segurança são aplicadas apenas à versão mais recente — mantenha sua instalação atualizada (`bash hostgator-setup-kit/update.sh` em self-host).
+O SonghaiCRM é distribuído em rolling release a partir da branch `main`. Correções de segurança são aplicadas apenas à versão mais recente — mantenha sua instalação atualizada (`bash self-host-kit/update.sh` em self-host).
 
 | Versão | Suportada |
 | --- | --- |

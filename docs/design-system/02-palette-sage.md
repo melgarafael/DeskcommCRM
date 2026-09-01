@@ -4,7 +4,7 @@
 
 ## Filosofia da paleta
 
-Sage é verde-erva desaturado: o suficiente pra ter personalidade vegetal, longe o suficiente pra não evocar o cliché "wellness/saúde mental". O DeskcommCRM é uma ferramenta de **trabalho operacional**, e Sage projeta:
+Sage é verde-erva desaturado: o suficiente pra ter personalidade vegetal, longe o suficiente pra não evocar o cliché "wellness/saúde mental". O SonghaiCRM é uma ferramenta de **trabalho operacional**, e Sage projeta:
 
 - **Calma sem fragilidade** — saturação ≤ 30% no accent 500 evita a sensação clínica.
 - **Confiança warm** — neutros greige (warm-gray, base bege/oliva) ao invés de slate/zinc, que carregam tom corporativo frio.

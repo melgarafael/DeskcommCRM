@@ -145,7 +145,7 @@ Running 58 tests using 1 worker
       19 |   });
       20 |
       21 |   test("/503 renders manutenção", async ({ page }) => {
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/error-pages.spec.ts:18:51
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/error-pages.spec.ts:18:51
 
     Error Context: test-results/error-pages-error-pages-500-renders-erro-interno-chromium/error-context.md
 
@@ -163,7 +163,7 @@ Running 58 tests using 1 worker
       274 |     await ctx.close();
       275 |   });
       276 |
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/invite-lifecycle.spec.ts:273:96
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/invite-lifecycle.spec.ts:273:96
 
     Error Context: test-results/invite-lifecycle-ciclo-de--5cd10-bro-→-failed-already-member-chromium/error-context.md
 
@@ -181,7 +181,7 @@ Running 58 tests using 1 worker
       116 |     await expect(page).toHaveURL(/\/onboarding\/welcome/);
       117 |     await snap(page, "j1.1-welcome");
       118 |   });
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/vps-fresh-onboarding.spec.ts:115:16
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/vps-fresh-onboarding.spec.ts:115:16
 
     Error Context: test-results/vps-fresh-onboarding-J1-—--3d906-izard-org-sem-onboarded-at--chromium/error-context.md
 
@@ -206,7 +206,7 @@ Running 58 tests using 1 worker
       239 |
       240 |       // --- Step 9: AGENT não vê "Webhooks" e é redirecionado ---
       241 |       const agentContext = await browser.newContext();
-        at /Users/rafaelmelgaco/DeskcommCRM-canais/tests/e2e/webhooks.spec.ts:238:45
+        at /Users/rafaelmelgaco/SonghaiCRM-canais/tests/e2e/webhooks.spec.ts:238:45
 
     Error Context: test-results/webhooks-webhooks-automaçõ-64c41-e-e-kanban-agent-sem-acesso-chromium/error-context.md
 

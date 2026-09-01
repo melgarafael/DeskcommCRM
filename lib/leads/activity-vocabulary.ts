@@ -50,7 +50,21 @@ export type ActivityType =
   | "followup_snoozed"
   | "followup_step_skipped"
   | "demand_closed"
-  | "promise_unowned";
+  | "promise_unowned"
+  /**
+   * As duas pontas de uma cobrança PaySuite: gerar o link é reversível (o
+   * cliente pode nunca pagar), então precisa da PRÓPRIA linha — não dá para
+   * inferir "foi cobrado" a partir de "foi confirmado" quando o segundo nunca
+   * chega. `payment_confirmed` é gravado só pelo webhook (nunca otimista).
+   */
+  | "payment_charge_created"
+  | "payment_confirmed"
+  /** As cinco transições do agendamento (Frente A da Agenda nativa). */
+  | "appointment_scheduled"
+  | "appointment_rescheduled"
+  | "appointment_cancelled"
+  | "appointment_completed"
+  | "appointment_no_show";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou pelo WhatsApp",
@@ -117,6 +131,13 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // invisível na timeline — só existia em audit e event_log, que ninguém lê na
   // tela — e o dossiê de um negócio fechado terminava sem dizer que fechou.
   demand_closed: "Demanda encerrada",
+  payment_charge_created: "Link de pagamento gerado",
+  payment_confirmed: "Pagamento confirmado",
+  appointment_scheduled: "Agendamento marcado",
+  appointment_rescheduled: "Agendamento remarcado",
+  appointment_cancelled: "Agendamento cancelado",
+  appointment_completed: "Agendamento concluído",
+  appointment_no_show: "Cliente não compareceu",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

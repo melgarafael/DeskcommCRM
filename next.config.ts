@@ -8,7 +8,7 @@ import type { NextConfig } from "next";
  *  - Initial bundle /app/inbox < 250KB gzipped
  */
 const nextConfig: NextConfig = {
-  // Self-host (HostGator): gera .next/standalone pro container Docker (node server.js).
+  // Self-host: gera .next/standalone pro container Docker (node server.js).
   // Aditivo — não afeta o deploy Vercel.
   output: "standalone",
   reactStrictMode: true,

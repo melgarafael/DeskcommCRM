@@ -1,4 +1,4 @@
-# DeskcommCRM self-hosted — instalação em VPS (com agente de IA)
+# SonghaiCRM self-hosted — instalação em VPS (com agente de IA)
 
 > Sistema operacional de vendas open source com agente SDR de IA integrado
 > (WhatsApp via WAHA) — pra qualquer negócio que vende conversando.
@@ -24,7 +24,7 @@
 
 ```bash
 git clone https://github.com/melgarafael/DeskcommCRM.git && cd DeskcommCRM
-cp .env.hostgator.example .env   # o template de produção (o .env.example é o de dev)
+cp .env.selfhost.example .env   # o template de produção (o .env.example é o de dev)
 ```
 
 Edite o `.env` e preencha (mínimo):
@@ -118,7 +118,7 @@ chegando com link para `https://SEU_DOMINIO/auth/confirm`.
 
 ```bash
 export SUPABASE_ACCESS_TOKEN=sbp_...      # supabase.com/dashboard/account/tokens
-bash hostgator-setup-kit/marca-emails.sh
+bash self-host-kit/marca-emails.sh
 ```
 
 Ele sobe assunto e corpo dos dois e-mails **com a marca da sua instalação**
@@ -172,7 +172,7 @@ nome da marca e a cor do botão são `__APP_NAME__` / `__ACCENT__`, e o cliente
 receberia isso literalmente. Renderize antes e aponte para o resultado:
 
 ```bash
-bash hostgator-setup-kit/marca-emails.sh --render-em /opt/deskcomm/emails
+bash self-host-kit/marca-emails.sh --render-em /opt/deskcomm/emails
 # GOTRUE_MAILER_TEMPLATES_CONFIRMATION=/opt/deskcomm/emails/confirmation.html
 # GOTRUE_MAILER_TEMPLATES_RECOVERY=/opt/deskcomm/emails/recovery.html
 ```
@@ -207,7 +207,7 @@ e é preciso repetir o comando quando a marca mudar.
   (`FLYWHEEL_INTERVAL_MS`) e grava PROPOSTAS de melhoria de prompt em
   `flywheel_distiller_proposals`. Nada é aplicado sozinho: revise e cole o
   bullet no prompt do agente na tela, publicando uma versão nova.
-- **Atualizar**: `bash hostgator-setup-kit/update.sh` — ele puxa a tag publicada,
+- **Atualizar**: `bash self-host-kit/update.sh` — ele puxa a tag publicada,
   re-aplica o `baseline.sql` (idempotente), sobe e faz backup antes. Não use
   `up -d --build`: isso reconstrói na sua máquina em vez de puxar a imagem
   testada, e **numa VPS com proxy reverso próprio o `up -d` precisa dos dois

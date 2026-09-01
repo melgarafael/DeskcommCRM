@@ -1,22 +1,22 @@
 ---
-title: DeskcommCRM — Diagramas de Arquitetura
+title: SonghaiCRM — Diagramas de Arquitetura
 version: 0.1
 status: em revisão
 date: 2026-04-28
-owner: Rafael Melgaço
+owner: Songhai, Lda
 referencia_arquitetural: docs/research/reference-synthesis.md
 formato: Mermaid
 ---
 
-# DeskcommCRM — Diagramas de Arquitetura
+# SonghaiCRM — Diagramas de Arquitetura
 
-Este documento consolida os diagramas canônicos do DeskcommCRM em sintaxe Mermaid. Serve como referência visual única para discussões de arquitetura, onboarding técnico, revisão de PRs estruturais e auditoria LGPD. Os diagramas aderem ao modelo C4 (níveis 1, 2 e 3), complementados por ER, sequência, deployment, fluxo de dados e máquinas de estado. Toda decisão arquitetural representada aqui foi herdada do bundle de referência (`reference-synthesis.md`) ou explicitada nos sub-PRDs `01` a `06`.
+Este documento consolida os diagramas canônicos do SonghaiCRM em sintaxe Mermaid. Serve como referência visual única para discussões de arquitetura, onboarding técnico, revisão de PRs estruturais e auditoria LGPD. Os diagramas aderem ao modelo C4 (níveis 1, 2 e 3), complementados por ER, sequência, deployment, fluxo de dados e máquinas de estado. Toda decisão arquitetural representada aqui foi herdada do bundle de referência (`reference-synthesis.md`) ou explicitada nos sub-PRDs `01` a `06`.
 
 ---
 
 ## 1. C4 Level 1 — System Context
 
-Visão macro do DeskcommCRM como sistema único, mostrando os atores humanos (operadores BPO, lojistas, clientes finais) e os sistemas externos (Nuvemshop, WhatsApp via WAHA, AI Gateway, ANPD). O foco é responder "quem fala com quem" e "qual é a fronteira do produto". O DeskcommCRM concentra a lógica de negócio; tudo que aparece ao redor é dependência ou usuário.
+Visão macro do SonghaiCRM como sistema único, mostrando os atores humanos (operadores BPO, lojistas, clientes finais) e os sistemas externos (Nuvemshop, WhatsApp via WAHA, AI Gateway, ANPD). O foco é responder "quem fala com quem" e "qual é a fronteira do produto". O SonghaiCRM concentra a lógica de negócio; tudo que aparece ao redor é dependência ou usuário.
 
 ```mermaid
 graph TD
@@ -26,31 +26,31 @@ graph TD
     SuperAdmin[Super-admin de Plataforma<br/>sócio empresa operadora]
     Auditor[ANPD / Auditor LGPD<br/>regulador]
 
-    DeskcommCRM[DeskcommCRM<br/>CRM operacional + IA + LGPD<br/>multi-tenant SaaS/BPO]
+    SonghaiCRM[SonghaiCRM<br/>CRM operacional + IA + LGPD<br/>multi-tenant SaaS/BPO]
 
     Nuvemshop[Nuvemshop API<br/>OAuth + 8 webhooks<br/>+ catálogo + pedidos]
     WAHA[WAHA Plus<br/>WhatsApp HTTP API<br/>multi-sessão NOWEB]
     AIGW[Vercel AI Gateway<br/>Anthropic primário<br/>OpenAI fallback]
     Sentry[Sentry<br/>error tracking]
 
-    OperadorBPO -->|atende multi-tenant| DeskcommCRM
-    SuperAdmin -->|gerencia plataforma| DeskcommCRM
-    Tenant -->|configura RAG, vê KPIs| DeskcommCRM
-    Auditor -.->|requisita audit trail| DeskcommCRM
+    OperadorBPO -->|atende multi-tenant| SonghaiCRM
+    SuperAdmin -->|gerencia plataforma| SonghaiCRM
+    Tenant -->|configura RAG, vê KPIs| SonghaiCRM
+    Auditor -.->|requisita audit trail| SonghaiCRM
 
     Cliente <-->|conversa via WhatsApp| WAHA
-    WAHA <-->|webhooks + send| DeskcommCRM
+    WAHA <-->|webhooks + send| SonghaiCRM
 
-    DeskcommCRM <-->|OAuth + webhooks + sync| Nuvemshop
-    DeskcommCRM -->|chat completion + embeddings| AIGW
-    DeskcommCRM -->|telemetria de erros| Sentry
+    SonghaiCRM <-->|OAuth + webhooks + sync| Nuvemshop
+    SonghaiCRM -->|chat completion + embeddings| AIGW
+    SonghaiCRM -->|telemetria de erros| Sentry
 ```
 
 ---
 
 ## 2. C4 Level 2 — Container Diagram
 
-Decomposição do DeskcommCRM em containers de runtime. O Next.js App é o monolito hospedado na Vercel; Supabase entrega Postgres, Realtime e Storage gerenciados; Upstash provê Redis para rate-limit; WAHA Plus roda em VPS Hostgator próprio (Docker); o MCP server é projeto separado entrando na Fase 2. A linha pontilhada para o MCP marca componentes ainda não construídos no MVP.
+Decomposição do SonghaiCRM em containers de runtime. O Next.js App é o monolito hospedado na Vercel; Supabase entrega Postgres, Realtime e Storage gerenciados; Upstash provê Redis para rate-limit; WAHA Plus roda em VPS própria (Docker); o MCP server é projeto separado entrando na Fase 2. A linha pontilhada para o MCP marca componentes ainda não construídos no MVP.
 
 ```mermaid
 graph TB
@@ -70,7 +70,7 @@ graph TB
         Redis[(Redis<br/>sliding-window rate limit<br/>idempotency cache)]
     end
 
-    subgraph HostgatorVPS
+    subgraph VpsWaha["VPS WAHA"]
         Nginx[Nginx<br/>proxy_buffering off]
         WAHA[WAHA Plus<br/>engine NOWEB<br/>N sessões]
     end
@@ -168,7 +168,7 @@ graph TB
 
 ## 4. ER Diagram — Schema completo
 
-Schema central do DeskcommCRM. Em torno de `organizations` orbitam três sub-domínios: (a) chat/canal — `channel_sessions`, `contacts`, `conversations`, `messages`; (b) CRM core — `crm_pipelines` → `crm_stages` → `crm_leads` → `crm_lead_activities` (timeline polimórfica) + `crm_lead_links` (vínculos polimórficos); (c) integração e-commerce e LGPD — `tenant_integrations`, `orders`, `nuvemshop_products`. Tabelas de plataforma (`api_tokens`, `event_log`, `webhook_subscriptions`, `usage_events`) servem o monolito inteiro. Multi-tenancy aplicada via `organization_id` em toda tabela tenant-aware.
+Schema central do SonghaiCRM. Em torno de `organizations` orbitam três sub-domínios: (a) chat/canal — `channel_sessions`, `contacts`, `conversations`, `messages`; (b) CRM core — `crm_pipelines` → `crm_stages` → `crm_leads` → `crm_lead_activities` (timeline polimórfica) + `crm_lead_links` (vínculos polimórficos); (c) integração e-commerce e LGPD — `tenant_integrations`, `orders`, `nuvemshop_products`. Tabelas de plataforma (`api_tokens`, `event_log`, `webhook_subscriptions`, `usage_events`) servem o monolito inteiro. Multi-tenancy aplicada via `organization_id` em toda tabela tenant-aware.
 
 ```mermaid
 erDiagram
@@ -610,7 +610,7 @@ sequenceDiagram
 
 ## 10. Deployment Diagram
 
-Topologia física de produção. Vercel hospeda o Next.js (Edge + serverless), Supabase entrega os 3 serviços gerenciados, Upstash o Redis, Hostgator VPS roda WAHA atrás de Nginx. AI Gateway é proxy interno da Vercel para Anthropic e OpenAI. Sentry recebe telemetria do Next.js e do host WAHA. Conexões críticas: Realtime via WebSocket persistente, webhooks WAHA via HTTPS, AI calls via HTTPS com observability nativa.
+Topologia física de produção. Vercel hospeda o Next.js (Edge + serverless), Supabase entrega os 3 serviços gerenciados, Upstash o Redis, uma VPS própria roda WAHA atrás de Nginx. AI Gateway é proxy interno da Vercel para Anthropic e OpenAI. Sentry recebe telemetria do Next.js e do host WAHA. Conexões críticas: Realtime via WebSocket persistente, webhooks WAHA via HTTPS, AI calls via HTTPS com observability nativa.
 
 ```mermaid
 graph LR
@@ -629,7 +629,7 @@ graph LR
 
     NS[Nuvemshop API]
 
-    subgraph Hostgator[Hostgator VPS]
+    subgraph VpsWaha[VPS WAHA]
         Nginx[Nginx<br/>TLS + buffering off]
         WAHA[WAHA Plus<br/>Docker NOWEB]
     end

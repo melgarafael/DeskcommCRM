@@ -221,7 +221,7 @@ describe("precedência POR CAMPO", () => {
 
   it("sem nenhuma camada, tudo é o padrão do produto", () => {
     const marca = resolverMarca([], REGUA);
-    expect(marca.name).toBe("DeskcommCRM");
+    expect(marca.name).toBe("SonghaiCRM");
     expect(marca.cor).toBeNull();
     expect(marca.origens).toEqual({ nome: "padrao", logoUrl: "padrao", cor: "padrao" });
     expect(marca.motivos).toEqual([]);

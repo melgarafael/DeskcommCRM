@@ -4,7 +4,7 @@
 
 ## Por que Atkinson Hyperlegible
 
-A fonte de display + body do DeskcommCRM é **Atkinson Hyperlegible**, criada pelo Braille Institute em 2020 com um único objetivo: **maximizar a distinção entre caracteres similares** para usuários com baixa visão.
+A fonte de display + body do SonghaiCRM é **Atkinson Hyperlegible**, criada pelo Braille Institute em 2020 com um único objetivo: **maximizar a distinção entre caracteres similares** para usuários com baixa visão.
 
 Razões da escolha:
 

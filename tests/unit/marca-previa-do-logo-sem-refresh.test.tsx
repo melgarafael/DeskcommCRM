@@ -76,7 +76,7 @@ function pintar(props: Partial<Parameters<typeof CampoDeLogo>[0]> = {}) {
       logoDaCamada={{ url: null }}
       logoHerdado={null}
       origemDoHerdado="do arquivo de instalação do servidor"
-      nomeEmVigor="DeskcommCRM"
+      nomeEmVigor="SonghaiCRM"
       {...props}
     />,
   );
@@ -157,7 +157,7 @@ describe("a prévia do logo não espera o router.refresh()", () => {
         logoDaCamada={{ url: null }}
         logoHerdado={URL_HERDADA}
         origemDoHerdado="do arquivo de instalação do servidor"
-        nomeEmVigor="DeskcommCRM"
+        nomeEmVigor="SonghaiCRM"
       />,
     );
 

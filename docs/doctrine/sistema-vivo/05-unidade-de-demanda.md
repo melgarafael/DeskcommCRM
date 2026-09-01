@@ -94,7 +94,7 @@ O erro a evitar é o passo 2 com adivinhação. Um histórico reconstruído por 
 
 ---
 
-# Aplicação de referência — DeskcommCRM
+# Aplicação de referência — SonghaiCRM
 
 **O que já existe:** contatos e leads como entidades; conversas e mensagens; estágios de funil com máquina de transições; linha do tempo de atividades por lead; e **casos** — que hoje modelam o atendimento humano aberto a partir de um handoff.
 

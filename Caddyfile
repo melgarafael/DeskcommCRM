@@ -1,4 +1,4 @@
-# Caddy — reverse proxy + HTTPS automático (Let's Encrypt) para o DeskcommCRM.
+# Caddy — reverse proxy + HTTPS automático (Let's Encrypt) para o SonghaiCRM.
 # HTTP→HTTPS e emissão/renovação de certificado são automáticos.
 
 {

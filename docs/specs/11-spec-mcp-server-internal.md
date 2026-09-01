@@ -6,7 +6,7 @@ related: 12-spec-ai-agents-ui.md
 version: 0.1
 status: draft (pre-implementation)
 date: 2026-05-05
-owner: Rafael Melgaço
+owner: Songhai, Lda
 ---
 
 # Spec 11 — Internal MCP Server (Tool Catalog)

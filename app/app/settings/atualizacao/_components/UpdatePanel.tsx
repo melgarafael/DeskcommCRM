@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 // Sem `cd <pasta>`: o instalador não fixa o nome da pasta do clone
 // (REPO_DIR é configurável, default "deskcommcrm" minúsculo) — quem tem
 // acesso ao servidor já sabe entrar na pasta onde instalou.
-const COMANDO_MANUAL = "bash hostgator-setup-kit/update.sh";
+const COMANDO_MANUAL = "bash self-host-kit/update.sh";
 
 /** Tira o "v" das versões: a tela fala "1.1.0", não "v1.1.0". */
 function semV(versao: string | undefined): string {
@@ -36,8 +36,8 @@ function semV(versao: string | undefined): string {
 function comandoDeVolta(fromVersion: string | undefined): string {
   const anterior = semV(fromVersion);
   return /^\d+\.\d+\.\d+/.test(anterior)
-    ? `bash hostgator-setup-kit/update.sh --to v${anterior} --force`
-    : "bash hostgator-setup-kit/update.sh --force";
+    ? `bash self-host-kit/update.sh --to v${anterior} --force`
+    : "bash self-host-kit/update.sh --force";
 }
 
 const PASSOS = [
@@ -122,7 +122,7 @@ export function UpdatePanel() {
           estão intactos. O banco de dados já tinha sido atualizado e permanece assim — isso é
           seguro, a versão {anterior} funciona com ele. Se quiser desfazer também o banco, use a
           cópia de segurança feita antes da tentativa (
-          <code>bash hostgator-setup-kit/restore.sh</code>).
+          <code>bash self-host-kit/restore.sh</code>).
         </p>
         <DetalhesTecnicos texto={data.run.log_tail} />
         <Saida

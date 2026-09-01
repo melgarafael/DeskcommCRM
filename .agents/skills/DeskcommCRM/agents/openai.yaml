@@ -1,6 +1,6 @@
 interface:
-  display_name: "DeskcommCRM"
-  short_description: "Repo-specific patterns and workflows for DeskcommCRM"
-  default_prompt: "Use the DeskcommCRM repo skill to follow existing architecture, testing, and workflow conventions."
+  display_name: "SonghaiCRM"
+  short_description: "Repo-specific patterns and workflows for SonghaiCRM"
+  default_prompt: "Use the SonghaiCRM repo skill to follow existing architecture, testing, and workflow conventions."
 policy:
   allow_implicit_invocation: true

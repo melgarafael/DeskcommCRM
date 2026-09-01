@@ -1,6 +1,6 @@
 # Runbook — “meu Supabase estourou a cota”
 
-Para quem roda o DeskcommCRM numa VPS com Supabase (em especial o **plano free**,
+Para quem roda o SonghaiCRM numa VPS com Supabase (em especial o **plano free**,
 cuja cota de egress é de 5 GB/mês) e recebeu aviso de consumo, throttling ou
 cobrança. Também serve para quem só quer saber **quanto o sistema parado custa**.
 
