@@ -13588,6 +13588,12 @@ create index if not exists payments_lead_idx on public.payments using btree (lea
 alter table public.payments enable row level security;
 revoke insert, update, delete on public.payments from anon, authenticated;
 
+-- drop guard adicionado pela migration 0167: a 0162 criava esta policy sem
+-- `drop policy if exists`, então reaplicar o baseline (update.sh) falhava
+-- com "policy already exists" — o guard tem que ficar aqui, na primeira
+-- ocorrência, porque psql roda com ON_ERROR_STOP=1 e para antes de alcançar
+-- qualquer bloco de apêndice mais abaixo no arquivo.
+drop policy if exists "payments_select" on public.payments;
 create policy payments_select on public.payments
   for select using (
     (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
