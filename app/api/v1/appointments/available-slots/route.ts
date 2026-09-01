@@ -84,5 +84,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     existingAppointments: (existing ?? []) as { scheduled_at: string; duration_minutes: number }[],
   });
 
-  return ok(slots, { requestId });
+  // O cálculo puro não conhece "agora" — filtra aqui os slots que já
+  // passaram (relevante em "hoje": o primeiro horário do turno pode já ter
+  // ficado no passado). Comparação de dois instantes absolutos, então
+  // independe do fuso da org.
+  const futuros = slots.filter((s) => new Date(s.startsAt).getTime() > Date.now());
+
+  return ok(futuros, { requestId });
 }
