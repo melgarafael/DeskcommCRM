@@ -48,12 +48,25 @@ const SEMENTES = [
 
 /** Quantos pares cada tema tem no globals.css de hoje — o piso da vacuidade.
  * Tema único agora: claro usa o mesmo accent-soft translúcido do escuro, então
- * as contagens batem (26/26, em vez do 18/26 de quando o claro era opaco). */
-const PARES_DE_HOJE = { claro: 26, escuro: 26 } as const;
+ * as contagens batem. 38 e nao 26 desde que `--color-link`/`-hover` entraram
+ * com a superficie clara do conteudo: dois papeis a mais x seis superficies. */
+const PARES_DE_HOJE = { claro: 38, escuro: 38, superficieClara: 38 } as const;
 
 const TEMAS = [
   { nome: "claro" as const, seletor: ":root:root" },
   { nome: "escuro" as const, seletor: ':root:root[data-theme="dark"]' },
+  /**
+   * A area de conteudo sobre Paper.
+   *
+   * Entrar AQUI, e nao num teste proprio, e o ponto: tudo o que este arquivo
+   * assere -- piso por par, vacuidade, "o emissor nao pinta superficie", "o
+   * bloco nao contradiz o globals.css" -- passa a valer para ela sem uma linha
+   * de asserção nova. Antes disso a superficie clara era a unica coisa que o
+   * produto pinta e que nenhum portao media: a rampa chegava la deslocada por
+   * uma conta feita contra Ink, e o `--color-accent-soft` do bloco era um
+   * literal Signal Blue que nenhuma marca de revendedor alcancava.
+   */
+  { nome: "superficieClara" as const, seletor: ':root:root [data-superficie="clara"]' },
 ];
 
 const corDe = (hex: string): CorResolvida => {
@@ -202,11 +215,13 @@ function paresPintados(tema: TemaDaRegua, bloco: Bloco): ParPintado[] {
 }
 
 /** Os pares dos dois temas de uma semente, prontos para asserir. */
-function pintadosDaSemente(hex: string): Record<"claro" | "escuro", ParPintado[]> {
+type NomeDeSuperficie = (typeof TEMAS)[number]["nome"];
+
+function pintadosDaSemente(hex: string): Record<NomeDeSuperficie, ParPintado[]> {
   const { css } = cssDaMarca(corDe(hex));
   if (css === null) throw new Error(`${hex}: o emissor recusou — não há tela para medir`);
   const blocos = lerBlocos(css);
-  const saida = {} as Record<"claro" | "escuro", ParPintado[]>;
+  const saida = {} as Record<NomeDeSuperficie, ParPintado[]>;
   for (const { nome, seletor } of TEMAS) {
     const bloco = blocos[seletor];
     if (!bloco) throw new Error(`${hex}: o CSS emitido não tem o bloco ${seletor}`);
@@ -222,7 +237,7 @@ const foco = (pares: readonly ParPintado[], superficie: string): number =>
 
 describe("o que o produto pinta — todo par, toda semente", () => {
   it.each(SEMENTES)(
-    "%s: nenhum papel abaixo do piso, nos dois temas, no pixel emitido",
+    "%s: nenhum papel abaixo do piso, nas tres superficies, no pixel emitido",
     (hex) => {
       const pintados = pintadosDaSemente(hex);
       for (const { nome } of TEMAS) {
@@ -258,6 +273,7 @@ describe("o que o produto pinta — todo par, toda semente", () => {
     }
     expect(pintados.claro).toHaveLength(PARES_DE_HOJE.claro);
     expect(pintados.escuro).toHaveLength(PARES_DE_HOJE.escuro);
+    expect(pintados.superficieClara).toHaveLength(PARES_DE_HOJE.superficieClara);
   });
 
   it("a cascata é a cascata: o emissor não pinta superfície nem inventa token", () => {
@@ -314,8 +330,17 @@ describe("o bloco emitido não pode contradizer o globals.css", () => {
   it("a caminhada de fato ANDA — e a emissão anda junto", () => {
     // Guarda de vacuidade da sabotagem: se nenhuma semente deslocasse, emitir a
     // rampa crua e emiti-la deslocada dariam o mesmo texto, e os testes acima
-    // seriam verdes contra o defeito. 13 combos (semente × tema) andam — o mesmo
-    // número que `branding-contraste.test.ts` mede na derivação.
+    // seriam verdes contra o defeito.
+    //
+    // 24 combos (semente × superficie) andam: 10 + 10 dos dois temas e 4 da
+    // superficie clara.
+    //
+    // Ela anda MENOS que os temas, e isso e resultado, nao sorte: o
+    // `--color-accent-hover` apontando para accent-700 no bloco da superficie
+    // clara (globals.css) tira do caminho o par que reprovava por 0,05 e
+    // empurrava quase toda marca um passo. Antes desse conserto eram 13 aqui.
+    // Andar menos e o objetivo -- cada passo afasta a tela do hex que a pessoa
+    // escolheu.
     let andaram = 0;
     for (const hex of SEMENTES) {
       const cor = corDe(hex);
@@ -334,7 +359,7 @@ describe("o bloco emitido não pode contradizer o globals.css", () => {
         );
       }
     }
-    expect(andaram).toBe(20);
+    expect(andaram).toBe(24);
   });
 });
 

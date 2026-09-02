@@ -101,11 +101,19 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
       "--color-accent",
       "--color-accent-fg",
       "--color-accent-hover",
+      // `--color-link`/`--color-link-hover` entraram com a superfície clara do
+      // conteúdo. Eles apontam para paradas da rampa (`var(--color-accent-500)`
+      // e `-400`), então a régua os extrai sozinha — e é isso que se quer: link
+      // é TEXTO acionável e responde ao piso 4,5, que a accent de fundo de botão
+      // não responde. A accent crua como texto dava 4,00 sobre Ink; era ela que
+      // estava passando sem ninguém medir.
+      "--color-link",
+      "--color-link-hover",
       "--ring",
       "::selection/color",
       ":focus-visible/outline",
     ]);
-    expect(REGUA.escuro.papeis).toHaveLength(6);
+    expect(REGUA.escuro.papeis).toHaveLength(8);
 
     // Tema único: claro agora usa o MESMO accent-soft translúcido do escuro, então as
     // duas contagens batem — 6 superfícies (3 bases + 3 composições tingidas) e 26
@@ -113,8 +121,9 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     expect(superficiesDoTema(REGUA.claro, REGUA.rampaDoProduto, 0)).toHaveLength(6);
     expect(superficiesDoTema(REGUA.escuro, REGUA.rampaDoProduto, 0)).toHaveLength(6);
 
-    expect(medirPares(REGUA.claro, REGUA.rampaDoProduto, 0)).toHaveLength(26);
-    expect(medirPares(REGUA.escuro, REGUA.rampaDoProduto, 0)).toHaveLength(26);
+    // 38 e não 26: dois papéis novos x seis superfícies = doze pares a mais.
+    expect(medirPares(REGUA.claro, REGUA.rampaDoProduto, 0)).toHaveLength(38);
+    expect(medirPares(REGUA.escuro, REGUA.rampaDoProduto, 0)).toHaveLength(38);
   });
 
   it("reproduz as razões medidas à mão no design system", () => {
@@ -325,10 +334,32 @@ describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
     const sage = derivarMarca("#506d48", REGUA);
     expect(sage.claro.accent).toBe("#67885d");
     expect(sage.escuro.accent).toBe("#67885d");
+    // A superficie clara tem deslocamento PROPRIO, e aqui ele e ZERO enquanto os
+    // dois temas andam -1. Ou seja: as duas contas discordam, que e exatamente a
+    // razao de existirem separadas. Enquanto a superficie clara herdava o offset
+    // do escuro, esta marca chegava a Paper como #41573b -- escurecida por uma
+    // conta feita contra Ink, sem que nada em Paper pedisse isso.
+    //
+    // O que faz o zero caber e o `--color-accent-hover` da superficie clara
+    // apontar para accent-700 (ver o bloco no globals.css): sem ele o par
+    // hover x surface-elevated dava 2,95 e empurrava TODA marca um passo,
+    // inclusive a nossa.
+    expect(sage.superficieClara.deslocamento).toBe(0);
+    expect(sage.superficieClara.accent).toBe("#506d48"); // o hex que a pessoa escolheu
+    expect(sage.claro.deslocamento).toBe(-1);
+    expect(sage.escuro.deslocamento).toBe(-1);
+
     const movidas = sage.motivos.filter((m) => m.codigo === "semantica_deslocada");
     expect(movidas.length).toBeGreaterThan(0);
-    expect(movidas).toHaveLength(2);
-    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual(["claro/error", "escuro/error"]);
+    expect(movidas).toHaveLength(3);
+    // Em Paper quem colide com o verde da marca e `--color-success` (verde
+    // tambem), e nao o `--color-error` que colide nos dois temas escuros: a
+    // superficie muda quais das NOSSAS semanticas ficam perto demais.
+    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual([
+      "claro/error",
+      "escuro/error",
+      "superficie-clara/success",
+    ]);
   });
 
   it("devolve sinal — e não distorção — quando não há rotação que resolva", () => {

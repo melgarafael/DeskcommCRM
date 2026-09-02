@@ -49,6 +49,14 @@ const config: Config = {
           950: "var(--color-accent-950)",
         },
 
+        // Link — texto acionável. Separado da accent porque o piso é outro:
+        // texto precisa de 4,5 e fundo de botão precisa de 3,0. Ver o bloco
+        // `--color-link` em `app/globals.css`.
+        link: {
+          DEFAULT: "var(--color-link)",
+          hover: "var(--color-link-hover)",
+        },
+
         // Neutrals — greige
         neutral: {
           50: "var(--color-neutral-50)",

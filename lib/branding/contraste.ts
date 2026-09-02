@@ -170,7 +170,15 @@ const PASSO_DE_ROTACAO = 5;
 
 // ── A régua: o que o `globals.css` de fato pinta ─────────────────────────────
 
-export type Tema = "claro" | "escuro";
+/**
+ * As tres SUPERFICIES que a derivacao mede.
+ *
+ * "claro" e "escuro" sao TEMAS (o alternador do usuario); "superficie-clara" e
+ * a area de conteudo sobre Paper (`[data-superficie="clara"]` no globals.css),
+ * que convive com qualquer um dos dois. O tipo e um so porque o que a regua faz
+ * com eles e identico -- medir papeis contra bases e andar a rampa ate caberem.
+ */
+export type Tema = "claro" | "escuro" | "superficie-clara";
 
 /** De onde uma cor vem. `grau` é o que o deslocamento do accent move. */
 export type Fonte =
@@ -207,6 +215,18 @@ export type Regua = {
   readonly rampaDoProduto: Rampa;
   readonly claro: TemaDaRegua;
   readonly escuro: TemaDaRegua;
+  /**
+   * A area de conteudo sobre Paper (`[data-superficie="clara"]`).
+   *
+   * Existe separada dos dois temas porque ela tem DESLOCAMENTO PROPRIO. Exigir
+   * que um unico deslocamento sirva a Ink e a Paper ao mesmo tempo e um sistema
+   * sobre-restrito: a rampa teria de agradar dois fundos em pontas opostas da
+   * luminosidade, e quem pagaria seria o tema escuro, que e onde o produto
+   * passa a maior parte do tempo. O `--color-link` do globals.css ja tinha
+   * chegado a essa conclusao a mao -- accent-500 no escuro, accent-700 sobre
+   * Paper; aqui a conclusao vira mecanismo.
+   */
+  readonly superficieClara: TemaDaRegua;
 };
 
 type Declaracao = { readonly prop: string; readonly valor: string };
@@ -321,12 +341,24 @@ export function extrairRegua(css: string): Regua {
     throw new Error("régua: não achei os blocos :root e [data-theme=\"dark\"] no CSS");
   }
 
+  const superficieClara = regras.find((r) => r.seletor === '[data-superficie="clara"]');
+  if (!superficieClara) {
+    // Lançar, e nao cair num default: um default silencioso devolveria a
+    // superficie ESCURA no lugar da clara, e a derivacao mediria Paper contra
+    // pares de Ink -- verde na suite, errado na tela. O mesmo criterio dos dois
+    // blocos acima.
+    throw new Error('regua: nao achei o bloco [data-superficie="clara"] no CSS');
+  }
+
   const rampaDoProduto = lerRampa(raiz.decls);
 
   return {
     rampaDoProduto,
     claro: montarTema("claro", raiz.decls, regras, false),
     escuro: montarTema("escuro", escuro.decls, regras, true),
+    // `raiz.decls` como heranca: o bloco da superficie clara e uma SUBARVORE do
+    // `:root` e so redeclara o que muda. Ver o @param de `montarTema`.
+    superficieClara: montarTema("superficie-clara", superficieClara.decls, regras, false, raiz.decls),
   };
 }
 
@@ -350,14 +382,32 @@ function lerNeutros(decls: readonly Declaracao[]): Rampa {
   return stops as unknown as Rampa;
 }
 
+/**
+ * @param heranca Declaracoes do bloco ANCESTRAL, para uma subarvore que so
+ * redeclara parte dos tokens. `[data-superficie="clara"]` troca as bases, as
+ * semanticas e o soft, e NAO declara a rampa, os neutros nem `--color-accent` --
+ * esses continuam valendo por heranca do `:root`, e sem eles aqui a montagem
+ * lançaria em `lerNeutros`. Mesclar antes de medir tambem e o que faz os papeis
+ * herdados (o `--color-accent` de um botao, por exemplo) serem medidos CONTRA
+ * PAPER, que e a metade do buraco que esta funcao existe para fechar.
+ *
+ * Os dois temas passam `[]` e seguem byte a byte como antes.
+ */
 function montarTema(
   nome: Tema,
   decls: readonly Declaracao[],
   regras: readonly RegraCss[],
   ehEscuro: boolean,
+  heranca: readonly Declaracao[] = [],
 ): TemaDaRegua {
+  // O bloco proprio vence a heranca, prop a prop -- e a cascata do CSS.
+  const proprias = new Set(decls.map((d) => d.prop));
+  const efetivas: readonly Declaracao[] = [
+    ...heranca.filter((h) => !proprias.has(h.prop)),
+    ...decls,
+  ];
   const base = CHAVES_DE_BASE.map((chave) => {
-    const f = lerFonte(decls.find((d) => d.prop === chave)?.valor ?? "");
+    const f = lerFonte(efetivas.find((d) => d.prop === chave)?.valor ?? "");
     if (!f || f.tipo !== "literal") throw new Error(`régua: ${chave} ausente em ${nome}`);
     return { chave, hex: f.hex };
   });
@@ -365,7 +415,7 @@ function montarTema(
   const tingidas: { chave: string; fonte: Fonte }[] = [];
   const papeis: Papel[] = [];
 
-  for (const d of decls) {
+  for (const d of efetivas) {
     if (!d.prop.startsWith("--")) continue;
     if (/^--color-(accent|neutral)-\d/.test(d.prop)) continue; // a rampa e os neutros, não papéis
     const fonte = lerFonte(d.valor);
@@ -377,7 +427,7 @@ function montarTema(
     }
     if (d.prop.endsWith("-fg")) {
       const baseToken = d.prop.slice(0, -"-fg".length);
-      const alvo = lerFonte(decls.find((x) => x.prop === baseToken)?.valor ?? "");
+      const alvo = lerFonte(efetivas.find((x) => x.prop === baseToken)?.valor ?? "");
       // Só o `-fg` de um token derivado da rampa interessa: `--color-success-fg` é cor
       // nossa medida contra fundo nosso, e a marca do cliente não o move.
       if (alvo?.tipo === "grau") {
@@ -391,6 +441,22 @@ function montarTema(
       continue;
     }
     if (fonte.tipo === "grau") {
+      // ⚠️ `--color-link` cai aqui como "componente", piso 3,0 — e ele é TEXTO,
+      // cujo piso é 4,5. Não é descuido: está medido, e fechar o buraco é uma
+      // mudança de produto, não de folha de estilo.
+      //
+      // Medido ao trocar a classificação para "texto": das 16 sementes de
+      // `tests/unit/branding-pares-pintados.test.ts`, CINCO passam a reprovar
+      // (#ffffff, #000000, #808080, #dc2626, #fafafa), todas no mesmo par —
+      // `--color-link × --color-accent-soft @ --color-surface-elevated = 4,30`.
+      // Ou seja: o portão do whitelabel passaria a recusar marcas que aceita
+      // hoje, e a derivação teria de mover a rampa para reacomodá-las.
+      //
+      // O link que o PRODUTO pinta está fora de risco (accent-500 sobre Ink =
+      // 5,53; accent-700 sobre Paper = 6,29, ambos medidos). O que está
+      // desprotegido é a marca de TERCEIRO: um revendedor cujo link caia em 3,2
+      // passa neste portão. Fechar isso pede decidir o que fazer com as cinco
+      // sementes — afrouxar o par do soft, mover a rampa, ou recusar a cor.
       papeis.push({ token: d.prop, tipo: "componente", fonte, contra: null });
     }
   }
@@ -428,8 +494,8 @@ function montarTema(
     }
   }
 
-  const accent = lerFonte(decls.find((d) => d.prop === "--color-accent")?.valor ?? "");
-  const hover = lerFonte(decls.find((d) => d.prop === "--color-accent-hover")?.valor ?? "");
+  const accent = lerFonte(efetivas.find((d) => d.prop === "--color-accent")?.valor ?? "");
+  const hover = lerFonte(efetivas.find((d) => d.prop === "--color-accent-hover")?.valor ?? "");
   const soft = tingidas.find((t) => t.chave === "--color-accent-soft")?.fonte;
   if (accent?.tipo !== "grau" || hover?.tipo !== "grau" || !soft) {
     throw new Error(`régua: tokens de papel do accent ausentes em ${nome}`);
@@ -441,11 +507,11 @@ function montarTema(
     tingidas,
     papeis,
     semanticas: SEMANTICAS.map((s) => {
-      const f = lerFonte(decls.find((d) => d.prop === `--color-${s}`)?.valor ?? "");
+      const f = lerFonte(efetivas.find((d) => d.prop === `--color-${s}`)?.valor ?? "");
       if (!f || f.tipo !== "literal") throw new Error(`régua: --color-${s} ausente em ${nome}`);
       return { nome: s, hex: f.hex };
     }),
-    neutros: lerNeutros(decls),
+    neutros: lerNeutros(efetivas),
     indices: {
       accent: accent.indice,
       hover: hover.indice,
@@ -571,7 +637,10 @@ export function escolherAccent(
   tema: TemaDaRegua,
   alcance = 10,
 ): EscolhaDeAccent {
-  const sentidoUtil = tema.nome === "claro" ? 1 : -1;
+  // Afastar da superficie: no escuro clarear, em QUALQUER superficie clara
+  // escurecer. "superficie-clara" entra com o mesmo sentido de "claro" porque
+  // o que decide e a luminosidade do fundo, nao o nome do alternador.
+  const sentidoUtil = tema.nome === "escuro" ? -1 : 1;
   const candidatos: number[] = [0];
   for (let d = 1; d <= alcance; d += 1) candidatos.push(d * sentidoUtil, -d * sentidoUtil);
 
@@ -745,6 +814,8 @@ export type Marca = {
   readonly origemDaRampa: "semente" | "produto";
   readonly claro: TokensDoTema;
   readonly escuro: TokensDoTema;
+  /** Tokens da area de conteudo sobre Paper -- deslocamento proprio. Ver `Regua`. */
+  readonly superficieClara: TokensDoTema;
   readonly motivos: readonly Motivo[];
 };
 
@@ -844,7 +915,8 @@ export function derivarMarca(semente: string, regua: Regua): Marca {
 
   const claro = derivarTema(regua.claro, rampa);
   const escuro = derivarTema(regua.escuro, rampa);
-  const motivos: Motivo[] = [...claro.motivos, ...escuro.motivos];
+  const superficieClara = derivarTema(regua.superficieClara, rampa);
+  const motivos: Motivo[] = [...claro.motivos, ...escuro.motivos, ...superficieClara.motivos];
 
   if (acromatica) {
     motivos.unshift({
@@ -863,6 +935,7 @@ export function derivarMarca(semente: string, regua: Regua): Marca {
     origemDaRampa: acromatica ? "produto" : "semente",
     claro: claro.tokens,
     escuro: escuro.tokens,
+    superficieClara: superficieClara.tokens,
     motivos,
   };
 }

@@ -50,6 +50,7 @@
  * que se descobre semanas depois.
  */
 
+import type { Tema } from "./contraste";
 import { GRAUS, stop } from "./rampa";
 import type { CorResolvida } from "./resolve";
 
@@ -107,7 +108,7 @@ function paraDiagnostico(valor: string): string {
 
 type Declaracao = readonly [nome: string, valor: string];
 
-function declaracoesDoTema(cor: CorResolvida, tema: "claro" | "escuro"): Declaracao[] {
+function declaracoesDoTema(cor: CorResolvida, tema: Tema): Declaracao[] {
   // `--color-brand` sai SEMPRE que há semente, inclusive quando ela não pinta
   // (marca acromática, papel só de identidade). É onde a cor do cliente existe
   // mesmo sem virar accent — e é o token que a tela de marca e o cabeçalho de
@@ -118,7 +119,12 @@ function declaracoesDoTema(cor: CorResolvida, tema: "claro" | "escuro"): Declara
   const derivada = cor.derivada;
   if (!derivada) return saida;
 
-  const t = tema === "claro" ? derivada.claro : derivada.escuro;
+  const t =
+    tema === "claro"
+      ? derivada.claro
+      : tema === "escuro"
+        ? derivada.escuro
+        : derivada.superficieClara;
 
   // Os 11 stops saem JÁ DESLOCADOS, e por isso podem diferir entre os dois
   // blocos. Os rótulos vêm de `GRAUS` (rampa.ts) e não de uma lista repetida
@@ -182,6 +188,21 @@ function declaracoesDoTema(cor: CorResolvida, tema: "claro" | "escuro"): Declara
 export const ESCOPO_DA_INSTALACAO = [
   [":root:root", "claro"],
   [':root:root[data-theme="dark"]', "escuro"],
+  /**
+   * A area de conteudo sobre Paper. Combinador DESCENDENTE, e nao compound:
+   * `[data-superficie="clara"]` esta numa div de pagina, nunca no `<html>` --
+   * um `:root:root[data-superficie="clara"]` nao casaria nada, do mesmo modo
+   * que o cabecalho de `ESCOPO_DA_ORGANIZACAO` descreve para o gate escuro.
+   *
+   * Especificidade (0,3,0) contra os (0,1,0) do `[data-superficie="clara"]` do
+   * `app/globals.css`. Aqui os dois disputam DE VERDADE -- casam a mesma div --
+   * entao a conta importa, ao contrario do par `:root` x `body` acima.
+   *
+   * Sem tema no seletor: os dois blocos de tema carregam valores identicos hoje
+   * (o produto tem uma aparencia so), e a superficie clara e ortogonal ao
+   * alternador. Uma entrada por tema emitiria dois blocos com os mesmos bytes.
+   */
+  [':root:root [data-superficie="clara"]', "superficie-clara"],
 ] as const;
 
 /**
@@ -226,6 +247,8 @@ export const ESCOPO_DA_INSTALACAO = [
 export const ESCOPO_DA_ORGANIZACAO = [
   ["body:has([data-marca-org])", "claro"],
   ['[data-theme="dark"] body:has([data-marca-org])', "escuro"],
+  /** A area de conteudo sobre Paper -- ver o par na instalacao. (0,2,1). */
+  ['body:has([data-marca-org]) [data-superficie="clara"]', "superficie-clara"],
 ] as const;
 
 export type EscopoDaMarca = typeof ESCOPO_DA_INSTALACAO | typeof ESCOPO_DA_ORGANIZACAO;

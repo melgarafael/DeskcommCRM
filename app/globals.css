@@ -49,6 +49,20 @@
      precisa deixar a superfície aparecer por baixo. Alfa 0.08 (não 0.16) —
      medido: em 0.16 o par accent×accent-soft@surface-elevated cai a 2,87,
      abaixo do piso 3,0 (Oxford Blue já é próxima do accent em matiz). */
+  /* LINK — texto que é acionável, e por isso obedece ao piso de TEXTO (4,5),
+     que a accent de fundo de botão não precisa obedecer.
+
+     Medido: a accent (#3b6fd4) como texto dá 4,00 sobre Ink e 4,36 sobre Paper
+     — reprova nas DUAS superfícies. O que salva não é a mesma cor em outro
+     fundo, é outra parada da rampa em cada uma: accent-500 sobre Ink dá 5,40,
+     accent-700 sobre Paper dá 6,29.
+
+     Vive no `:root` e não nos blocos de tema de propósito: os dois carregam
+     valores idênticos hoje, e entrar neles obrigaria a mexer no espelho que
+     `tests/unit/branding-tema-claro-escopavel.test.ts` compara. A superfície
+     clara redeclara as duas linhas abaixo — é lá que a troca acontece. */
+  --color-link: var(--color-accent-500);
+  --color-link-hover: var(--color-accent-400);
   --color-accent-soft: rgba(13, 27, 54, 0.08);
   --color-accent-hover: var(--color-accent-500);
 
@@ -253,6 +267,12 @@
   --color-accent-fg: #ffffff;
   --color-accent-soft: rgba(13, 27, 54, 0.08);
   --color-accent-hover: var(--color-accent-500);
+  /* Link — ver o bloco `--color-link` no `:root`. Repetido aqui nos dois
+     temas porque `extrairRegua` (lib/branding/contraste.ts) lê papel por
+     BLOCO: sem estas linhas o tema escuro herdava o link do `:root` e
+     funcionava, mas ficava fora da conta de contraste dele. */
+  --color-link: var(--color-accent-500);
+  --color-link-hover: var(--color-accent-400);
   --color-neutral-50: #f2f5fb;
   --color-neutral-100: #dbe2ee;
   --color-neutral-200: #b1bfd6;
@@ -348,6 +368,12 @@
   --color-accent-fg: #ffffff;
   --color-accent-soft: rgba(13, 27, 54, 0.08);
   --color-accent-hover: var(--color-accent-500);
+  /* Link — ver o bloco `--color-link` no `:root`. Repetido aqui nos dois
+     temas porque `extrairRegua` (lib/branding/contraste.ts) lê papel por
+     BLOCO: sem estas linhas o tema escuro herdava o link do `:root` e
+     funcionava, mas ficava fora da conta de contraste dele. */
+  --color-link: var(--color-accent-500);
+  --color-link-hover: var(--color-accent-400);
 
   /* Neutrals — família Oxford Blue (11 stops) */
   --color-neutral-50:  #f2f5fb;
@@ -415,6 +441,177 @@
   --agenda-pessoa-7: #be9ef6;
   --agenda-pessoa-8: #cc77b1;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SUPERFÍCIE CLARA — a área de conteúdo do produto sobre Paper (#F4F5F7),
+   com a barra lateral seguindo escura.
+
+   ── Por que um seletor NOVO, e não reviver `[data-theme="light"]` ──────────
+
+   O espelho claro logo acima existe para escopar o TEMA, e hoje ele carrega
+   valores escuros de propósito (ver o cabeçalho do arquivo: o produto tem uma
+   aparência só, e o alternador claro/escuro/sistema continua funcional sem
+   mudar pixel). Dar valores claros a ele faria o alternador voltar a trocar a
+   aparência do produto inteiro — uma mudança de comportamento que ninguém
+   pediu, entregue de carona com uma mudança de cor.
+
+   `[data-superficie="clara"]` é ortogonal ao tema: diz "esta subárvore é uma
+   superfície clara", e não "o usuário escolheu tema claro". Os dois convivem, e
+   `tests/unit/branding-tema-claro-escopavel.test.ts` continua comparando os dois
+   blocos de tema sem enxergar este (ele casa por seletor exato na linha).
+
+   ── Por que a rampa do accent NÃO é redeclarada ───────────────────────────
+
+   `--color-accent-*` é o que o motor de whitelabel sobrescreve em
+   `:root:root` (lib/branding/css.ts). Redeclará-la aqui congelaria o Signal
+   Blue e a instalação que comprou a marca em outra cor veria a barra lateral
+   dela e o conteúdo nosso. Ficando de fora, a rampa do revendedor ATRAVESSA
+   esta superfície — que é o comportamento que o resto do produto já tem.
+
+   ⚠️ O que atravessa junto é o RISCO: a régua de contraste
+   (lib/branding/contraste.ts) mediu os pares do accent contra as superfícies
+   ESCURAS. Um accent que passa em 4,5 sobre Ink pode reprovar sobre Paper — um
+   amarelo de marca é o exemplo óbvio. Fechar isso é estender a régua com os
+   pares desta superfície; enquanto não for feito, a garantia de contraste do
+   whitelabel vale para a barra lateral e não para cá.
+
+   ── Os números abaixo foram MEDIDOS, não escolhidos a olho ────────────────
+
+   Contraste WCAG sobre Paper: texto Ink 17,71 · muted 5,48 · subtle 4,56 ·
+   borda de controle 3,40 (piso 1.4.11 = 3,0). Botão primário mantém o Signal
+   Blue com texto branco: 4,76.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-superficie="clara"] {
+  /* Superfícies — Paper no fundo, branco no cartão, e um degrau intermediário
+     para o que o produto chama de "elevated" (que aqui afunda, não sobe: no
+     escuro elevar é clarear, no claro é escurecer um passo). */
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #e9ecf2;
+  --color-overlay: rgba(11, 14, 20, 0.55);
+
+  /* Texto */
+  --color-text: #0b0e14;
+  --color-text-muted: #5b6472;
+  --color-text-subtle: #69707e;
+
+  /* Bordas: a divisória é decorativa e fica suave de propósito (o pedido era
+     "sem branco puro chapado"); a forte desenha limite de CONTROLE e por isso
+     obedece ao piso 3,0 de 1.4.11. */
+  --color-border: #dfe2e8;
+  --color-border-strong: #7d8596;
+
+  /* O chip do accent: no escuro é um véu escuro sobre a superfície; aqui
+     precisa ser o próprio accent diluído, senão vira mancha cinza. */
+  /* Link: aqui a rampa desce em vez de subir — accent-700 dá 6,29 sobre Paper,
+     onde a accent crua daria 4,36. */
+  --color-link: var(--color-accent-700);
+  --color-link-hover: var(--color-accent-800);
+
+  /* HOVER — a mesma inversao do link, e pela mesma razao.
+   *
+   * No escuro o hover CLAREIA (`--color-accent-hover: var(--color-accent-500)`
+   * no `:root`, um passo acima do accent-600): sobre Ink, subir a rampa afasta
+   * do fundo. Sobre Paper isso aproxima, e o par reprova -- medido, com a
+   * propria Signal Blue: accent-500 x `--color-surface-elevated` = 2,95, contra
+   * o piso 3,0 de WCAG 1.4.11; contra o chip tingido, 2,84 e 2,63.
+   *
+   * Nao era um risco de whitelabel: era um defeito do PRODUTO, num par que
+   * nenhuma regua media ate a superficie clara entrar em `Regua`. Com
+   * accent-700 os tres passam com folga -- 5,79 · 5,58 · 5,17, na mesma ordem --
+   * e a caminhada do whitelabel para de precisar mover a rampa por causa dele:
+   * das 16 sementes da fixture, as que andam na superficie clara caem de 13 para
+   * 4. Cada passo que ela nao da e a marca chegando a tela no tom escolhido.
+   */
+  --color-accent-hover: var(--color-accent-700);
+
+  --color-accent-soft: rgba(59, 111, 212, 0.10);
+
+  /* Estados — os do tema escuro são claros por construção (texto claro sobre
+     fundo escuro) e sobre Paper reprovariam todos. Estes são os mesmos matizes
+     rebaixados até passarem 4,5 como texto. */
+  --color-success: #3f6b34;
+  --color-success-bg: rgba(63, 107, 52, 0.12);
+  --color-success-fg: #3f6b34;
+  --color-warning: #7a4f12;
+  --color-warning-bg: rgba(122, 79, 18, 0.12);
+  --color-warning-fg: #7a4f12;
+  --color-error: #a3352a;
+  --color-error-bg: rgba(163, 53, 42, 0.12);
+  --color-error-fg: #a3352a;
+  --color-info: #1f5468;
+  --color-info-bg: rgba(31, 84, 104, 0.12);
+  --color-info-fg: #1f5468;
+
+  /* Sombras: as do escuro têm base preta e alfa alto (0,30–0,65) porque lá elas
+     precisam vencer um fundo quase preto. Sobre Paper a mesma sombra vira uma
+     poça cinza; estas são a mesma escada com base Ink e alfa de superfície
+     clara. */
+  --shadow-xs: 0 1px 2px 0 rgba(11, 14, 20, 0.05);
+  --shadow-sm: 0 1px 2px 0 rgba(11, 14, 20, 0.07), 0 1px 1px 0 rgba(11, 14, 20, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(11, 14, 20, 0.10), 0 2px 4px -1px rgba(11, 14, 20, 0.06);
+  --shadow-lg: 0 12px 32px -6px rgba(11, 14, 20, 0.13), 0 4px 12px -2px rgba(11, 14, 20, 0.08);
+  --shadow-xl: 0 24px 48px -12px rgba(11, 14, 20, 0.16), 0 8px 16px -4px rgba(11, 14, 20, 0.10);
+
+  /* Aliases shadcn: precisam ser REDECLARADOS, não é redundância. Custom
+     property com `var()` é substituída no elemento que a DECLARA — `--card:
+     var(--color-surface)` no `:root` computa para o hex escuro ali e desce
+     herdado como literal. Sem estas linhas, todo componente shadcn desta
+     subárvore continuaria escuro sobre fundo claro. */
+  --background: var(--color-bg);
+  --foreground: var(--color-text);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-text);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-accent);
+  --primary-foreground: var(--color-accent-fg);
+  --secondary: var(--color-surface-elevated);
+  --secondary-foreground: var(--color-text);
+  --muted: var(--color-surface-elevated);
+  --muted-foreground: var(--color-text-muted);
+  --accent-foreground: var(--color-accent-fg);
+  --destructive: var(--color-error);
+  --destructive-foreground: #ffffff;
+  --border: var(--color-border);
+  --input: var(--color-border-strong);
+  --ring: var(--color-accent-600);
+
+  /* ---- Agenda · cor de pessoa, versão para superfície clara --------------
+   * As oito do tema escuro (#f89080, #4ccffb, ...) foram derivadas PARA fundo
+   * escuro: medidas sobre Paper dão 1,66 a 2,81, todas abaixo do piso 3,0 —
+   * a grade da agenda perderia justamente o eixo que ela usa para dizer de
+   * quem é o compromisso.
+   *
+   * Estas mantêm as MESMAS regras do bloco escuro, e por isso continuam
+   * merecendo as mesmas oito palavras: matiz travado no valor de lá (Telha,
+   * Âmbar, Oliva, Turquesa, Azul, Índigo, Violeta, Framboesa), croma <= 0,13
+   * (o produto é para quem encara a tela oito horas) e luminosidade que
+   * ALTERNA entre vizinhos.
+   *
+   * O que mudou é o alvo: contraste >= 3,0 sobre Paper em vez de sobre Ink.
+   * Busca com matiz travado, luminosidade restrita a 0,42-0,63 para o conjunto
+   * não ficar com metade quase preta:
+   *
+   *     pior par OKLab, tema escuro : 0.1162   <- a régua declarada lá
+   *     pior par OKLab, aqui        : 0.1523
+   *     contraste sobre Paper       : 3,07 a 8,33 (piso 3,0)
+   *
+   * O par mais próximo é Turquesa x Índigo, e não Âmbar x Oliva: escurecer
+   * matizes vizinhos os aproxima, e a primeira derivação (que só baixava cada
+   * cor até tocar o piso) caiu para 0.0835 — abaixo da régua do produto. Foi
+   * preciso espalhar a luminosidade de propósito, não só rebaixá-la.
+   */
+  --agenda-pessoa-1: #be5c4f;
+  --agenda-pessoa-2: #804400;
+  --agenda-pessoa-3: #9c8a0e;
+  --agenda-pessoa-4: #00726d;
+  --agenda-pessoa-5: #0098c2;
+  --agenda-pessoa-6: #234992;
+  --agenda-pessoa-7: #8161b3;
+  --agenda-pessoa-8: #782a63;
+}
+
 
 @layer base {
   * {

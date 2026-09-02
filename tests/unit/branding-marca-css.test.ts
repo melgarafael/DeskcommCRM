@@ -72,6 +72,9 @@ describe("serialização — os dois blocos", () => {
     expect(Object.keys(lerBlocos(css ?? ""))).toEqual([
       ":root:root",
       ':root:root[data-theme="dark"]',
+      // A area de conteudo sobre Paper. Combinador DESCENDENTE de proposito:
+      // o atributo vive numa div de pagina, nunca no <html>.
+      ':root:root [data-superficie="clara"]',
     ]);
   });
 
@@ -153,6 +156,7 @@ describe("o escopo da organização", () => {
     expect(Object.keys(lerBlocos(css ?? ""))).toEqual([
       "body:has([data-marca-org])",
       '[data-theme="dark"] body:has([data-marca-org])',
+      'body:has([data-marca-org]) [data-superficie="clara"]',
     ]);
   });
 
