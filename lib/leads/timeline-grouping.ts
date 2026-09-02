@@ -103,16 +103,19 @@ export function agrupaTimeline(
   return fino.length <= LIMITE_DE_BLOCOS ? fino : agrupaPorDia(itens, chegouAoVivo);
 }
 
-/** O dia do item no fuso de quem lê — "24 de jul." é o que a pessoa reconhece. */
+/** O dia do item no fuso de quem lê — "24 de julho" é o que a pessoa reconhece. */
 function diaDe(item: TimelineItemView): { chave: string; rotulo: string } {
   const d = new Date(item.performed_at);
   const chave = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   let rotulo: string;
   try {
+    // `month: "short"` em pt-PT devolve o mês NUMÉRICO ("20/07"), não abreviado
+    // como em pt-BR ("20 de jul.") — convenção diferente de CLDR entre as duas
+    // variantes. `month: "long"` é textual nas duas, preservando a legibilidade.
     rotulo = new Intl.DateTimeFormat("pt-PT", {
       weekday: "long",
       day: "2-digit",
-      month: "short",
+      month: "long",
     }).format(d);
   } catch {
     rotulo = chave;

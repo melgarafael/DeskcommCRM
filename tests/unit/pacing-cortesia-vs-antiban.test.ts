@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { decidePacing } from '@/lib/agent-engine/pacing/engine';
 import { PACING_DEFAULTS } from '@/lib/agent-engine/pacing/defaults';
 
-const MADRUGADA = new Date('2026-07-28T06:00:00Z'); // 03h BRT — fora da janela 7h-22h
+const MADRUGADA = new Date('2026-07-28T01:00:00Z'); // 03h em Africa/Maputo (UTC+2) — fora da janela 7h-22h
 const COMERCIAL = new Date('2026-07-28T13:00:00Z'); // 10h BRT — terça, dentro da janela
 
 function input(over: { now: Date; banRisk?: boolean; sentToday?: number }) {
