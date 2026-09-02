@@ -213,6 +213,19 @@ export function ConnectWhatsappClient({ wahaConfigured, sessionName }: Props) {
           <p className="text-sm font-medium">{rotuloDoEstado(busy ? "STARTING" : status)}</p>
           <p className="mt-1 text-xs text-muted-foreground">{explicacaoDoEstado(busy ? "STARTING" : status)}</p>
 
+          {showQr && (
+            <div className="mt-3 flex justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element -- vem de rota proxy, muda a cada poll */}
+              <img
+                src={`/api/v1/onboarding/whatsapp/qr?t=${qrTick}`}
+                alt="Código para digitalizar com o WhatsApp"
+                width={220}
+                height={220}
+                className="rounded-md border bg-white p-2"
+              />
+            </div>
+          )}
+
           {status === "WORKING" && (
             <p className="mt-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
               ✓ Conectado! Avançando…
