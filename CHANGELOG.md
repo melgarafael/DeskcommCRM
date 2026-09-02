@@ -25,7 +25,10 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **Nova paleta visual — Ink, sempre escura** O sistema trocou de cores: fundo escuro (Ink), destaque azul (Signal Blue) e
   apoio em azul-marinho (Oxford Blue) substituem o verde-sálvia anterior, e o
   produto passou a ter uma única aparência — o alternador de tema claro/escuro
-  continua no lugar, mas as duas opções pintam a mesma paleta escura agora.
+  continua no lugar, mas as duas opções pintam a mesma paleta agora. Ainda nesta
+  versão, a área de trabalho passou a usar o lado claro dessa mesma paleta (ver
+  "As telas de dentro do sistema ficaram claras", abaixo): a barra lateral segue
+  escura, o conteúdo não.
   Nenhuma ação é necessária: nada que funcionava mudou de comportamento, só de
   cor.
 
