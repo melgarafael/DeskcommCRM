@@ -155,7 +155,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
           </div>
         )}
         {senderLabel && (
-          <div className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide opacity-80">
+          <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
             {senderLabel === "IA" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}

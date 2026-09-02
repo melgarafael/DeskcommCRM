@@ -40,6 +40,14 @@ interface Props {
    */
   mostrarAtendente?: boolean;
   /**
+   * Mostrar o ícone de robô na prévia da mensagem, quando quem manda é o
+   * automático. Mesma regra dos dois badges acima: só quando DISCRIMINA. Na
+   * aba "Automático" toda linha já é robô, e o ícone repetido em cada uma vira
+   * ruído. Ausente ou `true` = mostra (comportamento anterior, seguro para o
+   * teste que não passa esta prop).
+   */
+  mostrarAutomatico?: boolean;
+  /**
    * A org tem atendimento automático de pé? Vem por PROP e não por hook: um hook
    * por linha faria 50 assinaturas de query na mesma lista para responder a MESMA
    * pergunta org-wide. `undefined` = "não sei", e a função trata isso como "não
@@ -109,6 +117,7 @@ export function ConversationListItem({
   queuePosition,
   mostrarCanal,
   mostrarAtendente,
+  mostrarAutomatico = true,
   automaticoDaOrg,
 }: Props) {
   const localeDaData = useLocaleDeData();
@@ -152,17 +161,28 @@ export function ConversationListItem({
   const canal = conversation.channel_sessions ?? null;
   const rotuloCanal = canal?.phone_number ?? canal?.display_name ?? null;
 
+  const temSelos =
+    visibleTags.length > 0 ||
+    (mostrarAtendente && comando.quem === "humano") ||
+    (mostrarCanal && rotuloCanal != null) ||
+    Boolean(c?.is_blocked) ||
+    Boolean(c?.is_anonymized);
+
   return (
     <button
       type="button"
       data-conversation-id={conversation.id}
       onClick={() => onSelect(conversation.id)}
       className={cn(
-        "group flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors hover:bg-accent/40",
-        isSelected && "bg-accent/60",
+        "group relative flex w-full items-start gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
+        "focus-visible:outline-none focus-visible:bg-surface-elevated",
+        isSelected && "bg-accent-50 hover:bg-accent-50",
       )}
       aria-current={isSelected ? "true" : undefined}
     >
+      {isSelected && (
+        <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" aria-hidden />
+      )}
       <div className="relative shrink-0">
         <Avatar className="h-10 w-10">
           {/* Só monta a <img> quando existe arquivo: sem isso o browser pediria
@@ -176,13 +196,13 @@ export function ConversationListItem({
               className="object-cover"
             />
           ) : null}
-          <AvatarFallback className="text-xs">
+          <AvatarFallback className="bg-surface-elevated text-xs font-medium text-text-muted">
             {initials(displayName, phoneFallback)}
           </AvatarFallback>
         </Avatar>
         <span
           className={cn(
-            "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-background",
+            "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background",
             dot,
           )}
           aria-hidden
@@ -193,12 +213,12 @@ export function ConversationListItem({
         {queuePosition !== undefined && (
           <div className="mb-1 flex items-center gap-1.5">
             <span
-              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/10 px-1 text-[10px] font-medium tabular-nums text-primary"
+              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-medium tabular-nums text-accent"
               aria-label={`${t("Posição")} ${queuePosition} ${t("na fila")}`}
             >
               {queuePosition}º
             </span>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-[11px] text-text-muted">
               {waitingLabel(conversation, t, localeDaData)}
             </span>
           </div>
@@ -206,58 +226,70 @@ export function ConversationListItem({
         <div className="flex items-baseline justify-between gap-2">
           <span
             className={cn(
-              "truncate text-sm font-medium",
-              c?.is_anonymized && "italic text-muted-foreground",
+              "truncate text-sm",
+              unread > 0 ? "font-semibold text-text" : "font-medium text-text",
+              c?.is_anonymized && "font-normal italic text-text-muted",
             )}
           >
             {displayName}
           </span>
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-            {time}
-          </span>
+          <span className="shrink-0 text-[11px] tabular-nums text-text-subtle">{time}</span>
         </div>
 
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {isAi ? <Robot size={10} weight="duotone" className="mr-1 inline" aria-hidden /> : null}
-          {truncated}
-        </p>
-
-        <div className="mt-1.5 flex flex-wrap items-center gap-1">
-          {visibleTags.map((t) => (
-            <Badge key={t} variant="secondary" className="h-4 px-1.5 text-[10px]">
-              {t}
-            </Badge>
-          ))}
-          {overflow > 0 && (
-            <span className="text-[10px] text-muted-foreground">+{overflow}</span>
-          )}
-          {mostrarAtendente && comando.quem === "humano" && (
-            <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
-          )}
-          {mostrarCanal && rotuloCanal && (
-            <Badge
-              variant="outline"
-              className="h-4 gap-1 px-1.5 text-[10px] font-normal text-muted-foreground"
-              title={`${t("Entrou por")} ${rotuloCanal}`}
-            >
-              <Phone size={9} weight="regular" aria-hidden />
-              {rotuloCanal}
-            </Badge>
-          )}
-          {c?.is_blocked && (
-            <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
-              {t("Bloqueado")}
-            </Badge>
-          )}
-          {c?.is_anonymized && (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-              {t("Anonimizado")}
-            </Badge>
-          )}
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <p
+            className={cn(
+              "min-w-0 truncate text-[13px]",
+              unread > 0 ? "text-text" : "text-text-muted",
+            )}
+          >
+            {isAi && mostrarAutomatico ? (
+              <Robot size={12} weight="duotone" className="mr-1 inline align-[-2px]" aria-hidden />
+            ) : null}
+            {truncated}
+          </p>
           {unread > 0 && (
-            <Badge className="ml-auto h-4 min-w-4 px-1.5 text-[10px]">{unread}</Badge>
+            <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
+              {unread}
+            </span>
           )}
         </div>
+
+        {temSelos && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            {visibleTags.map((t) => (
+              <Badge key={t} variant="secondary" className="h-4 px-1.5 text-[10px]">
+                {t}
+              </Badge>
+            ))}
+            {overflow > 0 && (
+              <span className="text-[10px] text-text-muted">+{overflow}</span>
+            )}
+            {mostrarAtendente && comando.quem === "humano" && (
+              <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
+            )}
+            {mostrarCanal && rotuloCanal && (
+              <Badge
+                variant="outline"
+                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-text-muted"
+                title={`${t("Entrou por")} ${rotuloCanal}`}
+              >
+                <Phone size={9} weight="regular" aria-hidden />
+                {rotuloCanal}
+              </Badge>
+            )}
+            {c?.is_blocked && (
+              <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
+                {t("Bloqueado")}
+              </Badge>
+            )}
+            {c?.is_anonymized && (
+              <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+                {t("Anonimizado")}
+              </Badge>
+            )}
+          </div>
+        )}
       </div>
     </button>
   );

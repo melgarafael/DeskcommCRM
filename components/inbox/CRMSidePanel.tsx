@@ -487,7 +487,7 @@ export function CRMSidePanel({ conversation }: Props) {
   return (
     <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold text-text">
           {t("Contato")}
         </h3>
         <Card className="mt-2 space-y-2 p-3 text-sm">
@@ -567,7 +567,7 @@ export function CRMSidePanel({ conversation }: Props) {
           conversa está atendendo alguém que pediu alguma coisa — a primeira
           pergunta a responder é o que ainda está pendente, não quanto vale. */}
       <section data-testid="inbox-demandas">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold text-text">
           {t("Demandas abertas")}
         </h3>
         {sectionsLoading ? (
@@ -619,7 +619,7 @@ export function CRMSidePanel({ conversation }: Props) {
       <Separator />
 
       <section data-testid="inbox-campos-lead">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold text-text">
           {t("Leads recentes")}
         </h3>
         {sectionsLoading ? (
@@ -639,7 +639,7 @@ export function CRMSidePanel({ conversation }: Props) {
       <Separator />
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold text-text">
           {t("Pedidos recentes")}
         </h3>
         {sectionsLoading ? (
@@ -671,7 +671,7 @@ export function CRMSidePanel({ conversation }: Props) {
       <Separator />
 
       <section>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold text-text">
           {t("Atividade")}
         </h3>
         {sectionsLoading ? (

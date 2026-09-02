@@ -94,6 +94,15 @@ export function ConversationList({
     return donos.size > 1;
   }, [filters.assigned_to, filters.comando, items]);
 
+  /**
+   * O ícone de robô, mesma regra dos dois badges acima: só entra quando
+   * DISCRIMINA. A aba "Automático" pede `comando=["automatico"]` — toda linha
+   * já é robô, e repetir o ícone em cada uma vira ruído. Nas outras abas a
+   * lista é mista (ou pode ser), então o ícone segue dizendo algo.
+   */
+  const mostrarAutomatico =
+    !(filters.comando?.length === 1 && filters.comando[0] === "automatico");
+
   useEffect(() => {
     if (onVisibleChange) onVisibleChange(items.map((i) => i.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,6 +154,7 @@ export function ConversationList({
             queuePosition={isQueue ? i + 1 : undefined}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}
+            mostrarAutomatico={mostrarAutomatico}
             automaticoDaOrg={automaticoDaOrg.data}
           />
         ))}

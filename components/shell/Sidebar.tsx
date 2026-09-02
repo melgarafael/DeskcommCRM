@@ -2,8 +2,8 @@
 import Link from "next/link";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname } from "next/navigation";
-import { useTransition } from "react";
-import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, Gear } from "@/lib/ui/icons";
+import { useEffect, useState, useTransition } from "react";
+import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -11,6 +11,8 @@ import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDo
 import { VersionFooter } from "@/components/shell/VersionFooter";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, NAV_GROUPS, sidebarGroups } from "@/lib/navigation/registry";
+
+const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 
 interface SidebarContentProps {
   collapsed: boolean;
@@ -42,6 +44,36 @@ export function SidebarContent({
   // 1280x768, ele caía fora da dobra mesmo em telas de 1080px.
   const grupos = todos.filter((g) => g.group.id !== GRUPO_NO_RODAPE);
   const rodape = NAV_GROUPS.find((g) => g.id === GRUPO_NO_RODAPE)?.hub;
+
+  /**
+   * Grupo fechado é preferência POR NAVEGADOR, não por conta: começa vazio (tudo
+   * aberto) em toda renderização — servidor, primeira pintura do cliente e nos
+   * testes, que nunca clicam em nada — e só muda depois do mount, se o
+   * `localStorage` tiver algo salvo. Guardar o CONJUNTO DOS FECHADOS, e não dos
+   * abertos, é o que faz "sem preferência salva" já significar "tudo aberto".
+   */
+  const [gruposFechados, setGruposFechados] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    try {
+      const salvo = window.localStorage.getItem(CHAVE_GRUPOS_FECHADOS);
+      if (salvo) setGruposFechados(new Set(JSON.parse(salvo) as string[]));
+    } catch {
+      // Storage bloqueado (aba privada) — fica tudo aberto, que é o padrão.
+    }
+  }, []);
+  function toggleGrupo(id: string) {
+    setGruposFechados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem(CHAVE_GRUPOS_FECHADOS, JSON.stringify([...next]));
+      } catch {
+        // Clique continua funcionando nesta sessão; só não sobrevive a um F5.
+      }
+      return next;
+    });
+  }
 
   const brand = useMarcaDaInstalacao();
   /**
@@ -125,6 +157,9 @@ export function SidebarContent({
       <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
+          // Recolhido o sidebar inteiro (rail de 64px), o grupo sempre mostra
+          // seus itens — não há onde desenhar cabeçalho nem seta para fechá-lo.
+          const aberto = collapsed || !gruposFechados.has(group.id);
           return (
             <div key={group.id} className="space-y-1">
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
@@ -132,13 +167,27 @@ export function SidebarContent({
               {collapsed ? (
                 <div aria-hidden className="mx-2 border-t first:hidden" />
               ) : (
-                <h2
-                  id={tituloId}
-                  className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60"
-                >
-                  {t(group.label)}
+                <h2 id={tituloId}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGrupo(group.id)}
+                    aria-expanded={aberto}
+                    className="flex w-full items-center justify-between rounded-md px-3 py-1 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-accent/40 hover:text-foreground"
+                  >
+                    {t(group.label)}
+                    <CaretDown
+                      size={12}
+                      weight="bold"
+                      className={cn(
+                        "shrink-0 text-muted-foreground/40 transition-transform",
+                        !aberto && "-rotate-90",
+                      )}
+                      aria-hidden
+                    />
+                  </button>
                 </h2>
               )}
+              {aberto && (
               <ul aria-labelledby={collapsed ? undefined : tituloId} aria-label={collapsed ? t(group.label) : undefined} className="space-y-1">
                 {items.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -190,6 +239,7 @@ export function SidebarContent({
                   </li>
                 )}
               </ul>
+              )}
             </div>
           );
         })}

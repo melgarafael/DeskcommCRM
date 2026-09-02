@@ -27,7 +27,7 @@ import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 import { ShortcutsHelpDialog } from "./ShortcutsHelpDialog";
 import { OpenConversationProvider } from "@/hooks/notifications/OpenConversationContext";
 // ADR-05: ícone de feature sai do mapa canônico, nunca do pacote direto.
-import { CaretLeft, IdentificationCard } from "@/lib/ui/icons";
+import { CaretLeft, ChatCircle, IdentificationCard } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -464,8 +464,10 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             {t("Conversa não encontrada ou fora do seu acesso.")}
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            {t("Selecione uma conversa")}
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <ChatCircle size={36} weight="thin" className="text-text-subtle" aria-hidden />
+            <p className="text-sm font-medium text-text-muted">{t("Selecione uma conversa")}</p>
+            <p className="text-xs text-text-subtle">{t("Ou navegue com J e K")}</p>
           </div>
         )}
       </div>
