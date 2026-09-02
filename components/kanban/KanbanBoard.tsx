@@ -225,7 +225,7 @@ export function KanbanBoard({
   if (data.stages.length === 0) {
     return (
       <Card className="m-4 p-6 text-sm text-text-muted">
-        Nenhum lead nesta pipeline ainda.
+        Nenhum lead neste funil ainda.
       </Card>
     );
   }

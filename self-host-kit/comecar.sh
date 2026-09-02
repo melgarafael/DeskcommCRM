@@ -9,11 +9,11 @@
 #
 # Uso:
 #   bash comecar.sh
-#   curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/self-host-kit/comecar.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/mutambe/DeskcommCRM/main/self-host-kit/comecar.sh | bash
 #
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/mutambe/DeskcommCRM.git}"
 COMUNIDADE_URL="https://lp-comunidade.automatiklabs.com.br"
 
 # ── Aparência ───────────────────────────────────────────────────────────────

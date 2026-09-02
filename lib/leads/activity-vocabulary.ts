@@ -58,7 +58,13 @@ export type ActivityType =
    * chega. `payment_confirmed` é gravado só pelo webhook (nunca otimista).
    */
   | "payment_charge_created"
-  | "payment_confirmed";
+  | "payment_confirmed"
+  /** As cinco transições do agendamento (Frente A da Agenda nativa). */
+  | "appointment_scheduled"
+  | "appointment_rescheduled"
+  | "appointment_cancelled"
+  | "appointment_completed"
+  | "appointment_no_show";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou pelo WhatsApp",
@@ -127,6 +133,11 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   demand_closed: "Demanda encerrada",
   payment_charge_created: "Link de pagamento gerado",
   payment_confirmed: "Pagamento confirmado",
+  appointment_scheduled: "Agendamento marcado",
+  appointment_rescheduled: "Agendamento remarcado",
+  appointment_cancelled: "Agendamento cancelado",
+  appointment_completed: "Agendamento concluído",
+  appointment_no_show: "Cliente não compareceu",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

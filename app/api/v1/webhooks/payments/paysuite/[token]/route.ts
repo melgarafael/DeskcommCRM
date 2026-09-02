@@ -2,7 +2,7 @@
  * POST /api/v1/webhooks/payments/paysuite/[token] — confirmação de pagamento.
  *
  * O token na URL resolve a organização (`payment_credentials.webhook_path_token`)
- * — mesmo desenho de `webhooks/channel/[token]` e `webhooks/waha/[token]`: a
+ * — mesmo desenho dos outros webhooks de canal por token na URL: a
  * organização nunca aparece na URL, só um token opaco.
  *
  * Assinatura: PaySuite manda `X-Signature` = HMAC-SHA256 hex do corpo cru,

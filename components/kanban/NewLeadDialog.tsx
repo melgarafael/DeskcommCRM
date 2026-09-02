@@ -133,7 +133,7 @@ export function NewLeadDialog({ open, onOpenChange, pipelineId, stages, contactI
         <DialogHeader>
           <DialogTitle>Novo Lead</DialogTitle>
           <DialogDescription>
-            Crie um lead manualmente neste pipeline.
+            Crie um lead manualmente neste funil.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">

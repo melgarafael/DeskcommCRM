@@ -58,7 +58,18 @@ const RAIZES = ["app", "lib", "scripts"];
  * gate que alguém desliga. Se precisar acrescentar uma linha aqui, escreva o
  * porquê ao lado; sem justificativa, o caminho é consertar.
  */
-const DIVIDA_ACEITA: ReadonlyArray<{ arquivo: string; coluna: string; porque: string }> = [];
+const DIVIDA_ACEITA: ReadonlyArray<{ arquivo: string; coluna: string; porque: string }> = [
+  {
+    arquivo: "app/api/v1/attendant-schedule/route.ts",
+    coluna: "ends_at",
+    porque:
+      "Falso positivo: a varredura casa por NOME de coluna, sem saber a tabela. Esta escrita é em " +
+      "attendant_schedule.ends_at (coluna `time`, comum, com CHECK ends_at > starts_at) — não tem " +
+      "relação com appointments.ends_at (a coluna GERADA que este gate protege). Mesmo nome, tabelas " +
+      "e colunas diferentes; a escrita aqui é legítima e obrigatória (é o próprio campo que a rota " +
+      "PUT /api/v1/attendant-schedule existe para gravar).",
+  },
+];
 
 interface ColunaGerada {
   tabela: string;

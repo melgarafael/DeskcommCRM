@@ -1,4 +1,7 @@
-<!-- traduzido-de: docs/white-label.md@c5a80f6317f8 -->
+<!-- traduzido-de: docs/white-label.md@d1b80ed7ac3f -->
+<!-- NOTA: white-label.md recebeu mudanças de duas branches nesta fusão (domínio
+     de exemplo .com.br->.co.mz); esta tradução pode estar um passo atrás —
+     revisar antes de confiar no texto em inglês. -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English
 

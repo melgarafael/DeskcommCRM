@@ -10,6 +10,7 @@ import { ScoreSlot } from "./ScoreSlot";
 import { LeadTimeline } from "./LeadTimeline";
 import { OwnerBadge } from "./OwnerBadge";
 import { CobrarButton } from "./CobrarButton";
+import { AppointmentsSlot } from "./AppointmentsSlot";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
 
 interface Props {
@@ -89,6 +90,7 @@ export function LeadDossier({
             ownerName={owner.name}
             agentVersion={owner.agentVersion}
           />
+          <AppointmentsSlot leadId={lead.id} />
           {score && (
             // O MESMO componente do card, não uma cópia do medidor.
             // "Superfície nova herda as decisões da antiga" só vale como
