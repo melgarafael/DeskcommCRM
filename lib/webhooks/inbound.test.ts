@@ -1,16 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { mapInboundPayload, normalizePhoneBR, verifyInboundSignature } from "@/lib/webhooks/inbound";
+import { mapInboundPayload, normalizePhoneNumber, verifyInboundSignature } from "@/lib/webhooks/inbound";
 import { createHmac } from "node:crypto";
 
-describe("normalizePhoneBR", () => {
-  it("já em E.164 passa direto", () => expect(normalizePhoneBR("+5511998765432")).toBe("+5511998765432"));
-  it("DDD+numero BR ganha +55", () => expect(normalizePhoneBR("11 99876-5432")).toBe("+5511998765432"));
-  it("com 55 na frente sem +", () => expect(normalizePhoneBR("5511998765432")).toBe("+5511998765432"));
-  it("fixo BR 10 dígitos", () => expect(normalizePhoneBR("1133334444")).toBe("+551133334444"));
-  it("lixo → null", () => expect(normalizePhoneBR("abc")).toBeNull());
+describe("normalizePhoneNumber", () => {
+  it("já em E.164 passa direto", () => expect(normalizePhoneNumber("+258841234567")).toBe("+258841234567"));
+  it("número moçambicano de 9 dígitos ganha +258", () =>
+    expect(normalizePhoneNumber("84 123 4567")).toBe("+258841234567"));
+  it("com 258 na frente sem +", () => expect(normalizePhoneNumber("258841234567")).toBe("+258841234567"));
+  it("DDD+numero BR (legado) ganha +55", () => expect(normalizePhoneNumber("11 99876-5432")).toBe("+5511998765432"));
+  it("com 55 na frente sem + (legado)", () => expect(normalizePhoneNumber("5511998765432")).toBe("+5511998765432"));
+  it("fixo BR 10 dígitos (legado)", () => expect(normalizePhoneNumber("1133334444")).toBe("+551133334444"));
+  it("lixo → null", () => expect(normalizePhoneNumber("abc")).toBeNull());
   it("vazio/não-string → null", () => {
-    expect(normalizePhoneBR("")).toBeNull();
-    expect(normalizePhoneBR(42 as unknown)).toBeNull();
+    expect(normalizePhoneNumber("")).toBeNull();
+    expect(normalizePhoneNumber(42 as unknown)).toBeNull();
   });
 });
 

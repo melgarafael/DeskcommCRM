@@ -153,18 +153,36 @@ test.describe("Agenda nativa — fluxo completo", () => {
     await expect(dialogoAgendamento.getByText("Nenhum horário livre neste dia.")).toHaveCount(0);
     // Primeiro slot livre do dia — os botões mostram "HH:MM" (toLocaleTimeString).
     await dialogoAgendamento.locator("button", { hasText: /^\d{2}:\d{2}$/ }).first().click();
+    // O diálogo pode ter avançado a data sozinho (ver NewAppointmentDialog.tsx):
+    // fora do expediente 07h-21h em Africa/Maputo, "hoje" não tem horário
+    // livre nenhum e ele busca o próximo dia com agenda aberta. Captura o
+    // POST de verdade em vez de assumir "hoje" — é o único jeito de saber em
+    // qual dia o agendamento realmente caiu.
+    const criacaoReq = page.waitForRequest(
+      (r) => r.url().includes("/api/v1/appointments") && r.method() === "POST",
+    );
     await dialogoAgendamento.getByRole("button", { name: "Confirmar" }).click();
+    const { scheduled_at: scheduledAt } = (await criacaoReq).postDataJSON() as {
+      scheduled_at: string;
+    };
+    // O filtro da Agenda usa fronteira de dia em UTC sobre essa mesma string
+    // de data — a janela 07h-21h de Maputo (UTC+2) nunca cruza meia-noite
+    // UTC, então a data UTC do scheduled_at é a mesma que o input de data
+    // "YYYY-MM-DD" da tela espera.
+    const dataDoAgendamento = scheduledAt.slice(0, 10);
     await expect(page.getByText("Horário marcado.")).toBeVisible();
 
     // O dossiê reflete o próprio agendamento sem reabrir nada.
     await expect(dossie.getByText(/Próximo horário:/)).toBeVisible({ timeout: 15_000 });
 
-    // --- 5. aparece na Agenda ---
+    // --- 5. aparece na Agenda, no dia em que caiu ---
     // Escopado pelo link "Ver lead" deste lead específico, não por "Marcado"
-    // solto — outros agendamentos já marcados hoje (de execuções anteriores
-    // desta mesma spec, banco compartilhado entre specs) tornariam esse texto
-    // ambíguo e o `toBeVisible` quebraria em modo estrito.
+    // solto — outros agendamentos já marcados no mesmo dia (de execuções
+    // anteriores desta mesma spec, banco compartilhado entre specs)
+    // tornariam esse texto ambíguo e o `toBeVisible` quebraria em modo
+    // estrito.
     await page.goto("/app/agenda");
+    await page.locator('input[type="date"]').fill(dataDoAgendamento);
     const linkDoLead = page.locator(`a[href="/app/kanban?lead=${leadCreated.id}"]`);
     const cardDaAgenda = linkDoLead.locator("..").locator("..");
     await expect(cardDaAgenda).toBeVisible({ timeout: 30_000 });

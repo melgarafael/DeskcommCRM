@@ -100,8 +100,8 @@ async function ensureOrg(): Promise<string> {
       slug: ORG_SLUG,
       display_name: ORG_NAME,
       legal_name: ORG_NAME,
-      timezone: "America/Sao_Paulo",
-      locale: "pt-BR",
+      timezone: "Africa/Maputo",
+      locale: "pt-PT",
       onboarded_at: new Date().toISOString(),
     } as never)
     .select("id")

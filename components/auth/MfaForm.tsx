@@ -96,7 +96,7 @@ export function MfaForm({ next }: MfaFormProps) {
         className="w-full"
         disabled={isPending || locked || code.length !== 6}
       >
-        {isPending ? "Verificando..." : "Verificar"}
+        {isPending ? "A verificar..." : "Verificar"}
       </Button>
 
       <div className="text-center text-sm">

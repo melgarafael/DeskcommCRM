@@ -72,7 +72,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
     .update({
       display_name: parsed.data.display_name,
       legal_name: parsed.data.legal_name,
-      cnpj: parsed.data.cnpj ?? null,
+      nuit: parsed.data.nuit ?? null,
       timezone: parsed.data.timezone,
       locale: parsed.data.locale,
       media_retention_days: parsed.data.media_retention_days,

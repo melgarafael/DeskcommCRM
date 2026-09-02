@@ -63,7 +63,7 @@ export function renderSystemPrompt(template: string, ctx: BotContext): string {
   const scope: Record<string, unknown> = {
     vocabulary,
     contact_name: ctx.contact.display_name ?? "cliente",
-    contact_locale: ctx.contact.locale ?? "pt-BR",
+    contact_locale: ctx.contact.locale ?? "pt-PT",
     recent_messages: formatRecentMessages(ctx),
     retrieved_chunks: formatRetrievedChunks(ctx),
   };

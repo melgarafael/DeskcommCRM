@@ -111,7 +111,7 @@ describe("o workflow do e2e honra o contrato de ambiente que a suíte exige", ()
     // `.env.e2e`, e o workflow a publica em vez de reescrevê-la.
     const DO_ENV_E2E = [
       "INTERNAL_SECRET",
-      "CPF_ENCRYPTION_KEY",
+      "NUIT_ENCRYPTION_KEY",
       "WAHA_BYO_ENCRYPTION_KEY",
       "AI_CRED_AES_KEY",
       "WAHA_API_KEY",

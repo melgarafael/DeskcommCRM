@@ -5,7 +5,7 @@
  * humano; aplicar cria uma versão NOVA do agente (publish-por-ponteiro).
  */
 import { formatDistanceToNowStrict } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";

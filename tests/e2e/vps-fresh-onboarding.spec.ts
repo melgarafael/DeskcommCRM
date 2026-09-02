@@ -142,7 +142,7 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
 
     const org = await orgRow();
     expect(org.display_name).toBe("Loja QA VPS");
-    expect(org.timezone).toBe("America/Sao_Paulo");
+    expect(org.timezone).toBe("Africa/Maputo");
     expect((org.onboarding_state as { welcome?: unknown })?.welcome).toBeTruthy();
   });
 

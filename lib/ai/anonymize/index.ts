@@ -2,13 +2,13 @@
  * PT-BR PII anonymizer for the conversations RAG ingestion pipeline (S-06.07).
  *
  * Replaces, in order:
- *   1. CPF       -> [CPF]
+ *   1. NUIT       -> [NUIT]
  *   2. Email     -> [EMAIL]
  *   3. Telefone  -> [TELEFONE]
  *   4. CEP       -> [CEP]
  *   5. Nomes PT-BR (lookup) -> [NOME]
  *
- * CPF runs before CEP because both share the digit-dash shape.
+ * NUIT runs before CEP because both share the digit-dash shape.
  *
  * Returns the anonymized string AND the list of hits (used by the ingestor's
  * ">=10 messages, 0 hits -> flag for manual review" guard).
@@ -22,7 +22,7 @@ import { FIRST_NAMES_PT_BR } from "./pt-br-first-names";
  */
 export function buildPiiPatterns(): Record<string, RegExp> {
   return {
-    cpf: /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g,
+    nuit: /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g,
     email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
     phone: /\b\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}\b/g,
     cep: /\b\d{5}-?\d{3}\b/g,
@@ -32,7 +32,7 @@ export function buildPiiPatterns(): Record<string, RegExp> {
 export const PII_PATTERNS = buildPiiPatterns();
 
 export interface AnonymizeHit {
-  type: "cpf" | "email" | "phone" | "cep" | "name";
+  type: "nuit" | "email" | "phone" | "cep" | "name";
   original: string;
   replacement: string;
 }
@@ -43,7 +43,7 @@ export interface AnonymizeResult {
 }
 
 const REPLACEMENT_BY_TYPE: Record<AnonymizeHit["type"], string> = {
-  cpf: "[CPF]",
+  nuit: "[NUIT]",
   email: "[EMAIL]",
   phone: "[TELEFONE]",
   cep: "[CEP]",
@@ -55,7 +55,7 @@ export function anonymize(text: string): AnonymizeResult {
   let out = text;
 
   const passes: { type: AnonymizeHit["type"]; pattern: RegExp }[] = [
-    { type: "cpf", pattern: /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g },
+    { type: "nuit", pattern: /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g },
     { type: "email", pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
     { type: "phone", pattern: /\b\(?\d{2}\)?\s*9?\d{4,5}-?\d{4}\b/g },
     { type: "cep", pattern: /\b\d{5}-?\d{3}\b/g },

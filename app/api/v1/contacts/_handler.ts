@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
-import { hashCpf, encryptCpfSql } from "@/lib/contacts/cpf";
+import { hashNuit, encryptNuitSql } from "@/lib/contacts/nuit";
 import type { Contact } from "@/lib/types/contacts";
 import type {
   ContactCreate,
@@ -22,7 +22,7 @@ import type {
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, created_at, updated_at, last_activity_at";
+  "id, organization_id, name, display_name, email, email_normalized, phone_number, nuit_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, created_at, updated_at, last_activity_at";
 
 const ROLE_RANK: Record<string, number> = {
   viewer: 1,
@@ -119,7 +119,7 @@ export async function listContactsHandler(
       `phone_number.ilike.%${s}%`,
     ];
     if (digits.length === 11) {
-      orParts.push(`cpf_hash.eq.${hashCpf(digits)}`);
+      orParts.push(`nuit_hash.eq.${hashNuit(digits)}`);
     }
     query = query.or(orParts.join(","));
   }
@@ -167,9 +167,9 @@ export interface GetContactInput {
 }
 
 export interface GetContactResult extends Contact {
-  cpf_available: boolean;
-  cpf_decrypted: string | null;
-  cpf_decrypt_denied?: boolean;
+  nuit_available: boolean;
+  nuit_decrypted: string | null;
+  nuit_decrypt_denied?: boolean;
 }
 
 export async function getContactHandler(
@@ -192,10 +192,10 @@ export async function getContactHandler(
   }
   const contact = data as Contact;
 
-  let cpfDecrypted: string | null = null;
-  let cpfDecryptDenied = false;
+  let nuitDecrypted: string | null = null;
+  let nuitDecryptDenied = false;
 
-  if (input.decryptPurpose && contact.cpf_hash && ctx.actor.type === "user") {
+  if (input.decryptPurpose && contact.nuit_hash && ctx.actor.type === "user") {
     const { data: membership } = await supabase
       .from("user_organizations")
       .select("role")
@@ -207,15 +207,15 @@ export async function getContactHandler(
     const role = membership?.role as string | undefined;
     const rank = role ? (ROLE_RANK[role] ?? 0) : 0;
     if (rank < ROLE_RANK.manager!) {
-      cpfDecryptDenied = true;
+      nuitDecryptDenied = true;
     } else {
-      const { data: dec, error: decErr } = await supabase.rpc("decrypt_cpf", {
+      const { data: dec, error: decErr } = await supabase.rpc("decrypt_nuit", {
         p_contact_id: input.contactId,
       });
       if (decErr) {
-        console.warn("[contacts.get] decrypt_cpf RPC unavailable", decErr.message);
+        console.warn("[contacts.get] decrypt_nuit RPC unavailable", decErr.message);
       } else if (typeof dec === "string") {
-        cpfDecrypted = dec;
+        nuitDecrypted = dec;
       }
       const a = actorAuditPayload(ctx.actor);
       await audit({
@@ -228,7 +228,7 @@ export async function getContactHandler(
         metadata: {
           ...a.metadataActor,
           decrypt_purpose: input.decryptPurpose,
-          success: !!cpfDecrypted,
+          success: !!nuitDecrypted,
         },
       });
     }
@@ -236,9 +236,9 @@ export async function getContactHandler(
 
   return {
     ...contact,
-    cpf_available: !!contact.cpf_hash,
-    cpf_decrypted: cpfDecrypted,
-    cpf_decrypt_denied: cpfDecryptDenied || undefined,
+    nuit_available: !!contact.nuit_hash,
+    nuit_decrypted: nuitDecrypted,
+    nuit_decrypt_denied: nuitDecryptDenied || undefined,
   };
 }
 
@@ -271,10 +271,10 @@ export async function createContactHandler(
     consent: input.consent ?? {},
   };
 
-  if (input.cpf) {
-    insertRow.cpf_hash = hashCpf(input.cpf);
-    const enc = await encryptCpfSql(supabase, input.cpf);
-    if (enc) insertRow.cpf_encrypted = enc;
+  if (input.nuit) {
+    insertRow.nuit_hash = hashNuit(input.nuit);
+    const enc = await encryptNuitSql(supabase, input.nuit);
+    if (enc) insertRow.nuit_encrypted = enc;
   }
 
   const { data: created, error: insErr } = await supabase
@@ -298,7 +298,7 @@ export async function createContactHandler(
         source: contact.source,
         has_email: !!contact.email,
         has_phone: !!contact.phone_number,
-        has_cpf: !!contact.cpf_hash,
+        has_nuit: !!contact.nuit_hash,
       },
       p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
       p_organization_id: contact.organization_id,
@@ -392,10 +392,10 @@ export async function patchContactHandler(
     >;
     patch.consent = { ...anterior, ...input.consent };
   }
-  if (input.cpf !== undefined) {
-    patch.cpf_hash = hashCpf(input.cpf);
-    const enc = await encryptCpfSql(supabase, input.cpf);
-    if (enc) patch.cpf_encrypted = enc;
+  if (input.nuit !== undefined) {
+    patch.nuit_hash = hashNuit(input.nuit);
+    const enc = await encryptNuitSql(supabase, input.nuit);
+    if (enc) patch.nuit_encrypted = enc;
   }
 
   if (Object.keys(patch).length === 0) {

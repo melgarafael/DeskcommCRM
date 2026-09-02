@@ -261,7 +261,7 @@ export function RequestsTable() {
                 <TableCell colSpan={8} className="text-center">
                   <div className="flex flex-col items-center gap-2 py-12 text-sm text-muted-foreground">
                     <Warning size={32} weight="thin" aria-hidden />
-                    <p className="font-medium">Nenhuma solicitação LGPD</p>
+                    <p className="font-medium">Nenhuma solicitação de proteção de dados</p>
                     <p className="text-xs">
                       Solicitações de dados e anonimizações aparecerão aqui.
                     </p>

@@ -104,7 +104,7 @@ export function ResetPasswordForm() {
         </div>
       )}
       <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? "Salvando..." : "Definir nova senha"}
+        {isPending ? "A guardar..." : "Definir nova senha"}
       </Button>
     </form>
   );

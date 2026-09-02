@@ -58,7 +58,7 @@ Seção que não responde nenhuma delas sai do plano.
 ## 2. Restrições não-negociáveis
 
 **Do design system** (`09-anti-patterns.md`):
-Atkinson Hyperlegible + IBM Plex Mono · sem Inter/Geist · **sem gradiente roxo/azul/rosa** · botão primário sólido Sage `#67885d` · sem glassmorphism · Phosphor duotone (nunca Lucide, nunca ícone Sparkles para IA — usar `Brain`) · fundo `#faf9f6`, nunca branco puro · sombras `rgba(20,18,14,X)`, nunca preto puro · sem `transition: all`.
+Atkinson Hyperlegible + IBM Plex Mono · sem Inter/Geist · **sem gradiente roxo/azul/rosa** · botão primário sólido verde-WhatsApp `#169b80` · sem glassmorphism · Phosphor duotone (nunca Lucide, nunca ícone Sparkles para IA — usar `Brain`) · fundo `#faf9f6`, nunca branco puro · sombras `rgba(20,18,14,X)`, nunca preto puro · sem `transition: all`.
 
 **Do GEO** (pesquisa de 27/07):
 Renderização no servidor obrigatória — **nenhum crawler de IA executa JavaScript**. Todo o conteúdo textual existe no HTML servido; o scrollytelling é camada por cima. `<html lang="pt-BR">`, `og:locale=pt_BR`, hreflang no `<head>`. Data de atualização visível na página.
@@ -101,7 +101,7 @@ Fino, sticky, fundo `#faf9f6` com `border-bottom` de 1px que só aparece após 4
 ```
 
 - `[GitHub ⭐ 116]` — secundário, ghost, **com contador ao vivo**. Decisão do Rafael, contra minha recomendação inicial e com argumento melhor que o meu: 116 para um CRM brasileiro com 3 meses de vida lê como tração real, não como hobby — a régua de ~1k que a pesquisa usa é de projeto anglófono de infraestrutura, outro mercado. O número é buscado da API do GitHub e cacheado; nunca hardcoded (prova social escrita à mão apodrece e fica menor que a realidade).
-- `[Instalar na VPS]` — primário sólido Sage.
+- `[Instalar na VPS]` — primário sólido verde-WhatsApp.
 - Mobile: logo + botão primário; o resto vira menu.
 
 ---
@@ -163,7 +163,7 @@ Cinco PNGs empilhados, ordem de baixo para cima:
 | 2 | Trilhas de conexão entre as peças | acendem em sequência ao entrar (uma vez) |
 | 3 | Peças: conversa, funil, agente, follow-up, log | estáticas |
 | 4 | Rótulos flutuantes das peças | fade + 8px rise, stagger 50ms |
-| 5 | O lead (um ponto sage) | percorre a trilha da conversa até o funil |
+| 5 | O lead (um ponto verde-WhatsApp) | percorre a trilha da conversa até o funil |
 
 **Movimento no scroll:** a câmera **não** faz parallax de profundidade. Ela faz uma coisa só e explicável: conforme o scroll desce, a mesa **inclina levemente** (de ~18° para ~12° de isometria), como quem se aproxima para olhar de perto. Uma frase: *"você está chegando mais perto da mesa"*. É a transição para a §4, que acontece **em cima da mesma mesa**.
 
@@ -455,7 +455,7 @@ Barra inferior: `SonghaiCRM · MIT · Feito no Brasil` · **`Página atualizada 
 Isometric 3D render, 30-degree camera angle, orthographic projection.
 Matte clay material — soft, slightly rough, no gloss, no chrome, no glass, no neon.
 Palette strictly limited to: warm off-white #faf9f6 background, surface #ffffff,
-warm greige #e7e3da for structure, desaturated sage green #506d48 for active
+warm greige #e7e3da for structure, WhatsApp green #008069 for active
 elements, muted amber #b8863b for warnings only. No other colors.
 Soft studio lighting from upper left, long soft shadows in warm grey rgba(20,18,14,0.10).
 No text, no labels, no UI chrome, no icons inside the render.
@@ -480,11 +480,11 @@ floating, seen from above at 30 degrees. On the desk sit five distinct low-profi
 modules connected by thin recessed channels carved into the desk surface:
 1. a rounded module suggesting a conversation thread (stacked soft plates)
 2. a module of four vertical columns of small tiles (a pipeline)
-3. a central rounded module, slightly taller, in sage green (the agent)
+3. a central rounded module, slightly taller, in WhatsApp green (the agent)
 4. a small circular module with a subtle ring (follow-up timer)
 5. a flat wide module of thin horizontal lines (the log)
-The channels connecting them are recessed grooves, sage green at the bottom.
-A single small sage sphere sits at the entrance of the conversation module.
+The channels connecting them are recessed grooves, WhatsApp green at the bottom.
+A single small WhatsApp-green sphere sits at the entrance of the conversation module.
 Nothing is detached; every module touches at least two channels.
 ```
 

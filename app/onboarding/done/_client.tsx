@@ -24,8 +24,8 @@ export function DoneClient({
         <h2 className="text-2xl font-semibold tracking-tight">Tudo pronto!</h2>
         <p className="text-sm text-muted-foreground">
           {pendentes.length === 0
-            ? "Seu funcionário está montado. Daqui em diante é só acompanhar."
-            : "Seu funcionário já está de pé. O que ficou para depois continua te esperando."}
+            ? "O seu funcionário está montado. Daqui em diante é só acompanhar."
+            : "O seu funcionário já está pronto. O que ficou para depois continua à sua espera."}
         </p>
       </div>
 
@@ -123,7 +123,7 @@ export function DoneClient({
             })
           }
         >
-          {pending ? "Finalizando..." : "Começar a usar"}
+          {pending ? "A finalizar..." : "Começar a usar"}
         </Button>
       </div>
     </div>

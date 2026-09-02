@@ -10,7 +10,7 @@
  *
  * Example markdown:
  *   ---
- *   locale: pt-BR
+ *   locale: pt-PT
  *   tags: [envio, prazo]
  *   ---
  *   ## Pergunta: Qual o prazo de entrega?
@@ -24,7 +24,7 @@ export interface FaqItem {
   locale: string;
 }
 
-const DEFAULT_LOCALE = "pt-BR";
+const DEFAULT_LOCALE = "pt-PT";
 
 /** Regex matching both `## Pergunta:` and `## P:` (case-insensitive). */
 const QUESTION_RE = /^##\s+(?:pergunta|p)\s*:/i;

@@ -59,11 +59,11 @@ describe("auditMcpToolCall", () => {
 
   it("redige segredos nos argumentos", async () => {
     await auditMcpToolCall({
-      ctx, toolName: "crm_get_contact", args: { cpf: "12345678900", query: "joana" },
+      ctx, toolName: "crm_get_contact", args: { nuit: "12345678900", query: "joana" },
       durationMs: 3, success: true,
     });
     const e = auditSpy.mock.calls[0]![0];
-    expect(e.metadata.args.cpf).toBe("[redacted]");
+    expect(e.metadata.args.nuit).toBe("[redacted]");
     expect(e.metadata.args.query).toBe("joana");
   });
 });

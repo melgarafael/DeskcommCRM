@@ -163,7 +163,7 @@ async function main(): Promise<void> {
       status: "open",
       source: "manual",
       value_cents: 250_000,
-      currency: "BRL",
+      currency: "MZN",
       position_in_stage: 9000,
       last_activity_at: new Date().toISOString(),
     },

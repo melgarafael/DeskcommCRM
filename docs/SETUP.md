@@ -398,8 +398,8 @@ Distribua nas variáveis:
 # Bearer secret pros endpoints /api/v1/cron/* (DIFERENTE do service role key)
 INTERNAL_SECRET=<saída-1>
 
-# Criptografia de PII (LGPD)
-CPF_ENCRYPTION_KEY=<saída-2>
+# Criptografia de PII
+NUIT_ENCRYPTION_KEY=<saída-2>
 
 # Criptografia de tokens OAuth Nuvemshop
 NUVEMSHOP_OAUTH_ENCRYPTION_KEY=<saída-3>
@@ -416,7 +416,7 @@ LGPD_SIGNING_KEY=<saída-6>
 
 > ⚠️ **NUNCA reutilize** a mesma string em produção. Cada uma criptografa uma coisa diferente — se vazar uma, queremos blast radius limitado.
 >
-> ⚠️ **NUNCA mude `CPF_ENCRYPTION_KEY` ou `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` depois que tiver dados em prod** — você não consegue mais descriptografar o que foi salvo. Rotação dessas chaves exige migration de re-encryption.
+> ⚠️ **NUNCA mude `NUIT_ENCRYPTION_KEY` ou `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` depois que tiver dados em prod** — você não consegue mais descriptografar o que foi salvo. Rotação dessas chaves exige migration de re-encryption.
 
 ### Outras vars opcionais
 

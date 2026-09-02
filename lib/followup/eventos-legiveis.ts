@@ -284,7 +284,7 @@ function quandoLegivel(iso: unknown): string | null {
   if (!s) return null;
   const t = Date.parse(s);
   if (Number.isNaN(t)) return null;
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("pt-PT", {
     day: "2-digit",
     month: "short",
     hour: "2-digit",

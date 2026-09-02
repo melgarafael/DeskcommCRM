@@ -57,7 +57,7 @@ function StatusBadge({
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
@@ -71,11 +71,11 @@ function extractCount(
   return arr[0]?.count ?? 0;
 }
 
-function shortCnpj(cnpj: string | null): string {
-  if (!cnpj) return "—";
+function shortNuit(nuit: string | null): string {
+  if (!nuit) return "—";
   // Show first 8 digits (company root) + ...
-  const digits = cnpj.replace(/\D/g, "");
-  if (digits.length < 8) return cnpj;
+  const digits = nuit.replace(/\D/g, "");
+  if (digits.length < 8) return nuit;
   return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/...`;
 }
 
@@ -89,7 +89,7 @@ export function TenantsTableSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
-            {["Slug", "Nome", "CNPJ", "Status", "Users", "Conversas", "Criado em", ""].map(
+            {["Slug", "Nome", "NUIT", "Status", "Users", "Conversas", "Criado em", ""].map(
               (h) => (
                 <TableHead key={h}>{h}</TableHead>
               ),
@@ -149,7 +149,7 @@ export function TenantsTable({
             <TableRow>
               <TableHead className="w-[140px]">Slug</TableHead>
               <TableHead>Nome</TableHead>
-              <TableHead className="w-[130px]">CNPJ</TableHead>
+              <TableHead className="w-[130px]">NUIT</TableHead>
               <TableHead className="w-[110px]">Status</TableHead>
               <TableHead className="w-[70px] text-right">Users</TableHead>
               <TableHead className="w-[90px] text-right">Conversas</TableHead>
@@ -163,7 +163,7 @@ export function TenantsTable({
                 <TableCell className="font-mono text-xs">{row.slug}</TableCell>
                 <TableCell className="font-medium">{row.display_name}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">
-                  {shortCnpj(row.cnpj)}
+                  {shortNuit(row.nuit)}
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={row.status} onboardedAt={row.onboarded_at} />

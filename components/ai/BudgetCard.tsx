@@ -60,14 +60,14 @@ type Modo = BudgetStatus["enforcement_mode"];
  * provedor cobra. Formatar em BRL fazia o dono do negócio ler um teto ~5x maior
  * do que o que estava armando.
  */
-const usd = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" });
+const usd = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "USD" });
 
 function fmtCents(cents: number): string {
   return usd.format((cents ?? 0) / 100);
 }
 
 function fmtData(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  return new Date(iso).toLocaleString("pt-PT", { dateStyle: "short", timeStyle: "short" });
 }
 
 /**
@@ -85,7 +85,7 @@ function fmtData(iso: string): string {
 function mesCorrente(): string {
   const agora = new Date();
   const nome = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toLocaleDateString(
-    "pt-BR",
+    "pt-PT",
     { month: "long", year: "numeric", timeZone: "UTC" },
   );
   return nome;

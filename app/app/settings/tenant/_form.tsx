@@ -14,13 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateTenant } from "@/app/actions/settings/updateTenant";
-import { tenantSchema, type Locale, type TenantInput } from "@/lib/schemas/settings";
+import { tenantSchema, type TenantInput } from "@/lib/schemas/settings";
 
 interface Props {
   initial: TenantInput;
 }
 
 const TIMEZONES = [
+  "Africa/Maputo",
   "America/Sao_Paulo",
   "America/Manaus",
   "America/Belem",
@@ -82,11 +83,11 @@ export function TenantForm({ initial }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cnpj">CNPJ</Label>
+            <Label htmlFor="nuit">NUIT</Label>
             <Input
-              id="cnpj"
-              value={form.cnpj ?? ""}
-              onChange={(e) => set("cnpj", e.target.value || null)}
+              id="nuit"
+              value={form.nuit ?? ""}
+              onChange={(e) => set("nuit", e.target.value || null)}
             />
           </div>
           <div className="space-y-2">
@@ -110,21 +111,6 @@ export function TenantForm({ initial }: Props) {
                     {tz}
                   </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="locale">Idioma</Label>
-            <Select
-              value={form.locale}
-              onValueChange={(v) => set("locale", v as Locale)}
-            >
-              <SelectTrigger id="locale">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pt-BR">Português (BR)</SelectItem>
-                <SelectItem value="es">Español</SelectItem>
               </SelectContent>
             </Select>
           </div>

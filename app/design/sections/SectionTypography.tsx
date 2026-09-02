@@ -24,7 +24,7 @@ const TYPO_FONTS: Record<TypoId, { display: string; body: string }> = {
 };
 
 const SAMPLE_PROSE =
-  "Pedido #12.443 enviado às 14h32 — cliente respondeu pelo WhatsApp confirmando o endereço de entrega. A IA já sugeriu a próxima ação: pedir comprovante de pagamento via Pix.";
+  "Pedido #12.443 enviado às 14h32 — cliente respondeu pelo WhatsApp confirmando o endereço de entrega. A IA já sugeriu a próxima ação: pedir comprovante de pagamento via Mpesa.";
 
 function PairBlock({ id }: { id: TypoId }) {
   const v = useVariant();
@@ -71,7 +71,7 @@ function PairBlock({ id }: { id: TypoId }) {
           <div>
             <div className="ds-key" style={{ marginBottom: 4 }}>Body · italic + bold</div>
             <p style={{ fontFamily: fonts.body, fontSize: 15, lineHeight: 1.55 }}>
-              <strong>Maria Silva</strong> respondeu <em>&ldquo;já paguei via Pix&rdquo;</em> às 14h32.
+              <strong>Maria Silva</strong> respondeu <em>&ldquo;já paguei via Mpesa&rdquo;</em> às 14h32.
               Aguardando comprovante automático.
             </p>
           </div>
@@ -81,9 +81,9 @@ function PairBlock({ id }: { id: TypoId }) {
           <div>
             <div className="ds-key" style={{ marginBottom: 4 }}>Numerais tabulares (financeiro)</div>
             <div style={{ fontFamily: fonts.body, fontVariantNumeric: "tabular-nums lining-nums", fontSize: 15 }}>
-              <div>R$ 1.234,56</div>
-              <div>R$ 9.998,01</div>
-              <div>R$&nbsp;&nbsp;&nbsp;&nbsp;42,00</div>
+              <div>MT 1.234,56</div>
+              <div>MT 9.998,01</div>
+              <div>MT&nbsp;&nbsp;&nbsp;&nbsp;42,00</div>
             </div>
           </div>
           <div>

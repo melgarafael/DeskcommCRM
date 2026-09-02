@@ -71,7 +71,7 @@ export function LgpdAdminClient() {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">LGPD — Cross-tenant</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Proteção de Dados — Cross-tenant</h1>
         <p className="text-sm text-muted-foreground mt-1">
           {isLoading
             ? "Carregando..."

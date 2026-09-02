@@ -21,7 +21,7 @@ interface Props {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
+  return new Date(iso).toLocaleString("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

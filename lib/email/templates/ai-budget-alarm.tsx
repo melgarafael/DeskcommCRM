@@ -17,7 +17,7 @@ export interface BudgetAlarmEmailOptions {
   dashboardUrl: string;
 }
 
-const brl = new Intl.NumberFormat("pt-BR", {
+const brl = new Intl.NumberFormat("pt-PT", {
   style: "currency",
   currency: "USD",
 });
@@ -38,7 +38,7 @@ export function buildBudgetAlarmEmail(opts: BudgetAlarmEmailOptions): {
     : "";
 
   const html = `<!doctype html>
-<html lang="pt-BR">
+<html lang="pt-MZ">
 <body style="margin:0;padding:0;background:#f5f5f4;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1c1917">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px">
     <h1 style="font-size:22px;line-height:1.3;margin:0 0 16px;color:#0c0a09">

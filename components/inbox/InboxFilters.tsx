@@ -1,5 +1,4 @@
 "use client";
-import { useT } from "@/hooks/i18n/useT";
 import { useEffect, useState } from "react";
 import { MagnifyingGlass } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -53,7 +52,6 @@ interface Props {
 }
 
 export function InboxFilters({ value, onChange }: Props) {
-  const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
   const { data: channels } = useChannelSessions({ refetchInterval: 30_000 });
   const { activeOrg } = useAuth();
@@ -102,7 +100,7 @@ export function InboxFilters({ value, onChange }: Props) {
         <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder={t("Buscar mensagens…")}
+          placeholder="Buscar mensagens…"
           className="h-8 pl-8 text-sm"
           aria-label="Buscar conversas"
         />
@@ -116,7 +114,7 @@ export function InboxFilters({ value, onChange }: Props) {
           }
         >
           <SelectTrigger className="h-8 text-sm" aria-label="Filtrar por número de WhatsApp">
-            <SelectValue placeholder={t("Todos os números")} />
+            <SelectValue placeholder="Todos os números" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os números</SelectItem>
@@ -138,7 +136,7 @@ export function InboxFilters({ value, onChange }: Props) {
           onValueChange={(v) => onChange({ ...value, tag: v === "all" ? undefined : v })}
         >
           <SelectTrigger className="h-8 text-sm" aria-label="Filtrar por tag">
-            <SelectValue placeholder={t("Todas as tags")} />
+            <SelectValue placeholder="Todas as tags" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as tags</SelectItem>
@@ -178,7 +176,7 @@ export function InboxFilters({ value, onChange }: Props) {
 
       <div className="flex items-center justify-between">
         <Label htmlFor="only-unread" className="text-xs text-muted-foreground">
-          {t("Apenas não lidos")}
+          {"Apenas não lidos"}
         </Label>
         <Switch
           id="only-unread"

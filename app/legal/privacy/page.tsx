@@ -31,7 +31,7 @@ export default async function PrivacyPage() {
         <h2 className="text-base font-semibold">1. Quem é o controlador</h2>
         <p>
           O controlador dos dados tratados aqui é <strong>{operador}</strong>
-          {op.cnpj ? ` (CNPJ ${op.cnpj})` : ""} — quem instalou e opera este sistema. Os autores do
+          {op.nuit ? ` (NUIT ${op.nuit})` : ""} — quem instalou e opera este sistema. Os autores do
           software não têm acesso a este servidor nem aos dados guardados nele, e não são
           controladores nem operadores desses dados.
         </p>
@@ -42,10 +42,10 @@ export default async function PrivacyPage() {
         <ul className="list-disc space-y-1 pl-5">
           <li>
             <strong>De quem é atendido:</strong> nome, telefone, e-mail quando informado, conteúdo
-            das conversas, arquivos enviados (imagens, áudios, documentos) e o histórico de negócios.
+            das conversas, ficheiros enviados (imagens, áudios, documentos) e o histórico de negócios.
           </li>
           <li>
-            <strong>De quem usa o sistema:</strong> nome, e-mail, papel de acesso e registro das
+            <strong>De quem usa o sistema:</strong> nome, e-mail, papel de acesso e registo das
             ações realizadas.
           </li>
         </ul>
@@ -54,14 +54,14 @@ export default async function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-base font-semibold">3. Para que são usados</h2>
         <p>
-          Para atender, responder, registrar o andamento do atendimento e organizar a relação
+          Para atender, responder, registar o andamento do atendimento e organizar a relação
           comercial — inclusive por agentes de inteligência artificial que atuam sob as regras
-          configuradas pelo operador. Registros de ação são mantidos para auditoria e segurança.
+          configuradas pelo operador. Registos de ação são mantidos para auditoria e segurança.
         </p>
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">4. Com quem são compartilhados</h2>
+        <h2 className="text-base font-semibold">4. Com quem são partilhados</h2>
         <p>
           Os dados ficam no servidor do operador. Para funcionar, o sistema se comunica com
           terceiros escolhidos e contratados pelo operador:
@@ -90,9 +90,9 @@ export default async function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-base font-semibold">6. Seus direitos</h2>
         <p>
-          A LGPD garante a você confirmar se há tratamento, acessar seus dados, corrigir dados
-          incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram
-          compartilhados e revogar consentimento.
+          A Lei n.º 3/2017 (Moçambique) garante-lhe o direito de confirmar se há tratamento,
+          aceder aos seus dados, corrigir dados incompletos ou desatualizados, pedir
+          anonimização ou eliminação, saber com quem foram partilhados e revogar consentimento.
         </p>
         <p>
           O sistema atende esses pedidos por um fluxo próprio: a exportação reúne o que existe sobre
@@ -105,13 +105,13 @@ export default async function PrivacyPage() {
         <h2 className="text-base font-semibold">7. Segurança</h2>
         <p>
           O acesso é controlado por conta, senha e papel, com verificação em duas etapas obrigatória
-          para administradores. Cada organização hospedada só enxerga os próprios dados, e as chaves
+          para administradores. Cada organização hospedada só vê os próprios dados, e as chaves
           de integração são guardadas cifradas.
         </p>
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-semibold">8. Encarregado e contato</h2>
+        <h2 className="text-base font-semibold">8. Encarregado e contacto</h2>
         <p>
           {op.dpoEmail ? (
             <>
@@ -124,7 +124,7 @@ export default async function PrivacyPage() {
             </>
           ) : (
             <>
-              O operador ainda não publicou um endereço de contato do encarregado de dados nesta
+              O operador ainda não publicou um endereço de contacto do encarregado de dados nesta
               instalação. Os pedidos devem ser feitos pelos canais de atendimento da própria
               organização.
             </>

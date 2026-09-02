@@ -1,7 +1,7 @@
 /**
  * PII masking helpers for LGPD preview endpoints.
  *
- * NEVER expose CPF — omit entirely.
+ * NEVER expose NUIT — omit entirely.
  * Email: a***@dominio.com
  * Phone: (**) ****-${last4}
  */

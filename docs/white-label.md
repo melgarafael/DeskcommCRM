@@ -1,4 +1,4 @@
-🇧🇷 Português · [🇺🇸 English](white-label.en.md) · [🇪🇸 Español](white-label.es.md)
+🇧🇷 Português · [🇺🇸 English](white-label.en.md)
 
 # Instalar para clientes (agências e revendedores)
 
@@ -21,7 +21,7 @@ O arquivo é aceito **pelos bytes, não pela extensão**. Renomear um `.svg` par
 Quem preferir hospedar por conta própria continua podendo, pelo `.env`:
 
 ```bash
-APP_LOGO_URL=https://cdn.suaempresa.com.br/logo.svg
+APP_LOGO_URL=https://cdn.suaempresa.co.mz/logo.svg
 ```
 
 Entre os dois, **o arquivo subido pela tela vence a URL do `.env`** — quem subiu expressou a escolha mais recente. E remover o logo de uma organização **devolve o da instalação**, não "nenhum": as camadas caem uma na outra, em vez de apagar.
@@ -30,7 +30,7 @@ Entre os dois, **o arquivo subido pela tela vence a URL do `.env`** — quem sub
 
 ```bash
 APP_NAME=Vendas Turbo CRM
-APP_LOGO_URL=https://cdn.suaempresa.com.br/logo.svg
+APP_LOGO_URL=https://cdn.suaempresa.co.mz/logo.svg
 APP_ACCENT_HEX=#7a5cd6
 ```
 
@@ -111,7 +111,7 @@ Para enviá-los, preencha as duas variáveis (o `install.sh` pergunta as duas):
 
 ```bash
 RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=nao-responda@suaempresa.com.br
+RESEND_FROM_EMAIL=nao-responda@suaempresa.co.mz
 ```
 
 **O endereço tem de ser de um domínio verificado na SUA conta Resend.** Esse é o único pedaço que a marca não resolve: o nome que aparece na caixa de entrada é a marca; o endereço é de quem hospeda.
@@ -121,7 +121,7 @@ RESEND_FROM_EMAIL=nao-responda@suaempresa.com.br
 ### O endereço de suporte que os seus clientes veem
 
 ```bash
-SUPPORT_EMAIL=suporte@suaempresa.com.br
+SUPPORT_EMAIL=suporte@suaempresa.co.mz
 ```
 
 Aparece nas telas de conta suspensa e de cobrança. **Vazio significa vazio:** a tela simplesmente não mostra endereço nenhum — nunca cai de volta no nosso. Numa tela de conta suspensa isso importa: quem suspendeu foi você, não nós.
@@ -159,13 +159,13 @@ Se o seu cliente pergunta "onde ficam meus dados?", a instalação dedicada tem 
 
 ---
 
-## O argumento jurídico que fecha venda no Brasil
+## O argumento jurídico para cliente moçambicano
 
-A **Resolução CD/ANPD nº 19/2024** tornou obrigatórias as cláusulas-padrão contratuais para **transferência internacional de dados pessoais**, com o prazo de adequação encerrado em **23 de agosto de 2025**.
+A base legal que o produto usa internamente (recibo de dados, PDF de exportação, política de privacidade padrão) é a **Lei n.º 3/2017** de Moçambique — não a LGPD brasileira. Os identificadores de código (`lgpd_*`, rotas `/lgpd`) ficam por herança técnica do template original; o que o titular de dados lê no documento é a lei moçambicana.
 
-Todo cliente seu que usa um CRM estrangeiro realiza essa transferência e precisa do artefato contratual. Hospedando em VPS no Brasil, **não há transferência internacional** — e a obrigação não se aplica.
+⚠️ **Não venda como "instalado em Moçambique = conformidade automática com a Lei n.º 3/2017".** Isso é tão falso quanto o equivalente brasileiro: conformidade depende de base legal, finalidade, segurança e direitos do titular — não só de onde o servidor está. O produto dá o mecanismo (exportação, anonimização, auditoria, encarregado de dados); a conformidade completa da operação do seu cliente é responsabilidade do próprio cliente.
 
-⚠️ **Não venda como "servidor no Brasil = conformidade com a LGPD".** Isso é falso e um advogado desmonta na primeira pergunta: conformidade depende de base legal, finalidade, segurança e direitos do titular. O argumento correto e defensável é o de cima: sem transferência internacional, não há exigência de cláusulas-padrão.
+Se o seu cliente é brasileiro (a base original do produto, ainda suportada), a mesma cautela vale para a LGPD: **Resolução CD/ANPD nº 19/2024** tornou obrigatórias cláusulas-padrão contratuais para **transferência internacional de dados pessoais** (prazo de adequação encerrado em 23 de agosto de 2025) — hospedar em VPS no Brasil evita essa transferência específica, mas não substitui a LGPD nem a Lei n.º 3/2017 como base legal declarada ao titular. Ajuste a política de privacidade e o PDF de exportação (`/legal/privacy`, `lib/lgpd/pdf-renderer.tsx`) para citar a lei realmente aplicável à instalação do seu cliente antes de vender para qualquer mercado.
 
 ---
 

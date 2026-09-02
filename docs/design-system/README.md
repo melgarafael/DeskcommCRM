@@ -1,9 +1,9 @@
 # Design System SonghaiCRM — Documentação Canônica
 
-> **Versão:** v1.0 (lockada em 2026-04-28)
+> **Versão:** v2.0 (2026-09-01 — cor trocada de Sage para verde-WhatsApp; v1.0 lockada em 2026-04-28)
 > **Status:** Ativa
 > **Direção:** Soft-tech / calmo, anti-genérico
-> **Stack visual:** Sage + Atkinson Hyperlegible + IBM Plex Mono + Aerada + Phosphor (duotone)
+> **Stack visual:** verde-WhatsApp + Atkinson Hyperlegible + IBM Plex Mono + Aerada + Phosphor (duotone)
 
 Esta pasta é a **fonte canônica** da linguagem visual do SonghaiCRM. Toda decisão de UI deve consultar estes documentos antes de implementação. Quando houver conflito entre código e doc, **a doc vence** — ajuste o código.
 
@@ -13,7 +13,7 @@ Esta pasta é a **fonte canônica** da linguagem visual do SonghaiCRM. Toda deci
 |---|-----------|-------------|
 | 00 | [Overview](./00-overview.md) | Filosofia, princípios, referências |
 | 01 | [Foundation Tokens](./01-foundation-tokens.md) | Spacing, radius, shadow, motion, z-index |
-| 02 | [Paleta Sage](./02-palette-sage.md) | 22 stops com hex (light + dark), estados, contraste |
+| 02 | [Paleta Accent (verde-WhatsApp)](./02-palette-sage.md) | 22 stops com hex (light + dark), estados, contraste |
 | 03 | [Tipografia](./03-typography.md) | Atkinson Hyperlegible, escala, IBM Plex Mono |
 | 04 | [Densidade Aerada](./04-density-aerada.md) | Row 56 / gap 24, quando overrider |
 | 05 | [Iconografia Phosphor](./05-iconography-phosphor.md) | Duotone, mapeamento por feature |
@@ -46,4 +46,5 @@ Esta pasta é a **fonte canônica** da linguagem visual do SonghaiCRM. Toda deci
 ## Versionamento
 
 - **v1.0** (2026-04-28) — paleta Sage, tipografia Atkinson, densidade Aerada, iconografia Phosphor lockados.
+- **v2.0** (2026-09-01) — paleta trocada de Sage (`#506d48`) para verde-WhatsApp (`#008069`); as outras 4 escolhas continuam as de v1.0.
 - Mudanças de versão maior exigem PR + revisão do design owner. Patches (ajuste de hex em ±2 luminosidade, novos ícones, novos exemplos de microcopy) podem ir direto.

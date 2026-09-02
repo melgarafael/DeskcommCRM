@@ -67,6 +67,10 @@ describe("todo fuso oferecido é utilizável", () => {
   it("Assunção está na lista — é o fuso deste país", () => {
     expect(FUSOS_OFERECIDOS.map((f) => f.codigo)).toContain("America/Asuncion");
   });
+
+  it("Maputo é a primeira opção — é o fuso do produto (Moçambique)", () => {
+    expect(FUSOS_OFERECIDOS[0]?.codigo).toBe("Africa/Maputo");
+  });
 });
 
 describe("a agenda do atendente rejeita fuso inválido", () => {

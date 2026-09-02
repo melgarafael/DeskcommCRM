@@ -54,7 +54,7 @@ const guardrailWindowCheck = z.object({
   kind: z.literal("window_check"),
   start_hour: z.number().int().min(0).max(23),
   end_hour: z.number().int().min(0).max(23),
-  timezone: z.string().default("America/Sao_Paulo"),
+  timezone: z.string().default("Africa/Maputo"),
   reason: z.string().min(1),
 });
 
@@ -127,7 +127,7 @@ export const agentCreateSchema = z
       .min(20)
       .max(10000)
       .default(
-        "Você é um assistente da loja. Responda com clareza e cordialidade, em português do Brasil. Use a base de conhecimento abaixo quando relevante.",
+        "Você é um assistente da loja. Responda com clareza e cordialidade, em português de Moçambique. Use a base de conhecimento abaixo quando relevante.",
       ),
   })
   .strict();
@@ -143,7 +143,7 @@ export const SYSTEM_PROMPT_PLACEHOLDERS: Array<{ token: string; description: str
   { token: "{{vocabulary.won}}", description: "Vocabulário do tenant para 'won' (ex: pago)" },
   { token: "{{vocabulary.lost}}", description: "Vocabulário do tenant para 'lost' (ex: cancelado)" },
   { token: "{{contact_name}}", description: "Nome do contato em atendimento" },
-  { token: "{{contact_locale}}", description: "Locale do contato (ex: pt-BR)" },
+  { token: "{{contact_locale}}", description: "Locale do contato (ex: pt-PT)" },
   { token: "{{recent_messages}}", description: "Últimas N mensagens da conversa" },
   { token: "{{retrieved_chunks}}", description: "Trechos da base de conhecimento (RAG)" },
 ];

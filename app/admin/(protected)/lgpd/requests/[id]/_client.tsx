@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import { CaretLeft } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -256,7 +256,7 @@ export function LgpdRequestAdminDetail({ id }: Props) {
         >
           <Link href="/admin/lgpd">
             <CaretLeft size={14} aria-hidden />
-            LGPD Cross-tenant
+            Proteção de Dados — Cross-tenant
           </Link>
         </Button>
       </div>

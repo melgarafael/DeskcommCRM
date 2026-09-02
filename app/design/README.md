@@ -67,9 +67,11 @@ Inter / Geist / Space Grotesk **proibidos** por saturação em training data.
 
 ## Decisões notáveis
 
-- **Default**: `Sage + Bricolage/Jakarta + Equilibrada + Light`. Sage projeta
-  calma operacional sem cair em "saúde mental clichê"; Bricolage tem width axis
-  útil para hierarquia em headers de inbox.
+- **Default**: `Sage + Bricolage/Jakarta + Equilibrada + Light`. O accent da
+  paleta `Sage` (nome interno da variante — ver nota em `docs/design-system/02-palette-sage.md`)
+  foi trocado em 2026-09-01 do verde-erva original para o verde característico
+  do WhatsApp, canal primário do produto; Bricolage tem width axis útil para
+  hierarquia em headers de inbox.
 - **Iconografia recomendada**: Phosphor (duotone). Justificativa na seção Iconografia.
 - **CSS variables, não Tailwind classes**: o showcase intencionalmente bypassa
   `tailwind.config.ts` para não poluir o config do app antes da decisão final.

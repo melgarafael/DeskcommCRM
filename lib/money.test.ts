@@ -11,7 +11,7 @@ describe("parseReaisToCents", () => {
     expect(parseReaisToCents("0.99")).toBe(99);
   });
 
-  it("lê vírgula como decimal (pt-BR)", () => {
+  it("lê vírgula como decimal (pt-PT)", () => {
     expect(parseReaisToCents("249,90")).toBe(24990);
     expect(parseReaisToCents("1.234,56")).toBe(123456);
     expect(parseReaisToCents("1.234.567,89")).toBe(123456789);

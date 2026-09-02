@@ -6,7 +6,7 @@
  *      AND usable_for_rag_marked_at > sinceTs
  *   2. For each conversation:
  *      a. Load messages (filtered by org_id), build "Cliente: ...\nAtendente: ..."
- *      b. Run anonymize() (CPF / email / phone / CEP / PT-BR first names)
+ *      b. Run anonymize() (NUIT / email / phone / CEP / PT-BR first names)
  *      c. Validador false-negative: if msgs >= 10 and hits == 0 -> mark
  *         rag_review_status='pending_review' and SKIP ingest
  *      d. Chunk anonymized text

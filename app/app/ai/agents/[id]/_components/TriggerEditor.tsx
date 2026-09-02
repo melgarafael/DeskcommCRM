@@ -57,7 +57,7 @@ export function TriggerEditor({ value, onChange, disabled }: Props) {
     patchFilters({
       business_hours: enabled
         ? bh ?? {
-            timezone: "America/Sao_Paulo",
+            timezone: "Africa/Maputo",
             start: "08:00",
             end: "20:00",
             weekdays: [1, 2, 3, 4, 5],

@@ -132,7 +132,7 @@ export function SectionMotion() {
         >
           <div className="row">
             <span className="title">Pedido #12.443</span>
-            <span className="value">R$ 1.234,56</span>
+            <span className="value">MT 1.234,56</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--ds-text-muted)" }}>Maria Silva · pix</div>
         </div>

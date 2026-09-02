@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 interface OrgRow {
   display_name: string;
   legal_name: string;
-  cnpj: string | null;
+  nuit: string | null;
   timezone: string;
   locale: string;
   media_retention_days: number;
@@ -31,7 +31,7 @@ export default async function TenantSettingsPage() {
   const { data } = await supabase
     .from("organizations")
     .select(
-      "display_name, legal_name, cnpj, timezone, locale, media_retention_days, dpo_email, privacy_policy_url, settings",
+      "display_name, legal_name, nuit, timezone, locale, media_retention_days, dpo_email, privacy_policy_url, settings",
     )
     .eq("id", activeOrg.orgId)
     .maybeSingle();
@@ -55,11 +55,12 @@ export default async function TenantSettingsPage() {
           initial={{
             display_name: row.display_name,
             legal_name: row.legal_name,
-            cnpj: row.cnpj,
+            nuit: row.nuit,
             timezone: row.timezone,
-            // `en-US` saiu da lista (nunca teve tradução). Uma linha antiga
-            // com ele cai no padrão em vez de quebrar a tela.
-            locale: row.locale === "es" ? "es" : "pt-BR",
+            // `en-US` e `es` saíram da lista (nenhum teve tradução suficiente
+            // para justificar seletor). Linha antiga com qualquer um dos dois
+            // cai no padrão em vez de quebrar a tela.
+            locale: "pt-PT",
             media_retention_days: row.media_retention_days,
             dpo_email: row.dpo_email,
             privacy_policy_url: row.privacy_policy_url,

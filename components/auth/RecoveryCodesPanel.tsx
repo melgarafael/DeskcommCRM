@@ -68,7 +68,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success("Arquivo baixado.");
+    toast.success("Ficheiro transferido.");
   };
 
   return (
@@ -96,7 +96,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
           Copiar todos
         </Button>
         <Button type="button" variant="outline" className="flex-1" onClick={handleDownload}>
-          Baixar .txt
+          Transferir .txt
         </Button>
       </div>
 

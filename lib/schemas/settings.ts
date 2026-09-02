@@ -9,19 +9,18 @@
 import { z } from "zod";
 
 import { ehHexValido } from "@/lib/branding/rampa";
-import { IDIOMAS } from "@/lib/i18n/idiomas";
 
 import { conversationTagSchema } from "./messaging";
 
 /**
- * Os idiomas que a interface REALMENTE serve.
- *
- * `en-US` saiu: esteve na lista desde sempre e nunca teve uma linha de
- * tradução — escolhê-lo não mudava nada. Espanhol entrou quando passou a mudar.
- * A fonte é `lib/i18n/idiomas`, para a validação e o dicionário não divergirem:
- * um idioma aceito aqui e desconhecido lá cairia no padrão em silêncio.
+ * O único idioma que a interface serve. `en-US` e `es` saíram: nenhum dos
+ * dois tinha (ou passou a ter, no caso do espanhol) tradução suficiente para
+ * justificar um seletor — escolher não mudava a tela o bastante. Sem segundo
+ * idioma, o seletor de idioma some da tela (é decorativo com uma opção só) e
+ * este campo fica só para não quebrar `user_metadata.locale`/`organizations.locale`
+ * já gravado.
  */
-const LOCALES = IDIOMAS;
+const LOCALES = ["pt-PT"] as const;
 
 /**
  * G6-02: organizations.settings.ai_dispatch_mode (edge-contract do Vendaval).
@@ -65,7 +64,7 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 export const tenantSchema = z.object({
   display_name: z.string().min(1).max(120),
   legal_name: z.string().min(1).max(200),
-  cnpj: z
+  nuit: z
     .string()
     .max(20)
     .nullable()

@@ -49,7 +49,7 @@ const schema = z.object({
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
 
   // Encryption keys (pgcrypto)
-  CPF_ENCRYPTION_KEY: required("CPF_ENCRYPTION_KEY"),
+  NUIT_ENCRYPTION_KEY: required("NUIT_ENCRYPTION_KEY"),
   // Opcional (template genérico) — só necessária ao ligar NUVEMSHOP_ENABLED.
   NUVEMSHOP_OAUTH_ENCRYPTION_KEY: z.string().optional().default(""),
   WAHA_BYO_ENCRYPTION_KEY: required("WAHA_BYO_ENCRYPTION_KEY"),
@@ -208,7 +208,7 @@ const schema = z.object({
   APP_NAME: z.string().optional().default(""),
   APP_LOGO_URL: z.string().optional().default(""),
   /**
-   * Cor da marca — um hex (`#506d48`), do qual `lib/branding/` deriva a rampa
+   * Cor da marca — um hex (`#008069`), do qual `lib/branding/` deriva a rampa
    * inteira. Vazio = o produto se pinta com a cor dele.
    *
    * `optional().default("")` e NUNCA `required()`, e o motivo é o modo de falha,
@@ -222,14 +222,28 @@ const schema = z.object({
   APP_ACCENT_HEX: z.string().optional().default(""),
 });
 
-let parsed = schema.safeParse(process.env);
+/**
+ * `NUIT_ENCRYPTION_KEY` nasceu `CPF_ENCRYPTION_KEY` (a coluna que ela cifra
+ * chamava-se `cpf_*` antes da migration 0166 renomear CPF/CNPJ para NUIT).
+ * Instalação já rodando tem `CPF_ENCRYPTION_KEY` no `.env` dela, e a doutrina
+ * de packaging proíbe bump que exija editar `.env` à mão — então o nome novo
+ * cai de volta pro antigo quando o antigo é o único presente. Self-host novo
+ * usa `NUIT_ENCRYPTION_KEY`; instalação existente segue funcionando sem tocar
+ * no arquivo.
+ */
+const envWithLegacyFallback: NodeJS.ProcessEnv = { ...process.env };
+if (!envWithLegacyFallback.NUIT_ENCRYPTION_KEY && envWithLegacyFallback.CPF_ENCRYPTION_KEY) {
+  envWithLegacyFallback.NUIT_ENCRYPTION_KEY = envWithLegacyFallback.CPF_ENCRYPTION_KEY;
+}
+
+let parsed = schema.safeParse(envWithLegacyFallback);
 
 // Na fase de build da imagem Docker, semeia placeholders pras vars que faltam
 // (URL válida, passa .url()/.min(1)) e revalida — permite `next build` sem os
 // segredos de runtime. NUNCA acontece em runtime: lá process.env está completo
 // e este bloco não roda, então o boot real continua cobrando tudo.
 if (!parsed.success && isBuildPhase) {
-  const seeded: Record<string, string | undefined> = { ...process.env };
+  const seeded: Record<string, string | undefined> = { ...envWithLegacyFallback };
   for (const key of Object.keys(parsed.error.flatten().fieldErrors)) {
     if (!seeded[key]) seeded[key] = "https://build-placeholder.invalid";
   }

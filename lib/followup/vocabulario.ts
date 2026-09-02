@@ -335,7 +335,7 @@ export function fraseDoRamo(branchId: string): string | null {
  * meio de outra frase é o tipo de detalhe que ninguém revisa e todo mundo lê.
  */
 function encaixa(frase: string): string {
-  return frase.charAt(0).toLocaleLowerCase("pt-BR") + frase.slice(1);
+  return frase.charAt(0).toLocaleLowerCase("pt-PT") + frase.slice(1);
 }
 
 /**

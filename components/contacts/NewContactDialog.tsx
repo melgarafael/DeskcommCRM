@@ -20,7 +20,7 @@ interface FormShape {
   name?: string;
   email?: string;
   phone_number?: string;
-  cpf?: string;
+  nuit?: string;
   tagsRaw?: string;
 }
 
@@ -34,7 +34,7 @@ export function NewContactDialog({ open, onOpenChange }: Props) {
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
-    defaultValues: { name: "", email: "", phone_number: "", cpf: "", tagsRaw: "" },
+    defaultValues: { name: "", email: "", phone_number: "", nuit: "", tagsRaw: "" },
   });
 
   async function onSubmit(values: FormShape) {
@@ -48,7 +48,7 @@ export function NewContactDialog({ open, onOpenChange }: Props) {
     if (values.name?.trim()) payload.name = values.name.trim();
     if (values.email?.trim()) payload.email = values.email.trim();
     if (values.phone_number?.trim()) payload.phone_number = values.phone_number.trim();
-    if (values.cpf?.trim()) payload.cpf = values.cpf.trim();
+    if (values.nuit?.trim()) payload.nuit = values.nuit.trim();
     if (tags.length) payload.tags = tags;
 
     const parsed = contactCreateSchema.safeParse(payload);
@@ -90,13 +90,13 @@ export function NewContactDialog({ open, onOpenChange }: Props) {
             <Label htmlFor="phone_number">Telefone (E.164)</Label>
             <Input
               id="phone_number"
-              placeholder="+5511999998888"
+              placeholder="+258841234567"
               {...form.register("phone_number")}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cpf">CPF (opcional)</Label>
-            <Input id="cpf" placeholder="00000000000" {...form.register("cpf")} />
+            <Label htmlFor="nuit">NUIT (opcional)</Label>
+            <Input id="nuit" placeholder="00000000000" {...form.register("nuit")} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="tagsRaw">Tags (separadas por vírgula)</Label>

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { formatRelative } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import {
   Table,
   TableBody,

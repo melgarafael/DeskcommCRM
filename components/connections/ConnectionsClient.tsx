@@ -310,7 +310,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {c.last_health_check_at
-                    ? `Verificado ${new Date(c.last_health_check_at).toLocaleString("pt-BR")}`
+                    ? `Verificado ${new Date(c.last_health_check_at).toLocaleString("pt-PT")}`
                     : "Ainda não verificado"}
                 </p>
                 <div className="mt-auto flex gap-2">

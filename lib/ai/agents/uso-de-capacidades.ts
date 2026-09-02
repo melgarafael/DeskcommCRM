@@ -190,7 +190,7 @@ export function montarUsoDeCapacidades(input: MontarUsoInput): CapacidadeComUso[
     const porGravidade = GRAVIDADE[a.sinal] - GRAVIDADE[b.sinal];
     if (porGravidade !== 0) return porGravidade;
     if (b.total !== a.total) return b.total - a.total;
-    return a.rotulo.localeCompare(b.rotulo, "pt-BR");
+    return a.rotulo.localeCompare(b.rotulo, "pt-PT");
   });
 }
 

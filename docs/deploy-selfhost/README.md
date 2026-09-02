@@ -45,7 +45,7 @@ Edite o `.env` e preencha (mínimo):
   > HTTPS via Caddy é o recomendado de produção: fecha a família inteira de
   > restrições de contexto não-seguro de uma vez.
 - **Segredos** (gere com `openssl rand -base64 32` cada): `INTERNAL_SECRET`,
-  `INTERNAL_CRON_SECRET`, `CPF_ENCRYPTION_KEY`, `AI_CRED_AES_KEY`,
+  `INTERNAL_CRON_SECRET`, `NUIT_ENCRYPTION_KEY`, `AI_CRED_AES_KEY`,
   `WAHA_BYO_ENCRYPTION_KEY`, `IMPERSONATE_COOKIE_SECRET`, `LGPD_SIGNING_KEY`, `SRH_TOKEN`
 - **WAHA**: `WAHA_API_KEY` (invente uma), `WAHA_API_KEY_SHA512`
   (`echo -n "$WAHA_API_KEY" | shasum -a 512 | awk '{print $1}'`), `WAHA_HMAC_SECRET`

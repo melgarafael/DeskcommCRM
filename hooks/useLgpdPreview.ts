@@ -9,7 +9,7 @@ export interface LgpdPreviewContact {
   display_name: string | null;
   email: string | null; // already masked: a***@domain
   phone_number: string | null; // already masked: (**) ****-last4
-  cpf_present: boolean; // CPF value is NEVER returned
+  nuit_present: boolean; // NUIT value is NEVER returned
   birthdate: string | null;
   is_blocked: boolean;
   is_anonymized: boolean;

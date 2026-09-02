@@ -30,7 +30,7 @@ de menor precedência e registre.
 
 | Doc | Para quê |
 |---|---|
-| [`README.md`](../README.md) | O que é, quickstart de 5 min, stack, roadmap. Também em [EN](../README.en.md) / [ES](../README.es.md) |
+| [`README.md`](../README.md) | O que é, quickstart de 5 min, stack, roadmap. Também em [EN](../README.en.md) |
 | [`VISION.md`](../VISION.md) | Posicionamento, por que self-host, para quem |
 | [`ARCHITECTURE.md`](../ARCHITECTURE.md) | Arquitetura em 1 página |
 | [`AGENTS.md`](../AGENTS.md) | Contrato para agentes de código (qualquer ferramenta) |
@@ -100,8 +100,8 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 
 ## 5. Design system
 
-[`design-system/README.md`](design-system/README.md) é o ponto de entrada (v1.0, 5 escolhas
-visuais lockadas: paleta Sage, Atkinson Hyperlegible, densidade aerada, Phosphor duotone,
+[`design-system/README.md`](design-system/README.md) é o ponto de entrada (v2.0, 5 escolhas
+visuais lockadas: paleta verde-WhatsApp, Atkinson Hyperlegible, densidade aerada, Phosphor duotone,
 IBM Plex Mono). Numerados `00`–`09`: overview, tokens, paleta, tipografia, densidade,
 iconografia, componentes, motion, voice & tone, **anti-patterns**.
 Fluxo de tela em `design-system/screen-flow/` (jornadas, clickflows, máquinas de estado,
@@ -145,7 +145,7 @@ Documentação de *processo*. Alta rotatividade; trate como estado, não como co
 - [`handoffs/`](handoffs/) — arquivados: casos humanos, inbox multimodal, CRM vivo, LGPD, wave1-devvivo, contrato wave5, briefing CRM vivo
 - [`stories/`](stories/) — épicos e stories (`epics/MASTER.md` = plano por epic/wave)
 - [`superpowers/`](superpowers/) — `plans/` e `specs/` datados por onda, mais `handoffs/`
-- [`growth/`](growth/) — material de crescimento · [`brand/`](brand/) — marca · [`white-label.md`](white-label.md) — instalação com marca própria, também em [en](white-label.en.md) e [es](white-label.es.md) (traduções seladas pelo hash do original; ver `scripts/selar-traducao.ts`)
+- [`growth/`](growth/) — material de crescimento · [`brand/`](brand/) — marca · [`white-label.md`](white-label.md) — instalação com marca própria, também em [en](white-label.en.md) (tradução selada pelo hash do original; ver `scripts/selar-traducao.ts`)
 - [`../plan/`](../plan/) — backlog do gov-loop (`features.json` 31/31, `phases.md`, `progress.md`)
 - [`../loop/`](../loop/) — máquina do gov-loop (`LOOP.md`, `CHECKPOINT.md`, `checkpoints/G1..G6-report.md` + `.approved`)
 - [`../tasks/todo.md`](../tasks/todo.md) — workflow de construção original (Fase 0 → PRD → specs)

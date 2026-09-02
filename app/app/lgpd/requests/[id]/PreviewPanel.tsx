@@ -92,8 +92,8 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
                   {preview.contact.phone_number && (
                     <p className="text-muted-foreground">{preview.contact.phone_number}</p>
                   )}
-                  {preview.contact.cpf_present && (
-                    <p className="text-xs text-muted-foreground">CPF: presente (valor ocultado)</p>
+                  {preview.contact.nuit_present && (
+                    <p className="text-xs text-muted-foreground">NUIT: presente (valor ocultado)</p>
                   )}
                 </div>
               )}
@@ -144,7 +144,7 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
               )}
 
               <p className="text-center text-xs text-muted-foreground">
-                Gerado em {new Date(preview.generated_at).toLocaleString("pt-BR")} · PII mascarada · CPF não exibido
+                Gerado em {new Date(preview.generated_at).toLocaleString("pt-PT")} · PII mascarada · NUIT não exibido
               </p>
             </div>
           )}

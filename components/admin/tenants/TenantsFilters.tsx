@@ -51,7 +51,7 @@ export function TenantsFilters({ filters, onChange }: TenantsFiltersProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
       <Input
-        placeholder="Buscar por nome, slug ou CNPJ..."
+        placeholder="Buscar por nome, slug ou NUIT..."
         value={inputValue}
         onChange={(e) => handleSearch(e.target.value)}
         className="sm:w-80"

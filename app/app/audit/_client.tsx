@@ -17,7 +17,7 @@ import { useAuditQuery, type AuditFilters } from "@/hooks/audit/useAuditQuery";
 
 function fmtDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleString("pt-BR", { hour12: false });
+    return new Date(iso).toLocaleString("pt-PT", { hour12: false });
   } catch {
     return iso;
   }

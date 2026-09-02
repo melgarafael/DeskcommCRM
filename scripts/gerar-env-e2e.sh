@@ -24,7 +24,7 @@
 #   pnpm e2e:build && pnpm test:e2e   # build embute NEXT_PUBLIC_*, ver e2e-build.sh
 set -uo pipefail
 set -e
-CHAVE_CPF=""; CHAVE_WAHA=""; CHAVE_AI=""
+CHAVE_NUIT=""; CHAVE_WAHA=""; CHAVE_AI=""
 
 cd "$(dirname "$0")/.."
 
@@ -44,11 +44,11 @@ fi
 # existe: regenerá-las a cada chamada tornaria ilegível toda credencial que o
 # banco de teste já guardou.
 if [ -f .env.e2e ]; then
-  CHAVE_CPF="$(grep -E '^CPF_ENCRYPTION_KEY=' .env.e2e | cut -d= -f2-)"
+  CHAVE_NUIT="$(grep -E '^NUIT_ENCRYPTION_KEY=' .env.e2e | cut -d= -f2-)"
   CHAVE_WAHA="$(grep -E '^WAHA_BYO_ENCRYPTION_KEY=' .env.e2e | cut -d= -f2-)"
   CHAVE_AI="$(grep -E '^AI_CRED_AES_KEY=' .env.e2e | cut -d= -f2-)"
 fi
-[ "${#CHAVE_CPF}" -ge 44 ] || CHAVE_CPF="$(openssl rand -base64 32)"
+[ "${#CHAVE_NUIT}" -ge 44 ] || CHAVE_NUIT="$(openssl rand -base64 32)"
 [ "${#CHAVE_WAHA}" -ge 44 ] || CHAVE_WAHA="$(openssl rand -base64 32)"
 [ "${#CHAVE_AI}" -ge 44 ] || CHAVE_AI="$(openssl rand -base64 32)"
 
@@ -114,7 +114,7 @@ INTERNAL_SECRET=e2e-placeholder-nao-e-segredo
 # ("AI_CRED_AES_KEY deve ter exatamente 32 bytes (lido: 21)") e todo run do
 # agente morria em \`credential_decrypt_failed\`, o que aparecia como "o modelo
 # não respondeu". Geradas na hora: são de teste, não precisam sobreviver.
-CPF_ENCRYPTION_KEY=$CHAVE_CPF
+NUIT_ENCRYPTION_KEY=$CHAVE_NUIT
 WAHA_BYO_ENCRYPTION_KEY=$CHAVE_WAHA
 AI_CRED_AES_KEY=$CHAVE_AI
 WAHA_API_BASE_URL=http://127.0.0.1:3999

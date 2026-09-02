@@ -121,7 +121,7 @@ export default async function NuvemshopIntegrationPage() {
               <CardDescription>
                 Loja #{integration.store_metadata?.store_id ?? "—"} · última sync:{" "}
                 {integration.last_sync_at
-                  ? new Date(integration.last_sync_at).toLocaleString("pt-BR")
+                  ? new Date(integration.last_sync_at).toLocaleString("pt-PT")
                   : "—"}
               </CardDescription>
             </div>

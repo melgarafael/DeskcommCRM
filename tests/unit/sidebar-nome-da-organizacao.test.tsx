@@ -26,7 +26,6 @@ import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app/inbox" }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({ toggleSidebar: vi.fn() }));
-vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 // Os dois buscam estado do servidor e não têm nada a ver com o nome da marca.
 vi.mock("@/components/connections/ConnectionHealthDot", () => ({
   ConnectionHealthDot: () => null,

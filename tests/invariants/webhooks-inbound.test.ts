@@ -421,7 +421,7 @@ describe("POST /api/v1/webhooks/in/[token] (Task 6)", () => {
     );
   });
 
-  it("bônus — telefone que falha normalizePhoneBR vai pra source_metadata.raw_phone (observabilidade)", async () => {
+  it("bônus — telefone que falha normalizePhoneNumber vai pra source_metadata.raw_phone (observabilidade)", async () => {
     const res = await POST(jsonReq(TOKEN_JSON, { nome: "Carlos", telefone: "abc-invalid" }), reqCtx(TOKEN_JSON));
     expect(res.status).toBe(200);
     const leadRows = rows(`select * from public.crm_leads where title = 'Carlos'`);

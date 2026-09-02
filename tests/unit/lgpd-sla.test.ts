@@ -3,12 +3,12 @@
  *
  * Verifies that the LGPD SLA calculator correctly skips:
  *  - Weekends (Saturday + Sunday)
- *  - Brazilian national holidays (fixed and moveable 2026-2030)
+ *  - Mozambican national holidays (all fixed dates, 2026-2030)
  */
 
 import { describe, it, expect } from "vitest";
 import { computeDueAt } from "@/lib/lgpd/sla";
-import { HOLIDAYS_BR_ISO } from "@/lib/lgpd/holidays-br";
+import { HOLIDAYS_MZ_ISO } from "@/lib/lgpd/holidays-mz";
 
 /** Parse a YYYY-MM-DD string as a UTC Date */
 function d(iso: string): Date {
@@ -73,8 +73,7 @@ describe("computeDueAt — business day SLA calculator", () => {
     // Count: Thu30, skip Fri01(holiday), Mon04, Tue05, Wed06, Thu07, Fri08 = 6
     //        Mon11, Tue12, Wed13, Thu14, Fri15 = 11
     //        Mon18, Tue19, Wed20, Thu21 = 15
-    // → Thu 2026-05-21... wait, Tiradentes is 04-21 (Tue), not in this window.
-    // Let's recount from Thu 2026-04-30:
+    // → Thu 2026-05-21. Full recount from Thu 2026-04-30:
     //  day1 = Thu 30 Apr
     //  day2 = Fri 01 May? No — 01-May is Trabalho holiday → skip
     //  day2 = Mon 04 May
@@ -113,38 +112,33 @@ describe("computeDueAt — business day SLA calculator", () => {
     expect(fmt(computeDueAt(d("2026-12-23"), 15))).toBe("2027-01-15");
   });
 
-  it("2026-02-13 (Fri) + 15 úteis pula Carnaval 16-17/02", () => {
-    // 2026-02-16 (Mon) = Carnaval Monday — holiday
-    // 2026-02-17 (Tue) = Carnaval Tuesday — holiday
-    // day1=Sat14? No, Sat → skip. Sun15 → skip.
-    // First business day after Fri13: Mon16 is holiday, Tue17 is holiday → Wed18(day1)
-    // day1=Wed18, day2=Thu19, day3=Fri20
-    // day4=Mon23, day5=Tue24, day6=Wed25, day7=Thu26, day8=Fri27
-    // day9=Mon02Mar, day10=Tue03, day11=Wed04, day12=Thu05, day13=Fri06
-    // day14=Mon09, day15=Tue10
-    expect(fmt(computeDueAt(d("2026-02-13"), 15))).toBe("2026-03-10");
+  it("2026-06-22 (Seg) + 5 úteis pula Dia da Independência 25/06", () => {
+    // 2026-06-22 é segunda; 25/06 (quinta) é feriado — Dia da Independência Nacional
+    // day1=Ter23, day2=Qua24, skip Qui25 (feriado), day3=Sex26
+    // skip Sáb27, Dom28, day4=Seg29, day5=Ter30
+    expect(fmt(computeDueAt(d("2026-06-22"), 5))).toBe("2026-06-30");
   });
 
   // -------------------------------------------------------------------------
   // Sanity check on the holiday list
   // -------------------------------------------------------------------------
 
-  it("HOLIDAYS_BR_ISO contains all 8 fixed holidays per year × 5 years = 40", () => {
-    const fixedCount = HOLIDAYS_BR_ISO.filter((h) => {
-      // Fixed holidays have a known suffix
-      const md = h.slice(5); // MM-DD
-      const fixed = [
-        "01-01",
-        "04-21",
-        "05-01",
-        "09-07",
-        "10-12",
-        "11-02",
-        "11-15",
-        "12-25",
-      ];
-      return fixed.includes(md);
-    }).length;
-    expect(fixedCount).toBe(8 * 5);
+  it("HOLIDAYS_MZ_ISO contém os 9 feriados fixos + Sexta-feira Santa (móvel), por ano × 5 anos = 50", () => {
+    const fixed = [
+      "01-01",
+      "02-03",
+      "04-07",
+      "05-01",
+      "06-25",
+      "09-07",
+      "09-25",
+      "10-04",
+      "12-25",
+    ];
+    const fixedCount = HOLIDAYS_MZ_ISO.filter((h) => fixed.includes(h.slice(5))).length;
+    expect(fixedCount).toBe(9 * 5);
+    // +1 por ano: Sexta-feira Santa, único feriado móvel do calendário
+    // moçambicano — datas exatas cobertas por tests/unit/holidays-mz.test.ts.
+    expect(HOLIDAYS_MZ_ISO.length).toBe(10 * 5);
   });
 });

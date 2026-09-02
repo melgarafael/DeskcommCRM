@@ -72,7 +72,7 @@ const NOME_DA_VERSAO: Record<string, string> = {
 
 function formatarData(iso: string | null): string {
   if (!iso) return "nunca";
-  return new Date(iso).toLocaleString("pt-BR", {
+  return new Date(iso).toLocaleString("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",

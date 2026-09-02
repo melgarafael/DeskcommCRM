@@ -10,7 +10,7 @@ export interface Contact {
   email: string | null;
   email_normalized: string | null;
   phone_number: string | null;
-  cpf_hash: string | null;
+  nuit_hash: string | null;
   birthdate: string | null;
   is_blocked: boolean;
   blocked_reason: string | null;

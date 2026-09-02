@@ -11,7 +11,7 @@ export interface TenantOrganization {
   slug: string;
   display_name: string;
   legal_name: string | null;
-  cnpj: string | null;
+  nuit: string | null;
   // 'onboarding' não existe na check constraint do banco — é estado derivado
   // (active + onboarded_at null), nunca vem numa linha real.
   status: "active" | "suspended" | "redacted";

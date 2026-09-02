@@ -86,7 +86,7 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s · ${name}`,
     },
     description:
-      "Centralize o atendimento por WhatsApp num funil só. Agentes de IA resolvem o que dá pra resolver e passam para o time humano o que importa — com tudo registrado. Multi-tenant, LGPD-nativo, feito para operações brasileiras.",
+      "Centralize o atendimento por WhatsApp num funil só. Agentes de IA resolvem o que dá para resolver e passam à equipa humana o que importa — com tudo registado. Multi-tenant, com proteção de dados nativa, feito para operações moçambicanas.",
     applicationName: name,
     authors: [{ name }],
     keywords: [
@@ -94,7 +94,7 @@ export async function generateMetadata(): Promise<Metadata> {
       "atendimento",
       "WhatsApp",
       "IA conversacional",
-      "LGPD",
+      "proteção de dados",
       "multi-tenant",
     ],
     robots: { index: false, follow: false },
@@ -275,7 +275,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
-      lang="pt-BR"
+      lang="pt-PT"
       data-theme="light"
       suppressHydrationWarning
       className={`${atkinson.variable} ${plexMono.variable}`}

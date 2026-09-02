@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { CircleNotch, MagnifyingGlass } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { format, formatDistanceToNowStrict } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 
 function useDebounced<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState<T>(value);

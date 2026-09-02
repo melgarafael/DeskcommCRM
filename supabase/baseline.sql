@@ -367,8 +367,8 @@ begin
     -- e o Postgres recusa escrita nela — a linha acima já a zera por derivação.
     -- Com a atribuição, o cascade INTEIRO abortava e nada era anonimizado.
     phone_number = null,
-    cpf_encrypted = null,
-    cpf_hash = null,
+    nuit_encrypted = null,
+    nuit_hash = null,
     birthdate = null,
     is_anonymized = true,
     anonymized_at = now(),
@@ -1350,8 +1350,8 @@ CREATE TABLE IF NOT EXISTS "public"."contacts" (
     "email" "text",
     "email_normalized" "text" GENERATED ALWAYS AS ("lower"(TRIM(BOTH FROM "email"))) STORED,
     "phone_number" "text",
-    "cpf_encrypted" "bytea",
-    "cpf_hash" "text",
+    "nuit_encrypted" "bytea",
+    "nuit_hash" "text",
     "birthdate" "date",
     "is_blocked" boolean DEFAULT false NOT NULL,
     "blocked_reason" "text",
@@ -1370,7 +1370,7 @@ CREATE TABLE IF NOT EXISTS "public"."contacts" (
     "last_activity_at" timestamp with time zone,
     "force_human" boolean DEFAULT false NOT NULL,
     CONSTRAINT "contacts_anonymized_locked" CHECK ((("is_anonymized" = false) OR (("is_anonymized" = true) AND ("anonymized_at" IS NOT NULL)))),
-    CONSTRAINT "contacts_cpf_consistency" CHECK ((("cpf_encrypted" IS NULL) = ("cpf_hash" IS NULL))),
+    CONSTRAINT "contacts_nuit_consistency" CHECK ((("nuit_encrypted" IS NULL) = ("nuit_hash" IS NULL))),
     CONSTRAINT "contacts_email_format" CHECK ((("email" IS NULL) OR ("email" ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'::"text"))),
     CONSTRAINT "contacts_phone_e164_format" CHECK ((("phone_number" IS NULL) OR ("phone_number" ~ '^\+\d{8,15}$'::"text")))
 );
@@ -1379,7 +1379,7 @@ CREATE TABLE IF NOT EXISTS "public"."contacts" (
 ALTER TABLE "public"."contacts" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."contacts" IS 'Pessoa fisica no escopo de um tenant. CPF criptografado at-rest. is_anonymized irreversivel (L-04).';
+COMMENT ON TABLE "public"."contacts" IS 'Pessoa fisica no escopo de um tenant. NUIT criptografado at-rest. is_anonymized irreversivel (L-04).';
 
 
 
@@ -1505,7 +1505,7 @@ CREATE TABLE IF NOT EXISTS "public"."crm_pipelines" (
     "is_archived" boolean DEFAULT false NOT NULL,
     "position" numeric DEFAULT 1000 NOT NULL,
     "vocabulary" "jsonb" DEFAULT "jsonb_build_object"('lead', 'Cliente', 'lead_plural', 'Clientes', 'deal', 'Pedido', 'deal_plural', 'Pedidos', 'won', 'Pago', 'lost', 'Cancelado', 'stage', 'Etapa', 'stage_plural', 'Etapas') NOT NULL,
-    "settings" "jsonb" DEFAULT "jsonb_build_object"('fields', '[]'::"jsonb", 'canonical_tags', '[]'::"jsonb", 'lost_reasons', '[]'::"jsonb", 'identity_resolution', "jsonb_build_object"('fields_in_priority_order', "jsonb_build_array"('cpf', 'phone_e164', 'email'))) NOT NULL,
+    "settings" "jsonb" DEFAULT "jsonb_build_object"('fields', '[]'::"jsonb", 'canonical_tags', '[]'::"jsonb", 'lost_reasons', '[]'::"jsonb", 'identity_resolution', "jsonb_build_object"('fields_in_priority_order', "jsonb_build_array"('nuit', 'phone_e164', 'email'))) NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     CONSTRAINT "crm_pipelines_slug_format" CHECK (("slug" ~ '^[a-z0-9_-]{2,40}$'::"text"))
@@ -1748,9 +1748,9 @@ CREATE TABLE IF NOT EXISTS "public"."organizations" (
     "slug" "public"."citext" NOT NULL,
     "legal_name" "text" NOT NULL,
     "display_name" "text" NOT NULL,
-    "cnpj" "text",
+    "nuit" "text",
     "status" "text" DEFAULT 'active'::"text" NOT NULL,
-    "timezone" "text" DEFAULT 'America/Sao_Paulo'::"text" NOT NULL,
+    "timezone" "text" DEFAULT 'Africa/Maputo'::"text" NOT NULL,
     "locale" "text" DEFAULT 'pt-BR'::"text" NOT NULL,
     "rate_limit_rps" integer DEFAULT 100 NOT NULL,
     "ai_budget_cents" bigint,
@@ -2376,10 +2376,10 @@ END IF; END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
 IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                WHERE conname = 'organizations_cnpj_key' AND conrelid = '"public"."organizations"'::regclass)
-   AND to_regclass('"public"."organizations_cnpj_key"') IS NULL THEN
+                WHERE conname = 'organizations_nuit_key' AND conrelid = '"public"."organizations"'::regclass)
+   AND to_regclass('"public"."organizations_nuit_key"') IS NULL THEN
 ALTER TABLE ONLY "public"."organizations"
-    ADD CONSTRAINT "organizations_cnpj_key" UNIQUE ("cnpj");
+    ADD CONSTRAINT "organizations_nuit_key" UNIQUE ("nuit");
 END IF; END $baseline_guard$;
 
 
@@ -2904,7 +2904,7 @@ CREATE INDEX IF NOT EXISTS "tenant_integrations_status_idx" ON "public"."tenant_
 
 
 
-CREATE UNIQUE INDEX IF NOT EXISTS "uniq_contacts_org_cpf" ON "public"."contacts" USING "btree" ("organization_id", "cpf_hash") WHERE (("cpf_hash" IS NOT NULL) AND ("is_merged_into" IS NULL));
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_contacts_org_nuit" ON "public"."contacts" USING "btree" ("organization_id", "nuit_hash") WHERE (("nuit_hash" IS NOT NULL) AND ("is_merged_into" IS NULL));
 
 
 
@@ -13529,6 +13529,100 @@ create or replace trigger trg_payments_updated_at
   before update on public.payments
   for each row execute function public.fn_set_updated_at();
 
+-- ---- RAG: escrita exige manager+ (migration 0163) ----
+--
+-- As 4 tabelas de conhecimento (`ai_chunks`, `ai_faq_items`,
+-- `ai_knowledge_versions`, `ai_knowledge_sources`) tinham policy `FOR ALL`
+-- só com isolamento de tenant — qualquer role (viewer, agent) podia escrever
+-- via client autenticado direto, sem passar pelas rotas oficiais
+-- (`app/api/v1/ai/knowledge/...`), que já exigem `requireRole("manager")`.
+-- A defesa vivia só na API; agora vive também no banco. SELECT continua
+-- aberto a qualquer membro da org (nenhuma tela depende de restringi-lo, e
+-- restringir sem necessidade seria escopo maior que o achado pede).
+
+drop policy if exists tenant_isolation_ai_chunks_all on public.ai_chunks;
+drop policy if exists ai_chunks_select on public.ai_chunks;
+create policy ai_chunks_select on public.ai_chunks
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+drop policy if exists ai_chunks_write on public.ai_chunks;
+create policy ai_chunks_write on public.ai_chunks
+  for all using (
+    ((organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  )
+  with check (
+    ((organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_ai_faq_items_all on public.ai_faq_items;
+drop policy if exists ai_faq_items_select on public.ai_faq_items;
+create policy ai_faq_items_select on public.ai_faq_items
+  for select using (organization_id in (select public.fn_user_org_ids()));
+drop policy if exists ai_faq_items_write on public.ai_faq_items;
+create policy ai_faq_items_write on public.ai_faq_items
+  for all using (
+    (organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager')
+  )
+  with check (
+    (organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager')
+  );
+
+drop policy if exists tenant_isolation_ai_kbv_all on public.ai_knowledge_versions;
+drop policy if exists ai_kbv_select on public.ai_knowledge_versions;
+create policy ai_kbv_select on public.ai_knowledge_versions
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+drop policy if exists ai_kbv_write on public.ai_knowledge_versions;
+create policy ai_kbv_write on public.ai_knowledge_versions
+  for all using (
+    ((organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  )
+  with check (
+    ((organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  );
+
+drop policy if exists tenant_isolation_ai_knowledge_sources_all on public.ai_knowledge_sources;
+drop policy if exists ai_knowledge_sources_select on public.ai_knowledge_sources;
+create policy ai_knowledge_sources_select on public.ai_knowledge_sources
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+  );
+drop policy if exists ai_knowledge_sources_write on public.ai_knowledge_sources;
+create policy ai_knowledge_sources_write on public.ai_knowledge_sources
+  for all using (
+    ((organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  )
+  with check (
+    ((organization_id in (select public.fn_user_org_ids())) and public.fn_role_at_least(organization_id, 'manager'))
+    or public.fn_is_platform_admin()
+  );
+
+-- ---- histórico de atribuição de conversa respeita visibilidade (migration 0164) ----
+--
+-- `conversation_assignment_events` (0031) tinha SELECT "org-flat": qualquer
+-- membro da org via qualquer transferência de qualquer conversa, mesmo com
+-- `visibility_mode='own'`. Mesmo idioma de `crm_lead_activities_select`
+-- (0042): EXISTS no pai (`conversations`, estado ATUAL) + `fn_can_view_lead`,
+-- que já resolve platform admin / role manager+ / dono / visibility_mode —
+-- repetir essas checagens aqui duplicaria a fonte da verdade.
+
+drop policy if exists cae_select on public.conversation_assignment_events;
+create policy cae_select on public.conversation_assignment_events
+  for select using (
+    exists (
+      select 1
+        from public.conversations c
+       where c.id = conversation_assignment_events.conversation_id
+         and public.fn_can_view_lead(c.organization_id, c.assigned_to_user_id)
+    )
+  );
 
 -- ---- Agenda nativa: appointment_types, attendant_schedule, appointments (migration 0165) ----
 --
@@ -13787,6 +13881,108 @@ create index if not exists idx_appointments_ends_at
   on public.appointments (ends_at)
   where status = 'scheduled';
 
+
+-- ---- fuso padrão da organização passa para Africa/Maputo (migration 0168) ----
+--
+-- Esta instalação opera em Moçambique; organização criada sem fuso explícito
+-- deve nascer em Africa/Maputo (UTC+2, sem DST), não em America/Sao_Paulo —
+-- herança do template original do curso WAHA. Não altera organização
+-- existente: só o piso para linha NOVA muda.
+
+alter table public.organizations alter column timezone set default 'Africa/Maputo';
+
+-- ---- NUIT em vez de CPF/CNPJ (migration 0169) ----
+--
+-- CPF e CNPJ são identificadores fiscais brasileiros. Esta instalação opera
+-- em Moçambique, onde o NUIT (Número Único de Identificação Tributária) serve
+-- tanto pessoas físicas quanto empresas — um único campo em vez do par
+-- CPF/CNPJ. Renomeia coluna, constraint e índice; corrige dado existente que
+-- ainda prioriza 'cpf' na resolução de identidade do pipeline.
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'contacts' and column_name = 'cpf_encrypted'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'contacts' and column_name = 'nuit_encrypted'
+  ) then
+    alter table public.contacts rename column cpf_encrypted to nuit_encrypted;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'contacts' and column_name = 'cpf_hash'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'contacts' and column_name = 'nuit_hash'
+  ) then
+    alter table public.contacts rename column cpf_hash to nuit_hash;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'cnpj'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'nuit'
+  ) then
+    alter table public.organizations rename column cnpj to nuit;
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'contacts_cpf_consistency' and conrelid = 'public.contacts'::regclass
+  ) then
+    alter table public.contacts rename constraint contacts_cpf_consistency to contacts_nuit_consistency;
+  end if;
+
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'organizations_cnpj_key' and conrelid = 'public.organizations'::regclass
+  ) then
+    alter table public.organizations rename constraint organizations_cnpj_key to organizations_nuit_key;
+  end if;
+end $$;
+
+alter index if exists public.uniq_contacts_org_cpf rename to uniq_contacts_org_nuit;
+
+comment on table public.contacts is 'Pessoa fisica no escopo de um tenant. NUIT criptografado at-rest. is_anonymized irreversivel (L-04).';
+
+update public.crm_pipelines
+set settings = jsonb_set(
+  settings,
+  '{identity_resolution,fields_in_priority_order}',
+  (
+    select jsonb_agg(case when elem = '"cpf"'::jsonb then '"nuit"'::jsonb else elem end)
+    from jsonb_array_elements(settings #> '{identity_resolution,fields_in_priority_order}') as elem
+  )
+)
+where settings #> '{identity_resolution,fields_in_priority_order}' @> '["cpf"]'::jsonb;
+
+alter table public.crm_pipelines
+  alter column settings set default jsonb_build_object(
+    'fields', '[]'::jsonb,
+    'canonical_tags', '[]'::jsonb,
+    'lost_reasons', '[]'::jsonb,
+    'identity_resolution', jsonb_build_object(
+      'fields_in_priority_order', jsonb_build_array('nuit', 'phone_e164', 'email')
+    )
+  );
+
+-- ---- locale padrão passa de pt-BR para pt-PT (migration 0170) ----
+--
+-- Esta instalação opera em Moçambique; organização ou item de FAQ criado sem
+-- locale explícito deve nascer em pt-PT (português europeu), não pt-BR —
+-- herança do template original do curso WAHA. Não altera organização/FAQ
+-- existente: só o piso para linha NOVA muda.
+
+alter table public.organizations alter column locale set default 'pt-PT';
+alter table public.ai_faq_items alter column locale set default 'pt-PT';
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

@@ -59,7 +59,7 @@ function formatRelative(iso: string | null): string {
   if (diffHr < 24) return `há ${diffHr} h`;
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 30) return `há ${diffDay} d`;
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return new Date(iso).toLocaleDateString("pt-PT");
 }
 
 export function KnowledgeSourceCard({

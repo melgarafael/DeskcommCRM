@@ -93,7 +93,7 @@ export function UsageDashboardClient({ agents, initial }: Props) {
             />
             <StatCard
               label="Atendimentos com IA"
-              value={q.data.totals.invocations.toLocaleString("pt-BR")}
+              value={q.data.totals.invocations.toLocaleString("pt-PT")}
             />
             <StatCard
               label="Passaram para uma pessoa"
@@ -108,12 +108,12 @@ export function UsageDashboardClient({ agents, initial }: Props) {
             */}
             <StatCard
               label="Tempo de resposta"
-              value={`${(q.data.totals.p95_latency_ms / 1000).toLocaleString("pt-BR", {
+              value={`${(q.data.totals.p95_latency_ms / 1000).toLocaleString("pt-PT", {
                 maximumFractionDigits: 1,
               })} s`}
               hint={`a maioria responde em ${(
                 q.data.totals.p50_latency_ms / 1000
-              ).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s; este é o pior caso comum`}
+              ).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} s; este é o pior caso comum`}
             />
           </div>
 

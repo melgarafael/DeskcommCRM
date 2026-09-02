@@ -21,6 +21,9 @@ import {
  * identificador é do sistema, o que ela reconhece é a cidade.
  */
 const FUSOS: { id: string; cidade: string }[] = [
+  { id: "Africa/Maputo", cidade: "Maputo e Moçambique" },
+  { id: "Africa/Johannesburg", cidade: "Joanesburgo e África do Sul" },
+  { id: "Europe/Lisbon", cidade: "Lisboa" },
   { id: "America/Sao_Paulo", cidade: "São Paulo, Rio, Brasília, Sul e Sudeste" },
   { id: "America/Recife", cidade: "Recife, Salvador, Fortaleza e Nordeste" },
   { id: "America/Belem", cidade: "Belém e Pará" },
@@ -28,9 +31,8 @@ const FUSOS: { id: string; cidade: string }[] = [
   { id: "America/Cuiaba", cidade: "Cuiabá e Mato Grosso" },
   { id: "America/Rio_Branco", cidade: "Rio Branco e Acre" },
   { id: "America/Argentina/Buenos_Aires", cidade: "Buenos Aires" },
-  { id: "Europe/Lisbon", cidade: "Lisboa" },
-  { id: "Europe/Madrid", cidade: "Madri" },
-  { id: "America/New_York", cidade: "Nova York" },
+  { id: "Europe/Madrid", cidade: "Madrid" },
+  { id: "America/New_York", cidade: "Nova Iorque" },
   { id: "America/Los_Angeles", cidade: "Los Angeles" },
   { id: "UTC", cidade: "Outro (horário universal)" },
 ];
@@ -38,7 +40,7 @@ const FUSOS: { id: string; cidade: string }[] = [
 export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
   const [displayName, setDisplayName] = useState(defaultOrgName);
   const [oQueFaz, setOQueFaz] = useState("");
-  const [timezone, setTimezone] = useState("America/Sao_Paulo");
+  const [timezone, setTimezone] = useState("Africa/Maputo");
   const [accepted, setAccepted] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -93,8 +95,8 @@ export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
           placeholder="Ex.: clínica odontológica, ou venda de roupa fitness pelo WhatsApp"
         />
         <p className="text-xs text-muted-foreground">
-          Uma linha basta. É com isso que seu funcionário aprende com quem ele
-          está falando — e que a gente monta o quadro de clientes do seu jeito.
+          Uma linha basta. É com isso que o seu funcionário aprende com quem
+          está a falar — e que nós montamos o quadro de clientes ao seu jeito.
         </p>
       </div>
 
@@ -141,7 +143,7 @@ export function WelcomeForm({ defaultOrgName }: { defaultOrgName: string }) {
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending || !accepted}>
-          {pending ? "Salvando..." : "Continuar"}
+          {pending ? "A guardar..." : "Continuar"}
         </Button>
       </div>
     </form>

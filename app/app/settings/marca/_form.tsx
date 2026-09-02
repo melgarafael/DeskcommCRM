@@ -76,7 +76,7 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
   // A sessão está com um fator cadastrado mas não confirmado AGORA. Sem esta
   // linha o toast mostraria o código cru — a action passou a cobrar o segundo
   // fator, e o gate de MFA das telas não alcança Server Action.
-  mfa_required: "Confirme o código do seu aplicativo de duas etapas e tente de novo.",
+  mfa_required: "Confirme o código da sua aplicação de duas etapas e tente de novo.",
   // NUNCA "salvo com uma ressalva": este código existe justamente porque a
   // gravação não casou nenhuma linha, e a tela dizer "salvo" quando nada foi
   // gravado é a forma exata do defeito que a função SQL veio fechar.
@@ -405,7 +405,7 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
             empresa.
           </li>
           <li>
-            A tela de entrada é sempre a do sistema: quando alguém digita a senha, ainda não dá
+            O ecrã de entrada é sempre o do sistema: quando alguém introduz a senha, ainda não dá
             para saber de qual empresa ele é.
           </li>
           {/*
@@ -417,17 +417,17 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
             papéis num documento com peso legal.
           */}
           <li>
-            Os e-mails que este sistema envia (convite de time, pedidos de LGPD) já saem com o
-            nome da sua empresa.
+            Os e-mails que este sistema envia (convite de equipa, pedidos de proteção de dados) já
+            saem com o nome da sua empresa.
           </li>
           <li>
-            O relatório de LGPD entregue ao cliente traz a RAZÃO SOCIAL da sua empresa, e não o
+            O relatório de proteção de dados entregue ao cliente traz a RAZÃO SOCIAL da sua empresa, e não o
             nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo
             &quot;Razão social&quot; em Configurações → Organização.
           </li>
           <li>
-            O aplicativo de verificação em duas etapas continua registrando o nome do sistema:
-            o cadastro acontece antes de saber de qual empresa a pessoa é.
+            A aplicação de verificação em duas etapas continua a registar o nome do sistema:
+            o registo acontece antes de saber de qual empresa a pessoa é.
           </li>
           {/*
             Esta linha dizia "o logo continua sendo o de quem instalou o
@@ -436,8 +436,8 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
             frase ausente, porque quem a lê para de procurar o campo.
           */}
           <li>
-            O logo que você subir aqui aparece no menu lateral, para quem trabalha nesta
-            empresa. A tela de entrada continua com o logo de quem instalou o sistema: ali
+            O logo que carregar aqui aparece no menu lateral, para quem trabalha nesta
+            empresa. O ecrã de entrada continua com o logo de quem instalou o sistema: ali
             ainda não dá para saber de qual empresa a pessoa é.
           </li>
         </ul>

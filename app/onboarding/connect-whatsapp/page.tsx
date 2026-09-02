@@ -19,7 +19,7 @@ export default async function ConnectWhatsappPage() {
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">Dê um telefone a ele</h2>
         <p className="text-sm text-muted-foreground">
-          É por este número que ele vai atender seus clientes. Tenha o celular por perto.
+          É por este número que ele vai atender os seus clientes. Tenha o telemóvel por perto.
         </p>
       </header>
       <ConnectWhatsappClient

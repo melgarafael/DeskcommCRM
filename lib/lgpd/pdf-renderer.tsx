@@ -98,7 +98,7 @@ interface Props {
 function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
   try {
-    return new Date(s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    return new Date(s).toLocaleString("pt-PT", { timeZone: "Africa/Maputo" });
   } catch {
     return s;
   }
@@ -131,9 +131,9 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Relatório LGPD — Solicitação de Acesso aos Dados</Text>
+          <Text style={styles.title}>Relatório de Proteção de Dados — Solicitação de Acesso</Text>
           <Text style={styles.subtitle}>
-            Base legal: LGPD Art. 18, II (Lei nº 13.709/2018) · Solicitação #{shortId}
+            Base legal: Lei n.º 3/2017 (Moçambique) · Solicitação #{shortId}
           </Text>
         </View>
 
@@ -187,9 +187,9 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
               <Text style={styles.value}>{data.contact.phone_number ?? "—"}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>CPF:</Text>
+              <Text style={styles.label}>NUIT:</Text>
               <Text style={styles.value}>
-                {data.contact.cpf_present ? "Armazenado (criptografado)" : "—"}
+                {data.contact.nuit_present ? "Armazenado (criptografado)" : "—"}
               </Text>
             </View>
             <View style={styles.row}>
@@ -211,7 +211,7 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Consentimentos</Text>
           {data.consents.length === 0 ? (
-            <Text style={styles.small}>Nenhum consentimento registrado.</Text>
+            <Text style={styles.small}>Nenhum consentimento registado.</Text>
           ) : (
             data.consents.map((c, i) => (
               <View key={i} style={styles.row}>
@@ -315,7 +315,7 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
             <Text>
               ASSINATURA DIGITAL PAdES PENDENTE — chave LGPD_SIGNING_KEY não
               configurada. A integridade do documento é garantida por hash SHA-256
-              registrado em log auditável.
+              registado em log auditável.
             </Text>
           </View>
         ) : null}
@@ -324,9 +324,9 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
         {/* CONTROLADOR, nunca marca — ver o cabeçalho deste arquivo. */}
         <View style={styles.footer} fixed>
           <Text>
-            Controlador: {data.organization_legal_name || "—"} · Relatório LGPD Art. 18 II
-            (Lei nº 13.709/2018) · Encarregado (DPO): {encarregado(data)} · Validade do
-            link de download conforme e-mail recebido
+            Controlador: {data.organization_legal_name || "—"} · Relatório de Proteção de
+            Dados — Lei n.º 3/2017 (Moçambique) · Encarregado (DPO): {encarregado(data)} ·
+            Validade da ligação de transferência conforme e-mail recebido
           </Text>
         </View>
       </Page>

@@ -13,7 +13,7 @@ import type {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -66,7 +66,7 @@ function StatCard({ label, value, warning }: { label: string; value: number; war
       "rounded-lg border p-4 flex flex-col gap-1",
       warning && value > 0 ? "border-amber-300 bg-amber-50/50 dark:border-amber-700 dark:bg-amber-950/20" : "bg-card",
     ].join(" ")}>
-      <span className="text-2xl font-bold tabular-nums">{value.toLocaleString("pt-BR")}</span>
+      <span className="text-2xl font-bold tabular-nums">{value.toLocaleString("pt-PT")}</span>
       <span className="text-xs text-muted-foreground leading-tight">{label}</span>
       {warning && value > 0 && (
         <Warning size={14} weight="fill" className="text-amber-500 mt-0.5" aria-label="Atenção" />
@@ -112,7 +112,7 @@ export function TenantOverview({ organization, counts, integrations }: TenantOve
         <div>
           <InfoRow label="Plano" value={<Badge variant="neutral" className="capitalize">{plan}</Badge>} />
           <InfoRow label="Razão social" value={organization.legal_name} />
-          <InfoRow label="CNPJ" value={organization.cnpj} />
+          <InfoRow label="NUIT" value={organization.nuit} />
           <InfoRow label="Onboarding concluído" value={formatDate(organization.onboarded_at)} />
           <InfoRow label="Criado em" value={formatDate(organization.created_at)} />
           {organization.suspended_at && (
@@ -177,7 +177,7 @@ export function TenantOverview({ organization, counts, integrations }: TenantOve
                 </span>
               }
             />
-            <InfoRow label="Invocações IA (30d)" value={counts.ai_invocations_30d.toLocaleString("pt-BR")} />
+            <InfoRow label="Invocações IA (30d)" value={counts.ai_invocations_30d.toLocaleString("pt-PT")} />
           </div>
         </div>
       </div>

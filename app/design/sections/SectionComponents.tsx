@@ -71,9 +71,9 @@ export function SectionComponents() {
           </div>
         </div>
         <div>
-          <label className="ds-label">CPF (com erro)</label>
+          <label className="ds-label">NUIT (com erro)</label>
           <input className="ds-input" defaultValue="000.000.000-00" aria-invalid="true" />
-          <span style={{ color: "var(--ds-error)", fontSize: 11.5, marginTop: 4, display: "block" }}>CPF inválido — verifique os dígitos.</span>
+          <span style={{ color: "var(--ds-error)", fontSize: 11.5, marginTop: 4, display: "block" }}>NUIT inválido — verifique os dígitos.</span>
         </div>
         <div>
           <label className="ds-label">Disabled</label>
@@ -114,7 +114,7 @@ export function SectionComponents() {
       <div className="ds-grid-3">
         <div className="ds-card">
           <div className="ds-key">Receita do dia</div>
-          <div className="ds-display" style={{ fontSize: 28, fontWeight: 600, marginTop: 6 }}>R$ 12.443,00</div>
+          <div className="ds-display" style={{ fontSize: 28, fontWeight: 600, marginTop: 6 }}>MT 12.443,00</div>
           <div style={{ fontSize: 12, color: "var(--ds-success)", marginTop: 4 }}>+8.4% vs ontem</div>
         </div>
         <div className="ds-card ds-card--interactive">
@@ -150,7 +150,7 @@ export function SectionComponents() {
               <div className="ds-avatar">JP</div>
               <div className="body">
                 <div className="title">João Pereira</div>
-                <div className="preview">Já fiz o Pix, segue o comprovante…</div>
+                <div className="preview">Já fiz o Mpesa, segue o comprovante…</div>
               </div>
               <div className="meta">
                 <span className="ts">14h28</span>
@@ -163,7 +163,7 @@ export function SectionComponents() {
           <div className="ds-kanban-card" style={{ background: "var(--ds-surface)" }}>
             <div className="row">
               <span className="title">Pedido #12.443</span>
-              <span className="value">R$ 1.234,56</span>
+              <span className="value">MT 1.234,56</span>
             </div>
             <div style={{ fontSize: 12, color: "var(--ds-text-muted)" }}>Maria Silva · cliente recorrente</div>
             <div className="row">

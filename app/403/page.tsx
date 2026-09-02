@@ -15,7 +15,7 @@ export default function ForbiddenPage() {
             <Link href="/">Voltar</Link>
           </Button>
           <Button asChild>
-            <Link href="/app/inbox">Voltar pra Inbox</Link>
+            <Link href="/app/inbox">Voltar à Inbox</Link>
           </Button>
         </div>
       </Card>

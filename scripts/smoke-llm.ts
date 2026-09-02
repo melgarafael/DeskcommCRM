@@ -61,7 +61,7 @@ const RUN_SALT = process.env.SMOKE_SALT ?? `run-${Date.now()}`;
 function bigSystem(): string {
   const bloco = [
     'Você é o assistente de vendas da organização de teste do smoke.',
-    'Regras de conduta: responda sempre em português do Brasil, com no máximo duas frases.',
+    'Regras de conduta: responda sempre em português de Moçambique, com no máximo duas frases.',
     'Nunca prometa prazos de entrega, descontos ou condições comerciais que não estejam no catálogo.',
     'Se o cliente pedir atendimento humano, confirme que a transferência será feita pelo sistema.',
     'Produtos do catálogo de teste: parafuso M3 (R$ 1), porca M3 (R$ 0,50), arruela lisa (R$ 0,25).',

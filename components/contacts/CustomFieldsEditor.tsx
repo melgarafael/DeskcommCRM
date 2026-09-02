@@ -189,7 +189,7 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled }: Props)
                 <Input
                   id={id}
                   type="tel"
-                  placeholder="+5511999998888"
+                  placeholder="+258841234567"
                   value={typeof v === "string" ? v : ""}
                   onChange={(e) => set(f.key, e.target.value)}
                   disabled={disabled}

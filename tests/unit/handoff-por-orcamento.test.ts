@@ -411,10 +411,15 @@ describe("o código morto de orçamento não volta", () => {
 describe("os textos do orçamento nomeiam botões que existem", () => {
   const fonteCabecalho = readFileSync(CABECALHO, "utf8");
 
-  /** O rótulo do botão de volta, extraído do próprio componente. */
+  /**
+   * O rótulo do botão de volta, extraído do próprio componente. O produto
+   * deixou de usar a função `t()` de i18n (interface passou a ser só
+   * pt-MZ) — o rótulo em repouso do JSX agora é a string literal depois do
+   * `:` do ternário `{pending ? "A devolver..." : "Devolver ao automático"}`.
+   */
   function rotuloDoBotaoDeVolta(): string {
     const bloco = fonteCabecalho.slice(fonteCabecalho.indexOf('data-testid="devolver-ao-automatico"'));
-    const m = /t\("([^"]+)"\)/.exec(bloco);
+    const m = /:\s*"([^"]+)"/.exec(bloco);
     if (m === null) {
       throw new Error(
         "não achei o rótulo do botão de volta em ConversationHeader.tsx — o extrator perdeu o alvo. " +
@@ -444,11 +449,11 @@ describe("os textos do orçamento nomeiam botões que existem", () => {
     // Sabota o COMPONENTE, não o texto: é a direção real do apodrecimento (o
     // botão é renomeado por outra frente, e os textos ficam para trás).
     const renomeado = fonteCabecalho.replace(
-      `t("${rotuloDoBotaoDeVolta()}")`,
-      't("Voltar para a IA")',
+      `: "${rotuloDoBotaoDeVolta()}"`,
+      ': "Voltar para a IA"',
     );
     expect(renomeado).not.toBe(fonteCabecalho);
-    const novo = /t\("([^"]+)"\)/.exec(
+    const novo = /:\s*"([^"]+)"/.exec(
       renomeado.slice(renomeado.indexOf('data-testid="devolver-ao-automatico"')),
     )?.[1];
     expect(novo).toBe("Voltar para a IA");

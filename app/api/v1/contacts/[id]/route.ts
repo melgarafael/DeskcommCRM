@@ -2,7 +2,7 @@
  * GET   /api/v1/contacts/[id] — fetch single (handler em ../_handler.ts)
  * PATCH /api/v1/contacts/[id] — update (handler em ../_handler.ts)
  *
- * Thin wrapper: auth + Zod + ok/fail. Decrypt CPF + LGPD irreversibility no handler.
+ * Thin wrapper: auth + Zod + ok/fail. Decrypt NUIT + LGPD irreversibility no handler.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";

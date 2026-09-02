@@ -124,7 +124,7 @@ async function main(): Promise<void> {
     rotulo: "tenant B admin",
   });
 
-  await page.getByRole("link", { name: "LGPD", exact: true }).click();
+  await page.getByRole("link", { name: "Proteção de Dados", exact: true }).click();
   await page.waitForURL(/\/app\/lgpd/, { timeout: 30_000 });
   const link = page.locator(`a[href*="${B.lgpd.requestId}"]`).first();
   await link.waitFor({ state: "visible", timeout: 90_000 });

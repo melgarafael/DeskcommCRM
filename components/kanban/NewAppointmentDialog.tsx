@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,12 @@ function toDateInputValue(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+function addDays(dateInput: string, dias: number): string {
+  const d = new Date(`${dateInput}T12:00:00Z`); // meio-dia UTC: soma de dia não tropeça em DST/fuso
+  d.setUTCDate(d.getUTCDate() + dias);
+  return toDateInputValue(d);
+}
+
 export function NewAppointmentDialog({ leadId, open, onOpenChange, onCreated }: Props) {
   const [types, setTypes] = useState<AppointmentType[]>([]);
   const [typeId, setTypeId] = useState("");
@@ -39,6 +45,22 @@ export function NewAppointmentDialog({ leadId, open, onOpenChange, onCreated }: 
   const [erroTipos, setErroTipos] = useState(false);
   const [erroSlots, setErroSlots] = useState(false);
   const [carregandoSlots, setCarregandoSlots] = useState(false);
+  // `date` nasce do relógio do NAVEGADOR (UTC no runner de CI), não do fuso da
+  // organização — em Africa/Maputo (UTC+2) a janela comercial de "hoje" pode
+  // já ter fechado quando ainda é "hoje" em UTC (ex.: 19h27 UTC = 21h27 em
+  // Maputo, depois do fim do expediente). Sem isto a pessoa via "Nenhum
+  // horário livre" à noite e tinha de adivinhar que precisava avançar a data
+  // à mão. Só avança enquanto a pessoa não tiver escolhido a data ela mesma —
+  // e só até 7 dias à frente, para não avançar para sempre numa organização
+  // sem horário nenhum cadastrado.
+  const [dataEscolhidaPeloUsuario, setDataEscolhidaPeloUsuario] = useState(false);
+  const avancosAutomaticos = useRef(0);
+
+  useEffect(() => {
+    if (!open) return;
+    setDataEscolhidaPeloUsuario(false);
+    avancosAutomaticos.current = 0;
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -74,7 +96,17 @@ export function NewAppointmentDialog({ leadId, open, onOpenChange, onCreated }: 
         return r.json();
       })
       .then((json: { data?: Slot[] }) => {
-        if (!cancelado) setSlots(json.data ?? []);
+        if (cancelado) return;
+        const recebidos = json.data ?? [];
+        setSlots(recebidos);
+        if (
+          recebidos.length === 0 &&
+          !dataEscolhidaPeloUsuario &&
+          avancosAutomaticos.current < 7
+        ) {
+          avancosAutomaticos.current += 1;
+          setDate((atual) => addDays(atual, 1));
+        }
       })
       .catch(() => {
         if (!cancelado) {
@@ -88,7 +120,7 @@ export function NewAppointmentDialog({ leadId, open, onOpenChange, onCreated }: 
     return () => {
       cancelado = true;
     };
-  }, [typeId, date]);
+  }, [typeId, date, dataEscolhidaPeloUsuario]);
 
   async function confirmar() {
     if (!typeId || !slotEscolhido) {
@@ -151,7 +183,10 @@ export function NewAppointmentDialog({ leadId, open, onOpenChange, onCreated }: 
             <input
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => {
+                setDataEscolhidaPeloUsuario(true);
+                setDate(e.target.value);
+              }}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             />
           </div>

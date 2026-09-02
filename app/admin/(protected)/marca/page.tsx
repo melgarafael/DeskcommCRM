@@ -21,8 +21,8 @@ export const dynamic = "force-dynamic";
  */
 function instanteLegivel(iso: string | null): string | null {
   if (!iso) return null;
-  return new Date(iso).toLocaleString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
+  return new Date(iso).toLocaleString("pt-PT", {
+    timeZone: "Africa/Maputo",
     dateStyle: "short",
     timeStyle: "short",
   });
