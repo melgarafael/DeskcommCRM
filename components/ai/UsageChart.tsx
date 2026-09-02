@@ -81,7 +81,7 @@ export function UsageChart({ payload }: Props) {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <ChartCard title="Quanto gastou por dia (R$)">
+      <ChartCard title="Quanto gastou por dia (USD)">
         {!hasCost ? (
           <EmptyChart />
         ) : (

@@ -24,19 +24,30 @@ export interface MappedLead {
   source_metadata: Record<string, string>;
 }
 
-/** Normaliza telefone BR para E.164. ponytail: heurística BR-only (público-alvo); internacional entra quando houver demanda. */
-export function normalizePhoneBR(raw: unknown): string | null {
+/**
+ * Normaliza telefone para E.164. Heurística de dois públicos-alvo — Moçambique
+ * (mercado atual do produto) e Brasil (instalações legadas herdadas do
+ * template original) — sem código de país explícito: internacional além
+ * desses dois entra quando houver demanda (é por isso que sem "+" só cobre
+ * comprimentos de dígito que não colidem entre os dois).
+ */
+export function normalizePhoneNumber(raw: unknown): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
   const digits = raw.replace(/\D/g, "");
   if (raw.trim().startsWith("+")) {
     return /^\d{8,15}$/.test(digits) ? `+${digits}` : null;
   }
   if (digits.length === 12 || digits.length === 13) {
-    // 55 + DDD + numero
-    return digits.startsWith("55") ? `+${digits}` : null;
+    // 258 + número moçambicano, ou 55 + DDD + número brasileiro — código de
+    // país presente mas sem o "+"
+    return digits.startsWith("258") || digits.startsWith("55") ? `+${digits}` : null;
+  }
+  if (digits.length === 9) {
+    // número moçambicano sem código de país (ex.: 84 123 4567)
+    return `+258${digits}`;
   }
   if (digits.length === 10 || digits.length === 11) {
-    // DDD + numero (fixo ou celular)
+    // DDD + número brasileiro (fixo ou celular) — legado
     return `+55${digits}`;
   }
   return null;
@@ -82,7 +93,7 @@ export function mapInboundPayload(
 
   return {
     name: nameHit?.value ?? null,
-    phone: normalizePhoneBR(phoneHit?.value),
+    phone: normalizePhoneNumber(phoneHit?.value),
     email: emailHit?.value ?? null,
     custom_fields,
     source_metadata,

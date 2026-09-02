@@ -54,7 +54,7 @@ const guardrailWindowCheck = z.object({
   kind: z.literal("window_check"),
   start_hour: z.number().int().min(0).max(23),
   end_hour: z.number().int().min(0).max(23),
-  timezone: z.string().default("America/Sao_Paulo"),
+  timezone: z.string().default("Africa/Maputo"),
   reason: z.string().min(1),
 });
 
@@ -127,7 +127,7 @@ export const agentCreateSchema = z
       .min(20)
       .max(10000)
       .default(
-        "Você é um assistente da loja. Responda com clareza e cordialidade, em português do Brasil. Use a base de conhecimento abaixo quando relevante.",
+        "Você é um assistente da loja. Responda com clareza e cordialidade, em português de Moçambique. Use a base de conhecimento abaixo quando relevante.",
       ),
   })
   .strict();

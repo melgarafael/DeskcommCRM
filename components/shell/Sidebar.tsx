@@ -1,6 +1,5 @@
 "use client";
 import Link from "next/link";
-import { useT } from "@/hooks/i18n/useT";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, Gear } from "@/lib/ui/icons";
@@ -21,9 +20,6 @@ import { GRUPO_NO_RODAPE, NAV_GROUPS, sidebarGroups } from "@/lib/navigation/reg
  * Configurações e das abas de IA, que mantinham suas próprias listas.
  */
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
-  // A barra lateral aparece em TODA tela — traduzi-la aqui é o que faz a
-  // escolha de idioma virar algo visível no primeiro clique.
-  const t = useT();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const { user, activeOrg } = useAuth();
@@ -113,10 +109,10 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                   id={tituloId}
                   className="px-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60"
                 >
-                  {t(group.label)}
+                  {group.label}
                 </h2>
               )}
-              <ul aria-labelledby={collapsed ? undefined : tituloId} aria-label={collapsed ? t(group.label) : undefined} className="space-y-1">
+              <ul aria-labelledby={collapsed ? undefined : tituloId} aria-label={collapsed ? group.label : undefined} className="space-y-1">
                 {items.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
                   const Icon = item.icon;
@@ -124,7 +120,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                     <li key={item.href}>
                       <Link
                         href={item.href}
-                        title={collapsed ? t(item.label) : undefined}
+                        title={collapsed ? item.label : undefined}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
                           "relative flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
@@ -135,7 +131,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                         )}
                       >
                         <Icon size={18} weight={isActive ? "fill" : "regular"} aria-hidden />
-                        {!collapsed && <span className="truncate">{t(item.label)}</span>}
+                        {!collapsed && <span className="truncate">{item.label}</span>}
                         {item.healthDot && (
                           <ConnectionHealthDot
                             className={cn(collapsed ? "absolute right-1.5 top-1.5" : "ml-auto")}
@@ -149,7 +145,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                   <li>
                     <Link
                       href={group.hub.href}
-                      title={collapsed ? t(group.hub.label) : undefined}
+                      title={collapsed ? group.hub.label : undefined}
                       aria-current={pathname === group.hub.href ? "page" : undefined}
                       className={cn(
                         "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
@@ -160,7 +156,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
                       )}
                     >
                       <ArrowRight size={18} aria-hidden />
-                      {!collapsed && <span className="truncate">{t(group.hub.label)}</span>}
+                      {!collapsed && <span className="truncate">{group.hub.label}</span>}
                     </Link>
                   </li>
                 )}
@@ -173,7 +169,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         {rodape && (
           <Link
             href={rodape.href}
-            title={collapsed ? t(rodape.label) : undefined}
+            title={collapsed ? rodape.label : undefined}
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             className={cn(
               "mb-1 flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",

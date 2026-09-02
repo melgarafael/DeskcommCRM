@@ -173,7 +173,7 @@ function buildState(args: {
     channel_session_id: version?.channel_session_id ?? "",
     system_prompt:
       version?.system_prompt ??
-      "Você é um atendente. Responda de forma educada e clara, em pt-BR.",
+      "Você é um atendente. Responda de forma educada e clara, em português de Moçambique.",
     tool_ids: version?.tool_ids ?? [],
     trigger_config: (version?.trigger_config as unknown as TriggerValue) ?? DEFAULT_TRIGGER,
     max_steps: version?.max_steps ?? 10,

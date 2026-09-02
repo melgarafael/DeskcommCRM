@@ -91,7 +91,7 @@ export function pedidoDeSugestao(
 
   return {
     system:
-      "Você monta o quadro de clientes de um negócio brasileiro que atende por WhatsApp. " +
+      "Você monta o quadro de clientes de um negócio moçambicano que atende por WhatsApp. " +
       "Escreva do jeito que o DONO fala, não como um manual de vendas: nada de " +
       '"prospecção", "MQL", "nutrição" ou "fundo de funil". ' +
       "Cada coluna é um momento concreto do atendimento dele. " +

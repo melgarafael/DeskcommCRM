@@ -14,9 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateProfile } from "@/app/actions/settings/updateProfile";
-import { profileSchema, type Locale } from "@/lib/schemas/settings";
+import { profileSchema } from "@/lib/schemas/settings";
 
 const TIMEZONES = [
+  "Africa/Maputo",
   "America/Sao_Paulo",
   "America/Manaus",
   "America/Belem",
@@ -33,8 +34,7 @@ interface Props {
 
 export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props) {
   const [fullName, setFullName] = useState(initialFullName ?? "");
-  const [locale, setLocale] = useState<Locale>("pt-BR");
-  const [timezone, setTimezone] = useState("America/Sao_Paulo");
+  const [timezone, setTimezone] = useState("Africa/Maputo");
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl ?? "");
   const [isPending, startTransition] = useTransition();
 
@@ -42,7 +42,7 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
     e.preventDefault();
     const parsed = profileSchema.safeParse({
       full_name: fullName || null,
-      locale,
+      locale: "pt-BR",
       timezone,
       avatar_url: avatarUrl || null,
     });
@@ -76,39 +76,20 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
             maxLength={120}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="locale">Idioma</Label>
-            <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
-              <SelectTrigger id="locale">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pt-BR">Português (BR)</SelectItem>
-                {/* Espanhol entrou quando passou a MUDAR alguma coisa. Enquanto
-                    o campo era guardado e ninguém o lia, oferecer um idioma a
-                    mais era prometer o que a tela não cumpre — e o operador
-                    conclui que o sistema está quebrado.
-                    `en-US` saiu pela mesma razão: nunca teve tradução. */}
-                <SelectItem value="es">Español</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="timezone">Fuso horário</Label>
-            <Select value={timezone} onValueChange={setTimezone}>
-              <SelectTrigger id="timezone">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIMEZONES.map((tz) => (
-                  <SelectItem key={tz} value={tz}>
-                    {tz}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="timezone">Fuso horário</Label>
+          <Select value={timezone} onValueChange={setTimezone}>
+            <SelectTrigger id="timezone">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TIMEZONES.map((tz) => (
+                <SelectItem key={tz} value={tz}>
+                  {tz}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label htmlFor="avatar_url">Avatar URL</Label>
@@ -125,7 +106,7 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
         </div>
         <div className="flex justify-end">
           <Button type="submit" disabled={isPending}>
-            {isPending ? "Salvando…" : "Salvar"}
+            {isPending ? "A guardar…" : "Salvar"}
           </Button>
         </div>
       </Card>

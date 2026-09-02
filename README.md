@@ -1,6 +1,6 @@
 <div align="center">
 
-🇧🇷 Português · [🇺🇸 English](README.en.md) · [🇪🇸 Español](README.es.md)
+🇧🇷 Português · [🇺🇸 English](README.en.md)
 
 # 🛠️ SonghaiCRM — o Sistema Operacional de Vendas com IA, open source, pro WhatsApp
 

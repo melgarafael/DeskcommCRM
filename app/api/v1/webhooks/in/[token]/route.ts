@@ -31,7 +31,7 @@ const RATE_LIMIT_PER_MIN = 60;
 
 // ponytail: mirrors the default phone aliases in lib/webhooks/inbound.ts —
 // duplicated (not exported there) only so the route can flag a phone-looking
-// field that failed normalizePhoneBR, for observability. Keep in sync if that
+// field that failed normalizePhoneNumber, for observability. Keep in sync if that
 // list changes.
 const PHONE_ALIASES_FOR_LOGGING = ["phone", "telefone", "whatsapp", "celular", "phone_number", "tel"];
 

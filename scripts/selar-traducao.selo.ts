@@ -54,7 +54,6 @@ export type ParTraduzido = {
 
 export const TRADUCOES: readonly ParTraduzido[] = [
   { original: "docs/white-label.md", traducao: "docs/white-label.en.md", idioma: "inglês" },
-  { original: "docs/white-label.md", traducao: "docs/white-label.es.md", idioma: "espanhol" },
 ];
 
 /** O comando que conserta — a mensagem de falha SEMPRE o nomeia. */

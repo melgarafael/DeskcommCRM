@@ -1,6 +1,6 @@
-<!-- traduzido-de: docs/white-label.md@e1d374bb48e0 -->
+<!-- traduzido-de: docs/white-label.md@c5a80f6317f8 -->
 
-[🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
+[🇧🇷 Português](white-label.md) · 🇺🇸 English
 
 # Installing for clients (agencies and resellers)
 
@@ -130,9 +130,9 @@ It shows up on the suspended-account and billing screens. **Empty means empty:**
 
 ---
 
-## The LGPD report is the only thing that does NOT carry your brand
+## The data-protection report is the only thing that does NOT carry your brand
 
-When a data subject exercises the right in Art. 18 II of the LGPD — Brazil's data protection law — the system generates a PDF report. That document **carries no brand at all** — not ours, not yours, no logo, no color. It names the **controller**: the organization's legal name, plus the data protection officer (DPO).
+When a data subject exercises their access right — the report cites **Law No. 3/2017 (Mozambique)**, the product's actual legal basis; internal identifiers (`lgpd_*`, `/lgpd` routes) keep that name only as technical inheritance from the original Brazil-built template — the system generates a PDF report. That document **carries no brand at all** — not ours, not yours, no logo, no color. It names the **controller**: the organization's legal name, plus the data protection officer (DPO).
 
 This is a product decision, not a forgotten item. In a document that answers a legal right, whoever is named answers for the data. **You are the processor, not the controller.** Changing the name there to your brand would not be "completing the whitelabel" — it would make things worse: today the name that appeared was obviously the software's, and afterwards it would look like the declaration of who is legally liable for those people's data.
 
@@ -161,13 +161,13 @@ If your client asks "where does my data live?", the dedicated installation has t
 
 ---
 
-## The legal argument that closes deals in Brazil
+## The legal argument for a Mozambican client
 
-**Resolution CD/ANPD nº 19/2024** made standard contractual clauses mandatory for **international transfers of personal data**, with the compliance deadline closing on **23 August 2025**.
+The legal basis the product uses internally (data-request receipt, export PDF, default privacy policy) is **Law No. 3/2017** of Mozambique — not Brazil's LGPD. Code identifiers (`lgpd_*`, `/lgpd` routes) keep that name only as technical inheritance from the original template; what the data subject reads in the document is the Mozambican law.
 
-Every client of yours who uses a foreign CRM performs such a transfer and needs the contractual artifact. Hosting on a VPS in Brazil, **there is no international transfer** — and the obligation does not apply.
+⚠️ **Do not sell this as "installed in Mozambique = automatic compliance with Law No. 3/2017".** That is just as false as the Brazilian equivalent: compliance depends on legal basis, purpose, security and data-subject rights — not just on where the server sits. The product provides the mechanism (export, anonymization, audit trail, data protection officer); full compliance of your client's operation remains your client's responsibility.
 
-⚠️ **Do not sell this as "server in Brazil = LGPD compliance".** That is false, and a lawyer takes it apart on the first question: compliance depends on legal basis, purpose, security and data-subject rights. The correct and defensible argument is the one above: with no international transfer, there is no requirement for standard clauses.
+If your client is Brazilian (the product's original base market, still supported), the same caution applies to the LGPD: **Resolution CD/ANPD nº 19/2024** made standard contractual clauses mandatory for **international transfers of personal data** (compliance deadline closed 23 August 2025) — hosting on a VPS in Brazil avoids that specific transfer, but does not replace the LGPD or Law No. 3/2017 as the legal basis declared to the data subject. Adjust the privacy policy and export PDF (`/legal/privacy`, `lib/lgpd/pdf-renderer.tsx`) to cite whichever law actually applies to your client's installation before selling into any market.
 
 ---
 

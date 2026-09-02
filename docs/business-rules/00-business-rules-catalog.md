@@ -127,18 +127,18 @@ owner: Songhai, Lda
 - **Enforcement**: DB trigger + middleware API.
 - **Exceção**: Nenhuma.
 
-### L-07 — CPF criptografado at-rest
-- **Origem**: Sub-PRD 02 §3.1 (Risco C7)
+### L-07 — NUIT criptografado at-rest
+- **Origem**: Sub-PRD 02 §3.1 (Risco C7). Campo nasceu CPF (identificador brasileiro); renomeado para NUIT (Número Único de Identificação Tributária, Moçambique) na migration 0166 — NUIT serve pessoa física e empresa, ao contrário do par CPF/CNPJ.
 - **Tipo**: Hard constraint
-- **Regra**: GIVEN contact com CPF; WHEN persistido; THEN coluna usa `pgcrypto` com chave separada `CPF_ENCRYPTION_KEY` (env-only, rotação trimestral).
-- **Enforcement**: DB (coluna `cpf_encrypted bytea`; função `decrypt_cpf()` com check de role).
-- **Exceção**: Tenants que explicitamente desativam coleta de CPF nas regras de identity resolution (Sub-PRD 02 §3.3) não têm a coluna populada.
+- **Regra**: GIVEN contact com NUIT; WHEN persistido; THEN coluna usa `pgcrypto` com chave separada `NUIT_ENCRYPTION_KEY` (env-only, rotação trimestral; instalação antiga com `CPF_ENCRYPTION_KEY` no `.env` continua servida — `lib/env.ts` aceita os dois nomes).
+- **Enforcement**: DB (coluna `nuit_encrypted bytea`; função `decrypt_nuit()` com check de role).
+- **Exceção**: Tenants que explicitamente desativam coleta de NUIT nas regras de identity resolution (Sub-PRD 02 §3.3) não têm a coluna populada.
 
-### L-08 — Logs nunca contêm CPF, mesmo em debug
+### L-08 — Logs nunca contêm NUIT, mesmo em debug
 - **Origem**: Sub-PRD 02 Risco C7
 - **Tipo**: Hard constraint
-- **Regra**: GIVEN qualquer log estruturado, Sentry event, request body dump; WHEN o payload contém CPF (regex `\d{3}\.?\d{3}\.?\d{3}-?\d{2}`); THEN o valor é mascarado pra `***.***.***-**` antes do log persistir.
-- **Enforcement**: Sentry `beforeSend` + logger middleware + sanitizador de webhook log.
+- **Regra**: GIVEN qualquer log estruturado, Sentry event, request body dump; WHEN o payload contém NUIT (regex `\b\d{9}\b`, mais o formato legado com separador `\d{3}\.?\d{3}\.?\d{3}-?\d{2}` de instalação herdada do template brasileiro); THEN o valor é mascarado pra `[NUIT]` antes do log persistir.
+- **Enforcement**: Sentry `beforeSend` (`lib/sentry/scrub.ts`) + logger middleware + sanitizador de webhook log.
 - **Exceção**: Nenhuma.
 
 ### L-09 — Token OAuth Nuvemshop criptografado at-rest

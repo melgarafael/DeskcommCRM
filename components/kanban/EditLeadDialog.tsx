@@ -135,7 +135,7 @@ export function EditLeadDialog({ open, onOpenChange, lead, pipelineId }: Props) 
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="valueReais">Valor (R$)</Label>
+              <Label htmlFor="valueReais">Valor (Metical)</Label>
               <Input
                 id="valueReais"
                 inputMode="decimal"

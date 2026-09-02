@@ -58,13 +58,19 @@ describe("scrubUrl", () => {
 });
 
 describe("scrubMessage", () => {
-  it("substitui NUIT, telefone e e-mail", () => {
+  it("substitui NUIT (formato legado com separador), telefone e e-mail", () => {
     const out = scrubMessage("falha para 123.456.789-01, +55 11 98765-4321, joao@exemplo.com");
     expect(out).toContain("[NUIT]");
     expect(out).toContain("[PHONE]");
     expect(out).toContain("[EMAIL]");
     expect(out).not.toContain("123.456.789-01");
     expect(out).not.toContain("joao@exemplo.com");
+  });
+
+  it("substitui NUIT moçambicano real (9 dígitos, sem separador)", () => {
+    const out = scrubMessage("contacto com nuit 841234567 falhou ao guardar");
+    expect(out).toContain("[NUIT]");
+    expect(out).not.toContain("841234567");
   });
 });
 

@@ -2,16 +2,16 @@
  * LGPD SLA business-day calculator.
  *
  * Rules (L-04):
- *  - SLA is expressed in Brazilian business days (dias úteis).
+ *  - SLA is expressed in Mozambican business days (dias úteis).
  *  - Skip Saturdays (getDay()===6) and Sundays (getDay()===0).
- *  - Skip Brazilian national holidays from HOLIDAYS_BR_ISO.
+ *  - Skip Mozambican national holidays from HOLIDAYS_MZ_ISO.
  *  - If receivedAt itself is not a business day, counting starts on the
  *    next business day (edge: weekend/holiday receipt).
  */
 
-import { HOLIDAYS_BR_ISO } from "./holidays-br";
+import { HOLIDAYS_MZ_ISO } from "./holidays-mz";
 
-const _defaultHolidays = new Set(HOLIDAYS_BR_ISO);
+const _defaultHolidays = new Set(HOLIDAYS_MZ_ISO);
 
 /**
  * Format a Date to YYYY-MM-DD (UTC-based, suitable for set lookup when
@@ -46,7 +46,7 @@ function addOneDay(date: Date): Date {
  *
  * @param receivedAt   Timestamp when the request was received.
  * @param businessDays Number of business days allowed (e.g. 15 for redact).
- * @param holidays     Override holiday set; defaults to HOLIDAYS_BR_ISO.
+ * @param holidays     Override holiday set; defaults to HOLIDAYS_MZ_ISO.
  * @returns            Date representing end of the Nth business day (00:00 UTC of that day).
  */
 export function computeDueAt(

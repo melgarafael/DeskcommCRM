@@ -51,7 +51,11 @@ export function isSensitiveHeader(name: string): boolean {
 
 export function scrubMessage(input: string): string {
   return input
+    // NUIT (Moçambique, 9 dígitos sem separador) e o formato antigo de CPF
+    // (xxx.xxx.xxx-xx) — instalação herdada do template brasileiro pode ainda
+    // ter esse formato em log antigo. `\b` evita cortar um número maior ao meio.
     .replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, "[NUIT]")
+    .replace(/\b\d{9}\b/g, "[NUIT]")
     .replace(/\+?\d{2}\s?\d{4,5}-?\d{4}/g, "[PHONE]")
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[EMAIL]");
 }
