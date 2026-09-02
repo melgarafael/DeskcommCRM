@@ -8,6 +8,86 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.11.0] — 2026-09-02
+
+### Adicionado
+
+- **A aba do navegador pode mostrar o logo de verdade, não só cor + inicial** `APP_LOGO_URL` (arquivo `.env`) agora também aceita um caminho raiz-relativo
+  para um arquivo dentro de `public/` (ex.: `/minha-marca.png`), além de
+  qualquer URL pública já aceita antes. Quando configurado assim, o ícone da aba
+  do navegador passa a mostrar o arquivo de verdade, em vez do ladrilho de cor +
+  inicial gerado automaticamente. Nenhuma ação é necessária para quem já
+  configurou `APP_LOGO_URL` com uma URL: o comportamento da aba continua sendo
+  cor + inicial, exatamente como antes.
+
+### Alterado
+
+- **Nova paleta visual — Ink, sempre escura** O sistema trocou de cores: fundo escuro (Ink), destaque azul (Signal Blue) e
+  apoio em azul-marinho (Oxford Blue) substituem o verde-sálvia anterior, e o
+  produto passou a ter uma única aparência — o alternador de tema claro/escuro
+  continua no lugar, mas as duas opções pintam a mesma paleta escura agora.
+  Nenhuma ação é necessária: nada que funcionava mudou de comportamento, só de
+  cor.
+
+- **A tela de entrar ganhou um painel de marca ao lado do formulário** O `/login` deixou de ser uma coluna estreita no meio da tela e passou a ser
+  dividido em dois: à esquerda a marca de quem instalou o produto, sobre um fundo
+  azul-marinho com uma malha de pontos animada; à direita o formulário, agora com
+  ícone dentro de cada campo e um botão para revelar a senha. No celular o painel
+  da esquerda encolhe para uma faixa com o logo, e o formulário ocupa a tela.
+
+  O logo continua sendo o mesmo de antes (o da instalação, nunca o da empresa que
+  usa o sistema), e as outras telas de acesso — cadastro, recuperação de senha,
+  nova senha, verificação em duas etapas e códigos de recuperação — seguem com a
+  aparência que já tinham. Nenhuma ação é necessária: entrar funciona exatamente
+  como antes, só mudou de cara.
+
+- **Nuvemshop saiu do menu lateral** O atalho para a integração com a Nuvemshop não aparece mais na seção Canais do
+  menu. A tela continua existindo e funcionando: dá para chegar nela pela busca
+  rápida, com Ctrl+K (ou Cmd+K no Mac), digitando "Nuvemshop".
+
+  Nada foi desconectado nem desligado. Quem já usa a integração segue com ela
+  ativa, recebendo pedidos e clientes normalmente.
+
+- **As telas de dentro do sistema ficaram claras** A área de trabalho — Inbox, Agenda, Funis, Contatos, Conexões, Desempenho,
+  Configurações, Radar, Respostas rápidas, Webhooks, Audit Log, LGPD, Equipe e as
+  telas do Agente de IA — deixou de ser escura e passou a ser um cinza muito
+  claro, com os cartões em branco por cima. A barra lateral segue escura, e a
+  barra de cima virou branca, com uma linha fina separando-a do conteúdo. O bloco
+  da marca no canto superior esquerdo agora mostra o nome ao lado do símbolo.
+
+  A ideia é a mesma da tela de entrar: fundo claro para o que se lê o dia inteiro,
+  e a cor da marca reservada para o que é botão, item selecionado e etiqueta de
+  situação. Os tons de cada cor de pessoa na grade da agenda foram refeitos para
+  esse fundo — as antigas tinham sido escolhidas para fundo escuro e sumiriam.
+
+  Nada muda no funcionamento: as mesmas telas, os mesmos caminhos, os mesmos
+  botões. Quem prefere o tema escuro do sistema operacional continua com o
+  alternador funcionando como antes.
+
+### Corrigido
+
+- **A cor da sua marca agora vale também nas telas claras** Quem instala o sistema com a própria cor tinha essa cor conferida apenas contra
+  o fundo escuro. Com a área de trabalho passando a ser clara, faltava a mesma
+  conferência do outro lado — e o resultado era que a etiqueta de destaque ficava
+  presa no azul padrão do produto em vez de acompanhar a marca de quem instalou.
+
+  Agora a cor é derivada e conferida nas duas superfícies, cada uma com o próprio
+  ajuste. Uma marca clara, que sobre fundo escuro funciona sem alteração, é
+  escurecida o suficiente para continuar legível sobre o fundo claro, e vice-versa.
+  Marcas já configuradas passam a aparecer mais fiéis ao tom escolhido, sem
+  nenhuma ação de quem administra.
+
+  De quebra, um par de cores do próprio produto que ficava um fio abaixo do mínimo
+  de contraste no estado de foco do mouse foi corrigido.
+
+- **A página não rola mais por baixo da barra lateral** Em telas com conteúdo longo, rolar arrastava a página inteira em vez de rolar só
+  a área de conteúdo. Como a barra lateral tem a altura da janela, ela terminava
+  no meio do caminho e aparecia uma faixa vazia embaixo dela.
+
+  Agora a rolagem acontece dentro da área de conteúdo, como sempre foi a intenção:
+  a barra lateral e a barra de cima ficam paradas, e só a lista, o formulário ou o
+  quadro se movem. O quadro do funil segue rolando na horizontal como antes.
+
 ## [1.10.1] — 2026-08-28
 
 ### Corrigido
@@ -1540,7 +1620,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.10.1...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.10.1...v1.11.0
 [1.10.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.9.1...v1.10.0
 [1.9.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.9.0...v1.9.1
