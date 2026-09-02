@@ -83,12 +83,42 @@ export function SidebarContent({
           // build — a imagem pré-buildada rejeitaria o domínio do self-hoster.
           // Altura fixa e largura livre porque a arte enviada tem proporção
           // desconhecida; forçar as duas distorceria o logo de quem configurou.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logo}
-            alt={nome}
-            className="h-7 w-auto max-w-[10rem] object-contain"
-          />
+          <span className="flex min-w-0 items-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={logo}
+              alt={nome}
+              className="h-7 w-auto max-w-[6rem] shrink-0 object-contain"
+            />
+            {/*
+              O WORDMARK, com o mesmo tratamento da fachada do login
+              (`app/(public)/login/page.tsx`): `font-display`, `font-extrabold`,
+              `uppercase` por CSS e `tracking-[0.16em]`. Familia, peso,
+              espacamento e cor sao os de la; so o CORPO desce de 17px para
+              13px, porque la o wordmark tem a largura da tela e aqui ele mora
+              numa barra de 240px.
+
+              `aria-hidden` porque este texto e uma DUPLICATA VISUAL do `alt` da
+              imagem ao lado, que ja anuncia o mesmo nome. Sem isto o leitor de
+              tela diria a marca duas vezes — a barra passaria a se comportar
+              diferente de hoje, e o combinado era mexer so no pixel.
+
+              `{nome}` e nao "KORA COMPANY" escrito a mao: e o mesmo no de texto
+              que o login usa, vindo de `branding()`. Cravar a string faria a
+              barra do revendedor que instalou com a marca DELE exibir a nossa —
+              exatamente o que o resto deste trabalho passou a sessao inteira
+              impedindo.
+
+              `truncate` + `min-w-0` sao a rede para nome longo: encolhe com
+              reticencias em vez de empurrar a barra.
+            */}
+            <span
+              aria-hidden
+              className="truncate font-display text-[13px] font-extrabold uppercase tracking-[0.16em] text-text"
+            >
+              {nome}
+            </span>
+          </span>
         ) : (
           <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>
             {nome}
