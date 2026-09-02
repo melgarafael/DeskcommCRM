@@ -48,7 +48,15 @@ const RAIZ = resolve(__dirname, "../..");
 function chamadoresDoResolver(): string[] {
   const saida = execFileSync(
     "git",
-    ["grep", "-l", "resolveLanguageModel", "--", "lib", "workers", "app", "scripts"],
+    // `--color=never` não é decoração: `git grep` não colore quando não há TTY,
+    // MAS colore assim mesmo se o dev tiver `color.ui=always` no ~/.gitconfig — e
+    // aí cada caminho volta embrulhado em ANSI, o `split("\n")` devolve
+    // "\u001b[35mlib/ai/...\u001b[m", e nenhum `readFileSync` acha o arquivo.
+    // Medido nas três combinações:
+    //   sem config            -> ANSI: false
+    //   -c color.ui=always    -> ANSI: true   <- o teste quebra aqui
+    //   + --color=never       -> ANSI: false
+    ["grep", "--color=never", "-l", "resolveLanguageModel", "--", "lib", "workers", "app", "scripts"],
     { cwd: RAIZ, encoding: "utf8" },
   );
   return saida

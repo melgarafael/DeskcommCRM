@@ -104,7 +104,25 @@ export function SidebarContent({
           </span>
         )}
       </div>
-      <nav className="flex-1 space-y-3 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
+      {/*
+        A DENSIDADE É MEDIDA, NÃO ESTÉTICA.
+
+        O e2e `navegacao.spec.ts` exige que o menu inteiro caiba em 1280×900 sem
+        rolar — porque um grupo abaixo da dobra é indistinguível de um grupo que
+        não existe. Com 18 links a margem era de ~4px: a tela nova de Produtos
+        estourou a dobra por uma linha, e reprovou no CI.
+
+        `py-1.5` → `py-1` (linha de 32px para 28px) e o intervalo entre grupos de
+        12px para 8px devolvem ~90px — folga para o próximo item, em vez de
+        deixar a próxima tela nova repetir esta corrida.
+
+        ⚠️ Isto é remendo de densidade, não conserto estrutural. O menu vai
+        estourar de novo: a saída existente é o HUB (o grupo IA já a usa — nove
+        das treze telas dele moram atrás do "Ver tudo em IA"), e o CRM ainda não
+        tem um. Quando o quinto destino de CRM aparecer, é hub que se cria, não
+        mais 4px que se raspa.
+      */}
+      <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
           return (
@@ -133,7 +151,7 @@ export function SidebarContent({
                         aria-current={isActive ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
-                          "relative flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
+                          "relative flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
                           isActive
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -159,7 +177,7 @@ export function SidebarContent({
                       aria-current={pathname === group.hub.href ? "page" : undefined}
                       onClick={onNavigate}
                       className={cn(
-                        "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
+                        "flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
                         pathname === group.hub.href
                           ? "bg-accent text-accent-foreground"
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -184,7 +202,7 @@ export function SidebarContent({
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
-              "mb-1 flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors",
+              "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",

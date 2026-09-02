@@ -123,6 +123,20 @@ Duas coisas vão parecer erro seu e não são:
   GitHub para quem nunca contribuiu antes. Um mantenedor libera; do segundo PR em diante
   roda sozinho. Se demorar, comente no PR.
 
+**Abra o PR de um ramo com nome, nunca do `main` do seu fork.** Se o `main` do fork já tem
+personalizações suas — e ele quase sempre tem, porque é dele que a sua VPS puxa —, o PR propõe
+essas personalizações ao produto inteiro. Isso não gera conflito e não acende gate nenhum: elas
+entram em silêncio para todas as instalações. Foi medido (PR #465): sete arquivos com a marca de um
+cliente, seis deles mergeando sem um único conflito. O caminho é `git checkout -b fix/o-que-voce-conserta`
+a partir da `main` **deste** repositório, com só o seu conserto dentro.
+
+**A marca da sua instalação não se troca editando código.** Não altere `DEFAULT_APP_NAME` em
+`lib/branding.ts`, nem os títulos em `app/`. O banco manda (`platform_branding`,
+`organizations.settings.branding`), `APP_NAME` no `.env` é a semente que o `install.sh` pergunta, e
+o resto é a tela **Configurações › Marca**. Receita inteira em [`docs/white-label.md`](docs/white-label.md).
+Editar a constante troca o padrão do PRODUTO — e a sua marca some no próximo `git pull`, o que é a
+razão prática de o caminho suportado ser melhor para você também.
+
 E sobre o `pnpm test:e2e` do DoD: rodar a suíte completa exige Docker, banco semeado e WAHA
 local. **Não travamos PR externo nisso** — mande o que conseguiu provar (unit + descrição do
 que testou na mão), que a prova de tela fica com o mantenedor. Exigir prova sem entregar a

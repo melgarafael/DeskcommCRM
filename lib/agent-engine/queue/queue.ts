@@ -273,6 +273,15 @@ export async function completeJob<T = void>(
  * Devolve o job à fila após falha (attempts já foi incrementado no claim). Excedeu
  * `max_attempts` → 'dead' + escalação humana em agent_inbox_items (kind='job_dead'), no
  * MESMO statement (atômico). Devolve null se o lease já não era deste worker.
+ *
+ * Backoff exponencial no retry (10s, 20s, 40s, 80s, capado em 120s — chave em
+ * `attempts`, já pós-incremento do claim): sem isso `run_after` fica intocado e
+ * o job cai `pending` já vencido, então o próximo `claimJobs` (poll de poucos
+ * segundos) o repega na hora. Contra um erro transitório de rate limit (TPM da
+ * OpenAI, por ex.) isso queima as 5 tentativas em menos de 1s — o rate limit não
+ * teve NENHUM tempo pra ceder entre uma tentativa e outra, e o job morre por um
+ * incidente que um minuto de espera resolveria sozinho. Caso real desta VPS,
+ * 2026-08-31: 49 jobs mortos em rajadas de poucos segundos, todos por TPM.
  */
 export async function failJob(
   db: Queryable,
@@ -284,6 +293,10 @@ export async function failJob(
     `with updated as (
        update job_queue
        set status = case when attempts >= max_attempts then 'dead' else 'pending' end,
+           run_after = case
+             when attempts >= max_attempts then run_after
+             else now() + (least(power(2, greatest(attempts - 1, 0)) * 10, 120) * interval '1 second')
+           end,
            locked_by = null, locked_at = null, last_error = $3
        where id = $1 and status = 'running' and locked_by = $2
        returning *

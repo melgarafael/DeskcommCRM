@@ -212,6 +212,22 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     sidebar: true,
   },
   {
+    // ⚠️ Esta tela nasceu porque a FERRAMENTA já existia sem ela. O agente de IA
+    // vinha com "procurar produto na loja" ligada por padrão, lendo uma tabela
+    // que ninguém nunca preencheu — e o efeito não era silêncio: era o agente
+    // respondendo "não tenho nada com esse nome" para uma loja de estoque cheio.
+    //
+    // Fica no grupo do CRM, e não em Configurações, porque consultar preço é
+    // trabalho de quem ATENDE, todo dia — diferente de "tipos de agendamento",
+    // que se configura uma vez.
+    href: "/app/products",
+    label: "Produtos",
+    description: "O catálogo da loja, com o preço que o atendente de IA responde.",
+    icon: Storefront,
+    group: "crm",
+    sidebar: true,
+  },
+  {
     // A promessa que o comentário da Agenda fazia desde que ela nasceu. Aqui se
     // decide O QUE se pode marcar, quanto dura e quem atende — e é isto que a
     // tela de marcar e o agente de IA oferecem ao cliente.

@@ -396,6 +396,13 @@ export const AUDIT_ACTIONS = [
   // A RPC `fn_apagar_dados_operacionais_da_organizacao` não audita por si —
   // é pura DELETE em SQL — então a action que a chama grava esta linha.
   "org.dados_operacionais_apagados",
+
+  // O catálogo da loja (migration 0204). Preço de venda é dado que a equipe
+  // disputa — quem mudou e quando precisa ficar registrado.
+  "catalog_product.created",
+  "catalog_product.updated",
+  "catalog_product.deleted",
+  "catalog_product.imported",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

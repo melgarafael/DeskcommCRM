@@ -6283,6 +6283,51 @@ export const DICIONARIO: Traducoes = {
   "tokens": { es: "tokens" },
   "Voltar para": { es: "Volver a" },
   "Ir para outra organização": { es: "Ir a otra organización" },
+
+  // ─── Catálogo de produtos (app/app/products) ───
+  //
+  // O catálogo é a resposta do agente para "quanto custa". Quem opera uma loja
+  // em espanhol vê a mesma tela; um preço explicado em português numa tela
+  // espanhola é a primeira coisa que faz alguém desconfiar do sistema.
+  "Produtos": { es: "Productos" },
+  "O catálogo da loja. É daqui que o atendente de IA tira o preço quando alguém pergunta.": {
+    es: "El catálogo de la tienda. De aquí saca el precio el asistente de IA cuando alguien pregunta.",
+  },
+  "Nenhum produto cadastrado ainda": { es: "Aún no hay productos cargados" },
+  "Enquanto o catálogo estiver vazio, o atendente responde que não encontrou o produto — mesmo que a loja tenha.": {
+    es: "Mientras el catálogo esté vacío, el asistente responde que no encontró el producto — aunque la tienda lo tenga.",
+  },
+  "Buscar por nome, código ou marca": { es: "Buscar por nombre, código o marca" },
+  "Novo produto": { es: "Nuevo producto" },
+  "Importar planilha": { es: "Importar planilla" },
+  "Baixar planilha modelo": { es: "Descargar planilla modelo" },
+  "Produto cadastrado": { es: "Producto cargado" },
+  "Produto desativado": { es: "Producto desactivado" },
+  "Produto reativado": { es: "Producto reactivado" },
+  "Não consegui ler essa planilha.": { es: "No pude leer esa planilla." },
+  "Não consegui enviar o arquivo.": { es: "No pude enviar el archivo." },
+  "Preço inválido. Escreva assim: 5.499,00": { es: "Precio inválido. Escríbalo así: 5.499,00" },
+  "Custo inválido.": { es: "Costo inválido." },
+  "novos": { es: "nuevos" },
+  "atualizados": { es: "actualizados" },
+  "linhas na planilha": { es: "líneas en la planilla" },
+  "Não usei estas colunas:": { es: "No usé estas columnas:" },
+  "Linhas que não entraram:": { es: "Líneas que no entraron:" },
+  "…e mais": { es: "…y más" },
+  "Código": { es: "Código" },
+  "Preço de venda": { es: "Precio de venta" },
+  "(opcional)": { es: "(opcional)" },
+  "Serve para o atendente saber até onde pode negociar. Não aparece para o cliente.": {
+    es: "Sirve para que el asistente sepa hasta dónde puede negociar. No se le muestra al cliente.",
+  },
+  "Controlar estoque deste produto": { es: "Controlar el stock de este producto" },
+  "Quantidade": { es: "Cantidad" },
+  "Sem controle de estoque, este produto sempre aparece como disponível para o atendente — é o certo para item sob encomenda ou fracionado.": {
+    es: "Sin control de stock, este producto siempre aparece como disponible para el asistente — es lo correcto para un artículo por encargo o fraccionado.",
+  },
+  "Salvar produto": { es: "Guardar producto" },
+  "em estoque": { es: "en stock" },
+  "sem controle de estoque": { es: "sin control de stock" },
 };
 
 /**

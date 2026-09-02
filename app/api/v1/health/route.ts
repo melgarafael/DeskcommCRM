@@ -193,10 +193,42 @@ function segredoInternoConfere(req: NextRequest): boolean {
   });
 }
 
-/** Sem o segredo, o endereço não sai — o resto do diagnóstico sai igual. */
+/**
+ * Sem o segredo, o endereço não sai — nem pelo `target`, nem pelo `error`.
+ *
+ * O `target` sempre foi escondido de propósito: esta rota é PÚBLICA (o `GET` não
+ * exige nada; o segredo interno só destrava o `?verbose=1`), e o cabeçalho deste
+ * arquivo chama o endereço de WAHA e Redis do cliente de superfície de ataque.
+ * Mas o `error` saía cru ao lado dele, e ele carrega o mesmo endereço numa das
+ * formas mais comuns de configuração errada.
+ *
+ * Medido, com valores que passam pelo Zod de `lib/env.ts` — porque só
+ * `NEXT_PUBLIC_SUPABASE_URL` é `.url()` (linha 69); `WAHA_API_BASE_URL` (140) e
+ * `UPSTASH_REDIS_REST_URL` (155) são `required()` puro, sem validação de forma:
+ *
+ *   "redis-interno.hostgator-vps.com"
+ *     -> e.message = "Failed to parse URL from redis-interno.hostgator-vps.com"
+ *   `"https://redis-interno.hostgator-vps.com"`  (aspas sobrando no .env)
+ *     -> e.message = "Failed to parse URL from \"https://redis-interno...\""
+ *
+ * Ou seja: exatamente os dois serviços cujo endereço a rota esconde por decisão
+ * escrita, e exatamente a instalação self-host que erra o `.env` — o caso já
+ * catalogado nesta casa como ".env sem aspas". O `error` publicava pela porta
+ * que a redação do `target` fechou.
+ *
+ * Contra-exemplo medido, para o escopo ficar honesto: um endereço com esquema
+ * válido e host inalcançável devolve `"fetch failed"`, e o host mora em
+ * `e.cause`, que esta rota nunca devolveu. O vazamento é da forma MALFORMADA,
+ * não de toda falha — e é por isso que a troca é de redação, não de remoção.
+ *
+ * O que NÃO se perde: `reason` (`classificarFalhaDeAlcance`) continua saindo
+ * inteiro, então quem monitora de fora segue distinguindo dns, recusa, tempo
+ * esgotado e credencial recusada. E quem tem o segredo continua vendo o texto
+ * original, porque `verbose=1` não passa por aqui.
+ */
 function semAlvo(check: Check): Check {
-  const { target: _oculto, ...resto } = check;
-  return resto;
+  const { target: _oculto, error, ...resto } = check;
+  return error === undefined ? resto : { ...resto, error: "erro_ao_consultar" };
 }
 
 export async function GET(req: NextRequest) {

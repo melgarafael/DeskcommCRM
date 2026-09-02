@@ -87,14 +87,19 @@ describe("a tag nasce no CI, e nunca do GITHUB_TOKEN", () => {
     // cortar a release: bastaria escrever `## [1.7.0]` à mão e a tag nasceria
     // no merge dele, levando junto as três imagens e o canal `stable`.
     // Medido em 2026-08-27: o PR #354 já trazia uma seção de versão escrita à
-    // mão. A segunda condição é a assinatura do corte — havia `.changes/*.md`
-    // antes e não há depois — e um PR comum não a produz: ele ACRESCENTA
-    // fragmento, nunca esvazia o diretório.
+    // mão. A segunda condição é a assinatura do corte: o commit REMOVEU
+    // fragmento — PR comum ACRESCENTA e nunca apaga.
     const t = job(release, "cortar-tag");
-    expect(t).toMatch(/git ls-tree[^\n]*HEAD\^[^\n]*\.changes\//);
-    expect(t).toMatch(/git ls-tree[^\n]*HEAD[^\n]*\.changes\//);
-    // O ramo que RECUSA precisa existir e cobrir os dois lados da assinatura.
-    expect(t).toMatch(/antes[^\n]*-eq 0[^\n]*depois[^\n]*-ne 0/);
+    // ⚠️ A assinatura MUDOU na migration desta guarda (issue #472): era "o
+    // diretório ficou vazio" (`antes>0 && depois==0`) e virou "este commit
+    // REMOVEU fragmento". A regra antiga recusava todo corte que corresse em
+    // paralelo com um merge comum — e merge comum é o estado normal de um repo
+    // vivo. Foi assim que a v1.11.1 nunca virou tag.
+    expect(t).toMatch(/git diff[^\n]*--diff-filter=D[^\n]*\.changes\//);
+    // O ramo que RECUSA precisa existir: zero removidos não é corte.
+    expect(t).toMatch(/removidos[^\n]*-eq 0/);
+    // E a condição que a guarda antiga NÃO tinha: só o App da release corta.
+    expect(t).toMatch(/deskcomm-release\[bot\]/);
   });
 
   it("a tag só é criada em push na main, nunca num dispatch de branch qualquer", () => {

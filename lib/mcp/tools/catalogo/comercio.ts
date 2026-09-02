@@ -22,7 +22,7 @@ export const TOOLS_COMERCIO = declararTools([
     category: "read",
     rotulo: "Procurar produto na loja",
     explicacao:
-      "Procura um produto pelo nome e devolve preço e quantidade em estoque, para o assistente responder com o dado da loja em vez de estimar.",
+      "Procura um produto no catálogo da loja e devolve o preço exato e o que está disponível, para o assistente responder com o valor cadastrado em vez de estimar.",
     oQueToca: "Catálogo da loja",
     risco: "seguro",
     pacotes: ["vender", "atender"],

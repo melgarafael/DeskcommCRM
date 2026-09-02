@@ -122,34 +122,125 @@ jobs:
         run: |
           set -euo pipefail
 
-          # DUAS condições, e a segunda é a que importa. Só a primeira ("o
-          # CHANGELOG anuncia versão que não tem tag") deixaria QUALQUER PR
-          # cortar a release: bastaria escrever `## [1.7.0]` no CHANGELOG à mão
-          # e a tag nasceria no merge dele, pulando o PR de release inteiro —
-          # e com ela as três imagens e o canal `stable`.
+          # ─── O QUE IDENTIFICA UM CORTE DE RELEASE ─────────────────────────
           #
-          # Isso não é hipótese: medido em 2026-08-27, o PR #354 (RAG) já
-          # trazia uma seção de versão escrita à mão no CHANGELOG.
+          # Só a primeira condição ("o CHANGELOG anuncia versão que não tem
+          # tag") deixaria QUALQUER PR cortar a release: bastaria escrever
+          # `## [1.7.0]` no CHANGELOG à mão e a tag nasceria no merge dele,
+          # pulando o PR de release inteiro — e com ela as três imagens e o
+          # canal `stable`. Não é hipótese: medido em 2026-08-27, o PR #354
+          # (RAG) já trazia uma seção de versão escrita à mão no CHANGELOG.
           #
-          # A segunda condição é a ASSINATURA do corte, e um PR comum não a
-          # produz nem por engano: o commit CONSUMIU fragmentos — havia
-          # `.changes/*.md` antes e não há depois. PR comum ACRESCENTA
-          # fragmento; só o corte esvazia o diretório.
+          # ⚠️ A SEGUNDA CONDIÇÃO ERA "O DIRETÓRIO FICOU VAZIO", E ISSO ESTAVA
+          # ERRADO — issue #472, medido no run 33494815423:
+          #
+          #     fragmentos em .changes/: antes=4 depois=1
+          #
+          # A v1.11.1 foi anunciada no CHANGELOG e NUNCA virou tag. Sem tag,
+          # sem release, sem as três imagens, sem `stable`: nenhuma VPS a
+          # recebeu, e o workflow saiu `success` — ele só decidiu não cortar.
+          #
+          # A causa é uma CORRIDA, não uma forja: o PR #460 mergeou entre o
+          # corte e o merge da release, deixando o fragmento dele vivo. O
+          # branch de release foi cortado ANTES daquele fragmento existir,
+          # então o merge apagou os 3 que consumiu e o 4º continuou lá.
+          # "Esvaziou o diretório" é falso para todo corte que corre em
+          # paralelo com um merge comum — e merge comum é o estado normal de
+          # um repo vivo.
+          #
+          # A assinatura correta é REMOVER: PR comum ACRESCENTA fragmento e
+          # nunca apaga; só o corte apaga. Conferido no commit real que
+          # falhou (f6f91377): a guarda antiga via depois=1 e recusava; a
+          # nova vê 3 removidos e corta.
+          #
+          # ⚠️ A TERCEIRA CONDIÇÃO É CINTO DE SEGURANÇA CONTRA ENGANO, NÃO
+          # CONTRA FORJA — e a distinção precisa estar escrita aqui, porque a
+          # versão anterior deste comentário dizia que a identidade do App
+          # "vive em secrets", e isso é FALSO.
+          #
+          # `%an` é o NOME DO AUTOR: campo de texto que qualquer um define.
+          # `git -c user.name='deskcomm-release[bot]' commit` devolve exatamente
+          # a string que a comparação abaixo procura. Medido.
+          #
+          # Nem adianta trocar por conferência criptográfica: os cinco cortes
+          # reais desta main têm `%G? = N` — não há assinatura para conferir.
+          #
+          # O que ela pega é o caso COMUM: alguém apaga um fragmento sem querer
+          # e a tag nasceria sozinha. Contra isso ela faz barulho em vez de
+          # silêncio, e é por isso que fica. Contra forja deliberada ela não
+          # protege, e a proteção de verdade — conferir pela API que o PR de
+          # origem foi aberto pelo App — está na issue #478.
           versao=$(pnpm exec tsx scripts/cortar-release.ts --versao-do-changelog)
 
-          antes=$(git ls-tree -r --name-only HEAD^ -- .changes/ | grep -c '\.md$' || true)
-          depois=$(git ls-tree -r --name-only HEAD  -- .changes/ | grep -c '\.md$' || true)
-          echo "fragmentos em .changes/: antes=${antes} depois=${depois}"
+          # `--diff-filter=D` conta o que este commit APAGOU de `.changes/`.
+          # `|| true` porque `grep -c` sai 1 quando não casa nada, e `set -e`
+          # mataria o passo justamente no caso normal (PR comum, zero removidos).
+          removidos=$(git diff --diff-filter=D --name-only HEAD^ HEAD -- .changes/ | grep -c '\.md$' || true)
+
+          # Num merge commit, `HEAD^2` é a ponta do branch de release — o
+          # commit que o App assinou. Se o merge for squash não há segundo pai,
+          # e aí o autor do próprio HEAD é quem responde. O `|| true` evita que
+          # a ausência de `HEAD^2` derrube o passo.
+          assinante=$(git log -1 --format='%an' 'HEAD^2' 2>/dev/null || true)
+          [ -n "${assinante}" ] || assinante=$(git log -1 --format='%an' HEAD)
+
+          # ─── O QUE SOBROU, E POR QUE ISSO IMPORTA ─────────────────────────
+          #
+          # A guarda antiga garantia, sem dizer, uma segunda coisa: `depois==0`
+          # significava que a versão anunciada dá conta de TUDO que estava
+          # pendente na main. Trocar por "removeu" abre mão disso — e há um caso
+          # em que abrir mão FAZ DANO.
+          #
+          # O caso: um PR com `impacto: exige_acao` mergeia durante a janela da
+          # release. O fragmento dele sobrevive (vai para a próxima versão), a
+          # tag sai, e `stable` passa a apontar para uma main que EXIGE ação do
+          # operador — enquanto a seção do CHANGELOG que ele lê antes de rodar o
+          # `update.sh` diz que nada mudou. O aviso fica na gaveta e o contêiner
+          # não sobe.
+          #
+          # `nada_mudou` e `capacidade_nova` sobrevivendo são inofensivos: entram
+          # na versão seguinte e ninguém quebra no meio. `exige_acao` não é.
+          exigem_acao=$(
+            git diff --diff-filter=D --name-only HEAD^ HEAD -- .changes/ > /tmp/removidos.txt || true
+            for f in $(git ls-tree -r --name-only HEAD -- .changes/ | grep '\.md$' || true); do
+              if git show "HEAD:${f}" | head -20 | grep -q '^impacto:[[:space:]]*exige_acao'; then
+                echo "${f}"
+              fi
+            done
+            # Fecha a substituição com status conhecido, para que o `set -e` do
+            # passo nunca dependa de qual foi o último `grep` do laço.
+            true
+          )
+
+          echo "fragmentos removidos por este commit: ${removidos}"
+          echo "assinante do corte: ${assinante}"
+          echo "fragmentos vivos que exigem ação: ${exigem_acao:-nenhum}"
 
           if git rev-parse -q --verify "refs/tags/v${versao}" >/dev/null; then
             echo "v${versao} já existe — nada a cortar"
             echo "cortar=nao" >> "$GITHUB_OUTPUT"
-          elif [ "${antes}" -eq 0 ] || [ "${depois}" -ne 0 ]; then
-            echo "::notice::O CHANGELOG anuncia ${versao} sem tag, mas este push NÃO consumiu fragmentos."
+          elif [ "${removidos}" -eq 0 ]; then
+            echo "::notice::O CHANGELOG anuncia ${versao} sem tag, mas este push não apagou fragmento nenhum."
             echo "::notice::Tag não criada. Uma release sai do workflow 'release' (Run workflow), nunca de um merge comum."
             echo "cortar=nao" >> "$GITHUB_OUTPUT"
+          elif [ "${assinante}" != "deskcomm-release[bot]" ]; then
+            # Alto, e não `notice`: alguém apagou fragmento de `.changes/` num
+            # commit que não veio do workflow de release. Ou é forja, ou é
+            # engano — e o silêncio é exatamente o que fez a #472 passar dias
+            # sem ninguém ver.
+            echo "::error::Este commit apagou ${removidos} fragmento(s) de .changes/ mas não foi assinado pelo App da release (assinante: ${assinante})."
+            echo "::error::A tag v${versao} NÃO foi criada. Se isto foi um corte legítimo, ele não saiu do workflow 'release'."
+            exit 1
+          elif [ -n "${exigem_acao}" ]; then
+            # Alto, e de novo não `notice`: este é o único caso em que NÃO cortar
+            # é o certo, e ele precisa de gente. Cortar publicaria `stable` sem o
+            # aviso que o operador precisa ler ANTES de atualizar.
+            echo "::error::Sobrou fragmento com 'impacto: exige_acao' em .changes/ — a v${versao} sairia sem o aviso que o operador precisa ler antes de atualizar."
+            echo "::error::Fragmentos: ${exigem_acao}"
+            echo "::error::Tag NÃO criada. Rode o workflow de release de novo, agora que ele consome também esse fragmento."
+            exit 1
           else
-            echo "corte de release: ${antes} fragmento(s) consumido(s), v${versao} ainda não existe"
+            echo "corte de release: ${removidos} fragmento(s) consumido(s), v${versao} ainda não existe"
             echo "cortar=sim"       >> "$GITHUB_OUTPUT"
             echo "versao=${versao}" >> "$GITHUB_OUTPUT"
           fi
