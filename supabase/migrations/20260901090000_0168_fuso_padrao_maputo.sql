@@ -1,4 +1,4 @@
--- 0165 — FUSO PADRÃO DA ORGANIZAÇÃO PASSA DE America/Sao_Paulo PARA Africa/Maputo.
+-- 0168 — FUSO PADRÃO DA ORGANIZAÇÃO PASSA DE America/Sao_Paulo PARA Africa/Maputo.
 --
 -- Esta instalação opera em Moçambique (ver rebrand SonghaiCRM/Songhai, Lda);
 -- organização criada sem fuso explícito deve nascer em Africa/Maputo (UTC+2,

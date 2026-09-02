@@ -1,19 +1,19 @@
--- 0169 — fn_lgpd_cascade_redact_contact VOLTA A APONTAR PARA COLUNA QUE EXISTE.
+-- 0171 — fn_lgpd_cascade_redact_contact VOLTA A APONTAR PARA COLUNA QUE EXISTE.
 --
--- Achado ao validar a 0167/0168 via `pnpm test:db`: a 0071
+-- Achado ao validar a 0170 via `pnpm test:db`: a 0071
 -- (crm_lead_activities_barramento, 2026-07-25) recria esta função com
--- `cpf_encrypted`/`cpf_hash` no corpo — nomes corretos NA ÉPOCA. A 0166
+-- `cpf_encrypted`/`cpf_hash` no corpo — nomes corretos NA ÉPOCA. A 0169
 -- (CPF/CNPJ→NUIT, 2026-09-02) renomeou as colunas mas não tocou nesta função:
 -- `alter table rename column` não segue para dentro de corpo de função
 -- plpgsql, que é texto opaco. Resultado: `select
 -- fn_lgpd_cascade_redact_contact(...)` falha com "column cpf_encrypted does
 -- not exist" — a anonimização de contato (LGPD/Proteção de Dados) fica
--- quebrada em qualquer banco que tenha rodado a 0071 e depois a 0166 nessa
+-- quebrada em qualquer banco que tenha rodado a 0071 e depois a 0169 nessa
 -- ordem (é a ordem cronológica normal de um `supabase db push` do zero).
 --
 -- `baseline.sql` já não tem este defeito (o corpo do snapshot pg_dump foi
 -- re-gerado depois do rename) — o gap é só na cadeia de migrations/ e em
--- qualquer projeto que já tenha rodado a 0166 sem este fix. Corpo idêntico ao
+-- qualquer projeto que já tenha rodado a 0169 sem este fix. Corpo idêntico ao
 -- da 0071, só troca `cpf_encrypted`/`cpf_hash` por `nuit_encrypted`/`nuit_hash`.
 
 CREATE OR REPLACE FUNCTION "public"."fn_lgpd_cascade_redact_contact"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_request_id" "uuid") RETURNS "jsonb"
