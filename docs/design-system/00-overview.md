@@ -19,7 +19,7 @@ A meta secundária é **não parecer genérico**. 80% dos CRMs SaaS atuais conve
 Quando duas decisões parecem igualmente boas, esta lista é a tiebreaker:
 
 1. **Clarity > decoration.** Se um elemento não comunica, ele sai. Sombras decorativas, gradients, ícones que repetem o label — fora.
-2. **Calm > vibrant.** Saturação alta cansa; contraste calibrado é mais legível que contraste máximo. Nenhum accent passa de stop 600 em áreas grandes.
+2. **Calm > vibrant.** Saturação alta cansa; contraste calibrado é mais legível que contraste máximo. Nenhum accent passa de stop 700 em áreas grandes.
 3. **Consistency > novelty.** Uma escolha boa repetida 100 vezes é melhor que 100 escolhas únicas. Componentes têm variants finitos e nomeados.
 4. **Accessibility > aesthetic.** WCAG AA é piso, não teto. Atkinson Hyperlegible foi escolhida pela disambiguação de glifos. Focus rings sempre 2px visíveis.
 5. **Intentional density.** Aerada é default; densidade só comprime quando o conteúdo justifica (tabela de dados). Whitespace não é desperdício, é respiração.
@@ -38,7 +38,8 @@ Leia 00 → 09 sequencial uma vez. Depois consulte por demanda via tabela do `RE
 
 ## Versionamento
 
-- **v1.0 — locked em 2026-04-28.** As 5 escolhas (Sage, Atkinson, Aerada, Phosphor, IBM Plex Mono) estão fechadas até v2.0. PRs que tentem trocar uma delas precisam de RFC.
+- **v1.0 — locked em 2026-04-28.** As 5 escolhas (Sage, Atkinson, Aerada, Phosphor, IBM Plex Mono) ficaram fechadas até v2.0. PRs que tentassem trocar uma delas precisavam de RFC.
+- **v2.0 — 2026-09-01.** A escolha de cor mudou: Sage (verde-erva desaturado, seed `#506d48`) deu lugar ao verde característico do WhatsApp (seed `#008069`), decisão de produto (o canal primário do produto é WhatsApp, e a cor reforça essa associação). As outras 4 escolhas (Atkinson, Aerada, Phosphor, IBM Plex Mono) continuam fechadas até v3.0. Detalhe da migração, números recalculados e o achado de contraste aberto: `docs/design-system/02-palette-sage.md`.
 - Patches são aceitos para: novos ícones, novos exemplos de microcopy, ajustes de hex em ±2 pontos de luminosidade quando WCAG falhar, novos componentes derivados.
 - Histórico de mudanças vai em `CHANGELOG.md` quando houver primeira mudança.
 

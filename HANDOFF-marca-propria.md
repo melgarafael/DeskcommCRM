@@ -108,7 +108,7 @@ de um agente que rodou o cálculo — e está marcado de propósito.
 | Defeito | Evidência | Fase que conserta |
 |---|---|---|
 | **Gate de marca verde enquanto a marca vaza** — `/Deskcomm/` case-**sensitive** | `tests/unit/branding.test.ts:90`; passam `support@deskcomm.com.br` (`app/account-suspended/page.tsx:17`), `suporte@deskcomm.app` (`app/app/settings/billing/page.tsx:26`), `deskcommcrm-recovery-codes.txt` (`components/auth/RecoveryCodesPanel.tsx:34`) | 1 |
-| **Colisão de cor Δ=0,0° no tema escuro** — `--color-success` é a mesma string de `--color-accent-400` | `app/globals.css:167` e `:193`, ambos `#82a077` | 1 |
+| **Quase-colisão de cor no tema escuro** — `--color-success` e `--color-accent-400` (ΔE 0,0443 sob dicromacia, abaixo do piso de separação 0,05) | `app/globals.css:167,193`; era Δ=0,0° (mesma string `#82a077`) até o rebrand de 2026-09-01 para o verde-WhatsApp, que trocou `--color-accent-400` para `#49b198` — deixou de ser igualdade byte a byte, mas a quase-colisão persiste; ver `tests/unit/branding-contraste.test.ts` | 1 |
 | **Corrida no `settings` jsonb** — SELECT→spread→UPDATE sem `.select()`; `visibility_mode` mora no mesmo jsonb | `app/actions/settings/updateTenant.ts:56-83` | 3 |
 | **`[data-theme="light"]` não existe** — `:root` casa só `<html>`, então tema claro não é escopável em subárvore | `grep -c 'data-theme="light"' app/globals.css` = 0 | 1 |
 

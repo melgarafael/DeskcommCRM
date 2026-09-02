@@ -41,11 +41,11 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
   sage: {
     id: "sage",
     name: "Sage",
-    description: "Verde-erva desaturado. Calmo, confiável, vegetal.",
+    description: "Verde WhatsApp. Reconhecível, vivo, o verde do canal primário.",
     accent: {
-      50: "#f3f6f1", 100: "#e4ebe0", 200: "#c8d6c1", 300: "#a4ba9a",
-      400: "#82a077", 500: "#67885d", 600: "#506d48", 700: "#41573b",
-      800: "#374731", 900: "#2f3c2b", 950: "#171f15",
+      50: "#eef8f4", 100: "#d9efe8", 200: "#b3dfd1", 300: "#80c7b3",
+      400: "#49b198", 500: "#169b80", 600: "#008069", 700: "#136553",
+      800: "#175244", 900: "#194439", 950: "#08221b",
     },
     neutralLight: {
       50: "#faf9f6", 100: "#f3f1ec", 200: "#e7e3da", 300: "#d2cdbf",

@@ -2638,7 +2638,7 @@ levantou eram reais, e nenhum dos dois aparecia em teste:
 | Risco | Por que a tela ficava igual |
 |---|---|
 | `box-shadow: 0 0 0 2px` num overlay `inset-0` | a sombra desenha para **fora** da caixa, e o card é `overflow-hidden` (`KanbanCard.tsx:88`) — ela caía exatamente na faixa recortada |
-| fundo de `prefers-reduced-motion` | `--color-accent-soft` é **cor sólida** no tema claro (`#e4ebe0`): o overlay cobria o card inteiro por 1,2 s, deixando quem desligou animação **sem ler** o card |
+| fundo de `prefers-reduced-motion` | `--color-accent-soft` é **cor sólida** no tema claro (`#d9efe8`): o overlay cobria o card inteiro por 1,2 s, deixando quem desligou animação **sem ler** o card |
 
 Correção: o anel virou **borda de 2 px com `box-sizing: border-box`** — desenha para dentro da
 própria caixa e não depende do overflow do pai. E movimento reduzido deixou de ser um caminho

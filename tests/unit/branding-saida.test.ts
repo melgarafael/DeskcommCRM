@@ -8,7 +8,7 @@
  *     do ar durante um envio de LGPD) não acontece em nenhuma suíte. Sem este
  *     caso, tirar o `try/catch` passaria em typecheck, lint e nos 4369 testes.
  *  2. O PISO importado, e não redigitado. A asserção compara com a régua
- *     (`REGUA_DO_PRODUTO`), nunca com o literal `#506d48` — um teste que
+ *     (`REGUA_DO_PRODUTO`), nunca com o literal `#008069` — um teste que
  *     escrevesse o hex à mão criaria a QUINTA cópia dele e passaria a verde no
  *     dia em que o produto mudasse de cor.
  *  3. O TEMA CLARO. E-mail não tem tema, e um `escuro` trocado por engano

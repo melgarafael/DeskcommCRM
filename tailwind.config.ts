@@ -30,7 +30,7 @@ const config: Config = {
           subtle: "var(--color-text-subtle)",
         },
 
-        // Accent — Sage scale
+        // Accent — verde-WhatsApp scale (id interno da paleta continua "sage")
         accent: {
           DEFAULT: "var(--color-accent)",
           foreground: "var(--color-accent-fg)",

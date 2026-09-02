@@ -54,7 +54,7 @@ describe("tema claro escopável em subárvore", () => {
     //
     // A rampa fica de fora de propósito: as 11 paradas são idênticas nos dois
     // blocos do produto (omiti-las não muda pixel), e assim uma subárvore clara
-    // herda a rampa do <html> — a do revendedor — em vez de fixar a Sage.
+    // herda a rampa do <html> — a do revendedor — em vez de fixar a do produto.
     const esperado = [...escuro.keys()].filter((k) => !RAMPA.has(k)).sort();
     expect([...claro.keys()].sort()).toEqual(esperado);
     for (const k of claro.keys()) expect(RAMPA.has(k), k).toBe(false);

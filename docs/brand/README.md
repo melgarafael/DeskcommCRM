@@ -29,7 +29,7 @@ mentindo, ou é refeito do zero com outra identidade.
 
 ## Regras da arte
 
-- Paleta lida de `app/globals.css` (creme `#faf9f6`, sage `#506d48`, texto
+- Paleta lida de `app/globals.css` (creme `#faf9f6`, verde-WhatsApp `#008069`, texto
   `#1c1a16`). O card usa a identidade real do produto, não uma criada para ele.
 - Tipografia: Atkinson Hyperlegible (títulos) + IBM Plex Mono (rótulos), as
   mesmas da aplicação.

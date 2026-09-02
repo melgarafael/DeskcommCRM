@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Badge — Sage design system.
+ * Badge — SonghaiCRM design system.
  * Variants: default (accent soft), neutral, success, warning, error, info.
  * Compat aliases: secondary -> neutral, destructive -> error, outline -> neutral.
  */

@@ -20,7 +20,7 @@ const REGUA = REGUA_DO_PRODUTO;
 const SEMENTES = [
   "#0f172a", "#f5c518", "#ffffff", "#000000", "#808080", "#dc2626", "#22c55e",
   "#f59e0b", "#2563eb", "#14b8a6", "#4b0082", "#e11d48", "#7c3aed", "#1a1f36",
-  "#fafafa", "#506d48",
+  "#fafafa", "#008069",
 ] as const;
 
 const corDe = (hex: string): CorResolvida => {
@@ -215,9 +215,9 @@ describe("o escopo da organização", () => {
   it("a allowlist vale igual no escopo novo", () => {
     // O escopo é parâmetro; a recusa não pode ser. Uma segunda porta de
     // serialização sem a mesma guarda seria a forma clássica de o furo voltar.
-    const derivada = derivarMarca("#506d48", REGUA);
+    const derivada = derivarMarca("#008069", REGUA);
     const forjada: CorResolvida = {
-      semente: "#506d48",
+      semente: "#008069",
       papel: "accent",
       derivada: { ...derivada, claro: { ...derivada.claro, accentSoft: "#fff; } body { x: 1" } },
     };
@@ -227,9 +227,9 @@ describe("o escopo da organização", () => {
 
 describe("allowlist de FORMA de valor", () => {
   const comSoftForjado = (valor: string): CorResolvida => {
-    const derivada = derivarMarca("#506d48", REGUA);
+    const derivada = derivarMarca("#008069", REGUA);
     return {
-      semente: "#506d48",
+      semente: "#008069",
       papel: "accent",
       derivada: { ...derivada, claro: { ...derivada.claro, accentSoft: valor } },
     };
@@ -255,7 +255,7 @@ describe("allowlist de FORMA de valor", () => {
   });
 
   it("aceita as três formas que o produto de fato emite", () => {
-    for (const bom of ["#abc", "#a1b2c3", "rgb(1, 2, 3)", "rgba(130, 160, 119, 0.16)"]) {
+    for (const bom of ["#abc", "#a1b2c3", "rgb(1, 2, 3)", "rgba(73, 177, 152, 0.16)"]) {
       expect(cssDaMarca(comSoftForjado(bom)).css, bom).not.toBeNull();
     }
   });

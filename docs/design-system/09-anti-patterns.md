@@ -23,7 +23,7 @@ Lista canônica do que **não fazer** no SonghaiCRM. Anti-patterns ficam aqui pr
 ## 3. ❌ Gradient roxo/azul/rosa em hero ou primary button
 
 **Por quê:** símbolo do "AI SaaS 2024". Datado e clichê. Não combina com soft-tech calmo.
-**✅ Sim:** solid `accent-500` (Sage `#67885d`). Profundidade vem de border + shadow neutro, não gradient.
+**✅ Sim:** solid `accent-500` (verde-WhatsApp `#169b80`). Profundidade vem de border + shadow neutro, não gradient.
 
 ---
 
@@ -55,7 +55,7 @@ Lista canônica do que **não fazer** no SonghaiCRM. Anti-patterns ficam aqui pr
 
 ---
 
-## 8. ❌ Sage accent como bg de toda a sidebar
+## 8. ❌ Accent (verde-WhatsApp) como bg de toda a sidebar
 
 **Por quê:** a sidebar é greige (`surface` ou `surface-elevated`). Accent na sidebar fica saturado e cansa em 8h.
 **✅ Sim:** sidebar `surface`, com hover `accent-soft` em items de nav, active `accent-soft` + text `accent`.

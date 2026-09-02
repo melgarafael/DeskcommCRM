@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Button — Sage design system.
+ * Button — SonghaiCRM design system.
  * Variants:
  *   - primary (default): accent fill, branded CTA
  *   - secondary: surface-elevated com border, ação neutra
