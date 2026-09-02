@@ -22,7 +22,7 @@ import { formatCentsUSD } from "@/lib/money";
 const fmtUSD = formatCentsUSD;
 
 function fmtNum(n: number): string {
-  return n.toLocaleString("pt-BR");
+  return n.toLocaleString("pt-PT");
 }
 
 // ---------------------------------------------------------------------------

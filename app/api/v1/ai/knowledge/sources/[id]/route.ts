@@ -24,7 +24,7 @@ const faqItemSchema = z.object({
   question: z.string().min(1),
   answer: z.string().min(1),
   tags: z.array(z.string()).optional().default([]),
-  locale: z.string().optional().default("pt-BR"),
+  locale: z.string().optional().default("pt-PT"),
 });
 
 const patchSourceSchema = z.object({

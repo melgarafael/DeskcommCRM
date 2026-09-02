@@ -13582,6 +13582,7 @@ create index if not exists payments_lead_idx on public.payments using btree (lea
 alter table public.payments enable row level security;
 revoke insert, update, delete on public.payments from anon, authenticated;
 
+drop policy if exists payments_select on public.payments;
 create policy payments_select on public.payments
   for select using (
     (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
@@ -13777,3 +13778,13 @@ alter table public.crm_pipelines
       'fields_in_priority_order', jsonb_build_array('nuit', 'phone_e164', 'email')
     )
   );
+
+-- ---- locale padrão passa de pt-BR para pt-PT (migration 0167) ----
+--
+-- Esta instalação opera em Moçambique; organização ou item de FAQ criado sem
+-- locale explícito deve nascer em pt-PT (português europeu), não pt-BR —
+-- herança do template original do curso WAHA. Não altera organização/FAQ
+-- existente: só o piso para linha NOVA muda.
+
+alter table public.organizations alter column locale set default 'pt-PT';
+alter table public.ai_faq_items alter column locale set default 'pt-PT';

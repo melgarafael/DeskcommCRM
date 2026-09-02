@@ -32,7 +32,7 @@ import type { EvolutionPayload } from "@/lib/ai/evolution/aggregate";
  */
 
 // DÓLAR: `outcome.cost_cents` vem de `llm_calls`, que `pricing.ts` grava em centavo de USD.
-const usd = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" });
+const usd = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "USD" });
 
 /**
  * O bloco se chama "o que MUDOU", mas o payload traz um período só — não há
@@ -89,7 +89,7 @@ export function taxaDeAjuda(rate: number): string {
   if (rate <= 0) return "0";
   const porCem = rate * 100;
   if (porCem < 0.1) return "menos de 0,1 a cada 100";
-  return `${porCem.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} a cada 100`;
+  return `${porCem.toLocaleString("pt-PT", { maximumFractionDigits: 1 })} a cada 100`;
 }
 
 /**
@@ -118,11 +118,11 @@ export function descricaoResultado(outcome: EvolutionPayload["outcome"]): string
 }
 
 function num(n: number): string {
-  return n.toLocaleString("pt-BR");
+  return n.toLocaleString("pt-PT");
 }
 
 function diaCurto(s: string): string {
-  return new Date(`${s}T00:00:00Z`).toLocaleDateString("pt-BR", {
+  return new Date(`${s}T00:00:00Z`).toLocaleDateString("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     timeZone: "UTC",

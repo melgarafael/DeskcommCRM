@@ -62,7 +62,7 @@ export function AnonymizeDialog({ contactId, open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-error-fg">Anonimizar contato (LGPD)</DialogTitle>
+          <DialogTitle className="text-error-fg">Anonimizar contato (Proteção de Dados)</DialogTitle>
           <DialogDescription>
             Esta ação é irreversível. O nome será substituído por &quot;Contato Anonimizado #N&quot;,
             email/telefone/NUIT serão limpos, e atividades terão conteúdo redigido.

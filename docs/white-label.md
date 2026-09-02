@@ -21,7 +21,7 @@ O arquivo é aceito **pelos bytes, não pela extensão**. Renomear um `.svg` par
 Quem preferir hospedar por conta própria continua podendo, pelo `.env`:
 
 ```bash
-APP_LOGO_URL=https://cdn.suaempresa.com.br/logo.svg
+APP_LOGO_URL=https://cdn.suaempresa.co.mz/logo.svg
 ```
 
 Entre os dois, **o arquivo subido pela tela vence a URL do `.env`** — quem subiu expressou a escolha mais recente. E remover o logo de uma organização **devolve o da instalação**, não "nenhum": as camadas caem uma na outra, em vez de apagar.
@@ -30,7 +30,7 @@ Entre os dois, **o arquivo subido pela tela vence a URL do `.env`** — quem sub
 
 ```bash
 APP_NAME=Vendas Turbo CRM
-APP_LOGO_URL=https://cdn.suaempresa.com.br/logo.svg
+APP_LOGO_URL=https://cdn.suaempresa.co.mz/logo.svg
 APP_ACCENT_HEX=#7a5cd6
 ```
 
@@ -111,7 +111,7 @@ Para enviá-los, preencha as duas variáveis (o `install.sh` pergunta as duas):
 
 ```bash
 RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=nao-responda@suaempresa.com.br
+RESEND_FROM_EMAIL=nao-responda@suaempresa.co.mz
 ```
 
 **O endereço tem de ser de um domínio verificado na SUA conta Resend.** Esse é o único pedaço que a marca não resolve: o nome que aparece na caixa de entrada é a marca; o endereço é de quem hospeda.
@@ -121,7 +121,7 @@ RESEND_FROM_EMAIL=nao-responda@suaempresa.com.br
 ### O endereço de suporte que os seus clientes veem
 
 ```bash
-SUPPORT_EMAIL=suporte@suaempresa.com.br
+SUPPORT_EMAIL=suporte@suaempresa.co.mz
 ```
 
 Aparece nas telas de conta suspensa e de cobrança. **Vazio significa vazio:** a tela simplesmente não mostra endereço nenhum — nunca cai de volta no nosso. Numa tela de conta suspensa isso importa: quem suspendeu foi você, não nós.

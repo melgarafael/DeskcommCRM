@@ -42,7 +42,7 @@ export function ProfileForm({ email, initialFullName, initialAvatarUrl }: Props)
     e.preventDefault();
     const parsed = profileSchema.safeParse({
       full_name: fullName || null,
-      locale: "pt-BR",
+      locale: "pt-PT",
       timezone,
       avatar_url: avatarUrl || null,
     });

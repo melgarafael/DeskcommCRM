@@ -23,7 +23,7 @@ import { Card } from "@/components/ui/card";
  * O MESMO formato da tela de Uso — as duas leem `llm_calls.cost_cents`, que é
  * centavo de DÓLAR (`pricing.ts` cota o provedor em USD).
  */
-const usd = new Intl.NumberFormat("pt-BR", {
+const usd = new Intl.NumberFormat("pt-PT", {
   style: "currency",
   currency: "USD",
   // 4 casas porque uma execução isolada custa fração de centavo, e arredondar
@@ -228,7 +228,7 @@ export function ExecucoesDeIa() {
               )}
 
               <p className="mt-2 text-xs text-muted-foreground">
-                {new Date(e.created_at).toLocaleString("pt-BR")}
+                {new Date(e.created_at).toLocaleString("pt-PT")}
                 {e.porQueEsteModelo ? ` · ${e.porQueEsteModelo}` : ""}
               </p>
             </Card>

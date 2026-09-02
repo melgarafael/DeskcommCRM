@@ -123,8 +123,8 @@ async function ensureOrg(): Promise<string> {
       slug: ORG_SLUG,
       display_name: ORG_NAME,
       legal_name: ORG_NAME,
-      timezone: "America/Sao_Paulo",
-      locale: "pt-BR",
+      timezone: "Africa/Maputo",
+      locale: "pt-PT",
       onboarded_at: new Date().toISOString(),
     } as never)
     .select("id")
@@ -224,7 +224,7 @@ async function ensureBoard(orgId: string): Promise<{ pipelineId: string; leadId:
       status: "open",
       source: "manual",
       value_cents: 100_000,
-      currency: "BRL",
+      currency: "MZN",
       position_in_stage: 1000,
       last_activity_at: new Date().toISOString(),
     } as never)
@@ -295,7 +295,7 @@ async function ensurePegadaLgpd(
     status: "open",
     source: "manual",
     value_cents: 50_000,
-    currency: "BRL",
+    currency: "MZN",
     position_in_stage: 2000,
     last_activity_at: new Date().toISOString(),
   };

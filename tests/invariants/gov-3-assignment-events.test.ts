@@ -31,9 +31,16 @@ import {
 const CAE_CONTACT = "dddddddd-3333-4000-8000-000000000001";
 const CAE_CONV = "dddddddd-4444-4000-8000-000000000001";
 
-function eventCount(where: string): number {
+// `asUser` default GOV_AGENT_A: correto em todo estado em que ele é o dono
+// atual (claim) ou a conversa está livre (release) — a 0164
+// (historico_de_atribuicao_respeita_visibilidade) faz `cae_select` seguir
+// `fn_can_view_lead(organization_id, assigned_to_user_id)` sobre o dono
+// ATUAL da conversa, não sobre quem aparece em cada linha de evento. No
+// instante entre transfer e release a conversa pertence a GOV_AGENT_B — é
+// só aí que o parâmetro precisa mudar (ver o teste de transfer abaixo).
+function eventCount(where: string, asUser: string = GOV_AGENT_A): number {
   return countAs(
-    GOV_AGENT_A,
+    asUser,
     `select count(*) from public.conversation_assignment_events
       where conversation_id = '${CAE_CONV}' and ${where}`,
   );
@@ -87,10 +94,17 @@ describe("eixo 3 — G3-01: eventos de atribuição", () => {
     const rows = assignAs(GOV_AGENT_A, `'${GOV_AGENT_B}'::uuid, 'transfer', null::uuid, false`);
     expect(rows).toBe(1);
 
+    // Consultado como GOV_AGENT_B (o dono ATUAL após a transferência), não
+    // GOV_AGENT_A: a 0164 restringe `cae_select` a quem `fn_can_view_lead`
+    // aprova para o dono corrente da conversa. GOV_AGENT_A transferiu para
+    // fora e perde a visibilidade da própria conversa até ela voltar a ser
+    // dele (ou ficar livre, ou ele virar manager/admin) — comportamento
+    // correto e deliberado, não um defeito desta invariante.
     expect(
       eventCount(
         `reason = 'transfer' and from_user_id = '${GOV_AGENT_A}'
          and to_user_id = '${GOV_AGENT_B}' and changed_by = '${GOV_AGENT_A}'`,
+        GOV_AGENT_B,
       ),
     ).toBe(1);
 

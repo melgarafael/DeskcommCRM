@@ -33,8 +33,8 @@ async function main() {
         slug: ORG_SLUG,
         display_name: ORG_NAME,
         legal_name: ORG_NAME,
-        timezone: "America/Sao_Paulo",
-        locale: "pt-BR",
+        timezone: "Africa/Maputo",
+        locale: "pt-PT",
         onboarded_at: null,
       } as never)
       .select("id, onboarded_at")

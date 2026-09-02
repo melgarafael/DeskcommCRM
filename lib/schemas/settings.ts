@@ -20,7 +20,7 @@ import { conversationTagSchema } from "./messaging";
  * este campo fica só para não quebrar `user_metadata.locale`/`organizations.locale`
  * já gravado.
  */
-const LOCALES = ["pt-BR"] as const;
+const LOCALES = ["pt-PT"] as const;
 
 /**
  * G6-02: organizations.settings.ai_dispatch_mode (edge-contract do Vendaval).

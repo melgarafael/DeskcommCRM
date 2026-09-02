@@ -72,10 +72,10 @@ export function formatCentsMZN(cents: number): string {
  * (exigiria fonte de câmbio, dependência externa nova num produto self-host):
  * o que muda é o rótulo dizer a unidade real.
  *
- * Vírgula decimal porque a frase é pt-BR; "US$" porque a moeda é dólar. É a
+ * Vírgula decimal porque a frase é pt-PT; "US$" porque a moeda é dólar. É a
  * mesma escolha de `emDolares` em `lib/agent-engine/edge/llm/orcamento.ts` —
  * mas ali ela não pode importar daqui (o módulo é do engine e roda no worker).
  */
 export function formatCentsUSD(cents: number): string {
-  return ((cents ?? 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "USD" });
+  return ((cents ?? 0) / 100).toLocaleString("pt-PT", { style: "currency", currency: "USD" });
 }

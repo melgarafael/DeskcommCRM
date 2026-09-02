@@ -60,7 +60,7 @@ export default async function TenantSettingsPage() {
             // `en-US` e `es` saíram da lista (nenhum teve tradução suficiente
             // para justificar seletor). Linha antiga com qualquer um dos dois
             // cai no padrão em vez de quebrar a tela.
-            locale: "pt-BR",
+            locale: "pt-PT",
             media_retention_days: row.media_retention_days,
             dpo_email: row.dpo_email,
             privacy_policy_url: row.privacy_policy_url,

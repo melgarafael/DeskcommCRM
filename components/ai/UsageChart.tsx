@@ -18,7 +18,7 @@ interface Props {
 
 function formatDateTick(s: string): string {
   const d = new Date(`${s}T00:00:00Z`);
-  return d.toLocaleDateString("pt-BR", {
+  return d.toLocaleDateString("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     timeZone: "UTC",
@@ -26,7 +26,7 @@ function formatDateTick(s: string): string {
 }
 
 function formatNumber(n: number): string {
-  return n.toLocaleString("pt-BR");
+  return n.toLocaleString("pt-PT");
 }
 
 function formatTokens(n: number): string {
@@ -191,7 +191,7 @@ export function UsageChart({ payload }: Props) {
                 // deixaria a régua contradizendo o rótulo — o gráfico diria
                 // "segundos" e mostraria 24.000 na lateral.
                 tickFormatter={(v: number) =>
-                  (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 0 })
+                  (v / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 0 })
                 }
                 width={40}
               />
@@ -199,7 +199,7 @@ export function UsageChart({ payload }: Props) {
                 // Segundos, não milissegundos: 17.621 ms não diz nada a quem
                 // atende; 17,6 s diz.
                 formatter={(value, name) => [
-                  `${(Number(value) / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s`,
+                  `${(Number(value) / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} s`,
                   name,
                 ]}
                 labelFormatter={(label) => formatDateTick(String(label))}

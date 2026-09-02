@@ -101,6 +101,14 @@ beforeAll(() => {
   // isoladamente é uma viagem no tempo que não volta sozinha — e o teste
   // seguinte mede o passado sem saber.
   psql(readFileSync("supabase/migrations/20260725020000_0072_activity_evidence_llm_call_ids.sql", "utf8"));
+  // A 0071 também recria fn_lgpd_cascade_redact_contact — com cpf_encrypted/
+  // cpf_hash, os nomes corretos NA ÉPOCA. A 0166 (CPF/CNPJ→NUIT) renomeou as
+  // colunas via ALTER TABLE, que não segue para dentro de corpo de função
+  // plpgsql (texto opaco); a 0169 é o forward-fix que devolve a função ao
+  // nome de coluna que existe. Sem reaplicá-la aqui, este arquivo deixa a
+  // anonimização quebrada para o describe() de LGPD logo abaixo — mesma
+  // viagem no tempo que o comentário acima já resolve para a 0072.
+  psql(readFileSync("supabase/migrations/20260902120000_0169_redact_contact_usa_nuit.sql", "utf8"));
 });
 
 describe("0071 — o backfill não apaga o que já se sabia", () => {

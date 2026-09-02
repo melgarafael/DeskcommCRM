@@ -6,7 +6,7 @@ import { useVariant } from "../lib/variant-context";
 
 const MOCK = [
   { name: "Maria Silva",   preview: "Confirmando o endereço de entrega para o pedido #12.443", ts: "14h32", initial: "MS", badge: "novo" },
-  { name: "João Pereira",  preview: "Já fiz o Pix, segue o comprovante em anexo agora",        ts: "14h28", initial: "JP", badge: null },
+  { name: "João Pereira",  preview: "Já fiz o Mpesa, segue o comprovante em anexo agora",        ts: "14h28", initial: "JP", badge: null },
   { name: "Ana Beatriz",   preview: "Posso trocar o tamanho? G ficou apertado",                ts: "13h51", initial: "AB", badge: null },
   { name: "Carlos Lima",   preview: "Pedido chegou quebrado, mandei foto pelo Insta",          ts: "12h17", initial: "CL", badge: "urg" },
   { name: "Fernanda Reis", preview: "Obrigada pelo atendimento ontem, super rápido!",          ts: "11h44", initial: "FR", badge: null },

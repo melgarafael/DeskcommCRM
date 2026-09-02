@@ -41,7 +41,7 @@ export function TenantHealthClient({ id }: TenantHealthClientProps) {
   }
 
   const lastChecked = dataUpdatedAt
-    ? new Intl.DateTimeFormat("pt-BR", {
+    ? new Intl.DateTimeFormat("pt-PT", {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",

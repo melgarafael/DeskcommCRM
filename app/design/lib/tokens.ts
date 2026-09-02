@@ -69,7 +69,7 @@ export const PALETTES: Record<PaletteId, PaletteDef> = {
   clay: {
     id: "clay",
     name: "Clay",
-    description: "Terracota quente. Acolhedor, artesanal, brasileiro.",
+    description: "Terracota quente. Acolhedor, artesanal, terroso.",
     accent: {
       50: "#fbf3ef", 100: "#f4e0d3", 200: "#e7bda5", 300: "#d79376",
       400: "#c47353", 500: "#b05a3d", 600: "#934531", 700: "#76382a",

@@ -173,7 +173,7 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
           <h2 className="text-xl font-semibold tracking-tight">{agent.name}</h2>
           <p className="text-xs text-muted-foreground">
             {agent.is_default ? "Agent default · " : ""}Criado em{" "}
-            {new Date(agent.created_at).toLocaleDateString("pt-BR")}
+            {new Date(agent.created_at).toLocaleDateString("pt-PT")}
           </p>
         </div>
         <div className="flex gap-2">

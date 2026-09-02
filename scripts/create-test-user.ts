@@ -28,8 +28,8 @@ async function main() {
         slug: ORG_SLUG,
         display_name: "E2E Test Org",
         legal_name: "E2E Test Org",
-        timezone: "America/Sao_Paulo",
-        locale: "pt-BR",
+        timezone: "Africa/Maputo",
+        locale: "pt-PT",
         onboarded_at: new Date().toISOString(),
       } as never)
       .select("id")

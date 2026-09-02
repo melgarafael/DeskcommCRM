@@ -12,9 +12,9 @@ export function formatBytes(bytes: number | null | undefined): string {
   if (!bytes || bytes <= 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
   const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} KB`;
+  if (kb < 1024) return `${kb.toLocaleString("pt-PT", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} KB`;
   const mb = kb / 1024;
-  return `${mb.toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB`;
+  return `${mb.toLocaleString("pt-PT", { maximumFractionDigits: 1, minimumFractionDigits: 1 })} MB`;
 }
 
 /** Rótulo curto do arquivo: extensão do path ("PDF") > sufixo do mime > "Arquivo". */

@@ -109,7 +109,7 @@ function diaDe(item: TimelineItemView): { chave: string; rotulo: string } {
   const chave = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   let rotulo: string;
   try {
-    rotulo = new Intl.DateTimeFormat("pt-BR", {
+    rotulo = new Intl.DateTimeFormat("pt-PT", {
       weekday: "long",
       day: "2-digit",
       month: "short",

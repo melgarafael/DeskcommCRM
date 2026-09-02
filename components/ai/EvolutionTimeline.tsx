@@ -31,7 +31,7 @@ function titulo(t: string): string {
 function dia(s: string): string {
   // `s` já vem truncado em YYYY-MM-DD pelo agregador; o `T00:00:00Z` evita que o
   // browser leia a data como local e mostre o dia anterior a oeste de Greenwich.
-  return new Date(`${s}T00:00:00Z`).toLocaleDateString("pt-BR", {
+  return new Date(`${s}T00:00:00Z`).toLocaleDateString("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     timeZone: "UTC",

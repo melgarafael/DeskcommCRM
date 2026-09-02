@@ -33,7 +33,7 @@ export const contactCreateSchema = z.object({
   email: z.string().email().optional(),
   phone_number: z
     .string()
-    .regex(PHONE_REGEX, "Telefone deve estar em formato E.164 (+5511999998888)")
+    .regex(PHONE_REGEX, "Telefone deve estar em formato E.164 (+258841234567)")
     .optional(),
   nuit: z.string().refine(isValidNuit, "NUIT inválido").optional(),
   birthdate: z

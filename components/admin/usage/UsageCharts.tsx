@@ -17,14 +17,14 @@ interface UsageChartsProps {
 
 function formatDateTick(date: string): string {
   const d = new Date(date + "T00:00:00");
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" });
 }
 
 // DÓLAR: o número é `llm_calls.cost_cents`, e `pricing.ts` cota o provedor em USD.
 const formatCurrency = formatCentsUSD;
 
 function formatNumber(n: number): string {
-  return n.toLocaleString("pt-BR");
+  return n.toLocaleString("pt-PT");
 }
 
 function EmptyChart() {

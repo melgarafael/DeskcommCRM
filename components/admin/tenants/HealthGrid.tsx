@@ -15,7 +15,7 @@ import type { TenantHealthResponse } from "@/app/api/v1/admin/tenants/[id]/healt
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("pt-PT", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -37,7 +37,7 @@ function formatLag(seconds: number | null): string {
  * ~5x menor do que o que a fatura do provedor vai cobrar.
  */
 function formatCents(cents: number): string {
-  return new Intl.NumberFormat("pt-BR", {
+  return new Intl.NumberFormat("pt-PT", {
     style: "currency",
     currency: "USD",
   }).format(cents / 100);

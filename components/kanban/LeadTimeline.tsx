@@ -21,7 +21,7 @@ interface Props {
 
 function quando(iso: string): string {
   try {
-    return new Intl.DateTimeFormat("pt-BR", {
+    return new Intl.DateTimeFormat("pt-PT", {
       day: "2-digit",
       month: "short",
       hour: "2-digit",

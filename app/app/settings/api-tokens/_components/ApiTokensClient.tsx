@@ -141,7 +141,7 @@ export function ApiTokensClient() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {t.expires_at ? new Date(t.expires_at).toLocaleDateString("pt-BR") : "—"}
+                    {t.expires_at ? new Date(t.expires_at).toLocaleDateString("pt-PT") : "—"}
                   </TableCell>
                   <TableCell>
                     {!t.revoked_at ? (

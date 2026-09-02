@@ -143,7 +143,7 @@ export const SYSTEM_PROMPT_PLACEHOLDERS: Array<{ token: string; description: str
   { token: "{{vocabulary.won}}", description: "Vocabulário do tenant para 'won' (ex: pago)" },
   { token: "{{vocabulary.lost}}", description: "Vocabulário do tenant para 'lost' (ex: cancelado)" },
   { token: "{{contact_name}}", description: "Nome do contato em atendimento" },
-  { token: "{{contact_locale}}", description: "Locale do contato (ex: pt-BR)" },
+  { token: "{{contact_locale}}", description: "Locale do contato (ex: pt-PT)" },
   { token: "{{recent_messages}}", description: "Últimas N mensagens da conversa" },
   { token: "{{retrieved_chunks}}", description: "Trechos da base de conhecimento (RAG)" },
 ];

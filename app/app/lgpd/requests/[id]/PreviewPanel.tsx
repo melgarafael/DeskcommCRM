@@ -144,7 +144,7 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
               )}
 
               <p className="text-center text-xs text-muted-foreground">
-                Gerado em {new Date(preview.generated_at).toLocaleString("pt-BR")} · PII mascarada · NUIT não exibido
+                Gerado em {new Date(preview.generated_at).toLocaleString("pt-PT")} · PII mascarada · NUIT não exibido
               </p>
             </div>
           )}
