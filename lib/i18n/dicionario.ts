@@ -6328,6 +6328,27 @@ export const DICIONARIO: Traducoes = {
   "Salvar produto": { es: "Guardar producto" },
   "em estoque": { es: "en stock" },
   "sem controle de estoque": { es: "sin control de stock" },
+
+  // ─── Configurações › Organização — zona de perigo (reset de dados de teste) ───
+  "Zona de perigo": { es: "Zona de peligro" },
+  "Apaga de vez todas as mensagens, conversas, leads, contatos, agendamentos e pedidos desta organização. Use para recomeçar os testes do zero. Não afeta usuários, configurações nem pipelines.": {
+    es: "Borra definitivamente todos los mensajes, conversaciones, leads, contactos, citas y pedidos de esta organización. Úselo para reiniciar las pruebas desde cero. No afecta a usuarios, configuraciones ni pipelines.",
+  },
+  "Apagar todos os dados de atendimento": { es: "Borrar todos los datos de atención" },
+  "Apagar todos os dados de atendimento?": { es: "¿Borrar todos los datos de atención?" },
+  "Esta ação é irreversível. Mensagens, conversas, leads, contatos, agendamentos e pedidos de": {
+    es: "Esta acción es irreversible. Mensajes, conversaciones, leads, contactos, citas y pedidos de",
+  },
+  "serão apagados de vez.": { es: "serán borrados definitivamente." },
+  "Digite": { es: "Escriba" },
+  "para confirmar": { es: "para confirmar" },
+  "Apagando…": { es: "Borrando…" },
+  "Apagar de vez": { es: "Borrar definitivamente" },
+  "Dados apagados": { es: "Datos borrados" },
+  "mensagens": { es: "mensajes" },
+  "conversas": { es: "conversaciones" },
+  "leads": { es: "leads" },
+  "contatos": { es: "contactos" },
 };
 
 /**
