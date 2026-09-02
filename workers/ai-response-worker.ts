@@ -228,6 +228,11 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
         skipDispatch: true,
         handoffReason: "low_confidence",
       });
+      // skipDispatch:true nunca aciona o re-check de assignee_kind (ver
+      // persistAndDispatch) — inalcançável aqui, só satisfaz o compilador.
+      if (persisted.status === "skipped_human_assigned") {
+        return { status: "skipped", reason: "assigned_to_human" };
+      }
       await triggerHandoff({
         conversationId: ctx.conversation_id,
         organizationId: ctx.organization_id,
@@ -267,6 +272,14 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
     }
 
     const persisted = await persistAndDispatch(ctx, response, post.text);
+    if (persisted.status === "skipped_human_assigned") {
+      logger.info("[ai-response-worker] skip", {
+        reason: "assigned_to_human",
+        conversation_id: ctx.conversation_id,
+        message_id: ctx.message_id,
+      });
+      return { status: "skipped", reason: "assigned_to_human" };
+    }
     logInvocation({
       organization_id: ctx.organization_id,
       agent_id: ctx.agent.id,
@@ -907,13 +920,39 @@ interface PersistOptions {
   handoffReason?: string;
 }
 
+type PersistResult =
+  | { status: "persisted"; outbound_message_id: string }
+  | { status: "skipped_human_assigned" };
+
 async function persistAndDispatch(
   ctx: BotContext,
   response: BotResponse,
   finalText: string,
   options: PersistOptions = {},
-): Promise<{ outbound_message_id: string }> {
+): Promise<PersistResult> {
   const admin = createAdminClient();
+
+  // G3-02, corrida: `buildContext` leu `assignee_kind` UMA vez, no início do
+  // turno — mas `invokeBot` (chamada ao LLM, segundos de latência) já
+  // aconteceu quando chegamos aqui. Um humano pode ter assumido a conversa
+  // nesse intervalo. Só importa quando o envio é REAL (`!skipDispatch`): o
+  // caminho G3 (handoff por baixa confiança) já não despacha nada ao cliente,
+  // então relê-lo não mudaria desfecho nenhum, só custaria uma query.
+  if (!options.skipDispatch) {
+    const { data: atual } = await admin
+      .from("conversations")
+      .select("assignee_kind")
+      .eq("id", ctx.conversation_id)
+      .eq("organization_id", ctx.organization_id)
+      .maybeSingle();
+    if ((atual as { assignee_kind: string | null } | null)?.assignee_kind === "user") {
+      logger.info("[ai-response-worker] assumido por humano durante a geração — resposta descartada", {
+        conversation_id: ctx.conversation_id,
+        message_id: ctx.message_id,
+      });
+      return { status: "skipped_human_assigned" };
+    }
+  }
 
   const insertRow = {
     organization_id: ctx.organization_id,
@@ -999,5 +1038,5 @@ async function persistAndDispatch(
       }
     });
 
-  return { outbound_message_id: inserted.id };
+  return { status: "persisted", outbound_message_id: inserted.id };
 }

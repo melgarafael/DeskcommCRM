@@ -84,6 +84,16 @@ export interface GateContext {
    */
   optedOut: boolean;
   /**
+   * `conversations.assignee_kind === 'user'`, lido FRESCO sob o mesmo advisory
+   * lock desta tentativa (G3-02: assignee de 1ª classe). Um atendente humano que
+   * clica "Assumir" veta a IA aqui, no ÚLTIMO seam antes do envio físico — mesmo
+   * que o turno tenha começado antes do clique (a corrida entre "worker gerando
+   * resposta" e "humano assumindo" é o próprio bug: sem esta releitura, os dois
+   * respondem o mesmo cliente). Ausente/false = não assumido → gate no-op nesta
+   * checagem, retrocompatível com todo caller que ainda não lê esta coluna.
+   */
+  humanAssigned?: boolean;
+  /**
    * Canal desta tentativa. Nenhum gate pergunta QUEM é o provider (invariante 1
    * de `docs/doctrine/restricao-de-canal.md`) — só o entrega a `capabilitiesOf`
    * para perguntar o que o canal permite.
@@ -219,19 +229,37 @@ export interface Gate {
   evaluate(ctx: GateContext): GateVerdict;
 }
 
-/** Gate 1 — STOP/opt-out/força-humano: veto IRREVOGÁVEL (regra dura nº 2), 1ª linha. */
-const stopGate: Gate = {
+/**
+ * Gate 1 — STOP/opt-out/força-humano/assumido-por-humano: veto IRREVOGÁVEL
+ * (regra dura nº 2), 1ª linha.
+ *
+ * `humanAssigned` entra ANTES de `optedOut` de propósito: são vetos irmãos da
+ * mesma família (nenhum dos dois é "recuperável" dentro do turno), mas a ordem
+ * entre eles não muda o resultado — os dois curto-circuitam a cadeia inteira.
+ */
+export const stopGate: Gate = {
   name: 'stop',
-  evaluate: (ctx) =>
-    ctx.optedOut
-      ? {
-          pass: false,
-          code: 'contato_bloqueado',
-          reason:
-            'o lead optou por sair do atendimento (bloqueio/opt-out irrevogável) — não é ' +
-            'possível enviar nada a ele; encerre o turno sem tentar de novo.',
-        }
-      : { pass: true },
+  evaluate: (ctx) => {
+    if (ctx.humanAssigned === true) {
+      return {
+        pass: false,
+        code: 'assumido_por_humano',
+        reason:
+          'um atendente humano assumiu esta conversa — a IA não pode responder enquanto isso ' +
+          'valer; encerre o turno sem tentar de novo.',
+      };
+    }
+    if (ctx.optedOut) {
+      return {
+        pass: false,
+        code: 'contato_bloqueado',
+        reason:
+          'o lead optou por sair do atendimento (bloqueio/opt-out irrevogável) — não é ' +
+          'possível enviar nada a ele; encerre o turno sem tentar de novo.',
+      };
+    }
+    return { pass: true };
+  },
 };
 
 /**
@@ -670,6 +698,8 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // são racy — precisam ver o que o worker anterior já efetivou).
     const provider = await loadChannelProvider(client, args.tenantId, args.channelSessionId);
     const optedOut = args.optedOutThisTurn || (await readStopFlags(client, args.tenantId, args.leadId));
+    const humanAssigned =
+      (await readAssigneeKind(client, args.tenantId, args.leadId, args.channelSessionId)) === 'user';
     const pacingCfg = await loadChannelKnobs(client, args.tenantId, args.channelSessionId, args.log);
     const pacingState = await loadPacingState(client, args.tenantId, args.channelSessionId, {
       now: args.now,
@@ -704,6 +734,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       now: args.now,
       body: args.body,
       optedOut,
+      humanAssigned,
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },
       pacing: { knobs: pacingCfg.knobs, state: pacingState, crmDailyLimit: args.crmDailyLimit, rng: args.rng },
@@ -869,6 +900,32 @@ async function readStopFlags(db: Queryable, organizationId: string, contactId: s
     [organizationId, contactId],
   );
   return rows[0]?.stopped === true;
+}
+
+/**
+ * `conversations.assignee_kind` FRESCO sob o lock desta tentativa (G3-02) — o
+ * insumo do veto `assumido_por_humano` do `stopGate`. Mesma chave de
+ * `readLastInboundAt` (contato + canal, não só contato: a mesma pessoa pode ter
+ * conversas em números diferentes, e posse é por conversa). Sem conversa
+ * encontrada = `null`, que o gate lê como "ninguém assumiu" — a direção segura
+ * é não vetar por falta de dado, não o contrário: um `null` tratado como
+ * "assumido" silenciaria a IA em toda conversa nova, que ainda não tem linha em
+ * `conversations` populada com este par contato/canal.
+ */
+async function readAssigneeKind(
+  db: Queryable,
+  organizationId: string,
+  contactId: string,
+  channelSessionId: string,
+): Promise<string | null> {
+  const { rows } = await db.query<{ assignee_kind: string | null }>(
+    `select assignee_kind from conversations
+      where organization_id = $1 and contact_id = $2 and channel_session_id = $3
+      order by last_inbound_at desc nulls last
+      limit 1`,
+    [organizationId, contactId, channelSessionId],
+  );
+  return rows[0]?.assignee_kind ?? null;
 }
 
 /**
