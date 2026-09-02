@@ -96,7 +96,7 @@ create table public.organizations (
   cnpj            text unique, -- nullable pra tenants internos
   status          text not null default 'active'
                   check (status in ('active','suspended','redacted','archived')),
-  timezone        text not null default 'America/Sao_Paulo',
+  timezone        text not null default 'Africa/Maputo',
   locale          text not null default 'pt-BR',
   rate_limit_rps  integer not null default 100, -- B-04
   ai_budget_cents bigint, -- nullable = ilimitado

@@ -90,7 +90,7 @@ export const availabilityScheduleSchema = z.object({
     .min(1)
     .max(64)
     .refine(fusoValido, "fuso horário inválido (ex.: America/Asuncion)")
-    .default("America/Sao_Paulo"),
+    .default("Africa/Maputo"),
   windows: z.array(scheduleWindowSchema).max(50).default([]),
 });
 export type AvailabilitySchedule = z.infer<typeof availabilityScheduleSchema>;

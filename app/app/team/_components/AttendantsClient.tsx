@@ -99,7 +99,7 @@ function ScheduleDialog({
   isPending: boolean;
 }) {
   const initial = attendant.availability?.schedule;
-  const [timezone, setTimezone] = useState(initial?.timezone || "America/Sao_Paulo");
+  const [timezone, setTimezone] = useState(initial?.timezone || "Africa/Maputo");
   const [windows, setWindows] = useState<ScheduleWindow[]>(initial?.windows ?? []);
 
   return (

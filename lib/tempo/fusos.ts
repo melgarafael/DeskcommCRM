@@ -31,6 +31,7 @@
  * termina — e a busca é justamente onde ele digita errado.
  */
 export const FUSOS_OFERECIDOS: { codigo: string; rotulo: string }[] = [
+  { codigo: "Africa/Maputo", rotulo: "Maputo (Moçambique)" },
   { codigo: "America/Asuncion", rotulo: "Assunção (Paraguai)" },
   { codigo: "America/Argentina/Buenos_Aires", rotulo: "Buenos Aires (Argentina)" },
   { codigo: "America/Montevideo", rotulo: "Montevidéu (Uruguai)" },

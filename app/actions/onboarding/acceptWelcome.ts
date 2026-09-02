@@ -28,7 +28,7 @@ export async function acceptWelcome(formData: FormData): Promise<AcceptWelcomeRe
   const raw = {
     display_name: String(formData.get("display_name") ?? "").trim(),
     o_que_faz: String(formData.get("o_que_faz") ?? "").trim() || undefined,
-    timezone: String(formData.get("timezone") ?? "America/Sao_Paulo"),
+    timezone: String(formData.get("timezone") ?? "Africa/Maputo"),
     accepted_terms_at: new Date().toISOString(),
   };
 
