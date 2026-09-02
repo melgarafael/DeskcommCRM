@@ -98,7 +98,7 @@ test.describe("o wizard monta um funcionário", () => {
     await page.waitForURL(/\/onboarding\/welcome/, { timeout: 30_000 });
 
     // O passo 1 começa pelo que já existe — em vez de um formulário em branco.
-    await expect(page.getByText(/já está de pé/i)).toBeVisible();
+    await expect(page.getByText(/já está pronto/i)).toBeVisible();
 
     // O instalador nunca pergunta o nome do negócio: a organização nasce
     // "Minha Empresa". Mandar isso como valor inicial obrigava a pessoa a
