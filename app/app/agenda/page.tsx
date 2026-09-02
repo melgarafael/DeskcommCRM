@@ -195,76 +195,89 @@ export default async function AgendaPage() {
   const faltaNoGoogle = googleConfigurado ? [] : await faltaParaConectarOGoogle();
 
   return (
-    <AgendaClient
-      fusoDeApresentacao={fusoDeApresentacao}
-      googleConfigurado={googleConfigurado}
-      contaConectada={conexao?.account_email ?? null}
-      enderecoDeRetorno={enderecoDeRetorno()}
-      faltaNoGoogle={faltaNoGoogle}
-      // SÓ para quem administra a INSTALAÇÃO. A tela do app OAuth vive em
-      // `/admin` e faz `notFound()` para o resto — oferecer o link a quem não
-      // pode entrar seria trocar um beco por outro.
-      linkDeConfiguracaoDoGoogle={user.is_platform_admin ? "/admin/google" : undefined}
-      tiposIniciais={(tipos ?? []).map((t) => ({
-        id: t.id,
-        nome: t.name,
-        duracaoMin: t.duration_minutes,
-        // Quem DE FATO atende este tipo. Sem isto a tela mostrava o primeiro da
-        // lista de pessoas como responsável e marcava na agenda dele — enquanto
-        // os horários oferecidos vinham da jornada de outra pessoa.
-        donoId: t.default_owner_user_id ?? null,
-        // O LOCAL DE VERDADE. O `select` acima já trazia `location_kind` e
-        // `location_details`, e o mapeamento os descartava — então o painel caía
-        // no default de parâmetro e toda clínica de toda instalação lia
-        // "Presencial · Sala 2" numa tela real.
-        localKind: t.location_kind ?? null,
-        localDetalhes: t.location_details ?? null,
-      }))}
-      agendamentosIniciais={((linhas ?? []).map((a) => ({
-        id: a.id,
-        titulo: a.title ?? "Agendamento",
-        responsavelId: a.owner_user_id ?? "",
-        comeca: a.starts_at,
-        termina: a.ends_at,
-        origem: "ui" as const,
-        situacao: a.status as "confirmed",
-        // "com quem" é a promessa do subtítulo desta tela, e era a única parte
-        // dela que o servidor não entregava: `contact_id` vinha no select e
-        // morria aqui. `dados-de-mentira.ts` preenche este campo nos 11 cards,
-        // então a tela pareceu pronta o tempo todo — e o `?? a.titulo` do
-        // histórico transformou a ausência em silêncio, não em erro.
-        // `name` antes de `display_name` segue o precedente do produto
-        // (`app/app/lgpd/requests/[id]/PreviewPanel.tsx`); as duas colunas são
-        // reescritas pelo cascade de LGPD, então nenhuma vaza titular anonimizado.
-        quemSeraAtendido: nomeDoContato(a.contacts),
-      })) as AgendamentoDaTela[]).concat(
-        /**
-         * A ocupação do Google entra na MESMA lista, com `origem: "google_sync"`.
-         *
-         * A grade já sabia tratar essa origem — `GradeDaAgenda` desabilita o
-         * bloco, tira o clique, tira o arraste e diz "ocupado na agenda do
-         * Google" no rótulo acessível. O que faltava era alguém entregar os
-         * dados: o tratamento existia e nunca recebia uma linha.
-         *
-         * `titulo: "Ocupado"` é o rótulo, não o nome do evento — ver o
-         * comentário da consulta acima sobre por que o `title` não é lido.
-         * `quemSeraAtendido` fica ausente de propósito: o tipo já documenta essa
-         * ausência como o caso do Google.
-         */
-        (externos ?? []).map((e) => {
-          const conexao = e.calendar_connections as { user_id: string } | { user_id: string }[] | null;
-          const dono = Array.isArray(conexao) ? conexao[0]?.user_id : conexao?.user_id;
-          return {
-            id: e.id,
-            titulo: "Ocupado",
-            responsavelId: dono ?? "",
-            comeca: e.starts_at,
-            termina: e.ends_at,
-            origem: "google_sync" as const,
-            situacao: "confirmed" as const,
-          };
-        }) as AgendamentoDaTela[],
-      )}
-    />
+    /*
+      PILOTO da superfície clara. O escopo mora aqui, e não no `<main>` do
+      `AppShell`, porque aquele `<main>` é o de TODAS as telas do produto —
+      movê-lo para lá acende as quatorze de uma vez, e o combinado era validar
+      uma antes.
+
+      `-m-6 p-6` cancela e repõe o respiro do `<main>`: sem isso a superfície
+      clara nasceria 24px para dentro e sobraria uma moldura escura em volta,
+      que é exatamente o que denuncia um tema aplicado pela metade. O
+      `min-h-full` faz o Paper alcançar o rodapé quando a agenda está vazia.
+    */
+    <div data-superficie="clara" className="-m-6 min-h-[calc(100%+3rem)] bg-bg p-6 text-text">
+      <AgendaClient
+        fusoDeApresentacao={fusoDeApresentacao}
+        googleConfigurado={googleConfigurado}
+        contaConectada={conexao?.account_email ?? null}
+        enderecoDeRetorno={enderecoDeRetorno()}
+        faltaNoGoogle={faltaNoGoogle}
+        // SÓ para quem administra a INSTALAÇÃO. A tela do app OAuth vive em
+        // `/admin` e faz `notFound()` para o resto — oferecer o link a quem não
+        // pode entrar seria trocar um beco por outro.
+        linkDeConfiguracaoDoGoogle={user.is_platform_admin ? "/admin/google" : undefined}
+        tiposIniciais={(tipos ?? []).map((t) => ({
+          id: t.id,
+          nome: t.name,
+          duracaoMin: t.duration_minutes,
+          // Quem DE FATO atende este tipo. Sem isto a tela mostrava o primeiro da
+          // lista de pessoas como responsável e marcava na agenda dele — enquanto
+          // os horários oferecidos vinham da jornada de outra pessoa.
+          donoId: t.default_owner_user_id ?? null,
+          // O LOCAL DE VERDADE. O `select` acima já trazia `location_kind` e
+          // `location_details`, e o mapeamento os descartava — então o painel caía
+          // no default de parâmetro e toda clínica de toda instalação lia
+          // "Presencial · Sala 2" numa tela real.
+          localKind: t.location_kind ?? null,
+          localDetalhes: t.location_details ?? null,
+        }))}
+        agendamentosIniciais={((linhas ?? []).map((a) => ({
+          id: a.id,
+          titulo: a.title ?? "Agendamento",
+          responsavelId: a.owner_user_id ?? "",
+          comeca: a.starts_at,
+          termina: a.ends_at,
+          origem: "ui" as const,
+          situacao: a.status as "confirmed",
+          // "com quem" é a promessa do subtítulo desta tela, e era a única parte
+          // dela que o servidor não entregava: `contact_id` vinha no select e
+          // morria aqui. `dados-de-mentira.ts` preenche este campo nos 11 cards,
+          // então a tela pareceu pronta o tempo todo — e o `?? a.titulo` do
+          // histórico transformou a ausência em silêncio, não em erro.
+          // `name` antes de `display_name` segue o precedente do produto
+          // (`app/app/lgpd/requests/[id]/PreviewPanel.tsx`); as duas colunas são
+          // reescritas pelo cascade de LGPD, então nenhuma vaza titular anonimizado.
+          quemSeraAtendido: nomeDoContato(a.contacts),
+        })) as AgendamentoDaTela[]).concat(
+          /**
+           * A ocupação do Google entra na MESMA lista, com `origem: "google_sync"`.
+           *
+           * A grade já sabia tratar essa origem — `GradeDaAgenda` desabilita o
+           * bloco, tira o clique, tira o arraste e diz "ocupado na agenda do
+           * Google" no rótulo acessível. O que faltava era alguém entregar os
+           * dados: o tratamento existia e nunca recebia uma linha.
+           *
+           * `titulo: "Ocupado"` é o rótulo, não o nome do evento — ver o
+           * comentário da consulta acima sobre por que o `title` não é lido.
+           * `quemSeraAtendido` fica ausente de propósito: o tipo já documenta essa
+           * ausência como o caso do Google.
+           */
+          (externos ?? []).map((e) => {
+            const conexao = e.calendar_connections as { user_id: string } | { user_id: string }[] | null;
+            const dono = Array.isArray(conexao) ? conexao[0]?.user_id : conexao?.user_id;
+            return {
+              id: e.id,
+              titulo: "Ocupado",
+              responsavelId: dono ?? "",
+              comeca: e.starts_at,
+              termina: e.ends_at,
+              origem: "google_sync" as const,
+              situacao: "confirmed" as const,
+            };
+          }) as AgendamentoDaTela[],
+        )}
+      />
+    </div>
   );
 }

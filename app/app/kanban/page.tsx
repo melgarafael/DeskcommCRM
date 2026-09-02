@@ -47,7 +47,16 @@ export default async function KanbanPickerPage() {
   const t = (texto: string) => traduzir(texto, idioma);
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6">
+    /*
+      A superficie clara, mesmo escopo da Agenda. O `-m-6` cancela o respiro do
+      `<main>` do AppShell e o `p-6` que ja existia aqui o repoe -- sem isso a
+      tela nasceria com 48px de respiro (o do `<main>` mais o proprio) e uma
+      moldura escura em volta do Paper.
+    */
+    <div
+      data-superficie="clara"
+      className="-m-6 flex min-h-[calc(100%+3rem)] flex-col gap-4 bg-bg p-6 text-text"
+    >
       <header className="flex items-center gap-3">
         <Kanban size={28} className="text-muted-foreground" weight="duotone" />
         {/* Era "Pipelines" — nome de quem construiu o sistema, não de quem

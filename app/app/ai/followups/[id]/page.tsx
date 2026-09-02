@@ -50,7 +50,11 @@ export default async function FollowupFlowBuilderPage({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    // O `p-6` que esta pagina sempre teve, agora dito por ela: vinha do
+    // `<main>`, e o `layout.tsx` desta area o cancela com `-m-6` para o Paper
+    // alcancar a borda. Sem esta linha, o construtor de fluxo seria o unico
+    // colado na borda da tela.
+    <div className="flex h-full flex-col p-6">
       <FlowBuilder flowId={id} initialData={flow} />
     </div>
   );

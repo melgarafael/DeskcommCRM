@@ -55,8 +55,25 @@ export function PipelinePageClient({
   const filteredLeads = data ? applyFilters(data.leads, filters) : [];
 
   return (
+    /*
+      Superficie clara — o quadro e a segunda metade de "Funis" (o seletor vive
+      em `app/app/kanban`), e as duas precisam acender juntas: sair da lista de
+      funis para dentro de um deles e trocar de fundo seria a tela piscando no
+      meio de uma navegacao que o usuario le como um lugar so.
+
+      A altura e TRAVADA (`h-`, e nao `min-h`) de proposito: o quadro rola na
+      HORIZONTAL por dentro, e para se medir ele precisa de um pai com altura
+      definida. Um `min-h` o faria crescer com o conteudo e devolveria a rolagem
+      ao `<main>` — o comportamento que o conserto do `AppShell` acabou de tirar
+      do sistema. As paginas comuns usam `min-h` pelo motivo inverso.
+
+      `-m-6` cancela o respiro do `<main>` e `p-6` o repoe — aqui o `p-6` nasce
+      neste commit porque este wrapper nao tinha respiro proprio: ele usava o do
+      `<main>`, que agora fica por baixo do Paper.
+    */
     <div
-      className="flex h-full flex-col gap-4"
+      data-superficie="clara"
+      className="-m-6 flex h-[calc(100%+3rem)] flex-col gap-4 bg-bg p-6 text-text"
       // OBSERVÁVEL de propósito, e é a razão de existir desta linha: "a
       // assinatura morreu" e "nada aconteceu" produzem o MESMO silêncio na
       // tela, e sem este valor nem o produto nem o teste conseguem separar as

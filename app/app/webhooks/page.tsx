@@ -14,7 +14,15 @@ export default async function WebhooksPage() {
   const idioma = user.idioma;
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    /*
+      Superficie clara — mesmo escopo das demais telas. `-m-6` cancela o respiro
+      do `<main>` do AppShell para o Paper alcancar a borda, e o `p-6` que ja
+      existia aqui o repoe.
+    */
+    <div
+      data-superficie="clara"
+      className="-m-6 flex min-h-[calc(100%+3rem)] flex-col gap-6 bg-bg p-6 text-text"
+    >
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Webhooks</h1>
         <p className="text-sm text-muted-foreground">

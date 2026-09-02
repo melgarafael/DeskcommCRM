@@ -18,7 +18,19 @@ export default async function MetricsPage() {
   const t = (texto: string) => traduzir(texto, idioma);
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    /*
+      Superficie clara — mesmo escopo da Agenda e de Funis. `-m-6` cancela o
+      respiro do `<main>` do AppShell para o Paper alcancar a borda, e o `p-6`
+      que ja existia aqui o repoe: sem cancelar, seriam 48px e uma moldura
+      escura em volta, que e o que denuncia um tema aplicado pela metade.
+
+      Tela unica, entao o escopo mora na propria pagina — Contatos e
+      Configuracoes usam `layout.tsx` porque tem varias.
+    */
+    <div
+      data-superficie="clara"
+      className="-m-6 flex min-h-[calc(100%+3rem)] flex-col gap-6 bg-bg p-6 text-text"
+    >
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Desempenho")}</h1>
         <p className="text-sm text-muted-foreground">
