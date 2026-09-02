@@ -6350,7 +6350,6 @@ export const DICIONARIO: Traducoes = {
   "mensagens": { es: "mensajes" },
   "conversas": { es: "conversaciones" },
   "leads": { es: "leads" },
-  "contatos": { es: "contactos" },
 };
 
 /**
