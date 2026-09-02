@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

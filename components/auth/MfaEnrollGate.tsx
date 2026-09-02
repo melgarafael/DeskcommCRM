@@ -31,7 +31,7 @@ export function MfaEnrollGate({
     <div className="fixed inset-0 z-40 bg-background">
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <p className="text-sm text-muted-foreground">
-          Configurando autenticação em duas etapas...
+          A configurar autenticação em duas etapas...
         </p>
       </div>
       <MfaEnrollModal />

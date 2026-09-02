@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { format, isToday, isYesterday } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import { ChatCircle, Users, Storefront, Robot, Gear } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";

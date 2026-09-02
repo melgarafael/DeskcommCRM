@@ -31,7 +31,7 @@ const formSchema = z.object({
     .max(40, "Máximo 40 caracteres")
     .regex(/^[a-z0-9-]+$/, "Apenas letras minúsculas, números e hífens"),
   legal_name: z.string().min(2).max(255).optional().or(z.literal("")),
-  cnpj: z.string().optional().or(z.literal("")),
+  nuit: z.string().optional().or(z.literal("")),
   plan: z.enum(["standard", "pro", "enterprise"]),
   owner_email: z.string().email("E-mail inválido"),
 });
@@ -53,10 +53,10 @@ function slugify(value: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// CNPJ mask
+// NUIT mask
 // ---------------------------------------------------------------------------
 
-function maskCnpj(value: string): string {
+function maskNuit(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 14);
   if (digits.length <= 2) return digits;
   if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
@@ -82,7 +82,7 @@ export function NewTenantForm() {
       display_name: "",
       slug: "",
       legal_name: "",
-      cnpj: "",
+      nuit: "",
       plan: "standard",
       owner_email: "",
     },
@@ -110,8 +110,8 @@ export function NewTenantForm() {
     setSlugLocked(clean.length > 0);
   };
 
-  const handleCnpjChange = (value: string) => {
-    setValue("cnpj", maskCnpj(value));
+  const handleNuitChange = (value: string) => {
+    setValue("nuit", maskNuit(value));
   };
 
   const onSubmit = handleSubmit(async (values) => {
@@ -120,7 +120,7 @@ export function NewTenantForm() {
         display_name: values.display_name,
         slug: values.slug,
         legal_name: values.legal_name || undefined,
-        cnpj: values.cnpj || undefined,
+        nuit: values.nuit || undefined,
         plan: values.plan,
         owner_email: values.owner_email,
       });
@@ -209,21 +209,21 @@ export function NewTenantForm() {
               )}
             </div>
 
-            {/* cnpj */}
+            {/* nuit */}
             <div className="space-y-1.5">
-              <Label htmlFor="cnpj">CNPJ</Label>
+              <Label htmlFor="nuit">NUIT</Label>
               <Input
-                id="cnpj"
+                id="nuit"
                 placeholder="00.000.000/0000-00"
-                {...register("cnpj")}
-                onChange={(e) => handleCnpjChange(e.target.value)}
+                {...register("nuit")}
+                onChange={(e) => handleNuitChange(e.target.value)}
                 inputMode="numeric"
                 maxLength={18}
-                aria-invalid={!!errors.cnpj}
+                aria-invalid={!!errors.nuit}
                 className="font-mono"
               />
-              {errors.cnpj && (
-                <p className="text-xs text-error-fg">{errors.cnpj.message}</p>
+              {errors.nuit && (
+                <p className="text-xs text-error-fg">{errors.nuit.message}</p>
               )}
             </div>
 

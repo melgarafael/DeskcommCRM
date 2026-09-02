@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 
 import { Robot, Gear } from "@/lib/ui/icons";
 import { autorNaTela, mudadoPorAgente } from "@/lib/operacao/autoria";

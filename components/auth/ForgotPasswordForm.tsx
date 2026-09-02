@@ -82,7 +82,7 @@ export function ForgotPasswordForm() {
         </div>
       )}
       <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? "Enviando..." : "Enviar link de redefinição"}
+        {isPending ? "A enviar..." : "Enviar link de redefinição"}
       </Button>
     </form>
   );

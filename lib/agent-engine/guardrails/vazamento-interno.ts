@@ -253,7 +253,7 @@ const REGRAS: ReadonlyArray<RegraTexto> = [
   // não há palavra: é FORMA.
   //
   // O formato 8-4-4-4-12 hex não colide com nada que o cliente reconheça — número
-  // de pedido (`2026-00815`), CPF, CNPJ e data têm outra forma, e todos foram
+  // de pedido (`2026-00815`), NUIT e data têm outra forma, e todos foram
   // medidos passando limpo. Um identificador assim NUNCA significa nada para quem
   // lê: se o agente precisa referenciar algo, referencia pelo nome ou pelo número
   // que o cliente conhece.

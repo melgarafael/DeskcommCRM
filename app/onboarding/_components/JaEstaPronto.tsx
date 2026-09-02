@@ -30,7 +30,7 @@ export function JaEstaPronto({ retrato }: { retrato: RetratoDaInstalacao }) {
         retrato.inteligencia.origemDaChave !== "nenhuma"
           ? `Inteligência contratada: ${retrato.inteligencia.rotulo}`
           : retrato.inteligencia.chaveEmVerificacao
-            ? "Chave cadastrada — conferindo com a empresa de IA"
+            ? "Chave registada — a conferir com a empresa de IA"
             : "Falta a chave da inteligência artificial",
     },
     {
@@ -55,7 +55,7 @@ export function JaEstaPronto({ retrato }: { retrato: RetratoDaInstalacao }) {
       className="rounded-lg border bg-background p-5"
     >
       <h3 id="ja-pronto" className="text-sm font-medium">
-        Você já instalou o sistema. Isto aqui já está de pé:
+        Você já instalou o sistema. Isto aqui já está pronto:
       </h3>
       <ul className="mt-3 space-y-1.5 text-sm">
         {itens.map((it) => (
@@ -73,8 +73,8 @@ export function JaEstaPronto({ retrato }: { retrato: RetratoDaInstalacao }) {
       </ul>
       <p className="mt-3 text-xs text-muted-foreground">
         {faltando === 0
-          ? "Agora é montar quem vai atender por você."
-          : "O que falta a gente resolve nos próximos passos."}
+          ? "Agora é montar quem vai atender por si."
+          : "O que falta nós resolvemos nos próximos passos."}
       </p>
     </section>
   );

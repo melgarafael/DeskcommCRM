@@ -1,6 +1,6 @@
 "use client";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import { ArrowsClockwise, Scales, ShieldCheck } from "@/lib/ui/icons";
 import { retentionCopy, type RetentionKind } from "@/lib/inbox/retention-copy";
 import { useRetention } from "@/hooks/inbox/useRetention";

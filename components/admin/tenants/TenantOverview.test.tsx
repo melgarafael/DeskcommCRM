@@ -44,7 +44,7 @@ const ORG: TenantOrganization = {
   slug: "acme",
   display_name: "Acme",
   legal_name: "Acme Comércio LTDA",
-  cnpj: "00.000.000/0001-00",
+  nuit: "00.000.000/0001-00",
   status: "active",
   onboarded_at: "2026-01-02T12:00:00.000Z",
   suspended_at: null,

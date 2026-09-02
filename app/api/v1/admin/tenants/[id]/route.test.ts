@@ -29,7 +29,7 @@ const ORG = {
   slug: "org",
   display_name: "Org",
   legal_name: null,
-  cnpj: null,
+  nuit: null,
   status: "active",
   onboarded_at: "2026-01-01T00:00:00Z",
   suspended_at: null,

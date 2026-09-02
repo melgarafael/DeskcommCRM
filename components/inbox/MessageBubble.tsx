@@ -1,6 +1,6 @@
 "use client";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import { Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";

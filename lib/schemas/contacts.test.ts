@@ -4,7 +4,7 @@
  * Covers:
  *  - E.164 phone validator (accept/reject)
  *  - Email parsing
- *  - CPF check-digit (valid, invalid, repeated digits)
+ *  - NUIT format (9 dígitos, rejeita sequências repetidas)
  *  - lgpdAnonymizeSchema requires justification ≥ 10 chars
  *  - contactListQuerySchema coerces `limit` and clamps boundaries
  */
@@ -13,36 +13,30 @@ import {
   contactCreateSchema,
   contactListQuerySchema,
   contactPatchSchema,
-  isValidCpf,
+  isValidNuit,
   lgpdAnonymizeSchema,
 } from "./contacts";
 
-describe("isValidCpf", () => {
-  it("accepts a known-valid CPF", () => {
-    // Generated valid CPFs (algorithm verified).
-    expect(isValidCpf("52998224725")).toBe(true);
-    expect(isValidCpf("11144477735")).toBe(true);
+describe("isValidNuit", () => {
+  it("accepts a well-formed 9-digit NUIT", () => {
+    expect(isValidNuit("400123456")).toBe(true);
+    expect(isValidNuit("123456789")).toBe(true);
   });
 
-  it("rejects repeated-digit CPFs", () => {
-    expect(isValidCpf("00000000000")).toBe(false);
-    expect(isValidCpf("11111111111")).toBe(false);
-    expect(isValidCpf("99999999999")).toBe(false);
-  });
-
-  it("rejects invalid check digits", () => {
-    expect(isValidCpf("52998224726")).toBe(false);
-    expect(isValidCpf("12345678900")).toBe(false);
+  it("rejects repeated-digit NUITs", () => {
+    expect(isValidNuit("000000000")).toBe(false);
+    expect(isValidNuit("111111111")).toBe(false);
+    expect(isValidNuit("999999999")).toBe(false);
   });
 
   it("rejects wrong length / non-digits", () => {
-    expect(isValidCpf("123")).toBe(false);
-    expect(isValidCpf("abcdefghijk")).toBe(false);
-    expect(isValidCpf("")).toBe(false);
+    expect(isValidNuit("123")).toBe(false);
+    expect(isValidNuit("abcdefghi")).toBe(false);
+    expect(isValidNuit("")).toBe(false);
   });
 
-  it("normalizes formatting (dots/dashes)", () => {
-    expect(isValidCpf("529.982.247-25")).toBe(true);
+  it("normaliza formatação (espaços/traços)", () => {
+    expect(isValidNuit("400-123-456")).toBe(true);
   });
 });
 
@@ -67,13 +61,13 @@ describe("contactCreateSchema", () => {
     expect(r.success).toBe(false);
   });
 
-  it("rejects invalid CPF", () => {
-    const r = contactCreateSchema.safeParse({ cpf: "12345678900" });
+  it("rejects invalid NUIT", () => {
+    const r = contactCreateSchema.safeParse({ nuit: "111111111" });
     expect(r.success).toBe(false);
   });
 
-  it("accepts valid CPF", () => {
-    const r = contactCreateSchema.safeParse({ cpf: "52998224725" });
+  it("accepts valid NUIT", () => {
+    const r = contactCreateSchema.safeParse({ nuit: "400123456" });
     expect(r.success).toBe(true);
   });
 
@@ -121,7 +115,7 @@ describe("lgpdAnonymizeSchema", () => {
   it("requires uuid contact_id", () => {
     const r = lgpdAnonymizeSchema.safeParse({
       contact_id: "not-a-uuid",
-      justification: "Solicitação formal LGPD do titular.",
+      justification: "Solicitação formal de proteção de dados do titular.",
     });
     expect(r.success).toBe(false);
   });
@@ -129,7 +123,7 @@ describe("lgpdAnonymizeSchema", () => {
   it("accepts well-formed payload", () => {
     const r = lgpdAnonymizeSchema.safeParse({
       contact_id: "11111111-1111-4111-8111-111111111111",
-      justification: "Solicitação formal LGPD do titular do dado.",
+      justification: "Solicitação formal de proteção de dados do titular.",
     });
     expect(r.success).toBe(true);
   });

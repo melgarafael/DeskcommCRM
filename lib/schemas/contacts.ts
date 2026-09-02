@@ -10,25 +10,21 @@
 import { z } from "zod";
 
 const PHONE_REGEX = /^\+\d{8,15}$/;
-const CPF_DIGITS = /^\d{11}$/;
+const NUIT_DIGITS = /^\d{9}$/;
 
 /**
- * CPF check-digit validator (algoritmo oficial Receita Federal).
- * Rejeita repetidos (00000000000, 11111111111, ...) e dígitos verificadores inválidos.
+ * NUIT (Número Único de Identificação Tributária, Moçambique) — validação de
+ * formato: 9 dígitos numéricos, rejeitando sequências repetidas
+ * (000000000, 111111111, ...). Ao contrário do CPF brasileiro, o NUIT não tem
+ * um algoritmo de dígito verificador publicamente documentado e verificável —
+ * por isso este validador cobre só formato, não checksum. Inventar um
+ * checksum não verificado seria pior do que não ter nenhum: rejeitaria NUITs
+ * válidos ou aceitaria inválidos com falsa confiança.
  */
-export function isValidCpf(raw: string): boolean {
+export function isValidNuit(raw: string): boolean {
   const s = raw.replace(/\D/g, "");
-  if (!CPF_DIGITS.test(s) || /^(\d)\1{10}$/.test(s)) return false;
-  let sum = 0;
-  for (let i = 0; i < 9; i++) sum += parseInt(s[i]!, 10) * (10 - i);
-  let d1 = (sum * 10) % 11;
-  if (d1 === 10) d1 = 0;
-  if (d1 !== parseInt(s[9]!, 10)) return false;
-  sum = 0;
-  for (let i = 0; i < 10; i++) sum += parseInt(s[i]!, 10) * (11 - i);
-  let d2 = (sum * 10) % 11;
-  if (d2 === 10) d2 = 0;
-  return d2 === parseInt(s[10]!, 10);
+  if (!NUIT_DIGITS.test(s) || /^(\d)\1{8}$/.test(s)) return false;
+  return true;
 }
 
 export const contactCreateSchema = z.object({
@@ -39,7 +35,7 @@ export const contactCreateSchema = z.object({
     .string()
     .regex(PHONE_REGEX, "Telefone deve estar em formato E.164 (+5511999998888)")
     .optional(),
-  cpf: z.string().refine(isValidCpf, "CPF inválido").optional(),
+  nuit: z.string().refine(isValidNuit, "NUIT inválido").optional(),
   birthdate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

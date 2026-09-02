@@ -53,7 +53,7 @@ function rotuloDoEstado(s: Status): string {
       return "Pronto para conectar";
     case "STARTING":
     case "INIT":
-      return "Preparando o código…";
+      return "A preparar o código…";
     case "WORKING":
       return "Conectado!";
     case "FAILED":
@@ -66,14 +66,14 @@ function rotuloDoEstado(s: Status): string {
 function explicacaoDoEstado(s: Status): string {
   switch (s) {
     case "SCAN_QR_CODE":
-      return "Escaneie o código abaixo com o celular que vai atender.";
+      return "Digitalize o código abaixo com o telemóvel que vai atender.";
     case "STARTING":
     case "INIT":
-      return "Isso leva alguns segundos. O código aparece aqui sozinho.";
+      return "Isto leva alguns segundos. O código aparece aqui sozinho.";
     case "WORKING":
-      return "O número está no ar. Seguindo para o próximo passo.";
+      return "O número está no ar. A seguir para o próximo passo.";
     case "FAILED":
-      return "É normal — ele vale poucos minutos. Dá para gerar outro.";
+      return "É normal — ele vale poucos minutos. É possível gerar outro.";
     default:
       return "O serviço roda no seu servidor e não respondeu agora.";
   }
@@ -222,14 +222,14 @@ export function ConnectWhatsappClient({ wahaConfigured, sessionName }: Props) {
           {status === "FAILED" && (
             <div className="mt-3 space-y-2">
               <p className="text-sm text-destructive">
-                O código expirou antes de alguém escanear. É normal — ele vale só alguns minutos.
+                O código expirou antes de alguém digitalizar. É normal — ele vale só alguns minutos.
               </p>
               <p className="text-xs text-muted-foreground">
-                Deixe o WhatsApp já aberto em <strong>Aparelhos conectados</strong> antes de gerar o
-                próximo, que aí dá tempo de sobra.
+                Deixe o WhatsApp já aberto em <strong>Dispositivos ligados</strong> antes de gerar o
+                próximo, que aí sobra tempo.
               </p>
               <Button type="button" size="sm" disabled={busy} onClick={restartSession}>
-                {busy ? "Gerando…" : "Gerar novo QR Code"}
+                {busy ? "A gerar…" : "Gerar novo QR Code"}
               </Button>
             </div>
           )}
@@ -246,7 +246,7 @@ export function ConnectWhatsappClient({ wahaConfigured, sessionName }: Props) {
                 </p>
               )}
               <Button type="button" size="sm" variant="outline" disabled={busy} onClick={restartSession}>
-                {busy ? "Tentando…" : "Tentar de novo"}
+                {busy ? "A tentar…" : "Tentar de novo"}
               </Button>
             </div>
           )}

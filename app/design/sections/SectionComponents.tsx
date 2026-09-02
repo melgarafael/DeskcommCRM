@@ -71,9 +71,9 @@ export function SectionComponents() {
           </div>
         </div>
         <div>
-          <label className="ds-label">CPF (com erro)</label>
+          <label className="ds-label">NUIT (com erro)</label>
           <input className="ds-input" defaultValue="000.000.000-00" aria-invalid="true" />
-          <span style={{ color: "var(--ds-error)", fontSize: 11.5, marginTop: 4, display: "block" }}>CPF inválido — verifique os dígitos.</span>
+          <span style={{ color: "var(--ds-error)", fontSize: 11.5, marginTop: 4, display: "block" }}>NUIT inválido — verifique os dígitos.</span>
         </div>
         <div>
           <label className="ds-label">Disabled</label>

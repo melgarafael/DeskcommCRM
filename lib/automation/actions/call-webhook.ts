@@ -15,7 +15,7 @@ const TIMEOUT_MS = 10_000;
 const RETRY_DELAYS_MS = [1_000, 5_000]; // total 3 tentativas
 
 // Projeções públicas do envelope — NUNCA repassar a row inteira do DB (vaza
-// organization_id, cpf_*, consent, source_metadata, owner_user_id etc. pra
+// organization_id, nuit_*, consent, source_metadata, owner_user_id etc. pra
 // endpoint externo do tenant). Só inclui as chaves presentes na row.
 const LEAD_PUBLIC_FIELDS = [
   "id",

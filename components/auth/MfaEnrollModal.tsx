@@ -99,7 +99,7 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
                 {motivo === "obrigatorio"
                   ? "Esta empresa exige a verificação em duas etapas de quem administra. "
                   : "A cada login, além da senha, o sistema vai pedir um código de 6 dígitos. "}
-                Use um aplicativo autenticador (Google Authenticator, 1Password, Authy,
+                Use uma aplicação autenticadora (Google Authenticator, 1Password, Authy,
                 Bitwarden) para gerar os códigos.
               </p>
             </div>
@@ -126,17 +126,17 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
           <div className="space-y-5">
             <div>
               <h2 id="mfa-title" className="text-xl font-semibold">
-                Escaneie o QR code
+                Digitalize o QR code
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Abra seu app autenticador, adicione uma nova conta e digite o
+                Abra a sua aplicação autenticadora, adicione uma nova conta e introduza o
                 código de 6 dígitos abaixo.
               </p>
             </div>
 
             {!enrollState ? (
               <div className="flex h-60 items-center justify-center text-sm text-muted-foreground">
-                Gerando QR code...
+                A gerar QR code...
               </div>
             ) : (
               <>
@@ -152,7 +152,7 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
                 </div>
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer">
-                    Não consegue escanear? Digite o código manual
+                    Não consegue digitalizar? Introduza o código manual
                   </summary>
                   <code className="mt-2 block break-all rounded bg-muted p-2 font-mono">
                     {enrollState.secret}
@@ -161,7 +161,7 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
 
                 <div className="space-y-3">
                   <p className="text-center text-sm font-medium">
-                    Digite o código de 6 dígitos
+                    Introduza o código de 6 dígitos
                   </p>
                   <TOTPInput
                     value={code}
@@ -182,7 +182,7 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
                     disabled={isPending || code.length !== 6}
                     onClick={() => submitCode()}
                   >
-                    {isPending ? "Verificando..." : "Confirmar"}
+                    {isPending ? "A verificar..." : "Confirmar"}
                   </Button>
                 </div>
               </>

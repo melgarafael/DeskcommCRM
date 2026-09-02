@@ -52,7 +52,7 @@ describe("tenantSchema", () => {
     const r = tenantSchema.safeParse({
       display_name: "Acme",
       legal_name: "Acme LTDA",
-      cnpj: "12345678000190",
+      nuit: "12345678000190",
       timezone: "America/Sao_Paulo",
       locale: "pt-BR",
       media_retention_days: 90,

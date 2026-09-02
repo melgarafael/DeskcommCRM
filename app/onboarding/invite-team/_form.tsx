@@ -142,7 +142,7 @@ export function InviteTeamForm() {
           Pular por enquanto
         </Button>
         <Button type="button" disabled={pending} onClick={() => submit(false)}>
-          {pending ? "Enviando..." : "Enviar convites"}
+          {pending ? "A enviar..." : "Enviar convites"}
         </Button>
       </div>
     </div>

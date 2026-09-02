@@ -10,7 +10,7 @@ const REDACT_KEYS = new Set([
   "api_key",
   "token",
   "password",
-  "cpf",
+  "nuit",
 ]);
 
 function redactValue(value: unknown): unknown {

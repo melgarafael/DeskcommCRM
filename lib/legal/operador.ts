@@ -24,7 +24,7 @@ export interface Operador {
   nome: string | null;
   /** Razão social. */
   razaoSocial: string | null;
-  cnpj: string | null;
+  nuit: string | null;
   /** Contato do encarregado de dados (LGPD). */
   dpoEmail: string | null;
   /** Política própria do operador, já checada — nunca o valor cru do banco. */
@@ -67,7 +67,7 @@ const SEM_SESSAO = (): Operador => ({
   sistema: branding().name,
   nome: null,
   razaoSocial: null,
-  cnpj: null,
+  nuit: null,
   dpoEmail: env.LGPD_DPO_EMAIL.trim() || null,
   politicaPropria: null,
   resolvido: false,
@@ -77,7 +77,7 @@ const SEM_SESSAO = (): Operador => ({
  * Lê os dados do operador com o client de SESSÃO, nunca com o service role: a
  * policy `orgs_select` já restringe a leitura às organizações do usuário. Numa
  * rota pública, um admin client resolveria "alguma" organização e publicaria
- * razão social, CNPJ e e-mail do encarregado de um tenant numa URL sem
+ * razão social, NUIT e e-mail do encarregado de um tenant numa URL sem
  * autenticação — e resolveria a org de fonte não confiável, que é o
  * anti-pattern que a doutrina do projeto proíbe.
  *
@@ -94,7 +94,7 @@ export async function resolverOperador(): Promise<Operador> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("organizations")
-    .select("display_name, legal_name, cnpj, dpo_email, privacy_policy_url")
+    .select("display_name, legal_name, nuit, dpo_email, privacy_policy_url")
     .eq("id", activeOrg.orgId)
     .maybeSingle();
 
@@ -105,7 +105,7 @@ export async function resolverOperador(): Promise<Operador> {
   const org = data as {
     display_name: string | null;
     legal_name: string | null;
-    cnpj: string | null;
+    nuit: string | null;
     dpo_email: string | null;
     privacy_policy_url: string | null;
   };
@@ -114,7 +114,7 @@ export async function resolverOperador(): Promise<Operador> {
     sistema: branding().name,
     nome: org.display_name?.trim() || null,
     razaoSocial: org.legal_name?.trim() || null,
-    cnpj: org.cnpj?.trim() || null,
+    nuit: org.nuit?.trim() || null,
     // Mesmo fallback que o resto do produto já usa para o encarregado.
     dpoEmail: org.dpo_email?.trim() || env.LGPD_DPO_EMAIL.trim() || null,
     politicaPropria: urlDePoliticaSegura(org.privacy_policy_url),

@@ -6,7 +6,7 @@ import type { Contact } from "@/lib/types/contacts";
 
 interface ContactResponse {
   data: Contact;
-  meta?: { cpf_available?: boolean };
+  meta?: { nuit_available?: boolean };
 }
 
 export function useContact(id: string) {

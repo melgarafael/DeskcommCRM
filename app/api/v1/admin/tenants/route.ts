@@ -25,7 +25,7 @@ const createSchema = z.object({
     .max(40)
     .regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
   legal_name: z.string().min(2).max(255).optional(),
-  cnpj: z.string().optional(),
+  nuit: z.string().optional(),
   plan: z.enum(["standard", "pro", "enterprise"]).default("standard"),
   owner_email: z.string().email(),
 });
@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
       slug,
       display_name,
       legal_name,
-      cnpj,
+      nuit,
       status,
       onboarded_at,
       suspended_at,
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
 
   if (q) {
     query = query.or(
-      `display_name.ilike.%${q}%,slug::text.ilike.%${q}%,cnpj.ilike.%${q}%`,
+      `display_name.ilike.%${q}%,slug::text.ilike.%${q}%,nuit.ilike.%${q}%`,
     );
   }
 
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { display_name, slug, legal_name, cnpj, plan, owner_email } = parsed.data;
+  const { display_name, slug, legal_name, nuit, plan, owner_email } = parsed.data;
   const admin = createAdminClient();
 
   const { data: org, error: insertError } = await admin
@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
       display_name,
       slug,
       legal_name: legal_name ?? null,
-      cnpj: cnpj ?? null,
+      nuit: nuit ?? null,
       // A check constraint de organizations.status não tem 'onboarding' — o
       // marcador de onboarding é onboarded_at null (mesmo modelo do signup).
       status: "active",

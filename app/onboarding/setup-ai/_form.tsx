@@ -221,13 +221,13 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
           className="space-y-3 rounded-md border border-amber-300/60 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/20"
         >
           <p className="text-sm font-medium">
-            Seu atendente foi criado, mas ficou como <strong>rascunho</strong> — ele ainda
+            O seu atendente foi criado, mas ficou como <strong>rascunho</strong> — ele ainda
             não tem com o que pensar.
           </p>
           <p className="text-sm">
-            Não achei chave de {provedorLegivel(provedor)} nem cadastrada aqui, nem vinda da
+            Não encontrei chave de {provedorLegivel(provedor)} nem registada aqui, nem vinda da
             instalação. Cole a chave no campo acima («o cérebro dele») e crie o atendente de
-            novo — ou cadastre em <strong>IA › Credenciais</strong>.
+            novo — ou registe em <strong>IA › Credenciais</strong>.
           </p>
           {/*
             ⚠️ SEM ESTA SAÍDA O PASSO É UM BECO. O aviso irmão (o de modelo) já
@@ -335,7 +335,7 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
           Pular
         </Button>
         <Button type="submit" disabled={pending}>
-          {pending ? "Criando..." : "Criar e continuar"}
+          {pending ? "A criar..." : "Criar e continuar"}
         </Button>
       </div>
     </form>

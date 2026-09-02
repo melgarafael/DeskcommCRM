@@ -239,7 +239,7 @@ async function ensurePipeline(orgId: string): Promise<string> {
     fields: [],
     canonical_tags: ["implante"],
     lost_reasons: [],
-    identity_resolution: { fields_in_priority_order: ["cpf", "phone_e164", "email"] },
+    identity_resolution: { fields_in_priority_order: ["nuit", "phone_e164", "email"] },
   };
 
   if (existing) {

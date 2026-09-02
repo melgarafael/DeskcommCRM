@@ -1,6 +1,6 @@
 "use client";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import { Note as NoteIcon, Trash } from "@/lib/ui/icons";
 import type { Note } from "@/lib/types/messaging";
 

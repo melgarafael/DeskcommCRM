@@ -4,7 +4,7 @@
  * Dry-run preview: returns COUNTS + SAMPLE (10 rows per category) of the data
  * that would be exported or redacted for this request.
  *
- * PII masking: email a***@domain, phone (**) ****-last4, CPF NEVER returned.
+ * PII masking: email a***@domain, phone (**) ****-last4, NUIT NEVER returned.
  * Does NOT write to DB.
  *
  * Auth: cookie session, role >= admin.
@@ -74,7 +74,7 @@ export async function GET(
     consents: payload.consents.length,
   };
 
-  // Build masked samples (10 rows per category, CPF never returned)
+  // Build masked samples (10 rows per category, NUIT never returned)
   const contact_masked = payload.contact
     ? {
         id: payload.contact.id,
@@ -82,8 +82,8 @@ export async function GET(
         display_name: payload.contact.display_name,
         email: maskEmail(payload.contact.email),
         phone_number: maskPhone(payload.contact.phone_number),
-        // cpf_present tells whether it exists — CPF value itself NEVER exposed
-        cpf_present: payload.contact.cpf_present,
+        // nuit_present tells whether it exists — NUIT value itself NEVER exposed
+        nuit_present: payload.contact.nuit_present,
         birthdate: payload.contact.birthdate,
         is_blocked: payload.contact.is_blocked,
         is_anonymized: payload.contact.is_anonymized,

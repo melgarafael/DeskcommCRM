@@ -1,7 +1,7 @@
 "use client";
 
 import { differenceInDays, format, isBefore } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 
 interface SlaTimelineProps {
   received_at: string;

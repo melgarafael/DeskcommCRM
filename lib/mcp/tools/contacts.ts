@@ -70,7 +70,7 @@ const getInputShape = {
 export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
   name: "crm_get_contact",
   description:
-    "Retorna detalhes de um contato pelo UUID. Inclui tags, consent, source. CPF nunca retornado em plaintext via MCP (sempre mascarado).",
+    "Retorna detalhes de um contato pelo UUID. Inclui tags, consent, source. NUIT nunca retornado em plaintext via MCP (sempre mascarado).",
   inputSchema: getInputShape,
   category: "read",
   requiresRole: "agent",
@@ -96,7 +96,7 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
       consent: contact.consent ?? {},
       is_blocked: contact.is_blocked,
       is_anonymized: contact.is_anonymized,
-      cpf_available: contact.cpf_available,
+      nuit_available: contact.nuit_available,
       created_at: contact.created_at,
       last_activity_at: contact.last_activity_at,
     };

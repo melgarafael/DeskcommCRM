@@ -24,7 +24,7 @@ export default async function TermsPage() {
         <p>
           O {op.sistema} é um software de código aberto instalado e operado por{" "}
           <strong>{operador}</strong>
-          {op.cnpj ? ` (CNPJ ${op.cnpj})` : ""}, daqui em diante <strong>o operador</strong>. É o
+          {op.nuit ? ` (NUIT ${op.nuit})` : ""}, daqui em diante <strong>o operador</strong>. É o
           operador quem mantém este servidor, decide como o sistema é usado e responde pelos dados
           tratados aqui.
         </p>

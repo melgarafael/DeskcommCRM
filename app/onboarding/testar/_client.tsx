@@ -19,7 +19,7 @@ type Desfecho =
   | { tipo: "resposta"; texto: string }
   | { tipo: "erro"; mensagem: string };
 
-const EXEMPLO = "Oi! Vocês atendem hoje? Queria saber o preço.";
+const EXEMPLO = "Olá! Vocês atendem hoje? Queria saber o preço.";
 
 export function TestarClient({ nome, agenteId, versaoId }: Props) {
   const [mensagem, setMensagem] = useState(EXEMPLO);
@@ -88,9 +88,9 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
     <div className="space-y-4">
       {semAgente && (
         <div className="rounded-lg border bg-background p-6" role="status">
-          <p className="text-sm font-medium">Você ainda não montou seu funcionário.</p>
+          <p className="text-sm font-medium">Você ainda não montou o seu funcionário.</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Sem ninguém treinado, não há o que testar. Dá para voltar ao passo anterior
+            Sem ninguém treinado, não há o que testar. É possível voltar ao passo anterior
             agora ou fazer isso depois, em IA › Agentes.
           </p>
         </div>
@@ -122,7 +122,7 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
           </div>
           <div className="flex justify-end">
             <Button type="button" onClick={ensaiar} disabled={carregando || mensagem.trim() === ""}>
-              {carregando ? "Ele está pensando..." : "Mandar mensagem"}
+              {carregando ? "Ele está a pensar..." : "Enviar mensagem"}
             </Button>
           </div>
 
@@ -152,8 +152,8 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
               </p>
               <p className="text-sm">
                 As causas mais comuns são a chave da empresa de IA sem saldo ou o modelo
-                indisponível. Dá para conferir em <strong>IA › Credenciais</strong> e seguir
-                daqui mesmo — o que você montou está salvo.
+                indisponível. É possível conferir em <strong>IA › Credenciais</strong> e seguir
+                daqui mesmo — o que montou está guardado.
               </p>
             </div>
           )}
@@ -184,7 +184,7 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
                 await marcarTesteFeito(desfecho?.tipo === "resposta");
               } catch (err) {
                 if (err instanceof Error && err.message.startsWith("NEXT_REDIRECT")) throw err;
-                toast.error("Não consegui salvar este passo.");
+                toast.error("Não consegui guardar este passo.");
               }
             })
           }

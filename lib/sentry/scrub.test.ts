@@ -58,9 +58,9 @@ describe("scrubUrl", () => {
 });
 
 describe("scrubMessage", () => {
-  it("substitui CPF, telefone e e-mail", () => {
+  it("substitui NUIT, telefone e e-mail", () => {
     const out = scrubMessage("falha para 123.456.789-01, +55 11 98765-4321, joao@exemplo.com");
-    expect(out).toContain("[CPF]");
+    expect(out).toContain("[NUIT]");
     expect(out).toContain("[PHONE]");
     expect(out).toContain("[EMAIL]");
     expect(out).not.toContain("123.456.789-01");

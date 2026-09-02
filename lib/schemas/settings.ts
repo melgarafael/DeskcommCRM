@@ -65,7 +65,7 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 export const tenantSchema = z.object({
   display_name: z.string().min(1).max(120),
   legal_name: z.string().min(1).max(200),
-  cnpj: z
+  nuit: z
     .string()
     .max(20)
     .nullable()

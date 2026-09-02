@@ -51,7 +51,7 @@ export function isSensitiveHeader(name: string): boolean {
 
 export function scrubMessage(input: string): string {
   return input
-    .replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, "[CPF]")
+    .replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, "[NUIT]")
     .replace(/\+?\d{2}\s?\d{4,5}-?\d{4}/g, "[PHONE]")
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[EMAIL]");
 }

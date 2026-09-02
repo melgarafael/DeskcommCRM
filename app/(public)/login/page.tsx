@@ -31,7 +31,7 @@ export default async function LoginPage({
           role="alert"
         >
           Link inválido ou expirado. Peça um novo em Recuperar senha ou refaça o
-          cadastro.
+          registo.
         </div>
       )}
       {/*

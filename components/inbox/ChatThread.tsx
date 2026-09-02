@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef } from "react";
 import { format, isToday, isYesterday } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { pt as ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageBubble } from "./MessageBubble";

@@ -158,7 +158,7 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
         </div>
       )}
       <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? "Criando conta..." : "Criar conta"}
+        {isPending ? "A criar conta..." : "Criar conta"}
       </Button>
     </form>
   );

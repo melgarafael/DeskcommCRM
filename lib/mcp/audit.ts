@@ -25,7 +25,7 @@ const ARGS_REDACT_KEYS = new Set([
   "api_key",
   "token",
   "password",
-  "cpf",
+  "nuit",
 ]);
 
 function redactArgs(args: Record<string, unknown>): Record<string, unknown> {

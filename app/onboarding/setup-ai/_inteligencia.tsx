@@ -162,7 +162,7 @@ export function InteligenciaDele({ inicial }: { inicial: EstadoDaChave }) {
               toast.success("Chave guardada. Agora ele pode pensar.");
             }}
           >
-            {salvando ? "Guardando..." : "Guardar a chave"}
+            {salvando ? "A guardar..." : "Guardar a chave"}
           </Button>
           <span className="text-xs text-muted-foreground">
             Ela é guardada cifrada — nem nós conseguimos lê-la depois.
@@ -181,7 +181,7 @@ export function InteligenciaDele({ inicial }: { inicial: EstadoDaChave }) {
         ) : null}
       </h3>
       <p className="text-sm text-muted-foreground">
-        {prova?.estado === "conferindo" && "Conferindo se a chave tem crédito…"}
+        {prova?.estado === "conferindo" && "A conferir se a chave tem crédito…"}
         {prova?.estado === "ok" && "Testei agora: a chave respondeu e tem crédito."}
         {prova?.estado === "problema" && (
           <>

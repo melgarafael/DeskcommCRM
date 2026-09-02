@@ -19,7 +19,7 @@ export interface ContactSnapshot {
   display_name: string | null;
   email: string | null;
   phone_number: string | null;
-  cpf_present: boolean;
+  nuit_present: boolean;
   birthdate: string | null;
   is_blocked: boolean;
   is_anonymized: boolean;
@@ -213,7 +213,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, email, phone_number, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, created_at, last_activity_at",
+        "id, name, display_name, email, phone_number, nuit_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, created_at, last_activity_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -231,7 +231,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         display_name: data.display_name ?? null,
         email: data.email ?? null,
         phone_number: data.phone_number ?? null,
-        cpf_present: Boolean(data.cpf_encrypted),
+        nuit_present: Boolean(data.nuit_encrypted),
         birthdate: data.birthdate ?? null,
         is_blocked: Boolean(data.is_blocked),
         is_anonymized: Boolean(data.is_anonymized),

@@ -2002,8 +2002,8 @@ export type Database = {
           blocked_at: string | null
           blocked_reason: string | null
           consent: Json
-          cpf_encrypted: string | null
-          cpf_hash: string | null
+          nuit_encrypted: string | null
+          nuit_hash: string | null
           created_at: string
           created_by_user_id: string | null
           display_name: string | null
@@ -2034,8 +2034,8 @@ export type Database = {
           blocked_at?: string | null
           blocked_reason?: string | null
           consent?: Json
-          cpf_encrypted?: string | null
-          cpf_hash?: string | null
+          nuit_encrypted?: string | null
+          nuit_hash?: string | null
           created_at?: string
           created_by_user_id?: string | null
           display_name?: string | null
@@ -2066,8 +2066,8 @@ export type Database = {
           blocked_at?: string | null
           blocked_reason?: string | null
           consent?: Json
-          cpf_encrypted?: string | null
-          cpf_hash?: string | null
+          nuit_encrypted?: string | null
+          nuit_hash?: string | null
           created_at?: string
           created_by_user_id?: string | null
           display_name?: string | null
@@ -4798,7 +4798,7 @@ export type Database = {
       organizations: {
         Row: {
           ai_budget_cents: number | null
-          cnpj: string | null
+          nuit: string | null
           created_at: string
           created_by: string | null
           display_name: string
@@ -4823,7 +4823,7 @@ export type Database = {
         }
         Insert: {
           ai_budget_cents?: number | null
-          cnpj?: string | null
+          nuit?: string | null
           created_at?: string
           created_by?: string | null
           display_name: string
@@ -4848,7 +4848,7 @@ export type Database = {
         }
         Update: {
           ai_budget_cents?: number | null
-          cnpj?: string | null
+          nuit?: string | null
           created_at?: string
           created_by?: string | null
           display_name?: string

@@ -7,11 +7,11 @@
  * Uso (planejado):
  *   npx tsx scripts/seed-tenant.ts \
  *     --name "Loja do João" \
- *     --cnpj "12.345.678/0001-90" \
+ *     --nuit "12.345.678/0001-90" \
  *     --admin-email "joao@lojadojoao.com.br"
  *
  * O que vai fazer:
- *  1. Validar CNPJ não duplicado (409 tenant_already_exists se sim)
+ *  1. Validar NUIT não duplicado (409 tenant_already_exists se sim)
  *  2. INSERT em organizations
  *  3. Seed de pipeline default ("Pedidos") com stages canônicas e-commerce:
  *     "Carrinho abandonado | Aguardando pagamento | Pago | Em separação |

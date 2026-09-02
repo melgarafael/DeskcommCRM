@@ -112,7 +112,7 @@ export function TenantOverview({ organization, counts, integrations }: TenantOve
         <div>
           <InfoRow label="Plano" value={<Badge variant="neutral" className="capitalize">{plan}</Badge>} />
           <InfoRow label="Razão social" value={organization.legal_name} />
-          <InfoRow label="CNPJ" value={organization.cnpj} />
+          <InfoRow label="NUIT" value={organization.nuit} />
           <InfoRow label="Onboarding concluído" value={formatDate(organization.onboarded_at)} />
           <InfoRow label="Criado em" value={formatDate(organization.created_at)} />
           {organization.suspended_at && (

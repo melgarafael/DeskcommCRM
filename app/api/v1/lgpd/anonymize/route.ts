@@ -98,8 +98,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       // que um 500 — a ANONIMIZAÇÃO NÃO ACONTECIA, num direito do titular que a
       // LGPD dá prazo para cumprir. Zerar `email` já zera a derivada.
       phone_number: null,
-      cpf_encrypted: null,
-      cpf_hash: null,
+      nuit_encrypted: null,
+      nuit_hash: null,
       birthdate: null,
       is_anonymized: true,
       anonymized_at: nowIso,

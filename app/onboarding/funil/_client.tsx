@@ -175,7 +175,7 @@ export function QuadroClient({
           </Button>
           {quadro.etapas.length >= MAX_ETAPAS ? (
             <span className="text-xs text-muted-foreground">
-              {MAX_ETAPAS} colunas é o máximo — mais que isso não cabe na tela do celular.
+              {MAX_ETAPAS} colunas é o máximo — mais que isso não cabe no ecrã do telemóvel.
             </span>
           ) : null}
         </div>
@@ -255,7 +255,7 @@ export function QuadroClient({
             })
           }
         >
-          {pending ? "Salvando..." : "Usar este quadro"}
+          {pending ? "A guardar..." : "Usar este quadro"}
         </Button>
         </div>
       </div>

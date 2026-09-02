@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 interface OrgRow {
   display_name: string;
   legal_name: string;
-  cnpj: string | null;
+  nuit: string | null;
   timezone: string;
   locale: string;
   media_retention_days: number;
@@ -31,7 +31,7 @@ export default async function TenantSettingsPage() {
   const { data } = await supabase
     .from("organizations")
     .select(
-      "display_name, legal_name, cnpj, timezone, locale, media_retention_days, dpo_email, privacy_policy_url, settings",
+      "display_name, legal_name, nuit, timezone, locale, media_retention_days, dpo_email, privacy_policy_url, settings",
     )
     .eq("id", activeOrg.orgId)
     .maybeSingle();
@@ -55,7 +55,7 @@ export default async function TenantSettingsPage() {
           initial={{
             display_name: row.display_name,
             legal_name: row.legal_name,
-            cnpj: row.cnpj,
+            nuit: row.nuit,
             timezone: row.timezone,
             // `en-US` saiu da lista (nunca teve tradução). Uma linha antiga
             // com ele cai no padrão em vez de quebrar a tela.

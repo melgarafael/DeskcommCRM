@@ -49,7 +49,7 @@ const schema = z.object({
   INTERNAL_CRON_SECRET: z.string().optional().default(""),
 
   // Encryption keys (pgcrypto)
-  CPF_ENCRYPTION_KEY: required("CPF_ENCRYPTION_KEY"),
+  NUIT_ENCRYPTION_KEY: required("NUIT_ENCRYPTION_KEY"),
   // Opcional (template genérico) — só necessária ao ligar NUVEMSHOP_ENABLED.
   NUVEMSHOP_OAUTH_ENCRYPTION_KEY: z.string().optional().default(""),
   WAHA_BYO_ENCRYPTION_KEY: required("WAHA_BYO_ENCRYPTION_KEY"),
@@ -208,7 +208,7 @@ const schema = z.object({
   APP_NAME: z.string().optional().default(""),
   APP_LOGO_URL: z.string().optional().default(""),
   /**
-   * Cor da marca — um hex (`#506d48`), do qual `lib/branding/` deriva a rampa
+   * Cor da marca — um hex (`#008069`), do qual `lib/branding/` deriva a rampa
    * inteira. Vazio = o produto se pinta com a cor dele.
    *
    * `optional().default("")` e NUNCA `required()`, e o motivo é o modo de falha,

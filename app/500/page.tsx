@@ -19,7 +19,7 @@ export default function InternalErrorPage() {
       <Card className="w-full max-w-md p-8 text-center">
         <h1 className="text-2xl font-semibold">500 — Erro interno</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Algo quebrou do nosso lado. Já registramos o ocorrido; tente de novo em instantes.
+          Algo correu mal do nosso lado. Já registámos o ocorrido; tente de novo dentro de instantes.
         </p>
         <div className="mt-6 flex justify-center gap-2">
           <Button asChild>

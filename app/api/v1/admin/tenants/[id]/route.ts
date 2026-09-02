@@ -34,7 +34,7 @@ export async function GET(
       slug,
       display_name,
       legal_name,
-      cnpj,
+      nuit,
       status,
       onboarded_at,
       suspended_at,

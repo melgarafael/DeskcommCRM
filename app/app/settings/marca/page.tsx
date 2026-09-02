@@ -13,7 +13,7 @@
  * ── Por que o papel mínimo é `admin` ─────────────────────────────────────────
  *
  * Medido nos gates das telas vizinhas: identidade da empresa (`display_name`,
- * `legal_name`, CNPJ, DPO) é admin (`settings/tenant/page.tsx`); billing é admin;
+ * `legal_name`, NUIT, DPO) é admin (`settings/tenant/page.tsx`); billing é admin;
  * API tokens é admin. O nome e a cor que o cliente final do revendedor vê SÃO
  * identidade da empresa — dá-los a `manager` os colocaria abaixo de billing e de
  * tokens na mesma prancheta.

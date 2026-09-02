@@ -5,7 +5,7 @@
  * aggregators (Vercel runtime logs, Sentry breadcrumb sinks, etc.) can index
  * arbitrary fields without parsing free-form strings.
  *
- * Never log secrets, raw tokens, message bodies, CPF, or phone numbers.
+ * Never log secrets, raw tokens, message bodies, NUIT, or phone numbers.
  */
 
 export type LogContext = Record<string, unknown>;

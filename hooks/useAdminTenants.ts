@@ -11,7 +11,7 @@ export interface AdminTenantRow {
   slug: string;
   display_name: string;
   legal_name: string | null;
-  cnpj: string | null;
+  nuit: string | null;
   status: string;
   onboarded_at: string | null;
   suspended_at: string | null;
