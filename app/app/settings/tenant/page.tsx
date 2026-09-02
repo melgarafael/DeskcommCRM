@@ -4,6 +4,7 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
+import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
 import { TenantForm } from "./_form";
 
 export const dynamic = "force-dynamic";
@@ -69,6 +70,7 @@ export default async function TenantSettingsPage() {
           }}
         />
       )}
+      {row && <ZonaDePerigoDaOrganizacao displayName={row.display_name} />}
     </div>
   );
 }

@@ -392,6 +392,10 @@ export const AUDIT_ACTIONS = [
   // Relógio HTTP (Hobby / sem contêiner scheduler): uma batida que alguém
   // de fora chama. Só audita quando alguma tarefa mexeu em dado.
   "relogio.tick_run",
+  // Reset de dados de teste (Configurações › Organização, zona de perigo).
+  // A RPC `fn_apagar_dados_operacionais_da_organizacao` não audita por si —
+  // é pura DELETE em SQL — então a action que a chama grava esta linha.
+  "org.dados_operacionais_apagados",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
