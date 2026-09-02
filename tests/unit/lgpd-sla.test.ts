@@ -73,8 +73,7 @@ describe("computeDueAt — business day SLA calculator", () => {
     // Count: Thu30, skip Fri01(holiday), Mon04, Tue05, Wed06, Thu07, Fri08 = 6
     //        Mon11, Tue12, Wed13, Thu14, Fri15 = 11
     //        Mon18, Tue19, Wed20, Thu21 = 15
-    // → Thu 2026-05-21... wait, Tiradentes is 04-21 (Tue), not in this window.
-    // Let's recount from Thu 2026-04-30:
+    // → Thu 2026-05-21. Full recount from Thu 2026-04-30:
     //  day1 = Thu 30 Apr
     //  day2 = Fri 01 May? No — 01-May is Trabalho holiday → skip
     //  day2 = Mon 04 May
@@ -124,7 +123,7 @@ describe("computeDueAt — business day SLA calculator", () => {
   // Sanity check on the holiday list
   // -------------------------------------------------------------------------
 
-  it("HOLIDAYS_MZ_ISO contains all 9 feriados fixos por ano × 5 anos = 45", () => {
+  it("HOLIDAYS_MZ_ISO contém os 9 feriados fixos + Sexta-feira Santa (móvel), por ano × 5 anos = 50", () => {
     const fixed = [
       "01-01",
       "02-03",
@@ -138,6 +137,8 @@ describe("computeDueAt — business day SLA calculator", () => {
     ];
     const fixedCount = HOLIDAYS_MZ_ISO.filter((h) => fixed.includes(h.slice(5))).length;
     expect(fixedCount).toBe(9 * 5);
-    expect(HOLIDAYS_MZ_ISO.length).toBe(9 * 5);
+    // +1 por ano: Sexta-feira Santa, único feriado móvel do calendário
+    // moçambicano — datas exatas cobertas por tests/unit/holidays-mz.test.ts.
+    expect(HOLIDAYS_MZ_ISO.length).toBe(10 * 5);
   });
 });
