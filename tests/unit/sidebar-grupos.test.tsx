@@ -75,14 +75,22 @@ describe("Sidebar agrupado", () => {
     expect(screen.getByRole("link", { name: "Funis" })).toHaveAttribute("href", "/app/kanban");
   });
 
-  it("desenterra Nuvemshop e Audit Log", () => {
+  it("desenterra Audit Log — e Nuvemshop ficou de fora, por escolha", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);
-    // Nuvemshop não tinha link nenhum no app; Audit Log só existia via card em
-    // Configurações. Canal oficial não está aqui de propósito: virou aba de
-    // Conexões no PR #105, e Conexões é a porta.
-    expect(screen.getByRole("link", { name: /Nuvemshop/ })).toBeTruthy();
+    // Audit Log só existia via card em Configurações. Canal oficial não está
+    // aqui de propósito: virou aba de Conexões no PR #105, e Conexões é a porta.
     expect(screen.getByRole("link", { name: /Audit Log/ })).toBeTruthy();
+
+    // NUVEMSHOP SAIU, e esta linha é a reversão explícita de uma decisão que
+    // este mesmo teste travava: a integração tinha sido "desenterrada" para o
+    // menu justamente por não ter link nenhum. O dono do produto pediu para
+    // ocultá-la — não usa a integração —, então o que era garantia virou o
+    // contrário, e fica dito aqui para ninguém "consertar" de volta sem saber.
+    //
+    // Some do MENU, não do produto: a rota e a página seguem de pé e o ⌘K
+    // continua achando (`searchable()` filtra por papel, nunca por `sidebar`).
+    expect(screen.queryByRole("link", { name: /Nuvemshop/ })).toBeNull();
   });
 
   it("Configurações fica no rodapé, nunca dependendo de scroll", () => {
