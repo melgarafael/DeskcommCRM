@@ -89,7 +89,8 @@ SonghaiCRM é um sistema operacional de vendas open source com agentes de IA nat
 - Engine NOWEB default; WEBJS apenas se precisar stickers animados / botões
 - Auth: env do WAHA recebe **hash SHA512 hex** da api key; cliente envia plaintext em `X-Api-Key`
 - Webhooks: HMAC SHA512 com `crypto.timingSafeEqual`
-- Anti-banimento: throttle 1 msg/1.2s + jitter ≤800ms. Campanha 1 msg/5s. Warm-up 7-14d. Spinning de copy. Janela 7h-22h, evitar domingo
+- Anti-banimento: throttle 1 msg/1.2s + jitter ≤800ms. Campanha 1 msg/5s. Spinning de copy. Janela 7h-22h, evitar domingo
+  - **Gate manual de go-live foi removido (2026-09-03, decisão do dono do produto).** Número novo nasce JÁ liberado (`channel_session_health.health_released_at = now()` no primeiro tick) — a IA responde imediato ao primeiro contato, sem espera de aquecimento nem item da Central pra resolver. Isto é uma troca deliberada de risco: sem warm-up, número novo tem MAIS chance de ban do WhatsApp/Meta em volume alto logo de saída. O circuito de degradação (`block_rate`/`response_rate` em `lib/agent-engine/health/circuit.ts`) continua de pé — se o número já liberado passar a apanhar bloqueio ou taxa de resposta baixa, ele AINDA entra em hold automático (esse não foi tocado)
 - STOP detection: regex `/STOP|PARAR|SAIR|UNSUBSCRIBE/i` no inbound → `is_blocked=true` automaticamente
 - Mídia: subir pro Supabase Storage primeiro, passar URL ao WAHA (não inline base64)
 - Multi-device: assinar `message.any` (não só `message`); tratar `fromMe=true` sem duplicar

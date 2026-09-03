@@ -307,19 +307,16 @@ async function evaluateSession(
     };
 
     if (row.health_released_at === null) {
-      // Número novo (fail-safe): nasce em hold com razão go_live; libera SÓ por ato
-      // explícito (humano resolve o item = liberação inicial de go-live).
-      if (!row.health_hold_active) {
-        await engageHold('go_live');
-      } else if (!row.has_open_item) {
-        await client.query(
-          `update channel_session_health
-           set health_released_at = now(), health_hold_active = false, health_hold_reason = null, updated_at = now()
-           where organization_id = $1 and channel_session_id = $2`,
-          [tenantId, channelSessionId],
-        );
-        delta.released = 1;
-      }
+      // Número novo: decisão do produto (2026-09) é responder de imediato, sem
+      // gate de go-live manual — nasce já liberado. O circuito de degradação
+      // (block_rate/response_rate) abaixo continua de pé como proteção real.
+      await client.query(
+        `update channel_session_health
+         set health_released_at = now(), health_hold_active = false, health_hold_reason = null, updated_at = now()
+         where organization_id = $1 and channel_session_id = $2`,
+        [tenantId, channelSessionId],
+      );
+      delta.released = 1;
     } else if (row.health_hold_active) {
       // Já liberado alguma vez → circuito de degradação. Retomada:
       if (!row.has_open_item) {
