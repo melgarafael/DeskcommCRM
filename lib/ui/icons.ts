@@ -34,6 +34,11 @@ export {
   Clock,
   // marca da instalação (o revendedor troca nome e cor do produto)
   Palette,
+  // anúncios (Análise → Meta Ads). Megaphone e não outro ChartX: os dois
+  // vizinhos do grupo já são gráficos (ChartBar em Desempenho, ChartLineUp em
+  // Evolução da IA), e um terceiro gráfico deixaria as três linhas do menu
+  // indistinguíveis de relance. Mesma família Phosphor, mesmo peso.
+  Megaphone,
   // health dashboard
   WifiHigh,
   Brain,

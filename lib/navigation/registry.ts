@@ -23,6 +23,7 @@ import {
   Lightbulb,
   ListChecks,
   Lock,
+  Megaphone,
   Palette,
   Plugs,
   PlugsConnected,
@@ -448,6 +449,21 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     sidebar: true,
   },
   {
+    // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá
+    // está o que aconteceu depois que a pessoa chegou; aqui, quanto custou
+    // trazê-la. Ler as duas juntas é o que fecha a conta do custo por cliente.
+    href: "/app/ads/meta",
+    label: "Meta Ads",
+    description: "Quanto custou cada resultado das campanhas que trazem gente para cá.",
+    icon: Megaphone,
+    group: "analise",
+    // `manager`, e não o `viewer` de Desempenho: aqui não há recorte por
+    // pessoa — orçamento e criativo são da empresa inteira. Mesmo grau dos
+    // outros dois vizinhos do grupo.
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.
     href: "/app/ai/evolution",
     label: "Evolução da IA",
@@ -537,6 +553,25 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     // `admin` pelo mesmo critério das vizinhas: o token grava na conta de
     // anúncios da empresa, e quem o troca decide para onde vai o dinheiro de
     // mídia. Um `manager` ficaria acima de billing na mesma prancheta.
+    minRole: "admin",
+  },
+  {
+    // Vizinha de Conversões, e SEPARADA dela de propósito. As duas conectam "a
+    // Meta" e a tentação de fundi-las é real — mas são credenciais de escopos
+    // diferentes, em tabelas diferentes (0205), com consequências opostas
+    // quando vencem: o token de leitura vencido deixa uma tela vazia, o de
+    // conversões vencido faz a empresa parar de reportar vendas sem sintoma.
+    // Uma tela só, com dois campos de token parecidos, é como se cola o token
+    // errado no campo errado e se perde uma semana achando que quebrou.
+    href: "/app/settings/meta-ads",
+    label: "Meta Ads",
+    description: "Conectar a conta de anúncios para ler o desempenho das campanhas.",
+    icon: Megaphone,
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin` pelo mesmo critério da vizinha, mesmo o token sendo só de
+    // leitura: ele expõe orçamento e performance da conta inteira, e quem
+    // apenas LÊ a tela (`manager`) não precisa poder trocar a credencial.
     minRole: "admin",
   },
   {

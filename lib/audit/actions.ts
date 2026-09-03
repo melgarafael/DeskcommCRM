@@ -293,6 +293,22 @@ export const AUDIT_ACTIONS = [
   // O `metadata` carrega o dataset (identificador, não segredo) e um booleano
   // dizendo se o token foi trocado. O token, nem em metadata.
   "ad_platform_connection.updated",
+  // A conexão de LEITURA da organização com a conta de anúncios (0205).
+  // Ação SEPARADA da de cima, e não um `metadata.purpose` na mesma: a pergunta
+  // que cada trilha responde é diferente. "Quem apontou minhas vendas para este
+  // destino?" é sobre dinheiro saindo; "quem deu a alguém acesso de leitura ao
+  // meu orçamento de mídia?" é sobre dado comercial vazando. Fundi-las
+  // obrigaria a ler o metadata para saber qual das duas aconteceu — o mesmo
+  // motivo pelo qual `branding.updated` não virou `org.updated`.
+  //
+  // O `metadata` carrega o id da conta padrão (identificador, não segredo) e um
+  // booleano dizendo se o token foi trocado. O token, nem em metadata.
+  "ad_insights_connection.updated",
+  // Desconectar APAGA o token (a 0205 não tem `enabled`, e o porquê está no
+  // cabeçalho dela). Auditada à parte de `.updated` porque some uma credencial:
+  // a tela de Meta Ads para de funcionar para todo mundo da organização, e a
+  // trilha precisa dizer quem fez isso e quando.
+  "ad_insights_connection.deleted",
   // A marca da ORGANIZAÇÃO (nome + cor) trocada em `organizations.settings.branding`
   // — mutação de TENANT, e por isso COM `organization_id` e com `resource_id` =
   // o uuid da org. É outra ação, e não `org.updated`, porque a pergunta que a
