@@ -1,0 +1,229 @@
+# SonghaiCRM — stack de produção via Docker SWARM, para VPS que já roda um
+# Traefik com `--providers.swarm=true` apontando para uma rede overlay própria
+# (ex.: `traefik_public`). Substitui docker-compose.prod.yml + traefik.yml
+# nesse cenário específico — não é um override deles, é autocontido.
+#
+#   docker stack deploy -c docker-compose.swarm.yml --with-registry-auth songhaicrm
+#
+# Diferenças do modo `docker compose` normal, e por quê:
+#   - SEM `caddy`: o Traefik já existe fora desta stack e descobre o `app` pela
+#     rede overlay abaixo — não pela API do Docker Compose, mas pelo provider
+#     Swarm nativo do Traefik (labels ficam em `deploy.labels`, não em `labels`).
+#   - SEM `env_file:` — o Swarm não lê env_file por serviço (o manager pode
+#     agendar a task num nó que nunca viu o arquivo). Cada var vira
+#     `VAR: ${VAR}` explícito; o `docker stack deploy` interpola a partir do
+#     `.env` no diretório onde o comando roda, igual ao `docker compose`.
+#   - `mem_limit` (forma curta do Compose) vira `deploy.resources.limits.memory`.
+#   - `depends_on` perde a `condition:` — Swarm não bloqueia start por
+#     healthcheck de outro serviço; a ordem final é garantida pelo próprio
+#     healthcheck + restart_policy de cada um.
+#   - Tag móvel (`:stable`/`:latest`) não é re-puxada sozinha pelo
+#     `stack deploy` se o digest local já existe. Depois de publicar imagem
+#     nova, force o repull por serviço:
+#       docker service update --with-registry-auth --force songhaicrm_app
+#       docker service update --with-registry-auth --force songhaicrm_worker
+#       docker service update --with-registry-auth --force songhaicrm_scheduler
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    image: ${APP_IMAGE:-ghcr.io/melgarafael/deskcommcrm:stable}
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL}
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      INTERNAL_CRON_SECRET: ${INTERNAL_CRON_SECRET}
+      INTERNAL_AGENT_RUN_STUB: ${INTERNAL_AGENT_RUN_STUB:-false}
+      CPF_ENCRYPTION_KEY: ${CPF_ENCRYPTION_KEY}
+      NUVEMSHOP_OAUTH_ENCRYPTION_KEY: ${NUVEMSHOP_OAUTH_ENCRYPTION_KEY}
+      WAHA_BYO_ENCRYPTION_KEY: ${WAHA_BYO_ENCRYPTION_KEY}
+      AI_CRED_AES_KEY: ${AI_CRED_AES_KEY}
+      WAHA_API_BASE_URL: http://waha:3000
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      WAHA_HMAC_SECRET: ${WAHA_HMAC_SECRET}
+      WAHA_WEBHOOK_REQUIRE_SIGNATURE: ${WAHA_WEBHOOK_REQUIRE_SIGNATURE:-false}
+      WAHA_WEBHOOK_BASE_URL: ${WAHA_WEBHOOK_BASE_URL}
+      UPSTASH_REDIS_REST_URL: http://srh:80
+      UPSTASH_REDIS_REST_TOKEN: ${SRH_TOKEN}
+      AI_PROVIDER: ${AI_PROVIDER}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
+      SENTRY_DSN: ${SENTRY_DSN}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL}
+      IMPERSONATE_COOKIE_SECRET: ${IMPERSONATE_COOKIE_SECRET}
+      LGPD_SIGNING_KEY: ${LGPD_SIGNING_KEY}
+      NUVEMSHOP_ENABLED: ${NUVEMSHOP_ENABLED:-false}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL}
+      APP_NAME: ${APP_NAME}
+      APP_LOGO_URL: ${APP_LOGO_URL}
+      APP_ACCENT_HEX: ${APP_ACCENT_HEX}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    logging: *default-logging
+    networks:
+      - internal
+      - proxy
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 768M
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.deskcomm.rule: "Host(`${DOMAIN}`)"
+        traefik.http.routers.deskcomm.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+        traefik.http.routers.deskcomm.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+        traefik.http.routers.deskcomm.middlewares: "deskcomm-compress"
+        traefik.http.services.deskcomm.loadbalancer.server.port: "3000"
+        traefik.http.middlewares.deskcomm-compress.compress: "true"
+        traefik.http.routers.deskcomm-waha-block.rule: "Host(`${DOMAIN}`) && Path(`/api/v1/webhooks/waha`)"
+        traefik.http.routers.deskcomm-waha-block.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+        traefik.http.routers.deskcomm-waha-block.tls.certresolver: "${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+        traefik.http.routers.deskcomm-waha-block.priority: "1000"
+        traefik.http.routers.deskcomm-waha-block.service: "deskcomm"
+        traefik.http.routers.deskcomm-waha-block.middlewares: "deskcomm-deny"
+        traefik.http.middlewares.deskcomm-deny.ipallowlist.sourcerange: "192.0.2.1/32"
+        traefik.http.routers.deskcomm-http.rule: "Host(`${DOMAIN}`)"
+        traefik.http.routers.deskcomm-http.entrypoints: "${TRAEFIK_ENTRYPOINT_HTTP:-web}"
+        traefik.http.routers.deskcomm-http.middlewares: "deskcomm-https"
+        traefik.http.routers.deskcomm-http.service: "deskcomm"
+        traefik.http.middlewares.deskcomm-https.redirectscheme.scheme: "https"
+        traefik.http.middlewares.deskcomm-https.redirectscheme.permanent: "true"
+
+  worker:
+    image: ${WORKER_IMAGE:-ghcr.io/melgarafael/deskcomm-worker:stable}
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL}
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      CPF_ENCRYPTION_KEY: ${CPF_ENCRYPTION_KEY}
+      WAHA_BYO_ENCRYPTION_KEY: ${WAHA_BYO_ENCRYPTION_KEY}
+      AI_CRED_AES_KEY: ${AI_CRED_AES_KEY}
+      WAHA_API_BASE_URL: http://waha:3000
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      WAHA_WEBHOOK_BASE_URL: ${WAHA_WEBHOOK_BASE_URL}
+      AI_PROVIDER: ${AI_PROVIDER}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
+      SENTRY_DSN: ${SENTRY_DSN}
+      UPSTASH_REDIS_REST_URL: http://srh:80
+      UPSTASH_REDIS_REST_TOKEN: ${SRH_TOKEN}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 512M
+
+  waha:
+    image: ${WAHA_IMAGE:-devlikeapro/waha:latest-2026.7.2}
+    environment:
+      WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512}"
+      WHATSAPP_HOOK_URL: ${WAHA_WEBHOOK_BASE_URL}/api/v1/webhooks/waha
+      WHATSAPP_HOOK_EVENTS: "message,message.any,message.ack,message.edited,message.revoked,session.status,state.change"
+      WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
+      WHATSAPP_DEFAULT_ENGINE: ${WHATSAPP_DEFAULT_ENGINE:-NOWEB}
+      WAHA_DASHBOARD_ENABLED: "false"
+    volumes:
+      - waha-data:/app/.sessions
+      - waha-media:/app/.media
+    logging: *default-logging
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 1280M
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    logging: *default-logging
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  srh:
+    image: hiett/serverless-redis-http@sha256:5b0bb9239fce53abf87b2018a7a0deb9ec7bd900c5360738fe5fbeeb426f9150
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${SRH_TOKEN}
+      SRH_CONNECTION_STRING: "redis://redis:6379"
+    logging: *default-logging
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+  scheduler:
+    image: ${SCHEDULER_IMAGE:-ghcr.io/melgarafael/deskcomm-scheduler:stable}
+    environment:
+      TZ: UTC
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+    logging: *default-logging
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
+volumes:
+  waha-data:
+  waha-media:
+
+networks:
+  internal:
+    driver: overlay
+  proxy:
+    external: true
+    name: "${TRAEFIK_NETWORK_SWARM:-traefik_public}"
