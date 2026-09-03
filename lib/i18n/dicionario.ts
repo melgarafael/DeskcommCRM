@@ -515,6 +515,7 @@ export const DICIONARIO: Traducoes = {
   "A chave desta instalação": { es: "La clave de esta instalación" },
   validada: { es: "validada" },
   validando: { es: "validando" },
+  "não validada": { es: "no validada" },
   inativa: { es: "inactiva" },
   "Nenhuma credencial": { es: "Ninguna credencial" },
   cadastrada: { es: "registrada" },
@@ -1251,7 +1252,37 @@ export const DICIONARIO: Traducoes = {
     },
   "Adicionar credencial": { es: "Añadir credencial" },
   Validada: { es: "Validada" },
+  "Não validada": { es: "Sin validar" },
   Inválida: { es: "Inválida" },
+  "A validação não terminou. Clique em revalidar para testar a chave agora.": {
+    es: "La validación no terminó. Haz clic en revalidar para probar la clave ahora.",
+  },
+  "O provedor recusou a chave. Confira se copiou inteira ou gere uma nova.": {
+    es: "El proveedor rechazó la clave. Verifica que la copiaste entera o genera una nueva.",
+  },
+  "O provedor limitou as chamadas desta chave. Tente de novo em alguns minutos.": {
+    es: "El proveedor limitó las llamadas de esta clave. Inténtalo de nuevo en unos minutos.",
+  },
+  "O provedor está fora do ar. A chave pode estar certa; revalide mais tarde.": {
+    es: "El proveedor está caído. La clave puede estar bien; revalida más tarde.",
+  },
+  "Não foi possível falar com o provedor a partir deste servidor. Revalide mais tarde.": {
+    es: "No fue posible hablar con el proveedor desde este servidor. Revalida más tarde.",
+  },
+  "Falha na validação": { es: "Falla en la validación" },
+  "Pegar chave em": { es: "Obtener clave en" },
+  "O padrão recomendado para conversar com o cliente: é o que melhor segue instruções longas e usa as ferramentas do CRM.": {
+    es: "El estándar recomendado para conversar con el cliente: es el que mejor sigue instrucciones largas y usa las herramientas del CRM.",
+  },
+  "Necessário para transcrever áudio e para indexar o seu material — esses dois pontos usam tecnologia da OpenAI mesmo quando o resto está em outro provedor.": {
+    es: "Necesario para transcribir audio e indexar tu material: esos dos puntos usan tecnología de OpenAI aunque el resto esté en otro proveedor.",
+  },
+  "Alternativa com contexto muito longo e custo baixo para tarefas de classificação.": {
+    es: "Alternativa con contexto muy largo y bajo costo para tareas de clasificación.",
+  },
+  "Uma chave só dá acesso a centenas de modelos de dezenas de fabricantes, inclusive os gratuitos. É o caminho mais simples para experimentar sem abrir conta em cada provedor.": {
+    es: "Una sola clave da acceso a cientos de modelos de decenas de fabricantes, incluidos los gratuitos. Es el camino más simple para experimentar sin abrir cuenta en cada proveedor.",
+  },
   Inativa: { es: "Inactiva" },
   "Revalidando…": { es: "Revalidando…" },
   "Credencial removida.": { es: "Credencial eliminada." },
@@ -1267,12 +1298,10 @@ export const DICIONARIO: Traducoes = {
   "A chave é cifrada (AES-GCM) antes de gravar e nunca é retornada em texto claro.": {
     es: "La clave se cifra (AES-GCM) antes de guardarse y nunca se devuelve en texto plano.",
   },
-  Label: { es: "Etiqueta" },
   "Ex: Produção": { es: "Ej: Producción" },
   "Credencial salva. Validando…": { es: "Credencial guardada. Validando…" },
   "Credencial salva. Validação em segundo plano.": { es: "Credencial guardada. Validación en segundo plano." },
   "modelos disponíveis.": { es: "modelos disponibles." },
-  "Validação falhou": { es: "La validación falló" },
   "Salvar e validar": { es: "Guardar y validar" },
   "Obrigatório": { es: "Obligatorio" },
   "API key muito curta": { es: "API key demasiado corta" },

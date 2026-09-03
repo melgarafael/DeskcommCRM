@@ -13,6 +13,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { contarUsoPublicado, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export async function DELETE(
   const { data: linked, error: linkErr } = await admin
     .from("ai_agent_versions")
     .select(
-      "id, agent_id, ai_agents!ai_agent_versions_agent_id_fkey!inner(id, archived_at, published_version_id)",
+      "id, credential_id, ai_agents!ai_agent_versions_agent_id_fkey!inner(archived_at, published_version_id)",
     )
     .eq("credential_id", id)
     .eq("organization_id", activeOrg.orgId);
@@ -55,20 +56,7 @@ export async function DELETE(
     return fail("internal_error", "Erro ao verificar uso da credential.", 500, { requestId });
   }
 
-  type LinkedVersion = {
-    id: string;
-    agent_id: string;
-    ai_agents:
-      | { id: string; archived_at: string | null; published_version_id: string | null }
-      | { id: string; archived_at: string | null; published_version_id: string | null }[]
-      | null;
-  };
-
-  const inUse = (linked ?? []).some((row: LinkedVersion) => {
-    const agent = Array.isArray(row.ai_agents) ? row.ai_agents[0] : row.ai_agents;
-    if (!agent || agent.archived_at) return false;
-    return agent.published_version_id === row.id;
-  });
+  const inUse = (contarUsoPublicado((linked ?? []) as unknown as VersaoVinculada[])[id] ?? 0) > 0;
 
   if (inUse) {
     return fail(

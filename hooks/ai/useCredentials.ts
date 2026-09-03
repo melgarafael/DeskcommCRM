@@ -19,7 +19,7 @@ export interface CredentialRow {
   api_key_last4: string | null;
   validated_at: string | null;
   validation_error: string | null;
-  models_available: number | null;
+  models_available: string[] | null;
   is_active: boolean;
   created_by: string | null;
   created_at: string;
@@ -45,12 +45,23 @@ export function useCredentialsList(opts?: { initialData?: CredentialRow[] }) {
       }
     },
     initialData: opts?.initialData,
+    // Enquanto alguma credencial está "validando", a tela precisa ver o resultado
+    // (ou a janela vencer) sem F5: o status é derivado de `created_at` + relógio,
+    // e nada re-renderiza sozinho quando o relógio cruza a janela.
+    refetchInterval: (query) =>
+      query.state.data?.some((c) => credentialStatus(c) === "validating") ? 5_000 : false,
   });
 }
 
-export function credentialStatus(row: CredentialRow): "validated" | "validating" | "invalid" | "inactive" {
+/** Depois disto sem resultado, o processo que validaria já morreu. */
+export const JANELA_DE_VALIDACAO_MS = 2 * 60_000;
+
+export type CredentialStatus = "validated" | "validating" | "unvalidated" | "invalid" | "inactive";
+
+export function credentialStatus(row: CredentialRow, agora: number = Date.now()): CredentialStatus {
   if (!row.is_active) return "inactive";
   if (row.validation_error) return "invalid";
   if (row.validated_at) return "validated";
+  if (agora - Date.parse(row.created_at) > JANELA_DE_VALIDACAO_MS) return "unvalidated";
   return "validating";
 }

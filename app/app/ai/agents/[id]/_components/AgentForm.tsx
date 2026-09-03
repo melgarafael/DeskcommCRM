@@ -39,7 +39,7 @@ import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 import { ModelPicker, useModelMeta } from "./ModelPicker";
-import { CHAVE_DA_INSTALACAO, CredentialPicker, findCredential } from "./CredentialPicker";
+import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { ToolPicker } from "./ToolPicker";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
@@ -699,9 +699,9 @@ export function AgentForm(props: Props) {
             {validation.credential_id ? (
               <p className="text-xs text-destructive">{validation.credential_id}</p>
             ) : null}
-            {cred && credSt !== "validated" ? (
+            {cred && credSt && credSt !== "validated" ? (
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                {t("Credencial selecionada está com status")} {credSt}
+                {t("Credencial selecionada está com status")} {t(STATUS_LABEL[credSt])}
                 {t(". Publish bloqueado até validar.")}
               </p>
             ) : null}
