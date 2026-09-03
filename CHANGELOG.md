@@ -8,6 +8,187 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.13.0] — 2026-09-03
+
+### Adicionado
+
+- **Admin agora apaga os dados de teste da organização pela própria tela** Configurações › Organização ganhou uma "Zona de perigo": um botão que apaga de
+  vez todas as mensagens, conversas, leads, contatos, agendamentos e pedidos da
+  organização, para quem quer recomeçar os testes do zero sem pedir a alguém
+  para rodar SQL.
+
+  Só quem administra a empresa vê o botão, e a ação exige digitar o nome exato
+  da organização antes de confirmar — como apagar um repositório. A função por
+  trás (`fn_apagar_dados_operacionais_da_organizacao`, já existente no banco)
+  não muda; o que entra é a tela e a auditoria (`org.dados_operacionais_apagados`
+  em `api_audit_log`).
+
+  Nada muda para quem opera uma instalação já em produção: nenhuma migration,
+  nenhum passo de atualização.
+
+### Alterado
+
+- **O Inbox e a barra lateral ficaram mais legíveis** A coluna da esquerda do Inbox empilhava quatro controles em caixa (busca,
+  filtro de tag, abas espremidas num quadro cinza e uma linha inteira só para o
+  interruptor "Apenas não lidos"), e cada conversa tinha altura diferente porque
+  o contador de não lidas vivia numa terceira linha que às vezes existia e às
+  vezes não.
+
+  Agora a busca é uma pílula sem borda com o filtro "Não lidos" ao lado, as abas
+  viram uma faixa sublinhada que cabe na largura da coluna, e cada conversa tem
+  duas linhas fixas: nome e hora em cima, prévia e contador embaixo. Conversa não
+  lida aparece em negrito com o contador cheio; a selecionada ganha uma barra
+  lateral na cor da marca. Os selos (tags, bloqueado, número de entrada) só
+  ocupam uma terceira linha quando existem.
+
+  O ícone de robô na prévia da mensagem também passou a seguir a mesma regra dos
+  outros selos: só aparece quando distingue alguma coisa. Na aba "Automático",
+  onde toda conversa já é robô, ele deixou de se repetir em cada linha.
+
+  Os rótulos em CAIXA ALTA espalhados pelo Inbox (cabeçalhos do painel lateral,
+  remetente na bolha de mensagem, nota interna, divisor de dia na conversa)
+  viraram texto normal em negrito — mais fácil de ler, mesma hierarquia.
+
+  Os filtros de número e de tag agora são pílulas na mesma linguagem da busca, e
+  ganham cor de destaque quando um filtro está ativo — antes eram duas caixas de
+  formulário empilhadas, sem diferença visual entre "filtrando" e "sem filtro".
+
+  A tela em branco de quando nenhuma conversa está aberta ganhou um ícone e o
+  lembrete de que dá para navegar com as teclas J e K, em vez de só o aviso
+  "Selecione uma conversa" sozinho no meio da tela.
+
+  Cada grupo da barra lateral (Atendimento, CRM, Agente de IA, Canais, Análise)
+  agora pode ser recolhido clicando no título — o app lembra quais grupos você
+  fechou da próxima vez que abrir. Os títulos deixaram de vir em CAIXA ALTA.
+
+  Nada muda para quem opera: nenhuma configuração nova, nenhum passo de
+  atualização.
+
+### Corrigido
+
+- **A atualização volta a chegar quando alguém aprova outra coisa durante o fechamento da versão** Uma versão do sistema é fechada em duas etapas: primeiro o time monta a lista do
+  que entrou, depois aprova essa lista. Entre uma coisa e outra, qualquer outra
+  melhoria aprovada no meio do caminho fazia o fechamento **desistir em silêncio**
+  — a versão aparecia na lista de novidades, mas nunca era publicada de verdade.
+
+  O efeito para quem tem o sistema instalado era o pior tipo: nada de errado
+  aparecia em lugar nenhum. O painel não acusava, o histórico de versões mostrava
+  a versão nova como se existisse, e a atualização simplesmente nunca chegava. Foi
+  o que aconteceu com a versão 1.11.1: ela consta no histórico desde 31 de agosto e
+  nunca existiu como pacote — nenhuma instalação a recebeu.
+
+  Agora o fechamento reconhece a si mesmo por outro sinal, que não depende de o
+  resto do time parar de trabalhar enquanto a versão fecha. E, se alguma coisa
+  estranha acontecer nesse momento, o processo **falha alto** em vez de passar
+  batido — que é o que teria feito alguém perceber a 1.11.1 no mesmo dia, e não
+  duas semanas depois.
+
+  Para quem opera uma instalação, nada muda no dia a dia: nenhuma configuração
+  nova, nenhum passo de atualização. O que muda é que "a versão saiu" volta a
+  significar que ela saiu.
+
+- **Sete vulnerabilidades de dependência transitiva corrigidas (fast-uri, qs, browserslist)** O GitHub apontou 7 advisories abertos no repo: 4 em `fast-uri` (host confusion /
+  SSRF via normalização de URI malformada), 2 em `qs` (bypass de limite de array,
+  DoS via `isBuffer`) e 1 em `browserslist` (crash / escrita de protótipo com
+  `browserslist-stats.json` não confiável). Nenhum dos três é dependência direta
+  — chegam via `ajv`/`@modelcontextprotocol/sdk`, `express`/`express-rate-limit`
+  e `autoprefixer`/`eslint-config-next`, respectivamente.
+
+  Os três entraram no piso de versão já existente em `package.json#pnpm.overrides`
+  (mesmo mecanismo que já fixava `postcss`, `sharp`, `hono`, `js-yaml` etc.), sem
+  subir de major: `fast-uri@^3.1.7`, `qs@^6.16.0`, `browserslist@^4.28.8`.
+
+  Nada muda para quem opera uma instalação: são versões patch de dependência
+  transitiva, sem migration nem passo de atualização.
+
+- **O endereço interno do seu servidor deixa de aparecer na página pública de saúde** O sistema tem um endereço público que responde se ele está de pé — usado por
+  monitoramento e pelo suporte. Ele já era cuidadoso: escondia de quem não tem a
+  chave interna o endereço da conexão do WhatsApp e do serviço de fila, porque
+  esse endereço é justamente o que alguém precisaria para tentar bater na porta
+  deles.
+
+  O cuidado tinha um furo. Quando o arquivo de configuração ficava com o endereço
+  numa forma inválida — sem o `https://` na frente, ou com aspas sobrando, que são
+  os dois erros mais comuns de quem instala —, a mensagem técnica da falha vinha
+  com o endereço dentro, e essa mensagem **saía por inteiro** para qualquer pessoa
+  que abrisse a página. O sistema fechava a porta da frente e deixava a mesma
+  informação na janela do lado.
+
+  Agora quem não tem a chave interna vê apenas que a consulta falhou, e **por quê**:
+  se não achou o servidor, se foi recusado, se demorou demais, se a
+  credencial não passou. Isso é o que serve para monitorar. O texto técnico
+  completo continua saindo inteiro para quem tem a chave, que é quem precisa dele
+  para consertar.
+
+  Para quem opera, nada muda: nenhuma configuração nova, nenhum passo de
+  atualização. Se você tinha algum alerta lendo o texto da mensagem de erro, ele
+  passa a ler o motivo em vez do texto.
+
+  O achado é de @prevprocesso-maker, que percebeu o furo instalando o sistema para
+  um cliente.
+
+- **Fechar um negócio parou de avisar duas vezes, e o card não some mais numa coluna arquivada** Toda vez que alguém marcava um negócio como ganho ou perdido, o sistema
+  registrava o acontecimento **duas vezes**: uma pelo banco, que já fazia isso
+  sozinho, e outra pelo aplicativo, que não sabia que o banco já tinha feito.
+  Enquanto ninguém escutava esse registro, a duplicata era só ruído guardado. Ela
+  deixou de ser inofensiva quando as notificações no navegador passaram a escutar
+  exatamente esse aviso — daí em diante, um único negócio fechado tocava duas
+  vezes no celular de quem estava acompanhando.
+
+  Junto vinham duas coisas menores e do mesmo tipo, do jeito silencioso que
+  incomoda mais do que erro barulhento:
+
+  - Um funil cujo estágio de fechamento tinha sido **arquivado** continuava sendo
+    usado. O negócio era fechado numa coluna que ninguém mais vê, sem aviso
+    nenhum. Agora o sistema recusa e diz que falta um estágio de fechamento no
+    funil, que é o que de fato está acontecendo.
+  - O card fechado caía em **posição aleatória** na coluna final, em vez de ir para
+    o fim dela. Quem trabalha olhando o quadro perdia o negócio de vista.
+
+  Para quem opera, nada muda no dia a dia: nenhuma configuração nova, nenhum passo
+  de atualização, nenhum dado a corrigir. O que muda é que o aviso passa a sair uma
+  vez, e que fechar num funil mal configurado avisa em vez de sumir.
+
+  O achado é de @prevprocesso-maker, que instalou o sistema para um cliente e
+  percebeu a emissão em dobro lendo o próprio código.
+
+- **Quero 2 iPhone 15" volta a encontrar o iPhone 15** Quando o cliente escrevia um número que não é característica do produto — a
+  quantidade que ele quer, quanto pretende gastar —, o atendente de IA respondia
+  que **não encontrou nada**. "Quero 2 iPhone 15" e "tenho 3.000 pra gastar num
+  iPhone" voltavam vazias, mesmo com o produto no catálogo.
+
+  É o pior momento para dizer "não encontrei": a pessoa estava comprando.
+
+  A causa era a regra que impede o erro mais caro da busca — quem pergunta do
+  128GB não pode receber o preço do 256GB. Para isso, o número que o cliente diz
+  precisa bater exatamente. Só que **todo** número era tratado assim, inclusive os
+  que não descrevem produto nenhum.
+
+  Agora o próprio catálogo decide: um número só restringe a busca se ele existir
+  em algum produto. "128" existe, então continua separando os modelos. "2" não
+  existe em produto nenhum, então é quantidade — e quantidade não esconde nada.
+
+  A proteção continua inteira no caso que importa: quem pede uma capacidade que a
+  loja não tem continua recebendo "não temos", e nunca o modelo parecido com
+  preço diferente.
+
+  Para quem opera uma instalação, nada muda no dia a dia.
+
+- **A tela de chaves de IA explica o que deu errado e mostra quantos modelos a chave alcança** Quem colava uma chave de IA e errava via um código (`auth_failed_401`) no
+  lugar de uma explicação, e quem acertava via a lista de modelos inteira colada
+  por vírgula onde deveria haver um número. Se o servidor reiniciasse no meio da
+  validação, o cartão dizia "Validando…" para sempre.
+
+  Agora o cartão diz em português o que aconteceu ("O provedor recusou a chave.
+  Confira se copiou inteira ou gere uma nova."), com o link para gerar outra;
+  mostra a contagem de modelos; e, passados dois minutos sem resposta, troca
+  "Validando…" por "Não validada" com a dica de revalidar. O diálogo de adicionar
+  passa a dizer quando usar cada provedor, onde a chave mora e como ela começa.
+  O botão de excluir só fica bloqueado quando a chave está de fato numa versão
+  publicada de agente — a mesma regra que a API já usava.
+
+  Nenhuma configuração nova, nenhum passo de atualização.
+
 ## [1.12.0] — 2026-09-02
 
 ### Adicionado
@@ -1815,7 +1996,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.12.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.10.2...v1.11.0
