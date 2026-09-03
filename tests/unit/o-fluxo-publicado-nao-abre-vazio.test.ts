@@ -108,3 +108,59 @@ describe("o rascunho que a tela desenha", () => {
     ).resolves.toBeNull();
   });
 });
+
+/**
+ * ═══ A REGRA ESTÁ GUARDADA; A FIAÇÃO NÃO ESTAVA ═════════════════════════════
+ *
+ * ⚠️ Achado por revisão adversarial deste PR, e reproduzido: removendo a fiação
+ * dos DOIS call sites — o import, o `const draft_graph = await rascunhoDoFluxo(…)`
+ * e a linha `draft_graph,` do objeto — mas deixando `lib/followup/rascunho.ts`
+ * intacto, o defeito volta INTEIRO (o GET devolve `draft_graph: null` e a tela
+ * abre em branco sobre o fluxo que está no ar) e a suíte fica 100% verde: 617
+ * arquivos, 6812 casos, zero falhas.
+ *
+ * Os casos acima exercitam só a função pura com um dublê de PostgREST. O único
+ * teste que importa a rota monta a linha com `active_version_id: null`, ou seja,
+ * nunca entra no ramo novo. E os e2e de follow-up gravam `draft_graph` por PATCH
+ * antes de abrir o construtor, então o estado "rascunho nulo com versão ativa"
+ * não ocorre lá.
+ *
+ * O risco não é teórico: o conserto mora numa LINHA SOLTA dentro de um object
+ * literal em cada arquivo — a forma exata que um revert ou uma resolução de
+ * merge derruba sem ninguém ver. E o que se perde junto é a proteção contra
+ * salvar-por-cima, que este PR descreve como o dano maior.
+ *
+ * Varredura de fonte, no padrão de `provedores-x-registry.test.ts`: não prova
+ * comportamento — prova que a fiação continua lá, que é o que some.
+ */
+describe("os dois lugares que abriam a tela continuam perguntando ao rascunho", () => {
+  const ler = async (p: string) => (await import("node:fs")).readFileSync(p, "utf8");
+
+  it("a rota GET resolve o rascunho pela regra, não pela coluna crua", async () => {
+    const fonte = await ler("app/api/v1/ai/followup-flows/[id]/route.ts");
+    expect(fonte, "a rota parou de importar a regra").toMatch(
+      /import \{ rascunhoDoFluxo \} from "@\/lib\/followup\/rascunho"/,
+    );
+    expect(fonte, "o call site da rota sumiu — o GET volta a devolver draft_graph nulo").toMatch(
+      /const draft_graph = await rascunhoDoFluxo\(/,
+    );
+    expect(
+      fonte,
+      "o resultado deixou de entrar na resposta: a regra roda e ninguém usa",
+    ).toMatch(/\n\s*draft_graph,/);
+  });
+
+  it("a página do construtor resolve o rascunho pela regra", async () => {
+    const fonte = await ler("app/app/ai/followups/[id]/page.tsx");
+    expect(fonte, "a página parou de importar a regra").toMatch(
+      /import \{ rascunhoDoFluxo \} from "@\/lib\/followup\/rascunho"/,
+    );
+    expect(fonte, "o call site da página sumiu — o canvas volta a abrir em branco").toMatch(
+      /const draft_graph = await rascunhoDoFluxo\(/,
+    );
+    expect(
+      fonte,
+      "o resultado deixou de ser passado adiante: o canvas lê `initialData.draft_graph`",
+    ).toMatch(/\n\s*draft_graph,/);
+  });
+});
