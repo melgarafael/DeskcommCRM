@@ -39,6 +39,8 @@ import { logInvocation } from "@/lib/ai/log-invocation";
 import { elegivelParaWorkerLegado } from "@/lib/ai/agents/no-ar";
 import { renderSystemPrompt } from "@/lib/ai/render-system-prompt";
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
+import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { checkG1, checkG3, checkG4Legal, checkG4Stage } from "@/lib/ai/handoff/triggers";
 import type {
   BotContext,
@@ -611,6 +613,30 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   // G3-02 — assignee de 1ª classe: humano atendendo (kind='user') veta o bot
   // deterministicamente, mesma família de guard de force_human/bot_silenced_until.
   if (c.assignee_kind === "user") return skip("assigned_to_human");
+
+  // GATE DE ELEGIBILIDADE (opt-in por canal — `metadata.ai_gate = 'allowlist'`).
+  // Este worker é o caminho PRÉ-ENGINE: responde as orgs sem versão de agente
+  // publicada. Ele TAMBÉM tem de respeitar o gate — senão liga-se
+  // `ai_gate='allowlist'` num canal, o log não reclama, e a IA segue
+  // respondendo todo mundo por aqui (a "falha-em-verde" que a doutrina condena).
+  // Mesma regra pura que o drain e o turno do agent-engine. Canal 'open' (o
+  // default) → `permite:true`, nada muda. Fail-closed: erro de leitura → skip.
+  try {
+    const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+      organizationId: input.organizationId,
+      conversationId: input.conversationId,
+      agora: new Date(),
+      ttlMs: ttlDaAutorizacaoMs(process.env),
+    });
+    if (elegib !== null && !elegib.permite) {
+      return skip("nao_elegivel_para_ia", elegib.motivo);
+    }
+  } catch (err) {
+    return skip(
+      "nao_elegivel_para_ia",
+      `elegibilidade indeterminada: ${err instanceof Error ? err.message.slice(0, 120) : "erro"}`,
+    );
+  }
 
   // 24h window (IA-01). Use last_inbound_at — webhook updates it on receive.
   if (c.last_inbound_at) {

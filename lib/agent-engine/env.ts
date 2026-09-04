@@ -198,6 +198,12 @@ const envSchema = z.object({
   FLYWHEEL_BATCH_LIMIT: z.coerce.number().int().positive().default(10),
   // Contenção de egress — hosts EXTRA além do Supabase/WAHA (CSV). Fail-closed.
   EGRESS_EXTRA_ALLOWED_HOSTS: z.string().optional(),
+  // Elegibilidade da IA (gate opt-in `channel_sessions.metadata.ai_gate=allowlist`):
+  // janela de validade da autorização de um contato. Fora dela, submissão antiga
+  // não reativa a IA; o turno autorizado renova o carimbo enquanto a conversa
+  // está viva. Só tem efeito nos canais com o gate ligado — canal 'open' (o
+  // default) nunca consulta autorização.
+  AI_ALLOWLIST_TTL_DAYS: z.coerce.number().int().positive().default(21),
 });
 
 export type Env = z.infer<typeof envSchema>;

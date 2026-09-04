@@ -61,6 +61,8 @@ export const AUDIT_ACTIONS = [
   "contact.merge_pending",
   "contact.merged",
   "lgpd.anonymize_executed",
+  // A cascata retomando o que uma execução interrompida não terminou (#310).
+  "lgpd.anonymize_catchup",
   "member.invited",
   "member.accepted",
   "member.role_changed",

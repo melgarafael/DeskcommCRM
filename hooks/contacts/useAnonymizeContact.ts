@@ -8,7 +8,15 @@ interface AnonymizeResponse {
   data: {
     contact_id: string;
     anonymized_at: string | null;
-    action: "anonymized" | "already_anonymized";
+    /**
+     * `resumed` é o desfecho que faltava: o contato já constava anonimizado e a
+     * cascata completou o que tinha ficado para trás. Sem ele, esse caso caía em
+     * `already_anonymized` e a tela dizia que nada acontecera bem na hora em que
+     * a redação pendente acontecia.
+     */
+    action: "anonymized" | "resumed" | "already_anonymized";
+    redacted_lead_ids: string[];
+    redacted_activities: number;
   };
 }
 

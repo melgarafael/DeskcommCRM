@@ -59,7 +59,19 @@ export type SkipReason =
    * rodam na mesma mensagem: o engine responde de verdade e este aqui gasta
    * token à toa e deixa uma linha presa para sempre no inbox de quem instalou.
    */
-  | "engine_owns_reply";
+  | "engine_owns_reply"
+  /**
+   * O canal tem o gate de elegibilidade ligado (`channel_sessions.metadata.ai_gate
+   * = 'allowlist'`) e o contato NÃO foi autorizado por uma origem elegível
+   * (webhook do Respondi, match de campanha, ação de automação, retomada manual)
+   * — ou a autorização expirou. Este worker legado passa pela MESMA regra pura
+   * (`lib/ai/elegibilidade/gate.ts`) que o drain e o turno do agent-engine: não
+   * pode existir um caminho alternativo que responda uma conversa não
+   * autorizada. Também cai aqui quando a leitura da elegibilidade falha —
+   * fail-closed, porque schema pela metade é exatamente quando não se quer a IA
+   * solta.
+   */
+  | "nao_elegivel_para_ia";
 
 export interface BotContext {
   organization_id: string;

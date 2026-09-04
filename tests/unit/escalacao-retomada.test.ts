@@ -192,7 +192,16 @@ describe("devolver o atendimento ao agente", () => {
     expect(
       noContato,
       "sem esta escrita o agente continua morto nos três guards (worker nativo, harness e before-send)",
-    ).toEqual([{ tabela: "contacts", valores: { force_human: false } }]);
+    ).toContainEqual({ tabela: "contacts", valores: { force_human: false } });
+    // Retomada manual = re-autoriza o contato (gate opt-in 'allowlist', 0203):
+    // sem isto, "devolver ao automático" apagaria as travas de handoff e a IA
+    // seguiria muda porque ai_authorized_at continuaria nulo/expirado.
+    expect(noContato).toContainEqual(
+      expect.objectContaining({
+        tabela: "contacts",
+        valores: expect.objectContaining({ ai_authorized_reason: "retomada_manual" }),
+      }),
+    );
   });
 
   it("devolve o comando da conversa: silêncio some, marca de passagem some, dono vira a IA", async () => {

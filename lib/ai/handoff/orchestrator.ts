@@ -27,6 +27,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { moverLeadParaEtapaDeHandoff } from "@/lib/leads/handoff-stage-move";
+import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 
 import { avisarLeadDoCrm } from "./aviso-ao-lead";
 
@@ -98,6 +100,32 @@ export async function triggerHandoff(
       if (since < IDEMPOTENCY_WINDOW_MS && c.last_handoff_reason === input.reason) {
         return { triggered: false, reason: "idempotent_5s" };
       }
+    }
+
+    // GATE DE ELEGIBILIDADE — só se passa bot→humano uma conversa que a IA
+    // PODERIA estar atendendo agora. Se `decidirElegibilidade` já diz não —
+    // porque o gate `allowlist` barra o contato (cliente antigo irritado →
+    // `low_sentiment` do worker de sentimento), OU porque já está de forma
+    // duradoura silenciada/em handoff/com dono humano —, NÃO há o que passar: disparar
+    // mandaria "um humano vai te atender" (às vezes de novo) e mexeria no
+    // estado de uma conversa que não é da IA. Fail-closed: erro de leitura →
+    // não dispara (o evento re-tenta).
+    try {
+      const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        agora: new Date(),
+        ttlMs: ttlDaAutorizacaoMs(process.env),
+      });
+      if (elegib !== null && !elegib.permite) {
+        return { triggered: false, reason: `nao_elegivel:${elegib.motivo}` };
+      }
+    } catch (err) {
+      logger.warn("[handoff] elegibilidade indeterminada — handoff não disparado", {
+        conversation_id: input.conversationId,
+        detail: err instanceof Error ? err.message.slice(0, 160) : "erro",
+      });
+      return { triggered: false, reason: "elegibilidade_indeterminada" };
     }
 
     const nowIso = new Date().toISOString();

@@ -264,24 +264,29 @@ function adminDuble(agente: Record<string, unknown>) {
         };
       }
       // ai_agent_versions. As DUAS consultas da action passam por aqui e se
-      // distinguem pelo select: a de rascunho vigente pede "id, version_number"
-      // (aqui: não há rascunho), a do maior número pede só "version_number".
-      // Um dublê que devolvesse a mesma linha para as duas mandaria a action
-      // pelo ramo do PATCH, e este arquivo mediria o caminho errado.
-      const selDe = (cols: string) => {
+      // distinguem pela FORMA de terminar: a LISTA de versões — de onde
+      // `escolherVersoesDaTela` tira o rascunho vigente — é aguardada direto,
+      // sem `.maybeSingle()`; a do maior número termina em `.maybeSingle()`.
+      // Aqui a lista é VAZIA ("nenhuma versão ainda"), o que manda a action pelo
+      // ramo da criação. Um dublê que devolvesse rascunho na lista a mandaria
+      // pelo PATCH, e este arquivo mediria o caminho errado.
+      //
+      // O `then` é obrigatório e não enfeite: sem ele o `await` da lista devolve
+      // o próprio objeto, `data` vem `undefined`, e o vazio acontece por
+      // acidente — verde que não mede nada.
+      const selDe = () => {
         const sel: Record<string, unknown> = {
           eq: () => sel,
           order: () => sel,
           limit: () => sel,
-          maybeSingle: async () => ({
-            data: cols.includes("id") ? null : { version_number: 1 },
-            error: null,
-          }),
+          maybeSingle: async () => ({ data: { version_number: 1 }, error: null }),
+          then: (r: (v: { data: unknown[]; error: null }) => unknown) =>
+            r({ data: [], error: null }),
         };
         return sel;
       };
       return {
-        select: (cols: string) => selDe(cols),
+        select: () => selDe(),
         insert: (payload: Record<string, unknown>) => {
           gravado.versao = payload;
           return {
@@ -320,7 +325,10 @@ const VERSION_PAYLOAD = {
   knowledge_source_ids: [],
 };
 
-const CADASTRO_ATUAL = { id: AGENTE, kind: "mcp_agent", archived_at: null, name: "Recepção", description: "atende quem chega", priority: 3 };
+// `published_version_id` está aqui porque a action o PEDE no mesmo SELECT e o
+// usa para decidir em qual rascunho escrever. Fixture sem a coluna faz a régua
+// receber `undefined` e mediria um caminho que a produção não tem.
+const CADASTRO_ATUAL = { id: AGENTE, kind: "mcp_agent", archived_at: null, name: "Recepção", description: "atende quem chega", priority: 3, published_version_id: null };
 
 async function salvarNoServidor(cadastro: unknown, agente = CADASTRO_ATUAL) {
   vi.mocked(createAdminClient).mockReturnValue(adminDuble(agente) as never);

@@ -44,6 +44,8 @@ import { logger } from "@/lib/logger";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
+import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
+import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -115,6 +117,7 @@ export async function aplicarEfeitosPosEntrada(
 ): Promise<void> {
   await aplicarOptOut(admin, entrada);
   await abrirDemanda(admin, entrada);
+  await avaliarCampanha(admin, entrada);
   // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
   // vem depois: no Hobby ele estoura o tempo da request e o próximo texto
   // do fluxo ficava esperando o relógio.
@@ -125,6 +128,69 @@ export async function aplicarEfeitosPosEntrada(
     texto: entrada.texto,
   });
   await pedirDespachoDoAgente(admin, entrada);
+}
+
+/**
+ * 2b · A mensagem casa uma campanha registrada? (caso 2 da elegibilidade)
+ *
+ * Campanhas de Meta/Google que levam direto para o WhatsApp: o lead chega com
+ * uma mensagem identificadora ("Quero saber mais sobre X"). Se ela casar uma
+ * campanha em `organizations.settings.campanhas_whatsapp`, o contato fica
+ * elegível para a IA. Só faz sentido consultar quando o canal tem o gate
+ * `allowlist` ligado — no gate 'open' a IA já responde todo mundo. Roda ANTES do
+ * despacho: o evento `ai_agent.dispatch_requested` desta mesma mensagem precisa
+ * já encontrar o contato autorizado.
+ *
+ * Best-effort: qualquer falha aqui vira log e o despacho segue (e cai no
+ * atendimento humano, o lado seguro).
+ */
+async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  if (!entrada.texto || entrada.texto.trim() === "") return;
+  try {
+    const { data: sess } = await admin
+      .from("channel_sessions")
+      .select("metadata")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.channelSessionId)
+      .maybeSingle();
+    const gate = (sess?.metadata as Record<string, unknown> | null)?.ai_gate;
+    if (gate !== "allowlist") return;
+
+    const { data: contato } = await admin
+      .from("contacts")
+      .select("ai_authorized_at")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.contactId)
+      .maybeSingle();
+    if (contato?.ai_authorized_at != null) return; // já elegível — não reescreve a origem
+
+    const { data: org } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", entrada.organizationId)
+      .maybeSingle();
+    const campanhas = lerCampanhas(org?.settings ?? null);
+    const casada = casarCampanha(entrada.texto, campanhas, entrada.channelSessionId);
+    if (casada === null) return;
+
+    await autorizarContatoParaIA(admin, {
+      organizationId: entrada.organizationId,
+      contactId: entrada.contactId,
+      reason: `campanha:${casada.id}`,
+      apenasSeNaoAutorizado: true,
+    });
+    logger.info("pos-entrada: contato autorizado para IA por campanha", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      campanha: casada.id,
+    });
+  } catch (err) {
+    logger.warn("pos-entrada: avaliação de campanha falhou (o despacho segue)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
 }
 
 /**

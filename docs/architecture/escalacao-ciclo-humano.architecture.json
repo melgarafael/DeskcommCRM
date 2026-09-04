@@ -369,6 +369,22 @@
       "type": "table",
       "label": "agent_inbox_items",
       "sublabel": "kind='handoff' — quem assume lê aqui se o cliente foi avisado"
+    },
+    {
+      "id": "ingestSaida",
+      "lane": "borda",
+      "col": 4,
+      "type": "service",
+      "label": "ingestão do canal — mensagem fromMe/outgoing",
+      "sublabel": "lib/waha/ingest.ts handleOutboundFromUserPhone · lib/channels/zernio/ingest.ts"
+    },
+    {
+      "id": "atendimentoManual",
+      "lane": "regra",
+      "col": 4,
+      "type": "service",
+      "label": "lib/escalacao/atendimento-manual.ts",
+      "sublabel": "pausarIaPorAtendimentoManual — pessoa respondeu por fora do CRM (pausa COM PRAZO)"
     }
   ],
   "edges": [
@@ -749,6 +765,24 @@
       "from": "reply",
       "to": "avisoCrm",
       "label": "'Assumir eu' também avisa antes de calar o automático"
+    },
+    {
+      "id": "e64",
+      "from": "ingestSaida",
+      "to": "atendimentoManual",
+      "label": "resposta manual pelo celular = a pessoa assumiu (eco do próprio envio já saiu como dedup)"
+    },
+    {
+      "id": "e65",
+      "from": "atendimentoManual",
+      "to": "conversas",
+      "label": "bot_silenced_until = agora + PRAZO_DO_SILENCIO_MS (60 min), renovado a cada fala humana e NUNCA encurtando um silêncio maior, + last_handoff_reason — NÃO toca ai_authorized_at (a origem do lead é outro estado)"
+    },
+    {
+      "id": "e66",
+      "from": "retomada",
+      "to": "atendimentoManual",
+      "label": "'Devolver ao automático' desfaz esta pausa ANTES da hora (solta a TRAVA 2, a mesma) — sem clique nenhum, o prazo vence e a IA volta sozinha"
     }
   ],
   "cards": [

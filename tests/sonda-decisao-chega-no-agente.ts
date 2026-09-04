@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     const resultado = await getLeadContext(
       pool,
       {} as never,
-      { tenantId: decidida.organization_id, leadId: decidida.contact_id },
+      { tenantId: decidida.organization_id, leadId: decidida.contact_id, fuso: "America/Sao_Paulo" },
       { historyLimit: 20, maxTokens: 1_000 },
     );
     if (!resultado.ok) throw new Error(`getLeadContext falhou: ${resultado.error.message}`);

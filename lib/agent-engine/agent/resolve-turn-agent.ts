@@ -49,6 +49,12 @@
  * shape quebrado) NUNCA derruba o turno — cai no `loadPublishedAgentConfig`
  * de hoje (sem router) com outcome 'classifier_failed' + log.warn. Um lead
  * real está esperando resposta; o router é estritamente aditivo.
+ *
+ * ⚠️ "silêncio não é desfecho possível" (regra 5) vale para os turnos que
+ * CHEGAM aqui. O gate de elegibilidade (migration 0203, canal com
+ * `metadata.ai_gate = 'allowlist'`) barra ANTES — no drain e no início do turno,
+ * via `decidirElegibilidadeDaConversa` — quando o contato não veio de uma origem
+ * elegível. Ali o silêncio É o desfecho, e de propósito.
  */
 import type pg from 'pg';
 

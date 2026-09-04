@@ -143,7 +143,9 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
   return summary;
 }
 
-type ContactEmbed = { tags: string[] | null; is_blocked: boolean | null } | null;
+type ContactEmbed =
+  | { tags: string[] | null; is_blocked: boolean | null; ai_authorized_at: string | null }
+  | null;
 
 /** Production adapter: `SilenceSweepDb` sobre o client service-role real. */
 export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSweepDb {
@@ -191,15 +193,25 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       // só faz sentido enquanto "o fluxo da conversa ainda está ativo".
       const { data, error } = await admin
         .from("conversations")
-        .select("contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked)")
+        .select(
+          "contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at), sessao:channel_session_id(metadata)",
+        )
         .eq("organization_id", orgId)
         .not("last_inbound_at", "is", null)
         .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
       if (error) throw new Error(error.message);
 
-      type Row = { contact_id: string; last_inbound_at: string; contacts: ContactEmbed };
+      type Row = {
+        contact_id: string;
+        last_inbound_at: string;
+        contacts: ContactEmbed;
+        sessao: { metadata: Record<string, unknown> | null } | null;
+      };
       const cutoff = new Date(cutoffIso).getTime();
-      const latest = new Map<string, { at: number; tags: string[]; blocked: boolean }>();
+      const latest = new Map<
+        string,
+        { at: number; tags: string[]; blocked: boolean; gateAllowlist: boolean; autorizado: boolean }
+      >();
       for (const row of (data ?? []) as unknown as Row[]) {
         const at = new Date(row.last_inbound_at).getTime();
         const prev = latest.get(row.contact_id);
@@ -208,6 +220,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
             at,
             tags: row.contacts?.tags ?? [],
             blocked: row.contacts?.is_blocked ?? false,
+            gateAllowlist: row.sessao?.metadata?.ai_gate === "allowlist",
+            autorizado: row.contacts?.ai_authorized_at != null,
           });
         }
       }
@@ -215,6 +229,9 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       const silentIds: string[] = [];
       for (const [contactId, v] of latest) {
         if (v.blocked) continue;
+        // Gate `allowlist`: o follow-up automático também respeita a
+        // elegibilidade — só entra contato que uma origem elegível autorizou.
+        if (v.gateAllowlist && !v.autorizado) continue;
         if (v.at > cutoff) continue; // conversou depois do corte — não é silêncio
         if (segments.length > 0 && !segments.some((s) => v.tags.includes(s))) continue;
         silentIds.push(contactId);

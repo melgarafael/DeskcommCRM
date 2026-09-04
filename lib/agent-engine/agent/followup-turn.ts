@@ -35,6 +35,7 @@ import {
   type LeadCheckpointRow,
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
+import { fusoDaOrganizacao } from './fuso-da-org';
 import type { LeadStateRow } from './lead-state';
 import { loadReentryTemplate, pickReentryVariant } from './reentry-template';
 import {
@@ -450,7 +451,8 @@ async function runFlowDrivenTurn(
 
   if (input.purpose === 'classify') {
     const classes = input.classes ?? [];
-    const context = await getLeadContext(pool, deps.crmCfg, { tenantId: target.tenantId, leadId: target.leadId }, {
+    const fuso = await fusoDaOrganizacao(pool, target.tenantId, runLog);
+    const context = await getLeadContext(pool, deps.crmCfg, { tenantId: target.tenantId, leadId: target.leadId, fuso }, {
       historyLimit: deps.knobs.historyLimit,
       maxTokens: deps.knobs.maxContextTokens,
     });
@@ -480,10 +482,12 @@ async function runFlowDrivenTurn(
   if (esperas.length === 0) {
     throw new Error('turno de planejamento de tempo sem esperas no payload — o engine só o enfileira quando há espera adaptativa');
   }
-  const context = await getLeadContext(pool, deps.crmCfg, { tenantId: target.tenantId, leadId: target.leadId }, {
-    historyLimit: deps.knobs.historyLimit,
-    maxTokens: deps.knobs.maxContextTokens,
-  });
+  const context = await getLeadContext(
+    pool,
+    deps.crmCfg,
+    { tenantId: target.tenantId, leadId: target.leadId, fuso: await fusoDaOrganizacao(pool, target.tenantId, runLog) },
+    { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens },
+  );
   if (!context.ok) {
     throw new Error(`turno de planejamento de tempo do fluxo falhou em get_lead_context (${context.error.code})`);
   }
@@ -614,10 +618,12 @@ async function sendFixedOutbound(
     return false;
   }
 
-  const context = await getLeadContext(pool, deps.crmCfg, { tenantId, leadId }, {
-    historyLimit: deps.knobs.historyLimit,
-    maxTokens: deps.knobs.maxContextTokens,
-  });
+  const context = await getLeadContext(
+    pool,
+    deps.crmCfg,
+    { tenantId, leadId, fuso: await fusoDaOrganizacao(pool, tenantId, runLog) },
+    { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens },
+  );
   if (!context.ok) {
     throw new Error(`envio fixo do follow-up falhou em get_lead_context (${context.error.code})`);
   }

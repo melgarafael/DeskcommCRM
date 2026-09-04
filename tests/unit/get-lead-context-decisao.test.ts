@@ -51,7 +51,7 @@ function dbFalso(decisoes: unknown[], contato = [{ name: "Carlos" }]) {
 }
 
 const KNOBS = { historyLimit: 20, maxTokens: 1_000 };
-const ENTRADA = { tenantId: "org-1", leadId: "contato-1" };
+const ENTRADA = { tenantId: "org-1", leadId: "contato-1", fuso: "America/Sao_Paulo" };
 
 describe("last_human_decision no contexto do turno", () => {
   it("a chave existe mesmo sem decisão nenhuma", async () => {

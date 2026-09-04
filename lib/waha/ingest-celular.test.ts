@@ -129,7 +129,7 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = []): Duplo
       }),
     }),
     // Encadeável em qualquer profundidade/ordem (.eq().in(), .eq().eq(), ...) — o
-    // `silenciarBotPorRetomadaHumana` (ver `lib/waha/ingest.ts`) faz `.update(...).eq("id",
+    // `pausarIaPorAtendimentoManual` (ver `lib/escalacao/atendimento-manual.ts`) faz `.update(...).eq("id",
     // ...).eq("organization_id", ...)`, dois `.eq()` seguidos, diferente do `.eq().in()`
     // que os demais updates deste arquivo já usavam. `await` num objeto plano (não-thenable)
     // simplesmente devolve o objeto — por isso resolver como `{ error: null }` direto

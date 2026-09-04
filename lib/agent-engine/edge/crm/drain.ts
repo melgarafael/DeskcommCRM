@@ -18,6 +18,7 @@ import type pg from 'pg';
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
+import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
 const DRAIN_CONSUMER = 'agent-engine';
 
@@ -46,7 +47,16 @@ export interface DrainKnobs {
   debounceMs: number;
   /** Evento 'processing' órfão volta a 'pending' após isto. */
   reapTimeoutMs: number;
+  /**
+   * Janela de validade da autorização de IA de um contato (gate 'allowlist').
+   * Só consultada em canal com `metadata.ai_gate = 'allowlist'`. Ausente nos
+   * testes que não exercitam o gate — o default de 21 dias em ms é aplicado.
+   */
+  allowlistTtlMs?: number;
 }
+
+/** Default de `allowlistTtlMs` (21 dias) para testes que omitem o knob. */
+const ALLOWLIST_TTL_MS_PADRAO = 21 * 24 * 60 * 60 * 1000;
 
 /** Um tick do drain: claima um lote de eventos e os transforma em jobs. */
 export async function drainTick(
@@ -249,6 +259,73 @@ async function processEvent(
       channel_session_id: p.channel_session_id,
     });
     return 'processado';
+  }
+
+  // ANTI-BACKLOG (toda instalação, sem knob): a mensagem que disparou este
+  // evento ainda é a última inbound da conversa? Se já veio inbound mais nova,
+  // ESTE evento está superado — a mensagem nova tem o próprio evento, e o turno
+  // dela lê o histórico inteiro (esta mensagem inclusa). Sem isto, um worker que
+  // ficou parado (deploy, OOM na VPS) acorda e drena o backlog em ordem de
+  // `created_at`, disparando um turno para CADA mensagem antiga — a IA
+  // respondendo conversa de dias atrás. Vira done, sem job, sem gasto.
+  //
+  // R7: o desempate. `order by sent_at desc, id desc` cai no `id` — uuid
+  // aleatório, não cronológico — sempre que dois inbound compartilham `sent_at`
+  // (relógio do provider repetido, ou duas mensagens na mesma janela sem
+  // timestamp). "A última" saía por sorteio e podia eleger a ANTIGA, disparando
+  // o turno dela. `coalesce(sent_at, created_at)` (defensivo — `sent_at` é
+  // `not null default now()` hoje, mas o padrão do repo, ver migration 0027, não
+  // confia nisso) com desempate por `created_at` (ordem de INGESTÃO, uma
+  // mensagem por webhook) dá recência determinística.
+  const { rows: ultimaInbound } = await pool.query<{ id: string }>(
+    `select id from messages
+     where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
+     order by coalesce(sent_at, created_at) desc, created_at desc, id desc
+     limit 1`,
+    [event.organization_id, p.conversation_id],
+  );
+  if (ultimaInbound[0] !== undefined && ultimaInbound[0].id !== p.inbound_message_id) {
+    log.info('drain: evento superado por inbound mais recente — turno pulado (sem gasto)', {
+      event_id: event.id,
+      inbound_message_id: p.inbound_message_id,
+      ultima_inbound_id: ultimaInbound[0].id,
+    });
+    return 'processado';
+  }
+
+  // GATE DE ELEGIBILIDADE (opt-in por canal — `metadata.ai_gate = 'allowlist'`).
+  // Num canal 'open' (o default), `decidirElegibilidade` devolve `permite:true`
+  // com motivo 'gate_aberto' e nada muda. Num canal 'allowlist', a IA só assume
+  // se o CONTATO estiver autorizado por uma origem elegível (Respondi, campanha,
+  // automação, retomada manual) e dentro da janela. Bloqueio por allowlist =
+  // done, sem job, sem gasto — a conversa fica para atendimento humano.
+  //
+  // `force_human` / silêncio / dono humano bloqueiam em QUALQUER modo: o turno já
+  // os respeitava (`isLeadInHandoff`), aqui a decisão só se antecipa para não
+  // enfileirar. O turno revalida (defesa em profundidade).
+  try {
+    const elegib = await decidirElegibilidadeDaConversa(pool, {
+      organizationId: event.organization_id,
+      conversationId: p.conversation_id,
+      agora: new Date(),
+      ttlMs: knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
+    });
+    if (elegib !== null && !elegib.permite) {
+      log.info('drain: conversa não elegível para IA — turno pulado (sem gasto)', {
+        event_id: event.id,
+        conversation_id: p.conversation_id,
+        motivo: elegib.motivo,
+      });
+      return 'processado';
+    }
+  } catch (err) {
+    // Falha da consulta de elegibilidade NÃO derruba o drain e NÃO bloqueia o
+    // turno: um lead real pode estar esperando. Degrada para o fluxo antigo
+    // (enfileira) — o turno tem a segunda checagem.
+    log.warn('drain: checagem de elegibilidade falhou — seguindo para o turno', {
+      event_id: event.id,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+    });
   }
 
   // Mídia ainda virando texto: ESPERAR. Sem isto o turno era despachado no mesmo

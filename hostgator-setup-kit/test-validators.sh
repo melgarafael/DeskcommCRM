@@ -434,6 +434,30 @@ if [ ! -f "$EXEMPLO" ]; then
   printf '  — pulado: %s não existe (kit fora do repositório)\n' "$EXEMPLO"
 else
   GRAVA="$(grep -oE '^[[:space:]]*envq [A-Z_0-9]+' install.sh | awk '{print $2}' | sort -u)"
+  # VACUIDADE — a lista de escrita é a régua deste caso, e uma régua CURTA acusa
+  # o inocente. `$GRAVA` sai de um pipeline de três estágios; quando a máquina
+  # está saturada ele às vezes volta truncado, e o efeito não é um teste que
+  # falha em reconhecer o defeito: é um teste que INVENTA um, nomeando chaves que
+  # o install.sh grava na linha seguinte.
+  #
+  # Medido duas vezes com load average acima de 30, no mesmo dia e no mesmo
+  # arquivo: uma rodada acusou VAPID_PUBLIC_KEY, outra ANTHROPIC_API_KEY e
+  # WAHA_HMAC_SECRET — as três com `envq` presente no install.sh, e as duas
+  # rodadas seguintes verdes. Conjuntos diferentes a cada vez é a assinatura de
+  # régua truncada, não de defeito.
+  #
+  # O piso não precisa acompanhar o crescimento do install.sh: ele separa
+  # "pipeline morreu no meio" de "lista completa", e qualquer valor bem abaixo do
+  # real serve. Para ver quantas há hoje:
+  #   grep -cE '^[[:space:]]*envq [A-Z_0-9]+' hostgator-setup-kit/install.sh
+  n_grava="$(printf '%s\n' "$GRAVA" | grep -c . || true)"
+  if [ "${n_grava:-0}" -lt 30 ]; then
+    printf '  ✗ a lista de escrita voltou com %s chave(s) — a régua está truncada, não o install.sh\n' "${n_grava:-0}"
+    printf '     (cenário INCONCLUSIVO: sem régua inteira, toda acusação abaixo seria falsa)\n'
+    fail=1
+    GRAVA=""
+    novas=""
+  else
   novas=""
   for k in $(grep -oE '^[A-Z_0-9]+=' "$EXEMPLO" | tr -d '=' | sort -u); do
     printf '%s\n' "$GRAVA" | grep -qx "$k" && continue
@@ -446,6 +470,7 @@ else
     fail=1
   else
     printf '  ✓ nenhuma chave nova fora da lista de escrita\n'
+  fi
   fi
   estagnada=""
   for k in $DIVIDA; do
@@ -1291,7 +1316,11 @@ montar_vps() {
   local raiz="$1" pasta="$2"
   VPS_RAIZ="$raiz"; VPS_PROJ="$raiz/$pasta"; VPS_LOG="$raiz/docker.log"
   mkdir -p "$raiz/bin" "$VPS_PROJ"
-  cp install.sh update.sh backup.sh _common.sh "$raiz/"
+  # `marca-emails.sh` entra porque o install.sh o INVOCA no fim (passo 7). Sem
+  # ele no sandbox, aquele `bash` falhava, o `|| true` engolia, e todo cenário
+  # media uma instalação em que o passo dos e-mails de acesso simplesmente não
+  # aconteceu — o elo mais fácil de quebrar sem ninguém ver.
+  cp install.sh update.sh backup.sh _common.sh marca-emails.sh "$raiz/"
   : > "$VPS_PROJ/docker-compose.prod.yml"
   cat > "$raiz/bin/docker"
   # Só o v_supabase_url exige resposta online (000 reprova); os outros toleram.
@@ -1407,16 +1436,17 @@ chegou_na_deteccao() {
 #   printf '%s' "${RESTO_DAS_PERGUNTAS%%c*}" | grep -c ''
 # → era 9 antes de APP_ACCENT_HEX entrar em FIELDS, 10 depois dela, e é 11
 #   desde que APP_LOCALE (o idioma da instalação) entrou logo após APP_NAME.
-RESTO_DAS_PERGUNTAS=$'\n\n\n\n\n\n\n\n\n\n\nc\n'
+RESTO_DAS_PERGUNTAS=$'\n\n\n\n\n\n\n\n\n\n\n\nc\n'
 
-# A posição da cor DENTRO da fila acima — 1 provedor + APP_IMAGE + OPENAI +
-# APP_NAME + APP_LOCALE e ela é a 6ª. Fica numa variável porque a fila com a cor RESPONDIDA
+# A posição da cor DENTRO da fila acima — SUPABASE_ACCESS_TOKEN + 1 provedor +
+# APP_IMAGE + OPENAI + APP_NAME + APP_LOCALE e ela é a 7ª. Fica numa variável porque a fila com a cor RESPONDIDA
 # (abaixo) é DERIVADA da de cima em vez de copiada: duas filas posicionais
 # mantidas à mão desincronizam no primeiro campo novo, e aí uma passa e a outra
 # reprova com um nome que não é o dela.
-POSICAO_DA_COR=6
-# O idioma vem logo antes da cor: 1 provedor + APP_IMAGE + OPENAI + APP_NAME.
-POSICAO_DO_IDIOMA=5
+POSICAO_DA_COR=7
+# O idioma vem logo antes da cor: SUPABASE_ACCESS_TOKEN + 1 provedor + APP_IMAGE
+# + OPENAI + APP_NAME.
+POSICAO_DO_IDIOMA=6
 COR_DE_TESTE='#f2c94c'
 # fila_com <fila> <posição> <valor> → a mesma fila, com uma resposta no lugar de
 # um Enter. `awk` porque a substituição é por NÚMERO DE LINHA: um `sed s///`
@@ -2223,6 +2253,59 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
 ) || fail=1
 rm -rf "$TMP_DDL_C"
 
+echo "e-mails de acesso: quem JÁ instalou também é avisado — uma vez só"
+# A população realmente quebrada hoje é quem instalou ANTES de a entrevista pedir
+# o token: o Site URL do projeto dela está em `localhost:3000` e nada a alcança.
+# O `install.sh` dela não perguntou nada, e o bloco de e-mails do `update.sh` só
+# roda COM token — então a atualização passava calada por cima do defeito.
+#
+# As DUAS metades são medidas aqui, e a segunda é a que impede o conserto de
+# virar um resmungo mensal: avisa na primeira atualização, e nunca mais.
+TMP_AVISO="$(mktemp -d)"
+(
+  montar_vps "$TMP_AVISO" "crmaviso" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  (cd "$VPS_PROJ" && git init -q -b main . \
+    && git -c user.email=t@exemplo -c user.name=teste add -A \
+    && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+    && git tag v9.9.9) >/dev/null 2>&1
+
+  extra="INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'"
+  # Sem token — o estado de quem instalou pelo caminho documentado.
+  unset SUPABASE_ACCESS_TOKEN
+  um="$(rodar update.sh "" "$extra")"
+  dois="$(rodar update.sh "" "$extra")"
+
+  # CONTROLE POSITIVO: sem chegar ao fim, a ausência do aviso não mede nada.
+  if ! printf '%s' "$um" | grep -q 'Atualização concluída'; then
+    printf '  ✗ o update.sh não chegou ao fim — cenário inconclusivo, não verde\n'
+    printf '     última linha: %s\n' "$(printf '%s' "$um" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | tail -1)"
+    exit 1
+  fi
+  if ! printf '%s' "$um" | grep -q 'URL Configuration'; then
+    printf '  ✗ a 1ª atualização passou calada pelo Site URL — quem já instalou não fica sabendo\n'
+    printf '     (o Site URL dele está em localhost:3000 e ninguém consegue redefinir a senha)\n'
+    exit 1
+  fi
+  # O domínio PREENCHIDO, não um placeholder.
+  if ! printf '%s' "$um" | grep -q 'https://crm.exemplo.com.br/auth/confirm'; then
+    printf '  ✗ o aviso não traz o domínio preenchido — quem lê não sabe o que escrever\n'; exit 1
+  fi
+  if printf '%s' "$dois" | grep -q 'URL Configuration'; then
+    printf '  ✗ a 2ª atualização repetiu o aviso — atualização que resmunga ensina a ignorar a saída\n'; exit 1
+  fi
+  printf '  ✓ a 1ª atualização avisa (com o domínio preenchido) e a 2ª fica calada\n'
+) || fail=1
+rm -rf "$TMP_AVISO"
+
 echo "DDL: nenhum script do kit manda a string do APP para o Postgres"
 # A guarda de CLASSE. Os três cenários acima provam o install.sh e o update.sh
 # pelo comportamento; esta linha alcança os irmãos que nenhuma fixture roda
@@ -2419,6 +2502,231 @@ elif ! cmp -s "$CRONTAB_REAL_ANTES" "$CRONTAB_REAL_DEPOIS"; then
 else
   printf '  ✓ o kit agendou %s linha(s) — todas no sandbox, o crontab real intacto\n' \
     "$(grep -c '# deskcomm:' "$CRONTAB_SANDBOX")"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
+# A URL DOS E-MAILS DE ACESSO — a pendência aparece na TELA FINAL (#431/#426)
+# ───────────────────────────────────────────────────────────────────────────
+#
+# Sem `SUPABASE_ACCESS_TOKEN`, o Site URL do projeto Supabase fica em
+# `localhost:3000`, e o link de "esqueci minha senha" leva a uma máquina que não
+# existe fora do laptop de quem desenvolve. O `marca-emails.sh` já avisava — no
+# meio de um log de dez minutos, ~200 linhas antes de uma tela verde escrita
+# "Instalação concluída!". Ninguém volta para ler.
+#
+# O que este cenário mede é a TELA FINAL: ela tem de nomear o passo que falta e
+# trazer o domínio já preenchido, para o dono resolver sem procurar nada.
+TMP_URL_EMAIL="$(mktemp -d)"
+(
+  montar_vps "$TMP_URL_EMAIL" "crmurl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  # O estado de TODA instalação feita pelo caminho documentado: sem o token.
+  unset SUPABASE_ACCESS_TOKEN
+  saida="$(rodar install.sh --yes)"
+
+  # CONTROLE POSITIVO: se a instalação nem chegou ao fim, a ausência do bloco
+  # abaixo não significa nada — seria sonda cega lida como aprovação.
+  if ! printf '%s' "$saida" | grep -q "Instalação concluída"; then
+    printf '  ✗ a instalação não chegou à tela final — cenário inconclusivo, não verde\n'; exit 1
+  fi
+
+  # ⚠ A MEDIÇÃO É SOBRE O QUE VEM DEPOIS DA TELA FINAL, e isso não é detalhe.
+  # O `marca-emails.sh` já imprime "URL Configuration" e o domínio ~200 linhas
+  # ANTES — que é justamente o problema desta issue. Procurar essas strings na
+  # saída INTEIRA aprova o defeito: medido, com o bloco novo removido o cenário
+  # ficava verde. Só o rabo da saída distingue "avisou onde ninguém lê" de
+  # "avisou onde a pessoa está olhando".
+  rabo="${saida##*Instalação concluída}"
+  faltou=""
+  printf '%s' "$rabo" | grep -q "URL Configuration" || faltou="${faltou} URL-Configuration"
+  printf '%s' "$rabo" | grep -q "Site URL" || faltou="${faltou} Site-URL"
+  # O domínio PREENCHIDO, não um placeholder: quem instala não deve ter de
+  # descobrir qual endereço escrever.
+  printf '%s' "$rabo" | grep -q "https://crm.exemplo.com.br/auth/confirm" \
+    || faltou="${faltou} Redirect-URL-com-o-dominio"
+  if [ -n "$faltou" ]; then
+    printf '  ✗ a tela final não avisa o que falta para os e-mails de acesso funcionarem:%s\n' "$faltou"
+    printf '     (sem isso, ninguém consegue redefinir a própria senha e o dono não sabe por quê)\n'
+    exit 1
+  fi
+  printf '  ✓ a tela final repete a pendência do Site URL, com o domínio preenchido\n'
+) || fail=1
+
+# A entrevista PERGUNTA o token — senão o caminho automático nunca é alcançado
+# por quem segue o README, e a pendência acima seria permanente.
+if ! grep -q 'SUPABASE_ACCESS_TOKEN|' ./install.sh; then
+  printf '  ✗ a entrevista do install.sh não pergunta o SUPABASE_ACCESS_TOKEN\n'
+  printf '     (sem ele o marca-emails.sh sai calado e o Site URL fica em localhost)\n'
+  fail=1
+elif grep -qE '^\s*envq SUPABASE_ACCESS_TOKEN' ./install.sh; then
+  # Ele abre a Management API, que cria e apaga projetos. Guardá-lo numa VPS
+  # trocaria um bug de primeira impressão por um passivo de segurança.
+  printf '  ✗ o SUPABASE_ACCESS_TOKEN está sendo gravado no .env — ele é token de CONTA\n'
+  fail=1
+else
+  printf '  ✓ a entrevista pergunta o token e não o guarda no .env\n'
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
+# O ✓ VERDE DOS E-MAILS TEM DE PROVAR O SITE URL, não só os modelos
+# ───────────────────────────────────────────────────────────────────────────
+#
+# `marca-emails.sh` declarava sucesso relendo o MARCADOR — que prova os MODELOS
+# e nada mais. O `site_url` viaja no MESMO PATCH e pode não pegar: a API aceita e
+# ignora (o cabeçalho do próprio script adverte contra isso), ou o passo 4
+# preserva de propósito um Site URL que o operador escolheu. Nos dois casos saía
+# "✓ configurados e CONFERIDOS", exit 0, NENHUMA pendência escrita — e a tela
+# final da instalação ficava muda enquanto o link do "esqueci minha senha"
+# continuava levando para outro lugar. Falha em verde, que é a pior.
+#
+# O dublê de `curl` reproduz exatamente isso: devolve o que o PATCH mandou (logo,
+# COM o marcador — o caminho verde é alcançado de verdade) e força o `site_url`
+# de volta para outro domínio.
+TMP_SITEURL="$(mktemp -d)"
+(
+  KIT_AQUI="$PWD"
+  cp "$KIT_AQUI/marca-emails.sh" "$KIT_AQUI/_common.sh" "$TMP_SITEURL/" || exit 1
+  mkdir -p "$TMP_SITEURL/../supabase/templates" 2>/dev/null
+  # Os modelos moram em ../supabase/templates relativo ao script.
+  mkdir -p "$TMP_SITEURL/kit" "$TMP_SITEURL/supabase/templates"
+  cp "$KIT_AQUI/marca-emails.sh" "$KIT_AQUI/_common.sh" "$TMP_SITEURL/kit/"
+  cp "$KIT_AQUI/../supabase/templates/confirmation.html" \
+     "$KIT_AQUI/../supabase/templates/recovery.html" "$TMP_SITEURL/supabase/templates/" || exit 1
+
+  mkdir -p "$TMP_SITEURL/bin"
+  cat > "$TMP_SITEURL/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+# Dublê da Management API. Guarda o corpo do PATCH e o devolve nos GETs
+# seguintes — com o site_url trocado por outro domínio, que é o defeito.
+ESTADO="$TMPDIR_STUB/estado.json"
+corpo=""; metodo=GET
+prev=""
+for a in "$@"; do
+  case "$prev" in -X) metodo="$a";; -d) corpo="$a";; esac
+  prev="$a"
+done
+if [ "$metodo" = PATCH ]; then
+  printf '%s' "$corpo" > "$ESTADO"
+  printf '{}'
+  exit 0
+fi
+if [ -s "$ESTADO" ]; then
+  sed 's#"site_url": "[^"]*"#"site_url": "https://outro-dominio.exemplo.com"#' "$ESTADO"
+else
+  printf '{"site_url": "https://outro-dominio.exemplo.com", "uri_allow_list": ""}'
+fi
+STUB
+  chmod +x "$TMP_SITEURL/bin/curl"
+
+  PEND="$TMP_SITEURL/pendencia.txt"
+  saida="$(cd "$TMP_SITEURL/kit" && PATH="$TMP_SITEURL/bin:$PATH" \
+    TMPDIR_STUB="$TMP_SITEURL" PENDENCIA_ARQUIVO="$PEND" \
+    SUPABASE_ACCESS_TOKEN=sbp_de_teste \
+    NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijklm.supabase.co \
+    NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br \
+    APP_NAME='Loja Teste' bash ./marca-emails.sh --env /dev/null 2>&1)"; rc=$?
+
+  # CONTROLE POSITIVO: se o dublê não levou o script até o caminho VERDE, a
+  # ausência de pendência abaixo não mede nada — mediria um script que morreu.
+  if ! printf '%s' "$saida" | grep -q 'CONFERIDOS'; then
+    printf '  ✗ o dublê não levou o script ao caminho verde — cenário inconclusivo, não verde\n'
+    printf '     (rc=%s, última linha: %s)\n' "$rc" \
+      "$(printf '%s' "$saida" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | tail -1)"
+    exit 1
+  fi
+  if [ "$rc" -ne 0 ]; then
+    printf '  ✗ o script saiu %s — ele NÃO pode derrubar o install.sh\n' "$rc"; exit 1
+  fi
+  if [ ! -s "$PEND" ]; then
+    printf '  ✗ o Site URL ficou em outro domínio e NENHUMA pendência foi escrita\n'
+    printf '     (o ✓ verde provou só os modelos; a tela final da instalação fica muda\n'
+    printf '      e ninguém consegue redefinir a própria senha)\n'
+    exit 1
+  fi
+  if ! grep -q 'outro-dominio.exemplo.com' "$PEND"; then
+    printf '  ✗ a pendência não diz ONDE o Site URL está — quem lê não sabe o que conferir\n'; exit 1
+  fi
+  printf '  ✓ modelos no ar mas Site URL em outro domínio: o script anota a pendência (não some no verde)\n'
+) || fail=1
+rm -rf "$TMP_SITEURL"
+
+# E a tela final da instalação REPETE o motivo, em vez de descartá-lo: o arquivo
+# de pendência já era escrito e nunca lido.
+if ! grep -q 'PENDENCIA_EMAIL"$' ./install.sh && ! grep -q 'sed .*PENDENCIA_EMAIL' ./install.sh; then
+  printf '  ✗ a tela final não mostra o motivo gravado pelo marca-emails.sh\n'; fail=1
+else
+  printf '  ✓ a tela final repete o motivo que o passo automático encontrou\n'
+fi
+
+# —— ...e também não o guarda no RASCUNHO de retomada ——
+#
+# A guarda acima é um `grep` por `envq SUPABASE_ACCESS_TOKEN`, e `.env` é OUTRO
+# ARQUIVO: ela é cega para esta categoria inteira. O `ask_one` chama
+# `save_partial` para toda resposta aceita, e `save_partial` escreve em
+# `.env.partial` — então o token de CONTA ficava no disco desde a pergunta até o
+# `rm -f` que só roda depois de o `.env` ser escrito, e qualquer aborto no meio o
+# deixava lá (a tentativa seguinte ainda o recarregava, com "✓ retomando").
+# Isso desmentia a promessa escrita em três lugares — README, o comentário do
+# campo, e o fragmento em `.changes/`.
+#
+# Este cenário mede COMPORTAMENTO, não texto: roda o `ask_one` de verdade e
+# procura o valor no disco. Ele tem controle positivo (uma chave que DEVE ser
+# guardada, respondida na mesma sessão) — sem ele, um `save_partial` quebrado de
+# qualquer outro jeito deixaria o arquivo vazio e o teste ficaria verde pelo
+# motivo errado.
+TMP_RASCUNHO="$(mktemp -d)"
+(
+  KIT_AQUI="$PWD"
+  cd "$TMP_RASCUNHO" || exit 1
+  cp "$KIT_AQUI/install.sh" "$KIT_AQUI/_common.sh" . || exit 1
+  INSTALL_SH_LIB=1 . ./install.sh >/dev/null 2>&1
+  set +e   # o install.sh liga `set -e`; aqui as sondas precisam poder sair != 0
+
+  # Controle positivo primeiro: se ESTA não for guardada, a ausência do token
+  # abaixo não prova nada.
+  printf 'sr_CHAVE_DE_SERVICO_DE_TESTE\n' \
+    | ask_one SUPABASE_SERVICE_ROLE_KEY 'SR' '' '' secret '' >/dev/null 2>&1
+  printf 'sbp_TOKEN_DE_CONTA_DE_TESTE\n' \
+    | ask_one SUPABASE_ACCESS_TOKEN 'Token' '' '' secret opcional >/dev/null 2>&1
+
+  if ! grep -q 'sr_CHAVE_DE_SERVICO_DE_TESTE' .env.partial 2>/dev/null; then
+    printf '  ✗ sonda cega: nem a chave que DEVE ser guardada apareceu no rascunho\n'
+    printf '     (cenário inconclusivo, não verde — sem controle positivo a ausência do token não mede nada)\n'
+    exit 1
+  fi
+
+  # O valor, em QUALQUER arquivo do diretório — não só no `.env.partial`, e não
+  # o nome da variável: um `.tmp.$$` deixado para trás vaza o mesmo segredo.
+  vazou="$(grep -rl 'sbp_TOKEN_DE_CONTA_DE_TESTE' . 2>/dev/null | tr '\n' ' ')"
+  if [ -n "$vazou" ]; then
+    printf '  ✗ o SUPABASE_ACCESS_TOKEN foi para o disco:%s\n' " $vazou"
+    printf '     (é token de CONTA — abre a Management API, que cria e apaga projetos.\n'
+    printf '      O README promete que ele "não fica salvo"; um aborto antes do fim o deixava lá)\n'
+    exit 1
+  fi
+
+  # E o efeito colateral do conserto não pode ser perder a retomada: o que o
+  # rascunho existe para guardar continua guardado.
+  if [ "$(valor_no_env .env.partial SUPABASE_SERVICE_ROLE_KEY)" != 'sr_CHAVE_DE_SERVICO_DE_TESTE' ]; then
+    printf '  ✗ pular o token levou junto o resto do rascunho — a retomada quebrou\n'; exit 1
+  fi
+  printf '  ✓ o token de conta não entra no rascunho, e a retomada das outras respostas segue de pé\n'
+) || fail=1
+rm -rf "$TMP_RASCUNHO"
+
+# E a tela DIZ que o token vai ser perguntado de novo. Sem isso, quem retoma vê
+# "N respostas guardadas" e em seguida a mesma pergunta — que lê como defeito.
+if ! grep -q 'nunca entra no rascunho' ./install.sh; then
+  printf '  ✗ a tela de retomada não avisa que o token será perguntado de novo\n'; fail=1
+else
+  printf '  ✓ a tela de retomada avisa que o token de conta é perguntado de novo\n'
 fi
 
 echo

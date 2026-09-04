@@ -30,6 +30,18 @@
  * "Vigente" é o ponto: um rascunho anterior à publicada foi superado por ela.
  * Ele não abre no editor e não aparece no botão de publicar — oferecer publicar
  * um texto que a tela não está mostrando é a versão pior do mesmo defeito.
+ *
+ * ─── O nome diz "tela", mas quem GRAVA também pergunta aqui ─────────────────
+ *
+ * `saveAgentDraftAction` decide por esta mesma função em qual rascunho a escrita
+ * cai. Enquanto ele tinha régua própria ("o rascunho de maior número"), as duas
+ * discordavam exatamente no rascunho superado: a tela abria a publicada e a
+ * escrita ia para o rascunho velho — que a tela não reabre, o botão não publica,
+ * e cujo conteúdo, prometido no Histórico, era sobrescrito em silêncio.
+ *
+ * Por isso a régua é UMA, e `tests/unit/rascunho-superado-nao-e-regravado.test.ts`
+ * cobra que todo chamador de produção passe o ponteiro — o argumento opcional
+ * abaixo existe para o histórico da migração, não para ser omitido.
  */
 
 /** O mínimo que a decisão precisa de uma versão. */

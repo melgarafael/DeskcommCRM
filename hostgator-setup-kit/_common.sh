@@ -641,12 +641,56 @@ set_env_var() {
 }
 
 # Resolve o UUID de um usuário pelo e-mail (admin API do Supabase).
+#
+# ── O `filter` do GoTrue é BUSCA POR SUBSTRING, não expressão ────────────────
+# Esta função pedia `?filter=email.eq.<email>` — sintaxe do PostgREST, que o
+# GoTrue não fala. Ele trata a string inteira como termo de busca, nenhum e-mail
+# contém "email.eq.", e a resposta é SEMPRE vazia. Medido em 2026-08-31 contra o
+# projeto de produção, com um e-mail que existe:
+#
+#   GET /auth/v1/admin/users?filter=email.eq.<existente>  → 200 {"users":[]}
+#   GET /auth/v1/admin/users?filter=<existente>           → 200 {"users":[<ele>]}
+#
+# Consequência: `reset-password.sh` morria com "Usuário '<email>' não
+# encontrado" para TODO e-mail — o único caminho de recuperação de senha de uma
+# instalação sem SMTP, que é o estado normal de um self-host, e o mesmo comando
+# que o CLAUDE.md do kit manda usar quando a pessoa se tranca fora.
+#
+# ── Por que o casamento tem de ser EXATO aqui ───────────────────────────────
+# Justamente por ser substring, `ana@empresa.com` casa também
+# `mariana@empresa.com`. Um `head -1` cego devolveria o UUID da outra pessoa
+# numa função cujo único consumidor TROCA SENHA. O padrão abaixo ancora no
+# prefixo do objeto de usuário (id→aud→role→email, nessa ordem), que nenhum
+# objeto aninhado de `identities` tem — e exige o e-mail inteiro, com os pontos
+# escapados (em BRE `.` casa qualquer caractere, e sem escapar
+# `elias.gervanno@x` casaria `eliasXgervanno@x`).
+#
+# Falha FECHADA: se o GoTrue mudar a ordem dos campos, o padrão não casa e a
+# função devolve vazio — quem chama morre com "não encontrado", que é ruim mas
+# recuperável. Devolver o UUID errado, não.
+#
+# ── Por que o `|| return 0` do fim não é enfeite ────────────────────────────
+# `_common.sh` roda sob `set -euo pipefail`, e o consumidor resolve o UUID numa
+# ATRIBUIÇÃO: `uid="$(owner_id_by_email "$EMAIL")"`. O status da atribuição é o
+# da substituição, então uma função que devolve não-zero mata o script ALI — na
+# linha de cima do `[ -n "$uid" ] || die "Usuário não encontrado."`, que nunca
+# chega a rodar. E o `grep` devolve 1 justamente quando não casa ninguém, que é
+# o caso em que a mensagem existe para falar.
+#
+# Medido em 2026-09-03 contra o GoTrue local v2.188.1, e-mail inexistente, as
+# duas linhas reais do reset-password.sh: rc=1 e NENHUMA saída — o operador que
+# erra uma letra no endereço não vê aviso nenhum, só o prompt de volta. "Não
+# encontrado" era uma mensagem inalcançável. O `|| return 0` põe a decisão onde
+# ela pertence: a função devolve VAZIO, e quem chama decide o que dizer.
 owner_id_by_email() {
-  local email="$1"
-  curl -fsS "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?filter=email.eq.${email}" \
+  local email="$1" resp esc
+  resp="$(curl -fsS "${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?filter=${email}" \
     -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-    -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" 2>/dev/null \
-    | grep -o '"id":"[0-9a-f-]\{36\}"' | head -1 | sed 's/.*:"//;s/"//'
+    -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" 2>/dev/null)" || return 0
+  esc="$(printf '%s' "$email" | sed 's/[.[\*^$]/\\&/g')"
+  printf '%s' "$resp" \
+    | grep -o "\"id\":\"[0-9a-f-]\{36\}\",\"aud\":\"[^\"]*\",\"role\":\"[^\"]*\",\"email\":\"${esc}\"" \
+    | head -1 | sed 's/^"id":"//;s/".*//' || return 0
 }
 
 # Ativa (idempotente) o cron que dispara o drain de eventos a cada minuto. SEM

@@ -18,6 +18,8 @@ import { z } from "zod";
 
 import { resolverAgenteDaConversa } from "@/lib/ai/agents/agente-da-conversa";
 import { computeCost } from "@/lib/ai/cost";
+import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { DEFAULT_CLASSIFIER_MODEL, isAiGatewayConfigured } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { logInvocation } from "@/lib/ai/log-invocation";
@@ -115,6 +117,29 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     const body = (message.body ?? "").trim();
     if (!body) {
       return { skipped: true, reason: "empty_body" };
+    }
+
+    // ── Guard: elegibilidade da IA ────────────────────────────────────────
+    // O único efeito deste worker é alimentar o handoff por sentimento
+    // (`ai.sentiment_alert` → `triggerHandoff`). Numa conversa que o gate
+    // `allowlist` barra, `triggerHandoff` já se recusa — então classificar aqui
+    // seria só queimar um Haiku à toa. Pula cedo. `open` (o default) segue.
+    // Fail-closed: erro de leitura → pula (sem custo, sem efeito).
+    const convIdParaGate = conversationId ?? (message.conversation_id as string | null);
+    if (convIdParaGate) {
+      try {
+        const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+          organizationId: event.organization_id,
+          conversationId: convIdParaGate,
+          agora: new Date(),
+          ttlMs: ttlDaAutorizacaoMs(process.env),
+        });
+        if (elegib !== null && elegib.bloqueioPorAllowlist) {
+          return { skipped: true, reason: "nao_elegivel_para_ia" };
+        }
+      } catch {
+        return { skipped: true, reason: "elegibilidade_indeterminada" };
+      }
     }
 
     // ── Qual agente atende ESTA conversa? ─────────────────────────────────

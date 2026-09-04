@@ -26,6 +26,7 @@ import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 
 const TIPO = "send_ai_message";
 
@@ -102,6 +103,15 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   // ─── O envio ───────────────────────────────────────────────────────────────
   try {
     const conversationId = await ensureConversation(ctx.admin, ctx.organizationId, contact.id, sessionId);
+    // ELEGIBILIDADE: a IA vai FALAR com este contato agora, por decisão de uma
+    // regra de automação (tipicamente o `lead.created` de um formulário). Isso o
+    // torna elegível para a resposta dele ser atendida — sem isto, no gate
+    // `allowlist` a IA abriria a conversa e ignoraria o retorno do lead.
+    await autorizarContatoParaIA(ctx.admin, {
+      organizationId: ctx.organizationId,
+      contactId: contact.id,
+      reason: `automacao:${ctx.ruleId}`,
+    });
     await espacarEnvio(sessionId);
     const message = await sendMessageHandler(
       ctx.admin,

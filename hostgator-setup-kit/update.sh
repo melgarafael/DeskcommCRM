@@ -181,8 +181,25 @@ fi
 #  - sem o token, o script imprimiria o passo manual — útil UMA vez, na
 #    instalação, e ruído em toda atualização a partir daí. Atualização que
 #    resmunga toda vez ensina a ignorar a saída dela.
+#
+# E sem o token, UMA vez na vida: quem instalou antes de a entrevista pedir o
+# token tem o Site URL do projeto em `localhost:3000` — o link de "esqueci minha
+# senha" leva a uma máquina que não existe fora do laptop de quem desenvolve.
+# Esse parque não é alcançado por nada: o `install.sh` dele não perguntou o
+# token, e o bloco acima só roda com token. Sem esta linha, a população
+# REALMENTE quebrada hoje nunca fica sabendo.
+#
+# Uma vez, e nunca mais — o marcador em disco garante isso, que é o que separa
+# um recado de um resmungo mensal. E o texto CONFERE, não acusa: quem já
+# configurou à mão está certo, e ler "seus e-mails estão quebrados" numa
+# atualização que correu bem seria alarme falso na cara de quem fez tudo certo.
+AVISO_SITE_URL=""
+MARCA_AVISO_SITE_URL="$PROJECT_DIR/.deskcomm-site-url-avisado"
 if [ -n "${SUPABASE_ACCESS_TOKEN:-}" ]; then
   bash "$KIT_DIR/marca-emails.sh" --projeto "$PROJECT_DIR" || true
+  : > "$MARCA_AVISO_SITE_URL" 2>/dev/null || true   # o passo automático rodou
+elif [ ! -e "$MARCA_AVISO_SITE_URL" ]; then
+  AVISO_SITE_URL=1
 fi
 
 # ── 5. App novo ──────────────────────────────────────────────────────────────
@@ -278,6 +295,30 @@ if [ -n "$ok" ]; then
   # e o worker seguia um canal móvel. Agora ele sabe que existiu e que acabou.
   if [ -n "$PIN_FALTANDO_ANTES" ]; then
     c_ylw "  (de quebra: a versão de $PIN_FALTANDO_ANTES estava solta e foi fixada agora)"
+  fi
+  # Dito aqui pelo mesmo motivo do pin: é no fim que o dono lê.
+  if [ -n "$AVISO_SITE_URL" ]; then
+    DOM_AVISO="$(printf '%s' "${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}")"
+    cat <<AVISO
+
+$(c_ylw "  ─── CONFIRA UMA COISA, UMA VEZ SÓ ─────────────────────")
+
+  Os e-mails de acesso (esqueci minha senha, confirmação de cadastro,
+  aceite de convite) levam para o endereço que estiver em Authentication
+  → URL Configuration, no painel do Supabase. Instalações feitas antes de
+  o instalador perguntar o token do Supabase ficaram com o padrão de
+  projeto novo, \`http://localhost:3000\`, que só existe na máquina de
+  quem desenvolve — e aí ninguém consegue redefinir a própria senha.
+
+  Vale conferir. Se já estiver com os valores abaixo, não há nada a fazer:
+
+       Site URL:       ${DOM_AVISO}
+       Redirect URLs:  ${DOM_AVISO%/}/auth/confirm
+
+  Este aviso não se repete — para o instalador cuidar disso sozinho, rode
+  o update com \`export SUPABASE_ACCESS_TOKEN=sbp_...\` no ambiente.
+AVISO
+    : > "$MARCA_AVISO_SITE_URL" 2>/dev/null || true
   fi
 else
   c_ylw "⚠ Atualizei, mas o app não respondeu 'ok'. Veja os logs:"

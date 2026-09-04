@@ -43,8 +43,15 @@ export function AnonymizeDialog({ contactId, open, onOpenChange }: Props) {
         contact_id: contactId,
         justification: justification.trim(),
       });
-      if (res.data.action === "already_anonymized") {
-        toast.info(t("Contato já estava anonimizado."));
+      // Três desfechos, e o do meio existia sem nome: uma cascata retomada —
+      // leads e atividades redigidas AGORA, num contato cujo `is_anonymized` já
+      // era verdadeiro — dizia "Contato já estava anonimizado.", que é a frase
+      // que descreve o DEFEITO. O toast afirmava que nada tinha acontecido no
+      // exato momento em que a redação pendente acabara de acontecer.
+      if (res.data.action === "resumed") {
+        toast.success(t("Anonimização retomada: o que faltava foi redigido agora."));
+      } else if (res.data.action === "already_anonymized") {
+        toast.info(t("Contato já estava anonimizado, e não faltava nada."));
       } else {
         toast.success(t("Contato anonimizado."));
       }

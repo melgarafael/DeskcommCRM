@@ -283,6 +283,7 @@ export async function startWorker(
       idleIntervalMs: env.CRM_DRAIN_IDLE_INTERVAL_MS,
       debounceMs: env.INBOUND_DEBOUNCE_MS,
       reapTimeoutMs: env.CRM_EVENT_REAP_TIMEOUT_MS,
+      allowlistTtlMs: env.AI_ALLOWLIST_TTL_DAYS * 24 * 60 * 60 * 1000,
     },
     log,
     loopsAbort.signal,
@@ -560,6 +561,7 @@ export async function main(): Promise<void> {
       followupAi: {
         ...(env.FOLLOWUP_AI_MODEL !== undefined ? { model: env.FOLLOWUP_AI_MODEL } : {}),
       },
+      allowlistTtlMs: env.AI_ALLOWLIST_TTL_DAYS * 24 * 60 * 60 * 1000,
     },
     log,
     // Onda 5 (Task 5.1): fecha o turno dirigido por fluxo de volta no enrollment —

@@ -179,6 +179,8 @@ jobs:
         agenda-tela-do-produto.spec.ts
         notificacoes-diz-o-que-falta.spec.ts
         relogio-http-cron-externo.spec.ts
+        j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
+        j20-elegibilidade-atendimento-manual.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava

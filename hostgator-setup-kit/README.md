@@ -85,6 +85,20 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
 | Banco de dados | Conta grátis no [supabase.com](https://supabase.com) (3 chaves + connection string) |
 | IA | Chave da [Anthropic](https://console.anthropic.com) |
 | WhatsApp | Seu número — conectado por QR code no onboarding |
+| Token do Supabase (opcional) | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) — com ele o instalador configura sozinho os links dos e-mails de acesso. **Ele não fica salvo:** é usado uma vez e some com o processo |
+
+> **Sem esse token, um passo fica manual — e ele importa.** Os e-mails de
+> "esqueci minha senha", de confirmação de cadastro e de aceite de convite saem
+> com o endereço que estiver em **Authentication → URL Configuration** do seu
+> projeto Supabase. Ele nasce como `http://localhost:3000`, que só existe na
+> máquina de quem desenvolve — então o link chega quebrado para todo mundo, e
+> ninguém consegue redefinir a própria senha.
+>
+> Se você pular o token, o instalador termina avisando exatamente o que
+> preencher, com o seu domínio já escrito. Se preferir fazer agora:
+>
+> - **Site URL:** `https://SEU_DOMINIO`
+> - **Redirect URLs:** `https://SEU_DOMINIO/auth/confirm`
 
 ## Requisitos do VPS
 

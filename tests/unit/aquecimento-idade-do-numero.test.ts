@@ -8,7 +8,7 @@
  * Pior: a tela oferecia o teto DIÁRIO, que é outro gate. O operador subia o teto
  * para 1000, nada mudava, e a mensagem seguia falando de aquecimento.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   WARMUP_PULADO,
@@ -40,13 +40,33 @@ describe("contrato da API — os campos que faltavam", () => {
     expect(r.success).toBe(true);
   });
 
-  it("recusa data no FUTURO — adiantar o aquecimento é o oposto de proteger", () => {
-    const amanha = new Date(Date.now() + 86_400_000).toISOString();
+  it("recusa o dia que não começou em lugar nenhum do mundo", () => {
+    // ⚠️ Relógio CONGELADO de propósito. Este caso mandava `Date.now() + 24h` e
+    // media contra "instante já passou"; a guarda hoje compara DIAS (um dia sem
+    // fuso dura 26 horas — ver `diaDeclaradoJaComecou`), e `+24h` cai ora num
+    // dia que já começou em UTC+14, ora não, conforme a hora em que a suíte
+    // roda. Um caso que depende do relógio da máquina não mede regra nenhuma.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T00:30:00.000Z"));
     const r = pacingKnobsUpdateSchema.safeParse({
       channel_session_id: SESSAO,
-      number_activated_at: amanha,
+      number_activated_at: "2026-09-05T12:00:00.000Z",
     });
+    vi.useRealTimers();
     expect(r.success).toBe(false);
+  });
+
+  it("aceita o DIA DE HOJE — a fronteira mora em aquecimento-aceita-o-dia-de-hoje", () => {
+    // Guarda de vizinhança: recusar hoje derrubava a ficha inteira durante a
+    // manhã de quem opera a oeste (achado da varredura contra o PR #496).
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T00:30:00.000Z"));
+    const r = pacingKnobsUpdateSchema.safeParse({
+      channel_session_id: SESSAO,
+      number_activated_at: "2026-09-04T12:00:00.000Z",
+    });
+    vi.useRealTimers();
+    expect(r.success).toBe(true);
   });
 
   it("aceita null — volta a tratar o número como recém-criado", () => {

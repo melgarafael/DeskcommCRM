@@ -40,7 +40,7 @@
  * fuso torto degrada para o padrão e o turno segue.
  */
 
-import { partesNoFuso, diaDaSemanaLocal } from "@/lib/agenda/fuso";
+import { partesNoFuso, diaDaSemanaLocal, offsetEmMinutos } from "@/lib/agenda/fuso";
 import { FUSO_PADRAO, fusoValido } from "@/lib/tempo/fusos";
 
 /**
@@ -110,6 +110,45 @@ export function renderAgora(agora: Date, fuso: string): string {
  * lista de horários vira um por linha. Uma data civil não tem horário de verão,
  * então derivar o dia dela é exato.
  */
+/**
+ * O instante, escrito na hora de parede do fuso da organização — ISO 8601 com o
+ * OFFSET REAL daquele fuso naquele instante (`2026-09-02T15:45:38-03:00`), nunca
+ * `+00:00`/`Z`.
+ *
+ * ─── O defeito que esta função existe para consertar ──────────────────────────
+ *
+ * `get-lead-context.ts` entregava cada mensagem do histórico ao modelo com
+ * `sent_at` cru do banco (`timestamptz::text` no fuso da SESSÃO do Postgres, que
+ * é UTC) — enquanto o bloco `## Agora` acima, no mesmo prompt, já mostrava o
+ * relógio certo no fuso da organização. Um agente instruído a "usar o horário
+ * exato de cada mensagem para saber se a loja está aberta" comparava um horário
+ * em UTC contra uma janela em hora local: medido em produção (YADEA, fuso
+ * America/Sao_Paulo, expediente 09:00–18:00), uma mensagem enviada às 15:45
+ * local chegou ao modelo como `18:45+00`, e o agente respondeu "a oficina está
+ * fechada" dentro do próprio horário de atendimento que ele citou na resposta.
+ *
+ * A saída ISO com offset (em vez de hora de parede nua) preserva o instante
+ * exato para quem ainda faz `Date.parse` sobre este campo (cálculo de "quanto
+ * tempo passou" em `followup-turn.ts`) — só o FUSO em que a hora é lida muda.
+ *
+ * Fuso ausente, vazio ou inválido cai em {@link FUSO_PADRAO} — nunca lança
+ * (mesma regra de falha aberta de `renderAgora`).
+ */
+export function isoLocalComOffset(instante: Date, fuso: string): string {
+  const fusoEmVigor = fusoValido(fuso) ? fuso : FUSO_PADRAO;
+  const p = partesNoFuso(instante, fusoEmVigor);
+  const offsetMin = Math.round(offsetEmMinutos(instante, fusoEmVigor));
+  const sinal = offsetMin < 0 ? "-" : "+";
+  const abs = Math.abs(offsetMin);
+  const offsetHoras = doisDigitos(Math.floor(abs / 60));
+  const offsetMinutos = doisDigitos(abs % 60);
+  return (
+    `${p.ano}-${doisDigitos(p.mes)}-${doisDigitos(p.dia)}T` +
+    `${doisDigitos(p.hora)}:${doisDigitos(p.minuto)}:${doisDigitos(p.segundo)}` +
+    `${sinal}${offsetHoras}:${offsetMinutos}`
+  );
+}
+
 export function rotuloLocal(instante: Date, fuso: string): string {
   const fusoEmVigor = fusoValido(fuso) ? fuso : FUSO_PADRAO;
   const p = partesNoFuso(instante, fusoEmVigor);

@@ -2,20 +2,31 @@
  * POST /api/v1/lgpd/anonymize
  *
  * Irreversible cascade nullify (Spec 05 §LGPD). Only `admin` role within the
- * tenant or platform_admin can execute. Idempotent: re-anonymizing returns
- * 200 with `action: "already_anonymized"`.
+ * tenant or platform_admin can execute.
  *
  * Cascade (best-effort sequential — no client-side transaction):
  *   1. contacts: nullify PII, set is_anonymized + anonymized_at, rewrite display_name
- *   2. crm_leads: append " (anonimizado)" to title (preserve PK + history)
- *   3. crm_lead_activities: redact payload to { redacted: true }
+ *      — roda UMA vez (repeti-la apagaria a data real do exercício do direito)
+ *   2. crm_leads + 3. crm_lead_activities: `lib/lgpd/cascata.ts`, idempotentes,
+ *      e a MESMA função que o cron `data-retention` usa para completar sozinho
+ *      o que ficou pela metade
  *   4. Storage media deletion deferred to EPIC-08 worker
+ *
+ * Três desfechos em `action`, e não dois: `anonymized` (primeira execução),
+ * `resumed` (já constava anonimizado E havia resíduo, redigido agora) e
+ * `already_anonymized` (nada faltava). O do meio existia sem nome, e caía em
+ * `already_anonymized` — que é a frase que descreve o DEFEITO (issue #310).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
+import {
+  completarRedacaoDoContato,
+  houveRedacao,
+  type ClienteDaCascata,
+} from "@/lib/lgpd/cascata";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { lgpdAnonymizeSchema, validateRequest } from "@/lib/schemas";
@@ -71,23 +82,32 @@ export async function POST(req: NextRequest): Promise<Response> {
   });
   if (!authz.ok) return authz.response;
 
-  // Idempotency.
-  if (existing.is_anonymized) {
-    return ok(
-      {
-        contact_id: existing.id,
-        anonymized_at: existing.anonymized_at,
-        action: "already_anonymized",
-      },
-      { requestId },
-    );
-  }
+  // ─── RETOMADA, NÃO PORTA FECHADA ───────────────────────────────────────
+  //
+  // Aqui havia um early-return que devolvia 200 `already_anonymized` ANTES dos
+  // passos 2 e 3. Se o passo 1 já tivesse rodado numa requisição que caiu no
+  // meio (timeout de cliente, contêiner reiniciado), os outros dois nunca mais
+  // rodavam — e não havia como retomá-los, porque a MESMA checagem que decidia
+  // "já foi anonimizado" decidia "não faço mais nada". O botão da tela dizia
+  // "já anonimizado" e não fazia nada, e o contato ficava com títulos de lead e
+  // atividades PERMANENTEMENTE não redigidos.
+  //
+  // Isso é violação direta do direito do titular: a cascata promete remover PII
+  // de contacts + crm_leads + crm_lead_activities e entregava um terço.
+  // (issue #310)
+  //
+  // O passo 1 continua rodando uma vez só — repetí-lo reescreveria
+  // `anonymized_at` e apagaria a data real do exercício do direito, que é o que
+  // responde ao prazo legal.
+  const retomada = existing.is_anonymized === true;
 
   const nowIso = new Date().toISOString();
   const shortId = existing.id.slice(0, 8);
 
   // Step 1 — contacts.
-  const { error: c1Err } = await supabase
+  const { error: c1Err } = retomada
+    ? { error: null }
+    : await supabase
     .from("contacts")
     .update({
       name: null,
@@ -105,37 +125,22 @@ export async function POST(req: NextRequest): Promise<Response> {
       anonymized_at: nowIso,
       updated_at: nowIso,
     })
-    .eq("id", existing.id);
+        .eq("id", existing.id);
   if (c1Err) {
     return fail("internal_error", `contacts: ${c1Err.message}`, 500, { requestId });
   }
 
-  // Step 2 — leads owned by contact (best-effort; non-fatal).
-  const { data: leadRows } = await supabase
-    .from("crm_leads")
-    .select("id, title")
-    .eq("contact_id", existing.id);
-  const redactedLeadIds: string[] = [];
-  for (const row of (leadRows ?? []) as { id: string; title: string | null }[]) {
-    const newTitle = `${(row.title ?? "").slice(0, 20)} (anonimizado)`;
-    const { error: leadErr } = await supabase
-      .from("crm_leads")
-      .update({ title: newTitle })
-      .eq("id", row.id);
-    if (leadErr) {
-      console.error("[lgpd.anonymize] crm_leads update failed", leadErr.message);
-    } else {
-      redactedLeadIds.push(row.id);
-    }
-  }
-
-  // Step 3 — activities (RLS-scoped UPDATE).
-  const { error: actErr } = await supabase
-    .from("crm_lead_activities")
-    .update({ payload: { redacted: true } })
-    .eq("contact_id", existing.id);
-  if (actErr) {
-    console.error("[lgpd.anonymize] crm_lead_activities update failed", actErr.message);
+  // ── Passos 2 e 3 — a MESMA função que o cron de retenção usa ──────────
+  //
+  // Estavam escritos aqui dentro, e a regra do corte do título passou a ter
+  // duas bocas quando o cron ganhou a varredura. Uma correção que entrasse numa
+  // e não na outra produziria títulos redigidos de dois jeitos no mesmo banco.
+  const redacao = await completarRedacaoDoContato(supabase as unknown as ClienteDaCascata, {
+    id: existing.id,
+    organizationId: existing.organization_id,
+  });
+  for (const falha of redacao.falhas) {
+    console.error("[lgpd.anonymize]", falha);
   }
 
   // Emit + audit.
@@ -157,7 +162,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
 
   await audit({
-    action: "lgpd.anonymize_executed",
+    // Uma retomada auditada como execução original mentiria sobre a data em que
+    // o direito foi exercido — e é a auditoria que responde ao titular.
+    action: retomada ? "lgpd.anonymize_catchup" : "lgpd.anonymize_executed",
     actorUserId: user.id,
     organizationId: existing.organization_id,
     resourceType: "contact",
@@ -166,11 +173,36 @@ export async function POST(req: NextRequest): Promise<Response> {
     metadata: {
       contact_id: existing.id,
       justification: input.justification,
-      redacted_tables: ["contacts", "crm_leads", "crm_lead_activities"],
-      redacted_lead_ids: redactedLeadIds,
+      // O que foi REALMENTE tocado. Era o literal ["contacts","crm_leads",
+      // "crm_lead_activities"] — e numa retomada `contacts` não é tocada, e os
+      // passos 2 e 3 são best-effort. A linha `lgpd.anonymize_catchup` afirmava
+      // ter redigido as três mesmo tendo redigido nenhuma: sucesso declarado
+      // sobre trabalho não feito, a mesma classe que esta cascata já pagou uma
+      // vez, quando deixava o arquivo no bucket e auditava que o redigira.
+      redacted_tables: [...(retomada ? [] : ["contacts"]), ...redacao.tabelas],
+      redacted_lead_ids: redacao.leadsRedigidas,
+      redacted_activities: redacao.atividadesRedigidas,
+      ...(redacao.falhas.length > 0 ? { failures: redacao.falhas } : {}),
       storage_media_deletion: "deferred_epic_08",
     },
   });
 
-  return ok({ contact_id: existing.id, anonymized_at: nowIso }, { requestId });
+  // `action` nos TRÊS desfechos, e o do meio é novo.
+  //
+  // Antes, uma retomada que redigiu leads e atividades voltava
+  // `already_anonymized` — e o diálogo mostrava "Contato já estava
+  // anonimizado.", exatamente a frase que descreve o DEFEITO que esta rota
+  // conserta. Quem chama não tinha como saber que houve trabalho.
+  const desfecho = !retomada ? "anonymized" : houveRedacao(redacao) ? "resumed" : "already_anonymized";
+
+  return ok(
+    {
+      contact_id: existing.id,
+      anonymized_at: retomada ? existing.anonymized_at : nowIso,
+      action: desfecho,
+      redacted_lead_ids: redacao.leadsRedigidas,
+      redacted_activities: redacao.atividadesRedigidas,
+    },
+    { requestId },
+  );
 }

@@ -36,6 +36,7 @@ import { audit } from "@/lib/audit";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { logger } from "@/lib/logger";
+import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 
 import { lerContinuidadeHumana, type ContinuidadeHumana } from "./continuidade";
 
@@ -165,6 +166,18 @@ export async function devolverAtendimentoAoAgente(
       });
       return { ok: false, erro: "assignment_conflict", detalhe: contatoErr.message };
     }
+  }
+
+  // (3b) ELEGIBILIDADE: devolver o atendimento à IA é uma decisão humana
+  // explícita — no gate `allowlist`, é ela que RE-AUTORIZA o contato. Sem isto,
+  // o botão "devolver ao automático" apagaria as três travas de handoff e a IA
+  // continuaria muda, porque `contacts.ai_authorized_at` seguiria nulo/expirado.
+  if (conv.contact_id !== null) {
+    await autorizarContatoParaIA(supabase, {
+      organizationId,
+      contactId: conv.contact_id,
+      reason: "retomada_manual",
+    });
   }
 
   // (4) Sinal durável de fim do episódio. AWAITED, não fire-and-forget, pela

@@ -31,6 +31,80 @@ function isValidTimezone(tz: string): boolean {
  */
 export const DAILY_LIMIT_BOUNDS = { min: 1, max: 10_000 } as const;
 
+/**
+ * O fuso mais adiantado que existe é UTC+14 (Kiritimati). Logo, o maior DIA de
+ * calendário em vigor em algum lugar do planeta é o dia UTC de `agora + 14h`.
+ */
+const MAIOR_ADIANTAMENTO_MS = 14 * 3_600_000;
+
+/** O dia do calendário (`yyyy-mm-dd`) de um instante, lido em UTC. */
+function diaEmUtc(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Hoje no calendário de quem está olhando a tela (`yyyy-mm-dd`) — o mesmo espaço
+ * de valores de um `<input type="date">`, que fala em dia LOCAL.
+ *
+ * `new Date().toISOString().slice(0, 10)` dá o dia UTC, e a oeste ele adianta:
+ * às 21h em São Paulo o `max` do campo "este número é usado desde" já oferecia
+ * AMANHÃ. Limite de campo é promessa: oferecer o que o servidor recusa é o
+ * controle decorativo ao contrário.
+ */
+export function diaDeHojeLocal(agora: Date = new Date()): string {
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${agora.getFullYear()}-${mes}-${dia}`;
+}
+
+/**
+ * O DIA declarado em `number_activated_at` já começou em algum lugar do mundo?
+ *
+ * ## Por que a comparação é entre DIAS, e não entre um dia e um relógio
+ *
+ * O operador não escolhe um instante: ele escolhe um DIA num `<input
+ * type="date">`, e a tela encaixa esse dia às **12h UTC** (meia-noite viraria o
+ * dia anterior em qualquer fuso a oeste — ver `AntiBanSheet`). A guarda antiga
+ * comparava esse encaixe com `Date.now()`, isto é, um DIA contra um RELÓGIO: o
+ * encaixe de hoje só "chega" às 12:00 UTC, então declarar HOJE era recusado
+ * durante toda a manhã.
+ *
+ * Medido no SHA f700f3e1, varrendo as 24 horas com o relógio falso, em
+ * `America/Sao_Paulo` (UTC−3): a recusa começava às **03:00 UTC** (00:00 BRT — o
+ * instante em que a data local vira hoje) e só parava às **12:00 UTC** (09:00
+ * BRT). Nove horas de todo dia em que o campo oferecia hoje e o servidor
+ * respondia "a data não pode estar no futuro". E a recusa derrubava a ficha
+ * INTEIRA — o schema é `.strict()` e a rota devolve 422 antes de gravar
+ * qualquer campo —, então janela, throttle e teto diário iam junto: exatamente
+ * o desfecho que o PR #496 tinha acabado de consertar para o campo em branco.
+ *
+ * ## Por que o limite é UTC+14, e por que a folga não afrouxa proteção nenhuma
+ *
+ * Um dia sem fuso não tem instante: "3 de setembro" começa em UTC+14 e termina
+ * em UTC−12, 26 horas depois. Como o payload não carrega o fuso do navegador, a
+ * única fronteira honesta é a do planeta: recusar só o dia que não começou em
+ * lugar NENHUM. Fica de fora o absurdo (2030), que é o que a guarda existe para
+ * pegar.
+ *
+ * A folga de até um dia é segura porque data futura **não** adianta o
+ * aquecimento — ela o atrasa. Quem decide isso é o MOTOR, não esta guarda:
+ * `lib/agent-engine/pacing/engine.ts` faz `Math.max(0, …)` na idade, e o
+ * comentário dele já dizia por quê — "number_activated_at no futuro (typo do
+ * admin / clock skew) cai no degrau MAIS conservador — warm-up falha FECHADO".
+ * Idade 0 é o primeiro degrau dos `PACING_DEFAULTS`: 20 envios/dia. O mesmo
+ * está preso em `tests/unit/aquecimento-idade-do-numero.test.ts` ("data no
+ * futuro não vira idade negativa").
+ *
+ * O comentário anterior desta guarda afirmava o oposto ("ela ADIANTARIA o
+ * aquecimento") e era a justificativa de um rigor que só machucava quem estava
+ * certo — a razão escrita contradizia o motor que ela dizia proteger.
+ */
+export function diaDeclaradoJaComecou(iso: string, agora: Date = new Date()): boolean {
+  const instante = Date.parse(iso);
+  if (!Number.isFinite(instante)) return false;
+  return diaEmUtc(instante) <= diaEmUtc(agora.getTime() + MAIOR_ADIANTAMENTO_MS);
+}
+
 /** Campos editáveis pela tela — null = voltar ao default conservador do engine. */
 export const pacingKnobsUpdateSchema = z
   .object({
@@ -57,13 +131,19 @@ export const pacingKnobsUpdateSchema = z
      * O warm-up mede idade, e a idade nascia do instante em que o número era
      * pareado aqui: reconectar um número usado há meses o rebaixava a
      * recém-nascido (teto de 20 envios/dia) sem nenhum caminho para corrigir.
-     * Data futura é recusada — ela ADIANTARIA o aquecimento, que é o oposto de
-     * proteger.
+     *
+     * A guarda é de SANIDADE do dia declarado, não de proteção: só recusa o dia
+     * que ainda não começou em lugar nenhum do mundo. Ver
+     * `diaDeclaradoJaComecou` — inclusive por que comparar com `Date.now()`
+     * calava o campo durante a manhã inteira de quem está a oeste.
      */
     number_activated_at: z
       .string()
       .datetime({ offset: true })
-      .refine((iso) => new Date(iso).getTime() <= Date.now(), "a data não pode estar no futuro")
+      .refine(
+        (iso) => diaDeclaradoJaComecou(iso),
+        "a data é de um dia que ainda não começou em lugar nenhum do mundo",
+      )
       .nullable()
       .optional(),
     /**

@@ -4655,6 +4655,12 @@ export const DICIONARIO: Traducoes = {
   "contatos": { es: "contactos" },
   "carregados — há mais resultados": { es: "cargados — hay más resultados" },
   "Contato já estava anonimizado.": { es: "El contacto ya estaba anonimizado." },
+  "Contato já estava anonimizado, e não faltava nada.": {
+    es: "El contacto ya estaba anonimizado, y no faltaba nada.",
+  },
+  "Anonimização retomada: o que faltava foi redigido agora.": {
+    es: "Anonimización retomada: lo que faltaba se ha redactado ahora.",
+  },
   "Contato anonimizado.": { es: "Contacto anonimizado." },
   "Anonimizar contato (LGPD)": { es: "Anonimizar contacto (LGPD)" },
   "Esta ação é irreversível. O nome será substituído por \"Contato Anonimizado #N\", email/telefone/CPF serão limpos, e atividades terão conteúdo redigido.": {

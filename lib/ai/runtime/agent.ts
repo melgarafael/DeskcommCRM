@@ -34,6 +34,8 @@ import {
   OPENROUTER_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
+import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import type { McpAuthResult } from "@/lib/mcp/auth";
@@ -368,6 +370,30 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
           waIdentity: conv.contacts?.wa_identity,
           waLid: conv.contacts?.wa_lid,
         });
+      }
+
+      // GATE DE ELEGIBILIDADE — este runtime legado (@deprecated, hoje só o
+      // dispatcher aposentado o alcança com envio real) TAMBÉM não pode
+      // responder uma conversa que uma origem elegível não autorizou. Mesma
+      // regra pura do drain/turno. Fail-closed: erro de leitura → falha o run
+      // antes de qualquer custo de LLM.
+      try {
+        const elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
+          organizationId: run.organization_id,
+          conversationId: run.conversation_id,
+          agora: new Date(),
+          ttlMs: ttlDaAutorizacaoMs(process.env),
+        });
+        if (elegib !== null && !elegib.permite) {
+          return await failRun(run, "nao_elegivel_para_ia", `elegibilidade: ${elegib.motivo}`, startedAt);
+        }
+      } catch (err) {
+        return await failRun(
+          run,
+          "nao_elegivel_para_ia",
+          `elegibilidade indeterminada: ${err instanceof Error ? err.message.slice(0, 120) : "erro"}`,
+          startedAt,
+        );
       }
     }
 

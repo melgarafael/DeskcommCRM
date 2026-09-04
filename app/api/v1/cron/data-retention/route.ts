@@ -63,6 +63,11 @@ import {
   RETENCAO_FILA_DIAS_PISO,
   interpretarRetencao,
 } from "@/lib/retencao/politica";
+import {
+  varrerRedacoesIncompletas,
+  type ClienteDaCascata,
+  type ResultadoDaVarredura,
+} from "@/lib/lgpd/cascata";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -224,6 +229,13 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   let resultado: ResultadoDaRetencao;
+  let varredura: ResultadoDaVarredura = {
+    examinados: 0,
+    comResiduo: 0,
+    completados: [],
+    temResto: false,
+    falhas: [],
+  };
   try {
     const admin = createAdminClient();
     // As duas funções são novas e não estão em `lib/database.types.ts` (gerado a
@@ -239,6 +251,29 @@ async function handle(req: NextRequest): Promise<Response> {
       JOB_QUEUE_RETENTION_DAYS: env.JOB_QUEUE_RETENTION_DAYS,
       AUDIT_LOG_RETENTION_DAYS: env.AUDIT_LOG_RETENTION_DAYS,
     });
+    // ── A cascata de anonimização que ficou pela metade ──────────────────
+    //
+    // Mora AQUI, e não numa rota de cron própria, por uma razão de packaging: o
+    // agendamento vive no serviço `scheduler`, e um cron novo exigiria linha
+    // nova no `docker/scheduler/entrypoint.sh` — que só chega a quem já
+    // instalou depois de a imagem do scheduler ser trocada. Pendurado no
+    // varredor diário que TODO clone já roda, o conserto alcança o parque
+    // instalado sem ninguém editar nada (DoD 15). Nome e cadência também
+    // servem: retenção é remover dado pessoal no prazo, e a LGPD dá D+15.
+    //
+    // O client aqui é o de SERVICE ROLE, que bypassa a RLS — por isso
+    // `completarRedacaoDoContato` filtra `organization_id` à mão em toda query,
+    // com a org vinda da própria linha de `contacts` (fonte confiável).
+    //
+    // Try PRÓPRIO, e não o de fora: uma varredura que explodisse derrubaria o
+    // relatório da PODA junto, e o cron passaria a auditar `falhou: true` num
+    // dia em que o expurgo funcionou. As duas tarefas dividem o relógio, não o
+    // desfecho — quem falha aqui falha aqui, e a falha é dita, não engolida.
+    try {
+      varredura = await varrerRedacoesIncompletas(admin as unknown as ClienteDaCascata);
+    } catch (err) {
+      varredura.falhas.push(err instanceof Error ? err.message : String(err));
+    }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[data-retention] poda falhou", { error: detail, requestId });
@@ -275,7 +310,46 @@ async function handle(req: NextRequest): Promise<Response> {
     });
   }
 
-  return ok(resultado, { requestId });
+  for (const falha of varredura.falhas) {
+    logger.error("[data-retention] retomada de anonimização falhou", { falha, requestId });
+  }
+
+  // Uma linha POR CONTATO, na org dele: é a auditoria que responde ao titular, e
+  // uma linha global `retention.sweep_run` não responde a ninguém em particular.
+  // Ela aparece em `/app/audit` como qualquer outra (a tela filtra por `action`
+  // em campo livre, não por lista fechada) — é o laço de retorno desta peça.
+  // Só para quem TINHA resíduo — `completados` já é a lista filtrada, e o `if`
+  // deixa isso explícito para o guarda de AST que varre esta pasta (ele não
+  // conta `for` como condição, e está certo em não contar).
+  for (const feito of varredura.completados) {
+    if (feito.resultado.tabelas.length > 0) {
+      void audit({
+        action: "lgpd.anonymize_catchup",
+        organizationId: feito.organizationId,
+        bypassedRls: true,
+        resourceType: "contact",
+        resourceId: feito.contactId,
+        requestId,
+        metadata: {
+          contact_id: feito.contactId,
+          origem: "cron.data-retention",
+          redacted_tables: feito.resultado.tabelas,
+          redacted_lead_ids: feito.resultado.leadsRedigidas,
+          redacted_activities: feito.resultado.atividadesRedigidas,
+        },
+      });
+    }
+  }
+
+  return ok(
+    {
+      ...resultado,
+      anonimizacoes_examinadas: varredura.examinados,
+      anonimizacoes_completadas: varredura.completados.length,
+      anonimizacoes_tem_resto: varredura.temResto,
+    },
+    { requestId },
+  );
 }
 
 export async function GET(req: NextRequest): Promise<Response> {

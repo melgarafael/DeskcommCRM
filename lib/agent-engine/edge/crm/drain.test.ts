@@ -134,3 +134,123 @@ it('sem agente MAS com roteador que resolve alguém: turno segue (caminho genér
   );
   expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
 });
+
+/**
+ * Anti-backlog + gate de elegibilidade (migration 0203).
+ *
+ * `poolElegibilidade` estende o pool falso com as duas consultas novas: a de
+ * supersessão (última inbound da conversa) e a de elegibilidade (gate do canal
+ * + travas do contato).
+ */
+function poolElegibilidade(
+  calls: string[],
+  opts: {
+    ultimaInboundId?: string;
+    aiGate?: string | null;
+    aiAuthorizedAt?: string | null;
+    forceHuman?: boolean;
+    assigneeKind?: string | null;
+  } = {},
+) {
+  const inboundId = '44444444-4444-4444-8444-444444444444';
+  const query = vi.fn().mockImplementation((sql: string) => {
+    calls.push(sql);
+    if (sql.includes('returning e.id')) return { rows: [{ ...event, created_at: new Date().toISOString() }] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes("direction = 'inbound'")) {
+      return { rows: [{ id: opts.ultimaInboundId ?? inboundId }] };
+    }
+    if (sql.includes("->>'ai_gate'")) {
+      return {
+        rows: [
+          {
+            ai_gate: opts.aiGate ?? null,
+            force_human: opts.forceHuman ?? false,
+            assignee_kind: opts.assigneeKind ?? 'ai',
+            bot_silenced_until: null,
+            ai_authorized_at: opts.aiAuthorizedAt ?? null,
+          },
+        ],
+      };
+    }
+    if (sql.includes('media_derived_status')) return { rows: [{ type: 'text', media_derived_status: null }] };
+    return { rows: [] };
+  });
+  return { query } as unknown as pg.Pool;
+}
+
+it('evento superado por inbound mais recente: turno pulado, sem job, sem gasto', async () => {
+  const calls: string[] = [];
+  await drainTick(poolElegibilidade(calls, { ultimaInboundId: 'outra-mensagem-mais-nova' }), knobs, log);
+  expect(calls.some((s) => s.includes("direction = 'inbound'"))).toBe(true);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
+});
+
+it("gate 'allowlist' + contato NÃO autorizado: turno pulado, sem job, sem gasto", async () => {
+  const calls: string[] = [];
+  await drainTick(poolElegibilidade(calls, { aiGate: 'allowlist', aiAuthorizedAt: null }), knobs, log);
+  expect(calls.some((s) => s.includes("->>'ai_gate'"))).toBe(true);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
+});
+
+it("gate 'allowlist' + contato autorizado agora: turno segue", async () => {
+  const calls: string[] = [];
+  await drainTick(
+    poolElegibilidade(calls, { aiGate: 'allowlist', aiAuthorizedAt: new Date().toISOString() }),
+    { ...knobs, allowlistTtlMs: 21 * 24 * 60 * 60 * 1000 },
+    log,
+  );
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
+});
+
+it("gate 'allowlist' + autorização EXPIRADA (fora do TTL): turno pulado", async () => {
+  const calls: string[] = [];
+  const antiga = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+  await drainTick(
+    poolElegibilidade(calls, { aiGate: 'allowlist', aiAuthorizedAt: antiga }),
+    { ...knobs, allowlistTtlMs: 21 * 24 * 60 * 60 * 1000 },
+    log,
+  );
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'done'"))).toBe(true);
+});
+
+it("gate 'open' (default): contato sem autorização NÃO é barrado — comportamento de hoje", async () => {
+  const calls: string[] = [];
+  await drainTick(poolElegibilidade(calls, { aiGate: null, aiAuthorizedAt: null }), knobs, log);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
+});
+
+it("gate 'allowlist' + force_human: turno pulado mesmo com autorização", async () => {
+  const calls: string[] = [];
+  await drainTick(
+    poolElegibilidade(calls, {
+      aiGate: 'allowlist',
+      aiAuthorizedAt: new Date().toISOString(),
+      forceHuman: true,
+    }),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+});
+
+/**
+ * R7 — a consulta da "última inbound" (anti-backlog) desempata por recência
+ * REAL, nunca por `id` (uuid aleatório). `order by sent_at desc nulls last, id
+ * desc` elegia a mensagem ANTIGA por sorteio quando dois inbound tinham o mesmo
+ * `sent_at`. A cerca guarda a cláusula seguindo o padrão do repo (migration
+ * 0027): `coalesce(sent_at, created_at)`.
+ */
+it("anti-backlog: ordena a última inbound por coalesce(sent_at, created_at), não por id sozinho", async () => {
+  const calls: string[] = [];
+  await drainTick(poolElegibilidade(calls), knobs, log);
+  const consultaUltima = calls.find((s) => s.includes("direction = 'inbound'"));
+  expect(consultaUltima).toBeDefined();
+  expect(consultaUltima).toContain('coalesce(sent_at, created_at) desc');
+  expect(consultaUltima).not.toContain('nulls last');
+});

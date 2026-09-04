@@ -137,6 +137,7 @@ import {
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
+import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
 /**
  * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
@@ -233,7 +234,9 @@ export const AGENT_TOOL_DEFS = {
       'sensível) ou quando você atingir o limite do que pode resolver. ' +
       'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
       'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
-      'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno.',
+      'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ' +
+      'NUNCA diga ao lead que "já chamei alguém" ou "já passei para a equipe" sem ter chamado esta ' +
+      'ferramenta NO MESMO turno — a frase no passado não substitui a ação, e ninguém é avisado de verdade.',
     // Schema LARGO para o SDK (o modelo vê o campo); a validação REAL é a whitelist .strict()
     // + guard de prototype pollution dentro de applyRequestHumanHandoff — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
@@ -257,7 +260,9 @@ export const AGENT_TOOL_DEFS = {
       'Abra um caso para um humano de retaguarda quando você NÃO conseguir resolver o pedido do lead ' +
       'sozinho (liberar acesso, corrigir algo num sistema, uma decisão que exige uma pessoa). Você CONTINUA ' +
       'conversando com o lead normalmente — não silencia. Use SEMPRE que for prometer ao lead que alguém vai ' +
-      'verificar/resolver: prometer sem abrir o caso é proibido.',
+      'verificar/resolver: prometer sem abrir o caso é proibido. Isso vale mesmo quando você nomeia a ' +
+      'pessoa ("vou confirmar com o Fulano", "já registrei com a equipe") — nomear alguém não abre o caso; ' +
+      'só esta ferramenta abre. Chame-a NO MESMO turno em que fizer a promessa, nunca depois.',
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() openHumanCaseInputSchema (human-cases.ts) — campo extra/forjado vira
     // erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
@@ -761,7 +766,17 @@ export interface InboundTurnKnobs {
    * Ausente = usa o defaultModel da org (mesma convenção de stageClassifier/jailbreak).
    */
   followupAi?: { model?: string };
+  /**
+   * Janela de validade da autorização de IA de um contato (gate opt-in
+   * `channel_sessions.metadata.ai_gate = 'allowlist'`). Só consultada quando o
+   * canal tem o gate ligado. Ausente nos testes que não o exercitam — o default
+   * de 21 dias é aplicado.
+   */
+  allowlistTtlMs?: number;
 }
+
+/** Default de `allowlistTtlMs` (21 dias) para testes que omitem o knob. */
+export const ALLOWLIST_TTL_MS_PADRAO = 21 * 24 * 60 * 60 * 1000;
 
 export interface InboundTurnDeps {
   crmCfg: CrmEdgeConfig;
@@ -1301,6 +1316,50 @@ async function executarTurnoDoAgente(
     return;
   }
 
+  // GATE DE ELEGIBILIDADE (opt-in por canal — `metadata.ai_gate = 'allowlist'`).
+  // Segunda checagem, defesa em profundidade: o drain já barra antes de
+  // enfileirar, mas um job pode ter sido enfileirado quando a conversa ainda
+  // estava autorizada e um humano assumiu no meio-tempo, ou o gate do canal
+  // mudou. Canal 'open' (default) → `permite:true`, nada muda. NO-OP no início do
+  // turno, antes de qualquer chamada de modelo — mesmo lugar e mesmo custo do
+  // veto de handoff acima.
+  try {
+    const elegib = await decidirElegibilidadeDaConversa(pool, {
+      organizationId: tenantId,
+      conversationId: input.conversationId,
+      agora: clock(),
+      ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
+    });
+    if (elegib !== null && !elegib.permite) {
+      runLog.info('turno pulado — conversa não elegível para IA', {
+        kind: job.kind,
+        motivo: elegib.motivo,
+      });
+      return;
+    }
+    // KEEP-ALIVE: enquanto a conversa autorizada está viva, renova o carimbo —
+    // assim uma negociação de semanas não expira pela janela de validade, mas um
+    // contato que veio de uma submissão e sumiu volta a NÃO ser elegível depois
+    // da janela. Só no modo 'allowlist' (motivo 'autorizado'); fire-and-forget.
+    if (elegib !== null && elegib.motivo === 'autorizado' && job.kind === 'inbound_turn') {
+      pool
+        .query(
+          `update contacts set ai_authorized_at = now()
+           where organization_id = $1 and id = $2 and ai_authorized_at is not null`,
+          [tenantId, leadId],
+        )
+        .catch((err: unknown) => {
+          runLog.warn('keep-alive da autorização de IA falhou', {
+            error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+          });
+        });
+    }
+  } catch (err) {
+    runLog.warn('checagem de elegibilidade falhou no turno — seguindo', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+    });
+  }
+
   // JANELA ANTI-BAN (7h–22h por padrão, fuso do tenant): fora dela o turno é
   // ADIADO, não gasto.
   //
@@ -1567,7 +1626,7 @@ async function executarTurnoDoAgente(
   const openingContext = await getLeadContext(
     pool,
     deps.crmCfg,
-    { tenantId, leadId, conversationId: input.conversationId },
+    { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
     turnContextKnobs,
   );
   if (!openingContext.ok) {
@@ -1932,7 +1991,7 @@ async function executarTurnoDoAgente(
           const releitura = await getLeadContext(
             pool,
             deps.crmCfg,
-            { tenantId, leadId, conversationId: input.conversationId },
+            { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
             turnContextKnobs,
           );
           // Sem esta linha a projeção da abertura seria decorativa: bastaria o

@@ -32,6 +32,7 @@ import { origemDaPagina, registrarCaptacao } from "@/lib/webhooks/captacao";
 import { ipDoClienteParaInet } from "@/lib/http/ip-do-cliente";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { ApiError } from "@/lib/api/types";
+import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { kickLocalPipeline } from "@/lib/dev/kick-local-pipeline";
 
 export const dynamic = "force-dynamic";
@@ -630,6 +631,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     contactId: contactId ?? null,
     outcome: "criado",
   });
+
+  // ELEGIBILIDADE DA IA (caso 1): uma submissão do Respondi é uma origem
+  // elegível — autoriza o contato a ser atendido automaticamente. Só tem efeito
+  // nos canais com o gate `allowlist` ligado; canal 'open' ignora a coluna.
+  // Consent explicitamente NEGADO não autoriza (LGPD); `not_found` (o formulário
+  // não pergunta) autoriza — mesma régua do `consentDoEnvio` acima.
+  const consentNegado =
+    respondiMapped != null &&
+    respondiMapped.consent.detectedVia !== "not_found" &&
+    !respondiMapped.consent.granted;
+  if (respondiMapped && contactId && !consentNegado) {
+    const formId = respondiMapped.custom_fields.respondi_form_id ?? "form";
+    const submissionId = respondiMapped.custom_fields.respondi_respondent_id ?? "s";
+    await autorizarContatoParaIA(admin, {
+      organizationId: source.organization_id,
+      contactId,
+      reason: `respondi:${formId}:${submissionId}`,
+    });
+  }
 
   // Captação: drena lead.created e inscreve no fluxo neste mesmo request.
   // Sem isto, em prod (Vercel Hobby sem cron de 1 min) o gatilho fica pending.

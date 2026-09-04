@@ -11,6 +11,7 @@ import type { ModelMessage } from 'ai';
 
 import { loadPublishedAgentConfig } from './agent-config';
 import { getLeadContext } from '../edge/crm/get-lead-context';
+import { fusoDaOrganizacao } from './fuso-da-org';
 import type { CrmEdgeConfig } from '../edge/crm/mcp-client';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
 
@@ -37,7 +38,12 @@ export async function generateDraftReply(
   const ctx = await getLeadContext(
     db,
     crmCfg,
-    { tenantId: input.tenantId, leadId: input.leadId, conversationId: input.conversationId },
+    {
+      tenantId: input.tenantId,
+      leadId: input.leadId,
+      conversationId: input.conversationId,
+      fuso: await fusoDaOrganizacao(db, input.tenantId),
+    },
     // knobs reais da versão publicada — mesmos usados pelo turno completo
     // (inbound-turn.ts), sem número mágico: historyMessageWindow/historyTokenWindow
     // já são exatamente os campos que LeadContextKnobs espera.

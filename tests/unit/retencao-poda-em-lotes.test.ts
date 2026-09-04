@@ -35,8 +35,27 @@ let respostaRpc: { data: number | null; error: { message: string } | null } = {
   data: 0,
   error: null,
 };
+/**
+ * As linhas que a varredura de anonimização enxerga nesta rodada. Vazio por
+ * padrão: os casos deste arquivo medem a PODA, e uma varredura com trabalho a
+ * fazer acrescentaria linhas de auditoria que confundiriam a contagem — o que a
+ * varredura faz é medido em `lgpd-varredura-completa-a-cascata.test.ts`.
+ */
+let contatosAnonimizados: Array<{ id: string; organization_id: string }> = [];
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: async () => respostaRpc }),
+  createAdminClient: () => ({
+    rpc: async () => respostaRpc,
+    from: () => {
+      const q: Record<string, unknown> = {
+        eq: () => q,
+        in: () => q,
+        limit: () => q,
+        then: (r: (v: unknown) => unknown) =>
+          Promise.resolve({ data: contatosAnonimizados, error: null }).then(r),
+      };
+      return { select: () => q, update: () => q };
+    },
+  }),
 }));
 
 /**
@@ -263,6 +282,7 @@ describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {
 
   beforeEach(() => {
     auditou.mockClear();
+    contatosAnonimizados = [];
   });
 
   it("rodada que não apagou nada responde 200 e NÃO audita", async () => {

@@ -76,7 +76,21 @@ done
 
 # Sai bem-sucedido depois de ensinar o passo manual. É o contrato deste script:
 # ele informa, não interrompe.
+# A pendência sai em ARQUIVO, quando quem chama pede. Sem isso, o aviso morre no
+# meio de um log de 10 minutos e a instalação termina com uma tela verde de
+# "concluído" — e o dono só descobre que o reset de senha aponta para localhost
+# quando alguém tenta usá-lo. (issue #431/#426)
+#
+# Separada de `instrua_e_saia` porque nem toda pendência encerra o script: o
+# passo dos e-mails tem um desfecho PARCIAL — os modelos sobem e o Site URL não
+# —, e ali é preciso anotar sem abortar o que ainda vai dar certo.
+anota_pendencia() {
+  [ -n "${PENDENCIA_ARQUIVO:-}" ] || return 0
+  printf '%s\n' "$1" > "$PENDENCIA_ARQUIVO" 2>/dev/null || true
+}
+
 instrua_e_saia() {
+  anota_pendencia "$1"
   printf '\n' >&2
   c_ylw "⚠ $1"
   printf '\n' >&2
@@ -336,6 +350,27 @@ if grep -qF "$MARCADOR" <<<"$depois"; then
   c_dim "    botão:    $ACCENT sobre texto $ACCENT_FG"
   [ "$SITE_NOVO" = "$SITE_ATUAL" ] || c_dim "    site url: $SITE_NOVO"
   [ "$ALLOW_NOVO" = "$ALLOW_ATUAL" ] || c_dim "    redirect: $ALLOW_NOVO"
+
+  # O MARCADOR prova os MODELOS, e só. O que faz o link do e-mail levar a algum
+  # lugar é o `site_url` — outro campo, do mesmo PATCH, que pode não ter pegado.
+  # Declarar sucesso relendo só o marcador é a mesma classe de erro que o
+  # cabeçalho deste script adverte contra ("API que ACEITA e IGNORA"), aplicada
+  # meio campo depois. E o desfecho era pior que um erro: ✓ verde, exit 0,
+  # nenhuma pendência escrita — a tela final da instalação ficava MUDA e os
+  # e-mails seguiam apontando para outro lugar.
+  #
+  # Dois caminhos chegam aqui, e o remédio é o mesmo: (a) a API aceitou e
+  # ignorou; (b) o passo 4 acima preservou de propósito um Site URL que o
+  # operador escolheu. Em ambos, o fato observado é este, e é ele que se anota.
+  SITE_DEPOIS="$(json_str "$depois" site_url)"
+  if [ -n "$APP_URL" ] && [ "${SITE_DEPOIS%/}" != "${APP_URL%/}" ]; then
+    c_ylw "  ⚠ o Site URL do projeto está em '${SITE_DEPOIS:-vazio}', não em $APP_URL"
+    c_ylw "    — os modelos subiram, mas o LINK dos e-mails ainda não leva a este app."
+    anota_pendencia "o Site URL do projeto Supabase está em '${SITE_DEPOIS:-vazio}', e este app roda em $APP_URL.
+    Os modelos de e-mail subiram; o que falta é o endereço para onde o link leva.
+    (Se o valor atual é um domínio SEU, escolhido de propósito, eu não o
+    sobrescrevo — trocar exige a sua decisão.)"
+  fi
   exit 0
 fi
 

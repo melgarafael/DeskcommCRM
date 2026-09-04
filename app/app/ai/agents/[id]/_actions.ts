@@ -32,6 +32,7 @@ import {
   versionPatchSchema,
 } from "@/lib/ai/agents/validation";
 import { publishAgentVersion } from "@/lib/ai/agents/publish";
+import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -151,7 +152,7 @@ export async function saveAgentDraftAction(
   // Sanity: o agent existe e é da org? não está arquivado?
   const { data: agent } = await admin
     .from("ai_agents")
-    .select("id, kind, archived_at, name, description, priority")
+    .select("id, kind, archived_at, name, description, priority, published_version_id")
     .eq("id", agentId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -169,16 +170,50 @@ export async function saveAgentDraftAction(
     return { ok: false, error: "validation_failed", message: mensagemDoEscopo(escopo) };
   }
 
-  // Procura draft existente (latest por version_number)
-  const { data: existingDraft } = await admin
+  // Em QUAL rascunho esta escrita cai — pela MESMA régua que a tela usa para
+  // decidir qual versão abrir (`escolherVersoesDaTela`, chamada em `page.tsx`).
+  // Uma segunda régua aqui é o defeito, não uma economia de consulta.
+  //
+  // Era "o rascunho de maior version_number, sem perguntar se ainda vale", e as
+  // duas respostas divergiam no rascunho SUPERADO — o rascunho ANTERIOR à
+  // publicada, estado que `revertToVersionAction` cria toda vez que alguém com
+  // trabalho em andamento reverte pelo Histórico. Medido com [v5 draft, v6
+  // publicada]: a tela responde `draft = null` (e chama a v5 de
+  // `draftObsoleto`), o servidor respondia `draft = v5`. Dois estragos de uma
+  // vez:
+  //
+  //   1. O trabalho ia para uma versão que a tela não reabre e o botão não
+  //      publica (`props.draft` é nulo enquanto o rascunho for superado). Aviso
+  //      verde "Rascunho v5 salvo.", recarrega, e a tela volta a mostrar a v6 —
+  //      o mesmo desfecho do defeito que o PR #502 consertou, por outra porta.
+  //   2. O rascunho superado é um RETRATO. A tela promete "ele continua no
+  //      Histórico" (`AgentForm.tsx`, `title` do badge) e o `VersionHistory` o
+  //      lista. Regravá-lo trocava o conteúdo daquela linha por um texto que
+  //      ninguém rascunhou ali, sem erro e sem volta — e o gatilho
+  //      `fn_ai_agent_version_content_immutable` não pega este caso, porque ele
+  //      congela conteúdo de `status <> 'draft'` e o rascunho superado ainda é
+  //      `draft`.
+  const { data: versoes } = await admin
     .from("ai_agent_versions")
-    .select("id, version_number")
+    .select("id, version_number, status")
     .eq("organization_id", activeOrg.orgId)
     .eq("agent_id", agentId)
-    .eq("status", "draft")
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("version_number", { ascending: false });
+
+  const { draft: existingDraft } = escolherVersoesDaTela(
+    versoes ?? [],
+    // MEDIDA, não palpite. O ponteiro é o que o motor executa (`agent-config.ts`
+    // faz `join … on v.id = a.published_version_id`); `status = 'published'` é
+    // rótulo, e os dois já divergem em produção. `?? null` é obrigatório e não
+    // enfeite: no schema a coluna é `uuid` NULL sem default (procure por
+    // `"published_version_id" "uuid"` em `supabase/baseline.sql`; a FK é `on
+    // delete set null`), então `null` é o dado "não há publicada" —
+    // enquanto `undefined` faria a régua cair no palpite. Medido com [v8
+    // published, v7 draft, v6 published] e ponteiro em v6: pela medida o
+    // rascunho vigente é a v7; pelo palpite não há rascunho vigente nenhum, e
+    // cada salvamento nasceria uma versão nova.
+    agent.published_version_id ?? null,
+  );
 
   if (existingDraft) {
     // PATCH na draft existente — não infla a sequência de versions.
@@ -235,7 +270,7 @@ export async function saveAgentDraftAction(
       ok: true,
       data: {
         version_id: existingDraft.id,
-        version_number: (existingDraft as { version_number: number }).version_number,
+        version_number: existingDraft.version_number,
       },
     };
   }
