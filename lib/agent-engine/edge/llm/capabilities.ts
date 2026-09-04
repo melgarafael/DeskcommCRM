@@ -36,6 +36,20 @@ const PROVIDER_DEFAULT: Record<string, ModelCapabilities> = {
  */
 const ROTEADORES = new Set(["openrouter"]);
 
+/**
+ * Este provedor é um ROTEADOR (revende modelos de vários fabricantes)?
+ *
+ * Importa para quem compõe esta resposta com o catálogo: num roteador, tudo que
+ * este registro tem é o PREFIXO do id — que diz o fabricante, não o modelo.
+ * `openai/gpt-4o` enxerga imagem e `openai/gpt-3.5-turbo` não, e os dois têm o
+ * mesmo prefixo. Já o catálogo (`ai_models.supports_vision`) é sincronizado das
+ * modalidades que a própria OpenRouter declara, então ali ele é MEDIDA e este
+ * registro é PALPITE. Ver `enxergaImagem` em `lib/ai/pontos/capacidade-em-vigor.ts`.
+ */
+export function ehRoteador(provider: string): boolean {
+  return ROTEADORES.has(provider?.toLowerCase() ?? "");
+}
+
 // Substrings de modelos que NÃO são de chat multimodal (embeddings, TTS, etc.)
 // — rebaixam mesmo num provider capaz. Deny-list explícita e pequena.
 const TEXT_ONLY_HINTS = ["embedding", "tts", "whisper", "moderation"];

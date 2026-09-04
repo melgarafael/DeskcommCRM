@@ -39,6 +39,7 @@ import { PONTO_POR_ID, type PontoDeIa } from "./registro";
 
 /** De onde a escolha efetiva veio — vai para a tela e para o log. */
 export type OrigemDaEscolha =
+  | "fixo_do_produto"
   | "agente_publicado"
   | "binding"
   | "variavel_de_ambiente"
@@ -52,6 +53,7 @@ export const EXPLICACAO_DA_ORIGEM: Record<OrigemDaEscolha, string> = {
   herdado_de_quem_chamou:
     "Herdado de quem disparou a chamada — o agente publicado, ou o roteador de intenção.",
   padrao_da_organizacao: "Usando o padrão da organização.",
+  fixo_do_produto: "O produto resolve este ponto sozinho — não há modelo a escolher.",
 };
 
 /** Uma linha de `ai_purpose_bindings`, já filtrada por organização. */
@@ -150,6 +152,26 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
 export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
   const ponto = PONTO_POR_ID.get(entrada.pontoId);
   const avisos: string[] = [];
+
+  // 0 · Ponto FIXO responde por si, antes de qualquer cadeia.
+  //
+  // ⚠️ Sem este degrau, um ponto fixo percorria a resolução inteira e caía no
+  // padrão da organização — e a tela anunciava `claude-sonnet-5` em "Ouvir o
+  // áudio do cliente", ao lado do texto que diz "usa o padrão de transcrição
+  // da OpenAI". A mesma tela afirmando duas coisas incompatíveis.
+  //
+  // Modelo de conversa não transcreve áudio: anunciar um ali manda quem opera
+  // caçar um problema que não existe, ou trocar o modelo errado.
+  if (ponto?.fixo?.usa) {
+    return {
+      provider: ponto.fixo.usa.provider,
+      modelId: ponto.fixo.usa.modelId,
+      credentialId: null,
+      baseUrl: null,
+      origem: "fixo_do_produto",
+      avisos,
+    };
+  }
 
   // 1 · O agente publicado manda nos pontos que são o próprio agente.
   if (PONTOS_DO_AGENTE_PUBLICADO.has(entrada.pontoId) && entrada.agentePublicado !== null) {

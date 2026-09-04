@@ -8,7 +8,7 @@ import { generateText } from "ai";
 import type pg from "pg";
 
 import { extractPdfText } from "@/lib/ai/rag/extractors/pdf";
-import { capacidadeEhConhecida, modelCapabilities } from "@/lib/agent-engine/edge/llm/capabilities";
+import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { resolveOrgLlmConfig, type LlmEdgeConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
 import { createPool } from "@/lib/agent-engine/db/pool";
@@ -152,7 +152,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       }
     }
 
-    const deps = buildDeriveDeps(llm, openaiKey, row.organization_id);
+    const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, admin);
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
     await admin.from("messages")
@@ -202,10 +202,42 @@ function buildDeriveDeps(
   llm: { provider: string; apiKey: string; defaultModel: string | null },
   openaiKey: string | null,
   orgId: string,
+  admin: ReturnType<typeof createAdminClient>,
 ): DeriveDeps {
   const registry = createDefaultRegistry();
-  const visionCapable = modelCapabilities(llm.provider, llm.defaultModel ?? "").image;
+  // Thunk, não consulta: nada vai ao banco até a visão ser de fato perguntada,
+  // e num provedor direto `visaoEmVigor` nem pergunta.
+  //
+  // ⚠️ Por que a consulta é escrita aqui, e também em `media-parts.ts`, em vez de
+  // morar num helper compartilhado: casar o client do Supabase contra a interface
+  // estreita de um helper faz o checador estourar em TS2589 ("type instantiation
+  // is excessively deep") — é o parser de colunas do PostgREST, não uma
+  // incompatibilidade real. E ele estoura de forma DESIGUAL: `tsc --noEmit`
+  // passava e o `next build` reprovava, no mesmo arquivo e na mesma linha, o que
+  // torna o helper uma armadilha que só aparece no CI. O que precisava ser único
+  // é a REGRA, e ela é: `visaoEmVigor` decide, aqui e em `media-parts.ts`.
+  const catalogo = async (): Promise<boolean | null> => {
+    const { data } = await admin
+      .from("ai_models")
+      .select("supports_vision")
+      .eq("provider", llm.provider)
+      .eq("model_id", llm.defaultModel ?? "")
+      .is("deprecated_at", null)
+      .maybeSingle();
+    return data?.supports_vision ?? null;
+  };
   const describeImage: DeriveDeps["describeImage"] = async (buffer, mime) => {
+    // ⚠️ A resposta é resolvida AQUI, não na montagem das deps, porque num
+    // roteador ela depende do catálogo e a consulta é assíncrona. Antes disto
+    // a pergunta ia direto ao registro, que num roteador responde pelo prefixo
+    // do fabricante: `openai/gpt-3.5-turbo` era dado como capaz de ver, a
+    // chamada de visão saía e o aviso ao operador nunca abria.
+    const visao = await visaoEmVigor({
+      provider: llm.provider,
+      modelId: llm.defaultModel ?? "",
+      catalogo,
+    });
+    const visionCapable = visao.enxerga;
     // ─── Falha VISÍVEL, não string vazia ────────────────────────────────────
     //
     // Antes daqui, modelo sem visão devolvia "" e pronto: o cliente mandava a
@@ -223,7 +255,7 @@ function buildDeriveDeps(
       // `{image:false}` por conservadorismo — afirmar ao operador que ele "não
       // enxerga imagens" seria gravar uma alegação que ninguém verificou (e
       // era o que acontecia com todo modelo da OpenRouter).
-      const motivo = capacidadeEhConhecida(llm.provider, llm.defaultModel ?? "")
+      const motivo = visao.sabemos
         ? `o modelo ${llm.defaultModel ?? "configurado"} não enxerga imagens`
         : `não sei se o modelo ${llm.defaultModel ?? "configurado"} enxerga imagens, ` +
           `então não arrisquei enviar a foto — escolha um modelo do catálogo em Agente de IA → Provedores`;
