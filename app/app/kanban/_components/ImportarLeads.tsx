@@ -154,7 +154,7 @@ export function ImportarLeads({ funis }: { funis: FunilDaLista[] }) {
             </a>
 
             {erro ? (
-              <p role="alert" className="rounded bg-destructive/10 p-2 text-xs font-medium text-destructive">
+              <p role="alert" className="rounded-md bg-destructive/10 p-2 text-xs font-medium text-destructive">
                 {erro}
               </p>
             ) : null}
