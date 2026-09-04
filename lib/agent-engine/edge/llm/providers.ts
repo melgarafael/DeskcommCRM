@@ -42,6 +42,23 @@ const GOOGLE_ENDPOINT = 'https://generativelanguage.googleapis.com';
  * `familia/modelo`, o mesmo dos nossos, sem tradução no meio.
  */
 export const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1';
+/**
+ * Os seis provedores abaixo são todos compatíveis com a API de Chat
+ * Completions da OpenAI (mesmo padrão da OpenRouter): `createOpenAI` com
+ * `baseURL` apontando pro endpoint canônico de cada um. O `baseUrl` do
+ * painel (terceiro argumento da fábrica) ainda vence quando presente — é o
+ * que permite proxy/gateway próprio, e é OBRIGATÓRIO para `ollama`, que não
+ * tem endpoint hospedado: o cliente aponta pra própria VPS/máquina.
+ */
+export const NVIDIA_ENDPOINT = 'https://integrate.api.nvidia.com/v1';
+/** Sem endpoint hospedado — é só o default sugerido pela tela quando o
+ *  operador ainda não digitou o seu. Nunca usado sem `baseUrl` explícito em
+ *  produção (a org roda o Ollama na própria rede). */
+export const OLLAMA_DEFAULT_ENDPOINT = 'http://localhost:11434/v1';
+export const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/v1';
+export const QWEN_ENDPOINT = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+export const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4';
+export const MOONSHOT_ENDPOINT = 'https://api.moonshot.cn/v1';
 
 /**
  * Providers reais do lançamento. Sonnet (Anthropic) é o default RECOMENDADO —
@@ -79,6 +96,39 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
      */
     openrouter: (apiKey, modelId, baseUrl) => {
       const endpoint = baseUrl ?? OPENROUTER_ENDPOINT;
+      return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) })(modelId);
+    },
+    nvidia: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? NVIDIA_ENDPOINT;
+      return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) })(modelId);
+    },
+    /**
+     * Sem chave real: `apiKey` vem vazia/dummy do painel (Ollama não cobra e
+     * não autentica por padrão). O `baseUrl` é OBRIGATÓRIO na prática — sem
+     * ele cai no default `localhost`, que só faz sentido rodando ao lado do
+     * próprio processo (dev). `createOpenAI` aceita string vazia sem lançar;
+     * quem valida se há endpoint alcançável é `validateOllamaEndpoint`.
+     */
+    ollama: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? OLLAMA_DEFAULT_ENDPOINT;
+      return createOpenAI({ apiKey: apiKey || 'ollama', baseURL: endpoint, fetch: contain(endpoint) })(
+        modelId,
+      );
+    },
+    deepseek: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? DEEPSEEK_ENDPOINT;
+      return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) })(modelId);
+    },
+    qwen: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? QWEN_ENDPOINT;
+      return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) })(modelId);
+    },
+    zhipu: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? ZHIPU_ENDPOINT;
+      return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) })(modelId);
+    },
+    moonshot: (apiKey, modelId, baseUrl) => {
+      const endpoint = baseUrl ?? MOONSHOT_ENDPOINT;
       return createOpenAI({ apiKey, baseURL: endpoint, fetch: contain(endpoint) })(modelId);
     },
   };

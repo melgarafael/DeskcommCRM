@@ -206,12 +206,11 @@ jobs:
       # Cada item aqui tem o motivo MEDIDO, não presumido — e o gate cobra que a
       # lista exista e some com as outras duas.
       #
-      # `vps-fresh-onboarding` fica fora por DUAS razões, e só a primeira estava
-      # escrita — com o número errado, contradito 8 linhas abaixo neste mesmo
-      # arquivo, que já usava 17 como controle positivo:
+      # `vps-fresh-onboarding` fica fora por DUAS razões:
       #
-      #   (1) 17 linhas dependem de WAHA/Resend/Nuvemshop/Redis
-      #       (`grep -ciE "waha|resend|nuvemshop|redis"` → 17 linhas, 22 ocorrências).
+      #   (1) depende de WAHA/Resend/Redis reais — não conta com credencial de CI.
+      #       Reconte antes de citar um número: `grep -ciE "waha|resend|redis"
+      #       tests/e2e/vps-fresh-onboarding.spec.ts`.
       #
       #   (2) `orgRow()` (`:41-43`) faz `.limit(1).single()` em `organizations` —
       #       pressupõe banco de UMA organização só. O banco do CI é compartilhado
@@ -226,9 +225,9 @@ jobs:
 # As CINCO specs da missão "Follow-up Vivo" (`followup-linguagem`,
       # `followup-ramos`, `followup-dossie`, `followup-tempo-adaptativo`,
       # `gatilho-de-etapa`) entraram nas listas de execução, e não aqui, porque a
-      # medição não dá motivo para excluí-las: grep de waha/resend/nuvemshop/redis
-      # devolve **0 em todas as cinco** (controle positivo: `vps-fresh-onboarding`
-      # devolve 17). Usam o endpoint de cron, como a `followup-journey` que já roda.
+      # medição não dá motivo para excluí-las: grep de waha/resend/redis
+      # devolve 0 em todas as cinco (controle positivo: `vps-fresh-onboarding`
+      # não devolve 0). Usam o endpoint de cron, como a `followup-journey` que já roda.
       #
       # ⚠️ O QUE NÃO ESTÁ MEDIDO: elas passam LOCALMENTE, e verde local não é verde
       # de CI. Nenhuma delas rodou num job ainda — foram escritas nesta missão e
@@ -483,7 +482,7 @@ jobs:
             echo "**Rodou: ${RODOU} de ${NO_DISCO} specs.**"
             echo ""
             echo "**Não rodou (${FORA}):**"
-            for s in $FORA_DO_CI; do echo "- \`${s}\` — precisa de WAHA + Redis + Resend + Nuvemshop (P0 da doutrina de QA Visual)"; done
+            for s in $FORA_DO_CI; do echo "- \`${s}\` — precisa de WAHA + Redis + Resend (P0 da doutrina de QA Visual)"; done
             echo ""
             echo "A soma é conferida mecanicamente por \`tests/unit/e2e-cobertura-completa.test.ts\`:"
             echo "spec no disco que não esteja em nenhuma das três listas reprova o build."

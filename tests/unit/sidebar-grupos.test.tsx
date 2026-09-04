@@ -75,13 +75,11 @@ describe("Sidebar agrupado", () => {
     expect(screen.getByRole("link", { name: "Funis" })).toHaveAttribute("href", "/app/kanban");
   });
 
-  it("desenterra Nuvemshop e Audit Log", () => {
+  it("desenterra Audit Log", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);
-    // Nuvemshop não tinha link nenhum no app; Audit Log só existia via card em
-    // Configurações. Canal oficial não está aqui de propósito: virou aba de
-    // Conexões no PR #105, e Conexões é a porta.
-    expect(screen.getByRole("link", { name: /Nuvemshop/ })).toBeTruthy();
+    // Audit Log só existia via card em Configurações. Canal oficial não está
+    // aqui de propósito: virou aba de Conexões no PR #105, e Conexões é a porta.
     expect(screen.getByRole("link", { name: /Audit Log/ })).toBeTruthy();
   });
 

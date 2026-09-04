@@ -7,7 +7,7 @@ Escopo previsto:
 - `gateway.ts` — wrapper Vercel AI Gateway (fallback de provedor; observability por tenant)
 - `agent.ts` — orquestrador do chatbot por tenant (carrega config de `ai_agents`)
 - `rag/`
-  - `ingest.ts` — pipeline de ingestão (FAQ + política + catálogo Nuvemshop + conversas resolvidas)
+  - `ingest.ts` — pipeline de ingestão (FAQ + política + catálogo CSV + conversas resolvidas)
   - `embed.ts` — wrapper OpenAI `text-embedding-3-large`
   - `retrieve.ts` — query top-K em `ai_chunks` (pgvector) + reranking
 - `sentiment.ts` — análise binária alta/baixa frustração via Haiku 4.5

@@ -19,11 +19,10 @@
 7. [OpenAI — embeddings do RAG](#5-openai--embeddings-do-rag)
 8. [Sentry — monitoramento de erros](#6-sentry--monitoramento-de-erros)
 9. [Resend — email transacional](#7-resend--email-transacional)
-10. [Nuvemshop — integração e-commerce](#8-nuvemshop--integração-e-commerce)
-11. [Chaves geradas localmente](#9-chaves-geradas-localmente--encryption--secrets)
-12. [Verificação final](#verificação-final)
-13. [Troubleshooting](#troubleshooting)
-14. [Próximos passos](#próximos-passos)
+10. [Chaves geradas localmente](#8-chaves-geradas-localmente--encryption--secrets)
+11. [Verificação final](#verificação-final)
+12. [Troubleshooting](#troubleshooting)
+13. [Próximos passos](#próximos-passos)
 
 ---
 
@@ -67,7 +66,6 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 **⚪ Pode ficar vazio em dev (degradam graciosamente):**
 - [Sentry](#6-sentry--monitoramento-de-erros) — não monitora erros, mas app sobe.
 - [Resend](#7-resend--email-transacional) — emails não saem (vão pro console.log), mas app sobe.
-- [Nuvemshop](#8-nuvemshop--integração-e-commerce) — UI mostra "Integração não configurada".
 
 ---
 
@@ -346,44 +344,7 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 
 ---
 
-## 8. Nuvemshop — integração e-commerce
-
-**O que é:** Plataforma de e-commerce brasileira. Nossa integração OAuth importa pedidos, produtos, clientes pro CRM.
-
-> ℹ️ **Pode pular em dev.** Se essas vars ficarem vazias, a UI mostra "Integração não configurada" e você toca o resto do app normal.
-
-### Passo a passo
-
-1. Acesse <https://partners.tiendanube.com/> → **Sign up** como parceiro (gratuito).
-2. No dashboard de parceiro → **Apps → Create new app**.
-   - **App name:** `SonghaiCRM Dev`.
-   - **Redirect URI:** `https://<sua-url-ngrok>.ngrok-free.app/api/v1/integrations/nuvemshop/callback` (mesmo ngrok do WAHA, ou outro).
-   - **Scopes:** marque tudo relacionado a `read_orders`, `read_customers`, `read_products`, `write_orders` (pra atualizar status).
-3. Após criar, a tela do app mostra:
-
-| Campo no portal | Variável no `.env.local` |
-|---|---|
-| **App ID** (na URL: `partners.tiendanube.com/apps/12345`) | `NUVEMSHOP_APP_ID` (= `12345`) |
-| **Client ID** | `NUVEMSHOP_CLIENT_ID` |
-| **Client Secret** (clique pra revelar) | `NUVEMSHOP_CLIENT_SECRET` |
-
-```env
-NUVEMSHOP_APP_ID=12345
-NUVEMSHOP_CLIENT_ID=...
-NUVEMSHOP_CLIENT_SECRET=...
-```
-
-4. Configure também a URL pública do app:
-
-```env
-NEXT_PUBLIC_APP_URL=https://<sua-url-ngrok>.ngrok-free.app
-```
-
-A URL do callback OAuth precisa bater **exatamente** com a `Redirect URI` cadastrada no portal — incluindo `https`, sem barra final.
-
----
-
-## 9. Chaves geradas localmente — encryption + secrets
+## 8. Chaves geradas localmente — encryption + secrets
 
 Estas você **gera você mesmo** — não tem dashboard, não tem login. São strings aleatórias usadas pra criptografia interna e segredos da app.
 
@@ -401,7 +362,7 @@ INTERNAL_SECRET=<saída-1>
 # Criptografia de PII
 NUIT_ENCRYPTION_KEY=<saída-2>
 
-# Criptografia de tokens OAuth Nuvemshop
+# Criptografia genérica de segredos de webhook/automação (GUC app.nuvemshop_oauth_key — nome legado)
 NUVEMSHOP_OAUTH_ENCRYPTION_KEY=<saída-3>
 
 # Criptografia de credenciais BYO-WAHA (cliente que roda WAHA próprio)
@@ -416,7 +377,7 @@ LGPD_SIGNING_KEY=<saída-6>
 
 > ⚠️ **NUNCA reutilize** a mesma string em produção. Cada uma criptografa uma coisa diferente — se vazar uma, queremos blast radius limitado.
 >
-> ⚠️ **NUNCA mude `NUIT_ENCRYPTION_KEY` ou `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` depois que tiver dados em prod** — você não consegue mais descriptografar o que foi salvo. Rotação dessas chaves exige migration de re-encryption.
+> ⚠️ **NUNCA mude `NUIT_ENCRYPTION_KEY` ou `NUVEMSHOP_OAUTH_ENCRYPTION_KEY` depois que tiver dados em prod** — você não consegue mais descriptografar o que foi salvo (a segunda cifra segredos de webhook/automação, não Nuvemshop). Rotação dessas chaves exige migration de re-encryption.
 
 ### Outras vars opcionais
 

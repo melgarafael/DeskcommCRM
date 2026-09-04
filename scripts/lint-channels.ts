@@ -107,9 +107,6 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
       "components/admin/dashboard/AlertItem.tsx",
       "components/admin/dashboard/KPICards.tsx",
       "components/admin/tenants/HealthGrid.tsx",
-      // (#118) Fixture do teste do componente logo abaixo, que já é dívida:
-      // sai junto com ele, pelo mesmo motivo.
-      "components/admin/tenants/TenantOverview.test.tsx",
       "components/admin/tenants/TenantOverview.tsx",
       "components/connections/ConnectionsClient.tsx",
       // (#118) `waha_error` no catálogo de códigos de erro da API pública.

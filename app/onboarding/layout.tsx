@@ -6,7 +6,6 @@ import { Stepper } from "./_components/Stepper";
 import { SkipToEnd } from "./_components/SkipToEnd";
 import { branding } from "@/lib/branding";
 import { passosVisiveis } from "@/lib/onboarding/passos";
-import { env } from "@/lib/env";
 
 export default async function OnboardingLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAuth();
@@ -18,7 +17,7 @@ export default async function OnboardingLayout({ children }: { children: React.R
 
   // Os passos que ESTA instalação oferece, com o que já foi resolvido. O
   // indicador não decide mais nada sozinho — ele desenha o que recebe.
-  const passos = passosVisiveis({ lojaLigada: env.NUVEMSHOP_ENABLED }).map((p) => ({
+  const passos = passosVisiveis().map((p) => ({
     segmento: p.segmento,
     rotulo: p.rotulo,
     cumprido: p.cumprido(state),

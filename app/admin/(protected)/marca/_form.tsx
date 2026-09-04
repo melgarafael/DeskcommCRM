@@ -230,7 +230,7 @@ export function FormularioDaMarca({
 
           Agora envelheceu uma TERCEIRA vez, e vale registrar o porquê: dizia que
           os 4 client components (os dois menus, o painel de códigos de
-          recuperação e a tela da Nuvemshop) liam `window.__PUBLIC_ENV__`. Eles
+          recuperação e uma tela de integração) liam `window.__PUBLIC_ENV__`. Eles
           liam — e era um DEFEITO, não um caminho. `branding()` lê
           `window.__PUBLIC_ENV__` no navegador e `process.env` no servidor, e a
           injeção da marca resolvida fez as duas divergirem: no SSR de um

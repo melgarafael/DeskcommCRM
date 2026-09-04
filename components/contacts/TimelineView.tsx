@@ -2,7 +2,7 @@
 import { useMemo } from "react";
 import { format, isToday, isYesterday } from "date-fns";
 import { pt as ptBR } from "date-fns/locale";
-import { ChatCircle, Users, Storefront, Robot, Gear } from "@/lib/ui/icons";
+import { ChatCircle, Users, Robot, Gear } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +20,6 @@ interface Props {
 const ICON_MAP: Record<string, PhosphorIcon> = {
   whatsapp: ChatCircle,
   crm: Users,
-  nuvemshop: Storefront,
   ai: Robot,
   system: Gear,
 };

@@ -623,8 +623,8 @@ setup_update_agent_cron() {
   c_grn "✓ atualização pela tela ativa (agente a cada 5 minutos)"
 }
 
-# Garante a chave de cifra dos segredos (webhooks/Nuvemshop) e a semeia no
-# banco (private.app_secrets, migration 0041). Idempotente: reusa a chave do
+# Garante a chave de cifra genérica dos segredos de webhook/automação e a
+# semeia no banco (private.app_secrets, migration 0041). Idempotente: reusa a chave do
 # .env se existir (trocá-la invalidaria dados já cifrados); gera se ausente e
 # appenda ao .env. Chamada por install.sh e update.sh APÓS aplicar o baseline.
 ensure_encryption_key() {

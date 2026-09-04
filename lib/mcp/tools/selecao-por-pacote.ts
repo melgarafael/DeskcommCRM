@@ -131,14 +131,12 @@ export function desligarPacote(
  * deliberadamente deixou de fora fica com o checkbox **desabilitado**: o pacote
  * prometeu uma escolha que o produto não permite fazer.
  *
- * Medido em 2026-08-06, catálogo de 51 capacidades, teto 20:
- *
- *   atender    17 automáticas + 1 crítica = 18
- *   organizar  14 automáticas + 4 críticas = 18
- *   escalar    10 automáticas + 2 críticas = 12
- *
- * Nenhum estoura sozinho. O que estourava era o pacote SOMADO ao que já estava
- * ligado: 3 pré-selecionadas + atender = 20 exatas, teto cheio, crítica morta.
+ * O número exato por pacote muda toda vez que o catálogo ganha ou perde
+ * capacidade — não hardcode aqui; `tests/unit/pacote-reserva-vaga-da-critica.test.ts`
+ * mede isso de verdade a cada rodada e é a fonte confiável. O que importa
+ * para o design: nenhum pacote sozinho estoura o teto de 20, mas um pacote
+ * SOMADO ao que já estava ligado pode chegar perto ou passar — foi assim que
+ * a crítica nascia morta antes desta função existir (issue #162).
  *
  * Reservar é o que mantém o contrato de pé: ou o pacote cabe inteiro — com a
  * vaga da crítica guardada — ou ele não liga, e a tela diz quantas vagas faltam.

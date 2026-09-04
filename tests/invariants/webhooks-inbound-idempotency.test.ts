@@ -7,7 +7,7 @@
  *  1. segundo INSERT com o mesmo (org, 'webhook', external_id) → 23505;
  *  2. external_id NULL não deduplica (N leads sem id externo convivem);
  *  3. o MESMO external_id em orgs diferentes convive (escopo por tenant);
- *  4. o mesmo external_id com source diferente convive (webhook ≠ nuvemshop).
+ *  4. o mesmo external_id com source diferente convive (webhook ≠ vtex).
  * O comportamento HTTP (200 idempotente, corrida re-selecionada) é provado no
  * E2E por curl contra o dev server (ver HANDOFF).
  *
@@ -76,8 +76,8 @@ describe("idempotência inbound — índice uniq_crm_leads_org_source_external",
     expect(n).toBe("2");
   });
 
-  it("4. mesmo external_id com SOURCE diferente convive (webhook ≠ nuvemshop)", () => {
-    sql(insertLead(ORG_A, PIPE_A, STAGE_A, "de outra origem", "nuvemshop", "zap-run-001"));
+  it("4. mesmo external_id com SOURCE diferente convive (webhook ≠ vtex)", () => {
+    sql(insertLead(ORG_A, PIPE_A, STAGE_A, "de outra origem", "vtex", "zap-run-001"));
     const n = sql(
       `select count(*) from public.crm_leads where organization_id='${ORG_A}' and external_id='zap-run-001';`,
     ).trim();

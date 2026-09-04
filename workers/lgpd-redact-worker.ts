@@ -14,9 +14,8 @@
  *        request_payload.progress. On finish: organizations.status='redacted'
  *        + redacted_at=now().
  *   5. Mark status='completed' (or 'partial_failure' for tenant).
- *   6. Try Nuvemshop callback (stub when adapter missing).
- *   7. Emit lgpd.redact_applied (success) or lgpd.redact_failed (error).
- *   8. Audit at request-level (the per-contact dense audit row is already
+ *   6. Emit lgpd.redact_applied (success) or lgpd.redact_failed (error).
+ *   7. Audit at request-level (the per-contact dense audit row is already
  *      inserted by the RPC).
  *
  * Zero PII in logs / Sentry — only ids + sha256 of error messages.
@@ -57,22 +56,6 @@ function readTenantProgress(payload: Record<string, unknown> | null | undefined)
       ? ((raw["failed_contacts"] as unknown[]).filter((x) => typeof x === "string") as string[])
       : [],
   };
-}
-
-async function tryNuvemshopCallback(
-  organizationId: string,
-  payload: Record<string, unknown>,
-): Promise<{ called: boolean; status: string }> {
-  // Best-effort: NuvemshopAdapter.redactCustomer is not yet implemented — the
-  // Nuvemshop App API does not currently expose a confirmation endpoint for
-  // GDPR/LGPD callbacks; receiving the webhook is the contract. We log a
-  // structured warn so observability tools surface the gap and the audit log
-  // marks the callback as 'not_implemented'.
-  logger.warn("[lgpd-redact-worker] nuvemshop_callback_not_implemented", {
-    organization_id: organizationId,
-    has_store_id: typeof payload["store_id"] !== "undefined",
-  });
-  return { called: false, status: "not_implemented" };
 }
 
 export async function processLgpdRedact(event: EventRow): Promise<HandlerResult> {
@@ -245,9 +228,6 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
         };
       }
 
-      // Best-effort callback to upstream platform.
-      const callback = await tryNuvemshopCallback(orgId, req.request_payload ?? {});
-
       await admin
         .from("lgpd_requests")
         .update({
@@ -257,7 +237,6 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
             contact_id: contactId,
             cascaded_to: cascade.counts,
             media_queued: cascade.mediaPaths.length,
-            callback_status: callback.status,
           },
           cascaded_to: cascade.counts,
           error_message: null,
@@ -290,7 +269,6 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
           contact_id: contactId,
           cascaded_to: cascade.counts,
           media_queued: cascade.mediaPaths.length,
-          callback_status: callback.status,
           attempts: nextAttempts,
         },
         bypassedRls: true,
@@ -386,8 +364,6 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
         });
       }
 
-      const callback = await tryNuvemshopCallback(orgId, req.request_payload ?? {});
-
       const failedCount = progress.failed_contacts.length;
       const finalStatus = failedCount > 0 ? "pending_review" : "completed";
 
@@ -401,7 +377,6 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
             processed: progress.processed,
             failed_contacts_count: failedCount,
             aggregate_counts: aggregate,
-            callback_status: callback.status,
             organization_status: "redacted",
           },
           cascaded_to: aggregate,
@@ -434,7 +409,6 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
           processed: progress.processed,
           failed_count: failedCount,
           aggregate_counts: aggregate,
-          callback_status: callback.status,
           attempts: nextAttempts,
           partial_failure: failedCount > 0,
         },

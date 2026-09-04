@@ -94,7 +94,11 @@ describe("o endpoint próprio chega até a fábrica", () => {
     // A assinatura precisa aceitar baseUrl, senão `ai_purpose_bindings.base_url`
     // seria uma coluna que a tela preenche e o runtime ignora — configuração
     // que não configura nada.
-    const modelo = registry["openrouter"]!("chave-de-teste", "meta-llama/llama-3.3-70b-instruct", "https://gateway.exemplo/v1");
+    const modelo = registry["openrouter"]!(
+      "chave-de-teste",
+      "meta-llama/llama-3.3-70b-instruct",
+      "https://gateway.exemplo/v1",
+    );
     expect(modelo).toBeDefined();
   });
 
@@ -140,6 +144,12 @@ describe("lista de provedores × os pontos de ESCRITA", () => {
     // existe um ramo por provedor, e não o `default` que devolve
     // `unknown_provider` — cadastrar a chave devolveria "provedor
     // desconhecido" com o provedor na lista da tela.
+    //
+    // É uma chamada de rede DE VERDADE por provedor (de propósito — casa o
+    // `switch` com o endpoint real, não um mock que também erraria sozinho).
+    // Com 10 provedores e até 5s de timeout cada (`TIMEOUT_MS` de
+    // provider-validators.ts) o pior caso passa fácil dos 15s padrão do
+    // vitest — daí o timeout maior aqui, não no `TIMEOUT_MS` de produção.
     const semValidador: string[] = [];
     for (const id of ids) {
       const r = await validators.validateProviderKey(
@@ -149,7 +159,7 @@ describe("lista de provedores × os pontos de ESCRITA", () => {
       if (!r.ok && r.error.startsWith("unknown_provider")) semValidador.push(id);
     }
     expect(semValidador).toEqual([]);
-  });
+  }, 60000);
 
   it("nenhuma cópia da lista de três sobrou no código de provedor", async () => {
     // A sonda é grosseira de propósito: qualquer lugar que ainda enumere

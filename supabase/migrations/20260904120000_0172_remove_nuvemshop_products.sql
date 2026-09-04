@@ -1,0 +1,33 @@
+-- 0172 — remove nuvemshop_products (feature Nuvemshop descontinuada no produto).
+--
+-- `nuvemshop_products` era um cache local sincronizado da API externa da
+-- Nuvemshop (produtos para RAG) — sem valor histórico a preservar, e
+-- resincronizável do zero se a integração algum dia voltar. Drop explícito:
+-- trigger -> policy -> tabela (índices, FK e grants seguem junto pelo DROP
+-- TABLE).
+--
+-- Deliberadamente NÃO apertamos os CHECK constraints que ainda citam
+-- 'nuvemshop'/'nuvemshop_catalog' no vocabulário aberto de outras tabelas
+-- (ai_knowledge_sources_source_type_check, lgpd_requests_source_check,
+-- orders_external_provider_check, tenant_integrations_provider_check,
+-- webhook_events_log_provider_check, e a lista de webhook_sources): clone
+-- self-host real pode ter linha histórica com esse valor (pedido antigo,
+-- requisição LGPD antiga), e apertar a constraint sem migrar dados primeiro
+-- quebraria o `update.sh` desses clones — a doutrina de migrations exige
+-- corrigir/deduplicar dados ANTES de apertar constraint, e não vale o
+-- esforço para uma feature descontinuada. O valor fica "morto" no
+-- vocabulário, inofensivo.
+--
+-- Também NÃO tocamos em `fn_encrypt_oauth`/`fn_decrypt_oauth` nem na GUC
+-- `app.nuvemshop_oauth_key`: essa infra de cifra, apesar do nome, hoje é
+-- usada também por `webhook_sources.secret_encrypted` e por
+-- `automation_rules` genéricos (migration 0041) — não é exclusiva da
+-- Nuvemshop. Renomear é fora de escopo desta migration (risco
+-- desproporcional para uma limpeza de descontinuação).
+
+-- DROP TABLE sozinho já cascateia trigger e policy da própria tabela — não
+-- precisa (e não deve) dropar os dois antes: ver baseline.sql, que corrige
+-- o mesmo padrão porque lá a tabela pode nunca ter existido (instalação
+-- fresh), e `... ON public.nuvemshop_products` falha se a relação não
+-- existir, mesmo com IF EXISTS no trigger/policy.
+DROP TABLE IF EXISTS public.nuvemshop_products;

@@ -58,7 +58,7 @@ owner: Songhai, Lda
 - **Tipo**: Soft policy
 - **Regra**: GIVEN request entrando pela API; WHEN chega no edge; THEN tenant é resolvido via subdomain (`<tenant>.api.deskcomm.com`) OU header `X-Tenant-ID` (configurável global). API key NÃO determina tenant — o JWT/Bearer determina.
 - **Enforcement**: Edge function / middleware.
-- **Exceção**: Webhooks externos (Nuvemshop) usam path token único por tenant em vez de subdomain.
+- **Exceção**: Webhooks externos genéricos (`webhook_sources`) usam path token único por tenant em vez de subdomain.
 
 ### T-06 — Tenant criado vem com pipeline default seedado
 - **Origem**: Sub-PRD 01 §3.7 + Sub-PRD 04 §3.3
@@ -86,21 +86,21 @@ owner: Songhai, Lda
 ## 2. LGPD (L)
 
 ### L-01 — Anonimização preferida sobre delete físico
-- **Origem**: PRD-Mestre §7.1, Sub-PRD 01 §3.6, Sub-PRD 06 §3.9
+- **Origem**: PRD-Mestre §7.1, Sub-PRD 01 §3.6
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN solicitação de redact LGPD; WHEN o contato tem **qualquer** referência em `crm_leads`, `orders`, `crm_lead_activities`, `messages` (ou seja, é praticamente sempre); THEN executar **anonimização** (não delete). Delete físico apenas se contact não tem nenhuma dependência (raro: contato criado e nunca usado).
 - **Enforcement**: API (`POST /api/v1/lgpd/redact`) + worker LGPD.
 - **Exceção**: Tenant pode solicitar delete forçado via processo manual com aprovação dupla (admin + super-admin) — auditado.
 
 ### L-02 — SLA de data_request: D+7 dias úteis
-- **Origem**: Sub-PRD 01 §3.6, Sub-PRD 06 §3.9
+- **Origem**: Sub-PRD 01 §3.6
 - **Tipo**: Hard constraint
-- **Regra**: GIVEN data_request recebido (via UI ou webhook Nuvemshop); WHEN cronômetro inicia em `request.received_at`; THEN export estruturado (JSON + PDF) deve ser entregue em ≤7 dias úteis (timezone America/Sao_Paulo).
+- **Regra**: GIVEN data_request recebido (via UI ou webhook externo); WHEN cronômetro inicia em `request.received_at`; THEN export estruturado (JSON + PDF) deve ser entregue em ≤7 dias úteis (timezone America/Sao_Paulo).
 - **Enforcement**: Worker LGPD + alarme em D+5 (Sentry/PagerDuty).
 - **Exceção**: Casos com volume excepcional (>1M activities) podem solicitar extensão por escrito ao titular, mas o pedido de extensão também é auditado.
 
 ### L-03 — SLA de redact: D+15 dias úteis
-- **Origem**: Sub-PRD 01 §3.6, Sub-PRD 06 §3.9
+- **Origem**: Sub-PRD 01 §3.6
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN redact aprovado (incluindo cascade pra messages, activities, mídia em Storage); WHEN cronômetro inicia em `redact.approved_at`; THEN cascade completo aplicado em ≤15 dias úteis.
 - **Enforcement**: Worker LGPD + alarme em D+10.
@@ -121,7 +121,7 @@ owner: Songhai, Lda
 - **Exceção**: Comunicação `transactional` originada pelo próprio cliente (resposta a inbound do cliente) é dispensada de verificação — janela 24h da Meta cobre.
 
 ### L-06 — Audit de toda operação em dados sensíveis
-- **Origem**: Sub-PRD 01 §3.5, Sub-PRD 06 §3.9
+- **Origem**: Sub-PRD 01 §3.5
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN qualquer create/update/delete em `contacts.email`, `contacts.phone_number`, `contacts.cpf`, `contacts.consent`; WHEN a mutação commita; THEN entrada em `api_audit_log` com `who/what/which/when/from/to`.
 - **Enforcement**: DB trigger + middleware API.
@@ -139,13 +139,6 @@ owner: Songhai, Lda
 - **Tipo**: Hard constraint
 - **Regra**: GIVEN qualquer log estruturado, Sentry event, request body dump; WHEN o payload contém NUIT (regex `\b\d{9}\b`, mais o formato legado com separador `\d{3}\.?\d{3}\.?\d{3}-?\d{2}` de instalação herdada do template brasileiro); THEN o valor é mascarado pra `[NUIT]` antes do log persistir.
 - **Enforcement**: Sentry `beforeSend` (`lib/sentry/scrub.ts`) + logger middleware + sanitizador de webhook log.
-- **Exceção**: Nenhuma.
-
-### L-09 — Token OAuth Nuvemshop criptografado at-rest
-- **Origem**: Sub-PRD 06 §3.2
-- **Tipo**: Hard constraint
-- **Regra**: GIVEN OAuth token de plataforma e-commerce; WHEN persistido em `tenants.<provider>_oauth`; THEN coluna usa `pgcrypto` com chave separada `NUVEMSHOP_OAUTH_ENCRYPTION_KEY`.
-- **Enforcement**: DB.
 - **Exceção**: Nenhuma.
 
 ### L-10 — Audit log é append-only e retém 5 anos
@@ -300,7 +293,7 @@ owner: Songhai, Lda
 - **Origem**: Sub-PRD 02 §3.2
 - **Tipo**: Soft policy
 - **Regra**: GIVEN mesmo contact tem pedidos múltiplos; WHEN cada pedido cria 1 lead em "Pedidos"; THEN N leads são permitidos, distinguidos por `source_metadata.order_id`. Mas dois leads na MESMA stage com MESMO `source_metadata.order_id` devem ser detectados e mesclados.
-- **Enforcement**: Worker de Nuvemshop sync (idempotência).
+- **Enforcement**: Worker de sync de e-commerce (idempotência).
 - **Exceção**: Nenhuma.
 
 ---
@@ -416,7 +409,7 @@ owner: Songhai, Lda
 - **Enforcement**: Pós-processamento da resposta do LLM.
 - **Exceção**: Nenhuma.
 
-### IA-08 — Bot só fala de produtos no catálogo Nuvemshop sincronizado
+### IA-08 — Bot só fala de produtos no catálogo sincronizado
 - **Origem**: Sub-PRD 05 §3.10
 - **Tipo**: Hard constraint (LLM-guardrail)
 - **Regra**: GIVEN cliente pergunta sobre produto X; WHEN RAG não retorna match no catálogo; THEN bot responde "vou verificar com nossa equipe" e escala (gatilho G3).
@@ -436,13 +429,6 @@ owner: Songhai, Lda
 - **Regra**: GIVEN tenant com `ai_budget_cents` configurado; WHEN consumo do mês atinge 80%; THEN alarme + email pro admin. Em 100%; THEN bot é throttled (default: pausa); 4 gatilhos de handoff continuam funcionando (cliente sempre tem humano).
 - **Enforcement**: Worker IA + cron de billing.
 - **Override**: Tenant pode escolher comportamento em 100%: pausar bot vs continuar (paga overage). Default: pausar.
-
-### IA-11 — Embeddings de catálogo Nuvemshop são re-indexados em mudança
-- **Origem**: Sub-PRD 05 §3.5
-- **Tipo**: Hard constraint
-- **Regra**: GIVEN evento `nuvemshop.product_updated` no event_log; WHEN worker RAG consome; THEN o produto correspondente tem embedding re-gerado e index atualizado em ≤30s p95.
-- **Enforcement**: Worker RAG (pull-loop) + Sentry alerta se lag >5min.
-- **Exceção**: Nenhuma.
 
 ---
 
@@ -476,13 +462,6 @@ owner: Songhai, Lda
 - **Enforcement**: Upstash Redis sliding window.
 - **Override**: Cliente enterprise pode contratar plano com RPS maior; ajuste em `tenants.rate_limit_config`.
 
-### B-05 — Sync inicial Nuvemshop respeita rate limit do upstream
-- **Origem**: Sub-PRD 06 §3.11
-- **Tipo**: Hard constraint
-- **Regra**: GIVEN sync inicial em execução; WHEN response da Nuvemshop API retorna `X-Rate-Limit-Remaining: 0`; THEN worker pausa por `Retry-After` (ou 60s default) antes de continuar.
-- **Enforcement**: Worker de sync.
-- **Exceção**: Nenhuma.
-
 ---
 
 ## Anexo A — Mapa de regras por sub-PRD origem
@@ -494,8 +473,7 @@ owner: Songhai, Lda
 | `02-prd-customer-360` | P-01, P-02, P-03, P-04, P-05, P-08; L-04, L-07, L-08 |
 | `03-prd-whatsapp-waha` | T-07; W-01 a W-12; AT-07 |
 | `04-prd-pipeline-attendance` | P-06, P-07; AT-01 a AT-08 |
-| `05-prd-ai-rag-handoff` | IA-01 a IA-11; B-02 |
-| `06-prd-nuvemshop-lgpd` | L-01, L-02, L-03, L-05, L-09; B-05 |
+| `05-prd-ai-rag-handoff` | IA-01 a IA-10; B-02 |
 
 ## Anexo B — Mapa de enforcement layer
 

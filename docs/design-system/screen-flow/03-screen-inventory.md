@@ -8,7 +8,7 @@ date: 2026-04-28
 
 # 03 — Screen Inventory
 
-> Tabela exaustiva de todas as telas mapeadas. Cada linha = uma tela única. Estados explícitos por tela. Total 95 telas. Componentes-chave referenciados pelos Sub-PRDs.
+> Tabela exaustiva de todas as telas mapeadas. Cada linha = uma tela única. Estados explícitos por tela. Total 89 telas. Componentes-chave referenciados pelos Sub-PRDs.
 
 > **Este doc é um PLANO, não um mapa do que existe.** Foi escrito em 2026-04-28 e a
 > construção divergiu dele nos dois sentidos. O que o plano previu e ainda não existe, e o
@@ -34,14 +34,16 @@ date: 2026-04-28
 | 4 | `/login/recovery` | todos | default, error, used-code | `<RecoveryCodeForm>` | — | P1 | idem |
 | 5 | `/logout` | todos | redirect | — | — | P0 | — |
 
-## B. Onboarding (8 telas)
+## B. Onboarding (7 telas)
+
+> `/onboarding/connect-nuvemshop` (era #9) saiu: integração Nuvemshop descontinuada
+> (2026-09-04), rota apagada — não é "planejado e não construído", é plano morto.
 
 | # | Path | Persona | Estados | Componentes | RT | Prio |
 |---|---|---|---|---|---|---|
 | 6 | `/onboarding/welcome` | P3 | default, terms-not-accepted | `<TermsCheckbox>`, `<SetPasswordForm>` | — | P0 |
 | 7 | `/onboarding/mfa-setup` | P3 admin, P2 | default, qr-loading, totp-invalid, success | `<TOTPSetup>`, `<RecoveryCodesPanel>` | — | P0 |
 | 8 | `/onboarding/connect-whatsapp` | P3 | qr-loading, scan-qr, expired (60s), connected, failed | `<ChannelSessionCard>`, `<QRCodePanel>` | sim | P0 |
-| 9 | `/onboarding/connect-nuvemshop` | P3 | default, redirecting, callback-success, callback-error, scopes-missing | `<NuvemshopConnectButton>`, `<SyncProgressBar>` | — | P0 |
 | 10 | `/onboarding/configure-ai` | P3 | default, ingestion-pending, ingestion-success, error | `<PromptTemplateSelector>`, `<KnowledgeUploader>` | — | P1 |
 | 11 | `/onboarding/invite-team` | P3 | default, sending, sent, partial-failure | `<InviteForm>`, `<InviteList>` | — | P1 |
 | 12 | `/onboarding/done` | P3, P4 | default | `<OnboardingDone>`, `<NextStepsChecklist>` | — | P0 |
@@ -102,7 +104,10 @@ date: 2026-04-28
 | 41 | `/app/ai/usage` | P3 admin | default, near-budget (80%), over-budget | `<UsageDashboard>`, `<CostChart>` | sim | P1 |
 | 42 | `/app/ai/budget` | P3 admin | default, edit, save-error | `<BudgetForm>` | — | P1 |
 
-## H. App tenant — Integrações (10 telas)
+## H. App tenant — Integrações (5 telas)
+
+> As 5 linhas de `/app/integrations/nuvemshop*` (eram #48–#52) saíram: integração
+> descontinuada (2026-09-04), rotas apagadas — plano morto, não "não construído".
 
 | # | Path | Persona | Estados | Componentes | RT | Prio |
 |---|---|---|---|---|---|---|
@@ -111,11 +116,6 @@ date: 2026-04-28
 | 45 | `/app/integrations/whatsapp/[id]` | P3 admin | working, scan-qr, stopped, failed, banned (suspeita) | `<SessionDetail>`, `<SessionMetrics>` | sim | P0 |
 | 46 | `/app/integrations/whatsapp/[id]/qr` | P3 admin | qr-loading, scan-qr, expired, connected | `<QRCodePanel>` | sim (polling) | P0 |
 | 47 | `/app/integrations/whatsapp/new` | P3 admin | name-input, creating, qr-ready | `<NewSessionWizard>` | — | P0 |
-| 48 | `/app/integrations/nuvemshop` | P3 admin | connected, token-expired, no-permission, disconnected | `<NuvemshopStatus>` | — | P0 |
-| 49 | `/app/integrations/nuvemshop/connect` | P3 admin | redirecting, callback-success, callback-error | `<OAuthFlow>` | — | P0 |
-| 50 | `/app/integrations/nuvemshop/sync` | P3 admin | idle, in-progress (com %), completed, failed | `<SyncProgressPanel>` | sim | P1 |
-| 51 | `/app/integrations/nuvemshop/webhooks` | P3 admin | default, dead-letter-items, retry-pending | `<WebhookEventsTable>`, `<DeadLetterList>` | — | P1 |
-| 52 | `/app/integrations/nuvemshop/mapping` | P3 admin | default, edit, save-conflict | `<StageMappingEditor>` | — | P1 |
 
 ## I. App tenant — Team (3 telas)
 
@@ -207,12 +207,12 @@ Contados, não estimados. Os `~` saíram: os números abaixo são derivados das 
 por `scripts/inventario-de-telas.ts` e vigiados por `tests/unit/inventario-de-telas.test.ts`
 — mexer numa tabela sem mexer aqui reprova o `verify`.
 
-- **Total de telas únicas**: 95 (algumas têm sub-states relevantes mas mesma rota)
-- **P0** (semana 1–4): 41 telas
-- **P1** (semana 5–8): 46 telas
+- **Total de telas únicas**: 89 (algumas têm sub-states relevantes mas mesma rota)
+- **P0** (semana 1–4): 38 telas
+- **P1** (semana 5–8): 43 telas
 - **P2** (Fase 1.5+): 6 telas
 - **Entregues** fora da escala de prioridade (marcadas `**entregue**`): 2 telas
-- **Realtime obrigatório**: 27 telas
+- **Realtime obrigatório**: 26 telas
 - **Cross-tenant (super-admin)**: 18 telas
 
 ## Reconciliação com o disco
@@ -221,12 +221,13 @@ por `scripts/inventario-de-telas.ts` e vigiados por `tests/unit/inventario-de-te
 (rotas do disco = `app/**/page.tsx`, com `(grupo)` removido; nome de segmento dinâmico
 ignorado na comparação, porque o plano escreve `[conversationId]` onde o disco tem `[id]`).
 
-O plano tem **95** linhas; o disco tem **92** páginas; e a interseção é menor que os dois:
-**42 linhas do plano nunca foram construídas** e **42 páginas existem sem linha no plano**.
-Isso não é defeito do produto — é o que acontece com um plano de 2026-04-28 depois de quatro
-meses de construção. É defeito quando ninguém escreve, e era esse o estado até esta passada.
+O plano tinha **95** linhas na passada de 2026-08-14; 6 saíram em 2026-09-04 (rotas
+`/onboarding/connect-nuvemshop` e `/app/integrations/nuvemshop*` — integração descontinuada,
+apagadas do disco, não "ainda não construídas") — hoje são **89**. Números de disco e de
+"construído fora do plano" não foram remedidos nesta edição pontual; rode
+`pnpm exec tsx scripts/inventario-de-telas.ts` para uma passada completa antes de citá-los.
 
-### Planejado e ainda não construído (42 rotas)
+### Planejado e ainda não construído (38 rotas)
 
 Catraca: esta lista **só encolhe**. Rota daqui que passar a existir no disco reprova
 `tests/unit/inventario-de-telas.test.ts` até ser apagada — é assim que a lista não vira
@@ -260,10 +261,6 @@ não.
 - `/app/integrations/whatsapp/[id]` (#45)
 - `/app/integrations/whatsapp/[id]/qr` (#46)
 - `/app/integrations/whatsapp/new` (#47)
-- `/app/integrations/nuvemshop/connect` (#49)
-- `/app/integrations/nuvemshop/sync` (#50)
-- `/app/integrations/nuvemshop/webhooks` (#51)
-- `/app/integrations/nuvemshop/mapping` (#52)
 - `/app/team/[userId]` (#55)
 - `/app/audit/[id]` (#57)
 - `/app/lgpd` (#58) — só a fila existe (`/app/lgpd/requests`)

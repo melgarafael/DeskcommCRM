@@ -4533,68 +4533,6 @@ export type Database = {
           },
         ]
       }
-      nuvemshop_products: {
-        Row: {
-          available_qty: number
-          created_at: string
-          description: string | null
-          external_id: string
-          id: string
-          image_url: string | null
-          last_updated_at: string
-          organization_id: string
-          payload: Json
-          price_cents: number
-          rag_chunk_count: number
-          rag_indexed_at: string | null
-          title: string
-          updated_at: string
-          url: string | null
-        }
-        Insert: {
-          available_qty?: number
-          created_at?: string
-          description?: string | null
-          external_id: string
-          id?: string
-          image_url?: string | null
-          last_updated_at: string
-          organization_id: string
-          payload?: Json
-          price_cents: number
-          rag_chunk_count?: number
-          rag_indexed_at?: string | null
-          title: string
-          updated_at?: string
-          url?: string | null
-        }
-        Update: {
-          available_qty?: number
-          created_at?: string
-          description?: string | null
-          external_id?: string
-          id?: string
-          image_url?: string | null
-          last_updated_at?: string
-          organization_id?: string
-          payload?: Json
-          price_cents?: number
-          rag_chunk_count?: number
-          rag_indexed_at?: string | null
-          title?: string
-          updated_at?: string
-          url?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "nuvemshop_products_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       orders: {
         Row: {
           contact_id: string | null

@@ -181,25 +181,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // ANTES do primeiro `return`: o caminho "nenhum dado localizado" também gera
   // um relatório entregue ao titular, e ele precisa nomear o controlador igual.
   const controlador = await lerControlador(admin, organizationId, requestId);
-  let contactId = args.contactId;
-
-  // Resolve contact_id when only external customer id is provided.
-  if (!contactId && externalCustomerId) {
-    const { data, error } = await admin
-      .from("contacts")
-      .select("id")
-      .eq("organization_id", organizationId)
-      .eq("source", "nuvemshop")
-      .eq("source_metadata->>nuvemshop_customer_id", externalCustomerId)
-      .maybeSingle();
-    if (error) {
-      logger.warn("[lgpd-export-worker] resolve-by-external failed", {
-        request_id: requestId,
-        error: error.message,
-      });
-    }
-    if (data) contactId = data.id;
-  }
+  const contactId = args.contactId;
 
   // No contact AND no external customer -> empty footprint.
   if (!contactId && !externalCustomerId) {

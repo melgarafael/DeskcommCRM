@@ -29,7 +29,15 @@ import { generateText, stepCountIs, type LanguageModel, type StopCondition, type
 
 // Fonte única do endpoint — a mesma constante que o registry de produção usa.
 // Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
-import { OPENROUTER_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import {
+  OPENROUTER_ENDPOINT,
+  NVIDIA_ENDPOINT,
+  OLLAMA_DEFAULT_ENDPOINT,
+  DEEPSEEK_ENDPOINT,
+  QWEN_ENDPOINT,
+  ZHIPU_ENDPOINT,
+  MOONSHOT_ENDPOINT,
+} from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
@@ -173,6 +181,22 @@ export function buildModel(provider: string, apiKey: string, modelId: string): L
     // normalmente pelo worker. Erro no ensaio lê-se como produto quebrado.
     case "openrouter":
       return createOpenAI({ apiKey, baseURL: OPENROUTER_ENDPOINT })(modelId);
+    case "nvidia":
+      return createOpenAI({ apiKey, baseURL: NVIDIA_ENDPOINT })(modelId);
+    // Sem baseUrl aqui (a assinatura de `buildModel` não recebe um — é o
+    // runtime de ENSAIO, que só faz smoke-test do switch). Em produção real o
+    // `ollama` sempre chega com `baseUrl` próprio via `createDefaultRegistry`;
+    // o default `localhost` só evita que este caso lance por falta de host.
+    case "ollama":
+      return createOpenAI({ apiKey: apiKey || "ollama", baseURL: OLLAMA_DEFAULT_ENDPOINT })(modelId);
+    case "deepseek":
+      return createOpenAI({ apiKey, baseURL: DEEPSEEK_ENDPOINT })(modelId);
+    case "qwen":
+      return createOpenAI({ apiKey, baseURL: QWEN_ENDPOINT })(modelId);
+    case "zhipu":
+      return createOpenAI({ apiKey, baseURL: ZHIPU_ENDPOINT })(modelId);
+    case "moonshot":
+      return createOpenAI({ apiKey, baseURL: MOONSHOT_ENDPOINT })(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }

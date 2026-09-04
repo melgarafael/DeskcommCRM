@@ -3,8 +3,8 @@
  *
  * A jornada de instalação fresca é a P0 da doutrina de QA deste projeto — é o
  * produto que se vende — e é a ÚNICA spec fora do gate, porque depende de WAHA,
- * Redis, Resend e Nuvemshop. O resultado é que o onboarding pôde apodrecer sem
- * nada ficar vermelho: foi assim que oito premissas mortas chegaram até aqui.
+ * Redis e Resend. O resultado é que o onboarding pôde apodrecer sem nada ficar
+ * vermelho: foi assim que oito premissas mortas chegaram até aqui.
  *
  * Esta spec cobre o que dá para cobrir sem esses serviços — que é quase tudo:
  * o wizard inteiro, do login ao "Começar a usar". Fica de fora só o ensaio com
@@ -394,9 +394,8 @@ test.describe("o wizard monta um funcionário", () => {
     await expect(page.getByText(/o que mais tem aqui/i)).toBeVisible();
     await expect(page.getByText(/voltar a falar com quem sumiu/i)).toBeVisible();
 
-    // A integração de loja vem desligada: o passo não existe nesta instalação,
-    // e o resumo listava "Loja Nuvemshop (pulado)" — acusando a pessoa de não
-    // fazer o que ninguém lhe ofereceu.
+    // A integração Nuvemshop foi descontinuada: nenhuma tela do wizard deve
+    // voltar a mencioná-la.
     await expect(page.locator("body")).not.toContainText(/Nuvemshop/i);
 
     await page.getByRole("button", { name: /começar a usar/i }).click();

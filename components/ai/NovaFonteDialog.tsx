@@ -32,9 +32,8 @@ import {
  * pergunta/resposta colada à mão (ninguém digita 200 perguntas de produto),
  * e sim por planilha — CSV colado ou arquivo `.csv` — que a API converte
  * internamente no mesmo formato de pergunta/resposta. Existe porque o
- * catálogo "de verdade" da tela só vem de sincronização de e-commerce
- * (Nuvemshop); quem não usa loja integrada não tinha NENHUM jeito de
- * preencher esse card.
+ * catálogo "de verdade" da tela só vem de sincronização de e-commerce; quem
+ * não usa loja integrada não tinha NENHUM jeito de preencher esse card.
  */
 const EXEMPLO = `## Pergunta: Qual o prazo de entrega?
 ## Resposta: De 2 a 3 dias úteis após a confirmação do pagamento.

@@ -19,7 +19,15 @@
  * por que nada funciona.
  */
 import { normalizarErro } from "@/lib/agent-engine/edge/llm/run-model-call";
-import { OPENROUTER_ENDPOINT } from "@/lib/agent-engine/edge/llm/providers";
+import {
+  OPENROUTER_ENDPOINT,
+  NVIDIA_ENDPOINT,
+  OLLAMA_DEFAULT_ENDPOINT,
+  DEEPSEEK_ENDPOINT,
+  QWEN_ENDPOINT,
+  ZHIPU_ENDPOINT,
+  MOONSHOT_ENDPOINT,
+} from "@/lib/agent-engine/edge/llm/providers";
 
 export type ResultadoDaProva =
   | { ok: true }
@@ -71,6 +79,30 @@ export function montarRequisicaoDeProva(
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: { model: modelo, max_tokens: 1, messages: msg },
       };
+    // Compatíveis OpenAI (Chat Completions) — mesmo corpo/header do
+    // openrouter, só o endpoint padrão muda por provedor. Ollama não cobra
+    // de verdade (é local), mas passa pela mesma geração mínima: o objetivo
+    // aqui também é provar que o endpoint responde, não só que existe.
+    case "nvidia":
+    case "ollama":
+    case "deepseek":
+    case "qwen":
+    case "zhipu":
+    case "moonshot": {
+      const padrao = {
+        nvidia: NVIDIA_ENDPOINT,
+        ollama: OLLAMA_DEFAULT_ENDPOINT,
+        deepseek: DEEPSEEK_ENDPOINT,
+        qwen: QWEN_ENDPOINT,
+        zhipu: ZHIPU_ENDPOINT,
+        moonshot: MOONSHOT_ENDPOINT,
+      }[provider];
+      return {
+        url: `${baseUrl ?? padrao}/chat/completions`,
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: { model: modelo, max_tokens: 1, messages: msg },
+      };
+    }
     case "google":
       return {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(

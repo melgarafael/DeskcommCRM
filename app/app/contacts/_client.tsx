@@ -22,7 +22,6 @@ const SOURCE_OPTIONS = [
   { value: undefined, label: "Todas as origens" },
   { value: "manual", label: "Manual" },
   { value: "whatsapp", label: "WhatsApp" },
-  { value: "nuvemshop", label: "Nuvemshop" },
 ];
 
 export function ContactsListClient() {

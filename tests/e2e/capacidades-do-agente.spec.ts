@@ -180,16 +180,28 @@ test.describe("Configurar o que o agente pode fazer", () => {
     const antes = await consumo(page);
     expect(antes).toMatch(/de 20$/);
 
+    // Uma quarta capacidade além das 3 do seed, de fora do pacote "Atender"
+    // (`crm_list_pipelines`, seguro) — só para o teste continuar montando o
+    // cenário "estoura o teto por 1" à mão, em vez de depender do tamanho
+    // exato do catálogo (que muda quando capacidade entra ou sai — ver
+    // `lib/mcp/tools/selecao-por-pacote.ts` para a conta de verdade).
+    await page.getByTestId("toggle-avancado").click();
+    await page.getByTestId("lista-avancada").waitFor({ state: "visible" });
+    await page.getByTestId("capacidade-crm_list_pipelines").locator("input[type=checkbox]").click();
+    await page.getByTestId("toggle-avancado").click();
+
     // O TETO ENTRA NA JORNADA (issue #162), e entra antes do clique.
     //
-    // Medido pela API servida em 2026-08-06: o catálogo tem 51 capacidades e
-    // "Atender" exige 18 vagas (17 automáticas + a crítica que o pacote
-    // deliberadamente NÃO liga). Com as 3 do seed dá 21, num teto de 20.
+    // "Atender" exige mais vagas do que o que sobrou no teto de 20 com as 4
+    // capacidades já ligadas acima — a conta exata é dinâmica (depende do
+    // catálogo) e vive em `vagasExigidasPeloPacote`, vigiada por
+    // `tests/unit/pacote-reserva-vaga-da-critica.test.ts`; aqui só importa que
+    // ESTOURA por 1.
     //
-    // Antes da correção a tela aceitava o pacote, chegava a 20 exatas e deixava
-    // o checkbox da crítica DESABILITADO — prometia uma escolha que o produto
-    // não permitia fazer, sem dizer por quê. Agora recusa e diz quantas vagas
-    // faltam, e o operador faz o que a própria tela manda.
+    // Antes da correção a tela aceitava o pacote, chegava ao teto exato e
+    // deixava o checkbox da crítica DESABILITADO — prometia uma escolha que o
+    // produto não permitia fazer, sem dizer por quê. Agora recusa e diz
+    // quantas vagas faltam, e o operador faz o que a própria tela manda.
     await page.getByTestId("switch-pacote-atender").click();
     await expect(page.getByTestId("aviso-teto")).toContainText(/faltam? 1 vaga/);
     await expect(

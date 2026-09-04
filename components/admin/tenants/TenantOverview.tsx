@@ -1,11 +1,7 @@
 "use client";
 import { Badge } from "@/components/ui/badge";
 import { Warning } from "@/lib/ui/icons";
-import type {
-  TenantOrganization,
-  TenantCounts,
-  TenantIntegrations,
-} from "@/hooks/useTenantDetail";
+import type { TenantOrganization, TenantCounts } from "@/hooks/useTenantDetail";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,35 +17,6 @@ function formatDate(iso: string | null): string {
     minute: "2-digit",
   }).format(new Date(iso));
 }
-
-// Vocabulário real de `tenant_integrations.status` (CHECK no schema). A tela
-// comparava com "active", que não existe nele: a integração saudável escrita
-// pelo callback do OAuth ('healthy') caía no ramo final e a tela imprimia a
-// string crua do banco.
-//
-// Exportados para o teste conferir a COBERTURA contra o CHECK do
-// `supabase/baseline.sql` (TenantOverview.test.tsx): status novo que uma
-// migration acrescente ao banco sem entrar nestes mapas volta a vazar cru para
-// a tela, e é isso que o teste reprova.
-export const NUVEMSHOP_LABEL: Record<string, string> = {
-  connecting: "Conectando",
-  healthy: "Conectado",
-  token_expired: "Token expirado",
-  scope_missing: "Permissão faltando",
-  disconnected: "Desconectado",
-  rate_limited: "Limitado (rate limit)",
-  error: "Com erro",
-};
-
-export const NUVEMSHOP_VARIANT: Record<string, "success" | "warning" | "error" | "neutral"> = {
-  connecting: "neutral",
-  healthy: "success",
-  token_expired: "error",
-  scope_missing: "error",
-  disconnected: "warning",
-  rate_limited: "warning",
-  error: "error",
-};
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -82,25 +49,14 @@ function StatCard({ label, value, warning }: { label: string; value: number; war
 interface TenantOverviewProps {
   organization: TenantOrganization;
   counts: TenantCounts;
-  integrations: TenantIntegrations;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function TenantOverview({ organization, counts, integrations }: TenantOverviewProps) {
+export function TenantOverview({ organization, counts }: TenantOverviewProps) {
   const plan = (organization.settings as { plan?: string } | null)?.plan ?? "—";
-
-  const nuvemshopStatus = integrations.nuvemshop_status;
-  // Valor fora do vocabulário conhecido continua aparecendo cru de propósito:
-  // esconder um estado que a tela não sabe nomear é pior que mostrá-lo.
-  const nuvemshopLabel = nuvemshopStatus
-    ? (NUVEMSHOP_LABEL[nuvemshopStatus] ?? nuvemshopStatus)
-    : "Não integrado";
-  const nuvemshopVariant = nuvemshopStatus
-    ? (NUVEMSHOP_VARIANT[nuvemshopStatus] ?? "warning")
-    : "neutral";
 
   return (
     <div className="space-y-6">
@@ -135,25 +91,13 @@ export function TenantOverview({ organization, counts, integrations }: TenantOve
         </div>
       </div>
 
-      {/* Integrations + WAHA */}
+      {/* Canais + WAHA */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-lg border bg-card p-5">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            Integrações
+            Canais
           </h2>
           <div>
-            <InfoRow
-              label="Nuvemshop"
-              value={
-                <Badge variant={nuvemshopVariant}>{nuvemshopLabel}</Badge>
-              }
-            />
-            {integrations.nuvemshop_connected_at && (
-              <InfoRow
-                label="Conectado em"
-                value={formatDate(integrations.nuvemshop_connected_at)}
-              />
-            )}
             <InfoRow label="WAHA sessions" value={counts.waha_sessions_count} />
           </div>
         </div>

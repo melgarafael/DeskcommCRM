@@ -206,7 +206,7 @@ The project was born as an e-commerce CRM — and the open-source community took
 - 🤖 **AI agents that operate the CRM** — per-tenant RAG, skills the agent executes on its own mid-conversation, operational memory, sentiment analysis, audited AI→human handoff, AI as a first-class assignee and per-org spending caps. Not a decorative chatbot: the agent answers, qualifies and moves the funnel.
 - 🔁 **Nothing dies in silence** — follow-up that revives a cold conversation (with adaptive timing and per-stage triggers), a radar of what's at risk of dying unanswered, and a notice center for what needs a human decision.
 - 🧠 **Self-improving agents** — resolved conversations become new knowledge; the **AI Evolution** screen shows whether the agent is improving, where it fails and what's left to teach; **Proposals** are improvements the AI suggests for itself, applicable as a new version — always human-gated.
-- 🧩 **Multi-niche by design** — configurable vocabulary per pipeline: a lead becomes a *Customer*, *Patient* or *Buyer*; "won" becomes *Paid*, *Booked* or *Closed*. The same core serves e-commerce (our birthplace, with native Nuvemshop integration), clinics, real estate or info-products.
+- 🧩 **Multi-niche by design** — configurable vocabulary per pipeline: a lead becomes a *Customer*, *Patient* or *Buyer*; "won" becomes *Paid*, *Booked* or *Closed*. The same core serves e-commerce (our birthplace), clinics, real estate or info-products.
 - 💬 **WhatsApp two ways** — via **QR code** (WAHA, multi-number, with anti-ban: throttle + jitter + time windows) or through **Meta's official channel** (Cloud API, with approved templates kept in sync). Media via Storage, STOP detection.
 - 🔀 **Choose your AI** — OpenRouter, Anthropic or OpenAI, decided at install time and switchable later from the screen, **per part of the system** (whatever talks doesn't have to be whatever indexes).
 - 👥 **Support governance** — real server-side RBAC, audited assignment/transfer, round-robin queue, automatic intent routing and per-role visibility scopes.
@@ -230,7 +230,7 @@ Under the hood, every event becomes a row in `event_log` — no database trigger
 | **Support** | **Inbox** (WhatsApp conversations, you and the AI side by side) · **Radar** (who went cold and is still open) · **Quick replies** |
 | **CRM** | **Kanban** (where each deal sits in the funnel) · **Contacts** · **Pipelines** (stages, business vocabulary and loss reasons) |
 | **AI Agent** | **Agents** · **Follow-ups** · **Routers** · **Providers** and **Credentials** · **Knowledge** (RAG) · **Memory** · **Skills** · **Cases** · **Alerts** · **Proposals** · **Runs** · **Usage & budget** |
-| **Channels** | **Connections** (QR or Meta's official channel, with health, reconnect and templates) · **Nuvemshop** · **Webhooks** |
+| **Channels** | **Connections** (QR or Meta's official channel, with health, reconnect and templates) · **Webhooks** |
 | **Analytics** | **Performance** (funnel and per-agent metrics) · **AI Evolution** · **Audit Log** |
 | **Organization** | **Team** · **Support distribution** · **Organization** · **LGPD** · **API Tokens** · **Security** (MFA, recovery codes, sessions) · Profile, Notifications, Billing |
 
@@ -288,7 +288,7 @@ pnpm dev
 
 App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/health>
 
-[`docs/SETUP.md`](docs/SETUP.md) is the complete tutorial for **every integration** (Supabase, WAHA, AI providers, Upstash, Sentry, Resend, Nuvemshop) — ~60–90 min from zero to a running app. *(Docs are in Brazilian Portuguese; translations welcome!)*
+[`docs/SETUP.md`](docs/SETUP.md) is the complete tutorial for **every integration** (Supabase, WAHA, AI providers, Upstash, Sentry, Resend) — ~60–90 min from zero to a running app. *(Docs are in Brazilian Portuguese; translations welcome!)*
 
 ---
 
@@ -318,7 +318,7 @@ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
 | `build-and-size` | `pnpm build` on Node 22 |
 | `e2e` | boots a local Supabase, applies `baseline.sql` and runs **44 of the 45** Playwright specs through the frontend |
 
-The only spec outside `e2e` is `vps-fresh-onboarding` — it needs a real WAHA + Redis + Resend + Nuvemshop. It is the **P0** of our visual-QA doctrine, so a green `e2e` does **not** prove the fresh-install journey; that one is proven on a VPS.
+The only spec outside `e2e` is `vps-fresh-onboarding` — it needs a real WAHA + Redis + Resend. It is the **P0** of our visual-QA doctrine, so a green `e2e` does **not** prove the fresh-install journey; that one is proven on a VPS.
 
 Among the invariants is the **RLS isolation test**: it creates 2 organizations, simulates JWT claims through the same `auth.uid()` / `fn_user_org_ids()` path production policies use, and proves a user of org A sees **zero rows** of org B in `conversations`, `messages`, `contacts` and `crm_leads`. A control case first proves org B's rows actually exist — without it, the test would pass against an empty table.
 
@@ -384,7 +384,7 @@ For **security vulnerabilities**, **do NOT open a public issue** — use [privat
 
 - **Foundation & platform** — auth (MFA for admins), multi-tenancy with RLS + isolation test, 4-role RBAC, append-only audit log, tenant onboarding.
 - **WhatsApp support** — real-time 3-pane inbox, multi-number connections via **QR (WAHA)** or **Meta's official channel** (approved templates kept in sync), media via Storage, anti-ban (throttle + jitter + time windows), STOP detection.
-- **CRM & orders** — kanban with per-niche configurable vocabulary (fractional indexing), pipeline management from the screen, customer 360, contacts, tags, Nuvemshop integration.
+- **CRM & orders** — kanban with per-niche configurable vocabulary (fractional indexing), pipeline management from the screen, customer 360, contacts, tags.
 - **Native AI** — agents with per-tenant RAG (pgvector), **skills** the agent runs by itself, **organization memory**, per-number intent router, sentiment analysis, AI→human handoff, per-org spending caps, internal MCP server.
 - **AI provider choice** — OpenRouter, Anthropic or OpenAI, decided at install time and switchable per part of the system from the screen.
 - **Living follow-up** — reviving cold conversations with adaptive timing, per-stage and per-case triggers, round-robin queue, and the Radar of what risks dying unanswered.
@@ -398,7 +398,7 @@ For **security vulnerabilities**, **do NOT open a public issue** — use [privat
 
 - **Public MCP** — CRM capabilities exposed to the agent ecosystem: plug in any agent and it operates Deskcomm.
 - **Niche templates** — ready-made pipelines and vocabularies for clinics, real estate, info-products and services (e-commerce already shipped).
-- **Integrations** — VTEX and Shopify via the adapter pattern (Nuvemshop already shipped).
+- **Integrations** — VTEX and Shopify via an e-commerce adapter pattern.
 - **Probabilistic identity** — contact unification across channels.
 
 ---

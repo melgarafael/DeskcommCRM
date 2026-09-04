@@ -16,9 +16,8 @@
  *  3. Seed de pipeline default ("Pedidos") com stages canônicas e-commerce:
  *     "Carrinho abandonado | Aguardando pagamento | Pago | Em separação |
  *      Enviado | Entregue | Pós-venda"
- *  4. Gerar webhook secret pra eventos LGPD da Nuvemshop
- *  5. Criar convite assinado (24h TTL) pro admin do tenant
- *  6. Audit log da criação com acting_as_platform_admin=true
+ *  4. Criar convite assinado (24h TTL) pro admin do tenant
+ *  5. Audit log da criação com acting_as_platform_admin=true
  *
  * Dependências (a instalar quando implementar): tsx, commander ou cac, zod.
  */

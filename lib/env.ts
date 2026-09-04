@@ -50,7 +50,8 @@ const schema = z.object({
 
   // Encryption keys (pgcrypto)
   NUIT_ENCRYPTION_KEY: required("NUIT_ENCRYPTION_KEY"),
-  // Opcional (template genérico) — só necessária ao ligar NUVEMSHOP_ENABLED.
+  // Chave de cifra genérica pra segredos de webhook_sources/automation_rules
+  // (GUC app.nuvemshop_oauth_key — nome legado, infra compartilhada, não renomear).
   NUVEMSHOP_OAUTH_ENCRYPTION_KEY: z.string().optional().default(""),
   WAHA_BYO_ENCRYPTION_KEY: required("WAHA_BYO_ENCRYPTION_KEY"),
   /**
@@ -180,16 +181,6 @@ const schema = z.object({
   LGPD_EXPORT_EXPIRES_HOURS: z.string().optional().default("72"),
   LGPD_DPO_EMAIL: z.string().optional().default(""),
 
-  // Nuvemshop — opcional (template genérico open-source). Só exigidas quando
-  // NUVEMSHOP_ENABLED=true; o runtime já degrada via getConfig()==null.
-  NUVEMSHOP_APP_ID: z.string().optional().default(""),
-  NUVEMSHOP_CLIENT_ID: z.string().optional().default(""),
-  NUVEMSHOP_CLIENT_SECRET: z.string().optional().default(""),
-  NUVEMSHOP_ENABLED: z
-    .enum(["true", "false"])
-    .optional()
-    .default("false")
-    .transform((v) => v === "true"),
 
   // App URLs
   NEXT_PUBLIC_APP_URL: z

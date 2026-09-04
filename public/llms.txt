@@ -7,7 +7,7 @@ Key facts:
 - AI: per-tenant RAG agents (pgvector) that answer, qualify and move leads; sentiment analysis; audited AI→human handoff; AI as first-class assignee; per-org AI budget; self-improvement loop (resolved conversations feed the knowledge base)
 - MCP: internal MCP server today; public MCP contract on the roadmap — any AI agent can operate the CRM
 - WhatsApp: via WAHA (multi-number, anti-ban throttling, media, STOP detection)
-- Multi-niche: configurable vocabulary per pipeline (lead = Customer/Patient/Buyer; won = Paid/Booked/Closed); Nuvemshop integration for the e-commerce vertical
+- Multi-niche: configurable vocabulary per pipeline (lead = Customer/Patient/Buyer; won = Paid/Booked/Closed)
 - Compliance: multi-tenant Postgres RLS (isolation tested in CI), LGPD by design (redact, data_request, anonymization), append-only audit log
 - Stack: Next.js 16, React 19, TypeScript, Supabase (Postgres + Auth + Realtime + Storage), Vercel AI SDK, WAHA
 - License: MIT. Fully self-hosted; your data stays on your VPS.

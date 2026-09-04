@@ -29,7 +29,7 @@ export interface Contact {
 
 /**
  * Polymorphic timeline item — surface from `crm_lead_activities`.
- * `source_module` is text (whatsapp | crm | nuvemshop | ai | system | ...).
+ * `source_module` is text (whatsapp | crm | ai | system | ...).
  */
 export interface TimelineItem {
   id: string;
