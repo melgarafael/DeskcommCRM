@@ -3,8 +3,7 @@
  * `ai_chunks` + `ai_knowledge_versions` for semantic retrieval.
  *
  * Events handled:
- *   - nuvemshop.product_synced  → fetches product, embeds chunks, activates version
- *   - knowledge_source.updated  → stub (full reindex deferred to S-06.05..07)
+ *   - knowledge_source.updated  → reconstructs the tenant's active KB version
  *
  * Service-role caveat (CLAUDE.md §multi-tenancy): every query filters
  * `organization_id` from the trusted event row, never from user input.
@@ -15,7 +14,6 @@ import { embedText } from "@/lib/ai/embed";
 import { acquireDebounce } from "@/lib/ai/rag/debounce";
 import { chunkText, computeContentHash } from "@/lib/ai/rag/chunker";
 import { estimateTokens } from "@/lib/ai/runtime/history";
-import { formatProductForRag, type NuvemshopProduct } from "@/lib/ai/rag/format-product";
 import {
   createKnowledgeVersion,
   markVersionReady,
@@ -24,7 +22,6 @@ import {
 } from "@/lib/ai/rag/version";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { NuvemshopApiClient } from "@/lib/nuvemshop/api-client";
 
 const DEBOUNCE_TTL_SEC = 30;
 const LAG_WARN_MS = 5 * 60 * 1000; // 5 minutes
@@ -72,206 +69,9 @@ async function resolveAgent(
   };
 }
 
-/**
- * Loads the decrypted Nuvemshop access token + store ID for the org.
- * Returns null when the integration is not connected.
- */
-async function resolveNuvemshopCredentials(
-  organizationId: string,
-): Promise<{ accessToken: string; storeId: string } | null> {
-  const admin = createAdminClient();
-
-  const { data, error } = await admin
-    .from("tenant_integrations")
-    .select("id, organization_id, provider, store_metadata, oauth_access_token_encrypted")
-    .eq("organization_id", organizationId)
-    .eq("provider", "nuvemshop")
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (error || !data) return null;
-
-  // store_metadata carries the storeId as { store_id: string } or { id: number }
-  const meta = (data as { store_metadata: Record<string, unknown> | null }).store_metadata ?? {};
-  const storeId = String(
-    meta["store_id"] ?? meta["id"] ?? "",
-  );
-  if (!storeId) return null;
-
-  // Decrypt the access token via Postgres helper fn_decrypt_oauth.
-  // We use RPC to avoid shipping plaintext bytes through the app layer.
-  const { data: decrypted, error: decErr } = await admin.rpc(
-    "fn_decrypt_oauth" as never,
-    {
-      p_organization_id: organizationId,
-      p_integration_id: (data as { id: string }).id,
-    } as never,
-  );
-
-  if (decErr || !decrypted) return null;
-
-  const accessToken = String(decrypted);
-  if (!accessToken) return null;
-
-  return { accessToken, storeId };
-}
-
-/**
- * Fetches a single product from Nuvemshop REST API.
- * Returns null when credentials are unavailable or product not found.
- */
-async function fetchNuvemshopProduct(
-  organizationId: string,
-  productId: string,
-): Promise<NuvemshopProduct | null> {
-  const creds = await resolveNuvemshopCredentials(organizationId);
-  if (!creds) {
-    // Wave 4 stub — full Nuvemshop credential resolution implemented in S-06.x
-    // Concern: fn_decrypt_oauth RPC may not exist; if so, this returns null gracefully.
-    console.warn(
-      "[rag-indexer] nuvemshop credentials unavailable for org",
-      organizationId,
-      "— skipping product fetch (stub path)",
-    );
-    return null;
-  }
-
-  const client = new NuvemshopApiClient({
-    storeId: creds.storeId,
-    accessToken: creds.accessToken,
-  });
-
-  try {
-    const product = await client.get<NuvemshopProduct>(`/products/${productId}`);
-    return product ?? null;
-  } catch (err) {
-    console.warn(
-      "[rag-indexer] fetchNuvemshopProduct failed",
-      productId,
-      err instanceof Error ? err.message : String(err),
-    );
-    return null;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
-
-async function handleProductSynced(
-  row: EventRow,
-  agentId: string,
-): Promise<ProcessResult> {
-  const productId = String(row.payload["product_id"] ?? "");
-  if (!productId) {
-    return skip("missing_product_id_in_payload");
-  }
-
-  const product = await fetchNuvemshopProduct(row.organization_id, productId);
-  if (!product) {
-    return skip("product_fetch_failed_or_stub");
-  }
-
-  const text = formatProductForRag(product);
-  const chunks = chunkText(text);
-
-  if (chunks.length === 0) {
-    return skip("no_chunks_generated");
-  }
-
-  // Create a new version in 'building' status.
-  const { versionId, versionNumber } = await createKnowledgeVersion({
-    agentId,
-    organizationId: row.organization_id,
-    sourceType: "nuvemshop_product",
-  });
-
-  console.warn(
-    `[rag-indexer] created version ${versionNumber} (${versionId}) for org ${row.organization_id}`,
-  );
-
-  // Embed and upsert each chunk.
-  const admin = createAdminClient();
-  let successCount = 0;
-
-  for (let i = 0; i < chunks.length; i++) {
-    const content = chunks[i] ?? "";
-    if (!content) continue;
-    const contentHash = computeContentHash(content);
-
-    let embedding: number[];
-    try {
-      const result = await embedText(content, { organizationId: row.organization_id });
-      embedding = result.embedding;
-    } catch (err) {
-      // If embedding fails mid-way, abort and fail the version.
-      const detail = err instanceof Error ? err.message : String(err);
-      return { type: "error", detail: `embed_failed at chunk ${i}: ${detail}` };
-    }
-
-    // Upsert chunk — conflict on (organization_id, kb_version_id, content_hash) → do nothing
-    const { error: upsertErr } = await admin
-      .from("ai_chunks")
-      .upsert(
-        {
-          organization_id: row.organization_id,
-          kb_version_id: versionId,
-          knowledge_source_id: null, // product-level indexing; source link deferred to S-06.05
-          position: i,
-          content,
-          content_hash: contentHash,
-          // NOT NULL no banco. Nenhum dos dois caminhos preenchia, e todo
-          // insert morria com "null value in column token_count".
-          token_count: estimateTokens(content),
-          embedding: embedding as unknown as string,
-          metadata: {
-            source_type: "nuvemshop_product",
-            product_id: productId,
-          },
-        },
-        {
-          // A constraint que existe no banco e ai_chunks_position_unique
-          // (knowledge_source_id, kb_version_id, position). O alvo antigo
-          // (organization_id, kb_version_id, content_hash) nao existe, e o
-          // Postgres respondia "there is no unique or exclusion constraint
-          // matching the ON CONFLICT specification" — TODO chunk falhava ao
-          // gravar. Como cada reindexacao cria uma versao nova, na pratica
-          // nunca ha conflito; o alvo certo e o que faz o insert passar.
-          onConflict: "knowledge_source_id,kb_version_id,position",
-          ignoreDuplicates: true,
-        },
-      );
-
-    if (upsertErr) {
-      // Log but don't fail the whole version for a single chunk upsert error.
-      console.warn(
-        `[rag-indexer] chunk upsert error at position ${i}:`,
-        upsertErr.message,
-      );
-    } else {
-      successCount++;
-    }
-  }
-
-  // NUNCA ativar versão vazia. Se todos os chunks falharem, marcar 'ready' com
-  // zero e ativar troca uma base que funcionava por uma base VAZIA — o agente
-  // perde o RAG em silêncio, que é pior que a indexação ter falhado. Falhando
-  // aqui, a versão anterior continua ativa.
-  if (successCount === 0) {
-    await markVersionFailed(versionId, row.organization_id, "nenhum chunk gravado");
-    return { type: "error", detail: "no_chunks_written" };
-  }
-
-  await markVersionReady(versionId, row.organization_id, successCount);
-  await activateVersion({
-    agentId,
-    versionId,
-    organizationId: row.organization_id,
-  });
-
-  return { type: "ok", versionId, chunkCount: successCount };
-}
-
 
 /**
  * Reindexa a base de conhecimento do tenant (FAQ, política) — S-06.05/06/07.
@@ -466,10 +266,6 @@ export async function processRagIndexer(row: EventRow): Promise<HandlerResult> {
     let result: ProcessResult;
 
     switch (row.event_type) {
-      case "nuvemshop.product_synced":
-        result = await handleProductSynced(row, agentId);
-        break;
-
       case "knowledge_source.updated":
         result = await handleKnowledgeSourceUpdated(row, agentId);
         break;

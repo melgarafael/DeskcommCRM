@@ -189,7 +189,7 @@ const DIVIDA_RBAC_CONHECIDA = new Set([
   "followup_enrollments", "followup_flow_pointers", "followup_flow_versions",
   "idempotency_keys", "incidents", "job_queue", "judge_alignment_pool", "knowledge_searches",
   "lead_checkpoints", "lead_notes", "lead_state", "lead_state_transitions", "llm_calls",
-  "meta_templates", "metrics", "nuvemshop_products", "orders", "org_memory_entries",
+  "meta_templates", "metrics", "orders", "org_memory_entries",
   "org_memory_pointers", "org_memory_versions", "organizations", "outbound_copies",
   "pacing_ledger", "playbook_pointers", "playbook_versions", "promise_table_pointers",
   "promise_table_versions", "reentry_knob_pointers", "reentry_knob_versions",

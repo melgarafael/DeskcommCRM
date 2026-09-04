@@ -1691,29 +1691,6 @@ CREATE TABLE IF NOT EXISTS "public"."messages" (
 ALTER TABLE "public"."messages" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."nuvemshop_products" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "organization_id" "uuid" NOT NULL,
-    "external_id" "text" NOT NULL,
-    "title" "text" NOT NULL,
-    "description" "text",
-    "price_cents" bigint NOT NULL,
-    "available_qty" integer DEFAULT 0 NOT NULL,
-    "url" "text",
-    "image_url" "text",
-    "rag_indexed_at" timestamp with time zone,
-    "rag_chunk_count" integer DEFAULT 0 NOT NULL,
-    "payload" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    "last_updated_at" timestamp with time zone NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "nuvemshop_products_price_cents_check" CHECK (("price_cents" >= 0))
-);
-
-
-ALTER TABLE "public"."nuvemshop_products" OWNER TO "postgres";
-
-
 CREATE TABLE IF NOT EXISTS "public"."orders" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "organization_id" "uuid" NOT NULL,
@@ -1782,7 +1759,7 @@ COMMENT ON COLUMN "public"."organizations"."onboarded_at" IS 'Null = ainda em on
 
 
 
-COMMENT ON COLUMN "public"."organizations"."onboarding_state" IS 'Wizard state: { welcome?: {accepted_at, timezone, display_name}, whatsapp?: {session_id, status}, nuvemshop?: {connected_at, store_id}, ai?: {agent_id}, team?: {invites_sent} }';
+COMMENT ON COLUMN "public"."organizations"."onboarding_state" IS 'Wizard state: { welcome?: {accepted_at, timezone, display_name}, whatsapp?: {session_id, status}, ai?: {agent_id}, team?: {invites_sent} }';
 
 
 
@@ -2334,24 +2311,6 @@ END IF; END $baseline_guard$;
 
 
 
-DO $baseline_guard$ BEGIN
-IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                WHERE conname = 'nuvemshop_products_organization_id_external_id_key' AND conrelid = '"public"."nuvemshop_products"'::regclass)
-   AND to_regclass('"public"."nuvemshop_products_organization_id_external_id_key"') IS NULL THEN
-ALTER TABLE ONLY "public"."nuvemshop_products"
-    ADD CONSTRAINT "nuvemshop_products_organization_id_external_id_key" UNIQUE ("organization_id", "external_id");
-END IF; END $baseline_guard$;
-
-
-
-DO $baseline_guard$ BEGIN
-IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                WHERE conname = 'nuvemshop_products_pkey' AND conrelid = '"public"."nuvemshop_products"'::regclass)
-   AND to_regclass('"public"."nuvemshop_products_pkey"') IS NULL THEN
-ALTER TABLE ONLY "public"."nuvemshop_products"
-    ADD CONSTRAINT "nuvemshop_products_pkey" PRIMARY KEY ("id");
-END IF; END $baseline_guard$;
-
 
 
 DO $baseline_guard$ BEGIN
@@ -2848,18 +2807,6 @@ CREATE INDEX IF NOT EXISTS "lgpd_requests_org_status_idx" ON "public"."lgpd_requ
 
 
 
-CREATE INDEX IF NOT EXISTS "nuvemshop_products_org_idx" ON "public"."nuvemshop_products" USING "btree" ("organization_id");
-
-
-
-CREATE INDEX IF NOT EXISTS "nuvemshop_products_rag_pending_idx" ON "public"."nuvemshop_products" USING "btree" ("organization_id") WHERE ("rag_indexed_at" IS NULL);
-
-
-
-CREATE INDEX IF NOT EXISTS "nuvemshop_products_title_trgm" ON "public"."nuvemshop_products" USING "gin" ("title" "public"."gin_trgm_ops");
-
-
-
 CREATE INDEX IF NOT EXISTS "orders_contact_idx" ON "public"."orders" USING "btree" ("contact_id") WHERE ("contact_id" IS NOT NULL);
 
 
@@ -3045,10 +2992,6 @@ CREATE OR REPLACE TRIGGER "trg_messages_emit_event" AFTER INSERT ON "public"."me
 
 
 CREATE OR REPLACE TRIGGER "trg_messages_updated_at" BEFORE UPDATE ON "public"."messages" FOR EACH ROW EXECUTE FUNCTION "public"."fn_set_updated_at"();
-
-
-
-CREATE OR REPLACE TRIGGER "trg_nuvemshop_products_updated_at" BEFORE UPDATE ON "public"."nuvemshop_products" FOR EACH ROW EXECUTE FUNCTION "public"."fn_set_updated_at"();
 
 
 
@@ -3836,16 +3779,6 @@ END IF; END $baseline_guard$;
 
 DO $baseline_guard$ BEGIN
 IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                WHERE conname = 'nuvemshop_products_organization_id_fkey' AND conrelid = '"public"."nuvemshop_products"'::regclass)
-   AND to_regclass('"public"."nuvemshop_products_organization_id_fkey"') IS NULL THEN
-ALTER TABLE ONLY "public"."nuvemshop_products"
-    ADD CONSTRAINT "nuvemshop_products_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE CASCADE;
-END IF; END $baseline_guard$;
-
-
-
-DO $baseline_guard$ BEGIN
-IF NOT EXISTS (SELECT 1 FROM pg_constraint
                 WHERE conname = 'orders_contact_id_fkey' AND conrelid = '"public"."orders"'::regclass)
    AND to_regclass('"public"."orders_contact_id_fkey"') IS NULL THEN
 ALTER TABLE ONLY "public"."orders"
@@ -4189,17 +4122,6 @@ DO $baseline_guard$ BEGIN
 IF NOT EXISTS (SELECT 1 FROM pg_policy
                 WHERE polname = 'messages_tenant_isolation_all' AND polrelid = '"public"."messages"'::regclass) THEN
 CREATE POLICY "messages_tenant_isolation_all" ON "public"."messages" USING ((("organization_id" IN ( SELECT "public"."fn_user_org_ids"() AS "fn_user_org_ids")) OR "public"."fn_is_platform_admin"())) WITH CHECK ((("organization_id" IN ( SELECT "public"."fn_user_org_ids"() AS "fn_user_org_ids")) OR "public"."fn_is_platform_admin"()));
-END IF; END $baseline_guard$;
-
-
-
-ALTER TABLE "public"."nuvemshop_products" ENABLE ROW LEVEL SECURITY;
-
-
-DO $baseline_guard$ BEGIN
-IF NOT EXISTS (SELECT 1 FROM pg_policy
-                WHERE polname = 'nuvemshop_products_tenant' AND polrelid = '"public"."nuvemshop_products"'::regclass) THEN
-CREATE POLICY "nuvemshop_products_tenant" ON "public"."nuvemshop_products" USING ((("organization_id" IN ( SELECT "public"."fn_user_org_ids"() AS "fn_user_org_ids")) OR "public"."fn_is_platform_admin"())) WITH CHECK ((("organization_id" IN ( SELECT "public"."fn_user_org_ids"() AS "fn_user_org_ids")) OR "public"."fn_is_platform_admin"()));
 END IF; END $baseline_guard$;
 
 
@@ -4838,12 +4760,6 @@ GRANT ALL ON TABLE "public"."merge_queue" TO "service_role";
 GRANT ALL ON TABLE "public"."messages" TO "anon";
 GRANT ALL ON TABLE "public"."messages" TO "authenticated";
 GRANT ALL ON TABLE "public"."messages" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."nuvemshop_products" TO "anon";
-GRANT ALL ON TABLE "public"."nuvemshop_products" TO "authenticated";
-GRANT ALL ON TABLE "public"."nuvemshop_products" TO "service_role";
 
 
 
@@ -13432,10 +13348,12 @@ notify pgrst, 'reload schema';
 -- CHECK de FORMA (`crm_leads_currency_iso`, `^[A-Z]{3}$`) — nenhuma lista de
 -- valores para editar, só o piso da coluna.
 --
--- `orders.currency` (Nuvemshop, plataforma brasileira) fica de fora: aquele
--- valor normalmente vem do payload real do pedido, e mudar o default ali
--- arriscaria rotular pedido em BRL como MZN quando o webhook não informar a
--- moeda.
+-- `orders.currency` (pedido de e-commerce integrado, ex. VTEX/Shopify) fica
+-- de fora: aquele valor normalmente vem do payload real do pedido, e mudar o
+-- default ali arriscaria rotular pedido em BRL como MZN quando o webhook não
+-- informar a moeda. (A Nuvemshop, plataforma brasileira que motivou esta nota
+-- originalmente, foi descontinuada do produto — ver migration 0172; o
+-- raciocínio segue válido para os providers de e-commerce restantes.)
 --
 -- Não reescreve nenhuma linha existente — lead antigo com 'BRL' gravado
 -- continua 'BRL', é o valor real do negócio na época. `alter column ... set
@@ -13983,6 +13901,31 @@ alter table public.crm_pipelines
 
 alter table public.organizations alter column locale set default 'pt-PT';
 alter table public.ai_faq_items alter column locale set default 'pt-PT';
+
+-- ---- remove nuvemshop_products (migration 0172) ----
+--
+-- Feature Nuvemshop descontinuada no produto. `nuvemshop_products` era um
+-- cache local sincronizado da API externa (produtos pra RAG) — sem valor
+-- histórico a preservar; resincronizável se a integração voltar um dia.
+-- Drop explícito: trigger -> policy -> tabela.
+--
+-- Deliberadamente NÃO tocamos nos CHECK constraints que ainda citam
+-- 'nuvemshop'/'nuvemshop_catalog' no vocabulário (ai_knowledge_sources,
+-- lgpd_requests, orders, tenant_integrations, webhook_events_log,
+-- webhook_sources): são colunas onde clone self-host real pode ter linha
+-- histórica com esse valor, e apertar a constraint sem migrar dados
+-- quebraria o `update.sh` de quem tem dados reais. O valor fica morto no
+-- vocabulário, inofensivo. Também não tocamos em `fn_encrypt_oauth` /
+-- `fn_decrypt_oauth` nem na GUC `app.nuvemshop_oauth_key`: essa infra de
+-- cifra é usada por `webhook_sources.secret_encrypted` e por
+-- `automation_rules` genéricos, não é exclusiva da Nuvemshop.
+
+-- DROP TABLE sozinho já cascateia a remoção do trigger e da policy que
+-- pertencem à tabela — não dá pra DROP TRIGGER/POLICY ... ON antes disso
+-- porque, numa instalação fresh (a tabela nunca chega a existir no corpo
+-- deste arquivo), a cláusula ON referencia uma relação inexistente e falha
+-- mesmo com IF EXISTS no trigger/policy (o IF EXISTS não cobre a tabela).
+drop table if exists public.nuvemshop_products;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

@@ -351,7 +351,6 @@ Primeira versão marcada do SonghaiCRM. O projeto vinha sendo desenvolvido publi
 - Funil kanban com indexação fracionária de posição.
 - Vocabulário configurável por funil — o mesmo núcleo atende e-commerce, clínica, imobiliária, infoproduto e serviços.
 - Customer 360, contatos, etiquetas e linha do tempo unificada.
-- Integração com Nuvemshop para a vertical de e-commerce.
 
 ### Agentes de IA
 

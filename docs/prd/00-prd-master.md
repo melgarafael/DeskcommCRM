@@ -9,7 +9,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 # SonghaiCRM — PRD-Mestre
 
-> Documento-índice da visão, escopo e estrutura do produto. Cada subsistema é detalhado em sub-PRDs (`01-plataforma-base.md` ... `06-nuvemshop-lgpd.md`). Decisões arquiteturais herdadas estão em `docs/research/reference-synthesis.md`.
+> Documento-índice da visão, escopo e estrutura do produto. Cada subsistema é detalhado em sub-PRDs (`01-plataforma-base.md` ... `05-ai-rag-handoff.md`). Decisões arquiteturais herdadas estão em `docs/research/reference-synthesis.md`.
 
 ---
 
@@ -331,7 +331,6 @@ Roadmap revisado a cada 4 semanas. Estimativa otimista; recalibrar a cada milest
 | `03-prd-whatsapp-waha.md` | Canal WhatsApp via WAHA Plus (sessões, anti-banimento, multi-atendente) | a escrever |
 | `04-prd-pipeline-attendance.md` | Pipeline Kanban + Atendimento + Tickets + Roteamento | a escrever |
 | `05-prd-ai-rag-handoff.md` | IA Conversacional (chatbot + RAG + sentiment + handoff) | a escrever |
-| `06-prd-nuvemshop-lgpd.md` | Integração Nuvemshop (OAuth + webhooks + LGPD) | a escrever |
 
 Cada sub-PRD contém: contexto, escopo, requisitos funcionais, requisitos não-funcionais, contratos de API/dados, dependências, riscos específicos, plano de validação.
 

@@ -33,7 +33,6 @@ import {
   ScalesSimple,
   ShieldCheck,
   Signpost,
-  Storefront,
   UserCircle,
   Users,
   UsersThree,
@@ -388,25 +387,13 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     healthDot: true,
   },
   {
-    // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
-    href: "/app/integrations/nuvemshop",
-    label: "Nuvemshop",
-    description: "Conecte a loja para trazer pedidos e clientes para dentro do CRM.",
-    icon: Storefront,
-    group: "canais",
-    // A página não filtra por papel, mas as Server Actions de conectar e
-    // desconectar exigem admin — mostrar a um viewer seria oferecer botão morto.
-    minRole: "admin",
-    sidebar: true,
-  },
-  {
     href: "/app/integrations/paysuite",
     label: "PaySuite",
     description: "Cobre por M-Pesa, e-Mola e cartão diretamente dos negócios do CRM.",
     icon: CreditCard,
     group: "canais",
     // A página não filtra por papel, mas salvar credenciais exige admin —
-    // mostrar a um viewer seria oferecer um formulário morto (mesma regra da Nuvemshop).
+    // mostrar a um viewer seria oferecer um formulário morto.
     minRole: "admin",
     sidebar: true,
   },

@@ -25,7 +25,7 @@ function canonicalType(t: string): KnowledgeSourceType | "other" {
   if (t === "faq") return "faq";
   if (t === "policy") return "policy";
   if (t === "conversation" || t === "conversations") return "conversations";
-  if (t === "catalog" || t === "nuvemshop_catalog") return "catalog";
+  if (t === "catalog") return "catalog";
   return "other";
 }
 

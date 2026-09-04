@@ -21,7 +21,6 @@ const SOURCE_LABEL: Record<string, string> = {
   conversation: "Conversa",
   conversations: "Conversa",
   catalog: "Catálogo",
-  nuvemshop_catalog: "Catálogo",
 };
 
 export function CitationsPanel({

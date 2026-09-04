@@ -36,7 +36,6 @@ const sourceTypeEnum = z.enum([
   "conversation",
   "conversations",
   "catalog",
-  "nuvemshop_catalog",
 ]);
 
 const createSourceSchema = z.object({

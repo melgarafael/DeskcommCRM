@@ -18,16 +18,6 @@ export const TOOLS_COMERCIO = declararTools([
     pacotes: ["vender", "atender"],
   },
   {
-    name: "crm_search_products",
-    category: "read",
-    rotulo: "Procurar produto na loja",
-    explicacao:
-      "Procura um produto pelo nome e devolve preço e quantidade em estoque, para o assistente responder com o dado da loja em vez de estimar.",
-    oQueToca: "Catálogo da loja",
-    risco: "seguro",
-    pacotes: ["vender", "atender"],
-  },
-  {
     name: "crm_list_privacy_requests",
     category: "read",
     rotulo: "Ver pedidos de privacidade",

@@ -74,7 +74,7 @@ efêmero pg17). `.github/workflows/perf.yml`: `build-and-size` = `pnpm build`.
 `.github/workflows/e2e.yml` roda **45 das 46 specs** Playwright contra um Supabase local de
 verdade com o `baseline.sql` aplicado — o mesmo banco que o self-hoster tem. **É check
 obrigatório desde 2026-08-08.** A **única** de fora é `vps-fresh-onboarding` (WAHA + Redis +
-Resend + Nuvemshop; é a P0 da doutrina de QA) — ou seja, `e2e` verde não prova a jornada de
+Resend; é a P0 da doutrina de QA) — ou seja, `e2e` verde não prova a jornada de
 instalação fresca. `followup-journey`, `webhooks` e `capacidades-do-agente` estiveram fora e
 **voltaram**: rodam hoje (`e2e.yml`, listas `SPECS_PARTE_1`/`SPECS_PARTE_2`).
 
@@ -163,7 +163,7 @@ Medido em 2026-08-14 @ `741c4ec8`, com o comando ao lado de cada número:
   **e no job `invariants` do CI**.
 - **46** specs Playwright em `tests/e2e/` (`ls tests/e2e/*.spec.ts | wc -l`). **45 rodam no CI** (via `e2e.yml`,
   **obrigatório**). A única de fora é `vps-fresh-onboarding`, por dependência de serviço externo
-  (WAHA/Redis/Resend/Nuvemshop). Ver issue #63.
+  (WAHA/Redis/Resend). Ver issue #63.
 
 ## Limitações conhecidas (estado em 2026-07-29, contra `origin/main` @ 789dfa6)
 

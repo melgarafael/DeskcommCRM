@@ -38,6 +38,15 @@ export interface ProvedorSuportado {
   catalogoSincronizavel: boolean;
   /** Onde o operador pega a chave — a tela mostra o link. */
   ondePegarAChave: string;
+  /**
+   * Provedor local/self-host, sem billing real e sem "chave" no sentido
+   * comum (ex.: Ollama rodando na própria VPS do cliente). Quando `true`, a
+   * tela não deve tratar `ondePegarAChave` como "onde comprar acesso" — o
+   * link aponta para a documentação do projeto, não para uma página de
+   * billing. Ausente (undefined) equivale a `false` para os provedores
+   * hospedados.
+   */
+  local?: boolean;
 }
 
 export const PROVEDORES = [
@@ -76,6 +85,63 @@ export const PROVEDORES = [
     aceitaEndpointProprio: true,
     catalogoSincronizavel: true,
     ondePegarAChave: "https://openrouter.ai/keys",
+  },
+  {
+    id: "nvidia",
+    rotulo: "NVIDIA NIM",
+    quandoUsar:
+      "Catálogo de modelos open-weight (Llama, Nemotron e outros) hospedado pela NVIDIA, com API compatível OpenAI — bom para quem já tem crédito NVIDIA ou quer um provedor alternativo aos três principais.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://build.nvidia.com",
+  },
+  {
+    id: "ollama",
+    rotulo: "Ollama (local)",
+    quandoUsar:
+      "Para rodar um modelo na própria máquina ou VPS do cliente, sem chave paga e sem enviar dados a terceiros — exige que o operador tenha o Ollama instalado e acessível pela rede.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    // Não é billing — é a documentação do projeto. `local: true` avisa a tela
+    // para não tratar este link como "onde comprar acesso".
+    ondePegarAChave: "https://ollama.com",
+    local: true,
+  },
+  {
+    id: "deepseek",
+    rotulo: "DeepSeek",
+    quandoUsar:
+      "Custo por token muito baixo, com modelos fortes em raciocínio e código — boa opção para operações de alto volume sensíveis a preço.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://platform.deepseek.com/api_keys",
+  },
+  {
+    id: "qwen",
+    rotulo: "Qwen (Alibaba Cloud)",
+    quandoUsar:
+      "Modelos da família Qwen via Dashscope, com bom suporte a chinês e português — alternativa para quem já opera na nuvem da Alibaba.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://dashscope.console.aliyun.com/apiKey",
+  },
+  {
+    id: "zhipu",
+    rotulo: "Zhipu AI (GLM)",
+    quandoUsar:
+      "Modelos GLM da Zhipu AI, com API compatível OpenAI — alternativa de custo competitivo para chat e ferramentas.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://open.bigmodel.cn/usercenter/apikeys",
+  },
+  {
+    id: "moonshot",
+    rotulo: "Moonshot AI (Kimi)",
+    quandoUsar:
+      "Modelos Kimi da Moonshot AI, com contexto longo — alternativa para quem precisa de janelas grandes a custo menor que os três principais.",
+    aceitaEndpointProprio: true,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://platform.moonshot.cn/console/api-keys",
   },
 ] as const satisfies readonly ProvedorSuportado[];
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais

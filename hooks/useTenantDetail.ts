@@ -32,16 +32,10 @@ export interface TenantCounts {
   waha_sessions_count: number;
 }
 
-export interface TenantIntegrations {
-  nuvemshop_status: string | null;
-  nuvemshop_connected_at: string | null;
-}
-
 export interface TenantDetailResponse {
   data: {
     organization: TenantOrganization;
     counts: TenantCounts;
-    integrations: TenantIntegrations;
   };
 }
 

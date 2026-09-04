@@ -1,11 +1,11 @@
 /**
- * Importação de catálogo por planilha (CSV), para quem não usa a Nuvemshop.
+ * Importação de catálogo por planilha (CSV), para quem não tem loja online
+ * integrada.
  *
  * O slot "Catálogo" da tela de conhecimento da IA só tinha uma fonte possível:
  * sincronização automática de e-commerce. Quem vende sem loja online integrada
- * (a maioria dos nichos fora de e-commerce, e qualquer negócio numa praça sem
- * Nuvemshop) não tinha como preencher esse slot — o card ficava eternamente
- * "Nenhuma fonte configurada".
+ * (a maioria dos nichos fora de e-commerce) não tinha como preencher esse
+ * slot — o card ficava eternamente "Nenhuma fonte configurada".
  *
  * Em vez de inventar um pipeline de busca novo, este módulo só CONVERTE cada
  * linha da planilha no mesmo formato `## Pergunta: / ## Resposta:` que

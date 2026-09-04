@@ -22,7 +22,7 @@
 
 Contexto do código: primeiro usuário nasce do `scripts/bootstrap-owner.ts`
 (install.sh); quem é convidado e ainda não tem conta entra por `/signup?invite=`.
-Wizard: welcome → whatsapp → (nuvemshop se `NUVEMSHOP_ENABLED`) → setup-ai →
+Wizard: welcome → whatsapp → setup-ai →
 **testar** → invite-team → done. A ordem, os rótulos e o resumo final saem de uma
 fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Gate:
 `organizations.onboarded_at`. MFA obrigatório pra admin logo após o wizard.
@@ -34,7 +34,7 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 | J1.3 | Welcome: termos não aceitos | botão avança desabilitado |
 | J1.4 | Welcome: nome da org + timezone salvos | grava `display_name`/`timezone`, avança pro WhatsApp |
 | J1.5 | Connect WhatsApp: WAHA ativo → QR aparece | sessão criada, QR renderiza via proxy, poll de status roda |
-| J1.6 | Connect WhatsApp: "Pular por enquanto" | avança pro step correto (setup-ai quando Nuvemshop off) |
+| J1.6 | Connect WhatsApp: "Pular por enquanto" | avança pro setup-ai |
 | J1.7 | Setup IA: criar agente default | `ai_agents` criado **e a versão publicada aponta para o provedor que a instalação escolheu**, com o modelo curado DAQUELE provedor; avança |
 | J1.8 | Invite team: enviar convite SEM Resend configurado (realidade da VPS fresca) | UI **não mente**: mostra que email não saiu + oferece `accept_url` copiável |
 | J1.9 | Done: "Ir para o Inbox" | seta `onboarded_at`, cai no `/app/inbox` |
@@ -42,7 +42,6 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 | J1.11 | Abandonar no meio e voltar (fecha browser no step 3) | retoma exatamente no step pendente |
 | J1.12 | Tentar `/app/inbox` antes de concluir | redirect pro onboarding, sem loop |
 | J1.13 | Reabrir `/onboarding` depois de concluído | redirect pro app (wizard não reabre) |
-| J1.14 | Stepper com Nuvemshop desabilitado | numeração/etapas não quebram visualmente |
 | J1.15 | Setup IA: erro de banco ao listar os números (a publicação não pode ser decidida) | UI **não mente**: agente criado como rascunho, causa técnica na tela e saída pro próximo passo; clicar de novo NÃO cria um 2º agente · **PASS** (`tests/unit/onboarding-agente-nao-publicado.test.ts`, `tests/unit/onboarding-setup-ai-aviso.test.tsx`) |
 | J1.16 | Instalação escolheu OpenRouter (opção [1] do instalador) | o agente publicado usa `openrouter`, nunca `anthropic` — o provider da versão vence o da organização em runtime, então publicar o provedor errado entrega um "Publicado" que morre em toda mensagem · **PASS** (`tests/unit/onboarding-agente-nao-publicado.test.ts`) |
 | J1.17 | Instalação em provedor cujo catálogo ainda não sincronizou (estado real de uma VPS nova: o baseline semeia ZERO modelos OpenRouter) | não publica e **diz a causa certa**: rascunho por falta de modelo, sem acusar o WhatsApp; oferece saída pro próximo passo · **PASS** (`tests/unit/onboarding-agente-nao-publicado.test.ts`, `tests/unit/onboarding-setup-ai-aviso.test.tsx`) |
@@ -68,7 +67,7 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 
 > **Cobertura em camadas (J1.22/J1.23):** a decisão de *não provisionar* é provada por unitário, porque é uma função pura e roda no gate obrigatório. O caso de tela cobre o caminho visível (CTA → signup com o token → campos certos). O que **não** está coberto ponta a ponta é a volta do link de confirmação de e-mail: exigiria caixa de e-mail no e2e, e a spec que faria isso é a de instalação fresca, que está fora do CI.
 
-> **A jornada J1 passou a ter GATE.** `tests/e2e/wizard-do-funcionario.spec.ts` roda no CI (SPECS_PARTE_1) e cobre o wizard inteiro pela tela — do login ao "Começar a usar" — criando a PRÓPRIA organização, porque o seed compartilhado entrega uma já onboardada e zerá-la mandaria as specs seguintes para dentro do onboarding. Fica de fora só o ensaio com resposta real, que exige chave de IA com saldo. `vps-fresh-onboarding.spec.ts` continua fora do gate (depende de WAHA, Redis, Resend e Nuvemshop) e segue sendo a prova mais completa, para rodar à mão.
+> **A jornada J1 passou a ter GATE.** `tests/e2e/wizard-do-funcionario.spec.ts` roda no CI (SPECS_PARTE_1) e cobre o wizard inteiro pela tela — do login ao "Começar a usar" — criando a PRÓPRIA organização, porque o seed compartilhado entrega uma já onboardada e zerá-la mandaria as specs seguintes para dentro do onboarding. Fica de fora só o ensaio com resposta real, que exige chave de IA com saldo. `vps-fresh-onboarding.spec.ts` continua fora do gate (depende de WAHA, Redis e Resend) e segue sendo a prova mais completa, para rodar à mão.
 
 > **Achado ABERTO (não é regressão, é primeira impressão):** percorrendo o wizard inteiro num tenant fresco, o botão "Começar a usar" entrega o dono no Inbox e a PRIMEIRA coisa que ele vê é um modal bloqueante de verificação em duas etapas — um sétimo passo que a barra de progresso do wizard nunca anunciou. O MFA obrigatório para `admin` é decisão de produto e está correto; o que está errado é ele aparecer como surpresa depois de seis passos que se apresentaram como o caminho completo. Conserto natural: virar passo do wizard, ou ao menos ser anunciado na tela final. Fora do escopo da frente do quadro de clientes.
 

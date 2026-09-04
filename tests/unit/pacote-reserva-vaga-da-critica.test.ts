@@ -9,7 +9,7 @@
  * por outro motivo, também escrito: prompt com capacidade demais degrada a
  * escolha do modelo.
  *
- * As duas regras se cancelavam. Ligar "Atender" traz 17 automáticas; somadas ao
+ * As duas regras se cancelavam. Ligar "Atender" traz 16 automáticas; somadas ao
  * que já estivesse ligado, o teto era atingido — e aí o checkbox da crítica
  * ficava `disabled`. O pacote prometia uma escolha que o produto não permitia
  * fazer, e o único sinal era um checkbox morto com `opacity-60`.
@@ -84,9 +84,9 @@ describe("ligar pacote reserva a vaga das próprias críticas", () => {
 
   it("nenhum pacote sozinho estoura o teto (senão a reserva o tornaria inatingível)", () => {
     // Se um pacote exigisse mais que o teto por si só, reservar apenas trocaria
-    // "crítica morta" por "pacote que nunca liga". Medido em 2026-08-06: o maior
-    // é 18 (atender 17+1, organizar 14+4) contra teto 20. Este caso é o alarme
-    // para quem acrescentar capacidade ao catálogo sem olhar o teto.
+    // "crítica morta" por "pacote que nunca liga". Medido em 2026-09-04: o maior
+    // é 18 (organizar 14+4; atender é 17 = 16+1) contra teto 20. Este caso é o
+    // alarme para quem acrescentar capacidade ao catálogo sem olhar o teto.
     for (const pacote of COM_CRITICA) {
       expect(
         vagasExigidasPeloPacote([], CATALOGO as never, pacote as never),

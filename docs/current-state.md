@@ -35,6 +35,11 @@ arquivos, conteúdo de CI e presença de doutrina no repo **foram** verificados 
 nesta rodada (leitura de código, grep, `git show --stat`, `gh api`). Nenhuma suíte de teste
 foi executada — é auditoria estática, não prova de que os testes passam hoje.
 
+**Nota factual (2026-09-04):** a integração Nuvemshop foi removida (código, env vars,
+docs dedicados). Onde este retrato ainda cita Nuvemshop como algo presente ou planejado,
+está desatualizado nesse ponto específico — confira `git log --grep=nuvemshop -i` antes de
+citar qualquer linha sobre e-commerce.
+
 ---
 
 ## 0. Achado estrutural que a auditoria anterior não podia ver
@@ -108,7 +113,7 @@ a partir de `package.json` vai publicar o número errado.
   (não existia na auditoria anterior) agora protege `signUp`, `signInWithPassword`,
   `requestPasswordReset` e `team/accept-invite/[token]` — os 4 pontos mais citados como
   abertos no item 4.3 do retrato anterior. Ainda não cobre `/api/internal/*`, `/api/mcp`,
-  crons, e não foi confirmado exaustivamente para webhooks Nuvemshop/WAHA.
+  crons, e não foi confirmado exaustivamente para webhooks WAHA.
 - **`.env.example` reconciliado com `lib/env.ts`** — diff de conjuntos deu vazio (toda
   variável do schema Zod tem par no template). Variáveis extra no template sem par em
   `env.ts` (`META_*`, `ZERNIO_*`) são as envs dos adapters `meta_cloud`/`zernio`, lidas fora
@@ -237,7 +242,7 @@ refletidos no documento que a doutrina trata como fonte de roadmap público.
 - Estado real de Inbox Multimodal ondas 4-6: absorvido por outro épico ou simplesmente
   parado.
 - Cobertura de teste (%) — nenhum relatório de coverage foi gerado.
-- Se `rate-limit.ts` cobre `/api/mcp`, `/api/internal/*`, webhooks Nuvemshop/WAHA — grep não
+- Se `rate-limit.ts` cobre `/api/mcp`, `/api/internal/*`, webhooks WAHA — grep não
   exaustivo.
 
 ---

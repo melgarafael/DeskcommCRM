@@ -67,7 +67,7 @@ Ordem definida pelo Rafael: **PRD → Regras de Negócio → Specs → Epics →
 - [ ] Epic E3: Customer 360° + Identity Resolution
 - [ ] Epic E4: Pipeline Kanban + Atendimento Humano
 - [ ] Epic E5: IA Conversacional + Handoff
-- [ ] Epic E6: Integração Nuvemshop + LGPD
+- [ ] ~~Epic E6: Integração Nuvemshop + LGPD~~ — obsoleto (Nuvemshop descontinuado, 2026-09-04)
 - [ ] Epic E7: Hardening + Observability + Deploy
 
 ## Fase 5 — Stories

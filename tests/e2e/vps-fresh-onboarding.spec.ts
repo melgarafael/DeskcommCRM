@@ -171,9 +171,8 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await login(page);
     await page.waitForURL(/\/onboarding\/connect-whatsapp/, { timeout: 20_000 });
 
-    // Com Nuvemshop desabilitado (VPS fresca), pular o WhatsApp deve cair
-    // DIRETO no setup de IA — nunca num step oculto (bug corrigido: as actions
-    // redirecionavam hardcoded pro connect-nuvemshop).
+    // Pular o WhatsApp deve cair DIRETO no setup de IA — o roteador do
+    // wizard decide o próximo passo, nunca um redirect hardcoded.
     await page.getByRole("button", { name: /pular por enquanto/i }).click();
     await page.waitForURL(/\/onboarding\/setup-ai/, { timeout: 20_000 });
     await snap(page, "j1.6-setup-ai");

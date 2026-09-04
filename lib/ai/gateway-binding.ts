@@ -30,6 +30,15 @@ import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import {
+  NVIDIA_ENDPOINT,
+  OLLAMA_DEFAULT_ENDPOINT,
+  DEEPSEEK_ENDPOINT,
+  QWEN_ENDPOINT,
+  ZHIPU_ENDPOINT,
+  MOONSHOT_ENDPOINT,
+} from "@/lib/agent-engine/edge/llm/providers";
+
 import { OPENROUTER_BASE_URL, resolveLanguageModel, type ModelId } from "./gateway";
 
 export interface ModeloResolvido {
@@ -174,6 +183,20 @@ function instanciar(
       return createGoogleGenerativeAI({ apiKey })(modelId);
     case "openrouter":
       return createOpenAI({ apiKey, baseURL: baseUrl ?? OPENROUTER_BASE_URL })(modelId);
+    case "nvidia":
+      return createOpenAI({ apiKey, baseURL: baseUrl ?? NVIDIA_ENDPOINT })(modelId);
+    case "ollama":
+      return createOpenAI({ apiKey: apiKey || "ollama", baseURL: baseUrl ?? OLLAMA_DEFAULT_ENDPOINT })(
+        modelId,
+      );
+    case "deepseek":
+      return createOpenAI({ apiKey, baseURL: baseUrl ?? DEEPSEEK_ENDPOINT })(modelId);
+    case "qwen":
+      return createOpenAI({ apiKey, baseURL: baseUrl ?? QWEN_ENDPOINT })(modelId);
+    case "zhipu":
+      return createOpenAI({ apiKey, baseURL: baseUrl ?? ZHIPU_ENDPOINT })(modelId);
+    case "moonshot":
+      return createOpenAI({ apiKey, baseURL: baseUrl ?? MOONSHOT_ENDPOINT })(modelId);
     default:
       return null;
   }

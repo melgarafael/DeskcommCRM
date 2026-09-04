@@ -7,7 +7,6 @@ export interface Citation {
     | "conversation"
     | "conversations"
     | "catalog"
-    | "nuvemshop_catalog"
     | string;
   source_anchor?: string | null;
   score?: number; // 0..1 cosine similarity

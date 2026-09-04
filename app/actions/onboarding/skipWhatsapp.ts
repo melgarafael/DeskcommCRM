@@ -14,8 +14,6 @@ export async function skipWhatsapp(): Promise<void> {
     actorUserId: ctx.userId,
     organizationId: ctx.orgId,
   });
-  // O roteador do wizard decide o próximo step (Nuvemshop só existe com
-  // NUVEMSHOP_ENABLED) — hardcodar aqui mandava o usuário pra um step oculto.
   redirect("/onboarding");
 }
 
@@ -35,27 +33,6 @@ export async function markWhatsappConfigured(
     organizationId: ctx.orgId,
     resourceType: "channel_session",
     metadata: { session_name: sessionName, status },
-  });
-  redirect("/onboarding");
-}
-
-export async function skipNuvemshop(): Promise<void> {
-  const ctx = await requireOnboardingCtx();
-  await patchOnboardingState(ctx.orgId, {
-    nuvemshop: { skipped: true },
-  });
-  await audit({
-    action: "onboarding.nuvemshop_skipped",
-    actorUserId: ctx.userId,
-    organizationId: ctx.orgId,
-  });
-  redirect("/onboarding");
-}
-
-export async function markNuvemshopConfigured(): Promise<void> {
-  const ctx = await requireOnboardingCtx();
-  await patchOnboardingState(ctx.orgId, {
-    nuvemshop: { connected_at: new Date().toISOString() },
   });
   redirect("/onboarding");
 }

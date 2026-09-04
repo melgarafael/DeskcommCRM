@@ -73,7 +73,6 @@ pelos 10 endpoints em `app/api/v1/cron/`. Contrato: [`docs/specs/07-spec-events-
 | **WAHA Plus** (NOWEB) | WhatsApp: envio, recebimento, sessões multi-número | `lib/waha/` | canal indisponível; obrigatório em produção |
 | **Upstash Redis** | rate limit + debounce de RAG | `lib/ai/dispatcher/rate-limit.ts`, `lib/ai/rag/debounce.ts` | degrada para memória com `warn` |
 | **Vercel AI Gateway** | LLM + embeddings (`@ai-sdk/anthropic\|openai\|google`) | `lib/ai/` | agente não responde |
-| **Nuvemshop** | e-commerce: pedidos, produtos, webhooks LGPD | `lib/nuvemshop/` | opcional (`NUVEMSHOP_ENABLED`) |
 | **Sentry** | erros + performance, `beforeSend` higieniza PII | `sentry.*.config.ts`, `instrumentation*.ts` | opcional |
 | **Resend** | e-mail transacional (convite de time) | `lib/email/` | opcional — o convite cai em copy-to-clipboard |
 | **MCP** | CRM exposto como tools para agentes | `app/api/mcp/`, `lib/mcp/` | — |
@@ -88,7 +87,7 @@ pelos 10 endpoints em `app/api/v1/cron/`. Contrato: [`docs/specs/07-spec-events-
 
 ## Onde olhar a fundo
 
-- [`docs/prd/`](docs/prd/) — PRDs (visão, escopo MVP, KPIs, plataforma base, customer 360, WhatsApp, pipeline, IA-RAG, Nuvemshop).
+- [`docs/prd/`](docs/prd/) — PRDs (visão, escopo MVP, KPIs, plataforma base, customer 360, WhatsApp, pipeline, IA-RAG).
 - [`docs/specs/`](docs/specs/) — specs técnicas com schema SQL e payloads.
 - [`docs/business-rules/`](docs/business-rules/) — regras de negócio fora do código.
 - [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md) — plano de execução por epic/wave.

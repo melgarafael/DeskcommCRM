@@ -57,11 +57,11 @@ export const TOOLS_ATENDIMENTO = declararTools([
     risco: "atencao",
     // ⚠️ FORA de "atender", e a razão é o TETO — não o valor da capacidade.
     //
-    // O pacote "Atender" já exigia 18 vagas e, com as 3 que um agente novo
-    // costuma ter, chega a 21 num teto de 20: ligá-lo já era impossível sem
-    // desligar algo antes (o e2e `capacidades-do-agente` mede exatamente isso).
-    // Acrescentar esta capacidade ali levaria a 22 — pioraria um defeito
-    // conhecido em troca de nada, porque o pacote continuaria não cabendo.
+    // O pacote "Atender" fica perto do teto de 20 (a conta exata está em
+    // `vagasExigidasPeloPacote`, `lib/mcp/tools/selecao-por-pacote.ts` — não
+    // hardcode o número aqui, ele muda toda vez que uma capacidade entra ou
+    // sai do catálogo). Acrescentar esta capacidade ali reduziria ainda mais
+    // a folga sem necessidade.
     //
     // Fica em "vender", que tem folga, e continua alcançável em qualquer jornada
     // pelo modo avançado. Quando o teto ou o tamanho do pacote for revisto, esta

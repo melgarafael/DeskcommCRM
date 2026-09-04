@@ -140,6 +140,64 @@ export async function validateOpenRouterKey(apiKey: string): Promise<ValidationR
   }
 }
 
+/**
+ * Os quatro provedores abaixo (NVIDIA, DeepSeek, Qwen, Zhipu, Moonshot) falam
+ * a mesma forma de discovery da OpenRouter: `GET /models` com
+ * `Authorization: Bearer`, devolvendo `{ data: [{ id }] }`. Uma fábrica
+ * genérica evita repetir o mesmo corpo cinco vezes — a única variação real é
+ * a URL.
+ */
+function validadorEstiloOpenAI(baseUrl: string) {
+  return async function validar(apiKey: string): Promise<ValidationResult> {
+    try {
+      const res = await timedFetch(`${baseUrl}/models`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: "auth_failed_401" };
+      }
+      if (!res.ok) {
+        return { ok: false, error: `provider_status_${res.status}` };
+      }
+      const json = (await res.json()) as { data?: { id?: string }[] };
+      const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+      return { ok: true, models };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+    }
+  };
+}
+
+export const validateNvidiaKey = validadorEstiloOpenAI("https://integrate.api.nvidia.com/v1");
+export const validateDeepSeekKey = validadorEstiloOpenAI("https://api.deepseek.com/v1");
+export const validateQwenKey = validadorEstiloOpenAI("https://dashscope.aliyuncs.com/compatible-mode/v1");
+export const validateZhipuKey = validadorEstiloOpenAI("https://open.bigmodel.cn/api/paas/v4");
+export const validateMoonshotKey = validadorEstiloOpenAI("https://api.moonshot.cn/v1");
+
+/**
+ * Ollama não tem "chave" — o que existe pra validar é se o endpoint local
+ * responde. `apiKey` aqui é, na prática, o `baseUrl` que o operador digitou
+ * na tela (o painel de Credenciais não tem campo de endpoint separado do de
+ * chave para provedores BYOK; ver decisão em `app`), com fallback pro
+ * default local quando vier vazio. Sem 401/403: Ollama não autentica por
+ * padrão, então "responde e lista modelos" já é a prova de que dá certo.
+ */
+export async function validateOllamaEndpoint(baseUrlOuVazio: string): Promise<ValidationResult> {
+  const baseUrl = (baseUrlOuVazio || "http://localhost:11434/v1").replace(/\/+$/, "");
+  try {
+    const res = await timedFetch(`${baseUrl}/models`, { method: "GET" });
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { data?: { id?: string }[] };
+    const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
 export function validateProviderKey(
   provider: Provider,
   apiKey: string,
@@ -153,6 +211,18 @@ export function validateProviderKey(
       return validateGoogleKey(apiKey);
     case "openrouter":
       return validateOpenRouterKey(apiKey);
+    case "nvidia":
+      return validateNvidiaKey(apiKey);
+    case "ollama":
+      return validateOllamaEndpoint(apiKey);
+    case "deepseek":
+      return validateDeepSeekKey(apiKey);
+    case "qwen":
+      return validateQwenKey(apiKey);
+    case "zhipu":
+      return validateZhipuKey(apiKey);
+    case "moonshot":
+      return validateMoonshotKey(apiKey);
     default: {
       // Sem `never` aqui: `Provider` agora é derivado de PROVEDORES, e a lista
       // cresce sem que este arquivo saiba. Provedor novo cadastrado antes de

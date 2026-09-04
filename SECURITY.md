@@ -30,7 +30,7 @@ Interessam especialmente relatos sobre:
 - Vazamento entre tenants (bypass de RLS ou de filtro `organization_id`)
 - Bypass de autenticação/RBAC (roles `viewer`/`agent`/`manager`/`admin`, super-admin)
 - Exposição de dados pessoais (LGPD): contatos, conversas, mídia do WhatsApp
-- Injeção via payloads de webhook (WAHA, Nuvemshop) ou da API `/api/v1`
+- Injeção via payloads de webhook (WAHA) ou da API `/api/v1`
 - Vazamento de segredos (API keys, tokens bearer, cookies de sessão)
 
 Instalações self-host são responsabilidade de quem hospeda; problemas de configuração do servidor (firewall, TLS do VPS etc.) estão fora do escopo do projeto, mas melhorias no kit de instalação são bem-vindas como issue normal.

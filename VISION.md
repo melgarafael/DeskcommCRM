@@ -16,7 +16,7 @@ O "CRM" no nome é a categoria de entrada, não o teto. O SonghaiCRM é **mais q
 
 O projeto nasceu em 2026 como um CRM operacional para **e-commerce brasileiro** — WhatsApp via WAHA, integração Nuvemshop, LGPD nativa. Quando abrimos o código, a comunidade decidiu outra coisa: a maioria dos adopters passou a rodar o Deskcomm em **clínicas, infoprodutos, imobiliárias, agências e prestadores de serviço** — qualquer negócio que vende conversando.
 
-Os pedidos de feature dessa comunidade empurraram o produto na direção que hoje é a nossa identidade: **agentes de IA cada vez mais capazes, integrados ao sistema via MCP, operando o CRM de verdade**. O e-commerce continua sendo um caso de uso de primeira classe (foi nosso berço e a integração Nuvemshop prova isso) — mas ele é **um** vertical, não **o** produto.
+Os pedidos de feature dessa comunidade empurraram o produto na direção que hoje é a nossa identidade: **agentes de IA cada vez mais capazes, integrados ao sistema via MCP, operando o CRM de verdade**. O e-commerce continua sendo um caso de uso de primeira classe (foi nosso berço) — mas ele é **um** vertical, não **o** produto.
 
 **A transição, em uma frase:** de "CRM de e-commerce com IA" para **"sistema operacional de vendas com agentes de IA, para qualquer negócio que vende pelo WhatsApp"**.
 

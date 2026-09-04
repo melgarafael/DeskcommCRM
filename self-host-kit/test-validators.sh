@@ -426,7 +426,7 @@ echo "sincronia: o install.sh grava as chaves que o .env.selfhost.example promet
 #
 # DÍVIDA: chaves que o install.sh hoje não grava. A lista só pode ENCOLHER; se
 # uma delas passar a ser gravada, o teste manda tirá-la daqui.
-DIVIDA="AGENT_DISPATCH_CONSUMER NUVEMSHOP_APP_ID NUVEMSHOP_CLIENT_ID NUVEMSHOP_CLIENT_SECRET"
+DIVIDA="AGENT_DISPATCH_CONSUMER"
 EXEMPLO="${EXEMPLO_ENV:-../.env.selfhost.example}"
 if [ ! -f "$EXEMPLO" ]; then
   # Pular é aceitável (o kit também roda solto, fora do repo), mas em voz alta:
