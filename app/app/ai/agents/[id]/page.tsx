@@ -70,8 +70,16 @@ export default async function AgentEditorPage({
   const agent = agentRow as unknown as AgentRow;
   const readOnly = ROLE_RANK[activeOrg.role] < ROLE_RANK.admin;
 
-  // Caminho legado: rag_bot continua usando o editor pré-EPIC-13.
-  if ((agent.kind ?? "rag_bot") !== "mcp_agent") {
+  // Caminho legado: rag_bot SEM versão publicada continua no editor pré-EPIC-13.
+  //
+  // A segunda condição é o conserto da #456. A régua do runtime já está escrita
+  // em `lib/ai/agents/no-ar.ts`: `published_version_id != null` significa "no ar
+  // pela versão", e `kind` só decide quando NÃO há versão. Esta tela era o
+  // último lugar que perguntava `kind` primeiro — e por isso entregava ao dono
+  // um campo de prompt que grava em `ai_agents`, a coluna que o motor não lê
+  // quando existe versão publicada. Ele digitava, via sucesso, e o agente
+  // continuava respondendo com o texto anterior.
+  if ((agent.kind ?? "rag_bot") !== "mcp_agent" && agent.published_version_id == null) {
     return (
       <div className="flex h-full flex-col gap-6 p-6">
         <AgentEditorClient agentId={agent.id} initialData={agent} readOnly={readOnly} />

@@ -300,7 +300,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded border border-border/60 px-2 py-1">
+    <div className="rounded-md border border-border/60 px-2 py-1">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="font-mono">{children}</p>
     </div>

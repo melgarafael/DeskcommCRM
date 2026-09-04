@@ -145,7 +145,52 @@ export async function listConversationsHandler(
 
   if (q.search) {
     const s = q.search.trim().replace(/[%_]/g, (m) => `\\${m}`);
-    query = query.ilike("last_message_preview", `%${s}%`);
+
+    // ─── A BUSCA ALCANÇA O CONTATO, NÃO SÓ A ÚLTIMA MENSAGEM ──────────────
+    //
+    // Aqui havia só o `ilike` em `last_message_preview`. Para um atendente,
+    // achar a conversa pelo NOME do cliente é o caso mais comum — bem mais que
+    // lembrar um trecho literal de mensagem —, e com milhares de contatos
+    // importados a única saída era rolar a lista. (issue #341)
+    //
+    // Dois passos, e não um `!inner` no embed do contato: transformar o embed
+    // em inner mudaria a semântica da LISTA inteira (conversa sem contato
+    // sumiria da caixa). A consulta curta abaixo devolve ids e o predicado os
+    // soma ao casamento por conteúdo, que continua valendo.
+    const somenteDigitos = s.replace(/\D/g, "");
+    // 4 dígitos é o piso: "12" casaria metade da base e devolveria a lista
+    // inteira embaralhada — pior que não achar, porque PARECE que funcionou.
+    const pareceTelefone = somenteDigitos.length >= 4;
+
+    const camposDoContato = [
+      `display_name.ilike.*${s}*`,
+      `name.ilike.*${s}*`,
+      ...(pareceTelefone ? [`phone_number.ilike.*${somenteDigitos}*`] : []),
+    ].join(",");
+
+    const { data: contatos } = await supabase
+      .from("contacts")
+      .select("id")
+      // Service role bypassa RLS: o filtro de organização é manual e obrigatório.
+      .eq("organization_id", ctx.organization_id)
+      // Anonimizar é direito do titular. Voltar a encontrá-lo pelo nome antigo
+      // criaria um vazamento onde não havia.
+      .eq("is_anonymized", false)
+      .or(camposDoContato)
+      // Teto obrigatório: a lista de ids viaja na URL do PostgREST, e uma busca
+      // por "a" sem limite estoura a requisição.
+      .limit(200);
+
+    const ids = (contatos ?? []).map((c) => (c as { id: string }).id);
+    if (ids.length > 0) {
+      query = query.or(
+        `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,
+      );
+    } else {
+      // Sem ids casados, um `contact_id.in.()` vazio é SQL inválido no
+      // PostgREST — a busca por conteúdo segue sozinha, como antes.
+      query = query.ilike("last_message_preview", `%${s}%`);
+    }
   }
 
   if (q.cursor) {

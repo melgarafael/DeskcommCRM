@@ -229,7 +229,12 @@ describe("packaging — o artefato que o cliente instala", () => {
     expect(wf, "publish-image.yml não passa APP_VERSION como build-arg").toContain(
       "APP_VERSION=",
     );
-    expect(wf, "publish-image.yml não cria o canal 'stable'").toContain("value=stable");
+    // A sonda prende o EFEITO (o canal `stable` passa a existir), não a forma.
+    // Ela já mudou uma vez: `stable` saiu da lista de tags da matriz — onde cada
+    // imagem o movia sozinha — para o job `promover-stable`, que só roda com as
+    // três publicadas (issue #488). Prender `value=stable` fazia esta guarda
+    // reprovar justamente o conserto.
+    expect(wf, "publish-image.yml não cria o canal 'stable'").toMatch(/:stable\b/);
   });
 
   it("nenhum gatilho reconstrói uma tag já publicada", () => {

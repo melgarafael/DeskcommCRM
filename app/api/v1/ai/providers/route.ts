@@ -11,6 +11,7 @@
  * recusar naquele instante trocaria uma configuração ruim por um atendimento
  * perdido.
  */
+import { enxergaImagem } from "@/lib/ai/pontos/capacidade-em-vigor";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
@@ -98,7 +99,18 @@ export async function GET(): Promise<Response> {
     ? { provider: versao.provider, credentialId: versao.credential_id, model: versao.model }
     : null;
 
-  const modelos = (modelosRes.data ?? []) as ModeloDoCatalogo[];
+  // ⚠️ A LISTA QUE A TELA DESENHA sai daqui, e `supports_vision` dela vinha da
+  // coluna — a mesma que discordava do motor. Reconciliar aqui, uma vez, é o
+  // que faz a lista, o aviso do binding e o motor darem a MESMA resposta.
+  // Ver `lib/ai/pontos/capacidade-em-vigor.ts`.
+  const modelos = ((modelosRes.data ?? []) as ModeloDoCatalogo[]).map((m) => ({
+    ...m,
+    supports_vision: enxergaImagem({
+      provider: m.provider,
+      modelId: m.model_id,
+      doCatalogo: m.supports_vision,
+    }),
+  }));
   const capacidadePorModelo = new Map(modelos.map((m) => [`${m.provider}|${m.model_id}`, m]));
 
   const pontos = PONTOS_DE_IA.map((ponto) => {
@@ -231,7 +243,14 @@ export async function PUT(req: NextRequest): Promise<Response> {
     modelo: {
       model_id: corpo.model_id,
       supports_tools: modelo?.supports_tools ?? false,
-      supports_vision: modelo?.supports_vision ?? false,
+      // A capacidade vem do MOTOR, não da coluna: os dois discordavam e a tela
+      // avisava "não enxerga imagens" sobre modelo que enxerga. Ver
+      // `lib/ai/pontos/capacidade-em-vigor.ts`.
+      supports_vision: enxergaImagem({
+        provider: corpo.provider,
+        modelId: corpo.model_id,
+        doCatalogo: modelo?.supports_vision ?? null,
+      }),
       conhecido: modelo !== null,
     },
   });

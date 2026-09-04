@@ -21,7 +21,7 @@ const buttonVariants = cva(
     "rounded-sm font-medium",
     "transition-[background-color,border-color,color,box-shadow,transform]",
     "duration-fast ease-out",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
     "disabled:pointer-events-none disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
     "active:translate-y-px",

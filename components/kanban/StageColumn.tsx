@@ -115,7 +115,7 @@ export function StageColumn({
             ))}
             {provided.placeholder}
             {leads.length === 0 && !snapshot.isDraggingOver && (
-              <div className="flex h-20 items-center justify-center text-[11px] text-text-muted/70">
+              <div className="flex h-20 items-center justify-center text-[11px] text-text-muted">
                 {t("vazio")}
               </div>
             )}

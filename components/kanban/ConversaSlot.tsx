@@ -46,7 +46,7 @@ export function ConversaSlot({ conversa }: { conversa: Lead["conversa"] }) {
       onClick={(e: MouseEvent) => e.stopPropagation()}
       onPointerDown={(e: MouseEvent) => e.stopPropagation()}
       className={cn(
-        "group/conversa mt-1 flex items-center gap-1.5 rounded px-1 py-0.5 text-[11px]",
+        "group/conversa mt-1 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px]",
         "text-text-muted transition-colors hover:bg-muted hover:text-foreground",
       )}
       title={t("Abrir esta conversa no Inbox")}

@@ -36,7 +36,7 @@ export function TabNav({ basePath, tabs }: TabNavProps) {
             className={[
               "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab.disabled
-                ? "cursor-not-allowed text-muted-foreground/40 border-transparent"
+                ? "cursor-not-allowed text-muted-foreground border-transparent"
                 : isActive
                   ? "border-foreground text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/40",

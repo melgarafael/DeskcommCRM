@@ -79,6 +79,9 @@ export const DICIONARIO: Traducoes = {
   Buscar: { es: "Buscar" },
 
   // ─── Inbox: filtros e lista ───
+  "Buscar por nome, telefone ou mensagem…": {
+    es: "Buscar por nombre, teléfono o mensaje…",
+  },
   "Buscar mensagens…": { es: "Buscar mensajes…" },
   "Todos os números": { es: "Todos los números" },
   "Todas as tags": { es: "Todas las etiquetas" },
@@ -2928,9 +2931,12 @@ export const DICIONARIO: Traducoes = {
   "Estes limites protegem o número contra bloqueio do WhatsApp. Campo vazio usa o padrão seguro do sistema (mostrado no campo).": {
     es: "Estos límites protegen el número contra el bloqueo de WhatsApp. Campo vacío usa el valor seguro predeterminado del sistema (que se muestra en el campo).",
   },
+  "A ordem de preferência vai de 0 a 1000.": {
+    es: "El orden de preferencia va de 0 a 1000.",
+  },
   "Este número é usado desde": { es: "Este número se usa desde" },
-  "A conexão pode ser nova sem que o número seja. O aquecimento conta a idade do NÚMERO — se você deixar em branco, ele é tratado como recém-criado e começa liberando pouco por dia.": {
-    es: "La conexión puede ser nueva sin que el número lo sea. El calentamiento cuenta la antigüedad del NÚMERO — si lo dejas en blanco, se trata como recién creado y empieza liberando poco por día.",
+  "A conexão pode ser nova sem que o número seja. O aquecimento conta a idade do NÚMERO — em branco, ele é tratado como recém-criado e começa liberando pouco por dia. Uma data já salva não some se você limpar o campo: para mudá-la, informe outra.": {
+    es: "La conexión puede ser nueva sin que el número lo sea. El calentamiento cuenta la antigüedad del NÚMERO — en blanco, se trata como recién creado y empieza liberando poco por día. Una fecha ya guardada no desaparece si limpias el campo: para cambiarla, informa otra.",
   },
   "Este número já está aquecido — pular o aquecimento": {
     es: "Este número ya está calentado — saltar el calentamiento",
@@ -6379,6 +6385,17 @@ export const DICIONARIO: Traducoes = {
   "mensagens": { es: "mensajes" },
   "conversas": { es: "conversaciones" },
   "leads": { es: "leads" },
+
+  // ─── Importar leads de planilha (extraído do PR #418) ───
+  "Importar leads de uma planilha": { es: "Importar leads desde una planilla" },
+  "Um arquivo CSV com uma linha por lead. Os leads entram na primeira etapa do funil escolhido.": {
+    es: "Un archivo CSV con una línea por lead. Los leads entran en la primera etapa del embudo elegido.",
+  },
+  "Funil de destino": { es: "Embudo de destino" },
+  "Escolher o arquivo CSV": { es: "Elegir el archivo CSV" },
+  "leads criados": { es: "leads creados" },
+  "contatos novos": { es: "contactos nuevos" },
+  "Colunas que não reconheci:": { es: "Columnas que no reconocí:" },
 };
 
 /**

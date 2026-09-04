@@ -376,7 +376,15 @@ export interface ParametrosDaLista {
 
 export type ResultadoDaLista =
   | { ok: true; agendamentos: AgendamentoListado[] }
-  | { ok: false; codigo: "erro_interno" | "sem_alvo"; motivoParaOperador: string; motivoParaCliente: string };
+  | {
+      ok: false;
+      // `alvo_nao_e_lead`: o id veio no parâmetro `lead_id` e não é um negócio
+      // do funil — quase sempre um id de CONTATO, que é o que o contexto do
+      // turno chama de `lead_id`. Ver o ramo que o emite. (issue #509)
+      codigo: "erro_interno" | "sem_alvo" | "alvo_nao_e_lead";
+      motivoParaOperador: string;
+      motivoParaCliente: string;
+    };
 
 /** O embed do PostgREST vem objeto ou array conforme o gerador de tipos; aceite os dois. */
 function nomeDoContato(
@@ -426,9 +434,44 @@ export async function listaAgendamentos(
       };
     }
     idsPorLead = (data ?? []).map((l) => String(l.target_id));
-    // Lead sem nenhum vínculo: lista vazia é a resposta CERTA aqui — a pergunta era
-    // "o que este negócio tem marcado?" e a resposta é "nada". Diferente de não saber.
-    if (idsPorLead.length === 0) return { ok: true, agendamentos: [] };
+    if (idsPorLead.length === 0) {
+      // ⚠️ SEM VÍNCULO, HÁ DUAS HISTÓRIAS DIFERENTES — e só uma delas pode ser
+      // contada ao cliente.
+      //
+      // "Este negócio não tem nada marcado" é resposta CERTA, e o comentário
+      // que estava aqui defendia isso com razão. Mas ela era dada TAMBÉM quando
+      // o id nem é um lead — e no motor `leadId` É o `contact_id`
+      // (`inbound-turn.ts:1121`, `get-lead-context.ts:193`), enquanto o campo
+      // publicado no contexto do turno se chama `lead_id`. O modelo passava o
+      // id do contato para cá, a busca por vínculo não achava nada, e o agente
+      // NEGAVA ao cliente um compromisso que ele mesmo tinha acabado de marcar.
+      //
+      // Nada reclamava: consulta válida, lista vazia é legítima, e o modelo não
+      // tinha como suspeitar. A consulta abaixo separa as duas histórias, e só
+      // roda no ramo que já ia devolver vazio. (issue #509)
+      const { data: ehLead } = await supabase
+        .from("crm_leads")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("id", params.leadId)
+        .maybeSingle();
+
+      if (!ehLead) {
+        return {
+          ok: false,
+          codigo: "alvo_nao_e_lead",
+          motivoParaOperador:
+            `o id ${params.leadId} não é um negócio do funil. No contexto do turno, o campo ` +
+            "`lead_id` carrega o id do CONTATO — para consultar os compromissos de uma pessoa, " +
+            "use `contact_id`.",
+          motivoParaCliente:
+            "Não consegui confirmar a agenda dessa pessoa agora. NÃO diga que ela não tem nada " +
+            "marcado — diga que vai confirmar com a equipe.",
+        };
+      }
+      // Lead de verdade, sem nenhum vínculo: "nada marcado" é a resposta certa.
+      return { ok: true, agendamentos: [] };
+    }
   }
 
   let q = supabase

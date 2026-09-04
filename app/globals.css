@@ -1,6 +1,28 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+
+/* Alcance do scanner. O v4 acha os arquivos sozinho a partir da raiz do git,
+   mas isso varreria `docs/` (149 markdowns cheios de exemplo de classe) e
+   `tests/` — o CSS engordaria com utilitário que nenhuma tela usa, e um
+   `bg-red-500` escrito numa doc viraria regra publicada. `source(none)` desliga
+   a descoberta automática e as quatro linhas abaixo repõem EXATAMENTE o
+   `content` que o `tailwind.config.ts` declarava. Ao criar pasta nova de UI,
+   acrescente-a aqui — senão as classes dela somem sem erro nenhum. */
+@source "../app";
+@source "../components";
+@source "../lib";
+@source "../hooks";
+
+/* Escuro por atributo, não por classe. Equivale ao `darkMode: ["class",
+   "[data-theme='dark']"]` do v3: a forma de duas casas do v3 NÃO acumula com
+   `.dark` — ela SUBSTITUI o seletor padrão, e o produto inteiro liga o tema
+   por `<html data-theme="dark">` (ver `[data-theme="dark"]` mais abaixo e o
+   `color-scheme` no `@layer base`).
+
+   O `:where()` zera a especificidade do seletor de tema, para que `dark:bg-x`
+   e `bg-x` continuem competindo só pela ordem em que aparecem — sem ele, todo
+   utilitário `dark:` ganharia um ponto de especificidade a mais e venceria
+   coisas que no v3 ele não vencia. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* ─────────────────────────────────────────────────────────────────────────
    DeskcommCRM — Design System tokens (Sage palette · density Aerada)
@@ -404,9 +426,225 @@
   --agenda-pessoa-8: #cc77b1;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Ponte token → utilitário (o que era `theme.extend` no `tailwind.config.ts`).
+
+   `@theme inline` e não `@theme`: com `inline`, o utilitário recebe o
+   `var(--color-…)` LITERAL em vez de uma cópia do valor. É o que preserva o
+   tema — `.bg-bg` vira `background-color: var(--color-bg)` e passa a valer o
+   que `[data-theme="dark"]` disser naquele ponto da árvore. Com `@theme` sem
+   `inline`, o valor claro seria assado dentro do utilitário e o tema escuro
+   pararia de existir.
+
+   Os três blocos de token acima (`:root`, `[data-theme="light"]`,
+   `[data-theme="dark"]`) ficam onde estão, sem layer e sem renomear. Não é
+   preferência: `extrairRegua` (lib/branding/contraste.ts) acha o bloco claro
+   por igualdade EXATA de seletor (`r.seletor === ":root"`), e
+   `tests/unit/branding-tema-claro-escopavel.test.ts` compara prop a prop os
+   blocos claro e escuro. Mover qualquer um deles para dentro de `@theme`
+   quebraria os dois.
+
+   Efeito colateral conhecido e inofensivo: como os nomes de token daqui são os
+   MESMOS do bloco `:root` (o produto já batizava tudo de `--color-*`), o v4
+   emite, dentro de `@layer theme`, linhas auto-referentes do tipo
+   `--color-bg: var(--color-bg)`. Elas nunca vencem — declaração sem layer tem
+   precedência sobre declaração em layer, e o `:root` autoral está fora de
+   layer. Vigiado por `tests/unit/tailwind-tokens.test.ts`; se um dia alguém
+   embrulhar o `:root` num `@layer`, o teste reprova e a explicação está aqui.
+   ───────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  /* Foundation */
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-elevated: var(--color-surface-elevated);
+  --color-overlay: var(--color-overlay);
+
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+
+  /* Accent — Sage */
+  --color-accent: var(--color-accent);
+  --color-accent-foreground: var(--color-accent-fg);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-50: var(--color-accent-50);
+  --color-accent-100: var(--color-accent-100);
+  --color-accent-200: var(--color-accent-200);
+  --color-accent-300: var(--color-accent-300);
+  --color-accent-400: var(--color-accent-400);
+  --color-accent-500: var(--color-accent-500);
+  --color-accent-600: var(--color-accent-600);
+  --color-accent-700: var(--color-accent-700);
+  --color-accent-800: var(--color-accent-800);
+  --color-accent-900: var(--color-accent-900);
+  --color-accent-950: var(--color-accent-950);
+
+  /* Neutrals — greige */
+  --color-neutral-50: var(--color-neutral-50);
+  --color-neutral-100: var(--color-neutral-100);
+  --color-neutral-200: var(--color-neutral-200);
+  --color-neutral-300: var(--color-neutral-300);
+  --color-neutral-400: var(--color-neutral-400);
+  --color-neutral-500: var(--color-neutral-500);
+  --color-neutral-600: var(--color-neutral-600);
+  --color-neutral-700: var(--color-neutral-700);
+  --color-neutral-800: var(--color-neutral-800);
+  --color-neutral-900: var(--color-neutral-900);
+  --color-neutral-950: var(--color-neutral-950);
+
+  /* States */
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-success-fg: var(--color-success-fg);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-warning-fg: var(--color-warning-fg);
+  --color-error: var(--color-error);
+  --color-error-bg: var(--color-error-bg);
+  --color-error-fg: var(--color-error-fg);
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+  --color-info-fg: var(--color-info-fg);
+
+  /* Aliases shadcn (consumers ainda não migrados). Espelham 1:1 o que o
+     `tailwind.config.ts` mapeava — inclusive `ring`, que apontava para a
+     parada 500 fixa e NÃO para `--ring` (que muda no escuro). Mantido igual de
+     propósito: trocar aqui mudaria o anel de foco de toda a aplicação, e isso
+     é decisão de design, não de migração. */
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-accent-500);
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: var(--color-accent-fg);
+  --color-secondary: var(--color-surface-elevated);
+  --color-secondary-foreground: var(--color-text);
+  --color-destructive: var(--color-error);
+  --color-destructive-foreground: #ffffff;
+  --color-muted: var(--color-surface-elevated);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-text);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-text);
+
+  /* Tipografia */
+  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+
+  /* Espaçamento. Os valores são px LITERAIS (`--space-6` = 24px), não rem — e
+     essa diferença é carregada por quem consome: ver o cálculo de altura em
+     `components/inbox/InboxLayout.tsx`, que soma `var(--space-6)` a um `3.5rem`
+     justamente porque as duas parcelas NÃO estão na mesma unidade.
+
+     As paradas fora desta lista (`p-7`, `gap-1.5`, `mt-14`…) continuam
+     existindo: o v4 as calcula pelo multiplicador `--spacing` (0.25rem), do
+     mesmo jeito que a escala default do v3 as fornecia. */
+  --spacing-0: var(--space-0);
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-5: var(--space-5);
+  --spacing-6: var(--space-6);
+  --spacing-8: var(--space-8);
+  --spacing-10: var(--space-10);
+  --spacing-12: var(--space-12);
+  --spacing-16: var(--space-16);
+  --spacing-20: var(--space-20);
+  --spacing-24: var(--space-24);
+  --spacing-32: var(--space-32);
+
+  /* Raio */
+  --radius-none: var(--radius-none);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  /* Sombra */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+
+  /* Motion */
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+  --ease-spring: var(--ease-spring);
+}
+
+/* `duration-*` não tem espaço de tema no v4 (o `transitionDuration` do v3 não
+   tem equivalente em `@theme`), então o apelido vira utilitário explícito. */
+@utility duration-fast {
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+  transition-duration: var(--duration-slow);
+}
+
+
 @layer base {
-  * {
+  /* O preflight do v4 não pinta mais borda por padrão (`border: 0 solid`, cor
+     = `currentColor`), então os ~300 `class="border"` sem cor desta base
+     dependem inteiramente desta regra. Ela já existia no v3 pelo mesmo motivo;
+     o que mudou é que os pseudo-elementos entraram na lista — o preflight do
+     v4 os zera junto com o elemento, e sem eles um `::before` com `border`
+     desenharia na cor do texto. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
     border-color: var(--color-border);
+  }
+
+  /* ---- cursor de botão · reposto do preflight do Tailwind v3 -------------
+     NÃO É REDUNDANTE — não apague achando que o preflight já faz isto. Até a
+     v3 estas duas regras vinham de graça no `@tailwind base`
+     (`tailwindcss@3.4.19`, `src/css/preflight.css:339-353`, verbatim). O v4
+     as REMOVEU de propósito, para se alinhar ao default do navegador — e o
+     default do navegador para `<button>` é a SETA, não a mãozinha.
+
+     Sem este bloco, todo controle do produto que renda um `<button>` nativo
+     passa a mostrar a seta: `<Button>`, `SelectTrigger`, `TabsTrigger`,
+     `Switch`, os gatilhos de Dropdown/Popover/Tooltip/Dialog/Sheet/
+     AlertDialog e os `<button>` crus. Para recontar sem confiar neste texto:
+
+       git grep -o -F '<button' -- 'app/*.tsx' 'components/*.tsx' | wc -l
+
+     Por que aqui e não em `buttonVariants`: uma classe em `buttonVariants` só
+     alcança o que passa por `<Button>` (e por `AlertDialogAction`/`Cancel`,
+     que a reusam) — deixaria de fora todo o resto acima, além do `<button>`
+     que uma biblioteca de terceiro renderiza dentro da nossa árvore, que
+     classe nenhuma nossa tocaria.
+
+     A segunda regra é o par obrigatório da primeira, e vinha logo depois dela
+     no v3 pelo mesmo motivo: sem ela, botão DESABILITADO passa a convidar o
+     clique. Ela tem de vir DEPOIS — `:disabled` (0,1,0) empata em
+     especificidade com `[role="button"]` (0,1,0), e quem decide o empate é a
+     ordem no arquivo.
+
+     Nada aqui vence uma classe: `@layer base` perde para `@layer utilities`,
+     então os `cursor-default`, `cursor-not-allowed` e `disabled:cursor-*` que
+     já existem no código continuam mandando. */
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  :disabled {
+    cursor: default;
   }
 
   html {
@@ -474,14 +712,19 @@
   }
 
   /* Modo de alto contraste do sistema (Windows High Contrast / forced-colors).
-     Medido antes de escrever: 0 ocorrências de `forced-colors` no repo inteiro
-     e, em `app/ components/ lib/`, 18 arquivos que matam `outline`
-     (`outline-none` / `outline: none` / outline transparente) — 14 deles
-     desenhando o foco com `ring-*`, que é `box-shadow`, e o forced-colors APAGA
-     box-shadow. (Contagem com este arquivo de fora: incluí-lo devolvia 19/15,
-     porque o grep achava as palavras deste próprio comentário.) Nesses 14, o
+     O problema: arquivos que matam o `outline` e desenham o foco com `ring-*`
+     — que é `box-shadow`, e o forced-colors APAGA box-shadow. Neles o
      indicador de foco some por completo naquele modo: quem navega por teclado
      perde a posição do cursor. É WCAG 2.4.7 nível A, não preferência.
+
+     Quantos são hoje (comando, e não número — número envelhece; a migração
+     para o Tailwind 4 já invalidou o que estava escrito aqui, porque
+     `outline-none` virou `outline-hidden` e o grep antigo passou a devolver
+     zero):
+
+       grep -rlE 'outline-hidden|outline:\s*none|outline-\[?transparent' \
+         app components lib --include='*.tsx' --include='*.ts' | wc -l
+       # …| xargs grep -lE 'ring-[a-z0-9]' | wc -l   ← os que dependem de ring
 
      `Highlight` é cor de sistema (a paleta do usuário), a única que o modo não
      substitui. `!important` porque o que precisa ser vencido é justamente o

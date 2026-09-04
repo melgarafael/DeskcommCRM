@@ -168,12 +168,12 @@ export function IncidentDetailClient({ id }: IncidentDetailClientProps) {
                     key={entry.id}
                     className="flex items-start gap-2 text-xs"
                   >
-                    <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground/60 mt-1.5" />
+                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/60 mt-1.5" />
                     <div className="min-w-0 flex-1">
                       <span className="font-mono text-muted-foreground">
                         {entry.action}
                       </span>
-                      <span className="ml-2 text-muted-foreground/70">
+                      <span className="ml-2 text-muted-foreground">
                         {format(new Date(entry.created_at), "dd/MM HH:mm:ss", {
                           locale: localeDaData,
                         })}

@@ -75,7 +75,7 @@ export function HealthCard({
       {/* Header row */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="w-5 h-5 flex-shrink-0" aria-hidden>
+          <span className="w-5 h-5 shrink-0" aria-hidden>
             {icon}
           </span>
           <span className="text-xs font-semibold uppercase tracking-wider leading-none">
@@ -136,7 +136,7 @@ export function HealthCard({
 
       {/* Last updated */}
       {lastUpdated && (
-        <p className="text-[11px] text-muted-foreground/60 mt-auto">
+        <p className="text-[11px] text-muted-foreground mt-auto">
           {lastUpdated}
         </p>
       )}

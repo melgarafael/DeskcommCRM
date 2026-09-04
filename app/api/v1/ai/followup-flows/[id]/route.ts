@@ -7,6 +7,7 @@
  * DELETE /api/v1/ai/followup-flows/:id — apaga o pointer (manager+). Enrollment
  *   e versões saem no cascade / na ordem abaixo; não dá para desfazer.
  */
+import { rascunhoDoFluxo } from "@/lib/followup/rascunho";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
@@ -59,9 +60,19 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .order("created_at", { ascending: false });
   if (versionsErr) return fail("internal_error", versionsErr.message, 500, { requestId });
 
+  // Rascunho ausente COM versão publicada: a tela abre o que está NO AR. Ver
+  // `lib/followup/rascunho.ts` — um fluxo publicado por fora do construtor
+  // abria vazio, e salvar por cima trocava o fluxo do ar por quase-nada.
+  const draft_graph = await rascunhoDoFluxo(
+    supabase,
+    data as unknown as { draft_graph: unknown; active_version_id: string | null },
+    activeOrg.orgId,
+  );
+
   return ok(
     {
       ...data,
+      draft_graph,
       versions_count: versionRows?.length ?? 0,
       previous_version_id: versionRows?.[1]?.id ?? null,
     },

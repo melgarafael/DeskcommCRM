@@ -588,7 +588,7 @@ export function AgendaClient({
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
               rows={3}
-              className="w-full rounded-md border border-border bg-surface p-2 text-sm outline-none focus:border-border-strong"
+              className="w-full rounded-md border border-border bg-surface p-2 text-sm outline-hidden focus:border-border-strong"
               placeholder={t("O paciente pediu para remarcar por telefone")}
             />
             <div className="flex justify-end gap-2">

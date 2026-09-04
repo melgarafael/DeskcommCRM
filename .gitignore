@@ -99,7 +99,19 @@ loop/run-session.sh
 
 # graphify (análise local de knowledge graph)
 graphify-out/
+
+# Lockfiles de OUTRO gerenciador. O `pnpm-lock.yaml` é o único versionado, e
+# não é preferência de estilo: os pisos de segurança do projeto vivem em
+# `pnpm.overrides` do package.json, que o npm e o bun NÃO leem. Um `bun install`
+# aqui move `overrides` para o topo do package.json (formato bun/npm), o pnpm
+# deixa de enxergá-lo, e o `pnpm-lock.yaml` perde o bloco `overrides` inteiro —
+# `path-to-regexp@6.1.0` volta para a árvore com `pnpm audit` ainda verde.
+# Aconteceu em 2026-08-26. Ignorar o lock não impede o estrago; impede que ele
+# viaje no commit sem ninguém notar.
 package-lock.json
+bun.lock
+bun.lockb
+yarn.lock
 .e2e-invite.json
 .e2e-owner.json
 .e2e-invite-url.json

@@ -23,7 +23,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
-import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS } from "@/lib/contacts/csv";
+import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
 
@@ -87,7 +87,14 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const lido = lerPlanilha(await arquivo.text());
+  // Os BYTES, não `arquivo.text()`: o Excel em pt-BR exporta cp1252 e
+  // `File.text()` decodifica sempre como UTF-8 — o nome entrava corrompido no
+  // catálogo sem um erro sequer, e é ele que o agente lê para o cliente (#483).
+  const decodificado = decodificarCsv(await arquivo.arrayBuffer());
+  if ("erro" in decodificado) {
+    return fail("validation_failed", decodificado.erro, 422, { requestId });
+  }
+  const lido = lerPlanilha(decodificado.texto);
   // Problema do ARQUIVO (falta a coluna de preço) é 422 com a frase inteira —
   // e não um relatório com 300 erros idênticos.
   if ("erro" in lido) return fail("validation_failed", lido.erro, 422, { requestId });

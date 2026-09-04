@@ -54,14 +54,44 @@ function bancoDeMentira(preexistentes: Array<Partial<LinhaMessage>> = []): Duplo
   const consulta = () => {
     let org: string | null = null;
     let externos: string[] = [];
+    const filtrosExtras: Array<[string, unknown]> = [];
     const q = {
       eq(coluna: string, valor: string) {
         if (coluna === "organization_id") org = valor;
+        else filtrosExtras.push([coluna, valor]);
         return q;
       },
       in(coluna: string, valores: string[]) {
         if (coluna === "external_id") externos = valores;
+        else filtrosExtras.push([coluna, valores]);
         return q;
+      },
+      is(coluna: string, valor: unknown) {
+        // `.is(col, null)` = `col IS NULL`. A checagem de eco do próprio envio
+        // (`ehEcoDeEnvioNosso`, ver `lib/waha/ingest.ts`) pergunta por linhas
+        // ainda SEM `external_id`; sem este elo o dublê estoura em
+        // "is is not a function" e nove casos deste arquivo caem por um motivo
+        // que nada tem a ver com o que eles medem.
+        filtrosExtras.push([coluna, valor]);
+        return q;
+      },
+      gte() {
+        return q;
+      },
+      order() {
+        return q;
+      },
+      then(ok: (v: unknown) => unknown) {
+        // A checagem de eco lê uma LISTA (sem `.maybeSingle()`). Este arquivo
+        // não mede o silêncio — quem mede é
+        // `tests/unit/eco-do-envio-nao-silencia-o-bot.test.ts` —, então aqui
+        // basta responder no formato certo.
+        const casadas = messages.filter(
+          (m) =>
+            (org === null || m.organization_id === org) &&
+            filtrosExtras.every(([c, v]) => (Array.isArray(v) ? v.includes(m[c]) : (m[c] ?? null) === v)),
+        );
+        return Promise.resolve(ok({ data: casadas, error: null }));
       },
       limit() {
         return q;

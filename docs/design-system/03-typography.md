@@ -140,7 +140,7 @@ Outro exemplo: **header de view**.
 ## Como consumir em código
 
 ```tsx
-// Tailwind (mapeado em tailwind.config.ts → theme.fontSize)
+// Tailwind (mapeado no `@theme inline` de app/globals.css)
 <h1 className="text-display-md font-bold tracking-tight">Inbox</h1>
 <p className="text-body-sm text-muted">42 abertas</p>
 <span className="font-mono text-mono-data tabular-nums">#12.443</span>

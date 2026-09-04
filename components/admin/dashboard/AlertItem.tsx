@@ -48,7 +48,7 @@ export function AlertItem({ alert }: AlertItemProps) {
     <button
       type="button"
       onClick={() => router.push(alert.link)}
-      className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1 space-y-0.5">

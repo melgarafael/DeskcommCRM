@@ -41,7 +41,7 @@ function Preview({ preview }: { preview: TemplatePreview }) {
           /^\{\{\w+\}\}$/.test(parte) ? (
             <span
               key={i}
-              className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-medium text-primary ring-1 ring-primary/20"
+              className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-medium text-primary ring-1 ring-primary/20"
             >
               {parte.slice(2, -2)}
             </span>

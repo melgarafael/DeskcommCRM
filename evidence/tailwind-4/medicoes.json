@@ -1,0 +1,430 @@
+{
+  "tokens/claro": {
+    "--color-bg": "#faf9f6",
+    "--color-surface": "#fff",
+    "--color-surface-elevated": "#f5f3ee",
+    "--color-text": "#1c1a16",
+    "--color-text-muted": "#5d594f",
+    "--color-border": "#e7e3da",
+    "--color-accent": "#506d48",
+    "--color-accent-500": "#67885d",
+    "--color-error": "#a94a3c",
+    "--radius-md": "8px",
+    "--shadow-md": "0 4px 12px -2px #14120e0f, 0 2px 4px -1px #14120e0a",
+    "--space-6": "24px",
+    "--duration-fast": ".12s",
+    "__body_bg": "rgb(250, 249, 246)",
+    "__body_color": "rgb(28, 26, 22)"
+  },
+  "01-login/claro": {
+    "url": "http://localhost:3001/login"
+  },
+  "01-login/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    }
+  },
+  "02-onboarding-welcome/claro": {
+    "url": "http://localhost:3001/onboarding/welcome",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "02-onboarding-welcome/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "03-onboarding-funil/claro": {
+    "url": "http://localhost:3001/onboarding/funil",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "03-onboarding-funil/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "04-onboarding-equipe/claro": {
+    "url": "http://localhost:3001/onboarding/invite-team",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "04-onboarding-equipe/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "05-onboarding-ia/claro": {
+    "url": "http://localhost:3001/onboarding/setup-ai",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "05-onboarding-ia/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "06-onboarding-whatsapp/claro": {
+    "url": "http://localhost:3001/onboarding/connect-whatsapp",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    }
+  },
+  "06-onboarding-whatsapp/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    }
+  },
+  "07-conta/claro": {
+    "url": "http://localhost:3001/onboarding/welcome",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "07-conta/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "08-seguranca/claro": {
+    "url": "http://localhost:3001/onboarding/welcome",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "08-seguranca/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    },
+    "rounded-md": {
+      "valor": "8px"
+    }
+  },
+  "09-legal-privacidade/claro": {
+    "url": "http://localhost:3001/legal/privacy",
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.9643 0.000209212 0.00699568 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(231, 227, 218)",
+      "corDoToken": "#e7e3da"
+    }
+  },
+  "09-legal-privacidade/escuro": {
+    "tokens": {
+      "--color-bg": "#161510",
+      "--color-surface": "#1d1c17",
+      "--color-surface-elevated": "#272620",
+      "--color-text": "#f5f4ef",
+      "--color-text-muted": "#8e8b7f",
+      "--color-border": "#33312a",
+      "--color-accent": "#82a077",
+      "--color-accent-500": "#67885d",
+      "--color-error": "#c87263",
+      "--radius-md": "8px",
+      "--shadow-md": "0 4px 12px -2px #00000073, 0 2px 4px -1px #0000004d",
+      "--space-6": "24px",
+      "--duration-fast": ".12s",
+      "__body_bg": "rgb(22, 21, 16)",
+      "__body_color": "rgb(245, 244, 239)"
+    },
+    "bg-muted/40": {
+      "ocorrencias": 1,
+      "valor": "oklab(0.267546 -0.00175017 0.0107598 / 0.4)",
+      "pinta": true,
+      "temAlfa": true
+    },
+    "border (sem cor)": {
+      "ocorrencias": 1,
+      "valor": "rgb(51, 49, 42)",
+      "corDoToken": "#33312a"
+    }
+  },
+  "erros-de-console": []
+}

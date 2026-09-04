@@ -60,11 +60,11 @@ export function FollowupFlowPicker({ value, onChange, disabled }: Props) {
         return (
           <label
             key={f.id}
-            className="flex cursor-pointer items-start gap-2 rounded p-1 hover:bg-muted/40"
+            className="flex cursor-pointer items-start gap-2 rounded-md p-1 hover:bg-muted/40"
           >
             <input
               type="checkbox"
-              className="mt-1 h-4 w-4 rounded border-border accent-primary"
+              className="mt-1 h-4 w-4 rounded-md border-border accent-primary"
               checked={checked}
               onChange={() => toggle(f.id)}
               disabled={disabled}

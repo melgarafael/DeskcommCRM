@@ -3,6 +3,8 @@ import { useState } from "react";
 import Link from "next/link";
 
 import { useT } from "@/hooks/i18n/useT";
+
+import { ImportarLeads } from "./_components/ImportarLeads";
 import { EmptyPipeline } from "@/components/empty";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,10 +57,13 @@ function textoDoErro(e: unknown, t: (texto: string) => string): string {
 export function FunisClient({
   funis: funisDoServidor,
   podeGerenciar,
+  podeImportar,
 }: {
   funis: FunilDaLista[];
   /** Espelha o `requireRole("manager")` das rotas — ver o comentário da page. */
   podeGerenciar: boolean;
+  /** Espelha o `requireRole("agent")` de `POST /api/v1/leads/import`. */
+  podeImportar: boolean;
 }) {
   const t = useT();
   /**
@@ -190,9 +195,14 @@ export function FunisClient({
 
   return (
     <div className="flex flex-col gap-4">
-      {podeGerenciar && (
-        <div className="flex sm:justify-end">
-          {novo === null ? (
+      {(podeGerenciar || podeImportar) && (
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          {/* A porta da importação fica AQUI, e não numa tela própria: é desta
+              lista que se escolhe o funil, e a planilha precisa de um destino.
+              Uma rota nova exigiria um item de menu para uma coisa que se faz
+              uma vez por mês — ruído permanente para um gesto ocasional. */}
+          {podeImportar ? <ImportarLeads funis={funis} /> : null}
+          {podeGerenciar && novo === null ? (
             <Button onClick={() => setNovo("")} disabled={ocupado} data-testid="novo-funil" className="w-full sm:w-auto">
               <Plus size={16} className="mr-2" aria-hidden /> {t("Novo funil")}
             </Button>

@@ -53,7 +53,7 @@ verificados por leitura de arquivo, config e workflow.
 | H2 — Reproduzível | ✅ | Quickstart no README, `docs/SETUP.md`, `.nvmrc` (22), `packageManager` fixo, `pnpm-lock.yaml`, `docker-compose.yml`, `install.sh` do kit self-host, `baseline.sql` |
 | H3 — Verificável | ✅ | `lint` + `typecheck` + `test:unit` + `build`; CI roda os 3 primeiros em PR |
 | H4 — Preparado para agentes | ✅ | `CLAUDE.md` doutrinal forte; `AGENTS.md` **criado nesta auditoria**; documentação técnica extensa; **e o CI roda o gate de isolamento RLS** (job `invariants` → `pnpm test:db`) |
-| H5 — Automação avançada | ⚠️ **parcial** | CI confiável e ambiente isolado ✅ (Postgres efêmero pg17, worktrees, gov-loop com maker≠checker e hash-check). Falta: **1 das 46 specs E2E fora do CI** (45 rodam via `e2e.yml`, **obrigatório desde 2026-08-08**; a de fora é `vps-fresh-onboarding`, que é justamente a P0), `format:check` fora do CI, e o comando único local (`gov:verify`) não cobre `test:db`/`test:e2e`. *(Números recontados em 2026-08-14 @ `741c4ec8`; a redação anterior — "4 das 32, não-obrigatório" — apodreceu.)* |
+| H5 — Automação avançada | ⚠️ **parcial** | CI confiável e ambiente isolado ✅ (Postgres efêmero pg15, worktrees, gov-loop com maker≠checker e hash-check). Falta: **1 das 46 specs E2E fora do CI** (45 rodam via `e2e.yml`, **obrigatório desde 2026-08-08**; a de fora é `vps-fresh-onboarding`, que é justamente a P0), `format:check` fora do CI, e o comando único local (`gov:verify`) não cobre `test:db`/`test:e2e`. *(Números recontados em 2026-08-14 @ `741c4ec8`; a redação anterior — "4 das 32, não-obrigatório" — apodreceu.)* |
 
 **Por que H4 e não H5:** a instrução da auditoria é explícita — não atribuir nível só
 porque os arquivos existem, avaliar se o processo está implementado. Aqui está: o gate de
@@ -100,7 +100,7 @@ Legenda: ✅ existente e funcional · ⚠️ existente mas incompleto · ❌ nã
 | 17 | Documentação arquitetural | ✅ | `ARCHITECTURE.md` (1 página) + `docs/specs/` (16 docs com schema e payloads) + `docs/architecture/agent-turn` + `graphify-out/` |
 | 18 | Regras para agentes de IA | ✅ | `CLAUDE.md` doutrinal (convenções não-negociáveis, anti-patterns, doutrinas de migration/QA/branch), `.claude/agents/` com frota especializada, `loop/` com maker≠checker. **`AGENTS.md` criado nesta auditoria** — antes, agentes não-Claude entravam sem contexto |
 | 19 | Critérios de conclusão de tarefa | ✅ | Definition of Done de 13 itens em `CLAUDE.md`; `docs/doctrine/sistema-vivo.md` com o Living System Checklist; template de PR com o checklist |
-| 20 | Ambiente reproduzível | ✅ | `docker-compose.yml` (dev), `.prod.yml`, `Dockerfile` + `Dockerfile.worker`, `baseline.sql` auto-curativo cobrindo até a migration 0092, `scripts/test-db.sh` com Postgres efêmero pg17 rodando em CI. ⚠️ A receita de ambiente fresco tem armadilhas que só existem em doc (pg17 obrigatório, `node_modules` real e não symlink, fora de `/tmp`) — reproduzível, mas com conhecimento tácito |
+| 20 | Ambiente reproduzível | ✅ | `docker-compose.yml` (dev), `.prod.yml`, `Dockerfile` + `Dockerfile.worker`, `baseline.sql` auto-curativo cobrindo até a migration 0092, `scripts/test-db.sh` com Postgres efêmero pg15 rodando em CI. ⚠️ A receita de ambiente fresco tem armadilhas que só existem em doc (`node_modules` real e não symlink, fora de `/tmp`) — reproduzível, mas com conhecimento tácito |
 
 ---
 

@@ -64,7 +64,7 @@ export function ProposalsPanel({
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg border border-border py-16 text-center">
-        <Brain size={28} className="text-muted-foreground/60" aria-hidden />
+        <Brain size={28} className="text-muted-foreground" aria-hidden />
         <p className="text-sm font-medium">{t("Nenhuma proposta ainda")}</p>
         <p className="max-w-sm text-xs text-muted-foreground">
           {t(

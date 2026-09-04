@@ -31,8 +31,25 @@ const CSS = fs.readFileSync(path.join(RAIZ, "app/globals.css"), "utf8");
  * a catraca deixaria de calibrar contra a régua. Lendo do arquivo, mudar a Sage quebra
  * este teste — que é exatamente o aviso que se quer.
  */
+/**
+ * O bloco `:root` sai por casamento de chaves, e não por `slice` entre duas
+ * `indexOf`. A versão anterior cortava de `indexOf(":root")` até
+ * `indexOf('[data-theme="dark"]')` e quebrou na migração para o Tailwind 4: o
+ * `@custom-variant dark (&:where([data-theme="dark"], …))` pôs essa string no
+ * TOPO do arquivo, antes do `:root`, e a fatia virou vazia. O sintoma foi
+ * "não achei --color-accent-50 no :root", que aponta para o lugar errado —
+ * o `:root` estava intacto; quem tinha se mexido era o delimitador.
+ */
+function blocoRoot(css: string): string {
+  const i = css.search(/^:root\s*\{/m);
+  if (i < 0) throw new Error("não achei o bloco `:root` em globals.css");
+  const fim = css.indexOf("\n}", i);
+  if (fim < 0) throw new Error("bloco `:root` sem fechamento em globals.css");
+  return css.slice(i, fim);
+}
+
 function stopsSageDoCss(): string[] {
-  const raiz = CSS.slice(CSS.indexOf(":root"), CSS.indexOf('[data-theme="dark"]'));
+  const raiz = blocoRoot(CSS);
   return GRAUS.map((g) => {
     const m = new RegExp(`--color-accent-${g}:\\s*(#[0-9a-f]{6})`, "i").exec(raiz);
     if (!m?.[1]) throw new Error(`não achei --color-accent-${g} no :root do globals.css`);

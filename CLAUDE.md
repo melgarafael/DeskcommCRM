@@ -20,7 +20,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 
 ## Stack canônica
 
-- **Frontend:** Next.js 16 App Router (Turbopack) + React 19 + TypeScript 6 estrito + Tailwind + shadcn/ui (style: `new-york`, neutral)
+- **Frontend:** Next.js 16 App Router (Turbopack) + React 19 + TypeScript 6 estrito + Tailwind 4 (config em CSS — ver abaixo) + shadcn/ui (style: `new-york`, neutral)
 - **Backend:** Next.js Route Handlers (mesmo repo); workers via `event_log` table + cron
 - **DB:** Supabase (Postgres). RLS em toda tabela tenant-aware. Extensions: `uuid-ossp`, `pgcrypto`, `vector`
 - **Auth:** Supabase Auth via `@supabase/ssr`. Cookie SameSite=Strict, HttpOnly, Secure
@@ -183,6 +183,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 | `docs/business-rules/` | Regras de negócio fora do código |
 | `docs/research/reference-synthesis.md` | Arquitetura herdada do curso WAHA |
 | `tasks/todo.md` | Workflow de construção atual |
+| `app/globals.css` | **Tailwind 4 é CSS-first: não existe `tailwind.config.ts`.** Tokens em `:root` / `[data-theme]`, ponte token → utilitário no `@theme inline`, alcance do scanner nos `@source`. Vigiado por `tests/unit/tailwind-tokens.test.ts` |
 | `lib/api/wrappers.ts` | `ok()`, `fail()`, tipos `ApiSuccess<T>` / `ApiError` |
 | `lib/api/errors.ts` | Códigos de erro canônicos |
 | `lib/env.ts` | Validação Zod das env vars (lança no startup se faltar crítica) |
@@ -337,7 +338,7 @@ No CI não há `UPSTASH` nenhum, então lá o caminho é o contador em memória 
 Checks **obrigatórios** na branch protection da `main` (verificado na configuração, não só no papel):
 
 - **`verify`** (`ci.yml`) — typecheck + lint + test:unit.
-- **`invariants`** (`ci.yml`) — `pnpm test:db`: sobe `pgvector/pgvector:pg17`, aplica `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e update (idempotência), e roda os testes de invariante, incluindo o de isolamento RLS entre 2 organizações.
+- **`invariants`** (`ci.yml`) — `pnpm test:db`: sobe `pgvector/pgvector:pg15` — o PISO que dizemos suportar, não a versão mais rica que temos à mão —, aplica `supabase/baseline.sql` em modo install (`ON_ERROR_STOP=1`) e update (idempotência), e roda os testes de invariante, incluindo o de isolamento RLS entre 2 organizações.
 - **`build-and-size`** (`perf.yml`) — `pnpm build` em Node 22.
 - **`e2e`** (`e2e.yml`) — sobe Supabase local, aplica o `baseline.sql` e roda **todas as specs Playwright menos uma**. O número saiu daqui de propósito: ele apodreceu **cinco** vezes (a quinta em 2026-08-24, quando `inbox-quem-manda.spec.ts` entrou), e a condição que o PR #242 pôs para parar de recontar já tinha vencido na quarta. Quem precisa do número roda o comando abaixo — comando não envelhece. A **única** de fora é `vps-fresh-onboarding` (precisa de WAHA + Redis + Resend + Nuvemshop) — e ela é a **P0** da doutrina de QA Visual, ou seja, `e2e` verde **não** prova a jornada de instalação fresca, que é o produto que se vende.
 
@@ -392,7 +393,7 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 
 **Medidas de front-end por ferramenta, nunca a olho** (`getBoundingClientRect`/`getComputedStyle` no Playwright). Ver `feedback_protocolo_execucao_visivel` na memória.
 
-**Receita de ambiente fresco (não-óbvia):** banco = `baseline.sql` num Supabase local **pg17** (`config.toml major_version = 17`; o baseline usa `GRANT MAINTAIN`, privilégio pg17+); `next build` + `next start` (produção — `next dev` compila lento demais e o Turbopack quebra `cookies()`); **worktree com `node_modules` real, nunca symlink** (Turbopack rejeita symlink "out of filesystem root") e **fora de `/tmp`** (é limpo no meio da sessão — commite cada marco). Detalhes em [[project_invite_e2e_and_bugs]].
+**Receita de ambiente fresco (não-óbvia):** banco = `baseline.sql` num Supabase local **pg15** (`config.toml major_version = 15`). Já foi pg17, por causa de 9 `GRANT MAINTAIN` que o `pg_dump` emitiu sozinho; hoje quem guarda o piso é `tests/unit/baseline-no-piso-do-postgres.test.ts`; `next build` + `next start` (produção — `next dev` compila lento demais e o Turbopack quebra `cookies()`); **worktree com `node_modules` real, nunca symlink** (Turbopack rejeita symlink "out of filesystem root") e **fora de `/tmp`** (é limpo no meio da sessão — commite cada marco). Detalhes em [[project_invite_e2e_and_bugs]].
 
 ---
 
@@ -420,7 +421,7 @@ Processo padrão (siga sempre):
 4. **Data migrations genéricas**: se a migration corrige/deduplica dados, escreva pensando em QUALQUER banco de clone (não hardcode IDs do seu tenant). Repointe FKs conferindo o catálogo (`information_schema` FK map) para não perder histórico.
 5. **Registre no MANIFEST**: adicione uma linha em `supabase/migrations/MANIFEST.md` (tabela "Applied") descrevendo versão, nome e o QUÊ/PORQUÊ.
 6. **Reflita no `supabase/baseline.sql` (OBRIGATÓRIO — é o que o kit self-host aplica).** O baseline é um dump `--schema-only` + um **apêndice idempotente** no fim do arquivo (blocos rotulados `-- ---- <coisa> (migration NNNN) ----`). O kit HostGator aplica **só o baseline.sql**, tanto no `install.sh` (banco novo, `ON_ERROR_STOP=1`) quanto no `update.sh` (re-aplica em banco existente, **sem** `ON_ERROR_STOP`). Então toda mudança de schema pós-snapshot DEVE ser acrescentada ao apêndice, **idempotente e auto-curativa**: `add column if not exists`, `create ... if not exists`, `create or replace function`, e — se a mudança adiciona constraint — **deduplicar/corrigir os dados ANTES** de criar a constraint (senão o `update.sh` de um clone bugado quebra). Sem isto, clones não recebem a mudança (ou quebram ao atualizar). Migração adicionada só em `migrations/` mas não no baseline **não chega aos self-hosters**.
-7. **Aplique e prove**: aplique via `mcp__plugin_supabase_supabase__apply_migration` (ou `supabase db push`), capture o estado ANTES/DEPOIS e prove invariantes (ex.: contagem de linhas que não pode mudar). Se mexeu em contrato, regenere `lib/database.types.ts`. Para mudanças de schema no kit, valide o baseline num Postgres descartável (`pgvector/pgvector:pg17` + extensões) aplicando `install` (fresh, `ON_ERROR_STOP=1`) e `update` (re-aplicar, sem a flag) — ambos têm que passar.
+7. **Aplique e prove**: aplique via `mcp__plugin_supabase_supabase__apply_migration` (ou `supabase db push`), capture o estado ANTES/DEPOIS e prove invariantes (ex.: contagem de linhas que não pode mudar). Se mexeu em contrato, regenere `lib/database.types.ts`. Para mudanças de schema no kit, valide o baseline num Postgres descartável (`pgvector/pgvector:pg15` + extensões) aplicando `install` (fresh, `ON_ERROR_STOP=1`) e `update` (re-aplicar, sem a flag) — ambos têm que passar.
 8. **Backfill de dados quebrados existentes**: constraint nova falha se os dados atuais a violam — a migration (e o apêndice do baseline) deve deduplicar/corrigir ANTES de criar a constraint.
 9. **Função nova em `public` nasce EXPOSTA — revogue as DUAS origens.** Toda `create function` no schema `public` termina com:
 

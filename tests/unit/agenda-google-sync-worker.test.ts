@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { audit } from "@/lib/audit";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
-import { icalUidDoAgendamento } from "@/lib/agenda/google/evento";
+import { idDeEventoDoGoogle } from "@/lib/agenda/google/escrita";
 import { sincronizarAgendasDoGoogle } from "@/app/api/v1/cron/agenda-google-sync/route";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined), isServiceRoleConfigured: vi.fn(() => true) }));
@@ -170,8 +170,15 @@ describe("sincronizarAgendasDoGoogle", () => {
     // agendamento continua ocupando o antigo, sem nada que os ligue.
     const nosso = {
       ...eventoDeTerceiro,
-      id: "evt-nosso",
-      iCalUID: icalUidDoAgendamento("22222222-2222-4222-8222-222222222222"),
+      // ⚠️ O anti-eco migrou do iCalUID para o ID.
+      //
+      // Mandar `iCalUID` junto do `id` no insert é o que o Google recusava com
+      // 400 (medido em produção em 2026-09-01), então o uid saiu do corpo — e o
+      // reconhecimento passou para o prefixo do id, que é nosso por construção.
+      // O uid que o evento traz agora é o que o GOOGLE gera, e ele NÃO nos
+      // identifica: é justamente por isso que o id precisa fazer esse trabalho.
+      iCalUID: "gerado-pelo-google@google.com",
+      id: idDeEventoDoGoogle("22222222-2222-4222-8222-222222222222"),
     };
     vi.mocked(fetch).mockResolvedValue(pagina({ items: [nosso, eventoDeTerceiro], nextSyncToken: "T1" }));
 
@@ -282,7 +289,7 @@ describe("sincronizarAgendasDoGoogle", () => {
   });
 
   it("a contagem do anti-eco vai para o audit — é a prova de que ele agiu", async () => {
-    const nosso = { ...eventoDeTerceiro, id: "n", iCalUID: icalUidDoAgendamento("x") };
+    const nosso = { ...eventoDeTerceiro, id: idDeEventoDoGoogle("x"), iCalUID: "gerado@google.com" };
     vi.mocked(fetch).mockResolvedValue(pagina({ items: [nosso, eventoDeTerceiro], nextSyncToken: "T1" }));
     await sincronizarAgendasDoGoogle(admin(), { agora: AGORA, calendarios: [calendario()] });
     expect(audit).toHaveBeenCalledWith(

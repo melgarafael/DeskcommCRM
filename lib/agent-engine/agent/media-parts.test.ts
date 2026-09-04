@@ -97,3 +97,123 @@ describe("buildNativeMediaParts — regressão da visão nativa", () => {
     expect(parts).toEqual([]);
   });
 });
+
+/**
+ * ═══ O ROTEADOR: o call site REAL consulta o catálogo, e o direto NÃO ═══════
+ *
+ * A regra vive em `lib/ai/pontos/capacidade-em-vigor.ts` e tem teste próprio.
+ * O que faltava é o que este bloco guarda: que ESTE arquivo a chama, e com o
+ * catálogo ligado. Sem isso, trocar `visaoEmVigor` de volta por
+ * `modelCapabilities(...).image` deixaria a suíte verde e o motor voltaria a
+ * anexar a imagem a um modelo que a recusa — teste guarda a função, não o
+ * call site.
+ *
+ * ⚠️ O dublê deste arquivo NÃO tinha `.from`, então nenhum caso passava pelo
+ * ramo do roteador. A ausência de `.from` também é o caso de "banco fora", e
+ * ele tem um teste aqui de propósito: falha de catálogo não pode derrubar o
+ * turno — cai no palpite, que é o comportamento de antes da regra existir.
+ */
+function fakeAdminComCatalogo(bytes: Buffer, supports_vision: boolean | null) {
+  const consultas: string[] = [];
+  const chain: Record<string, unknown> = {};
+  chain.select = () => chain;
+  chain.eq = (_c: string, v: string) => {
+    consultas.push(v);
+    return chain;
+  };
+  chain.is = () => chain;
+  chain.maybeSingle = async () => ({ data: supports_vision === null ? null : { supports_vision } });
+  return {
+    consultas,
+    admin: {
+      from: () => chain,
+      storage: {
+        from: () => ({
+          download: vi.fn(async () => ({
+            data: { arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) },
+            error: null,
+          })),
+        }),
+      },
+    } as never,
+  };
+}
+
+describe("buildNativeMediaParts — no roteador quem decide é o catálogo", () => {
+  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+
+  it("openrouter + catálogo diz que NÃO enxerga → nenhuma parte nativa", async () => {
+    // O defeito que este caso existe para impedir: o registro casa o prefixo
+    // `openai/` e afirma que enxerga, o motor anexa os bytes, e o provedor
+    // recusa — derrubando a resposta daquela mensagem para o cliente.
+    const db = fakeAdminComCatalogo(bytes, false);
+    const parts = await buildNativeMediaParts({
+      messages: [imageInbound],
+      provider: "openrouter",
+      model: "openai/gpt-3.5-turbo",
+      multimodalInput: true,
+      admin: db.admin,
+    });
+    expect(parts).toEqual([]);
+    expect(db.consultas, "o catálogo nem foi consultado").toContain("openai/gpt-3.5-turbo");
+  });
+
+  it("openrouter + catálogo diz que enxerga → a parte nativa vai", async () => {
+    // Controle: sem ele, "no roteador nunca anexe" satisfaria o caso acima e a
+    // visão morreria para quem usa OpenRouter com um modelo que enxerga.
+    const db = fakeAdminComCatalogo(bytes, true);
+    const parts = await buildNativeMediaParts({
+      messages: [imageInbound],
+      provider: "openrouter",
+      model: "openai/gpt-4o",
+      multimodalInput: true,
+      admin: db.admin,
+    });
+    expect(parts).toHaveLength(1);
+  });
+
+  it("openrouter SEM linha no catálogo → cai no prefixo, que é melhor que nada", async () => {
+    const db = fakeAdminComCatalogo(bytes, null);
+    const parts = await buildNativeMediaParts({
+      messages: [imageInbound],
+      provider: "openrouter",
+      model: "openai/gpt-4o",
+      multimodalInput: true,
+      admin: db.admin,
+    });
+    expect(parts).toHaveLength(1);
+  });
+
+  it("⚠️ provedor DIRETO não paga ida ao banco — o dublê explode se for consultado", async () => {
+    // Guarda de custo: um roundtrip por turno com mídia, para confirmar o que o
+    // registro já sabe. Se alguém tirar o atalho de `visaoEmVigor`, este caso
+    // vira vermelho em vez de a conta do banco subir em silêncio.
+    const db = fakeAdminComCatalogo(bytes, false);
+    (db.admin as unknown as { from: () => never }).from = () => {
+      throw new Error("provedor direto NÃO pode consultar o catálogo");
+    };
+    const parts = await buildNativeMediaParts({
+      messages: [imageInbound],
+      provider: "openai",
+      model: "gpt-4o",
+      multimodalInput: true,
+      admin: db.admin,
+    });
+    expect(parts).toHaveLength(1);
+  });
+
+  it("catálogo fora do ar não derruba o turno — cai no palpite", async () => {
+    const db = fakeAdminComCatalogo(bytes, false);
+    (db.admin as unknown as { from: () => never }).from = () => {
+      throw new Error("banco fora");
+    };
+    const parts = await buildNativeMediaParts({
+      messages: [imageInbound],
+      provider: "openrouter",
+      model: "openai/gpt-4o",
+      multimodalInput: true,
+      admin: db.admin,
+    });
+    expect(parts).toHaveLength(1);
+  });
+});

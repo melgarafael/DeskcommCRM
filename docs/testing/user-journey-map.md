@@ -1512,3 +1512,104 @@ ou ontem, e fora disso imprime `dd/MM/yyyy` — idêntico nos dois idiomas.
 
 **O que segue fora:** e-mail e o PDF de LGPD, com o motivo escrito em
 `tests/unit/i18n-a-data-segue-o-idioma.test.ts`.
+
+## A migração para o Tailwind 4 mudou 252 classes que ninguém sabia estarem mortas (2026-08-26)
+
+Origem: subir `tailwindcss` de 3.4 para 4, com o config saindo do
+`tailwind.config.ts` (deletado) para um `@theme inline` em `app/globals.css`.
+
+**O achado que a migração destapou.** No v3, um modificador de opacidade sobre
+cor declarada como `var(--…)` sem o marcador `<alpha-value>` fazia o Tailwind
+**não emitir a regra** — a classe simplesmente não existia no CSS, em silêncio.
+Todo token deste produto é `var(--color-*)`, então **62 classes distintas em 252
+usos** eram letra morta: `bg-destructive/10` num aviso de erro não pintava fundo
+nenhum, `border-destructive/30` caía na cor neutra da regra global de borda,
+`text-muted-foreground/60` herdava a cor do pai. O v4 resolve opacidade por
+`color-mix()`, que funciona com qualquer cor — então **as 252 passaram a pintar
+o que quem escreveu queria desde o começo**.
+
+Medido com o v3 real, e não deduzido: um `tailwindcss@3.4.19` de descarte,
+alimentado com 7 classes, emitiu **4** — nenhuma das 3 com barra.
+
+| caso | prioridade | estado |
+|---|---|---|
+| Tokens resolvem em claro e escuro depois do `@theme inline` | `[P0]` | **PASS**, medido por `getComputedStyle` em `tests/sonda-tailwind-4.ts`: `--color-bg` = `#faf9f6` claro / `#161510` escuro, e `body` acompanha |
+| A auto-referência do `@theme inline` (`--color-bg: var(--color-bg)`) não vence o `:root` autoral | `[P0]` | **PASS.** A teoria é de cascata (sem layer vence layer); a medida é a linha acima. Congelado em `tests/unit/tailwind-tokens.test.ts`, que reprova se alguém embrulhar `:root` num `@layer` |
+| `class="border"` sem cor continua na cor de borda do produto, e não em `currentColor` | `[P0]` | **PASS**: `rgb(231,227,218)` (claro) e `rgb(51,49,42)` (escuro) — os dois são o `--color-border` do tema |
+| As classes de opacidade revividas pintam de verdade | `[P1]` | **PASS parcial**: `bg-muted/40` medido em elemento real do onboarding, com alfa `0.4` nos dois temas. O antes/depois confirma 25 bordas e 8 fundos que passaram de cor chapada / transparente para cor com alfa. As demais estão no CSS construído, mas **não foram medidas uma a uma na tela** |
+| Onboarding completo (6 passos) em claro e escuro, instalação fresca | `[P0]` | **PASS**, 0 erro de console. Capturas em `evidence/tailwind-4/` |
+| **ANTES/DEPOIS**: as duas versões contra o MESMO banco, comparadas elemento a elemento | `[P0]` | **PASS**. `tests/sonda-tailwind-4-antes-depois.ts` sobe v3 em `:3002` e v4 em `:3001`, casa cada elemento pelo **caminho estrutural no DOM** (não pelo `className`, que a migração renomeou) e reporta todo estilo computado que divergiu, mais o diff de pixel. Pares em `evidence/tailwind-4/{antes,depois}/`, números em `antes-depois.json` |
+| Telas internas (`/app`, kanban, inbox, contatos) | — | **NÃO COBERTO.** Numa instalação fresca todas redirecionam para `/onboarding/welcome`; alcançá-las pede concluir o onboarding, o que pede WAHA e chave de IA. A sonda registra o redirecionamento em vez de fingir cobertura |
+| O efeito visual das 252 revividas foi *revisto por um designer* | — | **NÃO MEDIDO.** A migração provou que passaram a pintar; não provou que cada uma pinta o que a tela precisa. Onde a intenção original estava errada, o erro agora está visível |
+
+### O defeito que só o antes/depois encontrou: o rótulo colado no campo
+
+O `space-*` inverteu o lado da margem — e isso não é cosmético:
+
+```
+v3:  .space-y-2 > :not([hidden]) ~ :not([hidden])   { margin-top }      ← filho SEGUINTE
+v4:  :where(.space-y-2 > :not(:last-child))         { margin-block-end } ← filho ANTERIOR
+```
+
+Num grupo `<Label>` + campo, o filho anterior é o **rótulo**. E `<label>` nasce
+`display: inline`, que **ignora margem vertical** — a margem do grupo evaporava.
+Medido: todo grupo de formulário perdia exatamente um `--space-N`, e a tela de
+boas-vindas ficava 24px mais curta, com rótulo colado no campo. Zero erro, zero
+teste vermelho, no meio de 91 arquivos alterados.
+
+Conserto em `components/ui/label.tsx`: `inline-block` na classe base. Não é
+`block` porque medi os dois — `inline-block` preserva a largura shrink-to-fit que
+o `inline` dava e fica a **4px** do que o v3 rendia, contra 10px do `block`.
+
+| caso | prioridade | estado |
+|---|---|---|
+| O respiro entre rótulo e campo sobrevive à migração | `[P0]` | **PASS**, medido: 8px nos dois lados |
+| Rótulo inline não volta | `[P0]` | **PASS**, `tests/unit/tailwind-tokens.test.ts` — e provado por sabotagem: revertendo a classe, o teste reprova |
+| O `<label>` CRU tem o mesmo defeito, e o componente consertado não o alcança | `[P0]` | **PASS.** A sonda achou 1 na tela; a varredura estática achou **10** em 3 arquivos (`app/app/audit`, `webhooks/CapturasTab`, `onboarding/funil`), todos primeiro filho de `space-y-*`. Corrigidos, e a varredura virou teste — também provado por sabotagem. Confirmado depois na tela: **zero** filhos inline em container `space-*` nas 7 telas provadas |
+| Diferença residual de 4px por grupo | — | **CONHECIDA e não fechada.** É o `leading-none` da própria classe do rótulo finalmente valendo — enquanto ele era `inline`, quem mandava na altura da linha era o strut do pai. Fechar exige tirar o `leading-none`: decisão de design, não de migração |
+| `<option>` de `<select>` nativo perde 2px de `padding-left` e o fundo branco do popup | — | **MEDIDO, impacto visual NÃO PROVADO.** O preflight do v4 zera `padding` em `*` (o v3 não zerava). São 10 `<select>` no produto; o popup é desenhado pelo SO, então o Playwright não o captura |
+| `outline-none` → `outline-hidden` muda `outlineStyle` de `solid` para `none` em 2 campos | — | **ESPERADO, não é regressão.** O v3 punha contorno transparente SEMPRE; o v4 só sob `forced-colors`. O indicador de foco visível sempre foi o `ring`, e a regra `forced-colors` do `globals.css` cobre o resto |
+| Paleta default (amber, emerald) muda de sRGB para oklch | — | **NÃO MEDIDO** se o desvio é perceptível. São ~20 elementos, todos de aviso/estado |
+| Telas internas (`/app`, kanban, inbox, contatos) | — | **NÃO COBERTO**, mesmo motivo de antes: instalação fresca redireciona para o onboarding |
+
+### O risco que o dono do projeto nomeou antes da migração, medido
+
+Na issue #239 o mantenedor deixou um aviso específico: uma varredura de "tokens
+sem consumidor" apontaria `duration-fast/base/slow` como mortos, e deletar o
+bloco `transitionDuration` **apagaria a transição de todo botão, input, textarea
+e badge do produto** — em silêncio, com `typecheck`, `lint`, `test:unit`,
+`invariants` e `build-and-size` verdes, porque `grep -rn toHaveScreenshot tests/`
+devolve zero.
+
+No Tailwind 4 o risco é maior que no 3, e por um motivo novo: **não existe espaço
+de tema `--duration-*`**. Um `@theme inline` não tem onde declará-los, e a
+tradução ingênua do config os perderia sem erro nenhum. Aqui eles viraram
+`@utility` explícito em `app/globals.css`.
+
+| caso | prioridade | estado |
+|---|---|---|
+| Botão e campo mantêm a duração de transição | `[P0]` | **PASS**, medido em elemento real nas duas versões ao mesmo tempo: `transitionDuration` = `0.12s` no `<button type="submit">` e no `<input type="email">` do login, idêntico em v3 e v4 |
+| `duration-base` / `duration-slow` não aparecem no CSS construído | — | **ESPERADO, não é regressão.** Nenhum arquivo os usa, e o Tailwind só emite classe usada — no v3 era igual. O `--duration-slow` que o `.card-pulse` consome é a **variável**, não a classe, e continua no `:root` |
+
+### As provas versionadas
+
+Só os quatro pares que sustentam uma afirmação — o resto das capturas é artefato
+de execução e não entra no repositório (a regra é de
+`tests/unit/evidencia-citada.test.ts`, e ela reprovou esta entrega antes de eu
+podar). Para regerar todas: suba as duas versões e rode
+`tests/sonda-tailwind-4-antes-depois.ts`.
+
+| par | o que ele prova |
+|---|---|
+| `tailwind-4/antes/02-onboarding-welcome-claro.png` → `tailwind-4/depois/02-onboarding-welcome-claro.png` | O respiro entre rótulo e campo. É aqui que o defeito do `<label>` inline aparecia: a página inteira 24px mais curta, três grupos colados |
+| `tailwind-4/antes/02-onboarding-welcome-escuro.png` → `tailwind-4/depois/02-onboarding-welcome-escuro.png` | O tema escuro sobrevive à troca do `@theme inline` — mesma tela, tokens escuros resolvendo |
+| `tailwind-4/antes/05-onboarding-ia-escuro.png` → `tailwind-4/depois/05-onboarding-ia-escuro.png` | O cartão de aviso âmbar, que concentra as classes de opacidade revividas e a paleta default que passou a oklch |
+| `tailwind-4/antes/01-login-claro.png` → `tailwind-4/depois/01-login-claro.png` | A tela mais simples do produto, com borda, foco e anel — o controle: se algo básico tivesse quebrado, quebraria aqui |
+
+**Armadilha que custou duas medições falsas.** Sonda que injeta `<div
+class="p-7">` por JavaScript não mede nada: a classe nunca esteve na fonte, o
+scanner nunca a viu, e o zero medido é artefato da sonda. Pelo mesmo motivo, o
+primeiro elemento com `class="border"` da tela de login é o `<input>`
+autofocado — ele casa `focus-visible:border-accent-500` e devolve a cor do
+foco. A sonda só mede elemento real, e pula elemento em foco e elemento que já
+traga classe de cor própria.

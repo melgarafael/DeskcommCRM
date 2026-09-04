@@ -116,22 +116,51 @@ export async function validateGoogleKey(apiKey: string): Promise<ValidationResul
 
 /**
  * OpenRouter expõe `/api/v1/key` (metadados da própria chave) e `/api/v1/models`
- * (catálogo). Validamos pelo catálogo porque ele responde a mesma pergunta —
- * "esta chave é aceita?" — e já devolve a lista de modelos que a interface usa,
- * do mesmo jeito que os três irmãos acima.
+ * (catálogo).
+ *
+ * ⚠️ `/api/v1/models` É PÚBLICO. Validar por ele não valida nada — e era o que
+ * este arquivo fazia. Medido em 2026-09-02, com a chave mais falsa possível:
+ *
+ *     GET /api/v1/models   sem header nenhum         → 200
+ *     GET /api/v1/models   Bearer sk-or-v1-...falsa  → 200
+ *     GET /api/v1/key      Bearer sk-or-v1-...falsa  → 401
+ *
+ * O comentário anterior dizia que o catálogo responde "esta chave é aceita?"
+ * do mesmo jeito que os três irmãos acima. Não responde: os outros três batem
+ * em endpoints que EXIGEM credencial, este não.
+ *
+ * O efeito medido é o pior para quem opera: QUALQUER string era gravada com
+ * `validated_at` preenchido, a tela dizia "validada" com o final da chave ao
+ * lado, e a falha só aparecia no primeiro turno do agente — como
+ * `runtime_error: User not found.`, mensagem que não menciona credencial
+ * nenhuma. Quem depurasse isso procuraria o defeito no modelo, no provedor ou
+ * no runtime; o operador tinha uma tela dizendo que a parte quebrada estava boa.
+ *
+ * A prova passa a ser `/api/v1/key`, que exige a credencial. O catálogo segue
+ * sendo lido DEPOIS, porque a lista de modelos é o que a interface usa — e ali
+ * ele é só dado, não prova. Catálogo fora do ar não recusa uma chave que já
+ * provou ser válida: seria trocar um erro de credencial por um de
+ * disponibilidade.
  */
 export async function validateOpenRouterKey(apiKey: string): Promise<ValidationResult> {
   try {
+    const auth = await timedFetch("https://openrouter.ai/api/v1/key", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (auth.status === 401 || auth.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!auth.ok) {
+      return { ok: false, error: `provider_status_${auth.status}` };
+    }
+
     const res = await timedFetch("https://openrouter.ai/api/v1/models", {
       method: "GET",
       headers: { Authorization: `Bearer ${apiKey}` },
     });
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: "auth_failed_401" };
-    }
-    if (!res.ok) {
-      return { ok: false, error: `provider_status_${res.status}` };
-    }
+    if (!res.ok) return { ok: true, models: [] };
+
     const json = (await res.json()) as { data?: { id?: string }[] };
     const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
     return { ok: true, models };

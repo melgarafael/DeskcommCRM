@@ -272,7 +272,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               type="button"
               onClick={onCancelarResposta}
               aria-label={t("Cancelar resposta")}
-              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <X className="size-4" />
             </button>
@@ -339,7 +339,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             }
             className={cn(
               "min-h-9 max-h-40 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+              "placeholder:text-muted-foreground focus:outline-hidden focus:ring-1 focus:ring-ring",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}

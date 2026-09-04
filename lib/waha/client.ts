@@ -54,11 +54,73 @@ export const CONVERSAS_IGNORADAS = {
   groups: true,
 } as const;
 
+/**
+ * Teto de relógio das chamadas ao WAHA.
+ *
+ * 15s não é número escolhido aqui: é o que `docs/specs/03-spec-whatsapp-waha.md`
+ * já prescrevia na linha 636 (`timeoutMs: cfg?.timeoutMs ?? 15_000`). Duas
+ * réguas para a mesma grandeza divergem na primeira mudança.
+ *
+ * O WAHA é dependência externa e cai. O modo de falha caro não é a recusa
+ * imediata — essa devolve `ECONNREFUSED` na hora — é o socket que ACEITA e não
+ * responde: sem teto, a Server Action ou a rota fica presa até o limite do
+ * runtime. (issue #470)
+ */
+export const TETO_PADRAO_MS = 15_000;
+
+/**
+ * Mídia tem teto MAIOR, e por um motivo medível: `lib/waha/media-send.ts:28,31`
+ * manda `convert: true` em `sendVideo` e `sendVoice`. O WAHA roda ffmpeg e BAIXA
+ * a URL do Storage antes de responder.
+ *
+ * Um teto único calibrado para `sendText` cortaria envio de áudio legítimo — o
+ * conserto do timeout viraria um defeito novo, e mais difícil de ver que o
+ * original, porque a mensagem simplesmente não sai.
+ *
+ * 30s é o mesmo teto que a mídia de ENTRADA já usa
+ * (`lib/messaging/media/waha-source.ts:18`).
+ */
+export const TETO_DE_MIDIA_MS = 30_000;
+
+export interface WahaClientOpts {
+  /** Sobrescreve o teto padrão. Existe para o teste; produção usa o default. */
+  tetoMs?: number;
+}
+
 export class WahaClient {
+  private readonly tetoMs: number;
+
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
-  ) {}
+    opts: WahaClientOpts = {},
+  ) {
+    this.tetoMs = opts.tetoMs ?? TETO_PADRAO_MS;
+  }
+
+  /**
+   * `fetch` com teto, e com erro que DIZ que foi o relógio.
+   *
+   * Sem a segunda parte, um estouro de teto chega ao log como um erro de rede
+   * genérico e o diagnóstico começa procurando defeito de contrato — que é o
+   * caminho mais caro possível para "a dependência externa não respondeu".
+   */
+  private async fetchComTeto(
+    url: string | URL,
+    init: RequestInit,
+    tetoMs?: number,
+  ): Promise<Response> {
+    const teto = tetoMs ?? this.tetoMs;
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(teto) });
+    } catch (e) {
+      const nome = e instanceof Error ? e.name : "";
+      if (nome === "TimeoutError" || nome === "AbortError") {
+        throw new Error(`waha_timeout: o WAHA não respondeu em ${teto}ms (${url})`);
+      }
+      throw e;
+    }
+  }
 
   /**
    * Idempotent: ensures session exists, then starts it.
@@ -68,7 +130,7 @@ export class WahaClient {
    */
   async startSession(name: string): Promise<{ qr?: string; status: string }> {
     // 1) Create session (ignore 422/409 = already exists)
-    const createRes = await fetch(`${this.baseUrl}/api/sessions`, {
+    const createRes = await this.fetchComTeto(`${this.baseUrl}/api/sessions`, {
       method: "POST",
       headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ name, config: { ignore: CONVERSAS_IGNORADAS } }),
@@ -87,7 +149,7 @@ export class WahaClient {
     }
 
     // 2) Start session
-    const startRes = await fetch(
+    const startRes = await this.fetchComTeto(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/start`,
       {
         method: "POST",
@@ -111,7 +173,7 @@ export class WahaClient {
    * are treated as success so callers can compose reconnect = stop + start.
    */
   async stopSession(name: string): Promise<void> {
-    const res = await fetch(
+    const res = await this.fetchComTeto(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/stop`,
       {
         method: "POST",
@@ -139,7 +201,7 @@ export class WahaClient {
    * como sucesso — quem chama quer o efeito, não a transição.
    */
   async logoutSession(name: string): Promise<void> {
-    const res = await fetch(
+    const res = await this.fetchComTeto(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}/logout`,
       {
         method: "POST",
@@ -183,7 +245,7 @@ export class WahaClient {
   async convergirConfigDaSessao(name: string): Promise<void> {
     const url = `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`;
     try {
-      const atual = await fetch(url, { headers: { "X-Api-Key": this.apiKey } });
+      const atual = await this.fetchComTeto(url, { headers: { "X-Api-Key": this.apiKey } });
       if (!atual.ok) {
         logger.warn("[waha] não li a config da sessão; não vou reescrevê-la", {
           status: atual.status,
@@ -215,7 +277,7 @@ export class WahaClient {
         );
       if (jaConvergida) return;
 
-      const res = await fetch(url, {
+      const res = await this.fetchComTeto(url, {
         method: "PUT",
         headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({ name, config }),
@@ -240,7 +302,7 @@ export class WahaClient {
    * Idempotente pelo mesmo motivo do logout: 404 = já não existe = sucesso.
    */
   async deleteSession(name: string): Promise<void> {
-    const res = await fetch(
+    const res = await this.fetchComTeto(
       `${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`,
       {
         method: "DELETE",
@@ -254,7 +316,7 @@ export class WahaClient {
   }
 
   async getSessionQr(name: string): Promise<{ qr?: string; status: string }> {
-    const res = await fetch(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
       headers: { "X-Api-Key": this.apiKey },
     });
     if (!res.ok) throw new Error(`waha_${res.status}`);
@@ -275,7 +337,7 @@ export class WahaClient {
    */
   async getProfilePictureUrl(session: string, chatId: string): Promise<string | null> {
     try {
-      const res = await fetch(
+      const res = await this.fetchComTeto(
         `${this.baseUrl}/api/contacts/profile-picture` +
           `?session=${encodeURIComponent(session)}&contactId=${encodeURIComponent(chatId)}`,
         { headers: { "X-Api-Key": this.apiKey } },
@@ -305,7 +367,7 @@ export class WahaClient {
    */
   async resolvePhoneForLid(session: string, lid: string): Promise<string | null> {
     try {
-      const res = await fetch(
+      const res = await this.fetchComTeto(
         `${this.baseUrl}/api/${encodeURIComponent(session)}/lids/${encodeURIComponent(lid)}`,
         { headers: { "X-Api-Key": this.apiKey } },
       );
@@ -352,7 +414,7 @@ export class WahaClient {
     text: string,
     replyTo?: string | null,
   ): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}/api/sendText`, {
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/sendText`, {
       method: "POST",
       headers: {
         "X-Api-Key": this.apiKey,
@@ -377,7 +439,7 @@ export class WahaClient {
     const url = new URL(`${this.baseUrl}/api/contacts/check-exists`);
     url.searchParams.set("session", session);
     url.searchParams.set("phone", phoneDigits.replace(/\D/g, ""));
-    const res = await fetch(url, {
+    const res = await this.fetchComTeto(url, {
       headers: { "X-Api-Key": this.apiKey, Accept: "application/json" },
     });
     if (!res.ok) {
@@ -397,7 +459,7 @@ export class WahaClient {
       vcard: string;
     }>,
   ): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}/api/sendContactVcard`, {
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/sendContactVcard`, {
       method: "POST",
       headers: {
         "X-Api-Key": this.apiKey,
@@ -417,11 +479,15 @@ export class WahaClient {
     chatId: string,
     plan: { endpoint: string; payload: Record<string, unknown> },
   ): Promise<unknown> {
-    const res = await fetch(`${this.baseUrl}/api/${plan.endpoint}`, {
+    // Teto MAIOR aqui: `media-send.ts` manda `convert: true` em vídeo e áudio, e
+    // o WAHA roda ffmpeg e baixa a URL do Storage antes de responder. Com o teto
+    // de texto, o envio de áudio legítimo seria cortado — o conserto do timeout
+    // viraria um defeito novo, e mais silencioso que o original.
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/${plan.endpoint}`, {
       method: "POST",
       headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ session, chatId, ...plan.payload }),
-    });
+    }, TETO_DE_MIDIA_MS);
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`waha_${res.status}: ${body.slice(0, 200)}`);

@@ -64,7 +64,18 @@ export interface UltimaDecisaoHumana {
 
 /** Payload curado que o modelo recebe. */
 export interface LeadContext {
+  /** ⚠️ É o id do CONTATO, não de um lead do funil. Ver `contact_id` abaixo. */
   lead_id: string;
+  /**
+   * O mesmo valor de `lead_id`, com o nome verdadeiro (issue #509).
+   *
+   * OPCIONAL no tipo, e não por preguiça: exigir o campo obrigaria a editar
+   * fixtures em `tests/invariants/**`, que é CONGELADO pelo hook de governança
+   * (`loop/hooks/freeze-invariants.sh` — invariante existente não se edita). A
+   * produção sempre o preenche; quem constrói contexto à mão num teste não
+   * precisa dele.
+   */
+  contact_id?: string;
   contact: {
     name: string | null;
     phone: string | null;
@@ -233,7 +244,17 @@ export async function getLeadContext(
 
   const context = fitToBudget(
     {
+      // ⚠️ `lead_id` aqui é, e sempre foi, o id do CONTATO (ver o comentário da
+      // consulta acima e `inbound-turn.ts:1121`). O nome mente, e o modelo
+      // acreditava: passava este valor ao parâmetro `lead_id` das ferramentas
+      // de agenda, que espera um NEGÓCIO do funil. (issue #509)
+      //
+      // O campo antigo fica — ele circula por follow-up, case-reply e escalação,
+      // e por invariantes congelados; trocar o nome custa uma wave inteira e
+      // somar o certo custa uma linha. `contact_id` é a porta para o modelo
+      // acertar; as descrições das ferramentas apontam para ela.
       lead_id: input.leadId,
+      contact_id: input.leadId,
       contact: {
         name: contact.display_name ?? contact.name,
         phone: contact.phone_number,

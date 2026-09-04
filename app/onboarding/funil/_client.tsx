@@ -108,7 +108,7 @@ export function QuadroClient({
 
       <div className="space-y-3 rounded-lg border bg-background p-6">
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="nome_do_quadro">
+          <label className="block text-sm font-medium" htmlFor="nome_do_quadro">
             {t("Nome do quadro")}
           </label>
           <Input

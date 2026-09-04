@@ -48,7 +48,7 @@ export function AdminSidePanel({ data }: Props) {
               <div className="text-xs text-muted-foreground">{maskEmail(contact.email)}</div>
             )}
             {contact.is_blocked && (
-              <span className="inline-block rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+              <span className="inline-block rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
                 Bloqueado
               </span>
             )}

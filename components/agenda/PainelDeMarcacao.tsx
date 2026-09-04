@@ -552,10 +552,10 @@ export function PainelDeMarcacao({
                 className={cn(
                   "flex h-9 items-center justify-center rounded-sm text-sm tabular-nums transition-colors duration-fast ease-out",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
-                  !isSameMonth(d, mes) && "text-text-subtle/50",
+                  !isSameMonth(d, mes) && "text-text-subtle",
                   disponivel && !escolhido && "bg-accent-soft text-text hover:bg-accent hover:text-accent-fg",
                   escolhido && "bg-accent font-semibold text-accent-fg",
-                  !disponivel && "cursor-default text-text-subtle/60",
+                  !disponivel && "cursor-default text-text-subtle",
                   isSameDay(d, agora) && !escolhido && "ring-1 ring-inset ring-border-strong",
                 )}
               >

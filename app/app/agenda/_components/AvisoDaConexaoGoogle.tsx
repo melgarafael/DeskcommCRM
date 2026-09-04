@@ -108,6 +108,26 @@ const DESFECHOS: Record<string, Desfecho> = {
     corpo: "A conexão foi autorizada, mas o Google não respondeu quem é a conta. Tente de novo.",
     acao: "reconectar",
   },
+  /**
+   * O 403 que NÃO passa com o tempo.
+   *
+   * Medido em produção em 2026-09-01: três tentativas seguidas de conectar, as
+   * três com `HTTP 403` na leitura da agenda — e a tela mandando "Tente de
+   * novo", porque o único desfecho disponível para esse caminho era
+   * `conta_indisponivel`. A pessoa repetiria para sempre: a autorização está
+   * certa, os escopos estão certos, e quem recusa é o projeto do Google Cloud.
+   *
+   * A ação é do DONO DA INSTALAÇÃO, no Console do Google, e não de quem clicou.
+   * Por isso o texto não oferece "tentar de novo" como primeira saída — oferecer
+   * o botão errado é o que fez três tentativas virarem zero diagnóstico.
+   */
+  google_recusou_o_acesso: {
+    formato: "aviso",
+    titulo: "O Google recusou o acesso à agenda",
+    corpo:
+      "A autorização funcionou, mas o Google negou a leitura do calendário. Quase sempre é a API do Google Agenda desligada no projeto do Google Cloud desta instalação — ligue em APIs e serviços › Biblioteca › Google Calendar API e conecte de novo. O motivo exato que o Google devolveu ficou registrado no Audit Log, na falha de conexão da agenda.",
+    acao: "reconectar",
+  },
   nao_consegui_guardar: {
     formato: "aviso",
     titulo: "A conexão funcionou, mas não consegui salvar",

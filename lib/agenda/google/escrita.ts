@@ -189,7 +189,23 @@ export async function publicarNoGoogle(
       // CALENDÁRIO que não existe. Classificar os dois como `evento_sumiu` foi o
       // que fez a VPS registrar três vezes um diagnóstico que não descrevia nada.
       classificacao: classificarErroDoGoogle(cru, jaExisteLa ? "sincronizar" : "criar"),
-      detalhe: `HTTP ${resposta.status}`,
+      // ─── O CORPO DO GOOGLE ENTRA NO DETALHE ───────────────────────────────
+      //
+      // Era só `HTTP ${status}`, e o corpo — já parseado em `cru`, uma linha
+      // acima — era descartado. Medido em produção em 2026-09-01: o cron tentou
+      // publicar dois agendamentos a cada 5 minutos durante horas, e todo o
+      // registro que sobrou foi `HTTP 400`, repetido. Nada dizia QUAL campo o
+      // Google recusou, então não havia como consertar sem adivinhar.
+      //
+      // `detalhe` já flui para o `logger.warn` do cron E para a coluna
+      // `google_sync_error` — nenhum fio novo é preciso, só parar de jogar fora
+      // o que já está na mão.
+      //
+      // Recortado em 300 caracteres: a mensagem do Google é curta e o que
+      // interessa vem no começo; o resto encheria a coluna e o log sem
+      // acrescentar. E `JSON.stringify` não vaza credencial — `cru` é a
+      // resposta de erro, não a requisição.
+      detalhe: `HTTP ${resposta.status} — ${JSON.stringify(cru).slice(0, 300)}`,
     };
   }
   const corpo = (await resposta.json().catch(() => ({}))) as { id?: string; sequence?: number };
@@ -234,4 +250,32 @@ export async function apagarNoGoogle(
     classificacao: classificarErroDoGoogle(cru, "apagar"),
     detalhe: `HTTP ${resposta.status}`,
   };
+}
+
+/**
+ * Este evento do Google foi criado por NÓS? — o anti-eco, agora pelo id.
+ *
+ * ⚠️ SUBSTITUI `ehIcalUidNosso`, e a troca não é cosmética.
+ *
+ * O reconhecimento morava no sufixo `@deskcomm.app` do `iCalUID` que mandávamos
+ * junto do evento. Só que mandar `iCalUID` e `id` juntos é o que o Google
+ * recusava com `400 Invalid resource id value` — medido em produção em
+ * 2026-09-01, a cada 5 minutos, por horas. Tirar o uid conserta a publicação e
+ * deixaria o anti-eco cego: o Google gera `<id>@google.com`, que não termina no
+ * nosso sufixo, e todo compromisso criado aqui voltaria pela sincronização como
+ * ocupação de terceiro — bloqueando o próprio horário que ele já ocupa.
+ *
+ * O id serve melhor, e sempre serviu: ele é NOSSO por construção
+ * (`idDeEventoDoGoogle`), o Google o preserva, e a rota de sincronização já tem
+ * `external_event_id` na mão no mesmo ponto onde consultava o uid. A camada que
+ * faltava já estava debaixo do nariz.
+ *
+ * ⚠️ Migrar não custou dados: NENHUM evento nosso jamais chegou ao Google, em
+ * instalação nenhuma. Três eras de falha — filtro PostgREST inválido até a
+ * v1.7.0, `evento_sumiu` na v1.9.1, e este 400 — estão documentadas no MANIFEST
+ * e no cabeçalho deste arquivo. Não há legado com o uid antigo para reconhecer.
+ */
+export function ehEventoNosso(externalEventId: string | null | undefined): boolean {
+  if (!externalEventId) return false;
+  return externalEventId.toLowerCase().startsWith(PREFIXO);
 }

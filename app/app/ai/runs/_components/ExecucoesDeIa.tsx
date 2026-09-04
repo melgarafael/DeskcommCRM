@@ -215,7 +215,7 @@ export function ExecucoesDeIa() {
                   {e.error_message && (
                     <details className="text-xs text-muted-foreground">
                       <summary className="cursor-pointer">{t("Mensagem técnica do provedor")}</summary>
-                      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded bg-muted p-2">
+                      <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2">
                         {e.error_message}
                         {e.http_status ? `\n(${t("código")} ${e.http_status})` : ""}
                       </pre>

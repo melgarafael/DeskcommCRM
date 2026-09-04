@@ -1,0 +1,434 @@
+{
+  "01-login/claro": {
+    "elementosComparados": 26,
+    "soNoAntes": 0,
+    "tamanho": "1440x900 → 1440x900",
+    "pixelIdentico": false,
+    "mudancas": {
+      "marginBottom": {
+        "0px → 24px": "2",
+        "0px → 6px": "3",
+        "0px → 16px": "2",
+        "0px → 8px": "1"
+      },
+      "marginTop": {
+        "6px → 0px": "3",
+        "24px → 0px": "2",
+        "16px → 0px": "2",
+        "8px → 0px": "1"
+      },
+      "boxShadow": {
+        "rgb(255, 255, 255) 0px 0px 0px 0px, rgb(228, 235, 224) 0px 0px 0px 2px, rgba(0, 0, 0, 0) 0px 0px 0px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(228, 235, 224) 0px 0px 0px 2px, rgba(0, 0, 0, 0) 0px 0px 0px 0px": "1",
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px": "1"
+      },
+      "outlineStyle": {
+        "solid → none": "1"
+      }
+    }
+  },
+  "02-onboarding-welcome/claro": {
+    "elementosComparados": 92,
+    "soNoAntes": 0,
+    "tamanho": "1440x1019 → 1440x1007",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.9643 0.000209212 0.00699568 / 0.4)": "1",
+        "rgb(16, 185, 129) → lab(66.9756 -58.27 19.5419)": "3",
+        "rgb(245, 158, 11) → lab(72.7183 31.8672 97.9407)": "1",
+        "rgb(255, 255, 255) → rgba(0, 0, 0, 0)": "1"
+      },
+      "borderTopColor": {
+        "rgb(231, 227, 218) → oklab(0.464621 0.000375658 0.01656 / 0.2)": "5"
+      },
+      "marginBottom": {
+        "0px → 24px": "2",
+        "0px → 6px": "3",
+        "0px → 20px": "4",
+        "0px → 8px": "7"
+      },
+      "marginTop": {
+        "24px → 0px": "2",
+        "6px → 0px": "3",
+        "8px → 0px": "7",
+        "20px → 0px": "4"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.05) 0px 1px 2px 0px, rgba(20, 18, 14, 0.03) 0px 1px 1px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.05) 0px 1px 2px 0px, rgba(20, 18, 14, 0.03) 0px 1px 1px 0px": "1",
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px": "1"
+      },
+      "paddingLeft": {
+        "2px → 0px": "12"
+      }
+    }
+  },
+  "03-onboarding-funil/claro": {
+    "elementosComparados": 102,
+    "soNoAntes": 0,
+    "tamanho": "1440x1453 → 1440x1449",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.9643 0.000209212 0.00699568 / 0.4)": "1",
+        "rgba(245, 158, 11, 0.05) → oklab(0.769006 0.0640422 0.176756 / 0.05)": "1"
+      },
+      "borderTopColor": {
+        "rgb(231, 227, 218) → oklab(0.464621 0.000375658 0.01656 / 0.2)": "5",
+        "rgba(245, 158, 11, 0.3) → oklab(0.769006 0.0640422 0.176756 / 0.3)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "5",
+        "0px → 8px": "8",
+        "0px → 12px": "2",
+        "0px → 4px": "7"
+      },
+      "marginTop": {
+        "24px → 0px": "5",
+        "8px → 0px": "8",
+        "12px → 0px": "2",
+        "4px → 0px": "7"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px": "1"
+      }
+    }
+  },
+  "04-onboarding-equipe/claro": {
+    "elementosComparados": 54,
+    "soNoAntes": 0,
+    "tamanho": "1440x900 → 1440x900",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.9643 0.000209212 0.00699568 / 0.4)": "1",
+        "rgb(255, 251, 235) → lab(98.6252 -0.635922 8.42309)": "1"
+      },
+      "borderTopColor": {
+        "rgb(231, 227, 218) → oklab(0.464621 0.000375658 0.01656 / 0.2)": "5",
+        "rgba(252, 211, 77, 0.6) → oklab(0.879003 -0.00473928 0.168942 / 0.6)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "2",
+        "0px → 16px": "2",
+        "0px → 8px": "2"
+      },
+      "color": {
+        "rgb(120, 53, 15) → lab(31.2288 30.2627 40.0378)": "3"
+      },
+      "marginTop": {
+        "24px → 0px": "2",
+        "8px → 0px": "2",
+        "16px → 0px": "2"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.05) 0px 1px 2px 0px, rgba(20, 18, 14, 0.03) 0px 1px 1px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.05) 0px 1px 2px 0px, rgba(20, 18, 14, 0.03) 0px 1px 1px 0px": "1",
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px": "1"
+      }
+    }
+  },
+  "05-onboarding-ia/claro": {
+    "elementosComparados": 118,
+    "soNoAntes": 0,
+    "tamanho": "1440x1575 → 1440x1563",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.9643 0.000209212 0.00699568 / 0.4)": "1",
+        "rgba(245, 158, 11, 0.05) → oklab(0.769006 0.0640422 0.176756 / 0.05)": "1",
+        "rgba(0, 0, 0, 0) → oklab(0.50153 -0.0500825 0.0435521 / 0.05)": "1"
+      },
+      "borderTopColor": {
+        "rgb(231, 227, 218) → oklab(0.464621 0.000375658 0.01656 / 0.2)": "5",
+        "rgba(245, 158, 11, 0.4) → oklab(0.769006 0.0640422 0.176756 / 0.4)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "4",
+        "0px → 12px": "2",
+        "0px → 6px": "2",
+        "0px → 20px": "2",
+        "0px → 8px": "5",
+        "0px → 4px": "20"
+      },
+      "marginTop": {
+        "24px → 0px": "4",
+        "12px → 0px": "2",
+        "6px → 0px": "2",
+        "8px → 0px": "5",
+        "20px → 0px": "2",
+        "4px → 0px": "20"
+      },
+      "paddingLeft": {
+        "2px → 0px": "4"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px": "2"
+      }
+    }
+  },
+  "06-onboarding-whatsapp/claro": {
+    "elementosComparados": 61,
+    "soNoAntes": 0,
+    "tamanho": "1440x900 → 1440x900",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.9643 0.000209212 0.00699568 / 0.4)": "1"
+      },
+      "borderTopColor": {
+        "rgb(231, 227, 218) → oklab(0.464621 0.000375658 0.01656 / 0.2)": "5"
+      },
+      "marginBottom": {
+        "0px → 24px": "1",
+        "0px → 16px": "1",
+        "0px → 12px": "2",
+        "0px → 4px": "3"
+      },
+      "marginTop": {
+        "24px → 0px": "1",
+        "12px → 0px": "2",
+        "4px → 0px": "3",
+        "16px → 0px": "1"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 18, 14, 0.04) 0px 1px 2px 0px": "1"
+      }
+    }
+  },
+  "09-legal-privacidade/claro": {
+    "elementosComparados": 53,
+    "soNoAntes": 0,
+    "tamanho": "1440x1424 → 1440x1424",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.9643 0.000209212 0.00699568 / 0.4)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "8",
+        "0px → 4px": "4",
+        "0px → 8px": "11"
+      },
+      "marginTop": {
+        "4px → 0px": "4",
+        "24px → 0px": "8",
+        "8px → 0px": "11"
+      }
+    }
+  },
+  "01-login/escuro": {
+    "elementosComparados": 26,
+    "soNoAntes": 0,
+    "tamanho": "1440x900 → 1440x900",
+    "pixelIdentico": false,
+    "mudancas": {
+      "marginBottom": {
+        "0px → 24px": "2",
+        "0px → 6px": "3",
+        "0px → 16px": "2",
+        "0px → 8px": "1"
+      },
+      "marginTop": {
+        "6px → 0px": "3",
+        "24px → 0px": "2",
+        "16px → 0px": "2",
+        "8px → 0px": "1"
+      },
+      "boxShadow": {
+        "rgb(255, 255, 255) 0px 0px 0px 0px, rgba(130, 160, 119, 0.16) 0px 0px 0px 2px, rgba(0, 0, 0, 0) 0px 0px 0px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(130, 160, 119, 0.16) 0px 0px 0px 2px, rgba(0, 0, 0, 0) 0px 0px 0px 0px": "1",
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px": "1"
+      },
+      "outlineStyle": {
+        "solid → none": "1"
+      }
+    }
+  },
+  "02-onboarding-welcome/escuro": {
+    "elementosComparados": 92,
+    "soNoAntes": 0,
+    "tamanho": "1440x1019 → 1440x1007",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.267546 -0.00175017 0.0107598 / 0.4)": "1",
+        "rgb(16, 185, 129) → lab(66.9756 -58.27 19.5419)": "3",
+        "rgb(245, 158, 11) → lab(72.7183 31.8672 97.9407)": "1",
+        "rgb(59, 59, 59) → rgba(0, 0, 0, 0)": "1"
+      },
+      "borderTopColor": {
+        "rgb(51, 49, 42) → oklab(0.6358 -0.00163448 0.0178007 / 0.2)": "5"
+      },
+      "marginBottom": {
+        "0px → 24px": "2",
+        "0px → 6px": "3",
+        "0px → 20px": "4",
+        "0px → 8px": "7"
+      },
+      "marginTop": {
+        "24px → 0px": "2",
+        "6px → 0px": "3",
+        "8px → 0px": "7",
+        "20px → 0px": "4"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.2) 0px 1px 1px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.2) 0px 1px 1px 0px": "1",
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px": "1"
+      },
+      "paddingLeft": {
+        "2px → 0px": "12"
+      }
+    }
+  },
+  "03-onboarding-funil/escuro": {
+    "elementosComparados": 102,
+    "soNoAntes": 0,
+    "tamanho": "1440x1453 → 1440x1449",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.267546 -0.00175017 0.0107598 / 0.4)": "1",
+        "rgba(245, 158, 11, 0.05) → oklab(0.769006 0.0640422 0.176756 / 0.05)": "1"
+      },
+      "borderTopColor": {
+        "rgb(51, 49, 42) → oklab(0.6358 -0.00163448 0.0178007 / 0.2)": "5",
+        "rgba(245, 158, 11, 0.3) → oklab(0.769006 0.0640422 0.176756 / 0.3)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "5",
+        "0px → 8px": "8",
+        "0px → 12px": "2",
+        "0px → 4px": "7"
+      },
+      "marginTop": {
+        "24px → 0px": "5",
+        "8px → 0px": "8",
+        "12px → 0px": "2",
+        "4px → 0px": "7"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px": "1"
+      }
+    }
+  },
+  "04-onboarding-equipe/escuro": {
+    "elementosComparados": 54,
+    "soNoAntes": 0,
+    "tamanho": "1440x900 → 1440x900",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.267546 -0.00175017 0.0107598 / 0.4)": "1",
+        "rgba(69, 26, 3, 0.4) → oklab(0.279003 0.0538332 0.0550504 / 0.4)": "1"
+      },
+      "borderTopColor": {
+        "rgb(51, 49, 42) → oklab(0.6358 -0.00163448 0.0178007 / 0.2)": "5",
+        "rgba(245, 158, 11, 0.4) → oklab(0.769006 0.0640422 0.176756 / 0.4)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "2",
+        "0px → 16px": "2",
+        "0px → 8px": "2"
+      },
+      "color": {
+        "rgb(254, 243, 199) → lab(95.916 -1.21653 23.111)": "3"
+      },
+      "marginTop": {
+        "24px → 0px": "2",
+        "8px → 0px": "2",
+        "16px → 0px": "2"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.2) 0px 1px 1px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.2) 0px 1px 1px 0px": "1",
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px": "1"
+      }
+    }
+  },
+  "05-onboarding-ia/escuro": {
+    "elementosComparados": 118,
+    "soNoAntes": 0,
+    "tamanho": "1440x1575 → 1440x1563",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.267546 -0.00175017 0.0107598 / 0.4)": "1",
+        "rgba(245, 158, 11, 0.05) → oklab(0.769006 0.0640422 0.176756 / 0.05)": "1",
+        "rgba(0, 0, 0, 0) → oklab(0.67182 -0.0498558 0.0458667 / 0.05)": "1"
+      },
+      "borderTopColor": {
+        "rgb(51, 49, 42) → oklab(0.6358 -0.00163448 0.0178007 / 0.2)": "5",
+        "rgba(245, 158, 11, 0.4) → oklab(0.769006 0.0640422 0.176756 / 0.4)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "4",
+        "0px → 12px": "2",
+        "0px → 6px": "2",
+        "0px → 20px": "2",
+        "0px → 8px": "5",
+        "0px → 4px": "20"
+      },
+      "marginTop": {
+        "24px → 0px": "4",
+        "12px → 0px": "2",
+        "6px → 0px": "2",
+        "8px → 0px": "5",
+        "20px → 0px": "2",
+        "4px → 0px": "20"
+      },
+      "paddingLeft": {
+        "2px → 0px": "4"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px": "2"
+      }
+    }
+  },
+  "06-onboarding-whatsapp/escuro": {
+    "elementosComparados": 61,
+    "soNoAntes": 0,
+    "tamanho": "1440x900 → 1440x900",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.267546 -0.00175017 0.0107598 / 0.4)": "1"
+      },
+      "borderTopColor": {
+        "rgb(51, 49, 42) → oklab(0.6358 -0.00163448 0.0178007 / 0.2)": "5"
+      },
+      "marginBottom": {
+        "0px → 24px": "1",
+        "0px → 16px": "1",
+        "0px → 12px": "2",
+        "0px → 4px": "3"
+      },
+      "marginTop": {
+        "24px → 0px": "1",
+        "12px → 0px": "2",
+        "4px → 0px": "3",
+        "16px → 0px": "1"
+      },
+      "boxShadow": {
+        "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px → rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px": "1"
+      }
+    }
+  },
+  "09-legal-privacidade/escuro": {
+    "elementosComparados": 53,
+    "soNoAntes": 0,
+    "tamanho": "1440x1424 → 1440x1424",
+    "pixelIdentico": false,
+    "mudancas": {
+      "backgroundColor": {
+        "rgba(0, 0, 0, 0) → oklab(0.267546 -0.00175017 0.0107598 / 0.4)": "1"
+      },
+      "marginBottom": {
+        "0px → 24px": "8",
+        "0px → 4px": "4",
+        "0px → 8px": "11"
+      },
+      "marginTop": {
+        "4px → 0px": "4",
+        "24px → 0px": "8",
+        "8px → 0px": "11"
+      }
+    }
+  }
+}

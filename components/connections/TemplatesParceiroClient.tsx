@@ -462,7 +462,7 @@ export function TemplatesParceiroClient() {
                   <span className="font-mono text-sm">{tpl.name}</span>
                   <span className="text-xs text-muted-foreground">{tpl.language}</span>
                   {tpl.category && (
-                    <span className="rounded bg-muted px-1.5 text-[10px] uppercase text-muted-foreground">
+                    <span className="rounded-md bg-muted px-1.5 text-[10px] uppercase text-muted-foreground">
                       {tpl.category}
                     </span>
                   )}
@@ -509,7 +509,7 @@ export function TemplatesParceiroClient() {
                     {c.botoes.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {c.botoes.map((b, i) => (
-                          <span key={i} className="rounded border border-border px-1.5 text-[11px]">
+                          <span key={i} className="rounded-md border border-border px-1.5 text-[11px]">
                             {b.texto} <span className="text-muted-foreground">({b.tipo})</span>
                           </span>
                         ))}

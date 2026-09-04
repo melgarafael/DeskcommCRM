@@ -4712,9 +4712,9 @@ GRANT ALL ON TABLE "public"."ai_provider_credentials_safe" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."api_audit_log" TO "anon";
-GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."api_audit_log" TO "authenticated";
-GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."api_audit_log" TO "service_role";
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."api_audit_log" TO "anon";
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."api_audit_log" TO "authenticated";
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."api_audit_log" TO "service_role";
 
 
 
@@ -4748,8 +4748,8 @@ GRANT ALL ON TABLE "public"."conversations" TO "service_role";
 
 
 
-GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."crm_lead_activities" TO "anon";
-GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."crm_lead_activities" TO "authenticated";
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."crm_lead_activities" TO "anon";
+GRANT SELECT,INSERT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."crm_lead_activities" TO "authenticated";
 GRANT ALL ON TABLE "public"."crm_lead_activities" TO "service_role";
 
 
@@ -4778,8 +4778,8 @@ GRANT ALL ON TABLE "public"."crm_stages" TO "service_role";
 
 
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_log" TO "anon";
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_log" TO "authenticated";
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_log" TO "anon";
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_log" TO "authenticated";
 GRANT ALL ON TABLE "public"."event_log" TO "service_role";
 
 
@@ -4861,8 +4861,8 @@ GRANT ALL ON TABLE "public"."user_recovery_codes" TO "service_role";
 
 
 
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."webhook_events_log" TO "anon";
-GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."webhook_events_log" TO "authenticated";
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."webhook_events_log" TO "anon";
+GRANT SELECT,REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."webhook_events_log" TO "authenticated";
 GRANT ALL ON TABLE "public"."webhook_events_log" TO "service_role";
 
 
@@ -12466,6 +12466,26 @@ grant select on public.ai_provider_credentials_safe to authenticated;
 
 -- O PostgREST guarda o schema em cache; sem isto as policies novas só valem no
 -- próximo reload dele.
+notify pgrst, 'reload schema';
+
+
+-- ---- credenciais de IA voltam a ser LIDAS por quem não é admin (migration 0207) ----
+-- A 0150 (bloco acima) deixou `..._write` como ÚNICA policy da tabela. `FOR ALL`
+-- cobre o SELECT, então a leitura passou a exigir admin — e a view
+-- `ai_provider_credentials_safe` é `security_invoker=true`, então um `manager`
+-- passava na autorização da aplicação e era filtrado para ZERO LINHAS na base.
+-- A tela respondia 200 com `[]`, e a pessoa concluía que não havia credencial.
+--
+-- O par que o cabeçalho da 0150 promete: escrita de admin, leitura por tenancy.
+-- O segredo segue protegido pelo GRANT POR COLUNA logo acima — é ele, e não a
+-- RLS, que esconde `api_key_encrypted/iv/tag`. (issue #292)
+--
+-- Este bloco vem DEPOIS do da 0150 de propósito: lá em cima há um
+-- `drop policy if exists ..._select`, e inverter a ordem apagaria este conserto.
+drop policy if exists tenant_isolation_ai_provider_credentials_select on public.ai_provider_credentials;
+create policy tenant_isolation_ai_provider_credentials_select on public.ai_provider_credentials
+  for select using (organization_id in (select public.fn_user_org_ids()));
+
 notify pgrst, 'reload schema';
 
 

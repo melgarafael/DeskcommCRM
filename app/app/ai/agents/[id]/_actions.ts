@@ -26,9 +26,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import {
   agentMcpCreateSchema,
+  agentMcpPatchSchema,
+  PUBLISH_ERROR_CODES,
   versionCreateSchema,
   versionPatchSchema,
-  PUBLISH_ERROR_CODES,
 } from "@/lib/ai/agents/validation";
 import { publishAgentVersion } from "@/lib/ai/agents/publish";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
@@ -57,9 +58,66 @@ async function ensureAdmin() {
 // saveAgentDraftAction
 // ---------------------------------------------------------------------------
 
+/**
+ * Grava as colunas de cadastro em `ai_agents` — e só quando alguma mudou.
+ *
+ * Uma rodada que não mudou nada não é mutação, e auditar todo "Salvar rascunho"
+ * encheria `api_audit_log` de linha sem efeito. A comparação é contra a linha
+ * lida no mesmo request.
+ */
+async function gravarCadastroDoAgente(
+  admin: ReturnType<typeof createAdminClient>,
+  args: {
+    agentId: string;
+    orgId: string;
+    actorUserId: string;
+    requestId: string;
+    atual: { name?: unknown; description?: unknown; priority?: unknown };
+    pedido: { name?: string; description?: string | null; priority?: number };
+  },
+): Promise<{ erro: string } | { mudou: string[] }> {
+  const patch: Record<string, unknown> = {};
+  for (const campo of ["name", "description", "priority"] as const) {
+    const novo = args.pedido[campo];
+    if (novo === undefined) continue;
+    if ((args.atual[campo] ?? null) === (novo ?? null)) continue;
+    patch[campo] = novo ?? null;
+  }
+  if (Object.keys(patch).length === 0) return { mudou: [] };
+
+  // Service role bypassa RLS: o filtro de organização é manual e obrigatório.
+  const { error } = await admin
+    .from("ai_agents")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", args.agentId)
+    .eq("organization_id", args.orgId);
+  if (error) return { erro: error.message };
+
+  void audit({
+    action: "ai_agent.updated",
+    actorUserId: args.actorUserId,
+    organizationId: args.orgId,
+    resourceType: "ai_agent",
+    resourceId: args.agentId,
+    requestId: args.requestId,
+    metadata: { fields: Object.keys(patch) },
+  });
+  return { mudou: Object.keys(patch) };
+}
+
 export async function saveAgentDraftAction(
   agentId: string,
   payload: unknown,
+  /**
+   * Nome, descrição e ordem de preferência — as três colunas que moram em
+   * `ai_agents` e que `ai_agent_versions` NÃO tem. Elas viajavam só na criação;
+   * em modo edição, `toVersionPayload` era o único construtor do envio e não as
+   * incluía. A pessoa digitava o nome, via "Rascunho vN salvo.", publicava com
+   * sucesso — e o cartão da lista seguia com o nome antigo, porque nada daquilo
+   * era mentira: tudo se referia à VERSÃO, a única coisa realmente gravada.
+   * (issue #463)
+   */
+  cadastro?: unknown,
 ): Promise<ActionResult<{ version_id: string; version_number: number }>> {
   if (!UUID_RX.test(agentId)) return { ok: false, error: "invalid_request" };
   const guard = await ensureAdmin();
@@ -74,6 +132,18 @@ export async function saveAgentDraftAction(
       details: parsed.error.flatten(),
     };
   }
+  // Validado ANTES de qualquer escrita, junto do resto. Se o cadastro fosse
+  // conferido depois, uma ordem inválida devolveria erro com a versão já
+  // gravada; se fosse GRAVADO antes, um escopo inválido devolveria erro com o
+  // nome já trocado — a lista mostrando o novo e o editor o velho.
+  // `agentMcpPatchSchema` é a régua que a rota REST já usa: uma quarta régua
+  // para o mesmo campo é o defeito seguinte.
+  const cadastroParsed =
+    cadastro === undefined ? null : agentMcpPatchSchema.safeParse(cadastro);
+  if (cadastroParsed && !cadastroParsed.success) {
+    return { ok: false, error: "validation_failed", details: cadastroParsed.error.flatten() };
+  }
+
   const v = parsed.data;
   const requestId = randomUUID();
   const admin = createAdminClient();
@@ -81,7 +151,7 @@ export async function saveAgentDraftAction(
   // Sanity: o agent existe e é da org? não está arquivado?
   const { data: agent } = await admin
     .from("ai_agents")
-    .select("id, kind, archived_at")
+    .select("id, kind, archived_at, name, description, priority")
     .eq("id", agentId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -138,6 +208,27 @@ export async function saveAgentDraftAction(
       requestId,
       metadata: { agent_id: agentId, fields: Object.keys(update) },
     });
+
+    if (cadastroParsed?.success) {
+      const r = await gravarCadastroDoAgente(admin, {
+        agentId,
+        orgId: activeOrg.orgId,
+        actorUserId: authUser.id,
+        requestId,
+        atual: agent,
+        pedido: cadastroParsed.data,
+      });
+      // As duas escritas não são atômicas. O desfecho tem de dizer o que
+      // gravou: um toast verde genérico aqui reproduz o defeito com outra cara.
+      if ("erro" in r) {
+        return {
+          ok: false,
+          error: "internal_error",
+          message: `O rascunho foi salvo, mas o cadastro do agente não: ${r.erro}`,
+        };
+      }
+      if (r.mudou.length > 0) revalidatePath("/app/ai/agents");
+    }
 
     revalidatePath(`/app/ai/agents/${agentId}`);
     return {
@@ -206,6 +297,25 @@ export async function saveAgentDraftAction(
         requestId,
         metadata: { agent_id: agentId, version_number: created.version_number },
       });
+      if (cadastroParsed?.success) {
+        const r = await gravarCadastroDoAgente(admin, {
+          agentId,
+          orgId: activeOrg.orgId,
+          actorUserId: authUser.id,
+          requestId,
+          atual: agent,
+          pedido: cadastroParsed.data,
+        });
+        if ("erro" in r) {
+          return {
+            ok: false,
+            error: "internal_error",
+            message: `O rascunho foi salvo, mas o cadastro do agente não: ${r.erro}`,
+          };
+        }
+        if (r.mudou.length > 0) revalidatePath("/app/ai/agents");
+      }
+
       revalidatePath(`/app/ai/agents/${agentId}`);
       return { ok: true, data: { version_id: created.id, version_number: created.version_number } };
     }

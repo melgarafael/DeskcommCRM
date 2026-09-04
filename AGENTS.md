@@ -19,7 +19,7 @@ quebra no clone fresco é um bug de produto, não um detalhe de ambiente.
 
 ## Stack (CONFIRMADO em `package.json`)
 
-Next.js 16 (App Router) · React 19 · TypeScript 6 estrito · Tailwind 3 ·
+Next.js 16 (App Router) · React 19 · TypeScript 6 estrito · Tailwind 4 ·
 shadcn/ui · Supabase (Postgres + Auth + Realtime + Storage) · Upstash Redis ·
 Vercel AI Gateway (`@ai-sdk/anthropic|openai|google`) · WAHA Plus (engine NOWEB) ·
 Zod 4 · Vitest 4 · Playwright 1 · Sentry 10.
@@ -81,7 +81,7 @@ mudança toca schema, RLS ou UI, `gov:verify` verde **não** é prova — rode `
 
 **O que o CI cobre.** `.github/workflows/ci.yml`: `verify` = typecheck + lint + test:unit;
 `invariants` = `pnpm test:db` (isolamento RLS + invariantes de governança contra Postgres
-efêmero pg17). `.github/workflows/perf.yml`: `build-and-size` = `pnpm build`.
+efêmero pg15). `.github/workflows/perf.yml`: `build-and-size` = `pnpm build`.
 `.github/workflows/e2e.yml` roda **45 das 46 specs** Playwright contra um Supabase local de
 verdade com o `baseline.sql` aplicado — o mesmo banco que o self-hoster tem. **É check
 obrigatório desde 2026-08-08.** A **única** de fora é `vps-fresh-onboarding` (WAHA + Redis +

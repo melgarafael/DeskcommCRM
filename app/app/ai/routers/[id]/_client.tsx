@@ -559,13 +559,13 @@ function ExamplesInput({
   return (
     <div className="space-y-1">
       <Label>{t("Frases de exemplo (opcional)")}</Label>
-      <div className="flex flex-wrap gap-1 rounded border border-border/60 p-2">
+      <div className="flex flex-wrap gap-1 rounded-md border border-border/60 p-2">
         {value.map((ex) => (
           <button
             key={ex}
             type="button"
             onClick={() => !disabled && remove(ex)}
-            className="group flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs hover:bg-destructive/15"
+            className="group flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs hover:bg-destructive/15"
             disabled={disabled}
             aria-label={`${t("Remover exemplo")} ${ex}`}
           >
@@ -594,7 +594,7 @@ function ExamplesInput({
           />
           <button
             type="button"
-            className="rounded border border-border/60 px-3 text-xs hover:bg-muted"
+            className="rounded-md border border-border/60 px-3 text-xs hover:bg-muted"
             onClick={() => add(draft)}
             disabled={draft.trim() === ""}
           >

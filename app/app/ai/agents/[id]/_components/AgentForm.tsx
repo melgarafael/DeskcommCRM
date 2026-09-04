@@ -56,7 +56,11 @@ import {
   createMcpAgentAction,
 } from "../_actions";
 
-import { versionCreateSchema, agentMcpCreateSchema } from "@/lib/ai/agents/validation";
+import {
+  versionCreateSchema,
+  agentMcpCreateSchema,
+  agentMcpPatchSchema,
+} from "@/lib/ai/agents/validation";
 import type { SelectableChannel as ChannelSessionLite } from "@/lib/channels/selectable";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
@@ -223,6 +227,26 @@ function buildState(args: {
   };
 }
 
+/**
+ * As três colunas que moram em `ai_agents`, não em `ai_agent_versions`.
+ *
+ * Existir separado não é gosto: `versionCreateSchema` é `.strict()` e recusa
+ * estes campos, com razão — eles não descrevem a versão. O que faltava era o
+ * segundo construtor, e sem ele o modo EDIÇÃO mandava só a versão: a pessoa
+ * digitava o nome, via "Rascunho vN salvo.", publicava com sucesso, e o cartão
+ * da lista seguia com o nome antigo (issue #463). O modo CRIAÇÃO sempre
+ * mandou os três, e é por isso que o defeito só aparecia ao editar.
+ */
+function toCadastroPayload(s: FormState) {
+  return {
+    name: s.name.trim(),
+    // "" na tela é APAGAR, e apagar é `null` no banco — `undefined` seria
+    // "não mexi", e a descrição antiga sobreviveria a um campo esvaziado.
+    description: s.description.trim() === "" ? null : s.description.trim(),
+    priority: s.priority,
+  };
+}
+
 function toVersionPayload(s: FormState) {
   return {
     system_prompt: s.system_prompt,
@@ -311,6 +335,11 @@ export function AgentForm(props: Props) {
     // usuário de errar é a primeira coisa que ele vê nesta tela.
     if (form.name.trim().length === 0) errors.name = t("Dê um nome para este agente.");
     if (form.name.length > 120) errors.name = t("O nome pode ter até 120 caracteres.");
+    // A rota REST já cobra `0..1000` (`app/api/v1/ai/agents/[id]/route.ts:90`).
+    // Sem a mesma régua aqui, o número inválido só reprovaria no servidor e o
+    // aviso chegaria como erro genérico, depois de a versão já ter sido gravada.
+    if (!Number.isInteger(form.priority) || form.priority < 0 || form.priority > 1000)
+      errors.priority = t("A ordem de preferência vai de 0 a 1000.");
     if (form.system_prompt.trim().length < 10)
       errors.system_prompt = t("Escreva as instruções do agente (pelo menos uma frase).");
     // `.trim()` porque é o que o servidor mede: `z.string().trim().max(20000)`
@@ -378,7 +407,18 @@ export function AgentForm(props: Props) {
     setSaving(true);
     try {
       if (isEdit) {
-        const res = await saveAgentDraftAction(props.agent.id, toVersionPayload(form));
+        // A mesma régua do servidor, aqui, para o erro aparecer no campo em vez
+        // de voltar como 500 depois de a versão já ter sido gravada.
+        const cadastro = agentMcpPatchSchema.safeParse(toCadastroPayload(form));
+        if (!cadastro.success) {
+          toast.error(t("Validação falhou."));
+          return;
+        }
+        const res = await saveAgentDraftAction(
+          props.agent.id,
+          toVersionPayload(form),
+          cadastro.data,
+        );
         if (!res.ok) {
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
@@ -636,7 +676,11 @@ export function AgentForm(props: Props) {
                 value={form.priority}
                 onChange={(e) => patch({ priority: Number(e.target.value) })}
                 disabled={disabled}
+                aria-invalid={!!validation.priority}
               />
+              {validation.priority ? (
+                <p className="text-xs text-destructive">{validation.priority}</p>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 {t(
                   "Quando mais de um agente puder atender a mesma conversa, o de número maior tenta primeiro. Se você só tem um agente, pode deixar como está.",

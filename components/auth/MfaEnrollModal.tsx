@@ -149,14 +149,14 @@ export function MfaEnrollModal({ motivo = "obrigatorio" }: { motivo?: "obrigator
                     alt={t("QR code para configurar autenticador")}
                     width={240}
                     height={240}
-                    className="rounded border border-border bg-white p-2"
+                    className="rounded-md border border-border bg-white p-2"
                   />
                 </div>
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer">
                     {t("Não consegue escanear? Digite o código manual")}
                   </summary>
-                  <code className="mt-2 block break-all rounded bg-muted p-2 font-mono">
+                  <code className="mt-2 block break-all rounded-md bg-muted p-2 font-mono">
                     {enrollState.secret}
                   </code>
                 </details>

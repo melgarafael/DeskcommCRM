@@ -95,7 +95,7 @@ export default async function TenantDetailLayout({
             {org?.display_name ?? id}
           </h1>
           {org?.slug && (
-            <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono text-muted-foreground">
+            <code className="rounded-md bg-muted px-2 py-0.5 text-xs font-mono text-muted-foreground">
               {org.slug}
             </code>
           )}

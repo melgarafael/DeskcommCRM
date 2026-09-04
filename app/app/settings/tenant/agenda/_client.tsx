@@ -163,7 +163,7 @@ export function TiposDeAgendamentoClient({
                   value={rascunho.name}
                   onChange={(e) => setRascunho((r) => ({ ...r, name: e.target.value }))}
                   placeholder={t("Retorno")}
-                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-none focus:border-border-strong"
+                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-hidden focus:border-border-strong"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-text-muted">
@@ -172,7 +172,7 @@ export function TiposDeAgendamentoClient({
                   data-testid="novo-tipo-categoria"
                   value={rascunho.category}
                   onChange={(e) => setRascunho((r) => ({ ...r, category: e.target.value }))}
-                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-none focus:border-border-strong"
+                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-hidden focus:border-border-strong"
                 >
                   {CATEGORIAS.map((c) => (
                     <option key={c.valor} value={c.valor}>
@@ -192,7 +192,7 @@ export function TiposDeAgendamentoClient({
                   onChange={(e) =>
                     setRascunho((r) => ({ ...r, duration_minutes: Number(e.target.value) }))
                   }
-                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-none focus:border-border-strong"
+                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-hidden focus:border-border-strong"
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-text-muted">
@@ -201,7 +201,7 @@ export function TiposDeAgendamentoClient({
                   data-testid="novo-tipo-local"
                   value={rascunho.location_kind}
                   onChange={(e) => setRascunho((r) => ({ ...r, location_kind: e.target.value }))}
-                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-none focus:border-border-strong"
+                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-hidden focus:border-border-strong"
                 >
                   {LOCAIS.map((l) => (
                     <option key={l.valor} value={l.valor}>
@@ -222,7 +222,7 @@ export function TiposDeAgendamentoClient({
                   onChange={(e) =>
                     setRascunho((r) => ({ ...r, default_owner_user_id: e.target.value }))
                   }
-                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-none focus:border-border-strong"
+                  className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text outline-hidden focus:border-border-strong"
                 >
                   <option value="">{t("Definir depois")}</option>
                   {pessoas.map((p) => (
@@ -286,7 +286,7 @@ export function TiposDeAgendamentoClient({
                     type="button"
                     data-testid={`sem-dono-${tipo.id}`}
                     onClick={() => setEditandoId(tipo.id)}
-                    className="text-xs text-warning underline underline-offset-2 hover:text-warning/80"
+                    className="text-xs text-warning underline underline-offset-2"
                   >
                     {t("sem responsável — definir quem atende")}
                   </button>

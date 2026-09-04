@@ -92,7 +92,7 @@ export function FunisDoAgente({ funis, value, onChange, cobertura, disabled = fa
                 id={`funil-${f.id}`}
                 data-testid={`funil-${f.id}`}
                 type="checkbox"
-                className="h-4 w-4 shrink-0 rounded border-border accent-primary"
+                className="h-4 w-4 shrink-0 rounded-md border-border accent-primary"
                 checked={marcados.has(f.id)}
                 onChange={(e) => alternar(f.id, e.target.checked)}
                 disabled={disabled}

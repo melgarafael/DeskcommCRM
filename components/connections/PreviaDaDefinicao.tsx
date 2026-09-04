@@ -65,7 +65,7 @@ export function PreviaDaDefinicao({
                 width={320}
                 height={180}
                 unoptimized
-                className="mb-2 h-auto w-full rounded"
+                className="mb-2 h-auto w-full rounded-md"
               />
             )}
             {cabecalho && <p className="mb-1 text-sm font-semibold">{cabecalho}</p>}

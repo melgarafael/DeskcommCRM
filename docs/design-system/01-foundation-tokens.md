@@ -111,7 +111,10 @@ Definidas em `:root` por `app/design/lib/variant-context.tsx` ou `app/globals.cs
 
 ### 2. Tailwind classes (preferido em componentes React)
 
-Mapeadas em `tailwind.config.ts` para consumir as mesmas CSS vars:
+Mapeadas no bloco `@theme inline` de `app/globals.css` para consumir as mesmas
+CSS vars. (Era `tailwind.config.ts` até o Tailwind 4; o arquivo não existe
+mais — a ponte token → utilitário vive no próprio CSS, logo abaixo dos blocos
+`:root` / `[data-theme]`.)
 
 ```tsx
 <div className="p-5 rounded-sm border border-border shadow-sm transition-colors duration-150 ease-[cubic-bezier(0.2,0,0,1)]">

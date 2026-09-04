@@ -19,7 +19,9 @@ date: 2026-04-28
 | `tablet` | 768–1023px | "stacked" — layouts mudam |
 | `mobile` | 360–767px | atendente em deslocamento; somente leitura/quick-reply em algumas telas |
 
-Tailwind: `lg:` ≥1024, `xl:` ≥1280, `2xl:` ≥1536. Customizar `screens` no `tailwind.config.ts` se necessário pra tablet preciso.
+Tailwind: `lg:` ≥1024, `xl:` ≥1280, `2xl:` ≥1536. Para um ponto de corte próprio
+de tablet, declare `--breakpoint-<nome>` no `@theme inline` de `app/globals.css`
+(no Tailwind 4 não há mais `screens` em config JS).
 
 ## Princípios
 

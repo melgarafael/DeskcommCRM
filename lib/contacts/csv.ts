@@ -12,6 +12,55 @@ import { normalizePhoneBR } from "@/lib/webhooks/inbound";
  */
 
 /** Máximo defensivo: arquivo maior que isso é recusado antes do parse. */
+/**
+ * Os BYTES do upload viram texto — e o arquivo que não é texto é RECUSADO.
+ *
+ * `File.text()` decodifica sempre como UTF-8. O Excel em português exporta
+ * cp1252 por padrão, e o desfecho dependia de onde estava o acento (issue #483):
+ *
+ *   acento nos DADOS      -> IMPORTAVA, com `nome = "A��o C�nica �"`
+ *   acento no CABEÇALHO   -> 422 "Encontrei: C�digo, Produto, Pre�o, Marca."
+ *
+ * O segundo falha fechado e até é didático. O primeiro falha ABERTO: entra lixo
+ * no catálogo sem um erro sequer, e é esse nome que o agente lê para o cliente.
+ *
+ * O desempate não é detecção de charset, é uma prova: `TextDecoder("utf-8")` só
+ * produz U+FFFD quando o byte-stream NÃO é UTF-8 válido. Ausência de U+FFFD é
+ * prova de que UTF-8 é a leitura certa; presença é prova de que não é.
+ *
+ * O `windows-1252` "consegue" ler qualquer byte, então cair nele sem olhar o
+ * resultado transformaria um .xlsx renomeado em 300 produtos de nome ilegível.
+ * Por isso a segunda leitura é CONFERIDA: byte de controle (fora de TAB, CR e
+ * LF) não aparece em CSV de verdade, e aí o arquivo é recusado com a mesma
+ * instrução que a tela já dá.
+ *
+ * O que isto NÃO alcança, e está escrito para ninguém supor: o mojibake da
+ * ORIGEM — "AÃ§Ã£o", UTF-8 já gravado como latin-1 pelo sistema que gerou a
+ * planilha — é UTF-8 VÁLIDO, não tem U+FFFD nenhum, e passa limpo. É outro
+ * defeito, com outra evidência.
+ */
+export function decodificarCsv(bytes: ArrayBuffer | Uint8Array): { texto: string } | { erro: string } {
+  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+
+  const utf8 = new TextDecoder("utf-8").decode(buf);
+  if (!utf8.includes("\uFFFD")) return { texto: semBom(utf8) };
+
+  const latin = new TextDecoder("windows-1252").decode(buf);
+  // eslint-disable-next-line no-control-regex -- é exatamente o que se procura
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(latin)) {
+    return {
+      erro:
+        "Este arquivo não parece ser um CSV de texto. No Excel use “Salvar como” → “CSV UTF-8 (delimitado por vírgulas)”.",
+    };
+  }
+  return { texto: semBom(latin) };
+}
+
+/** O BOM vira caractere invisível no primeiro cabeçalho e cria coluna fantasma. */
+function semBom(texto: string): string {
+  return texto.charCodeAt(0) === 0xfeff ? texto.slice(1) : texto;
+}
+
 export const CSV_MAX_BYTES = 5 * 1024 * 1024;
 
 /** Teto de linhas de dados por importação (protege o round-trip do handler). */

@@ -61,4 +61,35 @@ describe("os fragmentos de .changes/ estão em forma de chegar à tela", () => {
       parseFragmento("ruim.md", "---\nimpacto: minor\nsecao: corrigido\ntitulo: x\n---\n\ncorpo"),
     ).toThrow(FragmentoInvalido);
   });
+
+  it("título com aspa NO MEIO chega inteiro à tela", () => {
+    // ⚠️ Defeito real, e ele passou por este gate: a limpeza de aspas tirava
+    // cada ponta INDEPENDENTE, então
+    //
+    //     titulo: "Quero 2 iPhone 15" volta a encontrar o iPhone 15
+    //
+    // virava `Quero 2 iPhone 15" volta a encontrar o iPhone 15` — a aspa de
+    // abertura sumia e a do meio ficava órfã. É ISSO que chega ao CHANGELOG que
+    // o dono da VPS lê antes de atualizar.
+    //
+    // Num produto de atendimento, citar o que o cliente digita é o caso natural
+    // do título, não a exceção.
+    const comAspa = parseFragmento(
+      "x.md",
+      ['---', 'impacto: nada_mudou', 'secao: corrigido',
+       'titulo: "Quero 2 iPhone 15" volta a encontrar o iPhone 15', '---', '', 'corpo.'].join("\n"),
+    );
+    expect(comAspa.titulo).toBe('"Quero 2 iPhone 15" volta a encontrar o iPhone 15');
+  });
+
+  it("aspas que ENVOLVEM o título inteiro continuam sendo removidas (controle)", () => {
+    // Sem este caso, "nunca tirar aspa" satisfaria o anterior — e aí todo
+    // título escrito no estilo YAML chegaria com as aspas na tela.
+    const envolvido = parseFragmento(
+      "x.md",
+      ['---', 'impacto: nada_mudou', 'secao: corrigido',
+       'titulo: "o título inteiro entre aspas"', '---', '', 'corpo.'].join("\n"),
+    );
+    expect(envolvido.titulo).toBe("o título inteiro entre aspas");
+  });
 });

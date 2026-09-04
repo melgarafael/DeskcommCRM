@@ -271,8 +271,26 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
 
 
 const listarShape = {
-  contact_id: z.string().uuid().optional(),
-  lead_id: z.string().uuid().optional(),
+  // As duas descrições existem porque o modelo escolhia entre os dois campos no
+  // escuro — nenhum tinha `.describe()`, e a única pista era o nome do campo no
+  // contexto do turno, que chama o CONTATO de `lead_id`. (issue #509)
+  contact_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "o id da PESSOA (o contato da conversa). É este que você quer na quase totalidade dos " +
+        "casos: o campo `lead_id` do contexto do turno carrega justamente o id do contato, " +
+        "então passe aquele valor AQUI.",
+    ),
+  lead_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "o id do NEGÓCIO no funil (a oportunidade), não o da pessoa. Só use quando estiver " +
+        "consultando os compromissos vinculados a um negócio específico.",
+    ),
   dia: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

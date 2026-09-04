@@ -110,7 +110,7 @@ export function CapturasTab() {
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground" htmlFor="captura-busca">
+            <label className="block text-xs text-muted-foreground" htmlFor="captura-busca">
               {t("Nome, telefone ou e-mail")}
             </label>
             <div className="flex gap-2">
@@ -135,7 +135,7 @@ export function CapturasTab() {
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">{t("Fonte")}</label>
+            <label className="block text-xs text-muted-foreground">{t("Fonte")}</label>
             <Select value={fonte} onValueChange={setFonte}>
               <SelectTrigger aria-label={t("Filtrar por fonte")}>
                 <SelectValue />
@@ -151,7 +151,7 @@ export function CapturasTab() {
             </Select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">{t("Resultado")}</label>
+            <label className="block text-xs text-muted-foreground">{t("Resultado")}</label>
             <Select value={desfecho} onValueChange={setDesfecho}>
               <SelectTrigger aria-label={t("Filtrar por resultado")}>
                 <SelectValue />
@@ -165,7 +165,7 @@ export function CapturasTab() {
             </Select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground" htmlFor="captura-de">
+            <label className="block text-xs text-muted-foreground" htmlFor="captura-de">
               {t("De")}
             </label>
             <Input
@@ -176,7 +176,7 @@ export function CapturasTab() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-muted-foreground" htmlFor="captura-ate">
+            <label className="block text-xs text-muted-foreground" htmlFor="captura-ate">
               {t("Até")}
             </label>
             <Input

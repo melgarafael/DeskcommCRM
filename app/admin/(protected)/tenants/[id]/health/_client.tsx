@@ -60,7 +60,7 @@ export function TenantHealthClient({ id }: TenantHealthClientProps) {
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           {t("Status de Saúde")}
         </h2>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {isFetching && (
             <ArrowsClockwise size={13} className="animate-spin" aria-hidden />
           )}

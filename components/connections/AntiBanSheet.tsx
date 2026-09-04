@@ -152,7 +152,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             />
             <p className="text-xs text-muted-foreground">
               {t(
-                "A conexão pode ser nova sem que o número seja. O aquecimento conta a idade do NÚMERO — se você deixar em branco, ele é tratado como recém-criado e começa liberando pouco por dia.",
+                "A conexão pode ser nova sem que o número seja. O aquecimento conta a idade do NÚMERO — em branco, ele é tratado como recém-criado e começa liberando pouco por dia. Uma data já salva não some se você limpar o campo: para mudá-la, informe outra.",
               )}
             </p>
 

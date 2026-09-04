@@ -59,7 +59,8 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { classificarErroDoGoogle } from "@/lib/agenda/google/erros";
-import { doEventoDoGoogle, ehIcalUidNosso } from "@/lib/agenda/google/evento";
+import { doEventoDoGoogle } from "@/lib/agenda/google/evento";
+import { ehEventoNosso } from "@/lib/agenda/google/escrita";
 import { listarEventos } from "@/lib/agenda/google/eventos-remotos";
 import { env } from "@/lib/env";
 
@@ -211,7 +212,8 @@ export async function sincronizarAgendasDoGoogle(
       // ⚠️ O FILTRO ANTI-ECO. Ver o cabeçalho: gravar o que nós mesmos criamos
       // faz o mesmo compromisso ocupar dois horários.
 
-      if (ehIcalUidNosso(lido.evento.ical_uid)) {
+      // Pelo ID, não mais pelo iCalUID — ver `ehEventoNosso`.
+      if (ehEventoNosso(lido.evento.external_event_id)) {
         resumo.nossosIgnorados += 1;
         continue;
       }

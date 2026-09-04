@@ -253,20 +253,20 @@ export function UserDetailClient({ id }: UserDetailClientProps) {
             <div className="space-y-3 max-h-96 overflow-auto pr-1">
               {recent_audit.map((entry) => (
                 <div key={entry.id} className="flex items-start gap-2 text-xs">
-                  <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-muted-foreground/50" />
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-muted-foreground">
                         {entry.action}
                       </span>
-                      <span className="text-muted-foreground/60">
+                      <span className="text-muted-foreground">
                         {format(new Date(entry.created_at), "dd/MM HH:mm:ss", {
                           locale: localeDaData,
                         })}
                       </span>
                     </div>
                     {entry.resource_type && (
-                      <p className="text-muted-foreground/60">
+                      <p className="text-muted-foreground">
                         {entry.resource_type}
                         {entry.resource_id ? ` · ${entry.resource_id.slice(0, 8)}…` : ""}
                       </p>

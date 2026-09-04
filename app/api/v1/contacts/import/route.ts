@@ -27,6 +27,7 @@ import { encryptCpfSql, hashCpf } from "@/lib/contacts/cpf";
 import {
   CSV_MAX_BYTES,
   CSV_MAX_DATA_ROWS,
+  decodificarCsv,
   mapHeader,
   mapLinha,
   parseCsv,
@@ -92,7 +93,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   // ─── Parse + validação de linhas (puro; nada tocou no banco ainda) ───────
-  const text = await file.text();
+  // Os BYTES, não `file.text()` — ver `decodificarCsv` (#483).
+  const decodificado = decodificarCsv(await file.arrayBuffer());
+  if ("erro" in decodificado) {
+    return fail("validation_failed", decodificado.erro, 422, { requestId });
+  }
+  const text = decodificado.texto;
   const rows = parseCsv(text);
   if (rows.length < 2) {
     return fail("validation_failed", "CSV vazio ou sem linhas de dados.", 422, { requestId });

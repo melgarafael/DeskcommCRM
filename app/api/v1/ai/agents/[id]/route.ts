@@ -128,6 +128,34 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("not_found", "Agent não encontrado.", 404, { requestId });
   }
 
+  // ─── CONTEÚDO DE VERSÃO PUBLICADA NÃO SE EDITA PELO CADASTRO ───────────
+  //
+  // `system_prompt` e `model` existem nas DUAS tabelas. Quando há versão
+  // publicada, é a versão que o motor lê (`agent-config.ts:123`) — gravar em
+  // `ai_agents` devolvia 200, a tela mostrava o texto novo, e o agente seguia
+  // respondendo ao cliente com o prompt anterior. Sem erro em lugar nenhum.
+  //
+  // O banco já sabia disso: `fn_ai_agent_version_content_immutable` recusa
+  // mudar conteúdo de versão publicada com esta mesma frase. Faltava a rota
+  // seguir a mesma regra — falhar FECHADO, e ensinar o caminho.
+  //
+  // Sem versão publicada, `ai_agents.system_prompt` É a fonte legítima (é o que
+  // `workers/ai-response-worker.ts` lê), e continua editável. (issue #456)
+  const CONTEUDO_DA_VERSAO = ["system_prompt", "model"] as const;
+  if (existing.published_version_id != null) {
+    const barrados = CONTEUDO_DA_VERSAO.filter((c) => patch[c] !== undefined);
+    if (barrados.length > 0) {
+      return fail(
+        "state_conflict",
+        `Este agente tem uma versão publicada, e é ela que o atendimento executa. ` +
+          `Mudança de conteúdo (${barrados.join(", ")}) = versão draft nova; publica. ` +
+          `Edite pela aba Modelo do editor de versões.`,
+        409,
+        { requestId, details: { campos: barrados, published_version_id: existing.published_version_id } },
+      );
+    }
+  }
+
   // Build UPDATE payload. Para `config`, faz merge preservando defaults.
   const update: Record<string, unknown> = {};
 

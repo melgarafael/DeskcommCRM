@@ -87,6 +87,73 @@ export async function silenciarBotPorRetomadaHumana(
   }
 }
 
+/**
+ * Quanto tempo um envio nosso pode ficar "em voo" antes de o eco deixar de ser
+ * explicável por ele.
+ *
+ * 60s é folgado de propósito: o custo de errar para o lado permissivo é uma
+ * digitação real do celular não silenciar a IA por um minuto; o custo de errar
+ * para o outro lado é a IA muda por três horas. Os dois erros não são simétricos.
+ */
+const JANELA_DO_ECO_MS = 60_000;
+
+/**
+ * A mensagem `fromMe` que chegou é o eco de um envio que ESTE CRM acabou de
+ * fazer — e não alguém digitando no celular?
+ *
+ * A prova exigida é forte: uma linha nossa na MESMA conversa, ainda sem
+ * `external_id` (portanto ainda em voo), com o MESMO corpo, dentro da janela.
+ * Qualquer uma dessas faltando, a resposta é "não sei" — e "não sei" silencia,
+ * porque é o desfecho seguro do lado do atendente humano (#371).
+ *
+ * Mídia não tem corpo comparável (o eco traz `media_url`, não texto): ali a
+ * prova cai para "existe envio nosso em voo do mesmo tipo na janela", que é mais
+ * permissivo e assumidamente mais fraco.
+ */
+async function ehEcoDeEnvioNosso(
+  admin: Admin,
+  organizationId: string,
+  conversationId: string,
+  p: WahaPayload,
+): Promise<boolean> {
+  const desde = new Date(Date.now() - JANELA_DO_ECO_MS).toISOString();
+  const { data, error } = await admin
+    .from("messages")
+    .select("id, body, type")
+    .eq("organization_id", organizationId)
+    .eq("conversation_id", conversationId)
+    .eq("direction", "outbound")
+    // `sent_via` separa o que NASCEU aqui do que veio do celular: a linha do
+    // celular é gravada como `external_device` e nunca pode servir de álibi.
+    .in("sent_via", ["ai", "user"])
+    // Sem `external_id` = ainda não confirmada pelo canal = ainda em voo. É esta
+    // a janela exata em que o eco é indistinguível de digitação humana.
+    .is("external_id", null)
+    .in("status", ["queued", "sending"])
+    .gte("created_at", desde)
+    .limit(20);
+
+  if (error) {
+    // Falha de leitura não pode virar "é eco": na dúvida, silencia — o
+    // desfecho seguro é o do atendente humano.
+    console.error("[waha.ingest] checagem de eco falhou", error.message);
+    return false;
+  }
+
+  const corpo = (p.body ?? "").trim();
+  for (const linha of data ?? []) {
+    const l = linha as { body: string | null; type?: string | null };
+    if (p.type && p.type !== "chat") {
+      // Mídia: sem corpo para comparar, a existência do envio em voo é a prova
+      // possível. Mais fraco, e escrito para ninguém supor o contrário.
+      if ((l.type ?? "chat") !== "chat") return true;
+      continue;
+    }
+    if (corpo.length > 0 && (l.body ?? "").trim() === corpo) return true;
+  }
+  return false;
+}
+
 interface Session {
   id: string;
   organization_id: string;
@@ -854,7 +921,26 @@ async function handleOutboundFromUserPhone(
   // Ver `silenciarBotPorRetomadaHumana` — um humano acabou de responder direto pelo
   // WhatsApp dele, fora do composer/IA; dá a ele uma janela curta de controle da
   // conversa sem precisar "assumir" formalmente no CRM.
-  await silenciarBotPorRetomadaHumana(admin, session.organization_id, conversationId);
+  //
+  // ⚠️ MAS ANTES: isto é MESMO um humano, ou é o eco do nosso próprio envio?
+  //
+  // Todo envio do CRM grava a linha ANTES de falar com o canal (`queued`,
+  // `external_id` null) — o id só existe depois que o WAHA responde. Nessa
+  // janela o dedup por `external_id` não casa nada, o eco chega com `fromMe` e
+  // esta função concluía "humano assumiu": a IA se calava por TRÊS HORAS por
+  // ter falado, e a tela mostrava "Automático pausado", um estado legítimo que
+  // ninguém investiga. (issue #519)
+  //
+  // As DUAS decisões que eram uma só se separam aqui, e em direções OPOSTAS de
+  // propósito:
+  //   gravar a linha  -> tolerante  (na dúvida grava; perder mensagem é pior que
+  //                                  duplicar — é o #108, que já custou caro)
+  //   silenciar o bot -> ESTRITO    (na dúvida NÃO cala; calar a IA por engano é
+  //                                  pior que não calar)
+  // Quem reaproveitar esta condição para pular o INSERT reabre o #108.
+  if (!(await ehEcoDeEnvioNosso(admin, session.organization_id, conversationId, p))) {
+    await silenciarBotPorRetomadaHumana(admin, session.organization_id, conversationId);
+  }
 
   await audit({
     action: "message.sent",

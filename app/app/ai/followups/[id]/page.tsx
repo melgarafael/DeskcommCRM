@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
+import { rascunhoDoFluxo } from "@/lib/followup/rascunho";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
@@ -43,8 +44,17 @@ export default async function FollowupFlowBuilderPage({
 
   if (!pointer) notFound();
 
+  // Mesma regra da rota: rascunho ausente COM versão publicada abre o que está
+  // NO AR. Ver `lib/followup/rascunho.ts`.
+  const draft_graph = await rascunhoDoFluxo(
+    supabase,
+    pointer as unknown as { draft_graph: unknown; active_version_id: string | null },
+    activeOrg.orgId,
+  );
+
   const flow: FollowupFlowDetailRow = {
     ...(pointer as unknown as Omit<FollowupFlowDetailRow, "versions_count" | "previous_version_id">),
+    draft_graph,
     versions_count: versionRows?.length ?? 0,
     previous_version_id: versionRows?.[1]?.id ?? null,
   };

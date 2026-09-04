@@ -114,7 +114,18 @@ function separarFrontmatter(texto: string): { campos: Record<string, string>; co
     // entregaria à tela do dono da VPS um título cortado no meio.
     const cru = linha.slice(sep + 1);
     const valor = (VOCABULARIO_FECHADO.has(chave) ? cru.replace(/\s+#.*$/, "") : cru).trim();
-    campos[chave] = valor.replace(/^["']|["']$/g, "");
+    // ⚠️ SÓ TIRA ASPA COM PAR. O `replace(/^["']|["']$/g, "")` que morava aqui
+    // tirava cada ponta INDEPENDENTE, e um título com aspa no meio saía torto:
+    //
+    //     titulo: "Quero 2 iPhone 15" volta a encontrar o iPhone 15
+    //          →  Quero 2 iPhone 15" volta a encontrar o iPhone 15
+    //
+    // A aspa de abertura some, a do meio fica órfã, e é ISSO que chega ao
+    // CHANGELOG que o dono da VPS lê antes de atualizar. Aspa citando o que o
+    // cliente digita é o caso natural num produto de atendimento — o título
+    // acima é real, e passou pelo gate.
+    const aspas = /^(["'])([\s\S]*)\1$/.exec(valor);
+    campos[chave] = aspas ? aspas[2]! : valor;
   }
   return { campos, corpo: linhas.slice(fim + 1).join("\n").trim() };
 }

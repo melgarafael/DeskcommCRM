@@ -81,7 +81,7 @@ it('áudio JÁ transcrito: turno segue normalmente', async () => {
 
 it('derivação travada além do teto: segue SEM o texto em vez de deixar o cliente esperando', async () => {
   const calls: string[] = [];
-  process.env.__ESPERA__ = '90000'; // 90s — muito além do teto de 45s
+  process.env.__ESPERA__ = '150000'; // 150s — muito além do teto de 120s
   await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, calls), knobs, log);
   expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
 });

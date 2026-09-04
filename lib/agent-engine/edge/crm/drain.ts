@@ -123,8 +123,18 @@ const ESPERA_DERIVACAO_MS = 4_000;
  * Teto da espera. Passado isto o turno segue SEM o texto derivado: melhor uma
  * resposta tarde e sem transcrição do que cliente esperando para sempre porque
  * a derivação travou.
+ *
+ * Era 45s até 2026-09-03, quando um áudio real (cliente "Alfran") levou ~86s
+ * para transcrever: o turno estourou o teto, respondeu "não consegui ouvir
+ * seu áudio" às 14:25:46, e a transcrição correta só ficou pronta às 14:26:04
+ * — 18s tarde demais, e o cliente teve que digitar a pergunta de novo.
+ * Medição de p50/p90/p99 de conclusão de transcrição nos últimos 7 dias desta
+ * instalação: 14s / 407s / 2538s — a cauda longa (minutos) é de retry após
+ * falha transitória, não do Whisper em si, e nenhum teto razoável a cobre sem
+ * o cliente esperando minutos pela primeira resposta. 120s cobre o caso comum
+ * de transcrição lenta (como o do Alfran) sem impor essa espera longa.
  */
-const TETO_ESPERA_DERIVACAO_MS = 45_000;
+const TETO_ESPERA_DERIVACAO_MS = 120_000;
 
 type DesfechoEvento = 'processado' | 'adiar';
 

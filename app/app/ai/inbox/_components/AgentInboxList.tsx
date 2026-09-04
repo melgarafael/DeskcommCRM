@@ -43,7 +43,7 @@ export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
         </div>
       ) : !data || data.items.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
-          <Bell size={28} className="text-muted-foreground/60" aria-hidden />
+          <Bell size={28} className="text-muted-foreground" aria-hidden />
           <p className="text-sm font-medium">
             {tab === "open" ? t("Nenhum aviso em aberto") : t("Nenhum aviso resolvido")}
           </p>

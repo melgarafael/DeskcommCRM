@@ -33,7 +33,7 @@ export function ShortcutsHelpDialog({ open, onOpenChange }: Props) {
           {BINDINGS.map((b) => (
             <li key={b.keys} className="flex items-center justify-between">
               <span className="text-muted-foreground">{t(b.description)}</span>
-              <kbd className="rounded border border-border bg-muted px-2 py-0.5 font-mono text-xs">
+              <kbd className="rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-xs">
                 {b.keys}
               </kbd>
             </li>

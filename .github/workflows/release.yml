@@ -54,7 +54,7 @@ jobs:
           token: ${{ steps.token.outputs.token }}
 
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -111,7 +111,7 @@ jobs:
           token: ${{ steps.token.outputs.token }}
 
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -298,27 +298,67 @@ jobs:
           # anônimo de pull do próprio registro. Não usa o GITHUB_TOKEN de
           # propósito — o que interessa provar é que a imagem está alcançável
           # para QUEM INSTALA, e quem instala não tem credencial nossa.
-          ghcr_status() {
+          #
+          # E ela lê DIGEST, não código de status. A sonda ingênua ("a tag
+          # responde 200?") é satisfeita pelo canal `stable` desde a 1.11.0 — ele
+          # existe sempre, apontando para o que quer que seja. Foi assim que a
+          # v1.12.0 saiu com `stable` do app na 1.11.0 e o das outras duas na
+          # 1.12.0 sem ninguém ver (issue #488): quem instalava por `stable`
+          # recebia um parque MISTURADO, e nenhum gate tinha opinião.
+          ghcr_digest() {
             local t
             t=$(curl -s "https://ghcr.io/token?scope=repository:${GITHUB_REPOSITORY_OWNER}/$1:pull&service=ghcr.io" \
                 | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-            curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $t" \
+            curl -sI -H "Authorization: Bearer $t" \
               -H 'Accept: application/vnd.oci.image.index.v1+json' \
-              "https://ghcr.io/v2/${GITHUB_REPOSITORY_OWNER}/$1/manifests/$2"
+              -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+              "https://ghcr.io/v2/${GITHUB_REPOSITORY_OWNER}/$1/manifests/$2" \
+              | tr -d '\r' | tr '[:upper:]' '[:lower:]' \
+              | sed -n 's/^docker-content-digest: //p'
           }
           echo "esperando a publicação de v${VERSAO}…"
           for _ in $(seq 1 60); do
             faltando=""
             for img in deskcommcrm deskcomm-worker deskcomm-scheduler; do
-              [ "$(ghcr_status "$img" "${VERSAO}")" = "200" ] || faltando="${faltando} ${img}"
+              [ -n "$(ghcr_digest "$img" "${VERSAO}")" ] || faltando="${faltando} ${img}"
             done
             if [ -z "$faltando" ]; then
               echo "as três imagens respondem em ${VERSAO}"
-              exit 0
+              break
             fi
             sleep 30
           done
-          echo "::error::A tag v${VERSAO} foi criada, mas as imagens não apareceram:${faltando}"
-          echo "::error::O parque instalado NÃO consegue atualizar para esta versão."
-          echo "::error::Confira o run de publish-image.yml para a tag v${VERSAO}."
-          exit 1
+          if [ -n "$faltando" ]; then
+            echo "::error::A tag v${VERSAO} foi criada, mas as imagens não apareceram:${faltando}"
+            echo "::error::O parque instalado NÃO consegue atualizar para esta versão."
+            echo "::error::Confira o run de publish-image.yml para a tag v${VERSAO}."
+            exit 1
+          fi
+
+          # ─── O CANAL ACOMPANHOU? ──────────────────────────────────────────
+          #
+          # `stable` é o que o instalador escreve por padrão, então ele é o que
+          # o parque realmente recebe. Um canal que ficou para trás numa das três
+          # imagens é pior que uma imagem ausente: a instalação SOBE, misturada,
+          # e o defeito aparece semanas depois como comportamento inexplicável.
+          echo "conferindo se o canal stable acompanhou v${VERSAO}…"
+          divergentes=""
+          for _ in $(seq 1 20); do
+            divergentes=""
+            for img in deskcommcrm deskcomm-worker deskcomm-scheduler; do
+              d_versao=$(ghcr_digest "$img" "${VERSAO}")
+              d_stable=$(ghcr_digest "$img" stable)
+              echo "  ${img}: ${VERSAO}=${d_versao:-ausente} stable=${d_stable:-ausente}"
+              [ -n "${d_versao}" ] && [ "${d_versao}" = "${d_stable}" ] || divergentes="${divergentes} ${img}"
+            done
+            [ -z "${divergentes}" ] && break
+            sleep 30
+          done
+          if [ -n "${divergentes}" ]; then
+            echo "::error::v${VERSAO} publicou, mas o canal stable NÃO acompanhou em:${divergentes}"
+            echo "::error::Quem instalar por stable agora recebe um parque MISTURADO — serviços do mesmo"
+            echo "::error::repositório em versões diferentes, estado que nenhum teste cobre."
+            echo "::error::Confira o job promover-stable no run de publish-image.yml da tag v${VERSAO}."
+            exit 1
+          fi
+          echo "stable e ${VERSAO} são o mesmo manifesto nas três imagens"

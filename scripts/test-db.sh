@@ -36,7 +36,14 @@ PUBLICACAO="127.0.0.1::5432"
 DONO_WORKTREE="$ROOT"
 DONO_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo desconhecida)"
 CONTAINER="deskcomm-test-db-$$"
-IMAGE="pgvector/pgvector:pg17"
+# pg15 e não pg17: o piso real do baseline é pg15 (`security_invoker` em view,
+# baseline.sql:1215). O 17 vinha de 9 `GRANT … MAINTAIN` que o `pg_dump` de um
+# projeto Supabase pg17 emitiu sozinho ao serializar o ACL das tabelas
+# append-only — ninguém os escreveu, e nenhum código do projeto usa o
+# privilégio. Testar no piso é o que faz este gate cobrir a instalação mais
+# pobre que dizemos suportar, em vez da mais rica que temos à mão.
+# Quem guarda o piso é tests/unit/baseline-no-piso-do-postgres.test.ts.
+IMAGE="pgvector/pgvector:pg15"
 # O baseline é aplicado UMA vez, num banco-MOLDE. Cada ARQUIVO de tests/invariants
 # recebe uma cópia nova dele — `create database postgres template $TEMPLATE`, ~0,2s
 # medidos — feita pelo setupFile declarado em vitest.db.config.ts.

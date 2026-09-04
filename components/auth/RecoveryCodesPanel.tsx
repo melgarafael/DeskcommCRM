@@ -85,7 +85,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
           {codes.map((c, i) => (
             <div
               key={i}
-              className="rounded border border-border bg-background px-3 py-2 text-center font-mono text-sm tracking-widest"
+              className="rounded-md border border-border bg-background px-3 py-2 text-center font-mono text-sm tracking-widest"
             >
               {c}
             </div>
@@ -107,7 +107,7 @@ export function RecoveryCodesPanel({ codes, onAcknowledge }: RecoveryCodesPanelP
           type="checkbox"
           checked={acked}
           onChange={(e) => setAcked(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-border"
+          className="mt-0.5 h-4 w-4 rounded-md border-border"
         />
         <span>{t("Salvei meus códigos em local seguro.")}</span>
       </label>

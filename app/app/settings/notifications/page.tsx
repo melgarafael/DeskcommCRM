@@ -81,7 +81,7 @@ export default async function NotificationsPage() {
               "Ligar o Push abaixo já faz o aviso aparecer na bandeja do sistema enquanto você está com o site aberto numa aba. Para receber também com a aba fechada, quem administra o servidor precisa gerar um par de chaves uma única vez e reiniciar:",
             )}
           </p>
-          <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">
+          <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-2 text-xs">
             <code>npx web-push generate-vapid-keys</code>
           </pre>
           <p className="mt-2 text-muted-foreground">

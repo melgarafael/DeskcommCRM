@@ -56,7 +56,7 @@ export function ScoreSlot({ probability, band, reason, factors }: ScoreSlotProps
           // O rótulo acessível carrega o número E a faixa: "72%" lido sozinho
           // não diz se é bom ou ruim para quem não vê a barra.
           aria-label={`${t("Probabilidade")} ${probability}%, ${bandLabel(band, t)}. ${t("Ver o porquê.")}`}
-          className="flex min-w-0 items-center gap-2 rounded text-left"
+          className="flex min-w-0 items-center gap-2 rounded-md text-left"
         >
           <span
             className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full bg-border"

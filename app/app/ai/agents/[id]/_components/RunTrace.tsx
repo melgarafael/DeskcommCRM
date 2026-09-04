@@ -94,20 +94,20 @@ export function RunTrace({
             <div className="space-y-3 border-t border-border/60 px-3 py-3 text-xs">
               <div>
                 <p className="mb-1 font-medium text-muted-foreground">{t("Args")}</p>
-                <pre className="overflow-x-auto rounded bg-muted/40 p-2 font-mono leading-relaxed">
+                <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 font-mono leading-relaxed">
                   {clip(fmtJson(s.args))}
                 </pre>
               </div>
               <div>
                 <p className="mb-1 font-medium text-muted-foreground">{t("Result")}</p>
-                <pre className="overflow-x-auto rounded bg-muted/40 p-2 font-mono leading-relaxed">
+                <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 font-mono leading-relaxed">
                   {clip(fmtJson(s.result))}
                 </pre>
               </div>
               {errMsg ? (
                 <div>
                   <p className="mb-1 font-medium text-destructive">{t("Error")}</p>
-                  <pre className="overflow-x-auto rounded bg-destructive/10 p-2 font-mono leading-relaxed text-destructive">
+                  <pre className="overflow-x-auto rounded-md bg-destructive/10 p-2 font-mono leading-relaxed text-destructive">
                     {clip(errMsg)}
                   </pre>
                 </div>

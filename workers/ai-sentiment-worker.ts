@@ -16,7 +16,7 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 
-import { agenteAtende } from "@/lib/ai/agents/no-ar";
+import { resolverAgenteDaConversa } from "@/lib/ai/agents/agente-da-conversa";
 import { computeCost } from "@/lib/ai/cost";
 import { DEFAULT_CLASSIFIER_MODEL, isAiGatewayConfigured } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
@@ -117,22 +117,60 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       return { skipped: true, reason: "empty_body" };
     }
 
-    // ── Load active agent to read sentiment_threshold config ──────────────
+    // ── Qual agente atende ESTA conversa? ─────────────────────────────────
     //
-    // Mesma régua da tela e do ai-response-worker (`lib/ai/agents/no-ar.ts`).
-    // Antes era `.eq("is_active", true)` sozinho, e pausar um `mcp_agent` não
-    // desliga essa coluna: o limiar de sentimento continuava saindo do agente
-    // que o dono acabara de pausar.
+    // Antes, a resposta era "o primeiro da organização que atende", ordenado por
+    // `is_default` e depois `created_at` — e a conversa que disparou o evento não
+    // entrava na consulta em lugar nenhum. Com um agente só, certo por acidente.
+    // Com dois, o limiar em vigor passava a depender da ORDEM DE CRIAÇÃO: numa
+    // clínica, cliente triste é sinal de problema; numa assistência técnica, é o
+    // cliente normal. O mesmo limiar erra nos dois sentidos, e quem configurou o
+    // campo do agente B ficava vendo o comportamento do agente A sem pista
+    // nenhuma na tela — os dois campos existem, os dois aceitam valor, e um
+    // deles não fazia nada. (issue #486)
+    const { data: conversa } = await admin
+      .from("conversations")
+      .select("id, channel_session_id, active_ai_agent_id")
+      .eq("id", message.conversation_id)
+      .eq("organization_id", event.organization_id)
+      .maybeSingle();
+
+    // As versões PUBLICADAS ligadas ao número em que a conversa acontece — é
+    // quem de fato responde ao cliente por aquela sessão. `null` (não consegui
+    // consultar) e `[]` (consultei, não há) levam ao mesmo desfecho na régua,
+    // mas quem lê o log precisa distinguir os dois.
+    let versoesPublicadasNaSessao: string[] | null = null;
+    if (conversa?.channel_session_id) {
+      const { data: versoes } = await admin
+        .from("ai_agent_versions")
+        .select("id, channel_session_id, status")
+        .eq("organization_id", event.organization_id)
+        .eq("channel_session_id", conversa.channel_session_id)
+        .eq("status", "published");
+      versoesPublicadasNaSessao = (versoes ?? []).map((v) => v.id as string);
+    }
+
     const { data: candidatos } = await admin
       .from("ai_agents")
-      .select("id, config, kind, is_active, published_version_id, archived_at")
+      .select(
+        "id, config, kind, is_active, published_version_id, archived_at, priority, created_at",
+      )
       .eq("organization_id", event.organization_id)
-      .is("archived_at", null)
-      .order("is_default", { ascending: false })
-      .order("created_at", { ascending: true });
+      .is("archived_at", null);
 
-    const agent = (candidatos ?? []).find(agenteAtende) ?? null;
+    const { agente: agent, motivo: motivoDoAgente } = resolverAgenteDaConversa(
+      candidatos ?? [],
+      conversa
+        ? {
+            active_ai_agent_id: conversa.active_ai_agent_id as string | null,
+            versoesPublicadasNaSessao,
+          }
+        : null,
+    );
 
+    // Sem agente resolvido, o padrão do PRODUTO — nunca o limiar do vizinho.
+    // Chutar a configuração de outro agente é o defeito de novo, agora com cara
+    // de configuração deliberada.
     const agentConfig = (agent?.config as Record<string, unknown> | null) ?? {};
     const threshold =
       typeof agentConfig["sentiment_threshold"] === "number"
@@ -265,7 +303,16 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
           conversation_id: conversationId ?? message.conversation_id ?? null,
           sentiment_score: result.sentiment_score,
         },
-        p_metadata: { source: "ai-sentiment-worker", threshold },
+        // `agent_id` e `motivo` viajam com o alerta porque o limiar é o número
+        // que decidiu emiti-lo: sem eles, "por que este alerta saiu?" recomeça
+        // do zero, e foi essa ausência que deixou o defeito da #486 invisível
+        // pela tela — os dois campos existiam e um não fazia nada.
+        p_metadata: {
+          source: "ai-sentiment-worker",
+          threshold,
+          agent_id: agent?.id ?? null,
+          agente_resolvido_por: motivoDoAgente,
+        },
         p_organization_id: event.organization_id,
       } as never);
 

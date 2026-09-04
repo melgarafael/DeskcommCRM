@@ -155,20 +155,28 @@ jobs:
             # inteira depende — `latest` = topo da main, `stable` = última
             # release — e fazia `latest` oscilar entre os dois.
             type=raw,value=latest,enable=${{ github.ref_type == 'branch' && github.ref_name == 'main' }}
-            # `stable` = a última RELEASE publicada. Existe porque `latest` aqui
-            # significa topo da `main` (código não lançado), e o nome engana:
-            # quem quer "a última versão estável" pedia `latest` e recebia edge.
-            # Trocar o significado de `latest` faria downgrade silencioso em quem
-            # já o consome, então o canal novo é o que ganha o nome certo.
-            # Três condições, e cada uma barra um caminho medido. `ref_type ==
-            # 'tag'` sozinho deixaria um dispatch numa branch mover o canal;
-            # `startsWith(…, 'v')` barra tag de teste (o registry já tem uma
-            # `quebrada-teste`, que nenhum push na main consegue produzir);
-            # e `event_name == 'push'` barra o pior caso — um dispatch numa
-            # release ANTIGA faria `stable` REGREDIR, e todo self-hoster no
-            # default do compose sofreria downgrade silencioso no próximo
-            # `up -d`, com app velho sobre banco já migrado.
-            type=raw,value=stable,enable=${{ github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+            # `stable` NÃO sai daqui, e a razão é a issue #488. Ele já saiu: era
+            # mais um `type=raw` nesta lista, e por isso CADA imagem movia o
+            # canal sozinha, ao terminar, sem saber se as irmãs conseguiram.
+            # Medido no corte da v1.12.0 — o job do app morreu em `Set up
+            # Buildx`, antes de compilar coisa alguma, enquanto worker e
+            # scheduler seguiram e moveram o ponteiro:
+            #
+            #   deskcommcrm          1.12.0   404
+            #   deskcommcrm          stable   sha256:0235d02b…  ← 1.11.0
+            #   deskcomm-worker      stable   sha256:66c7bde4…  ← 1.12.0
+            #   deskcomm-scheduler   stable   sha256:ac6b87cc…  ← 1.12.0
+            #
+            # Quem instalasse por `stable` naquela janela recebia app 1.11.0 com
+            # worker e scheduler 1.12.0. `fail-fast: true` não resolveria: quando
+            # o app falhou, as irmãs JÁ tinham publicado e JÁ tinham movido o
+            # canal — abortá-las não desfaz o que foi publicado.
+            #
+            # Publicar por NÚMERO é o que continua aqui, e é seguro: `1.12.0`
+            # pode existir para uma imagem e não para outra sem prejuízo, porque
+            # ninguém instala por um número que o instalador não escreveu. Mover
+            # o CANAL é ato do job `promover-stable`, lá embaixo, quando o
+            # conjunto está completo.
           labels: |
             org.opencontainers.image.title=${{ matrix.title }}
 
@@ -280,6 +288,76 @@ jobs:
       - name: Encerrar
         if: always()
         run: docker rm -f smoke 2>/dev/null || true
+
+  # O CANAL `stable` MOVE AQUI, E SÓ AQUI — depois que o conjunto está completo.
+  #
+  # Antes, `stable` era mais um `type=raw` na lista de tags da matriz, e por isso
+  # CADA imagem movia o canal sozinha ao terminar, sem saber se as irmãs
+  # conseguiram. Medido no registro público durante o corte da v1.12.0 (issue
+  # #488), com sonda de DIGEST — a ingênua ("a tag `stable` existe?") devolve 200
+  # nas três e não prova nada, porque `stable` existe desde a 1.11.0:
+  #
+  #   deskcommcrm          1.12.0   404
+  #   deskcommcrm          stable   sha256:0235d02b…   <- 1.11.0
+  #   deskcomm-worker      stable   sha256:66c7bde4…   <- 1.12.0
+  #   deskcomm-scheduler   stable   sha256:ac6b87cc…   <- 1.12.0
+  #
+  # Quem instalasse por `stable` naquela janela recebia app 1.11.0 com worker e
+  # scheduler 1.12.0. Os três saem do mesmo repositório e compartilham código;
+  # rodar dois numa versão e o terceiro noutra é um estado que nenhum teste cobre
+  # e que ninguém escolheu. O job do app tinha morrido em `Set up Buildx` — antes
+  # de compilar qualquer coisa, portanto por infraestrutura e não por conteúdo.
+  #
+  # `fail-fast: true` na matriz seria o conserto óbvio, e chega tarde: quando o
+  # app falhou, as irmãs JÁ tinham publicado e JÁ tinham movido o canal. Abortar
+  # não desfaz o que foi publicado. O que separa os dois atos é publicar por
+  # NÚMERO sempre (cada imagem, independente — ninguém instala por um número que
+  # o instalador não escreveu) e mover o CANAL num job final.
+  promover-stable:
+    # Sem `always()`, e isso é o ponto: `needs` só libera quando as DUAS entradas
+    # deram `success`. Com `always()` o canal andaria por cima de uma irmã que
+    # falhou, que é exatamente o defeito de volta com outra roupa.
+    needs: [build-and-push, imagem-do-app-sobe]
+    # As três condições, e cada uma barra um caminho medido. Sem `push`, um
+    # dispatch numa release ANTIGA faria `stable` REGREDIR, e todo self-hoster no
+    # default do compose sofreria downgrade silencioso no próximo `up -d` — app
+    # velho sobre banco já migrado. Sem `tag`, um dispatch numa branch moveria o
+    # canal. Sem o `v`, uma tag de teste o move (o registro já tem uma
+    # `quebrada-teste`, que nenhum push na main consegue produzir).
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    permissions:
+      # O menor escopo que faz o trabalho: reapontar tag no GHCR. Sem o bloco, o
+      # GITHUB_TOKEN herdaria o default do REPOSITÓRIO — configuração que vive
+      # fora do repo, muda num clique e não passa por PR.
+      packages: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apontar `stable` para esta versão, nas três imagens
+        env:
+          VERSAO: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # `imagetools create` REAPONTA o índice que já foi publicado — não
+          # reconstrói. Reconstruir o mesmo commit dá um digest DIFERENTE (foi o
+          # que fez `stable` e `1.3.0` divergirem com o mesmo `revision`), e aí o
+          # canal deixaria de ser o mesmo manifesto que a versão.
+          dono=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          numero="${VERSAO#v}"
+          for img in deskcommcrm deskcomm-worker deskcomm-scheduler; do
+            echo "::group::${img}"
+            docker buildx imagetools create \
+              --tag "${REGISTRY}/${dono}/${img}:stable" \
+              "${REGISTRY}/${dono}/${img}:${numero}"
+            echo "::endgroup::"
+          done
+          echo "stable agora aponta para ${numero} nas três imagens"
 
   # Job de fachada: dá UM nome estável para a branch protection exigir. Sem ele,
   # o required check teria que listar as três instâncias da matriz pelo nome

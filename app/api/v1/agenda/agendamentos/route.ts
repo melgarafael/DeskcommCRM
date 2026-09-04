@@ -15,8 +15,19 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { listaAgendamentos } from "@/lib/agenda/consulta";
+import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
 import { fail, ok } from "@/lib/api/wrappers";
+import { logger } from "@/lib/logger";
+
+/**
+ * O que ESTA ROTA devolve — o contrato da lista mais a ORIGEM.
+ *
+ * `AgendamentoListado` não tem origem de propósito: ela é o contrato que a
+ * ferramenta MCP do agente também consome, e lá só existe uma origem possível.
+ * A tela precisa distinguir, porque bloco vindo do Google não abre, não arrasta
+ * e não se clica.
+ */
+type AgendamentoDaResposta = AgendamentoListado & { origem?: "google_sync" };
 import { ApiError } from "@/lib/api/types";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
@@ -139,7 +150,71 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
 
-  return ok(resultado.agendamentos, { requestId });
+  // ─── A OCUPAÇÃO DO GOOGLE ENTRA AQUI, e não em `listaAgendamentos` ────────
+  //
+  // O defeito, medido em produção em 2026-09-01: 114 eventos vindos do Google no
+  // banco, 1 deles na semana desenhada, e a tela mostrando a agenda vazia.
+  //
+  // O servidor SEMEAVA os externos (`app/app/agenda/page.tsx`), e o cliente os
+  // jogava fora: `agendamentosVivos ?? semente` — assim que este GET responde,
+  // ele SUBSTITUI a semente inteira, e esta rota nunca devolveu ocupação. Em
+  // visão Mês nem a semente sobrevive, porque o recorte muda e o fallback é `[]`.
+  // Resultado: o bloco aparecia no primeiro instante da semana corrente e sumia.
+  //
+  // ⚠️ POR QUE NÃO DENTRO DE `listaAgendamentos`. Aquela função é compartilhada
+  // com a ferramenta MCP do agente de IA (`lib/mcp/tools/agendamento.ts`). Pôr
+  // "Ocupado" na resposta dela faria o agente enxergar compromisso onde há um
+  // bloco anônimo do Google — e falar sobre ele com o cliente. A tela precisa da
+  // ocupação; o agente, não. Fontes diferentes para consumidores diferentes.
+  //
+  // Falha aqui NÃO derruba a listagem: sem ocupação a grade fica pobre; sem
+  // agendamento ela fica errada. São consequências de tamanhos diferentes.
+  const externos: AgendamentoDaResposta[] = [];
+  if (parsed.data.de && parsed.data.ate) {
+    const { data: ocupacao, error: erroOcupacao } = await supabase
+      .from("calendar_external_events")
+      .select("id, starts_at, ends_at, calendar_connections!inner(user_id)")
+      .eq("organization_id", activeOrg.orgId)
+      .gte("starts_at", parsed.data.de)
+      .lt("starts_at", parsed.data.ate)
+      // `transparent` no Google é "livre": existe e não ocupa. Mesmo filtro que
+      // a semente do servidor já aplicava — a regra é uma só.
+      .neq("transparency", "transparent")
+      .neq("status", "cancelled")
+      .order("starts_at");
+
+    if (erroOcupacao) {
+      logger.warn("[agenda.agendamentos] ocupação do Google não veio", {
+        erro: erroOcupacao.message,
+        requestId,
+      });
+    }
+    for (const e of ocupacao ?? []) {
+      const conexao = e.calendar_connections as { user_id: string } | { user_id: string }[] | null;
+      const dono = Array.isArray(conexao) ? conexao[0]?.user_id : conexao?.user_id;
+      externos.push({
+        id: e.id,
+        // Rótulo, NUNCA o título do evento: a tabela guarda o `title` e esta
+        // resposta não o lê. Despejar o conteúdo da agenda pessoal na tela de
+        // trabalho é o que a consulta da semente também recusa.
+        titulo: "Ocupado",
+        donoId: dono ?? null,
+        iniciaEm: e.starts_at,
+        terminaEm: e.ends_at,
+        situacao: "confirmed",
+        // Os três abaixo existem para satisfazer o contrato da lista, e são
+        // vazios porque ocupação do Google não tem nenhum deles: o fuso vive na
+        // conexão, e contato é coisa de agendamento nosso. Preenchê-los com
+        // invenção faria a tela mostrar dado que não existe.
+        fuso: "",
+        contatoId: null,
+        contatoNome: null,
+        origem: "google_sync",
+      });
+    }
+  }
+
+  return ok([...resultado.agendamentos, ...externos], { requestId });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {

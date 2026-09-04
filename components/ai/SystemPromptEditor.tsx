@@ -61,7 +61,7 @@ export function SystemPromptEditor({ value, onChange, disabled }: Props) {
           {SYSTEM_PROMPT_PLACEHOLDERS.map((p) => (
             <li key={p.token} className="flex flex-col gap-1">
               <div className="flex items-center justify-between gap-2">
-                <code className="rounded bg-background px-1.5 py-0.5 text-[11px]">{p.token}</code>
+                <code className="rounded-md bg-background px-1.5 py-0.5 text-[11px]">{p.token}</code>
                 <Button
                   type="button"
                   size="sm"

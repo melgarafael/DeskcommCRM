@@ -44,7 +44,7 @@ pnpm exec next build
 # O host vem do PRÓPRIO .env.local, então a guarda continua valendo se alguém
 # apontar aquele arquivo para outro projeto.
 if [ -f .env.local ]; then
-  HOST_PROD="$(grep -E '^NEXT_PUBLIC_SUPABASE_URL=' .env.local | cut -d= -f2- | sed -E 's#https?://##; s#/.*##')"
+  HOST_PROD="$(grep -E '^NEXT_PUBLIC_SUPABASE_URL=' .env.local | cut -d= -f2- | sed -E 's#https?://##; s#/.*##' || true)"
   if [ -n "$HOST_PROD" ] && [ "$HOST_PROD" != "127.0.0.1:54321" ]; then
     if grep -rqF "$HOST_PROD" .next/static 2>/dev/null; then
       echo "==> FALHOU: o bundle do browser contém o host de produção ($HOST_PROD)." >&2

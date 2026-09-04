@@ -81,12 +81,26 @@ export async function PUT(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten(),
     });
   }
-  const { channel_session_id, daily_message_limit, skip_warmup, ...camposDiretos } = parsed.data;
+  const {
+    channel_session_id,
+    daily_message_limit,
+    skip_warmup,
+    number_activated_at,
+    ...camposDiretos
+  } = parsed.data;
   // `skip_warmup` é pergunta da TELA; a coluna guarda a forma que o motor lê.
   // A tradução mora aqui, num lugar só: a tela não deveria precisar conhecer o
   // formato dos degraus para dizer "este número já está aquecido".
   const knobFields = {
     ...camposDiretos,
+    // `null` na data é "não estou declarando", NUNCA "grave nulo": esta é a
+    // única coluna `not null` da tabela, e um null explícito ANULA o
+    // `default now()` em vez de cair nele — 23502, e a ficha inteira deixava de
+    // salvar para quem nunca informou a data (toda instalação nova). Omitindo,
+    // a linha nova nasce com `now()` (idade 0 — o "recém-criado" que a tela
+    // promete) e a linha existente preserva a data que já tem, em vez de
+    // rejuvenescer o número em silêncio de volta ao teto de 20 envios/dia.
+    ...(number_activated_at != null ? { number_activated_at } : {}),
     ...(skip_warmup !== undefined
       ? { warmup_daily_caps: skip_warmup ? [...WARMUP_PULADO] : null }
       : {}),
@@ -150,7 +164,13 @@ export async function PUT(req: NextRequest): Promise<Response> {
       { onConflict: "organization_id,channel_session_id" },
     );
     if (upErr) {
-      return fail("internal_error", "Falha ao salvar os knobs.", 500, { requestId });
+      // O motivo cru vai em `details`, não na `message` que o operador lê: foi a
+      // ausência dele que transformou um `not null` num diagnóstico de horas —
+      // nem a tela nem o log diziam QUAL campo o banco recusou.
+      return fail("internal_error", "Falha ao salvar os knobs.", 500, {
+        requestId,
+        details: { motivo: upErr.message },
+      });
     }
   }
 

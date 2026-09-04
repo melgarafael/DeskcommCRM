@@ -61,7 +61,7 @@ export function NavHub({ group, isPlatformAdmin, role, title, subtitle, locale =
         <section key={section} aria-labelledby={`hub-${group}-${slug(section)}`} className="space-y-3">
           <h2
             id={`hub-${group}-${slug(section)}`}
-            className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70"
+            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
           >
             {traduzir(section, locale)}
           </h2>

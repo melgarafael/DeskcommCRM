@@ -76,7 +76,7 @@ function SortableHead({
   className?: string;
 }) {
   const active = orderBy === column;
-  const muted = "text-muted-foreground/35";
+  const muted = "text-muted-foreground";
   const emphasis = "text-foreground";
 
   return (
