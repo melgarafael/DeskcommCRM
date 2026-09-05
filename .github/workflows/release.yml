@@ -29,8 +29,13 @@ permissions:
   contents: read
 
 jobs:
+  # Desligado neste fork: os dois jobs abaixo dependem de RELEASE_APP_ID /
+  # RELEASE_APP_PRIVATE_KEY, secrets do GitHub App do upstream (não copiados
+  # em fork). Este fork não corta release versionada — produção própria roda
+  # direto do :latest via deploy-vps.yml/fork-sync.yml. Reverter: tirar o
+  # "&& false" quando/se este fork tiver seu próprio App configurado.
   abrir-pr-de-release:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && false
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -87,7 +92,7 @@ jobs:
             --title "Release ${VERSAO}" --body-file /tmp/corpo.md
 
   cortar-tag:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && false
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -328,6 +328,60 @@ describe("GET /api/v1/system/version", () => {
     expect(body.data.current_version).toBe("1.0.0");
   });
 
+  it("um rollback que já foi SUPERADO por um deploy posterior não decide mais a versão", async () => {
+    // Medido em produção: um run `failed_rolled_back` de 28/08 fazia o rodapé
+    // anunciar `3414a2df` em 05/09, oito dias e vários deploys depois. A
+    // heurística de rollback estava certa — ela existe porque, no instante da
+    // falha, o checkout do host já é a versão nova e o contêiner voltou para a
+    // velha — mas não tinha fim de validade, e o app troca por caminhos que não
+    // criam run nenhum (`docker compose up -d`, deploy por CI, `update.sh` no
+    // terminal). O desempate é temporal: se o agente do host gravou
+    // `system_version` DEPOIS de o run terminar, ele viu o mundo mais recente.
+    versionRow.current_version = "1.2.0";
+    versionRow.updated_at = "2026-09-05T15:35:02.000Z";
+    runRow = {
+      id: "66666666-6666-4666-8666-666666666666",
+      status: "failed_rolled_back",
+      last_step: "banco",
+      dispatched_at: "2026-08-28T01:47:53.000Z",
+      finished_at: "2026-08-28T01:51:52.000Z",
+      from_version: "1.0.0",
+      to_version: "1.1.0",
+      log_tail: "",
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("../version/route");
+    const body = await (await GET(get())).json();
+    expect(body.data.current_version).toBe("1.2.0");
+    // O run continua na resposta: ele é o diagnóstico daquela falha, e some da
+    // tela só quando alguém tenta atualizar de novo. O que ele deixa de fazer é
+    // NOMEAR a versão no ar.
+    expect(body.data.run.from_version).toBe("1.0.0");
+  });
+
+  it("sem `finished_at`, o run velho ainda decide — ausência de prova não é prova de deploy", async () => {
+    // A guarda acima só pode agir quando existe o par de datas. Um run gravado
+    // por uma versão antiga do agente não tem `finished_at`, e aí o
+    // comportamento anterior é o seguro: o rollback é a informação mais
+    // específica que a instalação tem sobre o que está no ar.
+    versionRow.current_version = "1.1.0";
+    versionRow.updated_at = "2026-09-05T15:35:02.000Z";
+    runRow = {
+      id: "77777777-7777-4777-8777-777777777777",
+      status: "failed_rolled_back",
+      last_step: "banco",
+      dispatched_at: "2026-08-28T01:47:53.000Z",
+      finished_at: null,
+      from_version: "1.0.0",
+      to_version: "1.1.0",
+      log_tail: "",
+    };
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+    const { GET } = await import("../version/route");
+    const body = await (await GET(get())).json();
+    expect(body.data.current_version).toBe("1.0.0");
+  });
+
   it("deriva unknown num run parado há muito tempo", async () => {
     runRow = {
       id: "55555555-5555-4555-8555-555555555555",

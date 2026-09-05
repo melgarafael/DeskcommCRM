@@ -66,13 +66,17 @@ const DIR = join(process.cwd(), ".github/workflows");
 const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string }> = {
   // --- a cadeia que leva o conserto até a VPS ---------------------------------
   "release.yml::abrir-pr-de-release": {
-    condicao: "github.event_name == 'workflow_dispatch'",
+    // `&& false` é divergência DELIBERADA deste fork: o job depende de
+    // RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY, secrets do GitHub App do
+    // upstream, que fork nenhum herda. O fork não corta release versionada.
+    condicao: "github.event_name == 'workflow_dispatch' && false",
     efeito:
       "Este job é quem monta o PR de release a partir dos fragmentos de `.changes/`. " +
       "Desligá-lo faz nenhuma versão ser fechada — sem erro em lugar nenhum.",
   },
   "release.yml::cortar-tag": {
-    condicao: "github.event_name == 'push'",
+    // Mesmo motivo do job acima: desligado neste fork por falta do GitHub App.
+    condicao: "github.event_name == 'push' && false",
     efeito:
       "Este job é quem CRIA E EMPURRA a tag `vX.Y.Z`, que é o gatilho da atualização " +
       "do parque instalado inteiro. Desligá-lo faz a release parar em silêncio: nenhuma " +
@@ -122,6 +126,23 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
       "Ele precisa de `always()` para poder LER `skipped` dos `needs` e reprovar — e " +
       "desligá-lo (`always() && false`) o torna `skipped` ele mesmo, que a branch " +
       "protection lê como satisfeito.",
+  },
+
+  // --- exclusivos deste fork (não existem no upstream) ------------------------
+  "fork-sync.yml::sync": {
+    condicao: null,
+    efeito:
+      "Este job avança a `main` do fork até a do upstream (API /merge-upstream). Desligá-lo " +
+      "faz o fork envelhecer em silêncio — nada fica vermelho, e a divergência só aparece " +
+      "no próximo merge manual.",
+  },
+  "deploy-vps.yml::deploy": {
+    condicao:
+      "github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'",
+    efeito:
+      "Este job é quem leva a imagem publicada até a VPS deste fork. A condição barra o " +
+      "deploy quando a publicação da imagem FALHOU — sem ela, a VPS puxaria uma tag que " +
+      "não existe. Desligá-lo faz a produção do fork congelar sem erro em lugar nenhum.",
   },
 
   // --- os outros checks obrigatórios ------------------------------------------

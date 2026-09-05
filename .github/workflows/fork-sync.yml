@@ -1,0 +1,47 @@
+name: Sincronizar com upstream (melgarafael)
+
+# Traz a main do Rafael pra dentro da sua main automaticamente, sem force-push
+# e sem apagar trabalho: usa o endpoint `/merge-upstream`, que faz o merge no
+# servidor do GitHub — merge de verdade quando as duas mains divergiram, nunca
+# reset. Conflito devolve 409, o job falha e o GitHub avisa por e-mail; ninguém
+# escolhe lado no automático.
+#
+# Por que NÃO clona mais nem dá `git push`: push de GITHUB_TOKEN é recusado
+# quando o merge toca `.github/workflows/*` (medido no run 33397579685), e foi
+# isso que levou este arquivo a depender de um GitHub App. Só que os secrets
+# desse App (FORK_SYNC_APP_ID / FORK_SYNC_APP_PRIVATE_KEY) existem apenas no
+# upstream, então aqui o job falhava todo dia em "app-id must be set to a
+# non-empty string" (run 33516415219) — sincronização automática que nunca
+# sincronizou nada. O `/merge-upstream` não empurra ref nenhuma: ele sincroniza
+# o fork com o parent, e por isso a restrição de escopo `workflow` não se aplica.
+#
+# Limitação conhecida, deliberada: commit criado com GITHUB_TOKEN não dispara
+# outros workflows, então "Publicar imagem Docker (GHCR)" não roda sozinho
+# depois deste sync — e isso IMPORTA, porque a VPS segue o `:latest` publicado
+# por este fork. Um sync que não publica deixa a produção atrás do que a main já
+# tem, sem nada ficar vermelho. Para fechar a lacuna: publique pela tela do
+# Actions, ou empurre um commit próprio na main (que dispara a publicação e, com
+# ela, o deploy-vps).
+#
+# Esta nota já disse o contrário — que a VPS seguia as tags do upstream e que
+# por isso o sync sem publicação não mudava nada. Deixou de valer em 05/09/2026,
+# quando o `.env` de produção passou a apontar para `:latest` deste fork.
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # 09:00 UTC todo dia
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Mesclar upstream/main na main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api "repos/${{ github.repository }}/merge-upstream" -f branch=main
