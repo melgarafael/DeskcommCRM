@@ -34,8 +34,28 @@ jobs:
           script: |
             set -e
             cd "$DEPLOY_PATH"
+
+            # O checkout do repositório na VPS acompanha a imagem. Ele não é
+            # enfeite: `supabase/baseline.sql` mora nele, e é dele que sai o
+            # schema quando alguém atualiza o banco. Sem este passo o
+            # repositório congelava na data da instalação enquanto a imagem
+            # andava — medido em 05/09/2026, com o checkout em v1.12.0 e o app
+            # três versões à frente.
+            #
+            # A falha aqui NÃO cancela o deploy: uma árvore suja não é motivo
+            # para a correção não subir. Mas o job termina vermelho no fim,
+            # porque repositório atrasado em silêncio é como este problema
+            # nasceu.
+            CHECKOUT_FALHOU=0
+            git fetch origin main && git checkout --detach origin/main || CHECKOUT_FALHOU=1
+            if [ "$CHECKOUT_FALHOU" = "1" ]; then
+              echo "::error::não consegui atualizar o checkout da VPS (árvore suja?). A imagem sobe assim mesmo; o repositório fica atrás — rode 'git status' lá."
+            fi
+
             docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env pull app worker scheduler
             docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml --env-file .env up -d app worker scheduler
             docker image prune -f
+
+            exit "$CHECKOUT_FALHOU"
         env:
           DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
