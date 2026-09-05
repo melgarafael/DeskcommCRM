@@ -11,6 +11,13 @@
  *  - O mesmo telefone repetido vira UM contato. O original criava um contato por
  *    linha, e o produto passava a ter a duplicata que ele mesmo fabricou.
  *  - `viewer` não importa.
+ *  - `stage_id` é OPCIONAL: o `ImportarLeads.tsx` real NUNCA manda esse campo
+ *    (só tem seletor de FUNIL). Toda suíte anterior mandava `stage_id` no
+ *    `pedido()` por padrão — verde medindo um caminho que o usuário nunca
+ *    percorre, enquanto a importação de verdade morria com 422 "Escolha o
+ *    funil e a etapa de destino" antes de ler uma linha sequer. O teste
+ *    abaixo reproduz o form real (sem `stage_id`) e prova a resolução
+ *    automática da PRIMEIRA etapa do funil.
  */
 import { NextRequest } from "next/server";
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -62,6 +69,31 @@ function fazerSupabase(existente: { id: string } | null) {
     };
     elo.single = () => Promise.resolve({ data: { id: `novo-${inseridos.length}` }, error: null });
     elo.maybeSingle = () => Promise.resolve({ data: existente, error: null });
+    return elo;
+  };
+  vi.mocked(createClient).mockResolvedValue({ from } as never);
+  return { inseridos };
+}
+
+/**
+ * Mesmo dublê acima, mas distingue `crm_stages` de `contacts` — necessário
+ * para os testes que NÃO mandam `stage_id` e dependem da rota resolver a
+ * primeira etapa do funil consultando essa tabela.
+ */
+function fazerSupabaseComEtapa(primeiraEtapa: { id: string } | null) {
+  const inseridos: Record<string, unknown>[] = [];
+  const from = (tabela: string) => {
+    const elo: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "in", "limit", "order"]) elo[m] = () => elo;
+    elo.insert = (linha: Record<string, unknown>) => {
+      if (tabela === "contacts") inseridos.push(linha);
+      return elo;
+    };
+    elo.single = () => Promise.resolve({ data: { id: `novo-${inseridos.length}` }, error: null });
+    elo.maybeSingle = () =>
+      tabela === "crm_stages"
+        ? Promise.resolve({ data: primeiraEtapa, error: null })
+        : Promise.resolve({ data: null, error: null });
     return elo;
   };
   vi.mocked(createClient).mockResolvedValue({ from } as never);
@@ -199,6 +231,30 @@ describe("POST /api/v1/leads/import", () => {
     fazerSupabase(null);
     const { POST } = await import("@/app/api/v1/leads/import/route");
     const res = await POST(pedido("valor,origem\n100,site"));
+    expect(res.status).toBe(422);
+    expect(vi.mocked(createLeadHandler)).not.toHaveBeenCalled();
+  });
+
+  it("sem stage_id no form (o caminho REAL do ImportarLeads.tsx) entra na primeira etapa do funil", async () => {
+    fazerSupabaseComEtapa({ id: ETAPA });
+    const { POST } = await import("@/app/api/v1/leads/import/route");
+
+    const res = await POST(pedido("nome\nAna", { stage_id: null }));
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(createLeadHandler)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(createLeadHandler).mock.calls[0]![2]).toMatchObject({
+      pipeline_id: FUNIL,
+      stage_id: ETAPA,
+    });
+  });
+
+  it("sem stage_id e sem etapa nenhuma no funil, 422 — nunca cai numa etapa de outro funil", async () => {
+    fazerSupabaseComEtapa(null);
+    const { POST } = await import("@/app/api/v1/leads/import/route");
+
+    const res = await POST(pedido("nome\nAna", { stage_id: null }));
+
     expect(res.status).toBe(422);
     expect(vi.mocked(createLeadHandler)).not.toHaveBeenCalled();
   });
