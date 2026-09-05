@@ -56,7 +56,7 @@ beforeEach(() => {
   credenciais.linha = null;
 });
 
-describe("sem binding, nada muda", () => {
+describe("sem binding e sem credencial da organização, vale a chave da instalação", () => {
   it("cai no padrão e diz que caiu", async () => {
     // A recíproca de tudo abaixo: sem ela, um resolvedor que sempre ignorasse o
     // binding passaria em metade deste arquivo.
@@ -171,5 +171,186 @@ describe("cada ponto lê o SEU binding", () => {
     expect(chamadas).toContain("ai_purpose_bindings");
     expect(chamadas).toContain(`organization_id=${ORG}`);
     expect(chamadas).toContain("purpose=jailbreak_detect");
+  });
+});
+
+/**
+ * SEM BINDING, A CREDENCIAL DA ORGANIZAÇÃO VEM ANTES DA CHAVE DA INSTALAÇÃO.
+ *
+ * Medido em produção (05/09/2026, org "MKT ARQ E ENG"): `ai_purpose_bindings`
+ * vazio, duas credenciais OpenRouter ativas e validadas na tela — e o
+ * `sentiment_classify` falhando com 401 `{"message":"User not found."}` porque
+ * caía direto na `OPENROUTER_API_KEY` do `.env` da VPS, que estava revogada.
+ * Os pontos do agent-engine, que passam por `resolveOrgLlmConfig`, usavam a
+ * credencial da org e iam bem no mesmo instante.
+ *
+ * A chave da instalação é o ÚLTIMO degrau em `resolveOrgLlmConfig`
+ * (lib/agent-engine/edge/llm/credentials.ts): credencial escolhida, senão a
+ * mais recente ativa/validada do provider da org, senão o env. A pilha antiga
+ * pulava o degrau do meio — e uma organização que cadastrou a própria chave
+ * ficava refém de uma chave de instalação que não é dela.
+ */
+describe("sem binding, a credencial da organização manda", () => {
+  function montarAdmin(
+    orgSettings: unknown,
+    credencial: Record<string, unknown> | null,
+    espiao?: { tabelas: string[]; filtros: string[] },
+  ) {
+    return () => ({
+      from: (tabela: string) => {
+        espiao?.tabelas.push(tabela);
+        const chain = {
+          select: () => chain,
+          eq: (col: string, val: unknown) => {
+            espiao?.filtros.push(`${col}=${String(val)}`);
+            return chain;
+          },
+          not: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({
+            data:
+              tabela === "ai_purpose_bindings"
+                ? null
+                : tabela === "organizations"
+                  ? { settings: orgSettings }
+                  : credencial,
+          }),
+        };
+        return chain;
+      },
+    });
+  }
+
+  it("usa a credencial ativa do provider da organização, não a chave da instalação", async () => {
+    vi.doMock("@/lib/supabase/admin", () => ({
+      createAdminClient: montarAdmin({ llm: { provider: "openrouter" } }, {
+        api_key_encrypted: "x",
+        api_key_iv: "y",
+        api_key_tag: "z",
+      }),
+    }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    const r = await mod.resolverModeloDoPonto(
+      "sentiment_classify",
+      ORG,
+      "anthropic/claude-haiku-4-5",
+    );
+    expect(r?.origem).toBe("credencial_da_organizacao");
+    // O modelo é o do call site — trocá-lo pelo `default_model` da org faria o
+    // classificador barato virar o modelo de conversa da organização.
+    expect(r?.modelId).toBe("anthropic/claude-haiku-4-5");
+    // E não é o objeto do padrão: sem isto o teste mediria só o rótulo.
+    expect((r?.model as { __padrao?: boolean }).__padrao).toBeUndefined();
+  });
+
+  it("a credencial é buscada escopada por organização e pelo provider da org", async () => {
+    // Sem os dois filtros, a credencial de uma organização serviria a outra —
+    // ou a chave de um provedor iria para o endpoint de outro (PR #151).
+    const espiao = { tabelas: [] as string[], filtros: [] as string[] };
+    vi.doMock("@/lib/supabase/admin", () => ({
+      createAdminClient: montarAdmin(
+        { llm: { provider: "openrouter" } },
+        { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" },
+        espiao,
+      ),
+    }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    await mod.resolverModeloDoPonto("sentiment_classify", ORG, "anthropic/claude-haiku-4-5");
+    expect(espiao.tabelas).toContain("ai_provider_credentials");
+    expect(espiao.filtros).toContain(`organization_id=${ORG}`);
+    expect(espiao.filtros).toContain("provider=openrouter");
+  });
+
+  it("organização sem credencial do próprio provider cai na chave da instalação", async () => {
+    // A recíproca: sem ela, um resolvedor que SEMPRE dissesse "credencial da
+    // organização" passaria nos dois testes acima.
+    vi.doMock("@/lib/supabase/admin", () => ({
+      createAdminClient: montarAdmin({ llm: { provider: "openrouter" } }, null),
+    }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    const r = await mod.resolverModeloDoPonto(
+      "sentiment_classify",
+      ORG,
+      "anthropic/claude-haiku-4-5",
+    );
+    expect(r?.origem).toBe("padrao");
+  });
+});
+
+/**
+ * O PAR PROVIDER+MODELO NÃO SE CRUZA — a lição do PR #151, no degrau novo.
+ *
+ * A credencial da organização traz o PROVIDER junto. Aplicá-la a um id que
+ * pertence a outro provedor mandaria a chave de um para o endpoint do outro:
+ * exatamente `gpt-5-mini` no endpoint da Anthropic, que matou o turno inteiro
+ * em 2026-08-25. Quando o id não serve ao provider da organização, o certo é
+ * seguir para `resolveLanguageModel`, que sabe rotear pelo prefixo.
+ */
+describe("a credencial da organização só vale para modelo que o provider dela executa", () => {
+  function adminComOrg(provider: string) {
+    return () => ({
+      from: (tabela: string) => {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          not: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: async () => ({
+            data:
+              tabela === "ai_purpose_bindings"
+                ? null
+                : tabela === "organizations"
+                  ? { settings: { llm: { provider } } }
+                  : { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" },
+          }),
+        };
+        return chain;
+      },
+    });
+  }
+
+  it("id de OUTRO provedor não usa a credencial da organização", async () => {
+    vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: adminComOrg("anthropic") }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    const r = await mod.resolverModeloDoPonto("bot_respond", ORG, "openai/gpt-5-mini");
+    expect(r?.origem).toBe("padrao");
+  });
+
+  it("id do PRÓPRIO provedor entra sem o prefixo, que é nome de rota e não de modelo", async () => {
+    // `createAnthropic()("anthropic/claude-haiku-4-5")` pede à Anthropic um
+    // modelo cujo nome ela não conhece. O prefixo endereça o provedor; quem já
+    // está dentro dele recebe só o nome.
+    vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: adminComOrg("anthropic") }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    const r = await mod.resolverModeloDoPonto(
+      "sentiment_classify",
+      ORG,
+      "anthropic/claude-haiku-4-5",
+    );
+    expect(r?.origem).toBe("credencial_da_organizacao");
+    expect((r?.model as { modelId?: string }).modelId).toBe("claude-haiku-4-5");
+    // O log continua nomeando o id canônico — é ele que casa com o catálogo de
+    // preço. Cortar o prefixo aqui atribuiria o gasto a um modelo sem tabela.
+    expect(r?.modelId).toBe("anthropic/claude-haiku-4-5");
+  });
+
+  it("na OpenRouter o id canônico passa inteiro — lá o prefixo É a rota", async () => {
+    vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: adminComOrg("openrouter") }));
+    vi.resetModules();
+    const mod = await import("@/lib/ai/gateway-binding");
+    const r = await mod.resolverModeloDoPonto(
+      "sentiment_classify",
+      ORG,
+      "anthropic/claude-haiku-4-5",
+    );
+    expect(r?.origem).toBe("credencial_da_organizacao");
+    expect((r?.model as { modelId?: string }).modelId).toBe("anthropic/claude-haiku-4-5");
   });
 });
