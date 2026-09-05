@@ -52,6 +52,26 @@ const listarSchema = z.object({
   limite: z.coerce.number().int().min(1).max(500).optional(),
 });
 
+/**
+ * O e-mail do convidado — opcional, e a string VAZIA é significativa.
+ *
+ * Vazio não é "não mandou": é "apague o que estava lá". O formulário devolve
+ * `""` quando a pessoa limpa o campo, e sem este ramo não haveria como
+ * DESCONVIDAR alguém pela tela — só editando o banco à mão.
+ *
+ * O `preprocess` apara antes de decidir, então um campo com espaços cai no ramo
+ * do vazio em vez de virar recusa de formato — quem apagou o texto e deixou um
+ * espaço para trás quis limpar, não errar.
+ *
+ * 320 é o teto do RFC 5321 (64 da parte local + @ + 255 do domínio). Não é
+ * enfeite: sem teto, um campo de texto livre entra inteiro no corpo que vai ao
+ * Google, e a recusa viria de lá, em inglês e sem apontar o campo.
+ */
+const emailDoConvidado = z.preprocess(
+  (v) => (typeof v === "string" ? v.trim() : v),
+  z.union([z.literal(""), z.string().email().max(320)]),
+);
+
 const marcarSchema = z.object({
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
@@ -59,6 +79,7 @@ const marcarSchema = z.object({
   contact_id: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
   notes: z.string().max(2000).optional(),
+  guest_email: emailDoConvidado.optional(),
 });
 
 const alterarSchema = z
@@ -72,10 +93,18 @@ const alterarSchema = z
      */
     status: z.enum(["confirmed", "completed", "no_show"]).optional(),
     notes: z.string().max(2000).optional(),
+    guest_email: emailDoConvidado.optional(),
   })
-  .refine((c) => c.starts_at !== undefined || c.status !== undefined || c.notes !== undefined, {
-    message: "Informe pelo menos um campo para alterar.",
-  });
+  .refine(
+    (c) =>
+      c.starts_at !== undefined ||
+      c.status !== undefined ||
+      c.notes !== undefined ||
+      c.guest_email !== undefined,
+    {
+      message: "Informe pelo menos um campo para alterar.",
+    },
+  );
 
 const cancelarSchema = z.object({
   id: z.string().uuid(),

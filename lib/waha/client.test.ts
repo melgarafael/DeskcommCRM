@@ -165,3 +165,123 @@ describe("a superfície inteira — nenhum fetch fica de fora", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * O CORPO DA RESPOSTA DO WAHA NÃO SAI DAQUI — NEM NA EXCEÇÃO, NEM NA API.
+ *
+ * ─── O defeito, medido em 2005aea6 ──────────────────────────────────────────
+ *
+ *     $ grep -c 'body.slice(0, 200)' lib/waha/client.ts
+ *     8
+ *
+ * Os oito montavam `waha_<acao>_<status>: <corpo do WAHA>`, e essa string não
+ * morria no log: `wahaFriendlyError` a devolve inteira quando
+ * `classificarFalhaDeAlcance` não reconhece a falha — o caso de todo HTTP com
+ * status —, e as três rotas de `channel-sessions` a passam para `fail(...)`,
+ * que é o corpo da resposta da nossa API. Corpo de terceiro atravessando a
+ * fronteira do produto.
+ *
+ * ─── Por que o dublê é um servidor REAL ─────────────────────────────────────
+ *
+ * Um `vi.stubGlobal("fetch", ...)` provaria o mesmo texto sem passar pelo
+ * `fetchComTeto`, que é quem constrói a `Response` de verdade. Aqui o corpo
+ * atravessa a pilha inteira, como em produção.
+ *
+ * ─── As duas metades ────────────────────────────────────────────────────────
+ *
+ * Só provar que o segredo sumiu deixa verde um "conserto" que jogue fora a
+ * mensagem toda — e aí ninguém mais distingue 401 (credencial) de 500 (o WAHA
+ * quebrou). Por isso cada caso exige ALGO: o status tem de continuar lá.
+ *
+ * Achado de @prevprocesso-maker no PR #465.
+ */
+describe("o corpo devolvido pelo WAHA nunca entra na exceção", () => {
+  /** Tudo que um corpo de erro do WAHA pode carregar, junto numa linha. */
+  const CORPO_SENSIVEL =
+    '{"error":"session config","phone":"+5511987654321","webhook":' +
+    '{"url":"https://crm.exemplo.com/api/v1/webhooks/waha","hmac":{"key":"seg' +
+    'redo-do-hmac"}},"apiKey":"a1b2c3d4"}';
+  /** Os pedaços que, sozinhos, denunciam vazamento. */
+  const AGULHAS = ["+5511987654321", "segredo-do-hmac", "a1b2c3d4", "crm.exemplo.com"];
+
+  let quebrado: Server;
+  let urlQuebrado = "";
+
+  beforeAll(async () => {
+    quebrado = createServer((_req, res) => {
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(CORPO_SENSIVEL);
+    });
+    await new Promise<void>((r) => quebrado.listen(0, "127.0.0.1", r));
+    urlQuebrado = `http://127.0.0.1:${(quebrado.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((r) => quebrado.close(() => r()));
+  });
+
+  /**
+   * Toda chamada que LANÇA quando o WAHA responde com status de erro. Enumerar
+   * a classe é o ponto: consertar por instância deixa a próxima passar.
+   */
+  const CHAMADAS: Array<[string, (c: WahaClient) => Promise<unknown>]> = [
+    ["startSession", (c) => c.startSession("sessao")],
+    ["stopSession", (c) => c.stopSession("sessao")],
+    ["logoutSession", (c) => c.logoutSession("sessao")],
+    ["deleteSession", (c) => c.deleteSession("sessao")],
+    ["getSessionQr", (c) => c.getSessionQr("sessao")],
+    ["sendMessage", (c) => c.sendMessage("sessao", "5511999@c.us", "oi")],
+    ["checkContactExists", (c) => c.checkContactExists("sessao", "5511999999999")],
+    [
+      "sendContactVcard",
+      (c) =>
+        c.sendContactVcard("sessao", "5511999@c.us", [
+          { fullName: "F", phoneNumber: "+5511999999999", whatsappId: "5511999@c.us", vcard: "x" },
+        ]),
+    ],
+    [
+      "sendMedia",
+      (c) => c.sendMedia("sessao", "5511999@c.us", { endpoint: "sendImage", payload: {} }),
+    ],
+  ];
+
+  it.each(CHAMADAS)("⭐ %s: a mensagem não carrega nada do corpo do WAHA", async (_nome, fn) => {
+    const c = new WahaClient(urlQuebrado, "chave-de-teste", { tetoMs: 3_000 });
+    const { erro } = await medir(() => fn(c));
+
+    // Controle: sem exceção, o resto do caso não mede nada.
+    expect(erro, "a chamada não lançou — o caso ficaria verde sem medir").not.toBe("");
+    for (const agulha of AGULHAS) {
+      expect(erro, `a exceção carrega "${agulha}", que veio do corpo do WAHA`).not.toContain(agulha);
+    }
+  });
+
+  it.each(CHAMADAS)("%s: mas o STATUS continua na mensagem", async (_nome, fn) => {
+    // Sem esta metade, jogar a mensagem inteira fora passaria — e aí ninguém
+    // mais distingue 401 (credencial errada) de 500 (o WAHA quebrou).
+    const c = new WahaClient(urlQuebrado, "chave-de-teste", { tetoMs: 3_000 });
+    const { erro } = await medir(() => fn(c));
+    expect(erro, "o status sumiu junto com o corpo — o diagnóstico foi a zero").toContain("500");
+  });
+
+  it("⭐ nenhum corpo de resposta é interpolado numa exceção deste arquivo", async () => {
+    // Guarda de CLASSE: os casos acima cobrem os nove caminhos de hoje; este
+    // reprova o décimo, que ainda não existe.
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const fonte = readFileSync(join(process.cwd(), "lib/waha/client.ts"), "utf8");
+
+    // Controle positivo: a sonda precisa achar `new Error(` aqui, senão o
+    // vazio abaixo seria "procurei errado" lido como "está limpo".
+    expect(fonte, "a sonda não achou nenhum `new Error(` — ela está cega").toContain("new Error(");
+
+    const vazando = fonte
+      .split("\n")
+      .map((l, i) => [i + 1, l] as const)
+      .filter(([, l]) => /new Error\(/.test(l) && /\$\{\s*(body|corpo|texto)\b/.test(l));
+    expect(
+      vazando.map(([n, l]) => `${n}: ${l.trim()}`),
+      "estas exceções carregam o corpo devolvido pelo WAHA, e ele sai na resposta da nossa API pelas rotas de channel-sessions",
+    ).toEqual([]);
+  });
+});

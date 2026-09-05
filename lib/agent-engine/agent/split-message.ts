@@ -41,10 +41,40 @@ export function splitIntoBubbles(text: string, maxChars: number): string[] {
   return bubbles;
 }
 
-/** Divide em sentenças mantendo a pontuação final (. ! ?). */
+/**
+ * Divide em sentenças mantendo a pontuação final (. ! ?).
+ *
+ * O "." NÃO conta como fim de frase quando está entre dois dígitos — separador
+ * de milhar/decimal brasileiro ("R$ 10.990,00", "12.990"). Sem esta guarda,
+ * TODO preço em reais virava duas "sentenças" ("R$ 10." e "990 no cartão…"),
+ * que a bolha seguinte às vezes junta com espaço espúrio ("R$ 7. 990") e às
+ * vezes manda em bolhas do WhatsApp SEPARADAS — e um cliente que só via a
+ * primeira lia "R$ 10" como preço fechado de um produto de R$ 10.990.
+ * Medido em produção (YADEA, 2026-09-04): a moto DT3 (R$ 10.990) anunciada
+ * como "R$ 10" reais.
+ */
 function splitSentences(text: string): string[] {
-  const out = text.match(/[^.!?]+[.!?]*/g);
-  return (out ?? [text]).map((s) => s.trim()).filter((s) => s !== "");
+  const out: string[] = [];
+  let start = 0;
+  const re = /[.!?]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const end = m.index + m[0].length;
+    const prevChar = text[m.index - 1];
+    const nextChar = text[end];
+    const isNumeroPartido =
+      m[0] === "." &&
+      prevChar !== undefined &&
+      nextChar !== undefined &&
+      /\d/.test(prevChar) &&
+      /\d/.test(nextChar);
+    if (isNumeroPartido) continue;
+    out.push(text.slice(start, end).trim());
+    start = end;
+  }
+  const resto = text.slice(start).trim();
+  if (resto !== "") out.push(resto);
+  return out.length > 0 ? out.filter((s) => s !== "") : [text];
 }
 
 /** Última linha de defesa: agrupa palavras até maxChars; palavra atômica > max vai sozinha. */

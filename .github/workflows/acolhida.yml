@@ -1,0 +1,170 @@
+# A ACOLHIDA DE CONTRIBUIDOR EXTERNO — SEM DEPENDER DE ALGUÉM ESTAR TRIANDO.
+#
+# ## O gargalo medido
+#
+# A taxa histórica de recusa de PR de fork aqui é ZERO: o que trava não é
+# qualidade, é o tempo até alguém olhar. Três pessoas fecharam o PRÓPRIO PR
+# pedindo desculpa por "ruído" (#515, #547, #588) — nenhuma tinha errado, e a
+# última fechou 36 segundos depois de abrir, levando junto um bug de primeira
+# impressão achado com cliente real travado. Antes disso, a única coisa que este
+# projeto dizia a quem contribui era um check `Vercel` vermelho que não é culpa
+# dela.
+#
+# Este workflow diz três coisas, e nada além: o `Vercel` vermelho é esperado em
+# fork; os workflows podem ficar parados esperando liberação; e quando vem o
+# O PRAZO PROMETIDO NÃO É CHUTE — foi medido antes de entrar no texto.
+#
+# A doutrina proíbe prometer o que não se cumpre, então "em até um dia útil"
+# passou pela régua. Medido em 2026-09-05, sobre os PRs de FORK dos últimos 60,
+# contando de `createdAt` até o primeiro comentário humano (descartados
+# vercel[bot], ecc-tools[bot], github-actions e o próprio autor):
+#
+#   n = 13 PRs de fork com resposta humana
+#   mediana 1,0h · p90 7,5h · máximo 10,5h · dentro de 24h: 13/13
+#
+# O pior caso tem folga de mais de 2x contra a promessa. Se um dia essa conta
+# virar, o texto aqui vira mentira ANTES de alguém notar — então refaça a
+# medição em vez de confiar nesta linha:
+#
+#   gh pr list --state all --limit 60 --json number,createdAt,author,headRepositoryOwner
+#   (filtre headRepositoryOwner != melgarafael, pegue o 1º comentário não-bot)
+#
+# veredito. O molde é `triagem/references/resposta-ao-contribuidor.md`, seção
+# "Acolhida" — mudar o texto lá sem mudar aqui faz a versão humana e a
+# automática divergirem, e `tests/unit/acolhida-nao-toca-no-fork.test.ts`
+# reprova quando o essencial some daqui.
+#
+# ## Por que a acolhida pode ser automática: ela NÃO AVALIA
+#
+# Ela não pode estar errada sobre o mérito porque não fala do mérito. Um
+# "parece ótimo!" postado antes de medir é a semente do carimbo, e carimbo é
+# pior que silêncio — porque lava. Toda frase daqui é sobre o PROCESSO.
+#
+# ## A parte perigosa, e ela decide o desenho inteiro
+#
+# `pull_request_target` roda no contexto da BASE: com os segredos do repositório
+# e com permissão de escrita, num evento disparado por quem é de fora. É um
+# vetor de escalada conhecido, e a única defesa que não depende de vigilância é
+# o job não encostar em nada que venha do PR:
+#
+#   1. ZERO CHECKOUT, e zero `uses:`. Este job não baixa uma linha de código —
+#      nem do fork, nem da base, nem de action de terceiro. Sem `actions/checkout`
+#      não existe `npm install`, não existe script de `package.json`, não existe
+#      `.github/actions/*` do fork: não há bytes do contribuidor no runner.
+#   2. PERMISSÃO MÍNIMA E EXPLÍCITA: `pull-requests: write` e nada mais. Declarar
+#      o bloco zera todo escopo não citado — sem `contents`, sem `actions`, sem
+#      `packages`. O token deste job comenta num PR e não sabe fazer mais nada.
+#      No topo, e não por job, pela mesma razão escrita em `ci.yml`: job
+#      acrescentado depois nasce restrito em vez de herdar o default do
+#      repositório, que muda fora do repo, num clique, sem PR.
+#   3. NENHUM DADO DO PR DENTRO DE `run:`. Título, corpo e nome de branch são
+#      texto escolhido por quem abriu o PR; interpolados por `${{ }}` viram
+#      CÓDIGO no shell antes de o shell existir. O único dado que este job usa é
+#      o login, e ele entra por `env:` e é citado com aspas — nunca por `${{ }}`
+#      no corpo do `run:`.
+#   4. O texto fixo vai por heredoc COM ASPAS (`<<'MD'`). Sem as aspas, as crases
+#      da própria prosa (`` `gh pr checks` ``) viram substituição de comando.
+#
+# ## O que este workflow DELIBERADAMENTE não faz: liberar o CI sozinho
+#
+# No primeiro PR de quem nunca contribuiu, os runs ficam em `action_required` e
+# `gh pr checks` NÃO os mostra — o PR parece não ter check nenhum. Dava para
+# aprovar sozinho (`POST /actions/runs/{id}/approve`), e isso está RECUSADO:
+#
+#   - aprovar é EXECUTAR o código do fork nos nossos runners; o `verify` roda
+#     `pnpm install` (scripts de ciclo de vida) e a suíte, tudo vindo do PR. O
+#     portão do GitHub existe exatamente para uma pessoa olhar antes disso, e
+#     automatizá-lo o remove justamente para a população que ele protege;
+#   - exigiria `actions: write` aqui dentro, inflando este workflow de "sabe
+#     comentar" para "sabe aprovar e re-executar workflow" — num arquivo
+#     `pull_request_target`, que já é o alvo mais valioso do repositório;
+#   - e rodaria em `opened`, antes de qualquer humano ter visto o diff.
+#
+# Então a acolhida só AVISA que os runs estão parados. Quem tria libera com:
+#   gh api "repos/$REPO/actions/runs" --jq '.workflow_runs[]|select(.status=="action_required")|.id'
+#   gh api --method POST "repos/$REPO/actions/runs/<id>/approve"
+name: acolhida
+
+on:
+  # `opened` e só. `synchronize`/`reopened` re-disparariam a acolhida a cada push
+  # do contribuidor — e a boa-vinda que chega quatro vezes é ruído, não acolhida.
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  # `github.repository_owner` guarda o fork: este arquivo vai para a `main` de um
+  # produto self-host, e o fork de cada pessoa herda o workflow. Sem a guarda, um
+  # bot falaria pela gente no repositório de outra pessoa — prometendo o prazo de
+  # mantenedores que nunca concordaram com ele, e explicando um deploy da Vercel
+  # que não é o dela. É `repository_owner` e não `repository` porque renomear o
+  # repositório não deve calar a acolhida; mudar de dono deve.
+  acolher:
+    if: github.repository_owner == 'melgarafael' && github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Acolher quem abriu o PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          LOGIN: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+
+          # IDEMPOTÊNCIA REAL, e ela não é sobre re-execução: um humano pode ter
+          # acolhido antes (ou já ter dado o veredito). A triagem carimba TODO
+          # comentário com a âncora invisível `triagem-de-pr:v1:pass=N`; achar
+          # qualquer uma delas significa que a conversa já começou, e a boa-vinda
+          # do robô chegaria depois da pessoa.
+          #
+          # Falha aqui ABORTA de propósito. Se a listagem não respondeu, não
+          # sabemos se já há acolhida — e postar no escuro duplica. Vermelho
+          # visível vale mais que um comentário em dobro.
+          COMENTARIOS="$(mktemp)"
+          gh api --paginate "repos/${REPO}/issues/${PR}/comments" --jq '.[].body' > "${COMENTARIOS}"
+          if grep -qF 'triagem-de-pr:v1:' "${COMENTARIOS}"; then
+            echo "âncora de triagem já presente no PR #${PR} — a conversa já começou, nada a postar"
+            exit 0
+          fi
+
+          # O login é o ÚNICO dado do PR que entra no texto, e ele entra como
+          # valor, não como código. O GitHub restringe login a alfanumérico com
+          # hífen interno, no máximo 39 caracteres; qualquer coisa fora disso não
+          # é um login, e vira saudação sem nome em vez de virar conteúdo.
+          SAUDACAO="Recebido — obrigado por isto."
+          if printf '%s' "${LOGIN}" | grep -qE '^[A-Za-z0-9](-?[A-Za-z0-9]){0,38}$'; then
+            SAUDACAO="Recebido, @${LOGIN} — obrigado por isto."
+          fi
+
+          CORPO="$(mktemp)"
+          {
+            printf '<!-- triagem-de-pr:v1:pass=1 -->\n'
+            printf '%s\n\n' "${SAUDACAO}"
+            # Heredoc COM aspas: nada aqui dentro é expandido pelo shell, e as
+            # crases da prosa continuam sendo crases.
+            cat <<'MD'
+          Duas coisas que vão parecer erro seu e não são:
+
+          - O check **Vercel** vermelho ("Authorization required to deploy") é esperado em PR de fork. A
+            `main` faz deploy de produção e a Vercel se recusa a construir código de fora, o que está
+            certo. **Ele não entra no gate de merge.**
+          - No primeiro PR de quem nunca contribuiu aqui, os workflows ficam **parados esperando
+            liberação** — política do GitHub, não sua. Enquanto isso o PR parece não ter check nenhum
+            (nem o `gh pr checks` mostra os que estão nesse estado). Quem tria libera; você não precisa
+            fazer nada.
+
+          Um mantenedor vai revisar de verdade — rodando os gates e reproduzindo o comportamento, não só
+          lendo o diff — e responde aqui **em até um dia útil**, com a medição junto, nunca com um "acho
+          que".
+
+          Esta mensagem é automática e não diz nada sobre o seu PR: ela é sobre o processo. O que vem
+          depois é pessoa.
+          MD
+          } > "${CORPO}"
+
+          gh api --method POST "repos/${REPO}/issues/${PR}/comments" \
+            -F "body=@${CORPO}" --jq '.html_url'

@@ -75,6 +75,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
       cnpj: parsed.data.cnpj ?? null,
       timezone: parsed.data.timezone,
       locale: parsed.data.locale,
+      currency: parsed.data.currency,
       media_retention_days: parsed.data.media_retention_days,
       dpo_email: parsed.data.dpo_email ?? null,
       privacy_policy_url: parsed.data.privacy_policy_url ?? null,

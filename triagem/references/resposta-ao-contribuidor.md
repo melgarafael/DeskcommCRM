@@ -10,6 +10,18 @@ falta — e que nada do que ela leia seja cobrança por algo que ninguém contou
 
 ## Acolhida (passe 1) — em minutos, sem uma linha de avaliação
 
+**Ela sai sozinha em PR de fork**, por `.github/workflows/acolhida.yml`, em minutos e sem depender
+de alguém estar triando — que era o gargalo real: a taxa de recusa aqui é zero, o que custava era o
+tempo até alguém olhar. O passe 1 humano só escreve isto quando o robô não escreveu (PR interno, ou
+o workflow desligado); e o robô desiste sozinho se já houver qualquer âncora `triagem-de-pr:v1:` no
+PR — inclusive a sua.
+
+Duas frases do molde abaixo o robô **não pode** dizer, e é por isso que o texto dele não é cópia
+literal: "acabei de liberar" (ele não libera — aprovar run de fork é executar código de fora nos
+nossos runners, e está recusado por escrito no cabeçalho do workflow) e um prazo negociado caso a
+caso (ele promete "em até um dia útil", fixo). Mudar o texto aqui sem mudar lá faz as duas versões
+divergirem; `tests/unit/acolhida-nao-toca-no-fork.test.ts` guarda o essencial do lado de lá.
+
 Três informações, nesta ordem. Nada além.
 
 ```markdown

@@ -22,6 +22,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
@@ -139,7 +140,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   const erros: ErroDaLinha[] = [...lido.erros];
   let gravados = 0;
 
-  const paraGravar = lido.produtos.map((p) => ({
+  // A moeda vem da organização, igual ao cadastro manual — mas só entra na
+  // linha de produto NOVO. Um upsert do PostgREST monta UMA sentença
+  // `ON CONFLICT ... DO UPDATE SET col = EXCLUDED.col` para o lote inteiro: se
+  // a linha de um produto já existente também carregasse `moeda`, reimportar a
+  // MESMA planilha depois de trocar a moeda da organização reescreveria a
+  // moeda de todo produto já cadastrado — o oposto do que `descricao`,
+  // `imagem_url` e `ativo` já protegem (comentário no topo do arquivo). Por
+  // isso os dois grupos são upserts SEPARADOS, nunca misturados no mesmo lote:
+  // um shape por chamada, sem depender de o PostgREST tratar chave ausente
+  // linha a linha.
+  const moeda = await moedaDaOrganizacao(supabase, orgId);
+
+  const base = (p: (typeof lido.produtos)[number]) => ({
     linha: p.linha,
     organization_id: orgId,
     codigo: p.codigo,
@@ -151,35 +164,47 @@ export async function POST(req: NextRequest): Promise<Response> {
     controla_estoque: p.controla_estoque,
     quantidade: p.quantidade,
     origem: "planilha",
-  }));
+  });
 
-  for (let i = 0; i < paraGravar.length; i += LOTE) {
-    const lote = paraGravar.slice(i, i + LOTE);
-    const { error } = await supabase
-      .from("catalog_products")
-      .upsert(lote.map(semALinha), { onConflict: "organization_id,codigo" });
+  const paraGravar = lido.produtos.map((p) =>
+    antigos.has(p.codigo) ? base(p) : { ...base(p), moeda },
+  );
 
-    if (!error) {
-      gravados += lote.length;
-      continue;
-    }
-
-    // O lote é tudo-ou-nada. Uma linha ruim não pode derrubar as outras 199, e
-    // o relatório precisa nomear QUAL linha — então o lote que falhou é
-    // refeito produto a produto.
-    for (const produto of lote) {
-      const { error: individual } = await supabase
+  /** Grava um grupo de shape uniforme, em lotes, com reteste linha a linha no que falhar. */
+  async function gravarEmLotes(itens: typeof paraGravar): Promise<void> {
+    for (let i = 0; i < itens.length; i += LOTE) {
+      const lote = itens.slice(i, i + LOTE);
+      const { error } = await supabase
         .from("catalog_products")
-        .upsert([semALinha(produto)], { onConflict: "organization_id,codigo" });
-      if (individual) {
-        erros.push({ linha: produto.linha, motivo: `"${produto.nome}": ${individual.message}` });
+        .upsert(lote.map(semALinha), { onConflict: "organization_id,codigo" });
+
+      if (!error) {
+        gravados += lote.length;
         continue;
       }
-      gravados += 1;
+
+      // O lote é tudo-ou-nada. Uma linha ruim não pode derrubar as outras 199, e
+      // o relatório precisa nomear QUAL linha — então o lote que falhou é
+      // refeito produto a produto.
+      for (const produto of lote) {
+        const { error: individual } = await supabase
+          .from("catalog_products")
+          .upsert([semALinha(produto)], { onConflict: "organization_id,codigo" });
+        if (individual) {
+          erros.push({ linha: produto.linha, motivo: `"${produto.nome}": ${individual.message}` });
+          continue;
+        }
+        gravados += 1;
+      }
     }
   }
 
-  const atualizados = paraGravar.filter((p) => antigos.has(p.codigo)).length;
+  const novos = paraGravar.filter((p) => !antigos.has(p.codigo));
+  const existentes = paraGravar.filter((p) => antigos.has(p.codigo));
+  await gravarEmLotes(novos);
+  await gravarEmLotes(existentes);
+
+  const atualizados = existentes.length;
   const criados = Math.max(0, gravados - atualizados);
 
   await audit({

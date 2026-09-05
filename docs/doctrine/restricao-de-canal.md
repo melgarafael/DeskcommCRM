@@ -117,6 +117,43 @@ Regras duras:
 
 ---
 
+## A segunda fronteira: plataformas de anúncio
+
+Registrado em 2026-08-30, ao nascer o envio de conversões offline (migration 0213).
+
+O invariante 1 diz "nenhum código fora de `lib/channels/` nomeia um provider". A frase
+tratava `lib/channels/` como *a* fronteira porque, até aqui, só existia um tipo de
+transporte externo. Reportar venda para a plataforma que trouxe o lead é o segundo — e
+**não é canal**.
+
+| | **Canal** (`lib/channels/`) | **Plataforma de anúncio** (`lib/plataformas-de-anuncio/`) |
+|---|---|---|
+| O que faz | entrega MENSAGEM a um contato | devolve um FATO sobre um contato |
+| Tem destinatário | sim | não |
+| Física que o governa | janela de 24h, template, ban, intervalo | idade do evento, dedup, formato de identidade |
+| Capabilities | as sete de `capabilities.ts` | nenhuma delas se aplica |
+
+Uma linha em `CHANNEL_CAPABILITIES` respondendo "não se aplica" às sete colunas afirmaria
+que isto é canal quando não é, e transformaria o invariante 2 em formulário preenchido com
+nada. Pior: **os dois eixos são independentes**. Dá para receber lead de anúncio
+clique-para-WhatsApp num número servido por qualquer transporte, então pendurar a credencial
+de conversões em `channel_sessions` amarraria "reportar venda" a "ter canal oficial
+conectado" — e quebraria justamente quem mais usa esse tipo de anúncio.
+
+**O que NÃO afrouxa.** A entrada nova em `ALLOWED` (`scripts/lint-channels.ts`) é uma
+fronteira da mesma natureza, não uma exceção de feature. Continua valendo que só a fronteira
+nomeia o transporte: `lib/conversoes/` — a feature — pede ao registro pelo **slug da
+plataforma** (`meta_ads`, o vocabulário que a 0164 já criou para a atribuição) e nunca
+importa o transporte. Provado por construção: plantar `graph.facebook.com` em
+`lib/conversoes/` reprova o `pnpm lint:channels`.
+
+E o invariante 4 vale igual neste eixo. `google_ads` está **declarado sem transporte** no
+registro — não ausente. A lacuna é anterior: sem extrator de `gclid` não há clique capturado
+para reportar. Declarada, ela vira `skipped: 'plataforma_sem_transporte'` no livro-razão, que
+a tela mostra; omitida, viraria `undefined` e o chamador a trataria como bug.
+
+---
+
 ## Toda configuração tem superfície
 
 Estende o invariante 3 do sistema vivo (*log universal e visível*) para o eixo da

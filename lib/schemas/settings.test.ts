@@ -55,6 +55,7 @@ describe("tenantSchema", () => {
       cnpj: "12345678000190",
       timezone: "America/Sao_Paulo",
       locale: "pt-BR",
+      currency: "BRL",
       media_retention_days: 90,
       dpo_email: "dpo@acme.com",
       privacy_policy_url: "https://acme.com/privacy",
@@ -81,10 +82,32 @@ describe("tenantSchema", () => {
       legal_name: "Acme",
       timezone: "UTC",
       locale: "pt-BR",
+      currency: "BRL",
       media_retention_days: 90,
     });
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.lost_reasons_extra).toEqual([]);
+  });
+
+  /**
+   * ⚠️ `currency` e OBRIGATORIA de proposito, e o contrario seria pior.
+   *
+   * Com `.default("BRL")`, qualquer salvamento que omitisse o campo — um
+   * chamador novo, um payload montado a mao — PISARIA a moeda de uma
+   * organizacao mexicana em silencio, porque a action grava a linha inteira.
+   * Sao dois chamadores conhecidos (o formulario e a propria action), os dois
+   * mandam o campo, e quem esquecer falha ALTO em vez de trocar a unidade do
+   * catalogo sem avisar.
+   */
+  it("exige a moeda em vez de assumir uma", () => {
+    const r = tenantSchema.safeParse({
+      display_name: "Acme",
+      legal_name: "Acme",
+      timezone: "UTC",
+      locale: "pt-BR",
+      media_retention_days: 90,
+    });
+    expect(r.success).toBe(false);
   });
 });
 

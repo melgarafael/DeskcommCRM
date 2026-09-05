@@ -90,6 +90,20 @@ export interface ParticipanteDoAgendamento {
   nome?: string | null;
   /** O dono da agenda. Exatamente um participante deve marcar isto. */
   organizador?: boolean;
+  /**
+   * Este participante ainda NÃO confirmou nada aqui — o Google deve perguntar.
+   *
+   * O default (`false` ⇒ `responseStatus: "accepted"`) descreve o participante
+   * que já confirmou do nosso lado, e é por isso que ele é o default: cobrar
+   * RSVP de quem já disse sim no CRM seria pedir a mesma resposta duas vezes.
+   *
+   * O convidado DIGITADO À MÃO na tela é o caso oposto e por isso existe esta
+   * chave: ele nunca falou com o CRM, não confirmou coisa nenhuma, e mandá-lo
+   * como `accepted` produziria um convite que chega na caixa de entrada dele já
+   * respondido em seu nome — sem os botões "Sim / Talvez / Não", que são o
+   * motivo de se mandar convite do Google em vez de um e-mail comum.
+   */
+  aguardandoResposta?: boolean;
 }
 
 /** O subconjunto de `calendar_appointments` que o Google entende. */
@@ -274,10 +288,15 @@ export function paraEventoDoGoogle(a: AgendamentoParaGoogle): CorpoDeEventoDoGoo
     if (!email) {
       throw new Error("participante sem e-mail: o Google recusa o evento inteiro, não só o convidado");
     }
-    // `responseStatus: "accepted"` de propósito: sem isso o Google trata o
-    // convite como pendente e passa a cobrar RSVP de quem já confirmou aqui.
-    // Quem silencia o e-mail do convite é `sendUpdates: "none"`, na chamada.
-    const convidado: ParticipanteDoGoogle = { email, responseStatus: "accepted" };
+    // `responseStatus: "accepted"` é o DEFAULT, e continua sendo de propósito:
+    // sem isso o Google trata o convite como pendente e passa a cobrar RSVP de
+    // quem já confirmou aqui. Quem digitou um convidado à mão na tela não
+    // confirmou nada — esse manda `aguardandoResposta` e recebe os botões de
+    // RSVP. Quem silencia o e-mail do convite é `sendUpdates`, na chamada.
+    const convidado: ParticipanteDoGoogle = {
+      email,
+      responseStatus: p.aguardandoResposta ? "needsAction" : "accepted",
+    };
     if (p.nome?.trim()) convidado.displayName = p.nome.trim();
     if (p.organizador) convidado.organizer = true;
     return convidado;

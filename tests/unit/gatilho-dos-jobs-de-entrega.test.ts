@@ -153,6 +153,17 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
   },
 
   // --- e o que legitimamente tem interruptor -----------------------------------
+  "acolhida.yml::acolher": {
+    condicao:
+      "github.repository_owner == 'melgarafael' && " +
+      "github.event.pull_request.head.repo.full_name != github.repository",
+    efeito:
+      "Este job posta a acolhida automática em PR de fork — a resposta em minutos que existe " +
+      "porque três contribuidores fecharam o próprio PR achando que tinham errado. As duas " +
+      "condições são deliberadas e cada uma barra um caminho: sem a de fork, PR interno recebe " +
+      "boas-vindas de robô; sem a de dono, o fork de cada self-hoster herda um bot que fala pela " +
+      "gente no repositório dele, prometendo um prazo que ninguém lá concordou em cumprir.",
+  },
   "relogio.yml::tick": {
     condicao: "vars.RELOGIO_LIGADO == '1' || github.event_name == 'workflow_dispatch'",
     efeito:

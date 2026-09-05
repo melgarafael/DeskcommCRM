@@ -230,6 +230,28 @@ rodar, quem cobre é este passe — à mão.
 
 ---
 
+## 3-quater. Vermelho que não é do PR — três origens, três desfechos
+
+Medido numa fila de 18 PRs em 2026-09-04: **a maioria dos vermelhos não era dos PRs.** As três
+origens leem igual no resumo do `gh pr checks` e pedem ações opostas. Distinguir é o passe, e
+o custo de errar é mandar um contribuidor consertar o que não quebrou.
+
+| origem | como ela se parece | como confirmar | o que fazer |
+|---|---|---|---|
+| **Saturação da SUA máquina** | falhas com `Test timed out in 15000ms` / `Hook timed out in 10000ms`; nunca uma asserção | rode **os mesmos arquivos isolados**. Se ficam verdes, era carga | ignorar — e não escrever "N failed" no veredito sem esta nota |
+| **Infra do runner** | `address already in use`, `failed to bind host port`, job de 2-3 min | leia o log do PASSO, não do job. Um job que morre em 2m38s não rodou teste nenhum | `gh run rerun <id> --failed` |
+| **Run anterior ao conserto** | vermelho num PR cuja causa você acabou de consertar na `main` | compare o `head_sha` do run com o head do PR | `git merge origin/main` na branch e deixe o CI remedir |
+
+O erro que isto evita tem nome: **eu rodei a suíte com build, Playwright, Supabase e seis agentes
+na mesma máquina, vi 3 vermelhos, e quase os reportei como defeito de um contribuidor.** Rodados
+isolados: `exit=0, 11 passed`. E o `ci` da `main` estava verde no mesmo SHA base — que é o
+controle mais barato de todos e leva dez segundos.
+
+> **A regra curta:** timeout não é asserção. Antes de atribuir um vermelho a um PR, pergunte
+> *quem mais estava usando esta máquina* e *este job chegou a rodar teste?*
+
+---
+
 ## 4. Complemento — o que os gates não provam
 
 `references/complemento-do-ci.md`, linha por linha, com o gatilho de cada uma no diff.
@@ -238,6 +260,31 @@ Esta é a razão de a triagem existir tecnicamente. Repetir o que o CI já faz �
 que ele **não** alcança — e a lista não é opinião, é o que foi medido: a tripla de migration é
 guardada por um hook local que fork nunca roda, o teste de RLS cobre uma lista fixa de tabelas,
 `no-console` é aviso sem `--max-warnings`, e nenhum job testa o instalador.
+
+---
+
+## 4-bis. Colisão de migration é por TIMESTAMP e por NNNN — e há um hook que sabe
+
+O `pre-commit` deste repo reprova as duas colisões, contra **todas as branches locais**, e a
+mensagem dele diz o que fazer. Ele é a régua; não tente adivinhar antes de ouvi-lo.
+
+O que ele ensina e a doutrina escrita não dizia: **renumerar só o `NNNN` fabricou 12 das colisões
+de timestamp deste repositório.** O timestamp é a PK de `supabase_migrations.schema_migrations` —
+repetido, o `db push` colide e o `db reset` quebra. Os dois têm de ser únicos, e mudam juntos.
+
+**Quem renumera, quando dois PRs colidem** — e esta é a parte que não é técnica:
+
+> **O PR aberto de um contribuidor externo mantém a numeração dele. Quem renumera é o nosso
+> lado: rascunho interno sem PR, e PR do mantenedor.**
+
+Medido nesta fila: o `0208` era do #565 (@JowaniOrantes, aberto às 04h47) e de uma branch local
+nossa sem PR. Renumerar o trabalho de quem contribui de fora para acomodar rascunho nosso é a
+troca errada — e ele nem tem como ver a nossa fila. O `CLAUDE.md` manda "veja o último em
+`ls supabase/migrations/`", ele leu, e acertou contra a `main`. **O que ele não pode ver não pode
+ser cobrado dele** (passe 10).
+
+O escape `DESKCOMM_GOV_MIGRATION_EDIT=1` existe para quando você já **decidiu** qual numeração é
+canônica — e a decisão vai escrita no corpo do commit, não fica implícita no uso do escape.
 
 ---
 
@@ -335,6 +382,94 @@ sobrevive à sua mudança?
 
 ---
 
+## 8-bis. Reconciliação de PR de fork: o merge que credita em vez de descartar
+
+Quando o PR de um contribuidor conflita, a saída **não** é fechá-lo pedindo rebase. É montar uma
+branch sua com `git merge <head-do-PR>`, resolver o conflito do **nosso** lado, e mergear a sua.
+
+O detalhe que decide o desfecho para a pessoa: se o head do PR dele virar **ancestral** da `main`,
+o GitHub fecha o PR dele como **`MERGED`**, não como `CLOSED`. A diferença é o que aparece no
+perfil dele e na contagem de contribuições.
+
+```bash
+git merge-base --is-ancestor <head-do-PR> <sua-branch> && echo "vai fechar como MERGED"
+```
+
+Isso exige **merge commit, nunca squash** — squash reescreve os commits e a autoria some junto.
+Confirmado duas vezes nesta fila (#559 pelo #566, e #565 pelo #574): os dois fecharam `MERGED`.
+
+E confira que a autoria sobreviveu, antes de empurrar:
+
+```bash
+git log --format='%an <%ae>' origin/main..HEAD | sort | uniq -c
+```
+
+---
+
+## 8-ter. Resolver conflito: o delimitador que os dois lados compartilhavam
+
+A resolução mais comum desta casa é **"os dois lados ficam"** — apêndice contra apêndice no
+`baseline.sql`, lista contra lista no `e2e.yml`, entrada contra entrada num dicionário ou num
+union type. Ela é quase sempre certa, e tem uma armadilha que me pegou **três vezes numa fila só**:
+
+> **Concatenar `ours + theirs` PERDE a linha que os dois lados compartilhavam** — a chave que
+> fechava o bloco, o `/**` que abria o comentário seguinte, o `}` do objeto. Essa linha fica
+> FORA do bloco de conflito (é contexto comum), e o `git` a coloca depois do `>>>>>>>`.
+
+Medido, nesta ordem:
+
+- `lib/database.types.ts` — o `}` que fechava `fn_mesclar_contatos` era comum; concatenar deixou
+  o objeto aberto → `TS1131: Property or signature expected` na linha 7818.
+- `lib/leads/activity-vocabulary.ts` — o `/**` que abria o comentário do bloco de baixo era comum;
+  concatenar fechou o union cedo (o `;` de `task_completed`) e deixou um comentário órfão →
+  `TS1434` + `TS1003` + `TS1161`.
+
+**Nenhuma das duas apareceu na leitura do diff.** As duas apareceram no `pnpm typecheck`, e é por
+isso que ele roda ANTES do commit e não depois do push.
+
+E há uma guarda anterior a essa, mais barata, que também já falhou aqui: **o bloco que resolve e
+commita na mesma tacada commita os marcadores quando o conflito estava em outro arquivo.** Um
+script que resolvia `baseline.sql` e terminava com `git add -u` empurrou
+`<<<<<<< / ======= / >>>>>>>` dentro de `lib/i18n/dicionario.ts` para o remoto — o conflito era
+lá, não no baseline, e o `add -u` não pergunta.
+
+A receita, e as três guardas são baratas:
+
+```bash
+# 1. resolva (ordem importa: no baseline, o bloco que JÁ estava na main vem primeiro)
+# 2. GUARDA A — nenhum marcador sobrou, em arquivo NENHUM
+grep -rn -E "^<<<<<<< |^>>>>>>> " --include="*.ts" --include="*.tsx" --include="*.sql" \
+     --include="*.yml" --include="*.md" . | grep -v node_modules   # vazio é o esperado
+# 3. GUARDA B — o delimitador compartilhado sobreviveu
+pnpm typecheck; echo "exit=$?"                                      # 0 é o esperado
+# 4. GUARDA C — chave/entrada duplicada entre os lados NÃO pode existir
+#    (num objeto TS, a segunda vence em silêncio; num apêndice SQL, duplica o bloco)
+# só então: git add <arquivos> && git commit
+```
+
+A guarda C tem caso próprio medido: no `baseline.sql` do #553, o lado da branch trazia de volta o
+bloco da migration 0205 que a `main` já tinha — 2 ocorrências contra 1. "Aceitar os dois lados"
+teria duplicado um apêndice inteiro no arquivo que o `install.sh` do cliente aplica. **Compare os
+rótulos dos dois lados antes de concatenar**; se algum se repetir, pare e escolha.
+
+---
+
+## 8-quater. Os hooks reprovam o MERGE, e isso não é o defeito que eles descrevem
+
+Dois hooks locais desta casa disparam em merge da `main` sem que você tenha editado nada:
+
+| hook | por que dispara num merge | como confirmar antes de escapar |
+|---|---|---|
+| invariantes congelados | o merge traz a versão da `main` de um arquivo de `tests/invariants/` | `git diff --quiet origin/main -- <arquivo>` → **exit 0** quer dizer que ficou IDÊNTICO ao da main: foi o merge, não você |
+| tripla da migration | ele examina só arquivo com status `A`, e um `git mv` entra como `R096` — então ele **passa de graça** na renumeração | conferir à mão contra `git log --all --name-only`, os PRs abertos e as outras branches |
+
+O escape existe (`DESKCOMM_GOV_INVARIANTS_EDIT=1`, `DESKCOMM_GOV_MIGRATION_EDIT=1`) e é legítimo
+nesses dois casos — mas **a razão vai escrita no corpo do commit, com a medição**, nunca implícita
+no uso da variável. A linha do segundo caso é a mais importante: o hook da migration **não é rede
+para renumeração**, e quem lê a mensagem dele achando que é vai renumerar contra uma régua cega.
+
+---
+
 ## 9. Veredito com proveniência
 
 ```
@@ -369,6 +504,25 @@ entre abrir o PR e a primeira resposta humana**.
 
 ---
 
+## 10-bis. O crédito pode se perder na assinatura, e você é quem vê isso
+
+Um contribuidor desta fila abriu três PRs assinando como `root <root@vpsbr-…hostgator.com.br>` —
+ele commitou direto da VPS. `gh api …/pulls/<n>/commits --jq .[].author.login` devolve **`null`**:
+o GitHub não associa aquilo a conta nenhuma, e **o trabalho não aparece no perfil dele**.
+
+O `.mailmap` existe para isso, mas a regra dele exige **prova**, e `root@<host>` não a tem — o
+usuário `root` não identifica pessoa, e mapear pelo palpite de quem tinha acesso atribui trabalho
+a quem talvez não o tenha feito. Então:
+
+- **Não mapeie unilateralmente.** A regra que o projeto escreveu vale também para você.
+- **Avise a pessoa**, com o comando pronto, e ofereça mapear se ela confirmar. É trabalho de dez
+  linhas que devolve o crédito de todos os PRs seguintes.
+- Se for decisão do dono mapear retroativamente, é dele — leve como pergunta.
+
+Ninguém que contribui de graça deve descobrir sozinho que o trabalho dele não conta.
+
+---
+
 ## 11. Catraca — o passe que impede esta triagem de ser eterna
 
 Todo defeito que os gates não pegaram vira **gate novo** ou dívida com issue aberta.
@@ -376,6 +530,27 @@ Todo defeito que os gates não pegaram vira **gate novo** ou dívida com issue a
 A consequência é a parte elegante: a tabela do passe 4 é a **lista de tarefas do CI**. Cada linha que
 vira gate de verdade é uma linha que a triagem para de fazer à mão. Este procedimento deve ficar mais
 leve com o tempo. Se estiver ficando mais pesado, o passe 11 não está sendo cumprido.
+
+---
+
+## 11-bis. A conta de N vias: o gate que ninguém quebra sozinho
+
+Três PRs mexeram no mesmo invariante do menu por arquivos que **não se tocam**: um acrescentou um
+item ao registry, outro removeu um, o terceiro reescreveu a estrutura da barra lateral. **Zero
+conflito de merge. Zero gate reprovando na prévia de cada um.** O vermelho nasceu no terceiro
+merge, onde não havia PR para culpar.
+
+Quando dois ou mais PRs abertos tocam a mesma **grandeza medida** (altura de menu, tamanho de
+changelog, tempo de suíte, contagem de specs), some os deltas antes de mergear o primeiro:
+
+```bash
+for n in <prs>; do gh pr diff $n --name-only; done | sort | uniq -c | sort -rn | head
+```
+
+Arquivo repetido é aviso de ordem. Mas o caso caro é o **invariante** repetido sem arquivo comum —
+para esse, a pergunta é *"qual número este PR empurra, e quanto de folga sobra?"*, e ela se faz
+**uma vez para a fila**, não uma vez por PR. Dois orçamentos desta fila estavam simultaneamente
+em ~100% e ninguém tinha somado: o e2e a 30m00s de 30m, e o `verify` a 15m18s de 15m.
 
 ---
 
@@ -434,6 +609,21 @@ git ls-remote --tags origin 'refs/tags/vX.Y.Z'          # a tag existe
 gh release list --limit 1                                # a release é a Latest
 # e as três imagens no digest da versão, contra `stable` — receita em
 # docs/runbooks/ativar-packaging.md
+```
+---
+
+## 12-bis. Higiene de disco: um worktree por agente custa 1,2 GB
+
+A regra "um worktree por agente" (modo de falha 5) tem um custo que ninguém tinha medido: com
+`node_modules` real — obrigatório, porque symlink quebra o Turbopack —, **cada worktree pesa 1,2 a
+2,5 GB**. Quinze deles encheram o disco no meio da fila, e `ENOSPC` derruba build, agente e
+`gh` de uma vez, com mensagem que não parece falta de espaço.
+
+Remova o worktree assim que o PR dele for mergeado — não ao fim da sessão:
+
+```bash
+git worktree remove --force <caminho> && git worktree prune
+df -h /System/Volumes/Data | tail -1     # confira, não presuma
 ```
 
 ---

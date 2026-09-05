@@ -79,6 +79,21 @@ export const ApiErrorCodes = {
   // 429
   rate_limited: "rate_limited",
 
+  // ─── ANÚNCIOS, eixo de LEITURA (0214) ───
+  //
+  // Declarados aqui pelo mesmo motivo que os da Agenda: `fail()` aceita
+  // `(string & {})`, então um código inventado no call site vira contrato de
+  // wire sem passar por lista nenhuma. E estes precisam ser distinguíveis pelo
+  // cliente — a tela mostra uma frase DIFERENTE para cada um, porque cada um
+  // pede uma ação diferente de quem lê (colar token novo, refazer o token com
+  // `ads_read`, esperar a cota, ou avisar quem mantém o sistema).
+  ads_sem_conexao: "ads_sem_conexao",
+  ads_token_invalido: "ads_token_invalido",
+  ads_permissao_insuficiente: "ads_permissao_insuficiente",
+  ads_limite_de_chamadas: "ads_limite_de_chamadas",
+  ads_campo_invalido: "ads_campo_invalido",
+  ads_cifra_indisponivel: "ads_cifra_indisponivel",
+
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",

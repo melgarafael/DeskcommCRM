@@ -15,7 +15,68 @@ import type {
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
 
+/**
+ * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
+ *
+ * Exportada para ser testável: o defeito que ela impede é de SINTAXE, e sintaxe
+ * se verifica sem subir banco. O comportamento contra o PostgREST de verdade
+ * está em `tests/e2e/`.
+ */
+export function termoSeguroParaOr(bruto: string): string {
+  return bruto
+    .trim()
+    // curingas do `ilike` (Postgres)
+    .replace(/[%_]/g, (m) => `\\${m}`)
+    // gramática do `or=` (PostgREST) — viram o próprio curinga
+    .replace(/[,()]/g, "*");
+}
+
 type SB = SupabaseClient;
+
+/**
+ * Quantos contatos a busca do Inbox casa antes de cortar.
+ *
+ * Não é um número estético: os ids viajam DENTRO da querystring do PostgREST
+ * (`contact_id.in.(<uuid>,<uuid>,…)`), e requisição GET tem teto no gateway.
+ */
+const TETO_DE_CONTATOS_NA_BUSCA = 120;
+
+/**
+ * O orçamento de bytes que a lista de ids pode ocupar na URL.
+ *
+ * O muro real é 8.192 B na linha de requisição (Kong e nginx, ambos no default),
+ * e a URL leva mais coisa além dos ids: caminho, `select` com todas as
+ * `SELECT_COLS`, o filtro de organização, o `order`, o `limit` e o próprio
+ * `ilike` do termo. Medido neste arquivo, com 1 id a URL já tem 892 B — então o
+ * que sobra para os ids é o resto, e 5.000 B deixa folga confortável para o
+ * termo de busca crescer sem que ninguém precise voltar aqui.
+ *
+ * Cortar por BYTES e não por quantidade é o que faz esta guarda sobreviver a
+ * uma coluna nova em `SELECT_COLS` ou a um formato de id diferente.
+ */
+const ORCAMENTO_DE_IDS_NA_URL = 5_000;
+
+/**
+ * Corta a lista de ids no que cabe no orçamento da URL.
+ *
+ * Devolver menos contatos torna a busca INCOMPLETA — o que é ruim — mas devolver
+ * todos torna a tela QUEBRADA, com `414` virando `500` na cara do operador. Entre
+ * uma lista pobre e uma tela que não abre, a lista pobre ganha; e a diferença
+ * aparece porque a busca por conteúdo (`last_message_preview`) continua rodando
+ * ao lado, sem depender desta lista.
+ */
+function idsQueCabemNaURL(ids: string[]): string[] {
+  const cabem: string[] = [];
+  let bytes = 0;
+  for (const id of ids) {
+    // +1 pela vírgula que separa; o último sobra do lado seguro.
+    const custo = id.length + 1;
+    if (bytes + custo > ORCAMENTO_DE_IDS_NA_URL) break;
+    cabem.push(id);
+    bytes += custo;
+  }
+  return cabem;
+}
 
 const SELECT_COLS = `
   id, organization_id, contact_id, channel_session_id, channel, status,
@@ -144,7 +205,44 @@ export async function listConversationsHandler(
   }
 
   if (q.search) {
-    const s = q.search.trim().replace(/[%_]/g, (m) => `\\${m}`);
+    // ─── O TERMO NÃO PODE QUEBRAR A SINTAXE DO `.or()` ────────────────────
+    //
+    // Dois escapes diferentes, para dois parsers diferentes, e eles NÃO se
+    // substituem:
+    //
+    //   `%` e `_` são curingas do `ilike` (Postgres) — escapados com `\`.
+    //   `,` `(` `)` são a GRAMÁTICA do `or=` (PostgREST) — e para eles o
+    //   PostgREST não oferece escape nenhum dentro de um valor sem aspas.
+    //
+    // Medido contra o PostgREST v14.10 do stack local deste repo, buscando um
+    // contato que existe:
+    //
+    //   or=(display_name.ilike.*DIAG, 178*,…)   → HTTP 400 PGRST100
+    //                                             "failed to parse logic tree"
+    //   or=(display_name.ilike.*DIAG* 178*,…)   → 200, 3 resultados
+    //
+    // Ou seja: um cliente cadastrado como "Sobrenome, Nome" — que é como meia
+    // agenda de CRM é digitada — DERRUBA a busca do Inbox, não devolve lista
+    // vazia. E a vírgula não precisa estar no banco: basta o atendente digitá-la.
+    //
+    // AS DUAS SAÍDAS ÓBVIAS FORAM MEDIDAS E AS DUAS FALHAM:
+    //
+    //   aspas duplas no valor .... `ilike."*IAG*"` → 0 resultados contra
+    //                              `ilike.*IAG*` → 3. Dentro das aspas o `*`
+    //                              deixa de ser curinga; consertaria a sintaxe
+    //                              e mataria a busca.
+    //   barra invertida .......... `ilike.*I\,AG*` → HTTP 400. O PostgREST não
+    //                              tem escape para a vírgula fora de aspas.
+    //
+    // O que sobra, e é o que está aqui: trocar o metacaractere pelo PRÓPRIO
+    // curinga. "Silva, João" vira `*Silva* João*`, que casa "Silva, João" no
+    // banco — o `%` cobre a vírgula. A busca fica ligeiramente mais larga, e
+    // essa direção é a certa: o custo é achar um vizinho a mais; o custo do
+    // outro lado é a tela em branco com 400.
+    //
+    // O controle que impede o degenerado está no teste: termo inexistente
+    // continua devolvendo ZERO. Sem ele, "troque tudo por `*`" passaria.
+    const s = termoSeguroParaOr(q.search);
 
     // ─── A BUSCA ALCANÇA O CONTATO, NÃO SÓ A ÚLTIMA MENSAGEM ──────────────
     //
@@ -179,9 +277,28 @@ export async function listConversationsHandler(
       .or(camposDoContato)
       // Teto obrigatório: a lista de ids viaja na URL do PostgREST, e uma busca
       // por "a" sem limite estoura a requisição.
-      .limit(200);
+      //
+      // ⚠️ 200 ERA ACIMA DO MURO, e o comentário acima descrevia o perigo certo
+      // com o número errado. Medido com o `postgrest-js` real e as `SELECT_COLS`
+      // deste arquivo:
+      //
+      //     ids=  1 →   892 B      ids=186 →  8.098 B
+      //     ids=100 → 4.753 B      ids=200 →  8.653 B   ← acima de 8.192
+      //
+      // Kong 2.8.1 — o gateway que a Supabase põe na frente do PostgREST, e o
+      // mesmo que o stack local deste repo sobe — devolve `414 URI too long` a
+      // partir de ~187 ids. E o `error` desta consulta vira `500 internal_error`
+      // no handler, então o Inbox PARA: buscar "ana" ou "silva" numa base de
+      // milhares de contatos devolvia a tela quebrada, não uma lista pobre.
+      //
+      // O teto agora é de BYTES, não de linhas, porque é byte que estoura. O
+      // número de ids que cabe é consequência, e continua certo se as colunas
+      // ou o formato do id mudarem.
+      .limit(TETO_DE_CONTATOS_NA_BUSCA);
 
-    const ids = (contatos ?? []).map((c) => (c as { id: string }).id);
+    const ids = idsQueCabemNaURL(
+      (contatos ?? []).map((c) => (c as { id: string }).id),
+    );
     if (ids.length > 0) {
       query = query.or(
         `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,

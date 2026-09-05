@@ -8,6 +8,7 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api/client";
+import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
 
 interface Textos {
@@ -15,12 +16,6 @@ interface Textos {
   subtitulo: string;
   vazio: string;
   vazioDica: string;
-}
-
-/** O preço como quem vende lê. */
-function comoMoeda(cents: number, moeda: string): string {
-  const v = (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-  return moeda === "BRL" ? `R$ ${v}` : `${moeda} ${v}`;
 }
 
 interface ResumoDaImportacao {
@@ -366,7 +361,7 @@ export function ProdutosClient({
                 </p>
               </div>
               <span className="shrink-0 tabular-nums font-medium">
-                {comoMoeda(p.preco_cents, p.moeda)}
+                {formatCents(p.preco_cents, p.moeda)}
               </span>
               {podeEditar ? (
                 <Button

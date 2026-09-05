@@ -80,6 +80,15 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "membership e papel.",
   },
   {
+    fn: "fn_mesclar_contatos(uuid,uuid,uuid[])",
+    razao:
+      "A rota POST /api/v1/contacts/merge chama com a sessão do usuário, de " +
+      "propósito: é `auth.uid()` que faz a função reconferir o papel (piso " +
+      "`manager`, o mesmo das policies de merge_queue) e que assina a atividade " +
+      "da timeline. Trocar pelo client de service role apagaria as duas coisas. " +
+      "Mesmo desenho de fn_conversation_assign, acima.",
+  },
+  {
     fn: "fn_log_event(uuid,text,jsonb)",
     razao:
       "Chamada de dentro dos triggers de domínio; o grant a authenticated foi " +

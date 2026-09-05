@@ -67,7 +67,14 @@ jobs:
   # e 23:26→23:56 de 2026-08-27), e um PR de UM arquivo foi cancelado junto.
   #
   # Em paralelo, cada parte paga o setup uma vez e tem o teto inteiro para si:
-  # o job mais longo passa a ser ≈ 21 min em vez de ≈ 29.
+  # o job mais longo passou a ser ≈ 21 min em vez de ≈ 29.
+  #
+  # ⚠️ ESSA ÚLTIMA FRASE VENCEU. Ela estava certa quando escrita e descreve o
+  # efeito do paralelismo, não o estado: dez dias depois o job mais longo era 26
+  # min e chegou a ser cancelado aos 30. Quem lê "≈ 21 min" para saber se cabe
+  # mais spec mede contra a régua errada. O estado de hoje está no bloco
+  # "REBALANCEAMENTO DE 2026-09-04" mais abaixo — que também traz o comando que
+  # produz o número, porque número escrito envelhece e comando não.
   #
   # E há um ganho que não era o objetivo: a razão de existirem duas partes é
   # "processo novo, contador de login zerado" — o teto por IP. Runners de
@@ -104,6 +111,24 @@ jobs:
     # FORA_DO_CI exige motivo escrito no próprio nome do bloco abaixo — spec fora
     # do gate sem razão declarada é a dívida voltando pela porta de serviço.
     # ─────────────────────────────────────────────────────────────────────────
+    #
+    # ═══ `cadastro-sem-confirmacao-de-email`: A PRECONDIÇÃO É DO PROVEDOR ═══
+    #
+    # Ela mede o cadastro com "Confirm email" DESLIGADO no provedor de auth — o
+    # estado em que `signUp()` já devolve sessão e não existe link nenhum para
+    # clicar. Isso não é dado que a spec possa semear: é `GOTRUE_MAILER_AUTOCONFIRM`,
+    # fixado quando o Supabase local sobe, e o `supabase/config.toml` do repo
+    # declara `enable_confirmations = true` — que é o que `signup-journey` e
+    # `invite-lifecycle` exercitam. Ligar o autoconfirm por causa desta spec
+    # trocaria o provedor da SUÍTE INTEIRA, e as duas de cima passariam a medir
+    # outro fluxo sem que ninguém percebesse.
+    #
+    # O gate de todo dia é o par de testes de unidade, que roda no `verify`:
+    # `app/actions/auth/signUp.test.ts` (a action DIZ que a sessão veio aberta) e
+    # `tests/unit/cadastro-sem-confirmacao-nao-manda-esperar-email.test.tsx` (a
+    # tela AGE sobre isso). A spec é a prova pela tela de que os dois, juntos,
+    # resolvem a jornada — e ela CONFERE a própria precondição em `beforeAll`,
+    # falhando alto em vez de se auto-pular.
     #
     # ═══ O 429 DE `olhar-telas-do-epico`: RESOLVIDO DUAS VEZES, EM CAMADAS DIFERENTES ═══
     #
@@ -161,11 +186,97 @@ jobs:
     #
     # O rebalanceamento das duas partes FICA, por outro motivo e sem alegar mais do que
     # faz: 6,5 + 8,1 min em vez de 2,7 + 12,2.
+    #
+    # ═══ REBALANCEAMENTO DE 2026-09-04 — O PRIMEIRO MEDIDO POR ARQUIVO ═══
+    #
+    # A folga acabou de novo. Run 33820766602 (verde), confirmado em seis rodadas:
+    #
+    #   parte 1: 103 testes · 9,1 min de Playwright · job 18 min
+    #   parte 2: 127 testes · 18,0 min de Playwright · job 26 min
+    #   setup (build + Supabase + browser) ≈ 8-9 min, igual nos dois
+    #   as seis: parte 1 = 18 17 15 15 18 14 min · parte 2 = 26 28 26 26 25 25 min
+    #
+    # E não é mais risco: a parte 2 já ESTOUROU o teto — 30 min 17 s num PR, e de
+    # novo no run 33823969191 (deste PR), CANCELADA aos 30 min com 117 dos 133
+    # casos terminados.
+    #
+    # ── Por que contagem de TESTES não serve como régua ─────────────────────
+    #
+    # Este arquivo já registra dois proxies que inverteram o sinal da medição
+    # (ver o bloco de `SPECS_PARTE_1` abaixo). O terceiro proxy tentador é o
+    # número de testes por parte, e ele cai na PRÓPRIA tabela acima:
+    #
+    #   103 testes / 9,1 min  = 5,3 s por teste na parte 1
+    #   127 testes / 18,0 min = 8,5 s por teste na parte 2
+    #
+    # O mesmo "teste" custa 60% mais de um lado. E dentro de uma parte a
+    # dispersão é MAIOR: medido por arquivo no run 33823969191,
+    # `agenda-kit-visual` tem 20 casos e custa 21,6 s; `navegacao` tem 9 casos e
+    # custa 239,2 s. Mover o arquivo com MAIS casos desloca **11× menos tempo**
+    # que mover o de menos.
+    #
+    # ── O instrumento, para não haver quarto proxy ──────────────────────────
+    #
+    # O passo de execução roda com `--reporter=list` (o `dot`, default em CI,
+    # despeja os pontos em rajada — 37 numa linha só, cobrindo 4,9 min). Cada
+    # caso vira uma linha carimbada pelo Actions, e o custo de RELÓGIO de um
+    # arquivo é o intervalo entre o último caso dele e o último caso do arquivo
+    # anterior — o que inclui o `beforeAll`, que é onde as specs pagam o
+    # `execFileSync` dos seeds.
+    #
+    # Somar a duração que o reporter imprime NÃO serve: `result.duration` é só o
+    # caso. Medido na parte 1 do 33823969191 — soma das durações 7,14 min contra
+    # 7,95 min de relógio contra 8,1 min do rodapé do Playwright. O relógio
+    # fecha em 98% do rodapé; a soma das durações joga fora 12%, concentrado
+    # justamente nas specs que semeiam.
+    #
+    # Para refazer a medição em qualquer run, em vez de acreditar nos números
+    # desta seção:
+    #
+    #   gh run view --job <id-do-job> --log > /tmp/e2e.log
+    #   grep -E '\[chromium\] › tests/e2e/' /tmp/e2e.log
+    #
+    # ── O que mudou, e por que UM arquivo só ────────────────────────────────
+    #
+    # `navegacao.spec.ts` vai da PARTE_2 para a PARTE_1. Medido: 239,2 s
+    # (3,99 min), 23,3% de todo o relógio que a parte 2 chegou a gastar antes do
+    # corte. É o maior item das duas partes depois de `prova-painel-provedores`,
+    # e move sozinho quase exatamente o que falta.
+    #
+    # Um arquivo só, e não três de peso médio, porque as duas partes rodam
+    # contra o MESMO banco sem reset: cada spec movida é uma vizinhança nova.
+    # `navegacao` é a que tem menos aresta — só afirma cromo de navegação
+    # (sidebar, abas, ⌘K, medidas de layout), não lê dado semeado por vizinha
+    # nenhuma, e a precondição dela (`afirmarAdminDeTenantPuro`) é satisfeita em
+    # qualquer parte, porque quem promove `platform_admin` é
+    # `seed-e2e-system-update` e ele promove o `e2e-dono` REVOGANDO o `e2e-admin`.
+    # Alfabeticamente cai entre `mfa-opcional` e `notificacoes-`, isto é, ANTES
+    # de `relogio-http-cron-externo` — a restrição do tick global segue de pé.
+    #
+    # ── PREVISÃO (é previsão; a rodada seguinte deste PR é que mede) ────────
+    #
+    # Aplicada ao run de referência (9,1 + 18,0 = 27,1 min), com os 8 arquivos
+    # que o corte impediu de medir estimados em ~2,4 min (16 casos à média de
+    # 8,8 s/caso da própria parte 2), `navegacao` vale ≈ 3,6 min lá:
+    #
+    #   parte 1 ≈ 12,7 min de Playwright → job ≈ 21,6 min
+    #   parte 2 ≈ 14,4 min de Playwright → job ≈ 22,4 min
+    #   folga contra o teto: ≈ 7,6 min no pior dos dois (era 4 min, e virou −0:17)
+    #
+    # ── A próxima alavanca, quando esta acabar ──────────────────────────────
+    #
+    # `prova-painel-provedores` é 199,4 s — 42% de toda a parte 1, num arquivo
+    # de 8 casos a 25 s cada. Se a parte 1 voltar a estourar, é lá que se olha
+    # antes de repartir o resto. E se as duas estourarem juntas, a alavanca
+    # deixa de ser a partição e passa a ser uma terceira parte: o setup de
+    # 8-9 min é pago por parte, então três partes custam ~9 min de runner a mais
+    # e devolvem ~9 min de relógio a cada uma.
     env:
       SPECS_PARTE_1: >-
         smoke.spec.ts auth.spec.ts error-pages.spec.ts
         icone-da-marca.spec.ts
         password-recovery.spec.ts signup-journey.spec.ts
+        primeiro-acesso-sem-organizacao.spec.ts
         rbac-roles.spec.ts inbox-scope.spec.ts reset-password-mfa.spec.ts
         degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts
         kanban-owner-filter.spec.ts queue-assign.spec.ts
@@ -181,6 +292,10 @@ jobs:
         relogio-http-cron-externo.spec.ts
         j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
         j20-elegibilidade-atendimento-manual.spec.ts
+        navegacao.spec.ts
+        juntar-contatos-duplicados.spec.ts
+        lote-no-quadro-do-funil.spec.ts
+        relatorio-de-atividades.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava
@@ -250,7 +365,7 @@ jobs:
         agenda-tipos-de-agendamento.spec.ts agenda-grade-interativa.spec.ts
         agente-novo-e-uso.spec.ts agente-organiza-operacao.spec.ts
         central-de-avisos-capacidades.spec.ts escalacao-ciclo.spec.ts
-        navegacao.spec.ts olhar-telas-do-epico.spec.ts pipelines-gestao.spec.ts
+        olhar-telas-do-epico.spec.ts pipelines-gestao.spec.ts
         qa-agente-usa-as-maos.spec.ts qa-selo-no-funil-usado.spec.ts
         qa-telas-descobertas-w4.spec.ts retorno-anti-morte.spec.ts
         followup-builder.spec.ts followup-queue.spec.ts
@@ -262,6 +377,9 @@ jobs:
         gatilho-de-etapa.spec.ts gatilho-de-caso.spec.ts
         marca-logo.spec.ts
         historico-de-captacao.spec.ts
+        agenda-ocupacao-do-google-na-grade.spec.ts
+        agenda-ocupacao-do-google-no-historico.spec.ts
+        followup-publicado-abre-no-construtor.spec.ts
         automacao-diz-a-verdade.spec.ts
         inbox-quem-manda.spec.ts
         acervo-de-conhecimento.spec.ts
@@ -276,6 +394,19 @@ jobs:
         agenda-google-volta-nao-desloga.spec.ts
         i18n-espanhol-na-tela.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
+        moeda-da-organizacao.spec.ts
+        zona-de-perigo-apaga-dados-de-teste.spec.ts
+      # `moeda-da-organizacao` entrou na PARTE_2 em 2026-09-04, ao lado de
+      # `navegacao` — mesmo domínio (Configurações) e a mesma ausência de
+      # dependência: sem WAHA, Resend, Nuvemshop ou Redis. Toca a organização
+      # única do banco do CI (troca a moeda e devolve para BRL no afterEach),
+      # o mesmo cuidado que `troca-de-organizacao-tem-volta` já toma.
+      #
+      # `zona-de-perigo` entrou na mesma leva e no mesmo grupo, e por um
+      # cuidado a mais: ela APAGA dados, e por isso NÃO toca a organização
+      # compartilhada do banco do CI — o seed dela cria duas organizações
+      # próprias e descartáveis, e o caso zera uma para provar que a outra
+      # sai inteira. Sem WAHA, Resend, Nuvemshop ou Redis.
       # Cada item aqui tem o motivo MEDIDO, não presumido — e o gate cobra que a
       # lista exista e some com as outras duas.
       #
@@ -286,12 +417,30 @@ jobs:
       #   (1) 17 linhas dependem de WAHA/Resend/Nuvemshop/Redis
       #       (`grep -ciE "waha|resend|nuvemshop|redis"` → 17 linhas, 22 ocorrências).
       #
-      #   (2) `orgRow()` (`:41-43`) faz `.limit(1).single()` em `organizations` —
-      #       pressupõe banco de UMA organização só. O banco do CI é compartilhado
-      #       entre as duas partes do job, e `signup-journey.spec.ts:32` cria uma
-      #       segunda org sem cleanup: quando a parte 2 começa há ≥2, e o `.single()`
-      #       falha. Esta razão NÃO se resolve com variável de ambiente — é o desenho
-      #       do rig, e é por isso que "basta dar as credenciais" não destrava.
+      #   (2) `orgRow()` resolvia a organização com `.limit(1).single()` em
+      #       `organizations`, SEM `where` — pressupondo banco de UMA organização
+      #       só. O banco do CI é compartilhado entre as duas partes do job, e
+      #       `signup-journey.spec.ts:32` cria uma segunda org sem cleanup: quando
+      #       a parte 2 começa, já há ≥2.
+      #
+      #       ⚠️ ESTA LINHA DIZIA QUE "o `.single()` falha". É FALSO, e a frase
+      #       errada é o motivo de a classe ter sobrevivido em quatro lugares:
+      #       ela descrevia o desfecho como barulho quando o desfecho é dano.
+      #       Medido em 2026-09-04 contra PostgREST v14.10, três linhas na tabela:
+      #
+      #           .select(...).limit(1).single()  →  error: null + a PRIMEIRA linha
+      #           .select(...).single()           →  PGRST116 ("Cannot coerce…")
+      #
+      #       O `.limit(1)` recorta ANTES da checagem de singularidade. Ou seja:
+      #       o `beforeAll` desta suíte — que zera `onboarded_at`, apaga
+      #       `ai_agents` e apaga `channel_sessions` — apagava dados de uma
+      #       organização QUALQUER, em silêncio. Levantado por @Elevstudio-Dev
+      #       (PR #559) depois de acontecer numa instalação de trabalho.
+      #
+      #       A instância está corrigida (a org sai do dono do bootstrap) e a
+      #       classe inteira virou gate: `tests/unit/e2e-nao-escolhe-a-primeira-linha`.
+      #       O que continua valendo aqui é a razão (1): esta suíte não roda no CI
+      #       por dependência externa, não por causa do rig de organização.
       #
       # Continua sendo a P0 da doutrina de QA Visual: `e2e` verde NÃO prova a
       # jornada de instalação fresca, que é o produto que se vende.
@@ -394,17 +543,14 @@ jobs:
       FORA_DO_CI: >-
         vps-fresh-onboarding.spec.ts
         inbox-tempo-real.spec.ts
+        cadastro-sem-confirmacao-de-email.spec.ts
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/preparar-node
+        # O teto do preâmbulo mora aqui porque passo de composite action não
+        # aceita `timeout-minutes`. Razão e medições: o cabeçalho da action.
+        timeout-minutes: 5
 
       - uses: supabase/setup-cli@v3
         with:
@@ -642,7 +788,25 @@ jobs:
           # o playwright rodar a suíte INTEIRA (ou nenhuma) e o job ficaria
           # verde medindo outra coisa.
           [ -n "$LISTA" ] || { echo "::error::lista da parte ${{ matrix.parte }} vazia"; exit 1; }
-          pnpm exec playwright test --workers=1 $LISTA
+          # `--reporter=list` NÃO é preferência de leitura: é o INSTRUMENTO que
+          # mede o custo de cada spec, e sem ele a partição das duas listas volta
+          # a ser chutada.
+          #
+          # O reporter default em CI é o `dot`, e ele destrói justamente o dado
+          # que decide o balanceamento: os pontos saem em rajada, esvaziados só
+          # quando outro processo escreve na saída, e o timestamp do Actions é
+          # por LINHA. Medido no run 33820766602 (verde): a parte 1 despejou
+          # **37 pontos numa linha só**, cobrindo 4,9 min — 37 testes que se
+          # tornam indistinguíveis entre si. Reconstruir tempo por spec a partir
+          # disso é o terceiro proxy ruim que este arquivo já viu, e os dois
+          # anteriores INVERTERAM o sinal da medição (ver o bloco de
+          # `SPECS_PARTE_1` abaixo).
+          #
+          # Com o `list`, cada teste vira uma linha com caminho e duração
+          # (`✓ 12 [chromium] › tests/e2e/x.spec.ts:9:5 › título (3.4s)`), e a
+          # soma por arquivo sai de um `gh run view <id> --log`. Custo medido:
+          # ~240 linhas a mais de log, zero segundo de execução.
+          pnpm exec playwright test --workers=1 $LISTA --reporter=list
         env:
           # Só o que NÃO vem do `.env.e2e`: isto é ajuste de CI, não config do
           # produto. CI = 1 IP para todos os specs, e o teto de produção
@@ -701,16 +865,56 @@ jobs:
           # um `grep` no arquivo inteiro daria número MAIOR: os nomes aparecem
           # também em comentários, e foi assim que a contagem antiga mentiu.
           #
-          # O `[A-Z_0-9]` inclui DÍGITO de propósito: sem ele o range de
+          # ⚠️ O RECORTE PARA DE SER POR RANGE DE `sed` — ele lia COMENTÁRIO.
+          #
+          # A versão anterior era `sed -n "/^      $1: >-/,/^      [A-Z_0-9]*:/p"`,
+          # e o `[A-Z_0-9]` incluía DÍGITO de propósito: sem ele o range de
           # `SPECS_PARTE_1` não parava em `SPECS_PARTE_2` (que tem `2` no nome) e
           # seguia até `FORA_DO_CI`, devolvendo a união das duas como se fosse a
-          # parte 1. Medido antes do conserto: 67 em vez de 29.
-          bloco() { sed -n "/^      $1: >-/,/^      [A-Z_0-9]*:/p" .github/workflows/e2e.yml \
-                    | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
+          # parte 1. Medido antes daquele conserto: 67 em vez de 29.
+          #
+          # O que aquele conserto não alcançou é que o range NÃO PARA no fim do
+          # bloco `>-`: ele para na próxima CHAVE, e entre uma coisa e outra
+          # moram os comentários — que citam nome de spec o tempo todo. Medido
+          # neste arquivo, contra a lista de verdade:
+          #
+          #   SPECS_PARTE_1  real 30 · sed 31  (extra: `marca-logo`, citada no comentário)
+          #   SPECS_PARTE_2  real 43 · sed 44  (extra: `signup-journey`, idem)
+          #   FORA_DO_CI     real  2 · sed  3  (extra: um exemplo de saída do reporter)
+          #
+          # Nas duas primeiras o erro se anula na CONTA — as extras já estão na
+          # outra lista, e `RODOU` é união. Na terceira, não: `FORA_DO_CI` é a
+          # única lista impressa NOME A NOME, e o range dela vai até o fim do
+          # arquivo (nenhuma chave de 6 espaços vem depois). Qualquer comentário
+          # abaixo dela que cite um `.spec.ts` vira uma linha a mais em "Não
+          # rodou", com o motivo alheio colado — a declaração de cobertura
+          # afirmando falso sobre si mesma, que é a classe inteira que este
+          # passo existe para matar.
+          #
+          # O `awk` abaixo recorta o BLOCO: entra na chave, imprime enquanto as
+          # linhas forem continuação (8 espaços), e sai na primeira que não for
+          # — comentário de 6 espaços inclusive.
+          bloco() { awk -v k="$1" '
+                      index($0, "      " k ": >-") == 1 { dentro = 1; next }
+                      dentro && substr($0, 1, 8) == "        " && substr($0, 9, 1) != " " { print; next }
+                      dentro { exit }
+                    ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
           RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
+          # E o recorte passa a ter CONTROLE, não só um piso.
+          #
+          # `tests/unit/e2e-cobertura-completa.test.ts` já garante que toda spec
+          # do disco está em exatamente uma das três listas, sem duplicata e sem
+          # fantasma. Logo `RODOU + FORA` TEM de dar `NO_DISCO` — e quando não
+          # der, o recorte leu a mais ou a menos. Sem esta linha, ler a mais é
+          # invisível: o passo imprime um número maior e segue verde, que é
+          # exatamente como a contagem antiga mentiu por três versões seguidas.
+          if [ "$((RODOU + FORA))" -ne "$NO_DISCO" ]; then
+            echo "::error::recorte das listas divergiu — rodou=$RODOU fora=$FORA disco=$NO_DISCO"
+            exit 1
+          fi
           # Falha alto se o recorte parou de casar: listas vazias fariam este
           # passo anunciar "0 de N" como se fosse notícia, em vez de erro.
           [ "$RODOU" -gt 10 ] || { echo "::error::o recorte das listas do workflow parou de casar"; exit 1; }

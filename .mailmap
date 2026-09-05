@@ -79,3 +79,18 @@ jmpo <pompa.07@gmail.com> Juan <pompa.07@gmail.com>
 # não em algo que se possa reverificar rodando um comando.
 Rafael Melgaço <rafael@maudibrasil.com.br> <119944436+melgarafael@users.noreply.github.com>
 Rafael Melgaço <rafael@maudibrasil.com.br> <rafael@automatiklabs.com.br>
+
+# @automatikpg-ux — PRs #569, #570, #571 (e os anteriores dele).
+# Prova: os três PRs são da conta @automatikpg-ux e TODOS os commits deles
+# carregam esta assinatura única (`gh api .../pulls/<n>/commits --jq
+# '[.[].commit.author.email]|unique'` devolve só ela, nos três). A API do
+# GitHub não associa conta ao commit (`author.login` = null), porque `root@<host>`
+# não é e-mail de conta — é por isso que este caso ficava de fora.
+#
+# ⚠️ ENTRA POR DECISÃO EXPLÍCITA DO DONO DO PRODUTO, 2026-09-04, ciente do
+# risco: a prova aqui é o hostname da VPS dele, não a API. Se outra pessoa
+# tivesse commitado como root DAQUELA máquina, o trabalho dela viria para cá.
+# O dono pesou isso contra a alternativa — um contribuidor ativo com três PRs
+# mergeados no mesmo dia sem nada no perfil — e escolheu creditar.
+# A regra geral do arquivo (só o provado pela API) NÃO muda por causa desta linha.
+automatikpg-ux <automatikpg@gmail.com> root <root@vpsbr-15867794.vpshostgator.com.br>

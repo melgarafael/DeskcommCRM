@@ -13,6 +13,20 @@ const PHONE_REGEX = /^\+\d{8,15}$/;
 const CPF_DIGITS = /^\d{11}$/;
 
 /**
+ * Teto de 32 KB no jsonb inteiro. O CHECK do banco só garante que é OBJETO —
+ * sem limite de tamanho, um cliente da API escreveria megabytes numa coluna que
+ * a listagem de contatos traz inteira, e o custo apareceria como "a tela de
+ * contatos ficou lenta", longe da causa.
+ */
+const CUSTOM_FIELDS_MAX_BYTES = 32_768;
+
+const customFieldsSchema = z
+  .record(z.string().min(1).max(80), z.unknown())
+  .refine((value) => JSON.stringify(value).length <= CUSTOM_FIELDS_MAX_BYTES, {
+    message: "Campos personalizados excedem o limite de 32 KB",
+  });
+
+/**
  * CPF check-digit validator (algoritmo oficial Receita Federal).
  * Rejeita repetidos (00000000000, 11111111111, ...) e dígitos verificadores inválidos.
  */
@@ -48,6 +62,7 @@ export const contactCreateSchema = z.object({
   source: z.string().min(1).default("manual"),
   source_metadata: z.record(z.string(), z.unknown()).optional(),
   consent: z.record(z.string(), z.unknown()).optional(),
+  custom_fields: customFieldsSchema.optional(),
 });
 export type ContactCreate = z.infer<typeof contactCreateSchema>;
 
@@ -82,3 +97,31 @@ export const lgpdAnonymizeSchema = z.object({
   justification: z.string().min(10).max(1000),
 });
 export type LgpdAnonymizeInput = z.infer<typeof lgpdAnonymizeSchema>;
+
+/**
+ * Juntar contatos duplicados.
+ *
+ * O principal fica FORA do array de secundários e o `refine` é o que garante
+ * isso na borda — `fn_mesclar_contatos` recusa o mesmo caso com `22023`, mas um
+ * 422 com a lista de campos é o que a tela consegue mostrar. As duas guardas
+ * existem porque a rota não é a única porta: a RPC é alcançável por
+ * `authenticated` (é assim que a RLS a autoriza), e ela precisa se defender só.
+ *
+ * O teto de 20 secundários por chamada não é arbitrário: a fusão trava as
+ * linhas (`for update`) e reponta toda FK que aponta para elas: um lote grande
+ * segura escrita de contato para a organização inteira enquanto roda.
+ */
+export const contactsMergeSchema = z
+  .object({
+    primary_contact_id: z.string().uuid(),
+    secondary_contact_ids: z.array(z.string().uuid()).min(1).max(20),
+  })
+  .refine((v) => !v.secondary_contact_ids.includes(v.primary_contact_id), {
+    message: "O contato principal não pode estar entre os que serão absorvidos.",
+    path: ["secondary_contact_ids"],
+  })
+  .refine((v) => new Set(v.secondary_contact_ids).size === v.secondary_contact_ids.length, {
+    message: "Contato repetido na seleção.",
+    path: ["secondary_contact_ids"],
+  });
+export type ContactsMergeInput = z.infer<typeof contactsMergeSchema>;

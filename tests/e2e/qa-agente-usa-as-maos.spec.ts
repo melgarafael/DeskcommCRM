@@ -438,6 +438,14 @@ test.describe("QA — o agente usa as mãos que a W4 entregou?", () => {
     console.info(`[QA] cenários nesta corrida: ${aRodar.map((c) => c.nome).join(", ")}`);
 
     const relatorio: string[] = [];
+    /**
+     * Quantos cenarios PRODUZIRAM alguma coisa. O relatorio em markdown la
+     * embaixo tambem e artefato versionado de uma medicao real — e, ao
+     * contrario dos turnos JSON, NENHUM teste o le. Sobrescreve-lo com uma
+     * corrida vazia e destruicao que nada acusa. Medido em 2026-09-04: 507
+     * linhas de respostas reais trocadas por 35 de "NENHUMA / failed".
+     */
+    let cenariosQueMediram = 0;
     for (const cenario of aRodar) {
       const res = await page.request.post(
         `${APP_URL}/api/v1/ai/agents/${agenteId}/versions/${versaoId}/test`,
@@ -517,11 +525,46 @@ test.describe("QA — o agente usa as mãos que a W4 entregou?", () => {
       console.info(`[QA] status:   ${data.status} · ${data.latency_ms ?? "?"}ms`);
       console.info(`[QA] resposta: ${(data.final_text ?? "(vazia)").slice(0, 400)}`);
 
+      /**
+       * ⚠️ O TURNO SÓ SOBRESCREVE A MEDIÇÃO SE TIVER MEDIDO ALGUMA COISA.
+       *
+       * O irmão de cima já protege o caminho do HTTP != 200, e o comentário dele
+       * conta o estrago de 2026-08-08. Ficou aberto o outro caminho, e ele é mais
+       * sorrateiro: SEM CHAVE DE IA a rota responde **200**, porque o pedido foi
+       * aceito — o agente é que pula o turno (`reason='ai_gateway_key_missing'`,
+       * o aviso que `lib/env.ts` imprime em toda inicialização). `res.ok()` é
+       * verdadeiro, o gravador segue em frente, e um registro vazio cai por cima
+       * do turno REAL versionado.
+       *
+       * Aconteceu de novo em 2026-09-04, nesta máquina: 1.758 linhas apagadas
+       * dos 10 `operador__*.json`, trocadas por 80. Os testes de unidade ficaram
+       * vermelhos (o controle positivo pegou, como desenhado), e o vermelho foi
+       * lido como "os turnos foram renomeados" — o que levou a um commit que
+       * DESLIGAVA o caso. A medição histórica sobreviveu por `git checkout`; o
+       * diagnóstico errado quase não.
+       *
+       * A régua não olha `status`, olha RESULTADO: um turno que não produziu
+       * texto nem chamou ferramenta não mediu nada, seja qual for o vocabulário
+       * de status daquela versão. E ele continua sendo gravado — ao lado, como o
+       * `__falhou` —, porque cenário que some do diretório é indistinguível de
+       * cenário que nunca foi tentado.
+       */
+      const mediuAlgo = (data.final_text ?? "").trim().length > 0 || nomes.length > 0;
+      if (mediuAlgo) cenariosQueMediram += 1;
+      if (!mediuAlgo) {
+        console.info(
+          `[QA] ${cenario.nome}: HTTP 200 mas o turno veio VAZIO (status=${data.status}). ` +
+            `Gravando ao lado, em __sem-resposta.json — a medição versionada não é tocada. ` +
+            `Se você esperava medir de verdade, falta chave de IA.`,
+        );
+      }
+
       fs.writeFileSync(
-        dump,
+        mediuAlgo ? dump : dump.replace(/\.json$/, "__sem-resposta.json"),
         JSON.stringify(
           {
             prompt_kind: PROMPT_KIND,
+            mediu: mediuAlgo,
             cenario: cenario.nome,
             mensagem: cenario.mensagem,
             esperado: cenario.esperado,
@@ -563,8 +606,21 @@ test.describe("QA — o agente usa as mãos que a W4 entregou?", () => {
       );
     }
 
+    // Mesma regra dos turnos: corrida em que NADA mediu nao encosta no artefato
+    // versionado. Ela ainda e gravada, ao lado, para a corrida ficar visivel.
+    if (cenariosQueMediram === 0) {
+      console.info(
+        "[QA] nenhum cenario produziu resposta — o relatorio versionado nao foi tocado. " +
+          "A corrida foi para qa-turnos-do-agente__sem-resposta.md.",
+      );
+    }
     fs.writeFileSync(
-      path.join(SAIDA, "qa-turnos-do-agente.md"),
+      path.join(
+        SAIDA,
+        cenariosQueMediram > 0
+          ? "qa-turnos-do-agente.md"
+          : "qa-turnos-do-agente__sem-resposta.md",
+      ),
       `# QA — o agente usando as capacidades da W4\n\n` +
         `Modelo real, dry-run, pelo endpoint do botão "Executar teste".\n\n` +
         relatorio.join("\n\n---\n\n"),

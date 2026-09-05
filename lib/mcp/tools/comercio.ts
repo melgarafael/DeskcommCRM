@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import type { McpToolDefinition } from "../types";
 import { buscarComRelaxamento } from "@/lib/catalogo/busca";
+import { formatCents } from "@/lib/money";
 
 // ---------------------------------------------------------------------------
 // pedidos de um cliente
@@ -71,12 +72,6 @@ const produtosInputShape = {
   limite: z.number().int().min(1).max(20).optional().default(8),
   somente_disponiveis: z.boolean().optional().default(true),
 };
-
-/** O preço como a pessoa lê, não como o banco guarda. */
-function precoLegivel(cents: number, moeda: string): string {
-  const valor = (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-  return moeda === "BRL" ? `R$ ${valor}` : `${moeda} ${valor}`;
-}
 
 /**
  * O aviso que a busca manda junto com o resultado.
@@ -275,7 +270,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       produtos: topo.map(({ produto }) => ({
         codigo: produto.codigo,
         nome: produto.nome,
-        preco: precoLegivel(produto.preco_cents, produto.moeda),
+        preco: formatCents(produto.preco_cents, produto.moeda),
         preco_cents: produto.preco_cents,
         ...(produto.marca ? { marca: produto.marca } : {}),
         ...(produto.descricao ? { descricao: produto.descricao } : {}),

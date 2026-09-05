@@ -59,14 +59,20 @@ describe("Sidebar agrupado", () => {
     expect(titulos).toEqual(["Atendimento", "CRM", "Agente de IA", "Canais", "Análise"]);
   });
 
-  it("leva às Etapas do funil sem passar por Configurações", () => {
+  it("leva às Etapas do funil pelo CRM, e não por Configurações", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);
-    // O rótulo mudou: "Funis" passou a ser a LISTA (/app/kanban) e esta tela,
-    // que configura as colunas, virou "Etapas do funil". Antes as duas
-    // disputavam o mesmo nome no mesmo grupo do menu.
-    const etapas = screen.getByRole("link", { name: "Etapas do funil" });
-    expect(etapas).toHaveAttribute("href", "/app/settings/tenant/pipelines");
+    // ⚠️ O CAMINHO MUDOU, A PROPRIEDADE NÃO. Etapas do funil saiu do menu para
+    // dentro do hub do CRM quando Tarefas virou o quinto destino do grupo e o
+    // menu passou a rolar. A porta continua sendo CRM — "Ver tudo em CRM" leva
+    // a `/app/crm`, e é lá que a tela aparece —, nunca Configurações, que é o
+    // enterro que originou toda esta reorganização.
+    //
+    // O que este teste prende é a porta EXISTIR no grupo certo do sidebar; que
+    // ela desemboca na tela é o e2e `navegacao.spec.ts` que percorre, clicando.
+    const hub = screen.getByRole("link", { name: /Ver tudo em CRM/ });
+    expect(hub).toHaveAttribute("href", "/app/crm");
+    expect(screen.queryByRole("link", { name: "Etapas do funil" })).toBeNull();
   });
 
   it("e os dois itens de funil não disputam o mesmo nome", () => {
@@ -75,14 +81,34 @@ describe("Sidebar agrupado", () => {
     expect(screen.getByRole("link", { name: "Funis" })).toHaveAttribute("href", "/app/kanban");
   });
 
-  it("desenterra Nuvemshop e Audit Log", () => {
+  it("desenterra Audit Log — e Nuvemshop ficou de fora, por escolha", () => {
     comoPapel("admin");
     render(<Sidebar collapsed={false} />);
-    // Nuvemshop não tinha link nenhum no app; Audit Log só existia via card em
-    // Configurações. Canal oficial não está aqui de propósito: virou aba de
-    // Conexões no PR #105, e Conexões é a porta.
-    expect(screen.getByRole("link", { name: /Nuvemshop/ })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Audit Log/ })).toBeTruthy();
+    // ⚠️ O CAMINHO MUDOU, A PROPRIEDADE NÃO. O que esta linha sempre prendeu é
+    // que Audit Log deixou de existir só como card enterrado em Configurações.
+    // Quando Atividades (PR #583) virou o quinto destino do grupo Análise e o
+    // menu passou a rolar em 900px, a resposta foi o hub do grupo — como o
+    // comentário de densidade do `Sidebar.tsx` já mandava. Audit Log foi para
+    // dentro dele: a porta agora é "Ver tudo em Análise", nunca Configurações.
+    //
+    // Que a porta desemboca na tela é o e2e `navegacao.spec.ts` que percorre,
+    // clicando; aqui prende-se que ela EXISTE, no grupo certo do sidebar.
+    //
+    // Canal oficial não está aqui de propósito: virou aba de Conexões no PR
+    // #105, e Conexões é a porta.
+    const hubAnalise = screen.getByRole("link", { name: /Ver tudo em Análise/ });
+    expect(hubAnalise).toHaveAttribute("href", "/app/analise");
+    expect(screen.queryByRole("link", { name: /Audit Log/ })).toBeNull();
+
+    // NUVEMSHOP SAIU, e esta linha é a reversão explícita de uma decisão que
+    // este mesmo teste travava: a integração tinha sido "desenterrada" para o
+    // menu justamente por não ter link nenhum. O dono do produto pediu para
+    // ocultá-la — não usa a integração —, então o que era garantia virou o
+    // contrário, e fica dito aqui para ninguém "consertar" de volta sem saber.
+    //
+    // Some do MENU, não do produto: a rota e a página seguem de pé e o ⌘K
+    // continua achando (`searchable()` filtra por papel, nunca por `sidebar`).
+    expect(screen.queryByRole("link", { name: /Nuvemshop/ })).toBeNull();
   });
 
   it("Configurações fica no rodapé, nunca dependendo de scroll", () => {

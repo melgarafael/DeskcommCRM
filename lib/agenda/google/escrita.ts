@@ -91,19 +91,38 @@ export function idDeEventoDoGoogle(idDoAgendamento: string): string {
  */
 const PREFIXO = SUFIXO_ICAL_UID.toLowerCase().replace(/[^a-v0-9]/g, "");
 
+/**
+ * `sendUpdates` — o parâmetro sem o qual convidar não convida ninguém.
+ *
+ * ⚠️ O DEFAULT DO GOOGLE É NÃO AVISAR. Mandar `attendees` no corpo e omitir este
+ * parâmetro adiciona a pessoa ao evento EM SILÊNCIO: ela aparece na lista de
+ * convidados do calendário do organizador e nunca recebe e-mail nenhum. O
+ * sintoma seria o pior tipo — a tela diz "convidado adicionado", o evento mostra
+ * o convidado, e a caixa de entrada do cliente segue vazia.
+ *
+ * `all` só é mandado quando há convidado de verdade. Num evento sem `attendees`
+ * ele não teria a quem notificar, e a diferença não é cosmética: é o que mantém
+ * "campo vazio ⇒ exatamente o comportamento de antes", byte a byte na URL.
+ */
+function comAviso(url: string, avisar: boolean): string {
+  return avisar ? `${url}?sendUpdates=all` : url;
+}
+
 async function chamar(
   metodo: "POST" | "PUT" | "DELETE",
   accessToken: string,
   calendarId: string,
   eventoId: string | null,
   corpo?: unknown,
+  avisarConvidados = false,
 ): Promise<Response> {
   // POST vai para a COLEÇÃO (`/events`) e leva o id no CORPO; PUT e DELETE vão
   // para o RECURSO (`/events/{id}`). Misturar os dois é o que produziria um
   // `PUT /events` sem id, que o Google recusa por outro motivo — e o erro
   // apontaria para o lugar errado.
   const base = `${ENDERECO_DE_EVENTOS}/${encodeURIComponent(calendarId)}/events`;
-  const url = eventoId === null ? base : `${base}/${encodeURIComponent(eventoId)}`;
+  const recurso = eventoId === null ? base : `${base}/${encodeURIComponent(eventoId)}`;
+  const url = comAviso(recurso, avisarConvidados);
   return fetch(url, {
     method: metodo,
     headers: {
@@ -139,6 +158,30 @@ export async function publicarNoGoogle(
 ): Promise<EscritaNoGoogle> {
   const eventoId = idDeEventoDoGoogle(agendamento.id);
   const corpoDoEvento = paraEventoDoGoogle(agendamento);
+  // Derivado do CORPO, e não do input: é `paraEventoDoGoogle` quem decide se a
+  // lista sobreviveu à tradução (participante sem e-mail lança lá, e lista vazia
+  // não vira `attendees`). Perguntar ao corpo é perguntar ao que vai no fio.
+  const temConvidados = (corpoDoEvento.attendees?.length ?? 0) > 0;
+
+  /**
+   * ⚠️ `iCalUID` NÃO VAI NO CORPO — e aqui não há mais o que remover.
+   *
+   * O `events.insert` recusa `id` e `iCalUID` juntos (400 "Invalid resource id
+   * value."), e era o que fazia 100% dos compromissos falharem na ida ao
+   * Google. O #518 consertou isso AQUI, tirando o campo do corpo do POST; a
+   * `main` já tinha consertado na FONTE (#474): `paraEventoDoGoogle` deixou de
+   * emitir `iCalUID`, e `CorpoDeEventoDoGoogle` deixou de declará-lo.
+   *
+   * Convergência independente, dois consertos do mesmo defeito. Fica o da
+   * `main`, que é o mais forte: o campo não existe para ser esquecido em outro
+   * call site. O destructuring do #518 virou código morto na resolução do merge
+   * — `tsc` o reprovou (TS2339), porque a propriedade já não existe no tipo.
+   *
+   * O `id` é quem fica, e não é escolha de gosto: derivado do id do
+   * agendamento, é o que torna a criação IDEMPOTENTE e o que sustenta o "POST,
+   * e se 409 então PUT" descrito no cabeçalho deste arquivo. Sem ele, cada
+   * batida do cron criaria um evento novo do mesmo compromisso.
+   */
 
   /** Uma tentativa, já com a classificação do erro que ela produziu. */
   async function tentar(
@@ -152,7 +195,11 @@ export async function publicarNoGoogle(
         // POST manda o id NO CORPO, não na URL — é assim que `events.insert`
         // aceita id de quem cria.
         metodo === "POST" ? null : eventoId,
+        // O corpo já não carrega `iCalUID` (ver o bloco acima). O POST só
+        // acrescenta o `id`, que ele aceita de quem cria; o PUT vai sem ele
+        // porque ali o id viaja na URL.
         metodo === "POST" ? { ...corpoDoEvento, id: eventoId } : corpoDoEvento,
+        temConvidados,
       );
       return { resposta };
     } catch (erro) {
@@ -224,6 +271,17 @@ export async function publicarNoGoogle(
  * se queria. Tratá-los como erro faria o worker reencher a Central de avisos com
  * uma falha que não é falha — e o `classificarErroDoGoogle` já nomeia isso como
  * `ja_esta_feito`.
+ *
+ * ⚠️ AVISA SEMPRE, e este é o par obrigatório do convite. Desde que existe
+ * convidado, cancelar em silêncio deixa uma reunião FANTASMA na agenda de quem
+ * foi convidado: ele recebeu o convite, aceitou, e o compromisso segue lá para
+ * sempre porque o cancelamento não o alcançou. É o defeito que o próprio convite
+ * cria — não existia enquanto ninguém era convidado.
+ *
+ * Mandar `sendUpdates=all` num evento SEM convidado não notifica ninguém (não há
+ * a quem), então a condicional que `publicarNoGoogle` faz não se paga aqui: ela
+ * exigiria descobrir se havia convidado num evento que estamos apagando, e a
+ * linha do nosso lado já pode ter perdido o e-mail.
  */
 export async function apagarNoGoogle(
   accessToken: string,
@@ -233,7 +291,7 @@ export async function apagarNoGoogle(
   const eventoId = idDeEventoDoGoogle(idDoAgendamento);
   let resposta: Response;
   try {
-    resposta = await chamar("DELETE", accessToken, calendarId, eventoId);
+    resposta = await chamar("DELETE", accessToken, calendarId, eventoId, undefined, true);
   } catch (erro) {
     return {
       ok: false,

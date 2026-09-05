@@ -58,6 +58,14 @@ export interface MarcarInput {
   contact_id?: string;
   title?: string;
   notes?: string;
+  /**
+   * Convidado externo, digitado na tela. `""` limpa; ausente não mexe.
+   *
+   * NÃO é `contact_id`, e a distinção é o motivo de a coluna existir: o contato
+   * é quem recebe o atendimento, e quem precisa entrar na sala pode ser outra
+   * pessoa. Quem transforma isto em convite do Google é o worker de push.
+   */
+  guest_email?: string;
 }
 
 export interface AlterarInput {
@@ -65,6 +73,8 @@ export interface AlterarInput {
   starts_at?: string;
   status?: "confirmed" | "completed" | "no_show";
   notes?: string;
+  /** Igual ao de `MarcarInput`: `""` desconvida, ausente não mexe. */
+  guest_email?: string;
 }
 
 export interface CancelarInput {
@@ -164,6 +174,10 @@ export async function marcarAgendamentoHandler(
       location_kind: tipo.location_kind,
       location_details: tipo.location_details,
       notes: input.notes ?? null,
+      // `|| null` e não `?? null`: a rota deixa passar `""` (o campo limpo na
+      // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
+      // Google recusar o EVENTO INTEIRO, não só o convidado.
+      guest_email: input.guest_email || null,
       created_by_kind: autorParaCriacao(ctx.actor),
       created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
       source: ctx.actor.type === "user" ? "ui" : "mcp",
@@ -240,6 +254,12 @@ export async function alterarAgendamentoHandler(
 
   const mudanca: Record<string, unknown> = {};
   if (input.notes !== undefined) mudanca.notes = input.notes;
+  // Trocar SÓ o convidado não é remarcação nem mudança de situação, então não
+  // produz `transicao` — e não deveria: a timeline do lead não ganha notícia
+  // por causa de um e-mail digitado. Quem leva a mudança ao Google é a coluna
+  // gerada `needs_google_push` (migration 0200), que passa a `true` sozinha
+  // porque o trigger de `updated_at` disparou neste mesmo UPDATE.
+  if (input.guest_email !== undefined) mudanca.guest_email = input.guest_email || null;
   let transicao: Transicao | null = null;
 
   if (input.starts_at) {

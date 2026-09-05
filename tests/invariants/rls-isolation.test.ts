@@ -193,6 +193,17 @@ beforeAll(() => {
             values (v_org, 'RLS-' || v_org::text, 'Produto de invariante', 100);
         end if;
 
+        -- crm_tasks (migration 0210): o que o time combinou fazer, com prazo.
+        -- Entra COM o vínculo de lead porque a tarefa presa a um negócio é o
+        -- caso que cruza duas tabelas tenant-aware — se a policy vazasse, o
+        -- vizinho leria o combinado E o ponteiro para o funil dele.
+        -- (sem crase nesta prosa: o bloco inteiro é um template literal de JS.)
+        if not exists (select 1 from public.crm_tasks where organization_id = v_org) then
+          insert into public.crm_tasks (organization_id, title, lead_id)
+            values (v_org, 'RLS invariant task',
+                    (select id from public.crm_leads where organization_id = v_org limit 1));
+        end if;
+
         if not exists (select 1 from public.push_subscriptions where organization_id = v_org) then
           insert into public.push_subscriptions
             (organization_id, user_id, endpoint, p256dh, auth)
@@ -247,6 +258,12 @@ export const TABLES = [
   // exige `manager` — esse segundo eixo é medido em
   // `tests/invariants/catalogo-so-gestor-muda-preco.test.ts`, não aqui.
   "catalog_products",
+  // migration 0210 — as tarefas do CRM. A leitura é org-scoped sem gate de papel
+  // (o `viewer` precisa ver o que o time combinou); a ESCRITA exige `agent`, e
+  // esse segundo eixo NÃO é medido aqui — o usuário semeado é `agent`, então o
+  // controle positivo passaria por acerto. Quem mede a escrita é a rota, em
+  // `tests/unit/tarefas-rota-nao-tem-porta-dos-fundos.test.ts`.
+  "crm_tasks",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

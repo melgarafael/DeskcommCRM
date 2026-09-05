@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useContact } from "@/hooks/contacts/useContact";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
@@ -31,6 +33,9 @@ export function ContactDetailClient({ contactId }: Props) {
   const t = useT();
   const q = useContact(contactId);
   const { user, activeOrg } = useAuth();
+  // As DEFINIÇÕES continuam no funil (`crm_pipelines.settings.fields[]`) — só o
+  // VALOR mora no contato. `camposDoFunil` é o mesmo leitor que o Kanban usa.
+  const pipelineQuery = useDefaultPipeline(Boolean(activeOrg));
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
 
@@ -46,17 +51,14 @@ export function ContactDetailClient({ contactId }: Props) {
   if (q.isError || !q.data) {
     return (
       <div className="p-6">
-        <Card className="p-6 text-center text-sm text-error-fg">
-          Erro ao carregar contato.
-        </Card>
+        <Card className="p-6 text-center text-sm text-error-fg">Erro ao carregar contato.</Card>
       </div>
     );
   }
 
   const contact = q.data.data;
   const isAdmin =
-    user.is_platform_admin ||
-    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
+    user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
 
   // Uma decisão, um lugar (lib/contacts/rotulo-do-contato.ts). Esta tela era
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
@@ -68,7 +70,7 @@ export function ContactDetailClient({ contactId }: Props) {
       {contact.is_anonymized && (
         <div
           role="alert"
-          className="sticky top-0 z-20 flex items-center gap-3 rounded-md border border-error-fg/30 bg-error-bg p-3 text-sm text-error-fg"
+          className="border-error-fg/30 sticky top-0 z-20 flex items-center gap-3 rounded-md border bg-error-bg p-3 text-sm text-error-fg"
         >
           <ShieldCheck size={18} weight="duotone" aria-hidden />
           <span>
@@ -85,7 +87,7 @@ export function ContactDetailClient({ contactId }: Props) {
           {/* Sem truncar: nome é dado que a tela existe pra mostrar, e cortar
               com reticências sem um jeito de ver o resto violaria o princípio
               de nunca esconder informação crítica. Deixa quebrar linha. */}
-          <h1 className="text-2xl font-semibold tracking-tight break-words">{displayName}</h1>
+          <h1 className="break-words text-2xl font-semibold tracking-tight">{displayName}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             {contact.email && <span>{contact.email}</span>}
             {contact.email && contact.phone_number && <span>•</span>}
@@ -93,7 +95,9 @@ export function ContactDetailClient({ contactId }: Props) {
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
             {contact.tags.map((t) => (
-              <Badge key={t} variant="neutral">{t}</Badge>
+              <Badge key={t} variant="neutral">
+                {t}
+              </Badge>
             ))}
             {contact.is_blocked && <Badge variant="warning">Bloqueado</Badge>}
             {contact.is_anonymized && <Badge variant="destructive">Anonimizado</Badge>}
@@ -145,7 +149,9 @@ export function ContactDetailClient({ contactId }: Props) {
               </div>
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">{t("Telefone")}</dt>
-                <dd className="mt-1">{contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}</dd>
+                <dd className="mt-1">
+                  {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">Origem</dt>
@@ -173,7 +179,9 @@ export function ContactDetailClient({ contactId }: Props) {
                   {contact.tags.length === 0
                     ? "—"
                     : contact.tags.map((t) => (
-                        <Badge key={t} variant="neutral">{t}</Badge>
+                        <Badge key={t} variant="neutral">
+                          {t}
+                        </Badge>
                       ))}
                 </dd>
               </div>
@@ -187,11 +195,13 @@ export function ContactDetailClient({ contactId }: Props) {
 
         {isAdmin && (
           <TabsContent value="lgpd" className="mt-4">
-            <Card className="p-4 space-y-4">
+            <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">Direito ao esquecimento (LGPD)</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {t("A anonimização é irreversível. Use somente após confirmação formal do titular ou ordem judicial.")}
+                  {t(
+                    "A anonimização é irreversível. Use somente após confirmação formal do titular ou ordem judicial.",
+                  )}
                 </p>
               </div>
               {contact.is_anonymized ? (
@@ -215,12 +225,9 @@ export function ContactDetailClient({ contactId }: Props) {
         contact={contact}
         open={editOpen}
         onOpenChange={setEditOpen}
+        customFieldDefs={camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null)}
       />
-      <AnonymizeDialog
-        contactId={contactId}
-        open={anonOpen}
-        onOpenChange={setAnonOpen}
-      />
+      <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
     </div>
   );
 }

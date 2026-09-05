@@ -113,6 +113,30 @@ export interface AppointmentRow {
 }
 
 /**
+ * Tarefa combinada SOBRE a pessoa (migration 0210).
+ *
+ * ⚠️ ESTE BLOCO NASCEU COM A OUTRA METADE, e não depois dela. A migration liga o
+ * trigger `trg_redigir_tarefas_ao_anonimizar`, que troca `title` e apaga
+ * `description` quando o titular pede apagamento — e neste repo redigir e
+ * exportar sempre andam juntos: o que se apaga a pedido do titular é o que se
+ * entrega a pedido dele. Foi assim que `calendar_appointments` e
+ * `webhook_lead_captures` chegaram aqui, as duas depois do fato, achadas por
+ * `tests/unit/lgpd-exporta-o-que-redige.test.ts`.
+ *
+ * `due_date`, `status` e `priority` vão junto porque o titular tem direito a
+ * saber não só que a empresa escreveu algo sobre ele, mas quando ela combinou
+ * agir — que é a informação que dá sentido ao texto.
+ */
+export interface TaskRow {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  status: string;
+  priority: string;
+}
+
+/**
  * Captação por webhook — de onde a pessoa veio.
  *
  * ⚠️ ESTA NÃO É DA ENTREGA DO CALENDÁRIO. Ela apareceu porque o gate novo
@@ -171,6 +195,7 @@ export interface ExportPayload {
   orders: OrderRow[];
   activities: ActivityRow[];
   appointments: AppointmentRow[];
+  tasks: TaskRow[];
   webhook_captures: CaptureRow[];
   audit_log_extract: AuditRow[];
 }
@@ -265,7 +290,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, email, phone_number, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, created_at, last_activity_at",
+        "id, name, display_name, email, phone_number, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -500,6 +525,30 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Tarefas — contact_id direto em crm_tasks (migration 0210).
+  //
+  // O texto que a equipe escreveu sobre o titular ("ligar para Fulano confirmar
+  // o orçamento") é dado dele. Se a anonimização o apaga — e ela apaga —, o
+  // pedido de acesso tem de entregá-lo.
+  let tasks: TaskRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("crm_tasks")
+      .select("id, title, description, due_date, status, priority")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("due_date", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] tasks load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      tasks = data;
+    }
+  }
+
   // Captação por webhook — a MESMA classe do bloco acima, achada pelo gate.
   let webhook_captures: CaptureRow[] = [];
   if (contactId) {
@@ -565,6 +614,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     orders,
     activities,
     appointments,
+    tasks,
     webhook_captures,
     audit_log_extract,
   };
@@ -592,6 +642,7 @@ function emptyPayload(
     orders: [],
     activities: [],
     appointments: [],
+    tasks: [],
     webhook_captures: [],
     audit_log_extract: [],
   };

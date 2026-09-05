@@ -175,6 +175,25 @@ function fakeClient(): SupabaseClient {
     from: (table: string) => new FakeQB(table),
     rpc: (name: string, params: Record<string, unknown>): Promise<QResult> => {
       return (async () => {
+        // O bulk move deixou de escrever `position_in_stage` no handler: quem
+        // posiciona é `fn_mover_leads_em_lote` (migration 0209), porque N cards
+        // precisam de N posições distintas. Ela roda de VERDADE aqui — o banco
+        // deste gate já tem o baseline aplicado —, senão o teste mediria um
+        // dublê e não o caminho que a rota passou a usar.
+        if (name === "fn_mover_leads_em_lote") {
+          const p = params as { p_organization_id: string; p_lead_ids: string[]; p_stage_id: string };
+          try {
+            const out = sql(
+              `select coalesce(json_agg(t), '[]') from public.fn_mover_leads_em_lote(` +
+                `${sqlString(p.p_organization_id)}::uuid, ` +
+                `array[${p.p_lead_ids.map((id) => sqlString(id)).join(",")}]::uuid[], ` +
+                `${sqlString(p.p_stage_id)}::uuid) t;`,
+            );
+            return { data: JSON.parse(out || "[]"), error: null };
+          } catch (err) {
+            return { data: null, error: { message: (err as Error).message } };
+          }
+        }
         if (name !== "emit_event") throw new Error(`fakeClient: unsupported rpc ${name}`);
         const p = params as unknown as EmitEventParams;
         try {

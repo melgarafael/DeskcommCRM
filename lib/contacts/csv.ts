@@ -26,7 +26,33 @@ import { normalizePhoneBR } from "@/lib/webhooks/inbound";
  *
  * O desempate não é detecção de charset, é uma prova: `TextDecoder("utf-8")` só
  * produz U+FFFD quando o byte-stream NÃO é UTF-8 válido. Ausência de U+FFFD é
- * prova de que UTF-8 é a leitura certa; presença é prova de que não é.
+ * prova de que UTF-8 é a leitura certa.
+ *
+ * ⚠️ MAS A PRESENÇA NÃO É PROVA DO CONTRÁRIO, e a primeira versão disto tratava
+ * como se fosse — a decisão era por ARQUIVO sobre um sinal por BYTE, sem
+ * proporção. Um único byte inválido no meio de um arquivo perfeitamente UTF-8
+ * (a aspa curva do Word, 0x92, sobra comum de copiar-colar) jogava as 500 linhas
+ * boas para o `windows-1252`. Medido, com as funções deste arquivo:
+ *
+ *   arquivo limpo          → utf-8         "Ação" corretos=500  mojibake=  0
+ *   + 1 byte 0x92 no meio  → windows-1252  "Ação" corretos=  0  mojibake=500
+ *   antes deste arquivo    → "Ação" corretos=500, com U+FFFD=1
+ *
+ * Ou seja: no caminho do byte solto, a versão anterior a `file.text()` era
+ * MELHOR — ela corrompia um caractere, não o arquivo. E o `upsert` por
+ * `(organization_id, codigo)` sobrescreve os nomes bons que já estavam no
+ * catálogo, com `erros: []` e 200 OK.
+ *
+ * A prova certa é a DENSIDADE, porque as duas causas ficam a três ordens de
+ * grandeza de distância. Medido no mesmo texto de 500 linhas:
+ *
+ *   latin-1 de verdade (o que este arquivo conserta) → 1 U+FFFD a cada     5 bytes
+ *   UTF-8 com 1 byte inválido                        → 1 U+FFFD a cada 11.392
+ *   misto: 499 linhas UTF-8 + 1 linha latin-1        → 1 U+FFFD a cada  5.692
+ *
+ * `MAX_BYTES_POR_SUBSTITUICAO` fica no meio dessa distância, e é generoso de
+ * propósito: errar para o lado do UTF-8 corrompe um caractere; errar para o
+ * outro corrompe o arquivo inteiro. Os dois erros não custam o mesmo.
  *
  * O `windows-1252` "consegue" ler qualquer byte, então cair nele sem olhar o
  * resultado transformaria um .xlsx renomeado em 300 produtos de nome ilegível.
@@ -39,11 +65,28 @@ import { normalizePhoneBR } from "@/lib/webhooks/inbound";
  * planilha — é UTF-8 VÁLIDO, não tem U+FFFD nenhum, e passa limpo. É outro
  * defeito, com outra evidência.
  */
+/**
+ * A partir de quantos bytes por substituição o arquivo deixa de ser "latin-1" e
+ * passa a ser "UTF-8 com um byte ruim".
+ *
+ * 100 fica entre as duas causas medidas (5 e 5.692 bytes por U+FFFD) com folga
+ * de mais de uma ordem de grandeza para cada lado — não é um número escolhido
+ * para caber num caso, é o meio de um vale largo.
+ */
+const MAX_BYTES_POR_SUBSTITUICAO = 100;
+
 export function decodificarCsv(bytes: ArrayBuffer | Uint8Array): { texto: string } | { erro: string } {
   const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 
   const utf8 = new TextDecoder("utf-8").decode(buf);
-  if (!utf8.includes("\uFFFD")) return { texto: semBom(utf8) };
+  const substituicoes = (utf8.match(/\uFFFD/g) ?? []).length;
+  // Sem nenhuma: UTF-8 válido, e a prova é completa.
+  if (substituicoes === 0) return { texto: semBom(utf8) };
+  // Com poucas: é UTF-8 com sujeira pontual, não outro charset. Trocar de
+  // decoder aqui estragaria o arquivo inteiro para consertar um caractere.
+  if (buf.byteLength / substituicoes > MAX_BYTES_POR_SUBSTITUICAO) {
+    return { texto: semBom(utf8) };
+  }
 
   const latin = new TextDecoder("windows-1252").decode(buf);
   // eslint-disable-next-line no-control-regex -- é exatamente o que se procura

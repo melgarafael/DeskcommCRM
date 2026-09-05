@@ -69,6 +69,8 @@ export const DICIONARIO: Traducoes = {
   "Follow-ups": { es: "Seguimientos" },
   Roteadores: { es: "Enrutadores" },
   "Ver tudo em IA": { es: "Ver todo en IA" },
+  "Ver tudo em CRM": { es: "Ver todo en CRM" },
+  "Ver tudo em Análise": { es: "Ver todo en Análisis" },
   Conexões: { es: "Conexiones" },
   Webhooks: { es: "Webhooks" },
   Desempenho: { es: "Rendimiento" },
@@ -223,6 +225,26 @@ export const DICIONARIO: Traducoes = {
   "Dados da empresa, retenção de mídia, DPO. Admin only.": {
     es: "Datos de la empresa, retención de medios, DPO. Solo administradores.",
   },
+  // ─── Hub do CRM (NavHub: seções e subtítulo) ───
+  //
+  // As duas seções são a régua que decide o menu, escrita por extenso: o que se
+  // abre todo dia fica no sidebar, o que se define uma vez fica só no hub.
+  "O dia a dia da venda": { es: "El día a día de la venta" },
+  "Preparar a venda": { es: "Preparar la venta" },
+  "Onde a venda acontece — e o que você define uma vez para ela funcionar.": {
+    es: "Donde ocurre la venta — y lo que defines una vez para que funcione.",
+  },
+
+  // ─── Hub da Análise (NavHub: seções e subtítulo) ───
+  //
+  // As duas seções são a régua do menu escrita por extenso: o que se pergunta
+  // toda semana fica no sidebar, o que se visita de propósito fica só no hub.
+  "Os números do período": { es: "Los números del período" },
+  "O histórico que se consulta": { es: "El historial que se consulta" },
+  "Como o negócio foi no período — e o histórico para quando alguém perguntar por quê.": {
+    es: "Cómo fue el negocio en el período — y el historial para cuando alguien pregunte por qué.",
+  },
+
   // ─── Hub de Configurações (NavHub: seções, rótulos e descrições das cards) ───
   "Sua conta": { es: "Tu cuenta" },
   "Sua empresa": { es: "Tu empresa" },
@@ -4011,6 +4033,38 @@ export const DICIONARIO: Traducoes = {
   "Você não tem nenhuma organização ativa. Aceite um convite ou contate o admin.": {
     es: "No tienes ninguna organización activa. Acepta una invitación o contacta al admin.",
   },
+
+  // ─── Recuperação do primeiro acesso (/get-started) ───
+  "Você não tem nenhuma organização ativa. Configure sua organização ou aceite um convite.": {
+    es: "No tienes ninguna organización activa. Configura tu organización o acepta una invitación.",
+  },
+  "Configurar minha organização": { es: "Configurar mi organización" },
+  "Campos personalizados": { es: "Campos personalizados" },
+  "Campos definidos no funil padrão da organização.": {
+    es: "Campos definidos en el embudo predeterminado de la organización.",
+  },
+  "Configure sua organização": { es: "Configura tu organización" },
+  "Sua conta foi confirmada, mas a organização inicial ainda não foi criada. Informe o nome da sua empresa para concluir o primeiro acesso e abrir o onboarding do CRM.": {
+    es: "Tu cuenta fue confirmada, pero la organización inicial aún no fue creada. Indica el nombre de tu empresa para completar el primer acceso y abrir la configuración inicial del CRM.",
+  },
+  "Se você recebeu um convite, não crie uma organização nova. Use o link do convite ou peça ao administrador para reenviá-lo.": {
+    es: "Si recibiste una invitación, no crees una organización nueva. Usa el enlace de la invitación o pide al administrador que la reenvíe.",
+  },
+  // "Nome da empresa" já existe no bloco do cadastro — a chave é a mesma frase.
+  "Preparando seu ambiente…": { es: "Preparando tu entorno…" },
+  "Continuar para o onboarding": { es: "Continuar a la configuración inicial" },
+  "Informe um nome de empresa com 2 a 120 caracteres.": {
+    es: "Indica un nombre de empresa de 2 a 120 caracteres.",
+  },
+  "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.": {
+    es: "Demasiados intentos. Espera unos minutos antes de volver a intentarlo.",
+  },
+  "Esta conta tem um convite pendente ou inválido. Use o link do convite ou peça um novo ao administrador.": {
+    es: "Esta cuenta tiene una invitación pendiente o inválida. Usa el enlace de la invitación o pide una nueva al administrador.",
+  },
+  "Não foi possível concluir a organização agora. Tente novamente ou contate o administrador da instalação.": {
+    es: "No fue posible completar la organización ahora. Inténtalo de nuevo o contacta al administrador de la instalación.",
+  },
   "Adicionar tag à conversa": { es: "Agregar etiqueta a la conversación" },
   "Fechar conversa?": { es: "¿Cerrar conversación?" },
   "O cliente ainda não escreveu — a janela de 24h nunca abriu. Só um modelo aprovado sai daqui.": {
@@ -4645,6 +4699,40 @@ export const DICIONARIO: Traducoes = {
     es: "Customer 360 — busca, filtra y gestiona contactos.",
   },
   "Importar CSV": { es: "Importar CSV" },
+  // ── Juntar contatos duplicados ──────────────────────────────────────────
+  "Duplicados": { es: "Duplicados" },
+  "Contatos duplicados": { es: "Contactos duplicados" },
+  "A mesma pessoa cadastrada duas vezes. Escolha qual cadastro fica; o outro é absorvido sem perder histórico.": {
+    es: "La misma persona registrada dos veces. Elige cuál ficha se queda; la otra se absorbe sin perder historial.",
+  },
+  "Nenhum contato duplicado encontrado.": { es: "No se encontraron contactos duplicados." },
+  "Agrupados por": { es: "Agrupados por" },
+  "mesmo telefone": { es: "mismo teléfono" },
+  "mesmo e-mail": { es: "mismo correo" },
+  "telefone que o WhatsApp deixou em conflito": {
+    es: "teléfono que WhatsApp dejó en conflicto",
+  },
+  "Manter este cadastro": { es: "Mantener esta ficha" },
+  "Este fica": { es: "Esta se queda" },
+  "Será absorvido por quem fica": { es: "Será absorbida por la que se queda" },
+  "Conversas, mensagens, negócios e histórico passam para quem fica. O cadastro antigo não é apagado — vira registro de fusão. Não há como desfazer.": {
+    es: "Conversaciones, mensajes, negocios e historial pasan a la que se queda. La ficha antigua no se borra: queda como registro de la fusión. No se puede deshacer.",
+  },
+  "Juntar": { es: "Juntar" },
+  "Juntar contatos": { es: "Juntar contactos" },
+  "Juntar estes cadastros?": { es: "¿Juntar estas fichas?" },
+  "fica.": { es: "se queda." },
+  "será absorvido e sai da lista de contatos. Mensagens, negócios e histórico passam para quem fica. Não há como desfazer.": {
+    es: "será absorbida y sale de la lista de contactos. Mensajes, negocios e historial pasan a la que se queda. No se puede deshacer.",
+  },
+  "Juntando…": { es: "Juntando…" },
+  "Contatos juntados.": { es: "Contactos juntados." },
+  "Contatos juntados. {n} registro(s) continuaram no cadastro antigo — veja a auditoria.": {
+    es: "Contactos juntados. {n} registro(s) siguieron en la ficha antigua — revisa la auditoría.",
+  },
+  "Mostrando os duplicados entre os contatos mais antigos. Junte estes e reabra para ver os próximos.": {
+    es: "Mostrando los duplicados entre los contactos más antiguos. Junta estos y vuelve a abrir para ver los siguientes.",
+  },
   "Novo contato": { es: "Nuevo contacto" },
   "Buscar por nome, email ou telefone…": { es: "Buscar por nombre, email o teléfono…" },
   "todas": { es: "todas" },
@@ -5114,12 +5202,23 @@ export const DICIONARIO: Traducoes = {
   "selecionados": { es: "seleccionados" },
   "Mover para…": { es: "Mover a…" },
   "Atribuir a…": { es: "Asignar a…" },
+  "Responsável…": { es: "Responsable…" },
   "Eu": { es: "Yo" },
   "Remover responsável": { es: "Quitar responsable" },
   "nova tag": { es: "nueva etiqueta" },
   "Esta ação remove os leads selecionados. Não pode ser desfeita.": {
     es: "Esta acción elimina los leads seleccionados. No se puede deshacer.",
   },
+  // Seleção em lote no quadro (migration 0209). A frase perdeu o substantivo
+  // "leads" de propósito: o funil renomeia o que está nos cards
+  // (`crm_pipelines.vocabulary`), e uma frase que crava "leads" contradiz a
+  // própria tela em quem chamou de Cliente ou Pedido.
+  "Esta ação remove o que está selecionado. Não pode ser desfeita.": {
+    es: "Esta acción elimina lo que está seleccionado. No se puede deshacer.",
+  },
+  "Selecionar": { es: "Seleccionar" },
+  "Selecionar todos em": { es: "Seleccionar todos en" },
+  "Desmarcar todos em": { es: "Desmarcar todos en" },
   "Abrir esta conversa no Inbox": { es: "Abrir esta conversación en la Bandeja" },
   "conversa sem mensagens": { es: "conversación sin mensajes" },
   "Valor inválido": { es: "Valor inválido" },
@@ -6194,6 +6293,17 @@ export const DICIONARIO: Traducoes = {
   "Atendimentos já resolvidos que alguém marcou como aproveitáveis, com os dados pessoais removidos.": { es: "Atenciones ya resueltas que alguien marcó como aprovechables, con los datos personales quitados." },
   "Entra sozinha: conversas resolvidas que alguém marcar como aproveitáveis pela IA são anonimizadas e indexadas em lote.": { es: "Entra sola: las conversaciones resueltas que alguien marque como aprovechables por la IA se anonimizan y se indexan en lote." },
   "Catálogo de produtos": { es: "Catálogo de productos" },
+
+  // ─── Moeda da organização (Configurações › Organização, migration 0206) ───
+  //
+  // O RÓTULO das opções do seletor não tem chave de propósito: é código ISO +
+  // símbolo ("MXN · $"), que não se traduz. A primeira versão usava nomes
+  // ("Peso mexicano") por chave DINÂMICA, que o guarda do AST não enxerga —
+  // passariam no CI e cairiam no português na tela em espanhol.
+  "Moeda": { es: "Moneda" },
+  "Vale para todo preço do catálogo. Produto já cadastrado guarda a moeda com que nasceu.": {
+    es: "Vale para todo precio del catálogo. Un producto ya cargado conserva la moneda con la que nació.",
+  },
   "Os produtos sincronizados da sua loja, com preço, descrição e disponibilidade.": { es: "Los productos sincronizados de tu tienda, con precio, descripción y disponibilidad." },
   "Entra sozinho: os produtos vêm da sincronização com a sua loja, não de conteúdo digitado aqui.": { es: "Entra solo: los productos vienen de la sincronización con tu tienda, no de contenido escrito aquí." },
   "Escolhida por você no painel de Provedores.": { es: "La elegiste en el panel de Proveedores." },
@@ -6371,6 +6481,262 @@ export const DICIONARIO: Traducoes = {
   "Salvar produto": { es: "Guardar producto" },
   "em estoque": { es: "en stock" },
   "sem controle de estoque": { es: "sin control de stock" },
+  // ─── Análise → Meta Ads e Configurações → Meta Ads (0214) ───
+  //
+  // ⚠️ Boa parte deste bloco o teste `i18n-espanhol-cobre-a-tela` NÃO cobre, e
+  // isso é uma propriedade dele, não uma falha: ele varre o AST atrás de
+  // `t("literal")`, e aqui metade das strings chega por variável — `t(rotulo)`,
+  // `t(ESTADO_LEGIVEL[valor])`, `t(MENSAGEM_POR_CODIGO[code])`. São justamente
+  // as que preenchem a tabela e as que explicam a falha. Esquecê-las deixaria a
+  // tela em espanhol com cabeçalho traduzido e conteúdo em português, com o CI
+  // verde. Ao mexer nos mapas daqueles arquivos, volte aqui.
+  "Meta Ads": { es: "Meta Ads" },
+  "O desempenho das campanhas que estão trazendo gente para cá. Os números vêm da plataforma no momento em que você clica em Atualizar — nada fica guardado aqui.":
+    { es: "El rendimiento de las campañas que están trayendo gente hasta aquí. Los números vienen de la plataforma en el momento en que haces clic en Actualizar — nada queda guardado aquí." },
+  "Nenhuma conta de anúncios conectada.": { es: "Ninguna cuenta publicitaria conectada." },
+  "Conecte um token de acesso com permissão de leitura de anúncios para ver as campanhas aqui.":
+    { es: "Conecta un token de acceso con permiso de lectura de anuncios para ver las campañas aquí." },
+  "Peça a quem administra a organização para conectar a conta de anúncios em Configurações.":
+    { es: "Pide a quien administra la organización que conecte la cuenta publicitaria en Configuración." },
+  "Conectar conta de anúncios": { es: "Conectar cuenta publicitaria" },
+
+  // Seletores e rodapé da tela
+  "Conta de anúncios": { es: "Cuenta publicitaria" },
+  "Últimos 14 dias": { es: "Últimos 14 días" },
+  "Carregando campanhas…": { es: "Cargando campañas…" },
+  "lido em": { es: "leído el" },
+  a: { es: "a" },
+  // `Código` NÃO se repete aqui: o bloco do catálogo de produtos já o traz,
+  // com o mesmo valor. Chave repetida num literal de objeto é erro de tipo.
+  Requisição: { es: "Solicitud" },
+  "Não consegui carregar os dados agora.": { es: "No pude cargar los datos ahora." },
+
+  // Colunas da tabela
+  Campanha: { es: "Campaña" },
+  Veiculação: { es: "Entrega" },
+  "Custo por Resultado": { es: "Costo por Resultado" },
+  "Valor Gasto": { es: "Importe Gastado" },
+  Impressões: { es: "Impresiones" },
+  Alcance: { es: "Alcance" },
+  CPM: { es: "CPM" },
+  CTR: { es: "CTR" },
+  Frequência: { es: "Frecuencia" },
+  CPC: { es: "CPC" },
+  "Hook Rate": { es: "Hook Rate" },
+  "(reproduções)": { es: "(reproducciones)" },
+  "Reproduções de vídeo ÷ impressões": { es: "Reproducciones de video ÷ impresiones" },
+  ThruPlays: { es: "ThruPlays" },
+  "Nenhuma campanha neste período. Ou a conta ainda não tem campanhas, ou elas foram criadas depois da data escolhida.":
+    { es: "Ninguna campaña en este período. O la cuenta aún no tiene campañas, o fueron creadas después de la fecha elegida." },
+
+  // `effective_status` da campanha — chega por variável (ESTADO_LEGIVEL)
+  Excluída: { es: "Eliminada" },
+  "Em processamento": { es: "En procesamiento" },
+  "Com problemas": { es: "Con problemas" },
+  "Campanha pausada": { es: "Campaña pausada" },
+  "Conjunto pausado": { es: "Conjunto pausado" },
+  Reprovada: { es: "Rechazada" },
+  "Em análise": { es: "En revisión" },
+  "Pré-aprovada": { es: "Preaprobada" },
+  "Aguardando dados de cobrança": { es: "Esperando datos de facturación" },
+
+  // `account_status` da conta — chega por variável (STATUS_DA_CONTA)
+  desativada: { es: "desactivada" },
+  "pendência de cobrança": { es: "pendiente de pago" },
+  "em análise de risco": { es: "en revisión de riesgo" },
+  "aguardando pagamento": { es: "esperando pago" },
+  "em período de carência": { es: "en período de gracia" },
+  "encerramento pendente": { es: "cierre pendiente" },
+  encerrada: { es: "cerrada" },
+
+  // Rótulos de "Resultado" — chegam por variável (ROTULO_POR_INDICADOR)
+  "Conversas iniciadas": { es: "Conversaciones iniciadas" },
+  "Primeiras respostas": { es: "Primeras respuestas" },
+  Cadastros: { es: "Registros" },
+  Compras: { es: "Compras" },
+  "Registros concluídos": { es: "Registros completados" },
+  "Adições ao carrinho": { es: "Añadidos al carrito" },
+  "Checkouts iniciados": { es: "Pagos iniciados" },
+  "Cadastros de formulário": { es: "Registros de formulario" },
+  "Cliques no link": { es: "Clics en el enlace" },
+  "Visualizações da página": { es: "Visualizaciones de la página" },
+  Engajamentos: { es: "Interacciones" },
+  "Engajamentos da página": { es: "Interacciones de la página" },
+  "Visualizações de vídeo": { es: "Reproducciones de video" },
+  "Instalações do app": { es: "Instalaciones de la app" },
+
+  // Falhas da plataforma — chegam por variável (MENSAGEM_POR_CODIGO)
+  "A plataforma recusou o token de acesso — ele expirou ou foi revogado. Gere um novo em Configurações › Meta Ads.":
+    { es: "La plataforma rechazó el token de acceso — expiró o fue revocado. Genera uno nuevo en Configuración › Meta Ads." },
+  "O token não tem permissão de leitura de anúncios (ads_read), ou não alcança esta conta. Refaça o token no Meta for Developers marcando essa permissão.":
+    { es: "El token no tiene permiso de lectura de anuncios (ads_read), o no alcanza esta cuenta. Vuelve a generarlo en Meta for Developers marcando ese permiso." },
+  "A plataforma limitou as chamadas por excesso de consultas. Espere alguns minutos antes de atualizar de novo.":
+    { es: "La plataforma limitó las llamadas por exceso de consultas. Espera unos minutos antes de actualizar de nuevo." },
+  "A plataforma recusou um campo desta consulta. Isso é um problema do sistema, não da sua conta — avise quem mantém a instalação.":
+    { es: "La plataforma rechazó un campo de esta consulta. Es un problema del sistema, no de tu cuenta — avisa a quien mantiene la instalación." },
+  "A chave de criptografia da instalação não está disponível, então o token guardado não pode ser lido. Isso é configuração do servidor.":
+    { es: "La clave de cifrado de la instalación no está disponible, así que el token guardado no se puede leer. Es configuración del servidor." },
+  "Não consegui falar com a plataforma agora. Tente atualizar em instantes.":
+    { es: "No pude comunicarme con la plataforma ahora. Intenta actualizar en unos instantes." },
+  "Seu papel não permite ver os dados de anúncios.":
+    { es: "Tu rol no permite ver los datos de anuncios." },
+
+  // Configurações → Meta Ads
+  "Conecte um token de acesso para o sistema ler o desempenho das suas campanhas e mostrá-lo em Análise › Meta Ads. É uma conexão só de leitura: nada é criado, pausado ou alterado na sua conta de anúncios.":
+    { es: "Conecta un token de acceso para que el sistema lea el rendimiento de tus campañas y lo muestre en Análisis › Meta Ads. Es una conexión solo de lectura: nada se crea, pausa ni modifica en tu cuenta publicitaria." },
+  "O token precisa da permissão ads_read. Gere-o no Meta for Developers, na sua conta de aplicativo, e cole abaixo — ele fica guardado criptografado e nunca é mostrado de volta.":
+    { es: "El token necesita el permiso ads_read. Génralo en Meta for Developers, en tu cuenta de aplicación, y pégalo abajo — se guarda cifrado y nunca se muestra de vuelta." },
+  "Para trocar apenas a conta padrão, deixe o campo do token em branco — o token guardado é mantido.":
+    { es: "Para cambiar solo la cuenta predeterminada, deja el campo del token en blanco — el token guardado se mantiene." },
+  "Guardado — preencha só para trocar": { es: "Guardado — completa solo para cambiarlo" },
+  "Já existe um token guardado. Deixe em branco para mantê-lo, ou cole um novo para substituir.":
+    { es: "Ya existe un token guardado. Déjalo en blanco para mantenerlo, o pega uno nuevo para reemplazarlo." },
+  "Precisa da permissão ads_read.": { es: "Necesita el permiso ads_read." },
+  "Conta padrão (opcional)": { es: "Cuenta predeterminada (opcional)" },
+  "A conta que a tela de Meta Ads abre por padrão. Em branco, ela abre a primeira conta ativa que o token alcançar.":
+    { es: "La cuenta que la pantalla de Meta Ads abre por defecto. En blanco, abre la primera cuenta activa que el token alcance." },
+  "Cole o token para poder salvar.": { es: "Pega el token para poder guardar." },
+  "Conta desconectada.": { es: "Cuenta desconectada." },
+  "Desconectar apaga o token guardado. A tela de Meta Ads volta a pedir uma conexão, e nenhum dado histórico é perdido — nada é armazenado aqui.":
+    { es: "Desconectar borra el token guardado. La pantalla de Meta Ads vuelve a pedir una conexión, y no se pierde ningún dato histórico — aquí no se almacena nada." },
+  "Não consegui desconectar agora.": { es: "No pude desconectar ahora." },
+
+  // ─── Configurações → Conversões (0213) e o convidado da agenda (0212) ───
+  //
+  // Estas duas telas entraram na mesma leva do painel de Meta Ads e ficaram sem
+  // espanhol: o `i18n-espanhol-cobre-a-tela` as pegou com 27 chamadas caindo no
+  // português. Ao acrescentar campo em qualquer uma delas, volte aqui.
+  //
+  // ⚠️ `Conversões` também é o rótulo no menu lateral (`lib/navigation/registry.ts`),
+  // e é a MESMA chave: mudar a tradução aqui muda os dois lugares.
+  "Conversões": { es: "Conversiones" },
+  "Quando um negócio que veio de anúncio é marcado como ganho, o valor da venda volta para a plataforma que trouxe o cliente. É esse retorno que ensina o anúncio a procurar mais gente parecida com quem comprou.":
+    { es: "Cuando un negocio que vino de un anuncio se marca como ganado, el valor de la venta vuelve a la plataforma que trajo al cliente. Es ese retorno el que le enseña al anuncio a buscar más gente parecida a quien compró." },
+  "O envio está pausado. As vendas continuam sendo registradas aqui, mas não vão para a plataforma enquanto isto estiver desligado.":
+    { es: "El envío está pausado. Las ventas se siguen registrando aquí, pero no van a la plataforma mientras esto esté apagado." },
+  "Modo de teste ligado: as vendas vão marcadas como teste e não contam para a otimização. Apague o código de teste quando terminar de conferir.":
+    { es: "Modo de prueba encendido: las ventas van marcadas como prueba y no cuentan para la optimización. Borra el código de prueba cuando termines de revisar." },
+  "Vendas que não foram reportadas": { es: "Ventas que no fueron reportadas" },
+  "reportadas com sucesso": { es: "reportadas con éxito" },
+  "Nenhuma pendência. Ou tudo que veio de anúncio foi reportado, ou ainda não fechou nenhuma venda com origem em anúncio.":
+    { es: "Ninguna pendencia. O todo lo que vino de anuncios fue reportado, o todavía no se cerró ninguna venta con origen en anuncios." },
+  "Negócio": { es: "Negocio" },
+  "O que houve": { es: "Qué pasó" },
+  "(sem título)": { es: "(sin título)" },
+
+  // Formulário da conexão de conversões
+  "Conexão salva.": { es: "Conexión guardada." },
+  "Identificador do destino de conversões": { es: "Identificador del destino de conversiones" },
+  "Só números. Você encontra no gerenciador de anúncios, na fonte de dados que recebe as conversões.":
+    { es: "Solo números. Lo encuentras en el administrador de anuncios, en la fuente de datos que recibe las conversiones." },
+  "Gravado. Deixe em branco para manter.": { es: "Guardado. Déjalo en blanco para mantenerlo." },
+  "Cole o token gerado na plataforma": { es: "Pega el token generado en la plataforma" },
+  "Guardado criptografado. Ele nunca volta para esta tela depois de salvo.":
+    { es: "Guardado cifrado. Nunca vuelve a esta pantalla después de guardarlo." },
+  "Código de teste (opcional)": { es: "Código de prueba (opcional)" },
+  "Enquanto preenchido, as vendas vão marcadas como teste e não contam para a otimização. Apague quando terminar de conferir.":
+    { es: "Mientras esté completo, las ventas van marcadas como prueba y no cuentan para la optimización. Bórralo cuando termines de revisar." },
+  "Reportar vendas automaticamente": { es: "Reportar ventas automáticamente" },
+  "Desligar pausa o envio e mantém a credencial gravada.":
+    { es: "Apagarlo pausa el envío y mantiene la credencial guardada." },
+  "Salvar conexão": { es: "Guardar conexión" },
+  "Preencha o identificador e o token para poder salvar.":
+    { es: "Completa el identificador y el token para poder guardar." },
+
+  // Convidado do compromisso (agenda)
+  "E-mail do convidado": { es: "Correo del invitado" },
+  "opcional": { es: "opcional" },
+  "cliente@empresa.com": { es: "cliente@empresa.com" },
+  "Endereço inválido — confira antes de marcar.":
+    { es: "Dirección inválida — revísala antes de agendar." },
+  "Preenchido, o Google envia o convite por e-mail para esta pessoa.":
+    { es: "Si se completa, Google envía la invitación por correo a esta persona." },
+
+
+  // ─── Tarefas (extraídas do PR #418) ───
+  "Tarefas": { es: "Tareas" },
+  "O que ficou combinado, com prazo. Tarefa presa a um negócio aparece na linha do tempo dele.": {
+    es: "Lo que quedó acordado, con plazo. Una tarea ligada a un negocio aparece en la línea de tiempo de él.",
+  },
+  "O que ficou combinado, com prazo — e o que já venceu sem ninguém fazer.": {
+    es: "Lo que quedó acordado, con plazo — y lo que ya venció sin que nadie lo hiciera.",
+  },
+  "Em aberto": { es: "Abiertas" },
+  "Lista": { es: "Lista" },
+  "Calendário": { es: "Calendario" },
+  "Não foi possível carregar as tarefas.": { es: "No se pudieron cargar las tareas." },
+  "Nova tarefa": { es: "Nueva tarea" },
+  "Editar tarefa": { es: "Editar tarea" },
+  "Atrasadas": { es: "Atrasadas" },
+  "Esta semana": { es: "Esta semana" },
+  "Mais tarde": { es: "Más tarde" },
+  "Sem prazo": { es: "Sin plazo" },
+  "Encerradas": { es: "Cerradas" },
+  "Nenhuma tarefa por aqui": { es: "Ninguna tarea por aquí" },
+  "Enquanto isto estiver vazio, o que foi combinado vive só na memória de alguém.": {
+    es: "Mientras esto esté vacío, lo que se acordó vive solo en la memoria de alguien.",
+  },
+  "Marcar como concluída": { es: "Marcar como completada" },
+  "Reabrir a tarefa": { es: "Reabrir la tarea" },
+  "Editar a tarefa": { es: "Editar la tarea" },
+  "Apagar a tarefa": { es: "Eliminar la tarea" },
+  "O que precisa ser feito": { es: "Qué hay que hacer" },
+  "Ex.: ligar de volta para fechar a proposta": { es: "Ej.: llamar de vuelta para cerrar la propuesta" },
+  "O que você vai querer lembrar quando chegar a hora": {
+    es: "Lo que vas a querer recordar cuando llegue el momento",
+  },
+  "Prazo": { es: "Plazo" },
+  "Situação": { es: "Situación" },
+  "Em andamento": { es: "En curso" },
+  "Escreva um título para a tarefa.": { es: "Escribe un título para la tarea." },
+  "Não foi possível salvar a tarefa.": { es: "No se pudo guardar la tarea." },
+  "Baixa": { es: "Baja" },
+  "Média": { es: "Media" },
+  "Alta": { es: "Alta" },
+  "mais": { es: "más" },
+  // ─── Configurações › Organização — zona de perigo (extraído do PR #556) ───
+  "Zona de perigo": { es: "Zona de peligro" },
+  "Apaga de vez as mensagens, conversas, negócios, contatos, agendamentos e pedidos desta organização. Serve para recomeçar os testes do zero antes de atender de verdade.":
+    {
+      es: "Borra definitivamente los mensajes, conversaciones, negocios, contactos, citas y pedidos de esta organización. Sirve para volver a empezar las pruebas desde cero antes de atender de verdad.",
+    },
+  "Continuam de pé: as pessoas da equipe, as configurações, os funis e etapas, os agentes de IA e os canais de WhatsApp já conectados.":
+    {
+      es: "Siguen en pie: las personas del equipo, las configuraciones, los embudos y etapas, los agentes de IA y los canales de WhatsApp ya conectados.",
+    },
+  "Apagar todos os dados de atendimento": { es: "Borrar todos los datos de atención" },
+  "Apagar todos os dados de atendimento?": { es: "¿Borrar todos los datos de atención?" },
+  "Esta ação é irreversível. Mensagens, conversas, negócios, contatos, agendamentos e pedidos de":
+    {
+      es: "Esta acción es irreversible. Mensajes, conversaciones, negocios, contactos, citas y pedidos de",
+    },
+  "serão apagados de vez.": { es: "serán borrados definitivamente." },
+  Digite: { es: "Escriba" },
+  "para confirmar": { es: "para confirmar" },
+  "Apagando…": { es: "Borrando…" },
+  "Apagar de vez": { es: "Borrar definitivamente" },
+  "Dados apagados": { es: "Datos borrados" },
+  mensagens: { es: "mensajes" },
+  conversas: { es: "conversaciones" },
+  "Só quem administra esta empresa pode apagar os dados.": {
+    es: "Solo quien administra esta empresa puede borrar los datos.",
+  },
+  "O nome digitado não confere com o nome da organização.": {
+    es: "El nombre escrito no coincide con el nombre de la organización.",
+  },
+  "Digite o nome da organização para confirmar.": {
+    es: "Escriba el nombre de la organización para confirmar.",
+  },
+  "Não consegui apagar os dados agora.": { es: "No pude borrar los datos ahora." },
+  "Sua sessão expirou. Entre de novo para continuar.": {
+    es: "Su sesión expiró. Entre de nuevo para continuar.",
+  },
+  "Não consegui identificar sua empresa. Recarregue a página.": {
+    es: "No pude identificar su empresa. Recargue la página.",
+  },
+  "Confirme o código do seu aplicativo de duas etapas e tente de novo.": {
+    es: "Confirme el código de su aplicación de dos pasos e inténtelo de nuevo.",
+  },
 
   // ─── Configurações › Organização — zona de perigo (reset de dados de teste) ───
   "Zona de perigo": { es: "Zona de peligro" },
@@ -6402,6 +6768,33 @@ export const DICIONARIO: Traducoes = {
   "leads criados": { es: "leads creados" },
   "contatos novos": { es: "contactos nuevos" },
   "Colunas que não reconheci:": { es: "Columnas que no reconocí:" },
+
+  // ─── Relatório de atividades (/app/activities) ───
+  //
+  // "acontecimento"/"acontecimentos" são o PLURAL da mesma contagem e entram
+  // como duas chaves porque a tela escolhe uma das duas — espanhol tem a mesma
+  // distinção, então nenhuma das duas pode faltar.
+  "O que aconteceu na operação no período — e quanto disso foi a equipe.": {
+    es: "Lo que pasó en la operación en el período — y cuánto de eso fue el equipo.",
+  },
+  Últimos: { es: "Últimos" },
+  "Erro ao carregar o relatório.": { es: "Error al cargar el informe." },
+  acontecimento: { es: "suceso" },
+  acontecimentos: { es: "sucesos" },
+  "Nada aconteceu neste período": { es: "No pasó nada en este período" },
+  "Nenhum acontecimento foi registrado na janela escolhida — nem por pessoas, nem pelos agentes. Aumente o período ou confira se o atendimento está de pé.":
+    {
+      es: "No se registró ningún suceso en la ventana elegida — ni por personas, ni por los agentes. Amplíe el período o revise si la atención está funcionando.",
+    },
+  "Ver conversas": { es: "Ver conversaciones" },
+  "A equipe": { es: "El equipo" },
+  "Os agentes": { es: "Los agentes" },
+  "Quem fez": { es: "Quién lo hizo" },
+  "O que foi feito": { es: "Qué se hizo" },
+  "Linha do tempo da operação": { es: "Línea de tiempo de la operación" },
+  "A lista mostra só os mais recentes.": { es: "La lista muestra solo los más recientes." },
+  "No período houve": { es: "En el período hubo" },
+  "acontecimentos.": { es: "sucesos." },
 };
 
 /**

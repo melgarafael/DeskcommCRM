@@ -30,6 +30,7 @@
 
 import { Redis } from "@upstash/redis";
 import { env } from "@/lib/env";
+import { validarConfigRedisRest } from "@/lib/redis-config";
 
 // ---------------------------------------------------------------------------
 // Redis client — lazy singleton
@@ -47,10 +48,14 @@ function getRedis(): Redis | null {
   const url = env.UPSTASH_REDIS_REST_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN;
 
-  if (!url || !token) {
+  // Conferir a FORMA antes de construir o cliente: com o valor malformado, cada
+  // evento pagaria os 2s do `Promise.race` abaixo para chegar ao mesmo lugar em
+  // que esta linha chega de graça. Ver `lib/redis-config.ts`.
+  const config = validarConfigRedisRest(url, token);
+  if (!config.ok) {
     if (!_fallbackWarned) {
       console.warn(
-        "[rag-debounce] Redis missing — using in-memory fallback (NOT safe for multi-instance)",
+        `[rag-debounce] Redis ${config.reason} — using in-memory fallback (NOT safe for multi-instance)`,
       );
       _fallbackWarned = true;
     }

@@ -248,12 +248,14 @@ export const AUDIT_ACTIONS = [
   "auth.signup_failed",
   "auth.signup_confirmed",
   "auth.signup_provision_failed",
+  "auth.signup_provision_recovery_failed",
   "auth.email_link_rejected",
   "auth.password_reset_requested",
   "auth.password_reset_request_failed",
   "auth.password_reset_completed",
   "auth.password_reset_failed",
   "tenant.created_by_signup",
+  "tenant.created_by_recovery",
   "conversation.snoozed",
   "conversation.snooze_cancelled",
   "conversation.snooze_watcher_run",
@@ -290,6 +292,31 @@ export const AUDIT_ACTIONS = [
   // event_log (nenhum handler consumiria o tipo — ver register-handlers.ts).
   "platform_branding.updated",
   "platform_google_oauth.updated",
+  // A conexão da ORGANIZAÇÃO com a conta de anúncios (migration 0213).
+  // Auditável porque o token gravado aqui escreve conversões na conta de
+  // mídia do cliente: "quem apontou minhas vendas para este destino?" só tem
+  // resposta nesta trilha. COM `organization_id`, diferente das duas linhas
+  // acima — é mutação de tenant, e cada organização tem a sua conta.
+  //
+  // O `metadata` carrega o dataset (identificador, não segredo) e um booleano
+  // dizendo se o token foi trocado. O token, nem em metadata.
+  "ad_platform_connection.updated",
+  // A conexão de LEITURA da organização com a conta de anúncios (0214).
+  // Ação SEPARADA da de cima, e não um `metadata.purpose` na mesma: a pergunta
+  // que cada trilha responde é diferente. "Quem apontou minhas vendas para este
+  // destino?" é sobre dinheiro saindo; "quem deu a alguém acesso de leitura ao
+  // meu orçamento de mídia?" é sobre dado comercial vazando. Fundi-las
+  // obrigaria a ler o metadata para saber qual das duas aconteceu — o mesmo
+  // motivo pelo qual `branding.updated` não virou `org.updated`.
+  //
+  // O `metadata` carrega o id da conta padrão (identificador, não segredo) e um
+  // booleano dizendo se o token foi trocado. O token, nem em metadata.
+  "ad_insights_connection.updated",
+  // Desconectar APAGA o token (a 0205 não tem `enabled`, e o porquê está no
+  // cabeçalho dela). Auditada à parte de `.updated` porque some uma credencial:
+  // a tela de Meta Ads para de funcionar para todo mundo da organização, e a
+  // trilha precisa dizer quem fez isso e quando.
+  "ad_insights_connection.deleted",
   // A marca da ORGANIZAÇÃO (nome + cor) trocada em `organizations.settings.branding`
   // — mutação de TENANT, e por isso COM `organization_id` e com `resource_id` =
   // o uuid da org. É outra ação, e não `org.updated`, porque a pergunta que a
@@ -403,12 +430,25 @@ export const AUDIT_ACTIONS = [
   // é pura DELETE em SQL — então a action que a chama grava esta linha.
   "org.dados_operacionais_apagados",
 
+  // Zona de perigo de Configurações › Organização: o admin zera os dados de
+  // atendimento da própria organização para recomeçar os testes. Um DELETE não
+  // deixa rastro sozinho — esta linha é o único registro de que a organização
+  // foi esvaziada, por quem, e de quanto (as contagens vão no metadata).
+  "org.dados_operacionais_apagados",
+
   // O catálogo da loja (migration 0204). Preço de venda é dado que a equipe
   // disputa — quem mudou e quando precisa ficar registrado.
   "catalog_product.created",
   "catalog_product.updated",
   "catalog_product.deleted",
   "catalog_product.imported",
+
+  // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
+  // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
+  // exatamente o que se disputa depois de um cliente ficar sem retorno.
+  "crm_task.created",
+  "crm_task.updated",
+  "crm_task.deleted",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

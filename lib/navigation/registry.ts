@@ -23,6 +23,7 @@ import {
   Lightbulb,
   ListChecks,
   Lock,
+  Megaphone,
   Palette,
   Plugs,
   PlugsConnected,
@@ -96,13 +97,20 @@ export interface NavDestination {
  * Hub só onde o grupo passa de 4 telas. Abaixo disso ele cabe inteiro no
  * sidebar, e um hub de 3 itens seria só um clique a mais para chegar onde já
  * dava para chegar.
+ *
+ * O CRM cruzou essa linha com a tela de Tarefas (PR #546), e o hub dele é a
+ * cobrança de uma promessa escrita: o comentário de densidade do `Sidebar.tsx`
+ * dizia, desde a vez em que Produtos estourou a dobra por uma linha, que
+ * "quando o quinto destino de CRM aparecer, é hub que se cria, não mais 4px que
+ * se raspa". Tarefas foi o quinto. Raspar de novo devolveria 13px e adiaria a
+ * mesma conversa para a sexta tela.
  */
 export const NAV_GROUPS: NavGroup[] = [
   { id: "atendimento", label: "Atendimento" },
-  { id: "crm", label: "CRM" },
+  { id: "crm", label: "CRM", hub: { href: "/app/crm", label: "Ver tudo em CRM" } },
   { id: "ia", label: "Agente de IA", hub: { href: "/app/ai", label: "Ver tudo em IA" } },
   { id: "canais", label: "Canais" },
-  { id: "analise", label: "Análise" },
+  { id: "analise", label: "Análise", hub: { href: "/app/analise", label: "Ver tudo em Análise" } },
   {
     id: "organizacao",
     label: "Organização",
@@ -201,6 +209,7 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     description: "Seus funis de venda — clique em um para abrir o quadro de clientes.",
     icon: Kanban,
     group: "crm",
+    section: "O dia a dia da venda",
     sidebar: true,
   },
   {
@@ -209,6 +218,21 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     description: "As pessoas do outro lado da conversa e seu histórico.",
     icon: Users,
     group: "crm",
+    section: "O dia a dia da venda",
+    sidebar: true,
+  },
+  {
+    // Extraída do PR #418 (@clinicacentrodosorrisosc-code). Fica no CRM e no
+    // sidebar porque é tela de USO DIÁRIO — quem atende abre para ver o que
+    // vence hoje, do mesmo jeito que abre o Inbox. Sem `minRole`: `viewer` VÊ
+    // o que o time combinou (é informação de operação), e a criação é cobrada
+    // pela rota, com `requireRole("agent")`.
+    href: "/app/tasks",
+    label: "Tarefas",
+    description: "O que ficou combinado, com prazo — e o que já venceu sem ninguém fazer.",
+    icon: ListChecks,
+    group: "crm",
+    section: "O dia a dia da venda",
     sidebar: true,
   },
   {
@@ -217,15 +241,27 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     // que ninguém nunca preencheu — e o efeito não era silêncio: era o agente
     // respondendo "não tenho nada com esse nome" para uma loja de estoque cheio.
     //
-    // Fica no grupo do CRM, e não em Configurações, porque consultar preço é
-    // trabalho de quem ATENDE, todo dia — diferente de "tipos de agendamento",
-    // que se configura uma vez.
+    // Fica no grupo do CRM, e não em Configurações, porque o catálogo é insumo
+    // de VENDA: ele existe para o agente responder preço na conversa.
+    //
+    // ⚠️ ESTA FRASE DIZIA "consultar preço é trabalho de quem ATENDE, todo dia",
+    // e era o argumento para o `sidebar: true`. Ela se contradizia com a própria
+    // descrição do destino, uma linha abaixo: quem responde o preço é o
+    // atendente de IA, dentro do Inbox. O humano não abre esta tela para
+    // vender — abre para cadastrar o que vende.
     href: "/app/products",
     label: "Produtos",
     description: "O catálogo da loja, com o preço que o atendente de IA responde.",
     icon: Storefront,
     group: "crm",
-    sidebar: true,
+    section: "Preparar a venda",
+    // SEM `sidebar`: mora atrás de "Ver tudo em CRM".
+    //
+    // O critério é QUEM CONSOME a tela, e a descrição acima já o entrega: o
+    // preço quem responde é o atendente de IA, dentro da conversa. Esta tela é
+    // onde o catálogo se CADASTRA — trabalho de quando entra produto novo ou
+    // muda preço, não de toda manhã. Quem atende não a abre para vender; abre o
+    // Inbox e o funil, que continuam no menu.
   },
   {
     // A promessa que o comentário da Agenda fazia desde que ela nasceu. Aqui se
@@ -264,8 +300,18 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     description: "As colunas de cada funil, o vocabulário do negócio e os motivos de perda.",
     icon: Funnel,
     group: "crm",
+    section: "Preparar a venda",
     minRole: "manager",
-    sidebar: true,
+    // SEM `sidebar`: mora atrás de "Ver tudo em CRM".
+    //
+    // ⚠️ O ACHADO ORIGINAL NÃO FOI DESFEITO. Ele era "esta tela está enterrada
+    // em CONFIGURAÇÕES e ninguém sabe que existe" — o problema era o GRUPO
+    // errado, não a profundidade. Ela continua sendo CRM: aparece no hub do
+    // CRM, no ⌘K, e o caminho é "CRM › Ver tudo em CRM", nunca mais
+    // "Configurações". O que muda é a frequência: desenhar as colunas do funil
+    // e escrever os motivos de perda é trabalho de montagem, feito uma vez e
+    // revisitado por `manager` de vez em quando — enquanto Funis, Contatos e
+    // Tarefas se abrem todo dia. É esse o corte que decide quem fica no menu.
   },
 
   // ---- Agente de IA — montar, ensinar, acompanhar ----
@@ -430,7 +476,19 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     // A página não filtra por papel, mas as Server Actions de conectar e
     // desconectar exigem admin — mostrar a um viewer seria oferecer botão morto.
     minRole: "admin",
-    sidebar: true,
+    // SEM `sidebar`: fora do menu lateral por decisão do dono do produto — a
+    // integração não é usada nesta instalação e ocupava uma linha de "Canais"
+    // toda vez que alguém abria o app.
+    //
+    // Continua sendo DESTINO, e é por isso que a linha some em vez do bloco
+    // inteiro: `searchable()` (abaixo) filtra só por papel, então a tela segue
+    // no ⌘K; a rota, a página e as Server Actions ficam intactas; e
+    // `tests/unit/navegacao-completude.test.ts` continua vendo uma porta para
+    // `/app/integrations/nuvemshop` — apagar a entrada exigiria justificá-la na
+    // allowlist de "rota sem porta", que é coisa de rota morta, e esta não está.
+    //
+    // ⚠️ O grupo "canais" não tem hub, então o ⌘K passa a ser a ÚNICA porta
+    // navegável. Para voltar a mostrá-la, basta devolver `sidebar: true`.
   },
   {
     href: "/app/webhooks",
@@ -443,12 +501,62 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
 
   // ---- Análise — olhar o sistema funcionando ----
+  //
+  // ── QUEM FICA NO MENU, E POR QUÊ ─────────────────────────────────────────
+  //
+  // A régua é a FREQUÊNCIA de quem opera vendas por WhatsApp, não a importância
+  // da tela. As três de cima entram na rotina — o dono abre Desempenho para
+  // saber como vai o mês, Meta Ads para saber quanto custou trazer quem chegou,
+  // e Atividades para saber se a equipe (e a IA) trabalhou no período. São
+  // perguntas que se refazem toda semana, e um menu é para o que se refaz.
+  //
+  // As duas de baixo são visita DELIBERADA: "Evolução da IA" é revisão do
+  // agente, coisa de quando se senta para ensiná-lo — e quem senta para isso já
+  // vai ao grupo de IA; "Audit Log" é forense, aberto quando algo deu errado e
+  // se precisa saber quem mexeu. Nenhuma das duas se abre de passagem, e é
+  // justamente disso que o hub é feito: quem vai lá vai de propósito.
+  //
+  // Sair do menu não é sair do produto — o hub `/app/analise` é INVENTÁRIO e
+  // lista as cinco (`hubSections`), então as duas continuam a um clique, com a
+  // frase que explica para que servem. O ⌘K também as acha por nome.
   {
     href: "/app/metrics",
     label: "Desempenho",
     description: "Funil e performance por atendente nos últimos 30 dias.",
     icon: ChartBar,
     group: "analise",
+    section: "Os números do período",
+    sidebar: true,
+  },
+  {
+    // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá
+    // está o que aconteceu depois que a pessoa chegou; aqui, quanto custou
+    // trazê-la. Ler as duas juntas é o que fecha a conta do custo por cliente.
+    href: "/app/ads/meta",
+    label: "Meta Ads",
+    description: "Quanto custou cada resultado das campanhas que trazem gente para cá.",
+    icon: Megaphone,
+    group: "analise",
+    section: "Os números do período",
+    // `manager`, e não o `viewer` de Desempenho: aqui não há recorte por
+    // pessoa — orçamento e criativo são da empresa inteira. Mesmo grau dos
+    // outros dois vizinhos do grupo.
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
+    // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
+    // ganho/perdido por atendente); aqui é o TRABALHO que aconteceu no
+    // período, com quem fez cada coisa. Um mês inteiro atendido pela IA e um
+    // mês inteiro atendido pela equipe têm o mesmo desfecho e histórias
+    // opostas — só esta tela distingue as duas.
+    href: "/app/activities",
+    label: "Atividades",
+    description:
+      "Relatório do que a equipe e os agentes fizeram no período: quanto, quem e de que tipo.",
+    icon: ClockCounterClockwise,
+    group: "analise",
+    section: "Os números do período",
     sidebar: true,
   },
   {
@@ -458,8 +566,8 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     description: "Se o agente está melhorando, onde ele erra e o que falta ensinar.",
     icon: ChartLineUp,
     group: "analise",
+    section: "O histórico que se consulta",
     minRole: "manager",
-    sidebar: true,
   },
   {
     href: "/app/audit",
@@ -467,8 +575,8 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     description: "Quem fez o quê, quando — o histórico que não se apaga.",
     icon: ClockCounterClockwise,
     group: "analise",
+    section: "O histórico que se consulta",
     minRole: "manager",
-    sidebar: true,
   },
 
   // ---- Organização — conta, empresa, acesso ----
@@ -523,6 +631,43 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     icon: Buildings,
     group: "organizacao",
     section: "Sua empresa",
+    minRole: "admin",
+  },
+  {
+    // Mora em Organização e não em Canais de propósito: o que se configura aqui
+    // é a CONTA DE ANÚNCIOS da empresa — dinheiro e identidade comercial, ao lado
+    // de billing e API tokens. Canais é por onde se FALA com o cliente, e os dois
+    // eixos são independentes (dá para receber lead de anúncio num número servido
+    // por qualquer transporte). Ver `lib/plataformas-de-anuncio/types.ts`.
+    href: "/app/settings/conversoes",
+    label: "Conversões",
+    description:
+      "Devolver ao anúncio as vendas que ele trouxe, para ele aprender a procurar mais clientes parecidos.",
+    icon: ChartLineUp,
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin` pelo mesmo critério das vizinhas: o token grava na conta de
+    // anúncios da empresa, e quem o troca decide para onde vai o dinheiro de
+    // mídia. Um `manager` ficaria acima de billing na mesma prancheta.
+    minRole: "admin",
+  },
+  {
+    // Vizinha de Conversões, e SEPARADA dela de propósito. As duas conectam "a
+    // Meta" e a tentação de fundi-las é real — mas são credenciais de escopos
+    // diferentes, em tabelas diferentes (0214), com consequências opostas
+    // quando vencem: o token de leitura vencido deixa uma tela vazia, o de
+    // conversões vencido faz a empresa parar de reportar vendas sem sintoma.
+    // Uma tela só, com dois campos de token parecidos, é como se cola o token
+    // errado no campo errado e se perde uma semana achando que quebrou.
+    href: "/app/settings/meta-ads",
+    label: "Meta Ads",
+    description: "Conectar a conta de anúncios para ler o desempenho das campanhas.",
+    icon: Megaphone,
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin` pelo mesmo critério da vizinha, mesmo o token sendo só de
+    // leitura: ele expõe orçamento e performance da conta inteira, e quem
+    // apenas LÊ a tela (`manager`) não precisa poder trocar a credencial.
     minRole: "admin",
   },
   {

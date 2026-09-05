@@ -22,6 +22,7 @@ export interface Contact {
   tags: string[];
   source: string;
   source_metadata: Record<string, unknown>;
+  custom_fields: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   last_activity_at: string | null;

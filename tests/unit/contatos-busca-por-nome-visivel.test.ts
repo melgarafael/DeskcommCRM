@@ -25,6 +25,7 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 /** Client mínimo que só guarda o filtro `.or()` que o handler montou. */
 function supabaseEspiao() {
   const filtros: string[] = [];
+  const colunasIs: string[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chain: any = {
     select: () => chain,
@@ -32,13 +33,21 @@ function supabaseEspiao() {
     order: () => chain,
     limit: () => chain,
     contains: () => chain,
+    // O dublê tem de conhecer TODOS os elos que o handler encadeia: um elo que
+    // falta não vira "asserção que não passa", vira `TypeError` no meio da
+    // consulta — e o vermelho aparece em cinco casos de busca que não têm nada
+    // a ver com o que mudou.
+    is: (col: string) => {
+      colunasIs.push(col);
+      return chain;
+    },
     or: (expr: string) => {
       filtros.push(expr);
       return chain;
     },
     then: (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res),
   };
-  return { client: { from: () => chain } as never, filtros };
+  return { client: { from: () => chain } as never, filtros, colunasIs };
 }
 
 async function filtroDaBusca(termo: string): Promise<string> {
@@ -49,6 +58,17 @@ async function filtroDaBusca(termo: string): Promise<string> {
     { search: termo, limit: 20 },
   );
   return filtros[0] ?? "";
+}
+
+/** As colunas que a listagem exige serem NULL. */
+async function colunasComIsNull(): Promise<string[]> {
+  const { client, colunasIs } = supabaseEspiao();
+  await listContactsHandler(
+    client,
+    { organization_id: ORG, actor: { type: "user", id: "u-1" }, requestId: "req" },
+    { limit: 20 },
+  );
+  return colunasIs;
 }
 
 describe("busca de contatos", () => {
@@ -83,5 +103,19 @@ describe("busca de contatos", () => {
     // Quem cola +553284793302 tem que achar o contato gravado como +5532984793302.
     const filtro = await filtroDaBusca("3284793302");
     expect(filtro).toContain("phone_number.ilike.%5532984793302%");
+  });
+
+  it("a lápide de uma fusão não é um contato da lista", async () => {
+    // `is_merged_into` marca o cadastro ABSORVIDO por outro. Ele não é apagado
+    // (é o que libera telefone e e-mail para o vencedor herdar, e é o registro
+    // da fusão), mas deixou de ser uma pessoa da base.
+    //
+    // Esta listagem era a ÚNICA leitura de `contacts` do repositório que não
+    // filtrava — `contacts/duplicates`, o webhook de captação e as duas leituras
+    // de `lib/channels/contato-por-telefone` já filtravam. Medido pela tela em
+    // 2026-09-04: logo depois de juntar dois cadastros, a lista mostrava OS
+    // DOIS, com o mesmo telefone e ambos com status "ativo", e o rodapé dizia
+    // "2 contatos". Quem opera conclui que a fusão não funcionou.
+    expect(await colunasComIsNull()).toContain("is_merged_into");
   });
 });

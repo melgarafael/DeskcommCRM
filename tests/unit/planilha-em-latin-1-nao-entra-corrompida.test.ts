@@ -152,3 +152,68 @@ describe("as rotas de importação decodificam pelos BYTES", () => {
     expect(semComentarios(comDefeito).includes("decodificarCsv(")).toBe(false);
   });
 });
+
+describe("um byte ruim não condena o arquivo inteiro", () => {
+  /**
+   * ⚠️ REGRESSÃO MEDIDA depois do merge, numa varredura adversarial dos próprios
+   * merges do dia. O desempate original era `if (utf8.includes("\uFFFD"))` —
+   * decisão por ARQUIVO tomada sobre um sinal por BYTE, sem proporção.
+   *
+   * Um único byte inválido no meio de um arquivo perfeitamente UTF-8 (0x92, a
+   * aspa curva do Word, sobra comum de copiar-colar) jogava TODAS as linhas para
+   * o windows-1252. Medido com esta mesma função:
+   *
+   *   arquivo limpo          → "Ação" corretos=500  mojibake=  0
+   *   + 1 byte 0x92 no meio  → "Ação" corretos=  0  mojibake=500
+   *
+   * E o caminho anterior ao conserto (`file.text()`, UTF-8 com substituição
+   * local) era MELHOR nesse caso: corrompia UM caractere, não o arquivo. O
+   * `upsert` por `(organization_id, codigo)` ainda sobrescrevia os nomes bons
+   * que já estavam no catálogo — com `erros: []` e 200 OK.
+   */
+  const cemLinhas = Array.from({ length: 100 }, (_, i) => `Ação Cônica nº ${i + 1}`).join("\n");
+
+  it("UTF-8 com UM byte inválido continua sendo lido como UTF-8", () => {
+    const limpo = Buffer.from(cemLinhas, "utf8");
+    const meio = Math.floor(limpo.length / 2);
+    const sujo = Buffer.concat([limpo.subarray(0, meio), Buffer.from([0x92]), limpo.subarray(meio)]);
+
+    const r = decodificarCsv(new Uint8Array(sujo));
+    const texto = "texto" in r ? r.texto : "";
+    expect(
+      (texto.match(/Ação/g) ?? []).length,
+      "um byte solto derrubou o arquivo inteiro para windows-1252 — a decisão " +
+        "por arquivo voltou a ser tomada sobre um sinal por byte",
+    ).toBeGreaterThanOrEqual(99);
+    expect((texto.match(/AÃ§/g) ?? []).length, "mojibake em massa").toBe(0);
+  });
+
+  it("latin-1 de verdade CONTINUA sendo detectado — o par do «não faça X»", () => {
+    // Sem este caso, "sempre devolva UTF-8" satisfaria o de cima e desfaria o
+    // conserto que este arquivo inteiro existe para guardar.
+    const latin = Buffer.from(cemLinhas, "latin1");
+    const r = decodificarCsv(new Uint8Array(latin));
+    const texto = "texto" in r ? r.texto : "";
+    expect(
+      (texto.match(/Ação/g) ?? []).length,
+      "latin-1 puro deixou de ser detectado — o conserto original foi desfeito",
+    ).toBeGreaterThanOrEqual(99);
+  });
+
+  it("a densidade separa as duas causas por ordens de grandeza — o porquê do número", () => {
+    // Documenta a folga que sustenta MAX_BYTES_POR_SUBSTITUICAO: se um dia as
+    // duas se aproximarem, este caso avisa antes de alguém descobrir na planilha
+    // de um cliente.
+    const conta = (b: Buffer) => {
+      const d = new TextDecoder("utf-8").decode(b);
+      const n = (d.match(/\uFFFD/g) ?? []).length;
+      return n === 0 ? Infinity : b.byteLength / n;
+    };
+    const limpo = Buffer.from(cemLinhas, "utf8");
+    const meio = Math.floor(limpo.length / 2);
+    const sujo = Buffer.concat([limpo.subarray(0, meio), Buffer.from([0x92]), limpo.subarray(meio)]);
+
+    expect(conta(Buffer.from(cemLinhas, "latin1")), "latin-1 real ficou esparso demais").toBeLessThan(50);
+    expect(conta(sujo), "um byte ruim ficou denso demais").toBeGreaterThan(500);
+  });
+});

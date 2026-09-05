@@ -26,6 +26,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
+import { validarConfigRedisRest } from "@/lib/redis-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,7 +38,8 @@ type MotivoDeFalha =
   | FalhaDeAlcance
   | "credencial_recusada"
   | "resposta_inesperada"
-  | "nao_configurado";
+  | "nao_configurado"
+  | "configuracao_invalida";
 
 type Check = {
   status: CheckStatus;
@@ -103,8 +105,36 @@ async function checkRedis(): Promise<Check> {
   const t0 = Date.now();
   const url = env.UPSTASH_REDIS_REST_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) {
-    return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+
+  /**
+   * A FORMA do valor vem antes da ida à rede, e o motivo é o que quem opera faz
+   * a seguir.
+   *
+   * Um `.env` com as aspas sobrando (`URL="https://srh:80"`) hoje chega até o
+   * `fetch`, falha, e o `reason` que sai é o de alcance — indistinguível do
+   * contêiner do Redis realmente parado. As duas leituras mandam o operador
+   * para lugares opostos: uma para reiniciar um serviço que está de pé, a outra
+   * para o editor. `configuracao_invalida` separa as duas SEM ida à rede.
+   *
+   * Só "não configurado" segue `degraded`: é integração que ninguém contratou.
+   * Configurado errado é `down` — o produto conta com o Redis e não o tem.
+   *
+   * O texto continua carregando o endereço de propósito: `semAlvo()` o redige
+   * para quem não tem o segredo interno, e quem tem precisa ver QUAL valor está
+   * malformado — dizer só "inválido" sem dizer qual não conserta nada.
+   */
+  const config = validarConfigRedisRest(url, token);
+  if (!config.ok) {
+    if (config.reason === "nao_configurado") {
+      return { status: "degraded", latency_ms: 0, error: "not_configured", reason: "nao_configurado" };
+    }
+    return {
+      status: "down",
+      latency_ms: 0,
+      error: `configuracao_invalida: UPSTASH_REDIS_REST_URL=${url}`,
+      reason: "configuracao_invalida",
+      target: alvoDe(url),
+    };
   }
   try {
     // Protocolo REST do Upstash (compatível com serverless-redis-http): comando no

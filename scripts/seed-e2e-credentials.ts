@@ -91,8 +91,41 @@ async function ensureOrg(): Promise<string> {
     .eq("slug", ORG_SLUG)
     .maybeSingle();
   if (existing) {
-    console.log(`[seed] org existing: ${(existing as { id: string }).id}`);
-    return (existing as { id: string }).id;
+    const orgExistente = (existing as { id: string }).id;
+
+    /**
+     * O SEED E DONO DO ESTADO QUE PROMETE, nao so da primeira escrita dele.
+     *
+     * `onboarded_at` era gravado apenas no INSERT abaixo. Numa org que ja
+     * existe, este ramo devolvia o id e ia embora — e se alguma execucao
+     * anterior tivesse zerado o campo, ele nunca mais voltava.
+     *
+     * O efeito medido em 2026-09-03: a `E2E Test Org` ficou com
+     * `onboarded_at` nulo, `app/app/layout.tsx:51` passou a redirecionar todo
+     * login dela para `/onboarding`, e a barra lateral deixou de existir. Duas
+     * specs de webhooks falharam procurando um link que a tela do wizard nao
+     * tem — sintoma que nao aponta para ca, e que custou uma investigacao
+     * inteira para ligar as pontas.
+     *
+     * Quem zera de proposito e `vps-fresh-onboarding.spec.ts` (ela testa
+     * instalacao fresca) e `seed-e2e-funis.ts` (a SEGUNDA org, que precisa
+     * estar nao-configurada). Nenhum dos dois esta errado: o que faltava era
+     * este seed reafirmar o proprio contrato ao reusar.
+     *
+     * Mesma classe que `tests/unit/seeds-nao-disputam-organizacao.test.ts`
+     * fecha do lado de quem cria, aparecendo do lado de quem reusa.
+     */
+    const { error: erroOnboard } = await admin
+      .from("organizations")
+      .update({ onboarded_at: new Date().toISOString() } as never)
+      .eq("id", orgExistente)
+      .is("onboarded_at", null);
+    if (erroOnboard) {
+      throw new Error(`reafirmar org onboarded: ${erroOnboard.message}`);
+    }
+
+    console.log(`[seed] org existing: ${orgExistente}`);
+    return orgExistente;
   }
   const { data, error } = await admin
     .from("organizations")

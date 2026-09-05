@@ -12,6 +12,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
 
@@ -58,9 +59,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = await createClient();
+  // A moeda vem da organização, nunca do corpo — ver `moedaDaOrganizacao()`.
+  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
   const { data, error } = await supabase
     .from("catalog_products")
-    .insert({ ...parsed.data, organization_id: authz.org.orgId, origem: "manual" })
+    .insert({ ...parsed.data, moeda, organization_id: authz.org.orgId, origem: "manual" })
     .select(COLUNAS_DO_PRODUTO)
     .single();
 

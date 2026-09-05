@@ -1322,6 +1322,32 @@ isso não está escrito em lugar nenhum, e quem adota o helper sem subir o teto 
 dois testes alheios estourarem sem call log de locator. Se você for adotar o
 helper numa spec nova: `test.describe.configure({ timeout: 120_000 })`.
 
+## O menu inteiro cabe na dobra de um notebook? (2026-09-04)
+
+Origem: PR #546 pôs a tela de **Tarefas** no grupo CRM e o menu passou a rolar.
+Medido pela tela, 1280×900, logado como admin: `nav.scrollHeight` **776** contra
+**763** de altura útil — **13px** de excesso, 19 links, 5 grupos. Nenhum título
+de grupo caía fora da dobra; o que quebrava era o `rola`.
+
+A resposta NÃO foi raspar densidade: o comentário de `components/shell/Sidebar.tsx`
+já dizia, desde a vez em que Produtos estourou a dobra por uma linha, que "quando
+o quinto destino de CRM aparecer, é hub que se cria, não mais 4px que se raspa".
+Tarefas foi o quinto. Criou-se `/app/crm` — o mesmo mecanismo (`group.hub`) que o
+grupo IA já usava.
+
+| caso | prioridade | estado |
+|---|---|---|
+| Em 1280×900 o menu inteiro cabe sem rolar | `[P1]` | **PASS**, medido por ferramenta em `tests/e2e/navegacao.spec.ts`: `scrollHeight` **763** = altura **763**, excesso **0**, 18 links. A folga real — distância entre o fim do último grupo e o fim da caixa de conteúdo da `<nav>`, que o `scrollHeight` grampeado NÃO revela — é **19px** |
+| Etapas do funil continua alcançável pelo CRM, não por Configurações | `[P1]` | **PASS**, e o caminho é percorrido inteiro: sidebar → "Ver tudo em CRM" → `/app/crm` → card → `settings/tenant/pipelines`. Evidência em `.superpowers/evidence/nav-hub-crm.png` |
+| Produtos, que saiu do menu, continua tendo porta (DoD 14) | `[P1]` | **PASS**, caso próprio na mesma spec: o link não existe no sidebar (`toHaveCount(0)`) e existe no hub |
+| A folga de 19px é real | — | **PROVADO POR SABOTAGEM.** Um sexto destino de CRM com `sidebar: true` devolve o excesso a exatamente **+13px** e reprova o mesmo caso — previsto antes de rodar, e batido |
+| 19px é menos de uma linha (28px + 4px de intervalo = 32px) | — | **ACEITO, com a saída declarada.** O próximo item de sidebar volta a estourar. Só que CRM, IA e Organização têm hub: tela nova em qualquer um dos três não pressiona mais o menu. Quem ainda pressiona é grupo SEM hub — Atendimento (4), Canais (3), Análise (3) —, e para eles a resposta escrita é a mesma: cria-se o hub |
+
+**O que a medição do `scrollHeight` NÃO responde:** quando o conteúdo cabe, ele é
+grampeado no `clientHeight`, então "excesso 0" e "sobra 200px" dão o MESMO número.
+Quem quiser saber quanta folga restou tem de medir o `bottom` do último filho
+contra a caixa de conteúdo da `<nav>` — foi assim que os 19px saíram.
+
 ## O inbox em tempo real — o defeito que veio de fora (2026-08-24)
 
 **Sintoma relatado pelo dono:** *"Recebemos mensagem e só reflete no inbox (na
@@ -1728,3 +1754,34 @@ dia, ou uma delas fala de instante?"*.
 conserto): `lib/kanban/filters.ts` e `lib/automation/throttle.ts` derivam "hoje"
 de `toISOString().slice(0, 10)`, que é o dia UTC. Se algum deles compara com dia
 local, é a mesma classe.
+## J21 — Uma loja no México escolhe sua moeda `[P0]` (2026-09-04)
+
+Migration 0208 dá a `organizations` uma coluna `currency`; o resto do frente
+(seletor, herança no catálogo, formatação) não valia nada sem provar pela tela
+que a escolha sobrevive e que o preço sai do jeito certo — a mesma armadilha
+que o seletor de idioma do perfil já teve antes desta feature: campo que
+aceita clique e não muda nada.
+
+Banco: `supabase/baseline.sql` reaplicado no Supabase local (idempotente —
+`add column if not exists`, confirmado sem perda de dado na única organização
+que já existia). `pnpm e2e:build && pnpm test:e2e -- moeda-da-organizacao`,
+Chromium real, login com MFA real.
+
+| Caso | Prioridade | Resultado |
+|---|---|---|
+| Trocar para peso mexicano em Configurações › Organização e RECARREGAR a página | `[P0]` | **PASS.** `#currency` mostra `MXN` depois do `page.reload()` — não só depois de salvar. Evidência: `evidence/moeda-da-organizacao/moeda-01-antes.png`, `evidence/moeda-da-organizacao/moeda-02-mxn-salvo.png`, `evidence/moeda-da-organizacao/moeda-03-mxn-apos-reload.png` |
+| Produto cadastrado com a organização em MXN mostra o preço na convenção mexicana | `[P0]` | **PASS.** `$249.90` — ponto decimal, cifrão na frente. **Não** `MXN 249,90`, que era o que `comoMoeda()` (removida neste PR) mostrava: a asserção nega esse texto explicitamente, porque uma spec que só checasse "o preço apareceu" teria passado verde com o defeito antigo. Evidência: `evidence/moeda-da-organizacao/moeda-04-produto-mxn.png` |
+
+**Achado de infraestrutura, não desta feature:** `pnpm e2e:build` falhou na
+primeira tentativa com `Cannot find module '@tailwindcss/postcss'` — o merge de
+`upstream/main` trouxe a migração para Tailwind 4 (`package.json` já
+declarava a dependência), mas `pnpm install` não tinha rodado depois. `pnpm
+install` + `pnpm build` (exit 0) resolveram antes de tentar o e2e de novo.
+
+**Achado de doutrina, não desta feature:** o piso de Postgres mudou de pg17
+para pg15 no mesmo merge (PR #422, `tests/unit/baseline-no-piso-do-postgres.test.ts`
+novo). Conferido: a migration 0208 não usa nada exclusivo de pg17 (só `ADD
+COLUMN`, `UPDATE`, `ALTER COLUMN`, um bloco `DO` com `pg_constraint`), e
+`scripts/test-db.sh` já sobe `pgvector/pgvector:pg15` — os `pnpm test:db`
+anteriores desta sessão já corriam contra o piso certo, mesmo antes deste
+achado.

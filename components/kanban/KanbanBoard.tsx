@@ -151,20 +151,22 @@ export function KanbanBoard({
     return groupLeadsByStage(data.stages, data.leads);
   }, [data]);
 
-  const handleSelect = useCallback(
-    (leadId: string, additive: boolean) => {
+  // Um conjunto por vez, e não um card por vez: o board recebe o resultado do
+  // gesto já resolvido pela coluna (um card, um intervalo, a etapa inteira). A
+  // versão anterior só sabia alternar UM id, e é por isso que "selecionar tudo"
+  // não existia — cada card exigia uma volta pelo estado.
+  const handleSelectMany = useCallback(
+    (leadIds: string[], marcar: boolean) => {
       const apply = (prev: Set<string>): Set<string> => {
-        const next = new Set(additive ? prev : []);
-        if (additive && prev.has(leadId)) {
-          next.delete(leadId);
-        } else {
-          next.add(leadId);
+        const next = new Set(prev);
+        for (const id of leadIds) {
+          if (marcar) next.add(id);
+          else next.delete(id);
         }
         return next;
       };
       if (onSelectionChange) {
-        const nextSet = apply(selectedLeadIds);
-        onSelectionChange(Array.from(nextSet));
+        onSelectionChange(Array.from(apply(selectedLeadIds)));
       } else {
         setInternalSelected((prev) => apply(prev));
       }
@@ -256,7 +258,7 @@ export function KanbanBoard({
             pulses={pulsesProp ?? queryResult.pulses}
             canonicalTags={canonicalTags}
             selectedLeadIds={selectedLeadIds}
-            onSelect={handleSelect}
+            onSelectMany={handleSelectMany}
             onOpen={setDossieId}
           />
         ))}

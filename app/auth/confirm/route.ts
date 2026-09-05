@@ -139,7 +139,10 @@ export async function GET(request: NextRequest) {
       metadata: { reason: e instanceof Error ? e.message : String(e) },
       requestId,
     });
-    return redirectTo("/login?error=provisionamento");
+    // A sessão JÁ está firmada (o `verifyOtp`/`exchangeCodeForSession` acima
+    // passou). Mandar para `/login` deixava a pessoa logada e sem organização,
+    // sem nenhum caminho de volta — ver `app/actions/auth/recoverOrganization.ts`.
+    return redirectTo("/get-started");
   }
 
   void audit({

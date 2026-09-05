@@ -28,14 +28,44 @@ import { describe, expect, it } from "vitest";
  * Ler `title` no SERVIDOR para outra finalidade — um relatório do próprio dono
  * da agenda, um export de LGPD para o titular — não é o que está em jogo. O que
  * se guarda é a travessia para a TELA da Agenda, que é onde a exposição
- * acontece. Por isso o recorte é `app/app/agenda/**`, e não o repo inteiro.
+ * acontece. Por isso o recorte não é o repo inteiro — mas ele também não é uma
+ * pasta só.
+ *
+ * ⚠️ O RECORTE PRECISOU CRESCER, e o motivo foi MEDIDO — não é zelo.
+ *
+ * Ele era `app/app/agenda/**` e mais nada. Isso bastava enquanto a ocupação
+ * chegava à tela por UM caminho: a semente que o servidor monta em `page.tsx`.
+ * O PR #474 (@Clalber) acrescentou o segundo — a rota
+ * `app/api/v1/agenda/agendamentos`, que substitui a semente no primeiro
+ * refetch e serve TODA navegação depois dele.
+ *
+ * A guarda ficou cega para o caminho novo. Medido na triagem do #474, a mesma
+ * sabotagem (`title` acrescentado ao `select`) nos dois lados:
+ *
+ *   em `app/app/agenda/page.tsx`                 → exit 1  (a guarda pega)
+ *   em `app/api/v1/agenda/agendamentos/route.ts` → exit 0  (a guarda passa)
+ *
+ * O recorte de uma guarda de privacidade não é a PASTA onde a tela mora: é o
+ * conjunto de caminhos por onde o dado chega até ela. Caminho novo entra aqui
+ * — senão a guarda segue verde afirmando o que deixou de medir, que é o pior
+ * desfecho para uma guarda de ausência.
  *
  * Se um dia a decisão mudar, o caminho é POR ORGANIZAÇÃO e com aviso de quem vê
  * — nunca por default. Quem for fazer isso troca este teste junto, de propósito:
  * é o passo que obriga a decisão a ser tomada por gente.
  */
 const RAIZ = process.cwd();
-const TELA_DA_AGENDA = path.join(RAIZ, "app", "app", "agenda");
+/**
+ * Os caminhos por onde a ocupação do Google pode chegar à tela da Agenda.
+ *
+ * Os dois são superfície de exposição por razões diferentes: o primeiro é a
+ * semente que o servidor renderiza; o segundo é a rota que a substitui no
+ * primeiro refetch.
+ */
+const CAMINHOS_ATE_A_TELA = [
+  path.join(RAIZ, "app", "app", "agenda"),
+  path.join(RAIZ, "app", "api", "v1", "agenda"),
+];
 
 function arquivos(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -60,7 +90,7 @@ function semComentarios(fonte: string): string {
  */
 function consultasDeEventoExterno(): Array<{ onde: string; colunas: string }> {
   const out: Array<{ onde: string; colunas: string }> = [];
-  for (const arquivo of arquivos(TELA_DA_AGENDA)) {
+  for (const arquivo of CAMINHOS_ATE_A_TELA.flatMap(arquivos)) {
     const fonte = semComentarios(fs.readFileSync(arquivo, "utf8"));
     const rel = path.relative(RAIZ, arquivo);
     for (const m of fonte.matchAll(/\.from\("calendar_external_events"\)([\s\S]*?);/g)) {
@@ -83,7 +113,7 @@ describe("a ocupação do Google não leva o nome do evento para a tela", () => 
     const consultas = consultasDeEventoExterno();
     expect(
       consultas.length,
-      "nenhuma consulta a `calendar_external_events` em `app/app/agenda/` — ou a " +
+      "nenhuma consulta a `calendar_external_events` nos caminhos até a tela — ou a " +
         "ocupação deixou de ser buscada, ou ela mudou de lugar e este gate ficou cego",
     ).toBeGreaterThanOrEqual(1);
   });

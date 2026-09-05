@@ -15,7 +15,25 @@ import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { env } from "@/lib/env";
 
 export type SignUpResult =
-  | { ok: true }
+  | {
+      ok: true;
+      /**
+       * O provedor de auth JÁ abriu a sessão neste `signUp()` — quer dizer,
+       * "Confirm email" está DESLIGADO nele e não vai existir link nenhum para
+       * clicar. Quem chama precisa saber disto: a tela de "confirme seu e-mail"
+       * é uma instrução impossível de cumprir nesse estado, e a pessoa fica
+       * esperando para sempre um e-mail que nunca sai — autenticada, sem
+       * organização, sem motivo para navegar até a saída que existe.
+       *
+       * Medido em 2026-09-05 na `origin/main` @ `4d50f63f`, com
+       * `GOTRUE_MAILER_AUTOCONFIRM=true`: a tela dizia "Enviamos um link de
+       * confirmação para …", e ao mesmo tempo o cookie `sb-deskcomm-auth`
+       * estava no browser e `user_organizations` do usuário vinha `[]`.
+       *
+       * Achado de @KIRAzinx566, com um cliente real travado nessa tela.
+       */
+      sessao_ativa: boolean;
+    }
   | {
       ok: false;
       error: "validation_error" | "rate_limited" | "signup_failed";
@@ -123,5 +141,8 @@ export async function signUp(
     userAgent,
   });
 
-  return { ok: true };
+  // `data.session` é o único sinal confiável de que o provedor não vai mandar
+  // e-mail nenhum: ele vem preenchido exatamente quando a confirmação está
+  // desligada (ou já resolvida) e o GoTrue devolveu tokens junto do usuário.
+  return { ok: true, sessao_ativa: data.session !== null };
 }

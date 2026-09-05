@@ -15,7 +15,10 @@ export const dynamic = "force-dynamic";
 export default async function OnboardingIndex() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
-  if (!activeOrg) redirect("/login");
+  // Sem organização o onboarding não tem o que mostrar — mas mandar para
+  // `/login` fechava o círculo: quem entrasse de novo voltaria para cá. A saída
+  // é a tela que CRIA a organização que falta.
+  if (!activeOrg) redirect("/get-started");
 
   const { state, onboardedAt } = await loadOnboardingState(activeOrg.orgId);
   if (onboardedAt) redirect("/app/inbox");

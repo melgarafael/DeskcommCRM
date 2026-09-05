@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { updateTenant } from "@/app/actions/settings/updateTenant";
 import { useT } from "@/hooks/i18n/useT";
+import { MOEDAS_SERVIDAS, simboloDaMoeda, type MoedaServida } from "@/lib/money";
 import { tenantSchema, type Locale, type TenantInput } from "@/lib/schemas/settings";
 
 interface Props {
@@ -129,6 +130,27 @@ export function TenantForm({ initial }: Props) {
                 <SelectItem value="es">Español</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="currency">{t("Moeda")}</Label>
+            <Select
+              value={form.currency}
+              onValueChange={(v) => set("currency", v as MoedaServida)}
+            >
+              <SelectTrigger id="currency">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MOEDAS_SERVIDAS.map((moeda) => (
+                  <SelectItem key={moeda} value={moeda}>
+                    {moeda} · {simboloDaMoeda(moeda)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t("Vale para todo preço do catálogo. Produto já cadastrado guarda a moeda com que nasceu.")}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="media_retention_days">{t("Retenção de mídia (dias)")}</Label>

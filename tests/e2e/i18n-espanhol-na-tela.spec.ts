@@ -208,8 +208,40 @@ test.beforeAll(async () => {
   const svc = createClient(c.url, c.serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: org } = await svc.from("organizations").select("id").limit(1).single();
-  if (!org) throw new Error("fixture de data: nenhuma organização no banco de teste");
+  /**
+   * A organização é a DO SEED, nomeada — nunca "a primeira que vier".
+   *
+   * Esta fixture APAGA contatos e insere um. O alvo era
+   * `.select("id").limit(1).single()`, sem `where`: a primeira linha que o
+   * Postgres devolvesse. E — medido em 2026-09-04 contra PostgREST v14.10, com
+   * três organizações na tabela — `.limit(1).single()` **não falha**: devolve
+   * `error: null` e a primeira linha. O comentário de `.github/workflows/e2e.yml`
+   * dizia o contrário ("o `.single()` falha"), e foi essa frase que fez a classe
+   * parecer inofensiva: um teste que estoura é barulho, um teste que apaga a
+   * linha errada em silêncio é dano.
+   *
+   * O CI é a prova de que o pressuposto de "uma organização só" é falso aqui:
+   * esta spec roda em `SPECS_PARTE_2` e `signup-journey.spec.ts`, em
+   * `SPECS_PARTE_1`, cria uma segunda organização sem limpeza — mesmo banco,
+   * sem reset entre as partes.
+   *
+   * Classe apontada por @Elevstudio-Dev no PR #559, que fechou a instância de
+   * `vps-fresh-onboarding.spec.ts`. Esta é uma das outras três.
+   */
+  const orgDoSeed = (creds as unknown as { org_id?: string }).org_id;
+  if (!orgDoSeed) {
+    throw new Error(
+      "fixture de data: `.e2e-creds.json` sem `org_id`. Esta fixture APAGA contatos — " +
+        "sem saber de QUEM, ela para. Rode `pnpm tsx scripts/seed-e2e-credentials.ts`.",
+    );
+  }
+  const { data: org, error: erroOrg } = await svc
+    .from("organizations")
+    .select("id")
+    .eq("id", orgDoSeed)
+    .maybeSingle();
+  if (erroOrg) throw new Error(`fixture de data: ${erroOrg.message}`);
+  if (!org) throw new Error(`fixture de data: organização do seed (${orgDoSeed}) não existe`);
   const ontem = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   // Apaga e insere em vez de `upsert`: o índice único de telefone é PARCIAL
   // (`where phone_number is not null and is_merged_into is null`), e

@@ -138,6 +138,11 @@ export const AUTH_LIMITS = {
   signup: { ip: 20, windowSec: 3600 },
   reset: { ip: 30, id: 3, windowSec: 3600 },
   invite_accept: { ip: 60, windowSec: 3600 },
+  // Recuperação do primeiro acesso: o teto mais apertado da lista, e de
+  // propósito. Cada acerto CRIA uma organização, e o caminho legítimo é
+  // usado UMA vez na vida de uma conta — 3 por hora por identidade já é
+  // folga para quem errou o nome duas vezes.
+  org_recovery: { ip: 5, id: 3, windowSec: 3600 },
 } satisfies Record<string, AuthRateLimits>;
 
 export const __LOGIN_IP_DEFAULT_PARA_TESTE = LOGIN_IP_DEFAULT;

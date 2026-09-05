@@ -91,7 +91,13 @@ describe("lista de contatos — ordenação e cursor", () => {
         limit: 25,
       },
     );
-    expect(cap.isFilters[0]?.col).toBe("last_activity_at");
+    // ⚠️ NÃO é `isFilters[0]`: a listagem faz um `.is()` ANTES deste, para tirar
+    // a lápide de fusão (`is_merged_into is null`). Ancorar na POSIÇÃO fazia o
+    // teste medir o filtro errado no dia em que a consulta ganhou outro `.is()`
+    // — e o vermelho apontava para a paginação, que não tinha mudado. Ancorar
+    // na COLUNA sobrevive a qualquer filtro novo.
+    expect(cap.isFilters.map((f) => f.col)).toContain("last_activity_at");
+    expect(cap.isFilters.map((f) => f.col)).toContain("is_merged_into");
     expect(cap.ltGt[0]).toMatchObject({
       col: "id",
       op: "gt",

@@ -1,0 +1,97 @@
+name: Preparar Node + pnpm
+description: >-
+  Node 22, o pnpm da versão fixada em `packageManager` e `node_modules` —
+  sem ida ao registry npm no caminho normal.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POR QUE ISTO EXISTE: o `verify` morria de RELÓGIO, e não de defeito.
+#
+# Os seis pontos do CI abriam com o mesmo trio (pnpm/action-setup →
+# actions/setup-node → pnpm install). O primeiro deles roda um self-installer
+# que é, por dentro, um `npm install pnpm@<versão>` contra registry.npmjs.org,
+# sem cache e sem teto. Medido em 95 execuções do job `verify` (runs
+# 33831269531..33915100363, `gh api .../jobs`):
+#
+#   passo pnpm/action-setup   min 4s   p50 174s   p90 424s   max 433s
+#   > 120s em 56/92 · > 300s em 26/92
+#
+# E o trabalho de verdade (total do job MENOS esse passo), nas 51 verdes:
+#
+#   min 354s · p50 550s · p90 594s · MÁXIMO 609s   — contra um teto de 900s
+#
+# Ou seja: a suíte nunca chegou perto do teto. Quem estourava era o instalador.
+# Das 20 execuções canceladas, 17 chegaram a registrar esse passo, e as 17 têm
+# ≥ 352s nele (352, 375, 390, 402, 406, 406, 423, 423, 423, 424, 424, 425, 427,
+# 427, 428, 428, 429). Nenhuma verde passou de 300s. A separação é limpa.
+#
+# O teto de 15 min FICA — pela mesma razão escrita no cabeçalho do e2e.yml:
+# ele é o que denuncia a suíte crescendo, e subi-lo trocaria um vermelho
+# honesto por um CI que engorda sem ninguém ver. O que sai é o desperdício.
+#
+# COMO O DESPERDÍCIO SAI: `~/.npm` (o cache do npm, não o store do pnpm) passa
+# a ser restaurado por `actions/cache`, e o self-installer roda com
+# `npm_config_prefer_offline`. Com o tarball e o packument em cache, o
+# `npm install pnpm@<versão>` não emite requisição nenhuma. Provado nos dois
+# sentidos, com controle positivo (npm 10.9.2, pnpm@9.15.9):
+#
+#   cache quente + --offline  → `added 1 package in 2s`, exit 0
+#   cache VAZIO  + --offline  → ENOTCACHED em registry.npmjs.org, exit 1
+#
+# O segundo é o que prova que a sonda não está morta: sem o cache, a instalação
+# realmente precisa da rede. `prefer-offline` (e não `--offline`) porque numa
+# chave nova o passo tem de conseguir baixar; ele degrada para a rede sozinho.
+#
+# A chave é fixa (`npm-cache-pnpm-<os>-<versão>`), então: a PRIMEIRA execução em
+# cada branch erra o cache e o popula; a partir daí acerta e o `actions/cache`
+# nem regrava (chave exata já existe). PR — inclusive de fork — restaura o cache
+# do branch base, então quem contribui de fora herda o cache da `main` e não
+# paga a ida ao registry na primeira tentativa dele.
+#
+# O `timeout-minutes: 5` NÃO mora aqui: passo de composite action não aceita
+# esse campo. Ele vai no `uses:` de cada job — é lá que ele funciona, e é lá
+# que o cinto importa: num dia de cache frio, o preâmbulo morre em 5 min com o
+# nome do passo na tela, em vez de consumir o orçamento dos testes e cancelar
+# o job no meio do `pnpm test:unit`, sem uma linha FAIL e sem rodapé do vitest.
+#
+# SUPERFÍCIE: uma composite action referenciada por caminho vem do checkout,
+# então num PR de fork ela é o código do fork. Isso não é superfície nova —
+# `package.json`, `vitest.config.ts` e os testes já vêm do fork e já rodam. O
+# ci.yml não expõe segredo e o token é `contents: read`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+runs:
+  using: composite
+  steps:
+    - name: Versão do pnpm fixada em package.json
+      id: pino
+      shell: bash
+      run: |
+        set -euo pipefail
+        versao=$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"pnpm@\([^"]*\)".*/\1/p' package.json | head -1)
+        if [ -z "$versao" ]; then
+          echo "::error::package.json não declara packageManager: \"pnpm@<versão>\"" >&2
+          exit 1
+        fi
+        echo "versao=$versao" >> "$GITHUB_OUTPUT"
+
+    - name: Cache do npm (é o que tira o registry do caminho crítico)
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: npm-cache-pnpm-${{ runner.os }}-${{ steps.pino.outputs.versao }}
+
+    - uses: pnpm/action-setup@v6
+      env:
+        npm_config_prefer_offline: 'true'
+        npm_config_audit: 'false'
+        npm_config_fund: 'false'
+
+    - uses: actions/setup-node@v7
+      with:
+        # 22 como o `.nvmrc` e o `engines` (>=22). Verificar numa versão que o
+        # produto não suporta esconde quebra ou inventa falha.
+        node-version: 22
+        cache: pnpm
+
+    - shell: bash
+      run: pnpm install --frozen-lockfile

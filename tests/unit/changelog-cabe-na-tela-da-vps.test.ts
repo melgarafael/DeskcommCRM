@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseFragmento } from "@/lib/release/fragmento";
 import { montarSecao } from "@/lib/release/montar-secao";
-import { extractChangelogSection } from "@/lib/system/changelog";
+import { extractChangelogRange, extractChangelogSection } from "@/lib/system/changelog";
 
 /**
  * A seção mais nova do CHANGELOG é TELA DE PRODUTO, e ela tem um teto.
@@ -46,6 +46,15 @@ import { extractChangelogSection } from "@/lib/system/changelog";
  *   2. o `[Não lançado]` de agora — o que a PRÓXIMA release vai publicar, que é
  *      a única das duas que ainda dá para consertar enxugando.
  *
+ * E cada candidata é cobrada por DUAS réguas, porque a conta de bytes é um
+ * proxy e o proxy tem faixa cega: `comoOAgenteEmite()` reproduz o pipeline do
+ * `agent.sh` (o `awk` que para no cabeçalho da versão instalada, depois o
+ * `head -c`) e cobra o desfecho que o operador vê — `completa: true`. O
+ * cabeçalho da versão instalada é o último a entrar no corte e é ele que
+ * decide esse campo, então a conta fica verde numa faixa da largura desse
+ * cabeçalho (27 B hoje) em que a tela já degradou. Medido: com a seção
+ * terminando no byte 29.991 a conta passa e `completa` vem `false`.
+ *
  * O teto NÃO é digitado aqui — é lido do próprio `agent.sh`. Um número copiado
  * para cá viraria uma segunda fonte da verdade, e a que envelhece primeiro é
  * sempre a cópia. (Isso tem um custo declarado: subir o `head -c` do `agent.sh`
@@ -76,6 +85,25 @@ function tetoDoAgente(): number {
     );
   }
   return Number(m[1]);
+}
+
+/**
+ * O rótulo que o `awk` do agente procura para PARAR de imprimir.
+ *
+ * Lido do próprio `agent.sh` pelo mesmo motivo que o teto é: um `## [` digitado
+ * aqui viraria segunda fonte da verdade, e a cópia é sempre a que envelhece.
+ * O que se extrai é o valor de `-v cur=`, com `${CURRENT#v}` no lugar da versão.
+ */
+function rotuloDeParadaDoAgente(): (versao: string) => string {
+  const sh = fs.readFileSync(AGENT_SH, "utf8");
+  const m = /awk -v cur="([^"]*)"/.exec(sh);
+  if (!m?.[1]?.includes("${CURRENT#v}")) {
+    throw new Error(
+      "não achei o `-v cur=` do awk em agent.sh — se o corte deixou de parar no cabeçalho da " +
+        "versão instalada, este teste precisa acompanhar em vez de ser apagado.",
+    );
+  }
+  return (versao: string) => m[1]!.replace("${CURRENT#v}", versao);
 }
 
 interface Secao {
@@ -131,6 +159,53 @@ function comoFicaNaTag(raw: string, versaoFutura: string): string {
 /** Exatamente o que o agente manda: os primeiros N bytes do arquivo. */
 function comoChegaNaVps(texto: string, teto: number): string {
   return Buffer.from(texto, "utf8").subarray(0, teto).toString("utf8");
+}
+
+/**
+ * A versão logo ABAIXO de `versao` no arquivo — a que o dono da VPS tem
+ * instalada no caso comum (uma release de atraso), e onde o `awk` do agente
+ * para de imprimir.
+ */
+function versaoSeguinte(texto: string, versao: string): string | null {
+  const { secoes } = fatiar(texto);
+  const i = secoes.findIndex((s) => s.versao === versao);
+  if (i === -1) return null;
+  return secoes[i + 1]?.versao ?? null;
+}
+
+/**
+ * O payload EXATO do agente, derivado do `agent.sh` em vez de somado à mão:
+ *
+ *   git show <tag>:CHANGELOG.md | awk '<para no cabeçalho da instalada>' | head -c TETO
+ *
+ * Por que isto existe ao lado da conta de bytes acima: a conta é um PROXY. Ela
+ * mede até o FIM da seção nova, e o que o agente manda vai um pouco além — até
+ * o cabeçalho da versão instalada, INCLUSIVE. Esse cabeçalho não é enfeite: é
+ * ele que faz `extractChangelogRange` devolver `completa: true`. Sem ele, a
+ * tela do operador troca o histórico por "este histórico pode não alcançar a
+ * sua versão" — degradação honesta, mas degradação, e o proxy fica verde nela.
+ *
+ * A faixa cega tem a largura do cabeçalho (`## [1.13.0] — 2026-09-04` = 27 B
+ * hoje). É estreita, e é justamente por ser estreita que ninguém a acha lendo:
+ * quem estoura por 900 bytes vê o vermelho da conta, quem estoura por 10 não vê
+ * nada. Medido com um fragmento inflado até o fim da seção cair no byte 29.991:
+ * a conta passava e `completa` vinha `false`.
+ *
+ * E o proxy tem um segundo modo de erro que este não tem: ele reproduz o
+ * mecanismo do `awk` de cabeça. Se o corte do agente mudar de lugar de novo —
+ * já mudou uma vez, quando deixou de ser cego —, a conta continua verde
+ * medindo a régua antiga. Esta função lê o `-v cur=` do próprio script.
+ */
+function comoOAgenteEmite(tagueado: string, instalada: string, teto: number): string {
+  const parada = rotuloDeParadaDoAgente()(instalada);
+  const saida: string[] = [];
+  for (const linha of tagueado.split("\n")) {
+    saida.push(linha);
+    // `index($0, cur) == 1 { print; exit }`: imprime a linha do cabeçalho e para.
+    if (linha.startsWith(parada)) break;
+  }
+  // `awk` termina TODO registro com `\n`, inclusive o último.
+  return Buffer.from(saida.join("\n") + "\n", "utf8").subarray(0, teto).toString("utf8");
 }
 
 /** Onde a seção `versao` termina, em bytes, dentro de `texto`. */
@@ -246,6 +321,20 @@ describe("o CHANGELOG da versão nova cabe no que a VPS recebe", () => {
       `A seção termina no byte ${fim}, além do corte de ${TETO} bytes que o agent.sh aplica ` +
         `sobre o arquivo TAGUEADO. O dono da VPS receberia o texto cortado no meio. ${conserto}`,
     ).toBeLessThanOrEqual(TETO);
+  });
+
+  it.each(CANDIDATAS)("$nome chega inteira ao app, do jeito que o agente a emite", ({ versao, texto, conserto }) => {
+    const instalada = versaoSeguinte(texto, versao);
+    // Sem uma versão abaixo não há "instalada" a simular — é o primeiro corte
+    // do repositório, e aí não existe ninguém para receber texto truncado.
+    if (instalada === null) return;
+
+    const faixa = extractChangelogRange(comoOAgenteEmite(texto, instalada, TETO), versao, instalada);
+    expect(
+      faixa.completa,
+      `Quem está na [${instalada}] recebe o texto cortado ANTES do cabeçalho da própria versão: ` +
+        `a tela troca o histórico por "este histórico pode não alcançar a sua versão". ${conserto}`,
+    ).toBe(true);
   });
 
   it.each(CANDIDATAS)("o aviso de ação manual de $nome sobrevive ao corte", ({ versao, texto, conserto }) => {

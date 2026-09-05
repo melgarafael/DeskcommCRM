@@ -29,6 +29,25 @@ const svc = createClient(
   { auth: { persistSession: false } },
 );
 
+/**
+ * A ORGANIZACAO DO DONO — resolvida por QUEM ELA E, nunca por "a primeira".
+ *
+ * Este seletor era `.limit(1).single()` sem filtro nenhum: pegava a primeira
+ * organizacao que o Postgres devolvesse. Num banco recem-semeado isso funciona
+ * por acidente — a unica org existente e a do teste. Num banco que ja tem uso,
+ * a primeira e OUTRA, e o `beforeAll` desta suite entao zerava `onboarded_at`,
+ * apagava `ai_agents` e apagava `channel_sessions` DELA.
+ *
+ * Medido em 2026-09-03, numa instalacao de trabalho: a organizacao real perdeu
+ * o onboarding e caiu no wizard, e a sessao de WhatsApp conectada foi apagada.
+ * O sintoma que apareceu primeiro foi outro e nao apontava para ca — duas specs
+ * de webhooks falhando porque o link sumia da barra lateral, que e o que o
+ * layout faz quando a org nao esta onboarded.
+ *
+ * A correcao amarra a org ao DONO do bootstrap (`OWNER_EMAIL`), que e de quem
+ * esta suite fala. Se ele nao existir, falha alto: um teste destrutivo que nao
+ * sabe em quem esta mexendo deve parar, nunca escolher alguem.
+ */
 async function orgRow(): Promise<{
   id: string;
   display_name: string;
@@ -36,10 +55,30 @@ async function orgRow(): Promise<{
   onboarded_at: string | null;
   onboarding_state: Record<string, unknown> | null;
 }> {
+  const { data: users, error: erroUsuarios } = await svc.auth.admin.listUsers();
+  if (erroUsuarios) throw erroUsuarios;
+  const dono = users?.users.find((u) => u.email === OWNER_EMAIL);
+  if (!dono) {
+    throw new Error(
+      `esta suite APAGA dados da organizacao que resolver aqui, e nao achou o dono ` +
+        `(${OWNER_EMAIL}). Sem saber em quem mexer, ela para — escolher "a primeira" ` +
+        `ja custou o onboarding e a sessao de WhatsApp de uma instalacao real.`,
+    );
+  }
+
+  const { data: vinculo, error: erroVinculo } = await svc
+    .from("user_organizations")
+    .select("organization_id")
+    .eq("user_id", dono.id)
+    .is("revoked_at", null)
+    .limit(1)
+    .single();
+  if (erroVinculo) throw erroVinculo;
+
   const { data, error } = await svc
     .from("organizations")
     .select("id, display_name, timezone, onboarded_at, onboarding_state")
-    .limit(1)
+    .eq("id", (vinculo as { organization_id: string }).organization_id)
     .single();
   if (error) throw error;
   return data as never;
@@ -197,9 +236,16 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     await page.waitForURL(/\/onboarding\/testar/, { timeout: 20_000 });
     await snap(page, "j1.7-testar");
 
+    // `eq(organization_id)` pela MESMA razão de `orgRow()` acima: sem ele, este
+    // `select` lê os agentes de TODAS as organizações do banco, e o
+    // `expect(length).toBe(1)` deixa de medir "o wizard criou um agente" e passa
+    // a medir "o banco inteiro tem um agente" — que é falso em qualquer
+    // instalação com uso, e vermelho por motivo que não é o desta jornada.
+    const orgDoDono = await orgRow();
     const { data: agents } = await svc
       .from("ai_agents")
-      .select("id, name, is_active, is_default, published_version_id");
+      .select("id, name, is_active, is_default, published_version_id")
+      .eq("organization_id", orgDoDono.id);
     expect(agents?.length).toBe(1);
     expect(agents?.[0]).toMatchObject({ name: "Tomik QA", is_active: true, is_default: true });
 
@@ -217,7 +263,15 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
     // E o provedor da versão é o MESMO que a instalação escolheu. Comparar com
     // uma string fixa aqui não provaria nada: o teste passaria justamente na
     // instalação Anthropic, que é a única em que o defeito não aparecia.
-    const { data: org } = await svc.from("organizations").select("settings").limit(1).maybeSingle();
+    // A SEGUNDA instância de "a primeira organização" neste mesmo arquivo. Aqui
+    // ela não apaga nada — faz pior de um jeito silencioso: `escolhido` vira o
+    // provedor de OUTRA organização, e a asserção abaixo passa ou reprova sem
+    // relação com a instalação que o wizard acabou de configurar.
+    const { data: org } = await svc
+      .from("organizations")
+      .select("settings")
+      .eq("id", orgDoDono.id)
+      .maybeSingle();
     const escolhido =
       (org?.settings as { llm?: { provider?: string } } | null)?.llm?.provider ?? "anthropic";
     expect(versoes?.[0]?.provider).toBe(escolhido);

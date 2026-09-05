@@ -7,12 +7,21 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 
+/**
+ * O nome da empresa, com a MESMA régua nos dois caminhos que o aceitam: o
+ * cadastro e a recuperação do primeiro acesso. Enquanto a regra morava dentro
+ * do `signupSchema`, a segunda teria de repeti-la — e duas cópias divergem na
+ * primeira mudança.
+ */
+export const organizationNameSchema = z
+  .string()
+  .trim()
+  .min(2, "Nome da empresa deve ter pelo menos 2 caracteres")
+  .max(120, "Nome da empresa deve ter no máximo 120 caracteres");
+
 export const signupSchema = z
   .object({
-    org_name: z
-      .string()
-      .min(2, "Nome da empresa deve ter pelo menos 2 caracteres")
-      .max(120, "Nome da empresa deve ter no máximo 120 caracteres"),
+    org_name: organizationNameSchema,
     email: z.string().email("Email inválido"),
     password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
     password_confirm: z.string(),

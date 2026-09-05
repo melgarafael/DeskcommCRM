@@ -123,3 +123,8 @@ evidence/.sonda-score-residuo.json
 
 # QA em VPS: guarda segredo TOTP da conta de teste (repo e publico)
 .qa-vps/
+
+# Backups do install/update: env-*.bak é uma CÓPIA INTEIRA do .env — service
+# role key, secrets de webhook e a chave de cifra dos tokens. O padrão `.env*`
+# acima não os alcança porque eles vivem num diretório, com outro prefixo.
+backups/

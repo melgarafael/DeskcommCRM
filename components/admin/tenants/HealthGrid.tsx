@@ -11,6 +11,7 @@ import {
 } from "@/lib/ui/icons";
 import type { TenantHealthResponse } from "@/app/api/v1/admin/tenants/[id]/health/route";
 import { useT } from "@/hooks/i18n/useT";
+import { formatCentsUSD } from "@/lib/money";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -32,18 +33,6 @@ function formatLag(seconds: number | null): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}min`;
   return `${Math.round(seconds / 3600)}h`;
-}
-
-/**
- * DÓLAR. `llm_calls.cost_cents` é centavo de USD — `pricing.ts` calcula em
- * dólares e multiplica por 100. Formatar em BRL fazia o operador ler um gasto
- * ~5x menor do que o que a fatura do provedor vai cobrar.
- */
-function formatCents(cents: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
 }
 
 /** O teto vincula esta organização? É o que separa "100%" de "100% e parou". */
@@ -102,10 +91,10 @@ export function HealthGrid({ health }: HealthGridProps) {
   const aiPrimary =
     ai.percent_used !== null ? `${ai.percent_used}% ${t("usado")}` : t("Sem orçamento");
   const aiDetails = [
-    { label: t("Consumido"), value: formatCents(ai.consumed_cents) },
+    { label: t("Consumido"), value: formatCentsUSD(ai.consumed_cents) },
     {
       label: t("Orçamento"),
-      value: ai.budget_cents ? formatCents(ai.budget_cents) : t("Ilimitado"),
+      value: ai.budget_cents ? formatCentsUSD(ai.budget_cents) : t("Ilimitado"),
     },
     { label: t("Limite"), value: t(MODO_LABEL[ai.enforcement_mode]) },
   ];

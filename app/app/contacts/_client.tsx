@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { Plus, MagnifyingGlass, UploadSimple } from "@/lib/ui/icons";
+import { Plus, MagnifyingGlass, UploadSimple, UsersThree } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import { useContactList } from "@/hooks/contacts/useContactList";
 import { ContactsTable } from "@/components/contacts/ContactsTable";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
+import { MergeDialog } from "@/components/contacts/MergeDialog";
 import { EmptyContacts } from "@/components/empty";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
 
@@ -42,6 +43,7 @@ export function ContactsListClient() {
   const [limit, setLimit] = useState<number>(25);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [duplicadosOpen, setDuplicadosOpen] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput), 250);
@@ -92,6 +94,16 @@ export function ContactsListClient() {
           uma linha de dois botões sem isso comprime os rótulos.
         */}
         <div className="flex shrink-0 items-center gap-2">
+          {/*
+            A porta do recurso de duplicados fica AQUI, na tela que já existe, e
+            não num item de menu novo: quem descobre que tem contato repetido
+            descobre olhando a lista, e a barra lateral não precisa crescer para
+            um trabalho que se faz de vez em quando.
+          */}
+          <Button variant="outline" onClick={() => setDuplicadosOpen(true)}>
+            <UsersThree size={16} weight="bold" aria-hidden />
+            <span>{t("Duplicados")}</span>
+          </Button>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <UploadSimple size={16} weight="bold" aria-hidden />
             <span>{t("Importar CSV")}</span>
@@ -238,6 +250,7 @@ export function ContactsListClient() {
 
       <NewContactDialog open={createOpen} onOpenChange={setCreateOpen} />
       <ImportContactsDialog open={importOpen} onOpenChange={setImportOpen} />
+      <MergeDialog open={duplicadosOpen} onOpenChange={setDuplicadosOpen} />
     </div>
   );
 }

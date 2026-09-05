@@ -20,6 +20,16 @@ type ProvisionUser = {
 };
 
 /**
+ * De onde veio o provisionamento. A organização nasce igual nos dois casos — o
+ * que muda é a linha de auditoria, e ela precisa distinguir "primeiro acesso
+ * normal" de "primeiro acesso que precisou ser recuperado": a segunda é um
+ * sintoma de que o caminho do signup falhou, e some no meio da primeira.
+ */
+type ProvisionOptions = {
+  source?: "signup" | "recovery";
+};
+
+/**
  * Provisiona o tenant de um usuário recém-confirmado via signup self-service:
  * cria a organização (status `active`, `onboarded_at` null → cai no onboarding)
  * e a membership `admin` do usuário.
@@ -33,6 +43,7 @@ type ProvisionUser = {
  */
 export async function ensureTenantForUser(
   user: ProvisionUser,
+  options: ProvisionOptions = {},
 ): Promise<{ provisioned: boolean; organizationId?: string }> {
   const admin = createAdminClient();
 
@@ -87,7 +98,8 @@ export async function ensureTenantForUser(
   }
 
   void audit({
-    action: "tenant.created_by_signup",
+    action:
+      options.source === "recovery" ? "tenant.created_by_recovery" : "tenant.created_by_signup",
     actorUserId: user.id,
     organizationId: org.id,
     resourceType: "organization",

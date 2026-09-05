@@ -1,0 +1,35 @@
+-- 0216 — agent_inbox_items ganha resolved_at: a coluna que o código já supunha existir.
+--
+-- ─── O defeito, medido em produção (VPS, 2026-09-04) ───────────────────────
+--
+-- `lib/agent-engine/pacing/aviso-de-janela.ts` (commit 4912c5230, 2026-08-30)
+-- fecha o aviso "as respostas da IA estão esperando a janela de envio abrir"
+-- assim:
+--
+--     update agent_inbox_items set status = 'resolved', resolved_at = now()
+--      where ...
+--
+-- Só que `agent_inbox_items` NUNCA teve `resolved_at` — nem no snapshot
+-- original (migration 0001, dentro do baseline), nem em nenhuma migration
+-- depois. Nenhuma das outras três rotinas que resolvem itens desta tabela
+-- (`orcamento.ts`, `health/circuit.ts`) toca essa coluna; só esta.
+--
+-- Resultado: TODO turno que passa pelo gate com a janela aberta tenta
+-- resolver o aviso e falha com `column "resolved_at" of relation
+-- "agent_inbox_items" does not exist`. O erro é engolido (fire-and-forget —
+-- de propósito, para não derrubar a resposta ao lead), então o aviso "número
+-- calado" fica ABERTO na Central para sempre, mesmo com o agente respondendo
+-- normalmente dentro do horário — dá a impressão de canal/loja fechada
+-- quando não está. Medido: dezenas de falhas por hora, todo santo dia, desde
+-- que o código de resolução foi publicado.
+--
+-- ─── A correção ─────────────────────────────────────────────────────────
+--
+-- Aditiva, nullable, sem default: nenhuma linha existente viola nada, e o
+-- `update.sh` de clone não quebra. Não é a única coluna de timestamp de
+-- estado que falta nesta tabela — `ack` (ver o CHECK de `status`) também não
+-- tem carimbo — mas só `resolved_at` tem código em produção dependendo dela
+-- hoje; `acked_at` fica para quando existir leitor.
+
+alter table public.agent_inbox_items
+  add column if not exists resolved_at timestamptz;

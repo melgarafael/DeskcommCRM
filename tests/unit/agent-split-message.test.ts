@@ -40,4 +40,25 @@ describe("splitIntoBubbles", () => {
     expect(out.join(" ")).toContain("149");
     expect(out.join(" ")).toContain("central");
   });
+
+  it("nunca parte um valor em reais no separador de milhar (R$ 10.990) entre bolhas", () => {
+    // Bug real (YADEA, 2026-09-04): "R$ 10.990" virava bolha "R$ 10." + bolha
+    // "990 no cartão…" — o cliente que via só a primeira lia "R$ 10" como o
+    // preço de uma moto de R$ 10.990.
+    const out = splitIntoBubbles(
+      "Temos a DT3 por R$ 9.990 à vista no Pix ou R$ 10.990 no cartão em até 12x sem juros.",
+      40,
+    );
+    for (const bubble of out) {
+      expect(bubble).not.toMatch(/\d\.\s*$/); // nenhuma bolha termina em "dígito."
+    }
+    expect(out.join(" ")).toContain("10.990");
+    expect(out.join(" ")).toContain("9.990");
+  });
+
+  it("não insere espaço espúrio dentro de um valor em reais (R$ 7. 990)", () => {
+    const out = splitIntoBubbles("O valor é R$ 7.990 à vista no Pix.", 30);
+    expect(out.join(" ")).not.toContain("7. 990");
+    expect(out.join(" ")).toContain("7.990");
+  });
 });

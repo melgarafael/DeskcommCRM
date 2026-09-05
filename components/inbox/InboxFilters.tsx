@@ -117,7 +117,7 @@ export function InboxFilters({ value, onChange }: Props) {
             <Input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder={t("Buscar mensagens…")}
+              placeholder={t("Buscar por nome, telefone ou mensagem…")}
               className="h-9 rounded-full border-transparent bg-surface-elevated pl-9 text-sm shadow-none focus-visible:border-border focus-visible:bg-background"
               aria-label={t("Buscar conversas")}
             />
@@ -131,7 +131,7 @@ export function InboxFilters({ value, onChange }: Props) {
             onClick={() => onChange({ ...value, onlyUnread: !value.onlyUnread })}
             className={cn(
               "h-9 shrink-0 rounded-full border px-3 text-xs font-medium transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               value.onlyUnread
                 ? "border-accent bg-accent text-accent-foreground"
                 : "border-border bg-transparent text-text-muted hover:bg-surface-elevated",

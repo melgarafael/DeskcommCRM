@@ -98,7 +98,19 @@ export const produtoCreateSchema = z.object({
   marca: z.string().trim().max(80).optional(),
   categoria: z.string().trim().max(80).optional(),
   preco_cents: z.number().int().min(0, "preço não pode ser negativo"),
-  moeda: z.string().trim().length(3).toUpperCase().default("BRL"),
+  // ⚠️ `moeda` NÃO entra aqui de propósito, e a ausência é a regra.
+  //
+  // Ela esteve neste schema e era controle decorativo ao contrário: a rota
+  // aceitava a moeda do corpo, mas NENHUMA tela oferecia o campo — nem o
+  // formulário de "Novo produto" nem a planilha —, então o único jeito de um
+  // produto não ser BRL era chamar a API por fora do produto. Quem escolhe a
+  // moeda é a organização (`organizations.currency`, migration 0208), e o
+  // servidor a copia na escrita via `moedaDaOrganizacao()`.
+  //
+  // Fora do schema, o Zod descarta a chave: um corpo com `moeda` não falha, é
+  // ignorado — corpo não decide unidade, como não decide escopo. Some também
+  // do `produtoPatchSchema` (que é este `.partial()`), e isso é o certo: a
+  // linha guarda a moeda com que nasceu.
   custo_cents: z.number().int().min(0).nullable().optional(),
   controla_estoque: z.boolean().default(true),
   quantidade: z.number().int().min(0).default(0),

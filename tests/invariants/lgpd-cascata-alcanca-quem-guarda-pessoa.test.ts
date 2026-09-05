@@ -57,6 +57,18 @@ const DIVIDA_LGPD_CONHECIDA: Record<string, string> = {
   lead_notes:
     "Anotação livre do atendente SOBRE o contato (coluna body). Dívida anterior à agenda; " +
     "nenhum commit a declarou. Sai quando o cascade a alcançar.",
+  crm_tasks:
+    "Migration 0210 (extração do PR #418). A tabela guarda `title` — texto livre que " +
+    "na prática nomeia a pessoa (\"Ligar para Fulano confirmar o orçamento\"). " +
+    "⚠️ ELA JÁ ESTÁ PROTEGIDA: o trigger `trg_redigir_tarefas_ao_anonimizar` troca o " +
+    "título e apaga a descrição na transição `is_anonymized false → true`, e " +
+    "`tests/invariants/lgpd-tarefa-do-contato-anonimizado.test.ts` prova o efeito " +
+    "pelo comportamento, não pelo símbolo. A entrada existe só porque ESTE instrumento " +
+    "lê UMA função (`fn_lgpd_cascade_redact_contact`) e não enxerga trigger — a mesma " +
+    "razão pela qual `webhook_lead_captures` (0174) e `calendar_appointments` (0184) " +
+    "estão aqui, as duas também já cobertas por trigger. Sai no dia em que " +
+    "`tabelasNaCascata()` passar a derivar do catálogo também os triggers de " +
+    "`contacts`, ou no dia em que a função ganhar o passo.",
   webhook_lead_captures:
     "captured_name, captured_email e captured_phone — o payload cru de captação. " +
     "A própria migration 0174 escreveu que 'o cascade de anonimização precisa alcançar esta tabela' " +

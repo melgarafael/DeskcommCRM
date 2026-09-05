@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition, useState } from "react";
@@ -29,6 +30,7 @@ export interface ConviteDoSignup {
 
 export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
   const t = useT();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -63,6 +65,30 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
         : values;
       const res = await signUp(entrada, convite?.token);
       if (res.ok) {
+        /**
+         * ⚠️ O PROVEDOR JÁ DEIXOU A PESSOA ENTRAR — não existe e-mail para ela
+         * esperar. Acontece quando "Confirm email" está desligado no provedor
+         * de auth, que é uma escolha do operador da instalação e não um defeito
+         * dele; o defeito é a tela abaixo, que manda "abra o e-mail e clique no
+         * link" para quem já está autenticado. Sem este desvio a pessoa fica
+         * parada nessa instrução para sempre: logada, sem organização, e sem
+         * motivo nenhum para descobrir sozinha que a saída existe em
+         * `/get-started`. Medido com um cliente real travado — achado de
+         * @KIRAzinx566.
+         *
+         * O destino separa as duas naturezas de cadastro, com o dado que esta
+         * tela já tem em mãos: quem veio de um convite vai ACEITAR o convite
+         * (dar organização própria a essa pessoa é o erro que
+         * `decidirConviteDoSignup` existe para evitar); quem se cadastrou por
+         * conta própria vai à recuperação, que é o caminho auditado e com teto
+         * de tentativas — e não uma segunda porta de provisionamento.
+         */
+        if (res.sessao_ativa) {
+          router.replace(
+            convite ? `/team/accept-invite/${convite.token}` : "/get-started",
+          );
+          return;
+        }
         setSentTo(values.email);
         return;
       }

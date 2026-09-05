@@ -23,11 +23,13 @@ import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 
 const ERRO_EM_PORTUGUES: Record<string, string> = {
+  validation_failed: "Digite o nome da organização para confirmar.",
   unauthenticated: "Sua sessão expirou. Entre de novo para continuar.",
   forbidden_tenant: "Não consegui identificar sua empresa. Recarregue a página.",
   forbidden_role: "Só quem administra esta empresa pode apagar os dados.",
   mfa_required: "Confirme o código do seu aplicativo de duas etapas e tente de novo.",
   confirmacao_nao_confere: "O nome digitado não confere com o nome da organização.",
+  db_error: "Não consegui apagar os dados agora.",
 };
 
 interface Props {
@@ -41,7 +43,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
   const [digitado, setDigitado] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  const confere = digitado.trim() === displayName;
+  const confere = digitado.trim() === displayName.trim();
 
   function handleConfirm() {
     if (!confere) return;
@@ -52,7 +54,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
       if (resultado.ok) {
         const c = resultado.counts;
         toast.success(
-          `${t("Dados apagados")}: ${c.messages} ${t("mensagens")}, ${c.conversations} ${t("conversas")}, ${c.crm_leads} ${t("leads")}, ${c.contacts} ${t("contatos")}.`,
+          `${t("Dados apagados")}: ${c.messages} ${t("mensagens")}, ${c.conversations} ${t("conversas")}, ${c.crm_leads} ${t("negócios")}, ${c.contacts} ${t("contatos")}.`,
         );
         setOpen(false);
         setDigitado("");
@@ -64,14 +66,22 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
   }
 
   return (
-    <Card className="max-w-2xl space-y-4 border-destructive/40 p-6">
+    <Card
+      data-testid="zona-de-perigo"
+      className="max-w-2xl space-y-4 border-destructive/40 p-6"
+    >
       <div>
         <h2 className="text-base font-semibold tracking-tight text-destructive">
           {t("Zona de perigo")}
         </h2>
         <p className="text-sm text-muted-foreground">
           {t(
-            "Apaga de vez todas as mensagens, conversas, leads, contatos, agendamentos e pedidos desta organização. Use para recomeçar os testes do zero. Não afeta usuários, configurações nem pipelines.",
+            "Apaga de vez as mensagens, conversas, negócios, contatos, agendamentos e pedidos desta organização. Serve para recomeçar os testes do zero antes de atender de verdade.",
+          )}
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {t(
+            "Continuam de pé: as pessoas da equipe, as configurações, os funis e etapas, os agentes de IA e os canais de WhatsApp já conectados.",
           )}
         </p>
       </div>
@@ -84,7 +94,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
         }}
       >
         <AlertDialogTrigger asChild>
-          <Button type="button" variant="destructive">
+          <Button type="button" variant="destructive" data-testid="abrir-zona-de-perigo">
             {t("Apagar todos os dados de atendimento")}
           </Button>
         </AlertDialogTrigger>
@@ -94,7 +104,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
             <AlertDialogTitle>{t("Apagar todos os dados de atendimento?")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "Esta ação é irreversível. Mensagens, conversas, leads, contatos, agendamentos e pedidos de",
+                "Esta ação é irreversível. Mensagens, conversas, negócios, contatos, agendamentos e pedidos de",
               )}{" "}
               <strong>{displayName}</strong> {t("serão apagados de vez.")}
             </AlertDialogDescription>
@@ -106,6 +116,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
             </Label>
             <Input
               id="confirm_nome_organizacao"
+              data-testid="confirmar-nome-da-organizacao"
               value={digitado}
               onChange={(e) => setDigitado(e.target.value)}
               autoComplete="off"
@@ -115,6 +126,7 @@ export function ZonaDePerigoDaOrganizacao({ displayName }: Props) {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
             <AlertDialogAction
+              data-testid="apagar-de-vez"
               onClick={(e) => {
                 e.preventDefault();
                 handleConfirm();

@@ -112,9 +112,37 @@ test.describe("navegação agrupada", () => {
     // "Funis" seguiria verde medindo a outra tela; por isso a asserção de URL
     // abaixo é específica (`settings/tenant/pipelines`) e não o antigo
     // /pipelines/, que casa com as duas.
-    await sidebar(page).getByRole("link", { name: "Etapas do funil" }).click();
+    //
+    // ⚠️ E O CAMINHO MUDOU: com Tarefas (PR #546), o CRM chegou a cinco telas e
+    // o menu passou a rolar em 900px. A resposta foi o hub do grupo, como o
+    // comentário de densidade do `Sidebar.tsx` já mandava — então esta tela
+    // agora mora atrás de "Ver tudo em CRM". Este teste percorre o caminho
+    // INTEIRO em vez de checar um link: hub → tela. Que a porta existe no grupo
+    // certo do sidebar é o unitário `sidebar-grupos` que prende.
+    await sidebar(page).getByRole("link", { name: "Ver tudo em CRM" }).click();
+    await page.waitForURL(/\/app\/crm$/);
+    await expect(page.getByRole("heading", { name: "O dia a dia da venda" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Preparar a venda" })).toBeVisible();
+
+    await page.screenshot({ path: path.join(EVIDENCE, "nav-hub-crm.png"), fullPage: true });
+
+    await page.getByRole("link", { name: /Etapas do funil/ }).click();
     await page.waitForURL(/settings\/tenant\/pipelines/);
     await expect(page.getByRole("heading", { name: "Etapas do funil", level: 1 })).toBeVisible();
+  });
+
+  test("e Produtos, que saiu do menu, continua alcançável pelo mesmo hub", async ({ page }) => {
+    // Tirar do sidebar não pode virar tela órfã: DoD 14 cobra porta, e a porta
+    // passou a ser o hub. Sem este caso, o item "some do menu" ficaria provado
+    // e o "continua alcançável" ficaria só escrito no comentário.
+    await loginAdmin(page);
+
+    await expect(sidebar(page).getByRole("link", { name: "Produtos" })).toHaveCount(0);
+
+    await sidebar(page).getByRole("link", { name: "Ver tudo em CRM" }).click();
+    await page.waitForURL(/\/app\/crm$/);
+    await page.getByRole("link", { name: /Produtos/ }).click();
+    await page.waitForURL(/\/app\/products/);
   });
 
   test("e a lista de funis é o item vizinho, com nome próprio", async ({ page }) => {

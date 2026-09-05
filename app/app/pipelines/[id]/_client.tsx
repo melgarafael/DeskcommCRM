@@ -121,6 +121,7 @@ export function PipelinePageClient({
         selectedIds={selectedIds}
         stages={data?.stages ?? []}
         pipelineId={pipelineId}
+        vocabulary={data?.pipeline.vocabulary ?? null}
         onClear={() => setSelectedIds([])}
       />
     </div>
