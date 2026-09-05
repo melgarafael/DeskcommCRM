@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canTransition, isRunStale, RUN_STALE_AFTER_MS } from "./update-run";
+import { canTransition, isRunStale, rollbackFoiSuperado, RUN_STALE_AFTER_MS } from "./update-run";
 
 describe("canTransition", () => {
   it("aceita o desfecho reportado pelo agente", () => {
@@ -36,5 +36,28 @@ describe("isRunStale", () => {
 
   it("data inválida conta como velho — o que não dá para afirmar, não se afirma", () => {
     expect(isRunStale("isso não é data", new Date())).toBe(true);
+  });
+});
+
+describe("rollbackFoiSuperado", () => {
+  const fimDoRun = "2026-08-28T01:51:52.000Z";
+
+  it("agente gravou depois do run: o run não descreve mais o presente", () => {
+    expect(rollbackFoiSuperado("2026-09-05T15:35:02.000Z", fimDoRun)).toBe(true);
+  });
+
+  it("agente gravou antes do run: o rollback ainda é a notícia mais nova", () => {
+    expect(rollbackFoiSuperado("2026-08-28T01:40:00.000Z", fimDoRun)).toBe(false);
+  });
+
+  it("sem uma das datas, não afirma nada — e não afirmar mantém o run valendo", () => {
+    expect(rollbackFoiSuperado(null, fimDoRun)).toBe(false);
+    expect(rollbackFoiSuperado("2026-09-05T15:35:02.000Z", null)).toBe(false);
+    expect(rollbackFoiSuperado(undefined, undefined)).toBe(false);
+  });
+
+  it("data ilegível não vira comparação: NaN compara falso e mentiria por acidente", () => {
+    expect(rollbackFoiSuperado("isso não é data", fimDoRun)).toBe(false);
+    expect(rollbackFoiSuperado("2026-09-05T15:35:02.000Z", "isso não é data")).toBe(false);
   });
 });
