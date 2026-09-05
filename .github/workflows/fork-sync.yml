@@ -17,10 +17,15 @@ name: Sincronizar com upstream (melgarafael)
 #
 # Limitação conhecida, deliberada: commit criado com GITHUB_TOKEN não dispara
 # outros workflows, então "Publicar imagem Docker (GHCR)" não roda sozinho
-# depois deste sync. Enquanto o `.env` da VPS apontar para as tags do upstream
-# (ghcr.io/melgarafael/*), isso não muda nada — quem instala versão é o
-# update.sh. Se a VPS voltar a rodar ghcr.io/maugarciasa/*, publique pela tela
-# do Actions ou empurre um commit próprio na main.
+# depois deste sync — e isso IMPORTA, porque a VPS segue o `:latest` publicado
+# por este fork. Um sync que não publica deixa a produção atrás do que a main já
+# tem, sem nada ficar vermelho. Para fechar a lacuna: publique pela tela do
+# Actions, ou empurre um commit próprio na main (que dispara a publicação e, com
+# ela, o deploy-vps).
+#
+# Esta nota já disse o contrário — que a VPS seguia as tags do upstream e que
+# por isso o sync sem publicação não mudava nada. Deixou de valer em 05/09/2026,
+# quando o `.env` de produção passou a apontar para `:latest` deste fork.
 
 on:
   schedule:
