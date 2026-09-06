@@ -1723,7 +1723,6 @@ STUB
   fi
   printf '  ✓ com v1.0.0/v1.9.0/v1.10.0 no remoto, o .env nasce pinado em 1.10.0 (as três imagens)\n'
 ) || fail=1
-rm -rf "$TMP_PIN"
 
 echo "packaging: a tag do git não basta — as imagens têm de existir"
 # A tag nasce minutos antes das imagens, e as do worker/scheduler só passaram a
@@ -1745,6 +1744,9 @@ esac
 exit 0
 STUB
   export DUBLE_GHCR=403          # pacote existe mas está PRIVADO
+  # Este cenário exige uma tag existente. Reutiliza a origem local acima,
+  # sem depender das tags do GitHub (um fork novo ainda pode não ter nenhuma).
+  export REPO_URL="$TMP_PIN/origem.git"
   saida="$(rodar install.sh --yes)"
   unset DUBLE_GHCR
 
@@ -1761,7 +1763,7 @@ STUB
   fi
   printf '  ✓ e mesmo assim conclui a instalação (constrói é lento, não é impedimento)\n'
 ) || fail=1
-rm -rf "$TMP_PRIV"
+rm -rf "$TMP_PRIV" "$TMP_PIN"
 
 echo "integração: os TRÊS provedores de IA que o instalador oferece"
 # A pergunta "qual IA vai atender" tem três respostas, e até aqui só uma delas

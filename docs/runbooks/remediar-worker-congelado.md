@@ -1,5 +1,10 @@
 # Runbook — o worker congelado: diagnóstico e remediação
 
+> **Nota deste fork:** as referências a `ghcr.io/melgarafael` neste documento
+> registram o upstream e não são instruções de instalação do Laura. Para este
+> fork, use `ghcr.io/founders-br` nas três imagens; os defaults vigentes estão
+> em `hostgator-setup-kit/_common.sh` e `docker-compose.prod.yml`.
+
 > ## Estado do ensaio: **U6-b EXECUTADO em 2026-08-13, com uma ressalva que muda o procedimento**
 >
 > O ensaio rodou numa VPS real, com estado legado **reproduzido** (não simulado): clone

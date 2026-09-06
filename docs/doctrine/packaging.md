@@ -1,5 +1,11 @@
 # Doutrina de Packaging e Distribuição
 
+> **Fork founders-br/crm-laura:** o namespace canônico é `ghcr.io/founders-br`.
+> `IMG_NS` em `_common.sh` governa as imagens e as consultas de token/manifesto.
+> O instalador, `comecar.sh` e a descoberta de versões usam o repositório do fork.
+> As referências a `melgarafael` abaixo registram o histórico do upstream; não são
+> o destino de publicação ou instalação deste fork. O CI deriva o owner do repositório.
+
 > Lei de arquitetura para tudo que roda no disco de quem instalou o DeskcommCRM: imagens,
 > composes, tags e o kit de instalação. Complementa [`sistema-vivo.md`](./sistema-vivo.md) —
 > não é aspiração, é critério de aceite. Amarrada ao item 15 do Definition of Done

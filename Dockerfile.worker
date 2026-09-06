@@ -6,7 +6,7 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Procedência (doutrina de packaging, invariante 2).
-LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCRM" \
+LABEL org.opencontainers.image.source="https://github.com/founders-br/crm-laura" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.title="DeskcommCRM worker"
 

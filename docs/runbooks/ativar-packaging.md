@@ -1,5 +1,10 @@
 # Runbook — ativar a doutrina de packaging (uma vez só)
 
+> **Nota deste fork:** as referências a `ghcr.io/melgarafael` neste documento
+> registram o upstream e não são instruções de instalação do Laura. Para este
+> fork, use `ghcr.io/founders-br` nas três imagens; os defaults vigentes estão
+> em `hostgator-setup-kit/_common.sh` e `docker-compose.prod.yml`.
+
 > **CONCLUÍDO em 2026-08-14. Este runbook é histórico** — guardado porque descreve o
 > procedimento e as armadilhas de cada passo, não porque haja algo a fazer.
 >

@@ -1,5 +1,10 @@
 # Mapa de Jornadas & Testes E2E — Experiência do usuário em VPS fresca
 
+> **Nota deste fork:** as referências a `ghcr.io/melgarafael` neste documento
+> registram o upstream e não são instruções de instalação do Laura. Para este
+> fork, use `ghcr.io/founders-br` nas três imagens; os defaults vigentes estão
+> em `hostgator-setup-kit/_common.sh` e `docker-compose.prod.yml`.
+
 > Fonte da verdade do QA de produto do DeskcommCRM open-source. Cada caso aqui é
 > exercitado **pelo frontend real** (Playwright), com contas de teste reais e
 > recursos reais (banco fresco do `baseline.sql`, WAHA local, receiver de webhook

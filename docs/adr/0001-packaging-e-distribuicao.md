@@ -1,5 +1,10 @@
 # ADR-0001 — Packaging e distribuição do DeskcommCRM
 
+> **Nota deste fork:** as referências a `ghcr.io/melgarafael` neste documento
+> registram o upstream e não são instruções de instalação do Laura. Para este
+> fork, use `ghcr.io/founders-br` nas três imagens; os defaults vigentes estão
+> em `hostgator-setup-kit/_common.sh` e `docker-compose.prod.yml`.
+
 - **Status:** aceito
 - **Data:** 2026-08-13
 - **Contexto medido em:** `f9abedd0` (`main`)

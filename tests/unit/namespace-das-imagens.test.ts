@@ -53,7 +53,7 @@ const PUBLICA = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image
 const ENV_EXEMPLO = fs.readFileSync(path.join(RAIZ, ".env.hostgator.example"), "utf8");
 
 /** O valor literal que este repositório publica. A âncora. */
-const NAMESPACE_DESTE_REPO = "ghcr.io/melgarafael";
+const NAMESPACE_DESTE_REPO = "ghcr.io/founders-br";
 
 /**
  * Um fork que publica as próprias imagens muda `IMG_NS` — e precisa mudar junto
@@ -143,6 +143,62 @@ describe("o default do compose diz o mesmo que o kit", () => {
 });
 
 describe("o kit aponta para o que o CI realmente publica", () => {
+  it("os defaults de código e os labels de origem apontam para este fork", () => {
+    const repo = "https://github.com/founders-br/crm-laura";
+    for (const script of ["install.sh", "comecar.sh"]) {
+      const texto = fs.readFileSync(path.join(RAIZ, "hostgator-setup-kit", script), "utf8");
+      expect(texto).toContain(`REPO_URL="\${REPO_URL:-${repo}.git}"`);
+    }
+    expect(COMUM).toContain(`local url="\${1:-${repo}.git}" ref`);
+    for (const dockerfile of ["Dockerfile", "Dockerfile.worker", "Dockerfile.scheduler"]) {
+      expect(fs.readFileSync(path.join(RAIZ, dockerfile), "utf8")).toContain(
+        `org.opencontainers.image.source="${repo}"`,
+      );
+    }
+  });
+
+  it.each([undefined, "registry.example/outro-dono"])(
+    "ghcr_status consulta token e manifesto no IMG_NS (%s)",
+    (namespace) => {
+      const ns = namespace ?? imgNs();
+      const [registry, owner] = ns.split("/");
+      const saida = execFileSync(
+        "bash",
+        [
+          "-c",
+          `
+        source hostgator-setup-kit/_common.sh
+        if [ -n "$1" ]; then IMG_NS="$1"; fi
+        curl() {
+          local arg
+          for arg in "$@"; do
+            case "$arg" in
+              https://*/token[?]*) printf '%s\\n' "$arg" >> "$log"; printf '{"token":"teste"}'; return;;
+              https://*/v2/*) printf '%s\\n' "$arg" >> "$log"; printf '200'; return;;
+            esac
+          done
+          return 1
+        }
+        log=$(mktemp)
+        trap 'rm -f "$log"' EXIT
+        # O dublê registra em arquivo porque a função captura stdout do curl.
+        ghcr_status deskcommcrm 1.2.3
+        printf '\\n'
+        cat "$log"
+      `,
+          "teste",
+          namespace ?? "",
+        ],
+        { cwd: RAIZ, encoding: "utf8" },
+      );
+      expect(saida.trim().split("\n")).toEqual([
+        "200",
+        `https://${registry}/token?scope=repository:${owner}/deskcommcrm:pull&service=${registry}`,
+        `https://${registry}/v2/${owner}/deskcommcrm/manifests/1.2.3`,
+      ]);
+    },
+  );
+
   it("o registry do kit é o mesmo do workflow de publicação", () => {
     const m = PUBLICA.match(/^\s*REGISTRY:\s*(\S+)$/m);
     expect(m, "não achei `REGISTRY:` em .github/workflows/publish-image.yml").not.toBeNull();
