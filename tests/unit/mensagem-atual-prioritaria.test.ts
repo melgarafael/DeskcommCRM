@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildOpeningMessage } from "@/lib/agent-engine/agent/inbound-turn";
+import { buildOpeningMessage, claimsCurrentInboundIsEmpty } from "@/lib/agent-engine/agent/inbound-turn";
 import type { LeadContext } from "@/lib/agent-engine/edge/crm/get-lead-context";
 
 describe("mensagem atual do cliente", () => {
@@ -42,5 +42,25 @@ describe("mensagem atual do cliente", () => {
     expect(abertura.indexOf("A última mensagem do cliente veio em branco.")).toBeLessThan(
       abertura.indexOf("## Mensagem atual do cliente — fonte prioritária"),
     );
+  });
+});
+
+describe("barreira contra falso aviso de mensagem vazia", () => {
+  const inbound = "Eu quero agendar uma consulta com a Drª Mara, já tinha dito antes.";
+
+  it.each([
+    "Recebi uma mensagem em branco.",
+    "Sua última mensagem veio sem texto.",
+    "Notei que a mensagem chegou vazia.",
+  ])("recusa a frase falsa: %s", (candidate) => {
+    expect(claimsCurrentInboundIsEmpty(candidate, inbound)).toBe(true);
+  });
+
+  it("permite uma resposta que trata o pedido real", () => {
+    expect(claimsCurrentInboundIsEmpty("Claro. Qual dia e período você prefere para a consulta?", inbound)).toBe(false);
+  });
+
+  it("não arma quando a mensagem de fato não tem texto", () => {
+    expect(claimsCurrentInboundIsEmpty("Recebi uma mensagem em branco.", "   ")).toBe(false);
   });
 });
