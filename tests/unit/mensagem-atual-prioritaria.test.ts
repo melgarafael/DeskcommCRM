@@ -1,0 +1,46 @@
+import { describe, expect, it } from "vitest";
+
+import { buildOpeningMessage } from "@/lib/agent-engine/agent/inbound-turn";
+import type { LeadContext } from "@/lib/agent-engine/edge/crm/get-lead-context";
+
+describe("mensagem atual do cliente", () => {
+  it("fica depois da memória anterior e vence um resumo contaminado", () => {
+    const contexto: LeadContext = {
+      lead_id: "11111111-1111-4111-8111-111111111111",
+      contact: { name: "Cristiano", phone: null, email: null, tags: [], is_blocked: false },
+      conversation_id: "22222222-2222-4222-8222-222222222222",
+      last_human_decision: null,
+      messages: [
+        {
+          direction: "outbound",
+          body: "Como posso ajudar?",
+          sent_at: "2026-09-06T09:01:00-04:00",
+        },
+        {
+          direction: "inbound",
+          body: "Quero marcar um horário com a Drª Mara.",
+          sent_at: "2026-09-06T09:03:00-04:00",
+        },
+      ],
+    };
+
+    const abertura = buildOpeningMessage(
+      {
+        commitments: [],
+        objections: [],
+        next_action: "aguardar a mensagem do cliente",
+        rolling_summary: "A última mensagem do cliente veio em branco.",
+      } as never,
+      null,
+      contexto,
+      "sem notas",
+    );
+
+    expect(abertura).toContain("## Mensagem atual do cliente — fonte prioritária");
+    expect(abertura).toContain('"texto":"Quero marcar um horário com a Drª Mara."');
+    expect(abertura).toContain("NUNCA diga que veio vazia, em branco ou que não foi recebida.");
+    expect(abertura.indexOf("A última mensagem do cliente veio em branco.")).toBeLessThan(
+      abertura.indexOf("## Mensagem atual do cliente — fonte prioritária"),
+    );
+  });
+});
