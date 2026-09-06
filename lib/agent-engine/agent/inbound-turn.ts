@@ -1096,6 +1096,23 @@ export function buildOpeningMessage(
 }
 
 /**
+ * A mensagem que acaba de chegar é uma fonte factual: se ela tem texto, o
+ * agente não pode dizer ao cliente que ela veio vazia. Prompt reduz esse erro,
+ * mas não é uma barreira de envio — o modelo ainda pode repetir um resumo
+ * antigo contaminado. Esta detecção fica no único caminho que fala no canal.
+ */
+export function claimsCurrentInboundIsEmpty(candidate: string, currentInbound: string): boolean {
+  if (currentInbound.trim() === '') return false;
+
+  const emptyClaim = '(?:em\\s+branco|vazi[ao]|sem\\s+texto)';
+  const messageReference = '(?:mensagem|texto|recado|última\\s+mensagem|ela)';
+  return new RegExp(
+    `\\b${messageReference}\\b[\\s\\S]{0,90}\\b${emptyClaim}\\b|\\b${emptyClaim}\\b[\\s\\S]{0,90}\\b${messageReference}\\b`,
+    'i',
+  ).test(candidate);
+}
+
+/**
  * Parâmetros do run que DIFEREM entre inbound (F2-09) e follow-up (F3-03): os ids
  * de envio (de fonte confiável — payload do drain no inbound, row do lead no
  * follow-up, nunca do payload do modelo) e a montagem da mensagem de abertura,
@@ -1897,6 +1914,9 @@ async function executarTurnoDoAgente(
   // (`internal_vocabulary_leak`): 1º veto no turno ensina o modelo a reescrever; persistir
   // solta o envio com registro. Por turno (closure), nunca cross-turno.
   let internalVocabularyVetoCount = 0;
+  // Uma recusa deste tipo devolve o texto confirmado ao modelo para que ele
+  // reescreva antes de falar com o cliente. Não gasta envio nem toca no canal.
+  let falseEmptyInboundVetoCount = 0;
   // Cap de envio (warm-up/diário) vetado neste turno — capturado aqui porque o veto
   // não empurra outcome nenhum a `outcomes` (ver comentário no ponto de captura, mais
   // abaixo). Diferente da janela horária (checada ANTES do modelo rodar, linha ~1233):
@@ -2182,6 +2202,19 @@ async function executarTurnoDoAgente(
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
       execute: async ({ body }) => {
+        if (claimsCurrentInboundIsEmpty(body, inboundSignal)) {
+          falseEmptyInboundVetoCount += 1;
+          return {
+            ok: false,
+            error: {
+              code: 'false_empty_inbound',
+              message:
+                'O cliente enviou texto nesta mensagem. Não diga que ela veio vazia, em branco ou sem texto. ' +
+                `Responda ao pedido real agora: ${JSON.stringify(inboundSignal)}. ` +
+                `Esta é a tentativa de correção ${falseEmptyInboundVetoCount}.`,
+            },
+          };
+        }
         if (seq >= maxSendsPerTurn) {
           return {
             ok: false,
