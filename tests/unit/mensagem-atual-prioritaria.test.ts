@@ -43,6 +43,23 @@ describe("mensagem atual do cliente", () => {
       abertura.indexOf("## Mensagem atual do cliente — fonte prioritária"),
     );
   });
+
+  it("prefere a mensagem apontada pelo job a outra inbound no histórico", () => {
+    const contexto: LeadContext = {
+      lead_id: "11111111-1111-4111-8111-111111111111",
+      contact: { name: "Cristiano", phone: null, email: null, tags: [], is_blocked: false },
+      conversation_id: "22222222-2222-4222-8222-222222222222",
+      last_human_decision: null,
+      messages: [
+        { direction: "inbound", body: "registro concorrente sem conteúdo", sent_at: "2026-09-06T18:10:00-04:00" },
+      ],
+    };
+
+    const abertura = buildOpeningMessage(null, null, contexto, "sem notas", false, [], "", "Quero agendar com a Drª Mara.");
+
+    expect(abertura).toContain('"texto":"Quero agendar com a Drª Mara."');
+    expect(abertura).not.toContain('"texto":"registro concorrente sem conteúdo"');
+  });
 });
 
 describe("barreira contra falso aviso de mensagem vazia", () => {
