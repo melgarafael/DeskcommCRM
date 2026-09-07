@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export async function GET(
 
   const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -50,7 +52,7 @@ export async function GET(
     return fail("internal_error", "Erro ao ler o material.", 500, { requestId });
   }
   if (!fonte) {
-    return fail("not_found", "Material não encontrado.", 404, { requestId });
+    return fail("not_found", t("Material não encontrado."), 404, { requestId });
   }
 
   const versaoAtiva = (fonte as { active_kb_version_id: string | null }).active_kb_version_id;

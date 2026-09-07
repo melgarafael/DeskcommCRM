@@ -145,7 +145,7 @@ function GrupoDeDuplicados({
               aria-label={t("Manter este cadastro")}
             />
             <span className="min-w-0">
-              <span className="block truncate font-medium">{rotuloDoContato(c)}</span>
+              <span className="block truncate font-medium">{rotuloDoContato(c, t)}</span>
               <span className="block truncate text-muted-foreground">{c.email ?? "—"}</span>
               <span className="block truncate text-muted-foreground">
                 {c.phone_number ? phoneForDisplay(c.phone_number) : "—"}

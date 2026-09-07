@@ -51,6 +51,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -67,13 +68,14 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 
   const autorizado = await requireRole("agent", { requestId, resource: "calendar_connections" });
   if (!autorizado.ok) return autorizado.response;
+  const t = (texto: string) => traduzir(texto, autorizado.user.idioma);
   const { user, org } = autorizado;
 
   let alvo = user.id;
   const bruto = await req.json().catch(() => ({}));
   const lido = corpo.safeParse(bruto);
   if (!lido.success) {
-    return fail("validation_failed", "Corpo inválido para desconectar.", 422, { requestId });
+    return fail("validation_failed", t("Corpo inválido para desconectar."), 422, { requestId });
   }
   if (lido.data.user_id && lido.data.user_id !== user.id) {
     // Desconectar a agenda de OUTRA pessoa é ato de gestão, não de uso.
@@ -101,7 +103,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   if (!conexoes || conexoes.length === 0) {
     // 404 e não 200: dizer "desconectei" sobre o que não existe é a mesma
     // família de mentira que o "Marcado ✓" sem linha no banco.
-    return fail("not_found", "Não há agenda do Google conectada para esta pessoa.", 404, {
+    return fail("not_found", t("Não há agenda do Google conectada para esta pessoa."), 404, {
       requestId,
     });
   }

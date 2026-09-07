@@ -75,7 +75,7 @@ export function MatchReplyForm({
   return (
     <div className="space-y-3">
       <div className="space-y-2">
-        <Label>Regras de texto</Label>
+        <Label>{t("Regras de texto")}</Label>
         {branches.map((branch, index) => (
           <div key={branch.id} className="space-y-2 rounded-md border border-border p-2">
             <Input
@@ -155,7 +155,7 @@ export function MatchReplyForm({
         <p className="text-xs text-text-muted">{ESPERA_PELA_RESPOSTA.ajuda}</p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="match-reply-save">Gravar a resposta em</Label>
+        <Label htmlFor="match-reply-save">{t("Gravar a resposta em")}</Label>
         <Select
           value={
             saveTo?.kind === "contact_name"
@@ -181,7 +181,7 @@ export function MatchReplyForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">{t("Não gravar")}</SelectItem>
-            <SelectItem value="__contact_name__">Nome do contato</SelectItem>
+            <SelectItem value="__contact_name__">{t("Nome do contato")}</SelectItem>
             {camposUnicos.map((c) => (
               <SelectItem key={c.key} value={c.key}>
                 {c.label} ({c.key})
@@ -192,7 +192,7 @@ export function MatchReplyForm({
         </Select>
         {saveTo?.kind === "lead_custom" && !camposUnicos.some((c) => c.key === saveTo.key) && (
           <Input
-            aria-label="Chave do campo personalizado"
+            aria-label={t("Chave do campo personalizado")}
             value={saveTo.key}
             onChange={(e) => {
               const next: ReplySaveTo = { kind: "lead_custom", key: e.target.value };

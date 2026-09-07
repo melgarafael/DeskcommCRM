@@ -81,12 +81,12 @@ function Conferencia({
         {ordem ?? "•"}
       </span>
       <div className="space-y-1">
-        <p className="text-sm font-medium">{c.rotulo}</p>
-        <p className="text-xs text-muted-foreground">{c.oQueProtege}</p>
+        <p className="text-sm font-medium">{t(c.rotulo)}</p>
+        <p className="text-xs text-muted-foreground">{t(c.oQueProtege)}</p>
         {c.escolha === null ? (
           <p data-testid={`conferencia-${c.nome}-fixa`} className="text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{t("Isto não se desliga.")}</span>{" "}
-            {c.porQueNaoSeDesliga}
+            {t(c.porQueNaoSeDesliga)}
           </p>
         ) : (
           <div data-testid={`conferencia-${c.nome}-escolha`} className="space-y-1">
@@ -96,7 +96,7 @@ function Conferencia({
                 checked={estado?.efetivo ?? false}
                 disabled={!podeEditar || salvando}
                 onCheckedChange={(v) => onToggle(c.nome, v)}
-                aria-label={c.rotulo}
+                aria-label={t(c.rotulo)}
               />
               <span className="text-xs text-muted-foreground">
                 {estado === undefined
@@ -109,7 +109,7 @@ function Conferencia({
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              {t("Custa")} {c.escolha.custo}
+              {t("Custa")} {t(c.escolha.custo)}
               {t(". O modelo usado se escolhe em")}{" "}
               <a className="underline underline-offset-2" href="/app/ai/providers">
                 {t("Provedores de IA")}

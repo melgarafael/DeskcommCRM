@@ -8,11 +8,13 @@ import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { generateReplyDraft } from "@/lib/agent-engine/agent/reply-drafts";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 async function context(ctx: Ctx, requestId: string) {
   const auth = await requireRole("agent", { requestId, resource: "conversations" });
   if (!auth.ok) return { response: auth.response } as const;
+  const t = (texto: string) => traduzir(texto, auth.user.idioma);
   const { id } = await ctx.params;
   const db = await createClient();
   const { data: conversation } = await db
@@ -22,8 +24,8 @@ async function context(ctx: Ctx, requestId: string) {
     .eq("id", id)
     .maybeSingle();
   if (!conversation)
-    return { response: fail("not_found", "Conversa não encontrada.", 404, { requestId }) } as const;
-  return { auth, conversation } as const;
+    return { response: fail("not_found", t("Conversa não encontrada."), 404, { requestId }) } as const;
+  return { auth, conversation, t } as const;
 }
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const requestId = randomUUID(),
@@ -49,7 +51,7 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     id: conversationId,
   } = c.conversation;
   if (!contactId || !channelId)
-    return fail("unprocessable", "Conversa sem contato/canal.", 422, { requestId });
+    return fail("unprocessable", c.t("Conversa sem contato/canal."), 422, { requestId });
   try {
     const draft = await generateReplyDraft(getRequestPool(), requestTurnDeps(), {
       organizationId: c.auth.org.orgId,
@@ -72,7 +74,7 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
   } catch {
     return fail(
       "reply_unavailable",
-      "Não foi possível gerar a sugestão. Confira a publicação e a configuração do agente.",
+      c.t("Não foi possível gerar a sugestão. Confira a publicação e a configuração do agente."),
       422,
       { requestId },
     );

@@ -23,6 +23,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
 import { agentMcpCreateSchema } from "@/lib/ai/agents/validation";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -89,13 +90,14 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   let rawBody: unknown;
   try {
     rawBody = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const wantsMcp =
@@ -108,7 +110,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (wantsMcp) {
     const parsed = agentMcpCreateSchema.safeParse(rawBody);
     if (!parsed.success) {
-      return fail("validation_failed", "Campos inválidos.", 422, {
+      return fail("validation_failed", t("Campos inválidos."), 422, {
         requestId,
         details: parsed.error.flatten(),
       });
@@ -194,7 +196,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         .from("ai_agents")
         .update({ archived_at: new Date().toISOString() })
         .eq("id", agentRow.id);
-      return fail("internal_error", "Erro ao criar versão inicial.", 500, {
+      return fail("internal_error", t("Erro ao criar versão inicial."), 500, {
         requestId,
         details: { agent_rolled_back: true, db_error: versionErr?.message },
       });
@@ -216,7 +218,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Legacy path — kind='rag_bot' (default DB constraint).
   const parsed = agentCreateSchema.safeParse(rawBody);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });

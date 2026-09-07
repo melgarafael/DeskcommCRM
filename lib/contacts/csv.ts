@@ -229,7 +229,11 @@ function normalizaHeader(h: string): string {
  * (telefone/e-mail) — sem isso nada importável existe, e falhar aberto é
  * melhor que criar 300 contatos vazios.
  */
-export function mapHeader(header: string[]): { indices: Record<string, number>; motivo: string | null } {
+export function mapHeader(
+  header: string[],
+  t?: (text: string) => string,
+): { indices: Record<string, number>; motivo: string | null } {
+  const _t = t || ((x) => x);
   const indices: Record<string, number> = {};
   header.forEach((rawCell, idx) => {
     const cell = normalizaHeader(rawCell);
@@ -243,7 +247,7 @@ export function mapHeader(header: string[]): { indices: Record<string, number>; 
   const temIdentificador = indices.phone_number !== undefined || indices.email !== undefined;
   return {
     indices,
-    motivo: temIdentificador ? null : "cabeçalho sem coluna de telefone nem e-mail",
+    motivo: temIdentificador ? null : _t("cabeçalho sem coluna de telefone nem e-mail"),
   };
 }
 
@@ -317,7 +321,9 @@ export function normalizaData(raw: string): string | null {
 export function mapLinha(
   cells: string[],
   indices: Record<string, number>,
+  t?: (text: string) => string,
 ): { contato: LinhaNormalizada; motivo: string | null } {
+  const _t = t || ((x) => x);
   const get = (campo: string): string => {
     const idx = indices[campo];
     return idx === undefined ? "" : (cells[idx] ?? "").trim();
@@ -333,7 +339,7 @@ export function mapLinha(
   const email = get("email");
   if (email !== "") {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return { contato: {}, motivo: `e-mail inválido: "${email}"` };
+      return { contato: {}, motivo: _t("e-mail inválido: ") + `"${email}"` };
     }
     contato.email = email;
   }
@@ -344,14 +350,17 @@ export function mapLinha(
     if (phone === null) {
       return {
         contato: {},
-        motivo: `telefone inválido: "${phoneRaw}" (use DDI+DDD+número, ex.: +5511999998888)`,
+        motivo:
+          _t("telefone inválido: ") +
+          `"${phoneRaw}"` +
+          _t(" (use DDI+DDD+número, ex.: +5511999998888)"),
       };
     }
     contato.phone_number = phone;
   }
 
   if (contato.phone_number === undefined && contato.email === undefined) {
-    return { contato: {}, motivo: "linha sem telefone nem e-mail" };
+    return { contato: {}, motivo: _t("linha sem telefone nem e-mail") };
   }
 
   const cpf = get("cpf").replace(/\D/g, "");

@@ -10,6 +10,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -39,7 +41,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", "Fluxo não encontrado.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
 
   if (existing.status === "disabled") {
     return ok({ id, status: "disabled" }, { requestId });

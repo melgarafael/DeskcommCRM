@@ -46,22 +46,22 @@ export default async function TeamPage({
     <div className="flex h-full flex-col gap-6 p-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("Equipe")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("Gestão de membros, roles e atendimento do tenant.")}
           </p>
         </div>
         {isAdmin ? (
           <Button asChild className="shrink-0">
-            <Link href="/app/team/invite">Convidar membros</Link>
+            <Link href="/app/team/invite">{t("Convidar membros")}</Link>
           </Button>
         ) : null}
       </header>
 
       <Tabs defaultValue={abaInicial} className="flex flex-1 flex-col">
         <TabsList>
-          <TabsTrigger value="members">Membros</TabsTrigger>
-          <TabsTrigger value="attendants">Atendimento</TabsTrigger>
+          <TabsTrigger value="members">{t("Membros")}</TabsTrigger>
+          <TabsTrigger value="attendants">{t("Atendimento")}</TabsTrigger>
         </TabsList>
         <TabsContent value="members" className="mt-4">
           <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />

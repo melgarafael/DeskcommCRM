@@ -80,7 +80,7 @@ export function RecoveryForm({ next }: RecoveryFormProps) {
       )}
 
       <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? t("Validando...") : t("Recuperar acesso")}
+        {isPending ? t("Validando…") : t("Recuperar acesso")}
       </Button>
     </form>
   );

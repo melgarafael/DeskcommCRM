@@ -201,6 +201,19 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
       "workers/ai-response-worker.ts",
     ],
   },
+  {
+    reason:
+      "`lib/i18n/dicionario.ts` guarda, como CHAVE de tradução, a cópia de tela " +
+      "verbatim das rotas do grupo 'Texto VISÍVEL ao usuário' acima " +
+      "(`app/api/v1/onboarding/whatsapp/session/route.ts` e pares) — a varredura " +
+      "de cobertura do espanhol centraliza toda string visível para traduzir, " +
+      "dívida já registrada incluída. Reescrever essa cópia para tirar o nome do " +
+      "provider é a MESMA mudança de comportamento observável que a entrada " +
+      "irmã já recusa fazer nas Fases 0–2 — só que agora duplicada aqui porque " +
+      "o dicionário é espelho, não fonte. Sai junto com a Fase 3 do seam, quando " +
+      "a cópia de tela na fonte deixar de nomear o provider.",
+    files: ["lib/i18n/dicionario.ts"],
+  },
 ];
 
 const DEBT = new Set(KNOWN_DEBT.flatMap((g) => g.files));

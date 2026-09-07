@@ -256,7 +256,7 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
 
           {form.kind === "stage_change" && (
             <div className="space-y-2">
-              <Label htmlFor="trigger-stage">Etapa que dispara o fluxo</Label>
+              <Label htmlFor="trigger-stage">{t("Etapa que dispara o fluxo")}</Label>
               <Select
                 value={form.stageId}
                 onValueChange={(v) => setForm((f) => ({ ...f, stageId: v }))}
@@ -355,7 +355,7 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
           )}
 
           <div className="flex items-center justify-between gap-2">
-            <Label htmlFor="trigger-cancel-on-reply">Cancelar se o lead responder</Label>
+            <Label htmlFor="trigger-cancel-on-reply">{t("Cancelar se o lead responder")}</Label>
             <Switch
               id="trigger-cancel-on-reply"
               checked={form.kind === "appointment_no_show" || form.cancelOnReply}

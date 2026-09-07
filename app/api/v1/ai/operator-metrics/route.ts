@@ -30,6 +30,7 @@
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ const DIAS = 30;
 export async function GET(): Promise<Response> {
   const authz = await requireRole("manager", { resource: "ai_operator_metrics" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
   const db = await createClient();
@@ -84,6 +86,6 @@ export async function GET(): Promise<Response> {
       quisAgirENaoPode: semFerramenta,
     });
   } catch (err) {
-    return fail("read_failed", err instanceof Error ? err.message : "falha ao ler", 500);
+    return fail("read_failed", err instanceof Error ? err.message : t("falha ao ler"), 500);
   }
 }

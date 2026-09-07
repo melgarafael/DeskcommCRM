@@ -686,7 +686,7 @@ export function AgendaClient({
                 const alvo = todos.find((a) => a.id === cancelandoId);
                 if (!alvo) return t("Este agendamento não está mais na lista.");
                 const quem = alvo.quemSeraAtendido ? ` ${t("de")} ${alvo.quemSeraAtendido}` : "";
-                return `${t(alvo.titulo)}${quem}, ${format(new Date(alvo.comeca), t("d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}.`;
+                return `${alvo.titulo}${quem}, ${format(new Date(alvo.comeca), t("d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}.`;
               })()}
             </p>
             <label className="block text-xs font-medium text-text-muted" htmlFor="motivo-do-cancelamento">

@@ -23,6 +23,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { aggregateEvolution, type EvolutionInput } from "@/lib/ai/evolution/aggregate";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -60,11 +61,12 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "ai_evolution" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
   const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
   if (!parsed.success) {
-    return fail("validation_failed", "Filtros inválidos.", 422, {
+    return fail("validation_failed", t("Filtros inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });

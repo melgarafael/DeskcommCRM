@@ -25,6 +25,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   let arquivo: File;
   try {
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (!(f instanceof File)) throw new Error("sem arquivo");
     arquivo = f;
   } catch {
-    return fail("validation_failed", "Envie o arquivo no campo 'file'.", 422, { requestId });
+    return fail("validation_failed", t("Envie o arquivo no campo 'file'."), 422, { requestId });
   }
 
   const nome = arquivo.name ?? "";
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!tipoOk) {
     return fail(
       "validation_failed",
-      "Formato não suportado — envie um arquivo .csv. No Excel use 'Salvar como' → 'CSV UTF-8'.",
+      t("Formato não suportado — envie um arquivo .csv. No Excel use 'Salvar como' → 'CSV UTF-8'."),
       422,
       { requestId },
     );
@@ -86,7 +88,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (arquivo.size > CSV_MAX_BYTES) {
     return fail(
       "validation_failed",
-      `Arquivo maior que ${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+      t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
       413,
       { requestId },
     );
@@ -97,9 +99,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   // catálogo sem um erro sequer, e é ele que o agente lê para o cliente (#483).
   const decodificado = decodificarCsv(await arquivo.arrayBuffer());
   if ("erro" in decodificado) {
-    return fail("validation_failed", decodificado.erro, 422, { requestId });
+    return fail("validation_failed", t(decodificado.erro), 422, { requestId });
   }
-  const lido = lerPlanilha(decodificado.texto);
+  const lido = lerPlanilha(decodificado.texto, t);
   // Problema do ARQUIVO (falta a coluna de preço) é 422 com a frase inteira —
   // e não um relatório com 300 erros idênticos.
   if ("erro" in lido) return fail("validation_failed", lido.erro, 422, { requestId });
@@ -108,7 +110,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (totalLinhas > CSV_MAX_DATA_ROWS) {
     return fail(
       "validation_failed",
-      `Máximo de ${CSV_MAX_DATA_ROWS} produtos por importação — divida a planilha.`,
+      `${t("Máximo de")} ${CSV_MAX_DATA_ROWS} ${t("produtos por importação — divida a planilha.")}`,
       422,
       { requestId },
     );
@@ -244,6 +246,7 @@ export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const modelo = [
     "codigo,nome,marca,categoria,preco,custo,estoque",

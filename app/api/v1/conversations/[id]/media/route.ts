@@ -15,6 +15,7 @@ import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +38,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // claim/route.ts:35 é o modelo literal.
   const authz = await requireRole("agent", { requestId, resource: "conversation_media" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
   const authUser = await loadAuthUser();
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
-  if (!activeOrg) return fail("no_active_org", "No active organization.", 403, { requestId });
+  if (!activeOrg) return fail("no_active_org", t("No active organization."), 403, { requestId });
 
   // RLS + filtro explícito: a conversa precisa ser da org ativa.
   const { data: conv, error: convErr } = await supabase
@@ -49,21 +51,21 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("id", conversationId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
-  if (convErr) return fail("internal_error", "Erro ao validar conversa.", 500, { requestId });
-  if (!conv) return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+  if (convErr) return fail("internal_error", t("Erro ao validar conversa."), 500, { requestId });
+  if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   // Guard de DoS: rejeita pelo Content-Length declarado ANTES de bufferizar
   // o corpo inteiro. 1MB de slack pro overhead de multipart; o check
   // autoritativo continua o file.size pós-parse (Content-Length pode mentir).
   const declared = Number(req.headers.get("content-length") ?? 0);
   if (declared > MAX_MEDIA_BYTES + 1_048_576) {
-    return fail("payload_too_large", "Arquivo acima de 50MB.", 413, { requestId });
+    return fail("payload_too_large", t("Arquivo acima de 50MB."), 413, { requestId });
   }
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
-    return fail("validation_failed", "Campo 'file' (multipart) obrigatório.", 422, { requestId });
+    return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });
   }
 
   const mime = file.type || "application/octet-stream";
@@ -92,7 +94,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .upload(storagePath, buffer, { contentType: mimeFinal, upsert: false });
   if (upErr) {
     console.error("[conversations.media] upload failed", upErr.message);
-    return fail("internal_error", "Erro ao subir o arquivo.", 500, { requestId });
+    return fail("internal_error", t("Erro ao subir o arquivo."), 500, { requestId });
   }
 
   return ok(

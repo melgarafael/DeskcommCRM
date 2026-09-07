@@ -34,6 +34,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import { CAMADAS_SEMANTICAS } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -94,11 +95,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("admin", { resource: "ai_guardrail_layers" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
 
   const parsed = corpoDoPut.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("invalid_body", "corpo inválido", 422, { details: parsed.error.issues });
+    return fail("invalid_body", t("corpo inválido"), 422, { details: parsed.error.issues });
   }
   const corpo = parsed.data;
 
@@ -121,7 +123,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   if (!gravado) {
     // Upsert que casa zero linhas devolve sucesso no PostgREST — a tela diria
     // "salvo" sem nada ter sido gravado. Mesmo cuidado da rota de provedores.
-    return fail("save_failed", "nada foi gravado — verifique as permissões da organização", 500);
+    return fail("save_failed", t("nada foi gravado — verifique as permissões da organização"), 500);
   }
 
   void audit({

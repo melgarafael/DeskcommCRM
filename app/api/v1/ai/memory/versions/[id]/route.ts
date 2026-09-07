@@ -8,6 +8,7 @@ import { type NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const authz = await requireRole("agent", { requestId, resource: "org_memory" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
   const admin = createAdminClient();
@@ -34,10 +36,10 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
     .eq("organization_id", org.orgId)
     .maybeSingle();
   if (error) {
-    return fail("internal_error", "Erro ao carregar a versão da memória.", 500, { requestId });
+    return fail("internal_error", t("Erro ao carregar a versão da memória."), 500, { requestId });
   }
   if (!data) {
-    return fail("not_found", "Versão não encontrada nesta organização.", 404, { requestId });
+    return fail("not_found", t("Versão não encontrada nesta organização."), 404, { requestId });
   }
 
   return ok(data, { requestId });

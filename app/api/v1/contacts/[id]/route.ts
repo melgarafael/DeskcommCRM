@@ -13,6 +13,7 @@ import { ApiError } from "@/lib/api/types";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { contactPatchSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -37,9 +38,10 @@ export async function GET(
   }
 
   const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
-    return fail("no_active_org", "No active organization.", 403, { requestId });
+    return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
 
   const decryptPurpose = req.headers.get("x-decrypt-purpose");
@@ -51,6 +53,7 @@ export async function GET(
         organization_id: activeOrg.orgId,
         actor: { type: "user", id: user.id },
         requestId,
+        idioma: authUser?.idioma,
       },
       { contactId: id, decryptPurpose },
     );
@@ -100,6 +103,7 @@ export async function PATCH(
         organization_id: activeOrg.orgId,
         actor: { type: "user", id: user.id },
         requestId,
+        idioma: user.idioma,
       },
       id,
       input,
@@ -137,6 +141,7 @@ export async function DELETE(
         organization_id: activeOrg.orgId,
         actor: { type: "user", id: user.id },
         requestId,
+        idioma: user.idioma,
       },
       id,
     );

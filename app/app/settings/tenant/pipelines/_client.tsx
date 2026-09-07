@@ -116,8 +116,8 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
-      if (r.ok) toast.success(`${pipeline.name} atualizado.`);
-      else toast.error(`Erro: ${r.error}`);
+      if (r.ok) toast.success(`${pipeline.name} ${t("atualizado.")}`);
+      else toast.error(`${t("Erro:")} ${r.error}`);
     });
   }
 

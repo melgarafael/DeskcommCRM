@@ -156,6 +156,58 @@ describe("mapLinha", () => {
   });
 });
 
+/**
+ * `traduzir()` real só troca a CHAVE que bate byte a byte com uma entrada do
+ * dicionário; o resto degrada para o próprio texto. Um mock que traduz
+ * QUALQUER string esconderia um pedaço colado FORA de `t()` que deveria estar
+ * dentro (ou vice-versa) — ver o bug real corrigido em
+ * `lib/catalogo/planilha.test.ts` e `lib/leads/planilha.test.ts`.
+ */
+describe("mapHeader / mapLinha — mensagens de erro passam por t()", () => {
+  const indices = mapHeader(["Nome", "Telefone", "Email", "Tags"]).indices;
+  const DICIONARIO_FAKE: Record<string, string> = {
+    "cabeçalho sem coluna de telefone nem e-mail": "CABECERA SIN COLUMNA DE TELÉFONO NI E-MAIL",
+    "e-mail inválido: ": "E-MAIL INVÁLIDO: ",
+    "telefone inválido: ": "TELÉFONO INVÁLIDO: ",
+    " (use DDI+DDD+número, ex.: +5511999998888)":
+      " (USA CÓDIGO DE PAÍS+CÓDIGO DE ÁREA+NÚMERO, EJ.: +5511999998888)",
+    "linha sem telefone nem e-mail": "LÍNEA SIN TELÉFONO NI E-MAIL",
+  };
+  const gritar = (texto: string): string => DICIONARIO_FAKE[texto] ?? texto;
+
+  it("mapHeader: sem identificador traduz por completo", () => {
+    const { motivo } = mapHeader(["Nome", "Idade"], gritar);
+    expect(motivo).toBe("CABECERA SIN COLUMNA DE TELÉFONO NI E-MAIL");
+  });
+
+  it("mapHeader: sem t, comportamento idêntico ao de antes", () => {
+    const { motivo } = mapHeader(["Nome", "Idade"]);
+    expect(motivo).toBe("cabeçalho sem coluna de telefone nem e-mail");
+  });
+
+  it("mapLinha: sem telefone/e-mail traduz por completo", () => {
+    const { motivo } = mapLinha(["Só Nome", "", "", ""], indices, gritar);
+    expect(motivo).toBe("LÍNEA SIN TELÉFONO NI E-MAIL");
+  });
+
+  it("mapLinha: telefone inválido traduz por completo, incluindo o texto após o valor cru", () => {
+    const { motivo } = mapLinha(["Ana", "123", "", ""], indices, gritar);
+    expect(motivo).toBe(
+      'TELÉFONO INVÁLIDO: "123" (USA CÓDIGO DE PAÍS+CÓDIGO DE ÁREA+NÚMERO, EJ.: +5511999998888)',
+    );
+  });
+
+  it("mapLinha: e-mail inválido traduz por completo", () => {
+    const { motivo } = mapLinha(["Ana", "", "nao-e-email", ""], indices, gritar);
+    expect(motivo).toBe('E-MAIL INVÁLIDO: "nao-e-email"');
+  });
+
+  it("mapLinha: sem t, comportamento idêntico ao de antes (degrada para o texto original)", () => {
+    const { motivo } = mapLinha(["Ana", "123", "", ""], indices);
+    expect(motivo).toBe('telefone inválido: "123" (use DDI+DDD+número, ex.: +5511999998888)');
+  });
+});
+
 describe("limites declarados", () => {
   it("teto de linhas e tamanho são os mesmos que a rota cobra", () => {
     // Guarda barata: a rota lê estas constantes; o teste existe para o dia em

@@ -40,6 +40,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { createClient } from "@/lib/supabase/server";
 import type { Conversation } from "@/lib/types/messaging";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
 
   const supabase = await createClient();
@@ -74,7 +76,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .eq("organization_id", org.orgId)
     .maybeSingle();
   if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
-  if (!convData) return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+  if (!convData) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   const conv = convData as unknown as {
     id: string;
@@ -87,7 +89,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (conv.status === "closed" || conv.status === "archived") {
     return fail(
       "state_conflict",
-      "Esta conversa está encerrada — não há atendimento automático a pausar.",
+      t("Esta conversa está encerrada — não há atendimento automático a pausar."),
       409,
       { requestId },
     );
@@ -108,7 +110,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     });
     if (rpcErr) return fail("internal_error", rpcErr.message, 500, { requestId });
     if (!atribuida || (atribuida as unknown[]).length === 0) {
-      return fail("state_conflict", "Outro atendente assumiu esta conversa agora.", 409, {
+      return fail("state_conflict", t("Outro atendente assumiu esta conversa agora."), 409, {
         requestId,
       });
     }
@@ -131,7 +133,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .select("id, contact_id, organization_id, status, assigned_to_user_id, bot_silenced_until")
     .maybeSingle();
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
-  if (!atualizada) return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+  if (!atualizada) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   const final = atualizada as unknown as Conversation;
 
@@ -154,9 +156,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     contactId: conv.contact_id,
     tipo: "conversation_ai_paused",
     actor: { type: "user", id: user.id, role: org.role },
-    motivo: assumiu
-      ? "Assumiu a conversa e pausou o atendimento automático"
-      : MOTIVO,
+    // Canônico em português: quem traduz é a LEITURA (`t(item.reason)`). Ver o
+    // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
+    motivo: assumiu ? "Assumiu a conversa e pausou o atendimento automático" : MOTIVO,
     payload: { assumiu_ao_pausar: assumiu },
   });
 

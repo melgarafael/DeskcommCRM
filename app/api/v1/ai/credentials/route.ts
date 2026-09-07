@@ -21,6 +21,7 @@ import { guardarCredencial } from "@/lib/ai/credenciais/guardar";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -63,18 +64,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("admin", { requestId, resource: "ai_credentials" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   let rawBody: unknown;
   try {
     rawBody = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = createSchema.safeParse(rawBody);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -100,7 +102,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (guardado.motivo === "label_em_uso") {
       return fail(
         "label_already_used",
-        "Já existe uma credential com este label e provider.",
+        t("Já existe uma credential com este label e provider."),
         409,
         { requestId },
       );

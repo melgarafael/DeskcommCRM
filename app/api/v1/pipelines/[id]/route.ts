@@ -34,6 +34,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 
 import { conflitoDoBanco, corpo, lerDependencias, lerFunis } from "../_funis";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "crm_pipelines" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
   const { id: pipelineId } = await ctx.params;
@@ -74,12 +76,12 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   try {
     json = await req.json();
   } catch {
-    return fail("invalid_request", "Corpo não é JSON válido.", 400, { requestId });
+    return fail("invalid_request", t("Corpo não é JSON válido."), 400, { requestId });
   }
 
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
-    return fail("unprocessable_entity", "Não entendi o que mudar neste funil.", 422, {
+    return fail("unprocessable_entity", t("Não entendi o que mudar neste funil."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -100,7 +102,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // resposta é a mesma de um funil inexistente (dizer "existe, mas não é seu" já
   // vaza a existência).
   const alvo = funis.find((f) => f.id === pipelineId);
-  if (!alvo) return fail("not_found", "Funil não encontrado.", 404, { requestId });
+  if (!alvo) return fail("not_found", t("Funil não encontrado."), 404, { requestId });
 
   // ⚠️ ARQUIVADO NÃO SE EDITA. `uniq_crm_pipelines_org_default` é PARCIAL
   // (`where is_archived = false`): marcar um funil arquivado como padrão passa
@@ -147,7 +149,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     if (pedido.depois_de !== null && i < 0) {
       return fail(
         "unprocessable_entity",
-        "O funil que você escolheu como vizinho não está mais na lista. Recarregue a página.",
+        t("O funil que você escolheu como vizinho não está mais na lista. Recarregue a página."),
         422,
         { requestId },
       );
@@ -160,7 +162,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     if (!Number.isFinite(posicao)) {
       return fail(
         "state_conflict",
-        "Os funis desta lista estão empatados na ordenação. Recarregue a página e mova o funil para outro lugar.",
+        t("Os funis desta lista estão empatados na ordenação. Recarregue a página e mova o funil para outro lugar."),
         409,
         { requestId },
       );
@@ -225,6 +227,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "crm_pipelines" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
   const { id: pipelineId } = await ctx.params;
@@ -239,7 +242,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
     return fail("internal_error", (err as Error).message, 500, { requestId });
   }
   const alvo = funis.find((f) => f.id === pipelineId);
-  if (!alvo) return fail("not_found", "Funil não encontrado.", 404, { requestId });
+  if (!alvo) return fail("not_found", t("Funil não encontrado."), 404, { requestId });
 
   let deps;
   try {

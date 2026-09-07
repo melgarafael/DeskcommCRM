@@ -23,6 +23,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { conflitoDoBanco, corpo, lerFunis } from "./_funis";
 import { listPipelinesHandler } from "./_handler";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "pipelines" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const supabase = await createClient();
   try {
@@ -40,7 +42,7 @@ export async function GET(): Promise<Response> {
     });
     return ok(pipelines, { requestId });
   } catch {
-    return fail("internal_error", "Falha ao listar funis.", 500, { requestId });
+    return fail("internal_error", t("Falha ao listar funis."), 500, { requestId });
   }
 }
 
@@ -73,18 +75,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "crm_pipelines" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
   let json: unknown;
   try {
     json = await req.json();
   } catch {
-    return fail("invalid_request", "Corpo não é JSON válido.", 400, { requestId });
+    return fail("invalid_request", t("Corpo não é JSON válido."), 400, { requestId });
   }
 
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
-    return fail("unprocessable_entity", "Dê um nome ao funil — é o que aparece na lista.", 422, {
+    return fail("unprocessable_entity", t("Dê um nome ao funil — é o que aparece na lista."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });

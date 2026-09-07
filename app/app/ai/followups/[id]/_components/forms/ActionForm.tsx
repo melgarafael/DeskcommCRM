@@ -147,7 +147,7 @@ export function ActionForm({
 
       {mode === "text" ? (
         <div className="space-y-2">
-          <Label htmlFor="action-body">Texto enviado ao contato</Label>
+          <Label htmlFor="action-body">{t("Texto enviado ao contato")}</Label>
           <Textarea
             id="action-body"
             maxLength={4000}

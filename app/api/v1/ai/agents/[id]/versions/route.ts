@@ -18,6 +18,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { versionCreateSchema } from "@/lib/ai/agents/validation";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -74,18 +75,19 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = versionCreateSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -94,7 +96,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const agentCheck = await assertAgentInOrg(id, activeOrg.orgId);
   if (!agentCheck.ok) {
-    return fail("not_found", "Agent não encontrado.", 404, { requestId });
+    return fail("not_found", t("Agent não encontrado."), 404, { requestId });
   }
 
   const admin = createAdminClient();

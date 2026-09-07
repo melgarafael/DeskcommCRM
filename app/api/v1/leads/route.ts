@@ -48,6 +48,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         organization_id: activeOrg.orgId,
         actor: { type: "user", id: authUser.id },
         requestId,
+        idioma: authUser.idioma,
       },
       input as CreateLeadInput,
     );

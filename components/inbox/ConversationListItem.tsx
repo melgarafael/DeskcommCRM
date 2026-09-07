@@ -123,7 +123,7 @@ export function ConversationListItem({
   const localeDaData = useLocaleDeData();
   const t = useT();
   const c = conversation.contacts ?? null;
-  const displayName = rotuloDoContato(c);
+  const displayName = rotuloDoContato(c, t);
   const phoneFallback = c?.phone_number ? phoneForDisplay(c.phone_number) : "??";
   const tags = c?.tags ?? [];
   const visibleTags = tags.slice(0, 2);

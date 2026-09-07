@@ -19,6 +19,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export async function POST(
 
   const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   // Body é opcional; se vier, valida.
@@ -54,7 +56,7 @@ export async function POST(
     if (raw !== undefined && raw !== null) {
       const parsed = reindexBodySchema.safeParse(raw);
       if (!parsed.success) {
-        return fail("validation_failed", "Campos inválidos.", 422, {
+        return fail("validation_failed", t("Campos inválidos."), 422, {
           requestId,
           details: parsed.error.flatten(),
         });
@@ -76,7 +78,7 @@ export async function POST(
     return fail("internal_error", "Erro ao verificar fonte.", 500, { requestId });
   }
   if (!existing) {
-    return fail("not_found", "Fonte de conhecimento não encontrada.", 404, { requestId });
+    return fail("not_found", t("Fonte de conhecimento não encontrada."), 404, { requestId });
   }
 
   const ksRow = existing as { id: string; agent_id: string; source_type: string };

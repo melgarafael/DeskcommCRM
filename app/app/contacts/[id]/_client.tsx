@@ -51,7 +51,7 @@ export function ContactDetailClient({ contactId }: Props) {
   if (q.isError || !q.data) {
     return (
       <div className="p-6">
-        <Card className="p-6 text-center text-sm text-error-fg">Erro ao carregar contato.</Card>
+        <Card className="p-6 text-center text-sm text-error-fg">{t("Erro ao carregar contato.")}</Card>
       </div>
     );
   }
@@ -63,7 +63,7 @@ export function ContactDetailClient({ contactId }: Props) {
   // Uma decisão, um lugar (lib/contacts/rotulo-do-contato.ts). Esta tela era
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
   // aparecia como "Sem nome" aqui e com o número no inbox.
-  const displayName = rotuloDoContato(contact);
+  const displayName = rotuloDoContato(contact, t);
 
   return (
     <div className="space-y-4 p-6">
@@ -74,7 +74,7 @@ export function ContactDetailClient({ contactId }: Props) {
         >
           <ShieldCheck size={18} weight="duotone" aria-hidden />
           <span>
-            Contato anonimizado (LGPD)
+            {t("Contato anonimizado (LGPD)")}
             {contact.anonymized_at &&
               ` em ${format(new Date(contact.anonymized_at), "dd/MM/yyyy", { locale: localeDaData })}`}
             {t(" — edição bloqueada.")}
@@ -99,14 +99,14 @@ export function ContactDetailClient({ contactId }: Props) {
                 {t}
               </Badge>
             ))}
-            {contact.is_blocked && <Badge variant="warning">Bloqueado</Badge>}
-            {contact.is_anonymized && <Badge variant="destructive">Anonimizado</Badge>}
+            {contact.is_blocked && <Badge variant="warning">{t("Bloqueado")}</Badge>}
+            {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
         {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
           <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
             <PencilSimple size={16} weight="bold" aria-hidden />
-            <span>Editar</span>
+            <span>{t("Editar")}</span>
           </Button>
         )}
       </header>
@@ -136,7 +136,7 @@ export function ContactDetailClient({ contactId }: Props) {
           <Card className="p-4">
             <dl className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Nome</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Nome")}</dt>
                 <dd className="mt-1">{contact.name ?? "—"}</dd>
               </div>
               <div>
@@ -154,7 +154,7 @@ export function ContactDetailClient({ contactId }: Props) {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Origem</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Origem")}</dt>
                 <dd className="mt-1">{contact.source}</dd>
               </div>
               <div>
@@ -168,7 +168,7 @@ export function ContactDetailClient({ contactId }: Props) {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-muted-foreground">Criado em</dt>
+                <dt className="text-xs uppercase text-muted-foreground">{t("Criado em")}</dt>
                 <dd className="mt-1">
                   {format(new Date(contact.created_at), "dd/MM/yyyy", { locale: localeDaData })}
                 </dd>
@@ -197,7 +197,7 @@ export function ContactDetailClient({ contactId }: Props) {
           <TabsContent value="lgpd" className="mt-4">
             <Card className="space-y-4 p-4">
               <div>
-                <h2 className="text-lg font-semibold">Direito ao esquecimento (LGPD)</h2>
+                <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {t(
                     "A anonimização é irreversível. Use somente após confirmação formal do titular ou ordem judicial.",
@@ -213,7 +213,7 @@ export function ContactDetailClient({ contactId }: Props) {
                 </p>
               ) : (
                 <Button variant="destructive" onClick={() => setAnonOpen(true)}>
-                  Anonimizar contato
+                  {t("Anonimizar contato")}
                 </Button>
               )}
             </Card>

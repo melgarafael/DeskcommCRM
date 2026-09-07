@@ -279,7 +279,7 @@ function RoutingCard({ canManage }: { canManage: boolean }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Modo de roteamento</CardTitle>
+        <CardTitle>{t("Modo de roteamento")}</CardTitle>
         <CardDescription>
           {t("Como as conversas novas são distribuídas entre os atendentes da organização.")}
         </CardDescription>
@@ -413,10 +413,10 @@ export function AttendantsClient({ canManage }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Atendente</TableHead>
+                <TableHead>{t("Atendente")}</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Carga</TableHead>
-                <TableHead>Capacidade</TableHead>
+                <TableHead>{t("Carga")}</TableHead>
+                <TableHead>{t("Capacidade")}</TableHead>
                 <TableHead>{t("Horário")}</TableHead>
                 {canManage ? <TableHead className="w-[120px]">{t("Disponível")}</TableHead> : null}
               </TableRow>

@@ -140,8 +140,8 @@ function LinhaDoTempo({
                 )}
               />
               <div className="min-w-0 flex-1">
-                <p className="text-sm text-text">{lido.titulo}</p>
-                {lido.detalhe && <p className="mt-0.5 text-xs text-text-muted">{lido.detalhe}</p>}
+                <p className="text-sm text-text">{t(lido.titulo)}</p>
+                {lido.detalhe && <p className="mt-0.5 text-xs text-text-muted">{t(lido.detalhe)}</p>}
                 <p className="mt-0.5 text-[11px] text-text-muted">
                   {lido.onde}
                   {nome ? ` · ${nome}` : ""} · {absoluta(evento.created_at, localeDaData)}
@@ -229,7 +229,7 @@ export function DossieDoFollowup({ id, canWrite }: Props) {
               <>
                 <span className="font-medium">{data.no_atual.rotulo}</span>{" "}
                 <span className="text-text-muted">
-                  ({tipoDoNo(data.no_atual.tipo)} — {data.no_atual.resumo})
+                  ({t(tipoDoNo(data.no_atual.tipo))} — {t(data.no_atual.resumo)})
                 </span>
               </>
             ) : (

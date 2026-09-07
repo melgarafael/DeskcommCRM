@@ -19,6 +19,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { validateRequest } from "@/lib/schemas/_validate";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   let input;
@@ -91,7 +93,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", error.message, 500, { requestId });
   }
   if (!data) {
-    return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+    return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
   }
 
   await audit({

@@ -19,6 +19,7 @@ import { moveLeadSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export async function POST(
   // spec 13 §4: escrita é agent+ (viewer é read-only).
   const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
 
   let input;
@@ -62,7 +64,7 @@ export async function POST(
     return fail("internal_error", selErr.message, 500, { requestId });
   }
   if (!lead) {
-    return fail("not_found", "Lead não encontrado.", 404, { requestId });
+    return fail("not_found", t("Lead não encontrado."), 404, { requestId });
   }
 
   // Fetch target stage to validate same pipeline (P-01).
@@ -76,12 +78,12 @@ export async function POST(
     return fail("internal_error", stageErr.message, 500, { requestId });
   }
   if (!stage) {
-    return fail("not_found", "Stage não encontrado.", 404, { requestId });
+    return fail("not_found", t("Stage não encontrado."), 404, { requestId });
   }
   if (stage.pipeline_id !== lead.pipeline_id) {
     return fail(
       "pipeline_immutable_use_clone",
-      "Move cross-pipeline não é permitido. Clone o lead para o pipeline alvo.",
+      t("Move cross-pipeline não é permitido. Clone o lead para o pipeline alvo."),
       422,
       { requestId },
     );
@@ -113,7 +115,7 @@ export async function POST(
       .maybeSingle();
     return fail(
       "lead_stage_changed_concurrent",
-      "Lead foi modificado por outro usuário. Recarregue e tente novamente.",
+      t("Lead foi modificado por outro usuário. Recarregue e tente novamente."),
       409,
       {
         details: { current_updated_at: current?.updated_at ?? null },

@@ -16,6 +16,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { loadAuthUser } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import {
   roteiaProximasAcoes,
   type EstadoDoContato,
@@ -355,6 +357,8 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
+  const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
 
   const [
     { data: pipeline, error: pipelineErr },
@@ -379,7 +383,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
   if (stagesErr) return fail("internal_error", stagesErr.message, 500, { requestId });
   if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
-  if (!pipeline) return fail("resource_not_found", "Pipeline não encontrado.", 404, { requestId });
+  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
 
   const leadsWithOwner = await withOwnerAgents(
     supabase,

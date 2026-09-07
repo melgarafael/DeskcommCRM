@@ -220,7 +220,7 @@ export function MessageBubble({ message, debugCitations, onResponder, citada }: 
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {message.error_message ?? message.error_code ?? t("Erro desconhecido")}
+                  {message.error_message ? t(message.error_message) : (message.error_code ?? t("Erro desconhecido"))}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

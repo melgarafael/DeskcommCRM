@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { resolveOwnerPatch, type OwnerPatch, type OwnerPatchInput } from "@/lib/leads/owner-patch";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
@@ -42,7 +43,7 @@ async function ownerPatchOrThrow(
       "validation_failed",
       undefined,
       ctx.requestId,
-      "Um lead tem um dono: informe owner_user_id OU owner_agent_id.",
+      traduzir("Um lead tem um dono: informe owner_user_id OU owner_agent_id.", ctx.idioma ?? "pt-BR"),
     );
   }
   if (!result.patch) return null;
@@ -65,7 +66,7 @@ async function ownerPatchOrThrow(
         "validation_failed",
         undefined,
         ctx.requestId,
-        "Agente não encontrado nesta organização.",
+        traduzir("Agente não encontrado nesta organização.", ctx.idioma ?? "pt-BR"),
       );
     }
   }
@@ -162,7 +163,13 @@ export async function listLeadsHandler(
   if (q.cursor) {
     const c = decLeadCursor(q.cursor);
     if (!c) {
-      throw new ApiError(400, "invalid_cursor", undefined, ctx.requestId, "Cursor inválido.");
+      throw new ApiError(
+        400,
+        "invalid_cursor",
+        undefined,
+        ctx.requestId,
+        traduzir("Cursor inválido.", ctx.idioma ?? "pt-BR"),
+      );
     }
     query = query.or(
       `created_at.lt.${c.created_at},and(created_at.eq.${c.created_at},id.lt.${c.id})`,
@@ -212,7 +219,13 @@ export async function getLeadHandler(
   if (!data) {
     // 404, e não 403: dizer "existe, mas não é seu" confirmaria a existência de
     // um recurso alheio a quem tentou adivinhar o id.
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
   }
   return data as Record<string, unknown>;
 }
@@ -242,7 +255,13 @@ export async function createLeadHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, stageErr.message);
   }
   if (!stage || stage.organization_id !== ctx.organization_id) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Stage não encontrado.");
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Stage não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
   }
   if (stage.pipeline_id !== input.pipeline_id) {
     throw new ApiError(
@@ -250,7 +269,7 @@ export async function createLeadHandler(
       "stage_pipeline_mismatch",
       undefined,
       ctx.requestId,
-      "Stage não pertence ao pipeline informado.",
+      traduzir("Stage não pertence ao pipeline informado.", ctx.idioma ?? "pt-BR"),
     );
   }
 
@@ -308,7 +327,7 @@ export async function createLeadHandler(
       "internal_error",
       undefined,
       ctx.requestId,
-      insErr?.message ?? "Falha ao criar lead.",
+      insErr?.message ?? traduzir("Falha ao criar lead.", ctx.idioma ?? "pt-BR"),
     );
   }
 
@@ -379,7 +398,13 @@ export async function updateLeadHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);
   }
   if (!existing) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -427,7 +452,13 @@ export async function updateLeadHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
   if (!updated) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
   }
 
   const a = actorAuditPayload(ctx.actor);
@@ -558,7 +589,13 @@ export async function moveLeadHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);
   }
   if (!lead || lead.organization_id !== ctx.organization_id) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
   }
 
   const { data: stage, error: stageErr } = await supabase
@@ -570,7 +607,13 @@ export async function moveLeadHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, stageErr.message);
   }
   if (!stage || stage.organization_id !== ctx.organization_id) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Stage não encontrado.");
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Stage não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
   }
   if (stage.pipeline_id !== lead.pipeline_id) {
     throw new ApiError(
@@ -578,7 +621,7 @@ export async function moveLeadHandler(
       "pipeline_immutable_use_clone",
       undefined,
       ctx.requestId,
-      "Move cross-pipeline não é permitido.",
+      traduzir("Move cross-pipeline não é permitido.", ctx.idioma ?? "pt-BR"),
     );
   }
 
@@ -617,7 +660,7 @@ export async function moveLeadHandler(
       "lead_stage_changed_concurrent",
       undefined,
       ctx.requestId,
-      "Lead foi modificado concorrentemente.",
+      traduzir("Lead foi modificado concorrentemente.", ctx.idioma ?? "pt-BR"),
     );
   }
 

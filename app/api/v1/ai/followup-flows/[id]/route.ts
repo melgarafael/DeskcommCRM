@@ -17,6 +17,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { patchFollowupFlowSchema } from "@/lib/followup/api-schemas";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("viewer", { requestId, resource: "followup_flows" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -46,7 +48,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!data) return fail("not_found", "Fluxo não encontrado.", 404, { requestId });
+  if (!data) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
 
   // Linhagem de versions (Task 6.2 — builder): o PublishBar precisa saber se
   // existe versão anterior pra habilitar Rollback. `.limit()` deliberadamente
@@ -93,18 +95,19 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = patchFollowupFlowSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -118,7 +121,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", "Fluxo não encontrado.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
 
   const patch = parsed.data;
   if (Object.keys(patch).length === 0) {
@@ -146,7 +149,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   if (updErr || !updated) {
     if (updErr?.code === "23505") {
-      return fail("conflict", "Já existe um fluxo com este nome.", 409, { requestId });
+      return fail("conflict", t("Já existe um fluxo com este nome."), 409, { requestId });
     }
     return fail("internal_error", updErr?.message ?? "followup_flow_update_failed", 500, {
       requestId,
@@ -178,6 +181,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
 
   const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -188,7 +192,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!existing) return fail("not_found", "Fluxo não encontrado.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
 
   // Enrollment referencia version_id; pointer referencia active_version_id.
   // Soltar o relógio nessa ordem evita 23503 no Postgres.

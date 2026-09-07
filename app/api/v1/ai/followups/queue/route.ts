@@ -29,6 +29,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { situacaoDoRetorno } from "@/lib/followup/retorno";
 import { createClient } from "@/lib/supabase/server";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -133,23 +134,24 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "followup_queue" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status");
   if (status !== null && !ENROLLMENT_STATUSES.includes(status as (typeof ENROLLMENT_STATUSES)[number])) {
-    return fail("invalid_request", "status inválido.", 400, { requestId });
+    return fail("invalid_request", t("status inválido."), 400, { requestId });
   }
   const pointerId = sp.get("pointer_id");
   const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (pointerId !== null && !UUID_RX.test(pointerId)) {
-    return fail("invalid_request", "pointer_id inválido.", 400, { requestId });
+    return fail("invalid_request", t("pointer_id inválido."), 400, { requestId });
   }
   const q = sp.get("q")?.trim() || null;
   const cursorRaw = sp.get("cursor");
   const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
   if (cursorRaw && !cursor) {
-    return fail("invalid_request", "cursor inválido.", 400, { requestId });
+    return fail("invalid_request", t("cursor inválido."), 400, { requestId });
   }
   const limitParam = Number(sp.get("limit") ?? "20");
   const limit = Number.isFinite(limitParam) ? Math.min(100, Math.max(1, Math.trunc(limitParam))) : 20;

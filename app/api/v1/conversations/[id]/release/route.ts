@@ -19,6 +19,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import type { Conversation } from "@/lib/types/messaging";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // spec 13 §4: escrita é agent+ (viewer é read-only).
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
 
   const { data, error } = await supabase.rpc("fn_conversation_assign", {
@@ -54,7 +56,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
   const row = data?.[0];
   if (!row) {
-    return fail("state_conflict", "Você não está atribuído a essa conversa.", 409, { requestId });
+    return fail("state_conflict", t("Você não está atribuído a essa conversa."), 409, { requestId });
   }
 
   const conv = row as unknown as Conversation;
@@ -78,6 +80,8 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     contactId: conv.contact_id,
     tipo: "conversation_released",
     actor: { type: "user", id: user.id, role: authz.org.role },
+    // Canônico em português: quem traduz é a LEITURA (`t(item.reason)`). Ver o
+    // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
     motivo: "Liberou a conversa de volta para a fila",
   });
 

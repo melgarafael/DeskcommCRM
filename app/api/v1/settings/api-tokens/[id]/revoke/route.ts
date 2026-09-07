@@ -10,6 +10,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export async function POST(
 
   const authz = await requireRole("admin", { requestId, resource: "api_tokens" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -35,7 +37,7 @@ export async function POST(
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!token) return fail("not_found", "Token não encontrado.", 404, { requestId });
+  if (!token) return fail("not_found", t("Token não encontrado."), 404, { requestId });
   if (token.revoked_at) {
     return ok({ id, already_revoked: true }, { requestId });
   }

@@ -11,6 +11,7 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  * (S-13.03). O `Actor` discriminado permite que o mesmo handler atenda usuário
  * humano (cookie session) ou agente de IA (Bearer token com actor_type='ai_agent').
  */
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 export type Actor =
   | { type: "user"; id: string; role?: string }
@@ -46,4 +47,12 @@ export interface HandlerCtx {
   organization_id: string;
   actor: Actor;
   requestId: string;
+  /**
+   * Idioma de quem chamou, só quando é um usuário humano de verdade — as
+   * rotas REST passam `authz.user.idioma`. MCP e webhook não têm preferência
+   * de idioma humana, então ficam `undefined` de propósito: mensagem de erro
+   * que atravessa o handler degrada para português (o fallback de
+   * `traduzir()`), que é o comportamento de sempre para esses dois canais.
+   */
+  idioma?: Idioma;
 }

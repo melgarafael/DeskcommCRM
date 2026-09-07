@@ -15,6 +15,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import {
   decodeLeadCaptureCursor,
   encodeLeadCaptureCursor,
@@ -35,12 +36,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     allowPlatformAdmin: true,
   });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const params = Object.fromEntries(new URL(req.url).searchParams.entries());
   const parsed = leadCapturesQuerySchema.safeParse(params);
   if (!parsed.success) {
-    return fail("validation_failed", "Query inválida.", 422, {
+    return fail("validation_failed", t("Query inválida."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -74,7 +76,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   if (q.cursor) {
     const c = decodeLeadCaptureCursor(q.cursor);
-    if (!c) return fail("invalid_cursor", "Cursor inválido.", 400, { requestId });
+    if (!c) return fail("invalid_cursor", t("Cursor inválido."), 400, { requestId });
     query = query.or(
       `received_at.lt.${c.received_at},and(received_at.eq.${c.received_at},id.lt.${c.id})`,
     );

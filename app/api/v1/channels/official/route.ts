@@ -35,6 +35,7 @@ import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -116,12 +117,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
   const authz = await requireRole("admin", { requestId, resource: "channels_official" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
   const userId = authz.user.id;
 
   const parsed = conectarSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("invalid_request", "phone_number_id, waba_id e token são obrigatórios", 422, {
+    return fail("invalid_request", t("phone_number_id, waba_id e token são obrigatórios"), 422, {
       requestId,
     });
   }
@@ -141,7 +143,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // recusar. O operador precisa saber que falta uma configuração de servidor.
     return fail(
       "invalid_request",
-      "cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente) — o token não foi gravado",
+      t("cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente) — o token não foi gravado"),
       422,
       { requestId },
     );

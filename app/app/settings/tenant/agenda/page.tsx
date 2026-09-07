@@ -76,7 +76,7 @@ export default async function TiposDeAgendamentoPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Tipos de agendamento</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("Tipos de agendamento")}</h1>
         <p className="mt-1 text-sm text-text-muted">
           {t("O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.")}
         </p>

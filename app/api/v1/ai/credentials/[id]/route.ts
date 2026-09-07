@@ -15,6 +15,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { contarUsoPublicado, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export async function DELETE(
 
   const authz = await requireRole("admin", { requestId, resource: "ai_credentials" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   const admin = createAdminClient();
@@ -44,7 +46,7 @@ export async function DELETE(
     return fail("internal_error", "Erro ao consultar credential.", 500, { requestId });
   }
   if (!cred || cred.organization_id !== activeOrg.orgId) {
-    return fail("not_found", "Credential não encontrada.", 404, { requestId });
+    return fail("not_found", t("Credential não encontrada."), 404, { requestId });
   }
 
   // Está referenciada por alguma versão que é published_version_id de agent ativo?
@@ -65,7 +67,7 @@ export async function DELETE(
   if (inUse) {
     return fail(
       "credential_in_use",
-      "Credential é usada por uma versão publicada de agent. Despublique antes de deletar.",
+      t("Credential é usada por uma versão publicada de agent. Despublique antes de deletar."),
       409,
       { requestId },
     );
@@ -81,7 +83,7 @@ export async function DELETE(
     if (delErr.code === "23503") {
       return fail(
         "credential_in_use",
-        "Credential referenciada (FK ON DELETE RESTRICT). Remova as versões antes.",
+        t("Credential referenciada (FK ON DELETE RESTRICT). Remova as versões antes."),
         409,
         { requestId },
       );

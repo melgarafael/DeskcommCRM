@@ -101,7 +101,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     to: url.searchParams.get("to") ?? undefined,
   });
   if (!parsed.success) {
-    return fail("validation_failed", "Query inválida.", 422, {
+    return fail("validation_failed", t("Query inválida."), 422, {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
       requestId,
     });
@@ -112,7 +112,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     ? new Date(parsed.data.from)
     : new Date(to.getTime() - THIRTY_DAYS_MS);
   if (from.getTime() >= to.getTime()) {
-    return fail("validation_failed", "Janela inválida: 'from' deve ser anterior a 'to'.", 422, {
+    return fail("validation_failed", t("Janela inválida: 'from' deve ser anterior a 'to'."), 422, {
       requestId,
     });
   }
@@ -195,19 +195,20 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "metrics" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg, user } = authz;
 
   let corpo: unknown;
   try {
     corpo = await req.json();
   } catch {
-    return fail("validation_failed", "Corpo inválido.", 422, { requestId });
+    return fail("validation_failed", t("Corpo inválido."), 422, { requestId });
   }
   const parsed = patchSchema.safeParse(corpo);
   if (!parsed.success) {
     return fail(
       "validation_failed",
-      "A régua do abandono precisa ser um número inteiro de horas entre 1 e 2160.",
+      t("A régua do abandono precisa ser um número inteiro de horas entre 1 e 2160."),
       422,
       { details: parsed.error.flatten().fieldErrors as Record<string, unknown>, requestId },
     );

@@ -16,6 +16,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -53,10 +54,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const parsed = produtoCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("validation_failed", "Dados inválidos.", 422, {
+    return fail("validation_failed", t("Dados inválidos."), 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
@@ -75,7 +77,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // 23505 = já existe produto com este código nesta organização. A recusa
     // nomeia o campo porque quem lê é quem digitou.
     if (error.code === "23505") {
-      return fail("conflict", "Já existe um produto com esse código.", 409, { requestId });
+      return fail("conflict", t("Já existe um produto com esse código."), 409, { requestId });
     }
     return fail("internal_error", "Erro ao salvar o produto.", 500, { requestId });
   }

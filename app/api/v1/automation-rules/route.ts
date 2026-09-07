@@ -14,6 +14,7 @@ import { createAutomationRuleSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   let raw: unknown = {};
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const parsed = createAutomationRuleSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("invalid_request", "Dados inválidos.", 400, {
+    return fail("invalid_request", t("Dados inválidos."), 400, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (safeActions === null) {
     return fail(
       "encryption_unavailable",
-      "Não foi possível guardar o segredo do webhook com segurança: a chave de cifra desta instalação não está ativa. Quem administra o servidor resolve rodando o update.sh, que gera e ativa a chave. Enquanto isso, você pode criar a ação sem segredo.",
+      t("Não foi possível guardar o segredo do webhook com segurança: a chave de cifra desta instalação não está ativa. Quem administra o servidor resolve rodando o update.sh, que gera e ativa a chave. Enquanto isso, você pode criar a ação sem segredo."),
       422,
       { requestId },
     );

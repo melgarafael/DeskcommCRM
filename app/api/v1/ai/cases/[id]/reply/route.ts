@@ -44,6 +44,7 @@ import { enqueueJob } from "@/lib/agent-engine/queue/queue";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "agent_cases" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org, user } = authz;
   const { id: caseId } = await params;
 
@@ -88,11 +90,11 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   try {
     payload = await req.json();
   } catch {
-    return fail("invalid_request", "Body inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body inválido."), 400, { requestId });
   }
   const parsed = bodySchema.safeParse(payload);
   if (!parsed.success) {
-    return fail("validation_failed", "Body inválido.", 422, {
+    return fail("validation_failed", t("Body inválido."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -103,7 +105,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   try {
     pool = getRequestPool();
   } catch {
-    return fail("unavailable", "Resposta ao caso indisponível (config).", 503, { requestId });
+    return fail("unavailable", t("Resposta ao caso indisponível (config)."), 503, { requestId });
   }
 
   const { rows } = await pool.query<CaseRow>(
@@ -116,18 +118,18 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   );
   const caseRow = rows[0];
   if (caseRow === undefined) {
-    return fail("not_found", "Caso não encontrado.", 404, { requestId });
+    return fail("not_found", t("Caso não encontrado."), 404, { requestId });
   }
   if (caseRow.status !== "awaiting_human") {
     return fail(
       "invalid_state",
-      "O caso não está aguardando resposta do atendente (awaiting_human).",
+      t("O caso não está aguardando resposta do atendente (awaiting_human)."),
       409,
       { requestId },
     );
   }
   if (caseRow.contact_id === null) {
-    return fail("unprocessable_entity", "Conversa do caso sem contato associado.", 422, {
+    return fail("unprocessable_entity", t("Conversa do caso sem contato associado."), 422, {
       requestId,
     });
   }
@@ -176,7 +178,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       // Corrida perdida entre a leitura e o update. O handoff já aconteceu (e é
       // idempotente), então não mentimos dizendo que escalamos: devolvemos o
       // conflito para a UI reler o caso.
-      return fail("invalid_state", "Este caso já foi respondido por outra pessoa.", 409, {
+      return fail("invalid_state", t("Este caso já foi respondido por outra pessoa."), 409, {
         requestId,
       });
     }
@@ -210,7 +212,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
       client.release();
     }
     if (!transitioned) {
-      return fail("invalid_state", "Este caso já foi respondido por outra pessoa.", 409, {
+      return fail("invalid_state", t("Este caso já foi respondido por outra pessoa."), 409, {
         requestId,
       });
     }

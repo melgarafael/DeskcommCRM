@@ -22,6 +22,7 @@ import {
   principalSugerido,
   type ContatoParaDeduplicar,
 } from "@/lib/contacts/duplicados";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +47,8 @@ export async function GET(): Promise<Response> {
   }
   const org = await resolveActiveOrg(user);
   if (!org) {
-    return fail("forbidden_tenant", "Organização ativa não resolvida.", 403, { requestId });
+    const t = (texto: string) => traduzir(texto, user.idioma);
+    return fail("forbidden_tenant", t("Organização ativa não resolvida."), 403, { requestId });
   }
 
   const supabase = await createClient();

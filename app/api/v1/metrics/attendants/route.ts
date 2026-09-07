@@ -17,6 +17,7 @@ import { isServiceRoleConfigured } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // spec 13 §6.1: piso agent (vê as próprias); RLS gate a comparação manager+.
   const authz = await requireRole("agent", { requestId, resource: "metrics" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const url = new URL(req.url);
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     owner_user_id: url.searchParams.get("owner_user_id") ?? undefined,
   });
   if (!parsed.success) {
-    return fail("validation_failed", "Query inválida.", 422, {
+    return fail("validation_failed", t("Query inválida."), 422, {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
       requestId,
     });
@@ -67,7 +69,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     ? new Date(parsed.data.from)
     : new Date(to.getTime() - THIRTY_DAYS_MS);
   if (from.getTime() >= to.getTime()) {
-    return fail("validation_failed", "Janela inválida: 'from' deve ser anterior a 'to'.", 422, {
+    return fail("validation_failed", t("Janela inválida: 'from' deve ser anterior a 'to'."), 422, {
       requestId,
     });
   }

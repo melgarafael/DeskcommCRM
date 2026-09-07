@@ -13,6 +13,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   const admin = createAdminClient();
@@ -40,7 +42,7 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
 
-  if (!existing) return fail("not_found", "Agent não encontrado.", 404, { requestId });
+  if (!existing) return fail("not_found", t("Agent não encontrado."), 404, { requestId });
   if (existing.archived_at) {
     return fail("state_conflict", "Agent arquivado.", 409, { requestId });
   }

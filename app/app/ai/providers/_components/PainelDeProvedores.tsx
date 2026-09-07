@@ -319,7 +319,7 @@ function CartaoDoPonto({
         return;
       }
       const avisos: string[] = json?.data?.avisos ?? [];
-      if (avisos.length > 0) avisos.forEach((a) => toast.warning(a));
+      if (avisos.length > 0) avisos.forEach((a) => toast.warning(t(a)));
       else toast.success(`"${t(ponto.rotulo)}" ${t("agora usa")} ${modelId}`);
       await aoSalvar();
     } finally {
@@ -363,7 +363,7 @@ function CartaoDoPonto({
           className="mt-2 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-500"
           data-testid={`aviso-${ponto.id}`}
         >
-          {a}
+          {t(a)}
         </p>
       ))}
 

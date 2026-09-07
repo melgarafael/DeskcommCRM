@@ -34,6 +34,7 @@ import {
 import { leituraDoPlano, type TimingPlan } from "@/lib/followup/plano-de-tempo";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +141,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("viewer", { requestId, resource: "followup_enrollments" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
   const supabase = await createClient();
@@ -159,7 +161,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .maybeSingle();
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!row) return fail("not_found", "Follow-up não encontrado.", 404, { requestId });
+  if (!row) return fail("not_found", t("Follow-up não encontrado."), 404, { requestId });
 
   const { data: eventos, error: evErr } = await supabase
     .from("followup_enrollment_events")

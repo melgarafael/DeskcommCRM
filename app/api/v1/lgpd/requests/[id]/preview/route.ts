@@ -17,6 +17,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { collectExportData } from "@/lib/lgpd/export-collector";
 import { maskEmail, maskPhone } from "@/lib/lgpd/mask";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export async function GET(
     allowPlatformAdmin: true,
   });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const { id } = await params;
@@ -52,7 +54,7 @@ export async function GET(
     return fail("internal_error", reqErr.message, 500, { requestId });
   }
   if (!request) {
-    return fail("not_found", "Solicitação não encontrada.", 404, { requestId });
+    return fail("not_found", t("Solicitação não encontrada."), 404, { requestId });
   }
 
   // collectExportData — read-only, never writes

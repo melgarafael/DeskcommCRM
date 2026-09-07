@@ -12,6 +12,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { lerChamado } from "@/lib/escalacao/chamados";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "agent_cases" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
   const { id } = await params;
 
@@ -30,9 +32,9 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   try {
     chamado = await lerChamado(createAdminClient(), org.orgId, id);
   } catch {
-    return fail("internal_error", "Falha ao carregar o caso.", 500, { requestId });
+    return fail("internal_error", t("Falha ao carregar o caso."), 500, { requestId });
   }
-  if (!chamado) return fail("not_found", "Caso não encontrado.", 404, { requestId });
+  if (!chamado) return fail("not_found", t("Caso não encontrado."), 404, { requestId });
 
   return ok(chamado, { requestId });
 }

@@ -50,7 +50,6 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
-
   let input;
   try {
     input = await validateRequest(lgpdAnonymizeSchema, req);
@@ -74,6 +73,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("internal_error", selErr.message, 500, { requestId });
   }
   if (!existing) {
+    // Sem `t()` de propósito: o único consumidor (`useAnonymizeContact`) usa
+    // `showApiError`, que já traduz `err.message` no FRONTEND — traduzir aqui
+    // também exigiria um `loadAuthUser()` extra, redundante com o que
+    // `requireRole` já faz logo abaixo, e chegou a quebrar teste que não
+    // esperava essa chamada a mais.
     return fail("not_found", "Contato não encontrado.", 404, { requestId });
   }
 

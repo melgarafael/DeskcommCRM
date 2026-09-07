@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROLES, type Role } from "@/lib/schemas/team";
+import { descreverMotivoDaFalha } from "./motivo-da-falha";
 
 interface ResultState {
   sent: Array<{ email: string; accept_url: string; email_dispatched: boolean; expires_at: string }>;
@@ -146,7 +147,7 @@ export function InviteForm() {
                   {result.failed.map((f) => (
                     <li key={f.email}>
                       <span className="font-medium">{f.email}</span>{" "}
-                      <span className="text-muted-foreground">— {f.reason}</span>
+                      <span className="text-muted-foreground">— {t(descreverMotivoDaFalha(f.reason))}</span>
                     </li>
                   ))}
                 </ul>

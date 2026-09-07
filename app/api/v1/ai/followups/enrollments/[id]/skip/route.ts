@@ -22,6 +22,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 import { validaIdDaRota } from "../_id";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "followup_enrollments" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
 
   // Body ausente é legítimo aqui (nó de saída única não precisa de escolha), então
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   const parsed = bodySchema.safeParse(raw ?? {});
   if (!parsed.success) {
-    return fail("validation_failed", "Caminho inválido.", 422, {
+    return fail("validation_failed", t("Caminho inválido."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     id,
     parsed.data.edge_id ?? null,
   );
-  if (!resultado.ok) return respostaDaFalha(resultado, requestId);
+  if (!resultado.ok) return respostaDaFalha(resultado, requestId, t);
 
   void audit({
     action: "followup_enrollment.step_skipped",

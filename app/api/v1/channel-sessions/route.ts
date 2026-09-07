@@ -20,6 +20,7 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -70,14 +71,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     allowPlatformAdmin: true,
   });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
-  if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
+  if (await mfaEmDivida()) return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
 
   const waha = getWahaClient();
   if (!waha) {
     return fail(
       "waha_not_configured",
-      "O WhatsApp (WAHA) não está configurado neste ambiente: faltam WAHA_API_BASE_URL e/ou WAHA_API_KEY. Configure-as e tente de novo.",
+      t("O WhatsApp (WAHA) não está configurado neste ambiente: faltam WAHA_API_BASE_URL e/ou WAHA_API_KEY. Configure-as e tente de novo."),
       503,
       { requestId },
     );
@@ -91,7 +93,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const parsed = createChannelSchema.safeParse(raw ?? {});
   if (!parsed.success) {
-    return fail("validation_failed", "Dados inválidos.", 422, {
+    return fail("validation_failed", t("Dados inválidos."), 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
@@ -105,8 +107,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {
     if (error instanceof ChannelConnectionError) return fail(error.code,
-      error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente." : "Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número.",
+      error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.") : t("Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número."),
       error.status, { requestId, details: error.technical });
-    return fail("internal_error", "Não foi possível concluir a conexão. Tente novamente.", 500, { requestId });
+    return fail("internal_error", t("Não foi possível concluir a conexão. Tente novamente."), 500, { requestId });
   }
 }

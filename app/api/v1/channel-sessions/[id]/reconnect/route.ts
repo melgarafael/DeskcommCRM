@@ -44,6 +44,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,7 @@ export async function POST(
     allowPlatformAdmin: true,
   });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
 
@@ -97,11 +99,11 @@ export async function POST(
     waha_session_name: string | null;
     archived_at?: string | null;
   } | null;
-  if (!session) return fail("not_found", "Canal não encontrado.", 404, { requestId });
+  if (!session) return fail("not_found", t("Canal não encontrado."), 404, { requestId });
   if (session.archived_at) {
     return fail(
       "channel_archived",
-      "Este número foi excluído da Central de Conexões — reconectar não o traz de volta. Conecte um número para voltar a atender.",
+      t("Este número foi excluído da Central de Conexões — reconectar não o traz de volta. Conecte um número para voltar a atender."),
       409,
       { requestId },
     );
@@ -115,7 +117,7 @@ export async function POST(
   if (!nomeSessao) {
     return fail(
       "channel_without_session",
-      "Este canal é o oficial (API da plataforma): ele não tem sessão de WhatsApp para reiniciar. Se parou de entregar, atualize a credencial na tela do canal oficial.",
+      t("Este canal é o oficial (API da plataforma): ele não tem sessão de WhatsApp para reiniciar. Se parou de entregar, atualize a credencial na tela do canal oficial."),
       422,
       { requestId },
     );
@@ -125,7 +127,7 @@ export async function POST(
   if (!waha) {
     return fail(
       "waha_not_configured",
-      "O WhatsApp (WAHA) não está configurado neste ambiente: faltam WAHA_API_BASE_URL e/ou WAHA_API_KEY. Configure-as e tente de novo.",
+      t("O WhatsApp (WAHA) não está configurado neste ambiente: faltam WAHA_API_BASE_URL e/ou WAHA_API_KEY. Configure-as e tente de novo."),
       503,
       { requestId },
     );

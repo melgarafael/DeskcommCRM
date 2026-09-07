@@ -46,7 +46,7 @@ export default async function FollowupFlowsPage() {
       </header>
       <Tabs defaultValue="fluxos" className="flex flex-1 flex-col">
         <TabsList>
-          <TabsTrigger value="fluxos">Fluxos</TabsTrigger>
+          <TabsTrigger value="fluxos">{t("Fluxos")}</TabsTrigger>
           <TabsTrigger value="fila">Fila</TabsTrigger>
         </TabsList>
         <TabsContent value="fluxos">

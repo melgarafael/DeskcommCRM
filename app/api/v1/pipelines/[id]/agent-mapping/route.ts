@@ -32,6 +32,7 @@ import {
   type EtapaDoMapa,
 } from "@/lib/leads/agent-mapping";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -155,13 +156,14 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "pipeline_agent_mapping" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const { id: pipelineId } = await ctx.params;
   const supabase = await createClient();
 
   try {
     const funil = await lerFunil(supabase, authz.org.orgId, pipelineId);
-    if (!funil) return fail("not_found", "Funil não encontrado.", 404, { requestId });
+    if (!funil) return fail("not_found", t("Funil não encontrado."), 404, { requestId });
     return ok(corpo(funil.etapas), { requestId });
   } catch (err) {
     return fail("internal_error", (err as Error).message, 500, { requestId });
@@ -175,6 +177,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "pipeline_agent_mapping" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
   const { id: pipelineId } = await ctx.params;
@@ -183,14 +186,14 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   try {
     json = await req.json();
   } catch {
-    return fail("invalid_request", "Corpo não é JSON válido.", 400, { requestId });
+    return fail("invalid_request", t("Corpo não é JSON válido."), 400, { requestId });
   }
 
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
     return fail(
       "validation_failed",
-      "Envie o mapeamento completo dos sete passos do atendimento.",
+      t("Envie o mapeamento completo dos sete passos do atendimento."),
       422,
       { requestId, details: parsed.error.flatten() },
     );
@@ -206,7 +209,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   // Pipeline de outra org morre AQUI, antes de qualquer escrita: responder 404
   // depois de gravar seria pior que responder 200.
-  if (!funil) return fail("not_found", "Funil não encontrado.", 404, { requestId });
+  if (!funil) return fail("not_found", t("Funil não encontrado."), 404, { requestId });
 
   const { mapeamento } = parsed.data;
 
@@ -277,7 +280,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // inclusive se um update parcial deixou o funil diferente do mapa enviado.
   try {
     const depois = await lerFunil(supabase, orgId, pipelineId);
-    if (!depois) return fail("not_found", "Funil não encontrado.", 404, { requestId });
+    if (!depois) return fail("not_found", t("Funil não encontrado."), 404, { requestId });
     return ok(corpo(depois.etapas), { requestId });
   } catch (err) {
     return fail("internal_error", (err as Error).message, 500, { requestId });

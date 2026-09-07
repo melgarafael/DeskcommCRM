@@ -39,6 +39,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
         organization_id: authz.org.orgId,
         actor: { type: "user", id: authz.user.id },
         requestId,
+        idioma: authz.user.idioma,
       },
       id,
     );

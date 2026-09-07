@@ -42,6 +42,7 @@ import {
 } from "@/lib/agent-engine/edge/llm/orcamento";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -102,18 +103,19 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("admin", { requestId, resource: "ai_budget" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return fail("validation_failed", "JSON inválido.", 422, { requestId });
+    return fail("validation_failed", t("JSON inválido."), 422, { requestId });
   }
 
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return fail("validation_failed", "Payload inválido.", 422, {
+    return fail("validation_failed", t("Payload inválido."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -132,7 +134,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       request_id: requestId,
       causa: readErr.message,
     });
-    return fail("internal_error", "Erro ao ler o orçamento.", 500, { requestId });
+    return fail("internal_error", t("Erro ao ler o orçamento."), 500, { requestId });
   }
 
   const modoAntes = normalizarModoDeOrcamento(existing?.enforcement_mode ?? null);
@@ -158,8 +160,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     // matar. Quem garante o tempo é a CARÊNCIA de 72h, e é dela que a frase fala.
     return fail(
       "invalid_state_transition",
-      'Antes de fazer a IA parar no limite, salve "Me avisar" — assim o aviso já ' +
-        "está de pé quando a parada começar a valer, 72 horas depois de você armá-la.",
+      t('Antes de fazer a IA parar no limite, salve "Me avisar" — assim o aviso já ') +
+        t("está de pé quando a parada começar a valer, 72 horas depois de você armá-la."),
       422,
       { requestId, details: { de: modoAntes, para: modoDepois, degrau_faltante: "avisar" } },
     );
@@ -230,7 +232,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
         request_id: requestId,
         causa: updErr.message,
       });
-      return fail("internal_error", "Erro ao atualizar orçamento.", 500, { requestId });
+      return fail("internal_error", t("Erro ao atualizar orçamento."), 500, { requestId });
     }
   } else {
     const { error: insErr } = await admin.from("ai_budgets").insert({
@@ -246,7 +248,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
         request_id: requestId,
         causa: insErr.message,
       });
-      return fail("internal_error", "Erro ao criar orçamento.", 500, { requestId });
+      return fail("internal_error", t("Erro ao criar orçamento."), 500, { requestId });
     }
   }
 

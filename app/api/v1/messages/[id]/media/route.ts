@@ -11,6 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
@@ -43,9 +44,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
   const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
-    return fail("no_active_org", "No active organization.", 403, { requestId });
+    return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
 
   // Client de sessão: RLS garante que a mensagem pertence a uma org do usuário.
@@ -57,10 +59,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (error) {
-    return fail("internal_error", "Erro ao buscar mensagem.", 500, { requestId });
+    return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   }
   if (!msg || (!msg.media_storage_path && !msg.media_url)) {
-    return fail("not_found", "Mensagem sem mídia.", 404, { requestId });
+    return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
   }
 
   if (msg.media_storage_path) {
@@ -105,7 +107,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       if (!adapter.fetchInboundMedia || !sessionRef) {
         // Canal sem mídia de entrada não é defeito: é estado normal. 404 diz a
         // verdade ("não há o que servir"); 502 acusaria uma falha inexistente.
-        return fail("not_found", "Mensagem sem mídia.", 404, { requestId });
+        return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
       }
 
       const media = await adapter.fetchInboundMedia({
@@ -123,9 +125,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
         },
       });
     } catch {
-      return fail("bad_gateway", "Mídia indisponível no momento.", 502, { requestId });
+      return fail("bad_gateway", t("Mídia indisponível no momento."), 502, { requestId });
     }
   }
 
-  return fail("not_found", "Mensagem sem mídia.", 404, { requestId });
+  return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
 }

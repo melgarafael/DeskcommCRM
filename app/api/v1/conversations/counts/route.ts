@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
 import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
@@ -32,7 +33,12 @@ export async function GET(): Promise<Response> {
   const authUser = await loadAuthUser();
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
-    return fail("no_active_org", "No active organization.", 403, { requestId });
+    return fail(
+      "no_active_org",
+      traduzir("No active organization.", authUser?.idioma ?? "pt-BR"),
+      403,
+      { requestId },
+    );
   }
 
   const org = activeOrg.orgId;

@@ -20,6 +20,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSkillsPool } from "@/lib/ai/skills/db";
 import { parseSkillPackage } from "@/lib/ai/skills/package";
 import { importSkillPackage } from "@/lib/ai/skills/install";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org } = authz;
 
   // Guard against large uploads before buffering into memory. `parseSkillPackage`'s
@@ -39,19 +41,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 6MB: teto do envelope multipart (5MB skill + overhead)
   const contentLength = Number(req.headers.get("content-length") ?? "0");
   if (contentLength > MAX_UPLOAD_BYTES) {
-    return fail("skill_upload_too_large", "O arquivo enviado é grande demais (máx. 5 MB por skill).", 413, { requestId });
+    return fail("skill_upload_too_large", t("O arquivo enviado é grande demais (máx. 5 MB por skill)."), 413, { requestId });
   }
 
   let formData: FormData;
   try {
     formData = await req.formData();
   } catch {
-    return fail("invalid_request", "Falha ao processar multipart/form-data.", 400, { requestId });
+    return fail("invalid_request", t("Falha ao processar multipart/form-data."), 400, { requestId });
   }
 
   const fileEntry = formData.get("file");
   if (!(fileEntry instanceof File)) {
-    return fail("invalid_request", "Campo 'file' ausente ou inválido.", 400, { requestId });
+    return fail("invalid_request", t("Campo 'file' ausente ou inválido."), 400, { requestId });
   }
 
   const zipBytes = new Uint8Array(await fileEntry.arrayBuffer());

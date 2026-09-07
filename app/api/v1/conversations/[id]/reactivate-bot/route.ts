@@ -25,6 +25,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -57,12 +59,12 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   if (!resultado.ok) {
     if (resultado.erro === "conversation_not_found") {
-      return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+      return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
     }
     if (resultado.erro === "assignment_conflict") {
       return fail(
         "state_conflict",
-        "Alguém assumiu esta conversa agora — recarregue e tente de novo.",
+        t("Alguém assumiu esta conversa agora — recarregue e tente de novo."),
         409,
         { requestId },
       );
@@ -71,7 +73,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     // acompanhamento pausado. Repetir a chamada é seguro (tudo é idempotente).
     return fail(
       "internal_error",
-      "Atendimento devolvido, mas o sinal de retomada do acompanhamento falhou — tente de novo.",
+      t("Atendimento devolvido, mas o sinal de retomada do acompanhamento falhou — tente de novo."),
       500,
       { requestId },
     );

@@ -30,6 +30,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
@@ -67,10 +68,11 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("viewer", { requestId, resource: "crm_tasks" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const parsed = listaSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) {
-    return fail("validation_failed", "Parâmetros inválidos.", 422, {
+    return fail("validation_failed", t("Parâmetros inválidos."), 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
@@ -99,7 +101,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const { data, error } = await query;
   if (error) {
-    return fail("internal_error", "Erro ao listar as tarefas.", 500, { requestId });
+    return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
   }
 
   return ok({ tasks: (data ?? []) as unknown as Tarefa[] }, { requestId });
@@ -114,10 +116,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   // `agent` e não `manager`: criar tarefa é o gesto de quem ATENDE, todo dia.
   const authz = await requireRole("agent", { requestId, resource: "crm_tasks" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const parsed = criacaoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("validation_failed", "Dados inválidos.", 422, {
+    return fail("validation_failed", t("Dados inválidos."), 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
@@ -138,11 +141,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     // 23503 = lead ou contato de outra organização (ou apagado no meio). A
     // recusa nomeia o campo porque quem lê é quem escolheu na tela.
     if (error.code === "23503") {
-      return fail("validation_failed", "O negócio ou contato vinculado não existe.", 422, {
+      return fail("validation_failed", t("O negócio ou contato vinculado não existe."), 422, {
         requestId,
       });
     }
-    return fail("internal_error", "Erro ao salvar a tarefa.", 500, { requestId });
+    return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
   }
 
   const tarefa = data as unknown as Tarefa;

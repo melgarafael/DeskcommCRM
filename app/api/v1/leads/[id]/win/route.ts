@@ -43,6 +43,7 @@ export async function POST(
         organization_id: authz.org.orgId,
         actor: { type: "user", id: authz.user.id },
         requestId,
+        idioma: authz.user.idioma,
       },
       { leadId, desfecho: "won" },
     );

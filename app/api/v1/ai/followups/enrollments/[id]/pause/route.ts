@@ -15,6 +15,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { pausaEnrollment } from "@/lib/followup/intervencao";
 import { respostaDaFalha } from "@/lib/followup/intervencao-resposta";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -36,12 +37,13 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const authz = await requireRole("manager", { requestId, resource: "followup_enrollments" });
   if (!authz.ok) return authz.response;
   const { user, org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const resultado = await pausaEnrollment(
     { supabase: await createClient(), admin: createAdminClient(), orgId: org.orgId, userId: user.id, requestId },
     id,
   );
-  if (!resultado.ok) return respostaDaFalha(resultado, requestId);
+  if (!resultado.ok) return respostaDaFalha(resultado, requestId, t);
 
   void audit({
     action: "followup_enrollment.paused",

@@ -10,6 +10,7 @@ import { type NextRequest } from "next/server";
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +36,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
-    return fail("no_active_org", "No active organization.", 403, { requestId });
+    return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
 
   const { data: conv, error: convErr } = await supabase
@@ -47,10 +49,10 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("id", id)
     .maybeSingle();
   if (convErr) {
-    return fail("internal_error", "Failed to load conversation.", 500, { requestId });
+    return fail("internal_error", t("Failed to load conversation."), 500, { requestId });
   }
   if (!conv) {
-    return fail("not_found", "Conversation not found.", 404, { requestId });
+    return fail("not_found", t("Conversation not found."), 404, { requestId });
   }
 
   const since = new Date(Date.now() - RETENTION_LOOKBACK_MS).toISOString();
@@ -64,7 +66,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .order("created_at", { ascending: false })
     .limit(5);
   if (traceErr) {
-    return fail("internal_error", "Failed to load retention traces.", 500, { requestId });
+    return fail("internal_error", t("Failed to load retention traces."), 500, { requestId });
   }
 
   // Knobs do número (coluna NULL = default conservador do engine) — a UI usa o

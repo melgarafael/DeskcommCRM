@@ -18,6 +18,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSkillsPool } from "@/lib/ai/skills/db";
 import { installPlatformSkill } from "@/lib/ai/skills/install";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +35,13 @@ export async function POST(
 
   const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org } = authz;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
   if (!nameParsed.success) {
-    return fail("validation_failed", "Nome de skill inválido.", 422, { requestId });
+    return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
 
@@ -55,7 +57,7 @@ export async function POST(
     .eq("name", name)
     .maybeSingle();
   if (!platformSkill) {
-    return fail("not_found", "Skill não encontrada no catálogo de plataforma.", 404, { requestId });
+    return fail("not_found", t("Skill não encontrada no catálogo de plataforma."), 404, { requestId });
   }
 
   const db = getSkillsPool();

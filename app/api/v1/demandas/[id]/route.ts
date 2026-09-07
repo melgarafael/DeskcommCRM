@@ -35,6 +35,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -63,19 +64,20 @@ export async function PATCH(
 
   const authz = await requireRole("agent", { requestId, resource: "demandas" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg, user } = authz;
 
   let corpo: unknown;
   try {
     corpo = await req.json();
   } catch {
-    return fail("validation_failed", "Corpo inválido.", 422, { requestId });
+    return fail("validation_failed", t("Corpo inválido."), 422, { requestId });
   }
   const parsed = patchSchema.safeParse(corpo);
   if (!parsed.success) {
     return fail(
       "validation_failed",
-      "O próximo passo precisa ter de 3 a 500 caracteres.",
+      t("O próximo passo precisa ter de 3 a 500 caracteres."),
       422,
       { details: parsed.error.flatten().fieldErrors as Record<string, unknown>, requestId },
     );
@@ -118,7 +120,7 @@ export async function PATCH(
   // `organizations` engana exatamente assim. Aqui o `select` de volta é o que
   // separa "gravou" de "não achou/já fechada".
   if (!data) {
-    return fail("not_found", "Demanda não encontrada, ou já encerrada.", 404, { requestId });
+    return fail("not_found", t("Demanda não encontrada, ou já encerrada."), 404, { requestId });
   }
 
   void audit({

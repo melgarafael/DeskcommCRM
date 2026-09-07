@@ -359,7 +359,10 @@ function BlocoDeAgendamento({
       // rótulo dizia `, com ${pessoa.nome}`, que é o ATENDENTE: quem usa leitor
       // de tela ouvia os dois papéis trocados, e o card visual não desmente
       // porque em compromisso de 30min ele nem mostra o contato.
-      aria-label={`${t(agendamento.titulo)}, ${format(comeca, "HH:mm")} ${t("às")} ${format(termina, "HH:mm")}${
+      // `titulo` é DADO DO OPERADOR — a rota grava `title ?? tipo.name`, e
+      // `tipo.name` é o nome que ele cadastrou em Tipos de agendamento. Passá-lo
+      // por `t()` fazia "Retorno" virar "Seguimiento" na leitura de tela.
+      aria-label={`${agendamento.titulo}, ${format(comeca, "HH:mm")} ${t("às")} ${format(termina, "HH:mm")}${
         agendamento.quemSeraAtendido ? `, ${t("com")} ${agendamento.quemSeraAtendido}` : ""
       }${pessoa ? `, ${t("atendido por")} ${pessoa.nome}` : ""}${
         doGoogle ? `, ${t("ocupado na agenda do Google")}` : ""
@@ -704,7 +707,7 @@ function VisaoDeMes({
                         style={{ backgroundColor: corDaTrilha(trilha) }}
                       />
                       <span className="truncate text-[10px] leading-4 text-text">
-                        {format(new Date(c.comeca), "HH:mm")} {t(c.titulo)}
+                        {format(new Date(c.comeca), "HH:mm")} {c.titulo}
                       </span>
                     </div>
                   );

@@ -45,6 +45,7 @@ import {
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 const querySchema = z.object({
   event_type_id: z.string().uuid(),
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("viewer", { requestId, resource: "agenda" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const url = new URL(req.url);
@@ -68,7 +70,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     ate: url.searchParams.get("ate") ?? undefined,
   });
   if (!parsed.success) {
-    return fail("validation_failed", "Consulta inválida.", 422, {
+    return fail("validation_failed", t("Consulta inválida."), 422, {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
       requestId,
     });
@@ -77,12 +79,12 @@ export async function GET(req: NextRequest): Promise<Response> {
   const de = new Date(parsed.data.de);
   const ate = new Date(parsed.data.ate);
   if (ate.getTime() <= de.getTime()) {
-    return fail("validation_failed", "O fim do período precisa ser depois do começo.", 422, {
+    return fail("validation_failed", t("O fim do período precisa ser depois do começo."), 422, {
       requestId,
     });
   }
   if (ate.getTime() - de.getTime() > MAXIMO_DE_DIAS * 86_400_000) {
-    return fail("validation_failed", `O período não pode passar de ${MAXIMO_DE_DIAS} dias.`, 422, {
+    return fail("validation_failed", t(`O período não pode passar de ${MAXIMO_DE_DIAS} dias.`), 422, {
       requestId,
     });
   }
@@ -113,7 +115,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       erro_interno: { codigo: "internal_error", http: 500 },
     };
     const { codigo, http } = status[consulta.codigo];
-    return fail(codigo, consulta.motivoParaOperador, http, { requestId });
+    return fail(codigo, t(consulta.motivoParaOperador), http, { requestId });
   }
 
   return ok(

@@ -84,8 +84,8 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
     // Mesma cadeia que vazava `org_xxxx` no seletor do editor de agente: o
     // identificador do transporte era o penúltimo degrau, então uma conexão sem
     // apelido e sem número aparecia com ele no título do painel.
-    return nomeDoCanal(item.channel_session);
-  }, [item]);
+    return nomeDoCanal(item.channel_session, t);
+  }, [item, t]);
 
   if (!item || !form) return null;
   const eff = item.effective;

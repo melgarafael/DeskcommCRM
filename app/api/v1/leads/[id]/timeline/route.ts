@@ -35,6 +35,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { loadAuthUser } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 import {
   TIMELINE_COLS,
@@ -63,6 +65,8 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
+  const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
 
   const url = new URL(req.url);
   const types = url.searchParams.getAll("type").filter(Boolean);
@@ -71,7 +75,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const cursorRaw = url.searchParams.get("cursor");
   const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
   if (cursorRaw && !cursor) {
-    return fail("invalid_cursor", "Cursor inválido.", 400, { requestId });
+    return fail("invalid_cursor", t("Cursor inválido."), 400, { requestId });
   }
 
   // O lead vem pela RLS do caller — é ele que prova a org, nunca o body.
@@ -81,7 +85,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("id", leadId)
     .maybeSingle();
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
-  if (!lead) return fail("not_found", "Negócio não encontrado.", 404, { requestId });
+  if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
   const contactId = (lead as { contact_id: string | null }).contact_id;
 

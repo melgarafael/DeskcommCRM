@@ -27,6 +27,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listaTiposDeAtendimento } from "@/lib/agenda/consulta";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -132,10 +133,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = req.headers.get("x-request-id") ?? undefined;
   const autorizado = await requireRole("manager", { requestId, resource: "calendar_event_types" });
   if (!autorizado.ok) return autorizado.response;
+  const t = (texto: string) => traduzir(texto, autorizado.user.idioma);
 
   const lido = criarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
-    return fail("validation_failed", lido.error.issues[0]?.message ?? "corpo inválido", 422, { requestId });
+    return fail("validation_failed", lido.error.issues[0]?.message ?? t("corpo inválido"), 422, { requestId });
   }
 
   const admin = createAdminClient();
@@ -171,16 +173,17 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const requestId = req.headers.get("x-request-id") ?? undefined;
   const autorizado = await requireRole("manager", { requestId, resource: "calendar_event_types" });
   if (!autorizado.ok) return autorizado.response;
+  const t = (texto: string) => traduzir(texto, autorizado.user.idioma);
 
   const lido = alterarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
-    return fail("validation_failed", lido.error.issues[0]?.message ?? "corpo inválido", 422, { requestId });
+    return fail("validation_failed", lido.error.issues[0]?.message ?? t("corpo inválido"), 422, { requestId });
   }
   const { id, ...campos } = lido.data;
   if (Object.keys(campos).length === 0) {
     // Recusa em vez de UPDATE vazio: "alterei" sobre nada é a mesma família de
     // mentira que o "Marcado ✓" sem linha no banco.
-    return fail("validation_failed", "Nenhum campo para alterar.", 422, { requestId });
+    return fail("validation_failed", t("Nenhum campo para alterar."), 422, { requestId });
   }
 
   const admin = createAdminClient();
@@ -193,7 +196,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     .maybeSingle();
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!data) return fail("not_found", "Tipo de agendamento não encontrado.", 404, { requestId });
+  if (!data) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
 
   await audit({
     actorUserId: autorizado.user.id,
@@ -213,9 +216,10 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   const requestId = req.headers.get("x-request-id") ?? undefined;
   const autorizado = await requireRole("manager", { requestId, resource: "calendar_event_types" });
   if (!autorizado.ok) return autorizado.response;
+  const t = (texto: string) => traduzir(texto, autorizado.user.idioma);
 
   const lido = desativarSchema.safeParse(await req.json().catch(() => ({})));
-  if (!lido.success) return fail("validation_failed", "corpo inválido", 422, { requestId });
+  if (!lido.success) return fail("validation_failed", t("corpo inválido"), 422, { requestId });
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -227,7 +231,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
     .maybeSingle();
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!data) return fail("not_found", "Tipo de agendamento não encontrado.", 404, { requestId });
+  if (!data) return fail("not_found", t("Tipo de agendamento não encontrado."), 404, { requestId });
 
   await audit({
     actorUserId: autorizado.user.id,

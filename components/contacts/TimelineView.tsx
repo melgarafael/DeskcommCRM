@@ -111,7 +111,8 @@ export function TimelineView({ contactId, types }: Props) {
               {items.map((it) => {
                 const Icon = ICON_MAP[it.source_module] ?? Gear;
                 const label = t(activityLabel(it.type));
-                const corpo = (it.reason ?? "").trim() || summarizePayload(it.payload);
+                const reasonTrim = (it.reason ?? "").trim();
+                const corpo = reasonTrim ? t(reasonTrim) : summarizePayload(it.payload);
                 const forma = actorShape(it.actor_kind ?? null);
                 const quem = actorName(
                   it.actor_kind ?? null,

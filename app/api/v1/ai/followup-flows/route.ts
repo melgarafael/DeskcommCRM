@@ -12,6 +12,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createFollowupFlowSchema } from "@/lib/followup/api-schemas";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -40,18 +41,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = createFollowupFlowSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   if (insErr || !created) {
     if (insErr?.code === "23505") {
-      return fail("conflict", "Já existe um fluxo com este nome.", 409, { requestId });
+      return fail("conflict", t("Já existe um fluxo com este nome."), 409, { requestId });
     }
     return fail("internal_error", insErr?.message ?? "followup_flow_insert_failed", 500, {
       requestId,

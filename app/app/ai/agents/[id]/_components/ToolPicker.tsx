@@ -74,10 +74,11 @@ const CLASSE_RISCO: Record<ToolRisk, string> = {
 };
 
 function BadgeRisco({ risco }: { risco: ToolRisk }) {
+  const t = useT();
   const meta = riscoMeta(risco);
   return (
-    <Badge variant="outline" className={`text-[11px] ${CLASSE_RISCO[risco]}`} title={meta.explicacao}>
-      {meta.rotulo}
+    <Badge variant="outline" className={`text-[11px] ${CLASSE_RISCO[risco]}`} title={t(meta.explicacao)}>
+      {t(meta.rotulo)}
     </Badge>
   );
 }
@@ -98,6 +99,7 @@ function FichaCapacidade({
   disabled?: boolean;
   mostrarNomeTecnico?: boolean;
 }) {
+  const t = useT();
   return (
     <label
       data-testid={`capacidade-${capacidade.name}`}
@@ -113,15 +115,15 @@ function FichaCapacidade({
         checked={marcada}
         onChange={onToggle}
         disabled={disabled || bloqueada}
-        aria-label={capacidade.rotulo}
+        aria-label={t(capacidade.rotulo)}
       />
       <span className="flex-1 space-y-1">
         <span className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">{capacidade.rotulo}</span>
+          <span className="text-sm font-medium">{t(capacidade.rotulo)}</span>
           <BadgeRisco risco={capacidade.risco} />
-          <span className="text-xs text-muted-foreground">· {capacidade.o_que_toca}</span>
+          <span className="text-xs text-muted-foreground">· {t(capacidade.o_que_toca)}</span>
         </span>
-        <span className="block text-xs text-muted-foreground">{capacidade.explicacao}</span>
+        <span className="block text-xs text-muted-foreground">{t(capacidade.explicacao)}</span>
         {mostrarNomeTecnico ? (
           <code className="block font-mono text-[11px] text-muted-foreground">
             {capacidade.name}

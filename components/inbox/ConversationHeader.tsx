@@ -66,7 +66,7 @@ export function ConversationHeader({ conversation }: Props) {
   const [reassignOpen, setReassignOpen] = useState(false);
 
   const c = conversation.contacts ?? null;
-  const displayName = rotuloDoContato(c);
+  const displayName = rotuloDoContato(c, t);
   const phone = c?.phone_number ? phoneForDisplay(c.phone_number) : null;
   const status = conversation.status;
   const isMineAssigned = conversation.assigned_to_user_id === user.id;

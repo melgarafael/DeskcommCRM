@@ -29,6 +29,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) {
-    return fail("forbidden", "sem organização ativa", 403, { requestId });
+    return fail("forbidden", traduzir("sem organização ativa", user.idioma), 403, { requestId });
   }
   const orgId = activeOrg.orgId;
   const supabase = await createClient();
@@ -117,7 +118,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       if (!proposta) continue;
       pendentes.push({
         lead_id: l.id,
-        lead_title: l.title ?? "(sem título)",
+        lead_title: l.title ?? traduzir("(sem título)", user.idioma),
         stage_name: l.crm_stages?.name ?? null,
         contact_name: l.contacts?.display_name ?? null,
         next_action: proposta.label,
@@ -180,7 +181,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const historico: DecisaoPassada[] = linhas.map((d) => ({
     activity_id: d.id,
     lead_id: d.lead_id ?? "",
-    lead_title: d.crm_leads?.title ?? "(negócio removido)",
+    lead_title: d.crm_leads?.title ?? traduzir("(negócio removido)", user.idioma),
     decision: d.type === "next_action_approved" ? "approve" : "dismiss",
     next_action: d.payload?.next_action ?? "",
     decided_by: d.performed_by_user_id ? (nomes.get(d.performed_by_user_id) ?? null) : null,

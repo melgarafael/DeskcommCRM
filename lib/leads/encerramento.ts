@@ -23,6 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 
@@ -80,7 +81,7 @@ export async function encerraDemanda(
       "validation_failed",
       undefined,
       ctx.requestId,
-      "Informe o motivo da perda.",
+      traduzir("Informe o motivo da perda.", ctx.idioma ?? "pt-BR"),
     );
   }
 
@@ -95,7 +96,13 @@ export async function encerraDemanda(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);
   }
   if (!lead) {
-    throw new ApiError(404, "not_found", undefined, ctx.requestId, "Lead não encontrado.");
+    throw new ApiError(
+      404,
+      "not_found",
+      undefined,
+      ctx.requestId,
+      traduzir("Lead não encontrado.", ctx.idioma ?? "pt-BR"),
+    );
   }
 
   if ((lead as { status: string }).status === input.desfecho) {
@@ -123,9 +130,12 @@ export async function encerraDemanda(
       input.desfecho === "won" ? "pipeline_no_won_stage" : "pipeline_no_lost_stage",
       undefined,
       ctx.requestId,
-      input.desfecho === "won"
-        ? "Pipeline não tem stage de fechamento como ganho."
-        : "Pipeline não tem stage de fechamento como perda.",
+      traduzir(
+        input.desfecho === "won"
+          ? "Pipeline não tem stage de fechamento como ganho."
+          : "Pipeline não tem stage de fechamento como perda.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
 
@@ -192,6 +202,8 @@ export async function encerraDemanda(
     // O rótulo do tipo já diz "Demanda encerrada" na tela; o reason acrescenta o
     // DESFECHO e, na perda, o motivo — repetir o rótulo aqui deixaria a linha
     // com a mesma frase duas vezes (ver `motivoLegivel` em retorno-crm.ts).
+    // Canônico em português: quem traduz é a LEITURA (`t(item.reason)`). Ver o
+    // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
     reason: input.desfecho === "won" ? "Ganho" : `Perdido — ${input.motivo}`,
     payload: {
       desfecho: input.desfecho,

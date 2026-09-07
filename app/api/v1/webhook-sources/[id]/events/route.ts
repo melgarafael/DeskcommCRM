@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export async function GET(_req: Request, ctx: RouteCtx): Promise<Response> {
   const { id } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "webhook_sources" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const supabase = await createClient();
@@ -30,7 +32,7 @@ export async function GET(_req: Request, ctx: RouteCtx): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
   if (sourceErr) return fail("internal_error", sourceErr.message, 500, { requestId });
-  if (!source) return fail("not_found", "Fonte não encontrada.", 404, { requestId });
+  if (!source) return fail("not_found", t("Fonte não encontrada."), 404, { requestId });
 
   const { data, error } = await supabase
     .from("webhook_events_log")

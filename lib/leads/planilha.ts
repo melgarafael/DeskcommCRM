@@ -97,9 +97,13 @@ export interface ResultadoDaLeitura {
 /** A origem gravada em `crm_leads.source` — vocabulário, não string solta. */
 export const ORIGEM_DA_PLANILHA = "importacao_planilha";
 
-export function lerPlanilhaDeLeads(conteudo: string): ResultadoDaLeitura | { erro: string } {
+export function lerPlanilhaDeLeads(
+  conteudo: string,
+  t?: (text: string) => string,
+): ResultadoDaLeitura | { erro: string } {
+  const _t = t || ((x) => x);
   const linhas = parseCsv(conteudo).filter((l) => l.some((c) => c.trim() !== ""));
-  if (linhas.length === 0) return { erro: "A planilha está vazia." };
+  if (linhas.length === 0) return { erro: _t("A planilha está vazia.") };
 
   const cabecalho = linhas[0]!;
   const mapa = new Map<number, string>();
@@ -116,8 +120,9 @@ export function lerPlanilhaDeLeads(conteudo: string): ResultadoDaLeitura | { err
   if (!campos.has("titulo") && !campos.has("contato")) {
     return {
       erro:
-        "A planilha precisa de uma coluna com o nome do negócio ou do contato. " +
-        `Encontrei: ${cabecalho.filter((c) => c.trim()).join(", ") || "nenhuma coluna"}.`,
+        _t("A planilha precisa de uma coluna com o nome do negócio ou do contato. Encontrei: ") +
+        (cabecalho.filter((c) => c.trim()).join(", ") || _t("nenhuma coluna")) +
+        ".",
     };
   }
 
@@ -138,7 +143,7 @@ export function lerPlanilhaDeLeads(conteudo: string): ResultadoDaLeitura | { err
     // com o mesmo título — indistinguíveis no funil, que é onde eles vivem.
     const title = (valor("titulo").replace(/\s+/g, " ") || nomeDoContato).slice(0, 200);
     if (title.length < 2) {
-      erros.push({ linha: numeroNaPlanilha, motivo: "sem nome do negócio nem do contato" });
+      erros.push({ linha: numeroNaPlanilha, motivo: _t("sem nome do negócio nem do contato") });
       continue;
     }
 
@@ -148,7 +153,8 @@ export function lerPlanilhaDeLeads(conteudo: string): ResultadoDaLeitura | { err
       // O valor cru entra na mensagem: quem vai corrigir precisa achar a célula.
       erros.push({
         linha: numeroNaPlanilha,
-        motivo: `valor não reconhecido ("${valorTexto}") — escreva assim: 1.200,00`,
+        motivo:
+          _t("valor não reconhecido (") + `"${valorTexto}"` + ")" + _t(" — escreva assim: 1.200,00"),
       });
       continue;
     }
@@ -161,7 +167,11 @@ export function lerPlanilhaDeLeads(conteudo: string): ResultadoDaLeitura | { err
       // aviso fica, senão o número some sem ninguém saber.
       erros.push({
         linha: numeroNaPlanilha,
-        motivo: `telefone não reconhecido ("${telefoneTexto}") — o negócio entrou sem contato`,
+        motivo:
+          _t("telefone não reconhecido (") +
+          `"${telefoneTexto}"` +
+          ")" +
+          _t(" — o negócio entrou sem contato"),
       });
     }
 

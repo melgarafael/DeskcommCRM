@@ -21,6 +21,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -51,13 +52,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // `viewer` lê o board e vê a proposta, mas não aprova nem descarta.
   const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user } = authz;
 
   const supabase = await createClient();
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("validation_failed", "Corpo inválido.", 422, {
+    return fail("validation_failed", t("Corpo inválido."), 422, {
       requestId,
       details: { issues: parsed.error.issues },
     });
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("id", leadId)
     .maybeSingle();
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
-  if (!lead) return fail("not_found", "Lead não encontrado.", 404, { requestId });
+  if (!lead) return fail("not_found", t("Lead não encontrado."), 404, { requestId });
 
   const row = lead as {
     id: string;
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!row.contact_id) {
     return fail(
       "next_action_absent",
-      "Este negócio não tem contato, então não há proposta do agente.",
+      t("Este negócio não tem contato, então não há proposta do agente."),
       409,
       { requestId },
     );
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const linha = estado as { next_action: string | null; next_action_seq: number } | null;
   const atual = linha?.next_action?.trim() ?? null;
   if (!atual) {
-    return fail("next_action_absent", "Não há proposta pendente para este negócio.", 409, {
+    return fail("next_action_absent", t("Não há proposta pendente para este negócio."), 409, {
       requestId,
     });
   }
@@ -109,7 +111,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // identidade e não texto é o que pega a reescrita com as mesmas palavras.
     return fail(
       "next_action_changed",
-      "A proposta mudou desde que você a leu. Confira a nova antes de decidir.",
+      t("A proposta mudou desde que você a leu. Confira a nova antes de decidir."),
       409,
       { requestId, details: { current_text: atual, current_seq: linha!.next_action_seq } },
     );

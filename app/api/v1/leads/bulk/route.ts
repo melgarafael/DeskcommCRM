@@ -22,6 +22,7 @@ import { bulkLeadActionSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // spec 13 §4: escrita é agent+ (viewer é read-only).
   const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
 
   let input;
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   if (input.lead_ids.length > MAX_BULK) {
-    return fail("bulk_too_large", `Máximo ${MAX_BULK} leads por bulk.`, 422, { requestId });
+    return fail("bulk_too_large", `${t("Máximo")} ${MAX_BULK} ${t("leads por bulk.")}`, 422, { requestId });
   }
 
   // G3-04: assign é reatribuição de dono em lote → piso ≥manager (spec 04 §6.5,
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (!isServiceRoleConfigured()) {
         return fail(
           "owner_validation_unavailable",
-          "Não foi possível validar o responsável agora. Tente novamente em instantes.",
+          t("Não foi possível validar o responsável agora. Tente novamente em instantes."),
           422,
           { requestId },
         );
@@ -100,7 +102,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (!member || member.role === "viewer") {
         return fail(
           "invalid_owner",
-          "Responsável não é um atendente ativo desta organização.",
+          t("Responsável não é um atendente ativo desta organização."),
           422,
           { requestId },
         );
@@ -124,7 +126,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!first) {
     return fail(
       "not_found",
-      "Nenhum lead acessível na operação.",
+      t("Nenhum lead acessível na operação."),
       404,
       { requestId },
     );
@@ -252,7 +254,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (!owner.ok || !owner.patch) {
         return fail(
           "validation_failed",
-          "Um lead tem um dono: informe owner_user_id OU owner_agent_id.",
+          t("Um lead tem um dono: informe owner_user_id OU owner_agent_id."),
           422,
           { requestId },
         );

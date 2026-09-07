@@ -128,3 +128,12 @@ evidence/.sonda-score-residuo.json
 # role key, secrets de webhook e a chave de cifra dos tokens. O padrão `.env*`
 # acima não os alcança porque eles vivem num diretório, com outro prefixo.
 backups/
+
+# Dump de banco de QA. A doutrina já estava escrita duas linhas acima e só o
+# PADRÃO faltava: `backups/` não casa com `.qa-backups/`, e um dump de 1,1 MB de
+# um Supabase local chegou a um PR de contribuidor por causa disso (#600). O
+# conteúdo daquele era sintético, mas um dump carrega hash de senha, refresh
+# token e o jwt_secret da instância — e história de git público é PERMANENTE:
+# commit posterior de remoção não tira o blob.
+.qa-backups/
+*.dump

@@ -18,6 +18,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { aggregateUsage, type InvocationRow } from "@/lib/ai/usage/aggregate";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -64,13 +65,14 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "ai_usage" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(req.nextUrl.searchParams.entries()),
   );
   if (!parsed.success) {
-    return fail("validation_failed", "Filtros inválidos.", 422, {
+    return fail("validation_failed", t("Filtros inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });

@@ -12,6 +12,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -32,12 +33,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "org_memory" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org } = authz;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return fail("validation_failed", "status inválido.", 422, {
+    return fail("validation_failed", t("status inválido."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -52,7 +54,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .select("id, status")
     .single();
   if (error || !data) {
-    return fail("not_found", "Entrada de memória não encontrada nesta organização.", 404, {
+    return fail("not_found", t("Entrada de memória não encontrada nesta organização."), 404, {
       requestId,
     });
   }

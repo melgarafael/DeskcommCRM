@@ -28,6 +28,7 @@ import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-test
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -47,17 +48,18 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
   const parsed = testRunSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -75,7 +77,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     .eq("agent_id", id)
     .maybeSingle();
 
-  if (!version) return fail("not_found", "Version não encontrada.", 404, { requestId });
+  if (!version) return fail("not_found", t("Version não encontrada."), 404, { requestId });
 
   const startedAt = new Date();
 
@@ -145,7 +147,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       .eq("id", runRow.id);
     return fail(
       "preview_failed",
-      "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.",
+      t("Não foi possível executar o teste. Confira modelo, credencial e materiais do agente."),
       422,
       { requestId },
     );

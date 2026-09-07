@@ -56,18 +56,20 @@ export function DeleteFollowupFlowButton({
         }}
       >
         <Trash size={14} aria-hidden className="mr-1" />
-        Excluir
+        {t("Excluir")}
       </Button>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir &ldquo;{flowName}&rdquo;?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("Excluir")} &ldquo;{flowName}&rdquo;?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t("Inscrições e versões deste fluxo são apagadas junto. Não é possível desfazer.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={del.isPending}
               onClick={(e) => {

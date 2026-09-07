@@ -10,6 +10,7 @@ import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { auditQuerySchema } from "@/lib/schemas/audit";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -40,13 +41,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     allowPlatformAdmin: true,
   });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const params = Object.fromEntries(new URL(req.url).searchParams.entries());
   // Force a high limit for export, ignore caller's `limit`.
   const parsed = auditQuerySchema.safeParse({ ...params, limit: undefined });
   if (!parsed.success) {
-    return fail("validation_failed", "Query inválida.", 422, {
+    return fail("validation_failed", t("Query inválida."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });

@@ -84,7 +84,7 @@ export function FormularioDoGoogle({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="client-secret">Chave secreta do cliente</Label>
+          <Label htmlFor="client-secret">{t("Chave secreta do cliente")}</Label>
           <Input
             id="client-secret"
             data-testid="google-client-secret"
@@ -144,10 +144,10 @@ export function FormularioDoGoogle({
                   ...(clientSecret.trim() ? { client_secret: clientSecret.trim() } : {}),
                 });
                 if (!r.ok) {
-                  toast.error(r.error);
+                  toast.error(t(r.error));
                   return;
                 }
-                toast.success("Credenciais do Google salvas.");
+                toast.success(t("Credenciais do Google salvas."));
                 setClientSecret("");
                 router.refresh();
               })

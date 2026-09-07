@@ -9,7 +9,7 @@
  * capacidade que a IA usa para consultar quem esfriou (IA 360 · wave 2): a tela e
  * o agente têm de dizer a MESMA coisa sobre o mesmo negócio.
  *
- * Admin client bypassa RLS: a organização vem do JWT via requireRole, nunca do body.
+ * Client de sessão preserva RLS; organização e papel vêm de requireRole, nunca do body.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -19,6 +19,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { carregaRadarDeRisco, RADAR_MIN_HOURS_PADRAO } from "@/lib/leads/radar-de-risco";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +34,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "leads_at_risk" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(new URL(req.url).searchParams.entries()),
   );
   if (!parsed.success) {
-    return fail("validation_failed", "Query inválida.", 422, {
+    return fail("validation_failed", t("Query inválida."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -55,6 +57,6 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
     return ok(radar, { requestId });
   } catch {
-    return fail("internal_error", "Falha ao carregar o radar.", 500, { requestId });
+    return fail("internal_error", t("Falha ao carregar o radar."), 500, { requestId });
   }
 }

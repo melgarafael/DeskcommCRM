@@ -27,6 +27,7 @@ import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
 import { loadActiveRouter } from "@/lib/agent-engine/agent/router-config";
 import { classifyIntent } from "@/lib/agent-engine/agent/intent-classifier";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -50,18 +51,19 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "ai_routers" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
   let rawBody: unknown;
   try {
     rawBody = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = testSchema.safeParse(rawBody);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", "Erro ao carregar router.", 500, { requestId });
   }
   if (!router) {
-    return fail("not_found", "Router não encontrado.", 404, { requestId });
+    return fail("not_found", t("Router não encontrado."), 404, { requestId });
   }
 
   const pool = getSkillsPool();
@@ -86,7 +88,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!loaded || loaded.id !== id) {
     return fail(
       "state_conflict",
-      "O router precisa estar ativo (is_active=true) para ser testado.",
+      t("O router precisa estar ativo (is_active=true) para ser testado."),
       409,
       { requestId },
     );

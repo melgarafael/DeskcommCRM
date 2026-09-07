@@ -29,6 +29,7 @@ import {
   rotuloDoTipo,
 } from "@/lib/ai/rag/tipos-de-fonte";
 import { BUCKET_DE_CONHECIMENTO } from "@/lib/ai/rag/ingest/documento";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -111,18 +112,19 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   let rawBody: unknown;
   try {
     rawBody = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = createSourceSchema.safeParse(rawBody);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -171,7 +173,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       return fail("internal_error", "Erro ao validar agent_id.", 500, { requestId });
     }
     if (!agent) {
-      return fail("not_found", "Assistente não encontrado nesta organização.", 404, { requestId });
+      return fail("not_found", t("Assistente não encontrado nesta organização."), 404, { requestId });
     }
   }
 
@@ -190,13 +192,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       if (faqItems.length === 0) {
         return fail(
           "invalid_request",
-          "Não achei nenhum par pergunta/resposta no texto. Use uma linha ## Pergunta: e uma ## Resposta: por item.",
+          t("Não achei nenhum par pergunta/resposta no texto. Use uma linha ## Pergunta: e uma ## Resposta: por item."),
           400,
           { requestId },
         );
       }
     } else {
-      return fail("invalid_request", "Cole o conteúdo do material antes de criar.", 400, {
+      return fail("invalid_request", t("Cole o conteúdo do material antes de criar."), 400, {
         requestId,
       });
     }
@@ -231,7 +233,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     if (upErr) {
       console.error("[ai-knowledge-sources] guardar o texto falhou:", upErr.message);
-      return fail("internal_error", "Erro ao guardar o conteúdo do material.", 500, { requestId });
+      return fail("internal_error", t("Erro ao guardar o conteúdo do material."), 500, { requestId });
     }
     metadata = { ...metadata, blob_path: blobPath, ext: "md", origem: "texto_colado" };
   }
@@ -288,7 +290,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       // linha que promete conteúdo e nunca vai indexar nada.
       await admin.from("ai_knowledge_sources").delete().eq("id", ksId);
       console.error("[ai-knowledge-sources] insert dos itens falhou:", itemsErr.message);
-      return fail("internal_error", "Erro ao gravar o conteúdo do material.", 500, { requestId });
+      return fail("internal_error", t("Erro ao gravar o conteúdo do material."), 500, { requestId });
     }
     itemsCount = rows.length;
   }

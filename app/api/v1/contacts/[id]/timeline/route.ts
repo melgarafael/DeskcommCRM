@@ -21,6 +21,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { loadAuthUser } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 import type { TimelineItem } from "@/lib/types/contacts";
 import {
@@ -48,6 +50,8 @@ export async function GET(
   if (authErr || !user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
+  const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
 
   const url = new URL(req.url);
   const types = url.searchParams.getAll("type").filter(Boolean);
@@ -59,7 +63,7 @@ export async function GET(
   if (cursorRaw) {
     cursor = decodeCursor(cursorRaw);
     if (!cursor) {
-      return fail("invalid_cursor", "Cursor inválido.", 400, { requestId });
+      return fail("invalid_cursor", t("Cursor inválido."), 400, { requestId });
     }
   }
 
@@ -70,7 +74,7 @@ export async function GET(
     .eq("id", contactId)
     .maybeSingle();
   if (cErr) return fail("internal_error", cErr.message, 500, { requestId });
-  if (!contactRow) return fail("not_found", "Contato não encontrado.", 404, { requestId });
+  if (!contactRow) return fail("not_found", t("Contato não encontrado."), 404, { requestId });
 
   // Resolve owned lead ids first.
   const { data: leadRows, error: lErr } = await supabase

@@ -49,7 +49,7 @@ export function vizinhoAoMover(
  * uma instrução acionável em um beco sem saída.
  */
 function textoDoErro(e: unknown, t: (texto: string) => string): string {
-  if (e instanceof ApiError) return e.message;
+  if (e instanceof ApiError) return t(e.message);
   if (e instanceof Error && e.message) return e.message;
   return t("Não consegui completar essa ação. Tente de novo.");
 }

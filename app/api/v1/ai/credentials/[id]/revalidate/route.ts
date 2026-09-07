@@ -15,6 +15,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
 import { validateProviderKey } from "@/lib/ai/provider-validators";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export async function POST(
 
   const authz = await requireRole("admin", { requestId, resource: "ai_credentials" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   const admin = createAdminClient();
@@ -51,10 +53,10 @@ export async function POST(
     return fail("internal_error", "Erro ao consultar credential.", 500, { requestId });
   }
   if (!row || row.organization_id !== activeOrg.orgId) {
-    return fail("not_found", "Credential não encontrada.", 404, { requestId });
+    return fail("not_found", t("Credential não encontrada."), 404, { requestId });
   }
   if (!row.is_active) {
-    return fail("credential_inactive", "Credential desativada.", 409, { requestId });
+    return fail("credential_inactive", t("Credential desativada."), 409, { requestId });
   }
 
   // Leitura direta + decifragem (sem passar pelo gate `validated_at` do
@@ -68,7 +70,7 @@ export async function POST(
     });
   } catch (err) {
     console.error("[ai.credentials] decrypt failed during revalidate", err);
-    return fail("decrypt_failed", "Falha ao decifrar credential.", 500, { requestId });
+    return fail("decrypt_failed", t("Falha ao decifrar credential."), 500, { requestId });
   }
 
   const result = await validateProviderKey(row.provider, apiKey);

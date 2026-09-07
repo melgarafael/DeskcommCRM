@@ -16,6 +16,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { changeRoleSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,6 +30,7 @@ export async function changeMemberRole(
   const authz = await requireRole("admin", { requestId, resource: "team" });
   if (!authz.ok) return authz.response;
   const { user: authUser, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authUser.idioma);
 
   let input;
   try {
@@ -52,9 +54,9 @@ export async function changeMemberRole(
     .eq("user_id", targetUserId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
-  if (!target) return fail("not_found", "Membro não encontrado.", 404, { requestId });
+  if (!target) return fail("not_found", t("Membro não encontrado."), 404, { requestId });
   if (target.revoked_at) {
-    return fail("state_conflict", "Membro está revogado.", 409, { requestId });
+    return fail("state_conflict", t("Membro está revogado."), 409, { requestId });
   }
 
   if (target.role === "admin" && input.role !== "admin") {
@@ -68,7 +70,7 @@ export async function changeMemberRole(
     if ((count ?? 0) <= 1) {
       return fail(
         "state_conflict",
-        "Não é possível rebaixar o último admin do tenant.",
+        t("Não é possível rebaixar o último admin do tenant."),
         409,
         { requestId },
       );

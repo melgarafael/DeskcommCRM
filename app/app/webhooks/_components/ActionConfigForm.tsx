@@ -73,7 +73,7 @@ function CreateOrMoveLeadForm({
   return (
     <div className="grid gap-2 sm:grid-cols-2">
       <div className="space-y-1">
-        <Label>Funil</Label>
+        <Label>{t("Funil")}</Label>
         <Select
           value={config.pipeline_id}
           onValueChange={(v) => onChange({ pipeline_id: v, stage_id: "" })}
@@ -92,7 +92,7 @@ function CreateOrMoveLeadForm({
         </Select>
       </div>
       <div className="space-y-1">
-        <Label>Etapa</Label>
+        <Label>{t("Etapa")}</Label>
         <Select
           value={config.stage_id}
           onValueChange={(v) => onChange({ ...config, stage_id: v })}
@@ -169,7 +169,7 @@ function SendWhatsappForm({
         ) : null}
       </div>
       <div className="space-y-1">
-        <Label>Mensagem</Label>
+        <Label>{t("Mensagem")}</Label>
         <div className="flex flex-wrap gap-1">
           {TEMPLATE_VARS.map((v) => (
             <Button
@@ -227,7 +227,7 @@ function SendAiMessageForm({
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label>Qual agente escreve</Label>
+        <Label>{t("Qual agente escreve")}</Label>
         <Select
           value={config.agent_id}
           onValueChange={(v) => onChange({ ...config, agent_id: v })}
@@ -317,7 +317,7 @@ function AssignOwnerForm({ config, onChange }: FormProps<{ user_id: string }>) {
   const { data: members } = useAssignableMembers(true);
   return (
     <div className="space-y-1">
-      <Label>Atendente</Label>
+      <Label>{t("Atendente")}</Label>
       <Select value={config.user_id} onValueChange={(v) => onChange({ user_id: v })}>
         <SelectTrigger>
           <SelectValue placeholder={t("Escolha o atendente")} />

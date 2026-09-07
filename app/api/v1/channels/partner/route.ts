@@ -32,6 +32,7 @@ import {
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -104,11 +105,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // dono, não de quem atende.
   const authz = await requireRole("admin", { requestId, resource: "channels_partner" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
   const parsed = conectarSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("invalid_request", "account_id e api_key são obrigatórios", 422, { requestId });
+    return fail("invalid_request", t("account_id e api_key são obrigatórios"), 422, { requestId });
   }
 
   // A rota não sabe com quem fala: pergunta se a credencial presta e o canal responde.
@@ -130,7 +132,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // operador precisa saber que falta configuração de servidor.
     return fail(
       "invalid_request",
-      "cifra indisponível nesta instalação — a chave não foi gravada",
+      t("cifra indisponível nesta instalação — a chave não foi gravada"),
       422,
       { requestId },
     );

@@ -32,6 +32,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -63,12 +64,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // editar a ficha, e editar ficha é trabalho de quem atende.
   const guard = await requireRole("agent", { requestId });
   if (!guard.ok) return guard.response;
+  const t = (texto: string) => traduzir(texto, guard.user.idioma);
   const orgId = guard.org.orgId;
   const userId = guard.user.id;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("invalid_body", "decision é obrigatório (accept | dismiss).", 400, { requestId });
+    return fail("invalid_body", t("decision é obrigatório (accept | dismiss)."), 400, { requestId });
   }
   const { decision, motivo } = parsed.data;
 
@@ -105,12 +107,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       const st = (existe as { status: string }).status;
       return fail(
         "proposal_not_pending",
-        st === "expired" ? "Esta sugestão venceu pelo prazo." : "Esta sugestão já foi decidida.",
+        st === "expired" ? t("Esta sugestão venceu pelo prazo.") : t("Esta sugestão já foi decidida."),
         409,
         { requestId },
       );
     }
-    return fail("not_found", "Sugestão não encontrada.", 404, { requestId });
+    return fail("not_found", t("Sugestão não encontrada."), 404, { requestId });
   }
 
   const p = decidida as PropostaDecidida;
@@ -168,9 +170,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       // decisão humana, e ela é fato mesmo que a escrita tenha sido barrada.
       // Reverter para `pending` reapresentaria o botão e convidaria ao mesmo
       // clique, sem que nada tivesse mudado.
-      return fail(err.code, err.message ?? "Não foi possível gravar.", err.status, { requestId });
+      return fail(err.code, err.message ?? t("Não foi possível gravar."), err.status, { requestId });
     }
-    return fail("internal_error", "Não foi possível gravar o dado.", 500, { requestId });
+    return fail("internal_error", t("Não foi possível gravar o dado."), 500, { requestId });
   }
 
   await audit({

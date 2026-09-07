@@ -86,7 +86,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     if (reais.length > 0) {
       valueCents = parseReaisToCents(reais);
       if (valueCents === null) {
-        form.setError("valueReais", { message: "Valor inválido" });
+        form.setError("valueReais", { message: t("Valor inválido") });
         return;
       }
     }
@@ -103,7 +103,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
     const parsed = updateLeadSchema.safeParse(patch);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
-      toast.error(first?.message ?? "Dados inválidos");
+      toast.error(first?.message ?? t("Dados inválidos"));
       return;
     }
 
@@ -112,7 +112,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
         leadId: lead.id,
         patch: parsed.data as UpdateLeadInput,
       });
-      toast.success("Lead atualizado");
+      toast.success(t("Lead atualizado"));
       onSaved?.();
     } catch {
       // toast already shown
@@ -137,7 +137,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label htmlFor="valueReais">Valor (R$)</Label>
+            <Label htmlFor="valueReais">{t("Valor (R$)")}</Label>
             <Input
               id="valueReais"
               inputMode="decimal"
@@ -147,12 +147,12 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
             <EcoDoValor control={form.control} />
             {form.formState.errors.valueReais && (
               <p className="text-xs text-error-fg">
-                {form.formState.errors.valueReais.message}
+                {t(form.formState.errors.valueReais.message ?? "")}
               </p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="expected_close_date">Fechamento previsto</Label>
+            <Label htmlFor="expected_close_date">{t("Fechamento previsto")}</Label>
             <Input
               id="expected_close_date"
               type="date"
@@ -181,11 +181,11 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
       <div className="flex justify-end gap-2">
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel} disabled={edit.isPending}>
-            Cancelar
+            {t("Cancelar")}
           </Button>
         )}
         <Button type="submit" disabled={edit.isPending}>
-          {edit.isPending ? "Salvando…" : "Salvar"}
+          {edit.isPending ? t("Salvando…") : t("Salvar")}
         </Button>
       </div>
     </form>

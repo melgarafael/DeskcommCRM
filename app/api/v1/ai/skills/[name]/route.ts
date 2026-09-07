@@ -17,6 +17,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +34,13 @@ export async function DELETE(
 
   const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org } = authz;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
   if (!nameParsed.success) {
-    return fail("validation_failed", "Nome de skill inválido.", 422, { requestId });
+    return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
 
@@ -54,7 +56,7 @@ export async function DELETE(
     return fail("internal_error", "Erro ao desinstalar a skill.", 500, { requestId });
   }
   if (!deleted || deleted.length === 0) {
-    return fail("not_found", "Skill não está instalada nesta organização.", 404, { requestId });
+    return fail("not_found", t("Skill não está instalada nesta organização."), 404, { requestId });
   }
 
   await audit({

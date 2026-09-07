@@ -123,7 +123,7 @@ export function ContactPickerDialog({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Enviar contato</DialogTitle>
+          <DialogTitle>{t("Enviar contato")}</DialogTitle>
           <DialogDescription>
             {t("Escolha alguém da base ou informe nome e telefone — como no WhatsApp.")}
           </DialogDescription>
@@ -232,7 +232,7 @@ export function ContactPickerDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="manual-contact-phone">Telefone</Label>
+              <Label htmlFor="manual-contact-phone">{t("Telefone")}</Label>
               <Input
                 id="manual-contact-phone"
                 value={manualPhone}

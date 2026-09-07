@@ -17,6 +17,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ export async function POST(
     allowPlatformAdmin: true,
   });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   // Idempotency-Key is required
@@ -47,7 +49,7 @@ export async function POST(
   if (!idempotencyKey) {
     return fail(
       "missing_idempotency_key",
-      "Header Idempotency-Key é obrigatório.",
+      t("Header Idempotency-Key é obrigatório."),
       422,
       { requestId },
     );
@@ -62,12 +64,12 @@ export async function POST(
   try {
     rawBody = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = bodySchema.safeParse(rawBody);
   if (!parsed.success) {
-    return fail("validation_failed", "Parâmetros inválidos.", 422, {
+    return fail("validation_failed", t("Parâmetros inválidos."), 422, {
       details: parsed.error.flatten(),
       requestId,
     });
@@ -114,7 +116,7 @@ export async function POST(
     return fail("internal_error", reqErr.message, 500, { requestId });
   }
   if (!request) {
-    return fail("not_found", "Solicitação não encontrada.", 404, { requestId });
+    return fail("not_found", t("Solicitação não encontrada."), 404, { requestId });
   }
 
   // Only 'received' can be approved

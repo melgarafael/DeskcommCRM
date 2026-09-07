@@ -52,6 +52,7 @@ export async function PATCH(
         organization_id: activeOrg.orgId,
         actor: { type: "user", id: user.id },
         requestId,
+        idioma: user.idioma,
       },
       leadId,
       input,

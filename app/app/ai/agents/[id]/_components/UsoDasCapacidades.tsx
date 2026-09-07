@@ -172,7 +172,7 @@ export function UsoDasCapacidades({ agentId, active }: Props) {
               className="rounded-md border border-border/60 p-3"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">{c.rotulo}</span>
+                <span className="text-sm font-medium">{t(c.rotulo)}</span>
                 <Badge variant="outline" className={`text-[11px] ${SINAL[c.sinal].classe}`}>
                   {t(SINAL[c.sinal].rotulo)}
                 </Badge>
@@ -181,10 +181,10 @@ export function UsoDasCapacidades({ agentId, active }: Props) {
                     {t("desligada")}
                   </Badge>
                 ) : null}
-                <span className="text-xs text-muted-foreground">· {c.o_que_toca}</span>
+                <span className="text-xs text-muted-foreground">· {t(c.o_que_toca)}</span>
               </div>
 
-              <p className="pt-1 text-xs text-muted-foreground">{c.recomendacao}</p>
+              <p className="pt-1 text-xs text-muted-foreground">{t(c.recomendacao)}</p>
 
               <div className="flex flex-wrap gap-x-4 pt-2 font-mono text-[11px] text-muted-foreground">
                 <span>

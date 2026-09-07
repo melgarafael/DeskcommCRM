@@ -21,6 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { publishSchema, PUBLISH_ERROR_CODES } from "@/lib/ai/agents/validation";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 import { publishAgentVersion } from "@/lib/ai/agents/publish";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 const VALID_TOOL_IDS_RUNTIME = new Set<string>(VALID_TOOL_IDS as readonly string[]);
 
@@ -42,18 +43,19 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const authz = await requireRole("admin", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = publishSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -71,13 +73,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     .maybeSingle();
 
   if (!targetV || targetV.agent_id !== id) {
-    return fail("version_not_found", "Version não encontrada.", 404, { requestId });
+    return fail("version_not_found", t("Version não encontrada."), 404, { requestId });
   }
 
   const tools = (targetV.tool_ids ?? []) as string[];
   const invalid = tools.filter((t) => !VALID_TOOL_IDS_RUNTIME.has(t));
   if (invalid.length > 0) {
-    return fail("tool_id_invalid", "tool_ids contém ids inexistentes no catálogo MCP.", 422, {
+    return fail("tool_id_invalid", t("tool_ids contém ids inexistentes no catálogo MCP."), 422, {
       requestId,
       details: { invalid },
     });
@@ -94,7 +96,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       const status = result.code === "agent_not_found" || result.code === "version_not_found"
         ? 404
         : 422;
-      return fail(result.code, "Validação de publish falhou.", status, { requestId });
+      return fail(result.code, t("Validação de publish falhou."), status, { requestId });
     }
     return fail("internal_error", "Erro ao publicar.", 500, { requestId });
   }

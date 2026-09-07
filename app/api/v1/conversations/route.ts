@@ -7,6 +7,7 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { listConversationsQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
@@ -28,9 +29,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
   const activeOrg = authUser ? await resolveActiveOrg(authUser) : null;
   if (!activeOrg) {
-    return fail("no_active_org", "No active organization.", 403, { requestId });
+    return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
 
   const url = new URL(req.url);
@@ -59,7 +61,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     limit: url.searchParams.get("limit") ?? undefined,
   });
   if (!qsParsed.success) {
-    return fail("validation_failed", "Query inválida.", 422, {
+    return fail("validation_failed", t("Query inválida."), 422, {
       details: qsParsed.error.flatten().fieldErrors as Record<string, unknown>,
       requestId,
     });
@@ -72,6 +74,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         organization_id: activeOrg.orgId,
         actor: { type: "user", id: user.id },
         requestId,
+        idioma: authUser?.idioma,
       },
       qsParsed.data,
     );

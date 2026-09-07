@@ -12,6 +12,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -42,18 +43,19 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("admin", { requestId, resource: "ai_routers" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org } = authz;
 
   let rawBody: unknown;
   try {
     rawBody = await req.json();
   } catch {
-    return fail("invalid_request", "Body JSON inválido.", 400, { requestId });
+    return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
   const parsed = membersPutSchema.safeParse(rawBody);
   if (!parsed.success) {
-    return fail("validation_failed", "Campos inválidos.", 422, {
+    return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -72,7 +74,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", "Erro ao carregar router.", 500, { requestId });
   }
   if (!router) {
-    return fail("not_found", "Router não encontrado.", 404, { requestId });
+    return fail("not_found", t("Router não encontrado."), 404, { requestId });
   }
 
   // Substitui a lista inteira: apaga os membros atuais (filtrando org) e
@@ -100,7 +102,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     const { error: insErr } = await admin.from("ai_router_members").insert(rows);
     if (insErr) {
       if (insErr.code === "23505") {
-        return fail("duplicate_intent_name", "Duas intenções não podem ter o mesmo nome no router.", 409, {
+        return fail("duplicate_intent_name", t("Duas intenções não podem ter o mesmo nome no router."), 409, {
           requestId,
         });
       }

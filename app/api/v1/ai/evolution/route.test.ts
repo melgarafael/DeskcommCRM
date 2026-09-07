@@ -74,7 +74,7 @@ function fakeDb(
 beforeEach(() => {
   requireRole.mockReset();
   from.mockReset();
-  requireRole.mockResolvedValue({ ok: true, org: { orgId: 'org-1' } });
+  requireRole.mockResolvedValue({ ok: true, org: { orgId: 'org-1' }, user: { idioma: 'pt-BR' } });
   fakeDb();
 });
 

@@ -99,13 +99,16 @@ export function rotuloDoEstadoDoCanal(
  * como se fosse o nome do número da pessoa. Um canal sem apelido e sem telefone
  * é um canal sem nome, e dizer isso é melhor do que inventar um.
  */
-export function nomeDoCanal(c: {
-  display_name?: string | null;
-  phone_number?: string | null;
-}): string {
+export function nomeDoCanal(
+  c: {
+    display_name?: string | null;
+    phone_number?: string | null;
+  },
+  t: (texto: string) => string = (texto) => texto,
+): string {
   const apelido = (c.display_name ?? "").trim();
   if (apelido) return apelido;
   const telefone = (c.phone_number ?? "").trim();
   if (telefone) return telefone;
-  return "Número sem nome";
+  return t("Número sem nome");
 }

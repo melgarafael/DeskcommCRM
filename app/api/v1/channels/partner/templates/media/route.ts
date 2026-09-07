@@ -28,6 +28,7 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -54,26 +55,27 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Faça login.", 401, { requestId });
+  const t = (texto: string) => traduzir(texto, user.idioma);
   const org = await resolveActiveOrg(user);
-  if (!org) return fail("forbidden", "Sem organização ativa.", 403, { requestId });
+  if (!org) return fail("forbidden", t("Sem organização ativa."), 403, { requestId });
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
-    return fail("validation_failed", "Campo 'file' (multipart) obrigatório.", 422, { requestId });
+    return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });
   }
 
   const mime = file.type || "application/octet-stream";
   if (!TIPOS.has(mime)) {
     return fail(
       "unsupported_media_type",
-      "O cabeçalho aceita imagem JPG ou PNG.",
+      t("O cabeçalho aceita imagem JPG ou PNG."),
       415,
       { requestId },
     );
   }
   if (file.size > TAMANHO_MAX) {
-    return fail("payload_too_large", "A imagem precisa ter até 5 MB.", 413, { requestId });
+    return fail("payload_too_large", t("A imagem precisa ter até 5 MB."), 413, { requestId });
   }
 
   const ext = mime === "image/png" ? "png" : "jpg";

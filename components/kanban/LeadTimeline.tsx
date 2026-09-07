@@ -76,7 +76,7 @@ function Linha({ item, aoVivo }: { item: TimelineItemView; aoVivo?: boolean }) {
             </span>
           )}
         </p>
-        {item.reason && <p className="mt-0.5 text-xs text-text-muted">{item.reason}</p>}
+        {item.reason && <p className="mt-0.5 text-xs text-text-muted">{t(item.reason)}</p>}
         <p className="mt-0.5 text-[11px] text-text-muted">
           {nome} · {quando(item.performed_at, tagDoIdioma)}
         </p>

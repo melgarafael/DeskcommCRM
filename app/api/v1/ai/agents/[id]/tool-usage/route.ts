@@ -32,6 +32,7 @@ import {
   type LinhaDeUso,
 } from "@/lib/ai/agents/uso-de-capacidades";
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -50,13 +51,14 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org: activeOrg } = authz;
 
   const parsed = querySchema.safeParse({
     days: req.nextUrl.searchParams.get("days") ?? undefined,
   });
   if (!parsed.success) {
-    return fail("validation_failed", "Janela inválida.", 422, {
+    return fail("validation_failed", t("Janela inválida."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
@@ -75,7 +77,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     .eq("id", id)
     .maybeSingle();
   if (erroAgente) return fail("internal_error", "Erro ao carregar o agente.", 500, { requestId });
-  if (!agente) return fail("not_found", "Agente não encontrado.", 404, { requestId });
+  if (!agente) return fail("not_found", t("Agente não encontrado."), 404, { requestId });
 
   // O que está VALENDO: a versão publicada. Sem publicada, o rascunho mais
   // recente — é o que o humano tem na frente na aba de configuração.
