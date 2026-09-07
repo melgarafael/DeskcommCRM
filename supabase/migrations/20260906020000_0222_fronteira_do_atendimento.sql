@@ -696,7 +696,7 @@ update public.demanda_conversas dc
 --     entra. Se faltar privilégio para pausar, o backfill segue mesmo assim
 --     (carimbar tarde é melhor que não carimbar) e o notice registra.
 do $$
-declare v_pausado boolean := false; v_linhas bigint := 0;
+declare v_pausado boolean := false; v_linhas bigint := 0; v_restantes bigint := 0;
 begin
   begin
     if exists (select 1 from pg_trigger
@@ -734,6 +734,33 @@ begin
   -- o controle positivo de que o gatilho foi de fato pausado durante o carimbo.
   if v_linhas > 0 then
     raise warning '0222 backfill: % mensagem(ns) carimbada(s) (gatilho de agenda pausado: %)', v_linhas, v_pausado;
+  end if;
+  -- O RESIDUO, e por que ele e a rede de seguranca CERTA.
+  --
+  -- O `update.sh` roda o baseline SEM `ON_ERROR_STOP`, entao este passo pode
+  -- morrer calado depois de o passo 1 ja ter entrado. A instalacao fica com
+  -- `service_started_at` carimbado e mensagens sem carimbo — e a varredura de
+  -- silencio, que EXIGE procedencia, ignora essas linhas: o acompanhamento
+  -- para de achar quem esta calado, sem nada na tela.
+  --
+  -- Ja houve aqui um cinto no CONSUMIDOR (degradar para `last_inbound_at`
+  -- quando faltasse carimbo). Ele foi removido porque a falta de carimbo nao
+  -- e sinal de legado: e NORMAL em duas classes, e nas duas o cinto inscrevia
+  -- gente que nao devia — conversa de GRUPO e mensagem entregue FORA DE ORDEM
+  -- depois de um fechamento, as duas com saida cedo em `fn_service_inbound`.
+  -- Sao exatamente as duas que este `where` exclui: o que sobra so pode ser
+  -- passo 4 que nao terminou.
+  select count(*) into v_restantes
+    from public.messages m
+    join public.conversations c
+      on c.id = m.conversation_id and c.organization_id = m.organization_id
+   where m.direction = 'inbound'
+     and m.service_revision is null
+     and not c.is_group
+     and coalesce(c.group_chat_id, '') not like '%@g.us'
+     and (c.service_closed_at is null or m.sent_at > c.service_closed_at);
+  if v_restantes > 0 then
+    raise warning '0222 backfill: % mensagem(ns) inbound seguem SEM carimbo — a varredura de silencio ignora essas linhas. Re-rode o update.sh; se persistir, aplique o passo 4 a mao e abra issue.', v_restantes;
   end if;
 end $$;
 

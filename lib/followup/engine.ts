@@ -705,23 +705,7 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
 export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
   const revisions=new Map<string,number>();
   return {
-    async assertServiceBoundary(enrollment) {
-      if (!revisions.has(enrollment.id) && enrollment.revision !== undefined) revisions.set(enrollment.id, enrollment.revision);
-      // Linha nascida ANTES da fronteira (0222) e ainda sem carimbo: ausência
-      // aqui é desconhecimento, não encerramento. Tratá-la como fronteira
-      // vencida cancelaria TODO acompanhamento em curso — com o motivo errado
-      // na tela — no primeiro tick depois do update.sh. O backfill da 0222
-      // carimba essas linhas; este ramo é a recuperação de quem já atualizou
-      // sem ele.
-      if (!enrollment.service_boundary) {
-        logger.warn("followup: acompanhamento sem fronteira de atendimento; seguindo como legado", {
-          organization_id: enrollment.organization_id,
-          enrollment_id: enrollment.id,
-        });
-        return;
-      }
-      await assertServiceBoundarySupabase(admin, enrollment.service_boundary);
-    },
+    async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id) && enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null); },
     async assertAgenda(enrollment){await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
     async claimDueEnrollments(limit, leaseSeconds) {
       const { data, error } = await admin.rpc("fn_claim_due_followup_enrollments", {

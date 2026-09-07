@@ -1,4 +1,3 @@
-import { logger } from "@/lib/logger";
 import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { StaleServiceBoundaryError, parseServiceBoundary, assertCurrentServiceBoundary, type ServiceBoundary } from "@/lib/atendimento/fronteira";
@@ -214,6 +213,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         .eq("organization_id", orgId).eq("demandas.organization_id", orgId)
         .eq("contacts.organization_id", orgId).eq("sessao.organization_id", orgId)
         .eq("messages.organization_id", orgId).eq("messages.direction", "inbound")
+        .not("messages.service_revision", "is", null)
         .order("sent_at", { referencedTable: "messages", ascending: false })
         .limit(1, { referencedTable: "messages" })
         .not("last_inbound_at", "is", null)
@@ -229,7 +229,6 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         sessao: { metadata: Record<string, unknown> | null } | null;
       };
       const cutoff = new Date(cutoffIso).getTime();
-      let semCarimbo = 0;
       const agora = new Date();
       const ttlMs = ttlDaAutorizacaoMs(process.env);
       const latest = new Map<
@@ -238,32 +237,14 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       >();
       for (const row of (data ?? []) as unknown as Row[]) {
         const source = row.messages?.[0];
-        const carimbo = source ? parseServiceBoundary(source) : null;
-        // Instalação que aplicou a 0222 sem o backfill não tem carimbo em
-        // mensagem antiga — e a população que esta varredura existe para achar
-        // é EXATAMENTE a que não manda mensagem nova. Descartar em silêncio
-        // desligaria o gatilho de silêncio inteiro nessa instalação. Sem
-        // carimbo, degradamos para o relógio da conversa (o comportamento
-        // anterior à fronteira) e deixamos rastro. As guardas de estado
-        // continuam valendo: a fronteira degradada também passa por
-        // assertCurrentServiceBoundary logo abaixo.
-        const daConversa = parseServiceBoundary({
-          organization_id: orgId,
-          contact_id: row.contact_id,
-          conversation_id: row.id,
-          service_revision: row.service_revision,
-          demanda_id: row.current_demanda_id,
-          demanda_revision: row.demandas?.revision ?? null,
-        });
-        const boundary = carimbo ?? daConversa;
-        if (!boundary) continue;
-        if (!carimbo) semCarimbo++;
+        const boundary = parseServiceBoundary(source);
+        if (!source || !boundary) continue;
         try {
           assertCurrentServiceBoundary(boundary, { organization_id: orgId, contact_id: row.contact_id,
             conversation_id: row.id, service_revision: row.service_revision, demanda_id: row.current_demanda_id,
             demanda_revision: row.demandas?.revision ?? null, status: row.status, demanda_fechada_em: row.demandas?.fechada_em ?? null });
         } catch { continue; }
-        const at = new Date(carimbo && source ? source.sent_at : row.last_inbound_at).getTime();
+        const at = new Date(source.sent_at).getTime();
         const prev = latest.get(row.contact_id);
         if (!prev || at > prev.at) {
           const metadata = row.sessao?.metadata ?? {};
@@ -289,14 +270,6 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
           });
         }
       }
-
-      // Uma linha por varredura, não uma por conversa: numa base legada seriam
-      // milhares por tick, e um rastro que ninguém consegue ler não é rastro.
-      if (semCarimbo > 0)
-        logger.warn("followup: conversas sem carimbo de atendimento; silêncio medido por last_inbound_at", {
-          organization_id: orgId,
-          conversas: semCarimbo,
-        });
 
       const silentIds: string[] = [];
       for (const [contactId, v] of latest) {
