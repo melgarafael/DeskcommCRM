@@ -146,18 +146,39 @@ describe("cobertura do e2e no CI", () => {
     // inteira em vez de uma linha literal — as três variáveis chegam a `LISTA`,
     // e é `LISTA` que vai ao Playwright. Cobrar só o `--workers=1 $LISTA`
     // deixaria passar um workflow onde `LISTA` nunca é atribuída.
-    expect(yml, "SPECS_PARTE_1 não alimenta a variável que roda").toMatch(
-      /LISTA="\$SPECS_PARTE_1"/,
-    );
-    expect(yml, "SPECS_PARTE_2 não alimenta a variável que roda").toMatch(
-      /LISTA="\$SPECS_PARTE_2"/,
-    );
-    expect(yml, "SPECS_PARTE_3 não alimenta a variável que roda").toMatch(
-      /LISTA="\$SPECS_PARTE_3"/,
-    );
+    // Enumerar as partes À MÃO aqui repetiria o defeito que este bloco existe
+    // para impedir. As partes são DESCOBERTAS no próprio workflow: quem
+    // acrescentar uma quarta não precisa lembrar de nada — e se esquecer de
+    // ligá-la, é aqui que descobre.
+    const partesDeclaradas = [...yml.matchAll(/^ {6}(SPECS_PARTE_\d+):/gm)].map((m) => m[1]!);
+    expect(
+      partesDeclaradas.length,
+      "nenhuma SPECS_PARTE_N no workflow — o parser mudou?",
+    ).toBeGreaterThan(1);
+    for (const parte of partesDeclaradas)
+      expect(yml, `${parte} não alimenta a variável que roda`).toMatch(
+        new RegExp(`LISTA="\\$${parte}"`),
+      );
     expect(yml, "a lista escolhida não é passada ao Playwright").toMatch(
       /playwright test --workers=1 \$LISTA/,
     );
+    // E A CONTAGEM DO SUMMARY TAMBÉM SOMA TODAS AS PARTES.
+    //
+    // O passo de cobertura do job agregador faz `RODOU + FORA == disco` e
+    // reprova quando não bate. Ele é uma SEGUNDA implementação da mesma regra
+    // que este arquivo guarda — e as duas divergiram: a parte 3 entrou nas
+    // listas, no `case` e neste teste, e ficou de fora daquela soma. O CI
+    // acusou `rodou=72 fora=3 disco=100`, faltando exatamente as 25 da parte 3.
+    // Guardar só a régua e deixar a irmã solta é como ter um gate e meio.
+    const somaDoSummary = /RODOU=\$\(\s*\{([^}]*)\}/.exec(yml)?.[1] ?? "";
+    expect(somaDoSummary, "não achei a soma `RODOU=$( { ... }` no workflow").not.toBe("");
+    for (const parte of partesDeclaradas)
+      expect(
+        somaDoSummary,
+        `${parte} não entra na contagem de cobertura do job agregador — o summary vai acusar ` +
+          "divergência entre listas e disco, ou pior, deixar de acusar uma spec que não roda",
+      ).toContain(parte);
+
     // E FORA_DO_CI nunca é passada a um run — ela existe para NÃO rodar.
     expect(yml).not.toMatch(/playwright test[^\n]*\$FORA_DO_CI/);
     expect(yml).not.toMatch(/LISTA="\$FORA_DO_CI"/);

@@ -95,7 +95,7 @@ git show origin/main:.github/workflows/e2e.yml | grep -A4 'FORA_DO_CI:'
 O que continua verdade e é o que importa: `vps-fresh-onboarding` está entre elas (WAHA + Redis
 + Resend + Nuvemshop) e é a **P0** da doutrina de QA — ou seja, `e2e` verde não prova a jornada
 de instalação fresca. `followup-journey`, `webhooks` e `capacidades-do-agente` estiveram fora e
-**voltaram**: rodam hoje (`e2e.yml`, listas `SPECS_PARTE_1`/`SPECS_PARTE_2`).
+**voltaram**: rodam hoje (`e2e.yml`, listas `SPECS_PARTE_*` — são três desde 2026-09-07).
 
 `.github/workflows/publish-image.yml`: `imagens-ok` = as três imagens Docker constroem. **Obrigatório
 desde 2026-08-13.**

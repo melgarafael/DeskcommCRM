@@ -962,7 +962,7 @@ jobs:
                       dentro { exit }
                     ' .github/workflows/e2e.yml | grep -oE "[a-z0-9-]+\.spec\.ts" | sort -u; }
           NO_DISCO=$(ls tests/e2e/*.spec.ts | wc -l | tr -d " ")
-          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; } | sort -u | wc -l | tr -d " ")
+          RODOU=$( { bloco SPECS_PARTE_1; bloco SPECS_PARTE_2; bloco SPECS_PARTE_3; } | sort -u | wc -l | tr -d " ")
           FORA_LISTA=$(bloco FORA_DO_CI)
           FORA=$(echo "$FORA_LISTA" | grep -c . || true)
           # E o recorte passa a ter CONTROLE, não só um piso.
