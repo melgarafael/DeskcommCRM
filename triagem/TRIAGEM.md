@@ -1704,3 +1704,42 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
 
     Na prática: releia o seu próprio veredito procurando as frases que **encerram** uma investigação
     em vez de abri-la, e re-meça essas.
+
+40. **A notificação de background traz o exit do `echo`, e ela inverte o sinal justamente na
+    sabotagem.** `nohup pnpm test:db … > /tmp/log 2>&1; echo "exit=$?"` rodado em background faz o
+    harness anunciar **"completed (exit code 0)"** com a suíte vermelha: o código reportado é o do
+    `echo`, o último comando da linha. Medido em 2026-09-07 — a notificação disse exit 0 e o rodapé
+    do log dizia `Tests 1 failed | 13 passed`.
+
+    O modo de falha 2 (`cmd | tail` mascara o exit) é o irmão desta, mas a consequência aqui é
+    pior, e é por isso que ela merece número próprio: numa **sabotagem**, o resultado esperado é o
+    vermelho. O "exit 0" não lê como "passou", lê como *"a sabotagem não alcançou o mecanismo"* —
+    ou seja, como *"o meu teste é frouxo"*. O sinal invertido corrompe exatamente a prova que existe
+    para desconfiar do verde, e o desfecho natural é reescrever um teste que estava correto.
+
+    Na prática: o exit code de uma notificação de background nunca é veredito. Leia o rodapé
+    (`Test Files` / `Tests`), que é a autoridade. Se quiser o exit real, ele tem de ser a ÚLTIMA
+    instrução da linha — ou grave-o: `cmd > log 2>&1; echo $? > /tmp/rc`.
+
+41. **O invariante que reprova pode ter nascido no MESMO PR que o mecanismo que ele vigia.** Diante
+    de um invariante vermelho, a pergunta reflexa é "o código está errado ou o teste está
+    mal-escrito?" — e ela pula uma pergunta anterior, que é mecânica e custa dois comandos:
+    **essa lei já estava na `main`?**
+
+    ```bash
+    git cat-file -e origin/main:<arquivo-do-teste>   # a lei é vigente ou proposta?
+    git grep -n "<símbolo da guarda>" origin/main     # e o mecanismo que ela vigia?
+    ```
+
+    Medido no PR #613: o invariante exigia que colisão de conversas ABORTASSE a fusão de contatos, e
+    tanto ele quanto a guarda que o atendia nasceram no mesmo commit do PR, nunca estiveram na
+    `main`. Do outro lado, a fusão parcial já era contrato publicado — função, rota, hook, diálogo —
+    travado por spec no check `e2e` obrigatório. Não era "código contra teste": era **lei proposta
+    contra lei vigente**, e a proposta perde. Tratado como invariante estabelecido, o vermelho
+    empurra para consertar o código — que teria quebrado o caminho dominante de um recurso já
+    publicado.
+
+    O corolário, que é o que separa isto de "apagar o teste incômodo": a preocupação da guarda não
+    se apaga junto com ela. Meça-a, e se ela sobreviver à medição, transforme-a em asserção **pelo
+    caminho de leitura de produção** — nunca por um `select` equivalente escrito à mão, que
+    continuaria verde se o filtro sumisse do código.
