@@ -105,23 +105,27 @@ describe("transição real de atendimento", () => {
     const closed = await state();
     // 0228 coalesce trabalho ativo por org/conversa. Arma backoff futuro para
     // provar que a reabertura acorda a fila, sem exigir evento duplicado.
-    const pending = (await pool.query(
-      `update event_log set next_attempt_at=now()+interval '1 hour'
+    const pending = (
+      await pool.query(
+        `update event_log set next_attempt_at=now()+interval '1 hour'
        where organization_id=$1 and entity_id=$2
          and event_type='conversation.routing_requested' and status='pending'
        returning id,next_attempt_at`,
-      [GOV_ORG, conversation],
-    )).rows;
+        [GOV_ORG, conversation],
+      )
+    ).rows;
     expect(pending).toHaveLength(1);
     const at = closed.service_closed_at.toISOString();
     await inbound(conversation, at);
     await inbound(conversation, "2000-01-01");
     await inbound(conversation, undefined, "outbound");
     expect((await state()).status).toBe("closed");
-    const stillWaiting = (await pool.query(
-      "select next_attempt_at from event_log where organization_id=$1 and id=$2",
-      [GOV_ORG, pending[0].id],
-    )).rows[0];
+    const stillWaiting = (
+      await pool.query("select next_attempt_at from event_log where organization_id=$1 and id=$2", [
+        GOV_ORG,
+        pending[0].id,
+      ])
+    ).rows[0];
     expect(stillWaiting.next_attempt_at).toEqual(pending[0].next_attempt_at);
     const old = await readCurrentServiceBoundary(pool, GOV_ORG, conversation);
     await Promise.all([inbound(), inbound()]);
@@ -132,18 +136,25 @@ describe("transição real de atendimento", () => {
     await expect(requireCurrentServiceBoundary(pool, old)).rejects.toThrow(
       "service_boundary_stale",
     );
-    const routing = (await pool.query(
-      `select id,status,payload,next_attempt_at,
+    const routing = (
+      await pool.query(
+        `select id,status,payload,next_attempt_at,
               next_attempt_at<=clock_timestamp() as ready_now
        from event_log where organization_id=$1 and entity_id=$2
          and event_type='conversation.routing_requested'`,
-      [GOV_ORG, conversation],
-    )).rows;
+        [GOV_ORG, conversation],
+      )
+    ).rows;
     expect(routing).toHaveLength(1);
     expect(routing[0]).toMatchObject({
-      id: pending[0].id, status: "pending", ready_now: true,
-      payload: { organization_id: GOV_ORG, conversation_id: conversation,
-        channel_session_id: GOV_SESSION },
+      id: pending[0].id,
+      status: "pending",
+      ready_now: true,
+      payload: {
+        organization_id: GOV_ORG,
+        conversation_id: conversation,
+        channel_session_id: GOV_SESSION,
+      },
     });
     expect(routing[0].next_attempt_at.getTime()).toBeLessThan(pending[0].next_attempt_at.getTime());
   });
@@ -348,36 +359,112 @@ describe("transição real de atendimento", () => {
     ).toBeNull();
     await expect(insert(randomUUID())).rejects.toMatchObject({ code: "23503" });
   });
-  it("colisão de conversas aborta mescla inteira e preserva ambos históricos", async () => {
+  // ─── COLISÃO DE CONVERSAS: a fusão SEGUE, e o que não coube é ANUNCIADO ──
+  //
+  // Este caso nasceu ao contrário, e o conserto é o motivo de ele existir. A
+  // primeira versão exigia que a colisão ABORTASSE a fusão inteira, e a guarda
+  // que a atendia (`raise exception 'mescla_conversas_colidentes'`) quebrava o
+  // caminho DOMINANTE do recurso: duas duplicatas de WhatsApp chegam, por
+  // construção, pela MESMA sessão de canal — então toda fusão ordinária
+  // colidia, e "juntar duplicados" parava de funcionar para o único canal que o
+  // produto tem.
+  //
+  // O contrato que vale é o da migration 0215, já na main e travado pela spec
+  // `juntar-contatos-duplicados` (check `e2e`, obrigatório): a fusão é PARCIAL e
+  // ANUNCIADA. As mensagens passam inteiras — `messages.contact_id` não tem
+  // índice único por contato —, a conversa que bateria em
+  // `uniq_conversations_1to1_per_contact_session` fica na lápide, e a função
+  // devolve a contagem em `nao_repontado`, que a rota entrega e a tela mostra.
+  //
+  // O que a guarda TATEAVA continua sendo asserção aqui, e é a parte que não
+  // pode se perder junto com ela: a fronteira do atendimento não pode ficar
+  // partida ao meio. O checkpoint do perdedor é repontado para o vencedor, mas
+  // segue amarrado à conversa que ficou na lápide — e `latestCheckpoint`, sob a
+  // fronteira do vencedor, NÃO pode devolvê-lo. A asserção passa pela função de
+  // produção, e não por um `select` equivalente, porque o que se guarda é o
+  // CAMINHO DE LEITURA: um `select` escrito à mão continuaria verde se o filtro
+  // de fronteira sumisse do código.
+  it("colisão de conversas não aborta a fusão: mensagem passa inteira, a conversa fica na lápide e é anunciada", async () => {
     const a = randomUUID(),
       b = randomUUID();
+    const convA = randomUUID(),
+      convB = randomUUID();
     await pool.query(
       "insert into contacts(id,organization_id,display_name) values($1,$3,'A'),($2,$3,'B')",
       [a, b, GOV_ORG],
     );
+    // As duas pontas na MESMA sessão de canal — a forma da duplicata real.
     await pool.query(
-      "insert into conversations(organization_id,contact_id,channel_session_id,status) values($1,$2,$4,'closed'),($1,$3,$4,'open')",
-      [GOV_ORG, a, b, GOV_SESSION],
+      "insert into conversations(id,organization_id,contact_id,channel_session_id,status) values($1,$2,$3,$4,'open')",
+      [convA, GOV_ORG, a, GOV_SESSION],
     );
-    await expect(
-      pool.query("select fn_mesclar_contatos($1,$2,$3)", [GOV_ORG, a, [b]]),
-    ).rejects.toMatchObject({ code: "23505" });
+    await pool.query(
+      "insert into conversations(id,organization_id,contact_id,channel_session_id,status) values($1,$2,$3,$4,'closed')",
+      [convB, GOV_ORG, b, GOV_SESSION],
+    );
+    for (const _ of [1, 2]) {
+      await pool.query(
+        `insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,status,sent_via,body,sent_at)
+         values($1,$2,$3,$4,$5,'text','inbound','received','ai','Herança',clock_timestamp())`,
+        [randomUUID(), GOV_ORG, convB, GOV_SESSION, b],
+      );
+    }
+    const revB = (
+      await pool.query("select service_revision from conversations where id=$1", [convB])
+    ).rows[0].service_revision;
+    await pool.query(
+      `insert into lead_checkpoints(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,commitments,objections,next_action,rolling_summary)
+       values($1,$2,$3,$4,null,null,'[]','[]','PASSO_DO_PERDEDOR','RESUMO_DO_PERDEDOR')`,
+      [GOV_ORG, b, convB, revB],
+    );
+
+    const resultado = (
+      await pool.query("select fn_mesclar_contatos($1,$2,$3) as r", [GOV_ORG, a, [b]])
+    ).rows[0].r as {
+      repontado: Record<string, number>;
+      nao_repontado: Record<string, number>;
+    };
+
+    expect(resultado.repontado["messages.contact_id"], "as mensagens passam inteiras").toBe(2);
     expect(
-      (
-        await pool.query(
-          "select count(*)::int n from contacts where id=any($1) and is_merged_into is null",
-          [[a, b]],
-        )
-      ).rows[0].n,
-    ).toBe(2);
+      resultado.nao_repontado["conversations.contact_id"],
+      "a conversa que colide fica para trás — e a função DIZ quantas",
+    ).toBe(1);
     expect(
-      (
-        await pool.query("select count(*)::int n from conversations where contact_id=any($1)", [
-          [a, b],
-        ])
-      ).rows[0].n,
-    ).toBe(2);
+      (await pool.query("select count(*)::int n from messages where contact_id=$1", [b])).rows[0].n,
+      "a lápide não segura mensagem nenhuma",
+    ).toBe(0);
+    expect(
+      (await pool.query("select contact_id from conversations where id=$1", [convB])).rows[0]
+        .contact_id,
+      "a conversa colidente permanece na lápide",
+    ).toBe(b);
+    expect(
+      (await pool.query("select is_merged_into from contacts where id=$1", [b])).rows[0]
+        .is_merged_into,
+      "o perdedor virou lápide apontando para quem ficou",
+    ).toBe(a);
+
+    // A fronteira do vencedor não herda o checkpoint que ficou na outra conversa.
+    const fronteira = await readCurrentServiceBoundary(pool, GOV_ORG, convA);
+    if (!fronteira) throw new Error("fronteira do vencedor ausente");
+    await withServiceJob(
+      pool,
+      {
+        kind: "inbound_turn",
+        organization_id: GOV_ORG,
+        contact_id: a,
+        payload: { service_boundary: fronteira },
+      } as unknown as JobRow,
+      async () => {
+        expect(
+          await latestCheckpoint(pool, GOV_ORG, a),
+          "o checkpoint amarrado à conversa da lápide não entra na fronteira do vencedor",
+        ).toBeNull();
+      },
+    );
   });
+
   it("checkpoint vigente sem demanda é recuperado; fechar/reabrir o exclui", async () => {
     await close();
     await pool.query("select fn_service_begin($1,$2,$3)", [GOV_ORG, contact, GOV_SESSION]);
