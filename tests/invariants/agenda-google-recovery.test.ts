@@ -39,8 +39,20 @@ async function fixture(guest: string | null = null) {
     "insert into calendar_connection_calendars(id,organization_id,connection_id,external_calendar_id,name,is_destination,counts_for_conflicts,access_role,time_zone) values($1,$2,$3,'destination','Local',true,true,'owner','America/Sao_Paulo')",
     [cal, GOV_ORG, conn],
   );
+  // ⚠️ `google_next_attempt_at` EXPLÍCITO, e não o default `now()`.
+  //
+  // `googlePushCandidates` filtra `google_next_attempt_at <= now`, onde `now` é
+  // `new Date()` — o relógio do PROCESSO — e a coluna default é `now()` — o
+  // relógio do BANCO, que aqui roda dentro de um container. Com o default, o
+  // veredito de I3 passa a depender de os dois relógios concordarem na casa dos
+  // MILISSEGUNDOS: medido nesta máquina, a folga é de 6 a 204 ms, e uma
+  // sabotagem de 5 ms (`now()+interval '5 milliseconds'`) reproduz na hora o
+  // vermelho do CI — `:377:61 expected false to be true`, 1 em 2 rodadas.
+  // Um minuto no passado, no relógio do próprio banco, tira o relógio de fora do
+  // veredito sem afrouxar nada: o que I3 mede é que os 50 vínculos redigidos não
+  // ocupam o lote, não a resolução de dois relógios.
   await pool.query(
-    "insert into calendar_appointments(id,organization_id,contact_id,owner_user_id,title,starts_at,ends_at,status,time_zone,guest_email) values($1,$2,$3,$4,'Consulta',now()+$5*interval '1 day',now()+$5*interval '1 day'+interval '1 hour','confirmed','America/Sao_Paulo',$6)",
+    "insert into calendar_appointments(id,organization_id,contact_id,owner_user_id,title,starts_at,ends_at,status,time_zone,guest_email,google_next_attempt_at) values($1,$2,$3,$4,'Consulta',now()+$5*interval '1 day',now()+$5*interval '1 day'+interval '1 hour','confirmed','America/Sao_Paulo',$6,now()-interval '1 minute')",
     [id, GOV_ORG, contact, GOV_AGENT_A, 3 * ++sequence, guest],
   );
   return { id, conn, cal, contact };
