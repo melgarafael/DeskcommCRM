@@ -1,4 +1,4 @@
-import {recordLegacyNotice} from '@/lib/ai/agents/legacy-notice';
+import { recordLegacyNotice } from "@/lib/ai/agents/legacy-notice";
 import { serviceFromMessage } from "@/lib/atendimento/origem-mensagem";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
@@ -20,11 +20,7 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 
 import { generateText, type LanguageModel } from "ai";
 
-import {
-  DEFAULT_BOT_MODEL,
-  gatewayConfig,
-  gatewayHeaders,
-} from "@/lib/ai/gateway";
+import { DEFAULT_BOT_MODEL, gatewayConfig, gatewayHeaders } from "@/lib/ai/gateway";
 import { embedText } from "@/lib/ai/embed";
 import { MODELO_DE_EMBEDDING } from "@/lib/ai/embeddings/chave";
 import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget/check";
@@ -103,10 +99,22 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
   }
 
   const ctx = decision.context;
-  const boundary = await serviceFromMessage(createAdminClient(), ctx.organization_id, ctx.message_id);
-  if (!boundary || boundary.contact_id !== ctx.contact_id || boundary.conversation_id !== ctx.conversation_id) return { status: "skipped", reason: "service_boundary_stale" };
-  try { await assertServiceBoundarySupabase(createAdminClient(), boundary); }
-  catch { return { status: "skipped", reason: "service_boundary_stale" }; }
+  const boundary = await serviceFromMessage(
+    createAdminClient(),
+    ctx.organization_id,
+    ctx.message_id,
+  );
+  if (
+    !boundary ||
+    boundary.contact_id !== ctx.contact_id ||
+    boundary.conversation_id !== ctx.conversation_id
+  )
+    return { status: "skipped", reason: "service_boundary_stale" };
+  try {
+    await assertServiceBoundarySupabase(createAdminClient(), boundary);
+  } catch {
+    return { status: "skipped", reason: "service_boundary_stale" };
+  }
   ctx.serviceBoundary = boundary;
 
   // ── Synchronous triage (G1, G4) — bypass LLM entirely if a hard handoff
@@ -151,7 +159,11 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
   }
 
   if (!elegivelParaWorkerLegado(ctx.agent)) {
-    return {status:'skipped',reason:'agent_inactive_or_missing',detail:'legacy_recovery_required'};
+    return {
+      status: "skipped",
+      reason: "agent_inactive_or_missing",
+      detail: "legacy_recovery_required",
+    };
   }
 
   // ── Teto de gasto (IA-02) — mesma decisão e mesma régua que o engine aplica.
@@ -169,7 +181,7 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
   const veto = await vetoPorTetoDeGasto({
     orgId: ctx.organization_id,
     conversationId: ctx.conversation_id,
-      serviceBoundary: ctx.serviceBoundary,
+    serviceBoundary: ctx.serviceBoundary,
     leadId,
   });
   if (veto !== null) {
@@ -248,7 +260,7 @@ export async function processMessageReceived(row: EventRow): Promise<ProcessResu
       });
       await triggerHandoff({
         conversationId: ctx.conversation_id,
-      serviceBoundary: ctx.serviceBoundary,
+        serviceBoundary: ctx.serviceBoundary,
         organizationId: ctx.organization_id,
         reason: "low_confidence",
         leadId,
@@ -730,8 +742,8 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
     .order("created_at", { ascending: true });
 
   for (const candidate of candidatos ?? []) {
-    if(precisaRecuperarLegado(candidate))
-      await recordLegacyNotice(admin,input.organizationId,candidate.id,'sem_versao');
+    if (precisaRecuperarLegado(candidate))
+      await recordLegacyNotice(admin, input.organizationId, candidate.id, "sem_versao");
   }
   const agent = (candidatos ?? []).find(precisaRecuperarLegado) ?? null;
 
@@ -787,16 +799,16 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
     .eq("conversation_id", input.conversationId)
     .order("created_at", { ascending: false })
     .limit(RECENT_MESSAGES_LIMIT);
-  const recent_messages: RecentMessage[] = ((recents ?? []) as RecentMessage[])
-    .slice()
-    .reverse();
+  const recent_messages: RecentMessage[] = ((recents ?? []) as RecentMessage[]).slice().reverse();
 
   // RAG best-effort: lista vazia quando não há material ou não há chave.
-  const retrieved_chunks = elegivelParaWorkerLegado(agent) ? await retrieveContext({
-    organizationId: input.organizationId,
-    kbVersionId: agent.active_kb_version_id ?? null,
-    query: inbound_body,
-  }) : [];
+  const retrieved_chunks = elegivelParaWorkerLegado(agent)
+    ? await retrieveContext({
+        organizationId: input.organizationId,
+        kbVersionId: agent.active_kb_version_id ?? null,
+        query: inbound_body,
+      })
+    : [];
 
   return {
     kind: "proceed",
@@ -810,6 +822,9 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
       recent_messages,
       agent: {
         kind: agent.kind,
+        // A consulta acima já traz a coluna; faltava carregá-la até aqui, e a
+        // decisão que a lê ("este agente atende?") ficava sem o dado.
+        paused_at: agent.paused_at,
         id: agent.id,
         model: agent.model || DEFAULT_BOT_MODEL,
         system_prompt: agent.system_prompt,
@@ -836,10 +851,7 @@ function skip(reason: SkipDecision["reason"], detail?: string): SkipDecision {
  * the handoff orchestrator for stage gating (G4) + timeline activity. Returns
  * null on missing/error — handoff itself never depends on a lead.
  */
-async function resolveLeadId(
-  organizationId: string,
-  contactId: string,
-): Promise<string | null> {
+async function resolveLeadId(organizationId: string, contactId: string): Promise<string | null> {
   try {
     const admin = createAdminClient();
     const { data } = await admin
@@ -907,21 +919,27 @@ async function retrieveContext(input: RetrieveInput): Promise<RagHit[]> {
 
   const { data, error } =
     fontes.length > 0
-      ? await admin.rpc("fn_buscar_trechos_das_fontes" as never, {
-          p_organization_id: input.organizationId,
-          p_source_ids: fontes as unknown as string,
-          p_embedding: embedding as unknown as string,
-          p_k: RAG_TOP_K,
-          p_threshold: RAG_THRESHOLD,
-          p_embedding_model: MODELO_DE_EMBEDDING,
-        } as never)
-      : await admin.rpc("retrieve_top_k_chunks" as never, {
-          p_organization_id: input.organizationId,
-          p_kb_version_id: input.kbVersionId,
-          p_embedding: embedding as unknown as string,
-          p_k: RAG_TOP_K,
-          p_threshold: RAG_THRESHOLD,
-        } as never);
+      ? await admin.rpc(
+          "fn_buscar_trechos_das_fontes" as never,
+          {
+            p_organization_id: input.organizationId,
+            p_source_ids: fontes as unknown as string,
+            p_embedding: embedding as unknown as string,
+            p_k: RAG_TOP_K,
+            p_threshold: RAG_THRESHOLD,
+            p_embedding_model: MODELO_DE_EMBEDDING,
+          } as never,
+        )
+      : await admin.rpc(
+          "retrieve_top_k_chunks" as never,
+          {
+            p_organization_id: input.organizationId,
+            p_kb_version_id: input.kbVersionId,
+            p_embedding: embedding as unknown as string,
+            p_k: RAG_TOP_K,
+            p_threshold: RAG_THRESHOLD,
+          } as never,
+        );
 
   if (error) {
     logger.warn("[ai-response-worker] busca de trechos falhou", {
@@ -1078,18 +1096,21 @@ async function persistAndDispatch(
   // EXCEPTION (S-06.03 wave 3): when handoff was triggered (G3 low confidence),
   // we persist the bot's draft for the human to reuse but MUST NOT dispatch.
   if (!options.skipDispatch) {
-    const { error: emitErr } = await admin.rpc("emit_event" as never, {
-      p_event_type: "message.send_requested",
-      p_entity_kind: "message",
-      p_entity_id: inserted.id,
-      p_payload: {
-        message_id: inserted.id,
-        conversation_id: ctx.conversation_id,
-        ai_generated: true,
-      },
-      p_metadata: { source: "ai-response-worker" },
-      p_organization_id: ctx.organization_id,
-    } as never);
+    const { error: emitErr } = await admin.rpc(
+      "emit_event" as never,
+      {
+        p_event_type: "message.send_requested",
+        p_entity_kind: "message",
+        p_entity_id: inserted.id,
+        p_payload: {
+          message_id: inserted.id,
+          conversation_id: ctx.conversation_id,
+          ai_generated: true,
+        },
+        p_metadata: { source: "ai-response-worker" },
+        p_organization_id: ctx.organization_id,
+      } as never,
+    );
     if (emitErr) {
       logger.warn("[ai-response-worker] message.send_requested emit failed", {
         error: emitErr.message,
@@ -1100,20 +1121,23 @@ async function persistAndDispatch(
 
   // Domain event for downstream consumers (UI realtime, audit).
   void admin
-    .rpc("emit_event" as never, {
-      p_event_type: "ai.responded",
-      p_entity_kind: "message",
-      p_entity_id: inserted.id,
-      p_payload: {
-        message_id: inserted.id,
-        conversation_id: ctx.conversation_id,
-        agent_id: ctx.agent.id,
-        confidence: response.citations[0] ? response.citations[0].similarity : null,
-        citations: response.citations,
-      },
-      p_metadata: { source: "ai-response-worker" },
-      p_organization_id: ctx.organization_id,
-    } as never)
+    .rpc(
+      "emit_event" as never,
+      {
+        p_event_type: "ai.responded",
+        p_entity_kind: "message",
+        p_entity_id: inserted.id,
+        p_payload: {
+          message_id: inserted.id,
+          conversation_id: ctx.conversation_id,
+          agent_id: ctx.agent.id,
+          confidence: response.citations[0] ? response.citations[0].similarity : null,
+          citations: response.citations,
+        },
+        p_metadata: { source: "ai-response-worker" },
+        p_organization_id: ctx.organization_id,
+      } as never,
+    )
     .then(({ error: e }: { error: { message: string } | null }) => {
       if (e) {
         logger.warn("[ai-response-worker] ai.responded emit failed", {

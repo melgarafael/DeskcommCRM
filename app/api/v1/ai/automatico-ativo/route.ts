@@ -47,7 +47,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // SQL — que é como ela se desencontrou da primeira vez.
   const { data, error } = await supabase
     .from("ai_agents")
-    .select("kind, is_active, published_version_id, archived_at")
+    .select("kind, is_active, paused_at, published_version_id, archived_at")
     .eq("organization_id", authz.org.orgId)
     .is("archived_at", null);
 

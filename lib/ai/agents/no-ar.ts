@@ -4,7 +4,14 @@
 export interface FatosDoAgente {
   kind?: string | null;
   is_active?: boolean | null;
-  paused_at?: string | null;
+  // OBRIGATÓRIO de propósito. Enquanto era opcional, uma consulta que não
+  // trouxesse a coluna entregava `undefined`, `!= null` dava falso, e um agente
+  // PAUSADO voltava a contar como no ar — a tela dizia "Automático atendendo"
+  // logo depois de o dono pausar. Foi o que aconteceu em dois lugares
+  // (`/api/v1/ai/automatico-ativo` e `lib/ai/agents/org-tem-automatico.ts`), e
+  // o TypeScript não podia acusar porque o campo era opcional. Obrigatório, a
+  // consulta que esquecer a coluna não compila: a guarda vira mecanismo.
+  paused_at: string | null;
   operation_mode?: string;
   published_version_id?: string | null;
   archived_at?: string | null;
@@ -29,6 +36,11 @@ export function elegivelParaWorkerLegado(_a: FatosDoAgente): boolean {
 }
 /** This is eligibility for recovery/zero-model triage, never permission to send. */
 export function precisaRecuperarLegado(a: FatosDoAgente): boolean {
-  return a.kind === "rag_bot" && a.is_active === true && !a.published_version_id &&
-    !a.archived_at && !a.paused_at;
+  return (
+    a.kind === "rag_bot" &&
+    a.is_active === true &&
+    !a.published_version_id &&
+    !a.archived_at &&
+    !a.paused_at
+  );
 }
