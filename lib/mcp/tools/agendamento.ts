@@ -27,6 +27,7 @@ import {
   MAXIMO_DE_DIAS,
 } from "@/lib/agenda/consulta";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { diaLocalISO } from "@/lib/agenda/fuso";
 import { rotuloLocal } from "@/lib/tempo/agora";
 import {
   alterarAgendamentoHandler,
@@ -157,8 +158,17 @@ const horariosLivresShape = {
     .max(MAXIMO_DE_DIAS)
     .optional()
     .describe(`quantos dias olhar a partir de agora (padrão ${DIAS_PADRAO}). Use ESTE campo se você não sabe a data de hoje.`),
-  de: z.string().datetime({ offset: true }).optional(),
-  ate: z.string().datetime({ offset: true }).optional(),
+  /**
+   * A data civil é deliberadamente diferente de um ISO com offset. O modelo sabe
+   * que o cliente pediu "dia 13", mas não sabe onde começa esse dia no fuso da
+   * agenda. Receber `de`/`ate` em UTC fez 13/09 terminar às 19:59 em Manaus e
+   * descartou um horário das 21h que a própria ferramenta tinha oferecido.
+   */
+  dia: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "dia deve estar em YYYY-MM-DD")
+    .optional()
+    .describe("dia civil pedido pelo cliente, em YYYY-MM-DD. Use para uma data específica; o servidor aplica o fuso da agenda."),
   owner_user_id: z.string().uuid().optional(),
   limite: z
     .number()
@@ -182,7 +192,8 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
     "A lista vem cortada no `limite` e espalhada ao longo do período: `total_de_horarios` diz quantos " +
     "existem e `ha_mais` avisa que sobraram — lista cortada NÃO é agenda cheia. " +
     "QUANDO: informe `dias_a_frente` (a partir de agora — ex.: 7 para a próxima semana). " +
-    "SE VOCÊ NÃO SABE QUE DIA É HOJE, USE `dias_a_frente` — não tente montar `de`/`ate`. " +
+    "Para uma data que o cliente nomeou, use `dia` em YYYY-MM-DD; o servidor aplica o fuso da agenda. " +
+    "NUNCA monte um intervalo UTC por conta própria. " +
     "Lista vazia NÃO é erro e NÃO significa que a agenda está cheia: leia `publicou_horarios`. " +
     "Se ele for false, o atendente ainda não publicou os horários dele — não invente horários e " +
     "não diga que está lotado; avise que alguém da equipe confirma. " +
@@ -194,25 +205,25 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
     const agora = new Date();
-    const de = input.de ? new Date(input.de) : agora;
-    const ate = input.ate
-      ? new Date(input.ate)
-      : new Date(de.getTime() + (input.dias_a_frente ?? DIAS_PADRAO) * 86_400_000);
+    if (input.dia !== undefined && input.dias_a_frente !== undefined) {
+      return {
+        horarios: [],
+        motivo: "periodo_ambiguo",
+        mensagem: "informe um dia específico ou quantos dias olhar, não os dois.",
+      };
+    }
 
-    if (ate.getTime() <= de.getTime()) {
-      return {
-        horarios: [],
-        motivo: "periodo_invalido",
-        mensagem: "o fim do período precisa ser depois do começo. Use `dias_a_frente` se não souber a data de hoje.",
-      };
-    }
-    if (ate.getTime() - de.getTime() > MAXIMO_DE_DIAS * 86_400_000) {
-      return {
-        horarios: [],
-        motivo: "periodo_longo_demais",
-        mensagem: `o período não pode passar de ${MAXIMO_DE_DIAS} dias. Peça um intervalo menor.`,
-      };
-    }
+    // A faixa larga contém o dia civil em QUALQUER fuso. Depois de a coleta
+    // revelar o fuso da regra, filtramos pelo mesmo dia local. Assim a IA não
+    // converte "13/09" em meia-noite UTC e não perde a noite de Manaus.
+    const inicioDoDiaUtc =
+      input.dia === undefined ? null : new Date(`${input.dia}T00:00:00.000Z`);
+    const de =
+      inicioDoDiaUtc === null ? agora : new Date(inicioDoDiaUtc.getTime() - 14 * 60 * 60 * 1000);
+    const ate =
+      inicioDoDiaUtc === null
+        ? new Date(de.getTime() + (input.dias_a_frente ?? DIAS_PADRAO) * 86_400_000)
+        : new Date(inicioDoDiaUtc.getTime() + 38 * 60 * 60 * 1000);
 
     const consulta = await horariosLivresDaOrg(ctx.supabase, ctx.organizationId, {
       eventTypeSlug: input.event_type_slug,
@@ -238,8 +249,12 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
     // nele que os horários foram calculados, e é o que esta resposta já publica.
     // Rotular com outro faria `quando` discordar de `fuso_da_regra` na mesma
     // resposta.
+    const slotsDoPeriodo =
+      input.dia === undefined
+        ? consulta.slots
+        : consulta.slots.filter((s) => diaLocalISO(s.inicio, consulta.fusoDaRegra) === input.dia);
     const escolhidos = espalhaPorDia(
-      consulta.slots,
+      slotsDoPeriodo,
       consulta.fusoDaRegra,
       input.limite ?? HORARIOS_PADRAO,
     );
@@ -256,8 +271,8 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
       // Sem estes dois, uma lista cortada é indistinguível de uma agenda que
       // acabou — o mesmo modo de falha que `publicou_horarios` existe para
       // evitar.
-      total_de_horarios: consulta.slots.length,
-      ha_mais: consulta.slots.length > escolhidos.length,
+      total_de_horarios: slotsDoPeriodo.length,
+      ha_mais: slotsDoPeriodo.length > escolhidos.length,
       fuso_da_regra: consulta.fusoDaRegra,
       /** false = o atendente NÃO publicou jornada. Diferente de "sem vaga" (DECISÃO 1.1). */
       publicou_horarios: consulta.publicouHorarios,

@@ -109,24 +109,39 @@ describe("crm_find_free_slots", () => {
     expect(vi.mocked(horariosLivresDaOrg).mock.calls[0]![2].eventTypeSlug).toBe("consulta-inicial");
   });
 
-  it("período invertido é RESPOSTA, não exceção", async () => {
-    // Exceção mata o turno e o assistente emudece na frente do cliente
-    // (`pesquisa/repo-mcp.md` §7.5). Limite de negócio volta como texto de ensino.
+  it("um dia civil inclui a noite em Manaus, sem pedir que o modelo calcule UTC", async () => {
+    respondeCom({
+      ...SUCESSO,
+      fusoDaRegra: "America/Manaus",
+      slots: [
+        // 21h do dia 13 em Manaus: este foi o horário que o agente perdeu ao
+        // consultar 00:00–23:59 UTC, que termina às 19:59 no fuso da regra.
+        { inicio: new Date("2026-09-14T01:00:00.000Z"), fim: new Date("2026-09-14T01:30:00.000Z") },
+        // Já é madrugada do dia 14 local; a faixa larga pode vê-lo, mas a
+        // resposta de um pedido pelo dia 13 não pode oferecê-lo.
+        { inicio: new Date("2026-09-14T05:00:00.000Z"), fim: new Date("2026-09-14T05:30:00.000Z") },
+      ],
+    });
     const r = (await crmFindFreeSlots.handler(
-      { event_type_slug: "c", de: "2026-09-10T00:00:00Z", ate: "2026-09-01T00:00:00Z" },
+      { event_type_slug: "c", dia: "2026-09-13" },
       ctx,
-    )) as { motivo: string; mensagem: string };
-    expect(r.motivo).toBe("periodo_invalido");
-    expect(r.mensagem).toMatch(/dias_a_frente/);
+    )) as { horarios: { inicio: string }[]; total_de_horarios: number };
+    expect(r.horarios.map((h) => h.inicio)).toEqual(["2026-09-14T01:00:00.000Z"]);
+    expect(r.total_de_horarios).toBe(1);
+
+    const params = vi.mocked(horariosLivresDaOrg).mock.calls[0]![2];
+    expect(params.de.toISOString()).toBe("2026-09-12T10:00:00.000Z");
+    expect(params.ate.toISOString()).toBe("2026-09-14T14:00:00.000Z");
   });
 
-  it("período longo demais é recusado com o número, não com um 'não'", async () => {
+  it("não aceita dia específico e período relativo juntos", async () => {
     const r = (await crmFindFreeSlots.handler(
-      { event_type_slug: "c", de: "2026-09-01T00:00:00Z", ate: "2027-09-01T00:00:00Z" },
+      { event_type_slug: "c", dia: "2026-09-13", dias_a_frente: 7 },
       ctx,
     )) as { motivo: string; mensagem: string };
-    expect(r.motivo).toBe("periodo_longo_demais");
-    expect(r.mensagem).toMatch(/62/);
+    expect(r.motivo).toBe("periodo_ambiguo");
+    expect(r.mensagem).toMatch(/não os dois/);
+    expect(horariosLivresDaOrg).not.toHaveBeenCalled();
   });
 
   it("⚠️ a recusa que sai é a do CLIENTE, nunca a do OPERADOR", async () => {
