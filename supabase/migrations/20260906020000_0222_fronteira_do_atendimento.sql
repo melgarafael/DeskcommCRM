@@ -696,7 +696,7 @@ update public.demanda_conversas dc
 --     entra. Se faltar privilégio para pausar, o backfill segue mesmo assim
 --     (carimbar tarde é melhor que não carimbar) e o notice registra.
 do $$
-declare v_pausado boolean := false;
+declare v_pausado boolean := false; v_linhas bigint := 0;
 begin
   begin
     if exists (select 1 from pg_trigger
@@ -708,7 +708,9 @@ begin
     end if;
   exception when others then
     v_pausado := false;
-    raise notice '0222 backfill: nao foi possivel pausar trg_appointment_inbound (%)', sqlerrm;
+    -- `warning` e não `notice`: o dump do baseline abre com
+    -- `set client_min_messages = warning`, então notice NUNCA chega ao operador.
+    raise warning '0222 backfill: nao foi possivel pausar trg_appointment_inbound (%)', sqlerrm;
   end;
 
   update public.messages m
@@ -723,8 +725,15 @@ begin
      and m.direction = 'inbound'
      and m.service_revision is null;
 
+  get diagnostics v_linhas = row_count;
+
   if v_pausado then
     execute 'alter table public.messages enable trigger trg_appointment_inbound';
+  end if;
+  -- O operador precisa ver o que a atualização mexeu, e este notice é também
+  -- o controle positivo de que o gatilho foi de fato pausado durante o carimbo.
+  if v_linhas > 0 then
+    raise warning '0222 backfill: % mensagem(ns) carimbada(s) (gatilho de agenda pausado: %)', v_linhas, v_pausado;
   end if;
 end $$;
 
@@ -772,7 +781,7 @@ begin
          and organization_id = r.organization_id
          and service_boundary is null;
     exception when others then
-      raise notice '0222 backfill: acompanhamento % segue sem fronteira (%)', r.id, sqlerrm;
+      raise warning '0222 backfill: acompanhamento % segue sem fronteira (%)', r.id, sqlerrm;
     end;
   end loop;
 end $$;
