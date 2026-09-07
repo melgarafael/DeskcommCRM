@@ -1169,6 +1169,41 @@ rt_ok "Traefik em 2 redes → a primeira"          coolify    coolify    "coolif
 # mata o `up -d` com "network host declared as external, but could not be found".
 rt_ok "modo host NÃO grava a pseudo-rede 'host'" crm_proxy  host       "host "           crm_proxy
 
+echo "proxy reverso: como o Traefik da hospedagem chama as portas 80 e 443"
+# `web`/`websecure` é convenção da documentação, não regra. O EasyPanel usa
+# `http`/`https`, e o Traefik ignora em SILÊNCIO um label que aponte para um
+# entrypoint inexistente: nenhum erro no log, a rota nunca nasce, o domínio cai
+# no 404 do painel. Medido numa VPS com EasyPanel — 6 contêineres no ar,
+# /api/v1/health saudável por dentro, site mudo por fora.
+ep_ok() {  # ep_ok <descrição> <esperado: "<http> <https>"> <env e args do contêiner>
+  local desc="$1" esperado="$2" real
+  real="$(entrypoints_do_traefik "${3:-}")"
+  if [ "$real" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
+  else printf '  ✗ %s  (deu [%s], esperava [%s])\n' "$desc" "$real" "$esperado"; fail=1; fi
+}
+# Env copiado do contêiner easypanel-traefik de uma VPS real.
+ep_ok "EasyPanel (env, http/https)" "http https" 'TRAEFIK_ENTRYPOINTS_HTTP_ADDRESS=:80
+TRAEFIK_ENTRYPOINTS_HTTPS_ADDRESS=:443
+TRAEFIK_PROVIDERS_DOCKER=true'
+# A grafia da documentação, que é como sobe quem segue o traefik.io.
+ep_ok "flags clássicas (web/websecure)" "web websecure" '--entrypoints.web.address=:80
+--entrypoints.websecure.address=:443'
+# camelCase é aceito pelo Traefik e aparece em tutorial antigo.
+ep_ok "flag em camelCase" "web websecure" '--entryPoints.web.address=:80
+--entryPoints.websecure.address=:443'
+# Endereço com IP: a porta continua sendo o que decide.
+ep_ok "address com IP explícito" "http https" '--entrypoints.http.address=0.0.0.0:80
+--entrypoints.https.address=0.0.0.0:443'
+# Nada reconhecido → vazio, e quem chama fica com o default. Sem isto, um Traefik
+# configurado por arquivo (que o inspect não vê) apagaria os nomes que funcionam.
+ep_ok "sem entrypoint declarado → vazio" " " 'TRAEFIK_PROVIDERS_DOCKER=true'
+# Só HTTPS declarado: o :443 é o que decide a rota do site, e o :80 fica no default.
+ep_ok "só o :443 declarado" " https" '--entrypoints.https.address=:443'
+# Entrypoint de outra coisa (métricas, dashboard) não vira o do site.
+ep_ok "porta alheia não vira entrypoint do site" "http https" '--entrypoints.metrics.address=:8082
+--entrypoints.http.address=:80
+--entrypoints.https.address=:443'
+
 echo "proxy reverso: a rede externa existe e serve?"
 vr_ok() {  # vr_ok <descrição> <esperado> <driver encontrado> <rede> <bridge do projeto> [attachable]
   local desc="$1" esperado="$2" real
@@ -1868,7 +1903,14 @@ case "$1" in
   # Ninguém publica porta; o Traefik só aparece filtrando por rede host.
   ps)      for a in "$@"; do [ "$a" = "network=host" ] && em_host=1; done
            [ "${em_host:-0}" = 1 ] && printf 'traefik-hostinger|hostinger|traefik:v3.3|\n'; exit 0 ;;
-  inspect) case "$*" in *NetworkMode*) printf 'host\n';; *Networks*) printf 'host \n';; esac; exit 0 ;;
+  # Config.Env é a leitura dos entrypoints. Este Traefik chama as portas de
+  # `http`/`https` (como o EasyPanel), e NÃO de web/websecure: é o que separa
+  # "leu a configuração do proxy" de "repetiu o default da documentação".
+  inspect) case "$*" in
+             *Config.Env*)  printf 'TRAEFIK_ENTRYPOINTS_HTTP_ADDRESS=:80\nTRAEFIK_ENTRYPOINTS_HTTPS_ADDRESS=:443\n';;
+             *NetworkMode*) printf 'host\n';;
+             *Networks*)    printf 'host \n';;
+           esac; exit 0 ;;
   # Instalação nova: a rede do projeto ainda NÃO existe.
   network) case "$2" in inspect) exit 1 ;; esac; exit 0 ;;
 esac
@@ -1923,6 +1965,17 @@ STUB
     exit 1
   fi
   printf '  ✓ confirmando "s": cria a bridge e grava a rede com o nome que o compose usa\n'
+
+  # O label com um entrypoint que não existe não dá erro: o Traefik ignora a rota
+  # e o domínio cai no 404 do painel, com a instalação toda verde. Por isso os
+  # nomes têm de vir do proxy encontrado, e não do default da documentação.
+  if ! grep -qx 'TRAEFIK_ENTRYPOINT="https"' "$PROJ/.env" \
+     || ! grep -qx 'TRAEFIK_ENTRYPOINT_HTTP="http"' "$PROJ/.env"; then
+    printf '  ✗ os entrypoints do .env não são os do Traefik encontrado (http/:80, https/:443):\n'
+    printf '     %s\n' "$(grep -E '^TRAEFIK_ENTRYPOINT' "$PROJ/.env" | tr '\n' ' ' || echo '(ausentes)')"
+    exit 1
+  fi
+  printf '  ✓ os entrypoints gravados são os que o Traefik da hospedagem declara\n'
 
   saida="$(rodar install.sh "" "" "n${RESTO_DAS_PERGUNTAS}")"
   chegou_na_deteccao || exit 1

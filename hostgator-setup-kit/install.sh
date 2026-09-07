@@ -682,6 +682,34 @@ rede_do_traefik() {  # rede_do_traefik <NetworkMode do contêiner> <redes do con
   printf '%s' "$redes" | awk '{print $1}'
 }
 
+# Como o Traefik da hospedagem CHAMA as portas 80 e 443. Os nomes `web` e
+# `websecure` são convenção da documentação, não regra: o EasyPanel batiza os
+# dele de `http` e `https`, e um label apontando para um entrypoint que não
+# existe não gera erro nenhum — o Traefik simplesmente ignora a rota, o domínio
+# cai no 404 do painel e a instalação termina verde com o site mudo. Medido numa
+# VPS com EasyPanel: os 6 contêineres no ar, /api/v1/health saudável por dentro
+# e o domínio devolvendo a página de erro do painel.
+#
+# A configuração do Traefik chega por env (TRAEFIK_ENTRYPOINTS_<NOME>_ADDRESS) ou
+# por flag (--entrypoints.<nome>.address), e a porta pode vir `:80`, `0.0.0.0:80`
+# ou com IP. Nome nenhum encontrado devolve vazio, e quem chama fica com o
+# default de sempre — quem instala hoje atrás de um Traefik com os nomes da
+# documentação não muda de comportamento.
+#
+# Isolada do Docker pelo mesmo motivo de `rede_do_traefik`: para o teste poder
+# exercitar a decisão sem uma VPS.
+entrypoints_do_traefik() {  # entrypoints_do_traefik <env e args do contêiner, um por linha> → "<nome do :80> <nome do :443>"
+  printf '%s\n' "${1:-}" | awk '
+    { l = tolower($0) }
+    l ~ /entrypoints[._][a-z0-9-]+[._]address=/ {
+      nome = l; sub(/[._]address=.*/, "", nome); sub(/.*entrypoints[._]/, "", nome)
+      porta = l; sub(/.*address=/, "", porta); sub(/\/.*/, "", porta); sub(/.*:/, "", porta)
+      if (porta == "80"  && http  == "") http  = nome
+      if (porta == "443" && https == "") https = nome
+    }
+    END { print http " " https }'
+}
+
 # Um Traefik eleito pela varredura de MODO HOST é suspeita, não prova. A eleição
 # por porta publicada tem a evidência na mão — a coluna Ports diz `:80->`. A
 # varredura por `--network host` não tem nenhuma: em modo host a coluna sai vazia
@@ -1344,6 +1372,25 @@ fi
 if [ "$REVERSE_PROXY" = "traefik" ] && [ -z "${TRAEFIK_NETWORK:-}" ]; then
   die "Não consegui descobrir a rede Docker do seu Traefik. Rode 'docker network ls',
 identifique a rede dele e ponha TRAEFIK_NETWORK=<nome> no .env antes de tentar de novo."
+fi
+# Os nomes dos entrypoints saem do MESMO contêiner que já respondeu pela rede.
+# Só entra onde o .env está vazio: quem declarou o nome à mão manda mais que a
+# leitura — é a mesma regra que TRAEFIK_NETWORK segue logo acima.
+if [ "$REVERSE_PROXY" = "traefik" ] && [ -n "$traefik_container" ] \
+   && { [ -z "${TRAEFIK_ENTRYPOINT:-}" ] || [ -z "${TRAEFIK_ENTRYPOINT_HTTP:-}" ]; }; then
+  traefik_conf="$(docker inspect \
+    -f '{{range .Config.Env}}{{println .}}{{end}}{{range .Args}}{{println .}}{{end}}' \
+    "$traefik_container" 2>/dev/null || true)"
+  entrypoints_achados="$(entrypoints_do_traefik "$traefik_conf")"
+  if [ -z "${TRAEFIK_ENTRYPOINT_HTTP:-}" ] && [ -n "${entrypoints_achados%% *}" ]; then
+    TRAEFIK_ENTRYPOINT_HTTP="${entrypoints_achados%% *}"
+  fi
+  if [ -z "${TRAEFIK_ENTRYPOINT:-}" ] && [ -n "${entrypoints_achados##* }" ]; then
+    TRAEFIK_ENTRYPOINT="${entrypoints_achados##* }"
+  fi
+  if [ -n "${TRAEFIK_ENTRYPOINT:-}" ]; then
+    c_dim "  (entrypoints do seu Traefik: ${TRAEFIK_ENTRYPOINT_HTTP:-web} para HTTP, ${TRAEFIK_ENTRYPOINT} para HTTPS)"
+  fi
 fi
 # Confere (e cria, quando a rede é a nossa) — em _common.sh, porque o update.sh
 # precisa da mesma garantia antes do `dc up -d` dele. Também aplica o default
