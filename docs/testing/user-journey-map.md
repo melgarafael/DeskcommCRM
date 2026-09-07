@@ -1857,6 +1857,8 @@ Limite operacional: a revalidação acontece imediatamente antes do efeito. Um t
 
 Task4 fix1 — `encerramento-atendimento.spec.ts` amplia a prova: formulário conserva seleção durante refetch; histórico de desfecho em ES; resposta a caso antigo registra aviso e referência preservados na Central, sem link cru e com zero envio extra (projeção autorizada de navegação pertence à Task5); silêncio usa mensagem persistida pelo PostgREST (legado/reabertura não autorizam, entrada nova vigente autoriza). Execução final passou; logs/evidência no relatório Task4. A corrida real close/refetch → conversa null → perda do formulário foi corrigida preservando draft e CAS capturada no painel. Troca real de contato/conversa descarta o draft; conflito exige Cancelar/reabrir. Browser aguarda atribuição efetiva (Atendente/Liberar, sem Sem responsável) antes de responder e também prova reabertura/fechamento manual.
 
+Capturas selecionadas: `evidence/comunidade-360/task4-conversa-fechada-demanda-aberta.png`, `evidence/comunidade-360/task4-reaberto-respondido.png`, `evidence/comunidade-360/task4-caso-obsoleto-aviso.png` e `evidence/comunidade-360/task4-historico-es.png`.
+
 ### Comunidade 360 — Central de avisos com contexto (Task 5)
 
 [P1] `tests/e2e/central-avisos-destino.spec.ts`: aviso de conversa → contexto real → F5 → Back ainda aberto → resolver → Resolvidos → reabrir; contato e referência removida; links sob RLS em `own`/`own_and_unassigned`, outro responsável e outro tenant; manager/admin/viewer e bearer sem sessão; destino autorizado mesmo oculto no menu; desktop/mobile com medidas e screenshot carregado. Executado em 2026-09-06: quatro cenários passaram no build de produção do QA isolado, incluindo clique que abre o dossiê do negócio no funil certo e mobile em espanhol. Provas selecionadas: `evidence/comunidade-360/task5-desktop.png` e `evidence/comunidade-360/task5-mobile.png`, com medidas JSON ao lado. Comandos, logs e limites em `.superpowers/sdd/comunidade-360/task-5-report.md`.
@@ -1935,6 +1937,7 @@ Browser r3 passou **2 jornadas/30,0s**, appprodução3013, sessão e PostgREST r
 | Falha desktop | `evidence/comunidade-360/task8-failure-desktop.png` |
 | Falha mobile | `evidence/comunidade-360/task8-failure-mobile.png` |
 | Retry concluído mobile | `evidence/comunidade-360/task8-retry-ready-mobile.png` |
+| Prévia do PDF LGPD | `evidence/comunidade-360/task8-lgpd-export-preview.png` |
 
 `evidence/comunidade-360/task8-medidas.json` contém origem, hashes e medidas reais. Seção Meet com335px no desktop1440 e243,5px no mobile390; sem overflow horizontal, controles na viewport. A aquisição do job no browser é SQL manual restrita à fixture: prova consumer/ledger/HTTP, não o scheduler completo. Incerteza, opt-out, revogação, claim antigo, cancelamento e redação durante HTTP permanecem nas provas DB/receiver; não são atribuídos às duas jornadas UI.
 
