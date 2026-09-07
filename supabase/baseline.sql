@@ -19654,6 +19654,137 @@ end; $$;
 revoke execute on function public.fn_service_observe(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_service_observe(uuid,uuid) to service_role;
 
+-- ---- Backfill de continuidade da fronteira (migration 0222) ----
+-- As colunas acima nascem NULAS, e o consumidor lê AUSÊNCIA DE CARIMBO como
+-- "fronteira vencida". Numa instalação que já roda, isso não é uma degradação
+-- discreta: no primeiro tick depois do `update.sh` todo acompanhamento em
+-- curso é cancelado com "Atendimento encerrado ou substituído", a varredura de
+-- silêncio fica cega justamente para quem não manda mensagem nova, e o próximo
+-- inbound abre uma SEGUNDA demanda aberta na mesma conversa.
+-- Carimbamos só o que já é OBSERVÁVEL no trabalho legado — nunca um assunto
+-- novo. Idempotente: cada passo toca apenas linha ainda sem carimbo.
+
+-- 1 · Toda conversa tem um começo. Sem ele o histórico de saída some do
+--     contexto do agente (`messages.sent_at >= c.service_started_at`).
+update public.conversations set service_started_at = created_at
+ where service_started_at is null;
+
+-- 2 · A demanda aberta que já estava vinculada à conversa segue sendo a
+--     vigente. Sem isto `fn_service_inbound` não acha nada em
+--     `x.id = c.current_demanda_id` e abre outra.
+with vigente as (
+  select distinct on (dc.conversation_id) dc.conversation_id, dc.demanda_id
+    from public.demanda_conversas dc
+    join public.demandas d
+      on d.id = dc.demanda_id and d.organization_id = dc.organization_id
+   where d.fechada_em is null
+   order by dc.conversation_id, d.aberta_em desc, d.id
+)
+update public.conversations c
+   set current_demanda_id = v.demanda_id
+  from vigente v
+ where v.conversation_id = c.id
+   and c.current_demanda_id is null
+   and c.status not in ('closed','resolved','archived');
+
+-- 3 · O vínculo carrega a revisão da conversa; o reaproveitamento exige
+--     `dc.service_revision = c.service_revision`.
+update public.demanda_conversas dc
+   set service_revision = c.service_revision
+  from public.conversations c
+ where c.id = dc.conversation_id
+   and c.organization_id = dc.organization_id
+   and dc.service_revision is null;
+
+-- 4 · Mensagem legada pertence ao atendimento vigente da sua conversa.
+--     `trg_appointment_inbound` (migration posterior) trata o carimbo como
+--     EVENTO de entrada: sem pausá-lo, o backfill replicaria recuperação de
+--     agenda para o histórico inteiro. É um `do` único de propósito — sob o
+--     autocommit do `update.sh`, ou tudo entra e o gatilho volta, ou nada
+--     entra. Se faltar privilégio para pausar, o backfill segue mesmo assim
+--     (carimbar tarde é melhor que não carimbar) e o notice registra.
+do $$
+declare v_pausado boolean := false;
+begin
+  begin
+    if exists (select 1 from pg_trigger
+                where tgrelid = 'public.messages'::regclass
+                  and tgname = 'trg_appointment_inbound'
+                  and not tgisinternal) then
+      execute 'alter table public.messages disable trigger trg_appointment_inbound';
+      v_pausado := true;
+    end if;
+  exception when others then
+    v_pausado := false;
+    raise notice '0222 backfill: nao foi possivel pausar trg_appointment_inbound (%)', sqlerrm;
+  end;
+
+  update public.messages m
+     set service_revision = c.service_revision,
+         demanda_id = c.current_demanda_id,
+         demanda_revision = d.revision
+    from public.conversations c
+    left join public.demandas d
+      on d.id = c.current_demanda_id and d.organization_id = c.organization_id
+   where c.id = m.conversation_id
+     and c.organization_id = m.organization_id
+     and m.direction = 'inbound'
+     and m.service_revision is null;
+
+  if v_pausado then
+    execute 'alter table public.messages enable trigger trg_appointment_inbound';
+  end if;
+end $$;
+
+-- 5 · Acompanhamento em curso mantém a fronteira da conversa a que já
+--     pertence. Linha a linha: `trg_followup_revision` pode recusar a linha de
+--     recuperação de agenda cuja recibo já não vale, e uma recusa dessas não
+--     pode derrubar o backfill das outras.
+do $$
+declare r record;
+begin
+  for r in
+    select e.id,
+           e.organization_id,
+           c.id as conversation_id,
+           jsonb_build_object(
+             'organization_id', c.organization_id,
+             'contact_id',      c.contact_id,
+             'conversation_id', c.id,
+             'service_revision', c.service_revision,
+             'demanda_id',      c.current_demanda_id,
+             'demanda_revision', d.revision) as fronteira
+      from public.followup_enrollments e
+      join public.conversations c
+        on c.organization_id = e.organization_id
+       and c.contact_id = e.contact_id
+       and c.id = coalesce(e.conversation_id, (
+             select c2.id from public.conversations c2
+              where c2.organization_id = e.organization_id
+                and c2.contact_id = e.contact_id
+                and not c2.is_group
+                and c2.status not in ('closed','resolved','archived')
+              order by c2.last_message_at desc nulls last, c2.created_at desc
+              limit 1))
+      left join public.demandas d
+        on d.id = c.current_demanda_id and d.organization_id = c.organization_id
+     where e.service_boundary is null
+       and e.status not in ('completed','cancelled','dead')
+       and c.status not in ('closed','resolved','archived')
+  loop
+    begin
+      update public.followup_enrollments
+         set service_boundary = r.fronteira,
+             conversation_id  = r.conversation_id
+       where id = r.id
+         and organization_id = r.organization_id
+         and service_boundary is null;
+    exception when others then
+      raise notice '0222 backfill: acompanhamento % segue sem fronteira (%)', r.id, sqlerrm;
+    end;
+  end loop;
+end $$;
+
 -- ---- origem imutável do evento (0223) ----
 -- 0223 — Uma resolução imutável da origem por evento/destino, compartilhada entre
 -- automação e gatilho de etapa e entre retries. Não certifica legado.
