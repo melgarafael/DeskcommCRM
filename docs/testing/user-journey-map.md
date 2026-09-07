@@ -1950,3 +1950,12 @@ Testes: `tests/e2e/agenda-google-meet.spec.ts`, `tests/invariants/agenda-meet.te
 - [P1] Assistido: inbound gera sugestão; editar/aprovar/rejeitar na conversa. Aprovação autoriza só texto e preserva autonomia/assignment/silêncio; mudanças de contexto tornam a sugestão obsoleta.
 - [P1] Pausar e retomar: ponteiro publicado permanece; assistência manual continua. Troca de modo em voo impede efeitos automáticos obsoletos.
 - Provas Task9 em preparação: `tests/invariants/autonomia-replies.test.ts`, `lib/agent-engine/agent/preview.test.ts`. Evidência browser será registrada após revisão e aplicação da migration0227 no QA.
+
+
+## Comunidade 360 — aceite integrado de 2026-09-06
+
+Produto `7f1d0f3e`, integrado à main `ca895850`: as dez specs de organizações, suporte, interface por vínculo, encerramento, Central, presença/recuperação, Calendar, Meet, autonomia assistida e roteamento passaram juntas: **22 casos em 3,7 minutos**. A execução usa build de produção `F0cVqvOg8JuwVlWss4ijk`, banco QA local e receivers HTTP controlados; não comprova OAuth externo, WhatsApp pareado ou qualidade de modelo externo.
+
+Evidência local preservada em `.superpowers/evidence/comunidade-360/final-qa-targeted-r4/` e log `.superpowers/sdd/comunidade-360/final-qa-targeted-r4.log`. A rodada inclui atualização concorrente da interface sem perder formulário, sugestão obsoleta sem confirmação antiga de sucesso e encerramento de suporte com retorno ao contexto original.
+
+Validação integral do mesmo produto: 733 arquivos unitários / 7.911 casos aprovados + 1 falha esperada; 184 arquivos de banco / 1.466 casos aprovados + 1 falha esperada e 1 ignorado, com INSTALL e UPDATE; tipos, lint (0 erros, 344 avisos) e build aprovados. `lint:channels`, validadores shell e conferência de release também passaram. Os checks remotos continuam sendo condição do merge pelo revisor da PR #613.

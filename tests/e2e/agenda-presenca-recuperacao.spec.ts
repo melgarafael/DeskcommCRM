@@ -4,7 +4,7 @@ import { completeTurnForEnrollment, createPgAdminClient } from "../../lib/follow
 import { claimOfJob } from "../../lib/agent-engine/queue/claim";
 import { completeJob } from "../../lib/agent-engine/queue/queue";
 import { protecaoAgendaPg, protecaoAgendaSupabase } from "../../lib/agenda/protecao-followup";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
@@ -88,7 +88,7 @@ async function person(f: Fixture, name = "Cliente Presença") {
     organization_id: f.org,
     name,
     display_name: name,
-    phone_number: `+55119${Math.floor(10000000 + Math.random() * 89999999)}`,
+    phone_number: `+55119${randomInt(10000000, 99999999)}`,
   });
   const conversation = await insert("conversations", {
     organization_id: f.org,
