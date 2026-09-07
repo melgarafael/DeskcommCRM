@@ -1843,7 +1843,7 @@ begin
   end if;
   select id into v_org from public.organizations where slug='minha-empresa';
   if v_org is null then
-    -- `locale` aqui, e não só no usuário dono: é a organização que responde
+    -- locale aqui, e não só no usuário dono: é a organização que responde
     -- pelos convidados que ainda não existem. Quem entra sem preferência
     -- própria cai neste valor, então gravar só no dono entregaria o sistema em
     -- português para todo mundo que ele convidasse numa instalação em espanhol.

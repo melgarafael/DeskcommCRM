@@ -2729,6 +2729,25 @@ else
   printf '  ✓ a tela de retomada avisa que o token de conta é perguntado de novo\n'
 fi
 
+echo "bootstrap do dono: o heredoc do SQL não pode conter crase"
+# O `<<SQL` da etapa 8 NÃO é citado — de propósito, porque o bloco interpola
+# OWNER_EMAIL, APP_LOCALE e AI_PROVIDER. O preço é que o bash também executa
+# substituição de comando lá dentro, comentário incluído. Medido numa instalação
+# real: um comentário escrito `-- \`locale\` aqui` fez o bash rodar o comando
+# `locale` e injetar a saída dele no meio do bloco, e o psql morreu com
+#   ERROR:  "language" is not a known variable
+#   LINE 11: LANGUAGE=
+# com o banco já provisionado e o .env já escrito — a instalação parava no passo
+# mais tarde de todos. O próprio install.sh avisa sobre isso 60 linhas abaixo do
+# ponto onde a crase entrou; o aviso não impediu, o teste impede.
+crases_no_sql="$(awk '/<<SQL/{dentro=1; next} /^SQL$/{dentro=0} dentro' ./install.sh | grep -n '`' || true)"
+if [ -n "$crases_no_sql" ]; then
+  printf '  ✗ crase dentro do heredoc <<SQL — o bash vai EXECUTAR isso e quebrar a criação do dono:\n'
+  printf '%s\n' "$crases_no_sql" | sed 's/^/       /'; fail=1
+else
+  printf '  ✓ o heredoc do bootstrap do dono está livre de crase\n'
+fi
+
 echo
 if [ "$fail" = 0 ]; then echo "todos os validadores passaram"; else echo "FALHOU"; fi
 exit "$fail"
