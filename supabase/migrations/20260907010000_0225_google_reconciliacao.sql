@@ -385,8 +385,17 @@ grant execute on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) to 
 -- Leitura derivada: seleção vale nos três leitores, mesmo com cache antigo.
 create or replace function public.fn_google_counts_for_conflicts(p_org uuid,p_connection uuid,p_calendar text)
 returns boolean language sql stable security definer set search_path=public as $$
- select (auth.uid() is null or p_org in (select public.fn_user_org_ids())) and exists(
-  select 1 from public.calendar_connection_calendars where organization_id=p_org and connection_id=p_connection and external_calendar_id=p_calendar and counts_for_conflicts);
+ -- ⚠️ FALHA ABERTO na AUSÊNCIA de catálogo, e a direção é deliberada.
+ -- A forma `exists(... and counts_for_conflicts)` exigia linha em
+ -- calendar_connection_calendars para o evento contar. Antes desta migration os
+ -- três leitores (grade, semente da página e o motor de horários livres) liam
+ -- `calendar_external_events` DIRETO: toda ocupação contava. Numa conexão cujo
+ -- catálogo ainda não foi montado — ou cujo calendário saiu do catálogo com os
+ -- eventos ainda gravados — a ocupação sumia da grade E deixava de bloquear o
+ -- horário. O erro barato é mostrar "Ocupado" a mais; o caro é marcar por cima
+ -- de uma consulta que existe. A negativa só vale quando alguém a declarou.
+ select (auth.uid() is null or p_org in (select public.fn_user_org_ids())) and not exists(
+  select 1 from public.calendar_connection_calendars where organization_id=p_org and connection_id=p_connection and external_calendar_id=p_calendar and not counts_for_conflicts);
 $$;
 revoke all on function public.fn_google_counts_for_conflicts(uuid,uuid,text) from public,anon;
 grant execute on function public.fn_google_counts_for_conflicts(uuid,uuid,text) to authenticated,service_role;

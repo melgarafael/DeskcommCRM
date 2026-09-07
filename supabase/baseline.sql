@@ -20794,8 +20794,17 @@ grant execute on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) to 
 -- Leitura derivada: seleção vale nos três leitores, mesmo com cache antigo.
 create or replace function public.fn_google_counts_for_conflicts(p_org uuid,p_connection uuid,p_calendar text)
 returns boolean language sql stable security definer set search_path=public as $$
- select (auth.uid() is null or p_org in (select public.fn_user_org_ids())) and exists(
-  select 1 from public.calendar_connection_calendars where organization_id=p_org and connection_id=p_connection and external_calendar_id=p_calendar and counts_for_conflicts);
+ -- ⚠️ FALHA ABERTO na AUSÊNCIA de catálogo, e a direção é deliberada.
+ -- A forma `exists(... and counts_for_conflicts)` exigia linha em
+ -- calendar_connection_calendars para o evento contar. Antes desta migration os
+ -- três leitores (grade, semente da página e o motor de horários livres) liam
+ -- `calendar_external_events` DIRETO: toda ocupação contava. Numa conexão cujo
+ -- catálogo ainda não foi montado — ou cujo calendário saiu do catálogo com os
+ -- eventos ainda gravados — a ocupação sumia da grade E deixava de bloquear o
+ -- horário. O erro barato é mostrar "Ocupado" a mais; o caro é marcar por cima
+ -- de uma consulta que existe. A negativa só vale quando alguém a declarou.
+ select (auth.uid() is null or p_org in (select public.fn_user_org_ids())) and not exists(
+  select 1 from public.calendar_connection_calendars where organization_id=p_org and connection_id=p_connection and external_calendar_id=p_calendar and not counts_for_conflicts);
 $$;
 revoke all on function public.fn_google_counts_for_conflicts(uuid,uuid,text) from public,anon;
 grant execute on function public.fn_google_counts_for_conflicts(uuid,uuid,text) to authenticated,service_role;
@@ -21131,6 +21140,14 @@ create or replace function public.fn_meet_delivery_enqueue()
 returns trigger language plpgsql security definer set search_path=public as $$
 declare jid uuid; b jsonb;
 begin
+ -- A MESMA ORDEM DE TRAVA das ~20 irmãs: contato PRIMEIRO, job_queue depois.
+ -- Sem esta linha, este gatilho já segurava a linha do compromisso (é BEFORE/
+ -- AFTER na própria calendar_appointments) e ia travar job_queue sem o mutex do
+ -- contato, enquanto fn_meet_redact_contact (0229) pega o mutex do contato e só
+ -- então mexe em job_queue. Duas ordens opostas sobre os mesmos dois recursos =
+ -- deadlock (40P01) sob concorrência, e quem paga é o cliente com anonimização
+ -- LGPD acontecendo enquanto um link de reunião é entregue.
+ perform public.fn_service_lock(new.organization_id,new.contact_id);
  if new.meeting_state='cancelled' or new.meeting_delivery->>'state' in ('blocked','stale') then
   update public.job_queue set status='failed',locked_at=null,locked_by=null,payload='{}',last_error='meet_delivery_stale'
    where organization_id=new.organization_id and id=new.meeting_delivery_job_id and kind='transactional_delivery' and status in ('pending','running');
