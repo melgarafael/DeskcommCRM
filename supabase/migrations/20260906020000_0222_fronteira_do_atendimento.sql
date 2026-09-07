@@ -401,11 +401,17 @@ begin
   perform 1 from public.conversations where organization_id=p_organization_id
     and contact_id=any(array[p_contato_principal]||p_contatos_secundarios) order by id for no key update;
 
-  if exists(select 1 from public.conversations where organization_id=p_organization_id
-    and contact_id=any(array[p_contato_principal]||p_contatos_secundarios) and not is_group
-    and channel_session_id is not null group by channel_session_id having count(*)>1) then
-    raise exception 'mescla_conversas_colidentes' using errcode='23505';
-  end if;
+  -- Conversa colidente NÃO aborta a fusão. Duas conversas no mesmo
+  -- `channel_session_id` é exatamente COMO a duplicata de WhatsApp nasce (dois
+  -- cadastros, dois números, o mesmo número de atendimento), então recusar aqui
+  -- fecharia o caminho dominante do recurso — medido: o caso ordinário do
+  -- `tests/e2e/juntar-contatos-duplicados.spec.ts` virava 409.
+  -- Quem trata a colisão é o passo 5: `uniq_conversations_1to1_per_contact_session`
+  -- levanta unique_violation, o repontamento cai para linha a linha, a conversa
+  -- que não coube FICA na lápide e sai contada em `nao_repontado` — que a rota
+  -- devolve e a tela anuncia ("N registro(s) continuaram no cadastro antigo").
+  -- Mensagem não se perde: `messages.contact_id` não tem índice único por
+  -- contato e passa inteira para o vencedor.
 
   -- 2 · O principal existe, é desta org, está vivo — e trava até o fim.
   select * into v_principal from public.contacts

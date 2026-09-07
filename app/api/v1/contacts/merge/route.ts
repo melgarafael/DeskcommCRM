@@ -39,7 +39,6 @@ export const dynamic = "force-dynamic";
  * operador "o sistema quebrou" quando o que houve foi "esse contato não serve".
  */
 const DESFECHOS: Record<string, { code: string; status: number; message: string }> = {
-  mescla_conversas_colidentes: { code: "conflict", status: 409, message: "Estes contatos têm conversas no mesmo canal. Nada foi mesclado; os históricos foram preservados." },
   insufficient_role: {
     code: "forbidden_role",
     status: 403,
