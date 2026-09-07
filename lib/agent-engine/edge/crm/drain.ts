@@ -295,9 +295,17 @@ async function processEvent(
   // automação, retomada manual) e dentro da janela. Bloqueio por allowlist =
   // done, sem job, sem gasto — a conversa fica para atendimento humano.
   //
-  // `force_human` / silêncio / dono humano bloqueiam em QUALQUER modo: o turno já
-  // os respeitava (`isLeadInHandoff`), aqui a decisão só se antecipa para não
-  // enfileirar. O turno revalida (defesa em profundidade).
+  // `force_human` / silêncio / dono humano bloqueiam em QUALQUER modo, e é o
+  // TURNO quem garante isso — aqui a decisão só se antecipa para não enfileirar.
+  //
+  // Repare no `!canAssist` do `if` abaixo: com agente assistido publicado no
+  // canal o gate é desligado INTEIRO nesta ponta, de propósito (o rascunho é o
+  // produto do modo assistido, barrar aqui o mataria). A frase que este
+  // comentário trazia — "o turno revalida" — era falsa justamente nesse caso: o
+  // ramo assistido de `createInboundTurnHandler` devolvia antes das guardas de
+  // `runAgentTurn`. As duas checagens agora vivem dentro daquele ramo
+  // (`inbound-turn.ts`, `operationMode === 'assisted'`), e é lá que a defesa em
+  // profundidade realmente acontece.
   // This is a capability check, never a selection by priority. The canonical
   // router chooses once in the worker, then automatic eligibility is rechecked.
   const {rows:assistance}=await pool.query<{available:boolean}>(`select exists(
