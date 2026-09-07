@@ -1,94 +1,99 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedGov, GOV_ORG, GOV_SESSION } from "./gov-helpers";
+import { seedGov, GOV_ORG, GOV_SESSION, GOV_PIPELINE, GOV_STAGE } from "./gov-helpers";
 
 /**
- * "NÃO HAVIA ATENDIMENTO / HÁ AGORA" É PROGRESSÃO, NÃO CONFLITO.
+ * PARA UM EVENTO, `absent` É PROCEDÊNCIA — PARA UM ATOR, É REIVINDICAÇÃO.
  *
- * O CAS de `fn_service_begin` existe para impedir que trabalho antigo aja sobre
- * um atendimento que mudou debaixo dele. Quando a observação diz `absent`, não
- * havia atendimento em voo — nada podia ter mudado sob o chamador. Mesmo assim
- * o código comparava a fronteira de agora contra o literal `{"absent":true}`,
- * que difere sempre, e levantava `service_stale` no caminho ORDINÁRIO.
+ * O CAS de `fn_service_begin` recusa quem chega com uma observação que o mundo
+ * já superou, e isso é proteção de CONCORRÊNCIA: dois atores que observaram
+ * "não há atendimento" não podem agir os dois. Esse lado continua guardado por
+ * `service-boundary.test.ts` — e o segundo caso aqui confirma que não o
+ * afrouxei ao consertar o primeiro.
  *
- * O custo era invisível: um lead criado e depois movido de etapa gera dois
- * eventos observados como `absent`; resolver o primeiro cria a conversa e o
- * segundo morria com 40001 — que `serviceForEvent` engole como `stale_origin`.
- * O follow-up de etapa simplesmente não nascia, sem erro em lugar nenhum.
- *
- * Este arquivo guarda os dois lados: a progressão passa, e o atendimento OUTRO
- * continua sendo recusado.
+ * Um EVENTO é outra coisa. O retrato `absent` dele diz "quando este evento foi
+ * emitido não havia atendimento", e a resolução de cada evento já é idempotente
+ * pelo memo `event_service_origins`. Não há corrida a arbitrar — e, sem essa
+ * distinção, o caminho ORDINÁRIO morria: um lead criado e depois movido de
+ * etapa gera DOIS eventos, cada um com seu retrato `absent`; resolver o
+ * primeiro cria a conversa e o segundo levantava 40001, que `serviceForEvent`
+ * engole como `stale_origin`. O follow-up de etapa não nascia, sem erro em
+ * lugar nenhum — foi assim que `gatilho-de-etapa.spec.ts` ficou vermelho sem
+ * dizer por quê.
  */
 const pool = new pg.Pool({
   connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
   max: 3,
 });
-beforeAll(() => {
-  seedGov();
-});
+beforeAll(() => seedGov());
 afterAll(async () => {
   await pool.end();
 });
 
-describe("fronteira: progressão não é conflito", () => {
-  it("segunda origem observada como ausente aceita a conversa que a primeira criou", async () => {
-    const contato = randomUUID();
+describe("fronteira: progressão de evento não é conflito", () => {
+  it("dois eventos do mesmo contato, ambos observados sem atendimento, resolvem para a MESMA conversa", async () => {
+    const contact = randomUUID(),
+      lead = randomUUID();
+    await pool.query("insert into contacts(id,organization_id,name) values($1,$2,'Progressão')", [
+      contact,
+      GOV_ORG,
+    ]);
     await pool.query(
-      "insert into contacts(id,organization_id,display_name) values($1,$2,'Progressão')",
-      [contato, GOV_ORG],
+      "insert into crm_leads(id,organization_id,contact_id,pipeline_id,stage_id,title) values($1,$2,$3,$4,$5,'Progressão')",
+      [lead, GOV_ORG, contact, GOV_PIPELINE, GOV_STAGE],
     );
-    const ausente = JSON.stringify({ organization_id: GOV_ORG, contact_id: contato, absent: true });
 
-    // 1ª resolução: não há conversa, a observação diz `absent` — cria.
-    const primeira = await pool.query("select public.fn_service_begin($1,$2,$3,$4::jsonb) as b", [
-      GOV_ORG,
-      contato,
-      GOV_SESSION,
-      ausente,
-    ]);
-    expect(
-      primeira.rows[0].b?.conversation_id,
-      "a primeira origem abre o atendimento",
-    ).toBeTruthy();
+    // Os DOIS retratos são tirados ANTES de existir conversa — é assim que a
+    // vida real acontece: os dois eventos nascem antes de alguém atender.
+    const snapshot = async () =>
+      (await pool.query("select fn_service_observe_command($1,$2) s", [GOV_ORG, contact])).rows[0]
+        .s;
+    const emitir = async (tipo: string, observed: unknown) =>
+      (
+        await pool.query("select emit_event($1,'crm_lead',$2,$3::jsonb,'{}',$4) id", [
+          tipo,
+          lead,
+          JSON.stringify({ service_origin: { kind: "command", observed } }),
+          GOV_ORG,
+        ])
+      ).rows[0].id;
+    const primeiro = await emitir("lead.created", await snapshot());
+    const segundo = await emitir("lead.stage_changed", await snapshot());
 
-    // 2ª resolução com a MESMA observação: a conversa agora existe. Isto é o
-    // caminho ordinário (lead criado e movido), e era ele que morria.
-    const segunda = await pool.query("select public.fn_service_begin($1,$2,$3,$4::jsonb) as b", [
-      GOV_ORG,
-      contato,
-      GOV_SESSION,
-      ausente,
-    ]);
+    const resolver = async (event: string) =>
+      (
+        await pool.query("select fn_service_event_origin($1,$2,$3,$4) b", [
+          GOV_ORG,
+          event,
+          contact,
+          GOV_SESSION,
+        ])
+      ).rows[0].b;
+
+    const a = await resolver(primeiro);
+    expect(a?.conversation_id, "a primeira origem abre o atendimento").toBeTruthy();
+    const b = await resolver(segundo);
     expect(
-      segunda.rows[0].b?.conversation_id,
-      "a segunda origem tem de reaproveitar o mesmo atendimento, não morrer em service_stale",
-    ).toBe(primeira.rows[0].b.conversation_id);
+      b?.conversation_id,
+      "o segundo evento tem de pegar o MESMO atendimento, não morrer em service_stale",
+    ).toBe(a.conversation_id);
   });
 
-  it("observação que descreve OUTRO atendimento continua sendo recusada", async () => {
-    const contato = randomUUID();
-    await pool.query(
-      "insert into contacts(id,organization_id,display_name) values($1,$2,'Outro')",
-      [contato, GOV_ORG],
-    );
-    const ausente = JSON.stringify({ organization_id: GOV_ORG, contact_id: contato, absent: true });
-    const criada = await pool.query("select public.fn_service_begin($1,$2,$3,$4::jsonb) as b", [
+  it("o CAS do chamador direto continua recusando observação que o mundo superou", async () => {
+    // A metade que NÃO pode afrouxar junto: quem chama `fn_service_begin` com
+    // um retrato `absent` já superado é um ator em corrida, e perde.
+    const contact = randomUUID();
+    await pool.query("insert into contacts(id,organization_id,name) values($1,$2,'Corrida')", [
+      contact,
       GOV_ORG,
-      contato,
-      GOV_SESSION,
-      ausente,
     ]);
-    // Uma fronteira concreta que NÃO é a vigente: revisão adiantada. O
-    // afrouxamento vale só para a partida `absent`; isto tem de continuar 40001.
-    const forjada = JSON.stringify({ ...criada.rows[0].b, service_revision: 99 });
+    const observed = (await pool.query("select fn_service_observe($1,$2) s", [GOV_ORG, contact]))
+      .rows[0].s;
+    expect(observed.absent).toBe(true);
+    await pool.query("select fn_service_begin($1,$2,null,$3)", [GOV_ORG, contact, observed]);
     await expect(
-      pool.query("select public.fn_service_begin($1,$2,$3,$4::jsonb)", [
-        GOV_ORG,
-        contato,
-        GOV_SESSION,
-        forjada,
-      ]),
+      pool.query("select fn_service_begin($1,$2,null,$3)", [GOV_ORG, contact, observed]),
     ).rejects.toMatchObject({ code: "40001" });
   });
 });

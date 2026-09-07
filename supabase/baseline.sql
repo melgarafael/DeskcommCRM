@@ -19309,23 +19309,7 @@ begin
      raise exception 'service_scope_mismatch' using errcode='23503'; end if;
    if c.id is null then
      if p_observed->>'absent' is distinct from 'true' then raise exception 'service_stale' using errcode='40001'; end if;
-   -- "NAO HAVIA CONVERSA / HA AGORA" E PROGRESSAO, NAO CONFLITO.
-   --
-   -- Este CAS existe para impedir que trabalho antigo aja sobre um atendimento
-   -- que MUDOU debaixo dele. Quando a observacao disse `absent`, nao havia
-   -- atendimento nenhum em voo — nada podia ter mudado sob o chamador, e a
-   -- conversa que apareceu e a PRIMEIRA. Comparar a fronteira de agora contra
-   -- o literal `{"absent":true}` difere sempre, entao o ramo abaixo levantava
-   -- `service_stale` no caminho ORDINARIO: lead criado e depois movido de
-   -- etapa gera dois eventos observados como `absent`; resolver o primeiro cria
-   -- a conversa e o segundo morria — e `serviceForEvent` engole o 40001 como
-   -- `stale_origin`, entao o follow-up simplesmente nao nascia, calado.
-   --
-   -- Irma da regra em `lib/atendimento/fronteira.ts`: ali, abrir a PRIMEIRA
-   -- demanda tambem nao vence a fronteira. Nos dois casos o que se recusa e o
-   -- atendimento OUTRO, nunca o atendimento que acabou de comecar.
-   elsif p_observed->>'absent' is distinct from 'true'
-     and public.fn_service_boundary(p_org,c.id) is distinct from p_observed then
+   elsif public.fn_service_boundary(p_org,c.id) is distinct from p_observed then
      raise exception 'service_stale' using errcode='40001';
    end if;
  end if;
@@ -19983,6 +19967,30 @@ begin
  select service_boundary into current_boundary from public.event_service_origins where organization_id=p_org and event_id=root_event and channel_session_id=sid;
  if found then boundary:=current_boundary;
  elsif boundary is null then
+   -- PARA UM EVENTO, `absent` E PROCEDENCIA — NAO REIVINDICACAO DE ESTADO.
+   --
+   -- O CAS de `fn_service_begin` existe para que dois ATORES com a mesma
+   -- observacao "ausente" nao ajam os dois: o segundo tem de perder, e o
+   -- invariante de `fn_service_begin` guarda isso. Um evento e outra coisa: o
+   -- retrato `absent` diz "quando este evento foi EMITIDO nao havia
+   -- atendimento", e a resolucao de cada evento ja e idempotente pelo memo
+   -- `event_service_origins` logo acima — nao ha corrida a arbitrar aqui.
+   --
+   -- Sem esta distincao o caminho ORDINARIO morria: um lead criado e depois
+   -- movido de etapa gera DOIS eventos, cada um com seu retrato `absent`;
+   -- resolver o primeiro cria a conversa e o segundo levantava 40001 — que
+   -- `serviceForEvent` engole como `stale_origin`, entao o follow-up de etapa
+   -- simplesmente nao nascia, sem erro em lugar nenhum.
+   --
+   -- Zerar `observed` so quando a conversa JA existe mantem o CAS de pe para o
+   -- retrato que descreve uma fronteira concreta (esse continua sendo conferido
+   -- contra a vigente) e para todo chamador direto de `fn_service_begin`.
+   if observed->>'absent' = 'true' and exists(
+        select 1 from public.conversations
+         where organization_id=p_org and contact_id=p_contact
+           and channel_session_id=sid and not is_group) then
+     observed:=null;
+   end if;
    boundary:=public.fn_service_begin(p_org,p_contact,sid,observed) - 'status' - 'demanda_fechada_em' - 'service_started_at';
  end if;
  if boundary->>'organization_id' is distinct from p_org::text or boundary->>'contact_id' is distinct from p_contact::text then
@@ -20527,6 +20535,30 @@ begin
  select service_boundary into current_boundary from public.event_service_origins where organization_id=p_org and event_id=root_event and channel_session_id=sid;
  if found then boundary:=current_boundary;
  elsif boundary is null then
+   -- PARA UM EVENTO, `absent` E PROCEDENCIA — NAO REIVINDICACAO DE ESTADO.
+   --
+   -- O CAS de `fn_service_begin` existe para que dois ATORES com a mesma
+   -- observacao "ausente" nao ajam os dois: o segundo tem de perder, e o
+   -- invariante de `fn_service_begin` guarda isso. Um evento e outra coisa: o
+   -- retrato `absent` diz "quando este evento foi EMITIDO nao havia
+   -- atendimento", e a resolucao de cada evento ja e idempotente pelo memo
+   -- `event_service_origins` logo acima — nao ha corrida a arbitrar aqui.
+   --
+   -- Sem esta distincao o caminho ORDINARIO morria: um lead criado e depois
+   -- movido de etapa gera DOIS eventos, cada um com seu retrato `absent`;
+   -- resolver o primeiro cria a conversa e o segundo levantava 40001 — que
+   -- `serviceForEvent` engole como `stale_origin`, entao o follow-up de etapa
+   -- simplesmente nao nascia, sem erro em lugar nenhum.
+   --
+   -- Zerar `observed` so quando a conversa JA existe mantem o CAS de pe para o
+   -- retrato que descreve uma fronteira concreta (esse continua sendo conferido
+   -- contra a vigente) e para todo chamador direto de `fn_service_begin`.
+   if observed->>'absent' = 'true' and exists(
+        select 1 from public.conversations
+         where organization_id=p_org and contact_id=p_contact
+           and channel_session_id=sid and not is_group) then
+     observed:=null;
+   end if;
    boundary:=public.fn_service_begin(p_org,p_contact,sid,observed) - 'status' - 'demanda_fechada_em' - 'service_started_at';
  end if;
  if boundary->>'organization_id' is distinct from p_org::text or boundary->>'contact_id' is distinct from p_contact::text then
