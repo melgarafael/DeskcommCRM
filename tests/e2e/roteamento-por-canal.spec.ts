@@ -59,24 +59,38 @@ async function routingEventCount(org: string, status?: string): Promise<number> 
   return count ?? 0;
 }
 
-async function assertNoForeignRoutingDue(org: string): Promise<void> {
-  const now = new Date().toISOString();
-  const { data, error } = await db
+/**
+ * O cron de roteamento é GLOBAL: drena a fila da instalação inteira, e as
+ * asserções abaixo contam o LOTE. Esta função RECUSAVA rodar quando existisse
+ * item vencido de outra org — o que parecia proteger o teste e o tornava
+ * IMPOSSÍVEL de passar: `trg_conversation_routing_requested` (migration 0040)
+ * dispara em TODA conversa nova sem dono, e nenhum outro ponto da suíte drena
+ * essa fila (`grep -rln "cron/routing-worker" tests/e2e/` devolve só este
+ * arquivo). A fila só acumula; exigir que ela esteja vazia é exigir que
+ * nenhuma outra spec tenha criado conversa.
+ *
+ * Medido nas duas pontas antes de trocar: a MESMA recusa com 152 specs antes
+ * (run 34072172013, quando tudo era PARTE_2) e com 18 antes (run 34145244454,
+ * PARTE_3). Vizinhanças opostas, desfecho idêntico — não é contaminação de
+ * vizinha, é premissa falsa da guarda.
+ *
+ * Em vez de recusar, ADIAMOS o que não é nosso: `next_attempt_at` no futuro sai
+ * do claim do worker (`lib/routing/worker.ts`) sem apagar linha nenhuma, e o
+ * lote passa a ser só o desta org — que é exatamente o que as asserções medem.
+ */
+async function deferForeignRoutingDue(org: string): Promise<void> {
+  const agora = new Date();
+  const { error } = await db
     .from("event_log")
-    .select("id")
+    .update({ next_attempt_at: new Date(agora.getTime() + 3_600_000).toISOString() })
     .eq("event_type", "conversation.routing_requested")
     .eq("status", "pending")
     .neq("organization_id", org)
-    .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
-    .limit(1);
+    .or(`next_attempt_at.is.null,next_attempt_at.lte.${agora.toISOString()}`);
   if (error) throw error;
-  if (data?.length) throw new Error("routing_queue_foreign_due_refusing_global_cron");
 }
 
-async function createUser(
-  name: string,
-  password: string,
-): Promise<{ id: string; email: string }> {
+async function createUser(name: string, password: string): Promise<{ id: string; email: string }> {
   const email = `routing-${randomUUID()}@invariant.test`;
   const { data, error } = await db.auth.admin.createUser({
     email,
@@ -263,7 +277,7 @@ test("configura responsáveis por canal e o cron distribui sem misturar números
     const northConversation = await conversation(north, "Cliente Canal Norte", "+5511999000011");
     const southConversation = await conversation(south, "Cliente Canal Sul", "+5511999000022");
     await expect.poll(() => routingEventCount(org)).toBe(2);
-    await assertNoForeignRoutingDue(org);
+    await deferForeignRoutingDue(org);
 
     const firstDrain = await drain(page);
     expect(firstDrain.errors).toEqual([]);
@@ -299,7 +313,9 @@ test("configura responsáveis por canal e o cron distribui sem misturar números
     });
     await notice.getByRole("link", { name: "Abrir conversa" }).click();
     await expect(page).toHaveURL(new RegExp(`/app/inbox/${southConversation}$`));
-    await expect(page.getByText("Mensagem de Cliente Canal Sul", { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText("Mensagem de Cliente Canal Sul", { exact: true }).first(),
+    ).toBeVisible();
 
     await page.goto("/app/settings/atendimento");
     const resetSouth = page.getByRole("group", { name: "Canal Sul" });
@@ -308,7 +324,7 @@ test("configura responsáveis por canal e o cron distribui sem misturar números
       "Usa todos os atendentes elegíveis da organização.",
     );
     await expect.poll(() => routingEventCount(org, "pending")).toBe(1);
-    await assertNoForeignRoutingDue(org);
+    await deferForeignRoutingDue(org);
 
     const secondDrain = await drain(page);
     expect(secondDrain.errors).toEqual([]);

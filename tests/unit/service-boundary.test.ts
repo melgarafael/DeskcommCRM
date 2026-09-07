@@ -42,6 +42,27 @@ describe("fronteira imutável de atendimento", () => {
     }
     expect(() => assertCurrentServiceBoundary(null, boundary)).toThrow("service_boundary_stale");
   });
+  it("a resposta do lead abre a 1ª demanda e NÃO vence o acompanhamento; fechar, trocar ou virar revisão vencem", () => {
+    // O gatilho de silêncio captura a fronteira de um contato CALADO, que por
+    // definição não tem demanda aberta. A resposta dele abre a primeira demanda
+    // e a 0222 mantém `service_revision` de propósito — é o mesmo atendimento.
+    // Enquanto o predicado comparava `null !== uuid`, essa resposta vencia o
+    // acompanhamento que ela mesma acordou, e o nó `ai_classify` (que existe
+    // para consumi-la) ficava morto por construção.
+    const semDemanda = { ...boundary, demanda_id: null, demanda_revision: null };
+    expect(() => assertCurrentServiceBoundary(semDemanda, boundary)).not.toThrow();
+    // O afrouxamento é só para o `null` de partida: tudo que indica atendimento
+    // OUTRO continua vetando.
+    for (const changed of [
+      { demanda_fechada_em: "2026-01-01" },
+      { service_revision: 2 },
+      { status: "closed" },
+    ]) {
+      expect(() => assertCurrentServiceBoundary(semDemanda, { ...boundary, ...changed })).toThrow(
+        "service_boundary_stale",
+      );
+    }
+  });
   it("fechamento entre geração e tool impede o transporte HTTP real; reabertura também", async () => {
     let received = 0;
     const server = createServer((_req, res) => {

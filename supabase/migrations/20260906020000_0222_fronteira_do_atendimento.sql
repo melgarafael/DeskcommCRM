@@ -301,7 +301,23 @@ begin
      raise exception 'service_scope_mismatch' using errcode='23503'; end if;
    if c.id is null then
      if p_observed->>'absent' is distinct from 'true' then raise exception 'service_stale' using errcode='40001'; end if;
-   elsif public.fn_service_boundary(p_org,c.id) is distinct from p_observed then
+   -- "NAO HAVIA CONVERSA / HA AGORA" E PROGRESSAO, NAO CONFLITO.
+   --
+   -- Este CAS existe para impedir que trabalho antigo aja sobre um atendimento
+   -- que MUDOU debaixo dele. Quando a observacao disse `absent`, nao havia
+   -- atendimento nenhum em voo — nada podia ter mudado sob o chamador, e a
+   -- conversa que apareceu e a PRIMEIRA. Comparar a fronteira de agora contra
+   -- o literal `{"absent":true}` difere sempre, entao o ramo abaixo levantava
+   -- `service_stale` no caminho ORDINARIO: lead criado e depois movido de
+   -- etapa gera dois eventos observados como `absent`; resolver o primeiro cria
+   -- a conversa e o segundo morria — e `serviceForEvent` engole o 40001 como
+   -- `stale_origin`, entao o follow-up simplesmente nao nascia, calado.
+   --
+   -- Irma da regra em `lib/atendimento/fronteira.ts`: ali, abrir a PRIMEIRA
+   -- demanda tambem nao vence a fronteira. Nos dois casos o que se recusa e o
+   -- atendimento OUTRO, nunca o atendimento que acabou de comecar.
+   elsif p_observed->>'absent' is distinct from 'true'
+     and public.fn_service_boundary(p_org,c.id) is distinct from p_observed then
      raise exception 'service_stale' using errcode='40001';
    end if;
  end if;
