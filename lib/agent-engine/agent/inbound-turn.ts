@@ -3776,6 +3776,51 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
     }, { log: deps.log });
     const operationAgent = resolvedAgent.config;
     if (operationAgent?.operationMode === 'assisted') {
+      // O GATE VALE TAMBÉM NO ASSISTIDO, e é aqui que ele precisa estar.
+      //
+      // O drain desliga a checagem antes de enfileirar quando a org tem agente
+      // assistido publicado no canal (`canAssist`, drain.ts) — de propósito: o
+      // rascunho é o produto do modo assistido, e barrar no drain o mataria. Só
+      // que este ramo devolve ANTES de `runAgentTurn`, onde moram as duas
+      // guardas (isLeadInHandoff + decidirElegibilidadeDaConversa). Resultado
+      // medido: conversa com dono humano (`assignee_kind`), com `force_human`
+      // ou com o bot silenciado (`bot_silenced_until`) recebia rascunho assim
+      // mesmo — o gêmeo do fluxo automático não alcança este caminho.
+      //
+      // Fica no ramo, não antes dele: o caminho automático já refaz as duas
+      // checagens em `runAgentTurn`, e antecipá-las custaria duas queries por
+      // turno sem mudar nenhum desfecho.
+      if (await isLeadInHandoff(pool, job.organization_id, job.contact_id)) {
+        deps.log.info('rascunho pulado — lead em handoff humano (bot silenciado)', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+        });
+        return;
+      }
+      try {
+        const elegib = await decidirElegibilidadeDaConversa(pool, {
+          organizationId: job.organization_id,
+          conversationId: payload.conversation_id,
+          agora: new Date(),
+          ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
+        });
+        if (elegib !== null && !elegib.permite) {
+          deps.log.info('rascunho pulado — conversa não elegível para IA', {
+            job_id: job.id,
+            conversation_id: payload.conversation_id,
+            motivo: elegib.motivo,
+          });
+          return;
+        }
+      } catch (err) {
+        // Degrada ABERTO, igual ao gêmeo de `runAgentTurn`: falha da consulta
+        // não pode calar um assistido cuja conversa está liberada. Quem barra
+        // de verdade — handoff — já rodou acima e falha fechado.
+        deps.log.warn('checagem de elegibilidade falhou — seguindo para o rascunho', {
+          job_id: job.id,
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+        });
+      }
       const { generateReplyDraft } = await import('./reply-drafts');
       if (!job.contact_id) throw new Error('reply_without_contact');
       await generateReplyDraft(pool, deps, {
