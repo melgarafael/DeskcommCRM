@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET/PUT /api/v1/ai/providers — a configuração de IA de cada ponto do sistema.
  *
@@ -215,6 +216,9 @@ const corpoDoPut = z.object({
 });
 
 export async function PUT(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const authz = await requireRole("admin", { resource: "ai_providers" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);

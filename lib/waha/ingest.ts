@@ -670,7 +670,7 @@ async function handleInbound(
     return;
   }
 
-  await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), now);
+  await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now);
 
   await audit({
     action: "message.received",

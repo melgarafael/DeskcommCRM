@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -196,7 +197,7 @@ export function HistoricoDaAgenda({
                         cadastrou em Tipos de agendamento) e saem como ele
                         escreveu. Só o fallback "Agendamento" é rótulo nosso, e
                         esse traduz. */}
-                    <div className="truncate text-sm">{a.quemSeraAtendido ?? a.titulo}</div>
+                    <Link className="block truncate text-sm underline" href={`/app/agenda?compromisso=${a.id}`}>{a.quemSeraAtendido ?? a.titulo}</Link>
                     <div className="truncate text-[11px] text-text-muted">
                       {a.tipo || t("Agendamento")}
                       {pessoa ? ` · ${t("com")} ${pessoa.nome}` : ""}

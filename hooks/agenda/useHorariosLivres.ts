@@ -27,6 +27,7 @@ export interface HorariosLivresResposta {
   fuso_da_regra: string;
   publicou_horarios: boolean;
   fuso_suposto: boolean;
+  google_cobertura_parcial?: boolean;
   fontes_defasadas?: Array<{ nome?: string; desde?: string }>;
 }
 

@@ -46,6 +46,7 @@ function fakeDb(opts: {
   contato?: string | null;
   noDeGatilho?: string | null;
   jaVivo?: boolean;
+  stale?: boolean;
   vivos?: Array<{ id: string; current_node_id: string | null }>;
   cancelaFalha?: boolean;
   reg: Registro;
@@ -62,6 +63,7 @@ function fakeDb(opts: {
       return opts.noDeGatilho === undefined ? "t1" : opts.noDeGatilho;
     },
     async insereEnrollment(input) {
+      if (opts.stale) return { inserted: false, id: null, reason: "stale_origin" };
       if (opts.jaVivo) return { inserted: false, id: null };
       opts.reg.enrollments.push(input as unknown as Record<string, unknown>);
       return { inserted: true, id: ENROLLMENT };
@@ -280,4 +282,13 @@ describe("gatilho de caso — fechamento", () => {
     expect(s.cancelados).toBe(1);
     expect(s.vencidos).toBe(0);
   });
+});
+
+
+it("origem obsoleta não é contabilizada como enrollment existente", async () => {
+  const reg = registro();
+  const result = await aplicaGatilhoDeCaso(deps(fakeDb({ reg, stale: true })), evento());
+  expect(result.skipped_stale_origin).toBe(1);
+  expect(result.skipped_existing).toBe(0);
+  expect(reg.enrollments).toEqual([]);
 });

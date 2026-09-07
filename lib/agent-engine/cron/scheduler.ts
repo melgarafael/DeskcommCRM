@@ -1,3 +1,4 @@
+import { currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 /**
  * Camada de banco + loop do cron persistente (F3-01; achado OpenClaw 1.2). Irmão
  * da fila (queue/queue.ts): o cron AGENDA para o futuro e, no disparo, ENFILEIRA um
@@ -87,6 +88,7 @@ export async function scheduleCronJob(
   tenantId: string,
   input: ScheduleCronInput,
 ): Promise<CronJobRow> {
+  await guardServiceEffect();
   const nowMs = (input.now ?? Date.now)();
   const nextRunAt = computeInitialRunAt(input.spec, nowMs, input.staggerWindowMs, input.leadId);
   const spec = input.spec;
@@ -104,7 +106,7 @@ export async function scheduleCronJob(
       spec.kind === 'cron' ? spec.expr : null,
       spec.kind === 'cron' ? spec.tz : null,
       input.jobKind ?? null,
-      input.payload ?? {},
+      { ...(input.payload ?? {}), service_boundary: currentExecutionBoundary() ?? input.payload?.service_boundary ?? null },
       nextRunAt,
       input.maxAttempts ?? null,
     ],

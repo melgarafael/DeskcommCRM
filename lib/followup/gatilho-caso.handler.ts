@@ -38,7 +38,13 @@ export const followupGatilhoCasoHandler: EventHandler = {
       );
       return {
         consumer_key: FOLLOWUP_GATILHO_CASO_HANDLER_KEY,
-        status: summary.matched ? "ok" : "skipped",
+        // `ok` DESCARTA o `detail` (lib/event-log/drain.ts): só o de `skipped`
+        // sobrevive na linha do event_log. Enquanto o único desfecho mudo era
+        // "nenhum fluxo armado" isso custava pouco; com o portão de origem
+        // (`origem_obsoleta`) o motivo de o follow-up NÃO nascer virou
+        // invisível — e um e2e vermelho passou a não dizer por quê. Casar
+        // `matched` com `enrolled > 0` faz o contador chegar à linha.
+        status: summary.matched && summary.enrolled > 0 ? "ok" : "skipped",
         // Cada contador aqui existe porque, sem ele, um desfecho vira
         // indistinguível de outro. `vencidos` e `sem_contato` são os dois casos
         // em que o gatilho ESTAVA armado e mesmo assim ninguém foi enrollado —
@@ -46,7 +52,7 @@ export const followupGatilhoCasoHandler: EventHandler = {
         // conclusão errada e manda o operador procurar no lugar errado.
         detail:
           `armados=${summary.pointers_armados} enrolled=${summary.enrolled} ` +
-          `ja_vivo=${summary.skipped_existing} gate=${summary.pointers_barrados_pelo_gate} ` +
+          `origem_obsoleta=${summary.skipped_stale_origin ?? 0} ja_vivo=${summary.skipped_existing} gate=${summary.pointers_barrados_pelo_gate} ` +
           `sem_contato=${summary.sem_contato} cancelados=${summary.cancelados} ` +
           `vencidos=${summary.vencidos}`,
       };

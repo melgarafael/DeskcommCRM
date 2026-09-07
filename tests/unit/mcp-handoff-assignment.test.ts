@@ -5,7 +5,7 @@
  *  - a escolha do destino usa o roteamento G5 (loadEligibleAttendants +
  *    selectRoundRobin) — DETERMINÍSTICO sobre elegíveis, NÃO o antigo
  *    pickRoundRobinAssignee random sobre user_organizations;
- *  - com elegível: rpc fn_conversation_assign p_reason='handoff' + retorno
+ *  - com elegível: rpc fn_channel_routing_claim p_reason='handoff' + retorno
  *    estruturado { assigned_to };
  *  - target_user_id elegível: atribui ao alvo;
  *  - sem elegível: fila — assignee_kind limpo + evento reason='handoff' from/to
@@ -38,6 +38,8 @@ interface StubState {
   /** atendentes em attendant_availability (is_available=true). */
   attendants: Array<{ user_id: string; capacity: number; schedule: unknown }>;
   queuePositionCount: number;
+  allowed?: string[];
+  claimResult?: string;
   rpcCalls: Array<{ fn: string; args: Record<string, unknown> }>;
   updates: Array<{ table: string; values: Record<string, unknown> }>;
   inserts: Array<{ table: string; values: Record<string, unknown> }>;
@@ -73,16 +75,21 @@ function makeSupabaseStub(state: StubState) {
             data: {
               id: CONV_ID,
               organization_id: ORG_ID,
-              contact_id: null,
+              contact_id: null, channel_session_id: CONV_ID, assigned_to_user_id: null,
               last_inbound_at: null,
             },
             error: null,
           });
         }
+        if (table === "channel_sessions") return Promise.resolve({ data: { id: CONV_ID }, error: null });
+        if (table === "channel_routing_policies") return Promise.resolve({ data: state.allowed ? { id: "policy" } : null, error: null });
         return Promise.resolve({ data: null, error: null }); // crm_leads lookup
       },
       then: (resolve: (v: unknown) => unknown) => {
         let result: { data?: unknown; count?: number; error: null } = { data: [], error: null };
+        if (table === "user_organizations") result = { data: state.attendants.map(a => ({ user_id: a.user_id })), error: null };
+        else if (table === "channel_routing_responsibles") result = { data: (state.allowed ?? []).map(user_id => ({ user_id })), error: null };
+        else if (table === "conversations" && state.updates.length) result = { data: [{ id: CONV_ID }], error: null };
         if (table === "attendant_availability") result = { data: state.attendants, error: null };
         else if (table === "conversations" && q.count) result = { count: state.queuePositionCount, error: null };
         return Promise.resolve(result).then(resolve);
@@ -94,7 +101,7 @@ function makeSupabaseStub(state: StubState) {
     from,
     rpc: (fn: string, args: Record<string, unknown>) => {
       state.rpcCalls.push({ fn, args });
-      return Promise.resolve({ data: [{ id: CONV_ID }], error: null });
+      return Promise.resolve({ data: fn === "fn_channel_routing_claim" ? state.claimResult ?? "assigned" : null, error: null });
     },
   };
 }
@@ -136,7 +143,7 @@ beforeEach(() => {
 });
 
 describe("crm_request_human_handoff v2 (INB-12 — roteamento G5 unificado)", () => {
-  it("com elegível: selectRoundRobin determinístico ⇒ fn_conversation_assign reason='handoff'", async () => {
+  it("com elegível: selectRoundRobin determinístico ⇒ fn_channel_routing_claim reason='handoff'", async () => {
     const state = stubState();
     const result = (await crmRequestHumanHandoff.handler(baseInput, makeCtx(state))) as {
       assigned_to: string | null;
@@ -146,13 +153,10 @@ describe("crm_request_human_handoff v2 (INB-12 — roteamento G5 unificado)", ()
 
     expect(state.rpcCalls).toEqual([
       {
-        fn: "fn_conversation_assign",
+        fn: "fn_channel_routing_claim",
         args: {
-          p_organization_id: ORG_ID,
-          p_conversation_id: CONV_ID,
-          p_to_user_id: AGENT_ID,
-          p_reason: "handoff",
-          p_enforce_expected: false,
+          p_org: ORG_ID, p_conversation: CONV_ID, p_channel: CONV_ID, p_user: AGENT_ID,
+          p_reason: "handoff", p_schedule: {},
         },
       },
     ]);
@@ -174,7 +178,7 @@ describe("crm_request_human_handoff v2 (INB-12 — roteamento G5 unificado)", ()
       makeCtx(state),
     )) as { assigned_to: string | null };
 
-    expect(state.rpcCalls[0]?.args.p_to_user_id).toBe(AGENT_B);
+    expect(state.rpcCalls[0]?.args.p_user).toBe(AGENT_B);
     expect(result.assigned_to).toBe(AGENT_B);
   });
 
@@ -189,21 +193,24 @@ describe("crm_request_human_handoff v2 (INB-12 — roteamento G5 unificado)", ()
     expect(result.assigned_to).toBeNull();
     expect(result.queued).toBe(true);
     expect(result.position).toBe(4);
-    expect(state.rpcCalls).toEqual([]);
+    expect(state.rpcCalls).toEqual([{ fn: "fn_request_channel_routing", args: { p_org: ORG_ID, p_conversation: CONV_ID } }]);
     expect(state.updates).toContainEqual({
       table: "conversations",
       values: { assignee_kind: null },
     });
-    expect(state.inserts).toContainEqual({
-      table: "conversation_assignment_events",
-      values: {
-        organization_id: ORG_ID,
-        conversation_id: CONV_ID,
-        from_user_id: null,
-        to_user_id: null,
-        changed_by: null,
-        reason: "handoff",
-      },
-    });
+    expect(state.inserts).toEqual([]);
   });
+  it("alvo fora da política não recebe; lista vazia permanece na fila", async () => {
+    const state = stubState({ allowed: [] });
+    const result = await crmRequestHumanHandoff.handler({ ...baseInput, target_user_id: AGENT_ID }, makeCtx(state));
+    expect(result).toMatchObject({ assigned_to: null, queued: true });
+    expect(state.rpcCalls.some(c => c.fn === "fn_channel_routing_claim")).toBe(false);
+  });
+  it("perda por revogação no claim não troca por alguém fora da lista", async () => {
+    const state = stubState({ allowed: [AGENT_ID], claimResult: "candidate_revoked" });
+    expect(await crmRequestHumanHandoff.handler(baseInput, makeCtx(state))).toMatchObject({ assigned_to: null, queued: true });
+    expect(state.rpcCalls.filter(c => c.fn === "fn_channel_routing_claim")).toHaveLength(1);
+    expect(state.rpcCalls.at(-1)?.fn).toBe("fn_request_channel_routing");
+  });
+
 });

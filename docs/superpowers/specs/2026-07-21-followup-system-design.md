@@ -2,6 +2,14 @@
 
 > Aprovado por Rafael em 2026-07-21. Insumo: `docs/research/followup-reference-mining.md` (mineração odysseus / hermes / openclaw / tomikcrm).
 > Status: pronto para plano de implementação.
+>
+> **Snapshot histórico.** O status e o corpo abaixo registram o desenho aprovado
+> em 2026-07-21 e não devem ser lidos como o estado operacional atual. Os
+> complementos implementados de presença, proteção de silêncio e recuperação
+> vinculada/revisionada estão em
+> `docs/architecture/ponte-agendamento-followup.md`; seleção, identidade,
+> conflitos e limites da sincronização Google estão em
+> `docs/architecture/agenda-google-sync.architecture.json`.
 
 ## 1. Objetivo
 

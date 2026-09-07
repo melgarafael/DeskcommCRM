@@ -188,29 +188,13 @@ Supabase Realtime usa o mesmo JWT do cookie. Quando o `useRealtimeChannel` chama
 
 > **Pegadinha:** se o JWT expira durante uma sessão longa (default 1h), o realtime cai silenciosamente. O middleware refresca em request HTTP, mas se o usuário fica numa tela parada, precisa-se chamar `supabase.auth.refreshSession()` periodicamente. O hook `useAuth` (Tier 1) cuida disso com `setInterval(40min)`.
 
-### 3.7 Super-admin path
+### 3.7 Administração da plataforma e acompanhamento por sessão
 
-```mermaid
-sequenceDiagram
-  participant U as Browser
-  participant MW as Middleware
-  participant API as API route
-  participant FN as fn_is_platform_admin()
-  participant AUD as api_audit_log
+A área `/admin` gerencia a instalação. Para abrir dados de uma organização, a pessoa administradora inicia no detalhe do tenant um acompanhamento `full` ou `support_readonly`. O backend deriva ator e `auth.session_id` da sessão autenticada, valida a autoridade atual, o alvo, o modo, o TTL máximo de uma hora e a política de MFA, e então grava `platform_support_sessions`. O browser navega para o aplicativo da organização com um banner persistente e ação de saída.
 
-  U->>MW: GET /admin/inbox
-  MW->>FN: rpc('fn_is_platform_admin')
-  FN-->>MW: true
-  MW-->>U: passa
-  U->>API: GET /api/v1/admin/conversations?tenant_id=X
-  API->>FN: SELECT fn_is_platform_admin()
-  FN-->>API: true
-  API->>API: createAdminClient() (bypass RLS)
-  API->>AUD: INSERT { action: 'platform_admin.cross_tenant_read', tenant_id: X }
-  API-->>U: 200 + data (com X-Cross-Tenant: true)
-```
+Em cada request, `fn_support_context` reconfirma sessão Auth, ator, organização ativa, prazo, autoridade e modo efetivo. `full` projeta papel `admin`; `support_readonly` projeta `viewer` e suas cercas restritivas vencem até uma membership física admin no alvo. O mecanismo não cria membership, não troca identidade e não confina outras sessões ou direitos de plataforma fora do alvo.
 
-Toda rota `/admin/*` que cruza tenant **obriga** audit log. Isso é regra de produto, não de auth (vide Spec 01 §6.3).
+Expiração ou revogação invalidam o snapshot aberto e bloqueiam a continuação até a saída explícita. Um downgrade `full → support_readonly` invalida o estado de admin e retira a escrita, mas mantém a sessão ativa para a leitura permitida, sem exigir reinício. A saída depende da posse da sessão, restaura a organização anterior e reinicia a fronteira visual e de cache. Operações pelas superfícies do aplicativo registram ator real e `support_session_id`; isso não promete auditoria de DML bruto. Callbacks OAuth usam state assinado com ator/sessão e revalidam a cerca antes do efeito. Contrato completo: [`docs/support-sessions.md`](../support-sessions.md).
 
 ---
 
@@ -693,7 +677,7 @@ Tabela exaustiva pra cada tela P0. Use isso como checklist antes de codar.
 | `/onboarding/connect-nuvemshop` | onboarding | `useIntegration('nuvemshop')` | `connectNuvemshop()` (Server Action redirect → OAuth) | `org-{org_id}-sync-progress` | `integration.connected`, `nuvemshop.sync_started` | n/a |
 | `/onboarding/configure-ai` | onboarding | `useAgent('default')`, `useKnowledgeSources()` | `useUpdateAgent()`, `useUploadPolicy()` | `org-{org_id}-rag-status` | `ai_agents.updated`, `knowledge.indexed` | n/a |
 | `/onboarding/done` | onboarding | RSC: `getOnboardingChecklist()` | `acceptTermsOfService()` (Server Action), `dismissBanner('onboarding')` | n/a | `onboarding.completed` | n/a |
-| `/app` (router) | authenticated | RSC: `getUser()`, `getOrgs()`, `resolveActiveOrg()` | `setActiveOrg()` (Server Action) | `org-{org_id}-presence` | n/a | `Cmd+K` global search, `g i` inbox, `g p` pipeline |
+| `/app` (router) | authenticated | RSC: `getUser()`, vínculos aceitos, `resolveActiveOrg()` e `interface_settings` | `setActiveOrg()` (Server Action + navegação de documento completo) | `org-{org_id}-presence` | n/a (audit `organization.switched`) | `Cmd+K` usa somente destinos apresentados e permitidos |
 | `/app/inbox` | app | RSC initial 30 conversations + `useConversationsQuery(filter)` | n/a (sub-actions delegam pra detail) | `org-{org_id}-conversations` | n/a | `j/k` navigate, `/` search, `?` shortcuts, `Enter` open |
 | `/app/inbox/[conversationId]` | app | `useMessagesQuery(convId)`, `useConversation(convId)`, `useContact(contactId)`, `useTimeline(contactId)` | `useSendMessage`, `useResolveConversation`, `useClaimConversation`, `useReassignConversation`, `useUploadMedia` | `conv-{convId}-messages` + `conv-{convId}-typing` + `org-{org_id}-presence` | `message.sent`, `conversation.resolved`, `conversation.assigned`, `conversation.reassigned` | `r` reply, `e` resolve, `a` claim/assume, `Esc` close, `i` toggle nota interna, `Cmd+Enter` enviar, `/` quick reply |
 | `/app/pipelines/[pipelineId]` | app | `useBoard(pipelineId, filters)` (initial RSC + realtime patch) | `useMoveCard`, `useUpdateLead`, `useBulkAction`, `useCreateLead` | `pipeline-{pipelineId}-leads` | `lead.stage_changed`, `lead.won`, `lead.lost`, `lead.assigned`, `lead.value_changed` | drag (mouse), `b` toggle bulk-mode, `Esc` exit bulk, `f` focus search |
@@ -705,13 +689,13 @@ Tabela exaustiva pra cada tela P0. Use isso como checklist antes de codar.
 | `/app/ai/knowledge/sources` | app | `useKnowledgeSources(agentId)` | `useUploadPolicy` (file upload via signed URL), `useReindexSource`, `useDeleteSource` | `org-{org_id}-rag-status` | `knowledge.uploaded`, `knowledge.indexed`, `knowledge.failed` | n/a |
 | `/app/lgpd/requests` | app | `useLgpdRequests(filters)` | n/a (read-only listing) | `org-{org_id}-lgpd` | n/a | `j/k` navigate |
 | `/app/lgpd/requests/[id]` | app | `useLgpdRequest(id)`, `useDataPreview(id)` | `useApproveExport`, `useApproveRedact`, `useRejectRequest` | `org-{org_id}-lgpd` (filter `id=eq.{id}`) | `lgpd.export_generated`, `lgpd.redact_applied`, `lgpd.request_rejected` | n/a |
-| `/app/team` | app | `useTeamMembers()`, `useInvitations()` | `useInviteMember`, `useUpdateRole`, `useRevokeMember`, `useResendInvite` | `org-{org_id}-presence` | `member.invited`, `member.role_changed`, `member.revoked` | n/a |
+| `/app/team` | app | `useTeamMembers()` inclui `interface_settings`; convites carregam a escolha assinada | convite, papel, revogação, reenvio e `PATCH /api/v1/team/:user_id/interface` | `user_organizations` via hook realtime autenticado | `member.invited`, `member.role_changed`, `member.revoked`; interface: n/a (audit `team.interface_changed`) | n/a |
 | `/app/audit` | app | `useAuditLog(filters)` (cursor pagination) | n/a | n/a | n/a | `j/k` navigate rows, `Enter` abrir detalhe |
 | `/app/settings/tenant` | app | `useTenant()` | `useUpdateTenant`, `useUpdateBranding` | n/a | `org.updated` | n/a |
-| `/admin` | super-admin | RSC: `requirePlatformAdmin()`, `getAdminAlerts()` | `setActiveTenant()` (Server Action) | `presence-platform` + `platform-alerts` | `platform_admin.active_tenant_changed` | `Cmd+T` switch tenant, `Cmd+K` search |
-| `/admin/inbox` | super-admin | `useAdminInbox(filters)` (cross-tenant view) | (delega pra `/app/inbox/[id]` em modal/sheet) | `admin-conversations-{platform_admin_id}` | `platform_admin.cross_tenant_read` | `j/k` |
+| `/admin` | super-admin | RSC: `requirePlatformAdmin()`, alertas e estado da instalação | ações administrativas autorizadas | `presence-platform` + `platform-alerts` | n/a (auditoria própria da ação) | `Cmd+K` search |
 | `/admin/dashboard` | super-admin | `useAdminMetrics()`, `useAdminAlerts()` | `useAcknowledgeAlert` | `platform-alerts` | `platform_admin.alert_acknowledged` | n/a |
-| `/admin/tenants` | super-admin | `useTenants(filters)` | `useImpersonate(tenantId)`, `useSuspendTenant`, `useReactivateTenant` | n/a | `platform_admin.impersonate_started`, `org.suspended`, `org.reactivated` | n/a |
+| `/admin/tenants` | super-admin | `useTenants(filters)` | criar, suspender e reativar organização | n/a | n/a (ações auditadas) | n/a |
+| `/admin/tenants/[id]` | super-admin | detalhe e autoridade atuais | iniciar acompanhamento `full` ou `support_readonly`; sair ocorre pelo banner no app | estado da sessão é revalidado no app | n/a (auditoria com ator real) | n/a |
 | `/admin/tenants/[id]/health` | super-admin | `useTenantHealth(id)` | `useToggleTenantSuspend`, `useResetIntegration` | `tenant-{id}-health` | `org.suspended`, `org.reactivated`, `integration.reset` | n/a |
 | `/admin/incidents` | super-admin | `useIncidents()` | `useResolveIncident`, `useEscalateIncident` | `platform-incidents` | `incident.resolved`, `incident.escalated` | n/a |
 
@@ -817,8 +801,7 @@ Server Actions são restritas a **mutations curtas com revalidação de cache** 
 
 | Server Action | Signature | Onde é chamada | revalidate |
 |---|---|---|---|
-| `setActiveOrg(orgId: string)` | `(orgId: string) => Promise<void>` | `<OrgSwitcher>` em `/app/*` layout | `revalidatePath('/app', 'layout')` |
-| `setActiveTenant(tenantId: string)` | `(tenantId: string) => Promise<void>` | `<TenantSwitcher>` em `/admin/*` | `revalidatePath('/admin', 'layout')` |
+| `setActiveOrg(orgId: string)` | `(orgId: string) => Promise<{ ok: boolean; error?: string }>` | `<OrgSwitcher>` em `/app/*` layout | cliente navega o documento completo após sucesso |
 | `setTheme(theme: 'light' \| 'dark' \| 'system')` | `(theme) => Promise<void>` | `<ThemeToggle>` em settings | cookie set, sem revalidate |
 | `markNotificationRead(id: string)` | `(id: string) => Promise<void>` | `<NotificationItem>` | `revalidateTag('notifications')` |
 | `dismissBanner(bannerKey: string)` | `(bannerKey: string) => Promise<void>` | banners de onboarding/upgrade | `revalidatePath('/app', 'layout')` |
@@ -834,30 +817,13 @@ Server Actions são restritas a **mutations curtas com revalidação de cache** 
 
 > Toda Server Action faz **`requireAuth()`** no topo (helper que chama `supabase.auth.getUser()` server-side e jogo `redirect('/login')` se ausente). Roles checados via `lib/auth/permissions.ts`.
 
-```ts
-// app/actions/setActiveOrg.ts
-'use server';
-import { revalidatePath } from 'next/cache';
-import { cookies } from 'next/headers';
-import { requireAuth } from '@/lib/auth/server';
-import { z } from 'zod';
+Contrato vigente de `setActiveOrg`:
 
-const schema = z.object({ orgId: z.string().uuid() });
-
-export async function setActiveOrg(input: unknown) {
-  const { orgId } = schema.parse(input);
-  const { user, supabase } = await requireAuth();
-  const { data: membership } = await supabase
-    .from('user_organizations')
-    .select('organization_id')
-    .eq('user_id', user.id)
-    .eq('organization_id', orgId)
-    .maybeSingle();
-  if (!membership) throw new Error('forbidden_role');
-  (await cookies()).set('active_org', orgId, { httpOnly: true, sameSite: 'strict', path: '/' });
-  revalidatePath('/app', 'layout');
-}
-```
+1. Valida UUID e usuário com `getUser()` por `loadAuthUser`; acompanhamento ativo deve ser encerrado antes de uma troca normal.
+2. Aplica o gate de MFA em dívida e consulta novamente `user_organizations`, exigindo vínculo aceito, não revogado e organização ativa. Autoridade de plataforma isolada não substitui membership.
+3. Só depois grava o cookie `active_org` (`HttpOnly`, `SameSite=Strict`, `Secure` conforme o ambiente) e audita `organization.switched` com origem e destino.
+4. O cliente mantém uma guarda opaca sobre o documento e navega de forma completa. Falha libera a guarda e conserva cookie/contexto anteriores.
+5. `AuthProvider` recria `Providers` e o `QueryClient` pela fronteira `(user_id, organization_id, support_session_id, support_mode)`. Resultado antigo em voo termina no cache antigo e não aparece no novo contexto.
 
 ---
 
@@ -898,12 +864,14 @@ Lista priorizada dos hooks a criar em `hooks/`. Cada tier desbloqueia o próximo
 
 | Hook | Signature | Cache key | Invalidation |
 |---|---|---|---|
-| `useAuth` | `() => { user, signOut, refreshing }` | TanStack `['auth']` (staleTime: 30s) | manual em logout |
-| `useCurrentUser` | `() => User` (throws se ausente) | `['auth']` | — |
-| `useActiveOrg` | `() => { orgId, name, role }` | `['active-org']` | em `setActiveOrg` |
-| `usePermission` | `(action: string) => boolean` | derived de `useActiveOrg` | — |
+| `useAuth` | `() => { user, signOut, refreshing }` | contexto da fronteira ativa | reset em logout/troca/suporte |
+| `useCurrentUser` | `() => User` (throws se ausente) | contexto da fronteira ativa | — |
+| `useActiveOrg` | `() => { orgId, name, role, interface_settings }` | contexto da fronteira ativa | novo documento em `setActiveOrg` |
+| `usePermission` | `(action: string) => boolean` | derivado do papel efetivo | — |
 | `usePresence` | `(orgId) => { online: Set<userId> }` | broadcast in-memory | — |
-| `useOrgs` | `() => Org[]` | `['orgs']` | em invite-accept |
+| `useOrgs` | `() => Org[]` | contexto da fronteira ativa | aceite/troca |
+
+As query keys específicas dos tiers seguintes vivem dentro de um `QueryClient` isolado por usuário, organização e, quando presente, sessão/modo de suporte. `interface_settings` escolhe somente quais destinos autorizados são apresentados: catálogo allowlisted ∩ papel efetivo ∩ seleção do vínculo. Ocultar um destino não concede nem revoga acesso à URL/API; vínculo legado usa preset `completa`.
 
 ### Tier 2 — Inbox (semana 2)
 
@@ -974,8 +942,8 @@ Lista priorizada dos hooks a criar em `hooks/`. Cada tier desbloqueia o próximo
 
 | Hook | Signature | Cache key | Invalidation |
 |---|---|---|---|
-| `useTeamMembers` | `() => Query<Member[]>` | `['team']` | em mutations |
-| `useInvitations` | `() => Query<Invite[]>` | `['invitations']` | em mutations |
+| `useTeamMembers` | `() => Query<Member[]>` (inclui `interface_settings`) | `['team']` | mutations + realtime/foco |
+| `useInvitations` | `() => Query<Invite[]>` (inclui interface assinada) | `['invitations']` | em mutations |
 | `useInviteMember` | `() => Mutation` | append | — |
 | `useUpdateRole` | `(userId) => Mutation` | patch | — |
 | `useRevokeMember` | `(userId) => Mutation` | remove | — |
@@ -1002,7 +970,7 @@ Lista priorizada dos hooks a criar em `hooks/`. Cada tier desbloqueia o próximo
 | `useAdminAlerts` | `() => Query<Alert[]>` | `['admin-alerts']` | realtime |
 | `useTenants` | `(filters) => Query<Tenant[]>` | `['admin-tenants', filters]` | em mutations |
 | `useTenantHealth` | `(id) => Query<Health>` | `['tenant-health', id]` | realtime |
-| `useImpersonate` | `() => Mutation<{ tenant_id }>` | redirect; audit log | — |
+| Acompanhar organização | operação autenticada no detalhe do tenant; modo `full` ou `support_readonly` | novo documento + contexto por sessão | saída explícita |
 | `useToggleTenantSuspend` | `() => Mutation` | invalida health + tenants | — |
 | `useIncidents` | `() => Query<Incident[]>` | `['incidents']` | realtime |
 | `useResolveIncident` | `(id) => Mutation` | patch | — |

@@ -59,11 +59,7 @@ export interface DrainKnobs {
 const ALLOWLIST_TTL_MS_PADRAO = 21 * 24 * 60 * 60 * 1000;
 
 /** Um tick do drain: claima um lote de eventos e os transforma em jobs. */
-export async function drainTick(
-  pool: pg.Pool,
-  knobs: DrainKnobs,
-  log: Logger,
-): Promise<number> {
+export async function drainTick(pool: pg.Pool, knobs: DrainKnobs, log: Logger): Promise<number> {
   // Reaper de eventos órfãos — barato (update indexado), roda a cada tick.
   await pool.query(
     `update event_log set status = 'pending', updated_at = now()
@@ -107,10 +103,9 @@ export async function drainTick(
         );
         continue;
       }
-      await pool.query(
-        `update event_log set status = 'done', updated_at = now() where id = $1`,
-        [event.id],
-      );
+      await pool.query(`update event_log set status = 'done', updated_at = now() where id = $1`, [
+        event.id,
+      ]);
     } catch (err) {
       const message = (err instanceof Error ? err.message : String(err)).slice(0, 300);
       const terminal = event.attempts >= 5;
@@ -232,7 +227,7 @@ async function processEvent(
              -- Um roteador cujos membros foram todos pausados continuava
              -- abrindo o portão: a organização pagava o classificador e o turno
              -- inteiro por mensagem recebida, para responder pelo genérico.
-             -- O predicado aqui é o MESMO que loadPublishedAgentConfigById
+             -- O predicado aqui é o MESMO que loadConversationAgentConfigById
              -- aplica na hora de executar (agent-config.ts) — é o que garante
              -- que o portão não promete um agente que o resolvedor vai recusar.
              exists (
@@ -300,9 +295,24 @@ async function processEvent(
   // automação, retomada manual) e dentro da janela. Bloqueio por allowlist =
   // done, sem job, sem gasto — a conversa fica para atendimento humano.
   //
-  // `force_human` / silêncio / dono humano bloqueiam em QUALQUER modo: o turno já
-  // os respeitava (`isLeadInHandoff`), aqui a decisão só se antecipa para não
-  // enfileirar. O turno revalida (defesa em profundidade).
+  // `force_human` / silêncio / dono humano bloqueiam em QUALQUER modo, e é o
+  // TURNO quem garante isso — aqui a decisão só se antecipa para não enfileirar.
+  //
+  // Repare no `!canAssist` do `if` abaixo: com agente assistido publicado no
+  // canal o gate é desligado INTEIRO nesta ponta, de propósito (o rascunho é o
+  // produto do modo assistido, barrar aqui o mataria). A frase que este
+  // comentário trazia — "o turno revalida" — era falsa justamente nesse caso: o
+  // ramo assistido de `createInboundTurnHandler` devolvia antes das guardas de
+  // `runAgentTurn`. As duas checagens agora vivem dentro daquele ramo
+  // (`inbound-turn.ts`, `operationMode === 'assisted'`), e é lá que a defesa em
+  // profundidade realmente acontece.
+  // This is a capability check, never a selection by priority. The canonical
+  // router chooses once in the worker, then automatic eligibility is rechecked.
+  const {rows:assistance}=await pool.query<{available:boolean}>(`select exists(
+    select 1 from ai_agents a join ai_agent_versions v on v.organization_id=a.organization_id and v.id=a.published_version_id
+    where a.organization_id=$1 and a.archived_at is null and a.operation_mode='assisted' and v.status='published'
+    and(v.channel_session_id=$2 or exists(select 1 from ai_routers r where r.organization_id=a.organization_id and r.channel_session_id=$2 and r.is_active and(r.fallback_agent_id=a.id or exists(select 1 from ai_router_members m where m.organization_id=r.organization_id and m.router_id=r.id and m.agent_id=a.id))))) as available`,[event.organization_id,p.channel_session_id]);
+  const canAssist=assistance[0]?.available===true;
   try {
     const elegib = await decidirElegibilidadeDaConversa(pool, {
       organizationId: event.organization_id,
@@ -310,7 +320,7 @@ async function processEvent(
       agora: new Date(),
       ttlMs: knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
     });
-    if (elegib !== null && !elegib.permite) {
+    if (!canAssist && elegib !== null && !elegib.permite) {
       log.info('drain: conversa não elegível para IA — turno pulado (sem gasto)', {
         event_id: event.id,
         conversation_id: p.conversation_id,
@@ -419,10 +429,14 @@ export async function runDrainLoop(
     const waitMs = drained > 0 ? knobs.intervalMs : knobs.idleIntervalMs;
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, waitMs);
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer);
-        resolve();
-      }, { once: true });
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
     });
   }
 }

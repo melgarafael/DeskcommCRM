@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followups/enrollments/:id/skip (manager+) — pula o passo em
  * que o follow-up está e o coloca no passo seguinte, para ser avaliado no
@@ -30,6 +31,9 @@ const bodySchema = z.object({ edge_id: z.string().min(1).max(200).optional() });
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const invalido = validaIdDaRota(id, requestId);

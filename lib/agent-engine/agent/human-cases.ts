@@ -1,3 +1,4 @@
+import { currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 /**
  * Casos humanos (spec 15) — o loop assíncrono IA↔humano quando o agente esbarra
  * num bloqueio que só um humano resolve (aprovar desconto, confirmar política,
@@ -157,6 +158,7 @@ export async function openCase(
     source?: 'agent' | 'guardrail_autofallback';
   },
 ): Promise<OpenCaseResult> {
+  await guardServiceEffect();
   const source = input.source ?? 'agent';
   const actorKind = source === 'agent' ? 'agent' : 'system';
 
@@ -183,7 +185,7 @@ export async function openCase(
       input.title,
       input.summary,
       input.blocker,
-      JSON.stringify(input.contextSnapshot ?? {}),
+      JSON.stringify({ ...(input.contextSnapshot ?? {}), ...(currentExecutionBoundary() ? { service_boundary: currentExecutionBoundary() } : {}) }),
       source,
       OPEN_STATUSES,
       actorKind,

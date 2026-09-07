@@ -184,11 +184,41 @@ test.describe("Relógio HTTP — a batida de um cron externo faz o follow-up and
     // `fn_claim_due_followup_enrollments` usa. Sem relógio nenhum batendo, esta
     // linha fica parada para sempre — que é exatamente o defeito silencioso que
     // este arquivo existe para vigiar.
+    // A FRONTEIRA DO ATENDIMENTO, aberta pelo MESMO caminho da produção.
+    //
+    // Esta fixture nasceu antes da fronteira e semeava a linha sem
+    // `service_boundary`. O motor passou a exigi-la — e com razão: rodar um
+    // acompanhamento sem saber a QUAL atendimento ele pertence é como o
+    // follow-up volta a falar por cima de uma conversa que já virou outra. Todo
+    // caminho de produção carimba (`lib/followup/enroll.ts` e os dois INSERT em
+    // SQL de `fn_appointment_recover`), então a linha sem carimbo era um estado
+    // que o produto não cria — e o teste media um mundo que não existe.
+    //
+    // `fn_service_begin` é o que `beginServiceAtOrigin` chama; usar o RPC em vez
+    // de montar o objeto à mão faz a fixture herdar a forma real, inclusive se
+    // ela mudar.
+    const { data: fronteiraBruta, error: erroFronteira } = await admin.rpc("fn_service_begin", {
+      p_org: orgId,
+      p_contact: contato.id,
+    });
+    if (erroFronteira) throw new Error(`fn_service_begin: ${erroFronteira.message}`);
+    const bruta = fronteiraBruta as Record<string, unknown>;
+    const fronteira = {
+      organization_id: bruta.organization_id,
+      contact_id: bruta.contact_id,
+      conversation_id: bruta.conversation_id,
+      service_revision: bruta.service_revision,
+      demanda_id: bruta.demanda_id,
+      demanda_revision: bruta.demanda_revision,
+    };
+
     const enrollment = await semear<{ id: string }>("followup_enrollments", {
       organization_id: orgId,
       pointer_id: ponteiro.id,
       version_id: versao.id,
       contact_id: contato.id,
+      conversation_id: fronteira.conversation_id,
+      service_boundary: fronteira,
       current_node_id: "w1",
       status: "active",
       next_eval_at: new Date(Date.now() - 60_000).toISOString(),
@@ -207,10 +237,9 @@ test.describe("Relógio HTTP — a batida de um cron externo faz o follow-up and
 
   test("segredo errado é recusado — e o relógio NÃO anda", async () => {
     const antes = await lerEnrollment();
-    expect(
-      antes.current_node_id,
-      "pré-condição: o enrollment começa parado no nó de espera",
-    ).toBe("w1");
+    expect(antes.current_node_id, "pré-condição: o enrollment começa parado no nó de espera").toBe(
+      "w1",
+    );
 
     const codigo = baterNoRelogio("segredo-errado-de-proposito");
     expect(codigo, "batida sem o segredo certo tem de ser recusada").toBe(403);
@@ -251,10 +280,9 @@ test.describe("Relógio HTTP — a batida de um cron externo faz o follow-up and
     expect(baterNoRelogio(segredoInterno()), "a batida autorizada tem de ser aceita").toBe(200);
 
     const agendado = await lerEnrollment();
-    expect(
-      agendado.steps_taken,
-      "a primeira batida não executou o nó de espera",
-    ).toBeGreaterThan(inicial.steps_taken);
+    expect(agendado.steps_taken, "a primeira batida não executou o nó de espera").toBeGreaterThan(
+      inicial.steps_taken,
+    );
     expect(agendado.current_node_id, "o wait ainda não venceu — não pode ter avançado").toBe("w1");
     expect(
       new Date(agendado.next_eval_at ?? 0).getTime(),

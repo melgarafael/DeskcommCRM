@@ -32,6 +32,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
+import ts from "typescript";
 
 import {
   comHandoffSeOrcamentoAcabar,
@@ -100,10 +101,6 @@ function contexto(pool: unknown, log: unknown, avisarLead = avisoEspiao()) {
 /** Só as escritas do handoff — as leituras auxiliares da timeline não contam. */
 function sqlsDoHandoff(chamadas: Array<{ sql: string }>): string[] {
   return chamadas.map((c) => c.sql.replace(/\s+/gu, " ").trim());
-}
-
-function ocorrencias(texto: string, agulha: string): number {
-  return texto.split(agulha).length - 1;
 }
 
 describe("a escolta do orçamento", () => {
@@ -296,83 +293,77 @@ describe("a escolta do orçamento", () => {
  * o corpo do turno rodar desescoltado, e nenhum auxiliar futuro precisa ser
  * lembrado numa lista.
  */
-describe("o call site — medido no texto, porque a unidade não o alcança", () => {
+/** Distinguishes the authorized in-memory preview from every operational entrance. */
+function chamadasDoNucleo(texto: string) {
+  const ast = ts.createSourceFile("inbound.ts", texto, ts.ScriptTarget.Latest, true);
+  const chamadas: Array<{ tipo: "operacional" | "preview" | "sem_escolta"; texto: string }> = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "executarTurnoDoAgente") {
+      const ancestors: ts.Node[] = [];
+      for (let p = node.parent; p; p = p.parent) ancestors.push(p);
+      const owner = ancestors.find(ts.isFunctionDeclaration)?.name?.text;
+      const escoltado = ancestors.some(p => ts.isCallExpression(p) && ts.isIdentifier(p.expression) && p.expression.text === "comHandoffSeOrcamentoAcabar");
+      const preview = owner === "runAgentPreview" && node.arguments.length === 6 &&
+        node.arguments[1]?.kind === ts.SyntaxKind.NullKeyword && node.arguments[5]?.getText(ast) === "preview";
+      chamadas.push({ tipo: owner === "runAgentTurn" && escoltado ? "operacional" : preview ? "preview" : "sem_escolta", texto: node.getText(ast) });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  return chamadas;
+}
+
+describe("o call site — AST separa prévia sem job do turno operacional escoltado", () => {
   const fonteInbound = readFileSync(INBOUND, "utf8");
   const ESCOLTADO = "() => executarTurnoDoAgente(deps, job, pool, ctx, input),";
 
-  it("o turno inteiro roda dentro da escolta — não só as chamadas diretas de modelo", () => {
-    expect(fonteInbound.length, "guarda de vacuidade: inbound-turn.ts vazio?").toBeGreaterThan(1000);
-    // Duas ocorrências: a declaração e a ÚNICA chamada. Uma terceira seria um
-    // caminho de execução do turno que a escolta não cobre.
-    expect(
-      // Com parêntese: só INVOCAÇÃO e declaração contam. A menção em prosa
-      // (crase, sem parêntese) do cabeçalho de `runAgentTurn` não é caminho de
-      // execução, e contá-la faria o número mudar quando alguém edita comentário.
-      ocorrencias(fonteInbound, "executarTurnoDoAgente("),
-      "o núcleo do turno ganhou um segundo call site — a escolta cobre um só",
-    ).toBe(2);
-    expect(
-      fonteInbound,
-      "o núcleo do turno saiu de dentro da escolta: um estouro de teto em QUALQUER " +
-        "chamada de modelo do turno (inclusive as indiretas, que rodam primeiro) vira " +
-        "job cancelado e lead sem resposta",
-    ).toContain(ESCOLTADO);
-    expect(
-      fonteInbound.includes("export async function executarTurnoDoAgente"),
-      "exportar o núcleo cria um caminho para o turno rodar desescoltado",
-    ).toBe(false);
+  it("há uma única entrada operacional escoltada e uma prévia explicitamente sem job", () => {
+    const calls = chamadasDoNucleo(fonteInbound);
+    expect(calls.map(c => c.tipo).sort()).toEqual(["operacional", "preview"]);
+    const ast = ts.createSourceFile("inbound.ts", fonteInbound, ts.ScriptTarget.Latest, true);
+    const declarations = ast.statements.filter(ts.isFunctionDeclaration).filter(n => n.name?.text === "executarTurnoDoAgente");
+    expect(declarations).toHaveLength(1);
+    expect(declarations[0]!.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false).toBe(false);
   });
 
-  it("os auxiliares que chamam o modelo estão DENTRO do núcleo escoltado", () => {
-    // A guarda de alcance: se `classifyStage`/`maybeCompact` saíssem de
-    // `executarTurnoDoAgente` para `runAgentTurn` (antes da escolta), a escolta
-    // voltaria a não cobri-los. `indexOf` do núcleo marca a fronteira.
-    const inicioDoNucleo = fonteInbound.indexOf("async function executarTurnoDoAgente");
-    expect(inicioDoNucleo).toBeGreaterThan(0);
-    for (const auxiliar of ["classifyStage(", "maybeCompact("]) {
-      const pos = fonteInbound.indexOf(`await ${auxiliar}`);
-      expect(pos, `${auxiliar} não foi encontrado — o detector mede outra coisa`).toBeGreaterThan(0);
-      expect(
-        pos,
-        `${auxiliar} chama o modelo FORA do núcleo escoltado — estourar o teto ali ` +
-          `cancela o job sem handoff`,
-      ).toBeGreaterThan(inicioDoNucleo);
-    }
+  function auxiliaresForaDoNucleo(texto: string) {
+    const ast = ts.createSourceFile("inbound.ts", texto, ts.ScriptTarget.Latest, true);
+    const encontrados: Array<{ nome: string; owner: string | undefined }> = [];
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ["classifyStage", "maybeCompact"].includes(node.expression.text)) {
+        let parent: ts.Node | undefined = node.parent;
+        while (parent && !ts.isFunctionDeclaration(parent)) parent = parent.parent;
+        encontrados.push({ nome: node.expression.text, owner: parent && ts.isFunctionDeclaration(parent) ? parent.name?.text : undefined });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    return encontrados;
+  }
+  it("todos os auxiliares de classificação e compaction ficam dentro do núcleo", () => {
+    const calls = auxiliaresForaDoNucleo(fonteInbound);
+    expect(new Set(calls.map(c => c.nome))).toEqual(new Set(["classifyStage", "maybeCompact"]));
+    expect(calls.filter(c => c.owner !== "executarTurnoDoAgente")).toEqual([]);
   });
 
-  it("controle negativo: o detector acusa o núcleo tirado da escolta", () => {
-    const sabotado = fonteInbound.replace(
-      ESCOLTADO,
-      "() => Promise.resolve(),\n  );\n  await executarTurnoDoAgente(deps, job, pool, ctx, input);\n  void (",
-    );
-    expect(sabotado, "a sabotagem não mudou nada — o detector mede outra coisa").not.toBe(
-      fonteInbound,
-    );
-    // ⚠️ A CONTAGEM SOZINHA NÃO PEGARIA: a sabotagem tira uma invocação de dentro
-    // da escolta e põe outra fora, e o total continua 2. É a asserção de
-    // CONTINÊNCIA que carrega o peso aqui — cada uma das duas guarda uma
-    // propriedade diferente, e declarar isso é o que impede alguém de "simplificar"
-    // o caso removendo a que parece redundante.
-    expect(ocorrencias(sabotado, "executarTurnoDoAgente(")).toBe(2);
-    expect(sabotado).not.toContain(ESCOLTADO);
+  it("controle negativo: retirar a escolta é acusado mesmo mantendo o número de chamadas", () => {
+    const sabotado = fonteInbound.replace(ESCOLTADO, "() => Promise.resolve(),\n  );\n  await executarTurnoDoAgente(deps, job, pool, ctx, input);\n  void (");
+    expect(sabotado).not.toBe(fonteInbound);
+    expect(chamadasDoNucleo(sabotado)).toHaveLength(2);
+    expect(chamadasDoNucleo(sabotado).filter(c => c.tipo === "sem_escolta")).toHaveLength(1);
   });
-
-  it("controle negativo: a contagem acusa um SEGUNDO caminho de execução do turno", () => {
-    const sabotado = `${fonteInbound}\nasync function atalho() { await executarTurnoDoAgente(a, b, c, d, e); }\n`;
-    expect(ocorrencias(sabotado, "executarTurnoDoAgente(")).toBe(3);
-    // O atalho preserva a escolta original — só a contagem o denuncia.
-    expect(sabotado).toContain(ESCOLTADO);
+  it("controle negativo: um novo atalho é acusado sem remover a escolta legítima", () => {
+    const sabotado = `${fonteInbound}\nasync function atalho() { await executarTurnoDoAgente(a, b, c, d, e); }`;
+    expect(chamadasDoNucleo(sabotado).map(c => c.tipo).sort()).toEqual(["operacional", "preview", "sem_escolta"]);
   });
-
-  it("controle negativo: o detector acusa um auxiliar promovido para fora do núcleo", () => {
-    const inicioDoNucleo = fonteInbound.indexOf("async function executarTurnoDoAgente");
-    const sabotado =
-      fonteInbound.slice(0, inicioDoNucleo) +
-      "await classifyStage(x);\n" +
-      fonteInbound.slice(inicioDoNucleo);
-    expect(sabotado.indexOf("await classifyStage(")).toBeLessThan(
-      sabotado.indexOf("async function executarTurnoDoAgente"),
-    );
+  it("controle negativo: prévia não pode transportar um job operacional", () => {
+    const sabotado = fonteInbound.replace(/(await executarTurnoDoAgente\(\s*deps,\s*)null,/, "$1job,");
+    expect(sabotado).not.toBe(fonteInbound);
+    expect(chamadasDoNucleo(sabotado).filter(c => c.tipo === "sem_escolta")).toHaveLength(1);
+  });
+  it("controle negativo: um auxiliar fora do núcleo é acusado", () => {
+    const sabotado = `${fonteInbound}\nasync function atalho() { await classifyStage(x); }`;
+    expect(auxiliaresForaDoNucleo(sabotado).filter(c => c.owner !== "executarTurnoDoAgente")).toEqual([{ nome: "classifyStage", owner: "atalho" }]);
   });
 
   it("o erro de orçamento se declara terminal — é o que a fila lê", () => {
@@ -387,8 +378,8 @@ describe("o call site — medido no texto, porque a unidade não o alcança", ()
 describe("a fila trata veto de negócio como veto, não como incidente", () => {
   const fonteWorker = readFileSync(WORKER, "utf8").replace(/\s+/gu, " ");
   const ROTEAMENTO =
-    "if (terminal) { await cancelJob(pool, job.id, workerId, errMsg(err)); } " +
-    "else { await failJob(pool, job.id, workerId, err); }";
+    "if (terminal) { await cancelJob(pool, job.id, workerId, errMsg(err), claimOfJob(job)?.acquired_at); } " +
+    "else { await failJob(pool, job.id, workerId, err, claimOfJob(job)?.acquired_at); }";
 
   it("erro terminal vai para cancelJob; o resto continua em failJob", () => {
     expect(fonteWorker.length, "guarda de vacuidade: arquivo do worker vazio").toBeGreaterThan(1000);
@@ -401,8 +392,8 @@ describe("a fila trata veto de negócio como veto, não como incidente", () => {
 
   it("controle negativo: o detector acusa a volta do failJob", () => {
     const sabotado = fonteWorker.replace(
-      "await cancelJob(pool, job.id, workerId, errMsg(err));",
-      "await failJob(pool, job.id, workerId, err);",
+      "await cancelJob(pool, job.id, workerId, errMsg(err), claimOfJob(job)?.acquired_at);",
+      "await failJob(pool, job.id, workerId, err, claimOfJob(job)?.acquired_at);",
     );
     expect(sabotado).not.toBe(fonteWorker);
     expect(sabotado).not.toContain(ROTEAMENTO);

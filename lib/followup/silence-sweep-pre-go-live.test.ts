@@ -24,9 +24,25 @@ const metadata = {
 };
 
 function conversa(contactId: string, phoneNumber: string) {
+  const conversationId = `conversation-${contactId}`;
   return {
+    id: conversationId,
+    service_revision: 1,
+    current_demanda_id: null,
+    demandas: null,
+    status: "open",
     contact_id: contactId,
     last_inbound_at: "2026-09-01T10:00:00.000Z",
+    // O candidato conserva a origem do inbound no atendimento ainda vigente.
+    messages: [{
+      organization_id: "org",
+      contact_id: contactId,
+      conversation_id: conversationId,
+      service_revision: 1,
+      demanda_id: null,
+      demanda_revision: null,
+      sent_at: "2026-09-01T10:00:00.000Z",
+    }],
     contacts: {
       tags: [],
       is_blocked: false,

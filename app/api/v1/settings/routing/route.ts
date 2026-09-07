@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/settings/routing — lê a config de ATENDIMENTO (manager+):
  *      `organizations.settings.routing` + `settings.visibility_mode`.
@@ -68,6 +69,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "settings_routing" });
   if (!authz.ok) return authz.response;

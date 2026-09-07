@@ -1,3 +1,4 @@
+import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { RiskBucket } from "@/lib/leads/risk-radar";
 
 /**
@@ -234,6 +235,7 @@ export async function sincronizaEstagioDoAgente(
     .eq("id", lead.stage_id)
     .maybeSingle();
 
+  const serviceOrigin = await observeServiceOrigin(admin, input.organizationId, input.contactId);
   const { data: atualizadas, error } = await admin
     .from("crm_leads")
     .update({ stage_id: destino.stageId })
@@ -310,6 +312,7 @@ export async function sincronizaEstagioDoAgente(
     p_entity_kind: "crm_lead",
     p_entity_id: lead.id,
     p_payload: {
+      service_origin: serviceOrigin,
       pipeline_id: lead.pipeline_id,
       from_stage_id: lead.stage_id,
       to_stage_id: destino.stageId,

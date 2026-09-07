@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH  /api/v1/automation-rules/[id] — atualiza campos (inclui is_active — switch da UI).
  * DELETE /api/v1/automation-rules/[id] — remove a regra.
@@ -22,6 +23,9 @@ interface RouteCtx {
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
@@ -100,6 +104,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 }
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "automation_rules" });

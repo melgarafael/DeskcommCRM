@@ -321,12 +321,12 @@ owner: Rafael Melgaço
 
 ## 5. Atendimento & Roteamento (AT)
 
-### AT-01 — Conversation status segue máquina de estado fechada
+### AT-01 — Conversa e demanda têm ciclos distintos e revisionados
 - **Origem**: Sub-PRD 04 §3.4
 - **Tipo**: Hard constraint
-- **Regra**: Estados permitidos: `open` → `pending` → `resolved` (transitions auditadas). `resolved → open` permitido (reabertura). `pending → open` permitido (cliente respondeu). Outras transições retornam 422.
-- **Enforcement**: API + DB check constraint.
-- **Exceção**: Nenhuma.
+- **Regra**: O vocabulário aceito é `open`, `pending`, `ai_handling`, `claimed`, `closed`, `resolved` e `archived`; os três últimos são terminais compatíveis, e a UI Fechar grava `closed`. `service_revision` avança quando o estado anterior ou o novo é terminal, não entre dois estados não terminais. Fechar a conversa preserva a demanda e não infere desfecho; o desfecho é comando explícito com CAS, incrementa `demandas.revision` e a fronteira o captura como `demanda_revision`. Inbound válido depois de estado terminal cria nova fronteira e nova demanda, preserva a anterior como histórico e não escolhe outra demanda do contato por recência. Trabalho assíncrono captura `ServiceBoundary` e a revalida antes de ferramenta mutável ou envio.
+- **Enforcement**: DB (lock organização + contato, vocabulário terminal e revisões específicas) + API/worker (CAS e `ServiceBoundary`) + guarda no transporte.
+- **Exceção**: Efeito já aceito pelo transporte não pode ser desfeito; isso não renova a autoridade do job nem permite novo efeito.
 
 ### AT-02 — "Eu cuido" é claim atômico
 - **Origem**: Sub-PRD 04 §3.8

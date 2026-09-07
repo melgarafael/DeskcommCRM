@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channels/templates — o espelho local + o CONTRATO derivado de cada um.
  * POST /api/v1/channels/templates — força um sync com a Graph API.
@@ -146,6 +147,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(_req: NextRequest): Promise<NextResponse> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const r = await orgOrFail(requestId);
   if (!r.autorizado) return r.resposta;

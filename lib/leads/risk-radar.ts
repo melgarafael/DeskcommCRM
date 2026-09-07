@@ -1,3 +1,4 @@
+import type { ProtecaoAgenda } from "@/lib/agenda/protecao-followup";
 /**
  * Radar de Risco (desilhamento C1 da doutrina do sistema vivo) — lógica pura de
  * classificação. Uma demanda aberta que esfriou e não tem próximo passo garantido
@@ -48,6 +49,7 @@ export interface RiskInput {
   now: Date;
   /** há follow-up agendado no futuro (cron_jobs kind='at' enabled) para o contato. */
   inFlight: boolean;
+  agenda?: ProtecaoAgenda;
   /**
    * Janela do estágio — OBRIGATÓRIA. Era opcional durante a transição, e
    * opcional aqui significa "esquecer é silencioso": o chamador que não passa
@@ -65,14 +67,18 @@ export interface RiskResult {
   onRadar: boolean;
 }
 
-export function classifyRisk({ lastActivityAt, now, inFlight, window }: RiskInput): RiskResult {
+export function classifyRisk({ lastActivityAt, now, inFlight, window, agenda }: RiskInput): RiskResult {
   const { coldHours, criticalHours } = window;
   const hoursSinceActivity = Math.max(
     0,
     (now.getTime() - lastActivityAt.getTime()) / 3_600_000,
   );
   let bucket: RiskBucket;
-  if (hoursSinceActivity < coldHours) {
+  if (agenda?.adiar) {
+    bucket = "em_voo";
+  } else if (agenda?.motivo === "presenca_vencida") {
+    bucket = "critico";
+  } else if (hoursSinceActivity < coldHours) {
     bucket = "em_dia";
   } else if (inFlight) {
     bucket = "em_voo";

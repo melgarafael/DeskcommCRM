@@ -60,7 +60,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const { data: agents, error } = await supabase
     .from("ai_agents")
-    .select("id, name, published_version_id, kind, is_active, archived_at")
+    .select("id, name, published_version_id, kind, is_active, paused_at, archived_at")
     .eq("organization_id", orgId)
     .is("archived_at", null)
     .order("priority", { ascending: false })
@@ -68,14 +68,17 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  const rows = ((agents ?? []) as Array<{
-    id: string;
-    name: string;
-    published_version_id: string | null;
-    kind: string | null;
-    is_active: boolean | null;
-    archived_at: string | null;
-  }>).filter(agenteAtende);
+  const rows = (
+    (agents ?? []) as Array<{
+      id: string;
+      name: string;
+      published_version_id: string | null;
+      kind: string | null;
+      is_active: boolean | null;
+      paused_at: string | null;
+      archived_at: string | null;
+    }>
+  ).filter(agenteAtende);
 
   const publishedIds = rows.map((a) => a.published_version_id).filter((v): v is string => !!v);
   const versionById = new Map<string, number>();

@@ -86,7 +86,7 @@ describe("0088 · o espelho de templates da Meta chega ao clone", () => {
     expect(sql(`select relrowsecurity from pg_class where relname = 'meta_templates'`)).toBe("t");
     expect(
       sql(`select policyname from pg_policies
-            where schemaname = 'public' and tablename = 'meta_templates' order by 1`),
+            where schemaname = 'public' and tablename = 'meta_templates' and permissive = 'PERMISSIVE' order by 1`),
     ).toBe("tenant_isolation_meta_templates_all");
   });
 

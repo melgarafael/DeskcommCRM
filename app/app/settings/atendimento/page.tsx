@@ -22,6 +22,8 @@ import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, ROLE_RANK, type VisibilityMode } from "@/lib/auth/types";
 import { routingConfigSchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { loadChannelRoutingSettings } from "@/lib/routing/channel-policies";
+import { ChannelRoutingForm } from "./_channels-form";
 import { AtendimentoForm } from "./_form";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -31,7 +33,7 @@ export default async function AtendimentoSettingsPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
-  if (!user.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
+  if (!(user.is_platform_admin && !user.support) && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
     redirect("/403");
   }
 
@@ -50,6 +52,7 @@ export default async function AtendimentoSettingsPage() {
   // tela que serve justamente para consertá-la.
   const routing = routingConfigSchema.catch(routingConfigSchema.parse({})).parse(settings.routing ?? {});
   const idioma = user.idioma;
+  const channels = await loadChannelRoutingSettings(supabase, activeOrg.orgId);
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -68,6 +71,7 @@ export default async function AtendimentoSettingsPage() {
       <AtendimentoForm
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
       />
+      <ChannelRoutingForm initial={channels} />
     </div>
   );
 }

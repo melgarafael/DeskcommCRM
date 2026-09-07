@@ -1,3 +1,4 @@
+import { supportCallbackWriteAllowed } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/agenda/google/callback — a volta do consentimento do Google.
  *
@@ -221,6 +222,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // `code` do Google — que é de uso único — antes de descobrir que o `state`
   // era repetido, e quem apresentasse o legítimo receberia "código já usado",
   // um erro que aponta para o Google e não para o replay.
+  if (!(await supportCallbackWriteAllowed(organizationId, userId, estado.authSessionId))) return voltar("erro=retorno_nao_verificavel");
   const admin = createAdminClient();
   const { error: erroDoNonce } = await admin.from("calendar_oauth_nonces").insert({
     nonce: estado.nonce,
@@ -430,6 +432,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   await audit({
+    actorUserId: userId,
+    actorAuthSessionId: estado.authSessionId,
     action: "agenda.google.conexao_concluida",
     organizationId,
     metadata: { user_id: userId, account_email: conta.conta.email, fuso: conta.conta.fuso },

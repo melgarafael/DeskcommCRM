@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * DESCONECTAR A AGENDA DO GOOGLE.
  *
@@ -60,6 +61,9 @@ const corpo = z.object({
 });
 
 export async function DELETE(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = req.headers.get("x-request-id") ?? undefined;
 
   const autorizado = await requireRole("agent", { requestId, resource: "calendar_connections" });

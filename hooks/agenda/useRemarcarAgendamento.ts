@@ -32,7 +32,7 @@ import { apiClient } from "@/lib/api/client";
 export function useRemarcarAgendamento() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (entrada: { id: string; starts_at: string; guest_email?: string }) =>
+    mutationFn: async (entrada: { id: string; revision?:number; starts_at: string; guest_email?: string }) =>
       apiClient.patch<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
     onSuccess: () => {
       toast.success("Agendamento remarcado.");
@@ -47,7 +47,7 @@ export function useCancelarAgendamento() {
   return useMutation({
     // O `reason` é obrigatório na rota (mínimo 3 caracteres) e não é burocracia:
     // é o que a equipe lê ao ver o horário vago. A tela pede antes de chamar.
-    mutationFn: async (entrada: { id: string; reason: string }) =>
+    mutationFn: async (entrada: { id: string; revision?:number; reason: string }) =>
       apiClient.delete<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
     onSuccess: () => {
       toast.success("Agendamento cancelado.");
@@ -86,7 +86,7 @@ export function useCancelarAgendamento() {
 export function useRegistrarDesfecho() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (entrada: { id: string; status: "completed" | "no_show" }) =>
+    mutationFn: async (entrada: { id: string; revision?:number; status: "completed" | "no_show" }) =>
       apiClient.patch<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
     onSuccess: (_dados, entrada) => {
       toast.success(

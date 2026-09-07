@@ -93,7 +93,7 @@ describe("recoverOrganization", () => {
     vi.mocked(resolveActiveOrg).mockResolvedValue({ orgId: "existente" } as never);
     const { recoverOrganization } = await import("./recoverOrganization");
 
-    await expect(recoverOrganization("Empresa Nova")).rejects.toThrow("NEXT_REDIRECT:/app/inbox");
+    await expect(recoverOrganization("Empresa Nova")).rejects.toThrow("NEXT_REDIRECT:/app");
     expect(ensureTenantForUser).not.toHaveBeenCalled();
   });
 

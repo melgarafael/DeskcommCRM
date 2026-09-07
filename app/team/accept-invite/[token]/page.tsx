@@ -13,7 +13,7 @@ import Link from "next/link";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { createClient } from "@/lib/supabase/server";
-import { acceptInviteAction } from "@/app/actions/team/acceptInvite";
+import { AcceptInviteForm } from "./AcceptInviteForm";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -126,11 +126,6 @@ export default async function AcceptInvitePage({ params }: PageProps) {
     );
   }
 
-  async function accept() {
-    "use server";
-    await acceptInviteAction(token);
-  }
-
   return (
     <Shell>
       <h1 className="text-xl font-semibold">{t("Aceitar convite")}</h1>
@@ -138,14 +133,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         {t("Você foi convidado para entrar como")} <strong>{payload.role}</strong>.{" "}
         {t("Confirme abaixo para ativar seu acesso.")}
       </p>
-      <form action={accept} className="mt-4">
-        <button
-          type="submit"
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          {t("Aceitar convite")}
-        </button>
-      </form>
+      <AcceptInviteForm token={token} label={t("Aceitar convite")} pendingLabel={t("Confirmando…")} failureLabel={t("Não foi possível aceitar este convite. Ele pode ter vencido ou seu acesso foi revogado. Peça um novo link ao administrador.")} />
     </Shell>
   );
 }

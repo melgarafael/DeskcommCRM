@@ -1,3 +1,4 @@
+import { serviceForEvent } from "@/lib/atendimento/origem";
 /**
  * Gatilho de ETAPA DO FUNIL (`trigger_config.kind='stage_change'`) — o
  * follow-up passa a nascer sozinho quando o negócio entra numa etapa escolhida.
@@ -76,6 +77,8 @@ export interface GatilhoEtapaDb {
   carregaNoDeGatilho(orgId: string, versionId: string): Promise<string | null>;
   /** `inserted:false` = 23505 (contato já vivo em algum fluxo) → skip silencioso. */
   insereEnrollment(input: {
+    service_origin?: unknown;
+    event_id?: string;
     organization_id: string;
     pointer_id: string;
     version_id: string;
@@ -93,7 +96,7 @@ export interface GatilhoEtapaDb {
      */
     next_eval_at?: string;
     agent_id: string | null;
-  }): Promise<{ inserted: boolean; id: string | null }>;
+  }): Promise<{ inserted: boolean; id: string | null; reason?: "stale_origin" }>;
   /** A linha de proveniência na timeline do enrollment. */
   insereEventoDoEnrollment(evento: {
     organization_id: string;
@@ -112,6 +115,7 @@ export interface GatilhoEtapaSummary {
   pointers_barrados_pelo_gate: number;
   enrolled: number;
   skipped_existing: number;
+  skipped_stale_origin?: number;
   /** Negócio entrou na etapa mas não tem contato — não há a quem escrever. Contado, nunca calado. */
   sem_contato: number;
 }
@@ -181,7 +185,9 @@ export async function aplicaGatilhoDeEtapa(
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
 
-    const { inserted, id } = await deps.db.insereEnrollment({
+    const { inserted, id, reason } = await deps.db.insereEnrollment({
+      service_origin: row.payload.service_origin,
+      event_id: row.id,
       organization_id: row.organization_id,
       pointer_id: pointer.id,
       version_id: pointer.active_version_id,
@@ -192,7 +198,8 @@ export async function aplicaGatilhoDeEtapa(
       agent_id: agentId,
     });
     if (!inserted) {
-      summary.skipped_existing++;
+      if (reason === "stale_origin") summary.skipped_stale_origin = (summary.skipped_stale_origin ?? 0) + 1;
+      else summary.skipped_existing++;
       continue;
     }
     summary.enrolled++;
@@ -282,11 +289,14 @@ export function createSupabaseGatilhoEtapaDb(admin: SupabaseClient): GatilhoEtap
     },
 
     async insereEnrollment(input) {
+      const { service_origin: _origin, event_id, ...values } = input;
+      const boundary = event_id ? await serviceForEvent(admin, input.organization_id, event_id, input.contact_id) : null;
+      if (!boundary) return { inserted: false, id: null, reason: "stale_origin" };
       // O `.select("id")` não é enfeite: sem o id não há linha de proveniência,
       // e o enrollment apareceria na fila sem dizer de onde veio.
       const { data, error } = await admin
         .from("followup_enrollments")
-        .insert(input)
+        .insert({ ...values, conversation_id: boundary.conversation_id, service_boundary: boundary })
         .select("id")
         .maybeSingle();
       if (error) {

@@ -69,6 +69,7 @@ function listaDoWorkflow(yml: string, chave: string): string[] {
 const yml = readFileSync(WORKFLOW, "utf8");
 const parte1 = listaDoWorkflow(yml, "SPECS_PARTE_1");
 const parte2 = listaDoWorkflow(yml, "SPECS_PARTE_2");
+const parte3 = listaDoWorkflow(yml, "SPECS_PARTE_3");
 const foraDoCi = listaDoWorkflow(yml, "FORA_DO_CI");
 const noDisco = readdirSync(DIR_SPECS)
   .filter((f) => f.endsWith(".spec.ts"))
@@ -79,19 +80,22 @@ describe("cobertura do e2e no CI", () => {
     // Sem isto, um regex que parou de casar devolveria três listas vazias e a
     // asserção de vigência passaria por vacuidade, enquanto a de completude
     // acusaria as 39 specs de uma vez. Verde e vermelho errados pelo mesmo motivo.
-    expect(noDisco.length, "nenhuma spec no disco — o diretório mudou de lugar?").toBeGreaterThan(30);
+    expect(noDisco.length, "nenhuma spec no disco — o diretório mudou de lugar?").toBeGreaterThan(
+      30,
+    );
     expect(parte1.length, "SPECS_PARTE_1 não foi lida do workflow").toBeGreaterThan(10);
     expect(parte2.length, "SPECS_PARTE_2 não foi lida do workflow").toBeGreaterThan(10);
+    expect(parte3.length, "SPECS_PARTE_3 não foi lida do workflow").toBeGreaterThan(10);
     expect(foraDoCi.length, "FORA_DO_CI não foi lida do workflow").toBeGreaterThan(0);
   });
 
   it("toda spec do disco está em exatamente uma lista", () => {
-    const declaradas = [...parte1, ...parte2, ...foraDoCi];
+    const declaradas = [...parte1, ...parte2, ...parte3, ...foraDoCi];
     const semLista = noDisco.filter((f) => !declaradas.includes(f));
     expect(
       semLista,
       "Spec no disco que não roda no CI nem está declarada como fora. Ponha em " +
-        "SPECS_PARTE_1/2 (se rodar sem WAHA/Redis/Resend) ou em FORA_DO_CI com o " +
+        "SPECS_PARTE_1/2/3 (se rodar sem WAHA/Redis/Resend) ou em FORA_DO_CI com o " +
         "motivo escrito. Cobertura parcial silenciosa se lê como cobertura total.\n",
     ).toEqual([]);
 
@@ -105,8 +109,12 @@ describe("cobertura do e2e no CI", () => {
     // O sentido inverso, e ele é pior: `playwright test naoexiste.spec.ts` não
     // acha nada e o job termina VERDE. Uma renomeação silenciosamente desliga a
     // cobertura daquele arquivo.
-    const fantasmas = [...parte1, ...parte2, ...foraDoCi].filter((f) => !noDisco.includes(f));
-    expect(fantasmas, "lista do CI aponta para spec inexistente — renomeada ou apagada").toEqual([]);
+    const fantasmas = [...parte1, ...parte2, ...parte3, ...foraDoCi].filter(
+      (f) => !noDisco.includes(f),
+    );
+    expect(fantasmas, "lista do CI aponta para spec inexistente — renomeada ou apagada").toEqual(
+      [],
+    );
   });
 
   /**
@@ -135,14 +143,42 @@ describe("cobertura do e2e no CI", () => {
     // As partes passaram a rodar em PARALELO (matrix), e o comando deixou de
     // citar a variável direto: ele escolhe a lista pela `matrix.parte`. A
     // propriedade que este caso guarda não mudou, então ele cobra a CADEIA
-    // inteira em vez de uma linha literal — as duas variáveis chegam a `LISTA`,
+    // inteira em vez de uma linha literal — as três variáveis chegam a `LISTA`,
     // e é `LISTA` que vai ao Playwright. Cobrar só o `--workers=1 $LISTA`
     // deixaria passar um workflow onde `LISTA` nunca é atribuída.
-    expect(yml, "SPECS_PARTE_1 não alimenta a variável que roda").toMatch(/LISTA="\$SPECS_PARTE_1"/);
-    expect(yml, "SPECS_PARTE_2 não alimenta a variável que roda").toMatch(/LISTA="\$SPECS_PARTE_2"/);
+    // Enumerar as partes À MÃO aqui repetiria o defeito que este bloco existe
+    // para impedir. As partes são DESCOBERTAS no próprio workflow: quem
+    // acrescentar uma quarta não precisa lembrar de nada — e se esquecer de
+    // ligá-la, é aqui que descobre.
+    const partesDeclaradas = [...yml.matchAll(/^ {6}(SPECS_PARTE_\d+):/gm)].map((m) => m[1]!);
+    expect(
+      partesDeclaradas.length,
+      "nenhuma SPECS_PARTE_N no workflow — o parser mudou?",
+    ).toBeGreaterThan(1);
+    for (const parte of partesDeclaradas)
+      expect(yml, `${parte} não alimenta a variável que roda`).toMatch(
+        new RegExp(`LISTA="\\$${parte}"`),
+      );
     expect(yml, "a lista escolhida não é passada ao Playwright").toMatch(
       /playwright test --workers=1 \$LISTA/,
     );
+    // E A CONTAGEM DO SUMMARY TAMBÉM SOMA TODAS AS PARTES.
+    //
+    // O passo de cobertura do job agregador faz `RODOU + FORA == disco` e
+    // reprova quando não bate. Ele é uma SEGUNDA implementação da mesma regra
+    // que este arquivo guarda — e as duas divergiram: a parte 3 entrou nas
+    // listas, no `case` e neste teste, e ficou de fora daquela soma. O CI
+    // acusou `rodou=72 fora=3 disco=100`, faltando exatamente as 25 da parte 3.
+    // Guardar só a régua e deixar a irmã solta é como ter um gate e meio.
+    const somaDoSummary = /RODOU=\$\(\s*\{([^}]*)\}/.exec(yml)?.[1] ?? "";
+    expect(somaDoSummary, "não achei a soma `RODOU=$( { ... }` no workflow").not.toBe("");
+    for (const parte of partesDeclaradas)
+      expect(
+        somaDoSummary,
+        `${parte} não entra na contagem de cobertura do job agregador — o summary vai acusar ` +
+          "divergência entre listas e disco, ou pior, deixar de acusar uma spec que não roda",
+      ).toContain(parte);
+
     // E FORA_DO_CI nunca é passada a um run — ela existe para NÃO rodar.
     expect(yml).not.toMatch(/playwright test[^\n]*\$FORA_DO_CI/);
     expect(yml).not.toMatch(/LISTA="\$FORA_DO_CI"/);

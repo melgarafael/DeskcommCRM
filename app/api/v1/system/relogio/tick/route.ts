@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/system/relogio/tick — uma batida do relógio.
  *
@@ -58,6 +59,9 @@ async function sessaoAdmin(requestId: string): Promise<boolean> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const porSegredo = bearerValido(req);
   if (!porSegredo && !(await sessaoAdmin(requestId))) {

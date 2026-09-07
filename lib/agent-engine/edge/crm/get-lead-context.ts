@@ -95,6 +95,7 @@ export interface LeadContext {
     is_blocked: boolean;
   };
   conversation_id: string | null;
+  previous_service?: { label: string; outcomes: string[] };
   /**
    * `null` quando nenhum humano decidiu nada sobre propostas deste contato.
    *
@@ -233,6 +234,10 @@ export async function getLeadContext(
            from messages
            where organization_id = $1 and conversation_id = $2
              and direction in ('inbound', 'outbound')
+             and exists(select 1 from conversations c where c.organization_id=$1 and c.id=$2
+               and ((messages.direction='inbound' and messages.service_revision=c.service_revision
+                 and messages.demanda_id is not distinct from c.current_demanda_id)
+                 or (messages.direction='outbound' and messages.sent_at >= c.service_started_at)))
            order by sent_at desc, id desc
            limit $3`,
           [input.tenantId, conversationId, knobs.historyLimit],
@@ -252,8 +257,14 @@ export async function getLeadContext(
     false,
   );
 
+  const { rows: previousOutcomes } = await db.query<{ desfecho: string }>(
+    `select distinct d.desfecho from demandas d join demanda_conversas dc on dc.demanda_id=d.id and dc.organization_id=d.organization_id
+     where d.organization_id=$1 and dc.conversation_id=$2 and d.fechada_em is not null limit 5`,
+    [input.tenantId, conversationId]);
+
   const context = fitToBudget(
     {
+      previous_service: { label: 'Histórico encerrado. Desfechos anteriores não são tarefas ou compromissos pendentes.', outcomes: previousOutcomes.map((d) => d.desfecho) },
       // ⚠️ `lead_id` aqui é, e sempre foi, o id do CONTATO (ver o comentário da
       // consulta acima e `inbound-turn.ts:1121`). O nome mente, e o modelo
       // acreditava: passava este valor ao parâmetro `lead_id` das ferramentas

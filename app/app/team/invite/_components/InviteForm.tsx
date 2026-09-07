@@ -1,4 +1,10 @@
 "use client";
+import { InterfaceEditor } from "@/components/team/InterfaceEditor";
+import {
+  INTERFACE_COMPLETA,
+  interfaceSettingsSchema,
+  interfaceTemDestino,
+} from "@/lib/navigation/interface";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -25,6 +31,7 @@ interface ResultState {
 export function InviteForm() {
   const t = useT();
   const [emailsRaw, setEmailsRaw] = useState("");
+  const [settings, setSettings] = useState(INTERFACE_COMPLETA);
   const [role, setRole] = useState<Role>("agent");
   const [result, setResult] = useState<ResultState | null>(null);
   const invite = useInviteMembers();
@@ -46,7 +53,7 @@ export function InviteForm() {
     }
     try {
       const res = await invite.mutateAsync({
-        invitations: unique.map((email) => ({ email, role })),
+        invitations: unique.map((email) => ({ email, role, interface_settings: settings })),
       });
       setResult(res.data);
       const ok = res.data.sent.length;
@@ -88,7 +95,20 @@ export function InviteForm() {
             </SelectContent>
           </Select>
         </div>
-        <Button type="submit" disabled={invite.isPending}>
+        <InterfaceEditor
+          value={settings}
+          onChange={setSettings}
+          role={role}
+          disabled={invite.isPending}
+        />
+        <Button
+          type="submit"
+          disabled={
+            invite.isPending ||
+            !interfaceSettingsSchema.safeParse(settings).success ||
+            !interfaceTemDestino(settings, role)
+          }
+        >
           {invite.isPending ? t("Enviando…") : t("Enviar convites")}
         </Button>
       </form>
@@ -111,7 +131,7 @@ export function InviteForm() {
                           : t("Resend não configurado — link copiável abaixo (DEV).")}
                       </div>
                       {!s.email_dispatched ? (
-                        <code className="mt-1 block break-all text-xs">{s.accept_url}</code>
+                        <code className="mt-1 block text-xs break-all">{s.accept_url}</code>
                       ) : null}
                     </li>
                   ))}

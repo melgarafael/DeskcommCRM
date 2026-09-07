@@ -14,23 +14,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { ApiError } from "@/lib/api/types";
 import type { ChannelDeletionImpact } from "@/app/api/v1/channel-sessions/[id]/route";
 import type * as CanaisModule from "@/hooks/channels/useChannelSessions";
 import type { ChannelSession } from "@/hooks/channels/useChannelSessions";
 
 const getMock = vi.fn();
 const deleteMock = vi.fn();
+const postMock = vi.fn();
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
     get: (...a: unknown[]) => getMock(...a),
-    post: vi.fn(),
+    post: (...a: unknown[]) => postMock(...a),
     delete: (...a: unknown[]) => deleteMock(...a),
   },
 }));
 
 const toastSuccess = vi.fn();
+const toastError = vi.fn();
 vi.mock("sonner", () => ({
-  toast: { success: (m: string) => toastSuccess(m), error: vi.fn() },
+  toast: { success: (m: string) => toastSuccess(m), error: (m: string) => toastError(m) },
 }));
 
 vi.mock("@/hooks/channels/usePacingKnobs", () => ({
@@ -87,13 +90,15 @@ function wrap(ui: React.ReactNode) {
 beforeEach(() => {
   getMock.mockReset();
   deleteMock.mockReset();
+  postMock.mockReset();
+  toastError.mockReset();
   toastSuccess.mockReset();
   listagem.data = [canal()];
   listagem.isLoading = false;
   listagem.isError = false;
   listagem.schemaOutdated = false;
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("listagem que falhou não vira 'primeira instalação'", () => {
   it("erro de carregamento aparece como erro, e não como zero número", () => {
@@ -266,5 +271,27 @@ describe("frasesDoImpacto", () => {
     expect(frases).toEqual([
       "Este canal tem registros internos, por isso ele é arquivado em vez de apagado.",
     ]);
+  });
+});
+
+
+describe("copiar detalhes de conexão no self-host HTTP", () => {
+  it.each([true, false])("fallback execCommand=%s dá feedback e preserva detalhe", async (copied) => {
+    listagem.data = [];
+    getMock.mockResolvedValue({ data: { channels: [], members: [] } });
+    postMock.mockRejectedValue(new ApiError(502, "connection_repair_required", { operation: "start" }, "request-owned"));
+    vi.stubGlobal("navigator", {});
+    document.execCommand = vi.fn().mockReturnValue(copied);
+    render(wrap(<ConnectionsClient wahaConfigured />));
+    fireEvent.click(screen.getByRole("button", { name: "Conectar novo WhatsApp" }));
+    const details = await screen.findByText(/request-owned/);
+    fireEvent.click(screen.getByText("Detalhes para suporte"));
+    fireEvent.click(screen.getByRole("button", { name: "Copiar detalhes" }));
+    await waitFor(() => expect(document.execCommand).toHaveBeenCalledWith("copy"));
+    await waitFor(() => expect(copied ? toastSuccess : toastError).toHaveBeenCalledWith(
+      copied ? "Copiado!" : "Não foi possível copiar. Selecione e copie manualmente.",
+    ));
+    expect(details).toHaveTextContent("connection_repair_required");
+    expect(details).toHaveTextContent("request-owned");
   });
 });

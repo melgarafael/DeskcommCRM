@@ -64,6 +64,8 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const CONV_ID = "44444444-4444-4444-8444-444444444444";
 const MSG_ID = "55555555-5555-4555-8555-555555555555";
 const CONTACT_ID = "66666666-6666-4666-8666-666666666666";
+const SERVICE = { organization_id: ORG_ID, contact_id: CONTACT_ID, conversation_id: CONV_ID,
+  service_revision: 1, demanda_id: null, demanda_revision: null, status: "open", demanda_fechada_em: null };
 const AGENT_ID = "88888888-8888-4888-8888-888888888888";
 
 const ONTEM = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -135,7 +137,7 @@ function makeAdminStub(
             },
           }
         : table === "messages"
-          ? { id: MSG_ID, body: corpoInbound, direction: "inbound", organization_id: ORG_ID }
+          ? { ...SERVICE, id: MSG_ID, body: corpoInbound, direction: "inbound", organization_id: ORG_ID }
           : table === "ai_agents"
             ? {
                 id: AGENT_ID,
@@ -195,7 +197,8 @@ function makeAdminStub(
             table === "messages"
               ? [
                   {
-                    id: MSG_ID,
+                    ...SERVICE,
+              id: MSG_ID,
                     body: corpoInbound,
                     direction: "inbound",
                     created_at: new Date().toISOString(),
@@ -228,7 +231,7 @@ function makeAdminStub(
     return chain;
   };
 
-  const rpc = () => Promise.resolve({ data: [], error: null });
+  const rpc = (name: string) => Promise.resolve({ data: name === "fn_service_boundary" ? SERVICE : [], error: null });
   return { stub: { from, rpc }, operacoes, tabelasConsultadas };
 }
 
@@ -277,135 +280,24 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("o teto de gasto no caminho legado", () => {
-  it("armado, estourado e já avisado no mês → a resposta é RECUSADA", async () => {
-    const { operacoes } = montar({}, { avisosNoMes: 1, itensAbertos: 0 });
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result).toEqual({ status: "skipped", reason: "budget_exceeded" });
-    // E o cliente descobre POR QUÊ: sem o item, a IA para e nada na tela explica.
-    const item = itensDeOrcamento(operacoes).find((o) => o.row.kind === "budget_exceeded");
-    expect(item, "IA parada sem nada na Central explicando").toBeDefined();
-    expect(item?.row.severity).toBe("critical");
-    expect(item?.row.organization_id).toBe(ORG_ID);
-    // `ref_kind`/`ref_id` são o que permite FECHAR o item quando o mês virar.
-    expect(item?.row.ref_kind).toBe("ai_budget");
-    expect(item?.row.ref_id).toBe(ORG_ID);
-  });
-
-  it("CONDIÇÃO 6 — estourado mas sem aviso no mês: avisa e a resposta SAI", async () => {
-    const { operacoes } = montar({}, { avisosNoMes: 0, itensAbertos: 0 });
-
-    const result = await processMessageReceived(eventRow);
-
-    // A sentinela do dublê do SDK: o pipeline chegou ao modelo, logo passou.
-    expect(result.status).not.toBe("skipped");
-    expect(String(result.detail)).toContain("SENTINELA");
-
-    const aviso = itensDeOrcamento(operacoes).find((o) => o.row.kind === "budget_warning");
-    expect(aviso, "cruzou o teto sem abrir o aviso — o bloqueio nunca poderia disparar").toBeDefined();
-    expect(aviso?.row.severity, "aviso não é parada: 'critical' aqui gasta o alarme à toa").toBe(
-      "warn",
-    );
-    expect(itensDeOrcamento(operacoes).some((o) => o.row.kind === "budget_exceeded")).toBe(false);
-  });
-
-  it("modo 'off' não consulta nem a Central — 100% das organizações no dia 1", async () => {
-    const { operacoes, tabelasConsultadas } = montar({ enforcement_mode: "off" });
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.status).not.toBe("skipped");
-    expect(itensDeOrcamento(operacoes)).toEqual([]);
-    expect(
-      tabelasConsultadas.filter((t) => t === "agent_inbox_items"),
-      "o atalho do modo desligado deixou de ser atalho",
-    ).toEqual([]);
-  });
-
-  it("carência que ainda não venceu não bloqueia — no máximo avisa", async () => {
-    const { operacoes } = montar(
-      { enforcement_effective_at: AMANHA },
-      { avisosNoMes: 1, itensAbertos: 0 },
-    );
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.status).not.toBe("skipped");
-    expect(itensDeOrcamento(operacoes).some((o) => o.row.kind === "budget_exceeded")).toBe(false);
-  });
-
-  it("modo 'avisar' nunca para a IA, por mais que o gasto passe", async () => {
-    const { operacoes } = montar(
-      { enforcement_mode: "avisar", current_month_consumed_cents: 99_999 },
-      { avisosNoMes: 1, itensAbertos: 0 },
-    );
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.status).not.toBe("skipped");
-    expect(itensDeOrcamento(operacoes).some((o) => o.row.kind === "budget_exceeded")).toBe(false);
-  });
-
-  it("teto 0 é 'sem limite', nunca 'bloqueia tudo'", async () => {
-    // A inversão que o produto tinha: `spent < 0` é falso já com gasto zero, e
-    // quem recusou o orçamento de propósito levava o corte mais duro.
-    const { operacoes } = montar(
-      { monthly_limit_cents: 0, current_month_consumed_cents: 0 },
-      { avisosNoMes: 1, itensAbertos: 0 },
-    );
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.status).not.toBe("skipped");
-    expect(itensDeOrcamento(operacoes)).toEqual([]);
-  });
-
-  it("a chave de emergência da instalação rebaixa o bloqueio a aviso", async () => {
-    const { operacoes } = montar({ enforcement_env: "avisar" }, { avisosNoMes: 1, itensAbertos: 0 });
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.status).not.toBe("skipped");
-    expect(itensDeOrcamento(operacoes).some((o) => o.row.kind === "budget_exceeded")).toBe(false);
-  });
-
-  it("erro na leitura do orçamento SEGUE sem teto — falha aberta, nunca fechada", async () => {
-    // Errar frouxo custa dinheiro de provedor e é visível na tela de Uso; errar
-    // duro mata o WhatsApp de um negócio numa VPS onde não há para quem ligar.
-    const { operacoes } = montar("erro");
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.status).not.toBe("skipped");
-    expect(itensDeOrcamento(operacoes)).toEqual([]);
-  });
-
-  it("LAÇO DE RETORNO: gasto de volta abaixo do limiar retrata os itens abertos", async () => {
-    // Sem isto o aviso atravessaria a virada do mês ABERTO, e a dedupe de "já
-    // existe item aberto" impediria o aviso do mês novo — travando o bloqueio
-    // para sempre num estado que ninguém consegue destravar pela tela.
-    const { operacoes } = montar(
-      { current_month_consumed_cents: 0 },
-      { avisosNoMes: 1, itensAbertos: 1 },
-    );
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.status).not.toBe("skipped");
-    const retrato = itensDeOrcamento(operacoes).find((o) => o.tipo === "update");
-    expect(retrato, "alerta crítico aceso para sempre depois que a causa passou").toBeDefined();
-    expect(retrato?.row.status).toBe("resolved");
-  });
-
-  it("dedupe: com item já aberto, nenhum novo é inserido", async () => {
-    const { operacoes } = montar({}, { avisosNoMes: 1, itensAbertos: 1 });
-
-    await processMessageReceived(eventRow);
-
-    expect(itensDeOrcamento(operacoes).filter((o) => o.tipo === "insert")).toEqual([]);
-  });
+describe("recuperação substitui a resposta legada em qualquer estado de orçamento",()=>{
+ it.each([
+  ["bloqueio armado",{}],
+  ["desligado",{enforcement_mode:"off"}],
+  ["carência",{enforcement_effective_at:AMANHA}],
+  ["aviso",{enforcement_mode:"avisar",current_month_consumed_cents:99999}],
+  ["sem limite",{monthly_limit_cents:0,current_month_consumed_cents:0}],
+  ["chave de emergência",{enforcement_env:"avisar"}],
+  ["gasto normal",{current_month_consumed_cents:0}],
+  ["leitura indisponível","erro"],
+ ])("%s não consulta budget nem cria resposta órfã",async(_name,config)=>{
+  const {operacoes}=montar(config as Parameters<typeof montar>[0],{avisosNoMes:1,itensAbertos:1});
+  const result=await processMessageReceived(eventRow);
+  expect(result).toMatchObject({status:'skipped',reason:'agent_inactive_or_missing'});
+  expect(getBudgetStatus).not.toHaveBeenCalled();
+  expect(itensDeOrcamento(operacoes)).toEqual([]);
+  expect(operacoes.filter(o=>o.table==='messages'&&o.tipo==='insert'&&o.row.direction==='outbound')).toEqual([]);
+ });
 });
 
 describe("a ORDEM do veto — o teto de gasto não cala a triagem determinística", () => {
@@ -433,27 +325,11 @@ describe("a ORDEM do veto — o teto de gasto não cala a triagem determinístic
     expect(itensDeOrcamento(operacoes)).toEqual([]);
   });
 
-  it("bloqueio devolve a conversa à FILA HUMANA, como o engine faz", async () => {
-    // Os dois caminhos do produto param pelo mesmo veredito; dar respostas
-    // opostas ao lead seria a assimetria pior possível. Além disso, o texto do
-    // item `budget_exceeded` que este mesmo caminho abre PROMETE fila humana —
-    // sem o handoff, o próprio alerta mentiria.
-    const { operacoes } = montar({}, { avisosNoMes: 1, itensAbertos: 0 });
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(result.reason).toBe("budget_exceeded");
-    const passagem = operacoes.find(
-      (o) => o.table === "conversations" && o.tipo === "update" && o.row.status === "pending",
-    );
-    expect(
-      passagem,
-      "IA parada por gasto e a conversa continua marcada como atendida pela IA — ninguém responde",
-    ).toBeDefined();
-    expect(passagem?.row.bot_silenced_until).toBe("infinity");
-    expect(
-      passagem?.row.last_handoff_reason,
-      "razão diferente da que o engine grava faria quem filtra achar metade das conversas",
-    ).toBe("orcamento_de_ia");
+  it("saudação sem publicação não finge handoff por orçamento",async()=>{
+    const {operacoes}=montar({}, {avisosNoMes:1,itensAbertos:0});
+    const result=await processMessageReceived(eventRow);
+    expect(result).toMatchObject({status:'skipped',reason:'agent_inactive_or_missing'});
+    expect(getBudgetStatus).not.toHaveBeenCalled();
+    expect(operacoes.filter(o=>o.table==='conversations'&&o.tipo==='update'&&o.row.last_handoff_reason==='orcamento_de_ia')).toEqual([]);
   });
 });

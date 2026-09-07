@@ -1,0 +1,17 @@
+# Interface por membro e convite
+
+Em Equipe, quem administra pode escolher **Completa**, **Simplificada** ou personalizar as áreas visíveis de cada membro. A mesma configuração aparece no convite e na criação de organização, para o responsável. A preferência pertence ao vínculo: uma pessoa pode trabalhar com interfaces diferentes em empresas diferentes.
+
+Completa é o padrão de vínculos e convites antigos e acompanha destinos novos. Simplificada oferece Inbox, Agenda, Funis, Contatos, Tarefas e Conexões quando o papel permite. A seleção granular substitui o preset. Trocar o preset restaura sua seleção padrão. Ao menos uma área permitida precisa permanecer selecionada.
+
+Isso muda apresentação, sem alterar autorização. Barra lateral desktop/mobile, hubs, busca, sino e página inicial usam a mesma projeção do catálogo. URL direta e links contextuais de conversas/avisos continuam regidos pelo RBAC. Perfil e segurança pessoal permanecem disponíveis; quem administra mantém Equipe para recuperar a seleção. Sair, trocar empresa e encerrar acompanhamento mantêm seus controles. A porta da administração da instalação e a atualização do produto são controles essenciais externos ao catálogo, com os gates existentes.
+
+`lib/navigation/catalogo.ts` é a única lista de destinos, com IDs iguais a hrefs canônicos. `interface.ts` valida escrita, resolve leitura defensiva e calcula home; `registry.ts` liga ícones. Não se aceitam URLs arbitrárias. IDs removidos são ignorados na leitura; seleção totalmente obsoleta retorna ao padrão e o editor avisa que precisa de ajuste.
+
+`user_organizations.interface_settings` persiste a apresentação. O convite HMAC assina esse campo antes do aceite; o RPC grava na inserção ou reativação transacional. Repetir um convite de vínculo ativo preserva papel e preferência posteriores. A assinatura antiga do RPC delega ao padrão completo, com execução restrita ao servidor. Criação do próprio responsável grava a seleção no mesmo vínculo transacional; para responsável diferente ela acompanha o convite. O recibo confiável e o fingerprint do request completo preservam idempotência e provenance.
+
+Outro administrador pode editar enquanto o membro trabalha. Realtime invalida o contexto próprio via `/api/v1/auth/interface`; a resposta autenticada é a autoridade, nunca o payload do socket. Revalidação a cada 30 segundos, foco e reconexão cobre eventos perdidos. O refresh atualiza o menu sem trocar a URL ou desmontar formulários/cache por preferência. Home calculada só vale ao entrar por `/app`. Suporte usa o papel efetivo e a interface completa do acompanhamento, sem conceder bypass de plataforma durante readonly.
+
+Alterações emitem `team.interface_changed` para `api_audit_log`, disponível na Auditoria. Não há evento sem consumidor nem worker novo. O ciclo de correção é o administrador rever e salvar pela Equipe; erros de escrita ficam visíveis e não produzem sucesso otimista. Esta peça não decide atendimento ou follow-up: continuidade IA↔humano permanece nos links contextuais e permissões operacionais existentes.
+
+Provas: `tests/unit/interface-por-vinculo.test.ts`, `tests/invariants/interface-por-vinculo.test.ts` e `tests/e2e/interface-por-vinculo.spec.ts`. A spec dirige dois membros com mesmo papel, edição por outro administrador, recebimento real pelo socket, formulário preservado, hub-only, busca/mobile e convite/replay. Evidências locais em `.superpowers/evidence/comunidade-360/`.

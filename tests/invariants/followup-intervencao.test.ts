@@ -1,3 +1,4 @@
+import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { afterAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
@@ -102,12 +103,13 @@ async function criaEnrollment(
 ): Promise<string> {
   const status = opts.status ?? "active";
   const relogio = opts.comRelogio ?? true;
+  const boundary = await criarOrigemDeFollowup(pool, c.org, opts.contactId ?? c.contactId);
   const { rows } = await pool.query<{ id: string }>(
     `insert into followup_enrollments
-       (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, steps_taken)
-     values ($1, $2, $3, $4, 'acao', $5, case when $6 then now() - interval '1 second' else null end, $7)
+       (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, steps_taken, conversation_id, service_boundary)
+     values ($1, $2, $3, $4, 'acao', $5, case when $6 then now() - interval '1 second' else null end, $7, $8, $9::jsonb)
      returning id`,
-    [c.org, c.pointerId, c.versionId, opts.contactId ?? c.contactId, status, relogio, opts.stepsTaken ?? 0],
+    [c.org, c.pointerId, c.versionId, opts.contactId ?? c.contactId, status, relogio, opts.stepsTaken ?? 0, boundary.conversation_id, JSON.stringify(boundary)],
   );
   return rows[0]!.id;
 }

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { loadAuthUser } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { fail } from "@/lib/api/wrappers";
 import { GET, PATCH } from "./route";
 
+vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
@@ -20,6 +22,7 @@ const req = (body: unknown = {}) => new NextRequest("http://localhost/api/v1/cha
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(loadAuthUser).mockResolvedValue(null);
   for (const k of Object.keys(filters)) delete filters[k];
   vi.mocked(requireRole).mockResolvedValue({ ok: true, user: { id: org }, org: { orgId: org, role: "admin" } } as Awaited<ReturnType<typeof requireRole>>);
   const query = {
@@ -39,6 +42,18 @@ describe("configuração de acesso da IA", () => {
     expect((await PATCH(req(), context())).status).toBe(403);
     expect(requireRole).toHaveBeenCalledWith("admin", expect.objectContaining({ allowPlatformAdmin: true }));
     expect(createAdminClient).not.toHaveBeenCalled();
+  });
+  it("suporte readonly nega a mutação antes de service role e auditoria", async () => {
+    vi.mocked(loadAuthUser).mockResolvedValue({ id: org, is_platform_admin: true,
+      support: { organization_id: org, status: "active", access_mode: "support_readonly" },
+    } as Awaited<ReturnType<typeof loadAuthUser>>);
+    const response = await PATCH(req({ mode: "open", test_phone_numbers: [] }), context());
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe("forbidden");
+    expect(requireRole).not.toHaveBeenCalled();
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
   });
   it("retorna somente modo e telefones, com escopo de organização e canal ativo", async () => {
     const response = await GET(req(), context());

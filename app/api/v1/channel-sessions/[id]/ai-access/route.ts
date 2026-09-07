@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -29,6 +30,8 @@ export async function GET(_req: NextRequest, { params }: Context): Promise<Respo
 }
 
 export async function PATCH(req: NextRequest, { params }: Context): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   const requestId = randomUUID();
   const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: true });
   if (!auth.ok) return auth.response;

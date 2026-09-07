@@ -314,6 +314,41 @@ convite para olhar QUAIS arquivos — e ali os nomes contam a história inteira.
 
 ---
 
+### Antes de tudo: num workflow de MATRIZ, o rodapé disponível é de METADE
+
+Quando um job de matriz falha, o GitHub **cancela os irmãos**. O irmão cancelado morre antes do
+bloco de resumo: não imprime `N failed`, não lista as specs e não mostra asserção nenhuma — só os
+`✘` da linha de progresso, que ninguém procura.
+
+Resultado: a disciplina correta desta casa — *"o rodapé é a autoridade, o grep é conveniência"* —
+encontra **o rodapé de uma metade** e o lê como o todo. E o erro é sempre na direção otimista.
+
+Medido em 2026-09-07, no PR #613:
+
+```
+e2e-parte (1): completed/failure   → 4 ✘, COM rodapé (`3 failed`, um dos ✘ é um test.fail)
+e2e-parte (2): completed/cancelled → 7 ✘, SEM rodapé nenhum
+```
+
+O triador contou **4** e escreveu isso no briefing de seis agentes. O número era **10**, em 9
+arquivos de spec — e **8 desses arquivos eram pré-existentes e intocados**, o que muda o veredito de
+*"conserte o que você trouxe"* para *"o PR quebra funcionalidade já entregue"*. Só apareceu porque um
+cético foi **contar os `✘`** em vez de ler o rodapé.
+
+**A conta, antes de qualquer conclusão sobre um workflow de matriz:**
+
+```bash
+gh run view <id> --json jobs --jq '.jobs[]|select(.name|startswith("<job>"))|"\(.name): \(.conclusion)"'
+gh run view <id> --log > /tmp/full.log
+for p in 1 2; do echo "parte $p: $(grep -acE "^<job> \($p\).*✘" /tmp/full.log)"; done
+```
+
+Irmão com `conclusion: cancelled` é **prova de que há falhas não relatadas do outro lado**. E ao
+pedir o rerun, note que `gh run rerun --failed` fala de `failed`: confirme que o job **cancelado**
+também voltou (`status: in_progress` nos dois) antes de esperar por ele.
+
+---
+
 ### E há uma quarta origem: a sonda que você mesmo escreveu
 
 Antes de acreditar num diagnóstico de infra, confira se o comando que o produziu **existe**.
@@ -1669,3 +1704,42 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
 
     Na prática: releia o seu próprio veredito procurando as frases que **encerram** uma investigação
     em vez de abri-la, e re-meça essas.
+
+40. **A notificação de background traz o exit do `echo`, e ela inverte o sinal justamente na
+    sabotagem.** `nohup pnpm test:db … > /tmp/log 2>&1; echo "exit=$?"` rodado em background faz o
+    harness anunciar **"completed (exit code 0)"** com a suíte vermelha: o código reportado é o do
+    `echo`, o último comando da linha. Medido em 2026-09-07 — a notificação disse exit 0 e o rodapé
+    do log dizia `Tests 1 failed | 13 passed`.
+
+    O modo de falha 2 (`cmd | tail` mascara o exit) é o irmão desta, mas a consequência aqui é
+    pior, e é por isso que ela merece número próprio: numa **sabotagem**, o resultado esperado é o
+    vermelho. O "exit 0" não lê como "passou", lê como *"a sabotagem não alcançou o mecanismo"* —
+    ou seja, como *"o meu teste é frouxo"*. O sinal invertido corrompe exatamente a prova que existe
+    para desconfiar do verde, e o desfecho natural é reescrever um teste que estava correto.
+
+    Na prática: o exit code de uma notificação de background nunca é veredito. Leia o rodapé
+    (`Test Files` / `Tests`), que é a autoridade. Se quiser o exit real, ele tem de ser a ÚLTIMA
+    instrução da linha — ou grave-o: `cmd > log 2>&1; echo $? > /tmp/rc`.
+
+41. **O invariante que reprova pode ter nascido no MESMO PR que o mecanismo que ele vigia.** Diante
+    de um invariante vermelho, a pergunta reflexa é "o código está errado ou o teste está
+    mal-escrito?" — e ela pula uma pergunta anterior, que é mecânica e custa dois comandos:
+    **essa lei já estava na `main`?**
+
+    ```bash
+    git cat-file -e origin/main:<arquivo-do-teste>   # a lei é vigente ou proposta?
+    git grep -n "<símbolo da guarda>" origin/main     # e o mecanismo que ela vigia?
+    ```
+
+    Medido no PR #613: o invariante exigia que colisão de conversas ABORTASSE a fusão de contatos, e
+    tanto ele quanto a guarda que o atendia nasceram no mesmo commit do PR, nunca estiveram na
+    `main`. Do outro lado, a fusão parcial já era contrato publicado — função, rota, hook, diálogo —
+    travado por spec no check `e2e` obrigatório. Não era "código contra teste": era **lei proposta
+    contra lei vigente**, e a proposta perde. Tratado como invariante estabelecido, o vermelho
+    empurra para consertar o código — que teria quebrado o caminho dominante de um recurso já
+    publicado.
+
+    O corolário, que é o que separa isto de "apagar o teste incômodo": a preocupação da guarda não
+    se apaga junto com ela. Meça-a, e se ela sobreviver à medição, transforme-a em asserção **pelo
+    caminho de leitura de produção** — nunca por um `select` equivalente escrito à mão, que
+    continuaria verde se o filtro sumisse do código.

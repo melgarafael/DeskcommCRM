@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/conversations/[id]/media — upload outbound (multipart).
  * Storage-first: sobe pro bucket whatsapp-media; o envio da mensagem
@@ -23,6 +24,9 @@ interface RouteCtx {
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id: conversationId } = await ctx.params;
   const supabase = await createClient();

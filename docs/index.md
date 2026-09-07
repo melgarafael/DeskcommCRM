@@ -170,13 +170,12 @@ anterior à v1.0.0; regenere (`/graphify .`) antes de confiar em detalhe fino.
   "Próximo", apesar de o gatilho (`loop/checkpoints/G6.approved`) existir.
 - `docs/diagrams/` não tem `.md` e não foi inventariado. `docs/evidence/` é evidência visual
   (18 PNGs), não documentação de leitura.
-- `docs/architecture/` tem **13 entradas** — 10 `*.architecture.json`, 1 `*.workflow.json`, 1
-  `.html` e o `README.md` (medido em 2026-08-15: `ls docs/architecture/ | wc -l` = 13,
-  `ls docs/architecture/*.architecture.json | wc -l` = 10). A frase anterior deste índice dizia
-  "só o diagrama do agent-turn"
-  e envelheceu. Só dois deles estão listados na tabela acima; os demais entraram com as features
-  que descrevem. A doutrina (`CLAUDE.md`, DoD item 13) pede que o "mapa vivo" reflita toda peça
-  nova com ≥2 arestas, e `tests/unit/mapas-de-arquitetura.test.ts` cobra a forma de TODOS —
-  o que continua **NÃO IDENTIFICADO** é se toda feature entregue tem o seu.
+- `docs/architecture/` reúne mapas JSON e seus renders disponíveis. Consulte o
+  [catálogo de mapas](architecture/README.md) e os arquivos do diretório; a contagem
+  muda com as entregas. A doutrina exige representar peças novas e suas relações,
+  e `tests/unit/mapas-de-arquitetura.test.ts` verifica a forma e os kinds do runtime.
+  Esse gate não comprova, sozinho, que toda funcionalidade tem um mapa.
 - `docs/growth/` (3 docs) e `docs/brand/` (1) não foram lidos em detalhe — classificados por
   nome de pasta, portanto **INFERIDO**.
+
+- [Acompanhamento administrativo por sessão](support-sessions.md) — autoridade, somente leitura, saída e contratos OAuth.

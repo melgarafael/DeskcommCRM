@@ -60,6 +60,8 @@ const AGENT_ID = "88888888-8888-4888-8888-888888888888";
 // Corpo neutro de propósito: qualquer gatilho de handoff (G1 "quero falar com
 // humano", G4 "advogado") desviaria o fluxo ANTES do LLM e o teste passaria
 // sem nunca exercitar o ponto em questão.
+const SERVICE = { organization_id: ORG_ID, contact_id: CONTACT_ID, conversation_id: CONV_ID,
+  service_revision: 1, demanda_id: null, demanda_revision: null, status: "open", demanda_fechada_em: null };
 const INBOUND_BODY = "bom dia, qual o prazo de entrega?";
 
 /**
@@ -93,6 +95,7 @@ function makeAdminStub() {
           }
         : table === "messages"
           ? {
+              ...SERVICE,
               id: MSG_ID,
               body: INBOUND_BODY,
               direction: "inbound",
@@ -181,7 +184,7 @@ function makeAdminStub() {
   };
 
   // `emit_event` (evento message.send_requested) e o RPC de RAG passam por aqui.
-  const rpc = () => Promise.resolve({ data: [], error: null });
+  const rpc = (name: string) => Promise.resolve({ data: name === "fn_service_boundary" ? SERVICE : [], error: null });
 
   return { stub: { from, rpc }, inserted };
 }
@@ -228,19 +231,12 @@ afterEach(() => {
 });
 
 describe("ai-response-worker — resolução do modelo numa instalação self-host", () => {
-  it("com só ANTHROPIC_API_KEY, a chamada chega ao provider e o cliente é respondido", async () => {
+  it("chave de provedor não reativa resposta legada sem publicação", async () => {
     const result = await processMessageReceived(eventRow);
 
     // A asserção que importa: a requisição SAIU, e saiu para a Anthropic.
-    // Sem o resolver, `destinos` fica VAZIO — o SDK aborta antes de qualquer
-    // fetch, reclamando de AI_GATEWAY_API_KEY.
-    expect(destinos).toContain("api.anthropic.com");
-    // O `detail` entra na mensagem para que uma quebra futura diga POR QUÊ
-    // falhou, em vez de só "error !== sent_to_dispatch".
-    expect(
-      result.status,
-      `reason: ${result.reason ?? "-"} | detail: ${result.detail ?? "(vazio)"}`,
-    ).toBe("sent_to_dispatch");
+    expect(destinos).toEqual([]);
+    expect(result).toMatchObject({status:"skipped",reason:"agent_inactive_or_missing"});
   });
 
   it("o defeito, explicitado: model como STRING nem emite requisição", async () => {
@@ -270,7 +266,7 @@ describe("ai-response-worker — resolução do modelo numa instalação self-ho
     try {
       const result = await processMessageReceived(eventRow);
       expect(result.status).toBe("skipped");
-      expect(result.reason).toBe("ai_gateway_key_missing");
+      expect(result.reason).toBe("agent_inactive_or_missing");
       expect(destinos).toEqual([]);
     } finally {
       envMock.ANTHROPIC_API_KEY = anterior;

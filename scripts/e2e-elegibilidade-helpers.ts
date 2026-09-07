@@ -84,13 +84,17 @@ async function main(): Promise<void> {
       // quando criado, nascer sem `run_after` no futuro — a spec o vê já.
       case "drain-once": {
         const log = createLogger();
-        const drained = await drainTick(pool, {
-          batchSize: 50,
-          intervalMs: 1_000,
-          idleIntervalMs: 5_000,
-          debounceMs: 0,
-          reapTimeoutMs: 60_000,
-        }, log);
+        const drained = await drainTick(
+          pool,
+          {
+            batchSize: 50,
+            intervalMs: 1_000,
+            idleIntervalMs: 5_000,
+            debounceMs: 0,
+            reapTimeoutMs: 60_000,
+          },
+          log,
+        );
         out({ drained });
         break;
       }
@@ -217,7 +221,8 @@ async function main(): Promise<void> {
         if (!Number.isFinite(thresholdMinutes)) throw new Error("thresholdMinutes inválido");
         const creds = loadCreds();
         const fix = creds.elegibilidade;
-        if (!fix) throw new Error("bloco `elegibilidade` ausente — rode scripts/seed-e2e-elegibilidade.ts");
+        if (!fix)
+          throw new Error("bloco `elegibilidade` ausente — rode scripts/seed-e2e-elegibilidade.ts");
 
         const phone = telefoneUnico();
         const nome = `Silêncio Elegibilidade ${autorizado ? "autorizado" : "sem-autorizacao"} ${Date.now()}`;
@@ -236,6 +241,24 @@ async function main(): Promise<void> {
            values ($1, $2, $3, 'open', 'Oi, tudo bem?', $4, $4)
            returning id`,
           [creds.org_id, contactId, fix.channel_session_id, velho],
+        );
+        // A MENSAGEM PRECISA EXISTIR, e carimbada.
+        //
+        // Esta fixture nasceu antes da fronteira do atendimento e criava só a
+        // conversa com `last_inbound_at` — o silêncio como um CAMPO. A varredura
+        // passou a exigir PROCEDÊNCIA: ela lê a mensagem inbound mais nova e o
+        // carimbo dela, porque é isso que distingue "calado neste atendimento"
+        // de "calado desde outro". Sem a linha em `messages`, a conversa é
+        // invisível para o gatilho e o contato autorizado nunca era enrolado.
+        //
+        // O carimbo não é escrito aqui: `fn_service_inbound` dispara no INSERT
+        // e o grava. Escrevê-lo à mão provaria a forma da linha, não o caminho.
+        await pool.query(
+          `insert into messages
+             (organization_id, conversation_id, channel_session_id, contact_id,
+              type, direction, status, sent_via, body, sent_at)
+           values ($1, $2, $3, $4, 'text', 'inbound', 'received', 'ai', 'Oi, tudo bem?', $5)`,
+          [creds.org_id, convRows[0]!.id, fix.channel_session_id, contactId, velho],
         );
         out({ contactId, conversationId: convRows[0]!.id, phone });
         break;
@@ -263,10 +286,7 @@ async function main(): Promise<void> {
       case "cleanup-contact": {
         const contactId = args[0];
         if (!contactId) throw new Error("contactId obrigatório");
-        await pool.query(
-          `delete from job_queue where contact_id = $1`,
-          [contactId],
-        );
+        await pool.query(`delete from job_queue where contact_id = $1`, [contactId]);
         await pool.query(
           `delete from followup_enrollment_events where enrollment_id in
              (select id from followup_enrollments where contact_id = $1)`,
@@ -278,10 +298,7 @@ async function main(): Promise<void> {
              (select id from conversations where contact_id = $1)`,
           [contactId],
         );
-        await pool.query(
-          `delete from event_log where payload->>'contact_id' = $1`,
-          [contactId],
-        );
+        await pool.query(`delete from event_log where payload->>'contact_id' = $1`, [contactId]);
         await pool.query(`delete from conversations where contact_id = $1`, [contactId]);
         // Um lead pode ter nascido pelo webhook do Respondi (J20.6). Timeline
         // (`crm_lead_activities`) sai no cascade do lead.
@@ -299,10 +316,9 @@ async function main(): Promise<void> {
       case "cleanup-flow": {
         const pointerId = args[0];
         if (!pointerId) throw new Error("pointerId obrigatório");
-        await pool.query(
-          `update followup_flow_pointers set status = 'disabled' where id = $1`,
-          [pointerId],
-        );
+        await pool.query(`update followup_flow_pointers set status = 'disabled' where id = $1`, [
+          pointerId,
+        ]);
         await pool.query(
           `delete from followup_enrollment_events where enrollment_id in
              (select id from followup_enrollments where pointer_id = $1)`,
@@ -335,7 +351,8 @@ async function main(): Promise<void> {
         const pointerId = args[0] ?? null;
         const creds = loadCreds();
         const fix = creds.elegibilidade;
-        if (!fix) throw new Error("bloco `elegibilidade` ausente — rode scripts/seed-e2e-elegibilidade.ts");
+        if (!fix)
+          throw new Error("bloco `elegibilidade` ausente — rode scripts/seed-e2e-elegibilidade.ts");
         const nome = pointerId
           ? "E2E Elegibilidade — agente publicado (followup)"
           : "E2E Elegibilidade — agente publicado";
@@ -354,9 +371,14 @@ async function main(): Promise<void> {
           // acabou de publicar → `trg_ai_agent_versions_content_immutable`).
           // O advisory lock de transação faz a segunda chamada esperar a
           // primeira COMMITAR e então enxergar o estado final.
-          await cli.query("select pg_advisory_xact_lock(hashtext($1))", [`publish-agent:${creds.org_id}:${nome}`]);
+          await cli.query("select pg_advisory_xact_lock(hashtext($1))", [
+            `publish-agent:${creds.org_id}:${nome}`,
+          ]);
 
-          const { rows: aRows } = await cli.query<{ id: string; published_version_id: string | null }>(
+          const { rows: aRows } = await cli.query<{
+            id: string;
+            published_version_id: string | null;
+          }>(
             `insert into ai_agents (organization_id, name, system_prompt, kind, archived_at)
              values ($1, $2, 'Agente de teste E2E do gate de elegibilidade.', 'mcp_agent', null)
              on conflict (organization_id, name) do update set archived_at = null, kind = 'mcp_agent'

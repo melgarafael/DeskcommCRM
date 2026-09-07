@@ -66,6 +66,7 @@ let atualizado: Record<string, unknown> | null;
 function clienteCom(startsAt: string, status: string): SupabaseClient {
   const linha = {
     id: AGENDAMENTO,
+    revision: 1,
     event_type_id: "cccccccc-1111-4000-8000-00000000000c",
     owner_user_id: "dddddddd-1111-4000-8000-00000000000d",
     contact_id: "eeeeeeee-1111-4000-8000-00000000000e",
@@ -93,7 +94,12 @@ function clienteCom(startsAt: string, status: string): SupabaseClient {
       },
       insert: () => ({ select: () => ({ single: async () => ({ data: {}, error: null }) }) }),
     }),
-    rpc: async () => ({ data: null, error: null }),
+    rpc: async (name:string,args:Record<string,unknown>) => {
+      if(name!=="fn_appointment_change") return {data:null,error:null};
+      expect(args.p_org).toBe(ORG);expect(args.p_id).toBe(AGENDAMENTO);expect(args.p_revision).toBe(1);
+      atualizado=args.p_patch as Record<string,unknown>;
+      return {data:{...linha,...atualizado,revision:2},error:null};
+    },
   } as unknown as SupabaseClient;
 }
 

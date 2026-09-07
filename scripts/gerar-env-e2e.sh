@@ -109,6 +109,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:$E2E_PORT
 # eram iguais (\`e2e-placeholder…\` aqui, \`ci-placeholder…\` lá) — a promessa por
 # coincidência durou até a primeira divergência, que custou 8 specs em 401.
 INTERNAL_SECRET=e2e-placeholder-nao-e-segredo
+IMPERSONATE_COOKIE_SECRET=e2e-support-cookie-local-placeholder-32-chars
 # As três abaixo são chaves de CIFRA de verdade: o app exige 32 bytes e recusa
 # um rótulo. Medido — com o placeholder, criar credencial de IA devolvia 500
 # ("AI_CRED_AES_KEY deve ter exatamente 32 bytes (lido: 21)") e todo run do

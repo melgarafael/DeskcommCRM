@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { signInviteToken, verifyInviteToken, INVITE_TTL_SECONDS } from "./invite-token";
 
 const base = () => ({
-  invite_id: "11111111-1111-1111-1111-111111111111",
+  invite_id: "11111111-1111-4111-8111-111111111111",
   email: "alice@example.com",
-  organization_id: "22222222-2222-2222-2222-222222222222",
+  organization_id: "22222222-2222-4222-8222-222222222222",
   role: "agent",
   exp: Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS,
 });
@@ -45,3 +45,14 @@ describe("invite-token", () => {
     expect(verifyInviteToken("notatoken")).toBeNull();
   });
 });
+
+  it("rejects signed machine/unknown roles and malformed identities", () => {
+    for (const role of ["ai_operator", "superadmin", ""]) {
+      expect(verifyInviteToken(signInviteToken({ ...base(), role }))).toBeNull();
+    }
+    expect(verifyInviteToken(signInviteToken({ ...base(), organization_id: "not-uuid" }))).toBeNull();
+  });
+  it("preserves signed inviter and issuance time", () => {
+    const p = { ...base(), invited_by: "33333333-3333-4333-8333-333333333333", iat: Math.floor(Date.now()/1000) };
+    expect(verifyInviteToken(signInviteToken(p))).toEqual(p);
+  });

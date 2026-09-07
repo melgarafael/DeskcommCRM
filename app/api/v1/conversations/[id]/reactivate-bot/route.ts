@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/conversations/[id]/reactivate-bot
  *
@@ -33,6 +34,9 @@ interface RouteCtx {
 }
 
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
 

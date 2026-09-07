@@ -52,7 +52,7 @@ export default async function NuvemshopIntegrationPage() {
   const integration =
     activeOrg && configured ? await loadIntegration(activeOrg.orgId) : null;
 
-  const isAdmin = activeOrg?.role === "admin" || user?.is_platform_admin === true;
+  const isAdmin = activeOrg?.role === "admin" || (user?.is_platform_admin === true && !user.support);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">

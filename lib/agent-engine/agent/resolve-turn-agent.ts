@@ -239,3 +239,38 @@ export async function resolveTurnAgent(
     };
   }
 }
+
+/** One read-only selection before operation policy. A real queue job supplies correlation. */
+export async function resolveConversationTurn(
+  db: pg.Pool,
+  llmCfg: LlmEdgeConfig,
+  input: {
+    tenantId: string;
+    leadId: string;
+    jobId: string;
+    conversationId: string;
+    channelSessionId: string;
+    inbound: boolean;
+  },
+  deps: ResolveTurnAgentDeps,
+): Promise<TurnAgentResolution> {
+  const { rows } = await db.query<{
+    active_ai_agent_id: string | null;
+    active_intent: string | null;
+  }>(
+    'select active_ai_agent_id,active_intent from conversations where organization_id=$1 and id=$2',
+    [input.tenantId, input.conversationId],
+  );
+  const signal = input.inbound
+    ? (await db.query<{ body: string | null }>(
+        "select body from messages where organization_id=$1 and conversation_id=$2 and direction='inbound' order by sent_at desc,created_at desc,id desc limit 1",
+        [input.tenantId, input.conversationId],
+      )).rows[0]?.body ?? null
+    : null;
+  return resolveTurnAgent(db, llmCfg, {
+    ...input,
+    signal,
+    stickyAgentId: rows[0]?.active_ai_agent_id ?? null,
+    stickyIntent: rows[0]?.active_intent ?? null,
+  }, deps);
+}

@@ -31,6 +31,7 @@ function fakeDb(pointer: Row) {
     ai_agent_versions: [],
   };
   return {
+    rpc: async () => ({ data: { organization_id: ORG, contact_id: CONTACT, conversation_id: "conv-1", service_revision: 1, demanda_id: null, demanda_revision: null, status: "open", demanda_fechada_em: null }, error: null }),
     from(table: string) {
       const filters: Array<[string, unknown]> = [];
       let mode: "select" | "insert" = "select";

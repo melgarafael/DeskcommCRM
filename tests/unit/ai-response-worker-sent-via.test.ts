@@ -66,6 +66,8 @@ const OUTBOUND_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
 // Corpo neutro: qualquer gatilho de handoff (G1 "falar com humano", G4
 // "advogado") desviaria o fluxo ANTES do LLM e o insert nunca aconteceria.
+const SERVICE = { organization_id: ORG_ID, contact_id: CONTACT_ID, conversation_id: CONV_ID,
+  service_revision: 1, demanda_id: null, demanda_revision: null, status: "open", demanda_fechada_em: null };
 const INBOUND_BODY = "bom dia, qual o prazo de entrega?";
 
 /**
@@ -124,7 +126,7 @@ function makeAdminStub(confidenceThreshold: number) {
             },
           }
         : table === "messages"
-          ? { id: MSG_ID, body: INBOUND_BODY, direction: "inbound", organization_id: ORG_ID }
+          ? { ...SERVICE, id: MSG_ID, body: INBOUND_BODY, direction: "inbound", organization_id: ORG_ID }
           : table === "ai_agents"
             ? {
                 id: AGENT_ID,
@@ -222,7 +224,7 @@ function makeAdminStub(confidenceThreshold: number) {
     return chain;
   };
 
-  const rpc = () => Promise.resolve({ data: [], error: null });
+  const rpc = (name: string) => Promise.resolve({ data: name === "fn_service_boundary" ? SERVICE : [], error: null });
 
   return { stub: { from, rpc }, inserted };
 }
@@ -242,29 +244,6 @@ function prepararWorker(confidenceThreshold: number): LinhaInserida[] {
     stub as unknown as ReturnType<typeof createAdminClient>,
   );
   return inserted;
-}
-
-function mensagemOutbound(inserted: LinhaInserida[]): Record<string, unknown> {
-  const linhas = inserted.filter(
-    (i) =>
-      i.table === "messages" &&
-      i.row["direction"] === "outbound" &&
-      // O AVISO DE ESCALAÇÃO não é rascunho do bot: é texto de sistema que
-      // `triggerHandoff` manda ao lead ao tirar a IA de campo, e ele nasce
-      // marcado (`metadata.aviso_de_escalacao`). Sem este corte, o caso de
-      // handoff G3 passa a ver DUAS linhas outbound e a guarda anti-vacuidade
-      // abaixo reprova por um motivo que não é o deste arquivo — que é o
-      // `sent_via` do RASCUNHO caber na constraint do banco.
-      (i.row["metadata"] as Record<string, unknown> | null)?.["aviso_de_escalacao"] !== true,
-  );
-  // Anti-vacuidade: se o pipeline desviou antes do insert, não há o que
-  // asseverar e o teste passaria à toa.
-  expect(
-    linhas.length,
-    `nenhum insert outbound em messages — o pipeline não chegou a persistAndDispatch; ` +
-      `inserts vistos: ${JSON.stringify(inserted.map((i) => i.table))}`,
-  ).toBe(1);
-  return linhas[0]!.row;
 }
 
 beforeEach(() => {
@@ -299,70 +278,11 @@ describe("ai-response-worker — a linha outbound cabe na constraint de sent_via
     expect(SENT_VIA_PERMITIDOS).not.toContain("bot");
   });
 
-  it("caminho normal: persiste com sent_via aceito pelo banco e despacha", async () => {
-    const inserted = prepararWorker(0); // threshold 0 ⇒ G3 não dispara
-    const result = await processMessageReceived(eventRow);
-
-    const row = mensagemOutbound(inserted);
-    expect(
-      SENT_VIA_PERMITIDOS,
-      `sent_via=${JSON.stringify(row["sent_via"])} não está em messages_sent_via_check`,
-    ).toContain(row["sent_via"]);
-
-    expect(
-      result.status,
-      `reason: ${result.reason ?? "-"} | detail: ${result.detail ?? "(vazio)"}`,
-    ).toBe("sent_to_dispatch");
-    expect(result.outbound_message_id).toBe(OUTBOUND_ID);
-  });
-
-  it("caminho de handoff G3: o rascunho do bot também cabe na constraint", async () => {
-    // O segundo call site de persistAndDispatch (skipDispatch: true). Sem RAG a
-    // confiança é 0, então threshold 0.5 força o desvio por baixa confiança.
-    const inserted = prepararWorker(0.5);
-    const result = await processMessageReceived(eventRow);
-
-    const row = mensagemOutbound(inserted);
-    expect(
-      SENT_VIA_PERMITIDOS,
-      `sent_via=${JSON.stringify(row["sent_via"])} não está em messages_sent_via_check`,
-    ).toContain(row["sent_via"]);
-
-    expect(result.status).toBe("skipped");
-    expect(result.reason).toBe("handoff_g3_low_confidence");
-  });
-
-  it("o defeito, explicitado: sent_via fora do vocabulário derruba o envio", async () => {
-    // Prova que a asserção acima tem dente — que o `sent_to_dispatch` do
-    // primeiro caso vem de o valor ser válido, e não de o stub aceitar tudo.
-    const { stub, inserted } = makeAdminStub(0);
-    const comValorInvalido = {
-      ...stub,
-      from: (table: string) => {
-        const chain = stub.from(table);
-        if (table !== "messages") return chain;
-        return new Proxy(chain, {
-          get: (alvo, prop) =>
-            prop === "insert"
-              ? (row: Record<string, unknown>) =>
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  (alvo as any).insert({ ...row, sent_via: "bot" })
-              : // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (alvo as any)[prop],
-        });
-      },
-    };
-    vi.mocked(createAdminClient).mockReturnValue(
-      comValorInvalido as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(mensagemOutbound(inserted)["sent_via"]).toBe("bot");
-    // O worker transforma o erro do banco em throw; o handler do dispatcher
-    // captura e devolve status "error", que o drain converte em retentativa.
-    expect(result.status).toBe("error");
-    expect(result.detail).toMatch(/outbound_insert_failed/);
-    expect(result.detail).toMatch(/messages_sent_via_check/);
+  it.each([0,1])("limiar G3 %s não cria rascunho/outbound do motor retirado",async threshold=>{
+    const inserted=prepararWorker(threshold);
+    const result=await processMessageReceived(eventRow);
+    expect(result).toMatchObject({status:"skipped",reason:"agent_inactive_or_missing"});
+    expect(inserted.filter(i=>i.table==='messages'&&i.row.direction==='outbound')).toEqual([]);
+    expect(inserted.filter(i=>i.table==='event_log'&&i.row.event_type==='message.send_requested')).toEqual([]);
   });
 });

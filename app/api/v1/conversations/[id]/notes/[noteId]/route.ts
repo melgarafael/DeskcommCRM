@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * DELETE /api/v1/conversations/[id]/notes/[noteId] — apaga uma nota interna.
  * Autor da nota OU manager+ pode apagar; qualquer outro agent recebe 403.
@@ -19,6 +20,9 @@ interface RouteParams {
 }
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "conversation_notes" });
   if (!authz.ok) return authz.response;

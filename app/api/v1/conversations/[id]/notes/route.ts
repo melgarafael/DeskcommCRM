@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/conversations/[id]/notes — lista notas internas da conversa (nunca vai ao WhatsApp).
  * POST /api/v1/conversations/[id]/notes — cria nota interna (autor = user.id, org de authz).
@@ -52,6 +53,9 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "conversation_notes" });
   if (!authz.ok) return authz.response;

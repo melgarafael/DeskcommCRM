@@ -58,10 +58,15 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
   }
   const t = (texto: string) => traduzir(texto, user.idioma);
 
+  if (user.support && user.support.status !== "active") {
+    return { ok: false, response: fail("forbidden", "O acompanhamento terminou. Saia para continuar.", 403, { requestId }) };
+  }
   let org: ActiveOrg | null;
   if (organizationId) {
     const membership = user.organizations.find((o) => o.organization_id === organizationId);
-    org = membership
+    org = user.support?.organization_id === organizationId
+      ? { orgId: organizationId, name: user.support.name, role: user.support.access_mode === "full" ? "admin" : "viewer" }
+      : membership
       ? {
           orgId: membership.organization_id,
           name: membership.organization_name,
@@ -80,7 +85,7 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
     };
   }
 
-  if (allowPlatformAdmin && user.is_platform_admin) {
+  if (allowPlatformAdmin && user.is_platform_admin && !user.support) {
     return { ok: true, user, org };
   }
 

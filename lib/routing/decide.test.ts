@@ -82,7 +82,7 @@ describe("decideRouting — os 5 cenários do acceptance", () => {
     }
   });
 
-  it("sem elegível após estourar max_retries ⇒ dead (fica na fila)", () => {
+  it("sem elegível após max_retries mantém retry lento e contador limitado", () => {
     const action = decideRouting({
       mode: "round_robin",
       alreadyAssigned: false,
@@ -91,7 +91,11 @@ describe("decideRouting — os 5 cenários do acceptance", () => {
       attempts: 5,
       now: NOW,
     });
-    expect(action.kind).toBe("dead");
+    expect(action.kind).toBe("requeue");
+    if (action.kind === "requeue") {
+      expect(action.attempts).toBe(5);
+      expect(new Date(action.nextAttemptAt).getTime()).toBe(NOW.getTime() + 900_000);
+    }
   });
 
   it("modo manual ⇒ skip, worker não atribui (acceptance 5)", () => {

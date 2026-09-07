@@ -39,8 +39,8 @@ function espionar(respostas: Record<string, number>) {
     return {
       ok: status >= 200 && status < 300,
       status,
-      json: async () => ({ status: "SCAN_QR_CODE" }),
-      text: async () => "",
+      json: async () => ({ name: "s1", status: "SCAN_QR_CODE", config: { ignore: CONVERSAS_IGNORADAS }, engine: { engine: "NOWEB" } }),
+      text: async (): Promise<string> => "",
     };
   }) as unknown as typeof fetch;
 }
@@ -75,12 +75,12 @@ describe("sessão que JÁ existe é corrigida — sem levar a config junto", () 
       const m = i2.method ?? "GET";
       vistos.push({ metodo: m, corpo: i2.body ? JSON.parse(i2.body) : null });
       if (m === "POST" && u.endsWith("/api/sessions")) {
-        return { ok: false, status: 422, json: async () => ({}), text: async () => "" };
+        return { ok: false, status: 422, json: async () => ({ statusCode: 422, error: "Unprocessable Entity", message: "Session 's1' already exists. Use PUT to update it." }), text: async (): Promise<string> => "" };
       }
       if (m === "GET") {
-        return { ok: true, status: 200, json: async () => ({ config: configAtual }), text: async () => "" };
+        return { ok: true, status: 200, json: async () => ({ name: "s1", status: "WORKING", engine: { engine: "NOWEB" }, config: configAtual }), text: async (): Promise<string> => "" };
       }
-      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async () => "" };
+      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async (): Promise<string> => "" };
     }) as unknown as typeof fetch;
     return vistos;
   }
@@ -116,24 +116,30 @@ describe("sessão que JÁ existe é corrigida — sem levar a config junto", () 
       const m = ((init ?? {}) as { method?: string }).method ?? "GET";
       vistos.push({ metodo: m });
       if (m === "POST" && String(url).endsWith("/api/sessions")) {
-        return { ok: false, status: 422, json: async () => ({}), text: async () => "" };
+        return { ok: false, status: 422, json: async () => ({ statusCode: 422, error: "Unprocessable Entity", message: "Session 's1' already exists. Use PUT to update it." }), text: async (): Promise<string> => "" };
       }
-      if (m === "GET") return { ok: false, status: 500, json: async () => ({}), text: async () => "" };
-      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async () => "" };
+      if (m === "GET") return { ok: false, status: 500, json: async () => ({ statusCode: 500, error: "Internal Server Error", message: "unavailable" }), text: async (): Promise<string> => "" };
+      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async (): Promise<string> => "" };
     }) as unknown as typeof fetch;
-    await new WahaClient("http://w", "k").startSession("s1");
+    await expect(new WahaClient("http://w", "k").startSession("s1")).rejects.toThrow("waha_create_500");
     expect(vistos.some((v) => v.metodo === "PUT"), "escreveu às cegas").toBe(false);
   });
 
   it("falha da convergência não impede a sessão de iniciar", async () => {
-    // É economia, não condição de envio.
+    // Só a leitura oportunista da convergência falha. Identidade e engine
+    // continuam provados pela confirmação inicial e pelo GET depois do start.
+    let gets = 0;
     globalThis.fetch = vi.fn(async (url: unknown, init?: unknown) => {
       const m = ((init ?? {}) as { method?: string }).method ?? "GET";
-      if (m === "GET") throw new Error("ECONNRESET");
-      if (m === "POST" && String(url).endsWith("/api/sessions")) {
-        return { ok: false, status: 422, json: async () => ({}), text: async () => "" };
+      if (m === "GET") {
+        gets += 1;
+        if (gets === 2) throw new Error("ECONNRESET");
+        return { ok: true, status: 200, json: async () => ({ name: "s1", status: "WORKING", config: { webhooks: WEBHOOKS }, engine: { engine: "NOWEB" } }) };
       }
-      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async () => "" };
+      if (m === "POST" && String(url).endsWith("/api/sessions")) {
+        return { ok: false, status: 422, json: async () => ({ statusCode: 422, error: "Unprocessable Entity", message: "Session 's1' already exists. Use PUT to update it." }), text: async (): Promise<string> => "" };
+      }
+      return { ok: true, status: 200, json: async () => ({ status: "WORKING" }), text: async (): Promise<string> => "" };
     }) as unknown as typeof fetch;
     await expect(new WahaClient("http://w", "k").startSession("s1")).resolves.toBeTruthy();
   });

@@ -1,3 +1,4 @@
+import { currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 /**
  * O `RetornoDb` sobre `pg.Pool` — o lado do motor do agente.
  *
@@ -74,12 +75,14 @@ export function criaRetornoDbPg(db: pg.Pool): RetornoDb {
     },
 
     async insere(orgId, input) {
+      await guardServiceEffect();
+      const boundary = currentExecutionBoundary();
       const { rows } = await db.query<LinhaDeCron>(
         `insert into cron_jobs
            (organization_id, contact_id, kind, job_kind, payload, next_run_at)
          values ($1, $2, 'at', 'followup_turn', $3, $4)
          returning ${COLUNAS}`,
-        [orgId, input.contactId, input.payload, input.quando],
+        [orgId, input.contactId, { ...input.payload, service_boundary: boundary, conversation_id: boundary?.conversation_id }, input.quando],
       );
       const row = rows[0];
       if (row === undefined) throw new Error("retorno_insert_failed: sem linha");

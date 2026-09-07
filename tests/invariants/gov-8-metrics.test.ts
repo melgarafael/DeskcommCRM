@@ -214,6 +214,9 @@ function explainAs(actorId: string, query: string): string {
     ${asRole(actorId)}
     set enable_seqscan = off;
     set enable_bitmapscan = off;
+    -- Mede o índice do plano forçado, não o custo de compilação JIT.
+    -- Esta sessão psql é exclusiva desta chamada de explainAs.
+    set jit = off;
     explain (analyze, format text) ${query}
   `);
 }

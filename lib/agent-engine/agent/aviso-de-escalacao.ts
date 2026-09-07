@@ -1,3 +1,4 @@
+import type {JobClaim} from "../queue/claim";
 /**
  * O ENVIO do aviso de que a IA está saindo de campo — lado do MOTOR (`pg`).
  *
@@ -58,6 +59,7 @@ export type DesfechoDoAviso =
   | { avisado: false; porque: string };
 
 export interface AvisoDeEscalacaoIds {
+  jobClaim?:JobClaim;
   tenantId: string;
   leadId: string;
   conversationId: string;
@@ -128,6 +130,7 @@ export async function avisarLeadDaEscalacao(
           tenantId: ids.tenantId,
           leadId: ids.leadId,
           jobId: ids.jobId,
+          jobClaim:ids.jobClaim,
           seq: SEQ_DO_AVISO,
           conversationId: ids.conversationId,
           body: finalBody,

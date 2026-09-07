@@ -40,6 +40,12 @@ const db = pgComoSupabase(pool);
 
 const ORG = "d194b000-0000-4000-8000-000000000001";
 const USUARIO = "d194b000-0000-4000-8000-0000000000a1";
+const VIEWER = "d194b000-0000-4000-8000-0000000000a2";
+const requestDbPool = new pg.Pool({
+  connectionString: `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`,
+  max: 1,
+});
+let requestUser = USUARIO;
 
 /**
  * A rota de LGPD é um Route Handler: ela busca o client dela sozinha. Trocamos
@@ -48,23 +54,20 @@ const USUARIO = "d194b000-0000-4000-8000-0000000000a1";
  */
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => {
-    const base = pgComoSupabase(
-      new pg.Pool({
-        connectionString: `postgresql://postgres:postgres@127.0.0.1:${Number(
-          process.env.TEST_DB_PORT ?? 54329,
-        )}/postgres`,
-        max: 2,
-      }),
-    ) as unknown as Record<string, unknown>;
+    const actor = requestUser;
+    // Uma única conexão conserva o mesmo papel/claim durante todas as queries
+    // emitidas pelo Route Handler, como o PostgREST faria para a request.
+    await requestDbPool.query("set role authenticated");
+    await requestDbPool.query("select set_config('request.jwt.claims',$1,false)", [
+      JSON.stringify({ sub: actor, role: "authenticated", aal: "aal2" }),
+    ]);
+    const base = pgComoSupabase(requestDbPool) as unknown as Record<string, unknown>;
     return {
       ...base,
       from: base.from,
       rpc: base.rpc,
       auth: {
-        getUser: async () => ({
-          data: { user: { id: "d194b000-0000-4000-8000-0000000000a1" } },
-          error: null,
-        }),
+        getUser: async () => ({ data: { user: { id: actor } }, error: null }),
       },
     };
   },
@@ -106,10 +109,24 @@ beforeAll(async () => {
      values ($1, 'org-triagem-194', 'Triagem LTDA', 'Triagem') on conflict (id) do nothing`,
     [ORG],
   );
+  await pool.query(
+    `insert into auth.users (id, email) values
+       ($1, 'admin-triagem-194@invariant.test'),
+       ($2, 'viewer-triagem-194@invariant.test')
+     on conflict (id) do nothing`,
+    [USUARIO, VIEWER],
+  );
+  await pool.query(
+    `insert into user_organizations (organization_id, user_id, role, accepted_at)
+     values ($1, $2, 'admin', now()), ($1, $3, 'viewer', now())`,
+    [ORG, USUARIO, VIEWER],
+  );
 });
 
 afterAll(async () => {
+  await requestDbPool.end();
   await pool.query("delete from organizations where id = $1", [ORG]);
+  await pool.query("delete from auth.users where id = any($1::uuid[])", [[USUARIO, VIEWER]]);
   await pool.end();
 });
 
@@ -207,6 +224,27 @@ describe("defeito 3 — anonimização LGPD", () => {
     expect(rows[0]!.name, "o nome do titular continua no banco").toBeNull();
     expect(rows[0]!.email, "o e-mail do titular continua no banco").toBeNull();
   });
+
+  it("membro sem papel admin recebe 403 e o contato permanece intacto", async () => {
+    const { POST } = await import("@/app/api/v1/lgpd/anonymize/route");
+    const id = await criarContato({ name: "Titular Protegido", email: "protegido@exemplo.com" });
+    requestUser = VIEWER;
+    try {
+      const req = {
+        json: async () => ({ contact_id: id, justification: "tentativa sem permissão" }),
+        headers: new Headers(),
+      } as unknown as Request;
+      const res = await POST(req as never);
+      expect(res.status).toBe(403);
+      const { rows } = await pool.query<{ is_anonymized: boolean; email: string | null }>(
+        "select is_anonymized, email from contacts where id = $1",
+        [id],
+      );
+      expect(rows[0]).toEqual({ is_anonymized: false, email: "protegido@exemplo.com" });
+    } finally {
+      requestUser = USUARIO;
+    }
+  });
 });
 
 /* ══════════════════ DEFEITO 4 — fim do warm-up congela o canal ══════════════════ */
@@ -247,3 +285,6 @@ describe("defeito 4 — fim do warm-up", () => {
     expect(rows[0]!.is_warmup_complete, "o aquecimento não foi marcado como concluído").toBe(true);
   });
 });
+
+// Auth de request é um seam nesta prova SQL; a cerca real tem suíte própria.
+vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));

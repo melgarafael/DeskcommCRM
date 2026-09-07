@@ -7208,7 +7208,7 @@ begin
   end if;
 
   select v.id, v.organization_id, v.agent_id, v.status, v.provider, v.model,
-         v.credential_id, v.channel_session_id
+         v.credential_id, v.channel_session_id, v.provisioning_origin
     into v_version
   from public.ai_agent_versions v
   where v.id = p_version_id
@@ -7220,6 +7220,11 @@ begin
   if v_version.agent_id <> p_agent_id or v_version.organization_id <> p_org_id then
     raise exception 'version_not_found' using errcode = 'P0001';
   end if;
+  if p_expected_provenance is not null and (
+    p_expected_provenance not in('onboarding','legacy_reconciliation') or
+    v_version.provisioning_origin is distinct from p_expected_provenance or
+    (select count(*) from public.ai_agent_versions own_version where own_version.organization_id=p_org_id and own_version.agent_id=p_agent_id)<>1
+  ) then raise exception 'existing_version_requires_review' using errcode='P0001';end if;
   if v_version.status not in ('draft', 'superseded') then
     raise exception 'version_invalid_state' using errcode = 'P0001';
   end if;
@@ -7731,7 +7736,8 @@ alter table job_queue add constraint job_queue_kind_check
   -- de todo clone que já tenha uma linha de vocabulário posterior — os blocos
   -- antigos rodam antes e falham em cadeia. Vigiado por
   -- tests/unit/baseline-constraint-reconstruida.test.ts.
-  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn'));
+  -- 'transactional_delivery' (0226) segue a mesma consolidação de vocabulário.
+  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply'));
 alter table job_queue drop constraint if exists job_queue_turn_needs_contact;
 do $$
 declare c text;
@@ -7742,7 +7748,7 @@ begin
   if c is not null then execute format('alter table job_queue drop constraint %I', c); end if;
 end $$;
 alter table job_queue add constraint job_queue_turn_needs_contact
-  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn')) = (contact_id is not null));
+  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply')) = (contact_id is not null));
 
 alter table cron_jobs drop constraint if exists cron_jobs_job_kind_check;
 alter table cron_jobs add constraint cron_jobs_job_kind_check
@@ -10029,7 +10035,10 @@ alter table public.agent_inbox_items
 
 alter table public.agent_inbox_items
   add constraint agent_inbox_items_kind_check check (kind in (
+    'appointment_outcome_required',
+    'appointment_recovery_review',
     'qr_rescan',
+    'routing_unassigned',
     'job_dead',
     'event_dead',
     'budget_exceeded',
@@ -18187,79 +18196,3880 @@ create trigger trg_contacts_anonimizado_limpa_custom_fields
   execute function public.fn_contato_anonimizado_limpa_campos_personalizados();
 
 
--- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
---
--- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
--- dele — quem o empurrar para o meio desarma a cura para tudo que vier depois.
--- Vigiado por `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`.
---
--- A 0108 revogou anon numa LISTA de 8 funções, medida num banco instalado do
--- ZERO. Quem ATUALIZA tem outro estado: o `ALTER DEFAULT PRIVILEGES ... GRANT
--- ALL ON FUNCTIONS TO anon` do corpo deste arquivo grava uma entrada em
--- `pg_default_acl` que fica no catálogo PARA SEMPRE, e a partir daí toda função
--- criada em `public` nasce com EXECUTE para anon — inclusive as deste apêndice.
---
--- Medido numa VPS real (2026-08-07), comparando com o que um install fresco
--- produz: 6 definer expostas a anon e 5 a authenticated, entre elas
--- `fn_decrypt_oauth` — alcançável pela anon key, que vai para o browser.
---
--- Lista conserta o estoque e reabre no próximo `create function`. Esta varredura
--- é auto-curativa e roda DEPOIS de tudo que cria função, então cura no mesmo run
--- em que o defeito nasceria. Desfazer o ALTER DEFAULT PRIVILEGES não serve: ele
--- vem do `pg_dump` do Supabase e é reescrito a cada re-aplicação.
---
--- As duas origens de EXECUTE (a mesma lição da 0108): grant DIRETO a anon, que
--- `revoke from public` não remove; e grant a PUBLIC, do qual anon HERDA, que
--- `revoke from anon` não remove. O privilégio EFETIVO de authenticated e
--- service_role é medido ANTES e devolvido depois — tira anon sem tirar leitura.
-do $$
+-- ---- Organização e acesso atômicos (migration 0231; timestamp preservado 20260905120000) ----
+-- Criação administrativa atômica; chave existente com endpoint por ator, sem tokens.
+-- Apenas service_role: identidade/plataforma/MFA são verificadas pelo handler.
+create or replace function public.fn_create_tenant_with_owner(
+  p_actor uuid, p_key uuid, p_request jsonb, p_hash text
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  f record;
-  tinha_auth boolean;
-  tinha_service boolean;
+  prior public.idempotency_keys%rowtype;
+  org public.organizations%rowtype;
+  result jsonb;
 begin
-  if to_regrole('anon') is null then
+  if not exists (select 1 from public.platform_admins where user_id = p_actor
+    and revoked_at is null and scope = 'full') then
+    raise exception 'platform_admin_required' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_actor::text || ':' || p_key::text, 0));
+  select * into prior from public.idempotency_keys
+    where key = p_key::text and endpoint = '/api/v1/admin/tenants:' || p_actor::text
+      and expires_at > now();
+  if found then
+    if prior.request_hash <> decode(p_hash, 'hex') then
+      raise exception 'idempotency_conflict' using errcode = '22023';
+    end if;
+    return prior.response_body || jsonb_build_object('created', false);
+  end if;
+  insert into public.organizations(display_name, slug, legal_name, cnpj, status, settings, created_by)
+    values (p_request->>'display_name', p_request->>'slug', coalesce(nullif(p_request->>'legal_name', ''), p_request->>'display_name'),
+      p_request->>'cnpj', 'active', jsonb_build_object('plan', p_request->>'plan'), p_actor)
+    returning * into org;
+  insert into public.user_organizations(organization_id, user_id, role, accepted_at)
+    values (org.id, p_actor, 'admin', now());
+  result := jsonb_build_object('id', org.id, 'slug', org.slug, 'display_name', org.display_name,
+    'invite_id', gen_random_uuid(), 'issued_at', floor(extract(epoch from now()))::bigint);
+  insert into public.idempotency_keys(organization_id, key, endpoint, request_hash, status_code, response_body)
+    values (org.id, p_key::text, '/api/v1/admin/tenants:' || p_actor::text,
+      decode(p_hash, 'hex'), 201, result);
+  return result || jsonb_build_object('created', true);
+end $$;
+revoke all on function public.fn_create_tenant_with_owner(uuid, uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function public.fn_create_tenant_with_owner(uuid, uuid, jsonb, text) to service_role;
+
+-- O token HMAC/e-mail são verificados no servidor. Serialização impede duas
+-- aceitações concorrentes de reescrever o vínculo. Replay ativo não muda nada;
+-- revogado exige convite NOVO com iat posterior à revogação (legado é negado).
+create or replace function public.fn_accept_team_invite(
+  p_user uuid, p_org uuid, p_role text, p_invited_by uuid,
+  p_issued_at timestamptz, p_invited_at timestamptz
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare m public.user_organizations%rowtype;
+begin
+  if p_role not in ('viewer','agent','manager','admin') then
+    raise exception 'invalid_role' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_user::text || ':' || p_org::text, 0));
+  if not exists(select 1 from public.organizations where id = p_org and status = 'active') then
+    raise exception 'organization_unavailable' using errcode = '42501';
+  end if;
+  select * into m from public.user_organizations
+    where organization_id = p_org and user_id = p_user for update;
+  if found and m.revoked_at is null and m.accepted_at is not null then
+    return jsonb_build_object('id', m.id, 'changed', false);
+  end if;
+  if found and m.revoked_at is not null and (p_issued_at is null or p_issued_at <= m.revoked_at) then
+    raise exception 'invite_revoked' using errcode = '42501';
+  end if;
+  if m.id is not null then
+    update public.user_organizations set role = p_role, revoked_at = null,
+      invited_by = coalesce(p_invited_by, invited_by), invited_at = p_invited_at,
+      accepted_at = now(), updated_at = now()
+      where organization_id = p_org and id = m.id returning * into m;
+  else
+    insert into public.user_organizations(organization_id, user_id, role, invited_by, invited_at, accepted_at)
+      values (p_org, p_user, p_role, p_invited_by, p_invited_at, now()) returning * into m;
+  end if;
+  return jsonb_build_object('id', m.id, 'changed', true);
+end $$;
+revoke all on function public.fn_accept_team_invite(uuid, uuid, text, uuid, timestamptz, timestamptz) from public, anon, authenticated;
+grant execute on function public.fn_accept_team_invite(uuid, uuid, text, uuid, timestamptz, timestamptz) to service_role;
+
+-- ---- Recibo de criação confiável (migration 0219) ----
+-- Recibo que será autoridade de assinatura não pode ser escrito por membro.
+-- DEFAULT false marca TODA linha anterior como não confiável, inclusive forjada.
+-- Não fazemos backfill nem apagamos recibos: só a RPC abaixo produz confiança.
+-- Os namespaces LGPD/MCP continuam com o contrato de leitura/escrita original.
+alter table public.idempotency_keys add column if not exists tenant_creation_trusted boolean not null default false;
+drop policy if exists idempotency_platform_creation_server_only on public.idempotency_keys;
+create policy idempotency_platform_creation_server_only on public.idempotency_keys
+  as restrictive for all to anon, authenticated
+  using (endpoint not like '/api/v1/admin/tenants:%' and not tenant_creation_trusted)
+  with check (endpoint not like '/api/v1/admin/tenants:%' and not tenant_creation_trusted);
+-- TRUNCATE ignora RLS; nenhum consumidor de idempotência precisa dele.
+revoke truncate on public.idempotency_keys from public, anon, authenticated;
+
+-- Criação administrativa atômica; chave existente com endpoint por ator, sem tokens.
+-- Apenas service_role: identidade/plataforma/MFA são verificadas pelo handler.
+create or replace function public.fn_create_tenant_with_owner(
+  p_actor uuid, p_key uuid, p_request jsonb, p_hash text
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  prior public.idempotency_keys%rowtype;
+  org public.organizations%rowtype;
+  result jsonb;
+begin
+  if not exists (select 1 from public.platform_admins where user_id = p_actor
+    and revoked_at is null and scope = 'full') then
+    raise exception 'platform_admin_required' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_actor::text || ':' || p_key::text, 0));
+  select * into prior from public.idempotency_keys
+    where key = p_key::text and endpoint = '/api/v1/admin/tenants:' || p_actor::text
+      and expires_at > now() and tenant_creation_trusted;
+  if found then
+    if prior.request_hash <> decode(p_hash, 'hex') then
+      raise exception 'idempotency_conflict' using errcode = '22023';
+    end if;
+    if prior.response_body->>'id' is distinct from prior.organization_id::text
+      or not exists (select 1 from public.organizations where id = prior.organization_id and created_by = p_actor) then
+      raise exception 'idempotency_provenance_invalid' using errcode = '22023';
+    end if;
+    return prior.response_body || jsonb_build_object('created', false);
+  end if;
+  insert into public.organizations(display_name, slug, legal_name, cnpj, status, settings, created_by)
+    values (p_request->>'display_name', p_request->>'slug', coalesce(nullif(p_request->>'legal_name', ''), p_request->>'display_name'),
+      p_request->>'cnpj', 'active', jsonb_build_object('plan', p_request->>'plan'), p_actor)
+    returning * into org;
+  insert into public.user_organizations(organization_id, user_id, role, accepted_at)
+    values (org.id, p_actor, 'admin', now());
+  result := jsonb_build_object('id', org.id, 'slug', org.slug, 'display_name', org.display_name,
+    'invite_id', gen_random_uuid(), 'issued_at', floor(extract(epoch from now()))::bigint);
+  insert into public.idempotency_keys(organization_id, key, endpoint, request_hash, status_code, response_body, tenant_creation_trusted)
+    values (org.id, p_key::text, '/api/v1/admin/tenants:' || p_actor::text,
+      decode(p_hash, 'hex'), 201, result, true);
+  return result || jsonb_build_object('created', true);
+end $$;
+revoke all on function public.fn_create_tenant_with_owner(uuid, uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function public.fn_create_tenant_with_owner(uuid, uuid, jsonb, text) to service_role;
+
+
+-- ---- Suporte temporário por sessão (migration 0220) ----
+-- Suporte temporário por sessão Supabase; não cria membership nem troca identidade.
+-- O banco decide validade/modo. Sessão vencida continua identificável até saída.
+create table if not exists public.platform_support_sessions (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ actor_user_id uuid not null references auth.users(id) on delete cascade,
+ auth_session_id uuid not null,
+ access_mode text not null check (access_mode in ('full','support_readonly')),
+ previous_organization_id uuid references public.organizations(id) on delete set null,
+ created_at timestamptz not null default now(),
+ expires_at timestamptz not null,
+ ended_at timestamptz
+);
+-- Referência histórica ao Auth: CASCADE apagaria o bloqueio ao revogar a sessão;
+-- RESTRICT impediria logout. O início valida auth.sessions sob lock.
+alter table public.platform_support_sessions drop constraint if exists platform_support_sessions_auth_session_id_fkey;
+create unique index if not exists platform_support_sessions_open_session
+ on public.platform_support_sessions(auth_session_id) where ended_at is null;
+alter table public.platform_support_sessions enable row level security;
+revoke all on public.platform_support_sessions from public, anon, authenticated;
+grant select, insert, update, delete on public.platform_support_sessions to service_role;
+
+create or replace function public.fn_support_context()
+returns jsonb language sql stable security definer set search_path = public as $f$
+ select jsonb_build_object('id', s.id, 'organization_id', s.organization_id,
+ 'actor_user_id', s.actor_user_id, 'auth_session_id', s.auth_session_id,
+ 'previous_organization_id', s.previous_organization_id, 'expires_at', s.expires_at,
+ 'name', o.display_name, 'locale', o.locale,
+ 'access_mode', case when s.access_mode = 'support_readonly' or p.scope <> 'full'
+ then 'support_readonly' else 'full' end,
+ 'status', case when s.expires_at <= now() then 'expired'
+ when p.user_id is null or a.id is null or (a.not_after is not null and a.not_after <= now())
+ or o.status <> 'active' then 'revoked'
+ when (p.mfa_required or exists(select 1 from auth.mfa_factors f where f.user_id=s.actor_user_id and f.status='verified'))
+ and coalesce(auth.jwt()->>'aal','aal1') <> 'aal2' then 'revoked'
+ else 'active' end)
+ from public.platform_support_sessions s
+ join public.organizations o on o.id=s.organization_id
+ left join public.platform_admins p on p.user_id=s.actor_user_id and p.revoked_at is null
+ left join auth.sessions a on a.id=s.auth_session_id and a.user_id=s.actor_user_id
+ where s.actor_user_id=auth.uid()
+ and s.auth_session_id=nullif(auth.jwt()->>'session_id','')::uuid and s.ended_at is null
+ limit 1;
+$f$;
+revoke all on function public.fn_support_context() from public, anon;
+grant execute on function public.fn_support_context() to authenticated, service_role;
+
+create or replace function public.fn_support_write_allowed(p_org uuid)
+returns boolean language sql stable security definer set search_path = public as $f$
+ select coalesce((select case when (s->>'organization_id')::uuid is distinct from p_org then true
+ else s->>'status'='active' and s->>'access_mode'='full' end
+ from (select public.fn_support_context() s) c where s is not null),true);
+$f$;
+revoke all on function public.fn_support_write_allowed(uuid) from public, anon;
+grant execute on function public.fn_support_write_allowed(uuid) to authenticated, service_role;
+
+create or replace function public.fn_user_org_ids()
+returns setof uuid language sql stable security definer set search_path = public as $f$
+ select organization_id from public.user_organizations where user_id=auth.uid() and revoked_at is null
+ union select (s->>'organization_id')::uuid from (select public.fn_support_context() s) c where s->>'status'='active';
+$f$;
+create or replace function public.fn_user_role_in_org(p_org uuid)
+returns text language sql stable security definer set search_path = public as $f$
+ select case when s->>'status'='active' and (s->>'organization_id')::uuid=p_org
+ then case when s->>'access_mode'='full' then 'admin' else 'viewer' end
+ else (select role from public.user_organizations where user_id=auth.uid() and organization_id=p_org and revoked_at is null limit 1) end
+ from (select public.fn_support_context() s) c;
+$f$;
+
+-- Somente backend autenticado chama o início/fim. O corpo reconfirma sessão,
+-- autoridade e MFA reais, e limita TTL mesmo que quem chama peça mais.
+create or replace function public.fn_start_support(p_actor uuid, p_session uuid, p_org uuid, p_previous uuid, p_mode text default 'full', p_ttl integer default 3600)
+returns uuid language plpgsql security definer set search_path = public as $f$
+declare v_id uuid; v_scope text;
+begin
+ perform 1 from auth.sessions where id=p_session and user_id=p_actor and (not_after is null or not_after>now()) for update;
+ if not found then raise exception 'support_session_invalid'; end if;
+ select scope into v_scope from public.platform_admins p where user_id=p_actor and revoked_at is null
+ and (not (p.mfa_required or exists(select 1 from auth.mfa_factors f where f.user_id=p_actor and f.status='verified'))
+ or exists(select 1 from auth.sessions a where a.id=p_session and a.aal='aal2'));
+ if not found then raise exception 'support_authority_required'; end if;
+ if p_mode not in ('full','support_readonly') or p_ttl is null or p_ttl<1 then raise exception 'support_invalid_input'; end if;
+ if not exists(select 1 from organizations where id=p_org and status='active') then raise exception 'support_target_unavailable'; end if;
+ if exists(select 1 from platform_support_sessions where auth_session_id=p_session and ended_at is null) then raise exception 'support_exit_required'; end if;
+ if p_previous is not null and not exists(select 1 from user_organizations where user_id=p_actor and organization_id=p_previous and revoked_at is null) then raise exception 'support_previous_invalid'; end if;
+ insert into platform_support_sessions(organization_id,actor_user_id,auth_session_id,access_mode,previous_organization_id,expires_at)
+ values(p_org,p_actor,p_session,case when v_scope='full' then p_mode else 'support_readonly' end,p_previous,now()+make_interval(secs=>least(p_ttl,3600))) returning id into v_id;
+ return v_id;
+end $f$;
+create or replace function public.fn_end_support(p_actor uuid,p_session uuid)
+returns jsonb language plpgsql security definer set search_path = public as $f$
+declare v_row public.platform_support_sessions;
+begin
+ -- Sair depende somente da posse da sessão, nunca da autoridade/TTL.
+ update public.platform_support_sessions set ended_at=now()
+ where actor_user_id=p_actor and auth_session_id=p_session and ended_at is null returning * into v_row;
+ return to_jsonb(v_row);
+end $f$;
+revoke all on function public.fn_start_support(uuid,uuid,uuid,uuid,text,integer), public.fn_end_support(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_start_support(uuid,uuid,uuid,uuid,text,integer), public.fn_end_support(uuid,uuid) to service_role;
+
+-- Enumera o catálogo aplicado; não pressupõe quantas tabelas o produto terá.
+-- Restritiva derrota as permissivas OR plataforma, inclusive membership admin B.
+do $f$
+declare r record; v_col text;
+begin
+ for r in select c.oid,c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
+ where n.nspname='public' and c.relkind='r' and c.relrowsecurity
+ and (exists(select 1 from pg_attribute a where a.attrelid=c.oid and a.attname='organization_id' and not a.attisdropped) or c.relname='organizations')
+ loop
+ v_col:=case when r.relname='organizations' then 'id' else 'organization_id' end;
+ if not (has_table_privilege('authenticated',r.oid,'insert') or has_table_privilege('authenticated',r.oid,'update') or has_table_privilege('authenticated',r.oid,'delete')) then
+   execute format('drop policy if exists support_write_insert on public.%I',r.relname);
+   execute format('drop policy if exists support_write_update on public.%I',r.relname);
+   execute format('drop policy if exists support_write_delete on public.%I',r.relname);
+   continue; -- tabela server-only mantém ZERO policies, contrato mais restritivo
+ end if;
+ execute format('drop policy if exists support_write_insert on public.%I',r.relname);
+ execute format('create policy support_write_insert on public.%I as restrictive for insert to authenticated with check (public.fn_support_write_allowed(%I))',r.relname,v_col);
+ execute format('drop policy if exists support_write_update on public.%I',r.relname);
+ execute format('create policy support_write_update on public.%I as restrictive for update to authenticated using (public.fn_support_write_allowed(%I)) with check (public.fn_support_write_allowed(%I))',r.relname,v_col,v_col);
+ execute format('drop policy if exists support_write_delete on public.%I',r.relname);
+ execute format('create policy support_write_delete on public.%I as restrictive for delete to authenticated using (public.fn_support_write_allowed(%I))',r.relname,v_col);
+ end loop;
+end $f$;
+
+CREATE OR REPLACE FUNCTION public.emit_event(p_event_type text, p_entity_kind text, p_entity_id uuid, p_payload jsonb DEFAULT '{}'::jsonb, p_metadata jsonb DEFAULT '{}'::jsonb, p_organization_id uuid DEFAULT NULL::uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_org_id uuid;
+  v_event_id uuid;
+begin
+  v_org_id := coalesce(p_organization_id, (public.fn_support_context()->>'organization_id')::uuid);
+  if v_org_id is null then
+    select organization_id into v_org_id
+      from public.user_organizations
+      where user_id = auth.uid() and revoked_at is null
+      limit 1;
+  end if;
+  if v_org_id is null then
+    raise exception 'emit_event: organization_id obrigatorio';
+  end if;
+
+  if auth.uid() is not null
+     and not public.fn_role_at_least(v_org_id, 'viewer') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'emit_event: caller must be an active member of the organization';
+  end if;
+
+  if not public.fn_support_write_allowed(v_org_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+
+  insert into public.event_log
+    (organization_id, event_type, entity_kind, entity_id, payload, metadata)
+  values
+    (v_org_id, p_event_type, p_entity_kind, p_entity_id,
+     coalesce(p_payload, '{}'::jsonb),
+     coalesce(p_metadata, '{}'::jsonb)
+       || jsonb_build_object('emitted_at', extract(epoch from now())))
+  returning id into v_event_id;
+
+  return v_event_id;
+end $function$
+
+;
+
+CREATE OR REPLACE FUNCTION public.fn_conversation_assign(p_organization_id uuid, p_conversation_id uuid, p_to_user_id uuid, p_reason text, p_expected_assignee uuid DEFAULT NULL::uuid, p_enforce_expected boolean DEFAULT false)
+ RETURNS SETOF conversations
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  select assigned_to_user_id into v_from
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+   for update;
+
+  if not found then
     return;
   end if;
 
-  for f in
-    select p.oid, p.oid::regprocedure as assinatura
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public'
-       and p.prosecdef
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         -- Desnormalizado JUNTO com o dono, na mesma transação: nunca existe
+         -- uma janela em que id e nome discordam. NULL junto com o id quando
+         -- a atribuição é removida (release) — nunca sobra um nome órfão de
+         -- dono nenhum. Lido de auth.users porque quem chama esta função
+         -- (RPC) não necessariamente tem acesso ao Admin API — a definer
+         -- resolve por dentro.
+         assigned_to_user_name = case
+           when p_to_user_id is null then null
+           else (select raw_user_meta_data ->> 'full_name' from auth.users where id = p_to_user_id)
+         end,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         bot_silenced_until = case
+           when p_reason = 'routing'  then bot_silenced_until
+           when p_to_user_id is null  then (case when last_handoff_at is null
+                                                 then null
+                                                 else bot_silenced_until end)
+           else 'infinity'::timestamptz
+         end,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason);
+
+  return next v_conv;
+end;
+$function$
+
+;
+
+CREATE OR REPLACE FUNCTION public.fn_mesclar_contatos(p_organization_id uuid, p_contato_principal uuid, p_contatos_secundarios uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_principal public.contacts%rowtype;
+  v_esperado integer;
+  v_achado integer;
+  v_alvo record;
+  v_linha record;
+  v_movidas integer;
+  v_pulados integer;
+  v_repontado jsonb := '{}'::jsonb;
+  v_nao_repontado jsonb := '{}'::jsonb;
+  v_nome text;
+  v_apelido text;
+  v_nascimento date;
+  v_email text;
+  v_telefone text;
+  v_lid text;
+  v_tags text[];
+  v_leads integer := 0;
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  -- 1 · Autorização. Fundir é destrutivo na prática: `manager`, o mesmo piso das
+  --     policies de `merge_queue`. Sessão de service role (auth.uid() nulo) não
+  --     passa por aqui — quem resolve a org nesse caminho é a rota, de fonte
+  --     confiável, nunca do body.
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'manager') then
+    raise exception using errcode = '42501', message = 'insufficient_role';
+  end if;
+
+  if p_contato_principal is null
+     or p_contatos_secundarios is null
+     or cardinality(p_contatos_secundarios) = 0
+     or p_contato_principal = any(p_contatos_secundarios) then
+    raise exception using errcode = '22023', message = 'selecao_de_mesclagem_invalida';
+  end if;
+
+  select count(distinct id)::integer into v_esperado
+    from unnest(p_contatos_secundarios) as ids(id);
+  if v_esperado <> cardinality(p_contatos_secundarios) then
+    raise exception using errcode = '22023', message = 'secundario_repetido';
+  end if;
+
+  -- 2 · O principal existe, é desta org, está vivo — e trava até o fim.
+  select * into v_principal from public.contacts
+   where id = p_contato_principal
+     and organization_id = p_organization_id
+     and is_merged_into is null
+     and is_anonymized = false
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'contato_principal_indisponivel';
+  end if;
+
+  -- 3 · Os secundários também. `is_anonymized = false` não é zelo: L-04 é
+  --     irreversível, e reencaixar a linha anonimizada num contato ativo a
+  --     traria de volta ao atendimento pela porta dos fundos.
+  perform 1 from public.contacts
+   where id = any(p_contatos_secundarios)
+     and organization_id = p_organization_id
+     and is_merged_into is null
+     and is_anonymized = false
+   for update;
+  get diagnostics v_achado = row_count;
+  if v_achado <> v_esperado then
+    raise exception using errcode = 'P0002', message = 'contato_secundario_indisponivel';
+  end if;
+
+  -- 4 · A LÁPIDE VEM ANTES de tudo. É ela que solta telefone/e-mail/CPF dos
+  --     índices únicos parciais para o vencedor poder herdá-los no passo 6.
+  update public.contacts
+     set is_merged_into = p_contato_principal,
+         merged_at = now(),
+         updated_at = now()
+   where organization_id = p_organization_id
+     and id = any(p_contatos_secundarios);
+
+  -- Cadeia: quem já tinha sido mesclado NUM dos secundários passa a apontar para
+  -- o vencedor. Sem isto, `is_merged_into` vira uma corrente que a leitura teria
+  -- de percorrer, e ninguém percorre.
+  update public.contacts
+     set is_merged_into = p_contato_principal
+   where organization_id = p_organization_id
+     and is_merged_into = any(p_contatos_secundarios);
+
+  -- 5 · Reponta TODO ponteiro para os perdedores. A lista sai do catálogo; o
+  --     polimórfico entra à mão porque catálogo nenhum o conhece.
+  for v_alvo in
+    select n.nspname as esquema, c.relname as tabela, a.attname as coluna, ''::text as filtro
+      from pg_catalog.pg_constraint co
+      join pg_catalog.pg_class c on c.oid = co.conrelid
+      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      join pg_catalog.pg_attribute a on a.attrelid = co.conrelid and a.attnum = co.conkey[1]
+     where co.contype = 'f'
+       and co.confrelid = 'public.contacts'::regclass
+       and co.conrelid <> 'public.contacts'::regclass
+       and array_length(co.conkey, 1) = 1
+       and c.relkind = 'r'
+       and n.nspname = 'public'
+    union all
+    select 'public', 'crm_lead_links', 'target_id', ' and target_kind = ''contact'''
+     where to_regclass('public.crm_lead_links') is not null
+    order by 2, 3
   loop
-    tinha_auth := to_regrole('authenticated') is not null
-                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
-    tinha_service := to_regrole('service_role') is not null
-                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
+    v_pulados := 0;
+    begin
+      execute format(
+        'update %I.%I set %I = $1 where %I = any($2)%s',
+        v_alvo.esquema, v_alvo.tabela, v_alvo.coluna, v_alvo.coluna, v_alvo.filtro
+      ) using p_contato_principal, p_contatos_secundarios;
+      get diagnostics v_movidas = row_count;
+    exception when unique_violation or exclusion_violation then
+      -- Colisão REAL e esperada: `uniq_job_queue_one_running_per_contact` deixa
+      -- um job 'running' por contato, e os dois lados podem ter um. Em vez de
+      -- abortar a fusão inteira por causa de estado efêmero de runtime, reponta
+      -- linha a linha e conta quem ficou. Quem fica NÃO vira FK órfã — continua
+      -- apontando para a lápide, que existe.
+      v_movidas := 0;
+      for v_linha in execute format(
+        'select ctid as tid from %I.%I where %I = any($1)%s',
+        v_alvo.esquema, v_alvo.tabela, v_alvo.coluna, v_alvo.filtro
+      ) using p_contatos_secundarios
+      loop
+        begin
+          execute format(
+            'update %I.%I set %I = $1 where ctid = $2',
+            v_alvo.esquema, v_alvo.tabela, v_alvo.coluna
+          ) using p_contato_principal, v_linha.tid;
+          v_movidas := v_movidas + 1;
+        exception when unique_violation or exclusion_violation then
+          v_pulados := v_pulados + 1;
+        end;
+      end loop;
+    end;
 
-    execute format('revoke execute on function %s from public, anon', f.assinatura);
+    if v_movidas > 0 then
+      v_repontado := v_repontado
+        || jsonb_build_object(v_alvo.tabela || '.' || v_alvo.coluna, v_movidas);
+    end if;
+    if v_pulados > 0 then
+      v_nao_repontado := v_nao_repontado
+        || jsonb_build_object(v_alvo.tabela || '.' || v_alvo.coluna, v_pulados);
+    end if;
+  end loop;
 
-    if tinha_auth then
-      execute format('grant execute on function %s to authenticated', f.assinatura);
+  -- 6 · O principal MANDA; o que ele não tem, vem dos perdedores. Nunca o
+  --     contrário: sobrescrever o que o atendente digitou seria fusão com
+  --     surpresa, e fusão não tem desfazer.
+  select c.name into v_nome from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.name is not null
+   order by c.created_at, c.id limit 1;
+  select c.display_name into v_apelido from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.display_name is not null
+   order by c.created_at, c.id limit 1;
+  select c.birthdate into v_nascimento from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.birthdate is not null
+   order by c.created_at, c.id limit 1;
+  select c.email into v_email from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.email is not null
+   order by c.created_at, c.id limit 1;
+  select c.phone_number into v_telefone from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.phone_number is not null
+   order by c.created_at, c.id limit 1;
+  -- `wa_identity`/`wa_lid` são GERADAS: o que se herda é a origem delas. Sem
+  -- isto o WhatsApp do perdedor fica órfão — `fn_upsert_wa_contact` filtra
+  -- `is_merged_into is null`, não acharia mais ninguém e criaria um contato
+  -- novo na mensagem seguinte, refazendo a duplicata que acabou de ser desfeita.
+  select c.source_metadata->>'waha_lid' into v_lid from public.contacts c
+   where c.id = any(p_contatos_secundarios)
+     and c.source_metadata->>'waha_lid' is not null
+   order by c.created_at, c.id limit 1;
+
+  -- Guardas de unicidade. A lápide já tirou os perdedores dos índices parciais,
+  -- então o que sobrar aqui é conflito com um TERCEIRO contato vivo — e nesse
+  -- caso o vencedor simplesmente não herda o campo. Falhar a fusão inteira por
+  -- causa de um e-mail seria perder o repontamento que já valeu a pena.
+  if v_email is not null and exists (
+    select 1 from public.contacts o
+     where o.organization_id = p_organization_id and o.is_merged_into is null
+       and o.id <> p_contato_principal and o.email_normalized = lower(btrim(v_email))
+  ) then v_email := null; end if;
+  if v_telefone is not null and exists (
+    select 1 from public.contacts o
+     where o.organization_id = p_organization_id and o.is_merged_into is null
+       and o.id <> p_contato_principal and o.phone_number = v_telefone
+  ) then v_telefone := null; end if;
+  if v_lid is not null and exists (
+    select 1 from public.contacts o
+     where o.organization_id = p_organization_id and o.is_merged_into is null
+       and o.id <> p_contato_principal and o.wa_lid = v_lid
+  ) then v_lid := null; end if;
+
+  select coalesce(array_agg(distinct t), '{}'::text[]) into v_tags
+    from (
+      select unnest(c.tags) as t from public.contacts c
+       where c.organization_id = p_organization_id
+         and (c.id = p_contato_principal or c.id = any(p_contatos_secundarios))
+    ) as todas;
+
+  -- CPF e `consent` NÃO são herdados, de propósito. CPF é um PAR
+  -- (`cpf_encrypted` + `cpf_hash`) preso por check constraint e criptografado
+  -- com a chave da instalação — mover metade quebra a linha. `consent` é
+  -- registro legal do que AQUELA pessoa autorizou; herdar um "granted_at" de
+  -- outro cadastro fabricaria consentimento. Falha fechada nos dois.
+  update public.contacts set
+    name = coalesce(name, v_nome),
+    display_name = coalesce(display_name, v_apelido),
+    birthdate = coalesce(birthdate, v_nascimento),
+    email = coalesce(email, v_email),
+    phone_number = coalesce(phone_number, v_telefone),
+    tags = v_tags,
+    last_activity_at = greatest(
+      last_activity_at,
+      (select max(c.last_activity_at) from public.contacts c
+        where c.id = any(p_contatos_secundarios))
+    ),
+    source_metadata = (
+      case when source_metadata->>'waha_lid' is null and v_lid is not null
+        then source_metadata || jsonb_build_object('waha_lid', v_lid)
+        else source_metadata end
+    )
+      - case when coalesce(phone_number, v_telefone) is not null
+             then 'telefone_em_conflito' else '' end
+      || jsonb_build_object(
+           'mesclado_de',
+           coalesce(source_metadata->'mesclado_de', '[]'::jsonb)
+             || to_jsonb(p_contatos_secundarios),
+           'mesclado_em', to_jsonb(now())
+         ),
+    updated_at = now()
+  where id = p_contato_principal and organization_id = p_organization_id;
+
+  -- 7 · A fusão aparece na timeline de cada negócio que o vencedor passou a ter.
+  --     `crm_lead_activities.lead_id` é NOT NULL — contato sem negócio nenhum
+  --     não tem onde escrever, e para esse caso quem guarda o rastro é o
+  --     `api_audit_log` que a rota emite, sempre.
+  insert into public.crm_lead_activities
+    (organization_id, lead_id, contact_id, source_module, source_id, type,
+     payload, metadata, performed_at, performed_by_user_id)
+  select p_organization_id, l.id, p_contato_principal, 'crm', p_contato_principal,
+         'contacts_merged',
+         jsonb_build_object(
+           'contatos_mesclados', to_jsonb(p_contatos_secundarios),
+           'repontado', v_repontado,
+           'nao_repontado', v_nao_repontado
+         ),
+         '{}'::jsonb, now(), auth.uid()
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.contact_id = p_contato_principal;
+  get diagnostics v_leads = row_count;
+
+  return jsonb_build_object(
+    'contato_id', p_contato_principal,
+    'contatos_mesclados', to_jsonb(p_contatos_secundarios),
+    'repontado', v_repontado,
+    'nao_repontado', v_nao_repontado,
+    'atividades_emitidas', v_leads
+  );
+end;
+$function$
+
+;
+
+-- Storage usa organização no primeiro segmento. Segmentos de plataforma não
+-- recebem concessão nova; esta cerca só restringe os paths do alvo.
+create or replace function public.fn_support_storage_write_allowed(p_name text)
+returns boolean language sql stable security definer set search_path = public as $f$
+ select case when split_part(p_name,'/',1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+ then public.fn_support_write_allowed(split_part(p_name,'/',1)::uuid) else true end;
+$f$;
+revoke all on function public.fn_support_storage_write_allowed(text) from public,anon;
+grant execute on function public.fn_support_storage_write_allowed(text) to authenticated,service_role;
+do $f$ begin
+ if to_regclass('storage.objects') is not null then
+ execute 'drop policy if exists support_write_insert on storage.objects';
+ execute 'create policy support_write_insert on storage.objects as restrictive for insert to authenticated with check (public.fn_support_storage_write_allowed(name))';
+ execute 'drop policy if exists support_write_update on storage.objects';
+ execute 'create policy support_write_update on storage.objects as restrictive for update to authenticated using (public.fn_support_storage_write_allowed(name)) with check (public.fn_support_storage_write_allowed(name))';
+ execute 'drop policy if exists support_write_delete on storage.objects';
+ execute 'create policy support_write_delete on storage.objects as restrictive for delete to authenticated using (public.fn_support_storage_write_allowed(name))';
+ end if;
+end $f$;
+notify pgrst, 'reload schema';
+
+-- Callback OAuth não recebe JWT Strict. O state assinado liga sessão e ator.
+-- Legado sem sessão falha conservadoramente só se houver suporte restrito no alvo.
+create or replace function public.fn_support_callback_write_allowed(p_org uuid,p_actor uuid default null,p_session uuid default null)
+returns boolean language sql stable security definer set search_path=public as $f$
+ select not exists(
+ select 1 from platform_support_sessions s
+ left join platform_admins p on p.user_id=s.actor_user_id and p.revoked_at is null
+ left join auth.sessions a on a.id=s.auth_session_id and a.user_id=s.actor_user_id
+ join organizations o on o.id=s.organization_id
+ where s.organization_id=p_org and s.ended_at is null
+ and (p_actor is null or s.actor_user_id=p_actor)
+ and (p_session is null or s.auth_session_id=p_session)
+ and (s.access_mode<>'full' or p.scope<>'full' or p.user_id is null or s.expires_at<=now()
+ or a.id is null or (a.not_after is not null and a.not_after<=now()) or o.status<>'active'
+ or ((p.mfa_required or exists(select 1 from auth.mfa_factors f where f.user_id=s.actor_user_id and f.status='verified')) and coalesce(a.aal::text,'aal1')<>'aal2')));
+$f$;
+revoke all on function public.fn_support_callback_write_allowed(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_support_callback_write_allowed(uuid,uuid,uuid) to service_role;
+
+
+-- ---- Interface por vínculo (0221) ----
+-- Apresentação por membership, nunca autorização. IDs evoluem no catálogo TS.
+-- Default segura para clones; nenhuma linha legada é reinterpretada como bloqueio.
+alter table public.user_organizations add column if not exists interface_settings jsonb not null default '{"preset":"completa"}'::jsonb;
+do $$ begin
+ if not exists(select 1 from pg_constraint where conrelid='public.user_organizations'::regclass and conname='user_organizations_interface_shape') then
+  alter table public.user_organizations add constraint user_organizations_interface_shape check (
+   jsonb_typeof(interface_settings) = 'object' and interface_settings ? 'preset'
+   and interface_settings->>'preset' in ('completa','simplificada')
+   and (not interface_settings ? 'destinos' or (jsonb_typeof(interface_settings->'destinos')='array' and interface_settings->'destinos' <> '[]'::jsonb))
+  );
+ end if;
+ if exists(select 1 from pg_publication where pubname='supabase_realtime') and not exists(
+  select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='user_organizations') then
+  alter publication supabase_realtime add table public.user_organizations;
+ end if;
+end $$;
+
+-- INSERT/reativação aplica escolha assinada; replay ativo retorna antes da escrita.
+create or replace function public.fn_accept_team_invite(
+  p_user uuid, p_org uuid, p_role text, p_invited_by uuid,
+  p_issued_at timestamptz, p_invited_at timestamptz,
+  p_interface_settings jsonb
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare m public.user_organizations%rowtype;
+begin
+  if p_role not in ('viewer','agent','manager','admin') then
+    raise exception 'invalid_role' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_user::text || ':' || p_org::text, 0));
+  if not exists(select 1 from public.organizations where id = p_org and status = 'active') then
+    raise exception 'organization_unavailable' using errcode = '42501';
+  end if;
+  select * into m from public.user_organizations
+    where organization_id = p_org and user_id = p_user for update;
+  if found and m.revoked_at is null and m.accepted_at is not null then
+    return jsonb_build_object('id', m.id, 'changed', false);
+  end if;
+  if found and m.revoked_at is not null and (p_issued_at is null or p_issued_at <= m.revoked_at) then
+    raise exception 'invite_revoked' using errcode = '42501';
+  end if;
+  if m.id is not null then
+    update public.user_organizations set role = p_role, revoked_at = null, interface_settings = p_interface_settings,
+      invited_by = coalesce(p_invited_by, invited_by), invited_at = p_invited_at,
+      accepted_at = now(), updated_at = now()
+      where organization_id = p_org and id = m.id returning * into m;
+  else
+    insert into public.user_organizations(organization_id, user_id, role, invited_by, invited_at, accepted_at, interface_settings)
+      values (p_org, p_user, p_role, p_invited_by, p_invited_at, now(), p_interface_settings) returning * into m;
+  end if;
+  return jsonb_build_object('id', m.id, 'changed', true);
+end $$;
+revoke all on function public.fn_accept_team_invite(uuid, uuid, text, uuid, timestamptz, timestamptz, jsonb) from public, anon, authenticated;
+grant execute on function public.fn_accept_team_invite(uuid, uuid, text, uuid, timestamptz, timestamptz, jsonb) to service_role;
+
+create or replace function public.fn_accept_team_invite(
+ p_user uuid, p_org uuid, p_role text, p_invited_by uuid,
+ p_issued_at timestamptz, p_invited_at timestamptz
+) returns jsonb language sql security definer set search_path = public, pg_temp as $$
+ select public.fn_accept_team_invite(p_user,p_org,p_role,p_invited_by,p_issued_at,p_invited_at,'{"preset":"completa"}'::jsonb);
+$$;
+revoke all on function public.fn_accept_team_invite(uuid,uuid,text,uuid,timestamptz,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_accept_team_invite(uuid,uuid,text,uuid,timestamptz,timestamptz) to service_role;
+
+-- Recibos confiáveis e fingerprint do request inteiro preservados.
+create or replace function public.fn_create_tenant_with_owner(
+  p_actor uuid, p_key uuid, p_request jsonb, p_hash text
+) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  prior public.idempotency_keys%rowtype;
+  org public.organizations%rowtype;
+  result jsonb;
+begin
+  if not exists (select 1 from public.platform_admins where user_id = p_actor
+    and revoked_at is null and scope = 'full') then
+    raise exception 'platform_admin_required' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_actor::text || ':' || p_key::text, 0));
+  select * into prior from public.idempotency_keys
+    where key = p_key::text and endpoint = '/api/v1/admin/tenants:' || p_actor::text
+      and expires_at > now() and tenant_creation_trusted;
+  if found then
+    if prior.request_hash <> decode(p_hash, 'hex') then
+      raise exception 'idempotency_conflict' using errcode = '22023';
     end if;
-    if tinha_service then
-      execute format('grant execute on function %s to service_role', f.assinatura);
+    if prior.response_body->>'id' is distinct from prior.organization_id::text
+      or not exists (select 1 from public.organizations where id = prior.organization_id and created_by = p_actor) then
+      raise exception 'idempotency_provenance_invalid' using errcode = '22023';
     end if;
+    return prior.response_body || jsonb_build_object('created', false);
+  end if;
+  insert into public.organizations(display_name, slug, legal_name, cnpj, status, settings, created_by)
+    values (p_request->>'display_name', p_request->>'slug', coalesce(nullif(p_request->>'legal_name', ''), p_request->>'display_name'),
+      p_request->>'cnpj', 'active', jsonb_build_object('plan', p_request->>'plan'), p_actor)
+    returning * into org;
+  insert into public.user_organizations(organization_id, user_id, role, accepted_at, interface_settings)
+    values (org.id, p_actor, 'admin', now(), case when lower(p_request->>'owner_email') =
+      (select lower(email) from auth.users where id = p_actor)
+      then coalesce(p_request->'owner_interface_settings', '{"preset":"completa"}'::jsonb)
+      else '{"preset":"completa"}'::jsonb end);
+  result := jsonb_build_object('id', org.id, 'slug', org.slug, 'display_name', org.display_name,
+    'invite_id', gen_random_uuid(), 'issued_at', floor(extract(epoch from now()))::bigint);
+  insert into public.idempotency_keys(organization_id, key, endpoint, request_hash, status_code, response_body, tenant_creation_trusted)
+    values (org.id, p_key::text, '/api/v1/admin/tenants:' || p_actor::text,
+      decode(p_hash, 'hex'), 201, result, true);
+  return result || jsonb_build_object('created', true);
+end $$;
+revoke all on function public.fn_create_tenant_with_owner(uuid, uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function public.fn_create_tenant_with_owner(uuid, uuid, jsonb, text) to service_role;
+
+
+notify pgrst, 'reload schema';
+
+-- ---- Fronteira do atendimento (migration 0222) ----
+-- 0222 — conversa encerra atendimento; demanda exige desfecho explícito.
+-- Mutex: advisory(org, contato) -> conversa NO KEY UPDATE -> demanda.
+-- NO KEY UPDATE é deliberado: INSERT messages já detém KEY SHARE pela FK.
+-- Jamais adquirir FOR UPDATE aqui: dois INSERTs podem deter KEY SHARE juntos.
+alter table public.conversations add column if not exists service_revision bigint not null default 1;
+alter table public.conversations add column if not exists service_closed_at timestamptz;
+alter table public.conversations add column if not exists service_started_at timestamptz;
+alter table public.conversations add column if not exists current_demanda_id uuid references public.demandas(id) on delete set null;
+alter table public.demandas add column if not exists revision bigint not null default 1;
+alter table public.demandas add column if not exists encerrada_por uuid references auth.users(id) on delete set null;
+alter table public.demanda_conversas add column if not exists service_revision bigint;
+alter table public.messages add column if not exists service_revision bigint;
+alter table public.messages add column if not exists demanda_id uuid references public.demandas(id) on delete set null;
+alter table public.messages add column if not exists demanda_revision bigint;
+alter table public.lead_checkpoints add column if not exists conversation_id uuid references public.conversations(id) on delete set null;
+alter table public.lead_checkpoints add column if not exists service_revision bigint;
+alter table public.lead_checkpoints add column if not exists demanda_id uuid references public.demandas(id) on delete set null;
+alter table public.lead_checkpoints add column if not exists demanda_revision bigint;
+-- Só carimbos observados: não inventar assunto/provenance para trabalho legado.
+update public.conversations set service_closed_at = status_changed_at
+ where status in ('closed','resolved','archived') and service_closed_at is null;
+
+drop trigger if exists trg_demanda_fecha_com_conversa on public.conversations;
+
+create or replace function public.fn_service_lock(p_org uuid, p_contact uuid)
+returns void language sql set search_path = public as $$
+ select pg_advisory_xact_lock(hashtextextended(p_org::text || ':' || p_contact::text, 222));
+$$;
+revoke execute on function public.fn_service_lock(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.fn_service_lock(uuid,uuid) to service_role;
+
+-- Canônica: só recebe ID de mensagem persistida. Tenant/FKs são reconferidos.
+create or replace function public.fn_service_inbound(p_message uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare m public.messages; c public.conversations; d public.demandas; reopened boolean; pre_contact uuid;
+begin
+ select * into m from public.messages where id = p_message;
+ if not found or m.direction <> 'inbound' or m.service_revision is not null then return; end if;
+ select * into c from public.conversations where id = m.conversation_id;
+ if not found or c.organization_id is distinct from m.organization_id
+    or c.channel_session_id is distinct from m.channel_session_id
+    or not exists(select 1 from public.channel_sessions where id=m.channel_session_id and organization_id=m.organization_id)
+ then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+ if c.is_group or coalesce(c.group_chat_id,'') like '%@g.us' then return; end if;
+ if c.contact_id is distinct from m.contact_id
+    or not exists(select 1 from public.contacts where id=m.contact_id and organization_id=m.organization_id)
+ then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+ pre_contact:=c.contact_id;
+ perform public.fn_service_lock(c.organization_id,c.contact_id);
+ select * into c from public.conversations where id=m.conversation_id and organization_id=m.organization_id for no key update;
+ if c.contact_id is distinct from pre_contact then raise exception 'service_contact_changed' using errcode='40001'; end if;
+ if m.sent_at <= c.service_closed_at then return; end if;
+ reopened := c.status in ('closed','resolved','archived');
+ if not reopened then
+   select x.* into d from public.demandas x join public.demanda_conversas dc on dc.demanda_id=x.id
+    where x.id=c.current_demanda_id and x.organization_id=c.organization_id and x.contact_id=c.contact_id
+      and dc.organization_id=c.organization_id and dc.conversation_id=c.id
+      and dc.service_revision=c.service_revision and x.fechada_em is null;
+ end if;
+ if d.id is null then
+   insert into public.demandas(organization_id,contact_id,aberta_em,origem,estado,dono_kind,proximo_passo)
+    values(c.organization_id,c.contact_id,m.sent_at,'inbound','aberta','ia','Responder à nova mensagem do cliente') returning * into d;
+ end if;
+ if reopened then
+   update public.conversations set status='open', status_changed_at=clock_timestamp(),
+     service_revision=service_revision+1,service_started_at=m.sent_at,
+     assigned_to_user_id=null,assigned_at=null,assignee_kind=null,active_ai_agent_id=null,
+     current_demanda_id=d.id where id=c.id and organization_id=c.organization_id returning * into c;
+
+ else
+   update public.conversations set
+     service_revision=service_revision+case when current_demanda_id is not null and current_demanda_id<>d.id then 1 else 0 end,
+     service_started_at=case when current_demanda_id is not null and current_demanda_id<>d.id then m.sent_at else coalesce(service_started_at,m.sent_at) end,
+     current_demanda_id=d.id
+    where id=c.id and organization_id=c.organization_id returning * into c;
+ end if;
+ insert into public.demanda_conversas(organization_id,demanda_id,conversation_id,service_revision)
+  values(c.organization_id,d.id,c.id,c.service_revision) on conflict(demanda_id,conversation_id)
+  do update set service_revision=excluded.service_revision;
+ update public.messages set service_revision=c.service_revision,demanda_id=d.id,demanda_revision=d.revision
+  where id=m.id and organization_id=c.organization_id;
+end; $$;
+revoke execute on function public.fn_service_inbound(uuid) from public,anon,authenticated;
+grant execute on function public.fn_service_inbound(uuid) to service_role;
+
+create or replace function public.fn_demanda_abre_no_inbound()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin perform public.fn_service_inbound(new.id); return new; end; $$;
+revoke execute on function public.fn_demanda_abre_no_inbound() from public,anon,authenticated;
+
+-- Comando de status compartilhado pelas duas portas API. Só service_role; o
+-- handler verifica RBAC/escopo antes da chamada. CAS nunca regrava um desfecho.
+create or replace function public.fn_service_status(p_org uuid,p_conversation uuid,p_status text,p_expected bigint default null)
+returns public.conversations language plpgsql security definer set search_path=public as $$
+declare c public.conversations; terminal boolean; pre_contact uuid;
+begin
+ if p_status not in ('closed','resolved','archived','open','pending','ai_handling','claimed') then
+  raise exception 'invalid_status' using errcode='22023'; end if;
+ select * into c from public.conversations where id=p_conversation and organization_id=p_org;
+ if not found then raise exception 'service_not_found' using errcode='P0002'; end if;
+ pre_contact:=c.contact_id;
+ perform public.fn_service_lock(p_org,c.contact_id);
+ select * into c from public.conversations where id=p_conversation and organization_id=p_org for no key update;
+ if c.contact_id is distinct from pre_contact then raise exception 'service_contact_changed' using errcode='40001'; end if;
+ if p_expected is not null and c.service_revision<>p_expected then raise exception 'service_stale' using errcode='40001'; end if;
+ if c.status=p_status then return c; end if;
+ terminal := p_status in ('closed','resolved','archived');
+ update public.conversations set status=p_status,status_changed_at=clock_timestamp(),
+   service_revision=service_revision+case when terminal or c.status in ('closed','resolved','archived') then 1 else 0 end,
+   service_closed_at=case when terminal then clock_timestamp() else service_closed_at end,
+   service_started_at=case when c.status in ('closed','resolved','archived') and not terminal then clock_timestamp() else service_started_at end,
+   bot_silenced_until=case when terminal and last_handoff_at is null then null else bot_silenced_until end,
+   current_demanda_id=case when c.status in ('closed','resolved','archived') and not terminal then null else current_demanda_id end
+  where id=c.id and organization_id=p_org returning * into c;
+ if terminal then
+   update public.demandas set proximo_passo=coalesce(proximo_passo,'Revisar atendimento e registrar o desfecho da demanda')
+    where organization_id=p_org and id=c.current_demanda_id and fechada_em is null;
+ end if;
+ return c;
+end; $$;
+revoke execute on function public.fn_service_status(uuid,uuid,text,bigint) from public,anon,authenticated;
+grant execute on function public.fn_service_status(uuid,uuid,text,bigint) to service_role;
+
+create or replace function public.fn_demanda_encerrar(p_org uuid,p_demanda uuid,p_expected bigint,p_desfecho text,p_actor uuid)
+returns public.demandas language plpgsql security definer set search_path=public as $$
+declare d public.demandas; pre_contact uuid;
+begin
+ if p_desfecho not in ('resolvida','convertida','nao_procede','encerrada_pelo_cliente','perdida','expirada_sem_resposta') then
+  raise exception 'invalid_desfecho' using errcode='22023'; end if;
+ select * into d from public.demandas where id=p_demanda and organization_id=p_org;
+ if not found then raise exception 'demanda_not_found' using errcode='P0002'; end if;
+ pre_contact:=d.contact_id;
+ perform public.fn_service_lock(p_org,d.contact_id);
+ select * into d from public.demandas where id=p_demanda and organization_id=p_org for no key update;
+ if d.contact_id is distinct from pre_contact then raise exception 'service_contact_changed' using errcode='40001'; end if;
+ if d.revision<>p_expected or d.fechada_em is not null then raise exception 'demanda_stale' using errcode='40001'; end if;
+ update public.demandas set revision=revision+1,desfecho=p_desfecho,fechada_em=clock_timestamp(),
+  encerrada_por=p_actor,estado=case when p_desfecho in ('resolvida','convertida') then 'resolvida' else 'encerrada' end,
+  proximo_passo=null,proximo_passo_em=null,updated_at=clock_timestamp()
+  where id=p_demanda and organization_id=p_org returning * into d;
+ insert into public.crm_lead_activities(organization_id,lead_id,contact_id,source_module,source_id,type,payload,performed_at,performed_by_user_id)
+ select p_org,l.id,d.contact_id,'crm',d.id,'demand_closed',jsonb_build_object('demanda_id',d.id,'desfecho',p_desfecho),clock_timestamp(),p_actor
+ from public.crm_leads l where l.organization_id=p_org and l.contact_id=d.contact_id;
+ return d;
+end; $$;
+revoke execute on function public.fn_demanda_encerrar(uuid,uuid,bigint,text,uuid) from public,anon,authenticated;
+grant execute on function public.fn_demanda_encerrar(uuid,uuid,bigint,text,uuid) to service_role;
+notify pgrst,'reload schema';
+
+-- Só origem demonstrável. Cron legado/job antigo fica sem provenance e o
+-- consumidor o encerra stale; nunca carimbar no claim com a conversa de agora.
+create or replace function public.fn_job_service_boundary()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare b jsonb;
+begin
+ if new.kind not in ('inbound_turn','followup_turn','case_reply_turn','operator_turn') then return new; end if;
+ if new.payload ? 'inbound_message_id' then
+   select jsonb_build_object('organization_id',m.organization_id,'contact_id',m.contact_id,
+    'conversation_id',m.conversation_id,'service_revision',m.service_revision,
+    'demanda_id',m.demanda_id,'demanda_revision',m.demanda_revision) into b
+    from public.messages m where m.id::text=new.payload->>'inbound_message_id'
+     and m.organization_id=new.organization_id and m.contact_id=new.contact_id and m.service_revision is not null;
+ elsif new.payload ? 'origin_job_id' then
+   select j.payload->'service_boundary' into b from public.job_queue j
+    where j.id::text=new.payload->>'origin_job_id' and j.organization_id=new.organization_id and j.contact_id=new.contact_id;
+ elsif new.payload ? 'case_id' then
+   select ac.context_snapshot->'service_boundary' into b from public.agent_cases ac
+    join public.conversations c on c.id=ac.conversation_id and c.organization_id=ac.organization_id
+    where ac.id::text=new.payload->>'case_id' and ac.organization_id=new.organization_id and c.contact_id=new.contact_id;
+ else b:=new.payload->'service_boundary'; end if;
+ new.payload := (new.payload - 'service_boundary') || jsonb_build_object('service_boundary',b);
+ return new;
+end; $$;
+revoke execute on function public.fn_job_service_boundary() from public,anon,authenticated;
+drop trigger if exists trg_job_service_boundary on public.job_queue;
+create trigger trg_job_service_boundary before insert on public.job_queue for each row execute function public.fn_job_service_boundary();
+
+-- Defesa para escritores legados de status: só a linha já bloqueada, nenhum
+-- advisory/lock de demanda adquirido DEPOIS dela. As APIs usam fn_service_status.
+create or replace function public.fn_service_stamp_status()
+returns trigger language plpgsql set search_path=public as $$
+begin
+ if old.status is distinct from new.status and
+   (new.status in ('closed','resolved','archived') or old.status in ('closed','resolved','archived')) then
+   new.service_revision:=old.service_revision+1;
+   if new.status in ('closed','resolved','archived') then
+     new.service_closed_at:=clock_timestamp();
+     if old.last_handoff_at is null then new.bot_silenced_until:=null; end if;
+   else
+     if new.service_started_at is not distinct from old.service_started_at then new.service_started_at:=clock_timestamp(); end if;
+     if new.current_demanda_id is not distinct from old.current_demanda_id then new.current_demanda_id:=null; end if;
+     if new.status<>'claimed' then
+       new.assigned_to_user_id:=null; new.assigned_to_user_name:=null; new.assigned_at:=null;
+       new.assignee_kind:=null; new.active_ai_agent_id:=null;
+     end if;
+   end if;
+ end if;
+ return new;
+end; $$;
+revoke execute on function public.fn_service_stamp_status() from public,anon,authenticated;
+drop trigger if exists trg_service_stamp_status on public.conversations;
+create trigger trg_service_stamp_status before update of status on public.conversations
+ for each row execute function public.fn_service_stamp_status();
+
+-- Caso guarda sua origem no snapshot já existente. Resposta humana não cria
+-- um atendimento novo nem herda a revisão que houver quando for respondido.
+create or replace function public.fn_case_service_boundary()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare b jsonb;
+begin
+ select jsonb_build_object('organization_id',c.organization_id,'contact_id',c.contact_id,'conversation_id',c.id,
+  'service_revision',c.service_revision,'demanda_id',c.current_demanda_id,'demanda_revision',d.revision) into b
+  from public.conversations c left join public.demandas d on d.id=c.current_demanda_id and d.organization_id=c.organization_id
+  where c.id=new.conversation_id and c.organization_id=new.organization_id;
+ new.context_snapshot:=coalesce(new.context_snapshot,'{}'::jsonb)||jsonb_build_object('service_boundary',coalesce(new.context_snapshot->'service_boundary',b));
+ return new;
+end; $$;
+revoke execute on function public.fn_case_service_boundary() from public,anon,authenticated;
+drop trigger if exists trg_case_service_boundary on public.agent_cases;
+create trigger trg_case_service_boundary before insert on public.agent_cases for each row execute function public.fn_case_service_boundary();
+
+-- Agregados não podem tornar mensagem atrasada um sinal operacional recente.
+-- Mesma ordem de mutex da transição, depois conversa e contato.
+create or replace function public.fn_mark_conversation_message(p_conv uuid,p_direction text,p_preview text,p_at timestamptz)
+returns void language plpgsql security definer set search_path=public as $$
+declare c public.conversations; pre_contact uuid;
+begin
+ select * into c from public.conversations where id=p_conv;
+ if not found then return; end if;
+ pre_contact:=c.contact_id;
+ perform public.fn_service_lock(c.organization_id,c.contact_id);
+ select * into c from public.conversations where id=p_conv for no key update;
+ if c.contact_id is distinct from pre_contact then raise exception 'service_contact_changed' using errcode='40001'; end if;
+ if p_direction='inbound' and p_at<=c.service_closed_at then return; end if;
+ update public.conversations set
+  last_message_at=greatest(last_message_at,p_at),
+  last_message_preview=case when last_message_at is null or p_at>=last_message_at then p_preview else last_message_preview end,
+  last_inbound_at=case when p_direction='inbound' then greatest(last_inbound_at,p_at) else last_inbound_at end,
+  last_outbound_at=case when p_direction='outbound' then greatest(last_outbound_at,p_at) else last_outbound_at end,
+  unread_count_for_assignee=case when p_direction='inbound' then unread_count_for_assignee+1 when p_direction='outbound' then 0 else unread_count_for_assignee end
+ where id=p_conv and organization_id=c.organization_id;
+ update public.contacts set last_activity_at=greatest(last_activity_at,p_at)
+ where id=c.contact_id and organization_id=c.organization_id;
+end; $$;
+revoke execute on function public.fn_mark_conversation_message(uuid,text,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_mark_conversation_message(uuid,text,text,timestamptz) to service_role;
+
+-- Reentrada em fila tem consumidor real em lib/routing/worker.ts. Só a
+-- transição terminal->fila emite; atribuições subsequentes não produzem eco.
+drop trigger if exists trg_service_reopened_routing on public.conversations;
+create trigger trg_service_reopened_routing after update of status on public.conversations
+ for each row when (old.status in ('closed','resolved','archived') and new.status in ('open','pending')
+  and new.assigned_to_user_id is null) execute function public.fn_emit_conversation_routing();
+
+create or replace function public.fn_demanda_revision()
+returns trigger language plpgsql set search_path=public as $$
+begin
+ if new.revision=old.revision and (new.proximo_passo,new.proximo_passo_em,new.estado,new.desfecho,new.fechada_em)
+  is distinct from (old.proximo_passo,old.proximo_passo_em,old.estado,old.desfecho,old.fechada_em) then
+  new.revision:=old.revision+1;
+ end if;
+ return new;
+end; $$;
+revoke execute on function public.fn_demanda_revision() from public,anon,authenticated;
+drop trigger if exists trg_demanda_revision on public.demandas;
+create trigger trg_demanda_revision before update on public.demandas for each row execute function public.fn_demanda_revision();
+
+-- Snapshot atômico usado tanto pela origem quanto pelo sink.
+create or replace function public.fn_service_boundary(p_org uuid,p_conversation uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.conversations; d public.demandas;
+begin
+ select * into c from public.conversations where organization_id=p_org and id=p_conversation;
+ if not found then return null; end if;
+ if c.current_demanda_id is not null then
+  select * into d from public.demandas where organization_id=p_org and contact_id=c.contact_id and id=c.current_demanda_id;
+  if not found then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+ end if;
+ return jsonb_build_object('organization_id',c.organization_id,'contact_id',c.contact_id,'conversation_id',c.id,
+  'service_revision',c.service_revision,'demanda_id',d.id,'demanda_revision',d.revision,
+  'status',c.status,'demanda_fechada_em',d.fechada_em,'service_started_at',c.service_started_at);
+end; $$;
+revoke execute on function public.fn_service_boundary(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_service_boundary(uuid,uuid) to service_role;
+
+-- Nova iniciativa autorizada (humano/MCP/regra), chamada NA ORIGEM, nunca no
+-- firing. Uma conversa sem demanda é legítima; não inventa assunto do cliente.
+drop function if exists public.fn_service_begin(uuid,uuid,uuid);
+drop function if exists public.fn_service_begin(uuid,uuid,uuid,jsonb);
+create or replace function public.fn_service_begin(p_org uuid,p_contact uuid,p_session uuid default null,p_observed jsonb default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.conversations; sid uuid;
+begin
+ perform public.fn_service_lock(p_org,p_contact);
+ if not exists(select 1 from public.contacts where id=p_contact and organization_id=p_org and not is_anonymized and is_merged_into is null) then
+  raise exception 'service_contact_not_found' using errcode='P0002'; end if;
+ select * into c from public.conversations where organization_id=p_org and contact_id=p_contact and not is_group
+  and (p_session is null or channel_session_id=p_session) order by last_message_at desc nulls last,created_at desc limit 1 for no key update;
+ if p_observed is not null then
+   if p_observed->>'organization_id' is distinct from p_org::text or p_observed->>'contact_id' is distinct from p_contact::text then
+     raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+   if c.id is null then
+     if p_observed->>'absent' is distinct from 'true' then raise exception 'service_stale' using errcode='40001'; end if;
+   elsif public.fn_service_boundary(p_org,c.id) is distinct from p_observed then
+     raise exception 'service_stale' using errcode='40001';
+   end if;
+ end if;
+ if c.id is not null then
+   if c.status in ('closed','resolved','archived') then
+     c:=public.fn_service_status(p_org,c.id,'open',c.service_revision);
+   end if;
+   if exists(select 1 from public.demandas where id=c.current_demanda_id and organization_id=p_org and fechada_em is not null) then
+     update public.conversations set service_revision=service_revision+1,current_demanda_id=null,service_started_at=clock_timestamp()
+      where id=c.id and organization_id=p_org returning * into c;
+   end if;
+   if c.service_started_at is null then
+     update public.conversations set service_revision=service_revision+1,service_started_at=clock_timestamp()
+      where id=c.id and organization_id=p_org returning * into c;
+   end if;
+   return public.fn_service_boundary(p_org,c.id);
+ end if;
+ select id into sid from public.channel_sessions where organization_id=p_org and archived_at is null
+  and (p_session is null or id=p_session) order by (status='WORKING') desc,created_at limit 1;
+ if sid is null then raise exception 'service_channel_not_found' using errcode='P0002'; end if;
+ insert into public.conversations(organization_id,contact_id,channel_session_id,status,is_group,channel,service_started_at)
+  values(p_org,p_contact,sid,'open',false,'whatsapp',clock_timestamp()) returning * into c;
+ return public.fn_service_boundary(p_org,c.id);
+end; $$;
+revoke execute on function public.fn_service_begin(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_service_begin(uuid,uuid,uuid,jsonb) to service_role;
+
+alter table public.followup_enrollments add column if not exists service_boundary jsonb;
+
+-- BEFORE só mutex, nunca transição: precede KEY SHARE implícito das FKs do
+-- INSERT. Sem isto merge poderia segurar advisory esperando contact FOR UPDATE,
+-- enquanto o inbound segura contact KEY SHARE esperando o mesmo advisory.
+create or replace function public.fn_message_service_lock()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.direction='inbound' and new.contact_id is not null then perform public.fn_service_lock(new.organization_id,new.contact_id); end if;
+ return new;
+end; $$;
+revoke execute on function public.fn_message_service_lock() from public,anon,authenticated;
+drop trigger if exists trg_message_service_lock on public.messages;
+create trigger trg_message_service_lock before insert on public.messages for each row execute function public.fn_message_service_lock();
+
+-- Mescla preserva autorização/support gate e adota a mesma ordem de mutex.
+CREATE OR REPLACE FUNCTION public.fn_mesclar_contatos(p_organization_id uuid, p_contato_principal uuid, p_contatos_secundarios uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_principal public.contacts%rowtype;
+  v_esperado integer;
+  v_achado integer;
+  v_alvo record;
+  v_linha record;
+  v_movidas integer;
+  v_pulados integer;
+  v_repontado jsonb := '{}'::jsonb;
+  v_nao_repontado jsonb := '{}'::jsonb;
+  v_nome text;
+  v_apelido text;
+  v_nascimento date;
+  v_email text;
+  v_telefone text;
+  v_lid text;
+  v_tags text[];
+  v_leads integer := 0;
+  v_service_contact uuid;
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  -- 1 · Autorização. Fundir é destrutivo na prática: `manager`, o mesmo piso das
+  --     policies de `merge_queue`. Sessão de service role (auth.uid() nulo) não
+  --     passa por aqui — quem resolve a org nesse caminho é a rota, de fonte
+  --     confiável, nunca do body.
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'manager') then
+    raise exception using errcode = '42501', message = 'insufficient_role';
+  end if;
+
+  if p_contato_principal is null
+     or p_contatos_secundarios is null
+     or cardinality(p_contatos_secundarios) = 0
+     or p_contato_principal = any(p_contatos_secundarios) then
+    raise exception using errcode = '22023', message = 'selecao_de_mesclagem_invalida';
+  end if;
+
+  select count(distinct id)::integer into v_esperado
+    from unnest(p_contatos_secundarios) as ids(id);
+  if v_esperado <> cardinality(p_contatos_secundarios) then
+    raise exception using errcode = '22023', message = 'secundario_repetido';
+  end if;
+
+  -- Mesmo mutex dos atendimentos, ANTES de qualquer row lock.
+  for v_service_contact in select distinct id from unnest(array[p_contato_principal]||p_contatos_secundarios) ids(id) order by id loop
+    perform public.fn_service_lock(p_organization_id,v_service_contact);
+  end loop;
+  perform 1 from public.conversations where organization_id=p_organization_id
+    and contact_id=any(array[p_contato_principal]||p_contatos_secundarios) order by id for no key update;
+
+  -- Conversa colidente NÃO aborta a fusão. Duas conversas no mesmo
+  -- `channel_session_id` é exatamente COMO a duplicata de WhatsApp nasce (dois
+  -- cadastros, dois números, o mesmo número de atendimento), então recusar aqui
+  -- fecharia o caminho dominante do recurso — medido: o caso ordinário do
+  -- `tests/e2e/juntar-contatos-duplicados.spec.ts` virava 409.
+  -- Quem trata a colisão é o passo 5: `uniq_conversations_1to1_per_contact_session`
+  -- levanta unique_violation, o repontamento cai para linha a linha, a conversa
+  -- que não coube FICA na lápide e sai contada em `nao_repontado` — que a rota
+  -- devolve e a tela anuncia ("N registro(s) continuaram no cadastro antigo").
+  -- Mensagem não se perde: `messages.contact_id` não tem índice único por
+  -- contato e passa inteira para o vencedor.
+
+  -- 2 · O principal existe, é desta org, está vivo — e trava até o fim.
+  select * into v_principal from public.contacts
+   where id = p_contato_principal
+     and organization_id = p_organization_id
+     and is_merged_into is null
+     and is_anonymized = false
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'contato_principal_indisponivel';
+  end if;
+
+  -- 3 · Os secundários também. `is_anonymized = false` não é zelo: L-04 é
+  --     irreversível, e reencaixar a linha anonimizada num contato ativo a
+  --     traria de volta ao atendimento pela porta dos fundos.
+  perform 1 from public.contacts
+   where id = any(p_contatos_secundarios)
+     and organization_id = p_organization_id
+     and is_merged_into is null
+     and is_anonymized = false
+   for update;
+  get diagnostics v_achado = row_count;
+  if v_achado <> v_esperado then
+    raise exception using errcode = 'P0002', message = 'contato_secundario_indisponivel';
+  end if;
+
+  -- 4 · A LÁPIDE VEM ANTES de tudo. É ela que solta telefone/e-mail/CPF dos
+  --     índices únicos parciais para o vencedor poder herdá-los no passo 6.
+  update public.contacts
+     set is_merged_into = p_contato_principal,
+         merged_at = now(),
+         updated_at = now()
+   where organization_id = p_organization_id
+     and id = any(p_contatos_secundarios);
+
+  -- Cadeia: quem já tinha sido mesclado NUM dos secundários passa a apontar para
+  -- o vencedor. Sem isto, `is_merged_into` vira uma corrente que a leitura teria
+  -- de percorrer, e ninguém percorre.
+  update public.contacts
+     set is_merged_into = p_contato_principal
+   where organization_id = p_organization_id
+     and is_merged_into = any(p_contatos_secundarios);
+
+  -- 5 · Reponta TODO ponteiro para os perdedores. A lista sai do catálogo; o
+  --     polimórfico entra à mão porque catálogo nenhum o conhece.
+  for v_alvo in
+    select n.nspname as esquema, c.relname as tabela, a.attname as coluna, ''::text as filtro
+      from pg_catalog.pg_constraint co
+      join pg_catalog.pg_class c on c.oid = co.conrelid
+      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      join pg_catalog.pg_attribute a on a.attrelid = co.conrelid and a.attnum = co.conkey[1]
+     where co.contype = 'f'
+       and co.confrelid = 'public.contacts'::regclass
+       and co.conrelid <> 'public.contacts'::regclass
+       and array_length(co.conkey, 1) = 1
+       and c.relkind = 'r'
+       and n.nspname = 'public'
+    union all
+    select 'public', 'crm_lead_links', 'target_id', ' and target_kind = ''contact'''
+     where to_regclass('public.crm_lead_links') is not null
+    order by 2, 3
+  loop
+    v_pulados := 0;
+    begin
+      execute format(
+        'update %I.%I set %I = $1 where %I = any($2)%s',
+        v_alvo.esquema, v_alvo.tabela, v_alvo.coluna, v_alvo.coluna, v_alvo.filtro
+      ) using p_contato_principal, p_contatos_secundarios;
+      get diagnostics v_movidas = row_count;
+    exception when unique_violation or exclusion_violation then
+      -- Colisão REAL e esperada: `uniq_job_queue_one_running_per_contact` deixa
+      -- um job 'running' por contato, e os dois lados podem ter um. Em vez de
+      -- abortar a fusão inteira por causa de estado efêmero de runtime, reponta
+      -- linha a linha e conta quem ficou. Quem fica NÃO vira FK órfã — continua
+      -- apontando para a lápide, que existe.
+      v_movidas := 0;
+      for v_linha in execute format(
+        'select ctid as tid from %I.%I where %I = any($1)%s',
+        v_alvo.esquema, v_alvo.tabela, v_alvo.coluna, v_alvo.filtro
+      ) using p_contatos_secundarios
+      loop
+        begin
+          execute format(
+            'update %I.%I set %I = $1 where ctid = $2',
+            v_alvo.esquema, v_alvo.tabela, v_alvo.coluna
+          ) using p_contato_principal, v_linha.tid;
+          v_movidas := v_movidas + 1;
+        exception when unique_violation or exclusion_violation then
+          v_pulados := v_pulados + 1;
+        end;
+      end loop;
+    end;
+
+    if v_movidas > 0 then
+      v_repontado := v_repontado
+        || jsonb_build_object(v_alvo.tabela || '.' || v_alvo.coluna, v_movidas);
+    end if;
+    if v_pulados > 0 then
+      v_nao_repontado := v_nao_repontado
+        || jsonb_build_object(v_alvo.tabela || '.' || v_alvo.coluna, v_pulados);
+    end if;
+  end loop;
+
+  -- 6 · O principal MANDA; o que ele não tem, vem dos perdedores. Nunca o
+  --     contrário: sobrescrever o que o atendente digitou seria fusão com
+  --     surpresa, e fusão não tem desfazer.
+  select c.name into v_nome from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.name is not null
+   order by c.created_at, c.id limit 1;
+  select c.display_name into v_apelido from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.display_name is not null
+   order by c.created_at, c.id limit 1;
+  select c.birthdate into v_nascimento from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.birthdate is not null
+   order by c.created_at, c.id limit 1;
+  select c.email into v_email from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.email is not null
+   order by c.created_at, c.id limit 1;
+  select c.phone_number into v_telefone from public.contacts c
+   where c.id = any(p_contatos_secundarios) and c.phone_number is not null
+   order by c.created_at, c.id limit 1;
+  -- `wa_identity`/`wa_lid` são GERADAS: o que se herda é a origem delas. Sem
+  -- isto o WhatsApp do perdedor fica órfão — `fn_upsert_wa_contact` filtra
+  -- `is_merged_into is null`, não acharia mais ninguém e criaria um contato
+  -- novo na mensagem seguinte, refazendo a duplicata que acabou de ser desfeita.
+  select c.source_metadata->>'waha_lid' into v_lid from public.contacts c
+   where c.id = any(p_contatos_secundarios)
+     and c.source_metadata->>'waha_lid' is not null
+   order by c.created_at, c.id limit 1;
+
+  -- Guardas de unicidade. A lápide já tirou os perdedores dos índices parciais,
+  -- então o que sobrar aqui é conflito com um TERCEIRO contato vivo — e nesse
+  -- caso o vencedor simplesmente não herda o campo. Falhar a fusão inteira por
+  -- causa de um e-mail seria perder o repontamento que já valeu a pena.
+  if v_email is not null and exists (
+    select 1 from public.contacts o
+     where o.organization_id = p_organization_id and o.is_merged_into is null
+       and o.id <> p_contato_principal and o.email_normalized = lower(btrim(v_email))
+  ) then v_email := null; end if;
+  if v_telefone is not null and exists (
+    select 1 from public.contacts o
+     where o.organization_id = p_organization_id and o.is_merged_into is null
+       and o.id <> p_contato_principal and o.phone_number = v_telefone
+  ) then v_telefone := null; end if;
+  if v_lid is not null and exists (
+    select 1 from public.contacts o
+     where o.organization_id = p_organization_id and o.is_merged_into is null
+       and o.id <> p_contato_principal and o.wa_lid = v_lid
+  ) then v_lid := null; end if;
+
+  select coalesce(array_agg(distinct t), '{}'::text[]) into v_tags
+    from (
+      select unnest(c.tags) as t from public.contacts c
+       where c.organization_id = p_organization_id
+         and (c.id = p_contato_principal or c.id = any(p_contatos_secundarios))
+    ) as todas;
+
+  -- CPF e `consent` NÃO são herdados, de propósito. CPF é um PAR
+  -- (`cpf_encrypted` + `cpf_hash`) preso por check constraint e criptografado
+  -- com a chave da instalação — mover metade quebra a linha. `consent` é
+  -- registro legal do que AQUELA pessoa autorizou; herdar um "granted_at" de
+  -- outro cadastro fabricaria consentimento. Falha fechada nos dois.
+  update public.contacts set
+    name = coalesce(name, v_nome),
+    display_name = coalesce(display_name, v_apelido),
+    birthdate = coalesce(birthdate, v_nascimento),
+    email = coalesce(email, v_email),
+    phone_number = coalesce(phone_number, v_telefone),
+    tags = v_tags,
+    last_activity_at = greatest(
+      last_activity_at,
+      (select max(c.last_activity_at) from public.contacts c
+        where c.id = any(p_contatos_secundarios))
+    ),
+    source_metadata = (
+      case when source_metadata->>'waha_lid' is null and v_lid is not null
+        then source_metadata || jsonb_build_object('waha_lid', v_lid)
+        else source_metadata end
+    )
+      - case when coalesce(phone_number, v_telefone) is not null
+             then 'telefone_em_conflito' else '' end
+      || jsonb_build_object(
+           'mesclado_de',
+           coalesce(source_metadata->'mesclado_de', '[]'::jsonb)
+             || to_jsonb(p_contatos_secundarios),
+           'mesclado_em', to_jsonb(now())
+         ),
+    updated_at = now()
+  where id = p_contato_principal and organization_id = p_organization_id;
+
+  -- 7 · A fusão aparece na timeline de cada negócio que o vencedor passou a ter.
+  --     `crm_lead_activities.lead_id` é NOT NULL — contato sem negócio nenhum
+  --     não tem onde escrever, e para esse caso quem guarda o rastro é o
+  --     `api_audit_log` que a rota emite, sempre.
+  insert into public.crm_lead_activities
+    (organization_id, lead_id, contact_id, source_module, source_id, type,
+     payload, metadata, performed_at, performed_by_user_id)
+  select p_organization_id, l.id, p_contato_principal, 'crm', p_contato_principal,
+         'contacts_merged',
+         jsonb_build_object(
+           'contatos_mesclados', to_jsonb(p_contatos_secundarios),
+           'repontado', v_repontado,
+           'nao_repontado', v_nao_repontado
+         ),
+         '{}'::jsonb, now(), auth.uid()
+    from public.crm_leads l
+   where l.organization_id = p_organization_id
+     and l.contact_id = p_contato_principal;
+  get diagnostics v_leads = row_count;
+
+  return jsonb_build_object(
+    'contato_id', p_contato_principal,
+    'contatos_mesclados', to_jsonb(p_contatos_secundarios),
+    'repontado', v_repontado,
+    'nao_repontado', v_nao_repontado,
+    'atividades_emitidas', v_leads
+  );
+end;
+$function$;
+
+-- Observação da porta de comando. Captura até ausência/terminal sem abrir uma
+-- conversa só porque um card mudou de etapa; consumidor autorizado usa CAS.
+create or replace function public.fn_service_observe(p_org uuid,p_contact uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare cid uuid;
+begin
+ select id into cid from public.conversations where organization_id=p_org and contact_id=p_contact and not is_group
+  order by last_message_at desc nulls last,created_at desc limit 1;
+ if cid is null then return jsonb_build_object('absent',true,'organization_id',p_org,'contact_id',p_contact); end if;
+ return public.fn_service_boundary(p_org,cid);
+end; $$;
+revoke execute on function public.fn_service_observe(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_service_observe(uuid,uuid) to service_role;
+
+-- ---- Backfill de continuidade da fronteira (migration 0222) ----
+-- As colunas acima nascem NULAS, e o consumidor lê AUSÊNCIA DE CARIMBO como
+-- "fronteira vencida". Numa instalação que já roda, isso não é uma degradação
+-- discreta: no primeiro tick depois do `update.sh` todo acompanhamento em
+-- curso é cancelado com "Atendimento encerrado ou substituído", a varredura de
+-- silêncio fica cega justamente para quem não manda mensagem nova, e o próximo
+-- inbound abre uma SEGUNDA demanda aberta na mesma conversa.
+-- Carimbamos só o que já é OBSERVÁVEL no trabalho legado — nunca um assunto
+-- novo. Idempotente: cada passo toca apenas linha ainda sem carimbo.
+
+-- 1 · Toda conversa tem um começo. Sem ele o histórico de saída some do
+--     contexto do agente (`messages.sent_at >= c.service_started_at`).
+update public.conversations set service_started_at = created_at
+ where service_started_at is null;
+
+-- 2 · A demanda aberta que já estava vinculada à conversa segue sendo a
+--     vigente. Sem isto `fn_service_inbound` não acha nada em
+--     `x.id = c.current_demanda_id` e abre outra.
+with vigente as (
+  select distinct on (dc.conversation_id) dc.conversation_id, dc.demanda_id
+    from public.demanda_conversas dc
+    join public.demandas d
+      on d.id = dc.demanda_id and d.organization_id = dc.organization_id
+   where d.fechada_em is null
+   order by dc.conversation_id, d.aberta_em desc, d.id
+)
+update public.conversations c
+   set current_demanda_id = v.demanda_id
+  from vigente v
+ where v.conversation_id = c.id
+   and c.current_demanda_id is null
+   and c.status not in ('closed','resolved','archived');
+
+-- 3 · O vínculo carrega a revisão da conversa; o reaproveitamento exige
+--     `dc.service_revision = c.service_revision`.
+update public.demanda_conversas dc
+   set service_revision = c.service_revision
+  from public.conversations c
+ where c.id = dc.conversation_id
+   and c.organization_id = dc.organization_id
+   and dc.service_revision is null;
+
+-- 4 · Mensagem legada pertence ao atendimento vigente da sua conversa.
+--     `trg_appointment_inbound` (migration posterior) trata o carimbo como
+--     EVENTO de entrada: sem pausá-lo, o backfill replicaria recuperação de
+--     agenda para o histórico inteiro. É um `do` único de propósito — sob o
+--     autocommit do `update.sh`, ou tudo entra e o gatilho volta, ou nada
+--     entra. Se faltar privilégio para pausar, o backfill segue mesmo assim
+--     (carimbar tarde é melhor que não carimbar) e o notice registra.
+do $$
+declare v_pausado boolean := false; v_linhas bigint := 0; v_restantes bigint := 0;
+begin
+  begin
+    if exists (select 1 from pg_trigger
+                where tgrelid = 'public.messages'::regclass
+                  and tgname = 'trg_appointment_inbound'
+                  and not tgisinternal) then
+      execute 'alter table public.messages disable trigger trg_appointment_inbound';
+      v_pausado := true;
+    end if;
+  exception when others then
+    v_pausado := false;
+    -- `warning` e não `notice`: o dump do baseline abre com
+    -- `set client_min_messages = warning`, então notice NUNCA chega ao operador.
+    raise warning '0222 backfill: nao foi possivel pausar trg_appointment_inbound (%)', sqlerrm;
+  end;
+
+  update public.messages m
+     set service_revision = c.service_revision,
+         demanda_id = c.current_demanda_id,
+         demanda_revision = d.revision
+    from public.conversations c
+    left join public.demandas d
+      on d.id = c.current_demanda_id and d.organization_id = c.organization_id
+   where c.id = m.conversation_id
+     and c.organization_id = m.organization_id
+     and m.direction = 'inbound'
+     and m.service_revision is null;
+
+  get diagnostics v_linhas = row_count;
+
+  if v_pausado then
+    execute 'alter table public.messages enable trigger trg_appointment_inbound';
+  end if;
+  -- O operador precisa ver o que a atualização mexeu, e este notice é também
+  -- o controle positivo de que o gatilho foi de fato pausado durante o carimbo.
+  if v_linhas > 0 then
+    raise warning '0222 backfill: % mensagem(ns) carimbada(s) (gatilho de agenda pausado: %)', v_linhas, v_pausado;
+  end if;
+  -- O RESIDUO, e por que ele e a rede de seguranca CERTA.
+  --
+  -- O `update.sh` roda o baseline SEM `ON_ERROR_STOP`, entao este passo pode
+  -- morrer calado depois de o passo 1 ja ter entrado. A instalacao fica com
+  -- `service_started_at` carimbado e mensagens sem carimbo — e a varredura de
+  -- silencio, que EXIGE procedencia, ignora essas linhas: o acompanhamento
+  -- para de achar quem esta calado, sem nada na tela.
+  --
+  -- Ja houve aqui um cinto no CONSUMIDOR (degradar para `last_inbound_at`
+  -- quando faltasse carimbo). Ele foi removido porque a falta de carimbo nao
+  -- e sinal de legado: e NORMAL em duas classes, e nas duas o cinto inscrevia
+  -- gente que nao devia — conversa de GRUPO e mensagem entregue FORA DE ORDEM
+  -- depois de um fechamento, as duas com saida cedo em `fn_service_inbound`.
+  -- Sao exatamente as duas que este `where` exclui: o que sobra so pode ser
+  -- passo 4 que nao terminou.
+  select count(*) into v_restantes
+    from public.messages m
+    join public.conversations c
+      on c.id = m.conversation_id and c.organization_id = m.organization_id
+   where m.direction = 'inbound'
+     and m.service_revision is null
+     and not c.is_group
+     and coalesce(c.group_chat_id, '') not like '%@g.us'
+     and (c.service_closed_at is null or m.sent_at > c.service_closed_at);
+  if v_restantes > 0 then
+    raise warning '0222 backfill: % mensagem(ns) inbound seguem SEM carimbo — a varredura de silencio ignora essas linhas. Re-rode o update.sh; se persistir, aplique o passo 4 a mao e abra issue.', v_restantes;
+  end if;
+end $$;
+
+-- 5 · Acompanhamento em curso mantém a fronteira da conversa a que já
+--     pertence. Linha a linha: `trg_followup_revision` pode recusar a linha de
+--     recuperação de agenda cuja recibo já não vale, e uma recusa dessas não
+--     pode derrubar o backfill das outras.
+do $$
+declare r record;
+begin
+  for r in
+    select e.id,
+           e.organization_id,
+           c.id as conversation_id,
+           jsonb_build_object(
+             'organization_id', c.organization_id,
+             'contact_id',      c.contact_id,
+             'conversation_id', c.id,
+             'service_revision', c.service_revision,
+             'demanda_id',      c.current_demanda_id,
+             'demanda_revision', d.revision) as fronteira
+      from public.followup_enrollments e
+      join public.conversations c
+        on c.organization_id = e.organization_id
+       and c.contact_id = e.contact_id
+       and c.id = coalesce(e.conversation_id, (
+             select c2.id from public.conversations c2
+              where c2.organization_id = e.organization_id
+                and c2.contact_id = e.contact_id
+                and not c2.is_group
+                and c2.status not in ('closed','resolved','archived')
+              order by c2.last_message_at desc nulls last, c2.created_at desc
+              limit 1))
+      left join public.demandas d
+        on d.id = c.current_demanda_id and d.organization_id = c.organization_id
+     where e.service_boundary is null
+       and e.status not in ('completed','cancelled','dead')
+       and c.status not in ('closed','resolved','archived')
+  loop
+    begin
+      update public.followup_enrollments
+         set service_boundary = r.fronteira,
+             conversation_id  = r.conversation_id
+       where id = r.id
+         and organization_id = r.organization_id
+         and service_boundary is null;
+    exception when others then
+      raise warning '0222 backfill: acompanhamento % segue sem fronteira (%)', r.id, sqlerrm;
+    end;
   end loop;
 end $$;
 
--- regra 2 (authenticated): as 5 que o update abriu e o install não abre. Aqui não
--- cabe varredura — `authenticated` PRECISA de EXECUTE nos helpers de RLS e em
--- `retrieve_top_k_chunks` (num install fresco ele tem). É julgamento por função,
--- e o alvo de cada linha é o valor que um install fresco produz, medido.
-revoke execute on function public.fn_audit_log_row() from authenticated;
-revoke execute on function public.fn_decrypt_oauth(bytea) from authenticated;
-revoke execute on function public.fn_encrypt_oauth(text) from authenticated;
-revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from authenticated;
-revoke execute on function public.fn_update_budget_consumption() from authenticated;
+-- ---- origem imutável do evento (0223) ----
+-- 0223 — Uma resolução imutável da origem por evento/destino, compartilhada entre
+-- automação e gatilho de etapa e entre retries. Não certifica legado.
+-- DIRC: recibo por destino do evento; sem payload operacional/memória nova. Retenção
+-- acompanha event_log; somente UUIDs/revisões, sem cópia de PII.
+create table if not exists public.event_service_origins (
+ event_id uuid not null references public.event_log(id) on delete cascade,
+ channel_session_id uuid not null references public.channel_sessions(id) on delete cascade,
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ service_boundary jsonb not null,
+ primary key(event_id,channel_session_id)
+);
+alter table public.event_service_origins enable row level security;
+revoke all on public.event_service_origins from public,anon,authenticated,service_role;
+grant select on public.event_service_origins to service_role;
 
-grant execute on function public.fn_audit_log_row() to service_role;
-grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
-grant execute on function public.fn_encrypt_oauth(text) to service_role;
-grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
-grant execute on function public.fn_update_budget_consumption() to service_role;
+CREATE OR REPLACE FUNCTION public.emit_event(p_event_type text, p_entity_kind text, p_entity_id uuid, p_payload jsonb DEFAULT '{}'::jsonb, p_metadata jsonb DEFAULT '{}'::jsonb, p_organization_id uuid DEFAULT NULL::uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_org_id uuid;
+  v_event_id uuid;
+begin
+  -- message.received nasce somente do INSERT inbound interno. Um chamador
+  -- público não pode reapresentar uma mensagem existente como evento novo.
+  if auth.uid() is not null and p_event_type = 'message.received' then
+    raise exception 'reserved_message_received' using errcode='42501';
+  end if;
+  -- Estes campos autorizam efeitos operacionais; não são payload público.
+  if auth.uid() is not null and (
+    coalesce(p_payload,'{}'::jsonb) ?| array['service_origin','service_boundary']
+    or coalesce(p_metadata,'{}'::jsonb) ?| array['service_origin','service_boundary']
+  ) then raise exception 'reserved_service_origin' using errcode='42501'; end if;
+  v_org_id := coalesce(p_organization_id, (public.fn_support_context()->>'organization_id')::uuid);
+  if v_org_id is null then
+    select organization_id into v_org_id
+      from public.user_organizations
+      where user_id = auth.uid() and revoked_at is null
+      limit 1;
+  end if;
+  if v_org_id is null then
+    raise exception 'emit_event: organization_id obrigatorio';
+  end if;
+
+  if auth.uid() is not null
+     and not public.fn_role_at_least(v_org_id, 'viewer') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'emit_event: caller must be an active member of the organization';
+  end if;
+
+  if not public.fn_support_write_allowed(v_org_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+
+  insert into public.event_log
+    (organization_id, event_type, entity_kind, entity_id, payload, metadata)
+  values
+    (v_org_id, p_event_type, p_entity_kind, p_entity_id,
+     coalesce(p_payload, '{}'::jsonb),
+     coalesce(p_metadata, '{}'::jsonb)
+       || jsonb_build_object('emitted_at', extract(epoch from now())))
+  returning id into v_event_id;
+
+  return v_event_id;
+end $function$;
+
+-- Um único snapshot SQL: inclui a ausência de conversa em cada sessão permitida.
+create or replace function public.fn_service_observe_command(p_org uuid,p_contact uuid)
+returns jsonb language sql stable security definer set search_path=public as $$
+ with destinations as (
+ select s.id sid,c.id cid,c.last_message_at,c.created_at conversation_created,s.created_at session_created,s.status,
+ jsonb_build_object('channel_session_id',s.id,'observed',case when c.id is null then
+   jsonb_build_object('organization_id',p_org,'contact_id',p_contact,'absent',true)
+ else jsonb_build_object('organization_id',c.organization_id,'contact_id',c.contact_id,'conversation_id',c.id,
+   'service_revision',c.service_revision,'demanda_id',d.id,'demanda_revision',d.revision,
+   'status',c.status,'demanda_fechada_em',d.fechada_em,'service_started_at',c.service_started_at) end) snapshot
+ from public.channel_sessions s
+ left join public.conversations c on c.organization_id=s.organization_id and c.channel_session_id=s.id and c.contact_id=p_contact and not c.is_group
+ left join public.demandas d on d.organization_id=c.organization_id and d.contact_id=c.contact_id and d.id=c.current_demanda_id
+ where s.organization_id=p_org and s.archived_at is null
+ and exists(select 1 from public.contacts where organization_id=p_org and id=p_contact and not is_anonymized and is_merged_into is null)
+ )
+ select jsonb_build_object('organization_id',p_org,'contact_id',p_contact,
+ 'default_session_id',(select sid from destinations order by (cid is not null) desc,last_message_at desc nulls last,conversation_created desc nulls last,(status='WORKING') desc,session_created limit 1),
+ 'destinations',coalesce((select jsonb_agg(snapshot) from destinations),'[]'::jsonb));
+$$;
+revoke all on function public.fn_service_observe_command(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_service_observe_command(uuid,uuid) to service_role;
+
+create or replace function public.fn_service_event_origin(p_org uuid,p_event uuid,p_contact uuid,p_session uuid default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare e public.event_log; origin jsonb; boundary jsonb; current_boundary jsonb; entity_contact uuid; cid uuid; sid uuid; observed jsonb; root_event uuid:=p_event; visited uuid[]:=array[]::uuid[];
+begin
+ -- O drain faz claim otimista em outra transação; não conserva row lock.
+ -- Não travar event_log: advisory contato antecede os locks de conversa/FKs.
+ perform public.fn_service_lock(p_org,p_contact);
+ loop
+ if root_event = any(visited) or cardinality(visited)>=32 then raise exception 'service_origin_cycle' using errcode='40001'; end if;
+ visited:=array_append(visited,root_event);
+ boundary:=null;
+ entity_contact:=null;
+ select * into e from public.event_log where organization_id=p_org and id=root_event;
+ if not found then raise exception 'service_event_not_found' using errcode='P0002'; end if;
+ if e.event_type in ('lead.created','lead.stage_changed','lead.tag_added') and e.entity_kind='crm_lead' then
+   select contact_id into entity_contact from public.crm_leads where organization_id=p_org and id=e.entity_id;
+ elsif e.event_type='contact.tag_added' and e.entity_kind='contact' then
+   select id into entity_contact from public.contacts where organization_id=p_org and id=e.entity_id;
+ elsif e.event_type='message.received' and e.entity_kind='message' then
+   select contact_id,jsonb_build_object('organization_id',organization_id,'contact_id',contact_id,
+     'conversation_id',conversation_id,'service_revision',service_revision,'demanda_id',demanda_id,'demanda_revision',demanda_revision)
+     into entity_contact,boundary from public.messages where organization_id=p_org and id=e.entity_id and direction='inbound';
+ else raise exception 'service_event_origin_unsupported' using errcode='40001'; end if;
+ if entity_contact is distinct from p_contact or not exists(select 1 from public.contacts where organization_id=p_org and id=p_contact and not is_anonymized and is_merged_into is null) then
+   raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+ origin:=e.payload->'service_origin';
+ if origin->>'kind'='event' then
+   if origin->>'organization_id' is distinct from p_org::text or origin->>'contact_id' is distinct from p_contact::text then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+   root_event:=(origin->>'event_id')::uuid;
+   if root_event is null then raise exception 'service_stale' using errcode='40001'; end if;
+   continue;
+ end if;
+ exit;
+ end loop;
+ if boundary is not null or origin->>'kind'='continuation' then
+   boundary:=coalesce(boundary,origin->'boundary');
+   select channel_session_id into sid from public.conversations where organization_id=p_org and contact_id=p_contact and id=(boundary->>'conversation_id')::uuid;
+   if p_session is not null and p_session is distinct from sid then raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+ elsif origin->>'kind'='command' then
+   observed:=origin->'observed';
+   if observed->>'organization_id' is distinct from p_org::text or observed->>'contact_id' is distinct from p_contact::text then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+   if jsonb_typeof(observed->'destinations')='array' then
+     sid:=coalesce(p_session,(observed->>'default_session_id')::uuid);
+     select item->'observed' into observed from jsonb_array_elements(observed->'destinations') item where item->>'channel_session_id'=sid::text;
+   else
+     -- Compatibilidade com snapshot anterior: prova somente sua conversa, nunca ausência de outro canal.
+     select channel_session_id into sid from public.conversations where organization_id=p_org and contact_id=p_contact and id=(observed->>'conversation_id')::uuid;
+     if p_session is not null and p_session is distinct from sid then raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+   end if;
+ else raise exception 'service_stale' using errcode='40001'; end if;
+ if sid is null then raise exception 'service_stale' using errcode='40001'; end if;
+ if not exists(select 1 from public.channel_sessions where id=sid and organization_id=p_org and archived_at is null) then raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+ if boundary is null and observed is null then raise exception 'service_stale' using errcode='40001'; end if;
+ select service_boundary into current_boundary from public.event_service_origins where organization_id=p_org and event_id=root_event and channel_session_id=sid;
+ if found then boundary:=current_boundary;
+ elsif boundary is null then
+   -- PARA UM EVENTO, `absent` E PROCEDENCIA — NAO REIVINDICACAO DE ESTADO.
+   --
+   -- O CAS de `fn_service_begin` existe para que dois ATORES com a mesma
+   -- observacao "ausente" nao ajam os dois: o segundo tem de perder, e o
+   -- invariante de `fn_service_begin` guarda isso. Um evento e outra coisa: o
+   -- retrato `absent` diz "quando este evento foi EMITIDO nao havia
+   -- atendimento", e a resolucao de cada evento ja e idempotente pelo memo
+   -- `event_service_origins` logo acima — nao ha corrida a arbitrar aqui.
+   --
+   -- Sem esta distincao o caminho ORDINARIO morria: um lead criado e depois
+   -- movido de etapa gera DOIS eventos, cada um com seu retrato `absent`;
+   -- resolver o primeiro cria a conversa e o segundo levantava 40001 — que
+   -- `serviceForEvent` engole como `stale_origin`, entao o follow-up de etapa
+   -- simplesmente nao nascia, sem erro em lugar nenhum.
+   --
+   -- Zerar `observed` so quando a conversa JA existe mantem o CAS de pe para o
+   -- retrato que descreve uma fronteira concreta (esse continua sendo conferido
+   -- contra a vigente) e para todo chamador direto de `fn_service_begin`.
+   if observed->>'absent' = 'true' and exists(
+        select 1 from public.conversations
+         where organization_id=p_org and contact_id=p_contact
+           and channel_session_id=sid and not is_group) then
+     observed:=null;
+   end if;
+   boundary:=public.fn_service_begin(p_org,p_contact,sid,observed) - 'status' - 'demanda_fechada_em' - 'service_started_at';
+ end if;
+ if boundary->>'organization_id' is distinct from p_org::text or boundary->>'contact_id' is distinct from p_contact::text then
+   raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+ cid:=(boundary->>'conversation_id')::uuid;
+ if p_session is not null and not exists(select 1 from public.conversations where organization_id=p_org and id=cid and contact_id=p_contact and channel_session_id=p_session) then
+   raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+ current_boundary:=public.fn_service_boundary(p_org,cid);
+ if current_boundary is null or current_boundary->>'status' in ('closed','resolved','archived')
+   or current_boundary->>'demanda_fechada_em' is not null
+   or (current_boundary - 'status' - 'demanda_fechada_em' - 'service_started_at') is distinct from boundary then
+   raise exception 'service_stale' using errcode='40001'; end if;
+ insert into public.event_service_origins(event_id,channel_session_id,organization_id,service_boundary) values(root_event,sid,p_org,boundary)
+ on conflict(event_id,channel_session_id) do nothing;
+ return boundary;
+end; $$;
+revoke all on function public.fn_service_event_origin(uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_service_event_origin(uuid,uuid,uuid,uuid) to service_role;
+
+-- ---- Presença e recuperação (migration 0224) ----
+-- 0224 — Presença é declaração humana; o relógio só pede confirmação.
+-- DIRC: vínculos/estado/horário reutilizados; revisão mede intenção, não sync.
+-- Recibo privado é decisão terminal, sem fila, e sobrevive ao expurgo do evento.
+alter table public.calendar_appointments
+ add column if not exists revision bigint not null default 1,
+ add column if not exists revision_started_at timestamptz not null default now(),
+ add column if not exists outcome_source_kind text,
+ add column if not exists outcome_user_id uuid references auth.users(id) on delete set null,
+ add column if not exists outcome_message_id uuid references public.messages(id) on delete set null,
+ add column if not exists outcome_recorded_at timestamptz,
+ add column if not exists confirmation_next_at timestamptz;
+alter table public.followup_enrollments
+ add column if not exists appointment_id uuid references public.calendar_appointments(id) on delete set null,
+ add column if not exists appointment_revision bigint,
+ add column if not exists revision bigint not null default 1;
+create unique index if not exists followup_appointment_revision_unique
+ on public.followup_enrollments(organization_id,pointer_id,appointment_id,appointment_revision) where appointment_id is not null;
+create table if not exists public.appointment_recovery_receipts (
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ appointment_id uuid not null references public.calendar_appointments(id) on delete cascade,
+ appointment_revision bigint not null,
+ source_event_id uuid references public.event_log(id) on delete set null,
+ result text not null check(result in ('started','other_flow','ambiguous','not_configured','stale','no_contact')),
+ pointer_id uuid references public.followup_flow_pointers(id) on delete set null,
+ enrollment_id uuid references public.followup_enrollments(id) on delete set null,
+ recorded_at timestamptz not null default now(),
+ invalidated_at timestamptz,
+ primary key(organization_id,appointment_id,appointment_revision)
+);
+alter table public.appointment_recovery_receipts enable row level security;
+revoke all on public.appointment_recovery_receipts from public,anon,authenticated,service_role;
+grant select on public.appointment_recovery_receipts to service_role;
+
+-- Um aviso por revisão, inclusive depois de resolvido. Identidade não depende
+-- de SELECT seguido de INSERT, nem da duração de um lease do cron.
+alter table public.agent_inbox_items add column if not exists appointment_revision bigint;
+create unique index if not exists inbox_appointment_revision_unique
+ on public.agent_inbox_items(organization_id,ref_id,appointment_revision,kind)
+ where ref_kind='appointment' and appointment_revision is not null;
+create or replace function public.fn_appointment_stamp()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare changed boolean; actor uuid;
+begin
+ if new.contact_id is not null and not exists(select 1 from public.contacts where id=new.contact_id and organization_id=new.organization_id) then
+  raise exception 'appointment_contact_scope' using errcode='23503'; end if;
+ if new.conversation_id is not null and not exists(select 1 from public.conversations where id=new.conversation_id and organization_id=new.organization_id and contact_id=new.contact_id and not is_group and (auth.uid() is null or public.fn_can_view_conversation(organization_id,assigned_to_user_id))) then
+  raise exception 'appointment_conversation_scope' using errcode='23503'; end if;
+ if tg_op='INSERT' then
+  new.revision:=1;
+  -- Legado importado sem autoria não vira fato certificado.
+  new.outcome_source_kind:=null; new.outcome_user_id:=null; new.outcome_message_id:=null;
+  new.outcome_recorded_at:=null;
+  return new;
+ end if;
+ changed:=row(new.starts_at,new.ends_at,new.status,new.contact_id,new.conversation_id) is distinct from row(old.starts_at,old.ends_at,old.status,old.contact_id,old.conversation_id);
+ new.revision:=old.revision+case when changed then 1 else 0 end;
+ new.revision_started_at:=case when changed then clock_timestamp() else old.revision_started_at end;
+ if changed then new.confirmation_next_at:=null; end if;
+ if new.status is distinct from old.status and new.status in ('completed','no_show') then
+  actor:=auth.uid();
+  if actor is null or not public.fn_role_at_least(new.organization_id,'agent') or not public.fn_support_write_allowed(new.organization_id) then
+   raise exception 'appointment_human_confirmation_required' using errcode='42501'; end if;
+  if new.starts_at>now() then raise exception 'appointment_not_started' using errcode='22023'; end if;
+  new.outcome_user_id:=actor; new.outcome_recorded_at:=clock_timestamp();
+  new.outcome_source_kind:=case when new.outcome_message_id is null then 'user' else 'contact_message' end;
+  if new.outcome_message_id is not null and not exists(
+   select 1 from public.messages m join public.conversations c on c.id=m.conversation_id and c.organization_id=m.organization_id
+   where m.id=new.outcome_message_id and m.organization_id=new.organization_id and m.contact_id=new.contact_id
+    and (new.conversation_id is null or m.conversation_id=new.conversation_id)
+    and m.direction='inbound' and m.service_revision is not null and m.service_revision=c.service_revision
+    and m.demanda_id is not distinct from c.current_demanda_id and m.created_at>=old.revision_started_at
+    and not c.is_group and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)
+  ) then raise exception 'appointment_message_not_evidence' using errcode='42501'; end if;
+ elsif changed then
+  new.outcome_source_kind:=null; new.outcome_user_id:=null; new.outcome_message_id:=null;
+  new.outcome_recorded_at:=null;
+ else
+  new.outcome_source_kind:=old.outcome_source_kind;
+  -- SET NULL por retenção da FK é erosão de referência, não nova autoria.
+  new.outcome_user_id:=case when new.outcome_user_id is null and not exists(select 1 from auth.users where id=old.outcome_user_id) then null else old.outcome_user_id end;
+  new.outcome_message_id:=case when new.outcome_message_id is null and not exists(select 1 from public.messages where id=old.outcome_message_id and organization_id=old.organization_id) then null else old.outcome_message_id end;
+  new.outcome_recorded_at:=old.outcome_recorded_at;
+ end if;
+ return new;
+end; $$;
+revoke all on function public.fn_appointment_stamp() from public,anon,authenticated;
+drop trigger if exists trg_appointment_stamp on public.calendar_appointments;
+create trigger trg_appointment_stamp before insert or update on public.calendar_appointments for each row execute function public.fn_appointment_stamp();
+
+-- A mudança observada e o evento estão no mesmo commit. Sem janela em que
+-- o desfecho ficou gravado e a recuperação nunca soube dele.
+create or replace function public.fn_appointment_change(p_org uuid,p_id uuid,p_revision bigint,p_patch jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; contact uuid; origin jsonb; event_id uuid;
+begin
+ if auth.uid() is not null and (not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org)) then raise exception 'appointment_forbidden' using errcode='42501'; end if;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact); end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if a.contact_id is distinct from contact or a.revision is distinct from p_revision then raise exception 'appointment_stale' using errcode='40001'; end if;
+ if a.status='cancelled' then raise exception 'appointment_cancelled' using errcode='22023'; end if;
+ if contact is not null then origin:=jsonb_build_object('kind','command','observed',public.fn_service_observe_command(p_org,contact)); end if;
+ update public.calendar_appointments set
+  starts_at=case when p_patch?'starts_at' then (p_patch->>'starts_at')::timestamptz else starts_at end,
+  ends_at=case when p_patch?'ends_at' then (p_patch->>'ends_at')::timestamptz else ends_at end,
+  time_zone=coalesce(p_patch->>'time_zone',time_zone),
+  status=coalesce(p_patch->>'status',status),
+  cancelled_at=case when p_patch->>'status'='cancelled' then now() else cancelled_at end,
+  cancellation_reason=case when p_patch?'cancellation_reason' then p_patch->>'cancellation_reason' else cancellation_reason end,
+  notes=case when p_patch?'notes' then p_patch->>'notes' else notes end,
+  guest_email=case when p_patch?'guest_email' then p_patch->>'guest_email' else guest_email end,
+  outcome_message_id=case when p_patch?'outcome_message_id' then (p_patch->>'outcome_message_id')::uuid else null end,
+  confirmation_next_at=case when p_patch?'confirmation_next_at' then (p_patch->>'confirmation_next_at')::timestamptz else confirmation_next_at end
+ where organization_id=p_org and id=p_id returning * into a;
+ if p_patch?'confirmation_next_at' and (a.confirmation_next_at<=now() or a.confirmation_next_at>now()+interval '24 hours') then raise exception 'appointment_invalid_snooze' using errcode='22023'; end if;
+ update public.followup_enrollments set status='cancelled',cancel_reason='O compromisso mudou. Revise o próximo passo.',completed_at=now(),next_eval_at=null,claimed_until=null
+  where organization_id=p_org and appointment_id=p_id and appointment_revision<>a.revision and status in ('active','waiting_reply','paused_handoff','paused_manual');
+ update public.agent_inbox_items set status='resolved',resolved_at=now()
+  where organization_id=p_org and ref_kind='appointment' and ref_id=p_id and status='open'
+   and (appointment_revision<>a.revision or a.status in ('completed','no_show','cancelled') or p_patch?'confirmation_next_at');
+ if contact is not null and a.status='no_show' and a.outcome_recorded_at is not null and a.revision<>p_revision then
+  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
+   values(p_org,'appointment.outcome_confirmed','appointment',p_id,
+    jsonb_build_object('appointment_revision',a.revision,'service_origin',origin)) returning id into event_id;
+ end if;
+ return to_jsonb(a);
+end; $$;
+revoke all on function public.fn_appointment_change(uuid,uuid,bigint,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_appointment_change(uuid,uuid,bigint,jsonb) to authenticated,service_role;
+
+-- Certificação ocorre sob o mutex ANTES dos locks de mensagens/FKs (Task4).
+-- A ordem é a do lock, não created_at (now() mede início da transação).
+-- Identidade é a nova mensagem persistida. Timestamp externo anterior ao
+-- segundo do desfecho é histórico; igualdade de segundo conta. Sem timestamp,
+-- o fallback de ingestão não permite distinguir histórico de entrada live.
+create or replace function public.fn_appointment_inbound()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare a record;
+begin
+ if auth.uid() is null and old.service_revision is null and new.service_revision is not null and new.direction='inbound' then
+  perform public.fn_service_lock(new.organization_id,new.contact_id);
+  for a in select * from public.calendar_appointments where organization_id=new.organization_id and contact_id=new.contact_id
+   and status='no_show' and outcome_recorded_at is not null and new.sent_at>=date_trunc('second',outcome_recorded_at) for update
+  loop
+   insert into public.appointment_recovery_receipts(organization_id,appointment_id,appointment_revision,result,invalidated_at)
+    values(a.organization_id,a.id,a.revision,'stale',clock_timestamp())
+    on conflict(organization_id,appointment_id,appointment_revision) do update set invalidated_at=excluded.invalidated_at;
+   update public.followup_enrollments set status='cancelled',cancel_reason='O cliente respondeu. Revise o próximo passo.',completed_at=now(),next_eval_at=null,claimed_until=null
+    where organization_id=new.organization_id and contact_id=new.contact_id and appointment_id=a.id and appointment_revision=a.revision
+     and status in ('active','waiting_reply','paused_handoff','paused_manual');
+  end loop;
+ end if;
+ return new;
+end; $$;
+revoke all on function public.fn_appointment_inbound() from public,anon,authenticated;
+drop trigger if exists trg_appointment_inbound on public.messages;
+create trigger trg_appointment_inbound after update of service_revision on public.messages for each row execute function public.fn_appointment_inbound();
+
+create or replace function public.fn_followup_revision()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ -- Origem da recuperação é imutável, inclusive para quem pode editar o fluxo.
+ -- Só o desaparecimento real da FK permite apagar a referência, cancelando-o.
+ if old.appointment_revision is not null then
+  new.appointment_revision:=old.appointment_revision;
+  if new.appointment_id is null and not exists(select 1 from public.calendar_appointments where organization_id=old.organization_id and id=old.appointment_id) then
+   new.status:='cancelled';new.cancel_reason:='O compromisso foi removido.';new.next_eval_at:=null;new.claimed_until:=null;new.completed_at:=now();
+  else new.appointment_id:=old.appointment_id; end if;
+  if new.contact_id is distinct from old.contact_id then
+   new.status:='cancelled';new.cancel_reason:='O contato do compromisso mudou.';new.next_eval_at:=null;new.claimed_until:=null;new.completed_at:=now();
+  end if;
+ end if;
+ if new.appointment_revision is not null and new.status in ('active','waiting_reply','paused_handoff','paused_manual') then
+  if old.status not in ('active','waiting_reply','paused_handoff','paused_manual') or not exists(
+   select 1 from public.calendar_appointments a join public.appointment_recovery_receipts r
+    on r.organization_id=a.organization_id and r.appointment_id=a.id and r.appointment_revision=a.revision
+   where a.organization_id=new.organization_id and a.id=new.appointment_id and a.revision=new.appointment_revision
+    and a.status='no_show' and a.contact_id=new.contact_id and r.result='started' and r.invalidated_at is null
+  ) then raise exception 'followup_stale' using errcode='40001'; end if;
+ end if;
+ new.revision:=old.revision+1; return new;
+end; $$;
+revoke all on function public.fn_followup_revision() from public,anon,authenticated;
+drop trigger if exists trg_followup_revision on public.followup_enrollments;
+create trigger trg_followup_revision before update on public.followup_enrollments for each row execute function public.fn_followup_revision();
+
+-- Defaults também são validados no schema TS. Valores corrompidos de clone
+-- degradam para 10min/24h; não passam cast inseguro no sweep de toda instalação.
+create or replace function public.fn_agenda_minutes(p_settings jsonb,p_key text,p_default int)
+returns int language plpgsql immutable set search_path=public as $$
+declare cfg jsonb:=p_settings->'agenda'; delay int; horizon int;
+begin
+ if jsonb_typeof(cfg) is distinct from 'object'
+  or jsonb_typeof(cfg->'confirmation_delay_minutes') is distinct from 'number'
+  or jsonb_typeof(cfg->'unknown_protection_minutes') is distinct from 'number'
+  or (cfg->>'confirmation_delay_minutes' ~ '^[0-9]{1,5}$') is not true
+  or (cfg->>'unknown_protection_minutes' ~ '^[0-9]{1,5}$') is not true then return p_default; end if;
+ delay:=(cfg->>'confirmation_delay_minutes')::int; horizon:=(cfg->>'unknown_protection_minutes')::int;
+ if delay not between 1 and 10080 or horizon not between delay and 10080
+  or (cfg-'confirmation_delay_minutes'-'unknown_protection_minutes')<>'{}'::jsonb then return p_default; end if;
+ return case p_key when 'confirmation_delay_minutes' then delay when 'unknown_protection_minutes' then horizon else p_default end;
+end;
+$$;
+revoke all on function public.fn_agenda_minutes(jsonb,text,int) from public,anon,authenticated;
+grant execute on function public.fn_agenda_minutes(jsonb,text,int) to service_role;
+
+create or replace function public.fn_appointment_confirmation_sweep(p_limit int default 100,p_now timestamptz default now())
+returns int language plpgsql security definer set search_path=public as $$
+declare a record; n int:=0; expired boolean;
+begin
+ for a in select c.*,o.settings from public.calendar_appointments c join public.organizations o on o.id=c.organization_id
+  where c.status in ('pending','confirmed')
+   and c.ends_at+make_interval(mins=>public.fn_agenda_minutes(o.settings,'confirmation_delay_minutes',10))<=p_now
+   and (c.confirmation_next_at is null or c.confirmation_next_at<=p_now)
+  order by c.ends_at limit greatest(1,least(p_limit,500)) for update of c skip locked
+ loop
+  expired:=a.ends_at+make_interval(mins=>public.fn_agenda_minutes(a.settings,'unknown_protection_minutes',1440))<=p_now;
+  insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id,appointment_revision)
+   values(a.organization_id,'appointment_outcome_required',case when expired then 'critical' else 'warn' end,
+    case when expired then 'Presença sem confirmação há mais tempo' else 'Confirme a presença no compromisso' end,
+    'Compromisso: '||a.title||'. Abra e registre se a pessoa compareceu, faltou ou cancelou. O horário sozinho não confirma falta.',
+    'appointment',a.id,a.revision)
+   on conflict(organization_id,ref_id,appointment_revision,kind) where ref_kind='appointment' and appointment_revision is not null
+   do update set status='open',resolved_at=null,severity=excluded.severity,title=excluded.title;
+  update public.calendar_appointments set confirmation_next_at=case when expired then p_now+interval '24 hours' else least(p_now+interval '24 hours',a.ends_at+make_interval(mins=>public.fn_agenda_minutes(a.settings,'unknown_protection_minutes',1440))) end where id=a.id and organization_id=a.organization_id;
+  n:=n+1;
+ end loop;
+ return n;
+end; $$;
+revoke all on function public.fn_appointment_confirmation_sweep(int,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_appointment_confirmation_sweep(int,timestamptz) to service_role;
+
+-- Um único comando escolhe (ou recusa) o fluxo, guarda o recibo e inscreve.
+create or replace function public.fn_appointment_recover(p_org uuid,p_event uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare e public.event_log; a public.calendar_appointments; r public.appointment_recovery_receipts;
+ contact uuid; rev bigint; result text; candidates uuid[]; pointer uuid; agent uuid; version uuid; node text; boundary jsonb; enrollment uuid;
+begin
+ select * into e from public.event_log where organization_id=p_org and id=p_event and event_type='appointment.outcome_confirmed' and entity_kind='appointment';
+ if not found then raise exception 'appointment_source_event_missing' using errcode='P0002'; end if;
+ rev:=(e.payload->>'appointment_revision')::bigint;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=e.entity_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact); end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=e.entity_id for update;
+ if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='40001'; end if;
+ select * into r from public.appointment_recovery_receipts where organization_id=p_org and appointment_id=a.id and appointment_revision=rev;
+ if found then return to_jsonb(r); end if;
+ result:=case when contact is null then 'no_contact' when a.revision<>rev or a.status<>'no_show' or a.outcome_recorded_at is null
+
+  or not exists(select 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized and is_merged_into is null and not is_blocked)
+  then 'stale' else null end;
+ if result is null then
+  select array_agg(p.id) into candidates from public.followup_flow_pointers p
+   where p.organization_id=p_org and p.status='active' and p.active_version_id is not null and p.trigger_config->>'kind'='appointment_no_show'
+    and (coalesce(jsonb_array_length(p.trigger_config->'params'->'event_type_ids'),0)=0 or p.trigger_config->'params'->'event_type_ids' ? a.event_type_id::text)
+    and exists(select 1 from public.ai_agent_versions v where v.organization_id=p_org and v.status='published'
+     and v.followup->'enabled'='true'::jsonb and v.followup->'flow_pointer_ids' ? p.id::text);
+  result:=case when coalesce(cardinality(candidates),0)=0 then 'not_configured' when cardinality(candidates)>1 then 'ambiguous' else null end;
+ end if;
+ if result is null and exists(select 1 from public.followup_enrollments where organization_id=p_org and contact_id=contact and status in ('active','waiting_reply','paused_handoff','paused_manual')) then result:='other_flow'; end if;
+ if result is null then
+  pointer:=candidates[1];
+  select active_version_id into version from public.followup_flow_pointers where organization_id=p_org and id=pointer and status='active' for share;
+  -- Precedência de AGENTES já canônica em resolveAgentForAutomaticTrigger.
+  select agent_id into agent from public.ai_agent_versions where organization_id=p_org and status='published'
+   and followup->'enabled'='true'::jsonb and followup->'flow_pointer_ids' ? pointer::text order by agent_id limit 1;
+  select n->>'id' into node from public.followup_flow_versions v cross join lateral jsonb_array_elements(v.graph->'nodes') n
+   where v.organization_id=p_org and v.id=version and n->>'type'='trigger';
+  if version is null or agent is null or node is null then raise exception 'appointment_flow_changed' using errcode='40001'; end if;
+  begin
+   boundary:=public.fn_service_event_origin(p_org,p_event,contact,
+    (select channel_session_id from public.conversations where organization_id=p_org and id=a.conversation_id and contact_id=contact));
+  exception when serialization_failure then result:='stale'; end;
+  if result is null then
+   begin
+    insert into public.followup_enrollments(organization_id,pointer_id,version_id,contact_id,conversation_id,agent_id,current_node_id,service_boundary,
+     appointment_id,appointment_revision)
+    values(p_org,pointer,version,contact,(boundary->>'conversation_id')::uuid,agent,node,boundary,a.id,a.revision) returning id into enrollment;
+    insert into public.followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
+     values(p_org,enrollment,node,'enrolled',jsonb_build_object('trigger_kind','appointment_no_show','appointment_id',a.id,'appointment_revision',a.revision),'appointment:'||a.id||':'||a.revision);
+    result:='started';
+   exception when unique_violation then result:='other_flow'; end;
+  end if;
+ end if;
+ insert into public.appointment_recovery_receipts(organization_id,appointment_id,appointment_revision,source_event_id,result,pointer_id,enrollment_id)
+  values(p_org,a.id,rev,p_event,result,pointer,enrollment) returning * into r;
+ if result<>'started' then
+  insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id,appointment_revision)
+   values(p_org,'appointment_recovery_review','warn','A recuperação não foi iniciada',
+    case result when 'other_flow' then 'Este contato já tem outro acompanhamento. Revise o próximo passo; nenhuma recuperação ficou aguardando vaga.'
+     when 'ambiguous' then 'Mais de um fluxo atende a esta falta. Deixe apenas um configurado ou escolha manualmente o próximo passo.'
+     when 'not_configured' then 'Configure um fluxo de recuperação e habilite-o em um assistente publicado. Esta falta não será iniciada retroativamente.'
+     else 'O contexto mudou ou não há contato vinculado. Abra o compromisso e escolha o próximo passo.' end,'appointment',a.id,rev)
+   on conflict(organization_id,ref_id,appointment_revision,kind) where ref_kind='appointment' and appointment_revision is not null do nothing;
+ end if;
+ return to_jsonb(r);
+end; $$;
+revoke all on function public.fn_appointment_recover(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_appointment_recover(uuid,uuid) to service_role;
+
+create or replace function public.fn_agenda_settings(p_org uuid,p_config jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'manager') or not public.fn_support_write_allowed(p_org) then raise exception 'agenda_settings_forbidden' using errcode='42501'; end if;
+ if jsonb_typeof(p_config->'confirmation_delay_minutes') is distinct from 'number' or jsonb_typeof(p_config->'unknown_protection_minutes') is distinct from 'number'
+  or (p_config-'confirmation_delay_minutes'-'unknown_protection_minutes')<>'{}'::jsonb
+  or (p_config->>'confirmation_delay_minutes' ~ '^[0-9]{1,5}$') is not true or (p_config->>'unknown_protection_minutes' ~ '^[0-9]{1,5}$') is not true
+  or (p_config->>'confirmation_delay_minutes')::int not between 1 and 10080
+  or (p_config->>'unknown_protection_minutes')::int not between 1 and 10080
+  or (p_config->>'unknown_protection_minutes')::int < (p_config->>'confirmation_delay_minutes')::int
+ then raise exception 'agenda_settings_invalid' using errcode='22023'; end if;
+ update public.organizations set settings=jsonb_set(coalesce(settings,'{}'::jsonb),'{agenda}',p_config,true) where id=p_org;
+ if not found then raise exception 'organization_not_found' using errcode='P0002'; end if;
+ return p_config;
+end; $$;
+revoke all on function public.fn_agenda_settings(uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_agenda_settings(uuid,jsonb) to authenticated;
+
+create or replace function public.fn_appointment_enrollment_current(p_org uuid,p_id uuid,p_node text default null)
+returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.followup_enrollments e where e.organization_id=p_org and e.id=p_id
+  and e.status in ('active','waiting_reply') and (p_node is null or e.current_node_id=p_node)
+  and (e.appointment_revision is null or exists(select 1 from public.calendar_appointments a
+   where a.organization_id=p_org and a.id=e.appointment_id and a.revision=e.appointment_revision and a.status='no_show'
+    and a.outcome_recorded_at is not null and a.contact_id=e.contact_id
+    and exists(select 1 from public.appointment_recovery_receipts r where r.organization_id=p_org and r.appointment_id=a.id and r.appointment_revision=a.revision and r.result='started' and r.invalidated_at is null))));
+$$;
+revoke all on function public.fn_appointment_enrollment_current(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_appointment_enrollment_current(uuid,uuid,text) to service_role;
+
+-- DIRC: geração já existe na chave nó:steps do evento de enqueue. Rechecks
+-- incrementam steps_taken, portanto igualdade com o contador atual seria falsa.
+-- Só o produtor interno grava essa chave no job; retenção sem evento falha fechado.
+create or replace function public.fn_followup_generation_write()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if tg_table_name='job_queue' then
+  if auth.uid() is not null and ((tg_op<>'DELETE' and new.kind='followup_turn') or (tg_op<>'INSERT' and old.kind='followup_turn')) then
+   raise exception 'followup_job_internal' using errcode='42501';
+  end if;
+  if tg_op='UPDATE' and old.kind='followup_turn' then
+   if new.organization_id<>old.organization_id or new.contact_id is distinct from old.contact_id or new.kind<>old.kind
+    or new.payload->'followup_enrollment_id' is distinct from old.payload->'followup_enrollment_id'
+    or new.payload->'node_id' is distinct from old.payload->'node_id'
+    or new.payload->'source_step_key' is distinct from old.payload->'source_step_key'
+   then raise exception 'followup_job_origin_immutable' using errcode='42501'; end if;
+  end if;
+ elsif auth.uid() is not null and ((tg_op<>'DELETE' and new.idempotency_key ~ ':[0-9]+$') or (tg_op<>'INSERT' and old.idempotency_key ~ ':[0-9]+$')) then
+  raise exception 'followup_step_internal' using errcode='42501';
+ end if;
+ if tg_op='DELETE' then return old; end if;
+ return new;
+end; $$;
+revoke all on function public.fn_followup_generation_write() from public,anon,authenticated;
+drop trigger if exists trg_followup_generation_job on public.job_queue;
+create trigger trg_followup_generation_job before insert or update or delete on public.job_queue for each row execute function public.fn_followup_generation_write();
+drop trigger if exists trg_followup_generation_event on public.followup_enrollment_events;
+create trigger trg_followup_generation_event before insert or update or delete on public.followup_enrollment_events for each row execute function public.fn_followup_generation_write();
+
+create or replace function public.fn_followup_job_current(p_org uuid,p_job uuid,p_enrollment uuid,p_node text)
+returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.job_queue j
+  join public.followup_enrollments e on e.id=p_enrollment and e.organization_id=j.organization_id and e.contact_id=j.contact_id
+  join public.followup_enrollment_events origin on origin.organization_id=e.organization_id and origin.enrollment_id=e.id
+   and origin.node_id=p_node and origin.idempotency_key=j.payload->>'source_step_key'
+   and origin.event_type in ('turn_enqueued','classify_enqueued')
+  where j.id=p_job and j.organization_id=p_org and j.kind='followup_turn' and j.status in ('pending','running')
+   and j.payload->>'followup_enrollment_id'=p_enrollment::text and j.payload->>'node_id'=p_node
+   and origin.idempotency_key = origin.node_id||':'||substring(origin.idempotency_key from ':([0-9]+)$')
+   and public.fn_appointment_enrollment_current(p_org,p_enrollment,p_node)
+   and not exists(select 1 from public.followup_enrollment_events later
+    where later.organization_id=p_org and later.enrollment_id=e.id
+     and later.idempotency_key=later.node_id||':'||substring(later.idempotency_key from ':([0-9]+)$')
+     and substring(later.idempotency_key from ':([0-9]+)$')::numeric > substring(origin.idempotency_key from ':([0-9]+)$')::numeric
+     and not (later.node_id=p_node and later.event_type='action_recheck')));
+$$;
+revoke all on function public.fn_followup_job_current(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_followup_job_current(uuid,uuid,uuid,text) to service_role;
+
+-- Identidade ORIGINAL da aquisição. locked_at::text sai do claim PG sem perda
+-- dos microssegundos; heartbeat não altera locked_at. Reclaim do mesmo worker
+-- não reautoriza a execução anterior. Sem novo contador ou coluna de autoridade.
+create or replace function public.fn_followup_claim_current(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.job_queue where organization_id=p_org and id=p_job
+  and kind='followup_turn' and status='running' and locked_by=p_worker and locked_at=p_acquired_at);
+$$;
+revoke all on function public.fn_followup_claim_current(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_followup_claim_current(uuid,uuid,text,timestamptz) to service_role;
+
+-- CAS de todo update tardio: estado, nó e lease compartilham a revisão.
+create or replace function public.fn_followup_patch(p_org uuid,p_id uuid,p_revision bigint,p_patch jsonb)
+returns bigint language plpgsql security definer set search_path=public as $$
+declare current public.followup_enrollments; patched public.followup_enrollments; contact uuid;
+begin
+ select contact_id into contact from public.followup_enrollments where id=p_id and organization_id=p_org;
+ if not found then raise exception 'followup_stale' using errcode='40001'; end if;
+ perform public.fn_service_lock(p_org,contact);
+ select * into current from public.followup_enrollments where id=p_id and organization_id=p_org for update;
+ if current.contact_id is distinct from contact or current.revision is distinct from p_revision then raise exception 'followup_stale' using errcode='40001'; end if;
+ if p_patch->>'status' in ('active','waiting_reply') and current.appointment_revision is not null and not public.fn_appointment_enrollment_current(p_org,p_id,current.current_node_id) then raise exception 'followup_stale' using errcode='40001'; end if;
+ select * into patched from jsonb_populate_record(current,p_patch);
+ update public.followup_enrollments set status=patched.status,current_node_id=patched.current_node_id,next_eval_at=patched.next_eval_at,
+  claimed_until=patched.claimed_until,attempts=patched.attempts,last_error=patched.last_error,steps_taken=patched.steps_taken,
+  outcome=patched.outcome,cancel_reason=patched.cancel_reason,completed_at=patched.completed_at,timing_plan=patched.timing_plan
+ where organization_id=p_org and id=p_id returning revision into p_revision;
+ return p_revision;
+end; $$;
+revoke all on function public.fn_followup_patch(uuid,uuid,bigint,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_followup_patch(uuid,uuid,bigint,jsonb) to service_role;
+
+-- Estende o produtor permitido mantendo a origem imutável da 0223.
+CREATE OR REPLACE FUNCTION public.emit_event(p_event_type text, p_entity_kind text, p_entity_id uuid, p_payload jsonb DEFAULT '{}'::jsonb, p_metadata jsonb DEFAULT '{}'::jsonb, p_organization_id uuid DEFAULT NULL::uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_org_id uuid;
+  v_event_id uuid;
+  v_contact uuid;
+  v_origin jsonb;
+begin
+  -- message.received nasce somente do INSERT inbound interno. Um chamador
+  -- público não pode reapresentar uma mensagem existente como evento novo.
+  if auth.uid() is not null and p_event_type in ('message.received','appointment.outcome_confirmed') then
+    raise exception 'reserved_message_received' using errcode='42501';
+  end if;
+  -- Estes campos autorizam efeitos operacionais; não são payload público.
+  if auth.uid() is not null and (
+    coalesce(p_payload,'{}'::jsonb) ?| array['service_origin','service_boundary']
+    or coalesce(p_metadata,'{}'::jsonb) ?| array['service_origin','service_boundary']
+  ) then raise exception 'reserved_service_origin' using errcode='42501'; end if;
+  v_org_id := coalesce(p_organization_id, (public.fn_support_context()->>'organization_id')::uuid);
+  if v_org_id is null then
+    select organization_id into v_org_id
+      from public.user_organizations
+      where user_id = auth.uid() and revoked_at is null
+      limit 1;
+  end if;
+  if v_org_id is null then
+    raise exception 'emit_event: organization_id obrigatorio';
+  end if;
+
+  if auth.uid() is not null
+     and not public.fn_role_at_least(v_org_id, 'viewer') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'emit_event: caller must be an active member of the organization';
+  end if;
+
+  if not public.fn_support_write_allowed(v_org_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+
+  -- A ORIGEM E RESERVADA AO SERVIDOR — ENTAO O SERVIDOR TEM DE ESCREVE-LA.
+  --
+  -- O bloco acima recusa `service_origin` vindo de chamador autenticado (42501,
+  -- e com razao: e o campo que AUTORIZA efeito operacional, nao payload
+  -- publico). So que ninguem o escrevia no lugar dele. Efeito medido: quem move
+  -- o negocio pela IA carimba a origem no servidor (`agent-stage-sync`,
+  -- `appointment-stage-move`, `handoff-stage-move`) e o follow-up nasce; quem
+  -- move PELO QUADRO — o operador, pela rota HTTP autenticada — emitia um
+  -- evento SEM origem, `fn_service_event_origin` caia no `service_stale` final
+  -- (40001), `serviceForEvent` engolia como `stale_origin` e o follow-up nunca
+  -- nascia. Sem erro em lugar nenhum: o gatilho de etapa era inalcancavel pelo
+  -- caminho que o produto oferece na tela.
+  --
+  -- O retrato e tirado AQUI, no instante da emissao, que e exatamente a
+  -- semantica de procedencia que a 0223 quer: "quando este evento nasceu, o
+  -- atendimento estava assim". A resolucao do contato repete a mesma regra de
+  -- `fn_service_event_origin` — se ela nao souber resolver o tipo, nao ha o que
+  -- carimbar e o evento segue sem origem, como antes.
+  if not (coalesce(p_payload,'{}'::jsonb) ? 'service_origin')
+     and not (coalesce(p_metadata,'{}'::jsonb) ? 'service_origin') then
+    if p_event_type in ('lead.created','lead.stage_changed','lead.tag_added') and p_entity_kind='crm_lead' then
+      select contact_id into v_contact from public.crm_leads where organization_id=v_org_id and id=p_entity_id;
+    elsif p_event_type='contact.tag_added' and p_entity_kind='contact' then
+      select id into v_contact from public.contacts where organization_id=v_org_id and id=p_entity_id;
+    end if;
+    if v_contact is not null
+       and exists(select 1 from public.contacts
+                   where organization_id=v_org_id and id=v_contact
+                     and not is_anonymized and is_merged_into is null) then
+      v_origin := jsonb_build_object('kind','command',
+        'observed', public.fn_service_observe_command(v_org_id, v_contact));
+    end if;
+  end if;
+
+  insert into public.event_log
+    (organization_id, event_type, entity_kind, entity_id, payload, metadata)
+  values
+    (v_org_id, p_event_type, p_entity_kind, p_entity_id,
+     coalesce(p_payload, '{}'::jsonb)
+       || case when v_origin is null then '{}'::jsonb else jsonb_build_object('service_origin', v_origin) end,
+     coalesce(p_metadata, '{}'::jsonb)
+       || jsonb_build_object('emitted_at', extract(epoch from now())))
+  returning id into v_event_id;
+
+  return v_event_id;
+end $function$;
+
+
+create or replace function public.fn_service_event_origin(p_org uuid,p_event uuid,p_contact uuid,p_session uuid default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare e public.event_log; origin jsonb; boundary jsonb; current_boundary jsonb; entity_contact uuid; cid uuid; sid uuid; observed jsonb; root_event uuid:=p_event; visited uuid[]:=array[]::uuid[];
+begin
+ -- O drain faz claim otimista em outra transação; não conserva row lock.
+ -- Não travar event_log: advisory contato antecede os locks de conversa/FKs.
+ perform public.fn_service_lock(p_org,p_contact);
+ loop
+ if root_event = any(visited) or cardinality(visited)>=32 then raise exception 'service_origin_cycle' using errcode='40001'; end if;
+ visited:=array_append(visited,root_event);
+ boundary:=null;
+ entity_contact:=null;
+ select * into e from public.event_log where organization_id=p_org and id=root_event;
+ if not found then raise exception 'service_event_not_found' using errcode='P0002'; end if;
+ if e.event_type in ('lead.created','lead.stage_changed','lead.tag_added') and e.entity_kind='crm_lead' then
+   select contact_id into entity_contact from public.crm_leads where organization_id=p_org and id=e.entity_id;
+ elsif e.event_type='contact.tag_added' and e.entity_kind='contact' then
+   select id into entity_contact from public.contacts where organization_id=p_org and id=e.entity_id;
+ elsif e.event_type='appointment.outcome_confirmed' and e.entity_kind='appointment' then
+   select contact_id into entity_contact from public.calendar_appointments where organization_id=p_org and id=e.entity_id and revision=(e.payload->>'appointment_revision')::bigint and status='no_show' and outcome_recorded_at is not null;
+ elsif e.event_type='message.received' and e.entity_kind='message' then
+   select contact_id,jsonb_build_object('organization_id',organization_id,'contact_id',contact_id,
+     'conversation_id',conversation_id,'service_revision',service_revision,'demanda_id',demanda_id,'demanda_revision',demanda_revision)
+     into entity_contact,boundary from public.messages where organization_id=p_org and id=e.entity_id and direction='inbound';
+ else raise exception 'service_event_origin_unsupported' using errcode='40001'; end if;
+ if entity_contact is distinct from p_contact or not exists(select 1 from public.contacts where organization_id=p_org and id=p_contact and not is_anonymized and is_merged_into is null) then
+   raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+ origin:=e.payload->'service_origin';
+ if origin->>'kind'='event' then
+   if origin->>'organization_id' is distinct from p_org::text or origin->>'contact_id' is distinct from p_contact::text then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+   root_event:=(origin->>'event_id')::uuid;
+   if root_event is null then raise exception 'service_stale' using errcode='40001'; end if;
+   continue;
+ end if;
+ exit;
+ end loop;
+ if boundary is not null or origin->>'kind'='continuation' then
+   boundary:=coalesce(boundary,origin->'boundary');
+   select channel_session_id into sid from public.conversations where organization_id=p_org and contact_id=p_contact and id=(boundary->>'conversation_id')::uuid;
+   if p_session is not null and p_session is distinct from sid then raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+ elsif origin->>'kind'='command' then
+   observed:=origin->'observed';
+   if observed->>'organization_id' is distinct from p_org::text or observed->>'contact_id' is distinct from p_contact::text then raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+   if jsonb_typeof(observed->'destinations')='array' then
+     sid:=coalesce(p_session,(observed->>'default_session_id')::uuid);
+     select item->'observed' into observed from jsonb_array_elements(observed->'destinations') item where item->>'channel_session_id'=sid::text;
+   else
+     -- Compatibilidade com snapshot anterior: prova somente sua conversa, nunca ausência de outro canal.
+     select channel_session_id into sid from public.conversations where organization_id=p_org and contact_id=p_contact and id=(observed->>'conversation_id')::uuid;
+     if p_session is not null and p_session is distinct from sid then raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+   end if;
+ else raise exception 'service_stale' using errcode='40001'; end if;
+ if sid is null then raise exception 'service_stale' using errcode='40001'; end if;
+ if not exists(select 1 from public.channel_sessions where id=sid and organization_id=p_org and archived_at is null) then raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+ if boundary is null and observed is null then raise exception 'service_stale' using errcode='40001'; end if;
+ select service_boundary into current_boundary from public.event_service_origins where organization_id=p_org and event_id=root_event and channel_session_id=sid;
+ if found then boundary:=current_boundary;
+ elsif boundary is null then
+   -- PARA UM EVENTO, `absent` E PROCEDENCIA — NAO REIVINDICACAO DE ESTADO.
+   --
+   -- O CAS de `fn_service_begin` existe para que dois ATORES com a mesma
+   -- observacao "ausente" nao ajam os dois: o segundo tem de perder, e o
+   -- invariante de `fn_service_begin` guarda isso. Um evento e outra coisa: o
+   -- retrato `absent` diz "quando este evento foi EMITIDO nao havia
+   -- atendimento", e a resolucao de cada evento ja e idempotente pelo memo
+   -- `event_service_origins` logo acima — nao ha corrida a arbitrar aqui.
+   --
+   -- Sem esta distincao o caminho ORDINARIO morria: um lead criado e depois
+   -- movido de etapa gera DOIS eventos, cada um com seu retrato `absent`;
+   -- resolver o primeiro cria a conversa e o segundo levantava 40001 — que
+   -- `serviceForEvent` engole como `stale_origin`, entao o follow-up de etapa
+   -- simplesmente nao nascia, sem erro em lugar nenhum.
+   --
+   -- Zerar `observed` so quando a conversa JA existe mantem o CAS de pe para o
+   -- retrato que descreve uma fronteira concreta (esse continua sendo conferido
+   -- contra a vigente) e para todo chamador direto de `fn_service_begin`.
+   if observed->>'absent' = 'true' and exists(
+        select 1 from public.conversations
+         where organization_id=p_org and contact_id=p_contact
+           and channel_session_id=sid and not is_group) then
+     observed:=null;
+   end if;
+   boundary:=public.fn_service_begin(p_org,p_contact,sid,observed) - 'status' - 'demanda_fechada_em' - 'service_started_at';
+ end if;
+ if boundary->>'organization_id' is distinct from p_org::text or boundary->>'contact_id' is distinct from p_contact::text then
+   raise exception 'service_scope_mismatch' using errcode='23503'; end if;
+ cid:=(boundary->>'conversation_id')::uuid;
+ if p_session is not null and not exists(select 1 from public.conversations where organization_id=p_org and id=cid and contact_id=p_contact and channel_session_id=p_session) then
+   raise exception 'service_channel_mismatch' using errcode='23503'; end if;
+ current_boundary:=public.fn_service_boundary(p_org,cid);
+ if current_boundary is null or current_boundary->>'status' in ('closed','resolved','archived')
+   or current_boundary->>'demanda_fechada_em' is not null
+   or (current_boundary - 'status' - 'demanda_fechada_em' - 'service_started_at') is distinct from boundary then
+   raise exception 'service_stale' using errcode='40001'; end if;
+ insert into public.event_service_origins(event_id,channel_session_id,organization_id,service_boundary) values(root_event,sid,p_org,boundary)
+ on conflict(event_id,channel_session_id) do nothing;
+ return boundary;
+end; $$;
+revoke all on function public.fn_service_event_origin(uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_service_event_origin(uuid,uuid,uuid,uuid) to service_role;
+
+
+drop function if exists public.fn_followup_inline_settle(uuid,uuid,text,boolean,text,timestamptz,boolean);
+-- Atalho inline: estado do job e aviso no mesmo commit; lease antigo não conclui.
+create or replace function public.fn_followup_inline_settle(p_org uuid,p_id uuid,p_worker text,p_done boolean,p_error text default null,p_retry_at timestamptz default null,p_hold boolean default false,p_acquired_at timestamptz default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare j public.job_queue;
+begin
+ update public.job_queue set
+  status=case when p_done then 'done' when p_hold then 'pending' when attempts>=max_attempts then 'dead' else 'pending' end,
+  attempts=case when p_hold then greatest(0,attempts-1) else attempts end,
+  run_after=coalesce(p_retry_at,now()+interval '1 minute'),locked_by=null,locked_at=null,last_error=left(p_error,400)
+ where organization_id=p_org and id=p_id and kind='followup_turn' and status='running' and locked_by=p_worker and locked_at=p_acquired_at returning * into j;
+ if not found then return false; end if;
+ if j.status='dead' then
+  insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
+   values(p_org,'job_dead','critical','O acompanhamento não conseguiu enviar a mensagem',
+    'Abra o acompanhamento e confira o canal. Motivo: '||coalesce(j.last_error,'envio indisponível'),'job_queue',j.id);
+ end if;
+ return true;
+end; $$;
+revoke all on function public.fn_followup_inline_settle(uuid,uuid,text,boolean,text,timestamptz,boolean,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_followup_inline_settle(uuid,uuid,text,boolean,text,timestamptz,boolean,timestamptz) to service_role;
+
+
+-- Callback grava o passo e sua progressão juntos. Um CAS recusado não deixa
+-- idempotency_key órfã que impediria a próxima tentativa legítima.
+create or replace function public.fn_followup_apply_step(p_org uuid,p_id uuid,p_revision bigint,p_patch jsonb,p_event jsonb)
+returns bigint language plpgsql security definer set search_path=public as $$
+declare revision bigint; contact uuid;
+begin
+ if p_event ? 'job_id' then
+  select contact_id into contact from public.followup_enrollments where organization_id=p_org and id=p_id;
+  perform public.fn_service_lock(p_org,contact);
+  perform 1 from public.job_queue where id=(p_event->>'job_id')::uuid and organization_id=p_org for update;
+  if not public.fn_followup_claim_current(p_org,(p_event->>'job_id')::uuid,p_event->'job_claim'->>'worker_id',(p_event->'job_claim'->>'acquired_at')::timestamptz)
+   or not public.fn_followup_job_current(p_org,(p_event->>'job_id')::uuid,p_id,p_event->>'node_id') then
+   raise exception 'followup_job_stale' using errcode='40001';
+  end if;
+ end if;
+ revision:=public.fn_followup_patch(p_org,p_id,p_revision,p_patch);
+ insert into public.followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
+  values(p_org,p_id,p_event->>'node_id',p_event->>'event_type',coalesce(p_event->'payload','{}'::jsonb),p_event->>'idempotency_key');
+ return revision;
+end; $$;
+revoke all on function public.fn_followup_apply_step(uuid,uuid,bigint,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_followup_apply_step(uuid,uuid,bigint,jsonb,jsonb) to service_role;
+
+notify pgrst,'reload schema';
+
+-- ---- Google reconciliação (migration 0225) ----
+-- 0225 — Google compartilha o compromisso; presença continua humana (0224).
+-- DIRC: mesma tupla, crons, mutex e revisão de domínio. Checkpoints outbound
+-- são hashes; pending_write é um slot de intenção histórica, nunca recibo remoto.
+alter table public.calendar_appointments
+ add column if not exists google_local_revision bigint not null default 1,
+ add column if not exists google_synced_local_revision bigint not null default 0,
+ add column if not exists google_etag text,
+ add column if not exists google_base_projection jsonb,
+ add column if not exists google_conflict jsonb,
+ add column if not exists google_pending_write jsonb,
+ add column if not exists google_claim_token uuid,
+ add column if not exists google_claim_epoch bigint not null default 0,
+ add column if not exists google_claim_until timestamptz,
+ add column if not exists google_next_attempt_at timestamptz not null default now();
+alter table public.calendar_connections add column if not exists calendar_selection_revision bigint not null default 0;
+alter table public.calendar_connection_calendars
+ add column if not exists access_role text,
+ add column if not exists available boolean not null default true,
+ add column if not exists catalog_checked_at timestamptz,
+ add column if not exists sync_claim_token uuid,
+ add column if not exists sync_claim_epoch bigint not null default 0,
+ add column if not exists sync_claim_until timestamptz,
+ add column if not exists sync_next_attempt_at timestamptz not null default now(),
+ add column if not exists last_sync_at timestamptz,
+ add column if not exists sync_error text,
+ add column if not exists sync_cursor jsonb,
+ add column if not exists sync_coverage jsonb;
+alter table public.calendar_external_events
+ add column if not exists seen_generation uuid,
+ add column if not exists recurring_event_id text,
+ add column if not exists original_start_time jsonb;
+alter table public.calendar_external_events alter column starts_at drop not null;
+alter table public.calendar_external_events alter column ends_at drop not null;
+alter table public.calendar_external_events drop constraint if exists calendar_external_events_periodo_valido;
+alter table public.calendar_external_events add constraint calendar_external_events_periodo_valido
+ check(status='cancelled' or (starts_at is not null and ends_at is not null and ends_at>starts_at));
+drop index if exists public.calendar_appointments_google_evento_key;
+create unique index if not exists calendar_appointments_google_evento_key
+ on public.calendar_appointments(organization_id,google_connection_id,google_calendar_id,google_event_id) where google_event_id is not null;
+-- Nenhum legado é declarado sincronizado sem GET/base. Tupla ambígua fica
+-- preservada e visível; não se adivinha calendário de outra conta/conexão.
+drop index if exists public.calendar_appointments_pendente_no_google_idx;
+drop view if exists public.calendar_google_reconcilable_appointments;
+alter table public.calendar_appointments drop column if exists needs_google_push;
+alter table public.calendar_appointments add column needs_google_push boolean generated always as
+ (google_local_revision>google_synced_local_revision and google_conflict is null) stored;
+create index if not exists calendar_appointments_pendente_no_google_idx
+ on public.calendar_appointments(google_next_attempt_at) where needs_google_push and owner_user_id is not null;
+
+create or replace function public.fn_google_projection_stamp()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare changed boolean; inbound boolean; decision boolean; redacted boolean;
+begin
+ redacted:=new.contact_id is not null and exists(select 1 from public.contacts where organization_id=new.organization_id and id=new.contact_id and is_anonymized);
+ if redacted then
+  new.google_base_projection:=null;new.google_conflict:=null;new.google_pending_write:=null;new.google_claim_token:=null;new.google_claim_until:=null;new.google_etag:=null;new.guest_email:=null;
+  if tg_op='UPDATE' then new.google_claim_epoch:=old.google_claim_epoch+1;new.google_local_revision:=old.google_local_revision;new.google_synced_local_revision:=old.google_local_revision;end if;
+  return new;
+ end if;
+ if tg_op='INSERT' then
+  new.google_local_revision:=1;new.google_synced_local_revision:=0;
+  if auth.uid() is not null then
+   new.google_base_projection:=null;new.google_etag:=null;new.google_pending_write:=null;new.google_conflict:=null;
+   new.google_claim_token:=null;new.google_claim_epoch:=0;new.google_claim_until:=null;
+   new.google_connection_id:=null;new.google_calendar_id:=null;new.google_event_id:=null;
+  end if;
+  return new;
+ end if;
+ decision:=auth.uid()=old.owner_user_id and public.fn_role_at_least(new.organization_id,'agent') and public.fn_support_write_allowed(new.organization_id)
+  and old.google_conflict is not null and new.google_conflict-'resolution'=old.google_conflict-'resolution'
+  and new.google_conflict->'resolution'->>'actor_id'=auth.uid()::text
+  and new.google_conflict->'resolution'->>'choice' in ('google','local','preserve_remote')
+  and old.google_conflict->>'revision'=old.revision::text and old.google_conflict->>'local_revision'=old.google_local_revision::text
+  and old.google_conflict->>'etag' is not distinct from old.google_etag;
+ if auth.uid() is not null and (row(new.google_synced_at,new.google_sync_error) is distinct from row(old.google_synced_at,old.google_sync_error)
+  or (new.google_next_attempt_at is distinct from old.google_next_attempt_at and not coalesce(auth.uid()=old.owner_user_id and public.fn_role_at_least(new.organization_id,'agent') and public.fn_support_write_allowed(new.organization_id)
+    and new.google_next_attempt_at<=clock_timestamp() and (old.google_conflict is null or decision),false))) then
+  raise exception 'google_metadata_private' using errcode='42501';end if;
+ if auth.uid() is not null and ((new.google_conflict is distinct from old.google_conflict and not coalesce(decision,false)) or row(new.google_base_projection,new.google_pending_write,new.google_claim_token,new.google_claim_epoch,new.google_claim_until,new.google_synced_local_revision,new.google_etag,new.google_connection_id,new.google_calendar_id,new.google_event_id)
+  is distinct from row(old.google_base_projection,old.google_pending_write,old.google_claim_token,old.google_claim_epoch,old.google_claim_until,old.google_synced_local_revision,old.google_etag,old.google_connection_id,old.google_calendar_id,old.google_event_id)) then
+  raise exception 'google_metadata_private' using errcode='42501';
+ end if;
+ changed:=row(new.starts_at,new.ends_at,new.time_zone,new.status='cancelled',new.title,new.description,new.location_kind,new.location_details,new.guest_email)
+  is distinct from row(old.starts_at,old.ends_at,old.time_zone,old.status='cancelled',old.title,old.description,old.location_kind,old.location_details,old.guest_email);
+ -- Única entrada que modifica base e domínio juntos é o núcleo service-only.
+ -- Não há GUC ou flag no body público que suprima revisão.
+ inbound:=row(new.title,new.description,new.location_kind,new.location_details,new.guest_email) is not distinct from row(old.title,old.description,old.location_kind,old.location_details,old.guest_email) and auth.uid() is null and new.google_base_projection is distinct from old.google_base_projection
+  and (new.google_base_projection->'shared'->>'starts_at')::timestamptz=new.starts_at
+  and (new.google_base_projection->'shared'->>'ends_at')::timestamptz=new.ends_at
+  and new.google_base_projection->'shared'->>'time_zone'=new.time_zone
+  and (new.google_base_projection->'shared'->>'cancelled')::boolean=(new.status='cancelled');
+ new.google_local_revision:=old.google_local_revision+case when changed and not coalesce(inbound,false) then 1 else 0 end;
+ if changed then new.google_next_attempt_at:=now(); end if;
+ return new;
+end;$$;
+revoke all on function public.fn_google_projection_stamp() from public,anon,authenticated;
+drop trigger if exists trg_google_projection_stamp on public.calendar_appointments;
+create trigger trg_google_projection_stamp before insert or update on public.calendar_appointments for each row execute function public.fn_google_projection_stamp();
+
+create or replace function public.fn_appointment_change_core(p_org uuid,p_id uuid,p_revision bigint,p_patch jsonb,p_remote boolean,p_base jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; contact uuid; origin jsonb; event_id uuid;
+begin
+ if p_remote and (auth.uid() is not null or (p_patch-'starts_at'-'ends_at'-'time_zone'-'status'-'cancellation_reason')<>'{}'::jsonb or coalesce(p_patch->>'status','cancelled')<>'cancelled') then raise exception 'google_patch_forbidden' using errcode='42501';end if;
+ if auth.uid() is not null and (not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org)) then raise exception 'appointment_forbidden' using errcode='42501'; end if;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact); end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if a.contact_id is distinct from contact or a.revision is distinct from p_revision then raise exception 'appointment_stale' using errcode='40001'; end if;
+ if p_remote and a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='40001';end if;
+ if a.status='cancelled' then raise exception 'appointment_cancelled' using errcode='22023'; end if;
+ if contact is not null then origin:=jsonb_build_object('kind','command','observed',public.fn_service_observe_command(p_org,contact)); end if;
+ update public.calendar_appointments set
+  google_base_projection=case when p_remote then p_base else google_base_projection end,
+  starts_at=case when p_patch?'starts_at' then (p_patch->>'starts_at')::timestamptz else starts_at end,
+  ends_at=case when p_patch?'ends_at' then (p_patch->>'ends_at')::timestamptz else ends_at end,
+  time_zone=coalesce(p_patch->>'time_zone',time_zone),
+  status=coalesce(p_patch->>'status',status),
+  cancelled_at=case when p_patch->>'status'='cancelled' then now() else cancelled_at end,
+  cancellation_reason=case when p_patch?'cancellation_reason' then p_patch->>'cancellation_reason' else cancellation_reason end,
+  notes=case when p_patch?'notes' then p_patch->>'notes' else notes end,
+  guest_email=case when p_patch?'guest_email' then p_patch->>'guest_email' else guest_email end,
+  outcome_message_id=case when p_patch?'outcome_message_id' then (p_patch->>'outcome_message_id')::uuid else null end,
+  confirmation_next_at=case when p_patch?'confirmation_next_at' then (p_patch->>'confirmation_next_at')::timestamptz else confirmation_next_at end
+ where organization_id=p_org and id=p_id returning * into a;
+ if p_patch?'confirmation_next_at' and (a.confirmation_next_at<=now() or a.confirmation_next_at>now()+interval '24 hours') then raise exception 'appointment_invalid_snooze' using errcode='22023'; end if;
+ update public.followup_enrollments set status='cancelled',cancel_reason='O compromisso mudou. Revise o próximo passo.',completed_at=now(),next_eval_at=null,claimed_until=null
+  where organization_id=p_org and appointment_id=p_id and appointment_revision<>a.revision and status in ('active','waiting_reply','paused_handoff','paused_manual');
+ update public.agent_inbox_items set status='resolved',resolved_at=now()
+  where organization_id=p_org and ref_kind='appointment' and ref_id=p_id and status='open'
+   and (appointment_revision<>a.revision or a.status in ('completed','no_show','cancelled') or p_patch?'confirmation_next_at');
+ if contact is not null and a.status='no_show' and a.outcome_recorded_at is not null and a.revision<>p_revision then
+  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
+   values(p_org,'appointment.outcome_confirmed','appointment',p_id,
+    jsonb_build_object('appointment_revision',a.revision,'service_origin',origin)) returning id into event_id;
+ end if;
+ return to_jsonb(a);
+end; $$;
+revoke all on function public.fn_appointment_change_core(uuid,uuid,bigint,jsonb,boolean,jsonb) from public,anon,authenticated;
+create or replace function public.fn_appointment_change(p_org uuid,p_id uuid,p_revision bigint,p_patch jsonb)
+returns jsonb language sql security definer set search_path=public as $$
+ select public.fn_appointment_change_core(p_org,p_id,p_revision,p_patch,false,null);
+$$;
+revoke all on function public.fn_appointment_change(uuid,uuid,bigint,jsonb) from public,anon;
+grant execute on function public.fn_appointment_change(uuid,uuid,bigint,jsonb) to authenticated,service_role;
+
+-- Helpers de fencing só internos. Epoch identifica aquisição; geração pertence
+-- ao ciclo de paginação e não muda durante heartbeat/reclaim.
+create or replace function public.fn_google_calendar_fence(p_org uuid,p_id uuid,p_claim jsonb,p_cursor jsonb default null)
+returns void language plpgsql security definer set search_path=public as $$
+declare c public.calendar_connection_calendars;
+begin
+ select * into c from public.calendar_connection_calendars where organization_id=p_org and id=p_id for update;
+ if not found or not c.available or c.access_role not in ('owner','writer','reader','writerWithoutPrivateAccess') or c.sync_claim_token is distinct from (p_claim->>'token')::uuid
+  or c.sync_claim_epoch::text is distinct from p_claim->>'epoch' or c.sync_claim_until<=clock_timestamp() or c.sync_claim_until is null
+  or (p_cursor is not null and c.sync_cursor is distinct from p_cursor) then raise exception 'google_stale' using errcode='40001'; end if;
+ if not exists(select 1 from public.calendar_connections x join public.user_organizations m on m.organization_id=x.organization_id and m.user_id=x.user_id
+  where x.organization_id=p_org and x.id=c.connection_id and m.revoked_at is null and x.status='healthy') then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+end;$$;
+revoke all on function public.fn_google_calendar_fence(uuid,uuid,jsonb,jsonb) from public,anon,authenticated;
+
+create or replace function public.fn_google_appointment(p_org uuid,p_id uuid,p_action text,p_args jsonb default '{}')
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; c public.calendar_connection_calendars; conn public.calendar_connections;
+ contact uuid; claim jsonb:=p_args->'claim'; result jsonb; b jsonb; changed boolean; remote jsonb;
+begin
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002';end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact);end if;
+ -- Seleção/reserva compartilham membership antes dos locks de calendário/appointment.
+ perform 1 from public.user_organizations m join public.calendar_appointments x on x.organization_id=m.organization_id and x.owner_user_id=m.user_id
+  where x.organization_id=p_org and x.id=p_id for update of m;
+ if p_args?'calendar_fence' then
+  perform public.fn_google_calendar_fence(p_org,(p_args->'calendar_fence'->>'id')::uuid,p_args->'calendar_fence'->'claim',p_args->'calendar_fence'->'cursor');
+ end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='40001';end if;
+ if contact is not null and exists(select 1 from public.contacts where organization_id=p_org and id=contact and is_anonymized) then
+  if p_action='claim' then return jsonb_build_object('terminal','redacted');end if;
+  raise exception 'google_contact_redacted' using errcode='42501';end if;
+ if not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=a.owner_user_id and revoked_at is null) then
+  raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ if p_action='claim' then
+  if a.google_claim_until>clock_timestamp() then return null;end if;
+  if a.google_event_id is null and a.status<>'cancelled' then
+   select k.* into c from public.calendar_connection_calendars k join public.calendar_connections x on x.id=k.connection_id and x.organization_id=k.organization_id
+    where k.organization_id=p_org and x.user_id=a.owner_user_id and k.is_destination;
+   if not found or (select count(*) from public.calendar_connection_calendars k join public.calendar_connections x on x.id=k.connection_id and x.organization_id=k.organization_id where k.organization_id=p_org and x.user_id=a.owner_user_id and k.is_destination)<>1 then
+    update public.calendar_appointments set google_sync_error='Escolha uma agenda de destino nas configurações.',google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return null;
+   end if;
+   if not c.available or c.access_role not in ('owner','writer') then
+    update public.calendar_appointments set google_sync_error='A agenda de destino não permite publicação. Confira o acesso nas configurações.',google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return null;end if;
+   update public.calendar_appointments set google_connection_id=c.connection_id,google_calendar_id=c.external_calendar_id,
+    google_event_id='deskcommapp'||replace(id::text,'-',''),google_pending_write='{"reservation":true}'::jsonb where organization_id=p_org and id=p_id returning * into a;
+  end if;
+  update public.calendar_appointments set google_claim_token=gen_random_uuid(),google_claim_epoch=google_claim_epoch+1,
+   google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
+ else
+  if a.google_claim_token is distinct from (claim->>'token')::uuid or a.google_claim_epoch::text is distinct from claim->>'epoch'
+   or a.google_claim_until is null or a.google_claim_until<=clock_timestamp() then raise exception 'google_stale' using errcode='40001';end if;
+  if p_action='renew' then
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'google_stale' using errcode='40001';end if;
+   if not exists(select 1 from public.calendar_connections x join public.calendar_connection_calendars k on k.organization_id=x.organization_id and k.connection_id=x.id
+    where x.organization_id=p_org and x.id=a.google_connection_id and x.user_id=a.owner_user_id and x.status='healthy' and k.external_calendar_id=a.google_calendar_id and k.available and k.access_role in ('writer','owner')) then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+   update public.calendar_appointments set google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
+  elsif p_action='release' then
+   update public.calendar_appointments set google_claim_token=null,google_claim_until=null where organization_id=p_org and id=p_id;return 'true';
+  else
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision'
+    or a.google_event_id is distinct from p_args->>'event_id' or a.google_connection_id::text is distinct from p_args->>'connection_id'
+    or a.google_calendar_id is distinct from p_args->>'calendar_id' then raise exception 'google_stale' using errcode='40001';end if;
+   if p_action='error' then
+    update public.calendar_appointments set google_sync_error=left(p_args->>'message',200),google_next_attempt_at=now()+interval '15 minutes'
+     where organization_id=p_org and id=p_id;return 'true';end if;
+   if a.google_event_id is not null then
+    select * into conn from public.calendar_connections where organization_id=p_org and id=a.google_connection_id and user_id=a.owner_user_id;
+    select * into c from public.calendar_connection_calendars where organization_id=p_org and connection_id=a.google_connection_id and external_calendar_id=a.google_calendar_id;
+    if conn.id is null or conn.status<>'healthy' or c.id is null or not c.available then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+   end if;
+   if p_action='prepare' then
+    if c.access_role not in ('owner','writer') or (a.google_pending_write is not null and a.google_pending_write<>'{"reservation":true}'::jsonb) or a.google_conflict is not null then raise exception 'google_write_unavailable' using errcode='40001';end if;
+    update public.calendar_appointments set google_pending_write=p_args->'operation' where organization_id=p_org and id=p_id;return 'true';
+   elsif p_action='idle' then
+    update public.calendar_appointments set google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return 'true';
+   elsif p_action='commit' then
+    result:=p_args->'result'; b:=result->'base';remote:=result->'remote';
+    if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='40001';end if;
+    if result?'apply_remote' then
+     if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='40001';end if;
+     if not coalesce((remote->>'cancelled')::boolean,false) and exists(select 1 from public.calendar_appointments other
+      where other.organization_id=p_org and other.owner_user_id=a.owner_user_id and other.id<>a.id and other.status in ('pending','confirmed')
+      and other.starts_at<(remote->>'ends_at')::timestamptz and other.ends_at>(remote->>'starts_at')::timestamptz) then
+      return jsonb_build_object('overlap',true);end if;
+     changed:=row(a.starts_at,a.ends_at,a.time_zone,a.status='cancelled') is distinct from row((remote->>'starts_at')::timestamptz,(remote->>'ends_at')::timestamptz,remote->>'time_zone',(remote->>'cancelled')::boolean);
+     perform public.fn_appointment_change_core(p_org,p_id,a.revision,
+      jsonb_build_object('starts_at',remote->>'starts_at','ends_at',remote->>'ends_at','time_zone',remote->>'time_zone')||
+      case when (remote->>'cancelled')::boolean then '{"status":"cancelled","cancellation_reason":"Cancelado no Google"}'::jsonb else '{}'::jsonb end,true,b);
+     if changed then
+      insert into public.crm_lead_activities(organization_id,lead_id,contact_id,type,source_module,source_id,actor_kind,reason,payload)
+       select p_org,l.lead_id,a.contact_id,case when (remote->>'cancelled')::boolean then 'appointment_cancelled' else 'appointment_rescheduled' end,
+        'agenda',p_id,'system',case when (remote->>'cancelled')::boolean then 'Cancelado no Google' else 'Remarcado no Google' end,jsonb_build_object('origin','google','appointment_id',p_id,'resolution_actor_id',a.google_conflict->'resolution'->>'actor_id')
+       from public.crm_lead_links l where l.organization_id=p_org and l.target_id=p_id and l.target_kind='appointment' group by l.lead_id;
+     end if;
+    end if;
+    update public.calendar_appointments set
+     google_base_projection=case when result?'base' then b else google_base_projection end,
+     google_etag=case when result?'etag' then result->>'etag' else google_etag end,
+     google_conflict=case when result?'conflict' then nullif(result->'conflict','null'::jsonb) else google_conflict end,
+     google_pending_write=case when coalesce((result->>'retry_creation')::boolean,false) and a.google_base_projection is null and a.google_pending_write->>'method'='POST'
+      then '{"reservation":true}'::jsonb when coalesce((result->>'clear_pending')::boolean,false) then null else google_pending_write end,
+     google_synced_local_revision=case when coalesce((result->>'ack')::boolean,false) then a.google_local_revision else google_synced_local_revision end,
+     google_synced_at=case when coalesce((result->>'ack')::boolean,false) then now() else google_synced_at end,
+     google_sync_error=null,google_next_attempt_at=now()+interval '5 minutes'
+     where organization_id=p_org and id=p_id returning * into a;
+   else raise exception 'google_action_invalid' using errcode='22023';end if;
+  end if;
+ end if;
+ return to_jsonb(a)||jsonb_build_object('revision',a.revision::text,'google_local_revision',a.google_local_revision::text,
+  'google_synced_local_revision',a.google_synced_local_revision::text,'claim',jsonb_build_object('token',a.google_claim_token,'epoch',a.google_claim_epoch::text,'lease_until',a.google_claim_until));
+end;$$;
+revoke all on function public.fn_google_appointment(uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_google_appointment(uuid,uuid,text,jsonb) to service_role;
+
+create or replace function public.fn_google_calendar(p_org uuid,p_id uuid,p_action text,p_args jsonb default '{}')
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.calendar_connection_calendars; cur jsonb; it jsonb; gen uuid; rebuild_full boolean; token text;
+begin
+ select * into c from public.calendar_connection_calendars where organization_id=p_org and id=p_id for update;
+ if not found then raise exception 'google_calendar_not_found' using errcode='P0002';end if;
+ if not exists(select 1 from public.calendar_connections x join public.user_organizations m on m.organization_id=x.organization_id and m.user_id=x.user_id
+  where x.organization_id=p_org and x.id=c.connection_id and m.revoked_at is null and x.status='healthy') then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+ if p_action='claim' then
+  if c.sync_claim_until>clock_timestamp() or not c.available then return null;end if;
+  cur:=c.sync_cursor;
+  if cur is null then
+   rebuild_full:=c.sync_token is null or c.sync_coverage is null or (c.sync_coverage->>'completed_at')::timestamptz<now()-interval '24 hours';
+   cur:=jsonb_build_object('generation',gen_random_uuid(),'mode',case when rebuild_full then 'full' else 'incremental' end,
+    'base_sync_token',case when rebuild_full then null else c.sync_token end,'page_token',null,
+    'window_start',case when rebuild_full then now()-interval '1 day' else (c.sync_coverage->>'window_start')::timestamptz end,
+    'window_end',case when rebuild_full then now()+interval '90 days' else (c.sync_coverage->>'window_end')::timestamptz end);
+  end if;
+  update public.calendar_connection_calendars set sync_claim_token=gen_random_uuid(),sync_claim_epoch=sync_claim_epoch+1,
+   sync_claim_until=clock_timestamp()+interval '90 seconds',sync_cursor=cur where organization_id=p_org and id=p_id returning * into c;
+ else
+  perform public.fn_google_calendar_fence(p_org,p_id,p_args->'claim',p_args->'cursor');
+  if p_action='renew' then
+   update public.calendar_connection_calendars set sync_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into c;
+  elsif p_action='release' then
+   update public.calendar_connection_calendars set sync_claim_token=null,sync_claim_until=null where organization_id=p_org and id=p_id;return 'true';
+  elsif p_action='error' then
+   update public.calendar_connection_calendars set sync_error=left(p_args->>'message',200),sync_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return 'true';
+  elsif p_action='reset' then
+   update public.calendar_connection_calendars set sync_token=null,sync_cursor=null,sync_error='A ocupação está desatualizada. Reconstruindo a leitura.',sync_next_attempt_at=now()
+    where organization_id=p_org and id=p_id;return 'true';
+  elsif p_action='item' then
+   it:=p_args->'item';gen:=(c.sync_cursor->>'generation')::uuid;
+   -- O vínculo é resolvido antes do cache/anti-eco, também quando só chega id.
+   if exists(select 1 from public.calendar_appointments where organization_id=p_org and google_connection_id=c.connection_id and google_calendar_id=c.external_calendar_id and google_event_id=it->>'external_event_id') then
+    delete from public.calendar_external_events where organization_id=p_org and connection_id=c.connection_id and external_calendar_id=c.external_calendar_id and external_event_id=it->>'external_event_id';
+    return 'true';
+   end if;
+   insert into public.calendar_external_events(organization_id,connection_id,external_calendar_id,external_event_id,title,starts_at,ends_at,status,transparency,is_all_day,seen_generation,recurring_event_id,original_start_time)
+    values(p_org,c.connection_id,c.external_calendar_id,it->>'external_event_id',null,(it->>'starts_at')::timestamptz,(it->>'ends_at')::timestamptz,
+     it->>'status',coalesce(it->>'transparency','opaque'),coalesce((it->>'is_all_day')::boolean,false),gen,it->>'recurring_event_id',it->'original_start_time')
+    on conflict(organization_id,connection_id,external_calendar_id,external_event_id) do update set title=null,starts_at=excluded.starts_at,ends_at=excluded.ends_at,
+     status=excluded.status,transparency=excluded.transparency,is_all_day=excluded.is_all_day,seen_generation=excluded.seen_generation,
+     recurring_event_id=coalesce(excluded.recurring_event_id,calendar_external_events.recurring_event_id),original_start_time=coalesce(excluded.original_start_time,calendar_external_events.original_start_time);
+   return 'true';
+  elsif p_action='page' then
+   token:=p_args->>'next_page_token';
+   if token is not null and token=c.sync_cursor->>'page_token' then raise exception 'google_cursor_no_progress' using errcode='22023';end if;
+   if token is null then
+    if coalesce(p_args->>'next_sync_token','')='' then raise exception 'google_checkpoint_missing' using errcode='22023';end if;
+    if c.sync_cursor->>'mode'='full' then
+     delete from public.calendar_external_events where organization_id=p_org and connection_id=c.connection_id and external_calendar_id=c.external_calendar_id
+      and starts_at<(c.sync_cursor->>'window_end')::timestamptz and ends_at>(c.sync_cursor->>'window_start')::timestamptz
+      and seen_generation is distinct from (c.sync_cursor->>'generation')::uuid and status<>'cancelled';
+    end if;
+    update public.calendar_connection_calendars set sync_token=p_args->>'next_sync_token',sync_cursor=null,last_sync_at=now(),sync_error=null,
+     sync_coverage=case when c.sync_cursor->>'mode'='full' then c.sync_cursor-'page_token'-'base_sync_token'-'mode'||jsonb_build_object('completed_at',now()) else c.sync_coverage end,
+     sync_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id returning * into c;
+   else
+    update public.calendar_connection_calendars set sync_cursor=jsonb_set(sync_cursor,'{page_token}',to_jsonb(token)),sync_next_attempt_at=now() where organization_id=p_org and id=p_id returning * into c;
+   end if;
+  else raise exception 'google_action_invalid' using errcode='22023';end if;
+ end if;
+ return to_jsonb(c)||jsonb_build_object('claim',jsonb_build_object('token',c.sync_claim_token,'epoch',c.sync_claim_epoch::text,'lease_until',c.sync_claim_until));
+end;$$;
+revoke all on function public.fn_google_calendar(uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_google_calendar(uuid,uuid,text,jsonb) to service_role;
+
+-- Catálogo completo: ausências somente depois de todas as páginas recebidas.
+-- Uma mesma membership cerca seleção, catálogo e primeira reserva.
+create or replace function public.fn_google_catalog(p_org uuid,p_connection uuid,p_items jsonb,p_revision text)
+returns void language plpgsql security definer set search_path=public as $$
+declare conn public.calendar_connections; it jsonb; fresh boolean;
+begin
+ select * into conn from public.calendar_connections where organization_id=p_org and id=p_connection;
+ if not found then raise exception 'google_connection_unavailable' using errcode='P0002';end if;
+ perform 1 from public.user_organizations where organization_id=p_org and user_id=conn.user_id and revoked_at is null for update;
+ if not found then raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ select * into conn from public.calendar_connections where organization_id=p_org and id=p_connection;
+ if conn.status<>'healthy' then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+ if conn.calendar_selection_revision::text is distinct from p_revision then raise exception 'google_selection_stale' using errcode='40001';end if;
+ fresh:=(select count(*) from public.calendar_connections where organization_id=p_org and user_id=conn.user_id and provider='google_calendar')=1 and conn.calendar_selection_revision=0 and not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections x on x.organization_id=k.organization_id and x.id=k.connection_id where k.organization_id=p_org and x.user_id=conn.user_id and k.is_destination);
+ for it in select value from jsonb_array_elements(p_items) loop
+  insert into public.calendar_connection_calendars(organization_id,connection_id,external_calendar_id,name,time_zone,is_primary,access_role,available,catalog_checked_at,counts_for_conflicts,is_destination)
+   values(p_org,p_connection,it->>'id',coalesce(it->>'summaryOverride',it->>'summary',it->>'id'),it->>'timeZone',coalesce((it->>'primary')::boolean,false),it->>'accessRole',not coalesce((it->>'deleted')::boolean,false),now(),
+    fresh and coalesce((it->>'primary')::boolean,false),false)
+   on conflict(organization_id,connection_id,external_calendar_id) do update set name=excluded.name,time_zone=excluded.time_zone,is_primary=excluded.is_primary,
+    access_role=excluded.access_role,available=excluded.available,catalog_checked_at=excluded.catalog_checked_at,sync_next_attempt_at=now();
+ end loop;
+ update public.calendar_connection_calendars set available=false,catalog_checked_at=now() where organization_id=p_org and connection_id=p_connection
+  and not exists(select 1 from jsonb_array_elements(p_items) v where v->>'id'=external_calendar_id);
+ if fresh then
+  update public.calendar_connection_calendars set is_destination=true where organization_id=p_org and connection_id=p_connection and is_primary and available and access_role in ('owner','writer');
+ end if;
+ update public.calendar_connections set calendar_selection_revision=calendar_selection_revision+1 where organization_id=p_org and id=p_connection;
+end;$$;
+revoke all on function public.fn_google_catalog(uuid,uuid,jsonb,text) from public,anon,authenticated;
+grant execute on function public.fn_google_catalog(uuid,uuid,jsonb,text) to service_role;
+
+create or replace function public.fn_google_selection(p_org uuid,p_revisions jsonb,p_sources uuid[],p_destination uuid)
+returns void language plpgsql security definer set search_path=public as $$
+declare actor uuid:=auth.uid(); expected jsonb; actual jsonb;
+begin
+ if actor is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) then raise exception 'google_selection_forbidden' using errcode='42501';end if;
+ perform 1 from public.user_organizations where organization_id=p_org and user_id=actor and revoked_at is null for update;
+ if not found then raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ select jsonb_agg(value order by value->>'connection_id') into expected from jsonb_array_elements(p_revisions);
+ select jsonb_agg(jsonb_build_object('connection_id',id,'revision',calendar_selection_revision::text) order by id::text) into actual from public.calendar_connections where organization_id=p_org and user_id=actor and provider='google_calendar';
+ if actual is distinct from expected then raise exception 'google_selection_stale' using errcode='40001';end if;
+ if not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections c on c.id=k.connection_id and c.organization_id=k.organization_id
+  where k.organization_id=p_org and k.id=p_destination and c.user_id=actor and c.status='healthy' and k.available and k.access_role in ('owner','writer')) then raise exception 'google_destination_unavailable' using errcode='42501';end if;
+ if exists(select 1 from unnest(p_sources) selected(id) where not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections c on c.id=k.connection_id and c.organization_id=k.organization_id
+  where k.organization_id=p_org and k.id=selected.id and c.user_id=actor and c.status='healthy' and k.available and k.access_role in ('owner','writer','reader','writerWithoutPrivateAccess'))) then raise exception 'google_source_unavailable' using errcode='42501';end if;
+ update public.calendar_connection_calendars k set is_destination=false from public.calendar_connections c where k.organization_id=p_org and c.organization_id=p_org and k.connection_id=c.id and c.user_id=actor;
+ update public.calendar_connection_calendars k set is_destination=k.id=p_destination,counts_for_conflicts=k.id=any(p_sources),sync_next_attempt_at=now() from public.calendar_connections c where k.organization_id=p_org and c.organization_id=p_org and k.connection_id=c.id and c.user_id=actor;
+ update public.calendar_connections set calendar_selection_revision=calendar_selection_revision+1 where organization_id=p_org and user_id=actor and provider='google_calendar';
+end;$$;
+revoke all on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) from public,anon;
+grant execute on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) to authenticated;
+
+-- Leitura derivada: seleção vale nos três leitores, mesmo com cache antigo.
+create or replace function public.fn_google_counts_for_conflicts(p_org uuid,p_connection uuid,p_calendar text)
+returns boolean language sql stable security definer set search_path=public as $$
+ -- ⚠️ FALHA ABERTO na AUSÊNCIA de catálogo, e a direção é deliberada.
+ -- A forma `exists(... and counts_for_conflicts)` exigia linha em
+ -- calendar_connection_calendars para o evento contar. Antes desta migration os
+ -- três leitores (grade, semente da página e o motor de horários livres) liam
+ -- `calendar_external_events` DIRETO: toda ocupação contava. Numa conexão cujo
+ -- catálogo ainda não foi montado — ou cujo calendário saiu do catálogo com os
+ -- eventos ainda gravados — a ocupação sumia da grade E deixava de bloquear o
+ -- horário. O erro barato é mostrar "Ocupado" a mais; o caro é marcar por cima
+ -- de uma consulta que existe. A negativa só vale quando alguém a declarou.
+ select (auth.uid() is null or p_org in (select public.fn_user_org_ids())) and not exists(
+  select 1 from public.calendar_connection_calendars where organization_id=p_org and connection_id=p_connection and external_calendar_id=p_calendar and not counts_for_conflicts);
+$$;
+revoke all on function public.fn_google_counts_for_conflicts(uuid,uuid,text) from public,anon;
+grant execute on function public.fn_google_counts_for_conflicts(uuid,uuid,text) to authenticated,service_role;
+create or replace view public.calendar_selected_external_events with (security_invoker=true) as
+ select e.* from public.calendar_external_events e where e.status<>'cancelled'
+ and public.fn_google_counts_for_conflicts(e.organization_id,e.connection_id,e.external_calendar_id);
+revoke all on public.calendar_selected_external_events from public,anon;
+grant select on public.calendar_selected_external_events to authenticated,service_role;
+
+-- Anonimização e commit disputam a MESMA linha de appointment. Quem chegar
+-- depois vê redação ou tem o resultado apagado; não reidrata snapshot tardio.
+create or replace function public.fn_google_redact_contact()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.is_anonymized then
+  update public.calendar_appointments set google_base_projection=null,google_conflict=null,google_pending_write=null,
+   google_claim_epoch=google_claim_epoch+1,google_claim_token=null,google_claim_until=null,google_etag=null,
+   google_sync_error='Contato anonimizado. Sincronização interrompida.',guest_email=null
+   where organization_id=new.organization_id and contact_id=new.id;
+ end if;return new;
+end;$$;
+revoke all on function public.fn_google_redact_contact() from public,anon,authenticated;
+drop trigger if exists trg_google_redact_contact on public.contacts;
+create trigger trg_google_redact_contact after update of is_anonymized on public.contacts for each row when(new.is_anonymized is true) execute function public.fn_google_redact_contact();
+-- Backlog sem consumer não era entrega. A revisão durável é a única pendência.
+update public.event_log set status='done',updated_at=now(),last_error='superseded: Google acompanha a revisão atual do compromisso'
+ where event_type='agenda.appointment.push_to_google' and status in ('pending','processing');
+notify pgrst,'reload schema';
+
+create or replace function public.fn_google_resolve(p_org uuid,p_id uuid,p_revision text,p_local_revision text,p_etag text,p_choice text)
+returns void language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; contact uuid;
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) then raise exception 'google_resolution_forbidden' using errcode='42501';end if;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if contact is not null then perform public.fn_service_lock(p_org,contact);end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if not found or a.owner_user_id is distinct from auth.uid() then raise exception 'google_resolution_forbidden' using errcode='42501';end if;
+ if a.revision::text is distinct from p_revision or a.google_local_revision::text is distinct from p_local_revision
+  or a.google_etag is distinct from p_etag then raise exception 'google_stale' using errcode='40001';end if;
+ if p_choice='retry' then
+  if a.google_conflict is not null then raise exception 'google_conflict_requires_choice' using errcode='40001';end if;
+  update public.calendar_appointments set google_next_attempt_at=now() where organization_id=p_org and id=p_id;
+ else
+  if p_choice not in ('google','local','preserve_remote') or a.google_conflict is null then raise exception 'google_choice_invalid' using errcode='22023';end if;
+  -- O trigger reconhece somente esta forma autenticada: o corpo da comparação
+  -- e as revisões não mudam, actor_id é auth.uid(), não input do browser.
+  update public.calendar_appointments set google_conflict=google_conflict||jsonb_build_object('resolution',jsonb_build_object('choice',p_choice,'actor_id',auth.uid())),google_next_attempt_at=now()
+   where organization_id=p_org and id=p_id;
+ end if;
+end;$$;
+revoke all on function public.fn_google_resolve(uuid,uuid,text,text,text,text) from public,anon;
+grant execute on function public.fn_google_resolve(uuid,uuid,text,text,text,text) to authenticated;
+
+notify pgrst,'reload schema';
+
+create or replace function public.fn_google_coverage(p_org uuid,p_owner uuid,p_start timestamptz,p_end timestamptz)
+returns boolean language sql stable security definer set search_path=public as $$
+ select case when auth.uid() is not null and p_org not in(select public.fn_user_org_ids()) then true else exists(
+  select 1 from public.calendar_connection_calendars k join public.calendar_connections c on c.organization_id=k.organization_id and c.id=k.connection_id
+  where k.organization_id=p_org and c.user_id=p_owner and k.counts_for_conflicts and (
+   not k.available or c.status<>'healthy' or k.access_role not in ('owner','writer','reader','writerWithoutPrivateAccess') or k.sync_coverage is null or k.sync_error is not null or k.last_sync_at is null or k.last_sync_at<now()-interval '30 minutes'
+   or (k.sync_coverage->>'window_start')::timestamptz>p_start or (k.sync_coverage->>'window_end')::timestamptz<p_end)) end;
+$$;
+revoke all on function public.fn_google_coverage(uuid,uuid,timestamptz,timestamptz) from public,anon;
+grant execute on function public.fn_google_coverage(uuid,uuid,timestamptz,timestamptz) to authenticated,service_role;
+notify pgrst,'reload schema';
+
+-- Elegibilidade derivada do titular canônico, ANTES do limite do cron.
+-- Preservar a tupla redigida impede eco; não significa autorizar novo GET.
+create or replace view public.calendar_google_reconcilable_appointments with (security_invoker=true) as
+ select a.* from public.calendar_appointments a where not exists(
+  select 1 from public.contacts c where c.organization_id=a.organization_id and c.id=a.contact_id and c.is_anonymized);
+revoke all on public.calendar_google_reconcilable_appointments from public,anon,authenticated;
+grant select on public.calendar_google_reconcilable_appointments to service_role;
+notify pgrst,'reload schema';
+
+-- ---- fim Google 0225 ----
+
+
+-- ---- Google Meet e entrega transacional (migration 0226) ----
+-- 0226 — conferência e entrega são recibos distintos; mesma identidade Google/fila.
+alter table public.calendar_connection_calendars add column if not exists allowed_conference_types text[];
+alter table public.calendar_appointments
+ add column if not exists meeting_state text not null default 'not_requested' check(meeting_state in ('not_requested','pending','ready','failed','cancelled')),
+ add column if not exists meeting_request_id uuid,
+ add column if not exists meeting_requested_at timestamptz,
+ add column if not exists meeting_received_at timestamptz,
+ add column if not exists meeting_ready_at timestamptz,
+ add column if not exists meeting_attempts integer not null default 0,
+ add column if not exists meeting_last_error text,
+ add column if not exists meeting_next_attempt_at timestamptz,
+ add column if not exists meeting_delivery jsonb not null default '{"state":"none"}',
+ add column if not exists meeting_delivery_job_id uuid references public.job_queue(id) on delete set null;
+create index if not exists calendar_meet_pending_idx on public.calendar_appointments(meeting_next_attempt_at)
+ where meeting_state='pending';
+-- job_queue_kind_check e job_queue_turn_needs_contact: vocabulário completo
+-- consolidado no bloco original acima. A migration 0226 standalone mantém
+-- o upgrade; repetir os checks aqui quebraria update com jobs já enfileirados.
+
+create or replace function public.fn_meet_boundary_current(b jsonb)
+returns boolean language sql stable security definer set search_path=public as $$
+ select coalesce(exists(select 1 from public.conversations c left join public.demandas d on d.id=c.current_demanda_id and d.organization_id=c.organization_id and d.contact_id=c.contact_id
+  where c.organization_id::text=b->>'organization_id' and c.contact_id::text=b->>'contact_id' and c.id::text=b->>'conversation_id'
+   and c.service_revision::text=b->>'service_revision' and c.current_demanda_id::text is not distinct from b->>'demanda_id'
+   and d.revision::text is not distinct from b->>'demanda_revision' and d.fechada_em is null and not c.is_group
+   and c.status not in ('closed','resolved','archived')),false);
+$$;
+revoke all on function public.fn_meet_boundary_current(jsonb) from public,anon,authenticated;
+grant execute on function public.fn_meet_boundary_current(jsonb) to service_role;
+
+-- INVOKER: distingue escrita direta authenticated de chamadas pelas RPCs definer
+-- que reconferem ator/claim. Não usa flag/GUC fornecida pelo cliente como bypass.
+create or replace function public.fn_meet_stamp()
+returns trigger language plpgsql set search_path=public as $$
+declare redacted boolean; j public.job_queue; b jsonb;
+begin
+ if current_user in ('authenticated','anon') then
+  if tg_op='INSERT' then
+   if new.meeting_delivery<>'{"state":"none"}'::jsonb or new.meeting_request_id is not null or new.meeting_url is not null or new.meeting_state<>'not_requested' or new.meeting_requested_at is not null or new.meeting_received_at is not null or new.meeting_ready_at is not null or new.meeting_attempts<>0 or new.meeting_last_error is not null or new.meeting_next_attempt_at is not null or new.meeting_delivery_job_id is not null then raise exception 'meet_metadata_private' using errcode='42501';end if;
+  elsif row(new.meeting_state,new.meeting_request_id,new.meeting_requested_at,new.meeting_received_at,new.meeting_ready_at,new.meeting_attempts,new.meeting_last_error,new.meeting_next_attempt_at,new.meeting_delivery,new.meeting_delivery_job_id,new.meeting_url)
+   is distinct from row(old.meeting_state,old.meeting_request_id,old.meeting_requested_at,old.meeting_received_at,old.meeting_ready_at,old.meeting_attempts,old.meeting_last_error,old.meeting_next_attempt_at,old.meeting_delivery,old.meeting_delivery_job_id,old.meeting_url) then
+   raise exception 'meet_metadata_private' using errcode='42501';
+  end if;
+ end if;
+ select is_anonymized into redacted from public.contacts where id=new.contact_id and organization_id=new.organization_id;
+ if (redacted or new.status='cancelled' or new.location_kind<>'google_meet') and (new.location_kind='google_meet' or new.meeting_state<>'not_requested') then
+  if new.location_kind='google_meet' or new.meeting_state<>'not_requested' or new.meeting_requested_at is not null or new.meeting_received_at is not null or new.meeting_ready_at is not null or new.meeting_attempts<>0 or new.meeting_last_error is not null or new.meeting_next_attempt_at is not null or new.meeting_delivery_job_id is not null then new.meeting_state:='cancelled';end if;
+  new.meeting_request_id:=null;new.meeting_url:=null;new.meeting_last_error:=null;new.meeting_next_attempt_at:=null;
+  new.meeting_delivery:=jsonb_build_object('state',case when redacted then 'blocked' else 'stale' end);
+ elsif new.location_kind='google_meet' and new.meeting_state='not_requested' then
+  new.meeting_state:='pending';new.meeting_request_id:=gen_random_uuid();new.meeting_next_attempt_at:=now();
+ end if;
+ if tg_op='INSERT' and new.meeting_delivery ? 'booking_claim' then
+  perform public.fn_service_lock(new.organization_id,new.contact_id);
+  select * into j from public.job_queue where organization_id=new.organization_id and id=(new.meeting_delivery->>'source_operation_id')::uuid for update;
+  b:=new.meeting_delivery->'service_boundary';
+  if j.contact_id is distinct from new.contact_id or j.status is distinct from 'running' or j.kind not in ('inbound_turn','followup_turn','case_reply_turn','operator_turn')
+   or j.locked_by is distinct from new.meeting_delivery->'booking_claim'->>'worker_id' or j.locked_at is distinct from (new.meeting_delivery->'booking_claim'->>'acquired_at')::timestamptz
+   or j.payload->'service_boundary' is distinct from b or not public.fn_meet_boundary_current(b) or b->>'conversation_id' is distinct from new.conversation_id::text then
+   raise exception 'meet_booking_stale' using errcode='40001';end if;
+  if new.meeting_delivery->'authorized_by'->>'kind' is distinct from 'ai_agent' then raise exception 'meet_booking_origin_invalid' using errcode='42501';end if;
+  new.meeting_delivery:=new.meeting_delivery-'booking_claim';
+ end if;
+ if new.meeting_delivery ? 'generation' and (tg_op='INSERT' or new.meeting_delivery->>'generation' is distinct from old.meeting_delivery->>'generation') then
+  new.meeting_delivery:=new.meeting_delivery||jsonb_build_object('channel_session_id',(select channel_session_id from public.conversations where organization_id=new.organization_id and contact_id=new.contact_id and id::text=new.meeting_delivery->'service_boundary'->>'conversation_id'));
+ end if;
+ if new.meeting_state='pending' and new.meeting_next_attempt_at is not null then new.google_next_attempt_at:=least(new.google_next_attempt_at,new.meeting_next_attempt_at);end if;
+ return new;
+end;$$;
+revoke all on function public.fn_meet_stamp() from public,anon,authenticated;
+drop trigger if exists trg_zz_meet_stamp on public.calendar_appointments;
+create trigger trg_zz_meet_stamp before insert or update on public.calendar_appointments for each row execute function public.fn_meet_stamp();
+
+create or replace function public.fn_meet_observe(p_org uuid,p_id uuid,p_args jsonb)
+returns void language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; r jsonb:=p_args->'result';
+begin
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if not found or a.status='cancelled' or a.location_kind<>'google_meet' or a.meeting_request_id is distinct from (p_args->>'meeting_request_id')::uuid
+  or a.google_claim_token is distinct from (p_args->'claim'->>'token')::uuid or a.google_claim_epoch::text is distinct from p_args->'claim'->>'epoch'
+  or a.google_claim_until<=clock_timestamp() or a.google_claim_until is null or a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'meet_stale' using errcode='40001';end if;
+ if r->>'state' is null or r->>'state' not in ('pending','ready','failed') or (r->>'error' is not null and r->>'error' not in ('google_failure','unsupported','unknown','invalid')) then raise exception 'meet_invalid' using errcode='22023';end if;
+ if r->>'state'='ready' and (r->>'url' is null or r->>'url' !~ '^https://meet[.]google[.]com/[a-zA-Z0-9-]+/?$') then raise exception 'meet_invalid_url' using errcode='22023';end if;
+ update public.calendar_appointments set
+  meeting_state=case when r->>'state'='pending' and meeting_attempts>=19 then 'failed' else r->>'state' end,
+  meeting_url=case when r->>'state'='ready' then r->>'url' else null end,
+  meeting_last_error=case when r->>'state'='pending' and meeting_attempts>=19 then 'unknown' else r->>'error' end,
+  meeting_received_at=case when coalesce((r->>'received')::boolean,false) then coalesce(meeting_received_at,now()) else meeting_received_at end,
+  meeting_ready_at=case when r->>'state'='ready' then coalesce(meeting_ready_at,now()) else null end,
+  meeting_attempts=meeting_attempts+1,
+  meeting_next_attempt_at=now()+make_interval(secs=>least(900,15*power(2,least(meeting_attempts,6)))::double precision+floor(random()*5)),
+  google_etag=coalesce(r->>'etag',google_etag)
+ where organization_id=p_org and id=p_id;
+end;$$;
+revoke all on function public.fn_meet_observe(uuid,uuid,jsonb) from public,anon,authenticated;
+revoke all on function public.fn_meet_observe(uuid,uuid,jsonb) from service_role;
+
+create or replace function public.fn_google_appointment(p_org uuid,p_id uuid,p_action text,p_args jsonb default '{}')
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; c public.calendar_connection_calendars; conn public.calendar_connections;
+ contact uuid; claim jsonb:=p_args->'claim'; result jsonb; b jsonb; changed boolean; remote jsonb;
+begin
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002';end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact);end if;
+ -- Seleção/reserva compartilham membership antes dos locks de calendário/appointment.
+ perform 1 from public.user_organizations m join public.calendar_appointments x on x.organization_id=m.organization_id and x.owner_user_id=m.user_id
+  where x.organization_id=p_org and x.id=p_id for update of m;
+ if p_args?'calendar_fence' then
+  perform public.fn_google_calendar_fence(p_org,(p_args->'calendar_fence'->>'id')::uuid,p_args->'calendar_fence'->'claim',p_args->'calendar_fence'->'cursor');
+ end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='40001';end if;
+ if contact is not null and exists(select 1 from public.contacts where organization_id=p_org and id=contact and is_anonymized) then
+  if p_action='claim' then return jsonb_build_object('terminal','redacted');end if;
+  raise exception 'google_contact_redacted' using errcode='42501';end if;
+ if not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=a.owner_user_id and revoked_at is null) then
+  raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ if p_action='claim' then
+  if a.google_claim_until>clock_timestamp() then return null;end if;
+  if a.google_event_id is null and a.status<>'cancelled' then
+   select k.* into c from public.calendar_connection_calendars k join public.calendar_connections x on x.id=k.connection_id and x.organization_id=k.organization_id
+    where k.organization_id=p_org and x.user_id=a.owner_user_id and k.is_destination;
+   if not found or (select count(*) from public.calendar_connection_calendars k join public.calendar_connections x on x.id=k.connection_id and x.organization_id=k.organization_id where k.organization_id=p_org and x.user_id=a.owner_user_id and k.is_destination)<>1 then
+    update public.calendar_appointments set google_sync_error='Escolha uma agenda de destino nas configurações.',google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return null;
+   end if;
+   if not c.available or c.access_role not in ('owner','writer') then
+    update public.calendar_appointments set google_sync_error='A agenda de destino não permite publicação. Confira o acesso nas configurações.',google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return null;end if;
+   update public.calendar_appointments set google_connection_id=c.connection_id,google_calendar_id=c.external_calendar_id,
+    google_event_id='deskcommapp'||replace(id::text,'-',''),google_pending_write='{"reservation":true}'::jsonb where organization_id=p_org and id=p_id returning * into a;
+  end if;
+  update public.calendar_appointments set google_claim_token=gen_random_uuid(),google_claim_epoch=google_claim_epoch+1,
+   google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
+ else
+  if a.google_claim_token is distinct from (claim->>'token')::uuid or a.google_claim_epoch::text is distinct from claim->>'epoch'
+   or a.google_claim_until is null or a.google_claim_until<=clock_timestamp() then raise exception 'google_stale' using errcode='40001';end if;
+  if p_action='renew' then
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'google_stale' using errcode='40001';end if;
+   if not exists(select 1 from public.calendar_connections x join public.calendar_connection_calendars k on k.organization_id=x.organization_id and k.connection_id=x.id
+    where x.organization_id=p_org and x.id=a.google_connection_id and x.user_id=a.owner_user_id and x.status='healthy' and k.external_calendar_id=a.google_calendar_id and k.available and k.access_role in ('writer','owner')) then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+   update public.calendar_appointments set google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
+  elsif p_action='release' then
+   update public.calendar_appointments set google_claim_token=null,google_claim_until=null where organization_id=p_org and id=p_id;return 'true';
+  else
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision'
+    or a.google_event_id is distinct from p_args->>'event_id' or a.google_connection_id::text is distinct from p_args->>'connection_id'
+    or a.google_calendar_id is distinct from p_args->>'calendar_id' then raise exception 'google_stale' using errcode='40001';end if;
+   if p_action='error' then
+    update public.calendar_appointments set google_sync_error=left(p_args->>'message',200),google_next_attempt_at=now()+interval '15 minutes',
+     meeting_state=case when meeting_state='pending' and meeting_attempts>=19 then 'failed' else meeting_state end,
+     meeting_last_error=case when meeting_state='pending' then 'unknown' else meeting_last_error end,
+     meeting_attempts=meeting_attempts+case when meeting_state='pending' then 1 else 0 end,
+     meeting_next_attempt_at=case when meeting_state='pending' then now()+make_interval(secs=>least(900,15*power(2,least(meeting_attempts,6)))::double precision+floor(random()*5)) else meeting_next_attempt_at end
+     where organization_id=p_org and id=p_id;return 'true';end if;
+   if a.google_event_id is not null then
+    select * into conn from public.calendar_connections where organization_id=p_org and id=a.google_connection_id and user_id=a.owner_user_id;
+    select * into c from public.calendar_connection_calendars where organization_id=p_org and connection_id=a.google_connection_id and external_calendar_id=a.google_calendar_id;
+    if conn.id is null or conn.status<>'healthy' or c.id is null or not c.available then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+   end if;
+   if p_action='meet' then
+    perform public.fn_meet_observe(p_org,p_id,p_args);
+    select * into a from public.calendar_appointments where organization_id=p_org and id=p_id;
+   elsif p_action='prepare' then
+    if c.access_role not in ('owner','writer') or (a.google_pending_write is not null and a.google_pending_write<>'{"reservation":true}'::jsonb) or a.google_conflict is not null then raise exception 'google_write_unavailable' using errcode='40001';end if;
+    if p_args->'operation'?'conference_request_id' and (a.meeting_request_id is distinct from (p_args->'operation'->>'conference_request_id')::uuid or a.meeting_state<>'pending' or a.meeting_received_at is not null or a.status='cancelled') then raise exception 'meet_stale' using errcode='40001';end if;
+    update public.calendar_appointments set meeting_requested_at=case when p_args->'operation'?'conference_request_id' then coalesce(meeting_requested_at,now()) else meeting_requested_at end,google_pending_write=p_args->'operation' where organization_id=p_org and id=p_id;return 'true';
+   elsif p_action='idle' then
+    update public.calendar_appointments set google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return 'true';
+   elsif p_action='commit' then
+    result:=p_args->'result'; b:=result->'base';remote:=result->'remote';
+    if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='40001';end if;
+    if result?'apply_remote' then
+     if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='40001';end if;
+     if not coalesce((remote->>'cancelled')::boolean,false) and exists(select 1 from public.calendar_appointments other
+      where other.organization_id=p_org and other.owner_user_id=a.owner_user_id and other.id<>a.id and other.status in ('pending','confirmed')
+      and other.starts_at<(remote->>'ends_at')::timestamptz and other.ends_at>(remote->>'starts_at')::timestamptz) then
+      return jsonb_build_object('overlap',true);end if;
+     changed:=row(a.starts_at,a.ends_at,a.time_zone,a.status='cancelled') is distinct from row((remote->>'starts_at')::timestamptz,(remote->>'ends_at')::timestamptz,remote->>'time_zone',(remote->>'cancelled')::boolean);
+     perform public.fn_appointment_change_core(p_org,p_id,a.revision,
+      jsonb_build_object('starts_at',remote->>'starts_at','ends_at',remote->>'ends_at','time_zone',remote->>'time_zone')||
+      case when (remote->>'cancelled')::boolean then '{"status":"cancelled","cancellation_reason":"Cancelado no Google"}'::jsonb else '{}'::jsonb end,true,b);
+     if changed then
+      insert into public.crm_lead_activities(organization_id,lead_id,contact_id,type,source_module,source_id,actor_kind,reason,payload)
+       select p_org,l.lead_id,a.contact_id,case when (remote->>'cancelled')::boolean then 'appointment_cancelled' else 'appointment_rescheduled' end,
+        'agenda',p_id,'system',case when (remote->>'cancelled')::boolean then 'Cancelado no Google' else 'Remarcado no Google' end,jsonb_build_object('origin','google','appointment_id',p_id,'resolution_actor_id',a.google_conflict->'resolution'->>'actor_id')
+       from public.crm_lead_links l where l.organization_id=p_org and l.target_id=p_id and l.target_kind='appointment' group by l.lead_id;
+     end if;
+    end if;
+    update public.calendar_appointments set
+     google_base_projection=case when result?'base' then b else google_base_projection end,
+     google_etag=case when result?'etag' then result->>'etag' else google_etag end,
+     google_conflict=case when result?'conflict' then nullif(result->'conflict','null'::jsonb) else google_conflict end,
+     google_pending_write=case when coalesce((result->>'retry_creation')::boolean,false) and a.google_base_projection is null and a.google_pending_write->>'method'='POST'
+      then '{"reservation":true}'::jsonb when coalesce((result->>'clear_pending')::boolean,false) then null else google_pending_write end,
+     google_synced_local_revision=case when coalesce((result->>'ack')::boolean,false) then a.google_local_revision else google_synced_local_revision end,
+     google_synced_at=case when coalesce((result->>'ack')::boolean,false) then now() else google_synced_at end,
+     google_sync_error=null,google_next_attempt_at=now()+interval '5 minutes'
+     where organization_id=p_org and id=p_id returning * into a;
+   else raise exception 'google_action_invalid' using errcode='22023';end if;
+  end if;
+ end if;
+ return to_jsonb(a)||jsonb_build_object('revision',a.revision::text,'google_local_revision',a.google_local_revision::text,
+  'google_synced_local_revision',a.google_synced_local_revision::text,'meeting_allowed_types',(select allowed_conference_types from public.calendar_connection_calendars where organization_id=p_org and connection_id=a.google_connection_id and external_calendar_id=a.google_calendar_id),'claim',jsonb_build_object('token',a.google_claim_token,'epoch',a.google_claim_epoch::text,'lease_until',a.google_claim_until));
+end;$$;
+revoke all on function public.fn_google_appointment(uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_google_appointment(uuid,uuid,text,jsonb) to service_role;
+
+create or replace function public.fn_google_catalog(p_org uuid,p_connection uuid,p_items jsonb,p_revision text)
+returns void language plpgsql security definer set search_path=public as $$
+declare conn public.calendar_connections; it jsonb; fresh boolean;
+begin
+ select * into conn from public.calendar_connections where organization_id=p_org and id=p_connection;
+ if not found then raise exception 'google_connection_unavailable' using errcode='P0002';end if;
+ perform 1 from public.user_organizations where organization_id=p_org and user_id=conn.user_id and revoked_at is null for update;
+ if not found then raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ select * into conn from public.calendar_connections where organization_id=p_org and id=p_connection;
+ if conn.status<>'healthy' then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+ if conn.calendar_selection_revision::text is distinct from p_revision then raise exception 'google_selection_stale' using errcode='40001';end if;
+ fresh:=(select count(*) from public.calendar_connections where organization_id=p_org and user_id=conn.user_id and provider='google_calendar')=1 and conn.calendar_selection_revision=0 and not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections x on x.organization_id=k.organization_id and x.id=k.connection_id where k.organization_id=p_org and x.user_id=conn.user_id and k.is_destination);
+ for it in select value from jsonb_array_elements(p_items) loop
+  insert into public.calendar_connection_calendars(organization_id,connection_id,external_calendar_id,name,time_zone,is_primary,access_role,available,catalog_checked_at,counts_for_conflicts,is_destination,allowed_conference_types)
+   values(p_org,p_connection,it->>'id',coalesce(it->>'summaryOverride',it->>'summary',it->>'id'),it->>'timeZone',coalesce((it->>'primary')::boolean,false),it->>'accessRole',not coalesce((it->>'deleted')::boolean,false),now(),
+    fresh and coalesce((it->>'primary')::boolean,false),false,case when jsonb_typeof(it->'conferenceProperties'->'allowedConferenceSolutionTypes')='array' then array(select jsonb_array_elements_text(it->'conferenceProperties'->'allowedConferenceSolutionTypes')) else null end)
+   on conflict(organization_id,connection_id,external_calendar_id) do update set name=excluded.name,time_zone=excluded.time_zone,is_primary=excluded.is_primary,
+    allowed_conference_types=excluded.allowed_conference_types,access_role=excluded.access_role,available=excluded.available,catalog_checked_at=excluded.catalog_checked_at,sync_next_attempt_at=now();
+ end loop;
+ update public.calendar_connection_calendars set available=false,catalog_checked_at=now() where organization_id=p_org and connection_id=p_connection
+  and not exists(select 1 from jsonb_array_elements(p_items) v where v->>'id'=external_calendar_id);
+ if fresh then
+  update public.calendar_connection_calendars set is_destination=true where organization_id=p_org and connection_id=p_connection and is_primary and available and access_role in ('owner','writer');
+ end if;
+ update public.calendar_connections set calendar_selection_revision=calendar_selection_revision+1 where organization_id=p_org and id=p_connection;
+end;$$;
+revoke all on function public.fn_google_catalog(uuid,uuid,jsonb,text) from public,anon,authenticated;
+grant execute on function public.fn_google_catalog(uuid,uuid,jsonb,text) to service_role;
+
+
+create or replace function public.fn_meet_notice(p_org uuid,p_id uuid,p_reason text)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+ insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id,appointment_revision)
+ select p_org,'other','warn','Link da reunião precisa de atenção',
+  'Abra o compromisso na Agenda para verificar o link ou autorizar uma nova entrega.','appointment',id,revision
+ from public.calendar_appointments where organization_id=p_org and id=p_id
+ on conflict(organization_id,ref_id,appointment_revision,kind) where ref_kind='appointment' and appointment_revision is not null
+ do update set status='open',resolved_at=null,body=excluded.body;
+end;$$;
+revoke all on function public.fn_meet_notice(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_meet_notice(uuid,uuid,text) to service_role;
+
+create or replace function public.fn_meet_delivery_enqueue()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare jid uuid; b jsonb;
+begin
+ -- A MESMA ORDEM DE TRAVA das ~20 irmãs: contato PRIMEIRO, job_queue depois.
+ -- Sem esta linha, este gatilho já segurava a linha do compromisso (é BEFORE/
+ -- AFTER na própria calendar_appointments) e ia travar job_queue sem o mutex do
+ -- contato, enquanto fn_meet_redact_contact (0229) pega o mutex do contato e só
+ -- então mexe em job_queue. Duas ordens opostas sobre os mesmos dois recursos =
+ -- deadlock (40P01) sob concorrência, e quem paga é o cliente com anonimização
+ -- LGPD acontecendo enquanto um link de reunião é entregue.
+ perform public.fn_service_lock(new.organization_id,new.contact_id);
+ if new.meeting_state='cancelled' or new.meeting_delivery->>'state' in ('blocked','stale') then
+  update public.job_queue set status='failed',locked_at=null,locked_by=null,payload='{}',last_error='meet_delivery_stale'
+   where organization_id=new.organization_id and id=new.meeting_delivery_job_id and kind='transactional_delivery' and status in ('pending','running');
+  return new;
+ end if;
+ if new.meeting_state='failed' then perform public.fn_meet_notice(new.organization_id,new.id,'meeting_failed');end if;
+ if new.meeting_state<>'ready' or new.meeting_delivery->>'state'<>'waiting_for_link' then return new;end if;
+ b:=new.meeting_delivery->'service_boundary';
+ if not public.fn_meet_boundary_current(b) then
+  update public.calendar_appointments set meeting_delivery=meeting_delivery||'{"state":"stale","error":"service_boundary_stale"}' where organization_id=new.organization_id and id=new.id;
+  perform public.fn_meet_notice(new.organization_id,new.id,'service_boundary_stale');return new;
+ end if;
+ jid:=gen_random_uuid();
+ insert into public.job_queue(id,organization_id,contact_id,kind,payload,run_after)
+ values(jid,new.organization_id,new.contact_id,'transactional_delivery',jsonb_build_object('appointment_id',new.id,'meeting_request_id',new.meeting_request_id,
+  'delivery_generation',new.meeting_delivery->>'generation','service_boundary',b),now());
+ update public.calendar_appointments set meeting_delivery_job_id=jid,meeting_delivery=meeting_delivery||'{"state":"queued"}'
+  where organization_id=new.organization_id and id=new.id;
+ return new;
+end;$$;
+revoke all on function public.fn_meet_delivery_enqueue() from public,anon,authenticated;
+drop trigger if exists trg_meet_delivery_enqueue on public.calendar_appointments;
+create trigger trg_meet_delivery_enqueue after insert or update on public.calendar_appointments for each row execute function public.fn_meet_delivery_enqueue();
+
+create or replace function public.fn_meet_delivery_current(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.job_queue j join public.calendar_appointments a on a.organization_id=j.organization_id and a.id::text=j.payload->>'appointment_id'
+  join public.contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+  join public.conversations v on v.organization_id=a.organization_id and v.contact_id=a.contact_id and v.id::text=j.payload->'service_boundary'->>'conversation_id'
+  join public.channel_sessions cs on cs.organization_id=v.organization_id and cs.id=v.channel_session_id
+  join public.organizations o on o.id=a.organization_id and o.status='active'
+  where cs.archived_at is null and a.meeting_delivery->>'channel_session_id'=cs.id::text and j.organization_id=p_org and j.id=p_job and j.kind='transactional_delivery' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+   and a.contact_id=j.contact_id and not c.is_anonymized and not c.is_blocked and a.status<>'cancelled' and a.meeting_state='ready' and a.meeting_url is not null
+   and a.meeting_request_id::text=j.payload->>'meeting_request_id' and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation'
+   and a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'state'='queued'
+   and exists(select 1 from public.user_organizations where organization_id=p_org and user_id=a.owner_user_id and revoked_at is null)
+   and (a.meeting_delivery->'authorized_by'->>'kind'='ai_agent' or
+    (a.meeting_delivery->'authorized_by'->>'kind'='user' and a.meeting_delivery->'authorized_by'->>'id'=a.owner_user_id::text and exists(
+     select 1 from public.user_organizations u where u.organization_id=p_org and u.user_id=a.owner_user_id and u.revoked_at is null and u.role in ('agent','manager','admin')
+      and (u.role in ('manager','admin') or v.assigned_to_user_id=u.user_id or o.settings->>'visibility_mode'='all'
+       or (coalesce(o.settings->>'visibility_mode','own_and_unassigned')='own_and_unassigned' and v.assigned_to_user_id is null)))))
+   and a.meeting_delivery->'service_boundary'=j.payload->'service_boundary' and public.fn_meet_boundary_current(j.payload->'service_boundary'));
+$$;
+revoke all on function public.fn_meet_delivery_current(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_current(uuid,uuid,text,timestamptz) to service_role;
+
+-- Política privada: sempre relida por aquisição original, inclusive no sink.
+-- A origem humana vem somente do recibo protegido, nunca de payload do caller.
+create or replace function public.fn_meet_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare r record;
+begin
+ select a.meeting_delivery,a.contact_id,v.channel_session_id,c.is_blocked,c.is_anonymized,c.force_human,c.ai_authorized_at,v.assignee_kind,v.bot_silenced_until,cs.metadata,cs.archived_at,
+  public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) as current
+ into r from public.job_queue j join public.calendar_appointments a on a.organization_id=j.organization_id and a.id::text=j.payload->>'appointment_id'
+ join public.contacts c on c.organization_id=a.organization_id and c.id=a.contact_id
+ join public.conversations v on v.organization_id=a.organization_id and v.contact_id=a.contact_id and v.id::text=j.payload->'service_boundary'->>'conversation_id'
+ join public.channel_sessions cs on cs.organization_id=v.organization_id and cs.id=v.channel_session_id
+ where j.organization_id=p_org and j.id=p_job and j.kind='transactional_delivery' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+  and a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if not found then return jsonb_build_object('current',false,'reason','stale');end if;
+ if not r.current then return jsonb_build_object('current',false,'reason',case when r.is_anonymized then 'lgpd' when r.is_blocked then 'opt_out' when r.archived_at is not null then 'channel' else 'access_or_stale' end);end if;
+ return jsonb_build_object('current',true,'contact_id',r.contact_id,'channel_session_id',r.channel_session_id,'human_command',r.meeting_delivery->'authorized_by'->>'kind'='user',
+  'force_human',r.force_human,'ai_gate',r.metadata->>'ai_gate','ai_authorized_at',r.ai_authorized_at,'assignee_kind',r.assignee_kind,'bot_silenced_until',r.bot_silenced_until);
+end;$$;
+revoke all on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_policy(uuid,uuid,text,timestamptz) to service_role;
+
+-- Fencing também no callback/settle. O sink tem sua própria revalidação; o
+-- transporte já aceito não é desfeito, mas callback velho não reidrata estado.
+create or replace function public.fn_meet_delivery_settle(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz,p_state text,p_retry_at timestamptz default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare j public.job_queue; a public.calendar_appointments; contact uuid; current_intent boolean; reason text;
+begin
+ select contact_id into contact from public.job_queue where organization_id=p_org and id=p_job;
+ if contact is null then return false;end if;
+ perform public.fn_service_lock(p_org,contact);
+ select * into j from public.job_queue where organization_id=p_org and id=p_job for update;
+ if not found or j.kind<>'transactional_delivery' or j.status<>'running' or j.locked_by is distinct from p_worker or j.locked_at is distinct from p_acquired_at then return false;end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id::text=j.payload->>'appointment_id' for update;
+ current_intent:=a.meeting_delivery_job_id=j.id and a.meeting_delivery->>'generation'=j.payload->>'delivery_generation';
+ if p_state like 'blocked:%' then
+  reason:=substring(p_state from 9);
+  if reason not in ('opt_out','lgpd','channel','access_or_stale','force_human','conversa_silenciada','conversa_de_humano','sem_autorizacao','autorizacao_expirada','limits','guardrail') then raise exception 'meet_reason_invalid' using errcode='22023';end if;
+  p_state:='blocked';
+ end if;
+ if p_state not in ('sent','queued','retry','failed','blocked','stale') then raise exception 'meet_state_invalid' using errcode='22023';end if;
+ if p_state in ('sent','queued','retry') and not public.fn_meet_delivery_current(p_org,p_job,p_worker,p_acquired_at) then p_state:='stale';end if;
+ if p_state='sent' and not exists(select 1 from public.send_ledger where organization_id=p_org and job_id=p_job and seq=1 and status='accepted') then raise exception 'meet_delivery_not_accepted' using errcode='40001';end if;
+ if p_state='retry' and j.attempts>=j.max_attempts then p_state:='failed';end if;
+ if p_state in ('queued','retry') then
+  update public.job_queue set status='pending',locked_by=null,locked_at=null,attempts=case when p_state='queued' then greatest(0,attempts-1) else attempts end,run_after=coalesce(p_retry_at,now()+interval '1 minute'),last_error='meet_delivery_waiting' where id=p_job and organization_id=p_org;
+ else
+  update public.job_queue set status=case when p_state='sent' then 'done' else 'failed' end,locked_by=null,locked_at=null,last_error=case when p_state='sent' then null else coalesce(reason,'meet_delivery_'||p_state) end where id=p_job and organization_id=p_org;
+  if current_intent then
+   update public.calendar_appointments set meeting_delivery=meeting_delivery||jsonb_build_object('state',p_state,'error',case when p_state='sent' then null else coalesce(reason,'meet_delivery_'||p_state) end,'settled_at',now()) where id=a.id and organization_id=p_org;
+   if p_state<>'sent' then perform public.fn_meet_notice(p_org,a.id,p_state);
+   else update public.agent_inbox_items set status='resolved',resolved_at=now() where organization_id=p_org and ref_kind='appointment' and ref_id=a.id and kind='other' and status='open';end if;
+  end if;
+ end if;
+ return true;
+end;$$;
+revoke all on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_meet_delivery_settle(uuid,uuid,text,timestamptz,text,timestamptz) to service_role;
+
+-- Prova de sessão, independente da política de CADASTRO obrigatório de MFA.
+create or replace function public.fn_session_mfa_proven()
+returns boolean language sql stable security definer set search_path=public as $$
+ select auth.uid() is not null and (coalesce(auth.jwt()->>'aal','aal1')='aal2' or not exists(
+  select 1 from auth.mfa_factors where user_id=auth.uid() and factor_type='totp' and status='verified'));
+$$;
+revoke all on function public.fn_session_mfa_proven() from public,anon,authenticated;
+
+create or replace function public.fn_meet_action(p_org uuid,p_id uuid,p_revision text,p_request uuid,p_action text,p_conversation uuid default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; contact uuid; b jsonb; destination_channel uuid;
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) then raise exception 'meet_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'meet_mfa_required' using errcode='42501';end if;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if contact is not null then perform public.fn_service_lock(p_org,contact);end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if not found or a.owner_user_id is distinct from auth.uid() or not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=auth.uid() and revoked_at is null) then raise exception 'meet_forbidden' using errcode='42501';end if;
+ if a.revision::text is distinct from p_revision or a.meeting_request_id is distinct from p_request or a.status='cancelled' or a.location_kind<>'google_meet'
+  or exists(select 1 from public.contacts where id=a.contact_id and organization_id=p_org and is_anonymized) then raise exception 'meet_stale' using errcode='40001';end if;
+ if p_action='retry' then
+  if a.google_conflict is not null then raise exception 'google_conflict_requires_choice' using errcode='40001';end if;
+  if a.meeting_state='ready' then return false;end if;
+  if a.meeting_state<>'failed' then
+   update public.calendar_appointments set meeting_next_attempt_at=now(),google_next_attempt_at=now() where organization_id=p_org and id=p_id;return true;
+  end if;
+  -- Tempo/timeout não provam rejeição. Somente failure recebido gira solicitação.
+  update public.calendar_appointments set meeting_request_id=case when meeting_last_error='google_failure' and meeting_received_at is not null then gen_random_uuid() else meeting_request_id end,
+   meeting_requested_at=case when meeting_last_error='google_failure' and meeting_received_at is not null then null else meeting_requested_at end,
+   meeting_received_at=case when meeting_last_error='google_failure' then null else meeting_received_at end,
+   meeting_state='pending',meeting_attempts=0,meeting_last_error=null,meeting_next_attempt_at=now(),google_next_attempt_at=now() where organization_id=p_org and id=p_id;
+ elsif p_action='deliver' then
+  if a.contact_id is null then raise exception 'meet_conversation_unavailable' using errcode='42501';end if;
+  select channel_session_id into destination_channel from public.conversations where organization_id=p_org and id=p_conversation and contact_id=a.contact_id and not is_group and public.fn_can_view_conversation(organization_id,assigned_to_user_id) for update;
+  if not found then raise exception 'meet_conversation_unavailable' using errcode='42501';end if;
+  b:=public.fn_service_boundary(p_org,p_conversation)-'status'-'demanda_fechada_em'-'service_started_at';
+  if not public.fn_meet_boundary_current(b) then raise exception 'meet_conversation_stale' using errcode='40001';end if;
+  if a.meeting_delivery->'service_boundary'=b and a.meeting_delivery->>'channel_session_id'=destination_channel::text then
+   if a.meeting_delivery->>'state' in ('waiting_for_link','sent') then return false;end if;
+   if a.meeting_delivery->>'state'='queued' and a.meeting_delivery_job_id is not null then
+    -- Recuperação humana de job morto conserva ledger/identidade. Não duplicar
+    -- uma mensagem aceita antes do crash nem reconstruir fronteira antiga.
+    update public.job_queue set status='pending',locked_by=null,locked_at=null,attempts=0,run_after=now(),last_error=null
+     where organization_id=p_org and id=a.meeting_delivery_job_id and kind='transactional_delivery' and status in ('dead','failed','done');
+    return found;
+   end if;
+  end if;
+  update public.job_queue set status='failed',locked_by=null,locked_at=null,last_error='meet_delivery_superseded' where organization_id=p_org and id=a.meeting_delivery_job_id and kind='transactional_delivery' and status in ('pending','running');
+  update public.calendar_appointments set meeting_delivery=jsonb_build_object('state','waiting_for_link','generation',gen_random_uuid(),'service_boundary',b,'authorized_by',jsonb_build_object('kind','user','id',auth.uid()),'source_operation_id',gen_random_uuid()),meeting_delivery_job_id=null where organization_id=p_org and id=p_id;
+ else raise exception 'meet_action_invalid' using errcode='22023';end if;
+ return true;
+end;$$;
+revoke all on function public.fn_meet_action(uuid,uuid,text,uuid,text,uuid) from public,anon;
+grant execute on function public.fn_meet_action(uuid,uuid,text,uuid,text,uuid) to authenticated;
+
+-- Backfill operacional, sem assumir que URL legada é resposta validada Google.
+update public.calendar_appointments set meeting_state='not_requested' where location_kind='google_meet' and meeting_state='not_requested' and status<>'cancelled';
+
+-- Resultados/contextos derivados não são um segundo cofre de URL. A resposta
+-- autorizada continua funcional em memória e a mensagem em messages.body.
+create or replace function public.fn_meet_minimize_runtime()
+returns trigger language plpgsql set search_path=public as $$
+begin
+ new:=jsonb_populate_record(new,regexp_replace(to_jsonb(new)::text,'https://meet[.]google[.]com/[a-zA-Z0-9-]+',case when tg_table_name='outbound_copies' then '[meet-link]' else '[link da reunião disponível na Agenda]' end,'g')::jsonb);
+ return new;
+end;$$;
+revoke all on function public.fn_meet_minimize_runtime() from public,anon,authenticated;
+do $$ declare tab text;begin
+ foreach tab in array array['lead_checkpoints','lead_state','lead_state_transitions','agent_cases','outbound_copies','conversations'] loop
+  execute format('drop trigger if exists trg_meet_minimize_runtime on public.%I',tab);
+  execute format('create trigger trg_meet_minimize_runtime before insert or update on public.%I for each row execute function public.fn_meet_minimize_runtime()',tab);
+ end loop;
+end;$$;
+
+create or replace function public.fn_meet_redact_contact()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ perform public.fn_service_lock(new.organization_id,new.id);
+ update public.job_queue set payload='{}',status=case when status in ('pending','running') then 'failed' else status end,
+  locked_by=null,locked_at=null,last_error='meet_contact_redacted'
+  where organization_id=new.organization_id and contact_id=new.id and kind='transactional_delivery';
+ update public.agent_inbox_items set status='resolved',resolved_at=now(),body='Contato anonimizado.',ref_id=null
+  where organization_id=new.organization_id and ref_kind='appointment' and ref_id in(select id from public.calendar_appointments where organization_id=new.organization_id and contact_id=new.id) and kind='other';
+ update public.calendar_appointments set meeting_url=null,meeting_request_id=null,meeting_requested_at=null,meeting_received_at=null,meeting_last_error=null,
+  meeting_next_attempt_at=null,meeting_delivery='{"state":"blocked"}',meeting_delivery_job_id=null
+  where organization_id=new.organization_id and contact_id=new.id;
+ return new;
+end;$$;
+revoke all on function public.fn_meet_redact_contact() from public,anon,authenticated;
+drop trigger if exists trg_meet_redact_contact on public.contacts;
+create trigger trg_meet_redact_contact after update of is_anonymized on public.contacts for each row when(new.is_anonymized is true) execute function public.fn_meet_redact_contact();
+notify pgrst,'reload schema';
+
+-- ---- autonomia e respostas revisadas (migration 0227) ----
+-- Task9: publication is configuration; pause/mode are operation. Reply revisions
+-- guard ABA without changing ServiceBoundary. Row-local triggers never acquire
+-- the service advisory after a row lock. Draft snapshots precede model work.
+alter table public.ai_agents add column if not exists operation_mode text not null default 'automatic';
+alter table public.ai_agents add column if not exists paused_at timestamptz;
+alter table public.ai_agents add column if not exists operation_revision bigint not null default 1;
+alter table public.conversations add column if not exists reply_context_revision bigint not null default 1;
+alter table public.ai_agents drop constraint if exists ai_agents_operation_mode_check;
+alter table public.ai_agents add constraint ai_agents_operation_mode_check check(operation_mode in ('automatic','assisted'));
+
+create or replace function public.fn_reply_agent_revision() returns trigger language plpgsql set search_path=public as $$
+begin
+ new.operation_revision:=old.operation_revision+case when row(new.operation_mode,new.paused_at,new.published_version_id,new.archived_at,new.config,new.active_kb_version_id)
+  is distinct from row(old.operation_mode,old.paused_at,old.published_version_id,old.archived_at,old.config,old.active_kb_version_id) then 1 else 0 end;
+ return new;
+end;$$;
+revoke all on function public.fn_reply_agent_revision() from public,anon,authenticated;
+drop trigger if exists trg_reply_agent_revision on public.ai_agents;
+create trigger trg_reply_agent_revision before update on public.ai_agents for each row execute function public.fn_reply_agent_revision();
+-- A unique persisted inbound changes the response context, independent of its
+-- provider timestamp. Duplicate deliveries never INSERT, hence never increment.
+-- This observer does not dispatch a turn: historical import is not live inbound.
+create or replace function public.fn_reply_inbound_revision() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.direction='inbound' then
+  update public.conversations set reply_context_revision=reply_context_revision+1 where organization_id=new.organization_id and id=new.conversation_id and contact_id=new.contact_id;
+ end if;
+ return new;
+end;$$;
+revoke all on function public.fn_reply_inbound_revision() from public,anon,authenticated;
+-- Preserve explicit increments from the inbound observer; ordinary callers
+-- cannot manufacture validity because snapshots originate in the command below.
+create or replace function public.fn_reply_conversation_revision() returns trigger language plpgsql set search_path=public as $$
+begin
+ new.reply_context_revision:=greatest(old.reply_context_revision,new.reply_context_revision)+case when row(new.assigned_to_user_id,new.assignee_kind,new.active_ai_agent_id,new.channel_session_id,new.bot_silenced_until,new.status,new.service_revision,new.current_demanda_id)
+ is distinct from row(old.assigned_to_user_id,old.assignee_kind,old.active_ai_agent_id,old.channel_session_id,old.bot_silenced_until,old.status,old.service_revision,old.current_demanda_id) then 1 else 0 end;
+ return new;
+end;$$;
+revoke all on function public.fn_reply_conversation_revision() from public,anon,authenticated;
+drop trigger if exists trg_reply_conversation_revision on public.conversations;
+create trigger trg_reply_conversation_revision before update on public.conversations for each row execute function public.fn_reply_conversation_revision();
+drop trigger if exists trg_reply_inbound_revision on public.messages;
+create trigger trg_reply_inbound_revision after insert on public.messages for each row execute function public.fn_reply_inbound_revision();
+
+create or replace function public.fn_reply_channel_revision() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if row(new.status,new.archived_at,new.metadata,new.provider,new.daily_message_limit) is distinct from row(old.status,old.archived_at,old.metadata,old.provider,old.daily_message_limit) then
+ update public.conversations set reply_context_revision=reply_context_revision+1 where organization_id=new.organization_id and channel_session_id=new.id;
+ end if;return new;
+end;$$;
+revoke all on function public.fn_reply_channel_revision() from public,anon,authenticated;
+drop trigger if exists trg_reply_channel_revision on public.channel_sessions;
+create trigger trg_reply_channel_revision after update on public.channel_sessions for each row execute function public.fn_reply_channel_revision();
+
+create table if not exists public.ai_reply_drafts(
+ id uuid primary key default gen_random_uuid(),organization_id uuid not null references public.organizations(id) on delete cascade,
+ conversation_id uuid not null references public.conversations(id) on delete cascade,
+ contact_id uuid not null references public.contacts(id) on delete cascade,
+ agent_id uuid not null references public.ai_agents(id) on delete cascade,
+ agent_version_id uuid not null references public.ai_agent_versions(id),
+ channel_session_id uuid not null references public.channel_sessions(id),
+ service_boundary jsonb not null,context_revision bigint not null,operation_revision bigint not null,
+ generation_token uuid not null default gen_random_uuid(),revision bigint not null default 1,status text not null default 'generating' check(status in('generating','pending','approved','sending','sent','dismissed','stale','failed')),
+ original_body text,edited_body text,approved_body text,proposals jsonb not null default '[]',trace jsonb not null default '[]',feedback jsonb,
+ approved_by uuid references auth.users(id),approved_at timestamptz,approved_support_session_id uuid references public.platform_support_sessions(id),send_job_id uuid unique references public.job_queue(id),message_id uuid references public.messages(id),
+ error_code text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),
+ unique(organization_id,conversation_id,agent_id,context_revision,operation_revision)
+);
+alter table public.ai_reply_drafts enable row level security;
+revoke all on public.ai_reply_drafts from anon,authenticated;
+grant select on public.ai_reply_drafts to authenticated;
+grant all on public.ai_reply_drafts to service_role;
+drop policy if exists tenant_isolation_ai_reply_drafts_all on public.ai_reply_drafts;
+create policy tenant_isolation_ai_reply_drafts_all on public.ai_reply_drafts for select to authenticated
+ using(organization_id in(select public.fn_user_org_ids()) and exists(select 1 from public.conversations c where c.organization_id=ai_reply_drafts.organization_id and c.id=conversation_id and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id)));
+create index if not exists ai_reply_drafts_conversation on public.ai_reply_drafts(organization_id,conversation_id,created_at desc);
+
+create or replace function public.fn_reply_begin(p_org uuid,p_conversation uuid,p_agent uuid,p_version uuid,p_token uuid)
+returns public.ai_reply_drafts language plpgsql security definer set search_path=public as $$
+declare c public.conversations;a public.ai_agents;d public.ai_reply_drafts;contact uuid;b jsonb;
+begin
+ select contact_id into contact from public.conversations where organization_id=p_org and id=p_conversation;
+ if contact is null then raise exception 'reply_context_unavailable' using errcode='42501';end if;
+ perform public.fn_service_lock(p_org,contact);
+ select * into a from public.ai_agents where organization_id=p_org and id=p_agent and archived_at is null for share;
+ if not found or a.published_version_id is distinct from p_version then raise exception 'reply_agent_stale' using errcode='40001';end if;
+ select * into c from public.conversations where organization_id=p_org and id=p_conversation and contact_id=contact for no key update;
+ if c.active_ai_agent_id is not null and c.active_ai_agent_id<>p_agent then raise exception 'reply_agent_stale' using errcode='40001';end if;
+ b:=public.fn_service_boundary(p_org,p_conversation)-'status'-'demanda_fechada_em'-'service_started_at';
+ if not public.fn_meet_boundary_current(b) or exists(select 1 from public.contacts where organization_id=p_org and id=contact and (is_blocked or is_anonymized)) then raise exception 'reply_context_unavailable' using errcode='42501';end if;
+ insert into public.ai_reply_drafts(organization_id,conversation_id,contact_id,agent_id,agent_version_id,channel_session_id,service_boundary,context_revision,operation_revision,generation_token)
+ values(p_org,p_conversation,contact,p_agent,p_version,c.channel_session_id,b,c.reply_context_revision,a.operation_revision,p_token)
+ on conflict(organization_id,conversation_id,agent_id,context_revision,operation_revision) do update set
+ generation_token=case when (ai_reply_drafts.status='failed' or (ai_reply_drafts.status='generating' and ai_reply_drafts.updated_at<now()-interval '10 minutes')) then p_token else ai_reply_drafts.generation_token end,
+ status=case when (ai_reply_drafts.status='failed' or (ai_reply_drafts.status='generating' and ai_reply_drafts.updated_at<now()-interval '10 minutes')) then 'generating' else ai_reply_drafts.status end,
+ revision=ai_reply_drafts.revision+case when (ai_reply_drafts.status='failed' or (ai_reply_drafts.status='generating' and ai_reply_drafts.updated_at<now()-interval '10 minutes')) then 1 else 0 end,updated_at=now()
+ returning * into d;return d;
+end;$$;
+revoke all on function public.fn_reply_begin(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_reply_begin(uuid,uuid,uuid,uuid,uuid) to service_role;
+
+create or replace function public.fn_reply_context_current(p_org uuid,p_id uuid)
+returns boolean language sql stable security definer set search_path=public as $$
+ select exists(select 1 from public.ai_reply_drafts d join public.conversations c on c.organization_id=d.organization_id and c.id=d.conversation_id and c.contact_id=d.contact_id
+ join public.ai_agents a on a.organization_id=d.organization_id and a.id=d.agent_id
+ join public.contacts p on p.organization_id=d.organization_id and p.id=d.contact_id
+ join public.channel_sessions s on s.organization_id=d.organization_id and s.id=d.channel_session_id
+ where d.organization_id=p_org and d.id=p_id and c.reply_context_revision=d.context_revision and a.operation_revision=d.operation_revision
+ and a.archived_at is null and a.published_version_id=d.agent_version_id and c.channel_session_id=d.channel_session_id and s.archived_at is null
+ and not p.is_blocked and not p.is_anonymized and public.fn_meet_boundary_current(d.service_boundary));
+$$;
+revoke all on function public.fn_reply_context_current(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_reply_context_current(uuid,uuid) to service_role;
+
+create or replace function public.fn_reply_action(p_org uuid,p_id uuid,p_revision text,p_action text,p_body text default null,p_feedback text default null)
+returns uuid language plpgsql security definer set search_path=public as $$
+declare d public.ai_reply_drafts;contact uuid;jid uuid;a uuid;
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) or not public.fn_session_mfa_proven() then raise exception 'reply_forbidden' using errcode='42501';end if;
+ select contact_id,agent_id into contact,a from public.ai_reply_drafts where organization_id=p_org and id=p_id;
+ if contact is null then raise exception 'reply_forbidden' using errcode='42501';end if;
+ perform public.fn_service_lock(p_org,contact);
+ perform 1 from public.ai_agents where organization_id=p_org and id=a for share;
+ perform 1 from public.conversations c join public.ai_reply_drafts r on r.organization_id=c.organization_id and r.conversation_id=c.id where r.organization_id=p_org and r.id=p_id and public.fn_can_view_conversation(c.organization_id,c.assigned_to_user_id) for share of c;
+ if not found then raise exception 'reply_forbidden' using errcode='42501';end if;
+ select * into d from public.ai_reply_drafts where organization_id=p_org and id=p_id for update;
+ if d.status in('approved','sending','sent') and p_action='approve' and d.approved_by=auth.uid() and d.approved_body=p_body then return d.send_job_id;end if;
+ if d.revision::text is distinct from p_revision or d.status<>'pending' or not public.fn_reply_context_current(p_org,p_id) then raise exception 'reply_stale' using errcode='40001';end if;
+ if p_action='reject' then
+ update public.ai_reply_drafts set status='dismissed',feedback=jsonb_build_object('decision','rejected','reason',left(p_feedback,1000)),revision=revision+1,updated_at=now() where id=p_id and organization_id=p_org;return null;
+ elsif p_action='approve' then
+ if p_body is null or length(trim(p_body))=0 or length(p_body)>12000 then raise exception 'reply_body_invalid' using errcode='22023';end if;
+ jid:=gen_random_uuid();
+ insert into public.job_queue(id,organization_id,contact_id,kind,payload,run_after) values(jid,p_org,contact,'approved_reply',jsonb_build_object('draft_id',d.id,'service_boundary',d.service_boundary),now());
+ update public.ai_reply_drafts set status='approved',edited_body=p_body,approved_body=p_body,approved_by=auth.uid(),approved_at=now(),approved_support_session_id=case when public.fn_support_context()->>'organization_id'=p_org::text then (public.fn_support_context()->>'id')::uuid else null end,send_job_id=jid,
+ feedback=jsonb_build_object('decision',case when p_body is distinct from original_body then 'edited' else 'approved' end,'reason',left(p_feedback,1000),'correction',case when p_body is distinct from original_body then p_body else null end),revision=revision+1,updated_at=now()
+ where id=p_id and organization_id=p_org;return jid;
+ end if;
+ raise exception 'reply_action_invalid' using errcode='22023';
+end;$$;
+revoke all on function public.fn_reply_action(uuid,uuid,text,text,text,text) from public,anon;
+grant execute on function public.fn_reply_action(uuid,uuid,text,text,text,text) to authenticated;
+
+create or replace function public.fn_reply_delivery_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce((select jsonb_build_object('current',true,'context_current',public.fn_reply_context_current(p_org,d.id),
+ 'contact_id',d.contact_id,'conversation_id',d.conversation_id,'channel_session_id',d.channel_session_id,'draft_id',d.id,'body',d.approved_body,'agent_id',d.agent_id)
+ from public.job_queue j join public.ai_reply_drafts d on d.organization_id=j.organization_id and d.send_job_id=j.id and d.id::text=j.payload->>'draft_id'
+ join public.conversations c on c.organization_id=d.organization_id and c.id=d.conversation_id and c.contact_id=d.contact_id
+ join public.contacts p on p.organization_id=d.organization_id and p.id=d.contact_id
+ join public.channel_sessions s on s.organization_id=d.organization_id and s.id=d.channel_session_id
+ left join public.user_organizations u on u.organization_id=d.organization_id and u.user_id=d.approved_by and u.revoked_at is null and u.role in('agent','manager','admin')
+ left join public.platform_support_sessions ss on ss.id=d.approved_support_session_id and ss.organization_id=d.organization_id and ss.actor_user_id=d.approved_by and ss.access_mode='full' and ss.ended_at is null and ss.expires_at>now()
+ left join public.platform_admins pa on pa.user_id=ss.actor_user_id and pa.revoked_at is null and pa.scope='full'
+ left join auth.sessions au on au.id=ss.auth_session_id and au.user_id=ss.actor_user_id and (au.not_after is null or au.not_after>now())
+ join public.organizations o on o.id=d.organization_id and o.status='active'
+ where j.organization_id=p_org and j.id=p_job and j.kind='approved_reply' and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at
+ and j.contact_id=d.contact_id and d.status in('approved','sending') and d.approved_body is not null and d.service_boundary=j.payload->'service_boundary'
+ and not p.is_blocked and not p.is_anonymized and s.archived_at is null and c.channel_session_id=d.channel_session_id
+ and public.fn_meet_boundary_current(d.service_boundary)
+ and((d.approved_support_session_id is not null and ss.id is not null and pa.user_id is not null and au.id is not null and (not(pa.mfa_required or exists(select 1 from auth.mfa_factors mf where mf.user_id=ss.actor_user_id and mf.status='verified')) or au.aal='aal2'))
+ or(d.approved_support_session_id is null and u.user_id is not null and(u.role in('manager','admin') or c.assigned_to_user_id=u.user_id or o.settings->>'visibility_mode'='all' or(coalesce(o.settings->>'visibility_mode','own_and_unassigned')='own_and_unassigned' and c.assigned_to_user_id is null))))),'{"current":false}'::jsonb);
+$$;
+revoke all on function public.fn_reply_delivery_policy(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_reply_delivery_policy(uuid,uuid,text,timestamptz) to service_role;
+
+create or replace function public.fn_reply_receipt_policy(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns jsonb language sql stable security definer set search_path=public as $$
+ select coalesce((select jsonb_build_object('current',true,'context_current',false,'contact_id',d.contact_id,'conversation_id',d.conversation_id,'channel_session_id',d.channel_session_id,'draft_id',d.id,'body',d.approved_body,'agent_id',d.agent_id)
+ from public.job_queue j join public.ai_reply_drafts d on d.organization_id=j.organization_id and d.send_job_id=j.id and d.id::text=j.payload->>'draft_id'
+ join public.contacts p on p.organization_id=d.organization_id and p.id=d.contact_id and not p.is_anonymized
+ join public.conversations c on c.organization_id=d.organization_id and c.id=d.conversation_id and c.contact_id=d.contact_id
+ where j.organization_id=p_org and j.id=p_job and j.kind='approved_reply' and j.contact_id=d.contact_id and j.status='running' and j.locked_by=p_worker and j.locked_at=p_acquired_at and d.status in('approved','sending') and d.approved_body is not null and d.service_boundary=j.payload->'service_boundary'),'{"current":false}'::jsonb);
+$$;
+revoke all on function public.fn_reply_receipt_policy(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_reply_receipt_policy(uuid,uuid,text,timestamptz) to service_role;
+
+alter table public.agent_inbox_items add column if not exists legacy_recovery_code text check(legacy_recovery_code in('sem_canal','sem_credencial','sem_modelo','modelo_ambiguo','sem_versao','migracao_falhou','pronto'));
+-- Referência tipada abre o agente; causa estruturada registra a última transição.
+create or replace function public.fn_agent_legacy_notice(p_org uuid,p_agent uuid,p_code text,p_title text,p_body text)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare prior text;a public.ai_agents;
+begin
+ if p_code not in('sem_canal','sem_credencial','sem_modelo','modelo_ambiguo','sem_versao','migracao_falhou','pronto') then raise exception 'invalid_legacy_state';end if;
+ select * into a from public.ai_agents where organization_id=p_org and id=p_agent and kind='rag_bot' for update;
+ if not found or a.archived_at is not null then return false;end if;
+ -- Revalidar a observação anterior do worker, dentro da mesma serialização.
+ if p_code<>'pronto' and(a.published_version_id is not null or a.paused_at is not null or not a.is_active) then return false;end if;
+ if p_code='pronto' and a.published_version_id is null then return false;end if;
+ select legacy_recovery_code into prior from public.agent_inbox_items where organization_id=p_org and ref_id=p_agent and ref_kind='ai_agent' and legacy_recovery_code is not null order by created_at desc,id desc limit 1;
+ if prior=p_code then return false;end if;
+ if p_code='pronto' and prior is null then return false;end if;
+ if p_code='sem_versao' and prior is not null and prior<>'pronto' then return false;end if;
+ update public.agent_inbox_items set status='resolved',resolved_at=now() where organization_id=p_org and ref_id=p_agent and ref_kind='ai_agent' and legacy_recovery_code is not null and status in('open','ack');
+ insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id,legacy_recovery_code,status,created_at,resolved_at)
+ values(p_org,'other',case when p_code='pronto' then 'info' else 'warn' end,left(p_title,200),left(p_body,1500),'ai_agent',p_agent,p_code,case when p_code='pronto' then 'resolved' else 'open' end,clock_timestamp(),case when p_code='pronto' then now() else null end);
+ return true;
+end;$$;
+revoke all on function public.fn_agent_legacy_notice(uuid,uuid,text,text,text) from public,anon,authenticated;
+grant execute on function public.fn_agent_legacy_notice(uuid,uuid,text,text,text) to service_role;
+create or replace function public.fn_agent_legacy_published() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ perform public.fn_agent_legacy_notice(new.organization_id,new.id,'pronto','Agente recuperado','A configuração foi recuperada. As respostas usam a versão publicada.');
+ return new;
+end;$$;
+revoke all on function public.fn_agent_legacy_published() from public,anon,authenticated;
+drop trigger if exists trg_agent_legacy_published on public.ai_agents;
+create trigger trg_agent_legacy_published after update of published_version_id on public.ai_agents for each row when(new.kind='rag_bot' and new.published_version_id is not null and new.published_version_id is distinct from old.published_version_id) execute function public.fn_agent_legacy_published();
+
+-- Reconhecimento é atômico com as escritas locais. Não exige autoridade para
+-- um novo envio, mas mantém identidade, lease e redação até o commit.
+create or replace function public.fn_reply_record_receipt(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz,p_message uuid,p_external text,p_echo_ids text[] default '{}')
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare contact uuid;d public.ai_reply_drafts;m public.messages;
+begin
+ select contact_id into contact from public.job_queue where organization_id=p_org and id=p_job;
+ if contact is null then return null;end if;
+ perform public.fn_service_lock(p_org,contact);
+ perform 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized for share;
+ if not found then return null;end if;
+ select * into d from public.ai_reply_drafts where organization_id=p_org and send_job_id=p_job;
+ if not found then return null;end if;
+ perform 1 from public.conversations where organization_id=p_org and id=d.conversation_id and contact_id=contact for no key update;
+ if not found then return null;end if;
+ perform 1 from public.job_queue where organization_id=p_org and id=p_job for update;
+ perform 1 from public.ai_reply_drafts where organization_id=p_org and id=d.id for update;
+ if public.fn_reply_receipt_policy(p_org,p_job,p_worker,p_acquired_at)->>'current'<>'true' then return null;end if;
+ select * into m from public.messages where organization_id=p_org and id=p_message and conversation_id=d.conversation_id and contact_id=d.contact_id and channel_session_id=d.channel_session_id and direction='outbound' and type='text' and body=d.approved_body and exists(select 1 from public.send_ledger l where l.organization_id=p_org and l.job_id=p_job and l.seq=1 and l.id::text=messages.metadata->>'idempotency_key') for update;
+ if not found then return null;end if;
+ delete from public.messages where organization_id=p_org and conversation_id=d.conversation_id and sent_via='external_device' and external_id=any(p_echo_ids) and id<>p_message;
+ update public.messages set status='sent',external_id=p_external,ack=0 where organization_id=p_org and id=p_message returning * into m;
+ update public.send_ledger set status='accepted',crm_message_id=p_message,updated_at=now(),last_error=null where organization_id=p_org and job_id=p_job and seq=1 and id::text=m.metadata->>'idempotency_key';
+ update public.conversations set last_outbound_at=now(),last_message_at=now(),last_message_preview=left(d.approved_body,280),unread_count_for_assignee=0 where organization_id=p_org and id=d.conversation_id;
+ update public.contacts set last_activity_at=now() where organization_id=p_org and id=contact;
+ return to_jsonb(m);
+end;$$;
+revoke all on function public.fn_reply_record_receipt(uuid,uuid,text,timestamptz,uuid,text,text[]) from public,anon,authenticated;
+grant execute on function public.fn_reply_record_receipt(uuid,uuid,text,timestamptz,uuid,text,text[]) to service_role;
+
+create or replace function public.fn_reply_settle(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz,p_state text,p_error text default null)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare j public.job_queue;d public.ai_reply_drafts;contact uuid;pol jsonb;
+begin
+ select contact_id into contact from public.job_queue where organization_id=p_org and id=p_job;
+ if contact is null then return false;end if;perform public.fn_service_lock(p_org,contact);
+ select * into j from public.job_queue where organization_id=p_org and id=p_job for update;
+ if not found or j.kind<>'approved_reply' or j.status<>'running' or j.locked_by is distinct from p_worker or j.locked_at is distinct from p_acquired_at then return false;end if;
+ select * into d from public.ai_reply_drafts where organization_id=p_org and send_job_id=p_job for update;
+ if not found then return false;end if;
+ pol:=public.fn_reply_delivery_policy(p_org,p_job,p_worker,p_acquired_at);
+ if p_state='sent' then
+ if not exists(select 1 from public.send_ledger where organization_id=p_org and job_id=p_job and seq=1 and status='accepted') then p_state:='stale';end if;
+ elsif p_state in('queued','retry') and (pol->>'current'<>'true' or pol->>'context_current'<>'true') then p_state:='stale';end if;
+ if p_state in('queued','retry') and j.attempts<j.max_attempts then
+ update public.job_queue set status='pending',locked_by=null,locked_at=null,run_after=now()+interval '1 minute',attempts=case when p_state='queued' then greatest(0,attempts-1) else attempts end where organization_id=p_org and id=p_job;
+ update public.ai_reply_drafts set status='approved',error_code=p_error,updated_at=now() where organization_id=p_org and id=d.id;
+ else
+ if p_state not in('sent','stale','failed') then p_state:='failed';end if;
+ update public.job_queue set status=case when p_state='sent' then 'done' else 'failed' end,locked_at=null,locked_by=null,last_error=p_error where organization_id=p_org and id=p_job;
+ update public.ai_reply_drafts set status=p_state,error_code=p_error,message_id=(select crm_message_id from public.send_ledger where organization_id=p_org and job_id=p_job and seq=1 and status='accepted'),updated_at=now() where organization_id=p_org and id=d.id;
+ end if;return true;
+end;$$;
+revoke all on function public.fn_reply_settle(uuid,uuid,text,timestamptz,text,text) from public,anon,authenticated;
+grant execute on function public.fn_reply_settle(uuid,uuid,text,timestamptz,text,text) to service_role;
+
+create or replace function public.fn_reply_redact() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ update public.ai_reply_drafts set original_body=null,edited_body=null,approved_body=null,proposals='[]',trace='[]',feedback=null,status=case when status='sent' then status else 'stale' end,error_code='redacted',updated_at=now() where organization_id=new.organization_id and contact_id=new.id;
+ update public.job_queue set payload='{}',status=case when status in('pending','running') then 'failed' else status end,locked_by=null,locked_at=null,last_error='reply_redacted' where organization_id=new.organization_id and contact_id=new.id and kind='approved_reply';
+ return new;
+end;$$;
+revoke all on function public.fn_reply_redact() from public,anon,authenticated;
+drop trigger if exists trg_reply_redact on public.contacts;
+create trigger trg_reply_redact after update of is_anonymized on public.contacts for each row when(new.is_anonymized and not old.is_anonymized) execute function public.fn_reply_redact();
+
+-- Last preparation/cut: same locks as snapshots, then atomic sending CAS.
+-- The following network attempt is irreversible; receipt reconciliation is not
+-- another attempt. No service mutex is taken by a row-local revision trigger.
+create or replace function public.fn_reply_prepare(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz)
+returns boolean language plpgsql security definer set search_path=public as $$
+declare d public.ai_reply_drafts;pol jsonb;
+begin
+ select * into d from public.ai_reply_drafts where organization_id=p_org and send_job_id=p_job;
+ if not found then return false;end if;
+ perform public.fn_service_lock(p_org,d.contact_id);
+ perform 1 from public.ai_agents where organization_id=p_org and id=d.agent_id for share;
+ perform 1 from public.conversations where organization_id=p_org and id=d.conversation_id for share;
+ perform 1 from public.job_queue where organization_id=p_org and id=p_job for update;
+ perform 1 from public.ai_reply_drafts where organization_id=p_org and id=d.id for update;
+ pol:=public.fn_reply_delivery_policy(p_org,p_job,p_worker,p_acquired_at);
+ if pol->>'current'<>'true' or pol->>'context_current'<>'true' then return false;end if;
+ update public.ai_reply_drafts set status='sending',updated_at=now() where organization_id=p_org and id=d.id;
+ return true;
+end;$$;
+revoke all on function public.fn_reply_prepare(uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_reply_prepare(uuid,uuid,text,timestamptz) to service_role;
+
+notify pgrst,'reload schema';
+
+create or replace function public.fn_publish_ai_agent_version(
+  p_org_id uuid,
+  p_agent_id uuid,
+  p_version_id uuid,
+  p_platform_credential_verified boolean,
+  p_expected_provenance text
+)
+returns table (
+  agent_id uuid,
+  version_id uuid,
+  previous_version_id uuid,
+  published_at timestamptz
+)
+language plpgsql
+security definer
+set search_path to 'public'
+as $$
+declare
+  v_agent record;
+  v_version record;
+  v_credential record;
+  v_session record;
+  v_model_count integer;
+  v_previous_version_id uuid;
+  v_published_at timestamptz := now();
+begin
+  select a.id, a.organization_id, a.published_version_id, a.archived_at
+    into v_agent
+  from public.ai_agents a
+  where a.id = p_agent_id
+  for update;
+
+  if not found then
+    raise exception 'agent_not_found' using errcode = 'P0001';
+  end if;
+  if v_agent.organization_id <> p_org_id then
+    raise exception 'agent_not_found' using errcode = 'P0001';
+  end if;
+  if v_agent.archived_at is not null then
+    raise exception 'agent_archived' using errcode = 'P0001';
+  end if;
+
+  select v.id, v.organization_id, v.agent_id, v.status, v.provider, v.model,
+         v.credential_id, v.channel_session_id, v.provisioning_origin
+    into v_version
+  from public.ai_agent_versions v
+  where v.id = p_version_id
+  for update;
+
+  if not found then
+    raise exception 'version_not_found' using errcode = 'P0001';
+  end if;
+  if v_version.agent_id <> p_agent_id or v_version.organization_id <> p_org_id then
+    raise exception 'version_not_found' using errcode = 'P0001';
+  end if;
+  if p_expected_provenance is not null and (
+    p_expected_provenance not in('onboarding','legacy_reconciliation') or
+    v_version.provisioning_origin is distinct from p_expected_provenance or
+    (select count(*) from public.ai_agent_versions own_version where own_version.organization_id=p_org_id and own_version.agent_id=p_agent_id)<>1
+  ) then raise exception 'existing_version_requires_review' using errcode='P0001';end if;
+  if v_version.status not in ('draft', 'superseded') then
+    raise exception 'version_invalid_state' using errcode = 'P0001';
+  end if;
+
+  if v_version.credential_id is null and p_platform_credential_verified is not true then
+    raise exception 'credential_missing' using errcode = 'P0001';
+  end if;
+
+  if v_version.credential_id is not null then
+  select c.id, c.organization_id, c.provider, c.is_active, c.validated_at
+    into v_credential
+  from public.ai_provider_credentials c
+  where c.id = v_version.credential_id;
+
+  if not found or v_credential.organization_id <> p_org_id then
+    raise exception 'credential_not_found' using errcode = 'P0001';
+  end if;
+  if not v_credential.is_active then
+    raise exception 'credential_inactive' using errcode = 'P0001';
+  end if;
+  if v_credential.validated_at is null then
+    raise exception 'credential_not_validated' using errcode = 'P0001';
+  end if;
+  if v_credential.provider <> v_version.provider then
+    raise exception 'credential_provider_mismatch' using errcode = 'P0001';
+  end if;
+
+  end if;
+
+  select s.id, s.organization_id, s.status
+    into v_session
+  from public.channel_sessions s
+  where s.id = v_version.channel_session_id;
+
+  if not found or v_session.organization_id <> p_org_id then
+    raise exception 'channel_session_not_found' using errcode = 'P0001';
+  end if;
+  if v_session.status <> 'WORKING' then
+    raise exception 'channel_session_offline' using errcode = 'P0001';
+  end if;
+
+  select count(*)
+    into v_model_count
+  from public.ai_models m
+  where m.provider = v_version.provider
+    and m.model_id = v_version.model
+    and m.deprecated_at is null;
+
+  if v_model_count = 0 then
+    raise exception 'model_not_found' using errcode = 'P0001';
+  end if;
+
+  v_previous_version_id := v_agent.published_version_id;
+
+  if v_previous_version_id is not null and v_previous_version_id <> p_version_id then
+    update public.ai_agent_versions
+       set status = 'superseded', superseded_at = v_published_at
+     where id = v_previous_version_id;
+  end if;
+
+  update public.ai_agent_versions
+     set status = 'published',
+         published_at = v_published_at,
+         superseded_at = null
+   where id = p_version_id;
+
+  update public.ai_agents
+     set published_version_id = p_version_id,
+         updated_at = v_published_at
+   where id = p_agent_id;
+
+  return query
+    select p_agent_id, p_version_id, v_previous_version_id, v_published_at;
+end;
+$$;
+
+revoke all on function public.fn_publish_ai_agent_version(uuid,uuid,uuid,boolean,text) from public,anon,authenticated;
+grant execute on function public.fn_publish_ai_agent_version(uuid,uuid,uuid,boolean,text) to service_role;
+create or replace function public.fn_publish_ai_agent_version(p_org_id uuid,p_agent_id uuid,p_version_id uuid,p_platform_credential_verified boolean)
+returns table(agent_id uuid,version_id uuid,previous_version_id uuid,published_at timestamptz)
+language sql security definer set search_path=public as $$
+ select * from public.fn_publish_ai_agent_version(p_org_id,p_agent_id,p_version_id,p_platform_credential_verified,null);
+$$;
+revoke all on function public.fn_publish_ai_agent_version(uuid,uuid,uuid,boolean) from public,anon,authenticated;
+grant execute on function public.fn_publish_ai_agent_version(uuid,uuid,uuid,boolean) to service_role;
+create or replace function public.fn_publish_ai_agent_version(p_org_id uuid,p_agent_id uuid,p_version_id uuid)
+returns table(agent_id uuid,version_id uuid,previous_version_id uuid,published_at timestamptz)
+language sql security definer set search_path=public as $$
+ select * from public.fn_publish_ai_agent_version(p_org_id,p_agent_id,p_version_id,false);
+$$;
+
+
+alter table public.ai_agent_versions add column if not exists provisioning_origin text check(provisioning_origin in('onboarding','legacy_reconciliation'));
+create or replace function public.fn_agent_provisioning_origin() returns trigger language plpgsql set search_path=public as $$
+begin
+ if tg_op='INSERT' then
+  if current_user not in('postgres','service_role') then new.provisioning_origin:=null;end if;
+ else
+  new.provisioning_origin:=old.provisioning_origin;
+  if(to_jsonb(new)-array['status','published_at','superseded_at','updated_at','provisioning_origin']) is distinct from(to_jsonb(old)-array['status','published_at','superseded_at','updated_at','provisioning_origin']) then new.provisioning_origin:=null;end if;
+ end if;return new;
+end;$$;
+revoke all on function public.fn_agent_provisioning_origin() from public,anon,authenticated;
+drop trigger if exists trg_agent_provisioning_origin on public.ai_agent_versions;
+create trigger trg_agent_provisioning_origin before insert or update on public.ai_agent_versions for each row execute function public.fn_agent_provisioning_origin();
+
 -- ---- conversões de anúncio: conexão + livro-razão (migration 0213) ----
 -- Idempotente e auto-curativo, como o kit exige: `update.sh` re-aplica este
 -- arquivo inteiro num banco existente e sem `ON_ERROR_STOP`.
@@ -18420,3 +22230,1052 @@ notify pgrst, 'reload schema';
 -- em produção (engolido, fire-and-forget), e o aviso ficava aberto pra sempre.
 alter table public.agent_inbox_items
   add column if not exists resolved_at timestamptz;
+
+-- ---- roteamento por canal e reservas (migration 0228) ----
+-- 0228 — responsáveis por canal, claim automático serializado e conexão recuperável.
+-- Independente da 0227: assignment dispara os triggers vigentes, nunca escreve drafts.
+-- Ordem: mutex de serviço org+contato -> slot org+candidato -> canal SHARE -> conversa NO KEY UPDATE.
+-- Escrita humana de policy ocorre somente pela RPC (RBAC + MFA + suporte), evitando
+-- que DML direto burle a transação de substituição/locks. Leitura segue RLS por org.
+create unique index if not exists channel_sessions_org_id_unique on public.channel_sessions(organization_id,id);
+create table if not exists public.channel_routing_policies (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ channel_session_id uuid not null,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(),
+ unique(organization_id,channel_session_id), unique(organization_id,id),
+ foreign key(organization_id,channel_session_id) references public.channel_sessions(organization_id,id) on delete cascade
+);
+create table if not exists public.channel_routing_responsibles (
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ policy_id uuid not null,
+ user_id uuid not null,
+ created_at timestamptz not null default now(),
+ primary key(policy_id,user_id),
+ foreign key(organization_id,policy_id) references public.channel_routing_policies(organization_id,id) on delete cascade,
+ foreign key(organization_id,user_id) references public.user_organizations(organization_id,user_id) on delete cascade
+);
+create index if not exists channel_routing_responsibles_org_user on public.channel_routing_responsibles(organization_id,user_id);
+alter table public.channel_routing_policies enable row level security;
+alter table public.channel_routing_responsibles enable row level security;
+revoke all on public.channel_routing_policies,public.channel_routing_responsibles from public,anon,authenticated,service_role;
+grant select on public.channel_routing_policies,public.channel_routing_responsibles to authenticated,service_role;
+drop policy if exists tenant_isolation_channel_routing_policies_select on public.channel_routing_policies;
+create policy tenant_isolation_channel_routing_policies_select on public.channel_routing_policies for select to authenticated
+ using(organization_id in(select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+drop policy if exists tenant_isolation_channel_routing_responsibles_select on public.channel_routing_responsibles;
+create policy tenant_isolation_channel_routing_responsibles_select on public.channel_routing_responsibles for select to authenticated
+ using(organization_id in(select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+
+-- Preserva história: apenas o evento pendente duplicado deixa de disputar consumo.
+with ranked as (
+ select id,row_number() over(partition by organization_id,entity_id order by created_at,id) n
+ from public.event_log where event_type='conversation.routing_requested' and status in('pending','processing') and entity_id is not null
+)
+update public.event_log e set status='done',metadata=e.metadata||'{"routing_duplicate_recovered":true}'::jsonb
+ from ranked r where e.id=r.id and r.n>1;
+create unique index if not exists event_log_routing_active_unique on public.event_log(organization_id,entity_id)
+ where event_type='conversation.routing_requested' and status in('pending','processing');
+
+create or replace function public.fn_request_channel_routing(p_org uuid,p_conversation uuid)
+returns void language plpgsql security definer set search_path=public as $$
+declare c public.conversations;
+begin
+ select * into c from public.conversations where organization_id=p_org and id=p_conversation;
+ if not found or c.assigned_to_user_id is not null or c.status not in('open','pending','claimed','ai_handling') then return;end if;
+ insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
+ values(p_org,'conversation.routing_requested','conversation',c.id,
+  jsonb_build_object('organization_id',p_org,'conversation_id',c.id,'channel_session_id',c.channel_session_id))
+ on conflict(organization_id,entity_id) where event_type='conversation.routing_requested' and status in('pending','processing')
+ do update set next_attempt_at=case when event_log.status='pending' then now() else event_log.next_attempt_at end;
+end;
+$$;
+revoke all on function public.fn_request_channel_routing(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_request_channel_routing(uuid,uuid) to service_role;
+
+create or replace function public.fn_emit_conversation_routing()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ perform public.fn_request_channel_routing(new.organization_id,new.id);
+ return null;
+end;
+$$;
+revoke all on function public.fn_emit_conversation_routing() from public,anon,authenticated;
+
+-- Sem lock de conversa/advisory: este helper só agenda eventos, nunca atribui.
+create or replace function public.fn_wake_channel_routing(p_org uuid,p_channel uuid default null)
+returns void language plpgsql security definer set search_path=public as $$
+declare cid uuid;
+begin
+ for cid in select id from public.conversations where organization_id=p_org
+  and (p_channel is null or channel_session_id=p_channel) and assigned_to_user_id is null
+  and status in('open','pending','claimed','ai_handling') order by id
+ loop perform public.fn_request_channel_routing(p_org,cid);end loop;
+end;
+$$;
+revoke all on function public.fn_wake_channel_routing(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_wake_channel_routing(uuid,uuid) to service_role;
+
+create or replace function public.fn_set_channel_routing(p_org uuid,p_channel uuid,p_users uuid[],p_reset boolean default false)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare v_policy_id uuid; requested_count integer; found_count integer;
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'manager') or not public.fn_support_write_allowed(p_org)
+ then raise exception 'routing_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'routing_mfa_required' using errcode='42501';end if;
+ if p_users is null or cardinality(p_users)>1000 or array_position(p_users,null) is not null then
+  raise exception 'routing_invalid_members' using errcode='22023';end if;
+ -- Leitores de claim usam SHARE nesta identidade, inclusive na ausência de policy.
+ perform 1 from public.channel_sessions where organization_id=p_org and id=p_channel and archived_at is null for update;
+ if not found then raise exception 'routing_channel_not_found' using errcode='P0002';end if;
+ if p_reset then
+  delete from public.channel_routing_policies where organization_id=p_org and channel_session_id=p_channel;
+ else
+  select count(distinct x) into requested_count from unnest(p_users) x;
+  perform 1 from public.user_organizations where organization_id=p_org and user_id=any(p_users)
+   and revoked_at is null and role in('agent','manager','admin') order by user_id for share;
+  get diagnostics found_count=row_count;
+  if found_count<>requested_count then raise exception 'routing_invalid_members' using errcode='22023';end if;
+  insert into public.channel_routing_policies(organization_id,channel_session_id) values(p_org,p_channel)
+   on conflict(organization_id,channel_session_id) do update set updated_at=now() returning id into v_policy_id;
+  delete from public.channel_routing_responsibles where organization_id=p_org and channel_routing_responsibles.policy_id=v_policy_id;
+  insert into public.channel_routing_responsibles(organization_id,policy_id,user_id)
+   select p_org,v_policy_id,x from(select distinct unnest(p_users) x) users;
+ end if;
+ perform public.fn_wake_channel_routing(p_org,p_channel);
+ return jsonb_build_object('channel_session_id',p_channel,'policy_id',v_policy_id,
+  'mode',case when p_reset then 'legacy_unconfigured' when cardinality(p_users)=0 then 'restricted_empty' else 'restricted' end,
+  'user_ids',case when p_reset then '[]'::jsonb else to_jsonb(p_users) end);
+end;
+$$;
+revoke all on function public.fn_set_channel_routing(uuid,uuid,uuid[],boolean) from public,anon;
+grant execute on function public.fn_set_channel_routing(uuid,uuid,uuid[],boolean) to authenticated;
+
+-- Revogação é UPDATE, não DELETE: cascade sozinho não remove elegibilidade.
+create or replace function public.fn_routing_member_revoked()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.revoked_at is not null or new.role not in('agent','manager','admin') then
+  delete from public.channel_routing_responsibles where organization_id=new.organization_id and user_id=new.user_id;
+ end if;
+ perform public.fn_wake_channel_routing(new.organization_id);
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_member_revoked() from public,anon,authenticated;
+drop trigger if exists trg_routing_member_revoked on public.user_organizations;
+create trigger trg_routing_member_revoked after update of revoked_at,role on public.user_organizations
+ for each row when(old.revoked_at is distinct from new.revoked_at or old.role is distinct from new.role) execute function public.fn_routing_member_revoked();
+
+create or replace function public.fn_routing_availability_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin perform public.fn_wake_channel_routing(new.organization_id);return new;end;
+$$;
+revoke all on function public.fn_routing_availability_changed() from public,anon,authenticated;
+drop trigger if exists trg_routing_availability_changed on public.attendant_availability;
+create trigger trg_routing_availability_changed after insert or update of is_available,capacity,schedule on public.attendant_availability
+ for each row execute function public.fn_routing_availability_changed();
+
+-- Um aviso por conversa, com histórico preservado entre acknowledge e resolução.
+create unique index if not exists agent_inbox_routing_unique on public.agent_inbox_items(organization_id,ref_id,kind)
+ where kind='routing_unassigned';
+
+create or replace function public.fn_routing_unassigned_notice(p_org uuid,p_conversation uuid,p_reason text)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+ if not exists(select 1 from public.conversations where organization_id=p_org and id=p_conversation and assigned_to_user_id is null
+  and status in('open','pending','claimed','ai_handling')) then return;end if;
+ insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
+ values(p_org,'routing_unassigned','warn','Uma conversa aguarda um responsável',
+  case when p_reason='invalid_channel' then 'Confira o canal de origem desta conversa nas Conexões.'
+   else 'Confira os responsáveis do canal em Configurações → Atendimento e a disponibilidade da equipe. A distribuição continuará tentando.' end,
+  'conversation',p_conversation)
+ on conflict(organization_id,ref_id,kind) where kind='routing_unassigned'
+ do update set status='open',body=excluded.body;
+end;
+$$;
+revoke all on function public.fn_routing_unassigned_notice(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_routing_unassigned_notice(uuid,uuid,text) to service_role;
+
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ elsif old.assigned_to_user_id is not null or old.status not in('open','pending','claimed','ai_handling') then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+-- Mesma porta pública e contrato; compatível com KEY SHARE das FKs inbound.
+CREATE OR REPLACE FUNCTION public.fn_conversation_assign(p_organization_id uuid, p_conversation_id uuid, p_to_user_id uuid, p_reason text, p_expected_assignee uuid DEFAULT NULL::uuid, p_enforce_expected boolean DEFAULT false)
+ RETURNS SETOF conversations
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  select assigned_to_user_id into v_from
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+   for no key update;
+
+  if not found then
+    return;
+  end if;
+
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         -- Desnormalizado JUNTO com o dono, na mesma transação: nunca existe
+         -- uma janela em que id e nome discordam. NULL junto com o id quando
+         -- a atribuição é removida (release) — nunca sobra um nome órfão de
+         -- dono nenhum. Lido de auth.users porque quem chama esta função
+         -- (RPC) não necessariamente tem acesso ao Admin API — a definer
+         -- resolve por dentro.
+         assigned_to_user_name = case
+           when p_to_user_id is null then null
+           else (select raw_user_meta_data ->> 'full_name' from auth.users where id = p_to_user_id)
+         end,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         bot_silenced_until = case
+           when p_reason = 'routing'  then bot_silenced_until
+           when p_to_user_id is null  then (case when last_handoff_at is null
+                                                 then null
+                                                 else bot_silenced_until end)
+           else 'infinity'::timestamptz
+         end,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason);
+
+  return next v_conv;
+end;
+$function$;
+
+create or replace function public.fn_channel_routing_claim(p_org uuid,p_conversation uuid,p_channel uuid,p_user uuid,p_schedule jsonb default null,p_reason text default 'routing')
+returns text language plpgsql security definer set search_path=public as $$
+declare c public.conversations; pre_contact uuid; member_id uuid; v_policy_id uuid; availability public.attendant_availability; current_load integer;
+begin
+ if p_reason not in('routing','handoff') then raise exception 'routing_reason_invalid' using errcode='22023';end if;
+ select contact_id into pre_contact from public.conversations where organization_id=p_org and id=p_conversation;
+ if not found then return 'conversation_changed';end if;
+ perform public.fn_service_lock(p_org,pre_contact);
+ perform pg_advisory_xact_lock(hashtextextended(p_org::text||':'||p_user::text,228));
+ -- Task9: o trigger de status do canal toca conversas; ordem comum channel -> conversation.
+ perform 1 from public.channel_sessions where organization_id=p_org and id=p_channel for share;
+ if not found then return 'conversation_changed';end if;
+ select * into c from public.conversations where organization_id=p_org and id=p_conversation for no key update;
+ if not found or c.contact_id is distinct from pre_contact or c.channel_session_id is distinct from p_channel
+  or c.status not in('open','pending','claimed','ai_handling') then return 'conversation_changed';end if;
+ if c.assigned_to_user_id is not null then return 'already_assigned';end if;
+ select id into member_id from public.user_organizations where organization_id=p_org and user_id=p_user
+  and revoked_at is null and role in('agent','manager','admin') for share;
+ if not found then return 'candidate_revoked';end if;
+ select id into v_policy_id from public.channel_routing_policies where organization_id=p_org and channel_session_id=p_channel;
+ if found and not exists(select 1 from public.channel_routing_responsibles r where r.organization_id=p_org and r.policy_id=v_policy_id and r.user_id=p_user)
+ then return 'candidate_not_allowed';end if;
+ select * into availability from public.attendant_availability where organization_id=p_org and user_id=p_user for share;
+ if not found or not availability.is_available or (p_schedule is not null and availability.schedule is distinct from p_schedule)
+ then return 'capacity_changed';end if;
+ select count(*) into current_load from public.conversations where organization_id=p_org and assigned_to_user_id=p_user and status in('open','pending','claimed','ai_handling');
+ if current_load>=availability.capacity then return 'capacity_changed';end if;
+ perform public.fn_conversation_assign(p_org,p_conversation,p_user,p_reason,null,true);
+ return 'assigned';
+end;
+$$;
+revoke all on function public.fn_channel_routing_claim(uuid,uuid,uuid,uuid,jsonb,text) from public,anon,authenticated;
+grant execute on function public.fn_channel_routing_claim(uuid,uuid,uuid,uuid,jsonb,text) to service_role;
+
+-- Recibo privado: fatos da operação e lease; a representação do canal continua
+-- em channel_sessions. TTL vale para replay concluído, nunca apaga reparo pendente.
+create table if not exists public.channel_connection_requests (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ idempotency_key uuid not null,
+ request_hash text not null,
+ channel_session_id uuid,
+ state text not null default 'processing' check(state in('processing','succeeded','failed')),
+ lease_token uuid not null default gen_random_uuid(),
+ lease_until timestamptz not null default now()+interval '5 minutes',
+ remote_created boolean not null default false,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(),
+ unique(organization_id,idempotency_key),
+ foreign key(organization_id,channel_session_id) references public.channel_sessions(organization_id,id) on delete set null(channel_session_id)
+);
+alter table public.channel_connection_requests enable row level security;
+revoke all on public.channel_connection_requests from public,anon,authenticated,service_role;
+grant select on public.channel_connection_requests to service_role;
+-- Sem policy authenticated: contém lease de execução, não é uma tabela de UI.
+
+create or replace function public.fn_reserve_channel_connection(p_org uuid,p_key uuid,p_hash text,p_display_name text default null,p_onboarding boolean default false)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare receipt public.channel_connection_requests; channel public.channel_sessions; token uuid:=gen_random_uuid();
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'admin') or not public.fn_support_write_allowed(p_org)
+ then raise exception 'connection_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'connection_mfa_required' using errcode='42501';end if;
+ if p_key is null or p_hash is null or length(p_hash)<>64 or length(coalesce(p_display_name,''))>100 then
+  raise exception 'connection_invalid_request' using errcode='22023';end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_org::text,2281));
+ delete from public.channel_connection_requests where organization_id=p_org and idempotency_key=p_key
+  and state='succeeded' and updated_at<now()-interval '24 hours';
+ select * into receipt from public.channel_connection_requests where organization_id=p_org and idempotency_key=p_key for update;
+ if found then
+  if receipt.request_hash<>p_hash then raise exception 'idempotency_conflict' using errcode='22023';end if;
+  if receipt.state='succeeded' then
+   select * into channel from public.channel_sessions where organization_id=p_org and id=receipt.channel_session_id;
+   return jsonb_build_object('replay',true,'channel',to_jsonb(channel),'receipt_id',receipt.id);
+  end if;
+  if receipt.state='processing' and receipt.lease_until>now() then
+   raise exception 'connection_in_progress' using errcode='55P03';end if;
+  select * into channel from public.channel_sessions where organization_id=p_org and id=receipt.channel_session_id for update;
+  if not found then raise exception 'connection_reservation_missing' using errcode='P0002';end if;
+ else
+  if p_onboarding then
+   select * into channel from public.channel_sessions where organization_id=p_org and provider='waha'
+    and (metadata->>'onboarding'='true' or waha_session_name='org_'||left(p_org::text,8))
+    order by created_at limit 1 for update;
+  end if;
+  if channel.id is null then
+   insert into public.channel_sessions(organization_id,waha_session_name,display_name,engine,webhook_path_token,
+     webhook_secret_encrypted,status,last_status_change_at,consecutive_health_fails,daily_message_limit,metadata)
+   values(p_org,'org_'||replace(p_org::text,'-','')||'_'||replace(gen_random_uuid()::text,'-',''),p_display_name,'NOWEB',
+     replace(gen_random_uuid()::text,'-',''),'\x00'::bytea,'STARTING',now(),0,250,
+     case when p_onboarding then '{"onboarding":true}'::jsonb else '{}'::jsonb end) returning * into channel;
+  end if;
+  if exists(select 1 from public.channel_connection_requests where organization_id=p_org and channel_session_id=channel.id
+    and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
+  insert into public.channel_connection_requests(organization_id,idempotency_key,request_hash,channel_session_id)
+   values(p_org,p_key,p_hash,channel.id) returning * into receipt;
+ end if;
+ if exists(select 1 from public.channel_connection_requests where organization_id=p_org and channel_session_id=channel.id
+   and id<>receipt.id and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
+ update public.channel_connection_requests set state='processing',lease_token=token,lease_until=now()+interval '5 minutes',
+  remote_created=false,updated_at=now() where organization_id=p_org and id=receipt.id;
+ -- Não ressuscita antes da pós-condição remota. Arquivado permanece invisível
+ -- até finish; falha conserva identidade e estado FAILED para reparo.
+ update public.channel_sessions set status='STARTING',status_reason='connection_pending',last_status_change_at=now()
+  where organization_id=p_org and id=channel.id returning * into channel;
+ return jsonb_build_object('replay',false,'channel',to_jsonb(channel),'receipt_id',receipt.id,'lease_token',token);
+end;
+$$;
+revoke all on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) from public,anon;
+grant execute on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) to authenticated;
+
+create or replace function public.fn_finish_channel_connection(p_org uuid,p_receipt uuid,p_lease uuid,p_status text,p_reason text default null,p_created boolean default false)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare receipt public.channel_connection_requests; channel public.channel_sessions;
+begin
+ select * into receipt from public.channel_connection_requests where organization_id=p_org and id=p_receipt for update;
+ if not found or receipt.state<>'processing' or receipt.lease_token<>p_lease
+   or receipt.lease_until<=now()
+ then raise exception 'connection_lease_lost' using errcode='55P03';end if;
+ if p_status='remote_created' then
+  update public.channel_connection_requests set remote_created=true,updated_at=now() where organization_id=p_org and id=p_receipt;
+  return '{}'::jsonb;
+ end if;
+ if p_status not in('STARTING','SCAN_QR_CODE','WORKING','FAILED') then raise exception 'connection_invalid_status' using errcode='22023';end if;
+ update public.channel_sessions set status=p_status,status_reason=left(p_reason,200),last_status_change_at=now(),
+  consecutive_health_fails=case when p_status='FAILED' then consecutive_health_fails else 0 end,
+  archived_at=case when p_status<>'FAILED' then null else archived_at end,
+  phone_number=case when archived_at is not null and p_status<>'FAILED' then null else phone_number end
+  where organization_id=p_org and id=receipt.channel_session_id returning * into channel;
+ if not found then raise exception 'connection_reservation_missing' using errcode='P0002';end if;
+ update public.channel_connection_requests set state=case when p_status='FAILED' then 'failed' else 'succeeded' end,
+  remote_created=remote_created or p_created,updated_at=now() where organization_id=p_org and id=p_receipt;
+ return to_jsonb(channel);
+end;
+$$;
+revoke all on function public.fn_finish_channel_connection(uuid,uuid,uuid,text,text,boolean) from public,anon,authenticated;
+grant execute on function public.fn_finish_channel_connection(uuid,uuid,uuid,text,text,boolean) to service_role;
+
+-- ---- MFA e LGPD da agenda (migration 0229) ----
+-- 0229 — MFA das ações humanas e ordem LGPD/agenda.
+-- Forward independente de 0227/0228; helpers privados de 0222/0226 preservados.
+
+create or replace function public.fn_appointment_change_core(p_org uuid,p_id uuid,p_revision bigint,p_patch jsonb,p_remote boolean,p_base jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; contact uuid; origin jsonb; event_id uuid;
+begin
+ if p_remote and (auth.uid() is not null or (p_patch-'starts_at'-'ends_at'-'time_zone'-'status'-'cancellation_reason')<>'{}'::jsonb or coalesce(p_patch->>'status','cancelled')<>'cancelled') then raise exception 'google_patch_forbidden' using errcode='42501';end if;
+ if auth.uid() is not null and (not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org)) then raise exception 'appointment_forbidden' using errcode='42501'; end if;
+ if auth.uid() is not null and not public.fn_session_mfa_proven() then raise exception 'appointment_mfa_required' using errcode='42501';end if;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact); end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if a.contact_id is distinct from contact or a.revision is distinct from p_revision then raise exception 'appointment_stale' using errcode='40001'; end if;
+ if p_remote and a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='40001';end if;
+ if a.status='cancelled' then raise exception 'appointment_cancelled' using errcode='22023'; end if;
+ if contact is not null then origin:=jsonb_build_object('kind','command','observed',public.fn_service_observe_command(p_org,contact)); end if;
+ update public.calendar_appointments set
+  google_base_projection=case when p_remote then p_base else google_base_projection end,
+  starts_at=case when p_patch?'starts_at' then (p_patch->>'starts_at')::timestamptz else starts_at end,
+  ends_at=case when p_patch?'ends_at' then (p_patch->>'ends_at')::timestamptz else ends_at end,
+  time_zone=coalesce(p_patch->>'time_zone',time_zone),
+  status=coalesce(p_patch->>'status',status),
+  cancelled_at=case when p_patch->>'status'='cancelled' then now() else cancelled_at end,
+  cancellation_reason=case when p_patch?'cancellation_reason' then p_patch->>'cancellation_reason' else cancellation_reason end,
+  notes=case when p_patch?'notes' then p_patch->>'notes' else notes end,
+  guest_email=case when p_patch?'guest_email' then p_patch->>'guest_email' else guest_email end,
+  outcome_message_id=case when p_patch?'outcome_message_id' then (p_patch->>'outcome_message_id')::uuid else null end,
+  confirmation_next_at=case when p_patch?'confirmation_next_at' then (p_patch->>'confirmation_next_at')::timestamptz else confirmation_next_at end
+ where organization_id=p_org and id=p_id returning * into a;
+ if p_patch?'confirmation_next_at' and (a.confirmation_next_at<=now() or a.confirmation_next_at>now()+interval '24 hours') then raise exception 'appointment_invalid_snooze' using errcode='22023'; end if;
+ update public.followup_enrollments set status='cancelled',cancel_reason='O compromisso mudou. Revise o próximo passo.',completed_at=now(),next_eval_at=null,claimed_until=null
+  where organization_id=p_org and appointment_id=p_id and appointment_revision<>a.revision and status in ('active','waiting_reply','paused_handoff','paused_manual');
+ update public.agent_inbox_items set status='resolved',resolved_at=now()
+  where organization_id=p_org and ref_kind='appointment' and ref_id=p_id and status='open'
+   and (appointment_revision<>a.revision or a.status in ('completed','no_show','cancelled') or p_patch?'confirmation_next_at');
+ if contact is not null and a.status='no_show' and a.outcome_recorded_at is not null and a.revision<>p_revision then
+  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
+   values(p_org,'appointment.outcome_confirmed','appointment',p_id,
+    jsonb_build_object('appointment_revision',a.revision,'service_origin',origin)) returning id into event_id;
+ end if;
+ return to_jsonb(a);
+end; $$;
+
+create or replace function public.fn_agenda_settings(p_org uuid,p_config jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'manager') or not public.fn_support_write_allowed(p_org) then raise exception 'agenda_settings_forbidden' using errcode='42501'; end if;
+ if not public.fn_session_mfa_proven() then raise exception 'agenda_mfa_required' using errcode='42501';end if;
+ if jsonb_typeof(p_config->'confirmation_delay_minutes') is distinct from 'number' or jsonb_typeof(p_config->'unknown_protection_minutes') is distinct from 'number'
+  or (p_config-'confirmation_delay_minutes'-'unknown_protection_minutes')<>'{}'::jsonb
+  or (p_config->>'confirmation_delay_minutes' ~ '^[0-9]{1,5}$') is not true or (p_config->>'unknown_protection_minutes' ~ '^[0-9]{1,5}$') is not true
+  or (p_config->>'confirmation_delay_minutes')::int not between 1 and 10080
+  or (p_config->>'unknown_protection_minutes')::int not between 1 and 10080
+  or (p_config->>'unknown_protection_minutes')::int < (p_config->>'confirmation_delay_minutes')::int
+ then raise exception 'agenda_settings_invalid' using errcode='22023'; end if;
+ update public.organizations set settings=jsonb_set(coalesce(settings,'{}'::jsonb),'{agenda}',p_config,true) where id=p_org;
+ if not found then raise exception 'organization_not_found' using errcode='P0002'; end if;
+ return p_config;
+end; $$;
+
+create or replace function public.fn_google_selection(p_org uuid,p_revisions jsonb,p_sources uuid[],p_destination uuid)
+returns void language plpgsql security definer set search_path=public as $$
+declare actor uuid:=auth.uid(); expected jsonb; actual jsonb;
+begin
+ if actor is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) then raise exception 'google_selection_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'google_mfa_required' using errcode='42501';end if;
+ perform 1 from public.user_organizations where organization_id=p_org and user_id=actor and revoked_at is null for update;
+ if not found then raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ select jsonb_agg(value order by value->>'connection_id') into expected from jsonb_array_elements(p_revisions);
+ select jsonb_agg(jsonb_build_object('connection_id',id,'revision',calendar_selection_revision::text) order by id::text) into actual from public.calendar_connections where organization_id=p_org and user_id=actor and provider='google_calendar';
+ if actual is distinct from expected then raise exception 'google_selection_stale' using errcode='40001';end if;
+ if not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections c on c.id=k.connection_id and c.organization_id=k.organization_id
+  where k.organization_id=p_org and k.id=p_destination and c.user_id=actor and c.status='healthy' and k.available and k.access_role in ('owner','writer')) then raise exception 'google_destination_unavailable' using errcode='42501';end if;
+ if exists(select 1 from unnest(p_sources) selected(id) where not exists(select 1 from public.calendar_connection_calendars k join public.calendar_connections c on c.id=k.connection_id and c.organization_id=k.organization_id
+  where k.organization_id=p_org and k.id=selected.id and c.user_id=actor and c.status='healthy' and k.available and k.access_role in ('owner','writer','reader','writerWithoutPrivateAccess'))) then raise exception 'google_source_unavailable' using errcode='42501';end if;
+ update public.calendar_connection_calendars k set is_destination=false from public.calendar_connections c where k.organization_id=p_org and c.organization_id=p_org and k.connection_id=c.id and c.user_id=actor;
+ update public.calendar_connection_calendars k set is_destination=k.id=p_destination,counts_for_conflicts=k.id=any(p_sources),sync_next_attempt_at=now() from public.calendar_connections c where k.organization_id=p_org and c.organization_id=p_org and k.connection_id=c.id and c.user_id=actor;
+ update public.calendar_connections set calendar_selection_revision=calendar_selection_revision+1 where organization_id=p_org and user_id=actor and provider='google_calendar';
+end;$$;
+
+create or replace function public.fn_google_resolve(p_org uuid,p_id uuid,p_revision text,p_local_revision text,p_etag text,p_choice text)
+returns void language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; contact uuid;
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'agent') or not public.fn_support_write_allowed(p_org) then raise exception 'google_resolution_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'google_mfa_required' using errcode='42501';end if;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if contact is not null then perform public.fn_service_lock(p_org,contact);end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ if not found or a.owner_user_id is distinct from auth.uid() then raise exception 'google_resolution_forbidden' using errcode='42501';end if;
+ if a.revision::text is distinct from p_revision or a.google_local_revision::text is distinct from p_local_revision
+  or a.google_etag is distinct from p_etag then raise exception 'google_stale' using errcode='40001';end if;
+ if p_choice='retry' then
+  if a.google_conflict is not null then raise exception 'google_conflict_requires_choice' using errcode='40001';end if;
+  update public.calendar_appointments set google_next_attempt_at=now() where organization_id=p_org and id=p_id;
+ else
+  if p_choice not in ('google','local','preserve_remote') or a.google_conflict is null then raise exception 'google_choice_invalid' using errcode='22023';end if;
+  -- O trigger reconhece somente esta forma autenticada: o corpo da comparação
+  -- e as revisões não mudam, actor_id é auth.uid(), não input do browser.
+  update public.calendar_appointments set google_conflict=google_conflict||jsonb_build_object('resolution',jsonb_build_object('choice',p_choice,'actor_id',auth.uid())),google_next_attempt_at=now()
+   where organization_id=p_org and id=p_id;
+ end if;
+end;$$;
+
+-- Assinaturas e concessões das portas existentes não mudam.
+revoke all on function public.fn_appointment_change_core(uuid,uuid,bigint,jsonb,boolean,jsonb) from public,anon,authenticated;
+revoke all on function public.fn_agenda_settings(uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_agenda_settings(uuid,jsonb) to authenticated;
+revoke all on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) from public,anon;
+grant execute on function public.fn_google_selection(uuid,jsonb,uuid[],uuid) to authenticated;
+revoke all on function public.fn_google_resolve(uuid,uuid,text,text,text,text) from public,anon;
+grant execute on function public.fn_google_resolve(uuid,uuid,text,text,text,text) to authenticated;
+
+create or replace function public.fn_meet_redact_contact()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ perform public.fn_service_lock(new.organization_id,new.id);
+ update public.job_queue set payload='{}',status=case when status in ('pending','running') then 'failed' else status end,
+  locked_by=null,locked_at=null,last_error='meet_contact_redacted'
+  where organization_id=new.organization_id and contact_id=new.id and kind='transactional_delivery';
+ update public.agent_inbox_items set status='resolved',resolved_at=now(),body='Contato anonimizado.',ref_id=null
+  where organization_id=new.organization_id and ref_kind='appointment' and ref_id in(select id from public.calendar_appointments where organization_id=new.organization_id and contact_id=new.id) and kind in ('other','appointment_outcome_required','appointment_recovery_review');
+ update public.calendar_appointments set meeting_url=null,meeting_request_id=null,meeting_requested_at=null,meeting_received_at=null,meeting_last_error=null,
+  meeting_next_attempt_at=null,meeting_delivery='{"state":"blocked"}',meeting_delivery_job_id=null
+  where organization_id=new.organization_id and contact_id=new.id;
+ return new;
+end;$$;
+
+revoke all on function public.fn_meet_redact_contact() from public,anon,authenticated;
+
+create or replace function public.fn_appointment_recover(p_org uuid,p_event uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare e public.event_log; a public.calendar_appointments; r public.appointment_recovery_receipts;
+ contact uuid; rev bigint; result text; candidates uuid[]; pointer uuid; agent uuid; version uuid; node text; boundary jsonb; enrollment uuid;
+begin
+ select * into e from public.event_log where organization_id=p_org and id=p_event and event_type='appointment.outcome_confirmed' and entity_kind='appointment';
+ if not found then raise exception 'appointment_source_event_missing' using errcode='P0002'; end if;
+ rev:=(e.payload->>'appointment_revision')::bigint;
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=e.entity_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact); end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=e.entity_id for update;
+ if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='40001'; end if;
+ select * into r from public.appointment_recovery_receipts where organization_id=p_org and appointment_id=a.id and appointment_revision=rev;
+ if found then return to_jsonb(r); end if;
+ result:=case when contact is null then 'no_contact' when a.revision<>rev or a.status<>'no_show' or a.outcome_recorded_at is null
+
+  or not exists(select 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized and is_merged_into is null and not is_blocked)
+  then 'stale' else null end;
+ if result is null then
+  select array_agg(p.id) into candidates from public.followup_flow_pointers p
+   where p.organization_id=p_org and p.status='active' and p.active_version_id is not null and p.trigger_config->>'kind'='appointment_no_show'
+    and (coalesce(jsonb_array_length(p.trigger_config->'params'->'event_type_ids'),0)=0 or p.trigger_config->'params'->'event_type_ids' ? a.event_type_id::text)
+    and exists(select 1 from public.ai_agent_versions v where v.organization_id=p_org and v.status='published'
+     and v.followup->'enabled'='true'::jsonb and v.followup->'flow_pointer_ids' ? p.id::text);
+  result:=case when coalesce(cardinality(candidates),0)=0 then 'not_configured' when cardinality(candidates)>1 then 'ambiguous' else null end;
+ end if;
+ if result is null and exists(select 1 from public.followup_enrollments where organization_id=p_org and contact_id=contact and status in ('active','waiting_reply','paused_handoff','paused_manual')) then result:='other_flow'; end if;
+ if result is null then
+  pointer:=candidates[1];
+  select active_version_id into version from public.followup_flow_pointers where organization_id=p_org and id=pointer and status='active' for share;
+  -- Precedência de AGENTES já canônica em resolveAgentForAutomaticTrigger.
+  select agent_id into agent from public.ai_agent_versions where organization_id=p_org and status='published'
+   and followup->'enabled'='true'::jsonb and followup->'flow_pointer_ids' ? pointer::text order by agent_id limit 1;
+  select n->>'id' into node from public.followup_flow_versions v cross join lateral jsonb_array_elements(v.graph->'nodes') n
+   where v.organization_id=p_org and v.id=version and n->>'type'='trigger';
+  if version is null or agent is null or node is null then raise exception 'appointment_flow_changed' using errcode='40001'; end if;
+  begin
+   boundary:=public.fn_service_event_origin(p_org,p_event,contact,
+    (select channel_session_id from public.conversations where organization_id=p_org and id=a.conversation_id and contact_id=contact));
+  exception when serialization_failure then result:='stale'; end;
+  if result is null then
+   begin
+    insert into public.followup_enrollments(organization_id,pointer_id,version_id,contact_id,conversation_id,agent_id,current_node_id,service_boundary,
+     appointment_id,appointment_revision)
+    values(p_org,pointer,version,contact,(boundary->>'conversation_id')::uuid,agent,node,boundary,a.id,a.revision) returning id into enrollment;
+    insert into public.followup_enrollment_events(organization_id,enrollment_id,node_id,event_type,payload,idempotency_key)
+     values(p_org,enrollment,node,'enrolled',jsonb_build_object('trigger_kind','appointment_no_show','appointment_id',a.id,'appointment_revision',a.revision),'appointment:'||a.id||':'||a.revision);
+    result:='started';
+   exception when unique_violation then result:='other_flow'; end;
+  end if;
+ end if;
+ insert into public.appointment_recovery_receipts(organization_id,appointment_id,appointment_revision,source_event_id,result,pointer_id,enrollment_id)
+  values(p_org,a.id,rev,p_event,result,pointer,enrollment) returning * into r;
+ if result<>'started' and not exists(select 1 from public.contacts where organization_id=p_org and id=contact and is_anonymized) then
+  insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id,appointment_revision)
+   values(p_org,'appointment_recovery_review','warn','A recuperação não foi iniciada',
+    case result when 'other_flow' then 'Este contato já tem outro acompanhamento. Revise o próximo passo; nenhuma recuperação ficou aguardando vaga.'
+     when 'ambiguous' then 'Mais de um fluxo atende a esta falta. Deixe apenas um configurado ou escolha manualmente o próximo passo.'
+     when 'not_configured' then 'Configure um fluxo de recuperação e habilite-o em um assistente publicado. Esta falta não será iniciada retroativamente.'
+     else 'O contexto mudou ou não há contato vinculado. Abra o compromisso e escolha o próximo passo.' end,'appointment',a.id,rev)
+   on conflict(organization_id,ref_id,appointment_revision,kind) where ref_kind='appointment' and appointment_revision is not null do nothing;
+ end if;
+ return to_jsonb(r);
+end; $$;
+
+revoke all on function public.fn_appointment_recover(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_appointment_recover(uuid,uuid) to service_role;
+
+create or replace function public.fn_meet_notice(p_org uuid,p_id uuid,p_reason text)
+returns void language plpgsql security definer set search_path=public as $$
+declare contact uuid;
+begin
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ -- Pode vir de trigger com row lock: nunca esperar por advisory tardio.
+ if contact is not null and not pg_try_advisory_xact_lock(hashtextextended(p_org::text||':'||contact::text,222)) then
+  raise exception 'appointment_notice_busy' using errcode='40001';
+ end if;
+ insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id,appointment_revision)
+ select p_org,'other','warn','Link da reunião precisa de atenção',
+  'Abra o compromisso na Agenda para verificar o link ou autorizar uma nova entrega.','appointment',id,revision
+ from public.calendar_appointments where organization_id=p_org and id=p_id
+  and contact_id is not distinct from contact
+  and not exists(select 1 from public.contacts c where c.organization_id=p_org and c.id=contact and c.is_anonymized)
+ on conflict(organization_id,ref_id,appointment_revision,kind) where ref_kind='appointment' and appointment_revision is not null
+ do update set status='open',resolved_at=null,body=excluded.body;
+end;$$;
+
+revoke all on function public.fn_meet_notice(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_meet_notice(uuid,uuid,text) to service_role;
+
+create or replace function public.fn_appointment_confirmation_sweep(p_limit int default 100,p_now timestamptz default now())
+returns int language plpgsql security definer set search_path=public as $$
+declare a record; candidate record; n int:=0; expired boolean;
+begin
+ -- Escolhe o mesmo lote vencido e obtém mutexes em ordem, sem row lock prévio.
+ for candidate in select * from (
+  select c.id,c.organization_id,c.contact_id,c.ends_at
+  from public.calendar_appointments c join public.organizations o on o.id=c.organization_id
+  where c.status in ('pending','confirmed')
+   and c.ends_at+make_interval(mins=>public.fn_agenda_minutes(o.settings,'confirmation_delay_minutes',10))<=p_now
+   and (c.confirmation_next_at is null or c.confirmation_next_at<=p_now)
+   and not exists(select 1 from public.contacts ct where ct.organization_id=c.organization_id and ct.id=c.contact_id and ct.is_anonymized)
+  order by c.ends_at,c.id limit greatest(1,least(p_limit,500))
+ ) due order by organization_id,contact_id,id
+ loop
+  if candidate.contact_id is not null and not pg_try_advisory_xact_lock(hashtextextended(candidate.organization_id::text||':'||candidate.contact_id::text,222)) then continue;end if;
+  select c.*,o.settings into a from public.calendar_appointments c join public.organizations o on o.id=c.organization_id
+   where c.id=candidate.id and c.organization_id=candidate.organization_id and c.contact_id is not distinct from candidate.contact_id
+    and c.status in ('pending','confirmed')
+    and c.ends_at+make_interval(mins=>public.fn_agenda_minutes(o.settings,'confirmation_delay_minutes',10))<=p_now
+    and (c.confirmation_next_at is null or c.confirmation_next_at<=p_now)
+    and not exists(select 1 from public.contacts ct where ct.organization_id=c.organization_id and ct.id=c.contact_id and ct.is_anonymized)
+   for update of c skip locked;
+  if not found then continue;end if;
+  expired:=a.ends_at+make_interval(mins=>public.fn_agenda_minutes(a.settings,'unknown_protection_minutes',1440))<=p_now;
+  insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id,appointment_revision)
+   values(a.organization_id,'appointment_outcome_required',case when expired then 'critical' else 'warn' end,
+    case when expired then 'Presença sem confirmação há mais tempo' else 'Confirme a presença no compromisso' end,
+    'Compromisso: '||a.title||'. Abra e registre se a pessoa compareceu, faltou ou cancelou. O horário sozinho não confirma falta.',
+    'appointment',a.id,a.revision)
+   on conflict(organization_id,ref_id,appointment_revision,kind) where ref_kind='appointment' and appointment_revision is not null
+   do update set status='open',resolved_at=null,severity=excluded.severity,title=excluded.title;
+  update public.calendar_appointments set confirmation_next_at=case when expired then p_now+interval '24 hours' else least(p_now+interval '24 hours',a.ends_at+make_interval(mins=>public.fn_agenda_minutes(a.settings,'unknown_protection_minutes',1440))) end where id=a.id and organization_id=a.organization_id;
+  n:=n+1;
+ end loop;
+ return n;
+end; $$;
+
+revoke all on function public.fn_appointment_confirmation_sweep(int,timestamptz) from public,anon,authenticated;
+grant execute on function public.fn_appointment_confirmation_sweep(int,timestamptz) to service_role;
+
+CREATE OR REPLACE FUNCTION "public"."fn_lgpd_cascade_redact_contact"("p_organization_id" "uuid", "p_contact_id" "uuid", "p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_already bool;
+  v_counts jsonb := '{}'::jsonb;
+  v_media_paths text[] := '{}';
+  v_anon_label text;
+  v_count int;
+begin
+  perform public.fn_service_lock(p_organization_id,p_contact_id);
+  select is_anonymized into v_already
+    from contacts
+    where id = p_contact_id and organization_id = p_organization_id;
+
+  if not found then
+    raise exception 'contact not found' using errcode = 'P0002';
+  end if;
+
+  if v_already then
+    return jsonb_build_object('already_anonymized', true, 'counts', v_counts, 'media_paths', v_media_paths);
+  end if;
+
+  v_anon_label := 'Cliente Anonimizado #' || substring(p_contact_id::text from 1 for 8);
+
+  -- Collect media storage paths (we only delete what we own — media_storage_path)
+  select coalesce(array_agg(distinct media_storage_path) filter (where media_storage_path is not null), '{}')
+    into v_media_paths
+    from messages
+    where organization_id = p_organization_id
+      and conversation_id in (
+        select id from conversations
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      );
+
+  -- 1. contacts (irreversible)
+  update contacts set
+    name = v_anon_label,
+    display_name = v_anon_label,
+    email = null,
+    -- email_normalized NÃO entra: é GENERATED ALWAYS AS (lower(trim(email)))
+    -- e o Postgres recusa escrita nela — a linha acima já a zera por derivação.
+    -- Com a atribuição, o cascade INTEIRO abortava e nada era anonimizado.
+    phone_number = null,
+    cpf_encrypted = null,
+    cpf_hash = null,
+    birthdate = null,
+    is_anonymized = true,
+    anonymized_at = now(),
+    consent = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('contacts', v_count);
+
+  -- 2. conversations metadata + preview strip
+  update conversations set
+    metadata = '{}'::jsonb,
+    last_message_preview = null,
+    updated_at = now()
+  where contact_id = p_contact_id and organization_id = p_organization_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('conversations', v_count);
+
+  -- 3. messages: redact body + null media + strip metadata (preserve status/timestamps/conversation_id)
+  update messages set
+    body = '[mensagem anonimizada]',
+    media_url = null,
+    media_mime = null,
+    media_size_bytes = null,
+    media_storage_path = null,
+    metadata = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and conversation_id in (
+      select id from conversations
+        where contact_id = p_contact_id and organization_id = p_organization_id
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('messages', v_count);
+
+  -- 4. crm_lead_activities — strip payload, metadata E reason (migration 0071).
+  --    `reason` é texto livre escrito por LLM sobre a conversa do lead: supor que
+  --    nunca conterá um nome é a suposição que falha. `evidence` NÃO é limpa —
+  --    guarda só ids, e as linhas apontadas são redigidas por conta própria.
+  update crm_lead_activities set
+    payload = '{}'::jsonb,
+    metadata = '{}'::jsonb,
+    reason = null
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or lead_id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+      or lead_id in (
+        select id from crm_leads
+          where contact_id = p_contact_id and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('activities', v_count);
+
+  -- 5. crm_leads — strip title/description/custom_fields/source_metadata/tags but PRESERVE pipeline/stage/value
+  update crm_leads set
+    title = v_anon_label,
+    description = null,
+    custom_fields = '{}'::jsonb,
+    source_metadata = '{}'::jsonb,
+    tags = '{}'::text[],
+    updated_at = now()
+  where organization_id = p_organization_id
+    and (
+      contact_id = p_contact_id
+      or id in (
+        select lead_id from crm_lead_links
+          where target_kind = 'contact'
+            and target_id = p_contact_id
+            and organization_id = p_organization_id
+      )
+    );
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('leads', v_count);
+
+  -- 6. orders — PRESERVE values + status + timestamps. Strip personal fields from payload jsonb
+  --    and replace customer_external_id with null (FK-safe; soft de-link). Keep contact_id null.
+  update orders set
+    payload = (coalesce(payload, '{}'::jsonb))
+      - 'customer'
+      - 'customer_name'
+      - 'customer_email'
+      - 'customer_phone'
+      - 'shipping_address'
+      - 'billing_address'
+      - 'contact_identification',
+    customer_external_id = null,
+    contact_id = null,
+    is_anonymized = true,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('orders', v_count);
+
+  -- 7. enqueue media for async deletion (idempotent via unique (bucket, object_path))
+  if array_length(v_media_paths, 1) > 0 then
+    insert into storage_redaction_queue (organization_id, request_id, bucket, object_path)
+    select p_organization_id, p_request_id, 'whatsapp-media', path
+      from unnest(v_media_paths) as path
+      where path is not null and length(path) > 0
+    on conflict (bucket, object_path) do nothing;
+  end if;
+
+  -- 8. dense audit row
+  insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
+  values (
+    p_organization_id,
+    'lgpd.redact_executed',
+    null,
+    'contact',
+    p_contact_id,
+    jsonb_build_object(
+      'cascaded_to', v_counts,
+      'media_queued', coalesce(array_length(v_media_paths, 1), 0),
+      'request_id', p_request_id
+    ),
+    true
+  );
+
+  return jsonb_build_object(
+    'already_anonymized', false,
+    'counts', v_counts,
+    'media_paths', v_media_paths
+  );
+end;
+$$;
+
+revoke all on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_lgpd_cascade_redact_contact(uuid,uuid,uuid) to service_role;
+
+-- UPDATE cru já detém a linha ao entrar em BEFORE ROW. Compatibilidade sem
+-- espera invertida: ocupado implica retry da transação inteira, inclusive true→true.
+create or replace function public.fn_contact_redaction_lock()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if not pg_try_advisory_xact_lock(hashtextextended(new.organization_id::text||':'||new.id::text,222)) then
+  raise exception 'contact_redaction_busy' using errcode='40001';
+ end if;
+ return new;
+end;$$;
+revoke all on function public.fn_contact_redaction_lock() from public,anon,authenticated;
+drop trigger if exists trg_contact_redaction_lock on public.contacts;
+create trigger trg_contact_redaction_lock before update on public.contacts
+ for each row when(new.is_anonymized is true) execute function public.fn_contact_redaction_lock();
+
+-- Passo 1 legado: mesma autoridade humana, apenas a escrita do contato.
+-- A retomada de leads/atividades segue na rota e usa o timestamp retornado aqui.
+create or replace function public.fn_lgpd_anonymize_contact(p_organization_id uuid,p_contact_id uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.contacts; support jsonb;
+begin
+ support:=public.fn_support_context();
+ if auth.uid() is null or not public.fn_support_write_allowed(p_organization_id)
+  or not (public.fn_role_at_least(p_organization_id,'admin') or (public.fn_is_platform_admin() and support is null)) then
+  raise exception 'contact_anonymize_forbidden' using errcode='42501';
+ end if;
+ if not public.fn_session_mfa_proven() then raise exception 'contact_anonymize_mfa_required' using errcode='42501';end if;
+ perform public.fn_service_lock(p_organization_id,p_contact_id);
+ select * into c from public.contacts where organization_id=p_organization_id and id=p_contact_id for update;
+ if not found then raise exception 'contact_not_found' using errcode='P0002';end if;
+ if c.is_anonymized then return jsonb_build_object('already_anonymized',true,'anonymized_at',c.anonymized_at);end if;
+ update public.contacts set name=null,display_name='Contato Anonimizado #'||substring(p_contact_id::text from 1 for 8),
+  email=null,phone_number=null,cpf_encrypted=null,cpf_hash=null,birthdate=null,
+  is_anonymized=true,anonymized_at=now(),updated_at=now()
+  where organization_id=p_organization_id and id=p_contact_id returning * into c;
+ return jsonb_build_object('already_anonymized',false,'anonymized_at',c.anonymized_at);
+end;$$;
+revoke all on function public.fn_lgpd_anonymize_contact(uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function public.fn_lgpd_anonymize_contact(uuid,uuid) to authenticated;
+
+-- Cura apenas resíduos deste footprint em clones que já anonimizaram o contato.
+-- Mesma ordem de mutexes; não reescreve o contato nem a data original do direito.
+do $$
+declare c record;
+begin
+ for c in select distinct ct.organization_id,ct.id from public.contacts ct
+  join public.calendar_appointments a on a.organization_id=ct.organization_id and a.contact_id=ct.id
+  join public.agent_inbox_items n on n.organization_id=ct.organization_id and n.ref_kind='appointment' and n.ref_id=a.id
+  where ct.is_anonymized and n.kind in ('other','appointment_outcome_required','appointment_recovery_review')
+  order by ct.organization_id,ct.id
+ loop
+  perform public.fn_service_lock(c.organization_id,c.id);
+  update public.agent_inbox_items set status='resolved',resolved_at=now(),body='Contato anonimizado.',ref_id=null
+   where organization_id=c.organization_id and ref_kind='appointment'
+    and kind in ('other','appointment_outcome_required','appointment_recovery_review')
+    and ref_id in(select id from public.calendar_appointments where organization_id=c.organization_id and contact_id=c.id);
+ end loop;
+end;$$;
+
+notify pgrst,'reload schema';
+
+-- ---- Reserva WAHA preserva pré-go-live (migration 0230) ----
+-- 0230 — reserva WAHA cria canais em pré-go-live como os demais providers.
+-- Forward-only: 0228 já aplicada. A única mudança funcional é metadata no INSERT
+-- de canal novo; retry/replay/reconexão preservam integralmente a política atual.
+-- Contrato compartilhado com metadataInicialDoCanal, coberto pelo censo unit e PG.
+create or replace function public.fn_reserve_channel_connection(p_org uuid,p_key uuid,p_hash text,p_display_name text default null,p_onboarding boolean default false)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare receipt public.channel_connection_requests; channel public.channel_sessions; token uuid:=gen_random_uuid();
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'admin') or not public.fn_support_write_allowed(p_org)
+ then raise exception 'connection_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'connection_mfa_required' using errcode='42501';end if;
+ if p_key is null or p_hash is null or length(p_hash)<>64 or length(coalesce(p_display_name,''))>100 then
+  raise exception 'connection_invalid_request' using errcode='22023';end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_org::text,2281));
+ delete from public.channel_connection_requests where organization_id=p_org and idempotency_key=p_key
+  and state='succeeded' and updated_at<now()-interval '24 hours';
+ select * into receipt from public.channel_connection_requests where organization_id=p_org and idempotency_key=p_key for update;
+ if found then
+  if receipt.request_hash<>p_hash then raise exception 'idempotency_conflict' using errcode='22023';end if;
+  if receipt.state='succeeded' then
+   select * into channel from public.channel_sessions where organization_id=p_org and id=receipt.channel_session_id;
+   return jsonb_build_object('replay',true,'channel',to_jsonb(channel),'receipt_id',receipt.id);
+  end if;
+  if receipt.state='processing' and receipt.lease_until>now() then
+   raise exception 'connection_in_progress' using errcode='55P03';end if;
+  select * into channel from public.channel_sessions where organization_id=p_org and id=receipt.channel_session_id for update;
+  if not found then raise exception 'connection_reservation_missing' using errcode='P0002';end if;
+ else
+  if p_onboarding then
+   select * into channel from public.channel_sessions where organization_id=p_org and provider='waha'
+    and (metadata->>'onboarding'='true' or waha_session_name='org_'||left(p_org::text,8))
+    order by created_at limit 1 for update;
+  end if;
+  if channel.id is null then
+   insert into public.channel_sessions(organization_id,waha_session_name,display_name,engine,webhook_path_token,
+     webhook_secret_encrypted,status,last_status_change_at,consecutive_health_fails,daily_message_limit,metadata)
+   values(p_org,'org_'||replace(p_org::text,'-','')||'_'||replace(gen_random_uuid()::text,'-',''),p_display_name,'NOWEB',
+     replace(gen_random_uuid()::text,'-',''),'\x00'::bytea,'STARTING',now(),0,250,
+     '{"ai_gate":"allowlist","ai_gate_mode":"pre_go_live","ai_test_phone_numbers":[]}'::jsonb
+     || case when p_onboarding then '{"onboarding":true}'::jsonb else '{}'::jsonb end) returning * into channel;
+  end if;
+  if exists(select 1 from public.channel_connection_requests where organization_id=p_org and channel_session_id=channel.id
+    and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
+  insert into public.channel_connection_requests(organization_id,idempotency_key,request_hash,channel_session_id)
+   values(p_org,p_key,p_hash,channel.id) returning * into receipt;
+ end if;
+ if exists(select 1 from public.channel_connection_requests where organization_id=p_org and channel_session_id=channel.id
+   and id<>receipt.id and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
+ update public.channel_connection_requests set state='processing',lease_token=token,lease_until=now()+interval '5 minutes',
+  remote_created=false,updated_at=now() where organization_id=p_org and id=receipt.id;
+ -- Não ressuscita antes da pós-condição remota. Arquivado permanece invisível
+ -- até finish; falha conserva identidade e estado FAILED para reparo.
+ update public.channel_sessions set status='STARTING',status_reason='connection_pending',last_status_change_at=now()
+  where organization_id=p_org and id=channel.id returning * into channel;
+ return jsonb_build_object('replay',false,'channel',to_jsonb(channel),'receipt_id',receipt.id,'lease_token',token);
+end;
+$$;
+revoke all on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) from public,anon;
+grant execute on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) to authenticated;
+
+notify pgrst,'reload schema';
+
+-- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
+--
+-- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
+
+-- dele — quem o empurrar para o meio desarma a cura para tudo que vier depois.
+-- Vigiado por `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`.
+--
+-- A 0108 revogou anon numa LISTA de 8 funções, medida num banco instalado do
+-- ZERO. Quem ATUALIZA tem outro estado: o `ALTER DEFAULT PRIVILEGES ... GRANT
+-- ALL ON FUNCTIONS TO anon` do corpo deste arquivo grava uma entrada em
+-- `pg_default_acl` que fica no catálogo PARA SEMPRE, e a partir daí toda função
+-- criada em `public` nasce com EXECUTE para anon — inclusive as deste apêndice.
+--
+-- Medido numa VPS real (2026-08-07), comparando com o que um install fresco
+-- produz: 6 definer expostas a anon e 5 a authenticated, entre elas
+-- `fn_decrypt_oauth` — alcançável pela anon key, que vai para o browser.
+--
+-- Lista conserta o estoque e reabre no próximo `create function`. Esta varredura
+-- é auto-curativa e roda DEPOIS de tudo que cria função, então cura no mesmo run
+-- em que o defeito nasceria. Desfazer o ALTER DEFAULT PRIVILEGES não serve: ele
+-- vem do `pg_dump` do Supabase e é reescrito a cada re-aplicação.
+--
+-- As duas origens de EXECUTE (a mesma lição da 0108): grant DIRETO a anon, que
+-- `revoke from public` não remove; e grant a PUBLIC, do qual anon HERDA, que
+-- `revoke from anon` não remove. O privilégio EFETIVO de authenticated e
+-- service_role é medido ANTES e devolvido depois — tira anon sem tirar leitura.
+do $$
+declare
+  f record;
+  tinha_auth boolean;
+  tinha_service boolean;
+begin
+  if to_regrole('anon') is null then
+    return;
+  end if;
+
+  for f in
+    select p.oid, p.oid::regprocedure as assinatura
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosecdef
+  loop
+    tinha_auth := to_regrole('authenticated') is not null
+                  and has_function_privilege('authenticated', f.oid, 'EXECUTE');
+    tinha_service := to_regrole('service_role') is not null
+                     and has_function_privilege('service_role', f.oid, 'EXECUTE');
+
+    execute format('revoke execute on function %s from public, anon', f.assinatura);
+
+    if tinha_auth then
+      execute format('grant execute on function %s to authenticated', f.assinatura);
+    end if;
+    if tinha_service then
+      execute format('grant execute on function %s to service_role', f.assinatura);
+    end if;
+  end loop;
+end $$;
+
+-- regra 2 (authenticated): as 5 que o update abriu e o install não abre. Aqui não
+-- cabe varredura — `authenticated` PRECISA de EXECUTE nos helpers de RLS e em
+-- `retrieve_top_k_chunks` (num install fresco ele tem). É julgamento por função,
+-- e o alvo de cada linha é o valor que um install fresco produz, medido.
+revoke execute on function public.fn_audit_log_row() from authenticated;
+revoke execute on function public.fn_decrypt_oauth(bytea) from authenticated;
+revoke execute on function public.fn_encrypt_oauth(text) from authenticated;
+revoke execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) from authenticated;
+revoke execute on function public.fn_update_budget_consumption() from authenticated;
+
+grant execute on function public.fn_audit_log_row() to service_role;
+grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
+grant execute on function public.fn_encrypt_oauth(text) to service_role;
+grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
+grant execute on function public.fn_update_budget_consumption() to service_role;

@@ -45,6 +45,10 @@ interface TestResponse {
     latency_ms?: number;
     would_send_to?: { session?: string | null; chat_id?: string | null };
     stub?: boolean;
+    candidates?: Array<{ body: string; trace: Array<{ gate: string; verdict: string }> }>;
+    proposals?: Array<{ tool: string; arguments: unknown }>;
+    impediments?: Array<{ code: string; message: string }>;
+    restrictions?: string[];
     /** Ver lib/ai/agents/avaliar-resposta-de-teste.ts. */
     guardrails?: {
       passou: boolean;
@@ -189,7 +193,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             {t("Versão alvo")}
           </p>
           <div className="flex items-center gap-2 text-sm">
@@ -250,14 +254,12 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
       </div>
 
       <div className="flex flex-col gap-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {t("Resultado")}
         </p>
 
         {!result && !pending ? (
-          <p className="text-sm text-muted-foreground">
-            {t("Nenhum teste executado ainda.")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("Nenhum teste executado ainda.")}</p>
         ) : null}
 
         {pending ? (
@@ -268,7 +270,9 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           <>
             {result.stub ? (
               <p className="rounded-md border border-border/60 bg-muted/40 p-2 text-xs text-muted-foreground">
-                {t("Stub: o runtime real é entregue na S-13.08. O trace abaixo é simulado.")}
+                {t(
+                  "Provedor de teste controlado. O motor e as verificações são os mesmos; não há chamada a uma IA externa.",
+                )}
               </p>
             ) : null}
 
@@ -278,10 +282,10 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
                 {typeof result.latency_ms === "number" ? `${result.latency_ms}ms` : "—"}
               </Cell>
               <Cell label={t("Tokens in/out")}>
-                {(result.tokens_in ?? 0).toLocaleString()} /{" "}
-                {(result.tokens_out ?? 0).toLocaleString()}
+                {result.tokens_in?.toLocaleString()??"—"} /{" "}
+                {result.tokens_out?.toLocaleString()??"—"}
               </Cell>
-              <Cell label={t("Custo (cents)")}>{result.cost_cents ?? 0}</Cell>
+              <Cell label={t("Custo (cents)")}>{result.cost_cents ?? "—"}</Cell>
             </div>
 
             <RunTrace
@@ -290,7 +294,47 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
               emptyMessage={t("Sem tool calls (resposta direta do LLM).")}
             />
 
-            {result.guardrails ? <Verificacoes g={result.guardrails} /> : null}
+            {result.candidates ? (
+              <div className="space-y-2 text-xs">
+                <p>
+                  {t(
+                    "Mesmo motor e conhecimento do agente; nenhuma alteração é aplicada ao cliente.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "Estado do contato simulado. Canal, opt-out e contexto serão conferidos novamente antes de um envio real.",
+                  )}
+                </p>
+                {result.candidates.map((candidate, i) => (
+                  <details key={i}>
+                    <summary>{t("Verificações da resposta")}</summary>
+                    <pre className="overflow-auto whitespace-pre-wrap">
+                      {JSON.stringify(candidate.trace, null, 2)}
+                    </pre>
+                  </details>
+                ))}
+                {result.impediments?.map((x, i) => (
+                  <p role="status" key={i}>
+                    {x.message}
+                  </p>
+                ))}
+                {!!result.proposals?.length && (
+                  <div>
+                    <p className="font-medium">
+                      {t("Ações propostas: precisam de autorização separada")}
+                    </p>
+                    <ul>
+                      {result.proposals.map((x, i) => (
+                        <li key={i}>{x.tool}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : result.guardrails ? (
+              <Verificacoes g={result.guardrails} />
+            ) : null}
           </>
         ) : null}
       </div>
@@ -301,7 +345,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-md border border-border/60 px-2 py-1">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className="font-mono">{children}</p>
     </div>
   );

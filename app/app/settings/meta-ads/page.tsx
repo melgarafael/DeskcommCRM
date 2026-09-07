@@ -44,7 +44,7 @@ export default async function MetaAdsSettingsPage() {
   if (!activeOrg) redirect("/app");
   // Mesmo gate de `settings/conversoes`: o objeto é uma credencial da conta de
   // anúncios da empresa, ao lado de billing e API tokens na mesma prancheta.
-  if (!user.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
+  if (!(user.is_platform_admin && !user.support) && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
     redirect("/403");
   }
 

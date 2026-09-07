@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * `/api/v1/agenda/agendamentos` — a rota, FINA.
  *
@@ -78,6 +79,7 @@ const marcarSchema = z.object({
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
   contact_id: z.string().uuid().optional(),
+  conversation_id: z.string().uuid().optional(),
   title: z.string().min(1).max(200).optional(),
   notes: z.string().max(2000).optional(),
   guest_email: emailDoConvidado.optional(),
@@ -86,6 +88,9 @@ const marcarSchema = z.object({
 const alterarSchema = z
   .object({
     id: z.string().uuid(),
+    revision: z.number().int().positive().optional(),
+    outcome_message_id: z.string().uuid().optional(),
+    confirmation_next_at: z.string().datetime({offset:true}).optional(),
     /** Remarcar: o novo início. A duração vem do tipo, como na criação. */
     starts_at: z.string().datetime({ offset: true }).optional(),
     /**
@@ -98,6 +103,7 @@ const alterarSchema = z
   })
   .refine(
     (c) =>
+      c.confirmation_next_at !== undefined ||
       c.starts_at !== undefined ||
       c.status !== undefined ||
       c.notes !== undefined ||
@@ -109,6 +115,7 @@ const alterarSchema = z
 
 const cancelarSchema = z.object({
   id: z.string().uuid(),
+  revision: z.number().int().positive().optional(),
   /**
    * ⚠️ OBRIGATÓRIO, e não é burocracia: é o que a equipe lê ao ver o horário
    * vago. "Cancelado" sem motivo faz alguém ligar para o cliente perguntando o
@@ -203,7 +210,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const externos: AgendamentoDaResposta[] = [];
   if (parsed.data.de && parsed.data.ate) {
     const { data: ocupacao, error: erroOcupacao } = await supabase
-      .from("calendar_external_events")
+      .from("calendar_selected_external_events")
       .select("id, starts_at, ends_at, calendar_connections!inner(user_id)")
       .eq("organization_id", activeOrg.orgId)
       .gte("starts_at", parsed.data.de)
@@ -249,14 +256,23 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   return despachar(req, marcarSchema, marcarAgendamentoHandler, 201);
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   return despachar(req, alterarSchema, alterarAgendamentoHandler, 200);
 }
 
 export async function DELETE(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   return despachar(req, cancelarSchema, cancelarAgendamentoHandler, 200);
 }
 

@@ -115,7 +115,8 @@ interface InboxLayoutProps {
 
 export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {}) {
   const t = useT();
-  const { activeOrg } = useAuth();
+  const { activeOrg, user } = useAuth();
+  const supportReadonly = user.support?.access_mode === "support_readonly";
   const orgId = activeOrg?.orgId ?? null;
 
   const router = useRouter();
@@ -453,7 +454,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
             <Composer
               ref={composerRef}
               conversationId={selectedConversation.id}
-              blockedReason={blockedReason}
+              blockedReason={supportReadonly ? "Acompanhamento somente leitura" : blockedReason}
               janelaFechada={motivoDaJanela}
               disabled={selectedConversation.status === "closed"}
               contactName={selectedConversation.contacts?.name ?? null}
@@ -484,8 +485,8 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
         selectedId={selectedId}
         onSelect={handleSelect}
         onFocusReply={handleFocusReply}
-        onClaim={handleClaim}
-        onClose={handleClose}
+        onClaim={supportReadonly ? () => {} : handleClaim}
+        onClose={supportReadonly ? () => {} : handleClose}
         onToggleHelp={() => setHelpOpen((v) => !v)}
       />
       <ShortcutsHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />

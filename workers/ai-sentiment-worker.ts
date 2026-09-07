@@ -88,7 +88,8 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     }
     const sentimentModel = resolvido.model;
 
-    const messageId = (event.payload?.["message_id"] as string | undefined) ?? event.entity_id ?? null;
+    const messageId =
+      (event.payload?.["message_id"] as string | undefined) ?? event.entity_id ?? null;
     const conversationId = (event.payload?.["conversation_id"] as string | undefined) ?? null;
     if (!messageId) {
       return { skipped: true, reason: "missing_message_id" };
@@ -178,7 +179,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     const { data: candidatos } = await admin
       .from("ai_agents")
       .select(
-        "id, config, kind, is_active, published_version_id, archived_at, priority, created_at",
+        "id, config, kind, is_active, paused_at, published_version_id, archived_at, priority, created_at",
       )
       .eq("organization_id", event.organization_id)
       .is("archived_at", null);
@@ -319,27 +320,30 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
 
     // ── Emit alert if below threshold ────────────────────────────────────
     if (result.sentiment_score < threshold) {
-      const { error: emitErr } = await admin.rpc("emit_event" as never, {
-        p_event_type: "ai.sentiment_alert",
-        p_entity_kind: "message",
-        p_entity_id: messageId,
-        p_payload: {
-          message_id: messageId,
-          conversation_id: conversationId ?? message.conversation_id ?? null,
-          sentiment_score: result.sentiment_score,
-        },
-        // `agent_id` e `motivo` viajam com o alerta porque o limiar é o número
-        // que decidiu emiti-lo: sem eles, "por que este alerta saiu?" recomeça
-        // do zero, e foi essa ausência que deixou o defeito da #486 invisível
-        // pela tela — os dois campos existiam e um não fazia nada.
-        p_metadata: {
-          source: "ai-sentiment-worker",
-          threshold,
-          agent_id: agent?.id ?? null,
-          agente_resolvido_por: motivoDoAgente,
-        },
-        p_organization_id: event.organization_id,
-      } as never);
+      const { error: emitErr } = await admin.rpc(
+        "emit_event" as never,
+        {
+          p_event_type: "ai.sentiment_alert",
+          p_entity_kind: "message",
+          p_entity_id: messageId,
+          p_payload: {
+            message_id: messageId,
+            conversation_id: conversationId ?? message.conversation_id ?? null,
+            sentiment_score: result.sentiment_score,
+          },
+          // `agent_id` e `motivo` viajam com o alerta porque o limiar é o número
+          // que decidiu emiti-lo: sem eles, "por que este alerta saiu?" recomeça
+          // do zero, e foi essa ausência que deixou o defeito da #486 invisível
+          // pela tela — os dois campos existiam e um não fazia nada.
+          p_metadata: {
+            source: "ai-sentiment-worker",
+            threshold,
+            agent_id: agent?.id ?? null,
+            agente_resolvido_por: motivoDoAgente,
+          },
+          p_organization_id: event.organization_id,
+        } as never,
+      );
 
       if (emitErr) {
         console.warn("[ai-sentiment-worker] ai.sentiment_alert emit failed", {

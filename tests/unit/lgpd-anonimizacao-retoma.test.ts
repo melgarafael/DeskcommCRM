@@ -1,3 +1,4 @@
+import type * as SupportModule from "@/lib/impersonate/support";
 /**
  * A CASCATA DE ANONIMIZAÇÃO RETOMA DE ONDE PAROU (issue #310).
  *
@@ -78,6 +79,7 @@ function db(
   contato: Record<string, unknown>,
   leads: Array<{ id: string; title: string | null }>,
   atividades: Array<{ id: string; payload: unknown }> = [{ id: "atv-1", payload: { texto: "PII" } }],
+  step?: { already_anonymized: boolean; anonymized_at: string | null; error?: { code: string; message: string } },
 ) {
   const cliente = {
     from: (tabela: string) => ({
@@ -128,12 +130,20 @@ function db(
         return q;
       },
     }),
-    rpc: () => ({ then: (r: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(r) }),
+    rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+      if (name !== "fn_lgpd_anonymize_contact") return { error: null };
+      expect(args).toEqual({ p_organization_id: ORG, p_contact_id: CONTATO });
+      const data: NonNullable<typeof step> = step ?? { already_anonymized: contato.is_anonymized === true, anonymized_at: typeof contato.anonymized_at === "string" ? contato.anonymized_at : contato.is_anonymized ? null : "2026-09-06T12:00:00.000Z" };
+      if (data.error) return { data: null, error: data.error };
+      if (!data.already_anonymized) escrito.contacts.push({ name: null, is_anonymized: true });
+      return { data, error: null };
+    }),
     // A rota valida o JWT no backend com `getUser()` (nunca `getSession()`), e
     // é a primeira coisa que ela faz.
     auth: { getUser: async () => ({ data: { user: { id: USER } }, error: null }) },
   };
   vi.mocked(createClient).mockResolvedValue(cliente as never);
+  return cliente;
 }
 
 function contato(over: Record<string, unknown> = {}) {
@@ -164,6 +174,25 @@ beforeEach(() => {
 });
 
 describe("cascata de anonimização — retomada", () => {
+  it("passo transacional revalida estado após o mutex e preserva a data de outra execução", async () => {
+    const originalTime = "2026-08-01T10:00:00.000Z";
+    const client = db(contato(), [{ id: "lead-pendente", title: "Orçamento" }], [], { already_anonymized: true, anonymized_at: originalTime });
+    const result = await anonimizar();
+    expect(result.status).toBe(200);
+    expect(client.rpc).toHaveBeenCalledWith("fn_lgpd_anonymize_contact", { p_organization_id: ORG, p_contact_id: CONTATO });
+    expect(escrito.contacts).toEqual([]);
+    expect(result.corpo.data).toMatchObject({ action: "resumed", anonymized_at: originalTime });
+    expect(vi.mocked(audit).mock.calls.map(call => call[0].action)).toContain("lgpd.anonymize_catchup");
+  });
+
+  it("negação de autoridade na RPC interrompe a cascata sem declarar execução", async () => {
+    db(contato(), [{ id: "lead-pendente", title: "Orçamento" }], [], { already_anonymized: false, anonymized_at: null, error: { code: "42501", message: "contact_anonymize_forbidden" } });
+    const result = await anonimizar();
+    expect(result.status).toBe(403);
+    expect(escrito).toEqual({ contacts: [], leads: [], atividades: [] });
+    expect(audit).not.toHaveBeenCalled();
+  });
+
   it("⭐ contato JÁ anonimizado com lead pendente: a cascata roda o que faltou", async () => {
     // O estado real depois de uma requisição que caiu entre o passo 1 e o 2.
     db(contato({ is_anonymized: true, anonymized_at: "2026-08-01T10:00:00.000Z" }), [
@@ -277,3 +306,10 @@ describe("cascata de anonimização — retomada", () => {
     expect(escrito.leads).toEqual([]);
   });
 });
+
+// Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
+vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
+  ...await importOriginal<typeof SupportModule>(),
+  requireSupportWrite: vi.fn(async () => null),
+  authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
+}));

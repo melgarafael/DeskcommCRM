@@ -52,8 +52,14 @@ async function limpar(orgId: string) {
       .eq("organization_id", orgId)
       .eq("display_name", nome);
     for (const c of data ?? []) {
-      await admin.from("conversations").delete().eq("contact_id", (c as { id: string }).id);
-      await admin.from("contacts").delete().eq("id", (c as { id: string }).id);
+      await admin
+        .from("conversations")
+        .delete()
+        .eq("contact_id", (c as { id: string }).id);
+      await admin
+        .from("contacts")
+        .delete()
+        .eq("id", (c as { id: string }).id);
     }
   }
   await admin.from("channel_sessions").delete().eq("id", SESSAO);
@@ -74,7 +80,7 @@ async function limpar(orgId: string) {
 async function orgTemAutomaticoNoAr(orgId: string): Promise<boolean> {
   const { data } = await admin
     .from("ai_agents")
-    .select("kind, is_active, published_version_id, archived_at")
+    .select("kind, is_active, paused_at, published_version_id, archived_at")
     .eq("organization_id", orgId)
     .is("archived_at", null);
   return (data ?? []).some(agenteAtende);

@@ -43,6 +43,7 @@ export function PainelDeMarcacao({
   erroAoCarregar = false,
   fusoSuposto = false,
   fontesDefasadas,
+  googleCoberturaParcial,
   quemSeraAtendido,
   horarioInicial,
   onConfirmar,
@@ -102,6 +103,7 @@ export function PainelDeMarcacao({
   /** O fuso veio do padrão, ninguém escolheu — e o agente oferece horário com ele. */
   fusoSuposto?: boolean;
   /** Agenda conectada que parou de atualizar: o horário fica bloqueado, e a tela diz desde quando. */
+  googleCoberturaParcial?: boolean;
   fontesDefasadas?: Array<{ nome?: string; desde?: string }>;
   /**
    * Quem vai ser atendido, e se ele aceita receber mensagem.
@@ -498,6 +500,7 @@ export function PainelDeMarcacao({
           </div>
         )}
 
+        {googleCoberturaParcial && <p role="status" className="mb-2 text-xs text-warning">{t("Ocupação do Google ainda não verificada neste período.")}</p>}
         {fusoSuposto && (
           <p data-testid="fuso-suposto" className="mb-2 text-[11px] leading-4 text-text-subtle">
             {t("Estamos supondo o fuso")} <span className="font-mono">{(fuso ?? "").replace("_", " ")}</span> {t("— ninguém escolheu ainda. O agente oferece horário usando ele.")}

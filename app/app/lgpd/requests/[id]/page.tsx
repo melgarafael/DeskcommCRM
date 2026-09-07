@@ -19,7 +19,7 @@ export default async function LgpdRequestDetailPage({
   if (!activeOrg) redirect("/app");
 
   const isAllowed =
-    user.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+    (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   if (!isAllowed) redirect("/app");
 
   return (

@@ -246,3 +246,10 @@ describe("POST /api/v1/leads/bulk — limite (MAX_BULK=50)", () => {
     expect(state.updateCalled).toBe(false);
   });
 });
+
+// Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
+vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  requireSupportWrite: vi.fn(async () => null),
+  authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
+}));

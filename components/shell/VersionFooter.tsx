@@ -7,6 +7,7 @@ import { useSystemVersion } from "@/hooks/system/useSystemVersion";
 import { cn } from "@/lib/utils";
 
 /**
+ * Controle essencial da instalação: não é removível pela interface do vínculo.
  * Versão instalada no rodapé da sidebar. Vira um aviso clicável só para quem
  * é dono do servidor E tem versão nova — quem não pode atualizar não é
  * alertado sobre algo que não pode resolver.
@@ -33,7 +34,10 @@ export function VersionFooter({
   if (!alerta) {
     return (
       <p
-        className={cn("px-3 py-1 text-[11px] text-muted-foreground", collapsed && "px-0 text-center")}
+        className={cn(
+          "px-3 py-1 text-[11px] text-muted-foreground",
+          collapsed && "px-0 text-center",
+        )}
         title={`${t("Versão")} ${label}`}
       >
         {collapsed ? label.split(".").slice(0, 2).join(".") : `${t("versão")} ${label}`}
@@ -58,7 +62,8 @@ export function VersionFooter({
       </span>
       {!collapsed && (
         <span className="truncate">
-          {t("Nova versão")}{novo ? ` · ${novo}` : ""}
+          {t("Nova versão")}
+          {novo ? ` · ${novo}` : ""}
         </span>
       )}
       {collapsed && <ArrowCircleUp size={16} aria-hidden />}

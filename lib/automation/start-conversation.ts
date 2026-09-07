@@ -1,3 +1,4 @@
+import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 /**
  * Conversa programática p/ automação: acha a conversa aberta do contato na
  * sessão, REABRE a fechada, ou cria uma nova. Distinto da ingestão WAHA (que
@@ -13,7 +14,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 
-const OPEN_STATUSES = ["open", "pending", "claimed", "ai_handling"];
 
 /** Sessão viva da org: WORKING primeiro; senão qualquer uma não arquivada. */
 export async function sessaoProntaParaEnvio(
@@ -45,55 +45,5 @@ export async function ensureConversation(
   contactId: string,
   channelSessionId: string,
 ): Promise<string> {
-  const { data: existing } = await admin
-    .from("conversations")
-    .select("id, status")
-    .eq("organization_id", organizationId)
-    .eq("contact_id", contactId)
-    .eq("channel_session_id", channelSessionId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (existing) {
-    const row = existing as { id: string; status: string };
-    if (OPEN_STATUSES.includes(row.status)) return row.id;
-    const { error: reopenErr } = await admin
-      .from("conversations")
-      .update({ status: "open", updated_at: new Date().toISOString() })
-      .eq("id", row.id)
-      .eq("organization_id", organizationId);
-    if (reopenErr) throw new Error(reopenErr.message);
-    return row.id;
-  }
-
-  const { data: created, error } = await admin
-    .from("conversations")
-    .insert({
-      organization_id: organizationId,
-      contact_id: contactId,
-      channel_session_id: channelSessionId,
-      channel: "whatsapp",
-      status: "open",
-      metadata: { created_by: "automation" },
-    })
-    .select("id")
-    .single();
-  if (error || !created) {
-    // Corrida: outro processo criou a conversa 1:1 entre o select e o insert.
-    if ((error as { code?: string } | null)?.code === "23505") {
-      const { data: winner } = await admin
-        .from("conversations")
-        .select("id")
-        .eq("organization_id", organizationId)
-        .eq("contact_id", contactId)
-        .eq("channel_session_id", channelSessionId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (winner) return (winner as { id: string }).id;
-    }
-    throw new Error(error?.message ?? "conversation_insert_failed");
-  }
-  return (created as { id: string }).id;
+  return (await beginServiceAtOrigin(admin, organizationId, contactId, channelSessionId)).conversation_id;
 }

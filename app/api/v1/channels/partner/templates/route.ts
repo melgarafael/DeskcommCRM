@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * As definições aprovadas do canal INTERMEDIADO — listar, sincronizar, criar.
  *
@@ -144,6 +145,9 @@ export async function GET(): Promise<Response> {
  * e separá-las obrigaria a tela a saber que criar também sincroniza.
  */
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const r = await contexto(requestId);
   if (!r.ok) return r.res;

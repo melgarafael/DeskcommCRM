@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/ai/routers — lista routers da org (agent+), com member_count.
  * POST /api/v1/ai/routers — cria router (admin), audit `ai.router_created`.
@@ -73,6 +74,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("admin", { requestId, resource: "ai_routers" });
   if (!authz.ok) return authz.response;

@@ -36,7 +36,12 @@ let _client: ReturnType<typeof createBrowserClient> | null = null;
  * usuário sobrevivia ~2ms ao `setAuth`, e o heartbeat seguinte (~30s) o
  * substituía pela anon key de qualquer forma.
  *
- * Substituir a callback é a via suportada, e ela é melhor que o `setAuth` por
+ * A callback resolve a RENOVAÇÃO. O primeiro join ainda exige bootstrap:
+ * medido no SDK 2.112.4, connect() inicia a busca mas subscribe() pode montar
+ * o join antes dela. prepareRealtimeAuthentication aguarda a mesma fonte e
+ * setAuth(token), sem remover a callback. Não é a antiga segunda autoridade.
+ *
+ * Substituir a callback é a via suportada, e ela é melhor que só `setAuth` por
  * uma razão que independe do bug: o socket a chama de novo a cada heartbeat e
  * em cada reconexão. Um token de 1h deixa de ser uma bomba-relógio — quem
  * ficava com o inbox aberto por mais de uma hora perdia o tempo real e nada
@@ -52,14 +57,20 @@ const MARGEM_DE_RENOVACAO_MS = 60_000;
 
 let tokenEmCache: { valor: string; expiraEm: number } | null = null;
 let buscaEmVoo: Promise<string | null> | null = null;
+let authEpoch = 0;
 
-/** Só para teste: zera o cache do token (é módulo-global de propósito). */
-export function __resetTokenDoRealtime(): void {
+/** Invalida inclusive respostas em voo de um contexto que acabou. */
+export function resetRealtimeAuthentication(): void {
+  authEpoch++;
   tokenEmCache = null;
   buscaEmVoo = null;
 }
 
+/** Compatibilidade com os testes do cache. */
+export const __resetTokenDoRealtime = resetRealtimeAuthentication;
+
 async function tokenDoRealtime(): Promise<string | null> {
+  const epoch = authEpoch;
   // Válido e longe de expirar: serve o cache. Sem isto seria uma requisição a
   // cada heartbeat — ~2/min por aba aberta, para um token que vale uma hora.
   if (tokenEmCache && Date.now() < tokenEmCache.expiraEm - MARGEM_DE_RENOVACAO_MS) {
@@ -73,6 +84,7 @@ async function tokenDoRealtime(): Promise<string | null> {
       const body = (await res.json()) as {
         data?: { access_token?: string; expires_at?: number | null };
       };
+      if (epoch !== authEpoch) return null;
       const token = body.data?.access_token;
       if (!token) return null;
       // `expires_at` é epoch em SEGUNDOS. Sem ele, trata como já vencido na
@@ -81,9 +93,8 @@ async function tokenDoRealtime(): Promise<string | null> {
       tokenEmCache = { valor: token, expiraEm };
       return token;
     } catch {
-      // Devolver null aqui degrada o canal para anônimo — ele responde
-      // SUBSCRIBED e não entrega. É por isso que o inbox NÃO depende só dele:
-      // a rede de segurança (useRefetchDeSeguranca) cura e denuncia a perda.
+      // Ausência interna não autoriza canal: bootstrap recusa e a callback
+      // externa lança, para o SDK não rebaixar um token existente a anônimo.
       return null;
     } finally {
       // ⚠️ NUNCA memoizar a promessa além da requisição: uma falha transitória
@@ -91,10 +102,20 @@ async function tokenDoRealtime(): Promise<string | null> {
       // inteiro a canais anônimos. O que se guarda é o token BOM, com prazo;
       // o que não se guarda é a falha. O critério não é "deu erro?" — é "o
       // resultado guardado é o resultado DESEJADO?".
-      buscaEmVoo = null;
+      if (epoch === authEpoch) buscaEmVoo = null;
     }
   })();
   return buscaEmVoo;
+}
+
+/** O SDK 2.112.4 inicia connect antes de resolver a callback. O primeiro join
+ * precisa deste bootstrap; a MESMA callback continua renovando o token depois. */
+export async function prepareRealtimeAuthentication(): Promise<void> {
+  const epoch = authEpoch;
+  const token = await tokenDoRealtime();
+  if (!token || epoch !== authEpoch) throw new Error("Autenticação de tempo real indisponível.");
+  await createClient().realtime.setAuth(token);
+  if (epoch !== authEpoch) throw new Error("O contexto de tempo real mudou.");
 }
 
 export function createClient() {
@@ -124,7 +145,11 @@ export function createClient() {
       sameSite: "strict",
       path: "/",
     },
-    realtime: { accessToken: tokenDoRealtime },
+    realtime: { accessToken: async () => {
+      const token = await tokenDoRealtime();
+      if (!token) throw new Error("Token de tempo real indisponível.");
+      return token;
+    } },
   });
   return _client;
 }

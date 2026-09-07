@@ -15,7 +15,7 @@
  * Aqui: as três formas do controle (nenhuma outra organização, uma, várias) e o
  * fato de que ele NAVEGA depois de trocar. A navegação é o detalhe que mais
  * facilmente se perde numa refatoração e falha em silêncio: `setActiveOrg`
- * revalida `/app`, não `/onboarding`, então sem o `replace` o cookie muda e a
+ * muda o cookie, então sem a navegação completa a
  * pessoa continua olhando o wizard da organização que acabou de deixar — a tela
  * fica idêntica, e o clique parece não ter feito nada.
  *
@@ -24,7 +24,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 
 const setActiveOrg = vi.fn(async () => ({ ok: true }));
 const replace = vi.fn();
@@ -32,11 +32,21 @@ const replace = vi.fn();
 vi.mock("@/app/actions/shell/setActiveOrg", () => ({
   setActiveOrg: (...args: unknown[]) => setActiveOrg(...(args as [])),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+vi.mock("@/components/shell/OrganizationTransitionProvider", () => ({
+  useOrganizationTransition: () => ({ begin: vi.fn(), cancel: vi.fn() }),
+}));
+const realWindow = window;
+vi.stubGlobal("window", new Proxy(realWindow, {
+  get(target, property) {
+    if (property === "location") return { ...target.location, assign: replace };
+    return Reflect.get(target, property, target);
+  },
+}));
 
 import { OutrasOrganizacoes } from "@/app/onboarding/_components/OutrasOrganizacoes";
 
 afterEach(cleanup);
+afterAll(() => vi.unstubAllGlobals());
 beforeEach(() => {
   setActiveOrg.mockClear();
   replace.mockClear();
@@ -59,8 +69,7 @@ describe("a saída do wizard", () => {
   });
 
   it("clicar troca a organização E NAVEGA — as duas coisas", async () => {
-    // ⚠️ A navegação é metade do conserto. `setActiveOrg` revalida `/app`, não
-    // `/onboarding`: sem o `replace`, o cookie muda e o wizard continua na tela,
+    // ⚠️ A navegação é metade do conserto. `setActiveOrg` muda o cookie; sem a navegação completa o wizard continua na tela,
     // idêntico. O clique pareceria não ter feito nada.
     render(<OutrasOrganizacoes outras={[{ id: "o1", nome: "Clínica Vida" }]} />);
     fireEvent.click(screen.getByTestId("sair-do-onboarding"));

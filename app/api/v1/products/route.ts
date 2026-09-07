@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/products — o catálogo da organização ativa.
  * POST /api/v1/products — cadastra um produto.
@@ -47,6 +48,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;

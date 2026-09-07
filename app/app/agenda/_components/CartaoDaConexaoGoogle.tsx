@@ -129,6 +129,7 @@ export function CartaoDaConexaoGoogle({
           <span className="text-text-muted">{t("Agenda conectada:")} </span>
           <span className="font-medium">{contaConectada}</span>
         </p>
+        <a href="/app/settings/tenant/agenda" className="text-xs underline">{t("Configurar suas agendas")}</a>
         <Button
           variant="outline"
           size="sm"

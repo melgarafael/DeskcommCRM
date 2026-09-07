@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { completeTurnForEnrollment, type TurnBridgeAdminClient } from "./turn-bridge";
+import { completeTurnForEnrollment, createPgAdminClient, type TurnBridgeAdminClient } from "./turn-bridge";
 import type { EnrollmentRow } from "./node-handlers";
 import type { FlowGraph } from "./graph-schema";
 
@@ -366,4 +366,41 @@ describe("completeTurnForEnrollment — obsolescência", () => {
 
     expect(updateEnrollment).not.toHaveBeenCalled();
   });
+});
+
+
+describe("callback conserva a fronteira durante a conclusão", () => {
+  it.each(["classified", "planned"] as const)("%s não escreve se atendimento muda durante leitura do grafo", async (kind) => {
+    const planned = kind === "planned";
+    const { db, updateEnrollment, insertEnrollmentEvent } = fakeDb({
+      enrollment: enrollment({ current_node_id: planned ? "t1" : "ac1" }),
+      graph: planned ? PLAN_GRAPH : CLASSIFY_GRAPH,
+    });
+    let stale = false;
+    db.assertServiceBoundary = async () => { if (stale) throw new Error("service_boundary_stale"); };
+    const load = db.loadFlowGraph;
+    db.loadFlowGraph = async (...args) => { const graph = await load(...args); stale = true; return graph; };
+    await expect(completeTurnForEnrollment(db, "org-1", "enr-1", planned ? "t1" : "ac1",
+      planned ? { kind: "planned", propostas: [], modelo: "test" } : { kind: "classified", class: "hot" }, clock)).rejects.toThrow("service_boundary_stale");
+    expect(insertEnrollmentEvent).not.toHaveBeenCalled();
+    expect(updateEnrollment).not.toHaveBeenCalled();
+  });
+});
+
+
+it("adapter PG preserva provenance e leitor de inbound filtra a conversa solicitada", async () => {
+  const boundary = { organization_id: "org-1", contact_id: "contact-1", conversation_id: "conv-1", service_revision: 2, demanda_id: null, demanda_revision: null };
+  let current = { ...boundary, status: "open", demanda_fechada_em: null };
+  const query = vi.fn(async (sql: string) => ({ rows: sql.includes("from followup_enrollments")
+    ? [{ ...enrollment(), service_boundary: boundary }] : sql.includes("from conversations c left join demandas") ? [current] : [] }));
+  const db = createPgAdminClient({ query } as unknown as Parameters<typeof createPgAdminClient>[0]);
+  const row = await db.loadEnrollmentById("org-1", "enr-1");
+  expect(row?.service_boundary).toEqual(boundary);
+  await expect(db.assertServiceBoundary!(row!)).resolves.toBeUndefined();
+  current = { ...current, service_revision: 4 };
+  await expect(db.assertServiceBoundary!(row!)).rejects.toThrow("service_boundary_stale");
+  await db.loadLastInboundBody("org-1", "contact-1", "conv-1");
+  const [sql, values] = query.mock.calls.at(-1)! as unknown as [string, unknown[]];
+  expect(sql).toMatch(/conversation_id\s*=\s*\$3/);
+  expect(values[2]).toBe("conv-1");
 });

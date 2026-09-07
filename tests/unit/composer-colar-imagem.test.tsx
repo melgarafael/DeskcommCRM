@@ -166,3 +166,6 @@ describe("Composer — colar imagem", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+// A fixture exercita um atendente autorizado a consultar modelos de mensagem.
+vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true }));

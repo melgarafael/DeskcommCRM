@@ -1,4 +1,6 @@
 "use client";
+import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
+import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 
 import { useT } from "@/hooks/i18n/useT";
 
@@ -75,11 +77,13 @@ export function TiposDeAgendamentoClient({
   pessoas,
   podeEditar,
   usuarioAtualId,
+  podeConfigurarGoogle,
 }: {
   tiposIniciais: TipoRow[];
   pessoas: Array<{ id: string; papel: string; nome: string }>;
   podeEditar: boolean;
   usuarioAtualId: string;
+  podeConfigurarGoogle: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -127,6 +131,8 @@ export function TiposDeAgendamentoClient({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4" data-testid="tipos-de-agendamento-config">
+      {podeConfigurarGoogle && <AgendasConectadas />}
+      <PrazosDePresenca podeEditar={podeEditar}/>
       {podeEditar ? (
         <div>
           {criando ? (

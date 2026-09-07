@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
  * para sempre o modelo escolhido no dia da criação.
  */
 const AGENT_COLUMNS =
-  "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at, " +
+  "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at, " +
   "versao_publicada:ai_agent_versions!ai_agents_published_version_id_fkey(provider, model)";
 
 export default async function AgentsListPage() {
@@ -56,7 +56,9 @@ export default async function AgentsListPage() {
     <div className="flex h-full flex-col gap-6 p-6">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Agents de IA", idioma)}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {traduzir("Agents de IA", idioma)}
+          </h1>
           <p className="text-sm text-muted-foreground">
             {traduzir("Configure o comportamento dos agents que respondem no WhatsApp.", idioma)}
           </p>

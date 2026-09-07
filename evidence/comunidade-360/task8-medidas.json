@@ -1,0 +1,403 @@
+{
+  "run": "task8-browser-r3",
+  "product_commit": "8539a815b20db891de72ecc2d1e100cb7418fb51",
+  "spec_commit": "b73cc5730c7d16c6d091da0f5b7b3307a5e36bb0",
+  "cases": 2,
+  "result": "passed",
+  "duration_seconds": 30.0,
+  "inspected_by": "root",
+  "acquisition": "manual SQL claim scoped to fixture; real consumer/ledger/HTTP, scheduler not exercised",
+  "screenshots": [
+    {
+      "image": "evidence/comunidade-360/task8-failure-desktop.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-falha-c-2de8f-mantém-identidade-do-evento-chromium/failure-desktop/loaded.png",
+      "sha256": "2803762681c1f4bae4eb770ab8d72306d23af81fc82853311fea826541b81746",
+      "measures": {
+        "left": 1081,
+        "right": 1416,
+        "width": 335,
+        "scrollWidth": 333,
+        "clientWidth": 333,
+        "viewport": 1440,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Tentar criar link novamente",
+            "left": 1094,
+            "right": 1262.71875,
+            "top": 315,
+            "bottom": 347,
+            "visibility": "visible"
+          },
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 1094,
+            "right": 1403,
+            "top": 419,
+            "bottom": 455,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar quando ficar pronto",
+            "left": 1094,
+            "right": 1257.796875,
+            "top": 463,
+            "bottom": 495,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-failure-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-falha-c-2de8f-mantém-identidade-do-evento-chromium/failure-mobile/loaded.png",
+      "sha256": "4722e1311b5d049c0b2cc27ed11bd0f180ac96e7f6b99b7ce8b6b1ebf87ca568",
+      "measures": {
+        "left": 122.5,
+        "right": 366,
+        "width": 243.5,
+        "scrollWidth": 242,
+        "clientWidth": 242,
+        "viewport": 390,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Tentar criar link novamente",
+            "left": 135.5,
+            "right": 304.21875,
+            "top": 315,
+            "bottom": 359,
+            "visibility": "visible"
+          },
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 135.5,
+            "right": 353,
+            "top": 451,
+            "bottom": 487,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar quando ficar pronto",
+            "left": 135.5,
+            "right": 299.296875,
+            "top": 495,
+            "bottom": 539,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-retry-ready-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-falha-c-2de8f-mantém-identidade-do-evento-chromium/retry-ready-mobile/loaded.png",
+      "sha256": "07b89b85c377f57cfc8ea9944592d98497e20a87ea2088fa1001f5ca29142cd7",
+      "measures": {
+        "left": 122.5,
+        "right": 366,
+        "width": 243.5,
+        "scrollWidth": 242,
+        "clientWidth": 242,
+        "viewport": 390,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Abrir reunião",
+            "left": 135.5,
+            "right": 215.8125,
+            "top": 263,
+            "bottom": 307,
+            "visibility": "visible"
+          },
+          {
+            "text": "Copiar link",
+            "left": 223.8125,
+            "right": 306.609375,
+            "top": 263,
+            "bottom": 307,
+            "visibility": "visible"
+          },
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 135.5,
+            "right": 353,
+            "top": 399,
+            "bottom": 435,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar link ao cliente",
+            "left": 135.5,
+            "right": 268.5,
+            "top": 443,
+            "bottom": 487,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-pending-desktop.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-marca-M-152f3-nte-após-reabrir-mesmo-UUID-chromium/pending-desktop/loaded.png",
+      "sha256": "e080870c5089371f619bc7b0e2bc7118fc3e25033831bd3da881e56d750c8929",
+      "measures": {
+        "left": 1081,
+        "right": 1416,
+        "width": 335,
+        "scrollWidth": 333,
+        "clientWidth": 333,
+        "viewport": 1440,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 1094,
+            "right": 1403,
+            "top": 343,
+            "bottom": 379,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar quando ficar pronto",
+            "left": 1094,
+            "right": 1257.796875,
+            "top": 387,
+            "bottom": 419,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-pending-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-marca-M-152f3-nte-após-reabrir-mesmo-UUID-chromium/pending-mobile/loaded.png",
+      "sha256": "66477d6588b42540c7da50001b68b055fa86049b7523b0fa2cff3cce38cfbd18",
+      "measures": {
+        "left": 122.5,
+        "right": 366,
+        "width": 243.5,
+        "scrollWidth": 242,
+        "clientWidth": 242,
+        "viewport": 390,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 135.5,
+            "right": 353,
+            "top": 391,
+            "bottom": 427,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar quando ficar pronto",
+            "left": 135.5,
+            "right": 299.296875,
+            "top": 435,
+            "bottom": 479,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-ready-desktop.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-marca-M-152f3-nte-após-reabrir-mesmo-UUID-chromium/ready-desktop/loaded.png",
+      "sha256": "42dafe42b869c4ec2d3e6b2aac1482df89be8a97a1929c010ec26b39a69bcb2a",
+      "measures": {
+        "left": 1081,
+        "right": 1416,
+        "width": 335,
+        "scrollWidth": 333,
+        "clientWidth": 333,
+        "viewport": 1440,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Abrir reunião",
+            "left": 1094,
+            "right": 1174.3125,
+            "top": 263,
+            "bottom": 295,
+            "visibility": "visible"
+          },
+          {
+            "text": "Link copiado",
+            "left": 1182.3125,
+            "right": 1276.140625,
+            "top": 263,
+            "bottom": 295,
+            "visibility": "visible"
+          },
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 1094,
+            "right": 1403,
+            "top": 367,
+            "bottom": 403,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar link ao cliente",
+            "left": 1094,
+            "right": 1227,
+            "top": 411,
+            "bottom": 443,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-ready-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-marca-M-152f3-nte-após-reabrir-mesmo-UUID-chromium/ready-mobile/loaded.png",
+      "sha256": "b809ab87270666fa72912cd7389376288fa3b60c683e92fd5395a5948108d681",
+      "measures": {
+        "left": 122.5,
+        "right": 366,
+        "width": 243.5,
+        "scrollWidth": 242,
+        "clientWidth": 242,
+        "viewport": 390,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Abrir reunião",
+            "left": 135.5,
+            "right": 215.8125,
+            "top": 263,
+            "bottom": 307,
+            "visibility": "visible"
+          },
+          {
+            "text": "Link copiado",
+            "left": 223.8125,
+            "right": 317.640625,
+            "top": 263,
+            "bottom": 307,
+            "visibility": "visible"
+          },
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 135.5,
+            "right": 353,
+            "top": 399,
+            "bottom": 435,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar link ao cliente",
+            "left": 135.5,
+            "right": 268.5,
+            "top": 443,
+            "bottom": 487,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-reopened-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-marca-M-152f3-nte-após-reabrir-mesmo-UUID-chromium/reopened-mobile/loaded.png",
+      "sha256": "cf3d10f5f5961a1f70b878b0de0f21d51cfe58d684ba316095c6b61ca4ab5d8e",
+      "measures": {
+        "left": 122.5,
+        "right": 366,
+        "width": 243.5,
+        "scrollWidth": 242,
+        "clientWidth": 242,
+        "viewport": 390,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Abrir reunião",
+            "left": 135.5,
+            "right": 215.8125,
+            "top": 263,
+            "bottom": 307,
+            "visibility": "visible"
+          },
+          {
+            "text": "Copiar link",
+            "left": 223.8125,
+            "right": 306.609375,
+            "top": 263,
+            "bottom": 307,
+            "visibility": "visible"
+          },
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 135.5,
+            "right": 353,
+            "top": 399,
+            "bottom": 435,
+            "visibility": "visible"
+          },
+          {
+            "text": "Enviar link ao cliente",
+            "left": 135.5,
+            "right": 268.5,
+            "top": 443,
+            "bottom": 487,
+            "visibility": "visible"
+          }
+        ]
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task8-sent-desktop.png",
+      "source": ".superpowers/evidence/comunidade-360/task8-browser-r3/agenda-google-meet-marca-M-152f3-nte-após-reabrir-mesmo-UUID-chromium/sent-desktop/loaded.png",
+      "sha256": "ccdeef4ec7fc6b9d1e136c5be1343f6be00da6aa5ebeec3e605c22aaf614a03f",
+      "measures": {
+        "left": 1081,
+        "right": 1416,
+        "width": 335,
+        "scrollWidth": 333,
+        "clientWidth": 333,
+        "viewport": 1440,
+        "visibility": "visible",
+        "controls": [
+          {
+            "text": "Abrir reunião",
+            "left": 1094,
+            "right": 1174.3125,
+            "top": 263,
+            "bottom": 295,
+            "visibility": "visible"
+          },
+          {
+            "text": "Copiar link",
+            "left": 1182.3125,
+            "right": 1265.109375,
+            "top": 263,
+            "bottom": 295,
+            "visibility": "visible"
+          },
+          {
+            "text": "Maria Meet — +15551234567 — 06/09/2026",
+            "left": 1094,
+            "right": 1403,
+            "top": 367,
+            "bottom": 403,
+            "visibility": "visible"
+          },
+          {
+            "text": "Link já enviado",
+            "left": 1094,
+            "right": 1197.453125,
+            "top": 411,
+            "bottom": 443,
+            "visibility": "visible"
+          }
+        ]
+      }
+    }
+  ],
+  "pdf_preview": {
+    "image": "evidence/comunidade-360/task8-lgpd-export-preview.png",
+    "source": ".superpowers/sdd/comunidade-360/task8-fix5-export-preview.png",
+    "sha256": "38d847e8492d35f8ca0ca2eea9b8bd784be7ca79b96b4f138eee933778689eb0",
+    "inspected_by": "root",
+    "origin": "FIX5 real PDF render; separate from the nine browser captures"
+  }
+}

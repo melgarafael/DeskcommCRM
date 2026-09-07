@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/knowledge/sources/upload
  *
@@ -47,6 +48,9 @@ const nameSchema = z.string().trim().min(2).max(120);
 const agentIdSchema = z.string().uuid();
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });

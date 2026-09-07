@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followups/enrollments/:id/resume (manager+) — devolve ao
  * relógio o follow-up que uma pessoa pausou.
@@ -26,6 +27,9 @@ export const dynamic = "force-dynamic";
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const invalido = validaIdDaRota(id, requestId);

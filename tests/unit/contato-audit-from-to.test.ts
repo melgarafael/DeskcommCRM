@@ -52,16 +52,8 @@ let estadoAtual: Record<string, unknown>;
 function clienteFalso(): unknown {
   return {
     from: () => ({
-      select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: estadoAtual, error: null }) }),
-      }),
-      update: (patch: Record<string, unknown>) => ({
-        eq: () => ({
-          select: () => ({
-            maybeSingle: async () => ({ data: { ...estadoAtual, ...patch }, error: null }),
-          }),
-        }),
-      }),
+      select: () => { const chain = { eq: () => chain, maybeSingle: async () => ({ data: estadoAtual, error: null }) }; return chain; },
+      update: (patch: Record<string, unknown>) => { const chain = { eq: () => chain, select: () => chain, maybeSingle: async () => ({ data: { ...estadoAtual, ...patch }, error: null }) }; return chain; },
     }),
     rpc: () => ({ then: (r: (v: unknown) => unknown) => r({ error: null }) }),
   };

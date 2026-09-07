@@ -1,3 +1,4 @@
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Motor de regras: consome eventos-gatilho do event_log e executa as
  * automation_rules ativas do tenant. Registrado no registry via engine.handler.
@@ -136,6 +137,7 @@ export async function runAutomationForEvent(
   admin: SupabaseClient,
   row: EventRow,
 ): Promise<HandlerResult> {
+  const serviceBoundaries = new Map<string, Promise<ServiceBoundary>>();
   const requestId = row.metadata?.request_id;
   const causedByRule =
     Boolean(row.metadata?.caused_by_rule) || (typeof requestId === "string" && requestId.startsWith("rule:"));
@@ -177,7 +179,7 @@ export async function runAutomationForEvent(
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
       const until = await executor.postponeUntil(
-        { admin, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+        { admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
         action.config ?? {},
       );
       if (until) {
@@ -202,7 +204,7 @@ export async function runAutomationForEvent(
       try {
         results.push(
           await executor.execute(
-            { admin, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+            { admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
             action.config ?? {},
           ),
         );

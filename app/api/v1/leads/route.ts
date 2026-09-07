@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/leads — create lead (handler em ./_handler.ts).
  */
@@ -15,6 +16,9 @@ import { createLeadHandler } from "./_handler";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   // spec 13 §4: escrita é agent+ (viewer é read-only).

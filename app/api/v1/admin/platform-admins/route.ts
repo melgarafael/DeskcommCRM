@@ -193,14 +193,17 @@ function methodNotAllowed() {
 }
 
 export function POST() {
+
   return methodNotAllowed();
 }
 
 export function PATCH() {
+
   return methodNotAllowed();
 }
 
 export function DELETE() {
+
   return methodNotAllowed();
 }
 

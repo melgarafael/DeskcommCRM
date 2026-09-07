@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { randomId } from "@/lib/random-id";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -222,6 +223,8 @@ export function ConnectWhatsappClient({
   const t = useT();
   const [pending, startTransition] = useTransition();
   const [forma, setForma] = useState<Forma | null>(null);
+  const createKey = useRef<string | null>(null);
+  const restartKey = useRef<string | null>(null);
   const [info, setInfo] = useState<SessionInfo>({ status: "INIT", session: sessionName });
   const [qrTick, setQrTick] = useState(0);
   const [qrFailed, setQrFailed] = useState(false);
@@ -243,7 +246,7 @@ export function ConnectWhatsappClient({
     (async () => {
       setBusy(true);
       try {
-        const res = await fetch("/api/v1/onboarding/whatsapp/session", { method: "POST" });
+        const res = await fetch("/api/v1/onboarding/whatsapp/session", { method: "POST", headers: { "Idempotency-Key": createKey.current ??= randomId() } });
         const json = (await res.json()) as { data?: SessionInfo; error?: { message?: string } };
         if (cancelled) return;
         if (json.data) {
@@ -311,25 +314,26 @@ export function ConnectWhatsappClient({
 
   // 3) When status → WORKING, auto-advance.
   useEffect(() => {
-    if (status !== "WORKING") return;
+    if (status !== "WORKING" || !info.session) return;
+    const confirmedSession = info.session;
     startTransition(async () => {
       try {
-        await markWhatsappConfigured(sessionName, "WORKING");
+        await markWhatsappConfigured(confirmedSession, "WORKING");
       } catch (err) {
         if (isRedirectError(err)) throw err;
         toast.error("Falha ao avançar: " + String(err));
       }
     });
-  }, [status, sessionName, t]);
+  }, [status, info.session, t]);
 
   // Derruba a sessão morta e sobe outra. O polling volta sozinho porque `status`
   // sai de FAILED e o efeito que o observa roda de novo.
   async function restartSession() {
     setBusy(true);
     try {
-      const res = await fetch("/api/v1/onboarding/whatsapp/session?restart=1", { method: "POST" });
+      const res = await fetch("/api/v1/onboarding/whatsapp/session?restart=1", { method: "POST", headers: { "Idempotency-Key": restartKey.current ??= randomId() } });
       const json = (await res.json()) as { data?: SessionInfo };
-      if (json.data) setInfo(json.data);
+      if (json.data) { setInfo(json.data); restartKey.current = null; }
       else toast.error(t("Não consegui gerar outro código. Tente de novo em alguns segundos."));
     } catch {
       toast.error(t("Não consegui falar com o servidor. Confira sua conexão e tente de novo."));
@@ -378,7 +382,7 @@ export function ConnectWhatsappClient({
             />
           </div>
         </fieldset>
-        <Saidas status={status} sessionName={sessionName} />
+        <Saidas status={status} sessionName={info.session ?? ""} />
       </div>
     );
   }
@@ -406,7 +410,7 @@ export function ConnectWhatsappClient({
             contra o outro lado ANTES de gravar — e duas cópias divergem. */}
         {forma === "oficial" ? <CanalOficialClient /> : <CanalParceiroClient />}
 
-        <Saidas status={status} sessionName={sessionName} />
+        <Saidas status={status} sessionName={info.session ?? ""} />
       </div>
     );
   }
@@ -516,7 +520,7 @@ export function ConnectWhatsappClient({
         </div>
       )}
 
-      <Saidas status={status} sessionName={sessionName} />
+      <Saidas status={status} sessionName={info.session ?? ""} />
     </div>
   );
 }

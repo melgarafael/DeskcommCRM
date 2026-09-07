@@ -123,7 +123,10 @@ test.describe("followup flows — lista + criação (Task 6.1)", () => {
     const card = page.locator("li", { hasText: flowName });
     await expect(card).toBeVisible();
     await expect(card.getByText("Rascunho", { exact: true })).toBeVisible();
-    await page.screenshot({ path: "test-results/followup-6.1-04-flow-in-list.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.1-04-flow-in-list.png",
+      fullPage: true,
+    });
   });
 
   test("viewer não vê o botão de criar fluxo (RBAC)", async ({ page }) => {
@@ -160,7 +163,9 @@ async function connectHandles(
     ? `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source[data-handleid="${sourceHandleId}"]`
     : `.react-flow__node[data-id="${sourceNodeId}"] .react-flow__handle.source`;
   const source = page.locator(sourceSel).first();
-  const target = page.locator(`.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`);
+  const target = page.locator(
+    `.react-flow__node[data-id="${targetNodeId}"] .react-flow__handle.target`,
+  );
   const sBox = await source.boundingBox();
   const tBox = await target.boundingBox();
   if (!sBox || !tBox) throw new Error(`handle não encontrado: ${sourceNodeId} -> ${targetNodeId}`);
@@ -210,7 +215,10 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.getByTestId("node-palette")).toBeVisible();
     // React Flow's own pane element — proves the dynamically-imported canvas actually mounted.
     await expect(page.locator(".react-flow")).toBeVisible();
-    await page.screenshot({ path: "test-results/followup-6.2-01-canvas-empty.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.2-01-canvas-empty.png",
+      fullPage: true,
+    });
   });
 
   test("adiciona os 4 nós via paleta e conecta trigger→wait→action→end", async ({ page }) => {
@@ -246,9 +254,15 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     const zoomOut = page.locator(".react-flow__controls-zoomout");
     for (let i = 0; i < 5; i++) await zoomOut.click();
 
-    const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
-    const waitId = await page.locator('.react-flow__node[data-id^="wait-"]').getAttribute("data-id");
-    const actionId = await page.locator('.react-flow__node[data-id^="action-"]').getAttribute("data-id");
+    const triggerId = await page
+      .locator('.react-flow__node[data-id^="trigger-"]')
+      .getAttribute("data-id");
+    const waitId = await page
+      .locator('.react-flow__node[data-id^="wait-"]')
+      .getAttribute("data-id");
+    const actionId = await page
+      .locator('.react-flow__node[data-id^="action-"]')
+      .getAttribute("data-id");
     const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
     if (!triggerId || !waitId || !actionId || !endId) throw new Error("node ids ausentes");
 
@@ -260,7 +274,9 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await page.screenshot({ path: "test-results/followup-6.2-02-connected.png", fullPage: true });
   });
 
-  test("clica no nó Aguardar e configura 10min; clica no nó Ação e configura o prompt_hint", async ({ page }) => {
+  test("clica no nó Aguardar e configura 10min; clica no nó Ação e configura o prompt_hint", async ({
+    page,
+  }) => {
     await login(page, creds.users.manager!.email);
 
     await page.goto("/app/ai/followups");
@@ -287,15 +303,23 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     // Subtitle on the card derives straight from committed config — proves the
     // panel wrote through to the live FlowGraph state, not just local form state.
     await expect(page.locator('[data-testid^="node-card-wait-"]')).toContainText("10 min");
-    await page.screenshot({ path: "test-results/followup-6.2-03-wait-configured.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.2-03-wait-configured.png",
+      fullPage: true,
+    });
 
     // Action node → prompt_hint.
     await page.locator('[data-testid^="node-card-action-"]').click();
     const promptHint = panel.getByLabel("Instrução para a IA");
     await promptHint.fill("Reforce o benefício e pergunte se ainda tem interesse.");
     await promptHint.blur();
-    await expect(page.locator('[data-testid^="node-card-action-"]')).toContainText("Reforce o benefício");
-    await page.screenshot({ path: "test-results/followup-6.2-04-action-configured.png", fullPage: true });
+    await expect(page.locator('[data-testid^="node-card-action-"]')).toContainText(
+      "Reforce o benefício",
+    );
+    await page.screenshot({
+      path: "test-results/followup-6.2-04-action-configured.png",
+      fullPage: true,
+    });
   });
 
   /**
@@ -330,9 +354,15 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     const zoomOut = page.locator(".react-flow__controls-zoomout");
     for (let i = 0; i < 5; i++) await zoomOut.click();
 
-    const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
-    const waitId = await page.locator('.react-flow__node[data-id^="wait-"]').getAttribute("data-id");
-    const actionId = await page.locator('.react-flow__node[data-id^="action-"]').getAttribute("data-id");
+    const triggerId = await page
+      .locator('.react-flow__node[data-id^="trigger-"]')
+      .getAttribute("data-id");
+    const waitId = await page
+      .locator('.react-flow__node[data-id^="wait-"]')
+      .getAttribute("data-id");
+    const actionId = await page
+      .locator('.react-flow__node[data-id^="action-"]')
+      .getAttribute("data-id");
     const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
     if (!triggerId || !waitId || !actionId || !endId) throw new Error("node ids ausentes");
 
@@ -349,14 +379,21 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator(`[data-testid="node-card-${waitId}"]`)).toContainText("10 min");
 
     await page.locator(`[data-testid="node-card-${actionId}"]`).click();
-    await panel.getByLabel("Instrução para a IA").fill("Reforce o benefício e pergunte se ainda tem interesse.");
+    await panel
+      .getByLabel("Instrução para a IA")
+      .fill("Reforce o benefício e pergunte se ainda tem interesse.");
     await panel.getByLabel("Instrução para a IA").blur();
-    await expect(page.locator(`[data-testid="node-card-${actionId}"]`)).toContainText("Reforce o benefício");
+    await expect(page.locator(`[data-testid="node-card-${actionId}"]`)).toContainText(
+      "Reforce o benefício",
+    );
     // Close the config panel — it's a docked aside that narrows the canvas and
     // can occlude nodes, which would break the next handle-to-handle drag.
     await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
     await expect(page.getByTestId("node-config-sheet")).toHaveCount(0);
-    await page.screenshot({ path: "test-results/followup-6.2-05-built-incomplete.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.2-05-built-incomplete.png",
+      fullPage: true,
+    });
 
     // 4. Publish INCOMPLETE — expect 422 anchored to the offending nodes.
     await page.getByTestId("publish-button").click();
@@ -364,7 +401,10 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator(`[data-testid="node-error-${waitId}"]`)).toBeVisible();
     await expect(page.locator(`[data-testid="node-error-${actionId}"]`)).toBeVisible();
     await expect(page.locator(`[data-testid="node-error-${endId}"]`)).toBeVisible();
-    await page.screenshot({ path: "test-results/followup-6.2-06-publish-422-anchored.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.2-06-publish-422-anchored.png",
+      fullPage: true,
+    });
 
     // 5. Fix: connect action→end.
     await connectHandles(page, actionId, endId);
@@ -386,7 +426,8 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     // mid-transition frame. Wait for it to settle before the "before" capture.
     await page.waitForTimeout(400);
 
-    const positionsBefore: Record<string, { x: number; y: number; width: number; height: number }> = {};
+    const positionsBefore: Record<string, { x: number; y: number; width: number; height: number }> =
+      {};
     for (const id of [triggerId, waitId, actionId, endId]) {
       const box = await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox();
       if (!box) throw new Error(`nó ${id} sem bounding box antes do reload`);
@@ -401,7 +442,9 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await expect(page.locator(".react-flow__node")).toHaveCount(4);
     await expect(page.locator(".react-flow__edge")).toHaveCount(3);
     await expect(page.locator(`[data-testid="node-card-${waitId}"]`)).toContainText("10 min");
-    await expect(page.locator(`[data-testid="node-card-${actionId}"]`)).toContainText("Reforce o benefício");
+    await expect(page.locator(`[data-testid="node-card-${actionId}"]`)).toContainText(
+      "Reforce o benefício",
+    );
     // Same settle wait as the "before" capture — the post-reload fitView (on
     // mount) needs the same grace period before its transform is comparable.
     await page.waitForTimeout(400);
@@ -414,7 +457,10 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
       expect(Math.abs(box.x - before.x)).toBeLessThanOrEqual(TOLERANCE_PX);
       expect(Math.abs(box.y - before.y)).toBeLessThanOrEqual(TOLERANCE_PX);
     }
-    await page.screenshot({ path: "test-results/followup-6.2-08-reloaded-persisted.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.2-08-reloaded-persisted.png",
+      fullPage: true,
+    });
 
     // 8. Rollback disabled — only 1 version exists (this is the first publish).
     await expect(page.getByTestId("rollback-button")).toBeDisabled();
@@ -435,7 +481,12 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
    * is what a real user would do before wiring a non-trivial flow; this
    * mirrors that instead of fighting the demo grid.
    */
-  async function moveNodeTo(page: Page, nodeId: string, targetX: number, targetY: number): Promise<void> {
+  async function moveNodeTo(
+    page: Page,
+    nodeId: string,
+    targetX: number,
+    targetY: number,
+  ): Promise<void> {
     const card = page.locator(`[data-testid="node-card-${nodeId}"]`);
     const box = await card.boundingBox();
     if (!box) throw new Error(`nó ${nodeId} sem bounding box`);
@@ -504,8 +555,12 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     await page.getByTestId("palette-add-end").click();
     await page.getByTestId("palette-add-end").click();
 
-    const triggerId = await page.locator('.react-flow__node[data-id^="trigger-"]').getAttribute("data-id");
-    const classifyId = await page.locator('.react-flow__node[data-id^="ai_classify-"]').getAttribute("data-id");
+    const triggerId = await page
+      .locator('.react-flow__node[data-id^="trigger-"]')
+      .getAttribute("data-id");
+    const classifyId = await page
+      .locator('.react-flow__node[data-id^="ai_classify-"]')
+      .getAttribute("data-id");
     const [action1Id, action2Id] = await nodeIdsByPrefix(page, "action");
     const [end1Id, end2Id] = await nodeIdsByPrefix(page, "end");
     if (!triggerId || !classifyId || !action1Id || !action2Id || !end1Id || !end2Id) {
@@ -537,14 +592,20 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     const panel = page.getByTestId("node-config-panel");
     await panel.getByLabel("Classes (separadas por vírgula)").fill("positivo, objecao");
     await panel.getByLabel("Classes (separadas por vírgula)").blur();
-    await expect(page.locator(`[data-testid="node-card-${classifyId}"]`)).toContainText("2 classes");
+    await expect(page.locator(`[data-testid="node-card-${classifyId}"]`)).toContainText(
+      "2 classes",
+    );
 
     // 3. Configure the 2 action nodes' prompt_hint.
     await page.locator(`[data-testid="node-card-${action1Id}"]`).click();
-    await panel.getByLabel("Instrução para a IA").fill("Envie uma oferta especial reforçando o interesse.");
+    await panel
+      .getByLabel("Instrução para a IA")
+      .fill("Envie uma oferta especial reforçando o interesse.");
     await panel.getByLabel("Instrução para a IA").blur();
     await page.locator(`[data-testid="node-card-${action2Id}"]`).click();
-    await panel.getByLabel("Instrução para a IA").fill("Pergunte com empatia qual é a objeção específica.");
+    await panel
+      .getByLabel("Instrução para a IA")
+      .fill("Pergunte com empatia qual é a objeção específica.");
     await panel.getByLabel("Instrução para a IA").blur();
 
     // Close the config panel — docked aside narrows the canvas, would break the drags below.
@@ -576,9 +637,14 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     // Exactly one node carries an error — proves the failure is scoped to the classify
     // node's edge coverage, not some unrelated structural problem in the graph.
     await expect(page.locator('[data-testid^="node-error-"]')).toHaveCount(1);
-    const classifyErrorText = await page.locator(`[data-testid="node-error-${classifyId}"]`).textContent();
+    const classifyErrorText = await page
+      .locator(`[data-testid="node-error-${classifyId}"]`)
+      .textContent();
     expect(classifyErrorText).toMatch(/class_match|no_reply/i);
-    await page.screenshot({ path: "test-results/followup-6.3-02-publish-422-all-always.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.3-02-publish-422-all-always.png",
+      fullPage: true,
+    });
 
     // 6. Fix it: use the new EdgeConfigPanel to set each classify-outgoing edge's condition.
     await setEdgeCondition(page, "edge-2", "positivo");
@@ -587,11 +653,16 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     // edge-5 is already the "always" fallback by default — open it and confirm rather
     // than change it, proving the option is genuinely selected, not just left untouched.
     await clickEdge(page, "edge-5");
-    await expect(page.getByTestId("edge-config-panel").getByRole("combobox")).toContainText("Sempre");
+    await expect(page.getByTestId("edge-config-panel").getByRole("combobox")).toContainText(
+      "Sempre",
+    );
 
     await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
     await expect(page.getByTestId("edge-config-sheet")).toHaveCount(0);
-    await page.screenshot({ path: "test-results/followup-6.3-03-edges-configured.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.3-03-edges-configured.png",
+      fullPage: true,
+    });
 
     // 7. Publish for real — expect SUCCESS this time, where the identical graph shape
     // with all-`always` edges failed above.
@@ -607,7 +678,10 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
     await expect(page.getByTestId("rf__edge-edge-5")).toContainText("Sempre");
     await page.locator(".react-flow__controls-fitview").click();
     await page.waitForTimeout(400);
-    await page.screenshot({ path: "test-results/followup-6.3-04-published-branching.png", fullPage: true });
+    await page.screenshot({
+      path: "test-results/followup-6.3-04-published-branching.png",
+      fullPage: true,
+    });
   });
 });
 
@@ -626,7 +700,7 @@ test.describe("followup flow builder — editor de condição de aresta / ai_cla
 test.describe("followup flow selector no editor do agente (Task 7.2)", () => {
   test.beforeAll(() => {
     execFileSync("npx", ["tsx", "scripts/seed-e2e-followup-agent.ts"], { stdio: "inherit" });
-  // O seed ESCREVE em .e2e-creds.json, e `creds` foi lido no carregamento do
+    // O seed ESCREVE em .e2e-creds.json, e `creds` foi lido no carregamento do
     // módulo — sem reler, o objeto em memória nunca vê o bloco que o seed
     // acabou de gravar. Foi por isto que esta spec ficou fora do CI: a mensagem
     // "o seed não grava X" descrevia o sintoma, e o seed gravava certo desde
@@ -647,22 +721,40 @@ test.describe("followup flow selector no editor do agente (Task 7.2)", () => {
     // --- 1. publica um fluxo mínimo trigger→end via API ---
     const stamp = Date.now();
     const flowName = `E2E Seletor ${stamp}`;
-    const createFlowRes = await page.request.post("/api/v1/ai/followup-flows", { data: { name: flowName } });
+    const createFlowRes = await page.request.post("/api/v1/ai/followup-flows", {
+      data: { name: flowName },
+    });
     expect(createFlowRes.status()).toBe(201);
     const { data: flow } = (await createFlowRes.json()) as { data: { id: string } };
 
     const graph = {
       nodes: [
         { id: "trigger-1", type: "trigger", label: "Início", position: { x: 0, y: 0 }, config: {} },
-        { id: "end-1", type: "end", label: "Fim", position: { x: 0, y: 200 }, config: { outcome: "exhausted" } },
+        {
+          id: "end-1",
+          type: "end",
+          label: "Fim",
+          position: { x: 0, y: 200 },
+          config: { outcome: "exhausted" },
+        },
       ],
-      edges: [{ id: "edge-1", source: "trigger-1", target: "end-1", priority: 0, condition: { type: "always" } }],
+      edges: [
+        {
+          id: "edge-1",
+          source: "trigger-1",
+          target: "end-1",
+          priority: 0,
+          condition: { type: "always" },
+        },
+      ],
     };
     const patchRes = await page.request.patch(`/api/v1/ai/followup-flows/${flow.id}`, {
       data: { draft_graph: graph },
     });
     expect(patchRes.status()).toBe(200);
-    const publishRes = await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/publish`, { data: {} });
+    const publishRes = await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/publish`, {
+      data: {},
+    });
     expect(publishRes.status()).toBe(200);
 
     // --- 2. cria um mcp_agent + v1 draft via API, usando as fixtures seedadas ---
@@ -682,7 +774,10 @@ test.describe("followup flow selector no editor do agente (Task 7.2)", () => {
     });
     expect(createAgentRes.status()).toBe(201);
     const { data: created } = (await createAgentRes.json()) as {
-      data: { agent: { id: string }; version: { id: string; followup: { enabled: boolean; flow_pointer_ids: string[] } } };
+      data: {
+        agent: { id: string };
+        version: { id: string; followup: { enabled: boolean; flow_pointer_ids: string[] } };
+      };
     };
     const agentId = created.agent.id;
     const versionId = created.version.id;
@@ -760,7 +855,10 @@ test.describe("followup flow builder — controle de gatilho na PublishBar (Task
       await triggerButton.click();
       const panel = page.getByTestId("trigger-config-panel");
       await expect(panel).toBeVisible();
-      await page.screenshot({ path: "e2e-artifacts/followup-8.5-01-trigger-panel-manual.png", fullPage: true });
+      await page.screenshot({
+        path: "e2e-artifacts/followup-8.5-01-trigger-panel-manual.png",
+        fullPage: true,
+      });
 
       // Só o que tem motor de enrollment é oferecido. Eram 2 até a frente de
       // gatilhos entregar o produtor de `stage_change`
@@ -779,12 +877,27 @@ test.describe("followup flow builder — controle de gatilho na PublishBar (Task
       // coisas — e é o que o operador de fato vê.
       const kindSelect = panel.getByRole("combobox");
       await kindSelect.click();
-      const OFERECIDOS = ["Manual", "Silêncio", "Etapa do funil", "Agente pediu ajuda", "Automação (Webhooks)"];
+      // `appointment_no_show` entrou com motor completo, verificado ponta a ponta:
+      // `fn_appointment_change` (migration 0224) emite `appointment.outcome_confirmed`
+      // quando a equipe confirma a falta; `lib/followup/gatilho-presenca.handler.ts`
+      // consome — e está REGISTRADO em `lib/event-log/register-handlers.ts`, que é
+      // onde "tem consumidor" deixa de ser promessa; ele chama `fn_appointment_recover`,
+      // que insere em `followup_enrollments`. O publish já o aceita em `KINDS_COM_MOTOR`.
+      const OFERECIDOS = [
+        "Manual",
+        "Silêncio",
+        "Etapa do funil",
+        "Falta confirmada pela equipe",
+        "Agente pediu ajuda",
+        "Automação (Webhooks)",
+      ];
       for (const nome of OFERECIDOS) {
         await expect(page.getByRole("option", { name: nome, exact: true })).toBeVisible();
       }
       await expect(page.getByRole("option")).toHaveCount(OFERECIDOS.length);
-      await expect(page.getByRole("option", { name: /conversation_end|fim do atendimento/i })).toHaveCount(0);
+      await expect(
+        page.getByRole("option", { name: /conversation_end|fim do atendimento/i }),
+      ).toHaveCount(0);
 
       await page.getByRole("option", { name: "Silêncio", exact: true }).click();
       await expect(panel.getByLabel("Minutos de silêncio")).toBeVisible();
@@ -794,16 +907,24 @@ test.describe("followup flow builder — controle de gatilho na PublishBar (Task
 
       const saveButton = panel.getByTestId("trigger-config-save");
       await expect(saveButton).toBeEnabled();
-      await page.screenshot({ path: "e2e-artifacts/followup-8.5-02-trigger-silence-filled.png", fullPage: true });
+      await page.screenshot({
+        path: "e2e-artifacts/followup-8.5-02-trigger-silence-filled.png",
+        fullPage: true,
+      });
       await saveButton.click();
 
       await expect(page.getByText("Gatilho atualizado.")).toBeVisible();
       await expect(triggerButton).toHaveText("Gatilho: Silêncio (45 min)");
-      await page.screenshot({ path: "e2e-artifacts/followup-8.5-03-trigger-saved.png", fullPage: true });
+      await page.screenshot({
+        path: "e2e-artifacts/followup-8.5-03-trigger-saved.png",
+        fullPage: true,
+      });
 
       // Reload — o valor persistido (PATCH round-trip) sobrevive, não é só estado local.
       await page.reload();
-      await expect(page.getByTestId("trigger-config-button")).toHaveText("Gatilho: Silêncio (45 min)");
+      await expect(page.getByTestId("trigger-config-button")).toHaveText(
+        "Gatilho: Silêncio (45 min)",
+      );
 
       // Prova via API (não só UI): GET devolve o trigger_config exato que foi salvo.
       const getRes = await page.request.get(`/api/v1/ai/followup-flows/${flow.id}`);

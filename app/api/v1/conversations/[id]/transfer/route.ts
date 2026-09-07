@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/conversations/[id]/transfer — reatribui a conversa a outro
  * atendente. Decisão G1-06d (spec 13 §5): transferência é IMEDIATA, sem etapa
@@ -29,6 +30,9 @@ interface RouteCtx {
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const supabase = await createClient();

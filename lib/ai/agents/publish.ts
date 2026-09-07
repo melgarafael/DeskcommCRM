@@ -5,6 +5,7 @@
  * Returns a discriminated result so the caller maps validation errors to 422
  * with a stable error code, and unknown errors to 500.
  */
+import { chaveDePlataforma } from "@/lib/ai/runtime/agent";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PUBLISH_ERROR_CODES, type PublishErrorCode } from "./validation";
 
@@ -33,14 +34,26 @@ interface PublishRow {
 
 export async function publishAgentVersion(
   admin: SupabaseClient,
-  params: { orgId: string; agentId: string; versionId: string },
+  params: { orgId: string; agentId: string; versionId: string; expectedProvenance?: "onboarding" | "legacy_reconciliation" },
 ): Promise<PublishResult> {
-  const { data, error } = await admin
-    .rpc("fn_publish_ai_agent_version", {
-      p_org_id: params.orgId,
-      p_agent_id: params.agentId,
-      p_version_id: params.versionId,
-    });
+  const { data: version, error: readError } = await admin
+    .from("ai_agent_versions")
+    .select("provider,credential_id")
+    .eq("organization_id", params.orgId)
+    .eq("agent_id", params.agentId)
+    .eq("id", params.versionId)
+    .maybeSingle();
+  if (readError || !version)
+    return { ok: false, code: "version_not_found", message: "version_not_found" };
+  const platform = version.credential_id === null;
+  if (platform && !chaveDePlataforma(version.provider))
+    return { ok: false, code: "credential_missing", message: "credential_missing" };
+  const { data, error } = await admin.rpc("fn_publish_ai_agent_version", {
+    p_org_id: params.orgId,
+    p_agent_id: params.agentId,
+    p_version_id: params.versionId,
+    ...(params.expectedProvenance ? { p_platform_credential_verified: platform, p_expected_provenance: params.expectedProvenance } : platform ? { p_platform_credential_verified: true } : {}),
+  });
 
   if (error) {
     // Postgres P0001 with the reason as message.
@@ -51,7 +64,9 @@ export async function publishAgentVersion(
     return { ok: false, code: "internal_error", message: raw || "publish_failed" };
   }
 
-  const row = Array.isArray(data) ? (data[0] as PublishRow | undefined) : (data as PublishRow | null);
+  const row = Array.isArray(data)
+    ? (data[0] as PublishRow | undefined)
+    : (data as PublishRow | null);
   if (!row) {
     return { ok: false, code: "internal_error", message: "no_row_returned" };
   }

@@ -103,6 +103,62 @@ test.describe("Inbox — quem manda nesta conversa", () => {
       sessaoId = (data as { id: string }).id;
     }
 
+    // A PRECONDIÇÃO DO PASSO (1): esta org PRECISA ter automático no ar.
+    //
+    // "No ar" passou a significar VERSÃO PUBLICADA (`lib/ai/agents/no-ar.ts`):
+    // o estado `no_ar_legado` saiu, `agenteAtende` não conta mais o `rag_bot`
+    // ativo e nunca publicado, e o worker legado deixou de responder por ele —
+    // quem cuida desse agente agora é a recuperação de legado. O agente que
+    // `scripts/seed-e2e-credentials.ts` cria é exatamente esse: ativo, sem
+    // publicação. SEM esta publicação a tela escreve "Sem responsável" e
+    // ACERTA — não há automático de quem a pessoa possa assumir o comando —, e
+    // o teste morre na precondição sem nunca exercitar o handoff, que é o que
+    // ele existe para medir. Publicar aqui devolve o cenário; a asserção
+    // `/autom/i` continua exatamente como estava.
+    const { data: agente } = await admin
+      .from("ai_agents")
+      .select("id, published_version_id")
+      .eq("organization_id", creds.org_id)
+      .eq("is_default", true)
+      .maybeSingle();
+    const agenteDefault = agente as { id: string; published_version_id: string | null } | null;
+    if (!agenteDefault) throw new Error("a org de teste não tem agente default");
+    if (!agenteDefault.published_version_id) {
+      // `version_number` é único por agente: numerar a partir do que já existe,
+      // senão um rascunho deixado por outra spec faz colidir em vez de publicar.
+      const { data: ultima } = await admin
+        .from("ai_agent_versions")
+        .select("version_number")
+        .eq("agent_id", agenteDefault.id)
+        .order("version_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const proximo = ((ultima as { version_number: number } | null)?.version_number ?? 0) + 1;
+      const { data: versao, error: erroVersao } = await admin
+        .from("ai_agent_versions")
+        .insert({
+          organization_id: creds.org_id,
+          agent_id: agenteDefault.id,
+          version_number: proximo,
+          system_prompt: "Atendimento automático do E2E.",
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          // Nulo = a chave da instalação; a coluna é nullable de propósito.
+          credential_id: null,
+          channel_session_id: sessaoId,
+          status: "published",
+          published_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (erroVersao) throw new Error(`ai_agent_versions: ${erroVersao.message}`);
+      const { error: erroPtr } = await admin
+        .from("ai_agents")
+        .update({ published_version_id: (versao as { id: string }).id })
+        .eq("id", agenteDefault.id);
+      if (erroPtr) throw new Error(`published_version_id: ${erroPtr.message}`);
+    }
+
     const { data: contato, error: erroContato } = await admin
       .from("contacts")
       .insert({
@@ -210,9 +266,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     // Sem esta linha, tudo acima provaria que a tela mudou — não que o motor
     // parou. `bot_silenced_until` é o gate que os três guards do motor leem.
     // -----------------------------------------------------------------
-    await expect
-      .poll(async () => silencioNoBanco(), { timeout: 30_000 })
-      .toMatch(/infinity/);
+    await expect.poll(async () => silencioNoBanco(), { timeout: 30_000 }).toMatch(/infinity/);
 
     // -----------------------------------------------------------------
     // (5) A troca de comando aparece na linha do tempo do painel.
@@ -237,9 +291,7 @@ test.describe("Inbox — quem manda nesta conversa", () => {
     await expect(voltar).toBeVisible();
     await voltar.click();
 
-    await expect
-      .poll(async () => silencioNoBanco(), { timeout: 30_000 })
-      .toBe("(null)");
+    await expect.poll(async () => silencioNoBanco(), { timeout: 30_000 }).toBe("(null)");
     await expect(comando).toContainText(/autom/i, { timeout: 30_000 });
     await expect(page.getByTestId("badge-atendimento-humano")).toHaveCount(0);
     await captura(page, "3-devolvido-ao-automatico");

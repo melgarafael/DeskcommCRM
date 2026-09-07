@@ -100,7 +100,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - Action audit obrigatória: `lgpd.data_request_received`, `lgpd.export_generated`, `lgpd.redact_executed`, `lgpd.consent_changed`
 
 ### WAHA
-- Plus obrigatório (Core não suporta multi-tenant, sem retry, sem S3)
+- Default fixo `devlikeapro/waha:latest-2026.7.2`, NOWEB. A prova local criou duas sessões CORE simultâneas até `SCAN_QR_CODE`; não prova pairing, duas contas `WORKING` nem envio. Não bloquear segunda sessão por tier: conferir resposta estruturada e pós-condição da operação.
 - Engine NOWEB default; WEBJS apenas se precisar stickers animados / botões
 - Auth: env do WAHA recebe **hash SHA512 hex** da api key; cliente envia plaintext em `X-Api-Key`
 - Webhooks: HMAC SHA512 com `crypto.timingSafeEqual`

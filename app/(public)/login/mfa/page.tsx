@@ -21,7 +21,7 @@ export default async function MfaChallengePage({
 
   const { data: factorsData } = await supabase.auth.mfa.listFactors();
   const hasVerified = !!factorsData?.totp?.some((f) => f.status === "verified");
-  if (!hasVerified) redirect("/app/inbox");
+  if (!hasVerified) redirect("/app");
 
   const idioma = normalizarIdioma(
     (user.user_metadata?.locale as string | undefined) ?? null,

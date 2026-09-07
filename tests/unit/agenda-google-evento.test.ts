@@ -539,3 +539,9 @@ describe("doEventoDoGoogle", () => {
     }
   });
 });
+
+it("URL assíncrona Meet não altera projeção de local; vídeo manual continua publicado", () => {
+  const pending = agendamento({ location_kind: "google_meet", location_details: "Atendimento online", meeting_url: null });
+  expect(paraEventoDoGoogle({ ...pending, meeting_url: "https://meet.google.com/abc-defg-hij" })).toEqual(paraEventoDoGoogle(pending));
+  expect(paraEventoDoGoogle({ ...pending, location_kind: "video_link", meeting_url: "https://video.example/room" }).location).toBe("https://video.example/room");
+});

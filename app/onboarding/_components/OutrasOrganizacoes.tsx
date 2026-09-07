@@ -1,6 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { flushSync } from "react-dom";
+import { useOrganizationTransition } from "@/components/shell/OrganizationTransitionProvider";
 import { useTransition } from "react";
 
 import { setActiveOrg } from "@/app/actions/shell/setActiveOrg";
@@ -37,10 +39,8 @@ import { ArrowBendUpLeft, CaretDown } from "@/lib/ui/icons";
  * a porta de trás. Configurar continua sendo o caminho principal — este botão
  * não o atropela, fica ao lado dele no cabeçalho.
  *
- * ⚠️ Navega EXPLICITAMENTE depois de trocar. `setActiveOrg` revalida `/app`, não
- * `/onboarding`, então o layout desta rota não re-renderiza sozinho: sem o
- * `replace`, o cookie mudaria e a pessoa continuaria olhando o wizard da
- * organização que ela acabou de deixar.
+ * A navegação completa após trocar reinicia cache e subscriptions. A guarda
+ * visual fica na raiz e sobrevive ao refresh RSC disparado pelo cookie.
  */
 export function OutrasOrganizacoes({
   outras,
@@ -49,14 +49,22 @@ export function OutrasOrganizacoes({
 }) {
   const [isPending, startTransition] = useTransition();
   const t = useT();
-  const router = useRouter();
+  const transition = useOrganizationTransition();
+
 
   if (outras.length === 0) return null;
 
   const trocar = (id: string) =>
     startTransition(async () => {
-      const r = await setActiveOrg(id);
-      if (r.ok) router.replace("/app/inbox");
+      flushSync(() => transition.begin(t("Carregando organização…")));
+      try {
+        const r = await setActiveOrg(id);
+        if (!r.ok) throw new Error(r.error);
+        window.location.assign("/app/inbox");
+      } catch {
+        transition.cancel();
+        toast.error(t("Não foi possível trocar de organização. Tente novamente."));
+      }
     });
 
   // Uma organização só: a escolha já está feita, e um menu de um item é

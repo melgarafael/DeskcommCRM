@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/skills/[name]/install
  *
@@ -27,6 +28,9 @@ export async function POST(
   _req: NextRequest,
   ctx: { params: Promise<{ name: string }> },
 ): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   const authz = await requireRole("manager", { requestId, resource: "ai_skills" });

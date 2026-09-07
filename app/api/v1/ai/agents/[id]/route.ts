@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET    /api/v1/ai/agents/:id  — fetch um agent (manager+)
  * PATCH  /api/v1/ai/agents/:id  — atualiza campos (admin)
@@ -23,7 +24,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const AGENT_COLUMNS =
-  "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
+  "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -69,6 +70,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
@@ -154,7 +158,10 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
           `Mudança de conteúdo (${barrados.join(", ")}) = versão draft nova; publica. ` +
           `Edite pela aba Modelo do editor de versões.`,
         409,
-        { requestId, details: { campos: barrados, published_version_id: existing.published_version_id } },
+        {
+          requestId,
+          details: { campos: barrados, published_version_id: existing.published_version_id },
+        },
       );
     }
   }
@@ -162,6 +169,8 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // Build UPDATE payload. Para `config`, faz merge preservando defaults.
   const update: Record<string, unknown> = {};
 
+  if (patch.operation_mode !== undefined) update.operation_mode = patch.operation_mode;
+  if (patch.paused_at !== undefined) update.paused_at = patch.paused_at;
   if (patch.name !== undefined) update.name = patch.name;
   if (patch.description !== undefined) update.description = patch.description;
   if (patch.is_active !== undefined) update.is_active = patch.is_active;
@@ -205,6 +214,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 // ---------------------------------------------------------------------------
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
 

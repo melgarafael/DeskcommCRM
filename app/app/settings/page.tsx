@@ -29,8 +29,9 @@ export default async function SettingsHubPage() {
   return (
     <NavHub
       group="organizacao"
-      isPlatformAdmin={user.is_platform_admin}
+      isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}
+      interfaceSettings={activeOrg?.interface_settings}
       title={traduzir("Configurações", idioma)}
       subtitle={traduzir("Sua conta, os dados da empresa e quem tem acesso ao quê.", idioma)}
       locale={idioma}

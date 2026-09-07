@@ -1,5 +1,6 @@
 "use client";
 
+import { MemberInterfaceDialog } from "@/components/team/MemberInterfaceDialog";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -54,6 +55,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
   const changeRole = useChangeRole();
   const revoke = useRevokeMember();
 
+  const [interfaceMember, setInterfaceMember] = useState<TeamMember | null>(null);
   const [revokeDialog, setRevokeDialog] = useState<TeamMember | null>(null);
 
   if (isLoading) {
@@ -75,6 +77,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
             <TableRow>
               <TableHead>{t("Membro")}</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>{t("Interface")}</TableHead>
               <TableHead>{t("Status")}</TableHead>
               <TableHead>{t("Última atividade")}</TableHead>
               {canManage ? <TableHead className="w-[80px]" /> : null}
@@ -84,10 +87,10 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
             {members.map((m) => (
               <TableRow key={m.user_id}>
                 <TableCell>
-                  <div className="font-medium">{m.full_name ?? m.email ?? m.user_id.slice(0, 8)}</div>
-                  {m.email ? (
-                    <div className="text-xs text-muted-foreground">{m.email}</div>
-                  ) : null}
+                  <div className="font-medium">
+                    {m.full_name ?? m.email ?? m.user_id.slice(0, 8)}
+                  </div>
+                  {m.email ? <div className="text-xs text-muted-foreground">{m.email}</div> : null}
                 </TableCell>
                 <TableCell>
                   {canManage && m.user_id !== currentUserId ? (
@@ -113,6 +116,30 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     </Select>
                   ) : (
                     <Badge variant="secondary">{m.role}</Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {canManage ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`${t("Interface de")} ${m.full_name ?? m.email ?? m.user_id}`}
+                      onClick={() => setInterfaceMember(m)}
+                    >
+                      {m.interface_settings?.destinos
+                        ? t("Personalizada")
+                        : m.interface_settings?.preset === "simplificada"
+                          ? t("Simplificada")
+                          : t("Completa")}
+                    </Button>
+                  ) : (
+                    <span>
+                      {m.interface_settings?.destinos
+                        ? t("Personalizada")
+                        : m.interface_settings?.preset === "simplificada"
+                          ? t("Simplificada")
+                          : t("Completa")}
+                    </span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -156,12 +183,20 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
         </Table>
       </div>
 
+      {interfaceMember && (
+        <MemberInterfaceDialog
+          key={interfaceMember.user_id}
+          member={interfaceMember}
+          onClose={() => setInterfaceMember(null)}
+        />
+      )}
       <Dialog open={!!revokeDialog} onOpenChange={(o) => !o && setRevokeDialog(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("Revogar acesso")}</DialogTitle>
             <DialogDescription>
-              {revokeDialog?.email ?? revokeDialog?.user_id} {t("perderá acesso ao tenant. Esta ação pode ser desfeita reconvidando o membro.")}
+              {revokeDialog?.email ?? revokeDialog?.user_id}{" "}
+              {t("perderá acesso ao tenant. Esta ação pode ser desfeita reconvidando o membro.")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -22,8 +22,7 @@ import { duplicateAgentWithVersion } from "@/lib/ai/agents/duplicate";
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ActionResult<T = void> =
-  | { ok: true; data?: T }
-  | { ok: false; error: string; message?: string };
+  { ok: true; data?: T } | { ok: false; error: string; message?: string };
 
 type AdminGuard =
   | { kind: "ok"; authUser: { id: string }; activeOrg: { orgId: string; role: Role } }
@@ -55,27 +54,14 @@ export async function pauseAgentAction(id: string): Promise<ActionResult> {
     .maybeSingle();
 
   if (!existing) return { ok: false, error: "not_found" };
-  if (existing.archived_at) return { ok: false, error: "state_conflict", message: "Agent arquivado." };
+  if (existing.archived_at)
+    return { ok: false, error: "state_conflict", message: "Agent arquivado." };
 
   const requestId = randomUUID();
-  const previousVersionId = (existing as { published_version_id: string | null }).published_version_id;
+  const previousVersionId = (existing as { published_version_id: string | null })
+    .published_version_id;
 
-  if (previousVersionId) {
-    await admin
-      .from("ai_agent_versions")
-      .update({ status: "superseded", superseded_at: new Date().toISOString() })
-      .eq("id", previousVersionId)
-      .eq("organization_id", activeOrg.orgId)
-      .eq("status", "published");
-  }
-
-  const updates: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-    published_version_id: null,
-  };
-  // Legacy rag_bot: também flip is_active para refletir no badge.
-  if (existing.kind !== "mcp_agent") updates.is_active = false;
-
+  const updates = { paused_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   const { error } = await admin
     .from("ai_agents")
     .update(updates)
@@ -106,7 +92,7 @@ export async function unpauseAgentAction(id: string): Promise<ActionResult> {
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("ai_agents")
-    .select("id, kind, archived_at, is_active")
+    .select("id, kind, archived_at, is_active, published_version_id")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -114,14 +100,15 @@ export async function unpauseAgentAction(id: string): Promise<ActionResult> {
   if (!existing) return { ok: false, error: "not_found" };
   if (existing.archived_at) return { ok: false, error: "state_conflict" };
 
-  // mcp_agent não pode ser despausado por aqui — precisa ir em /publish escolhendo versão.
-  if (existing.kind === "mcp_agent") {
-    return { ok: false, error: "publish_required", message: "Publique uma versão para reativar." };
-  }
-
+  if (!existing.published_version_id)
+    return {
+      ok: false,
+      error: "publish_required",
+      message: "Conclua a configuração e publique uma versão.",
+    };
   const { error } = await admin
     .from("ai_agents")
-    .update({ is_active: true, updated_at: new Date().toISOString() })
+    .update({ paused_at: null, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId);
   if (error) return { ok: false, error: "internal_error", message: error.message };

@@ -331,14 +331,21 @@ a migration `20260716120000_0030_config_rls_role_policies.sql` aplica
   consome com claim + dedup (at-least-once seguro: conversa que já tem dono nunca
   é reatribuída pelo replay).
 - Sem elegível ⇒ fila (visível, com posição) + re-agenda com backoff.
-- **Notificação de atribuição** (decisão G5-03): o repo NÃO tem sistema de
-  notificação in-app (só `notification_prefs` = preferências; sem tabela de
-  notificação nem entrega de toast). A notificação ao novo dono é, portanto, o
-  par **unread badge + realtime**: `fn_conversation_assign` zera
-  `unread_count_for_assignee` e seta `assigned_to_user_id`; a subscription
-  `postgres_changes` de `conversations` (G4-01/02, RLS visibility-aware) entrega
-  o change ao novo dono, que vê a conversa surgir em "Minhas" com o unread badge.
-  Não construímos um sistema de notificação novo (fora de escopo).
+- **Notificação e Central** (reconciliação 2026-09): a atribuição continua
+  aparecendo ao novo dono pelo par **unread badge + realtime**:
+  `fn_conversation_assign` zera `unread_count_for_assignee`, define
+  `assigned_to_user_id` e a subscription RLS-aware faz a conversa surgir em
+  "Minhas". Além desse sinal operacional, o produto possui a Central baseada em
+  `agent_inbox_items` para avisos produzidos pelos fluxos que a alimentam.
+- O GET da Central calcula contexto e próximo passo no servidor a partir de um
+  catálogo fechado de tipos e referências. A projeção usa a sessão autenticada,
+  organização explícita e RLS/ownership vigentes; referência removida, invisível,
+  de outro tenant, desconhecida ou cuja consulta falhou não se transforma em URL.
+  Quando não há tela segura e inequívoca, o card mostra orientação geral honesta.
+- Abrir o contexto é navegação por `Link` e não altera o estado do aviso. Resolver
+  ou reabrir é uma mutação separada, escopada à organização e auditada. A Central
+  não inventa telas técnicas para toda referência nem amplia RBAC por causa de um
+  menu oculto ou de uma preferência de interface.
 - **Fila com posição/espera** (G5-03): a visão Fila (`assigned_to=unassigned`)
   ordena por `last_inbound_at` ASC (quem espera há mais tempo primeiro); posição =
   índice na lista ordenada; "aguardando há X" derivado de `last_inbound_at`. A

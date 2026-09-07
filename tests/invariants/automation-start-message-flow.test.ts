@@ -134,7 +134,31 @@ class FakeQuery implements PromiseLike<QResult> {
 }
 
 function fakeAdminClient(): SupabaseClient {
-  return { from: (table: string) => new FakeQuery(table) } as unknown as SupabaseClient;
+  return {
+    from: (table: string) => new FakeQuery(table),
+    rpc: async (name: string, params: Record<string, unknown>): Promise<QResult> => {
+      if (name === "fn_service_boundary" || name === "fn_service_event_origin") {
+        try {
+          const expression =
+            name === "fn_service_boundary"
+              ? `public.fn_service_boundary(${sqlLiteral(params.p_org)}::uuid,${sqlLiteral(params.p_conversation)}::uuid)`
+              : `public.fn_service_event_origin(${sqlLiteral(params.p_org)}::uuid,${sqlLiteral(params.p_event)}::uuid,${sqlLiteral(params.p_contact)}::uuid,${sqlLiteral(params.p_session)}::uuid)`;
+          return { data: JSON.parse(sql(`select ${expression};`)), error: null };
+        } catch (error) {
+          return { data: null, error: { message: String(error) } };
+        }
+      }
+      if (name !== "fn_service_begin") throw new Error(`unsupported rpc ${name}`);
+      try {
+        const out = sql(
+          `select public.fn_service_begin(p_org => ${sqlLiteral(params.p_org)}::uuid, p_contact => ${sqlLiteral(params.p_contact)}::uuid, p_session => ${sqlLiteral(params.p_session)}::uuid);`,
+        );
+        return { data: JSON.parse(out), error: null };
+      } catch (error) {
+        return { data: null, error: { message: String(error) } };
+      }
+    },
+  } as unknown as SupabaseClient;
 }
 
 const admin = fakeAdminClient();
@@ -147,7 +171,13 @@ const RULE_ID = "dddddddd-1111-4000-8000-0000000000c1";
 const GRAPH = flowGraphSchema.parse({
   nodes: [
     { id: "t1", type: "trigger", label: "t1", position: { x: 0, y: 0 }, config: {} },
-    { id: "e1", type: "end", label: "e1", position: { x: 0, y: 0 }, config: { outcome: "exhausted" } },
+    {
+      id: "e1",
+      type: "end",
+      label: "e1",
+      position: { x: 0, y: 0 },
+      config: { outcome: "exhausted" },
+    },
   ],
   edges: [{ id: "edge1", source: "t1", target: "e1", priority: 0, condition: { type: "always" } }],
 });
@@ -192,7 +222,12 @@ function baseCtx(): ActionCtx {
     organizationId: GOV_ORG,
     ruleId: RULE_ID,
     ruleName: "start_message_flow test",
-    event: { id: lastLine(sql(`select gen_random_uuid();`)) } as unknown as EventRow,
+    event: {
+      id: lastLine(
+        sql(`select public.emit_event('contact.tag_added','contact','${CONTACT_ID}',
+      jsonb_build_object('service_origin',jsonb_build_object('kind','command','observed',public.fn_service_observe_command('${GOV_ORG}','${CONTACT_ID}'))),'{}','${GOV_ORG}');`),
+      ),
+    } as unknown as EventRow,
     context: { contact: { id: CONTACT_ID } },
     requestId: "test-start-message-flow",
   };
@@ -220,7 +255,9 @@ describe("start_message_flow — enroll no banco", () => {
     expect(second.status).toBe("failed");
     expect(second.error).toBe("live_enrollment_exists");
 
-    const found = rows(`select id from public.followup_enrollments where contact_id = '${CONTACT_ID}'`);
+    const found = rows(
+      `select id from public.followup_enrollments where contact_id = '${CONTACT_ID}'`,
+    );
     expect(found.length).toBe(1);
   });
 });

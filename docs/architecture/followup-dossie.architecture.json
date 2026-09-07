@@ -196,6 +196,46 @@
       "type": "service",
       "label": "turn-bridge.completeTurnForEnrollment",
       "sublabel": "só active|waiting_reply avançam (lista POSITIVA)"
+    },
+    {
+      "id": "agenda-presenca",
+      "lane": "humano",
+      "col": 6,
+      "type": "frontend",
+      "label": "DetalheDoCompromisso · /app/agenda?compromisso=id",
+      "sublabel": "presença humana · revisão do rascunho · conflito pede revisão explícita · idioma da interface + fuso do compromisso"
+    },
+    {
+      "id": "agenda-command",
+      "lane": "borda",
+      "col": 6,
+      "type": "api",
+      "label": "PATCH agenda/agendamentos · fn_appointment_change",
+      "sublabel": "ator autenticado + revisão CAS; mensagem é evidência validada pela pessoa"
+    },
+    {
+      "id": "agenda-recibo",
+      "lane": "dados",
+      "col": 6,
+      "type": "database",
+      "label": "appointment_recovery_receipts",
+      "sublabel": "decisão terminal privada por compromisso/revisão; não é fila"
+    },
+    {
+      "id": "agenda-guarda",
+      "lane": "regra",
+      "col": 6,
+      "type": "service",
+      "label": "lib/agenda/protecao-followup.ts + efeito.ts",
+      "sublabel": "leitura completa · proteção + geração + aquisição original até transporte/callback"
+    },
+    {
+      "id": "agenda-consumer",
+      "lane": "motor",
+      "col": 6,
+      "type": "service",
+      "label": "followup-gatilho-presenca.v1 + fn_appointment_recover",
+      "sublabel": "falta confirmada → inscrição ou impedimento terminal visível"
     }
   ],
   "edges": [
@@ -378,6 +418,72 @@
       "from": "legiveis",
       "to": "fila",
       "label": "rotuloDoStatus/tomDoStatus: a fila e o dossiê nomeiam o MESMO status no mesmo lugar"
+    },
+    {
+      "id": "e31",
+      "from": "agenda-presenca",
+      "to": "agenda-command",
+      "label": "humano confirma após início; conflito mantém revisão explícita"
+    },
+    {
+      "id": "e32",
+      "from": "agenda-command",
+      "to": "agenda-consumer",
+      "label": "appointment.outcome_confirmed interno; relógio nunca emite falta"
+    },
+    {
+      "id": "e33",
+      "from": "agenda-consumer",
+      "to": "agenda-recibo",
+      "label": "mutex org/contato; decisão e inscrição atômicas"
+    },
+    {
+      "id": "e34",
+      "from": "agenda-recibo",
+      "to": "agenda-presenca",
+      "label": "resultado e interrupção com link para acompanhamento"
+    },
+    {
+      "id": "e35",
+      "from": "agenda-consumer",
+      "to": "enrollments",
+      "label": "fluxo pinado existente; ocupado/ambíguo não espera vaga"
+    },
+    {
+      "id": "e36",
+      "from": "agenda-presenca",
+      "to": "dossie",
+      "label": "abrir o acompanhamento iniciado"
+    },
+    {
+      "id": "e37",
+      "from": "agenda-command",
+      "to": "audit",
+      "label": "ator real + presença/alteração/cancelamento"
+    },
+    {
+      "id": "e38",
+      "from": "agenda-guarda",
+      "to": "engine",
+      "label": "adiamento sem avanço; indisponibilidade usa retry finito"
+    },
+    {
+      "id": "e39",
+      "from": "agenda-guarda",
+      "to": "bridge",
+      "label": "origem + job/source_step_key + CAS; queued não é sent"
+    },
+    {
+      "id": "e40",
+      "from": "enrollments",
+      "to": "agenda-guarda",
+      "label": "appointment_id/revision e recibo invalidado por inbound"
+    },
+    {
+      "id": "e41",
+      "from": "agenda-guarda",
+      "to": "agenda-presenca",
+      "label": "Radar/Central abrem o compromisso que explica a proteção"
     }
   ],
   "cards": [

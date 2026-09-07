@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * Épico Operação Visível (F1) — POST: cria entrada manual de memória da org
  * (migration 0067). source='manual', status='active' direto (sem gate de
@@ -21,6 +22,9 @@ const postSchema = z.object({
 });
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "org_memory" });
   if (!authz.ok) return authz.response;

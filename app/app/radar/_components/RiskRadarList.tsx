@@ -193,7 +193,9 @@ function RadarRow({ lead }: { lead: AtRiskLead }) {
               {dono}
             </span>
           </p>
-          {lead.in_flight && lead.next_followup_at ? (
+          {lead.agenda?.appointment_id ? (
+            <p className="mt-1 text-xs text-info-fg">{t(lead.agenda.motivo === "presenca_vencida" ? "Presença não confirmada · revise o compromisso" : lead.agenda.motivo === "presenca_pendente" ? "Confirme a presença · cobrança aguardando" : "Compromisso agendado · cobrança aguardando")}</p>
+          ) : lead.in_flight && lead.next_followup_at ? (
             <p className="mt-1 inline-flex items-center gap-1 text-xs text-info-fg">
               <PaperPlaneTilt size={13} aria-hidden />
               {t("Assistente retorna")} {followupWhen(lead.next_followup_at, t)}
@@ -207,6 +209,7 @@ function RadarRow({ lead }: { lead: AtRiskLead }) {
         </div>
       </Link>
       <div className="flex shrink-0 items-center gap-2 self-center">
+        {lead.agenda?.appointment_id ? <Link className="text-xs underline" href={`/app/agenda?compromisso=${lead.agenda.appointment_id}`}>{t("Ver compromisso")}</Link> : null}
         {canClaim ? (
           <Button
             size="sm"

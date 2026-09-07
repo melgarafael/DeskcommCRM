@@ -16,7 +16,7 @@ export default async function RoutersPage() {
   if (!activeOrg) redirect("/app");
   const idioma = user.idioma;
 
-  if (!user.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
+  if (!(user.is_platform_admin && !user.support) && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
     redirect("/403");
   }
 

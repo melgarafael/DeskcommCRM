@@ -36,6 +36,8 @@ export interface CompromissoDoContato {
   starts_at: string;
   ends_at: string | null;
   status: string;
+  meeting_state?: string;
+  meeting_url?: string | null;
 }
 
 /** Quantos compromissos futuros cabem no bloco antes de ele passar a truncar. */
@@ -55,7 +57,7 @@ export async function compromissosDoContato(
   agora: Date,
 ): Promise<CompromissoDoContato[]> {
   const { rows } = await db.query<CompromissoDoContato>(
-    `select id, title, starts_at, ends_at, status
+    `select id, title, starts_at, ends_at, status, meeting_state, meeting_url
        from calendar_appointments
       where organization_id = $1
         and contact_id = $2
@@ -81,7 +83,7 @@ export function renderCompromissos(linhas: readonly CompromissoDoContato[]): str
   const itens = cabem.map((c) => {
     const titulo = (c.title ?? "").trim() || "compromisso";
     const fim = c.ends_at ? ` até ${c.ends_at}` : "";
-    return `- ${c.starts_at}${fim} — ${titulo} (${c.status})`;
+    return `- ${c.starts_at}${fim} — ${titulo} (${c.status})${c.meeting_state === "ready" && c.meeting_url ? ` — link da reunião: ${c.meeting_url}` : c.meeting_state === "pending" ? " — link ainda sendo criado" : c.meeting_state === "failed" ? " — link indisponível; a equipe precisa verificar" : ""}`;
   });
 
   // Truncar em silêncio faria o modelo afirmar que o cliente só tem estes — a
