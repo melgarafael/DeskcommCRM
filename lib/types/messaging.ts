@@ -71,7 +71,11 @@ export interface Message {
   media_mime: string | null;
   media_size_bytes: number | null;
   media_storage_path: string | null;
-  sent_via: "user" | "ai" | "system";
+  // Espelha o CHECK do banco (baseline.sql:1664): 'crm', 'external_device',
+  // 'automation', 'ai', 'user', 'system'. O tipo da UI listava só três e o
+  // TypeScript aceitava "external_device" só porque o dado vinha do Supabase
+  // sem cast — a tela então não conseguia nem NOMEAR o valor para exibi-lo.
+  sent_via: "user" | "ai" | "system" | "external_device" | "automation" | "crm";
   sent_by_user_id: string | null;
   sent_at: string;
   delivered_at: string | null;
