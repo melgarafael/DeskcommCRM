@@ -8,7 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAgentInbox, useUpdateInboxItem, type AgentInboxItem } from "@/hooks/ai/useAgentInbox";
+import {
+  useAgentInbox,
+  useResolveAllInboxItems,
+  useUpdateInboxItem,
+  type AgentInboxItem,
+} from "@/hooks/ai/useAgentInbox";
 import { kindLabel, SEVERITY_LABEL, type AgentInboxSeverity } from "@/lib/ai/agent-inbox-copy";
 import { Bell, Check } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
@@ -24,17 +29,31 @@ export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
   const [tab, setTab] = useState<"open" | "resolved">("open");
   const { data, isLoading } = useAgentInbox(tab);
   const update = useUpdateInboxItem();
+  const resolveAll = useResolveAllInboxItems();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "open" | "resolved")}>
-        <TabsList>
-          <TabsTrigger value="open">
-            {t("Abertos")}{data ? ` (${data.open_count})` : ""}
-          </TabsTrigger>
-          <TabsTrigger value="resolved">{t("Resolvidos")}</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex items-center justify-between gap-2">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as "open" | "resolved")}>
+          <TabsList>
+            <TabsTrigger value="open">
+              {t("Abertos")}{data ? ` (${data.open_count})` : ""}
+            </TabsTrigger>
+            <TabsTrigger value="resolved">{t("Resolvidos")}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {canResolve && tab === "open" && data && data.items.length > 0 ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={resolveAll.isPending}
+            onClick={() => resolveAll.mutate()}
+          >
+            <Check size={14} aria-hidden />
+            {t("Marcar todos resolvidos")}
+          </Button>
+        ) : null}
+      </div>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -93,11 +112,11 @@ function InboxRow({
         {t(SEVERITY_LABEL[item.severity])}
       </Badge>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{t(item.title)}</p>
+        <p className="text-sm font-medium">{item.title}</p>
         <p className="text-xs text-muted-foreground">
           {kindLabel(item.kind, t)} · {when}
         </p>
-        {item.body ? <p className="mt-1 text-xs text-muted-foreground">{t(item.body)}</p> : null}
+        {item.body ? <p className="mt-1 text-xs text-muted-foreground">{item.body}</p> : null}
       </div>
       {canResolve ? (
         item.status === "resolved" ? (

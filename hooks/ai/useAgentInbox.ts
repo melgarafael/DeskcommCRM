@@ -40,3 +40,11 @@ export function useUpdateInboxItem() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["agent-inbox"] }),
   });
 }
+
+export function useResolveAllInboxItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.post(`/api/v1/ai/inbox/resolve-all`, {}),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["agent-inbox"] }),
+  });
+}
