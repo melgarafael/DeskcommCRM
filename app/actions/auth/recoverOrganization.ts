@@ -58,7 +58,7 @@ export async function recoverOrganization(name: string): Promise<RecoverOrganiza
 
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
-  if (activeOrg) redirect("/app/inbox");
+  if (activeOrg) redirect("/app");
 
   const supabase = await createClient();
   const {
@@ -99,6 +99,6 @@ export async function recoverOrganization(name: string): Promise<RecoverOrganiza
     return { ok: false, error: "provision_failed" };
   }
 
-  revalidatePath("/app/inbox");
+  revalidatePath("/app");
   redirect("/onboarding/welcome");
 }

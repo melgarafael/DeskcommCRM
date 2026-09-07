@@ -67,6 +67,75 @@ const ANON_PERMITIDO: readonly Excecao[] = [];
  */
 const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
   {
+    fn: "fn_reply_action(uuid,uuid,text,text,text,text)",
+    razao:
+      "POST app/api/v1/ai/replies/[id]/route.ts usa createClient da sessão. " +
+      "auth.uid(), role agent, suporte, MFA comprovado, visibilidade, revisão e contexto " +
+      "validam aprovação/rejeição. tests/invariants/autonomia-replies.test.ts prova " +
+      "ACL direto A/B, viewer/anon/cross-org, CAS e duas aprovações concorrentes.",
+  },
+  {
+    fn: "fn_lgpd_anonymize_contact(uuid,uuid)",
+    razao:
+      "POST app/api/v1/lgpd/anonymize/route.ts usa createClient da sessão " +
+      "no passo transacional do contato: admin ou plataforma fora de suporte, " +
+      "MFA comprovada e tenant explícito antes do mutex. " +
+      "tests/invariants/lgpd-agenda-lock-order.test.ts prova ator/tenant, " +
+      "service_role negado, suporte readonly/expirado, MFA e retomada.",
+  },
+  {
+    fn: "fn_set_channel_routing(uuid,uuid,uuid[],boolean)",
+    razao: "PATCH app/api/v1/settings/routing/channels/route.ts usa createClient da sessão; RPC exige manager, suporte de escrita, MFA e canal/membros da org na mesma transação. tests/invariants/channel-routing.test.ts prova viewer, tenants A/B, membro revogado, policy vazia e MFA platform aal1/aal2.",
+  },
+  {
+    fn: "fn_reserve_channel_connection(uuid,uuid,text,text,boolean)",
+    razao: "lib/channels/connect-waha.ts recebe createClient das rotas channel-sessions e onboarding/whatsapp/session; RPC exige admin, suporte e MFA, cria identidade org-owned com recibo privado. tests/invariants/channel-routing.test.ts prova lease/replay/ACL do recibo e MFA platform aal1/aal2.",
+  },
+  {
+    fn: "fn_google_selection(uuid,jsonb,uuid[],uuid)",
+    razao:
+      "PATCH app/api/v1/agenda/google/calendarios/route.ts chama createClient " +
+      "da sessão; auth.uid() exige agent, suporte de escrita e calendários " +
+      "do próprio dono. tests/invariants/agenda-google-acl.test.ts prova " +
+      "JWT A/B, viewer/cross-org/outro dono/anon sem efeito; " +
+      "agenda-google-reconciliacao.test.ts prova suporte full/readonly/expirado.",
+  },
+  {
+    fn: "fn_meet_action(uuid,uuid,text,uuid,text,uuid)",
+    razao:
+      "Rotas app/api/v1/agenda/agendamentos/[id]/google/meet/retry e deliver " +
+      "delegam a _action.ts com createClient da sessão. auth.uid(), owner IS " +
+      "DISTINCT FROM, role agent, suporte e CAS validam ação explícita; " +
+      "tests/invariants/agenda-meet.test.ts prova ACL SQL direto A/B, dono " +
+      "NULL, outro ator, viewer, anon e suporte readonly.",
+  },
+  {
+    fn: "fn_google_resolve(uuid,uuid,text,text,text,text)",
+    razao:
+      "POST app/api/v1/agenda/agendamentos/[id]/google/resolver/route.ts " +
+      "(também chamado por retry/route.ts) usa createClient da sessão; " +
+      "auth.uid() exige agent, suporte e dono do compromisso, além de CAS. " +
+      "tests/invariants/agenda-google-acl.test.ts prova JWT A/B, " +
+      "viewer/cross-org/outro dono/anon sem efeito; " +
+      "agenda-google-reconciliacao.test.ts prova suporte full/readonly/expirado.",
+  },
+  {
+    fn: "fn_appointment_change(uuid,uuid,bigint,jsonb)",
+    razao:
+      "app/api/v1/agenda/agendamentos/route.ts passa createClient da sessão ao " +
+      "_handler.ts (alteraComRevisao): auth.uid() valida papel agent, suporte " +
+      "e assina o desfecho humano. tests/invariants/agenda-presenca-acl.test.ts " +
+      "prova JWT A/B, negação viewer/cross-org e autoria real.",
+  },
+  {
+    fn: "fn_agenda_settings(uuid,jsonb)",
+    razao:
+      "PATCH app/api/v1/agenda/configuracao/route.ts chama com createClient " +
+      "da sessão; auth.uid() exige manager e suporte de escrita. " +
+      "tests/invariants/agenda-presenca-acl.test.ts prova manager A/B próprio, " +
+      "negação agent/viewer/cross-org e ausência de efeito recusado.",
+  },
+  {
     fn: "emit_event(text,text,uuid,jsonb,jsonb,uuid)",
     razao:
       "Server Actions chamam com a sessão do usuário " +

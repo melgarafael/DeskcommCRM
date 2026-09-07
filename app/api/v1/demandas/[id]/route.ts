@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH /api/v1/demandas/[id] — marca o PRÓXIMO PASSO de uma demanda aberta.
  *
@@ -38,16 +39,26 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-const patchSchema = z.object({
+const passoSchema = z.object({
   proximo_passo: z.string().trim().min(3).max(500),
   /** ISO 8601 absoluto. Ausente é legítimo: nem todo passo tem hora marcada. */
   proximo_passo_em: z.string().datetime({ offset: true }).nullish(),
 });
 
+const encerrarSchema = z.object({
+  action: z.literal("encerrar"),
+  expected_revision: z.number().int().positive(),
+  desfecho: z.enum(["resolvida", "convertida", "nao_procede", "encerrada_pelo_cliente", "perdida", "expirada_sem_resposta"]),
+});
+const patchSchema = z.union([encerrarSchema, passoSchema]);
+
 export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
@@ -73,6 +84,19 @@ export async function PATCH(
   }
 
   const admin = createAdminClient();
+
+  if ("action" in parsed.data) {
+    const { data, error } = await admin.rpc("fn_demanda_encerrar", {
+      p_org: activeOrg.orgId, p_demanda: id, p_expected: parsed.data.expected_revision,
+      p_desfecho: parsed.data.desfecho, p_actor: user.id,
+    });
+    if (error) return fail(error.code === "40001" ? "conflict" : error.code === "P0002" ? "not_found" : "internal_error",
+      error.code === "40001" ? "Esta demanda mudou. Atualize antes de encerrar." : error.message,
+      error.code === "40001" ? 409 : error.code === "P0002" ? 404 : 500, { requestId });
+    void audit({ action: "demanda.encerrada", actorUserId: user.id, organizationId: activeOrg.orgId,
+      resourceType: "demanda", resourceId: id, requestId, metadata: { desfecho: parsed.data.desfecho } });
+    return ok(data, { requestId });
+  }
 
   // Service role bypassa RLS: o `organization_id` vem do CONTEXTO autenticado e
   // é filtro explícito no update, nunca do corpo. E `fechada_em is null` porque

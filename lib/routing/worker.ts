@@ -12,10 +12,11 @@
  * A lógica de decisão (manual/round_robin/no-eligible/replay) é pura em
  * lib/routing/decide.ts; aqui só há I/O.
  */
+import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { decideRouting } from "@/lib/routing/decide";
-import { loadEligibleAttendants } from "@/lib/routing/eligibles";
+import { loadEligibleAttendants, InvalidRoutingChannel } from "@/lib/routing/eligibles";
 import { routingConfigSchema } from "@/lib/schemas/routing";
 
 export const ROUTING_WORKER_KEY = "worker.routing.v1";
@@ -29,7 +30,7 @@ export type RoutingOutcome =
   | "skipped_already_assigned"
   | "skipped_unsupported_mode"
   | "requeued_no_eligible"
-  | "dead_no_eligible"
+  | "skipped_invalid_channel"
   | "skipped_conv_missing"
   | "skipped_invalid_payload"
   | "assign_lost_race"
@@ -48,6 +49,7 @@ interface EventRow {
   metadata: Record<string, unknown> | null;
   consumed_by: string[];
   attempts: number;
+  claimed_at?: string;
 }
 
 const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
@@ -56,7 +58,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_already_assigned: 0,
   skipped_unsupported_mode: 0,
   requeued_no_eligible: 0,
-  dead_no_eligible: 0,
+  skipped_invalid_channel: 0,
   skipped_conv_missing: 0,
   skipped_invalid_payload: 0,
   assign_lost_race: 0,
@@ -75,6 +77,18 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
   const batchSize = Math.min(Math.max(opts.batchSize ?? DEFAULT_BATCH_SIZE, 1), 500);
   const summary: RoutingSummary = { batch_size: 0, outcomes: EMPTY_OUTCOMES(), errors: [] };
 
+  // Recupera execução interrompida sem criar outro evento. O timestamp do
+  // claim cerca o fechamento: um worker antigo não conclui a nova tentativa.
+  const { data: abandoned, error: recoveryError } = await admin.from("event_log")
+    .select("id, organization_id, updated_at").eq("event_type", ROUTING_EVENT_TYPE)
+    .eq("status", "processing").lte("updated_at", new Date(now.getTime() - 300_000).toISOString()).limit(batchSize);
+  if (recoveryError) { summary.errors.push("routing_recovery_failed"); return summary; }
+  for (const previous of abandoned ?? []) {
+    const { error } = await admin.from("event_log").update({ status: "pending", next_attempt_at: now.toISOString() })
+      .eq("organization_id", previous.organization_id).eq("id", previous.id)
+      .eq("status", "processing").eq("updated_at", previous.updated_at);
+    if (error) summary.errors.push("routing_recovery_failed");
+  }
   const { data: rawEvents, error: pullErr } = await admin
     .from("event_log")
     .select("id, organization_id, payload, metadata, consumed_by, attempts, next_attempt_at, status")
@@ -94,7 +108,7 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
   ) as EventRow[];
 
   for (const event of events) {
-    const claimed = await claimEvent(event.id);
+    const claimed = await claimEvent(event);
     if (!claimed) continue;
     summary.batch_size += 1;
     try {
@@ -122,37 +136,49 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const orgId = strOrNull(payload.organization_id) ?? event.organization_id;
   const conversationId = strOrNull(payload.conversation_id);
 
-  if (!conversationId || orgId !== event.organization_id) {
+  if (!conversationId || !z.string().uuid().safeParse(conversationId).success || orgId !== event.organization_id) {
     await markDone(event, "skipped_invalid_payload");
     return "skipped_invalid_payload";
   }
 
-  const { data: conv } = await admin
+  const { data: conv, error: convError } = await admin
     .from("conversations")
-    .select("id, organization_id, contact_id, assigned_to_user_id, status")
+    .select("id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status")
     .eq("id", conversationId)
     .eq("organization_id", orgId)
     .maybeSingle();
 
-  if (!conv) {
+  if (convError) throw new Error(convError.message);
+  if (!conv || !["open", "pending", "claimed", "ai_handling"].includes(conv.status)) {
     await markDone(event, "skipped_conv_missing");
     return "skipped_conv_missing";
   }
 
   // organizations.settings.routing → Zod (default manual; knobs = config, não hardcode).
-  const { data: org } = await admin
+  const { data: org, error: orgError } = await admin
     .from("organizations")
     .select("settings")
     .eq("id", orgId)
     .maybeSingle();
+  if (orgError) throw new Error(orgError.message);
+  if (!org) throw new Error("routing_organization_missing");
   const settings = (org?.settings ?? {}) as { routing?: unknown };
   const config = routingConfigSchema.parse(settings.routing ?? {});
 
   const alreadyAssigned = Boolean(conv.assigned_to_user_id);
-  const eligibles =
-    !alreadyAssigned && config.mode === "round_robin"
-      ? await loadEligibleAttendants(createAdminClient(), orgId, now)
-      : [];
+  let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
+  if (!alreadyAssigned && config.mode === "round_robin") {
+    try {
+      eligibles = await loadEligibleAttendants(admin, orgId, now, {
+        kind: "conversation_channel", channelSessionId: conv.channel_session_id,
+      });
+    } catch (error) {
+      if (!(error instanceof InvalidRoutingChannel)) throw error;
+      await notice(orgId, conversationId, "invalid_channel");
+      await markDone(event, "skipped_invalid_channel");
+      return "skipped_invalid_channel";
+    }
+  }
 
   const action = decideRouting({
     mode: config.mode,
@@ -165,21 +191,22 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
 
   switch (action.kind) {
     case "assign": {
-      // Optimistic lock: expected=null ⇒ só atribui se AINDA sem dono. Grava
-      // conversation_assignment_events(reason='routing') na MESMA transação (fn).
-      const { data: rows, error } = await admin.rpc("fn_conversation_assign", {
-        p_organization_id: orgId,
-        p_conversation_id: conversationId,
-        p_to_user_id: action.userId,
-        p_reason: "routing",
-        p_expected_assignee: null,
-        p_enforce_expected: true,
+      const { data: result, error } = await admin.rpc("fn_channel_routing_claim", {
+        p_org: orgId, p_conversation: conversationId, p_channel: conv.channel_session_id,
+        p_user: action.userId, p_reason: "routing",
+        p_schedule: eligibles.find((candidate) => candidate.userId === action.userId)?.scheduleSnapshot ?? {},
       });
-      if (error) throw new Error(`fn_conversation_assign: ${error.message}`);
-      if (!Array.isArray(rows) || rows.length === 0) {
-        // 0 rows = ganhou dono entre o load e o assign (replay/corrida): não reatribui.
+      if (error) throw new Error(`fn_channel_routing_claim: ${error.message}`);
+      if (result === "already_assigned" || result === "conversation_changed") {
         await markDone(event, "assign_lost_race");
         return "assign_lost_race";
+      }
+      if (result !== "assigned") {
+        if (!["candidate_revoked", "candidate_not_allowed", "capacity_changed"].includes(String(result))) {
+          throw new Error("routing_claim_invalid_result");
+        }
+        await requeueEvent(event, now, Math.min(event.attempts + 1, config.max_retries), { reason: result });
+        return "requeued_no_eligible";
       }
       const leads = await adotarLeadsDoContato(
         admin,
@@ -210,31 +237,32 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       return outcome;
     }
     case "requeue": {
+      if (action.attempts >= config.max_retries) await notice(orgId, conversationId, "no_eligible");
       await requeueEvent(event, now, action.attempts, { reason: "no_eligible" }, action.nextAttemptAt);
       return "requeued_no_eligible";
     }
-    case "dead": {
-      await markDead(event, action.reason);
-      return "dead_no_eligible";
-    }
+
   }
 }
 
 // --- event lifecycle (mesma mecânica do agent-dispatcher; status ∈ pending|processing|done|dead) ---
 
-async function claimEvent(eventId: string): Promise<boolean> {
+async function claimEvent(event: EventRow): Promise<boolean> {
   const admin = createAdminClient();
+  event.claimed_at = new Date().toISOString();
   const { data, error } = await admin
     .from("event_log")
-    .update({ status: "processing", updated_at: new Date().toISOString() })
-    .eq("id", eventId)
+    .update({ status: "processing", updated_at: event.claimed_at })
+    .eq("id", event.id)
+    .eq("organization_id", event.organization_id)
     .eq("status", "pending")
-    .select("id")
+    .select("id, updated_at")
     .maybeSingle();
   if (error) {
-    logger.warn("[routing-worker] claim failed", { event_id: eventId, error: error.message });
+    logger.warn("[routing-worker] claim failed", { event_id: event.id, error: error.message });
     return false;
   }
+  if (data) event.claimed_at = data.updated_at;
   return Boolean(data);
 }
 
@@ -254,7 +282,10 @@ async function markDone(
       metadata: { ...(event.metadata ?? {}), outcome, handled_by: ROUTING_WORKER_KEY, ...extra },
       updated_at: new Date().toISOString(),
     })
-    .eq("id", event.id);
+    .eq("id", event.id)
+    .eq("organization_id", event.organization_id)
+    .eq("status", "processing")
+    .eq("updated_at", event.claimed_at!);
   if (error) logger.warn("[routing-worker] markDone failed", { event_id: event.id, error: error.message });
 }
 
@@ -276,23 +307,18 @@ async function requeueEvent(
       metadata: { ...(event.metadata ?? {}), last_requeue: { ...extra, at: now.toISOString() } },
       updated_at: new Date().toISOString(),
     })
-    .eq("id", event.id);
+    .eq("id", event.id)
+    .eq("organization_id", event.organization_id)
+    .eq("status", "processing")
+    .eq("updated_at", event.claimed_at!);
   if (error) logger.warn("[routing-worker] requeue failed", { event_id: event.id, error: error.message });
 }
 
-async function markDead(event: EventRow, reason: string): Promise<void> {
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from("event_log")
-    .update({
-      status: "dead",
-      attempts: event.attempts + 1,
-      last_error: reason.slice(0, 500),
-      metadata: { ...(event.metadata ?? {}), outcome: "dead", reason },
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", event.id);
-  if (error) logger.warn("[routing-worker] markDead failed", { event_id: event.id, error: error.message });
+async function notice(orgId: string, conversationId: string, reason: string): Promise<void> {
+  const { error } = await createAdminClient().rpc("fn_routing_unassigned_notice", {
+    p_org: orgId, p_conversation: conversationId, p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
 }
 
 function strOrNull(v: unknown): string | null {

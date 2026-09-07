@@ -29,7 +29,7 @@ export async function orgTemAutomatico(
   // `agenteAtende` em SQL, que é como ela se desencontrou da primeira vez.
   const { data, error } = await supabase
     .from("ai_agents")
-    .select("kind, is_active, published_version_id, archived_at")
+    .select("kind, is_active, paused_at, published_version_id, archived_at")
     .eq("organization_id", organizationId)
     .is("archived_at", null);
 

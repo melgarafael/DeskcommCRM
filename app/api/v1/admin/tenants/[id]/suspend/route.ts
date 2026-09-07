@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/admin/tenants/[id]/suspend (S-11.08)
  *
@@ -26,6 +27,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const supportDenied = await requireSupportWrite((await params).id);
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id: tenantId } = await params;
 

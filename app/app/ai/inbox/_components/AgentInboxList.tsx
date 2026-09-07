@@ -2,6 +2,7 @@
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useState } from "react";
+import Link from "next/link";
 import { formatDistanceToNowStrict } from "date-fns";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { useAgentInbox, useUpdateInboxItem, type AgentInboxItem } from "@/hooks/
 import { kindLabel, SEVERITY_LABEL, type AgentInboxSeverity } from "@/lib/ai/agent-inbox-copy";
 import { Bell, Check } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
+import { ApiError } from "@/lib/api/types";
 
 const SEVERITY_VARIANT: Record<AgentInboxSeverity, "info" | "warning" | "error"> = {
   info: "info",
@@ -22,7 +24,9 @@ const SEVERITY_VARIANT: Record<AgentInboxSeverity, "info" | "warning" | "error">
 export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
   const t = useT();
   const [tab, setTab] = useState<"open" | "resolved">("open");
-  const { data, isLoading } = useAgentInbox(tab);
+  const { data: cachedData, error, isLoading, isError, refetch, isFetching } = useAgentInbox(tab);
+  const acessoNegado = error instanceof ApiError && (error.status === 401 || error.status === 403);
+  const data = acessoNegado ? undefined : cachedData;
   const update = useUpdateInboxItem();
 
   return (
@@ -36,12 +40,20 @@ export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
         </TabsList>
       </Tabs>
 
+      {isError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-4 text-sm">
+          <p className="min-w-0 flex-1">{t(acessoNegado ? "Seu acesso aos avisos não está disponível. Confira sua sessão e tente novamente." : data ? "Não foi possível atualizar os avisos. A lista abaixo pode estar desatualizada." : "Não foi possível carregar os avisos. Tente novamente.")}</p>
+          <Button variant="outline" size="sm" disabled={isFetching} onClick={() => void refetch()}>{t("Tentar novamente")}</Button>
+        </div>
+      ) : null}
+      {update.isError ? <p role="alert" className="text-sm text-destructive">{t("Não foi possível atualizar este aviso. Tente novamente.")}</p> : null}
+
       {isLoading ? (
         <div className="space-y-2">
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
         </div>
-      ) : !data || data.items.length === 0 ? (
+      ) : isError && !data ? null : !data || data.items.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
           <Bell size={28} className="text-muted-foreground" aria-hidden />
           <p className="text-sm font-medium">
@@ -88,16 +100,22 @@ function InboxRow({
     locale: localeDaData,
   });
   return (
-    <li className="flex items-start gap-3 px-4 py-3" data-testid="inbox-item">
+    <li className="flex flex-wrap items-start gap-3 px-4 py-3" data-testid="inbox-item">
       <Badge variant={SEVERITY_VARIANT[item.severity]} className="mt-0.5 shrink-0">
         {t(SEVERITY_LABEL[item.severity])}
       </Badge>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-48 break-words">
         <p className="text-sm font-medium">{t(item.title)}</p>
         <p className="text-xs text-muted-foreground">
           {kindLabel(item.kind, t)} · {when}
         </p>
         {item.body ? <p className="mt-1 text-xs text-muted-foreground">{t(item.body)}</p> : null}
+        {item.destination.orientacao ? <p className="mt-2 text-xs text-muted-foreground">{t(item.destination.orientacao)}</p> : null}
+        {item.destination.estado === "disponivel" ? (
+          <Button asChild size="sm" variant="link" className="mt-1 h-auto whitespace-normal px-0 text-left">
+            <Link href={item.destination.href}>{t(item.destination.rotulo)}</Link>
+          </Button>
+        ) : null}
       </div>
       {canResolve ? (
         item.status === "resolved" ? (

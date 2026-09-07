@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * Épico Operação Visível (F1) — transição de status de um aviso do agente.
  * PATCH { status: 'ack' | 'resolved' | 'open' } — org-scoped, auditado.
@@ -21,6 +22,9 @@ const bodySchema = z.object({ status: z.enum(["open", "ack", "resolved"]) }).str
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {

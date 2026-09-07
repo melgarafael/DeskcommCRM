@@ -1,3 +1,8 @@
+import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
+import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
+import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
+import { claimOfJob } from '../queue/claim';
+import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
  * Loop do agente v0 — handler do job `inbound_turn` (F2-09; blueprint 8.8).
  *
@@ -33,7 +38,11 @@ import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
 import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
-import { getLeadContext, type LeadContext, type LeadContextResult } from '../edge/crm/get-lead-context';
+import {
+  getLeadContext,
+  type LeadContext,
+  type LeadContextResult,
+} from '../edge/crm/get-lead-context';
 import { citationsFromHits, searchKnowledge } from './search-knowledge';
 import type { CrmEdgeConfig } from '../edge/crm/mcp-client';
 import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
@@ -57,7 +66,12 @@ import { moverLeadParaEtapaDeHandoff } from '@/lib/leads/handoff-stage-move';
 import { detectUrgencySignal } from '../guardrails/sinal-de-urgencia';
 import { buildNativeMediaParts } from './media-parts';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
-import { applyLeadStateUpdate, getLeadState, type LeadStage, type LeadStateRow } from './lead-state';
+import {
+  applyLeadStateUpdate,
+  getLeadState,
+  type LeadStage,
+  type LeadStateRow,
+} from './lead-state';
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
 import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-followup';
@@ -74,7 +88,12 @@ import {
   isLeadInHandoff,
   performHumanHandoff,
 } from './human-handoff';
-import { maybeCompact, renderCompactedSummary, trimTranscriptToBudget, type CompactionKnobs } from './compaction';
+import {
+  maybeCompact,
+  renderCompactedSummary,
+  trimTranscriptToBudget,
+  type CompactionKnobs,
+} from './compaction';
 import { pruneToolResults, type PruneToolResultsKnobs } from './prune-tool-results';
 import {
   classifyStage,
@@ -83,16 +102,29 @@ import {
   type StageClassifierKnobs,
 } from './stage-classifier';
 import { loadPlaybook } from './playbook';
-import { DECLARACAO_INSTRUCTION, declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
-import { projetarContexto, projetarRetornoDeTool, turnoProjeta, type ContextoProjetado } from './projecao';
-import { capacidadesEntreguesAoOperador, catalogoEntregueAoOperador } from './entrega-de-capacidade';
+import {
+  DECLARACAO_INSTRUCTION,
+  declaracaoDoTurnoSchema,
+  promessasEmAberto,
+  type DeclaracaoDoTurno,
+} from './declaracao';
+import {
+  projetarContexto,
+  projetarRetornoDeTool,
+  turnoProjeta,
+  type ContextoProjetado,
+} from './projecao';
+import {
+  capacidadesEntreguesAoOperador,
+  catalogoEntregueAoOperador,
+} from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword } from './agent-config';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
-import { resolveTurnAgent } from './resolve-turn-agent';
+import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
 import {
   hasOpenCaseForContact,
   getCaseAwaitingLead,
@@ -167,12 +199,22 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO só para o SDK (o modelo vê os campos); a validação REAL é a
     // whitelist .strict() dentro de applyLeadStateUpdate — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z.object({
-      stage: z.string().optional().describe('novo estágio do funil (só o próximo válido)'),
-      qualification: z.object({}).passthrough().optional().describe('qualificação: budget, authority, need, timeline'),
-      next_action: z.string().nullable().optional().describe('próxima ação concreta combinada com o lead'),
-      reason: z.string().optional().describe('evidência curta do avanço (vai ao audit do CRM)'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        stage: z.string().optional().describe('novo estágio do funil (só o próximo válido)'),
+        qualification: z
+          .object({})
+          .passthrough()
+          .optional()
+          .describe('qualificação: budget, authority, need, timeline'),
+        next_action: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('próxima ação concreta combinada com o lead'),
+        reason: z.string().optional().describe('evidência curta do avanço (vai ao audit do CRM)'),
+      })
+      .passthrough(),
   },
   schedule_followup: {
     description:
@@ -183,12 +225,20 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() + guard de prototype pollution dentro de applyScheduleFollowup — campo
     // extra/forjado e data inválida viram erro de ENSINO ao modelo, nunca exceção do SDK.
-    inputSchema: z.object({
-      reason: z.string().describe('por que agendar o retorno'),
-      promised_at: z.string().describe('data/hora ISO 8601 do retorno (no futuro), ex.: "2026-07-15T14:00:00Z"'),
-      promise: z.string().describe('o que você prometeu ao lead'),
-      context_snapshot: z.string().nullable().optional().describe('contexto curto para o seu run futuro'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        reason: z.string().describe('por que agendar o retorno'),
+        promised_at: z
+          .string()
+          .describe('data/hora ISO 8601 do retorno (no futuro), ex.: "2026-07-15T14:00:00Z"'),
+        promise: z.string().describe('o que você prometeu ao lead'),
+        context_snapshot: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('contexto curto para o seu run futuro'),
+      })
+      .passthrough(),
   },
   save_lead_note: {
     description:
@@ -200,22 +250,26 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() + guard de prototype pollution dentro de applySaveLeadNote — campo
     // extra/forjado vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z.object({
-      headline: z.string().describe('linha curta do índice (sempre visível no prompt)'),
-      body: z.string().describe('corpo completo da nota (lido sob demanda por get_lead_note)'),
-      supersedes: z
-        .array(z.string())
-        .optional()
-        .describe('ids de notas que esta substitui/consolida (vistos no índice de memória)'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        headline: z.string().describe('linha curta do índice (sempre visível no prompt)'),
+        body: z.string().describe('corpo completo da nota (lido sob demanda por get_lead_note)'),
+        supersedes: z
+          .array(z.string())
+          .optional()
+          .describe('ids de notas que esta substitui/consolida (vistos no índice de memória)'),
+      })
+      .passthrough(),
   },
   get_lead_note: {
     description:
       'Lê o CORPO completo de UMA nota da memória deste lead pelo id (o id aparece no índice de memória, ' +
       'entre colchetes). Use quando a headline no índice não bastar e você precisar do detalhe.',
-    inputSchema: z.object({
-      note_id: z.string().describe('id da nota (como aparece no índice, entre colchetes)'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        note_id: z.string().describe('id da nota (como aparece no índice, entre colchetes)'),
+      })
+      .passthrough(),
   },
   search_knowledge: {
     description:
@@ -223,9 +277,11 @@ export const AGENT_TOOL_DEFS = {
       'relevantes para uma pergunta. Use ANTES de responder qualquer dúvida factual sobre produto, ' +
       'preço, prazo, política ou funcionamento — responda com base nos trechos retornados e não ' +
       'invente o que não encontrar. Sem resultados = diga que vai confirmar, nunca chute.',
-    inputSchema: z.object({
-      query: z.string().min(2).describe('a pergunta ou termos a buscar, em pt-br'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        query: z.string().min(2).describe('a pergunta ou termos a buscar, em pt-br'),
+      })
+      .passthrough(),
   },
   request_human_handoff: {
     description:
@@ -240,9 +296,11 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO para o SDK (o modelo vê o campo); a validação REAL é a whitelist .strict()
     // + guard de prototype pollution dentro de applyRequestHumanHandoff — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z.object({
-      reason: z.string().optional().describe('por que passar ao humano (curto)'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        reason: z.string().optional().describe('por que passar ao humano (curto)'),
+      })
+      .passthrough(),
   },
   read_skill_reference: {
     description:
@@ -250,10 +308,15 @@ export const AGENT_TOOL_DEFS = {
       'CASOU neste turno. Use quando o corpo da skill ativa mencionar uma reference e você precisar do ' +
       'detalhe completo dela. Só funciona para skills ativas AGORA — pedir skill não ativa ou caminho ' +
       'fora do manifesto dela volta erro.',
-    inputSchema: z.object({
-      skill_name: z.string().min(1).describe('nome da skill ativa neste turno (como aparece no bloco de skills)'),
-      ref_path: z.string().min(1).describe('caminho da reference dentro do pacote da skill'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        skill_name: z
+          .string()
+          .min(1)
+          .describe('nome da skill ativa neste turno (como aparece no bloco de skills)'),
+        ref_path: z.string().min(1).describe('caminho da reference dentro do pacote da skill'),
+      })
+      .passthrough(),
   },
   open_human_case: {
     description:
@@ -266,11 +329,13 @@ export const AGENT_TOOL_DEFS = {
     // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
     // .strict() openHumanCaseInputSchema (human-cases.ts) — campo extra/forjado vira
     // erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z.object({
-      title: z.string().describe('título curto, ex.: "Liberar acesso ao painel"'),
-      summary: z.string().describe('o que o lead precisa, em pt-br'),
-      blocker: z.string().describe('por que você não consegue resolver sozinho'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        title: z.string().describe('título curto, ex.: "Liberar acesso ao painel"'),
+        summary: z.string().describe('o que o lead precisa, em pt-br'),
+        blocker: z.string().describe('por que você não consegue resolver sozinho'),
+      })
+      .passthrough(),
   },
   provide_case_update: {
     description:
@@ -278,10 +343,12 @@ export const AGENT_TOOL_DEFS = {
       'use esta tool para devolver a informação ao humano responsável. Não invente — só o que o lead disse.',
     // Schema LARGO para o SDK; a validação REAL é a whitelist .strict()
     // provideCaseUpdateInputSchema (human-cases.ts).
-    inputSchema: z.object({
-      case_id: z.string().describe('id do caso aberto'),
-      info: z.string().describe('a informação colhida do lead'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        case_id: z.string().describe('id do caso aberto'),
+        info: z.string().describe('a informação colhida do lead'),
+      })
+      .passthrough(),
   },
   send_template: {
     description:
@@ -290,13 +357,17 @@ export const AGENT_TOOL_DEFS = {
       'Você precisa do nome exato do template, do idioma e de um valor para CADA parâmetro. ' +
       'Se faltar valor, a resposta diz quais e você pode chamar de novo; qualquer outro erro ' +
       'significa que um humano precisa agir — encerre o turno sem insistir.',
-    inputSchema: z.object({
-      template_name: z.string().min(1).describe('nome exato do template, como aprovado na Meta'),
-      language: z.string().min(2).describe('código do idioma, ex.: pt_BR'),
-      values: z
-        .record(z.string(), z.string())
-        .describe('valor de cada parâmetro, na chave que a tela de templates mostra (ex.: "1", "2")'),
-    }).passthrough(),
+    inputSchema: z
+      .object({
+        template_name: z.string().min(1).describe('nome exato do template, como aprovado na Meta'),
+        language: z.string().min(2).describe('código do idioma, ex.: pt_BR'),
+        values: z
+          .record(z.string(), z.string())
+          .describe(
+            'valor de cada parâmetro, na chave que a tela de templates mostra (ex.: "1", "2")',
+          ),
+      })
+      .passthrough(),
   },
 } as const;
 
@@ -534,7 +605,8 @@ export async function comHandoffSeOrcamentoAcabar<T>(
       aviso = await ctx.avisarLead();
     } catch (erroDoAviso) {
       ctx.log.warn('aviso ao lead falhou antes da passagem por orçamento', {
-        error: erroDoAviso instanceof Error ? erroDoAviso.message.slice(0, 200) : 'erro desconhecido',
+        error:
+          erroDoAviso instanceof Error ? erroDoAviso.message.slice(0, 200) : 'erro desconhecido',
       });
       aviso = { avisado: false, porque: 'erro_no_envio' };
     }
@@ -785,6 +857,7 @@ export interface InboundTurnDeps {
   log: Logger;
   /** testes: registry com provider fake — produção usa o default do seam */
   registry?: ProviderRegistry;
+  embed?: typeof import('@/lib/ai/embed').embedText;
   /**
    * Seam de canal (F2-25): fábrica do ChannelAdapter para o pool do job. Default =
    * WAHA-via-CRM (o único adapter da v1). Trocar o adapter (ex.: Cloud API) NÃO
@@ -812,12 +885,21 @@ export async function latestCheckpoint(
   tenantId: string,
   leadId: string,
 ): Promise<LeadCheckpointRow | null> {
+  const boundary = currentExecutionBoundary();
   const { rows } = await db.query<LeadCheckpointRow>(
-    `select * from lead_checkpoints
-     where organization_id = $1 and contact_id = $2
-     order by seq desc
-     limit 1`,
-    [tenantId, leadId],
+    `select * from lead_checkpoints where organization_id=$1 and contact_id=$2
+      ${boundary ? 'and conversation_id=$3 and service_revision=$4 and demanda_id is not distinct from $5::uuid and demanda_revision is not distinct from $6::bigint' : ''}
+      order by seq desc limit 1`,
+    boundary
+      ? [
+          tenantId,
+          leadId,
+          boundary.conversation_id,
+          boundary.service_revision,
+          boundary.demanda_id,
+          boundary.demanda_revision,
+        ]
+      : [tenantId, leadId],
   );
   return rows[0] ?? null;
 }
@@ -888,9 +970,11 @@ async function insertCheckpoint(
   db: Queryable,
   input: { tenantId: string; leadId: string; jobId: string; content: CheckpointContent },
 ): Promise<void> {
+  await guardServiceEffect();
+  const boundary = currentExecutionBoundary();
   await db.query(
-    `insert into lead_checkpoints (organization_id, contact_id, job_id, commitments, objections, next_action, rolling_summary, declaracao)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `insert into lead_checkpoints (organization_id, contact_id, job_id, commitments, objections, next_action, rolling_summary, declaracao, conversation_id, service_revision, demanda_id, demanda_revision)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       input.tenantId,
       input.leadId,
@@ -904,6 +988,10 @@ async function insertCheckpoint(
       // sustenta em memória. Gravar um objeto vazio aqui jogaria fora, no
       // Postgres, a informação que o Zod tomou o cuidado de manter.
       input.content.declaracao === undefined ? null : JSON.stringify(input.content.declaracao),
+      boundary?.conversation_id ?? null,
+      boundary?.service_revision ?? null,
+      boundary?.demanda_id ?? null,
+      boundary?.demanda_revision ?? null,
     ],
   );
 }
@@ -923,12 +1011,18 @@ export function parseCheckpointText(text: string): CheckpointContent {
   try {
     raw = JSON.parse(text.slice(start, end + 1));
   } catch {
-    throw new Error('JSON de checkpoint inválido no fechamento do turno — run re-tentado pela fila');
+    throw new Error(
+      'JSON de checkpoint inválido no fechamento do turno — run re-tentado pela fila',
+    );
   }
   const parsed = checkpointContentSchema.safeParse(raw);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join('.') || '(raiz)'}: ${i.code}`).join('; ');
-    throw new Error(`checkpoint do fechamento com shape inválido (${issues}) — run re-tentado pela fila`);
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join('.') || '(raiz)'}: ${i.code}`)
+      .join('; ');
+    throw new Error(
+      `checkpoint do fechamento com shape inválido (${issues}) — run re-tentado pela fila`,
+    );
   }
   return parsed.data;
 }
@@ -975,7 +1069,9 @@ export function ritualBlocks(
     ? JSON.stringify({
         stage: leadState.stage,
         qualification: leadState.qualification,
-        next_action: leadState.next_action,
+        next_action: currentExecutionBoundary()
+          ? (previous?.next_action ?? null)
+          : leadState.next_action,
       })
     : 'sem registro — o lead está em "new"';
   return [
@@ -1072,10 +1168,14 @@ export function buildOpeningMessage(
     // "não há disso no seu contexto" — a segunda não depende de obediência.
     ...(entregue('update_lead_state')
       ? []
-      : ['Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).']),
+      : [
+          'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
+        ]),
     ...(entregue('save_lead_note')
       ? []
-      : ['Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).']),
+      : [
+          'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+        ]),
   ].join('\n');
 }
 
@@ -1087,6 +1187,7 @@ export function buildOpeningMessage(
  * no SUFIXO — depois do prefixo cacheável, sem invalidar o cache F2-17).
  */
 export interface AgentTurnInput {
+  resolvedAgent?: TurnAgentResolution;
   /** número (channel_sessions.id do CRM) — chave da serialização anti-ban do envio. */
   channelSessionId: string;
   /** conversa do CRM — destino do send_message. */
@@ -1233,10 +1334,14 @@ export async function runAgentTurn(
           },
           {
             motivo: 'orcamento_de_ia',
-            channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+            channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(
+              pool,
+            ),
             now: deps.clock?.() ?? new Date(),
             log: logDaEscolta,
-            ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
+            ...(deps.knobs.disclosureMode !== undefined
+              ? { disclosureMode: deps.knobs.disclosureMode }
+              : {}),
             ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
           },
         ),
@@ -1266,16 +1371,21 @@ function turnoVaiFalarComOLead(job: JobRow): boolean {
 
 async function executarTurnoDoAgente(
   deps: InboundTurnDeps,
-  job: JobRow,
+  job: JobRow | null,
   pool: pg.Pool,
   ctx: { workerId: string },
   input: AgentTurnInput,
+  preview?: TurnPreview,
 ): Promise<void> {
-  const tenantId = job.organization_id;
-  const leadId = job.contact_id;
-  if (leadId === null) {
-    throw new Error('job de turno sem contact_id — o CHECK da fila deveria impedir');
-  }
+  const liveJob = (): JobRow => {
+    if (!job) throw new Error('preview_operational_job_forbidden');
+    return job;
+  };
+  const tenantId = preview?.organizationId ?? liveJob().organization_id;
+  // Empty exists only in the in-memory scenario. Every CRM read uses preview's
+  // context and all operational tools are replaced before entering the loop.
+  const leadId = preview?.contactId ?? (preview ? '' : liveJob().contact_id);
+  if (leadId === null) throw new Error('turn_without_contact');
   // O RELÓGIO, declarado antes de qualquer guarda de janela.
   //
   // Ele já existia — 330 linhas ABAIXO, depois das duas guardas que mais
@@ -1286,9 +1396,17 @@ async function executarTurnoDoAgente(
   // suíte de invariantes ficava vermelha das 22h às 7h (fuso do tenant) — nove
   // horas por dia em que um PR reprova por causa do relógio de parede.
   const clock = deps.clock ?? ((): Date => new Date());
-  const contextKnobs = { historyLimit: deps.knobs.historyLimit, maxTokens: deps.knobs.maxContextTokens };
+  const contextKnobs = {
+    historyLimit: deps.knobs.historyLimit,
+    maxTokens: deps.knobs.maxContextTokens,
+  };
   // Contexto do RUN em toda linha de log do turno (F2-16): job_id É o run id.
-  const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
+  const runLog = withFields(deps.log, {
+    job_id: job?.id ?? null,
+    preview_run_id: preview?.runId,
+    tenant_id: tenantId,
+    lead_id: leadId,
+  });
 
   // AS DUAS CAMADAS QUE CUSTAM DINHEIRO, resolvidas UMA vez por turno.
   //
@@ -1311,8 +1429,8 @@ async function executarTurnoDoAgente(
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
-  if (await isLeadInHandoff(pool, tenantId, leadId)) {
-    runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: job.kind });
+  if (!preview && (await isLeadInHandoff(pool, tenantId, leadId))) {
+    runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: liveJob().kind });
     return;
   }
 
@@ -1323,41 +1441,43 @@ async function executarTurnoDoAgente(
   // mudou. Canal 'open' (default) → `permite:true`, nada muda. NO-OP no início do
   // turno, antes de qualquer chamada de modelo — mesmo lugar e mesmo custo do
   // veto de handoff acima.
-  try {
-    const elegib = await decidirElegibilidadeDaConversa(pool, {
-      organizationId: tenantId,
-      conversationId: input.conversationId,
-      agora: clock(),
-      ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
-    });
-    if (elegib !== null && !elegib.permite) {
-      runLog.info('turno pulado — conversa não elegível para IA', {
-        kind: job.kind,
-        motivo: elegib.motivo,
+  if (!preview) {
+    try {
+      const elegib = await decidirElegibilidadeDaConversa(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+        agora: clock(),
+        ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
-      return;
-    }
-    // KEEP-ALIVE: enquanto a conversa autorizada está viva, renova o carimbo —
-    // assim uma negociação de semanas não expira pela janela de validade, mas um
-    // contato que veio de uma submissão e sumiu volta a NÃO ser elegível depois
-    // da janela. Só no modo 'allowlist' (motivo 'autorizado'); fire-and-forget.
-    if (elegib !== null && elegib.motivo === 'autorizado' && job.kind === 'inbound_turn') {
-      pool
-        .query(
-          `update contacts set ai_authorized_at = now()
-           where organization_id = $1 and id = $2 and ai_authorized_at is not null`,
-          [tenantId, leadId],
-        )
-        .catch((err: unknown) => {
-          runLog.warn('keep-alive da autorização de IA falhou', {
-            error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-          });
+      if (elegib !== null && !elegib.permite) {
+        runLog.info('turno pulado — conversa não elegível para IA', {
+          kind: liveJob().kind,
+          motivo: elegib.motivo,
         });
+        return;
+      }
+      // KEEP-ALIVE: enquanto a conversa autorizada está viva, renova o carimbo —
+      // assim uma negociação de semanas não expira pela janela de validade, mas um
+      // contato que veio de uma submissão e sumiu volta a NÃO ser elegível depois
+      // da janela. Só no modo 'allowlist' (motivo 'autorizado'); fire-and-forget.
+      if (elegib !== null && elegib.motivo === 'autorizado' && liveJob().kind === 'inbound_turn') {
+        pool
+          .query(
+            `update contacts set ai_authorized_at = now()
+           where organization_id = $1 and id = $2 and ai_authorized_at is not null`,
+            [tenantId, leadId],
+          )
+          .catch((err: unknown) => {
+            runLog.warn('keep-alive da autorização de IA falhou', {
+              error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+            });
+          });
+      }
+    } catch (err) {
+      runLog.warn('checagem de elegibilidade falhou no turno — seguindo', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
     }
-  } catch (err) {
-    runLog.warn('checagem de elegibilidade falhou no turno — seguindo', {
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
-    });
   }
 
   // JANELA ANTI-BAN (7h–22h por padrão, fuso do tenant): fora dela o turno é
@@ -1378,12 +1498,13 @@ async function executarTurnoDoAgente(
   // Só a JANELA adia. Cap diário e warm-up continuam com o gate de envio: eles
   // dependem de quanto já saiu hoje, e antecipá-los aqui adiaria turno que, na
   // hora do envio, teria passado.
-  if (turnoVaiFalarComOLead(job)) {
+  if (!preview && turnoVaiFalarComOLead(liveJob())) {
     const { knobs } = await loadChannelKnobs(pool, tenantId, input.channelSessionId, runLog);
     const agora = clock();
     if (!janelaDeEnvioAberta(agora, knobs)) {
       const abertura = proximaAberturaDaJanela(agora, knobs);
-      await rescheduleJob(pool, job.id, ctx.workerId, {
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
         delayMs: Math.max(abertura.getTime() - agora.getTime(), 1_000),
         reason: 'fora da janela anti-ban de envio — turno adiado para a abertura',
       });
@@ -1419,7 +1540,9 @@ async function executarTurnoDoAgente(
           error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
         });
       }
-      throw new JobSettledError('fora da janela anti-ban — job reagendado para a abertura da janela');
+      throw new JobSettledError(
+        'fora da janela anti-ban — job reagendado para a abertura da janela',
+      );
     }
     // A janela está ABERTA: se havia aviso de silêncio pendurado, ele morre
     // AQUI — no mesmo ponto que o abriu. Um aviso que só o humano fecha vira
@@ -1437,63 +1560,39 @@ async function executarTurnoDoAgente(
     }
   }
 
-  // Fase 3: stickiness do router — qual agente já atende esta conversa. Leituras
-  // tolerantes a falha (ex.: clone self-host ainda sem a migration 0085 aplicada) —
-  // um erro aqui degrada pro fluxo sem router, nunca derruba o turno (review T5).
-  let sticky: { active_ai_agent_id: string | null; active_intent: string | null } = {
-    active_ai_agent_id: null,
-    active_intent: null,
-  };
-  // Regra 6 do resolver (nunca classifica em follow-up): só busca o sinal em turno
-  // inbound de verdade — um follow-up de dias depois não pode reclassificar sobre a
-  // mensagem antiga que originou a promessa (review T5, finding 1).
-  let routingSignal: string | null = null;
-  try {
-    const { rows: convRows } = await pool.query<{ active_ai_agent_id: string | null; active_intent: string | null }>(
-      'select active_ai_agent_id, active_intent from conversations where organization_id = $1 and id = $2',
-      [tenantId, input.conversationId],
-    );
-    sticky = convRows[0] ?? sticky;
-    if (job.kind === 'inbound_turn') {
-      // O sinal de roteamento (última inbound) ainda não está disponível aqui —
-      // getLeadContext só roda mais abaixo. Leitura direta e barata, só pra alimentar
-      // o classificador. Mesma régua de "última inbound" do resto do turno
-      // (get-lead-context.ts): sent_at (relógio do WhatsApp), não created_at (now() do
-      // insert) — os dois relógios podem divergir (review T5, finding 3).
-      const { rows: sigRows } = await pool.query<{ body: string | null }>(
-        `select body from messages
-         where organization_id = $1 and conversation_id = $2 and direction = 'inbound'
-         order by sent_at desc, id desc limit 1`,
-        [tenantId, input.conversationId],
-      );
-      routingSignal = sigRows[0]?.body ?? null;
-    }
-  } catch (err) {
-    runLog.warn('leitura de sticky/sinal do router falhou — turno segue sem router', {
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-    });
-  }
-
-  // Fase 2B/3: config do agente por PONTEIRO PUBLICADO (tela ai/agents) — lida a
-  // cada turno, zero cache; org/sessão da row do job (fonte confiável). Sem router
-  // ativo pra sessão, o resolver devolve o mesmo fluxo de hoje (outcome 'no_router').
-  // null = sem agente publicado p/ esta sessão → fallback (playbook + settings + env).
-  const routed = await resolveTurnAgent(
-    pool,
-    deps.llmCfg,
-    {
-      tenantId,
-      leadId,
-      jobId: job.id,
-      channelSessionId: input.channelSessionId,
-      conversationId: input.conversationId,
-      signal: routingSignal,
-      stickyAgentId: sticky.active_ai_agent_id,
-      stickyIntent: sticky.active_intent,
-    },
-    { log: runLog },
-  );
+  const routed = preview
+    ? { config: preview.agent, routerId: null, intentName: null, confidence: null, outcome: 'preview' }
+    : input.resolvedAgent ?? await resolveConversationTurn(pool, deps.llmCfg, {
+        tenantId, leadId, jobId: liveJob().id,
+        channelSessionId: input.channelSessionId,
+        conversationId: input.conversationId,
+        inbound: liveJob().kind === 'inbound_turn',
+      }, { log: runLog });
   const agentConfig = routed.config;
+  if (!preview && agentConfig?.operationMode === 'assisted' && job?.kind === 'inbound_turn') {
+    const { generateReplyDraft } = await import('./reply-drafts');
+    await generateReplyDraft(pool, deps, {
+      organizationId: tenantId,
+      conversationId: input.conversationId,
+      contactId: leadId,
+      channelId: input.channelSessionId,
+      boundary: currentExecutionBoundary() ?? undefined,
+      agent: agentConfig,
+    });
+    return;
+  }
+  if (!preview && agentConfig && (agentConfig.pausedAt || agentConfig.operationMode === 'assisted'))
+    return;
+  const agentOperation =
+    !preview && agentConfig?.operationRevision
+      ? {
+          organizationId: tenantId,
+          agentId: agentConfig.agentId,
+          versionId: agentConfig.versionId,
+          revision: agentConfig.operationRevision,
+        }
+      : undefined;
+  if (agentOperation) setExecutionAgentOperation(agentOperation);
   if (agentConfig !== null) {
     runLog.info('config do agente publicada em uso', {
       agent_id: agentConfig.agentId,
@@ -1512,18 +1611,23 @@ async function executarTurnoDoAgente(
   // Adia, não descarta: o job volta a 'pending' na abertura, SEM consumir
   // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
   // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
-  if (job.kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
+  if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
     const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
     if (esperaMs !== null) {
-      await rescheduleJob(pool, job.id, ctx.workerId, {
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
         delayMs: esperaMs,
-        reason: 'fora do horário de funcionamento do agente — turno adiado para a abertura da janela',
+        reason:
+          'fora do horário de funcionamento do agente — turno adiado para a abertura da janela',
       });
-      runLog.info('turno adiado — fora do horário de funcionamento configurado na versão publicada', {
-        agent_id: agentConfig.agentId,
-        espera_ms: esperaMs,
-        janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
-      });
+      runLog.info(
+        'turno adiado — fora do horário de funcionamento configurado na versão publicada',
+        {
+          agent_id: agentConfig.agentId,
+          espera_ms: esperaMs,
+          janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
+        },
+      );
       throw new JobSettledError(
         'fora do horário de funcionamento — job reagendado para a abertura da janela',
       );
@@ -1532,7 +1636,7 @@ async function executarTurnoDoAgente(
 
   // Fase 3: grava a decisão de roteamento e a aderência da conversa ao agente.
   // Fire-and-forget — falha de telemetria nunca derruba a resposta ao lead.
-  if (routed.routerId !== null) {
+  if (!preview && routed.routerId !== null) {
     try {
       if (agentConfig !== null) {
         await pool.query(
@@ -1546,10 +1650,21 @@ async function executarTurnoDoAgente(
         `insert into ai_router_decisions
            (organization_id, router_id, conversation_id, intent_name, confidence, agent_id, outcome, job_id)
          values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [tenantId, routed.routerId, input.conversationId, routed.intentName, routed.confidence, agentConfig?.agentId ?? null, routed.outcome, job.id],
+        [
+          tenantId,
+          routed.routerId,
+          input.conversationId,
+          routed.intentName,
+          routed.confidence,
+          agentConfig?.agentId ?? null,
+          routed.outcome,
+          liveJob().id,
+        ],
       );
     } catch (err) {
-      runLog.warn('decisão do router não gravada', { error: (err instanceof Error ? err.message : String(err)).slice(0, 120) });
+      runLog.warn('decisão do router não gravada', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
     }
   }
   // Knobs por-turno: a versão publicada vence o env; sem ela, env (main.ts).
@@ -1584,7 +1699,10 @@ async function executarTurnoDoAgente(
    */
   const turnContextKnobs =
     agentConfig !== null
-      ? { historyLimit: agentConfig.historyMessageWindow, maxTokens: agentConfig.historyTokenWindow }
+      ? {
+          historyLimit: agentConfig.historyMessageWindow,
+          maxTokens: agentConfig.historyTokenWindow,
+        }
       : contextKnobs;
 
   // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
@@ -1620,15 +1738,23 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
   }
+  if (preview)
+    blocosResidentes.push(
+      'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',
+    );
   const system = blocosResidentes.join('\n\n');
-  const previous = await latestCheckpoint(pool, tenantId, leadId);
-  const leadState = await getLeadState(pool, tenantId, leadId);
-  const openingContext = await getLeadContext(
-    pool,
-    deps.crmCfg,
-    { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
-    turnContextKnobs,
-  );
+  const previous = preview
+    ? (preview.previous ?? null)
+    : await latestCheckpoint(pool, tenantId, leadId);
+  const leadState = preview?.kind === 'sandbox' ? null : await getLeadState(pool, tenantId, leadId);
+  const openingContext = preview
+    ? preview.context
+    : await getLeadContext(
+        pool,
+        deps.crmCfg,
+        { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
+        turnContextKnobs,
+      );
   if (!openingContext.ok) {
     // Sem contexto não há turno: transiente (CRM fora) OU permanente (lead
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
@@ -1647,7 +1773,13 @@ async function executarTurnoDoAgente(
   // de qualquer chamada de modelo; o canal precisa existir antes deles.
   const turnCrmCfg =
     agentConfig !== null ? { ...deps.crmCfg, agentActorId: agentConfig.agentId } : deps.crmCfg;
-  const channel = (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
+  const channel = preview
+    ? null
+    : (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, turnCrmCfg)))(pool);
+  const liveChannel = (): ChannelAdapter => {
+    if (!channel) throw new Error('preview_transport_forbidden');
+    return channel;
+  };
   // STOP lido no turno (fonte: CRM via get_lead_context) — combinado com o cache
   // durável leads.is_opted_out no gate 1 da cadeia (F2-13).
   const optedOutThisTurn = openingContext.context.contact.is_blocked;
@@ -1657,25 +1789,29 @@ async function executarTurnoDoAgente(
   const lgpd = openingContext.lgpd;
 
   /** Argumentos fixos do aviso ao lead — os dois desvios abaixo só trocam o motivo. */
-  const avisoDaEscalacao = {
+  const avisoDaEscalacao = () => ({
     ids: {
       tenantId,
       leadId,
       conversationId: input.conversationId,
       channelSessionId: input.channelSessionId,
-      jobId: job.id,
+      jobId: liveJob().id,
+      jobClaim: claimOfJob(liveJob()),
+      agentOperation,
     },
     base: {
-      channel,
+      channel: liveChannel(),
       optedOutThisTurn,
       now: clock(),
       log: runLog,
       lgpd,
       agentId: agentConfig?.agentId ?? null,
-      ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
+      ...(deps.knobs.disclosureMode !== undefined
+        ? { disclosureMode: deps.knobs.disclosureMode }
+        : {}),
       ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
     },
-  };
+  });
 
   // F4-06 (acceptance 1): detecção DETERMINÍSTICA (regex PT-BR, sem LLM) de pedido explícito
   // de atendimento humano na última mensagem do lead. Handoff é cidadão de 1ª classe (exigência
@@ -1689,11 +1825,12 @@ async function executarTurnoDoAgente(
   // ninguém: a própria trava que a passagem acabou de armar veta a mensagem.
   const inboundSignal = latestInboundSignal(openingContext.context.messages);
   if (
-    detectHumanHandoffRequest(inboundSignal) ||
-    (agentConfig !== null && matchesHandoffKeyword(inboundSignal, agentConfig.handoffKeywords))
+    !preview &&
+    (detectHumanHandoffRequest(inboundSignal) ||
+      (agentConfig !== null && matchesHandoffKeyword(inboundSignal, agentConfig.handoffKeywords)))
   ) {
-    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao.ids, {
-      ...avisoDaEscalacao.base,
+    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+      ...avisoDaEscalacao().base,
       motivo: 'pediu_humano',
     });
     await performHumanHandoff(
@@ -1707,7 +1844,7 @@ async function executarTurnoDoAgente(
       },
     );
     runLog.info('handoff humano acionado por pedido explícito do lead (detecção determinística)', {
-      kind: job.kind,
+      kind: liveJob().kind,
       lead_avisado: aviso.avisado,
     });
     return; // bot silencia: o aviso já saiu, e nada mais sai neste turno
@@ -1719,14 +1856,14 @@ async function executarTurnoDoAgente(
   // (bot_silenced_until='infinity', que SOBREVIVE à leitura do CRM que sobrescreve o cache
   // is_opted_out) e escala à inbox para o humano confirmar o opt-out real (is_blocked) no
   // CRM. Cancela os follow-ups agendados de tabela. Nada disso reverte (regra dura nº 2).
-  if (detectAmbiguousOptOut(latestInboundSignal(openingContext.context.messages))) {
+  if (!preview && detectAmbiguousOptOut(latestInboundSignal(openingContext.context.messages))) {
     // O aviso daqui NÃO fala em atendente — quem pediu para parar não quer ouvir
     // sobre atendimento (`textoDoAviso`, motivo `suspeita_de_opt_out`). Ele
     // CONFIRMA a parada, que é o padrão de mensageria para um opt-out, e diz que
     // uma pessoa vai conferir. Sair calado deixaria a pessoa sem saber se o
     // pedido dela foi ouvido — e ela pediu justamente para ser ouvida.
-    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao.ids, {
-      ...avisoDaEscalacao.base,
+    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+      ...avisoDaEscalacao().base,
       motivo: 'suspeita_de_opt_out',
     });
     await performHumanHandoff(
@@ -1741,7 +1878,7 @@ async function executarTurnoDoAgente(
       },
     );
     runLog.info('possível opt-out detectado no inbound — bot silenciado e escalado ao humano', {
-      kind: job.kind,
+      kind: liveJob().kind,
       lead_avisado: aviso.avisado,
     });
     return; // bot silencia: a confirmação já saiu, e nada mais sai neste turno
@@ -1758,7 +1895,7 @@ async function executarTurnoDoAgente(
     const compacted = await maybeCompact(
       pool,
       deps.llmCfg,
-      { tenantId, leadId, jobId: job.id },
+      { tenantId, leadId: leadId || null, jobId: job?.id },
       {
         context: openingContext.context,
         previousSummary: previous?.rolling_summary ?? '',
@@ -1769,35 +1906,46 @@ async function executarTurnoDoAgente(
         knobs: { ...deps.knobs.compaction, ...argsAux(deps.knobs.compaction.model) },
         notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
       },
-      { registry: deps.registry, log: runLog },
+      {
+        registry: deps.registry,
+        log: runLog,
+        ...(preview
+          ? {
+              noteSink: (note: { headline: string; body: string }) => {
+                (preview.notes ??= []).push(note);
+              },
+            }
+          : {}),
+      },
     );
     if (compacted !== null) {
       // Só o rolling_summary é sobrescrito (o resumo compactado carrega compromissos/
       // objeções/estágio/dados pessoais planificados). O `previous` sintético do 1º
       // turno com histórico importado é local — nunca persistido; o fechamento grava o
       // checkpoint real.
-      const base: LeadCheckpointRow =
-        previous ??
-        {
-          id: '',
-          seq: '0',
-          organization_id: tenantId,
-          contact_id: leadId,
-          job_id: null,
-          created_at: new Date(),
-          commitments: [],
-          objections: [],
-          next_action: null,
-          rolling_summary: '',
-          // Este `previous` é sintetizado a partir de histórico IMPORTADO — não
-          // houve turno nosso, logo ninguém declarou nada. `null` é o valor
-          // honesto; um objeto vazio afirmaria uma avaliação que não aconteceu.
-          declaracao: null,
-        };
+      const base: LeadCheckpointRow = previous ?? {
+        id: '',
+        seq: '0',
+        organization_id: tenantId,
+        contact_id: leadId,
+        job_id: null,
+        created_at: new Date(),
+        commitments: [],
+        objections: [],
+        next_action: null,
+        rolling_summary: '',
+        // Este `previous` é sintetizado a partir de histórico IMPORTADO — não
+        // houve turno nosso, logo ninguém declarou nada. `null` é o valor
+        // honesto; um objeto vazio afirmaria uma avaliação que não aconteceu.
+        declaracao: null,
+      };
       effectivePrevious = { ...base, rolling_summary: renderCompactedSummary(compacted) };
       effectiveContext = {
         ...openingContext.context,
-        messages: trimTranscriptToBudget(openingContext.context.messages, deps.knobs.compaction.transcriptMaxTokens),
+        messages: trimTranscriptToBudget(
+          openingContext.context.messages,
+          deps.knobs.compaction.transcriptMaxTokens,
+        ),
       };
     }
   }
@@ -1805,16 +1953,21 @@ async function executarTurnoDoAgente(
   // Índice da memória durável do lead (F3-05) — headlines dentro do orçamento fixo,
   // injetado no SUFIXO da abertura (não invalida o prefixo cacheável F2-17). Montado
   // DEPOIS do flush (F3-07) para que as notas gravadas neste turno já entrem no índice.
-  const notesIndexBlock = await buildNotesIndexBlock(pool, tenantId, leadId, deps.knobs.notesIndexMaxTokens);
+  const notesIndexBlock = preview
+    ? (preview.notes ?? []).map((n) => n.headline + ': ' + n.body).join('\n')
+    : await buildNotesIndexBlock(pool, tenantId, leadId, deps.knobs.notesIndexMaxTokens);
   // ⚠️ `leadId` AQUI É O CONTATO (`leadIdDoJob = job.contact_id`, e o comentário
   // de `get-lead-context.ts:193` diz o mesmo). Passar essa variável para um
   // parâmetro chamado `contactId` é correto pelo VALOR; o nome é que mente, e é
   // o que a issue #509 conserta. Não troque por um `lead_id` "mais coerente".
-  const compromissosBlock = await buildCompromissosBlock(pool, tenantId, leadId, new Date());
+  const compromissosBlock =
+    preview?.kind === 'sandbox'
+      ? ''
+      : await buildCompromissosBlock(pool, tenantId, leadId, new Date());
   // Observabilidade da memória (Fase 2A): SÓ ids/contagens no log — headline/corpo
   // são PII e nunca saem do prompt. Prova auditável de que a memória durável do
   // lead entrou no contexto DESTE turno.
-  {
+  if (!preview) {
     const { rows: noteIdRows } = await pool.query<{ id: string }>(
       'select id from lead_notes where organization_id = $1 and contact_id = $2 order by created_at',
       [tenantId, leadId],
@@ -1826,12 +1979,11 @@ async function executarTurnoDoAgente(
     });
   }
 
-
   // F4-07: STOP no CRM detectado no turno → cancela TODOS os follow-ups agendados do lead
   // (não só o job atual). O stopGate já veta ESTE turno; o cancel garante que nenhum cron
   // futuro dispare em vão (opt-out irrevogável, regra dura nº 2). Idempotente — reusa o
   // cancel compartilhado com o handoff (F4-06).
-  if (optedOutThisTurn) {
+  if (!preview && optedOutThisTurn) {
     const canceled = await cancelPendingCronsForLead(pool, tenantId, leadId);
     if (canceled > 0) {
       runLog.info('opt-out detectado no turno — follow-ups agendados cancelados', { canceled });
@@ -1855,20 +2007,22 @@ async function executarTurnoDoAgente(
   // Gate 5 da cadeia (F4-02/F4-08): closure do classificador semântico com tenant/lead/job da
   // ROW do job fechados dentro (regra dura nº 1) — resolvido pelo seam agnóstico. undefined =
   // camada off (gate no-op). CUSTO: uma chamada de modelo POR ENVIO quando ligada.
-  const semanticClassifier =
-    camadaLigada(camadas.promessa_semantica, deps.knobs.promiseSemantic?.enabled === true)
-      ? (candidate: string) =>
-          classifyPromise(
-            pool,
-            deps.llmCfg,
-            { tenantId, leadId, jobId: job.id },
-            {
-              candidate,
-              ...argsAux(deps.knobs.promiseSemantic?.model),
-            },
-            { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
-          )
-      : undefined;
+  const semanticClassifier = camadaLigada(
+    camadas.promessa_semantica,
+    deps.knobs.promiseSemantic?.enabled === true,
+  )
+    ? (candidate: string) =>
+        classifyPromise(
+          pool,
+          deps.llmCfg,
+          { tenantId, leadId: leadId || null, jobId: job?.id },
+          {
+            candidate,
+            ...argsAux(deps.knobs.promiseSemantic?.model),
+          },
+          { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+        )
+    : undefined;
   let outOfTablePromiseAttempted = false;
   // Spec 15 (Wave 4 lê este flag): true quando open_human_case abriu um caso NESTE
   // turno — aqui só declara e seta; o consumo (ex.: guardrail de promessa) é da Wave 4.
@@ -1896,7 +2050,11 @@ async function executarTurnoDoAgente(
   // Nunca bloqueia nem derruba o turno — mesma disciplina de `triggerHandoff` (G1-G4),
   // que já chama o mesmo helper para o handoff por palavra-chave do cliente.
   const moverParaHandoffBestEffort = (reason: string): void => {
-    moverLeadParaEtapaDeHandoff(createAdminClient(), { organizationId: tenantId, leadId, reason }).catch((err) => {
+    moverLeadParaEtapaDeHandoff(createAdminClient(), {
+      organizationId: tenantId,
+      leadId,
+      reason,
+    }).catch((err) => {
       runLog.warn('moverLeadParaEtapaDeHandoff falhou (best-effort, caso humano)', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -1928,34 +2086,48 @@ async function executarTurnoDoAgente(
   const skillSignal = latestInboundSignal(effectiveContext.messages);
   const skillMatch = matchSkills(skills, skillSignal);
   const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
-  if (deps.knobs.goldenCandidatesDir !== undefined) {
+  if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
     await recordSkillMissCandidates(
       deps.knobs.goldenCandidatesDir,
-      { tenantId, leadId, jobId: job.id, signal: skillSignal, candidates: skillMatch.missCandidates },
+      {
+        tenantId,
+        leadId,
+        jobId: liveJob().id,
+        signal: skillSignal,
+        candidates: skillMatch.missCandidates,
+      },
       runLog,
     );
   }
   // Fase 2: telemetria de ativação de skill (hard match + near-miss probe).
-  try {
-    const rows: Array<[string, string | null, string]> = [
-      ...skillMatch.matched.map((s) => [s.name, s.versionId, 'hard'] as [string, string | null, string]),
-      ...skillMatch.missCandidates.map((m) => [m.skill, null, 'probe'] as [string, string | null, string]),
-    ];
-    if (rows.length > 0) {
-      const values: string[] = [];
-      const params: unknown[] = [];
-      rows.forEach(([name, verId, trig], i) => {
-        const b = i * 5;
-        values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5})`);
-        params.push(tenantId, name, verId, trig, job.id);
+  if (!preview) {
+    try {
+      const rows: Array<[string, string | null, string]> = [
+        ...skillMatch.matched.map(
+          (s) => [s.name, s.versionId, 'hard'] as [string, string | null, string],
+        ),
+        ...skillMatch.missCandidates.map(
+          (m) => [m.skill, null, 'probe'] as [string, string | null, string],
+        ),
+      ];
+      if (rows.length > 0) {
+        const values: string[] = [];
+        const params: unknown[] = [];
+        rows.forEach(([name, verId, trig], i) => {
+          const b = i * 5;
+          values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5})`);
+          params.push(tenantId, name, verId, trig, liveJob().id);
+        });
+        await pool.query(
+          `insert into skill_activations (organization_id, skill_name, skill_version_id, trigger, job_id) values ${values.join(',')}`,
+          params,
+        );
+      }
+    } catch (err) {
+      runLog.warn('skill_activations não gravadas', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
       });
-      await pool.query(
-        `insert into skill_activations (organization_id, skill_name, skill_version_id, trigger, job_id) values ${values.join(',')}`,
-        params,
-      );
     }
-  } catch (err) {
-    runLog.warn('skill_activations não gravadas', { error: (err instanceof Error ? err.message : String(err)).slice(0, 120) });
   }
 
   /**
@@ -1988,12 +2160,14 @@ async function executarTurnoDoAgente(
         | { ok: false; error: { code: string; message: string } }
       > => {
         try {
-          const releitura = await getLeadContext(
-            pool,
-            deps.crmCfg,
-            { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
-            turnContextKnobs,
-          );
+          const releitura = preview
+            ? preview.context
+            : await getLeadContext(
+                pool,
+                deps.crmCfg,
+                { tenantId, leadId, conversationId: input.conversationId, fuso: fusoDaOrg },
+                turnContextKnobs,
+              );
           // Sem esta linha a projeção da abertura seria decorativa: bastaria o
           // modelo chamar esta ferramenta para receber o contexto CRU de volta,
           // com `lead_id`, `conversation_id` e caminho de mídia. A releitura é a
@@ -2012,7 +2186,10 @@ async function executarTurnoDoAgente(
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao ler o contexto — encerre o turno agora.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao ler o contexto — encerre o turno agora.',
+            },
           };
         }
       },
@@ -2086,9 +2263,10 @@ async function executarTurnoDoAgente(
         const chain = await runBeforeSend({
           pool,
           log: runLog,
+          agentOperation,
           tenantId,
           leadId,
-          jobId: job.id,
+          jobId: liveJob().id,
           channelSessionId: input.channelSessionId,
           body: rendered,
           // Só ESTE gate muda; stop, LGPD e pacing continuam valendo integralmente.
@@ -2100,10 +2278,12 @@ async function executarTurnoDoAgente(
           lgpd,
           send: (finalBody: string) => {
             seq += 1;
-            return channel.send({
+            return liveChannel().send({
               tenantId,
               leadId,
-              jobId: job.id,
+              jobId: liveJob().id,
+              jobClaim: claimOfJob(liveJob()),
+              agentOperation,
               seq,
               conversationId: input.conversationId,
               body: finalBody,
@@ -2137,19 +2317,26 @@ async function executarTurnoDoAgente(
         if (fontes.length === 0 && agentConfig?.activeKbVersionId == null) {
           return {
             ok: false,
-            error: { code: 'no_knowledge_base', message: 'este agente não tem material de consulta habilitado — siga sem ele.' },
+            error: {
+              code: 'no_knowledge_base',
+              message: 'este agente não tem material de consulta habilitado — siga sem ele.',
+            },
           };
         }
-        const out = await searchKnowledge(pool, {
-          organizationId: tenantId,
-          knowledgeSourceIds: fontes,
-          kbVersionId: agentConfig?.activeKbVersionId ?? null,
-          query,
-          topK: agentConfig?.ragTopK ?? 5,
-          threshold: agentConfig?.ragSimilarityThreshold ?? 0.4,
-          jobId: job.id,
-          agentId: agentConfig?.agentId ?? null,
-        }, { log: runLog });
+        const out = await searchKnowledge(
+          pool,
+          {
+            organizationId: tenantId,
+            knowledgeSourceIds: fontes,
+            kbVersionId: agentConfig?.activeKbVersionId ?? null,
+            query,
+            topK: agentConfig?.ragTopK ?? 5,
+            threshold: agentConfig?.ragSimilarityThreshold ?? 0.4,
+            jobId: job?.id,
+            agentId: agentConfig?.agentId ?? null,
+          },
+          { log: runLog, embed: deps.embed },
+        );
         if (out.ok && out.results.length > 0) {
           // As citações são montadas AQUI, pelo código, a partir do resultado
           // cru — é por isso que os ids podem sair do que vai ao modelo sem
@@ -2180,7 +2367,10 @@ async function executarTurnoDoAgente(
         // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
         // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
         // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
-        if (promiseTable !== null && !decidePromise({ candidate: body, table: promiseTable }).allow) {
+        if (
+          promiseTable !== null &&
+          !decidePromise({ candidate: body, table: promiseTable }).allow
+        ) {
           outOfTablePromiseAttempted = true;
         }
         // Cadeia de guardrails (F2-13): stop/opt-out → anti-ban → spinning rodam
@@ -2202,9 +2392,10 @@ async function executarTurnoDoAgente(
           const beforeSendArgs = {
             pool,
             log: runLog,
+            agentOperation,
             tenantId,
             leadId,
-            jobId: job.id,
+            jobId: liveJob().id,
             channelSessionId: input.channelSessionId,
             body,
             optedOutThisTurn,
@@ -2239,10 +2430,14 @@ async function executarTurnoDoAgente(
               active: agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment'),
               toolCalledThisTurn: agendaToolCalledThisTurn,
             },
-            ...(deps.knobs.disclosureMode !== undefined ? { disclosureMode: deps.knobs.disclosureMode } : {}),
+            ...(deps.knobs.disclosureMode !== undefined
+              ? { disclosureMode: deps.knobs.disclosureMode }
+              : {}),
             // Gate 5 (F4-02): classificador semântico roteado pelo MESMO seam agnóstico (budget
             // da org checado nele). Closure com tenant/lead/job da ROW fechados — nunca do payload.
-            ...(semanticClassifier !== undefined ? { classifyPromiseSemantic: semanticClassifier } : {}),
+            ...(semanticClassifier !== undefined
+              ? { classifyPromiseSemantic: semanticClassifier }
+              : {}),
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
             send: (finalBody: string) =>
@@ -2253,10 +2448,12 @@ async function executarTurnoDoAgente(
                 jitter: () => 1200 + Math.floor(Math.random() * 800), // piso no throttle anti-ban (1.2s) — bolhas são mensagens físicas
                 send: (bubble): Promise<ChannelSendResult> => {
                   seq += 1;
-                  return channel.send({
+                  return liveChannel().send({
                     tenantId,
                     leadId,
-                    jobId: job.id,
+                    jobId: liveJob().id,
+                    jobClaim: claimOfJob(liveJob()),
+                    agentOperation,
                     seq,
                     conversationId: input.conversationId,
                     body: bubble,
@@ -2276,7 +2473,11 @@ async function executarTurnoDoAgente(
             }
             const auto = await openCase(
               pool,
-              { tenantId, conversationId: input.conversationId, agentId: agentConfig?.agentId ?? null },
+              {
+                tenantId,
+                conversationId: input.conversationId,
+                agentId: agentConfig?.agentId ?? null,
+              },
               {
                 title: 'Atendimento que precisa de um humano',
                 summary: body, // a mensagem-promessa que a IA tentou enviar
@@ -2298,7 +2499,11 @@ async function executarTurnoDoAgente(
             // (perderia pacing/lgpd/stop). ponytail: re-roda a cadeia inteira no fail-safe
             // (raro) — pode reaplicar 1 espera de pacing; aceitável pelo caminho ser
             // excepcional.
-            chain = await runBeforeSend({ ...beforeSendArgs, hasOpenCase: true, openedCaseThisTurn: true });
+            chain = await runBeforeSend({
+              ...beforeSendArgs,
+              hasOpenCase: true,
+              openedCaseThisTurn: true,
+            });
           }
           if (chain.status === 'vetoed' && chain.code === 'internal_vocabulary_leak') {
             // Fail-safe do gate de vazamento — O CLIENTE NUNCA FICA SEM RESPOSTA.
@@ -2318,9 +2523,12 @@ async function executarTurnoDoAgente(
             if (internalVocabularyVetoCount < MAX_VETOS_DE_VOCABULARIO_INTERNO) {
               return { ok: false, error: { code: chain.code, message: chain.message } };
             }
-            runLog.warn('fail-safe do gate de vocabulário interno: envio liberado após vetos seguidos', {
-              vetos: internalVocabularyVetoCount,
-            });
+            runLog.warn(
+              'fail-safe do gate de vocabulário interno: envio liberado após vetos seguidos',
+              {
+                vetos: internalVocabularyVetoCount,
+              },
+            );
             // `openedCaseThisTurn` vai pelo valor VIVO (o fail-safe de casos acima pode
             // tê-lo mudado); reusar o do objeto capturado re-vetaria no case_promise.
             chain = await runBeforeSend({
@@ -2391,18 +2599,24 @@ async function executarTurnoDoAgente(
                 ok: false,
                 error: {
                   code: 'envio_falhou',
-                  message: 'o canal falhou ao enviar — não tente de novo neste turno; o sistema fará retry.',
+                  message:
+                    'o canal falhou ao enviar — não tente de novo neste turno; o sistema fará retry.',
                 },
               };
             case 'unavailable':
               // transiente (transporte/tool do canal): ensina o modelo a parar; o
               // job re-tenta com a MESMA idempotency_key (ledger ficou 'requested').
-              noteRunError(new Error(`canal indisponível no envio (${outcome.reason}) — job re-tentado pela fila`));
+              noteRunError(
+                new Error(
+                  `canal indisponível no envio (${outcome.reason}) — job re-tentado pela fila`,
+                ),
+              );
               return {
                 ok: false,
                 error: {
                   code: 'envio_indisponivel',
-                  message: 'não consegui enviar agora (canal indisponível) — encerre o turno; o sistema re-tentará.',
+                  message:
+                    'não consegui enviar agora (canal indisponível) — encerre o turno; o sistema re-tentará.',
                 },
               };
           }
@@ -2411,7 +2625,10 @@ async function executarTurnoDoAgente(
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno no envio — encerre o turno agora.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno no envio — encerre o turno agora.',
+            },
           };
         }
       },
@@ -2420,7 +2637,11 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.update_lead_state,
       execute: async (raw) => {
         try {
-          const update = await applyLeadStateUpdate(pool, { tenantId, leadId, jobId: job.id }, raw);
+          const update = await applyLeadStateUpdate(
+            pool,
+            { tenantId, leadId, jobId: liveJob().id },
+            raw,
+          );
           if (!update.ok) {
             return update; // erro de ensino (payload fora da whitelist / transição inválida)
           }
@@ -2433,7 +2654,9 @@ async function executarTurnoDoAgente(
               tenantId,
               leadId,
               toStage: update.transition.to,
-              ...(update.transition.reason !== undefined ? { reason: update.transition.reason } : {}),
+              ...(update.transition.reason !== undefined
+                ? { reason: update.transition.reason }
+                : {}),
             });
             if (!mirror.ok) {
               runLog.warn('espelho de stage no CRM falhou — harness mantido', {
@@ -2471,7 +2694,12 @@ async function executarTurnoDoAgente(
           // F3-11: o estágio que o modelo confirmou (a máquina F2-10 gravou) — base da
           // comparação com a sugestão do classificador no fechamento do run.
           confirmedStage = update.state.stage;
-          return { ok: true, status: 'estado_atualizado', stage: update.state.stage, message: update.message };
+          return {
+            ok: true,
+            status: 'estado_atualizado',
+            stage: update.state.stage,
+            message: update.message,
+          };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
@@ -2501,12 +2729,20 @@ async function executarTurnoDoAgente(
           if (!res.ok) {
             return res; // ensino (payload fora da whitelist / orçamento do índice estourado)
           }
-          return { ok: true, status: 'nota_salva', superseded: res.superseded, message: res.message };
+          return {
+            ok: true,
+            status: 'nota_salva',
+            superseded: res.superseded,
+            message: res.message,
+          };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao salvar a nota — encerre o turno agora.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao salvar a nota — encerre o turno agora.',
+            },
           };
         }
       },
@@ -2524,7 +2760,8 @@ async function executarTurnoDoAgente(
               ok: false,
               error: {
                 code: 'note_not_found',
-                message: 'não há nota com esse id na memória deste lead — confira o id no índice de memória.',
+                message:
+                  'não há nota com esse id na memória deste lead — confira o id no índice de memória.',
               },
             };
           }
@@ -2533,7 +2770,10 @@ async function executarTurnoDoAgente(
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao ler a nota — encerre o turno agora.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao ler a nota — encerre o turno agora.',
+            },
           };
         }
       },
@@ -2565,8 +2805,8 @@ async function executarTurnoDoAgente(
           // preciso.
           const aviso =
             seq === 0
-              ? await avisarLeadDaEscalacao(pool, avisoDaEscalacao.ids, {
-                  ...avisoDaEscalacao.base,
+              ? await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+                  ...avisoDaEscalacao().base,
                   motivo: 'pediu_humano',
                 })
               : ({ avisado: true } as const);
@@ -2582,7 +2822,10 @@ async function executarTurnoDoAgente(
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao acionar o handoff humano — encerre o turno agora.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao acionar o handoff humano — encerre o turno agora.',
+            },
           };
         }
       },
@@ -2611,12 +2854,20 @@ async function executarTurnoDoAgente(
           if (!res.ok) {
             return res; // erro de ensino (payload / data no passado / fora da janela)
           }
-          return { ok: true, status: 'agendado', agendado_para: res.promisedAt.toISOString(), message: res.message };
+          return {
+            ok: true,
+            status: 'agendado',
+            agendado_para: res.promisedAt.toISOString(),
+            message: res.message,
+          };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao agendar o retorno — encerre o turno agora.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao agendar o retorno — encerre o turno agora.',
+            },
           };
         }
       },
@@ -2634,13 +2885,21 @@ async function executarTurnoDoAgente(
         try {
           return await readSkillReference(
             { admin: deps.crmCfg.supabase },
-            { organizationId: tenantId, matchedSkills: skillMatch.matched, skillName: skill_name, refPath: ref_path },
+            {
+              organizationId: tenantId,
+              matchedSkills: skillMatch.matched,
+              skillName: skill_name,
+              refPath: ref_path,
+            },
           );
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao ler a reference da skill — encerre o turno agora.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao ler a reference da skill — encerre o turno agora.',
+            },
           };
         }
       },
@@ -2658,7 +2917,9 @@ async function executarTurnoDoAgente(
   // agente). ponytail: snapshot mínimo; enriquecer se a UI precisar de mais.
   const buildCaseContextSnapshot = (): Record<string, unknown> => ({
     contact_name: effectiveContext.contact.name,
-    last_messages: effectiveContext.messages.slice(-5).map((m) => ({ direction: m.direction, body: m.body })),
+    last_messages: effectiveContext.messages
+      .slice(-5)
+      .map((m) => ({ direction: m.direction, body: m.body })),
   });
 
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
@@ -2704,7 +2965,10 @@ async function executarTurnoDoAgente(
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao abrir o caso — encerre o turno.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao abrir o caso — encerre o turno.',
+            },
           };
         }
       },
@@ -2726,12 +2990,18 @@ async function executarTurnoDoAgente(
             { caseId: parsed.data.case_id, info: parsed.data.info },
           );
           if (!res.ok) return res;
-          return { ok: true, message: 'informação enviada ao responsável; aguarde o retorno pelo caso.' };
+          return {
+            ok: true,
+            message: 'informação enviada ao responsável; aguarde o retorno pelo caso.',
+          };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
-            error: { code: 'internal_error', message: 'erro interno ao atualizar o caso — encerre o turno.' },
+            error: {
+              code: 'internal_error',
+              message: 'erro interno ao atualizar o caso — encerre o turno.',
+            },
           };
         }
       },
@@ -2743,7 +3013,10 @@ async function executarTurnoDoAgente(
   // ponteiro legado (`activeKbVersionId`) segue valendo para o clone que ainda
   // não aplicou a migration. Ferramenta que só sabe responder "não tenho base"
   // não é neutra: gasta contexto e degrada a escolha do modelo.
-  if ((agentConfig?.knowledgeSourceIds?.length ?? 0) === 0 && agentConfig?.activeKbVersionId == null) {
+  if (
+    (agentConfig?.knowledgeSourceIds?.length ?? 0) === 0 &&
+    agentConfig?.activeKbVersionId == null
+  ) {
     delete rawTools.search_knowledge;
   }
 
@@ -2751,7 +3024,10 @@ async function executarTurnoDoAgente(
   // Num canal que fala livre a qualquer hora ela nunca teria uso — e tool inútil no
   // prompt não é neutra: gasta contexto e degrada a escolha do modelo.
   {
-    const provider = await loadChannelProvider(pool, tenantId, input.channelSessionId);
+    const provider =
+      preview && !preview.channelId
+        ? DEFAULT_CHANNEL_PROVIDER
+        : await loadChannelProvider(pool, tenantId, input.channelSessionId);
     if (!capabilitiesOf(provider).requiresTemplates) {
       delete rawTools.send_template;
     }
@@ -2761,600 +3037,724 @@ async function executarTurnoDoAgente(
   // role/scope da ponte nativa; envio e handoff do catálogo são bloqueados —
   // ver edge/crm/mcp-tools.ts). As 8 tools do engine têm precedência de nome.
   let mcpCleanup: (() => Promise<void>) | null = null;
-  if (agentConfig !== null && agentConfig.toolIds.length > 0) {
-    try {
-      // As de OPERAÇÃO saem antes de serem montadas, quando o Operador as tem.
-      // Medido: são elas que carregavam 2 dos 3 vazamentos (o DADO que devolvem),
-      // e tirá-las levou a taxa de 30% para 10% — ver RELATORIO-passo6.md.
-      const catalogoEntregue = catalogoEntregueAoOperador({
-        operadorLigado: agentConfig.operatorEnabled,
-        ferramentasDoOperador: agentConfig.operatorToolIds,
-        ferramentasDoConversador: agentConfig.toolIds,
-      });
-      const configDoTurno =
-        catalogoEntregue.length === 0
-          ? agentConfig
-          : { ...agentConfig, toolIds: agentConfig.toolIds.filter((t) => !catalogoEntregue.includes(t)) };
-      if (catalogoEntregue.length > 0) {
-        runLog.info('capacidades de catálogo entregues ao operador', { entregues: catalogoEntregue });
-      }
-      const mcp = await buildMcpTurnTools(deps.crmCfg, { organizationId: tenantId, jobId: job.id }, configDoTurno, runLog);
-      if (mcp !== null) {
-        mcpCleanup = mcp.cleanup;
-        for (const [name, mcpTool] of Object.entries(mcp.tools)) {
-          if (name in rawTools) continue;
-          // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
-          // precisa saber para não vetar um turno que já checou a agenda de verdade.
-          if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
-            const executeOriginal = mcpTool.execute.bind(mcpTool);
-            rawTools[name] = {
-              ...mcpTool,
-              execute: (async (...args: Parameters<typeof executeOriginal>) => {
-                agendaToolCalledThisTurn = true;
-                return executeOriginal(...args);
-              }) as typeof mcpTool.execute,
-            };
-          } else {
-            rawTools[name] = mcpTool;
-          }
-        }
-        mcpToolIdsDoTurno.push(...mcp.toolIds);
-        runLog.info('tools MCP da tela montadas no turno', { mcp_tool_ids: mcp.toolIds });
-      }
-    } catch (err) {
-      // Tool extra é privilégio, não invariante: falha no mint/montagem NÃO
-      // derruba o turno — a conversa do cliente não pode morrer porque uma tool
-      // extra falhou. Isso continua certo.
-      //
-      // O que estava errado era o DEPOIS. A versão anterior deste comentário
-      // dizia "o humano vê o log". Não vê: o log sai no stdout do worker, num
-      // contêiner de VPS que o dono do negócio nunca abre. Medido num turno
-      // real — o agente atendeu sem NENHUMA das capacidades que o humano tinha
-      // ligado na tela, e a única pista existia num log que ninguém lê. É
-      // falha-em-verde: anunciada na tela, ausente na execução, nada contando.
-      const detalhe = (err instanceof Error ? err.message : String(err)).slice(0, 200);
-      runLog.error('tools MCP da tela não montadas — turno segue sem elas', { error: detalhe });
-      await avisarCapacidadesAusentes(pool, tenantId, input.conversationId, detalhe, runLog);
-    }
-  }
-
-  // ── A CURA (spec 16, passo 6) ───────────────────────────────────────────────
-  //
-  // As ferramentas de escrita saem do Conversador quando o Operador as assumiu.
-  // O gate de vazamento é rede — barra na saída e ensina; isto é a cura: o
-  // modelo não pode repetir o nome de uma ferramenta que nunca viu, e foi pelo
-  // NOME que o vazamento voltou depois de a descrição ser limpa.
-  //
-  // A remoção é CONDICIONAL a o novo dono existir (ver entrega-de-capacidade):
-  // tirar de um lado sem garantir o outro não separa papéis, perde capacidade.
-  const entregues = capacidadesEntreguesAoOperador({
-    operadorLigado: agentConfig?.operatorEnabled ?? false,
-    ferramentasDoOperador: agentConfig?.operatorToolIds ?? [],
-  });
-  for (const nome of entregues) delete rawTools[nome];
-  if (entregues.length > 0) {
-    runLog.info('capacidades entregues ao operador — fora do turno do conversador', {
-      entregues,
-    });
-  }
-
-  // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
-  // entre runs por construção (mesma garantia de isolamento do resto do run).
-  const tools = wrapToolsWithBreaker(rawTools, {
-    thresholds: deps.knobs.breaker,
-    readOnlyTools: READ_ONLY_TOOLS,
-    log: runLog, // os warns dos gates do breaker saem carimbados com o run
-  });
-
-  // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
-  // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
-  // do agente decide e confirma via update_lead_state (a máquina F2-10 é a única porta). A
-  // sugestão fica guardada para comparar com o que o modelo confirmou (divergência, no fim).
-  const currentStage: LeadStage = leadState?.stage ?? 'new';
-  let stageSuggestion: LeadStage | null = null;
-  let stageHintBlock = '';
-  if (deps.knobs.stageClassifier !== undefined) {
-    stageSuggestion = await classifyStage(
-      pool,
-      deps.llmCfg,
-      { tenantId, leadId, jobId: job.id },
-      {
-        context: effectiveContext,
-        currentStage,
-        ...argsAux(deps.knobs.stageClassifier.model),
-      },
-      { registry: deps.registry, log: runLog },
-    );
-    if (stageSuggestion !== null) {
-      stageHintBlock = renderStageHint(stageSuggestion, currentStage);
-    }
-  }
-
-  // F4-04: classifier ADVISÓRIO anti-jailbreak sobre a mensagem INBOUND do lead (o
-  // skillSignal já é a última inbound). Roda pelo seam agnóstico (modelo BARATO, budget
-  // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
-  // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
-  let jailbreakLevel: JailbreakLevel = 'none';
-  if (camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
-    const verdict = await classifyJailbreak(
-      pool,
-      deps.llmCfg,
-      { tenantId, leadId, jobId: job.id },
-      {
-        message: skillSignal,
-        // Knob ausente + organização ligando = roda com o modelo padrão dela,
-        // que é a convenção já usada pelo stageClassifier.
-        ...argsAux(deps.knobs.jailbreak?.model),
-      },
-      { registry: deps.registry, log: runLog },
-    );
-    jailbreakLevel = verdict.level;
-    if (verdict.flag) {
-      // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
-      runLog.warn('jailbreak: sinal detectado na mensagem do lead', {
-        jailbreak_flag: true,
-        jailbreak_level: verdict.level,
-      });
-    }
-  }
-
-  // Spec 16 §4: a projeção arma quando NENHUMA ferramenta de catálogo entrou —
-  // é exatamente o turno em que os ids do contexto não têm uso, e portanto o
-  // único em que removê-los não custa nada. Logado porque "por que o prompt
-  // deste turno é diferente do daquele?" precisa ter resposta no trace.
-  const projetaContexto = turnoProjeta(mcpToolIdsDoTurno);
-  runLog.info('projeção do contexto do turno', {
-    projeta: projetaContexto,
-    mcp_tools_no_turno: mcpToolIdsDoTurno.length,
-  });
-  const openingBase = input.buildOpening({
-    previous: effectivePrevious,
-    leadState,
-    context: effectiveContext,
-    notesIndexBlock,
-    projeta: projetaContexto,
-    entregues,
-    compromissosBlock,
-  });
-  // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
-  // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
-  // split_messages está on — Onda 4). Vazios são omitidos.
-  const splitHint = (agentConfig?.splitMessages ?? false)
-    ? 'Responda em mensagens curtas e naturais, uma ideia por mensagem — como uma pessoa digitando no WhatsApp. Prefira várias mensagens curtas a um texto único e longo.'
-    : '';
-  // Spec 15: o `case_id` real do caso 'awaiting_lead' desta conversa, se houver — sem
-  // isso o modelo nunca consegue chamar provide_case_update quando o lead simplesmente
-  // responde (o caminho comum; case_reply_turn só cobre a AÇÃO do humano). Sufixo
-  // por-lead (volátil) — nunca no prefixo cacheável (o case_id muda a cada caso).
-  const caseAwaitingLead =
-    agentConfig !== null && agentConfig.casesEnabled
-      ? await getCaseAwaitingLead(pool, tenantId, input.conversationId)
-      : null;
-  const caseAwaitingLeadBlock =
-    caseAwaitingLead !== null
-      ? `## Caso aguardando resposta deste cliente\n` +
-        `Há um caso aberto (case_id: ${caseAwaitingLead.id}) esperando uma informação dele: "${caseAwaitingLead.ask}". ` +
-        `Se a mensagem dele responde a isso, chame provide_case_update com este case_id e a informação recebida — ` +
-        `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
-      : '';
-  // ── O RELÓGIO DO TURNO ────────────────────────────────────────────────────
-  //
-  // Entra AQUI, e o lugar é a metade do conserto.
-  //
-  // No `system` (o prefixo estável org-wide, F2-17) ele invalidaria o cache de
-  // prompt de TODOS os leads a cada turno, porque muda a cada segundo — é o que
-  // `stable-prefix.ts` proíbe em letra. No sufixo por-lead ele é volátil entre
-  // iguais, e custa os ~50 tokens dele.
-  //
-  // PRIMEIRO da lista de propósito: a âncora temporal precede o material que o
-  // modelo vai usar para decidir data — corpo de skill, hint do classificador,
-  // caso pendente. E `executarTurnoDoAgente` é o ponto por onde passam os TRÊS
-  // turnos conversacionais (inbound, follow-up e resposta a caso), então um
-  // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
-  // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
-  const agoraBlock = renderAgora(clock(), fusoDaOrg);
-  const openingSuffixes = [
-    agoraBlock,
-    matchedSkillsBlock,
-    stageHintBlock,
-    splitHint,
-    caseAwaitingLeadBlock,
-  ].filter((b) => b !== '');
-  const openingText =
-    openingSuffixes.length === 0 ? openingBase : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
-  // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
-  // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
-  // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
-  const nativeParts = await buildNativeMediaParts({
-    messages: effectiveContext.messages,
-    provider: agentConfig?.provider ?? 'anthropic',
-    model: agentConfig?.model ?? '',
-    multimodalInput: agentConfig?.multimodalInput ?? false,
-    admin: deps.crmCfg.supabase,
-  });
-  const openingTextOnly: ModelMessage[] = [{ role: 'user', content: openingText }];
-  const openingMessages: ModelMessage[] =
-    nativeParts.length === 0
-      ? openingTextOnly
-      : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
-
-  // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
-  //
-  // Sem escolta LOCAL: quem cobre o teto de gasto é `runAgentTurn`, que envolve
-  // este corpo inteiro. Escoltar aqui deixaria de fora as chamadas de modelo dos
-  // auxiliares (`classifyStage`, `maybeCompact`), que rodam ANTES desta e por
-  // isso são as que estouram primeiro.
-  const turn = await runModelCall(
-    pool,
-    deps.llmCfg,
-    {
-      tenantId,
-      leadId,
-      jobId: job.id,
-      // De quem é esta execução. Vai para `llm_calls.agent_id` e é o que permite
-      // a aba "Execuções" da tela do agente mostrar o que ELE fez — antes ela
-      // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
-      // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
-      agentId: agentConfig?.agentId ?? null,
-      purpose: 'agent_turn',
-      system,
-      messages: openingMessages,
-      tools,
-      maxSteps,
-      ...(agentConfig !== null
-        ? {
-            model: agentConfig.model,
-            llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
-          }
-        : {}),
-    },
-    { registry: deps.registry, log: runLog },
-  );
-
-  // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
-  // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
-  // abertura; as tentativas de envio já passaram pelo loop). Dispara escalação humana em
-  // inbox_items (dedup por episódio). Advisório: o classifier sozinho nunca escala — o gate
-  // determinístico é que confirma a promessa indevida. Feito antes do runError/veto para
-  // não se perder num turno que falha o envio depois.
-  if (jailbreakLevel === JAILBREAK_ESCALATION_LEVEL && outOfTablePromiseAttempted) {
-    const created = await escalateJailbreakPromise(pool, { tenantId, leadId, level: jailbreakLevel });
-    if (created > 0) {
-      runLog.warn('jailbreak: escalação humana criada (flag alta + promessa fora de tabela no turno)', {
-        jailbreak_level: jailbreakLevel,
-      });
-    }
-  }
-
-  if (runError !== null) {
-    throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
-  }
-  if (outcomes.some((o) => o.kind === 'failed')) {
-    // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
-    // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
-    throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
-  }
-
-  // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
-  // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
-  // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
-  // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
-  const responseMessages =
-    deps.knobs.prune !== undefined
-      ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
-      : turn.result.response.messages;
-
-  // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
-  //
-  // Também sob o handoff (o do turno inteiro, em `runAgentTurn`): o teto pode
-  // ser cruzado ENTRE as duas chamadas — a primeira é que gasta o grosso do
-  // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
-  // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
-  // sem nada tendo mudado no meio.
-  const closing = await runModelCall(
-    pool,
-    deps.llmCfg,
-    {
-      tenantId,
-      leadId,
-      jobId: job.id,
-      purpose: 'checkpoint',
-      ...(agentConfig !== null
-        ? {
-            model: agentConfig.model,
-            llmOverride: { provider: agentConfig.provider, credentialId: agentConfig.credentialId },
-          }
-        : {}),
-      system,
-      messages: [
-        // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-        // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-        ...openingTextOnly,
-        ...responseMessages,
-        { role: 'user', content: CHECKPOINT_INSTRUCTION },
-      ],
-    },
-    { registry: deps.registry, log: runLog },
-  );
-  const content = parseCheckpointText(closing.result.text);
-
-  // Wave 3 (2.4): o checkpoint anterior é lido ANTES de gravar o novo — a
-  // timeline recebe o DIFF, nunca o snapshot. Emitir a cada turno encheria a
-  // tela com "a IA pensou" e enterraria a única linha que muda o que alguém
-  // faria a seguir.
-  const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
-  await insertCheckpoint(pool, { tenantId, leadId, jobId: job.id, content });
-
-  // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
-  //
-  // Enfileirado AQUI, pelo RUNTIME, logo depois de o checkpoint existir — nunca
-  // por decisão do modelo. Um Conversador que "chama" o Operador devolveria o
-  // problema inteiro: voltaria a depender de o modelo lembrar, e o turno em que
-  // ele não achasse necessário seria um lead parado no funil, em silêncio.
-  //
-  // Depois do checkpoint porque a declaração É o insumo do Operador; enfileirar
-  // antes criaria uma corrida em que ele leria o checkpoint do turno ANTERIOR e
-  // agiria sobre um turno que não é o seu.
-  //
-  // Fire-and-forget: falha ao enfileirar NÃO derruba um turno que já respondeu
-  // ao cliente. O `sourceEventId` é o job do Conversador, então o retry da fila
-  // não gera um segundo Operador para o mesmo turno.
-  const disparo = decidirSeEnfileiraOperador({
-    temAgentePublicado: agentConfig !== null,
-    papelLigado: agentConfig?.operatorEnabled ?? false,
-  });
-  if (!disparo.enfileira) {
-    runLog.info('turno do operador não enfileirado', { porque: disparo.porque });
-  } else {
-    try {
-      const { deduped } = await enqueueJob(pool, tenantId, {
-        kind: 'operator_turn',
-        leadId,
-        sourceEventId: job.id,
-        payload: {
-          conversation_id: input.conversationId,
-          origin_job_id: job.id,
-          agent_id: agentConfig?.agentId ?? null,
-        },
-      });
-      runLog.info('turno do operador enfileirado', { deduped });
-    } catch (err) {
-      runLog.error('turno do operador NÃO foi enfileirado (o turno segue)', {
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-      });
-      // O CATCH TINHA A DOUTRINA CERTA E A CONCLUSÃO ERRADA.
-      //
-      // "O aviso não pode derrubar o turno que já respondeu ao cliente" está certo.
-      // "Então basta um log" não: o enfileiramento é o ÚNICO mecanismo que garante o
-      // disparo do papel, e falhar aqui significa que a promessa que o Conversador
-      // acabou de fazer não terá dono e ninguém vai saber.
-      //
-      // É a mesma lição que este arquivo já aplicou no catch das capacidades MCP,
-      // onde o comentário diz que a versão anterior "dizia 'o humano vê o log'. Não
-      // vê." Lição aplicada numa ocorrência e não na irmã.
-      //
-      // Só quando HÁ promessa: sem ela o Operador teria decidido "nada a fazer", e
-      // item sem ação é ruído — ruído ensina a ignorar a Central.
-      const promessas = promessasEmAberto(content.declaracao ?? null);
-      if (promessas.length > 0) {
-        try {
-          await insertInboxItem(
-            pool,
-            tenantId,
-            {
-              kind: 'promise_unfulfilled',
-              severity: 'warn',
-              title: 'Um retorno prometido a um cliente ficou sem dono',
-              body:
-                'O assistente prometeu algo a esta pessoa nesta conversa e o passo que registra ' +
-                'o cumprimento não chegou a ser agendado. Abra a conversa, veja o que foi ' +
-                'combinado e cumpra você mesmo.',
-              refKind: 'conversation',
-              refId: input.conversationId,
-            },
-            'kind_e_ref',
-          );
-        } catch (erroDoAviso) {
-          runLog.error('aviso de promessa sem dono não foi gravado', {
-            error: (erroDoAviso instanceof Error ? erroDoAviso.message : String(erroDoAviso)).slice(0, 120),
+  try {
+    if (agentConfig !== null && agentConfig.toolIds.length > 0) {
+      try {
+        // As de OPERAÇÃO saem antes de serem montadas, quando o Operador as tem.
+        // Medido: são elas que carregavam 2 dos 3 vazamentos (o DADO que devolvem),
+        // e tirá-las levou a taxa de 30% para 10% — ver RELATORIO-passo6.md.
+        const catalogoEntregue = catalogoEntregueAoOperador({
+          operadorLigado: agentConfig.operatorEnabled,
+          ferramentasDoOperador: agentConfig.operatorToolIds,
+          ferramentasDoConversador: agentConfig.toolIds,
+        });
+        const configDoTurno =
+          catalogoEntregue.length === 0
+            ? agentConfig
+            : {
+                ...agentConfig,
+                toolIds: agentConfig.toolIds.filter((t) => !catalogoEntregue.includes(t)),
+              };
+        if (catalogoEntregue.length > 0) {
+          runLog.info('capacidades de catálogo entregues ao operador', {
+            entregues: catalogoEntregue,
           });
         }
+        const mcp = await buildMcpTurnTools(
+          deps.crmCfg,
+          { organizationId: tenantId, jobId: preview?.runId ?? liveJob().id },
+          configDoTurno,
+          runLog,
+          preview ? { readOnly: true } : undefined,
+        );
+        if (mcp !== null) {
+          mcpCleanup = mcp.cleanup;
+          for (const [name, mcpTool] of Object.entries(mcp.tools)) {
+            if (name in rawTools) continue;
+            // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
+            // precisa saber para não vetar um turno que já checou a agenda de verdade.
+            if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
+              const executeOriginal = mcpTool.execute.bind(mcpTool);
+              rawTools[name] = {
+                ...mcpTool,
+                execute: (async (...args: Parameters<typeof executeOriginal>) => {
+                  agendaToolCalledThisTurn = true;
+                  return executeOriginal(...args);
+                }) as typeof mcpTool.execute,
+              };
+            } else {
+              rawTools[name] = mcpTool;
+            }
+          }
+          mcpToolIdsDoTurno.push(...mcp.toolIds);
+          runLog.info('tools MCP da tela montadas no turno', { mcp_tool_ids: mcp.toolIds });
+        }
+      } catch (err) {
+        // Tool extra é privilégio, não invariante: falha no mint/montagem NÃO
+        // derruba o turno — a conversa do cliente não pode morrer porque uma tool
+        // extra falhou. Isso continua certo.
+        //
+        // O que estava errado era o DEPOIS. A versão anterior deste comentário
+        // dizia "o humano vê o log". Não vê: o log sai no stdout do worker, num
+        // contêiner de VPS que o dono do negócio nunca abre. Medido num turno
+        // real — o agente atendeu sem NENHUMA das capacidades que o humano tinha
+        // ligado na tela, e a única pista existia num log que ninguém lê. É
+        // falha-em-verde: anunciada na tela, ausente na execução, nada contando.
+        const detalhe = (err instanceof Error ? err.message : String(err)).slice(0, 200);
+        runLog.error('tools MCP da tela não montadas — turno segue sem elas', { error: detalhe });
+        if (preview)
+          preview.result.impediments.push({
+            code: 'capabilities_unavailable',
+            message: 'Não foi possível carregar as capacidades configuradas.',
+          });
+        else await avisarCapacidadesAusentes(pool, tenantId, input.conversationId, detalhe, runLog);
       }
     }
-  }
 
-  const mudanca = diffCheckpoint(
-    checkpointAnterior
-      ? {
-          commitments: (checkpointAnterior.commitments ?? []) as string[],
-          objections: (checkpointAnterior.objections ?? []) as string[],
-          next_action: checkpointAnterior.next_action ?? null,
-          rolling_summary: checkpointAnterior.rolling_summary ?? null,
-        }
-      : null,
-    content,
-  );
-
-  if (mudanca.emit) {
-    try {
-      const r = await emitAgentActivityForContact({
-        pool,
-        organizationId: tenantId,
-        contactId: leadId,
-        type: "ai_turn",
-        sourceModule: "agent",
-        sourceId: job.id,
-        // O lastro é a chamada de modelo que PRODUZIU este checkpoint
-        // (llm_calls.id). Sem ele a linha entraria como 'system' e perderia a
-        // autoria justamente no evento mais "de IA" que existe.
-        ...(closing.callId ? { evidence: { llm_call_ids: [closing.callId] } } : {}),
-        ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
-        reason: mudanca.reason,
-        payload: {
-          added_commitments: mudanca.addedCommitments,
-          added_objections: mudanca.addedObjections,
-          next_action_changed: mudanca.nextActionChanged,
-        },
+    // ── A CURA (spec 16, passo 6) ───────────────────────────────────────────────
+    //
+    // As ferramentas de escrita saem do Conversador quando o Operador as assumiu.
+    // O gate de vazamento é rede — barra na saída e ensina; isto é a cura: o
+    // modelo não pode repetir o nome de uma ferramenta que nunca viu, e foi pelo
+    // NOME que o vazamento voltou depois de a descrição ser limpa.
+    //
+    // A remoção é CONDICIONAL a o novo dono existir (ver entrega-de-capacidade):
+    // tirar de um lado sem garantir o outro não separa papéis, perde capacidade.
+    const entregues = capacidadesEntreguesAoOperador({
+      operadorLigado: agentConfig?.operatorEnabled ?? false,
+      ferramentasDoOperador: agentConfig?.operatorToolIds ?? [],
+    });
+    for (const nome of entregues) delete rawTools[nome];
+    if (entregues.length > 0) {
+      runLog.info('capacidades entregues ao operador — fora do turno do conversador', {
+        entregues,
       });
-      if (!r.routed) {
-        runLog.info('checkpoint sem negócio para pendurar: registrado no event_log', {
-          reason: r.reason,
+    }
+
+    // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
+    // entre runs por construção (mesma garantia de isolamento do resto do run).
+    if (preview && rawTools.get_lead_note)
+      rawTools.get_lead_note = {
+        ...rawTools.get_lead_note,
+        execute: async () => ({ ok: true, notes: preview.notes ?? [] }),
+      };
+    const previewContext = preview
+      ? await previewGateContext(pool, preview, runLog, clock())
+      : null;
+    const previewTools =
+      preview && previewContext
+        ? applyPreviewPolicy(
+            rawTools,
+            preview,
+            {
+              ...previewContext,
+              disclosure: {
+                ...previewContext.disclosure,
+                mode: deps.knobs.disclosureMode ?? 'inject',
+              },
+            },
+            () => pendingCitations,
+            semanticClassifier,
+            () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
+          )
+        : rawTools;
+    const tools = wrapToolsWithBreaker(previewTools, {
+      thresholds: deps.knobs.breaker,
+      readOnlyTools: READ_ONLY_TOOLS,
+      log: runLog, // os warns dos gates do breaker saem carimbados com o run
+    });
+
+    // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
+    // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
+    // do agente decide e confirma via update_lead_state (a máquina F2-10 é a única porta). A
+    // sugestão fica guardada para comparar com o que o modelo confirmou (divergência, no fim).
+    const currentStage: LeadStage = leadState?.stage ?? 'new';
+    let stageSuggestion: LeadStage | null = null;
+    let stageHintBlock = '';
+    if (deps.knobs.stageClassifier !== undefined) {
+      stageSuggestion = await classifyStage(
+        pool,
+        deps.llmCfg,
+        { tenantId, leadId: leadId || null, jobId: job?.id },
+        {
+          context: effectiveContext,
+          currentStage,
+          ...argsAux(deps.knobs.stageClassifier.model),
+        },
+        { registry: deps.registry, log: runLog },
+      );
+      if (stageSuggestion !== null) {
+        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+      }
+    }
+
+    // F4-04: classifier ADVISÓRIO anti-jailbreak sobre a mensagem INBOUND do lead (o
+    // skillSignal já é a última inbound). Roda pelo seam agnóstico (modelo BARATO, budget
+    // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
+    // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
+    let jailbreakLevel: JailbreakLevel = 'none';
+    if (camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
+      const verdict = await classifyJailbreak(
+        pool,
+        deps.llmCfg,
+        { tenantId, leadId: leadId || null, jobId: job?.id },
+        {
+          message: skillSignal,
+          // Knob ausente + organização ligando = roda com o modelo padrão dela,
+          // que é a convenção já usada pelo stageClassifier.
+          ...argsAux(deps.knobs.jailbreak?.model),
+        },
+        { registry: deps.registry, log: runLog },
+      );
+      jailbreakLevel = verdict.level;
+      if (verdict.flag) {
+        // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
+        runLog.warn('jailbreak: sinal detectado na mensagem do lead', {
+          jailbreak_flag: true,
+          jailbreak_level: verdict.level,
         });
       }
-    } catch (err) {
-      // A timeline do turno não pode derrubar o turno.
-      runLog.error('falha ao registrar atividade de checkpoint (segue)', {
-        error: err instanceof Error ? err.name : 'unknown',
-      });
     }
-  }
 
-  // ── A NOTA DO NEGÓCIO ──────────────────────────────────────────────────────
-  //
-  // O turno acabou de mexer em TUDO que a fórmula lê: compromissos e objeções
-  // (o checkpoint acima) e a qualificação BANT (`lead_state`, escrita pelo
-  // update_lead_state do modelo). Recalcular aqui é recalcular no instante em
-  // que os sinais mudaram — não há evento melhor.
-  //
-  // ⚠️ POR QUE ISTO EXISTE: `recalculaScoreDoLead` estava escrita, testada e
-  // com constraint no banco exigindo o `reason` — e SEM UM ÚNICO CHAMADOR no
-  // repositório inteiro. Nenhuma nota jamais foi calculada. O modo de falha era
-  // mudo: o card simplesmente não mostrava número, e "não tem nota ainda" é
-  // indistinguível de "ninguém nunca calcula".
-  //
-  // Fora do `if (mudanca.emit)` DE PROPÓSITO: o BANT muda em turnos que não
-  // mexem no checkpoint, e esses turnos também mudam a nota. Amarrar o cálculo
-  // à emissão da atividade faria a nota envelhecer em silêncio — o mesmo
-  // defeito, um andar acima.
-  //
-  // Falha aqui não derruba o turno: nota é derivado, e o próximo turno
-  // recalcula. O que não pode é o cliente ficar sem resposta por causa dela.
-  try {
-    const alvo = await resolveActiveLeadForContact(
-      (
-        await pool.query<LeadCandidate>(
-          `select l.id, l.organization_id, l.pipeline_id, l.status,
+    // Spec 16 §4: a projeção arma quando NENHUMA ferramenta de catálogo entrou —
+    // é exatamente o turno em que os ids do contexto não têm uso, e portanto o
+    // único em que removê-los não custa nada. Logado porque "por que o prompt
+    // deste turno é diferente do daquele?" precisa ter resposta no trace.
+    const projetaContexto = turnoProjeta(mcpToolIdsDoTurno);
+    runLog.info('projeção do contexto do turno', {
+      projeta: projetaContexto,
+      mcp_tools_no_turno: mcpToolIdsDoTurno.length,
+    });
+    const openingBase = input.buildOpening({
+      previous: effectivePrevious,
+      leadState,
+      context: effectiveContext,
+      notesIndexBlock,
+      projeta: projetaContexto,
+      entregues,
+      compromissosBlock,
+    });
+    // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
+    // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
+    // split_messages está on — Onda 4). Vazios são omitidos.
+    const splitHint =
+      (agentConfig?.splitMessages ?? false)
+        ? 'Responda em mensagens curtas e naturais, uma ideia por mensagem — como uma pessoa digitando no WhatsApp. Prefira várias mensagens curtas a um texto único e longo.'
+        : '';
+    // Spec 15: o `case_id` real do caso 'awaiting_lead' desta conversa, se houver — sem
+    // isso o modelo nunca consegue chamar provide_case_update quando o lead simplesmente
+    // responde (o caminho comum; case_reply_turn só cobre a AÇÃO do humano). Sufixo
+    // por-lead (volátil) — nunca no prefixo cacheável (o case_id muda a cada caso).
+    const caseAwaitingLead =
+      preview?.kind !== 'sandbox' && agentConfig !== null && agentConfig.casesEnabled
+        ? await getCaseAwaitingLead(pool, tenantId, input.conversationId)
+        : null;
+    const caseAwaitingLeadBlock =
+      caseAwaitingLead !== null
+        ? `## Caso aguardando resposta deste cliente\n` +
+          `Há um caso aberto (case_id: ${caseAwaitingLead.id}) esperando uma informação dele: "${caseAwaitingLead.ask}". ` +
+          `Se a mensagem dele responde a isso, chame provide_case_update com este case_id e a informação recebida — ` +
+          `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
+        : '';
+    // ── O RELÓGIO DO TURNO ────────────────────────────────────────────────────
+    //
+    // Entra AQUI, e o lugar é a metade do conserto.
+    //
+    // No `system` (o prefixo estável org-wide, F2-17) ele invalidaria o cache de
+    // prompt de TODOS os leads a cada turno, porque muda a cada segundo — é o que
+    // `stable-prefix.ts` proíbe em letra. No sufixo por-lead ele é volátil entre
+    // iguais, e custa os ~50 tokens dele.
+    //
+    // PRIMEIRO da lista de propósito: a âncora temporal precede o material que o
+    // modelo vai usar para decidir data — corpo de skill, hint do classificador,
+    // caso pendente. E `executarTurnoDoAgente` é o ponto por onde passam os TRÊS
+    // turnos conversacionais (inbound, follow-up e resposta a caso), então um
+    // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
+    // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
+    const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    const openingSuffixes = [
+      agoraBlock,
+      matchedSkillsBlock,
+      stageHintBlock,
+      splitHint,
+      caseAwaitingLeadBlock,
+      preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
+    ].filter((b) => b !== '');
+    const openingText =
+      openingSuffixes.length === 0
+        ? openingBase
+        : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
+    // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
+    // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
+    // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
+    const nativeParts =
+      preview?.kind === 'sandbox'
+        ? []
+        : await buildNativeMediaParts({
+            messages: effectiveContext.messages,
+            provider: agentConfig?.provider ?? 'anthropic',
+            model: agentConfig?.model ?? '',
+            multimodalInput: agentConfig?.multimodalInput ?? false,
+            admin: deps.crmCfg.supabase,
+          });
+    const openingTextOnly: ModelMessage[] = [{ role: 'user', content: openingText }];
+    const openingMessages: ModelMessage[] =
+      nativeParts.length === 0
+        ? openingTextOnly
+        : [{ role: 'user', content: [{ type: 'text', text: openingText }, ...nativeParts] }];
+
+    // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
+    //
+    // Sem escolta LOCAL: quem cobre o teto de gasto é `runAgentTurn`, que envolve
+    // este corpo inteiro. Escoltar aqui deixaria de fora as chamadas de modelo dos
+    // auxiliares (`classifyStage`, `maybeCompact`), que rodam ANTES desta e por
+    // isso são as que estouram primeiro.
+    const turn = await runModelCall(
+      pool,
+      deps.llmCfg,
+      {
+        tenantId,
+        leadId: leadId || null,
+        jobId: job?.id,
+        // De quem é esta execução. Vai para `llm_calls.agent_id` e é o que permite
+        // a aba "Execuções" da tela do agente mostrar o que ELE fez — antes ela
+        // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
+        // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
+        agentId: agentConfig?.agentId ?? null,
+        purpose: preview ? 'agent_preview' : 'agent_turn',
+        system,
+        messages: openingMessages,
+        tools,
+        maxSteps,
+        ...(agentConfig !== null
+          ? {
+              model: agentConfig.model,
+              llmOverride: {
+                provider: agentConfig.provider,
+                credentialId: agentConfig.credentialId,
+              },
+            }
+          : {}),
+      },
+      { registry: deps.registry, log: runLog },
+    );
+
+    // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
+    // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
+    // abertura; as tentativas de envio já passaram pelo loop). Dispara escalação humana em
+    // inbox_items (dedup por episódio). Advisório: o classifier sozinho nunca escala — o gate
+    // determinístico é que confirma a promessa indevida. Feito antes do runError/veto para
+    // não se perder num turno que falha o envio depois.
+    if (!preview && jailbreakLevel === JAILBREAK_ESCALATION_LEVEL && outOfTablePromiseAttempted) {
+      const created = await escalateJailbreakPromise(pool, {
+        tenantId,
+        leadId,
+        level: jailbreakLevel,
+      });
+      if (created > 0) {
+        runLog.warn(
+          'jailbreak: escalação humana criada (flag alta + promessa fora de tabela no turno)',
+          {
+            jailbreak_level: jailbreakLevel,
+          },
+        );
+      }
+    }
+
+    if (runError !== null) {
+      throw runError; // job falha → retry da fila; o ledger segura duplicata de envio
+    }
+    if (outcomes.some((o) => o.kind === 'failed')) {
+      // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
+      // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
+      throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+    }
+
+    // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
+    // (é onde a fita inteira é re-serializada num prompt) — o conteúdo durável já foi para
+    // lead_notes pelo flush (F3-07), então o stub não perde nada recuperável. Opera SÓ no
+    // sufixo por-lead, nunca no prefixo estável (regra de cache 15).
+    const responseMessages =
+      deps.knobs.prune !== undefined
+        ? pruneToolResults(turn.result.response.messages, deps.knobs.prune)
+        : turn.result.response.messages;
+
+    // Fechamento imposto pelo runtime: 2ª chamada, mesma conversa, só o checkpoint.
+    //
+    // Também sob o handoff (o do turno inteiro, em `runAgentTurn`): o teto pode
+    // ser cruzado ENTRE as duas chamadas — a primeira é que gasta o grosso do
+    // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
+    // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
+    // sem nada tendo mudado no meio.
+    const closing = await runModelCall(
+      pool,
+      deps.llmCfg,
+      {
+        tenantId,
+        leadId: leadId || null,
+        jobId: job?.id,
+        purpose: 'checkpoint',
+        ...(agentConfig !== null
+          ? {
+              model: agentConfig.model,
+              llmOverride: {
+                provider: agentConfig.provider,
+                credentialId: agentConfig.credentialId,
+              },
+            }
+          : {}),
+        system,
+        messages: [
+          // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+          // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+          ...openingTextOnly,
+          ...responseMessages,
+          { role: 'user', content: CHECKPOINT_INSTRUCTION },
+        ],
+      },
+      { registry: deps.registry, log: runLog },
+    );
+    const content = parseCheckpointText(
+      closing.result.text.replace(
+        /https:\/\/meet\.google\.com\/[a-zA-Z0-9-]+/g,
+        '[link da reunião disponível na Agenda]',
+      ),
+    );
+
+    if (preview) {
+      preview.result.checkpoint = content;
+      if (preview.result.candidates.length === 0 && preview.result.impediments.length === 0)
+        preview.result.impediments.push({
+          code: 'no_candidate',
+          message: 'O agente não propôs uma resposta. Revise o cenário ou a configuração.',
+        });
+      return;
+    }
+
+    // Wave 3 (2.4): o checkpoint anterior é lido ANTES de gravar o novo — a
+    // timeline recebe o DIFF, nunca o snapshot. Emitir a cada turno encheria a
+    // tela com "a IA pensou" e enterraria a única linha que muda o que alguém
+    // faria a seguir.
+    const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
+    await insertCheckpoint(pool, { tenantId, leadId, jobId: liveJob().id, content });
+
+    // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
+    //
+    // Enfileirado AQUI, pelo RUNTIME, logo depois de o checkpoint existir — nunca
+    // por decisão do modelo. Um Conversador que "chama" o Operador devolveria o
+    // problema inteiro: voltaria a depender de o modelo lembrar, e o turno em que
+    // ele não achasse necessário seria um lead parado no funil, em silêncio.
+    //
+    // Depois do checkpoint porque a declaração É o insumo do Operador; enfileirar
+    // antes criaria uma corrida em que ele leria o checkpoint do turno ANTERIOR e
+    // agiria sobre um turno que não é o seu.
+    //
+    // Fire-and-forget: falha ao enfileirar NÃO derruba um turno que já respondeu
+    // ao cliente. O `sourceEventId` é o job do Conversador, então o retry da fila
+    // não gera um segundo Operador para o mesmo turno.
+    const disparo = decidirSeEnfileiraOperador({
+      temAgentePublicado: agentConfig !== null,
+      papelLigado: agentConfig?.operatorEnabled ?? false,
+    });
+    if (!disparo.enfileira) {
+      runLog.info('turno do operador não enfileirado', { porque: disparo.porque });
+    } else {
+      try {
+        const { deduped } = await enqueueJob(pool, tenantId, {
+          kind: 'operator_turn',
+          leadId,
+          sourceEventId: liveJob().id,
+          payload: {
+            conversation_id: input.conversationId,
+            origin_job_id: liveJob().id,
+            agent_id: agentConfig?.agentId ?? null,
+          },
+        });
+        runLog.info('turno do operador enfileirado', { deduped });
+      } catch (err) {
+        runLog.error('turno do operador NÃO foi enfileirado (o turno segue)', {
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        });
+        // O CATCH TINHA A DOUTRINA CERTA E A CONCLUSÃO ERRADA.
+        //
+        // "O aviso não pode derrubar o turno que já respondeu ao cliente" está certo.
+        // "Então basta um log" não: o enfileiramento é o ÚNICO mecanismo que garante o
+        // disparo do papel, e falhar aqui significa que a promessa que o Conversador
+        // acabou de fazer não terá dono e ninguém vai saber.
+        //
+        // É a mesma lição que este arquivo já aplicou no catch das capacidades MCP,
+        // onde o comentário diz que a versão anterior "dizia 'o humano vê o log'. Não
+        // vê." Lição aplicada numa ocorrência e não na irmã.
+        //
+        // Só quando HÁ promessa: sem ela o Operador teria decidido "nada a fazer", e
+        // item sem ação é ruído — ruído ensina a ignorar a Central.
+        const promessas = promessasEmAberto(content.declaracao ?? null);
+        if (promessas.length > 0) {
+          try {
+            await insertInboxItem(
+              pool,
+              tenantId,
+              {
+                kind: 'promise_unfulfilled',
+                severity: 'warn',
+                title: 'Um retorno prometido a um cliente ficou sem dono',
+                body:
+                  'O assistente prometeu algo a esta pessoa nesta conversa e o passo que registra ' +
+                  'o cumprimento não chegou a ser agendado. Abra a conversa, veja o que foi ' +
+                  'combinado e cumpra você mesmo.',
+                refKind: 'conversation',
+                refId: input.conversationId,
+              },
+              'kind_e_ref',
+            );
+          } catch (erroDoAviso) {
+            runLog.error('aviso de promessa sem dono não foi gravado', {
+              error: (erroDoAviso instanceof Error
+                ? erroDoAviso.message
+                : String(erroDoAviso)
+              ).slice(0, 120),
+            });
+          }
+        }
+      }
+    }
+
+    const mudanca = diffCheckpoint(
+      checkpointAnterior
+        ? {
+            commitments: (checkpointAnterior.commitments ?? []) as string[],
+            objections: (checkpointAnterior.objections ?? []) as string[],
+            next_action: checkpointAnterior.next_action ?? null,
+            rolling_summary: checkpointAnterior.rolling_summary ?? null,
+          }
+        : null,
+      content,
+    );
+
+    if (mudanca.emit) {
+      try {
+        const r = await emitAgentActivityForContact({
+          pool,
+          organizationId: tenantId,
+          contactId: leadId,
+          type: 'ai_turn',
+          sourceModule: 'agent',
+          sourceId: liveJob().id,
+          // O lastro é a chamada de modelo que PRODUZIU este checkpoint
+          // (llm_calls.id). Sem ele a linha entraria como 'system' e perderia a
+          // autoria justamente no evento mais "de IA" que existe.
+          ...(closing.callId ? { evidence: { llm_call_ids: [closing.callId] } } : {}),
+          ...(agentConfig?.agentId ? { agentId: agentConfig.agentId } : {}),
+          reason: mudanca.reason,
+          payload: {
+            added_commitments: mudanca.addedCommitments,
+            added_objections: mudanca.addedObjections,
+            next_action_changed: mudanca.nextActionChanged,
+          },
+        });
+        if (!r.routed) {
+          runLog.info('checkpoint sem negócio para pendurar: registrado no event_log', {
+            reason: r.reason,
+          });
+        }
+      } catch (err) {
+        // A timeline do turno não pode derrubar o turno.
+        runLog.error('falha ao registrar atividade de checkpoint (segue)', {
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+      }
+    }
+
+    // ── A NOTA DO NEGÓCIO ──────────────────────────────────────────────────────
+    //
+    // O turno acabou de mexer em TUDO que a fórmula lê: compromissos e objeções
+    // (o checkpoint acima) e a qualificação BANT (`lead_state`, escrita pelo
+    // update_lead_state do modelo). Recalcular aqui é recalcular no instante em
+    // que os sinais mudaram — não há evento melhor.
+    //
+    // ⚠️ POR QUE ISTO EXISTE: `recalculaScoreDoLead` estava escrita, testada e
+    // com constraint no banco exigindo o `reason` — e SEM UM ÚNICO CHAMADOR no
+    // repositório inteiro. Nenhuma nota jamais foi calculada. O modo de falha era
+    // mudo: o card simplesmente não mostrava número, e "não tem nota ainda" é
+    // indistinguível de "ninguém nunca calcula".
+    //
+    // Fora do `if (mudanca.emit)` DE PROPÓSITO: o BANT muda em turnos que não
+    // mexem no checkpoint, e esses turnos também mudam a nota. Amarrar o cálculo
+    // à emissão da atividade faria a nota envelhecer em silêncio — o mesmo
+    // defeito, um andar acima.
+    //
+    // Falha aqui não derruba o turno: nota é derivado, e o próximo turno
+    // recalcula. O que não pode é o cliente ficar sem resposta por causa dela.
+    try {
+      const alvo = await resolveActiveLeadForContact(
+        (
+          await pool.query<LeadCandidate>(
+            `select l.id, l.organization_id, l.pipeline_id, l.status,
                   l.last_activity_at, l.created_at
              from crm_leads l
             where l.organization_id = $1 and l.contact_id = $2`,
-          [tenantId, leadId],
-        )
-      ).rows,
-    );
-    if (alvo.routed) {
-      const r = await recalculaScoreDoLead(pool, tenantId, alvo.leadId);
-      runLog.info('score do negócio recalculado', {
-        lead_id: alvo.leadId,
-        gravou: r.gravou,
-        ...(r.motivo !== undefined ? { motivo: r.motivo } : {}),
-      });
-    }
-  } catch (err) {
-    runLog.error('falha ao recalcular score (segue)', {
-      error: err instanceof Error ? err.name : 'unknown',
-    });
-  }
-
-  // F3-11: divergência classificador×modelo. O classificador sugeriu um estágio; se o
-  // modelo confirmou (via update_lead_state — a máquina F2-10) um estágio DIFERENTE, o
-  // desacordo vira candidato ao golden set (fs em runtime — reuso do dir da F3-09). Sem
-  // sugestão, sem confirmação, ou concordância ⇒ nenhum arquivo (zero divergência).
-  if (
-    deps.knobs.goldenCandidatesDir !== undefined &&
-    stageSuggestion !== null &&
-    confirmedStage !== null &&
-    stageSuggestion !== confirmedStage
-  ) {
-    await recordStageDivergenceCandidate(
-      deps.knobs.goldenCandidatesDir,
-      {
-        tenantId,
-        leadId,
-        jobId: job.id,
-        signal: skillSignal,
-        divergence: { suggested: stageSuggestion, confirmed: confirmedStage },
-      },
-      runLog,
-    );
-  }
-
-  const blocked = outcomes.find((o) => o.kind === 'blocked');
-  if (blocked !== undefined) {
-    // veto permanente (regra dura nº 2): cancela o job e cacheia o opt-out —
-    // depois do checkpoint (o artefato do turno fica registrado mesmo em veto).
-    await applySendOutcome(
-      pool,
-      blocked,
-      { jobId: job.id, workerId: ctx.workerId, tenantId, leadId },
-      { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
-    );
-    throw new JobSettledError(
-      'turno encerrado com veto do sink (is_blocked) — job cancelado em definitivo, checkpoint gravado',
-    );
-  }
-
-  // Cap de warm-up/diário vetou toda tentativa de envio deste turno e nada saiu: sem
-  // isto, o job terminava 'ok' com `messages_sent: 0` e o lead ficava sem resposta até
-  // escrever de novo por conta própria (ou nunca) — medido em produção, 2026-08-29
-  // (número no dia 0 de warm-up, cap batido pelo volume da própria conversa de teste).
-  // Mesmo contrato da janela anti-ban (linha ~1233): adia sem gastar `attempts`, o job
-  // volta a 'pending' na hora certa e o mesmo turno roda de novo, com o mesmo contexto.
-  if (pacingCapVeto !== null && outcomes.length === 0) {
-    // Capturado num `const`: `pacingCapVeto` é reatribuído numa closure em outro ponto do
-    // turno, e o TS reabre a união (perde o `!== null`) depois de qualquer chamada — o
-    // valor JÁ CHECADO não muda, só a inferência precisa de um nome que não reatribui.
-    const veto = pacingCapVeto;
-    await rescheduleJob(pool, job.id, ctx.workerId, {
-      delayMs: Math.max(veto.nextAllowedAt.getTime() - clock().getTime(), 1_000),
-      reason: `cap de envio (${veto.code}) atingido — turno adiado para a próxima abertura`,
-    });
-    runLog.info('turno adiado — cap de envio atingido antes de qualquer mensagem sair', {
-      code: veto.code,
-      proxima_abertura: veto.nextAllowedAt.toISOString(),
-    });
-    // O reagendamento acima trata toda mensagem represada igual — um lead relatando
-    // risco de segurança (freio, fumaça, bateria esquentando) esperaria a mesma janela
-    // que um "bom dia" qualquer, às vezes horas (medido em produção, tenant YADEA:
-    // 20h+ represado num relato de bateria superaquecendo). Sem furar o cap de
-    // warm-up/diário em si (proteção anti-banimento — mexer nisso é decisão de
-    // produto, não deste guardrail), abre um alerta CRÍTICO na Central agora, pra um
-    // humano poder responder manualmente pelo próprio WhatsApp enquanto o número
-    // aquece. Dedupe por (kind, ref) — não reabre um já aberto pra esta conversa.
-    if (detectUrgencySignal(inboundSignal)) {
-      await insertInboxItem(
-        pool,
-        tenantId,
-        {
-          kind: 'handoff',
-          severity: 'critical',
-          title: 'Lead com sinal de urgência represado pelo cap de envio do número',
-          body:
-            `Mensagem do lead parece relatar risco/urgência, mas o número está em ` +
-            `warm-up/bateu o cap diário (${veto.code}) — a resposta automática só sai em ` +
-            `${veto.nextAllowedAt.toISOString()}. Considere responder manualmente pelo ` +
-            `WhatsApp enquanto o número aquece.`,
-          refKind: 'conversation',
-          refId: input.conversationId,
-        },
-        'kind_e_ref',
-      ).catch((err) => {
-        runLog.warn('alerta de urgência represada por warmup_cap falhou (best-effort)', {
-          error: err instanceof Error ? err.message : String(err),
+            [tenantId, leadId],
+          )
+        ).rows,
+      );
+      if (alvo.routed) {
+        const r = await recalculaScoreDoLead(pool, tenantId, alvo.leadId);
+        runLog.info('score do negócio recalculado', {
+          lead_id: alvo.leadId,
+          gravou: r.gravou,
+          ...(r.motivo !== undefined ? { motivo: r.motivo } : {}),
         });
+      }
+    } catch (err) {
+      runLog.error('falha ao recalcular score (segue)', {
+        error: err instanceof Error ? err.name : 'unknown',
       });
     }
-    throw new JobSettledError(
-      'cap de envio atingido — job reagendado para a próxima abertura, sem mensagem enviada',
-    );
+
+    // F3-11: divergência classificador×modelo. O classificador sugeriu um estágio; se o
+    // modelo confirmou (via update_lead_state — a máquina F2-10) um estágio DIFERENTE, o
+    // desacordo vira candidato ao golden set (fs em runtime — reuso do dir da F3-09). Sem
+    // sugestão, sem confirmação, ou concordância ⇒ nenhum arquivo (zero divergência).
+    if (
+      deps.knobs.goldenCandidatesDir !== undefined &&
+      stageSuggestion !== null &&
+      confirmedStage !== null &&
+      stageSuggestion !== confirmedStage
+    ) {
+      await recordStageDivergenceCandidate(
+        deps.knobs.goldenCandidatesDir,
+        {
+          tenantId,
+          leadId,
+          jobId: liveJob().id,
+          signal: skillSignal,
+          divergence: { suggested: stageSuggestion, confirmed: confirmedStage },
+        },
+        runLog,
+      );
+    }
+
+    const blocked = outcomes.find((o) => o.kind === 'blocked');
+    if (blocked !== undefined) {
+      // veto permanente (regra dura nº 2): cancela o job e cacheia o opt-out —
+      // depois do checkpoint (o artefato do turno fica registrado mesmo em veto).
+      await applySendOutcome(
+        pool,
+        blocked,
+        {
+          jobId: liveJob().id,
+          workerId: ctx.workerId,
+          tenantId,
+          leadId,
+          jobClaim: claimOfJob(liveJob()),
+        },
+        { queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs },
+      );
+      throw new JobSettledError(
+        'turno encerrado com veto do sink (is_blocked) — job cancelado em definitivo, checkpoint gravado',
+      );
+    }
+
+    // Cap de warm-up/diário vetou toda tentativa de envio deste turno e nada saiu: sem
+    // isto, o job terminava 'ok' com `messages_sent: 0` e o lead ficava sem resposta até
+    // escrever de novo por conta própria (ou nunca) — medido em produção, 2026-08-29
+    // (número no dia 0 de warm-up, cap batido pelo volume da própria conversa de teste).
+    // Mesmo contrato da janela anti-ban (linha ~1233): adia sem gastar `attempts`, o job
+    // volta a 'pending' na hora certa e o mesmo turno roda de novo, com o mesmo contexto.
+    if (pacingCapVeto !== null && outcomes.length === 0) {
+      // Capturado num `const`: `pacingCapVeto` é reatribuído numa closure em outro ponto do
+      // turno, e o TS reabre a união (perde o `!== null`) depois de qualquer chamada — o
+      // valor JÁ CHECADO não muda, só a inferência precisa de um nome que não reatribui.
+      const veto = pacingCapVeto;
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
+        delayMs: Math.max(veto.nextAllowedAt.getTime() - clock().getTime(), 1_000),
+        reason: `cap de envio (${veto.code}) atingido — turno adiado para a próxima abertura`,
+      });
+      runLog.info('turno adiado — cap de envio atingido antes de qualquer mensagem sair', {
+        code: veto.code,
+        proxima_abertura: veto.nextAllowedAt.toISOString(),
+      });
+      // O reagendamento acima trata toda mensagem represada igual — um lead relatando
+      // risco de segurança (freio, fumaça, bateria esquentando) esperaria a mesma janela
+      // que um "bom dia" qualquer, às vezes horas (medido em produção, tenant YADEA:
+      // 20h+ represado num relato de bateria superaquecendo). Sem furar o cap de
+      // warm-up/diário em si (proteção anti-banimento — mexer nisso é decisão de
+      // produto, não deste guardrail), abre um alerta CRÍTICO na Central agora, pra um
+      // humano poder responder manualmente pelo próprio WhatsApp enquanto o número
+      // aquece. Dedupe por (kind, ref) — não reabre um já aberto pra esta conversa.
+      if (detectUrgencySignal(inboundSignal)) {
+        await insertInboxItem(
+          pool,
+          tenantId,
+          {
+            kind: 'handoff',
+            severity: 'critical',
+            title: 'Lead com sinal de urgência represado pelo cap de envio do número',
+            body:
+              `Mensagem do lead parece relatar risco/urgência, mas o número está em ` +
+              `warm-up/bateu o cap diário (${veto.code}) — a resposta automática só sai em ` +
+              `${veto.nextAllowedAt.toISOString()}. Considere responder manualmente pelo ` +
+              `WhatsApp enquanto o número aquece.`,
+            refKind: 'conversation',
+            refId: input.conversationId,
+          },
+          'kind_e_ref',
+        ).catch((err) => {
+          runLog.warn('alerta de urgência represada por warmup_cap falhou (best-effort)', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+      throw new JobSettledError(
+        'cap de envio atingido — job reagendado para a próxima abertura, sem mensagem enviada',
+      );
+    }
+
+    runLog.info('turno do agente concluído', {
+      kind: liveJob().kind,
+      messages_sent: outcomes.length,
+      model: turn.model,
+    });
+  } finally {
+    await mcpCleanup?.();
   }
+}
 
-  await mcpCleanup?.();
-
-  runLog.info('turno do agente concluído', {
-    kind: job.kind,
-    messages_sent: outcomes.length,
-    model: turn.model,
-  });
+export async function runAgentPreview(
+  deps: InboundTurnDeps,
+  pool: pg.Pool,
+  preview: TurnPreview,
+): Promise<void> {
+  await executarTurnoDoAgente(
+    deps,
+    null,
+    pool,
+    { workerId: '' },
+    {
+      channelSessionId: preview.channelId ?? '',
+      conversationId: preview.context.context.conversation_id ?? '',
+      buildOpening: ({
+        previous,
+        leadState,
+        context,
+        notesIndexBlock,
+        projeta,
+        entregues,
+        compromissosBlock,
+      }) =>
+        buildOpeningMessage(
+          previous,
+          leadState,
+          context,
+          notesIndexBlock,
+          projeta,
+          entregues,
+          compromissosBlock,
+        ),
+    },
+    preview,
+  );
 }
 
 /**
@@ -3365,7 +3765,77 @@ async function executarTurnoDoAgente(
 export function createInboundTurnHandler(deps: InboundTurnDeps) {
   return async (job: JobRow, pool: pg.Pool, ctx: { workerId: string }): Promise<void> => {
     const payload = inboundTurnPayloadSchema.parse(job.payload);
+    if (!job.contact_id) throw new Error('reply_without_contact');
+    const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
+      tenantId: job.organization_id,
+      leadId: job.contact_id,
+      jobId: job.id,
+      conversationId: payload.conversation_id,
+      channelSessionId: payload.channel_session_id,
+      inbound: true,
+    }, { log: deps.log });
+    const operationAgent = resolvedAgent.config;
+    if (operationAgent?.operationMode === 'assisted') {
+      // O GATE VALE TAMBÉM NO ASSISTIDO, e é aqui que ele precisa estar.
+      //
+      // O drain desliga a checagem antes de enfileirar quando a org tem agente
+      // assistido publicado no canal (`canAssist`, drain.ts) — de propósito: o
+      // rascunho é o produto do modo assistido, e barrar no drain o mataria. Só
+      // que este ramo devolve ANTES de `runAgentTurn`, onde moram as duas
+      // guardas (isLeadInHandoff + decidirElegibilidadeDaConversa). Resultado
+      // medido: conversa com dono humano (`assignee_kind`), com `force_human`
+      // ou com o bot silenciado (`bot_silenced_until`) recebia rascunho assim
+      // mesmo — o gêmeo do fluxo automático não alcança este caminho.
+      //
+      // Fica no ramo, não antes dele: o caminho automático já refaz as duas
+      // checagens em `runAgentTurn`, e antecipá-las custaria duas queries por
+      // turno sem mudar nenhum desfecho.
+      if (await isLeadInHandoff(pool, job.organization_id, job.contact_id)) {
+        deps.log.info('rascunho pulado — lead em handoff humano (bot silenciado)', {
+          job_id: job.id,
+          conversation_id: payload.conversation_id,
+        });
+        return;
+      }
+      try {
+        const elegib = await decidirElegibilidadeDaConversa(pool, {
+          organizationId: job.organization_id,
+          conversationId: payload.conversation_id,
+          agora: new Date(),
+          ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
+        });
+        if (elegib !== null && !elegib.permite) {
+          deps.log.info('rascunho pulado — conversa não elegível para IA', {
+            job_id: job.id,
+            conversation_id: payload.conversation_id,
+            motivo: elegib.motivo,
+          });
+          return;
+        }
+      } catch (err) {
+        // Degrada ABERTO, igual ao gêmeo de `runAgentTurn`: falha da consulta
+        // não pode calar um assistido cuja conversa está liberada. Quem barra
+        // de verdade — handoff — já rodou acima e falha fechado.
+        deps.log.warn('checagem de elegibilidade falhou — seguindo para o rascunho', {
+          job_id: job.id,
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+        });
+      }
+      const { generateReplyDraft } = await import('./reply-drafts');
+      if (!job.contact_id) throw new Error('reply_without_contact');
+      await generateReplyDraft(pool, deps, {
+        organizationId: job.organization_id,
+        conversationId: payload.conversation_id,
+        contactId: job.contact_id,
+        channelId: payload.channel_session_id,
+        boundary: currentExecutionBoundary() ?? undefined,
+        agent: operationAgent,
+      });
+      return;
+    }
+    if (operationAgent?.pausedAt) return;
     await runAgentTurn(deps, job, pool, ctx, {
+      resolvedAgent,
       channelSessionId: payload.channel_session_id,
       conversationId: payload.conversation_id,
       buildOpening: ({

@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fronteira do atendimento — comunidade 360 Task4",
+    "subtitle": "Conversa e demanda têm encerramentos independentes; efeitos operacionais conservam sua origem",
+    "output": "encerramento-atendimento.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Atendimento"
+    },
+    {
+      "id": "service",
+      "label": "Aplicação"
+    },
+    {
+      "id": "db",
+      "label": "Postgres"
+    },
+    {
+      "id": "external",
+      "label": "Canal externo"
+    }
+  ],
+  "mainPath": [
+    "inbound",
+    "boundary",
+    "origin",
+    "receipt",
+    "job",
+    "guard",
+    "sink",
+    "transport"
+  ],
+  "nodes": [
+    {
+      "id": "inbox",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "Inbox — conversa, demanda e fatos"
+    },
+    {
+      "id": "commands",
+      "lane": "service",
+      "col": 2,
+      "type": "backend",
+      "label": "close/reopen CAS e encerramento explícito da demanda"
+    },
+    {
+      "id": "inbound",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Mensagem persistida — BEFORE mutex, AFTER transição"
+    },
+    {
+      "id": "boundary",
+      "lane": "db",
+      "col": 4,
+      "type": "database",
+      "label": "Conversa/revisão e demanda/revisão, histórico N:N"
+    },
+    {
+      "id": "origin",
+      "lane": "service",
+      "col": 5,
+      "type": "backend",
+      "label": "Comando autorizado inicia; continuação herda snapshot"
+    },
+    {
+      "id": "job",
+      "lane": "db",
+      "col": 1,
+      "type": "database",
+      "label": "Job/enrollment/caso/cron com origem imutável"
+    },
+    {
+      "id": "guard",
+      "lane": "service",
+      "col": 2,
+      "type": "backend",
+      "label": "Comparador puro, leitores confiáveis e ALS"
+    },
+    {
+      "id": "sink",
+      "lane": "service",
+      "col": 3,
+      "type": "backend",
+      "label": "Tool mutável e envio canônico revalidam"
+    },
+    {
+      "id": "memory",
+      "lane": "service",
+      "col": 4,
+      "type": "backend",
+      "label": "Contexto vigente + notas duráveis + histórico rotulado"
+    },
+    {
+      "id": "transport",
+      "lane": "external",
+      "col": 5,
+      "type": "external",
+      "label": "Transporte aceito não pode ser desfeito"
+    },
+    {
+      "id": "receipt",
+      "lane": "db",
+      "col": 2,
+      "type": "database",
+      "label": "Evento/destino — recibo imutável entre consumidores e retries"
+    }
+  ],
+  "edges": [
+    {
+      "from": "inbox",
+      "to": "commands",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "commands",
+      "to": "boundary",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "inbound",
+      "to": "boundary",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "boundary",
+      "to": "inbox",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "boundary",
+      "to": "origin",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "origin",
+      "to": "job",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "inbound",
+      "to": "job",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "job",
+      "to": "guard",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "boundary",
+      "to": "guard",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "guard",
+      "to": "sink",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "sink",
+      "to": "transport",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "boundary",
+      "to": "memory",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "memory",
+      "to": "guard",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "memory",
+      "to": "inbox",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "transport",
+      "to": "inbound",
+      "label": "origem e estado explícitos"
+    },
+    {
+      "from": "origin",
+      "to": "receipt",
+      "label": "Snapshot por canal e CAS sob mesmo mutex"
+    },
+    {
+      "from": "receipt",
+      "to": "job",
+      "label": "Reutiliza origem, nunca renova"
+    }
+  ]
+}

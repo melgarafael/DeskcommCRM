@@ -409,6 +409,8 @@ export function descreveEvento(
         detalhe: "o agente não respondeu a tempo; cada espera usa o máximo configurado",
         ...motor,
       };
+    case "turn_skipped":
+      return {titulo:"Acompanhamento encerrado sem novo envio",detalhe:texto(p.reason),...motor};
     case "cancelled_manual":
       return { titulo: "Cancelado por uma pessoa da equipe", detalhe: null, ...pessoa };
     case "paused_manual":

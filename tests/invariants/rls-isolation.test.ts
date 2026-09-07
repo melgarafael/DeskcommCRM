@@ -99,6 +99,9 @@ beforeAll(() => {
       v_conv uuid;
       v_pipe uuid;
       v_stage uuid;
+      v_agent uuid;
+      v_version uuid;
+      v_boundary jsonb;
     begin
       foreach v_org in array array['${ORG_A}'::uuid, '${ORG_B}'::uuid] loop
         select id into v_sess from public.channel_sessions where organization_id = v_org limit 1;
@@ -120,6 +123,31 @@ beforeAll(() => {
         if not exists (select 1 from public.messages where organization_id = v_org) then
           insert into public.messages (organization_id, conversation_id, channel_session_id, contact_id, type, direction, body)
             values (v_org, v_conv, v_sess, v_contact, 'text', 'inbound', 'rls invariant probe');
+        end if;
+
+        -- 0227: sugestões contêm texto privado da conversa. Os dois tenants
+        -- recebem uma linha real, com todos os FKs e a fronteira canônica.
+        -- A prova abaixo usa JWT authenticated; não é só inspeção de policy.
+        if not exists (select 1 from public.ai_reply_drafts where organization_id = v_org) then
+          v_boundary := public.fn_service_begin(v_org, v_contact);
+          v_conv := (v_boundary->>'conversation_id')::uuid;
+          insert into public.ai_agents (organization_id, name, system_prompt, operation_mode)
+            values (v_org, 'RLS Invariant Assistant', 'RLS invariant private prompt', 'assisted')
+            returning id into v_agent;
+          insert into public.ai_agent_versions
+            (organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status)
+            values (v_org, v_agent, 1, 'RLS invariant private prompt', 'anthropic', 'rls-test-model', v_sess, 'published')
+            returning id into v_version;
+          update public.ai_agents set published_version_id = v_version
+            where organization_id = v_org and id = v_agent;
+          insert into public.ai_reply_drafts
+            (organization_id, conversation_id, contact_id, agent_id, agent_version_id,
+             channel_session_id, service_boundary, context_revision, operation_revision,
+             status, original_body)
+            values (v_org, v_conv, v_contact, v_agent, v_version, v_sess, v_boundary,
+              (select reply_context_revision from public.conversations where organization_id = v_org and id = v_conv),
+              (select operation_revision from public.ai_agents where organization_id = v_org and id = v_agent),
+              'pending', 'RLS invariant private reply');
         end if;
 
         select id into v_pipe from public.crm_pipelines
@@ -264,6 +292,8 @@ export const TABLES = [
   // controle positivo passaria por acerto. Quem mede a escrita é a rota, em
   // `tests/unit/tarefas-rota-nao-tem-porta-dos-fundos.test.ts`.
   "crm_tasks",
+  // 0227 — texto de sugestões: org + visibilidade da conversa por authenticated.
+  "ai_reply_drafts",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"
@@ -290,6 +320,21 @@ describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {
       expect(ownRows).toBeGreaterThanOrEqual(1);
     });
   }
+
+  it("ai_reply_drafts: org B lê sua sugestão e não lê a de A (direção inversa)", () => {
+    expect(countAs(USER_B,
+      `select count(*) from public.ai_reply_drafts where organization_id = '${ORG_B}';`,
+    )).toBeGreaterThanOrEqual(1);
+    expect(countAs(USER_B,
+      `select count(*) from public.ai_reply_drafts where organization_id = '${ORG_A}';`,
+    )).toBe(0);
+  });
+
+  it("ai_reply_drafts: os dois tenants têm linhas antes de testar as cercas", () => {
+    expect(Number(sql(
+      `select count(distinct organization_id) from public.ai_reply_drafts where organization_id in ('${ORG_A}','${ORG_B}');`,
+    ))).toBe(2);
+  });
 
   it("superuser sees both orgs (seed sanity: cross-tenant rows really exist)", () => {
     const total = Number(

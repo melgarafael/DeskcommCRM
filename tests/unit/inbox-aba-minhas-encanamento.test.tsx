@@ -21,6 +21,7 @@ const getSpy = vi.fn(async (_url: string) => ({ data: [], meta: { has_more: fals
 vi.mock("@/lib/api/client", () => ({ apiClient: { get: (url: string) => getSpy(url) } }));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
 vi.mock("@/lib/supabase/browser", () => ({
+  prepareRealtimeAuthentication: vi.fn().mockResolvedValue(undefined),
   createClient: () => ({
     channel: () => ({ on: () => ({ subscribe: () => ({}) }), subscribe: () => ({}) }),
     removeChannel: () => {},

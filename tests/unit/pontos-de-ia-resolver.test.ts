@@ -257,20 +257,41 @@ describe("aviso de capacidade que não precisa de catálogo", () => {
 });
 
 describe("o conjunto de pontos do agente publicado", () => {
-  it("contém exatamente os dois pontos que conversam com o cliente", () => {
-    // Crescer este conjunto tira pontos do painel sem ninguém perceber — quem
-    // adicionar um terceiro tem que passar por aqui e justificar.
+  it("contém os dois turnos do agente e o preview que usa a mesma versão", () => {
+    // Preview precisa reproduzir provider/modelo/credencial da versão testada,
+    // sem permitir que o binding do painel troque o agente durante a revisão.
+    // O conjunto continua exato: outros pontos permanecem sob o painel.
     expect([...PONTOS_DO_AGENTE_PUBLICADO].sort()).toEqual([
+      "agent_preview",
       "agent_turn",
       "operator_turn",
     ]);
   });
 
-  it("sem agente publicado, esses pontos caem para as origens seguintes", () => {
+  it("preview conserva modelo, provider e credencial da versão apesar do binding e do ambiente", () => {
+    const d = decidirBinding(entrada({
+      pontoId: "agent_preview",
+      binding: binding({ purpose: "agent_preview" }),
+      agentePublicado: agente(),
+      modeloDeAmbiente: "claude-haiku-4-5",
+    }));
+    expect(d).toMatchObject({
+      origem: "agente_publicado",
+      provider: "openai",
+      modelId: "gpt-5-mini",
+      credentialId: "cred-openai",
+      baseUrl: null,
+    });
+    expect(d.provider).not.toBe(PADRAO.provider);
+    expect(d.provider).not.toBe("openrouter");
+    expect(d.credentialId).not.toBe("cred-openrouter");
+  });
+
+  it.each(["agent_turn", "operator_turn", "agent_preview"])("sem agente publicado, %s cai para as origens seguintes", (pontoId) => {
     // Organização que ainda não publicou agente nenhum não pode ficar sem
     // resolução — seria o agente mudo do dia da instalação.
     const d = decidirBinding(
-      entrada({ pontoId: "agent_turn", binding: binding({ purpose: "agent_turn" }) }),
+      entrada({ pontoId, binding: binding({ purpose: pontoId }) }),
     );
     expect(d.origem).toBe("binding");
   });

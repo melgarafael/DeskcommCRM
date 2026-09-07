@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { moveLeadHandler, updateLeadHandler } from "@/app/api/v1/leads/_handler";
@@ -28,6 +28,8 @@ import { GOV_MANAGER, GOV_ORG, GOV_PIPELINE, GOV_STAGE, seedGov, sql } from "./g
  * (ECONNREFUSED) e é engolida pelo try/catch interno de `audit()`; não afeta
  * o teste.
  */
+
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => fakeAdminClient() }));
 
 function sqlString(v: string): string {
   return `'${v.replace(/'/g, "''")}'`;
@@ -135,6 +137,10 @@ function fakeAdminClient(): SupabaseClient {
     from: (table: string) => new FakeQB(table),
     rpc: (name: string, params: Record<string, unknown>): Promise<QResult> => {
       return (async () => {
+        if (name === "fn_service_observe_command") {
+          const raw = sql(`select public.fn_service_observe_command(${sqlLiteral(params.p_org)},${sqlLiteral(params.p_contact)})::text`);
+          return { data: JSON.parse(raw || "null"), error: null };
+        }
         if (name !== "emit_event") {
           throw new Error(`fakeAdminClient: unsupported rpc ${name}`);
         }

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST   /api/v1/conversations/[id]/snooze — define lembrete ("avise se o lead não responder em X h").
  * DELETE /api/v1/conversations/[id]/snooze — cancela o lembrete ativo.
@@ -29,6 +30,9 @@ interface RouteParams {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
@@ -73,6 +77,9 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
 }
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;

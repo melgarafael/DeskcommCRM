@@ -1,8 +1,10 @@
 "use client";
+import type { InterfaceSettings } from "@/lib/navigation/interface";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 
 export interface TeamMember {
+  interface_settings?: InterfaceSettings;
   user_id: string;
   role: string;
   invited_at: string | null;
@@ -17,8 +19,7 @@ export interface TeamMember {
 export function useTeamMembers(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["team", "members"],
-    queryFn: async () =>
-      apiClient.get<{ data: TeamMember[] }>("/api/v1/team"),
+    queryFn: async () => apiClient.get<{ data: TeamMember[] }>("/api/v1/team"),
     staleTime: 30_000,
     enabled: opts?.enabled ?? true,
   });

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * Épico Operação Visível (F3) — POST: aplica uma proposta do flywheel como
  * versão NOVA do agente via publish-por-ponteiro (o clique É o gate humano).
@@ -28,6 +29,9 @@ const HTTP_BY_CODE: Record<ApplyProposalErrorCode, number> = {
 type Ctx = { params: Promise<{ id: string; pid: string }> };
 
 export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id, pid } = await ctx.params;
   if (!UUID_RX.test(id) || !UUID_RX.test(pid)) {

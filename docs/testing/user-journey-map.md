@@ -1405,6 +1405,14 @@ então o token de 1h deixa de ser bomba-relógio para quem fica com o inbox
 aberto. Sai do `useRealtimeChannel` toda a dança de auth — mantê-la seria manter
 duas fontes, que era o defeito.
 
+**Complemento medido na Task2 (2026-09-05):** no SDK 2.112.4, o primeiro
+subscribe pode emitir join antes de resolver a callback. O hook agora aguarda
+o bootstrap da MESMA fonte e setAuth antes de criar o canal; a callback segue
+renovando. Epoch/cancelamento impedem resposta tardia de contexto anterior.
+A jornada de suporte em múltiplas abas exige todos os joins authenticated e
+evento postgres_changes real antes de aceitar a atualização B. Nenhum EXECUTE
+foi concedido a anon.
+
 **Segundo achado, do mesmo puxão:** o inbox era **a única tela viva sem rede de
 segurança**. Board (`useBoard`) e linha do tempo (`useLeadTimeline`) já usavam
 `useRefetchDeSeguranca`; o inbox tinha só `refetchOnWindowFocus`, que exige
@@ -1798,3 +1806,156 @@ COLUMN`, `UPDATE`, `ALTER COLUMN`, um bloco `DO` com `pg_constraint`), e
 `scripts/test-db.sh` já sobe `pgvector/pgvector:pg15` — os `pnpm test:db`
 anteriores desta sessão já corriam contra o piso certo, mesmo antes deste
 achado.
+
+### [P0] Organizações: criar, convidar e alternar (comunidade 360)
+
+- Porta: `TenantSwitcher` → **Gerenciar organizações**, inclusive com uma membership, somente platform admin.
+- `organizacoes-criacao-convite-e-cache.spec.ts`: organização A única → formulário cria B e vínculo do criador → link copiável e validade sem Resend → inbox A→B→A com contatos distinguíveis e novo documento → responsável aceita convite e chega a B. Seeds exclusivos locais; nenhuma pessoa real recebe mensagem.
+- Rodada de correção 1: navegador em produção verde; contatos verificados dentro de `[data-conversation-id]` (o banner de canal não vale como prova da lista). Evidência adicional da falha de troca registrada no relatório local da Task1.
+- Recuperação após resposta perdida: três respostas reais pós-commit abortadas, novo clique conserva chave, ID e link; recibo legado forjado é ignorado pelo handler. Falha de rede na troca libera a guarda e mantém cookie, organização e inbox. Proteção do recibo (INSERT/UPDATE/DELETE/TRUNCATE e namespaces LGPD/MCP) coberta em `organizacoes-recibo-confiavel.test.ts`.
+- Aceite preserva `invited_by`; replay não regrava papel ativo e convite anterior/legado não desfaz revogação. Prova no banco em `organizacoes-criacao-e-convite.test.ts`; resposta antiga em voo e troca de usuário cobertas em `organizacoes-cache-por-contexto.test.tsx`.
+- Recuperação: falha de entrega mantém link; convite vencido pode ser reemitido em Equipe. Troca recusada mostra erro e mantém organização anterior. Onboarding conserva saída para outra organização (spec existente).
+- Execução local em produção passou no commit `815f59ea`: criação, cópia real do link, aceite e A→B→A. Guarda de transição medida com `getBoundingClientRect`/`getComputedStyle`; sentinela confirma novo documento. Screenshots em `.superpowers/evidence/comunidade-360/` (`criacao-convite`, `transicao-para-A/B`, `inbox-volta-a`, `aceite-na-org-b`); comandos e limites em `.superpowers/sdd/comunidade-360/task-1-report.md`.
+
+
+## Acompanhamento administrativo por sessão (Task2, 2026-09-05)
+
+- [P0] Administração → organização B → acompanhamento full → dados B → editar contato → audit do ator real → sair → A sem cache antigo.
+- [P0] Somente leitura B, inclusive administrador físico B: inbox navega sem marcar lida/enviar; API comum e administração recusam escrita.
+- [P0] Expiração/revogação: nenhuma volta silenciosa a A; saída continua disponível após perder plataforma.
+- Duas abas da mesma sessão acompanham início/fim e dados B/A; sessão distinta da mesma pessoa não recebe grant/contexto da observadora.
+- [P0] B com onboarding incompleto abre shell com banner/saída em ambos os modos; acesso direto ao wizard retorna ao app, sem concluir setup.
+- Receiver HTTP do transporte configurado confirma reconexão full (stop/create/start), readonly sem recepção e outra sessão operando A. Não é prova de envio de mensagem WhatsApp.
+- Fonte de prova: `tests/e2e/suporte-temporario.spec.ts`, produção local: jornada ampliada passou em produção local (21,2 s), incluindo zero403 espontâneo, banner medido e screenshot sem toast residual.
+- Achado visual: consulta auxiliar de automático exigia agent e gerava toast403 para viewer; hook passou a respeitar permissão efetiva e mantém dado desconhecido, sem ampliar RBAC.
+- DB: `tests/invariants/suporte-temporario.test.ts` prova grant,TTL,MFA,restrições DML/RPC e callbacks; não confundir com a jornada frontend.
+
+
+## Interface por membro e convite — comunidade 360
+
+- [P0] Convite emitido pela tela com interface selecionada antes do aceite; sem serviço de e-mail o link permite entrar na home calculada. Replay do convite preserva ajuste posterior do administrador.
+- [P1] Dois membros com mesmo papel veem apresentações diferentes. Outro administrador edita pela Equipe; evento real de Realtime atualiza a navegação sem logout nem perda de formulário aberto.
+- [P1] Seleção apenas de destino hub-only mantém porta no desktop/mobile e resultados úteis no ⌘K; sino oculto não monta consulta. URL autorizada oculta continua acessível; endpoint privilegiado continua 403.
+- Spec: `tests/e2e/interface-por-vinculo.spec.ts`; imagens/trace locais em `.superpowers/evidence/comunidade-360/`. Resultado executado e limitações ficam no report da Task3.
+
+
+## Comunidade 360 — encerramento e memória (Task4)
+
+Spec: `tests/e2e/encerramento-atendimento.spec.ts`. Banco Supabase aplicado pelo baseline, frontend de produção e receiver HTTP local. Execução final FIX3-r1: **2 casos passaram em 20,7s**, com traces persistentes em `.superpowers/evidence/comunidade-360/task4-browser-fix3-r1/` e screenshots carregadas inspecionadas.
+
+| Caso | Prioridade | Prova |
+|---|---|---|
+| Fechar conversa preserva demanda e outro canal | P0 | UI Fechar, consulta estado e screenshot carregada |
+| Registrar desfecho explicitamente | P0 | Formulário no painel vigente, revisão CAS |
+| Novo inbound volta à fila com demanda nova | P0 | Ingestão persistida, fila, assumir e responder pelo composer |
+| Memória mantém fatos e rotula histórico | P1 | Notas duráveis no painel; checkpoint/mensagens antigas fora do contexto corrente em teste DB |
+| Trabalho antigo não envia após close/reopen | P0 | Tool e sink canônico contra receiver HTTP real; controle positivo do transporte |
+| Concorrência e tenant | P0 | Invariantes DB: inbound simultâneo, CAS, dois tenants e merge com duas conexões |
+
+Limite operacional: a revalidação acontece imediatamente antes do efeito. Um transporte que já aceitou a mensagem não é desfeito pelo encerramento posterior.
+
+
+Task4 fix1 — `encerramento-atendimento.spec.ts` amplia a prova: formulário conserva seleção durante refetch; histórico de desfecho em ES; resposta a caso antigo registra aviso e referência preservados na Central, sem link cru e com zero envio extra (projeção autorizada de navegação pertence à Task5); silêncio usa mensagem persistida pelo PostgREST (legado/reabertura não autorizam, entrada nova vigente autoriza). Execução final passou; logs/evidência no relatório Task4. A corrida real close/refetch → conversa null → perda do formulário foi corrigida preservando draft e CAS capturada no painel. Troca real de contato/conversa descarta o draft; conflito exige Cancelar/reabrir. Browser aguarda atribuição efetiva (Atendente/Liberar, sem Sem responsável) antes de responder e também prova reabertura/fechamento manual.
+
+Capturas selecionadas: `evidence/comunidade-360/task4-conversa-fechada-demanda-aberta.png`, `evidence/comunidade-360/task4-reaberto-respondido.png`, `evidence/comunidade-360/task4-caso-obsoleto-aviso.png` e `evidence/comunidade-360/task4-historico-es.png`.
+
+### Comunidade 360 — Central de avisos com contexto (Task 5)
+
+[P1] `tests/e2e/central-avisos-destino.spec.ts`: aviso de conversa → contexto real → F5 → Back ainda aberto → resolver → Resolvidos → reabrir; contato e referência removida; links sob RLS em `own`/`own_and_unassigned`, outro responsável e outro tenant; manager/admin/viewer e bearer sem sessão; destino autorizado mesmo oculto no menu; desktop/mobile com medidas e screenshot carregado. Executado em 2026-09-06: quatro cenários passaram no build de produção do QA isolado, incluindo clique que abre o dossiê do negócio no funil certo e mobile em espanhol. Provas selecionadas: `evidence/comunidade-360/task5-desktop.png` e `evidence/comunidade-360/task5-mobile.png`, com medidas JSON ao lado. Comandos, logs e limites em `.superpowers/sdd/comunidade-360/task-5-report.md`.
+
+O link vem da projeção autenticada `lib/ai/inbox-destino.ts`; não muda o status do aviso. Modelos de canal abrem a área de templates de Conexões/Parceiro, e referências técnicas sem tela recebem orientação. O recorte humano do Radar passa a usar a RLS de lead/conversa na Task6, conforme contrato em `docs/architecture/ponte-agendamento-followup.md`.
+
+## Comunidade 360 — Agenda, presença e recuperação (Task6)
+
+Executado em 2026-09-06 no QA isolado, build de produção do produto `bfa2ab2f`, baseline fresco preservado e migrations até0224: **7 casos passaram em1,2min**, um worker e nenhum retry, na spec `tests/e2e/agenda-presenca-recuperacao.spec.ts` (basename registrado no CI). Originais e sete traces permanecem em `.superpowers/evidence/comunidade-360/task6-browser-r3/`; as duas rodadas anteriores não foram sobrescritas.
+
+| Jornada | Prioridade | Prova executada |
+|---|---|---|
+| Inbox → compromisso → Central → detalhe antigo | P0 | Contato/conversa vinculados pela tela; cron abre aviso; snooze e presença humana com mensagem/ator persistidos |
+| Datas PT/ES em navegador inglês/Honolulu | P1 | GET traz São Paulo; intervalo29/08 23h30→30/08 00h30 contrasta com29/08 16h30→17h30 do browser; seletor real troca idioma sem mudar instantes/autoria/revisão |
+| Gestão configura prazos e falta recuperável | P0 | Configuração persistida; Faltou → evento pending → cron drain → done/recibo started → UI; replay conserva inscrição e inbound interrompe |
+| Ausência de configuração e outro fluxo ativo | P0 | Impedimento terminal legível, sem começar recuperação tardia quando a vaga abre |
+| Receiver com inline/daemon e interrupção no preparo | P0 | Nos dois sentidos, um recebimento e um avanço por intenção mesmo após callback indisponível; aquisição antiga não envia;1001 pendências antes do protetor não escondem proteção; PG/Supabase concordam e nenhum envio novo ocorre |
+| Radar com RLS real | P0 | Lead fora do pool frio, demanda sem lead com conversa visível, own/own_and_unassigned e gestão/suporte; contagens respeitam acesso |
+| Duas sessões e rascunho antigo | P0 | Outra sessão remarca; polling bloqueia cancelamento até descarte/revisão; confirmação atual cancela; cleanup termina sem erro |
+
+Achado visual da primeira rodada: detalhe PT usava idioma/fuso do navegador. FIX4 usa idioma canônico e fuso existente do compromisso, incluindo dia final; três controles de draft/CAS permanecem. As seis capturas carregadas finais foram abertas pelo autor/controlador, e o controlador confirmou ausência de novo defeito no recorte. Painel desktop:384px dentro de viewport1280, scrollWidth=clientWidth=383; mobile:292,5px dentro de390, scrollWidth=clientWidth=292; visibility=visible em todas.
+
+Evidências selecionadas, copiadas sem edição dos originais:
+
+- Presença: `evidence/comunidade-360/task6-presenca-desktop.png` e `evidence/comunidade-360/task6-presenca-mobile.png`.
+- Datas em português: `evidence/comunidade-360/task6-datas-pt-BR-desktop.png` e `evidence/comunidade-360/task6-datas-pt-BR-mobile.png`.
+- Datas em espanhol: `evidence/comunidade-360/task6-datas-es-desktop.png` e `evidence/comunidade-360/task6-datas-es-mobile.png`.
+- Medidas, origem e SHA256 das seis capturas: `evidence/comunidade-360/task6-medidas.json`.
+
+Prova DB integral preservada:166 arquivos/1310 casos passaram, mais1expected fail/1skip, com INSTALL/UPDATE PG15 e teardown. Cobre desfecho/CAS/recibo privado, inbound fora de ordem, transação anterior à confirmação, loop/callback velho, retenção, lease/retry/aviso e isolamento/ACL. Nenhum SQL mudou no FIX4. Receiver HTTP é real e local; não prova pareamento/entrega de WhatsApp real, consentimento Google ou convite entregue. Logs e reconciliação em `.superpowers/sdd/comunidade-360/task-6-report.md`.
+
+## Comunidade 360 — Seleção de agendas e reconciliação Google (Task7)
+
+**Jornada executada:2casos PASS em25,0s,exit0**, output local `task7-browser-r2`, build de produção6726941e e Supabase55431/55432. `tests/e2e/agenda-google-sync.spec.ts` está registrada no CI. Usa sessão real do produto e receiver HTTP controlado, sem conta Google externa. O controlador abriu as nove capturas finais e medidas, sem novo achado visual; validação concluída, aguardando re-review FIX4/aprovação da Task7.
+
+| Jornada | Prioridade | Resultado observado |
+|---|---|---|
+| Selecionar fontes e destino entre contas | P0 | PASS — salva pela tela e espera PATCH200/refetch; um destino na segunda conta, reader sem escrita. Cartão/10h bloqueados e12h disponível → fonte desmarcada → cartão some,10h abre confirmação e12h/cache permanecem; desktop/mobile medidos |
+| Retentar publicação indisponível | P0 | PASS — botão do detalhe → RPC autenticada → mesma consulta de candidatos do cron contra PostgREST, após50 vínculos anonimizados → executor com receiver HTTP → sucesso visível |
+| Horários divergentes | P0 | PASS — intenção local usa slot oferecido pela rota canônica; mudança remota gera comparação → escolha pela tela aplica horário Google e conserva título e tupla original, apesar da troca de destino; sem PATCH remoto adicional |
+
+Capturas versionadas, sem edição e idênticas aos originais:
+
+- Fonte ocupada: `evidence/comunidade-360/task7-fonte-ocupada-grade.png` e `evidence/comunidade-360/task7-fonte-ocupada-horarios.png` —12h enquadrado no painel.
+- Seleção salva: `evidence/comunidade-360/task7-selecao.png` e `evidence/comunidade-360/task7-selecao-mobile.png`.
+- Fonte retirada: `evidence/comunidade-360/task7-fonte-retirada-grade.png` e `evidence/comunidade-360/task7-fonte-retirada-horarios.png` —10h selecionado e12h preservado.
+- Publicação e decisão: `evidence/comunidade-360/task7-publicado.png`, `evidence/comunidade-360/task7-conflito.png` e `evidence/comunidade-360/task7-resolvido-mobile.png`.
+
+`evidence/comunidade-360/task7-medidas.json` registra origem, SHA256 e medidas das nove capturas, sem overflow horizontal. O controle12h tem altura44 e interseção integral com a viewport nos dois painéis. A r1 e seus dois diagnósticos de fixture/espera foram preservados, com reconciliação em `.superpowers/sdd/comunidade-360/task-7-report.md`; nenhuma assertion ou regra de produto foi relaxada para fechar a r2.
+
+Gates de produto preservados: unit integral706arquivos/7622PASS+1expected fail; DB integral169arquivos/1348PASS+1expected fail+1skip, INSTALL/UPDATE PG15; typecheck/lint/cercas/build verdes. Claims, callbacks tardios, escrita aceita sem resposta, edição local concorrente, RSVP/412, cursor e redação são exercitados contra banco e receiver. FIX4 passou typecheck/lint da spec e browser no mesmo build. AfterAll e sonda0|0 confirmaram limpeza; app/receiver efêmeros encerrados.0224/0225 aplicadas e imutáveis no QA. Receiver local comprova transporte/estados; não comprova consentimento Google real, pareamento WhatsApp ou convite entregue.
+
+## Comunidade 360 — Google Meet e entrega transacional (Task8)
+
+Browser r3 passou **2 jornadas/30,0s**, appprodução3013, sessão e PostgREST reais no QA55431/55432, com receivers HTTP locais. Produto8539a815 e spec b73cc573. Root abriu e aprovou as nove capturas e suas medidas; os defeitos de consulta de telefone e destino da Central encontrados em r2 foram corrigidos e receberam regressões. Não se alega conta Google real, OAuth, convite externo ou entrega na rede WhatsApp.
+
+| Caminho | Prioridade | Prova atual |
+| --- | --- | --- |
+| Link pendente, pronto, copiar/abrir e falha/retry | P0 | UI cria por slot oferecido, mostra pending sem URL, recebe ready do executor, expõe href válido e copia para clipboard real; failure/retry chega pela Central e preserva identidade Google |
+| Autorização de entrega com destino visível | P0 | UI mostra Maria Meet antes do clique; consumer real entrega ao chat e à sessão da fixture, revision/request observados conferidos. SQL prova owner/ator/org/suporte/MFA negativos, sem ampliar o browser |
+| Canal indisponível e replay | P0 | Consumer/gates/ledger/handler/adapter reais com SQL e receiver HTTP local; queued não significa sent; aceite anterior reconcilia mesmo após expirar/remover autorização de IA, sem HTTP novo, enquanto ausência de aceite continua bloqueada |
+| Atendimento encerra/reabre | P0 | UI fecha; inbound canônico reabre MESMO UUID; novo clique cria outra intenção/job e segundo POST. Ledger accepted real e job done antigos permanecem byte-equivalentes em seus snapshots; fronteira original preserva no-op |
+| Link solicitado por humano em conversa sob controle humano | P0 | UI autoriza e HTTP chega com assignee user, silêncio, force_human e allowlist preservados. Dois payloads medem texto, destinatário e sessão. Booking automático bloqueado e demais negativos seguem medidos em DB |
+| Aquisição antiga/cancelamento/redação concorrente | P0 | Reclaim e cancelamento antes do sink barram POST; redação durante POST aceito impede callback reidratar link/prévia |
+| Solicitação Google incerta | P0 | POST aceito sem resposta conserva requestId; GET reconhece recibo sem reconhecer remarcação ainda não enviada |
+| Acesso LGPD aos novos dados | P0 | Coletor paginado com tenant/titular/referência validada; testes renderizam PDF real, extraem entregas/avisos em múltiplas páginas e preservam controlador/DPO, sem payload/claim/marca |
+
+| Captura inspecionada | Evidência |
+| --- | --- |
+| Pending desktop | `evidence/comunidade-360/task8-pending-desktop.png` |
+| Pending mobile | `evidence/comunidade-360/task8-pending-mobile.png` |
+| Ready/copiar desktop | `evidence/comunidade-360/task8-ready-desktop.png` |
+| Ready mobile | `evidence/comunidade-360/task8-ready-mobile.png` |
+| Envio concluído | `evidence/comunidade-360/task8-sent-desktop.png` |
+| Nova autorização após reabrir | `evidence/comunidade-360/task8-reopened-mobile.png` |
+| Falha desktop | `evidence/comunidade-360/task8-failure-desktop.png` |
+| Falha mobile | `evidence/comunidade-360/task8-failure-mobile.png` |
+| Retry concluído mobile | `evidence/comunidade-360/task8-retry-ready-mobile.png` |
+| Prévia do PDF LGPD | `evidence/comunidade-360/task8-lgpd-export-preview.png` |
+
+`evidence/comunidade-360/task8-medidas.json` contém origem, hashes e medidas reais. Seção Meet com335px no desktop1440 e243,5px no mobile390; sem overflow horizontal, controles na viewport. A aquisição do job no browser é SQL manual restrita à fixture: prova consumer/ledger/HTTP, não o scheduler completo. Incerteza, opt-out, revogação, claim antigo, cancelamento e redação durante HTTP permanecem nas provas DB/receiver; não são atribuídos às duas jornadas UI.
+
+Testes: `tests/e2e/agenda-google-meet.spec.ts`, `tests/invariants/agenda-meet.test.ts`, `tests/invariants/agenda-meet-export.test.ts`, `tests/unit/agenda-meet*.test.ts*` e `tests/unit/lgpd-pdf-meet.test.ts`. Unit integral710arquivos/7671PASS+1expectedfail; DB integral171arquivos/1386PASS+1expectedfail+1skip, INSTALL/UPDATE PG15. Após o reparo runtime,75casos focados/type/lint e novo build/browser passaram; sem repetição do DB sem delta SQL.0226 aplicada/imutável no QA, junto com0224/0225. Limpeza0organizações/0usuários meet-ui, app/receivers/pools encerrados e namespace demo preservado. Histórico e limites completos em `.superpowers/sdd/comunidade-360/task-8-report.md`.
+
+### Autonomia e revisão de respostas (Task9)
+
+- [P0] Agente sem publicação: salvar versão, testar cenário e ver candidata/propostas sem mensagem operacional. Mesmo ritual de abertura, compactação e fechamento; provedor controlado deve ser identificado como tal.
+- [P0] Recuperação do agente legado: escolher canal/modelo/credencial explicitamente; preservar prompt/RAG e qualquer versão humana existente. Falta de configuração mostra reparo, nunca “no ar”.
+- [P1] Assistido: inbound gera sugestão; editar/aprovar/rejeitar na conversa. Aprovação autoriza só texto e preserva autonomia/assignment/silêncio; mudanças de contexto tornam a sugestão obsoleta.
+- [P1] Pausar e retomar: ponteiro publicado permanece; assistência manual continua. Troca de modo em voo impede efeitos automáticos obsoletos.
+- Provas Task9 em preparação: `tests/invariants/autonomia-replies.test.ts`, `lib/agent-engine/agent/preview.test.ts`. Evidência browser será registrada após revisão e aplicação da migration0227 no QA.
+
+
+## Comunidade 360 — aceite integrado de 2026-09-06
+
+Produto `7f1d0f3e`, integrado à main `ca895850`: as dez specs de organizações, suporte, interface por vínculo, encerramento, Central, presença/recuperação, Calendar, Meet, autonomia assistida e roteamento passaram juntas: **22 casos em 3,7 minutos**. A execução usa build de produção `F0cVqvOg8JuwVlWss4ijk`, banco QA local e receivers HTTP controlados; não comprova OAuth externo, WhatsApp pareado ou qualidade de modelo externo.
+
+Evidência local preservada em `.superpowers/evidence/comunidade-360/final-qa-targeted-r4/` e log `.superpowers/sdd/comunidade-360/final-qa-targeted-r4.log`. A rodada inclui atualização concorrente da interface sem perder formulário, sugestão obsoleta sem confirmação antiga de sucesso e encerramento de suporte com retorno ao contexto original.
+
+Validação integral do mesmo produto: 733 arquivos unitários / 7.911 casos aprovados + 1 falha esperada; 184 arquivos de banco / 1.466 casos aprovados + 1 falha esperada e 1 ignorado, com INSTALL e UPDATE; tipos, lint (0 erros, 344 avisos) e build aprovados. `lint:channels`, validadores shell e conferência de release também passaram. Os checks remotos continuam sendo condição do merge pelo revisor da PR #613.

@@ -1,92 +1,82 @@
-/**
- * POST /api/v1/conversations/:id/draft-reply — sugere um rascunho de resposta
- * pra o composer (sob demanda, sem enviar nada). Onda 5.1.
- *
- * Reusa `generateDraftReply` (agent-engine) via um pool de Postgres próprio
- * do processo Next.js — sem tools, sem guardrails de envio (revisão humana
- * antes de sair). Sem rate-limiter dedicado: o gate de orçamento dentro de
- * `runModelCall` (`aplicarOrcamento`) já limita custo por org — desde a 0159
- * pelo teto que a organização configurou na tela, e não mais por um escalar de
- * jsonb que ninguém editava.
- */
 import { randomUUID } from "node:crypto";
-import { type NextRequest } from "next/server";
-
-import { generateDraftReply, type DraftReplyResult } from "@/lib/agent-engine/agent/draft-reply";
-import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { crmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/crm/mcp-client";
-import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/run-model-call";
-import { ok, fail } from "@/lib/api/wrappers";
+import type { NextRequest } from "next/server";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
-import { env } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
+import { generateReplyDraft } from "@/lib/agent-engine/agent/reply-drafts";
+import { ok, fail } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
-
 export const dynamic = "force-dynamic";
-
-interface RouteParams {
-  params: Promise<{ id: string }>;
-}
-
-const REASON_TO_RESPONSE: Record<
-  Exclude<DraftReplyResult, { ok: true }>["reason"],
-  [code: string, message: string, status: number]
-> = {
-  no_agent: ["no_agent", "Nenhum agente publicado para sugerir resposta.", 422],
-  blocked: ["blocked", "Contato bloqueado/anonimizado.", 422],
-  empty: ["empty", "A IA não gerou um rascunho.", 422],
-  error: ["internal_error", "Erro ao gerar rascunho.", 500],
-};
-
-export async function POST(_req: NextRequest, { params }: RouteParams): Promise<Response> {
-  const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "conversations" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
-  const { id } = await params;
-
-  const supabase = await createClient();
-  const { data: conv } = await supabase
+type Ctx = { params: Promise<{ id: string }> };
+async function context(ctx: Ctx, requestId: string) {
+  const auth = await requireRole("agent", { requestId, resource: "conversations" });
+  if (!auth.ok) return { response: auth.response } as const;
+  const t = (texto: string) => traduzir(texto, auth.user.idioma);
+  const { id } = await ctx.params;
+  const db = await createClient();
+  const { data: conversation } = await db
     .from("conversations")
-    .select("id, organization_id, contact_id, channel_session_id")
+    .select("id,contact_id,channel_session_id")
+    .eq("organization_id", auth.org.orgId)
     .eq("id", id)
-    .eq("organization_id", org.orgId)
     .maybeSingle();
-  if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
-  if (!conv.contact_id || !conv.channel_session_id) {
-    return fail("unprocessable", t("Conversa sem contato/canal."), 422, { requestId });
-  }
-
-  let pool;
-  try {
-    pool = getRequestPool();
-  } catch {
-    return fail("unavailable", t("Rascunho da IA indisponível (config)."), 503, { requestId });
-  }
-
-  // Falha controlada (getLeadContext ok:false) volta como reason:'error' e vira
-  // 500 abaixo. Exceção inesperada (credencial inválida, provider fora, pool
-  // morto, orçamento atingido) NÃO é engolida: sobe pro handler global do Next, que a
-  // registra — perder a causa raiz de uma chamada de LLM seria cegueira em prod.
-  const result: DraftReplyResult = await generateDraftReply(
-    pool,
-    llmEdgeConfigFromEnv(env),
-    crmEdgeConfigFromEnv({
-      SUPABASE_URL: env.NEXT_PUBLIC_SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
-    }),
-    {
-      tenantId: org.orgId,
-      leadId: conv.contact_id,
-      conversationId: conv.id,
-      channelSessionId: conv.channel_session_id,
-    },
+  if (!conversation)
+    return { response: fail("not_found", t("Conversa não encontrada."), 404, { requestId }) } as const;
+  return { auth, conversation, t } as const;
+}
+export async function GET(_req: NextRequest, ctx: Ctx) {
+  const requestId = randomUUID(),
+    c = await context(ctx, requestId);
+  if ("response" in c) return c.response;
+  const { rows } = await getRequestPool().query(
+    `select id,revision::text,original_body,edited_body,approved_body,proposals,feedback,error_code,created_at,
+ case when status in ('generating','pending','approved') and not fn_reply_context_current(organization_id,id) then 'stale' else status end as status
+ from ai_reply_drafts where organization_id=$1 and conversation_id=$2 order by created_at desc limit 5`,
+    [c.auth.org.orgId, c.conversation.id],
   );
-
-  if (!result.ok) {
-    const [code, message, status] = REASON_TO_RESPONSE[result.reason];
-    return fail(code, t(message), status, { requestId });
+  return ok({ drafts: rows }, { requestId });
+}
+export async function POST(_req: NextRequest, ctx: Ctx) {
+  const denied = await requireSupportWrite();
+  if (denied) return denied;
+  const requestId = randomUUID(),
+    c = await context(ctx, requestId);
+  if ("response" in c) return c.response;
+  const {
+    contact_id: contactId,
+    channel_session_id: channelId,
+    id: conversationId,
+  } = c.conversation;
+  if (!contactId || !channelId)
+    return fail("unprocessable", c.t("Conversa sem contato/canal."), 422, { requestId });
+  try {
+    const draft = await generateReplyDraft(getRequestPool(), requestTurnDeps(), {
+      organizationId: c.auth.org.orgId,
+      conversationId,
+      contactId,
+      channelId,
+    });
+    void audit({
+      action: "ai_reply.generated",
+      actorUserId: c.auth.user.id,
+      organizationId: c.auth.org.orgId,
+      resourceType: "conversation",
+      resourceId: conversationId,
+      requestId,
+    });
+    return ok(
+      { draft: draft.original_body ?? "", draft_id: draft.id, status: draft.status },
+      { requestId },
+    );
+  } catch {
+    return fail(
+      "reply_unavailable",
+      c.t("Não foi possível gerar a sugestão. Confira a publicação e a configuração do agente."),
+      422,
+      { requestId },
+    );
   }
-  return ok({ draft: result.draft }, { requestId });
 }

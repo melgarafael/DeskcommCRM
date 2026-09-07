@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/products/import — o catálogo a partir da planilha que a loja já tem.
  *
@@ -51,6 +52,9 @@ interface ResumoDaImportacao {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   // Preço de venda é escrita de gestão: o mesmo papel do POST unitário.
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });

@@ -31,10 +31,14 @@ export default async function AnaliseHubPage() {
   return (
     <NavHub
       group="analise"
-      isPlatformAdmin={user.is_platform_admin}
+      isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}
+      interfaceSettings={activeOrg?.interface_settings}
       title={traduzir("Análise", idioma)}
-      subtitle={traduzir("Como o negócio foi no período — e o histórico para quando alguém perguntar por quê.", idioma)}
+      subtitle={traduzir(
+        "Como o negócio foi no período — e o histórico para quando alguém perguntar por quê.",
+        idioma,
+      )}
       locale={idioma}
     />
   );

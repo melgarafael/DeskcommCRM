@@ -1,3 +1,4 @@
+import { requireSupportWrite, authenticatedSessionId } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/agenda/google/connect — começa a conexão da agenda do Google.
  *
@@ -49,6 +50,8 @@ function voltarComErro(codigo: string): NextResponse {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   const requestId = req.headers.get("x-request-id") ?? undefined;
 
   const autorizado = await requireRole("agent", { requestId, resource: "calendar_connections" });
@@ -71,7 +74,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let state: string;
   try {
     state = emitirEstado(
-      { organizationId: org.orgId, userId: user.id },
+      { organizationId: org.orgId, userId: user.id, authSessionId: await authenticatedSessionId() },
       { segredo: env.INTERNAL_SECRET, agora: new Date(), nonce },
     );
   } catch {

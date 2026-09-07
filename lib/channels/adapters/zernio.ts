@@ -203,6 +203,7 @@ export const zernioAdapter: ChannelAdapter = {
       ...(envelope.replyToExternalId ? { replyTo: envelope.replyToExternalId } : {}),
     };
 
+    await envelope.beforeSend?.();
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -247,6 +248,7 @@ export const zernioAdapter: ChannelAdapter = {
    * parâmetro virar o primeiro na hora em que alguém renomeasse uma chave.
    */
   async sendTemplate(input: ChannelTenantScope & {
+    beforeSend?: () => Promise<void>;
     sessionRef: string;
     to: string;
     name: string;
@@ -272,6 +274,7 @@ export const zernioAdapter: ChannelAdapter = {
       .sort((a, b) => Number(a) - Number(b))
       .map((k) => input.values[k] ?? "");
 
+    await input.beforeSend?.();
     const res = await fetch(`${creds.baseUrl}/v1/inbox/conversations`, {
       method: "POST",
       headers: {

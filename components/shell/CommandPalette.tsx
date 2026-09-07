@@ -21,10 +21,7 @@ import { cn } from "@/lib/utils";
 
 /** Sem acento e sem caixa: ninguém digita "orçamento" com cedilha às pressas. */
 function normalizar(texto: string): string {
-  return texto
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
 const ROTULO_GRUPO = new Map(NAV_GROUPS.map((g) => [g.id, g.label]));
@@ -58,15 +55,23 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
   const [destacado, setDestacado] = useState(0);
 
   const visiveis = useMemo(
-    () => searchable(user.is_platform_admin, activeOrg?.role ?? null),
-    [user.is_platform_admin, activeOrg?.role],
+    () =>
+      searchable(
+        user.is_platform_admin && !user.support,
+        activeOrg?.role ?? null,
+        activeOrg?.interface_settings,
+      ),
+    [user.is_platform_admin, user.support, activeOrg?.role, activeOrg?.interface_settings],
   );
 
   const resultados = useMemo(() => {
     const termo = normalizar(busca.trim());
     // Sem termo, abre no trabalho do dia em vez de uma tela vazia que não
     // ensina nada sobre o que dá para procurar aqui.
-    if (!termo) return visiveis.filter((d) => d.group === "atendimento");
+    if (!termo) {
+      const daily = visiveis.filter((d) => d.group === "atendimento");
+      return daily.length ? daily : visiveis.slice(0, 8);
+    }
     return visiveis.filter((d) => normalizar(`${d.label} ${d.description}`).includes(termo));
   }, [busca, visiveis]);
 
@@ -149,7 +154,7 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
                 <div className="min-w-0">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">{t(d.label)}</span>
-                    <span className="truncate text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <span className="truncate text-[11px] tracking-wider text-muted-foreground uppercase">
                       {t(ROTULO_GRUPO.get(d.group) ?? "")}
                     </span>
                   </div>

@@ -16,7 +16,15 @@
  */
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 
-export type JobKind = 'inbound_turn' | 'followup_turn' | 'watchdog' | 'flywheel' | 'case_reply_turn' | 'operator_turn';
+export type JobKind =
+  | 'inbound_turn'
+  | 'followup_turn'
+  | 'watchdog'
+  | 'flywheel'
+  | 'case_reply_turn'
+  | 'operator_turn'
+  | 'transactional_delivery'
+  | 'approved_reply';
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'dead';
 
 export interface JobRow {
@@ -34,6 +42,8 @@ export interface JobRow {
   last_error: string | null;
   locked_by: string | null;
   locked_at: Date | null;
+  /** Texto original da aquisição; Date do driver perde microssegundos. */
+  claim_acquired_at?: string;
   created_at: Date;
 }
 
@@ -136,7 +146,7 @@ const CLAIM_SQL = `
   update job_queue
   set status = 'running', locked_by = $2, locked_at = now(), attempts = attempts + 1
   where id in (select id from runnable)
-  returning *`;
+  returning *, locked_at::text as claim_acquired_at`;
 
 /**
  * Claima até `batchSize` jobs respeitando o cap global (`maxConcurrency`): a soma de
@@ -244,6 +254,7 @@ export async function completeJob<T = void>(
   jobId: string,
   workerId: string,
   inSameCommit?: (tx: PoolClient) => Promise<T>,
+  acquiredAt?: string,
 ): Promise<T> {
   const client = await pool.connect();
   try {
@@ -251,8 +262,8 @@ export async function completeJob<T = void>(
     const result = (inSameCommit ? await inSameCommit(client) : undefined) as T;
     const done = await client.query(
       `update job_queue set status = 'done', locked_by = null, locked_at = null
-       where id = $1 and status = 'running' and locked_by = $2`,
-      [jobId, workerId],
+       where id = $1 and status = 'running' and locked_by = $2 and ($3::timestamptz is null or locked_at=$3)`,
+      [jobId, workerId, acquiredAt ?? null],
     );
     if (done.rowCount !== 1) {
       throw new Error(
@@ -288,6 +299,7 @@ export async function failJob(
   jobId: string,
   workerId: string,
   error: unknown,
+  acquiredAt?: string,
 ): Promise<JobRow | null> {
   const { rows } = await db.query<JobRow>(
     `with updated as (
@@ -298,7 +310,7 @@ export async function failJob(
              else now() + (least(power(2, greatest(attempts - 1, 0)) * 10, 120) * interval '1 second')
            end,
            locked_by = null, locked_at = null, last_error = $3
-       where id = $1 and status = 'running' and locked_by = $2
+       where id = $1 and status = 'running' and locked_by = $2 and ($4::timestamptz is null or locked_at=$4)
        returning *
      ),
      alert as (
@@ -317,7 +329,7 @@ export async function failJob(
        where status = 'dead'
      )
      select * from updated`,
-    [jobId, workerId, normalizeError(error)],
+    [jobId, workerId, normalizeError(error), acquiredAt ?? null],
   );
   return rows[0] ?? null;
 }
@@ -334,13 +346,14 @@ export async function cancelJob(
   jobId: string,
   workerId: string,
   reason: string,
+  acquiredAt?: string,
 ): Promise<JobRow | null> {
   const { rows } = await db.query<JobRow>(
     `update job_queue
      set status = 'failed', locked_by = null, locked_at = null, last_error = $3
-     where id = $1 and status = 'running' and locked_by = $2
+     where id = $1 and status = 'running' and locked_by = $2 and ($4::timestamptz is null or locked_at=$4)
      returning *`,
-    [jobId, workerId, normalizeError(reason)],
+    [jobId, workerId, normalizeError(reason), acquiredAt ?? null],
   );
   return rows[0] ?? null;
 }
@@ -355,7 +368,7 @@ export async function rescheduleJob(
   db: Queryable,
   jobId: string,
   workerId: string,
-  opts: { delayMs: number; reason: string },
+  opts: { delayMs: number; reason: string; acquiredAt?: string },
 ): Promise<JobRow | null> {
   const { rows } = await db.query<JobRow>(
     `update job_queue
@@ -363,9 +376,9 @@ export async function rescheduleJob(
          run_after = now() + ($3 * interval '1 millisecond'),
          attempts = greatest(attempts - 1, 0),
          last_error = $4
-     where id = $1 and status = 'running' and locked_by = $2
+     where id = $1 and status = 'running' and locked_by = $2 and ($5::timestamptz is null or locked_at=$5)
      returning *`,
-    [jobId, workerId, opts.delayMs, normalizeError(opts.reason)],
+    [jobId, workerId, opts.delayMs, normalizeError(opts.reason), opts.acquiredAt ?? null],
   );
   return rows[0] ?? null;
 }
@@ -382,7 +395,14 @@ export async function reapExpiredJobs(
   const { rows } = await db.query<{ id: string; status: JobStatus }>(
     `with expired as (
        update job_queue
-       set status = case when attempts >= max_attempts then 'dead' else 'pending' end,
+       set status = case
+         -- An accepted approved reply only needs local receipt recognition.
+         -- Exhausting send attempts must not discard that existing receipt.
+         when kind='approved_reply' and exists(
+           select 1 from send_ledger l where l.organization_id=job_queue.organization_id
+           and l.job_id=job_queue.id and l.seq=1 and l.status='accepted'
+         ) then 'pending'
+         when attempts >= max_attempts then 'dead' else 'pending' end,
            locked_by = null, locked_at = null,
            last_error = coalesce(last_error, 'visibility timeout excedido (worker morto?)')
        where status = 'running' and locked_at < now() - ($1 * interval '1 millisecond')
@@ -437,7 +457,10 @@ async function rollback(client: PoolClient, cause: unknown): Promise<void> {
   try {
     await client.query('rollback');
   } catch (rollbackErr) {
-    throw new AggregateError([cause, rollbackErr], 'rollback falhou após erro na transação da fila');
+    throw new AggregateError(
+      [cause, rollbackErr],
+      'rollback falhou após erro na transação da fila',
+    );
   }
 }
 

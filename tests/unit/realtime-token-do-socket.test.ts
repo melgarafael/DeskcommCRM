@@ -54,7 +54,7 @@ function soCodigo(fonte: string): string {
 const FONTE = soCodigo(readFileSync("lib/supabase/browser.ts", "utf8"));
 
 describe("o token que o socket do Realtime usa", () => {
-  it("a callback é instalada em `realtime`, e não via setAuth", () => {
+  it("a callback permanece fonte da renovação e o bootstrap usa a mesma fonte", () => {
     // `realtime: { accessToken }` é o que sobrescreve a callback padrão (o
     // SupabaseClient faz `{...defaults, ...settings.realtime}`). Passar
     // `accessToken` no nível do CLIENT seria outra coisa — transformaria
@@ -62,10 +62,8 @@ describe("o token que o socket do Realtime usa", () => {
     expect(FONTE, "a callback `accessToken` do realtime sumiu do client").toMatch(
       /realtime:\s*\{\s*accessToken:/,
     );
-    expect(
-      FONTE,
-      "voltou a usar setAuth — a callback vence o token manual desde o realtime-js 2.112.x",
-    ).not.toMatch(/realtime\.setAuth\(/);
+    expect(FONTE).toMatch(/const token = await tokenDoRealtime\(\)/);
+    expect(FONTE).toMatch(/await createClient\(\)\.realtime\.setAuth\(token\)/);
   });
 
   it("o hook do canal NÃO autentica por conta própria — fonte única", () => {
@@ -101,7 +99,7 @@ describe("a callback do token", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.doMock("@supabase/ssr", () => ({
-      createBrowserClient: vi.fn(() => ({ realtime: {} })),
+      createBrowserClient: vi.fn(() => ({ realtime: { setAuth: vi.fn(async () => {}) } })),
     }));
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://localhost:54321");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key-de-teste");
@@ -130,13 +128,13 @@ describe("a callback do token", () => {
     await expect(cb()).resolves.toBe("jwt-do-usuario");
   });
 
-  it("401 devolve null, e a PRÓXIMA tentativa refaz a requisição", async () => {
+  it("401 recusa sem token anônimo, e a PRÓXIMA tentativa refaz a requisição", async () => {
     // Falha não se guarda. Um 401 transitório (sessão estabelecendo, cookie em
     // renovação) condenaria todos os canais criados depois se a promessa
     // ficasse memoizada — foi um defeito real deste caminho, na versão anterior.
     const cb = await callbackInstalada();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
-    await expect(cb()).resolves.toBeNull();
+    await expect(cb()).rejects.toThrow("Token de tempo real indisponível");
 
     const bom = vi.fn().mockResolvedValue({
       ok: true,
@@ -152,7 +150,7 @@ describe("a callback do token", () => {
     // assim não há token. Guardar isto é guardar sucesso parcial.
     const cb = await callbackInstalada();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: {} }) }));
-    await expect(cb()).resolves.toBeNull();
+    await expect(cb()).rejects.toThrow("Token de tempo real indisponível");
   });
 
   it("N canais assinando juntos fazem UMA requisição", async () => {
@@ -194,4 +192,17 @@ describe("a callback do token", () => {
     await cb();
     expect(segundo, "token perto de vencer deveria ser renovado").toHaveBeenCalledTimes(2);
   });
+  it("resposta de contexto anterior não alimenta cache nem bootstrap novo", async () => {
+    const browser = await import("@/lib/supabase/browser");
+    let resolveOld!: (value: unknown) => void;
+    const fetcher = vi.fn().mockReturnValueOnce(new Promise(r => { resolveOld = r; })).mockResolvedValue({ok:true,json:async()=>({data:{access_token:"novo",expires_at:Math.floor(Date.now()/1000)+3600}})});
+    vi.stubGlobal("fetch",fetcher);
+    const old = browser.prepareRealtimeAuthentication();
+    browser.resetRealtimeAuthentication();
+    const fresh = browser.prepareRealtimeAuthentication();
+    resolveOld({ok:true,json:async()=>({data:{access_token:"antigo",expires_at:Math.floor(Date.now()/1000)+3600}})});
+    await expect(old).rejects.toThrow();await expect(fresh).resolves.toBeUndefined();
+    const cb=await callbackInstalada();await expect(cb()).resolves.toBe("novo");
+  });
+
 });

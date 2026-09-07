@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+const originRpc = vi.hoisted(() => vi.fn(async (_fn: string, _args: unknown) => ({ data: null, error: null })));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: originRpc }) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 // `tests/helpers/stages-db-double.ts` importa `createClient`/`requireRole` de
 // verdade para poder `vi.mocked(...).mockResolvedValue(...)` — sem mockar os
@@ -146,4 +148,16 @@ describe("create_or_move_lead — não lê nenhuma chave classificacao_inicial_*
     expect(fonte.toLowerCase()).not.toContain("classificacao");
     expect(fonte.toLowerCase()).not.toContain("respondi_score");
   });
+});
+
+
+it("CRM derivado propaga referência original sem observar ou abrir atendimento", async () => {
+  originRpc.mockClear();
+  const db = makeDb({ pipelines: [funilRow({ id: PIPE, name: "Funil" })], stages: [ETAPA_ORIGEM, ETAPA_DESTINO], leads: [negocio("lead-1", "novo")] });
+  const ctx = ctxComLead({}, db.client as unknown as ActionCtx["admin"]);
+  ctx.event = { id: "evento-original", event_type: "message.received" } as ActionCtx["event"];
+  ctx.context.contact = { id: "contato-1" };
+  expect((await getAction("create_or_move_lead")!.execute(ctx, { pipeline_id: PIPE, stage_id: "triagem" })).status).toBe("success");
+  expect(originRpc).toHaveBeenCalledWith("emit_event", expect.objectContaining({ p_payload: expect.objectContaining({ service_origin: {kind:"event",event_id:"evento-original",organization_id:ORG_ID,contact_id:"contato-1"} }) }));
+  expect(originRpc.mock.calls.every(call => call[0] === "emit_event")).toBe(true);
 });

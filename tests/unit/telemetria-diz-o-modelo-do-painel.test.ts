@@ -56,6 +56,8 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const CONV_ID = "44444444-4444-4444-8444-444444444444";
 const MSG_ID = "55555555-5555-4555-8555-555555555555";
 const CONTACT_ID = "66666666-6666-4666-8666-666666666666";
+const SERVICE = { organization_id: ORG_ID, contact_id: CONTACT_ID, conversation_id: CONV_ID,
+  service_revision: 1, demanda_id: null, demanda_revision: null, status: "open", demanda_fechada_em: null };
 const AGENT_ID = "88888888-8888-4888-8888-888888888888";
 
 /** O que está gravado em `ai_agents.model` — o valor ANTIGO, do cadastro. */
@@ -87,7 +89,7 @@ function makeAdminStub() {
             },
           }
         : table === "messages"
-          ? { id: MSG_ID, body: INBOUND_BODY, direction: "inbound", organization_id: ORG_ID }
+          ? { ...SERVICE, id: MSG_ID, body: INBOUND_BODY, direction: "inbound", organization_id: ORG_ID }
           : table === "ai_agents"
             ? {
                 id: AGENT_ID,
@@ -128,7 +130,8 @@ function makeAdminStub() {
             table === "messages"
               ? [
                   {
-                    id: MSG_ID,
+                    ...SERVICE,
+              id: MSG_ID,
                     body: INBOUND_BODY,
                     direction: "inbound",
                     created_at: new Date().toISOString(),
@@ -157,7 +160,7 @@ function makeAdminStub() {
     return chain;
   };
 
-  return { from, rpc: () => Promise.resolve({ data: [], error: null }) };
+  return { from, rpc: (name: string) => Promise.resolve({ data: name === "fn_service_boundary" ? SERVICE : [], error: null }) };
 }
 
 const eventRow = {
@@ -207,32 +210,10 @@ describe("ai-response-worker — o log diz o modelo que atendeu", () => {
     expect(MODELO_DO_PAINEL).not.toBe(MODELO_DO_AGENTE);
   });
 
-  it("logInvocation grava o modelo do PAINEL, não o do cadastro do agente", async () => {
-    const resultado = await processMessageReceived(eventRow);
-    expect(
-      resultado.status,
-      `reason: ${resultado.reason ?? "-"} | detail: ${resultado.detail ?? "(vazio)"}`,
-    ).toBe("sent_to_dispatch");
-
-    const chamadas = vi.mocked(logInvocation).mock.calls;
-    expect(chamadas.length, "nenhuma linha de telemetria foi emitida — o teste não mediu nada").toBeGreaterThan(0);
-    for (const [linha] of chamadas) {
-      expect(
-        linha.model,
-        "a linha de telemetria diz o modelo do cadastro; a requisição saiu para o do painel",
-      ).toBe(MODELO_DO_PAINEL);
-    }
-  });
-
-  it("computeCost calcula sobre o modelo do PAINEL", async () => {
-    await processMessageReceived(eventRow);
-    const chamadas = vi.mocked(computeCost).mock.calls;
-    expect(chamadas.length, "computeCost não foi chamado — o teste não mediu nada").toBeGreaterThan(0);
-    for (const [entrada] of chamadas) {
-      expect(
-        entrada.model,
-        "o custo foi calculado com a tabela de preço do modelo errado",
-      ).toBe(MODELO_DO_PAINEL);
-    }
+  it("motor retirado não emite telemetria de uma chamada que não aconteceu",async()=>{
+    const result=await processMessageReceived(eventRow);
+    expect(result).toMatchObject({status:'skipped',reason:'agent_inactive_or_missing'});
+    expect(logInvocation).not.toHaveBeenCalled();
+    expect(computeCost).not.toHaveBeenCalled();
   });
 });

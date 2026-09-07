@@ -64,6 +64,7 @@ export const AUDIT_ACTIONS = [
   // A cascata retomando o que uma execução interrompida não terminou (#310).
   "lgpd.anonymize_catchup",
   "member.invited",
+  "team.interface_changed",
   "member.accepted",
   "member.role_changed",
   "member.revoked",
@@ -162,6 +163,10 @@ export const AUDIT_ACTIONS = [
   "ai_agent.version_created",
   "ai_agent.version_updated",
   "ai_agent.tested",
+  "ai_agent.reconciled",
+  "ai_reply.generated",
+  "ai_reply.approved",
+  "ai_reply.rejected",
   "ai_agent.reverted",
   "ai.dispatcher_run",
   "ai.pacing_knobs_updated",
@@ -205,6 +210,7 @@ export const AUDIT_ACTIONS = [
   // uma demanda, e qual. Sem isto, a única mutação que fecha o vazamento seria
   // a única sem rastro.
   "demanda.proximo_passo_definido",
+  "demanda.encerrada",
   "routing.worker_run",
   "attendant.heartbeat_swept",
   "webhook.source_created",
@@ -410,17 +416,21 @@ export const AUDIT_ACTIONS = [
   // `nossos_ignorados` de propósito: é o número que prova o anti-eco
   // funcionando — sem ele, esses eventos teriam virado compromisso fantasma.
   "agenda.google.sync_executado",
+  "agenda.google_selection_updated",
+  "agenda.google_catalog_updated",
+  "agenda.meet_action_requested",
+  "agenda.google_resolution_requested",
 
   // ── O compromisso em si (frentes 1 e 5 do Calendário Vivo) ──────────────
   // Marcar, remarcar e cancelar são mutações de um compromisso com hora e
   // pessoa. Cancelar em especial: é a única das três que alguém pode querer
   // negar ter feito.
   //
-  // Não há `agenda.appointment_completed` nem `_no_show` aqui de propósito.
-  // Esses dois não são mutação de intenção — são o registro de um fato que já
-  // aconteceu no mundo, e vivem na timeline do lead (`ATIVIDADES_DA_AGENDA`,
-  // em `lib/agenda/tipos.ts`), não na trilha de quem-fez-o-quê.
   "agenda.appointment_created",
+  "agenda.appointment_outcome_recorded",
+  "agenda.appointment_updated",
+  "agenda.confirmation_sweep_run",
+  "agenda.settings_updated",
   "agenda.appointment_rescheduled",
   "agenda.appointment_cancelled",
   // Relógio HTTP (Hobby / sem contêiner scheduler): uma batida que alguém
@@ -446,6 +456,7 @@ export const AUDIT_ACTIONS = [
   "crm_task.created",
   "crm_task.updated",
   "crm_task.deleted",
+  "organization.switched",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

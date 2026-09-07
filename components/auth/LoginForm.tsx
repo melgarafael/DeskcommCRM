@@ -35,7 +35,7 @@ export function LoginForm({ next }: { next?: string }) {
       const res = await signInWithPassword(values, next);
       if (!res) {
         // Should be unreachable (redirect throws), but guard anyway.
-        router.replace(next || "/app/inbox");
+        router.replace(next || "/app");
         return;
       }
       if (res.error === "mfa_required") {

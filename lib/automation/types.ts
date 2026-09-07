@@ -1,3 +1,4 @@
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 
@@ -9,6 +10,8 @@ export interface ActionResultDetail {
 }
 
 export interface ActionCtx {
+  /** Privado à execução: nunca vem do payload nem do contexto de condições. */
+  serviceBoundaries?: Map<string, Promise<ServiceBoundary>>;
   admin: SupabaseClient;
   organizationId: string;
   ruleId: string;

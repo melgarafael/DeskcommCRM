@@ -63,7 +63,7 @@ const ACTIVITY_COLS =
  * ausência dele é o próprio invariante 4, e é o que precisa saltar na tela.
  */
 const DEMANDA_COLS =
-  "id, aberta_em, origem, estado, proximo_passo, proximo_passo_em, prazo_em";
+  "id, revision, aberta_em, origem, estado, proximo_passo, proximo_passo_em, prazo_em";
 
 export async function GET(
   _req: NextRequest,
@@ -81,17 +81,21 @@ export async function GET(
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
-  const [leads, orders, activities, demandas] = await Promise.all([
+  const { data: contactScope, error: scopeError } = await supabase.from("contacts")
+    .select("organization_id").eq("id", contactId).maybeSingle();
+  if (scopeError) return fail("internal_error", scopeError.message, 500, { requestId });
+  if (!contactScope) return fail("not_found", "Contato não encontrado.", 404, { requestId });
+  const [leads, orders, activities, demandas, fatos, historico] = await Promise.all([
     supabase
       .from("crm_leads")
       .select(LEAD_COLS)
-      .eq("contact_id", contactId)
+      .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
       .order("updated_at", { ascending: false })
       .limit(3),
     supabase
       .from("orders")
       .select(ORDER_COLS)
-      .eq("contact_id", contactId)
+      .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
       .order("created_at", { ascending: false })
       .limit(3),
     // 12 e não 5. A janela de 5 foi dimensionada quando a timeline não recebia
@@ -102,7 +106,7 @@ export async function GET(
     supabase
       .from("crm_lead_activities")
       .select(ACTIVITY_COLS)
-      .eq("contact_id", contactId)
+      .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
       .order("performed_at", { ascending: false })
       .limit(12),
     // Só as ABERTAS: demanda encerrada é histórico e já vive na timeline. Da
@@ -112,15 +116,17 @@ export async function GET(
     supabase
       .from("demandas")
       .select(DEMANDA_COLS)
-      .eq("contact_id", contactId)
+      .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
       .is("fechada_em", null)
       .order("aberta_em", { ascending: true })
       .limit(5),
+    supabase.from("lead_notes").select("id, headline, body").eq("contact_id", contactId).eq("organization_id", contactScope.organization_id).order("created_at", { ascending: false }).limit(20),
+    supabase.from("demandas").select("id, desfecho, fechada_em").eq("contact_id", contactId).eq("organization_id", contactScope.organization_id).not("fechada_em", "is", null).order("fechada_em", { ascending: false }).limit(5),
   ]);
 
   // A falha SOBE. Engolir aqui devolveria lista vazia ao cliente e recriaria,
   // do lado do servidor, exatamente a mentira que esta rota veio desfazer.
-  const falha = leads.error ?? orders.error ?? activities.error ?? demandas.error;
+  const falha = leads.error ?? orders.error ?? activities.error ?? demandas.error ?? fatos.error ?? historico.error;
   if (falha) {
     return fail("internal_error", falha.message, 500, { requestId });
   }
@@ -145,6 +151,7 @@ export async function GET(
           : null,
       })),
       demandas: demandas.data ?? [],
+      fatos: fatos.data ?? [], historico: historico.data ?? [],
     },
     { requestId },
   );

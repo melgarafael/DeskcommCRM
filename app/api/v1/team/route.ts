@@ -1,3 +1,4 @@
+import type { InterfaceSettings } from "@/lib/navigation/interface";
 /**
  * GET /api/v1/team — list members of the active organization.
  *
@@ -18,6 +19,7 @@ import { isServiceRoleConfigured } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
 interface MembershipRow {
+  interface_settings?: InterfaceSettings;
   user_id: string;
   role: string;
   invited_at: string | null;
@@ -42,7 +44,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const { data: rows, error } = await supabase
     .from("user_organizations")
-    .select("user_id, role, invited_at, accepted_at, revoked_at, created_at")
+    .select("user_id, role, interface_settings, invited_at, accepted_at, revoked_at, created_at")
     .eq("organization_id", activeOrg.orgId)
     .is("revoked_at", null)
     .order("created_at", { ascending: true });

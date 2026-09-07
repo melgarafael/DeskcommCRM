@@ -31,15 +31,17 @@ function b64urlDecode(s: string): string {
   return Buffer.from(s, "base64url").toString("utf8");
 }
 
-export function issueState(orgId: string): string {
+export function issueState(orgId: string, actor?: { userId: string; authSessionId: string }): string {
   const nonce = randomBytes(16).toString("hex");
   const exp = Date.now() + TTL_MS;
-  const payload = `${orgId}.${nonce}.${exp}`;
+  const payload = `${orgId}.${nonce}.${exp}${actor ? `.${actor.userId}.${actor.authSessionId}` : ""}`;
   const sig = createHmac("sha256", key()).update(payload, "utf8").digest("hex");
   return `${b64urlEncode(payload)}.${sig}`;
 }
 
 export interface VerifiedState {
+  userId?: string;
+  authSessionId?: string;
   orgId: string;
   nonce: string;
   expMs: number;
@@ -69,11 +71,11 @@ export function verifyState(token: string | null | undefined): VerifiedState | n
   if (!timingSafeEqual(receivedSig, expectedSig)) return null;
 
   const segments = payload.split(".");
-  if (segments.length !== 3) return null;
-  const [orgId, nonce, expStr] = segments;
+  if (segments.length !== 3 && segments.length !== 5) return null;
+  const [orgId, nonce, expStr, userId, authSessionId] = segments;
   const expMs = Number(expStr);
   if (!orgId || !nonce || !Number.isFinite(expMs)) return null;
   if (Date.now() > expMs) return null;
 
-  return { orgId, nonce, expMs };
+  return { orgId, nonce, expMs, ...(userId && authSessionId ? {userId, authSessionId} : {}) };
 }

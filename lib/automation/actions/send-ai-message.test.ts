@@ -79,6 +79,12 @@ import "@/lib/automation/actions/send-ai-message";
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CANAL = "22222222-2222-4222-8222-222222222222";
 const NUMERO_DE_TESTE = "+5511999998888";
+const EVENTO = "33333333-3333-4333-8333-333333333333";
+const FRONTEIRA = {
+  organization_id: ORG, contact_id: "contato-1", conversation_id: "conversa-1",
+  service_revision: 1, demanda_id: null, demanda_revision: null,
+  status: "open", demanda_fechada_em: null,
+};
 
 interface EscritaNoBanco {
   tabela: string;
@@ -99,7 +105,7 @@ function canalEmTeste(numeros: string[]): Record<string, unknown> {
  * Dublê do cliente admin. Registra toda ida ao banco para o teste poder afirmar
  * o que NÃO foi escrito — que é o que a guarda promete.
  */
-function bancoFalso(canal: { metadata?: unknown; existe?: boolean; erro?: string }) {
+function bancoFalso(canal: { metadata?: unknown; existe?: boolean; erro?: string; origemObsoleta?: boolean }) {
   const idas: EscritaNoBanco[] = [];
   const from = (tabela: string) => {
     let operacao: "select" | "update" = "select";
@@ -113,13 +119,34 @@ function bancoFalso(canal: { metadata?: unknown; existe?: boolean; erro?: string
     };
     encadeavel.maybeSingle = async () => {
       idas.push({ tabela, operacao });
+      if (tabela === "conversations") return { data: { channel_session_id: CANAL }, error: null };
+      if (tabela === "organizations") return { data: { settings: {} }, error: null };
       if (tabela !== "channel_sessions") return { data: { id: "contato-1" }, error: null };
       if (canal.erro) return { data: null, error: { message: canal.erro } };
       return { data: canal.existe === false ? null : { metadata: canal.metadata }, error: null };
     };
+    encadeavel.single = encadeavel.maybeSingle;
+    encadeavel.then = (resolve: (value: unknown) => unknown) => {
+      if (tabela !== "calendar_appointments") throw new Error(`Leitura em lista não prevista: ${tabela}`);
+      idas.push({ tabela, operacao });
+      return Promise.resolve({ data: [], error: null }).then(resolve);
+    };
     return encadeavel;
   };
-  return { cliente: { from } as unknown as ActionCtx["admin"], idas };
+  // A origem e suas guardas rodam de verdade; o dublê fornece o recibo do evento.
+  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    expect(args.p_org).toBe(ORG);
+    if (name === "fn_service_event_origin") {
+      expect(args).toEqual({ p_org: ORG, p_event: EVENTO, p_contact: "contato-1", p_session: CANAL });
+      return { data: FRONTEIRA, error: null };
+    }
+    if (name === "fn_service_boundary") {
+      expect(args.p_conversation).toBe(FRONTEIRA.conversation_id);
+      return { data: { ...FRONTEIRA, service_revision: canal.origemObsoleta ? 2 : 1 }, error: null };
+    }
+    throw new Error(`RPC não prevista: ${name}`);
+  });
+  return { cliente: { from, rpc } as unknown as ActionCtx["admin"], idas, rpc };
 }
 
 function executar(admin: ActionCtx["admin"], telefone: string): Promise<ActionResultDetail> {
@@ -130,7 +157,7 @@ function executar(admin: ActionCtx["admin"], telefone: string): Promise<ActionRe
     organizationId: ORG,
     ruleId: "regra-1",
     ruleName: "Primeiro contato — formulário do site",
-    event: {} as ActionCtx["event"],
+    event: { id: EVENTO } as ActionCtx["event"],
     requestId: "req-1",
     // Sem `lead` de propósito: com ele a ação vai ao banco buscar a captação do
     // formulário, e o que se mede aqui não depende disso.
@@ -153,7 +180,7 @@ beforeEach(() => {
 
 describe("send_ai_message em canal no modo de teste — número FORA da lista", () => {
   it("não gasta o modelo, não abre conversa e não envia", async () => {
-    const { cliente } = bancoFalso({ metadata: canalEmTeste([NUMERO_DE_TESTE]) });
+    const { cliente, rpc } = bancoFalso({ metadata: canalEmTeste([NUMERO_DE_TESTE]) });
 
     const r = await executar(cliente, "+5521988887777");
 
@@ -164,6 +191,7 @@ describe("send_ai_message em canal no modo de teste — número FORA da lista", 
     });
     expect(gerarAbordagemDeFormulario).not.toHaveBeenCalled();
     expect(ensureConversation).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
     expect(sendMessageHandler).not.toHaveBeenCalled();
   });
 
@@ -215,6 +243,15 @@ describe("send_ai_message — quem PODE receber continua recebendo", () => {
 });
 
 describe("send_ai_message — indeterminado é PARAR, nunca seguir", () => {
+  it("origem do evento obsoleta barra antes do modelo e de autorizar o contato", async () => {
+    const { cliente, idas } = bancoFalso({ metadata: { ai_gate: "open" }, origemObsoleta: true });
+    const r = await executar(cliente, NUMERO_DE_TESTE);
+    expect(r).toMatchObject({ status: "failed", error: "service_boundary_stale" });
+    expect(gerarAbordagemDeFormulario).not.toHaveBeenCalled();
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(idas.filter((i) => i.tabela === "contacts" && i.operacao === "update")).toEqual([]);
+  });
+
   it("banco fora do ar durante a leitura do canal: skipped, sem gastar e sem enviar", async () => {
     const { cliente } = bancoFalso({ erro: "connection terminated unexpectedly" });
 

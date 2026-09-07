@@ -1,3 +1,4 @@
+import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
 
@@ -300,12 +301,13 @@ async function seedEnrollment(params: {
       : status === "paused_handoff"
         ? null
         : new Date(Date.now() + 3_600_000).toISOString();
+  const boundary = await criarOrigemDeFollowup(pool, params.org, params.contactId);
   const { rows } = await pool.query<{ id: string }>(
     `insert into followup_enrollments
-       (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, steps_taken)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+       (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at, steps_taken, conversation_id, service_boundary)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
      returning id`,
-    [params.org, params.pointerId, params.versionId, params.contactId, params.currentNodeId, status, nextEvalAt, params.stepsTaken ?? 0],
+    [params.org, params.pointerId, params.versionId, params.contactId, params.currentNodeId, status, nextEvalAt, params.stepsTaken ?? 0, boundary.conversation_id, JSON.stringify(boundary)],
   );
   return rows[0]!.id;
 }
@@ -838,6 +840,7 @@ describe("completeTurnForEnrollment (turn-bridge) — respeita paused_handoff", 
       currentNodeId: "ac1",
       nextEvalAt: new Date(Date.now() - 1_000).toISOString(),
     });
+    expect((await getEnrollment(enrollmentId)).conversation_id).toBe(conversationId);
     const tick1 = await runFollowupTick({ db: pgDb, clock: relogioAncoradoNoBanco(), enqueueJob: async (j) => void jobs.push(j) }, { limit: 5 });
     expect(tick1.scheduled).toBe(1);
     const afterTick1 = await getEnrollment(enrollmentId);

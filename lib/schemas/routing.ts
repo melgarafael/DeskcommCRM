@@ -107,3 +107,9 @@ export const availabilityPatchSchema = z
     message: "Informe ao menos um campo (is_available, capacity ou schedule).",
   });
 export type AvailabilityPatch = z.infer<typeof availabilityPatchSchema>;
+
+export const channelRoutingPatchSchema = z.object({
+  channel_session_id: z.string().uuid(),
+  user_ids: z.array(z.string().uuid()).max(1000),
+  reset: z.boolean().default(false),
+}).strict();

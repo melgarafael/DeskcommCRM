@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/routers/:id/test — classifica uma mensagem de TESTE contra o
  * router (manager+). Reusa loadActiveRouter/classifyIntent (Tasks 2-3, mesmo
@@ -39,6 +40,9 @@ const testSchema = z.object({
 });
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {

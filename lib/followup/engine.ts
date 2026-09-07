@@ -1,3 +1,9 @@
+import type { JobClaim } from "@/lib/agent-engine/queue/claim";
+import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
+import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
+import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 /**
  * Follow-up flow engine — worker tick (Task 4.1). Orchestrates DB access
  * around the pure decisions in `node-handlers.ts`: claim due enrollments,
@@ -62,8 +68,10 @@ export interface FollowupJobRequest {
   organization_id: string;
   contact_id: string;
   payload: {
+    service_boundary?: ServiceBoundary | null;
     followup_enrollment_id: string;
     node_id: string;
+    source_step_key?: string;
     purpose: "send_message" | "classify" | "plan_timing";
     /** action (mode 'ai_message') — Task 5.1: repassado ao turno pra virar o bloco de orientação. */
     prompt_hint?: string;
@@ -85,6 +93,8 @@ export interface FollowupJobRequest {
 
 /** DB surface the engine needs — see file header for why this isn't `SupabaseClient` directly. */
 export interface AdminClient {
+  assertServiceBoundary?(enrollment: EnrollmentRow): Promise<void>;
+  assertAgenda?(enrollment:EnrollmentRow):Promise<void>;
   claimDueEnrollments(limit: number, leaseSeconds: number): Promise<EnrollmentRow[]>;
   loadFlowGraph(orgId: string, versionId: string): Promise<FlowGraph | null>;
   loadLeadFacts(orgId: string, contactId: string): Promise<{
@@ -111,6 +121,7 @@ export interface AdminClient {
     payload: Record<string, unknown>;
     idempotency_key: string;
   }): Promise<{ inserted: boolean }>;
+  applyEnrollmentStep?(id:string,orgId:string,patch:EnrollmentPatch,event:{job_claim?:JobClaim;job_id?:string;node_id:string;event_type:string;payload:Record<string,unknown>;idempotency_key:string}):Promise<void>;
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
   loadFlowPointerName(orgId: string, pointerId: string): Promise<string | null>;
   insertDeadInboxItem(item: { organization_id: string; title: string; body: string; ref_id: string }): Promise<void>;
@@ -323,6 +334,7 @@ async function applyResult(
   respostaParaGravar: string | null = null,
 ): Promise<void> {
   const { db, clock, enqueueJob } = deps;
+  await db.assertServiceBoundary?.(enrollment);
 
   if (result.kind === "fail") {
     await applyHandlerFailure(deps, enrollment, result.error, summary);
@@ -410,12 +422,15 @@ async function applyResult(
           : ACTION_RECHECK_MS;
       patch.next_eval_at = new Date(clock().getTime() + graceMs).toISOString();
       if (!isReplay) {
+        await db.assertServiceBoundary?.(enrollment);
         await enqueueJob({
           organization_id: enrollment.organization_id,
           contact_id: enrollment.contact_id,
           payload: {
+            service_boundary: enrollment.service_boundary ?? null,
             followup_enrollment_id: enrollment.id,
             node_id: node.id,
+            source_step_key: idemKey,
             purpose: result.purpose,
             ...turnPayloadExtras(node, smartWaits, events),
             ...(result.fixed_body ? { fixed_body: result.fixed_body } : {}),
@@ -446,6 +461,7 @@ async function applyResult(
     !((node.config.if_exists ?? "overwrite") === "confirm" && ehConfirmacao(respostaParaGravar))
   ) {
     try {
+      await db.assertServiceBoundary?.(enrollment);
       await db.persistirRespostaFollowup({
         organization_id: enrollment.organization_id,
         contact_id: enrollment.contact_id,
@@ -492,6 +508,18 @@ async function processEnrollment(
   inboundBodyOverride?: string,
 ): Promise<void> {
   const { db, clock } = deps;
+  try { await db.assertServiceBoundary?.(enrollment); await db.assertAgenda?.(enrollment); }
+  catch (error) {
+    if(error instanceof AgendaDeferredError){
+      if(error.protection.motivo === "leitura_indisponivel") throw error;
+      await db.updateEnrollment(enrollment.id,enrollment.organization_id,{next_eval_at:error.protection.reavaliar_em,claimed_until:null,last_error:error.message});
+      return;
+    }
+    if (!(error instanceof StaleServiceBoundaryError)) throw error;
+    await db.updateEnrollment(enrollment.id, enrollment.organization_id, { status: "cancelled", cancel_reason: "Atendimento encerrado ou substituído", claimed_until: null, completed_at: clock().toISOString() });
+    return;
+  }
+
 
   if (enrollment.steps_taken > MAX_STEPS) {
     await markDead(db, clock, enrollment, "max_steps");
@@ -675,13 +703,17 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
 
 /** Production adapter: `AdminClient` backed by the real Supabase service-role client. */
 export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
+  const revisions=new Map<string,number>();
   return {
+    async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id) && enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null); },
+    async assertAgenda(enrollment){await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
     async claimDueEnrollments(limit, leaseSeconds) {
       const { data, error } = await admin.rpc("fn_claim_due_followup_enrollments", {
         p_limit: limit,
         p_lease_seconds: leaseSeconds,
       });
       if (error) throw new Error(error.message);
+      for(const row of data??[]) revisions.set(row.id,Number(row.revision));
       return (data ?? []) as EnrollmentRow[];
     },
     async loadFlowGraph(orgId, versionId) {
@@ -720,7 +752,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         custom_fields: custom,
       };
     },
-    async loadLastInboundBody(orgId, contactId, _conversationId, naoAntesDe) {
+    async loadLastInboundBody(orgId, contactId, conversationId, naoAntesDe) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
       let q = admin
         .from("messages")
@@ -728,6 +760,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         .eq("organization_id", orgId)
         .in("contact_id", ids)
         .eq("direction", "inbound");
+      if (conversationId) q = q.eq("conversation_id", conversationId);
       if (naoAntesDe) q = q.gte("sent_at", naoAntesDe);
       const { data, error } = await q.order("sent_at", { ascending: false }).limit(1).maybeSingle();
       if (error) throw new Error(error.message);
@@ -758,9 +791,20 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       }
       return { inserted: true };
     },
+    async applyEnrollmentStep(id,orgId,patch,event){
+      const revision=revisions.get(id);if(revision===undefined) throw new StaleServiceBoundaryError();
+      const {data,error}=await admin.rpc("fn_followup_apply_step",{p_org:orgId,p_id:id,p_revision:revision,p_patch:patch,p_event:event});
+      if(error?.code==="23505") return;
+      if(error?.code==="40001") throw new StaleServiceBoundaryError();
+      if(error) throw error;revisions.set(id,Number(data));
+    },
     async updateEnrollment(id, orgId, patch) {
-      const { error } = await admin.from("followup_enrollments").update(patch).eq("id", id).eq("organization_id", orgId);
-      if (error) throw new Error(error.message);
+      const revision=revisions.get(id);
+      if(revision===undefined) throw new StaleServiceBoundaryError();
+      const {data,error}=await admin.rpc("fn_followup_patch",{p_org:orgId,p_id:id,p_revision:revision,p_patch:patch});
+      if(error?.code==="40001") throw new StaleServiceBoundaryError();
+      if(error) throw new Error(error.message);
+      revisions.set(id,Number(data));
     },
     async loadFlowPointerName(orgId, pointerId) {
       const { data, error } = await admin

@@ -41,7 +41,7 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
   // Sanity-check: must have a verified TOTP factor.
   const { data: factorsData } = await supabase.auth.mfa.listFactors();
   const totp = factorsData?.totp?.find((f) => f.status === "verified");
-  if (!totp) redirect("/app/inbox");
+  if (!totp) redirect("/app");
 
   // Lockout check (cookie counter).
   const store = await cookies();
@@ -108,5 +108,5 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
     userAgent,
   });
 
-  redirect(safeNext(next, "/app/inbox"));
+  redirect(safeNext(next, "/app"));
 }

@@ -1,0 +1,159 @@
+{
+  "run": "task7-browser-r2",
+  "product_commit": "6726941e620f9b78d49883539da1d4a5a7274ae4",
+  "fix_base": "a07b0efab8c64f1440c8ccaa21370af7157c5897",
+  "cases": 2,
+  "result": "passed",
+  "duration_seconds": 25.0,
+  "inspected_by": "root",
+  "screenshots": [
+    {
+      "image": "evidence/comunidade-360/task7-fonte-ocupada-grade.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-fontes--44f66-ação-imediatamente-removida-chromium/fonte-ocupada-grade/loaded.png",
+      "sha256": "907bb1ae6b00894ccdee9dacacc0a3bb2e51388e69a45c4965142ec4cda7795f",
+      "measures": {
+        "left": 288,
+        "right": 1232,
+        "width": 944,
+        "viewport": 1280,
+        "scrollWidth": 942,
+        "clientWidth": 942,
+        "visibility": "visible"
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-fonte-ocupada-horarios.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-fontes--44f66-ação-imediatamente-removida-chromium/fonte-ocupada-horarios/loaded.png",
+      "sha256": "18da41766210f0b82ffe38fcf37af808311afffba465e6ddd011b4b4d5dba659",
+      "measures": {
+        "left": 265,
+        "right": 1247,
+        "width": 982,
+        "viewport": 1280,
+        "scrollWidth": 980,
+        "clientWidth": 980,
+        "visibility": "visible",
+        "control": {
+          "text": "12:00",
+          "left": 979,
+          "right": 1231,
+          "top": 572,
+          "bottom": 616,
+          "width": 252,
+          "height": 44,
+          "viewportHeight": 720,
+          "visibility": "visible"
+        }
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-fonte-retirada-grade.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-fontes--44f66-ação-imediatamente-removida-chromium/fonte-retirada-grade/loaded.png",
+      "sha256": "ab3716dcae16a300df1db2f892df219d24f6093efd0f6dd585ac05fc795ad43d",
+      "measures": {
+        "left": 288,
+        "right": 1392,
+        "width": 1104,
+        "viewport": 1440,
+        "scrollWidth": 1102,
+        "clientWidth": 1102,
+        "visibility": "visible"
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-fonte-retirada-horarios.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-fontes--44f66-ação-imediatamente-removida-chromium/fonte-retirada-horarios/loaded.png",
+      "sha256": "b3b49aa77bd9d810d58cf68d6892c45d57e5410f4201ff769332f916dc746a88",
+      "measures": {
+        "left": 425,
+        "right": 1407,
+        "width": 982,
+        "viewport": 1440,
+        "scrollWidth": 980,
+        "clientWidth": 980,
+        "visibility": "visible",
+        "control": {
+          "text": "12:00",
+          "left": 1139,
+          "right": 1391,
+          "top": 712,
+          "bottom": 756,
+          "width": 252,
+          "height": 44,
+          "viewportHeight": 1000,
+          "visibility": "visible"
+        }
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-selecao.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-fontes--44f66-ação-imediatamente-removida-chromium/selecao/loaded.png",
+      "sha256": "85f2797b64fd0b5725d44b610f5e83c7f3ad0aacb3e63d9e74e6440d609d2630",
+      "measures": {
+        "left": 288,
+        "right": 1232,
+        "width": 944,
+        "viewport": 1280,
+        "scrollWidth": 942,
+        "clientWidth": 942,
+        "visibility": "visible"
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-selecao-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-fontes--44f66-ação-imediatamente-removida-chromium/selecao-mobile/loaded.png",
+      "sha256": "78d11b74d18c3431c3f45fd021d8d00d1e72b4cedb2ad5d40e7217c17cb985f8",
+      "measures": {
+        "left": 48,
+        "right": 342,
+        "width": 294,
+        "viewport": 390,
+        "scrollWidth": 292,
+        "clientWidth": 292,
+        "visibility": "visible"
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-conflito.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-retry-p-ce71f--conserva-identidade-antiga-chromium/conflito/loaded.png",
+      "sha256": "468efb44e078a4e64d5c30d492ff158e59a0ab553d2ddcd122c02110c7fbacaf",
+      "measures": {
+        "left": 896,
+        "right": 1280,
+        "width": 384,
+        "viewport": 1280,
+        "scrollWidth": 383,
+        "clientWidth": 383,
+        "visibility": "visible"
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-publicado.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-retry-p-ce71f--conserva-identidade-antiga-chromium/publicado/loaded.png",
+      "sha256": "90a236a902864cdefe21fd468ce72875a7087986fc34ce6d4afd7ee590924142",
+      "measures": {
+        "left": 896,
+        "right": 1280,
+        "width": 384,
+        "viewport": 1280,
+        "scrollWidth": 383,
+        "clientWidth": 383,
+        "visibility": "visible"
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task7-resolvido-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task7-browser-r2/agenda-google-sync-retry-p-ce71f--conserva-identidade-antiga-chromium/resolvido-mobile/loaded.png",
+      "sha256": "fefb517a14e1cf5a06c7c28c13e481b0076c12ce30477ccd25f100940fa4a609",
+      "measures": {
+        "left": 97.5,
+        "right": 390,
+        "width": 292.5,
+        "viewport": 390,
+        "scrollWidth": 292,
+        "clientWidth": 292,
+        "visibility": "visible"
+      }
+    }
+  ]
+}

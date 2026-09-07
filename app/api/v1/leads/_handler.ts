@@ -1,3 +1,5 @@
+import { observeServiceOrigin } from "@/lib/atendimento/origem";
+import { createAdminClient } from "@/lib/supabase/admin";
 /**
  * Core handlers para /api/v1/leads.
  *
@@ -291,6 +293,7 @@ export async function createLeadHandler(
     (await ownerPatchOrThrow(supabase, ctx, input)) ??
     ({ owner_user_id: null, owner_agent_id: null, owner_kind: null } satisfies OwnerPatch);
 
+  const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? null);
   const { data: lead, error: insErr } = await supabase
     .from("crm_leads")
     .insert({
@@ -329,12 +332,13 @@ export async function createLeadHandler(
   }
 
   const a = actorAuditPayload(ctx.actor);
-  await supabase
+  await createAdminClient()
     .rpc("emit_event", {
       p_event_type: "lead.created",
       p_entity_kind: "crm_lead",
       p_entity_id: (lead as { id: string }).id,
       p_payload: {
+        service_origin: serviceOrigin,
         pipeline_id: (lead as { pipeline_id: string }).pipeline_id,
         stage_id: (lead as { stage_id: string }).stage_id,
         title: (lead as { title: string }).title,
@@ -433,6 +437,9 @@ export async function updateLeadHandler(
   // O filtro entra AQUI TAMBÉM, e não só no SELECT acima: entre ler e escrever
   // há uma janela, e defesa que depende de uma leitura anterior é defesa que
   // some quando alguém reordena o código.
+  const tagServiceOrigin = input.tags !== undefined
+    ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
+    : null;
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update(patch)
@@ -527,12 +534,12 @@ export async function updateLeadHandler(
     const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
     const addedTags = input.tags.filter((t) => !prevTags.includes(t));
     if (addedTags.length) {
-      await supabase
+      await createAdminClient()
         .rpc("emit_event", {
           p_event_type: "lead.tag_added",
           p_entity_kind: "crm_lead",
           p_entity_id: leadId,
-          p_payload: { added_tags: addedTags, tags: input.tags },
+          p_payload: { added_tags: addedTags, tags: input.tags, service_origin: tagServiceOrigin },
           p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
           p_organization_id: existing.organization_id,
         })
@@ -630,6 +637,7 @@ export async function moveLeadHandler(
     position = maxRow?.position_in_stage ? Number(maxRow.position_in_stage) + 1000 : 1000;
   }
 
+  const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
@@ -664,12 +672,13 @@ export async function moveLeadHandler(
   const finalLead = (fresh ?? updated) as Record<string, unknown>;
 
   const a = actorAuditPayload(ctx.actor);
-  await supabase
+  await createAdminClient()
     .rpc("emit_event", {
       p_event_type: "lead.stage_changed",
       p_entity_kind: "crm_lead",
       p_entity_id: leadId,
       p_payload: {
+        service_origin: serviceOrigin,
         pipeline_id: lead.pipeline_id,
         from_stage_id: lead.stage_id,
         to_stage_id: input.to_stage_id,

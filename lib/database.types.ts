@@ -34,6 +34,259 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_reply_drafts: {
+        Row: {
+          id: string;
+          organization_id: string;
+          conversation_id: string;
+          contact_id: string;
+          agent_id: string;
+          agent_version_id: string;
+          channel_session_id: string;
+          service_boundary: Json;
+          context_revision: number;
+          operation_revision: number;
+          generation_token: string;
+          revision: number;
+          status: string;
+          original_body: string | null;
+          edited_body: string | null;
+          approved_body: string | null;
+          proposals: Json;
+          trace: Json;
+          feedback: Json | null;
+          approved_by: string | null;
+          approved_support_session_id: string | null;
+          approved_at: string | null;
+          send_job_id: string | null;
+          message_id: string | null;
+          error_code: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          organization_id?: string;
+          conversation_id?: string;
+          contact_id?: string;
+          agent_id?: string;
+          agent_version_id?: string;
+          channel_session_id?: string;
+          service_boundary?: Json;
+          context_revision?: number;
+          operation_revision?: number;
+          generation_token?: string;
+          revision?: number;
+          status?: string;
+          original_body?: string | null;
+          edited_body?: string | null;
+          approved_body?: string | null;
+          proposals?: Json;
+          trace?: Json;
+          feedback?: Json | null;
+          approved_by?: string | null;
+          approved_support_session_id?: string | null;
+          approved_at?: string | null;
+          send_job_id?: string | null;
+          message_id?: string | null;
+          error_code?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          organization_id?: string;
+          conversation_id?: string;
+          contact_id?: string;
+          agent_id?: string;
+          agent_version_id?: string;
+          channel_session_id?: string;
+          service_boundary?: Json;
+          context_revision?: number;
+          operation_revision?: number;
+          generation_token?: string;
+          revision?: number;
+          status?: string;
+          original_body?: string | null;
+          edited_body?: string | null;
+          approved_body?: string | null;
+          proposals?: Json;
+          trace?: Json;
+          feedback?: Json | null;
+          approved_by?: string | null;
+          approved_support_session_id?: string | null;
+          approved_at?: string | null;
+          send_job_id?: string | null;
+          message_id?: string | null;
+          error_code?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      }
+      channel_routing_policies: {
+        Row: {
+          channel_session_id: string
+          created_at: string
+          id: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          channel_session_id: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          channel_session_id?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_routing_policies_organization_id_channel_session_i_fkey"
+            columns: ["organization_id", "channel_session_id"]
+            referencedRelation: "channel_sessions"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "channel_routing_policies_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      channel_routing_responsibles: {
+        Row: {
+          created_at: string
+          organization_id: string
+          policy_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          policy_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          policy_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_routing_responsibles_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_routing_responsibles_organization_id_policy_id_fkey"
+            columns: ["organization_id", "policy_id"]
+            referencedRelation: "channel_routing_policies"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "channel_routing_responsibles_organization_id_user_id_fkey"
+            columns: ["organization_id", "user_id"]
+            referencedRelation: "user_organizations"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
+      }
+      channel_connection_requests: {
+        Row: {
+          channel_session_id: string | null
+          created_at: string
+          id: string
+          idempotency_key: string
+          lease_token: string
+          lease_until: string
+          organization_id: string
+          remote_created: boolean
+          request_hash: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          channel_session_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          lease_token?: string
+          lease_until?: string
+          organization_id: string
+          remote_created?: boolean
+          request_hash: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          channel_session_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          lease_token?: string
+          lease_until?: string
+          organization_id?: string
+          remote_created?: boolean
+          request_hash?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_connection_requests_organization_id_channel_sessio_fkey"
+            columns: ["organization_id", "channel_session_id"]
+            referencedRelation: "channel_sessions"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "channel_connection_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+
+      appointment_recovery_receipts: {
+        Row: { organization_id: string; appointment_id: string; appointment_revision: number; source_event_id: string | null; result: string; pointer_id: string | null; enrollment_id: string | null; recorded_at: string; invalidated_at: string | null }
+        Insert: { organization_id: string; appointment_id: string; appointment_revision: number; source_event_id?: string | null; result: string; pointer_id?: string | null; enrollment_id?: string | null; recorded_at?: string; invalidated_at?: string | null }
+        Update: { organization_id?: string; appointment_id?: string; appointment_revision?: number; source_event_id?: string | null; result?: string; pointer_id?: string | null; enrollment_id?: string | null; recorded_at?: string; invalidated_at?: string | null }
+        Relationships: [
+          { foreignKeyName: "appointment_recovery_receipts_organization_id_fkey"; columns: ["organization_id"]; isOneToOne: false; referencedRelation: "organizations"; referencedColumns: ["id"] },
+          { foreignKeyName: "appointment_recovery_receipts_appointment_id_fkey"; columns: ["appointment_id"]; isOneToOne: false; referencedRelation: "calendar_appointments"; referencedColumns: ["id"] },
+          { foreignKeyName: "appointment_recovery_receipts_source_event_id_fkey"; columns: ["source_event_id"]; isOneToOne: false; referencedRelation: "event_log"; referencedColumns: ["id"] },
+          { foreignKeyName: "appointment_recovery_receipts_pointer_id_fkey"; columns: ["pointer_id"]; isOneToOne: false; referencedRelation: "followup_flow_pointers"; referencedColumns: ["id"] },
+          { foreignKeyName: "appointment_recovery_receipts_enrollment_id_fkey"; columns: ["enrollment_id"]; isOneToOne: false; referencedRelation: "followup_enrollments"; referencedColumns: ["id"] }
+        ]
+      }
+      event_service_origins: {
+        Row: { event_id: string; channel_session_id: string; organization_id: string; service_boundary: Json }
+        Insert: { event_id: string; channel_session_id: string; organization_id: string; service_boundary: Json }
+        Update: { event_id?: string; channel_session_id?: string; organization_id?: string; service_boundary?: Json }
+        Relationships: [
+          { foreignKeyName: "event_service_origins_channel_session_id_fkey"; columns: ["channel_session_id"]; isOneToOne: false; referencedRelation: "channel_sessions"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_service_origins_event_id_fkey"; columns: ["event_id"]; isOneToOne: false; referencedRelation: "event_log"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_service_origins_organization_id_fkey"; columns: ["organization_id"]; isOneToOne: false; referencedRelation: "organizations"; referencedColumns: ["id"] }
+        ]
+      }
+
+      platform_support_sessions: {
+        Row: { id: string; organization_id: string; actor_user_id: string; auth_session_id: string; access_mode: string; previous_organization_id: string | null; created_at: string; expires_at: string; ended_at: string | null }
+        Insert: { id?: string; organization_id: string; actor_user_id: string; auth_session_id: string; access_mode: string; previous_organization_id?: string | null; created_at?: string; expires_at: string; ended_at?: string | null }
+        Update: { id?: string; organization_id?: string; actor_user_id?: string; auth_session_id?: string; access_mode?: string; previous_organization_id?: string | null; created_at?: string; expires_at?: string; ended_at?: string | null }
+        Relationships: [{ foreignKeyName: "platform_support_sessions_organization_id_fkey"; columns: ["organization_id"]; isOneToOne: false; referencedRelation: "organizations"; referencedColumns: ["id"] }]
+      }
+
       ad_conversion_dispatches: {
         Row: {
           attempted_at: string
@@ -289,9 +542,11 @@ export type Database = {
       }
       agent_inbox_items: {
         Row: {
+          appointment_revision: number | null
           body: string | null
           created_at: string
           id: string
+          legacy_recovery_code: string | null
           kind: string
           organization_id: string | null
           ref_id: string | null
@@ -302,9 +557,11 @@ export type Database = {
           title: string
         }
         Insert: {
+          appointment_revision?: number | null
           body?: string | null
           created_at?: string
           id?: string
+          legacy_recovery_code?: string | null
           kind: string
           organization_id?: string | null
           ref_id?: string | null
@@ -315,9 +572,11 @@ export type Database = {
           title: string
         }
         Update: {
+          appointment_revision?: number | null
           body?: string | null
           created_at?: string
           id?: string
+          legacy_recovery_code?: string | null
           kind?: string
           organization_id?: string | null
           ref_id?: string | null
@@ -474,6 +733,7 @@ export type Database = {
       }
       ai_agent_versions: {
         Row: {
+          provisioning_origin: string | null
           agent_id: string
           cases_enabled: boolean
           channel_session_id: string
@@ -510,6 +770,7 @@ export type Database = {
           video_frames_enabled: boolean
         }
         Insert: {
+          provisioning_origin?: string | null
           agent_id: string
           cases_enabled?: boolean
           channel_session_id: string
@@ -546,6 +807,7 @@ export type Database = {
           video_frames_enabled?: boolean
         }
         Update: {
+          provisioning_origin?: string | null
           agent_id?: string
           cases_enabled?: boolean
           channel_session_id?: string
@@ -621,6 +883,9 @@ export type Database = {
       }
       ai_agents: {
         Row: {
+          operation_mode: string
+          paused_at: string | null
+          operation_revision: number
           active_kb_version_id: string | null
           archived_at: string | null
           config: Json
@@ -641,6 +906,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          operation_mode?: string
+          paused_at?: string | null
+          operation_revision?: number
           active_kb_version_id?: string | null
           archived_at?: string | null
           config?: Json
@@ -661,6 +929,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          operation_mode?: string
+          paused_at?: string | null
+          operation_revision?: number
           active_kb_version_id?: string | null
           archived_at?: string | null
           config?: Json
@@ -1874,6 +2145,34 @@ export type Database = {
       }
       calendar_appointments: {
         Row: {
+          meeting_state: string
+          meeting_request_id: string | null
+          meeting_requested_at: string | null
+          meeting_received_at: string | null
+          meeting_ready_at: string | null
+          meeting_attempts: number
+          meeting_last_error: string | null
+          meeting_next_attempt_at: string | null
+          meeting_delivery: Json
+          meeting_delivery_job_id: string | null
+
+          google_local_revision: number
+          google_synced_local_revision: number
+          google_etag: string | null
+          google_base_projection: Json | null
+          google_conflict: Json | null
+          google_pending_write: Json | null
+          google_claim_token: string | null
+          google_claim_epoch: number
+          google_claim_until: string | null
+          google_next_attempt_at: string
+          revision: number
+          revision_started_at: string
+          outcome_source_kind: string | null
+          outcome_user_id: string | null
+          outcome_message_id: string | null
+          outcome_recorded_at: string | null
+          confirmation_next_at: string | null
           cancellation_reason: string | null
           cancelled_at: string | null
           contact_id: string | null
@@ -1911,6 +2210,34 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          meeting_state?: string
+          meeting_request_id?: string | null
+          meeting_requested_at?: string | null
+          meeting_received_at?: string | null
+          meeting_ready_at?: string | null
+          meeting_attempts?: number
+          meeting_last_error?: string | null
+          meeting_next_attempt_at?: string | null
+          meeting_delivery?: Json
+          meeting_delivery_job_id?: string | null
+
+          google_local_revision?: number
+          google_synced_local_revision?: number
+          google_etag?: string | null
+          google_base_projection?: Json | null
+          google_conflict?: Json | null
+          google_pending_write?: Json | null
+          google_claim_token?: string | null
+          google_claim_epoch?: number
+          google_claim_until?: string | null
+          google_next_attempt_at?: string
+          revision?: number
+          revision_started_at?: string
+          outcome_source_kind?: string | null
+          outcome_user_id?: string | null
+          outcome_message_id?: string | null
+          outcome_recorded_at?: string | null
+          confirmation_next_at?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           contact_id?: string | null
@@ -1948,6 +2275,34 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          meeting_state?: string
+          meeting_request_id?: string | null
+          meeting_requested_at?: string | null
+          meeting_received_at?: string | null
+          meeting_ready_at?: string | null
+          meeting_attempts?: number
+          meeting_last_error?: string | null
+          meeting_next_attempt_at?: string | null
+          meeting_delivery?: Json
+          meeting_delivery_job_id?: string | null
+
+          google_local_revision?: number
+          google_synced_local_revision?: number
+          google_etag?: string | null
+          google_base_projection?: Json | null
+          google_conflict?: Json | null
+          google_pending_write?: Json | null
+          google_claim_token?: string | null
+          google_claim_epoch?: number
+          google_claim_until?: string | null
+          google_next_attempt_at?: string
+          revision?: number
+          revision_started_at?: string
+          outcome_source_kind?: string | null
+          outcome_user_id?: string | null
+          outcome_message_id?: string | null
+          outcome_recorded_at?: string | null
+          confirmation_next_at?: string | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           contact_id?: string | null
@@ -1985,6 +2340,8 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          { foreignKeyName: "calendar_appointments_meeting_delivery_job_id_fkey"; columns: ["meeting_delivery_job_id"]; isOneToOne: false; referencedRelation: "job_queue"; referencedColumns: ["id"] },
+          { foreignKeyName: "calendar_appointments_outcome_message_id_fkey"; columns: ["outcome_message_id"]; isOneToOne: false; referencedRelation: "messages"; referencedColumns: ["id"] },
           {
             foreignKeyName: "calendar_appointments_contact_id_fkey"
             columns: ["contact_id"]
@@ -2085,6 +2442,18 @@ export type Database = {
       }
       calendar_connection_calendars: {
         Row: {
+          allowed_conference_types: string[] | null
+          access_role: string | null
+          available: boolean
+          catalog_checked_at: string | null
+          sync_claim_token: string | null
+          sync_claim_epoch: number
+          sync_claim_until: string | null
+          sync_next_attempt_at: string
+          last_sync_at: string | null
+          sync_error: string | null
+          sync_cursor: Json | null
+          sync_coverage: Json | null
           connection_id: string
           counts_for_conflicts: boolean
           created_at: string
@@ -2099,6 +2468,18 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allowed_conference_types?: string[] | null
+          access_role?: string | null
+          available?: boolean
+          catalog_checked_at?: string | null
+          sync_claim_token?: string | null
+          sync_claim_epoch?: number
+          sync_claim_until?: string | null
+          sync_next_attempt_at?: string
+          last_sync_at?: string | null
+          sync_error?: string | null
+          sync_cursor?: Json | null
+          sync_coverage?: Json | null
           connection_id: string
           counts_for_conflicts?: boolean
           created_at?: string
@@ -2113,6 +2494,18 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          allowed_conference_types?: string[] | null
+          access_role?: string | null
+          available?: boolean
+          catalog_checked_at?: string | null
+          sync_claim_token?: string | null
+          sync_claim_epoch?: number
+          sync_claim_until?: string | null
+          sync_next_attempt_at?: string
+          last_sync_at?: string | null
+          sync_error?: string | null
+          sync_cursor?: Json | null
+          sync_coverage?: Json | null
           connection_id?: string
           counts_for_conflicts?: boolean
           created_at?: string
@@ -2145,6 +2538,7 @@ export type Database = {
       }
       calendar_connections: {
         Row: {
+          calendar_selection_revision: number
           account_email: string
           created_at: string
           id: string
@@ -2162,6 +2556,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          calendar_selection_revision?: number
           account_email: string
           created_at?: string
           id?: string
@@ -2179,6 +2574,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          calendar_selection_revision?: number
           account_email?: string
           created_at?: string
           id?: string
@@ -2293,9 +2689,12 @@ export type Database = {
       }
       calendar_external_events: {
         Row: {
+          seen_generation: string | null
+          recurring_event_id: string | null
+          original_start_time: Json | null
           connection_id: string
           created_at: string
-          ends_at: string
+          ends_at: string | null
           external_calendar_id: string
           external_event_id: string
           external_updated_at: string | null
@@ -2303,16 +2702,19 @@ export type Database = {
           id: string
           is_all_day: boolean
           organization_id: string
-          starts_at: string
+          starts_at: string | null
           status: string
           title: string | null
           transparency: string
           updated_at: string
         }
         Insert: {
+          seen_generation?: string | null
+          recurring_event_id?: string | null
+          original_start_time?: Json | null
           connection_id: string
           created_at?: string
-          ends_at: string
+          ends_at: string | null
           external_calendar_id: string
           external_event_id: string
           external_updated_at?: string | null
@@ -2320,16 +2722,19 @@ export type Database = {
           id?: string
           is_all_day?: boolean
           organization_id: string
-          starts_at: string
+          starts_at: string | null
           status?: string
           title?: string | null
           transparency?: string
           updated_at?: string
         }
         Update: {
+          seen_generation?: string | null
+          recurring_event_id?: string | null
+          original_start_time?: Json | null
           connection_id?: string
           created_at?: string
-          ends_at?: string
+          ends_at?: string | null
           external_calendar_id?: string
           external_event_id?: string
           external_updated_at?: string | null
@@ -2337,7 +2742,7 @@ export type Database = {
           id?: string
           is_all_day?: boolean
           organization_id?: string
-          starts_at?: string
+          starts_at?: string | null
           status?: string
           title?: string | null
           transparency?: string
@@ -2981,6 +3386,7 @@ export type Database = {
       }
       conversations: {
         Row: {
+          reply_context_revision: number
           active_agent_set_at: string | null
           active_ai_agent_id: string | null
           active_intent: string | null
@@ -2993,6 +3399,7 @@ export type Database = {
           channel_session_id: string
           contact_id: string
           created_at: string
+          current_demanda_id: string | null
           group_chat_id: string | null
           id: string
           is_group: boolean
@@ -3006,6 +3413,9 @@ export type Database = {
           organization_id: string
           provider_conversation_id: string | null
           rag_review_status: string | null
+          service_closed_at: string | null
+          service_revision: number
+          service_started_at: string | null
           snooze_until: string | null
           snoozed_at: string | null
           snoozed_by_user_id: string | null
@@ -3019,6 +3429,7 @@ export type Database = {
           usable_for_rag_marked_by: string | null
         }
         Insert: {
+          reply_context_revision?: number
           active_agent_set_at?: string | null
           active_ai_agent_id?: string | null
           active_intent?: string | null
@@ -3031,6 +3442,7 @@ export type Database = {
           channel_session_id: string
           contact_id: string
           created_at?: string
+          current_demanda_id?: string | null
           group_chat_id?: string | null
           id?: string
           is_group?: boolean
@@ -3044,6 +3456,9 @@ export type Database = {
           organization_id: string
           provider_conversation_id?: string | null
           rag_review_status?: string | null
+          service_closed_at?: string | null
+          service_revision?: number
+          service_started_at?: string | null
           snooze_until?: string | null
           snoozed_at?: string | null
           snoozed_by_user_id?: string | null
@@ -3057,6 +3472,7 @@ export type Database = {
           usable_for_rag_marked_by?: string | null
         }
         Update: {
+          reply_context_revision?: number
           active_agent_set_at?: string | null
           active_ai_agent_id?: string | null
           active_intent?: string | null
@@ -3069,6 +3485,7 @@ export type Database = {
           channel_session_id?: string
           contact_id?: string
           created_at?: string
+          current_demanda_id?: string | null
           group_chat_id?: string | null
           id?: string
           is_group?: boolean
@@ -3082,6 +3499,9 @@ export type Database = {
           organization_id?: string
           provider_conversation_id?: string | null
           rag_review_status?: string | null
+          service_closed_at?: string | null
+          service_revision?: number
+          service_started_at?: string | null
           snooze_until?: string | null
           snoozed_at?: string | null
           snoozed_by_user_id?: string | null
@@ -3114,6 +3534,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_current_demanda_id_fkey"
+            columns: ["current_demanda_id"]
+            isOneToOne: false
+            referencedRelation: "demandas"
             referencedColumns: ["id"]
           },
           {
@@ -3755,18 +4182,21 @@ export type Database = {
           conversation_id: string
           demanda_id: string
           organization_id: string
+          service_revision: number | null
           vinculada_em: string
         }
         Insert: {
           conversation_id: string
           demanda_id: string
           organization_id: string
+          service_revision?: number | null
           vinculada_em?: string
         }
         Update: {
           conversation_id?: string
           demanda_id?: string
           organization_id?: string
+          service_revision?: number | null
           vinculada_em?: string
         }
         Relationships: [
@@ -3803,6 +4233,7 @@ export type Database = {
           desfecho: string | null
           dono_kind: string
           dono_user_id: string | null
+          encerrada_por: string | null
           estado: string
           fechada_em: string | null
           id: string
@@ -3812,6 +4243,7 @@ export type Database = {
           prazo_em: string | null
           proximo_passo: string | null
           proximo_passo_em: string | null
+          revision: number
           updated_at: string
         }
         Insert: {
@@ -3823,6 +4255,7 @@ export type Database = {
           desfecho?: string | null
           dono_kind?: string
           dono_user_id?: string | null
+          encerrada_por?: string | null
           estado?: string
           fechada_em?: string | null
           id?: string
@@ -3832,6 +4265,7 @@ export type Database = {
           prazo_em?: string | null
           proximo_passo?: string | null
           proximo_passo_em?: string | null
+          revision?: number
           updated_at?: string
         }
         Update: {
@@ -3843,6 +4277,7 @@ export type Database = {
           desfecho?: string | null
           dono_kind?: string
           dono_user_id?: string | null
+          encerrada_por?: string | null
           estado?: string
           fechada_em?: string | null
           id?: string
@@ -3852,6 +4287,7 @@ export type Database = {
           prazo_em?: string | null
           proximo_passo?: string | null
           proximo_passo_em?: string | null
+          revision?: number
           updated_at?: string
         }
         Relationships: [
@@ -4169,6 +4605,9 @@ export type Database = {
       }
       followup_enrollments: {
         Row: {
+          revision: number
+          appointment_id: string | null
+          appointment_revision: number | null
           agent_id: string | null
           attempts: number
           cancel_reason: string | null
@@ -4184,6 +4623,7 @@ export type Database = {
           organization_id: string
           outcome: string | null
           pointer_id: string
+          service_boundary: Json | null
           started_at: string
           status: string
           steps_taken: number
@@ -4192,6 +4632,9 @@ export type Database = {
           version_id: string
         }
         Insert: {
+          revision?: number
+          appointment_id?: string | null
+          appointment_revision?: number | null
           agent_id?: string | null
           attempts?: number
           cancel_reason?: string | null
@@ -4207,6 +4650,7 @@ export type Database = {
           organization_id: string
           outcome?: string | null
           pointer_id: string
+          service_boundary?: Json | null
           started_at?: string
           status?: string
           steps_taken?: number
@@ -4215,6 +4659,9 @@ export type Database = {
           version_id: string
         }
         Update: {
+          revision?: number
+          appointment_id?: string | null
+          appointment_revision?: number | null
           agent_id?: string | null
           attempts?: number
           cancel_reason?: string | null
@@ -4230,6 +4677,7 @@ export type Database = {
           organization_id?: string
           outcome?: string | null
           pointer_id?: string
+          service_boundary?: Json | null
           started_at?: string
           status?: string
           steps_taken?: number
@@ -4238,6 +4686,7 @@ export type Database = {
           version_id?: string
         }
         Relationships: [
+          { foreignKeyName: "followup_enrollments_appointment_id_fkey"; columns: ["appointment_id"]; isOneToOne: false; referencedRelation: "calendar_appointments"; referencedColumns: ["id"] },
           {
             foreignKeyName: "followup_enrollments_agent_id_fkey"
             columns: ["agent_id"]
@@ -4383,6 +4832,7 @@ export type Database = {
       }
       idempotency_keys: {
         Row: {
+          tenant_creation_trusted: boolean
           created_at: string
           endpoint: string
           expires_at: string
@@ -4394,6 +4844,7 @@ export type Database = {
           status_code: number
         }
         Insert: {
+          tenant_creation_trusted?: boolean
           created_at?: string
           endpoint: string
           expires_at?: string
@@ -4405,6 +4856,7 @@ export type Database = {
           status_code: number
         }
         Update: {
+          tenant_creation_trusted?: boolean
           created_at?: string
           endpoint?: string
           expires_at?: string
@@ -4643,8 +5095,11 @@ export type Database = {
         Row: {
           commitments: Json
           contact_id: string
+          conversation_id: string | null
           created_at: string
           declaracao: Json | null
+          demanda_id: string | null
+          demanda_revision: number | null
           id: string
           job_id: string | null
           next_action: string | null
@@ -4652,12 +5107,16 @@ export type Database = {
           organization_id: string
           rolling_summary: string
           seq: number
+          service_revision: number | null
         }
         Insert: {
           commitments?: Json
           contact_id: string
+          conversation_id?: string | null
           created_at?: string
           declaracao?: Json | null
+          demanda_id?: string | null
+          demanda_revision?: number | null
           id?: string
           job_id?: string | null
           next_action?: string | null
@@ -4665,12 +5124,16 @@ export type Database = {
           organization_id: string
           rolling_summary?: string
           seq?: never
+          service_revision?: number | null
         }
         Update: {
           commitments?: Json
           contact_id?: string
+          conversation_id?: string | null
           created_at?: string
           declaracao?: Json | null
+          demanda_id?: string | null
+          demanda_revision?: number | null
           id?: string
           job_id?: string | null
           next_action?: string | null
@@ -4678,6 +5141,7 @@ export type Database = {
           organization_id?: string
           rolling_summary?: string
           seq?: never
+          service_revision?: number | null
         }
         Relationships: [
           {
@@ -4685,6 +5149,20 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_checkpoints_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_checkpoints_demanda_id_fkey"
+            columns: ["demanda_id"]
+            isOneToOne: false
+            referencedRelation: "demandas"
             referencedColumns: ["id"]
           },
           {
@@ -5143,6 +5621,8 @@ export type Database = {
           conversation_id: string
           created_at: string
           delivered_at: string | null
+          demanda_id: string | null
+          demanda_revision: number | null
           direction: string
           edited_at: string | null
           error_code: string | null
@@ -5163,6 +5643,7 @@ export type Database = {
           sent_at: string
           sent_by_user_id: string | null
           sent_via: string
+          service_revision: number | null
           status: string
           template_language: string | null
           template_name: string | null
@@ -5178,6 +5659,8 @@ export type Database = {
           conversation_id: string
           created_at?: string
           delivered_at?: string | null
+          demanda_id?: string | null
+          demanda_revision?: number | null
           direction: string
           edited_at?: string | null
           error_code?: string | null
@@ -5198,6 +5681,7 @@ export type Database = {
           sent_at?: string
           sent_by_user_id?: string | null
           sent_via?: string
+          service_revision?: number | null
           status?: string
           template_language?: string | null
           template_name?: string | null
@@ -5213,6 +5697,8 @@ export type Database = {
           conversation_id?: string
           created_at?: string
           delivered_at?: string | null
+          demanda_id?: string | null
+          demanda_revision?: number | null
           direction?: string
           edited_at?: string | null
           error_code?: string | null
@@ -5233,6 +5719,7 @@ export type Database = {
           sent_at?: string
           sent_by_user_id?: string | null
           sent_via?: string
+          service_revision?: number | null
           status?: string
           template_language?: string | null
           template_name?: string | null
@@ -5266,6 +5753,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_demanda_id_fkey"
+            columns: ["demanda_id"]
+            isOneToOne: false
+            referencedRelation: "demandas"
             referencedColumns: ["id"]
           },
           {
@@ -6639,6 +7133,7 @@ export type Database = {
       }
       user_organizations: {
         Row: {
+          interface_settings: Json
           accepted_at: string | null
           calendar_trilha: number | null
           created_at: string
@@ -6652,6 +7147,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          interface_settings?: Json
           accepted_at?: string | null
           calendar_trilha?: number | null
           created_at?: string
@@ -6665,6 +7161,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          interface_settings?: Json
           accepted_at?: string | null
           calendar_trilha?: number | null
           created_at?: string
@@ -6985,6 +7482,15 @@ export type Database = {
       }
     }
     Views: {
+      calendar_google_reconcilable_appointments: {
+        Row: Database["public"]["Tables"]["calendar_appointments"]["Row"]
+        Relationships: Database["public"]["Tables"]["calendar_appointments"]["Relationships"]
+      }
+      calendar_selected_external_events: {
+        Row: Omit<Database["public"]["Tables"]["calendar_external_events"]["Row"], "starts_at" | "ends_at"> & { starts_at: string; ends_at: string }
+        Relationships: Database["public"]["Tables"]["calendar_external_events"]["Relationships"]
+      }
+
       ai_provider_credentials_safe: {
         Row: {
           api_key_last4: string | null
@@ -7040,6 +7546,222 @@ export type Database = {
       }
     }
     Functions: {
+      fn_channel_routing_claim: {
+        Args: {
+          p_channel: string
+          p_conversation: string
+          p_org: string
+          p_reason?: string
+          p_schedule?: Json
+          p_user: string
+        }
+        Returns: string
+      }
+      fn_set_channel_routing: {
+        Args: {
+          p_channel: string
+          p_org: string
+          p_reset?: boolean
+          p_users: string[]
+        }
+        Returns: Json
+      }
+      fn_request_channel_routing: {
+        Args: { p_conversation: string; p_org: string }
+        Returns: undefined
+      }
+      fn_wake_channel_routing: {
+        Args: { p_channel?: string; p_org: string }
+        Returns: undefined
+      }
+      fn_routing_unassigned_notice: {
+        Args: { p_conversation: string; p_org: string; p_reason: string }
+        Returns: undefined
+      }
+      fn_reserve_channel_connection: {
+        Args: {
+          p_display_name?: string
+          p_hash: string
+          p_key: string
+          p_onboarding?: boolean
+          p_org: string
+        }
+        Returns: Json
+      }
+      fn_finish_channel_connection: {
+        Args: {
+          p_created?: boolean
+          p_lease: string
+          p_org: string
+          p_reason?: string
+          p_receipt: string
+          p_status: string
+        }
+        Returns: Json
+      }
+
+      fn_google_appointment: { Args: { p_org: string; p_id: string; p_action: string; p_args?: Json }; Returns: Json }
+      fn_google_calendar: { Args: { p_org: string; p_id: string; p_action: string; p_args?: Json }; Returns: Json }
+      fn_google_calendar_fence: { Args: { p_org: string; p_id: string; p_claim: Json; p_cursor?: Json }; Returns: undefined }
+      fn_google_catalog: { Args: { p_org: string; p_connection: string; p_items: Json; p_revision: string }; Returns: undefined }
+      fn_google_selection: { Args: { p_org: string; p_revisions: Json; p_sources: string[]; p_destination: string }; Returns: undefined }
+      fn_meet_delivery_policy: { Args: { p_org:string; p_job:string; p_worker:string; p_acquired_at:string }; Returns:Json }
+      fn_meet_delivery_current: { Args: { p_org:string; p_job:string; p_worker:string; p_acquired_at:string }; Returns:boolean }
+      fn_meet_delivery_settle: { Args: { p_org:string; p_job:string; p_worker:string; p_acquired_at:string; p_state:string; p_retry_at?:string|null }; Returns:boolean }
+      fn_meet_action: { Args: { p_org:string; p_id:string; p_revision:string; p_request:string|null; p_action:string; p_conversation?:string|null }; Returns:boolean }
+      fn_google_resolve: { Args: { p_org: string; p_id: string; p_revision: string; p_local_revision: string; p_etag: string | null; p_choice: string }; Returns: undefined }
+      fn_google_counts_for_conflicts: { Args: { p_org: string; p_connection: string; p_calendar: string }; Returns: boolean }
+      fn_google_coverage: { Args: { p_org: string; p_owner: string; p_start: string; p_end: string }; Returns: boolean }
+      fn_appointment_change_core: { Args: { p_org: string; p_id: string; p_revision: number; p_patch: Json; p_remote: boolean; p_base: Json }; Returns: Json }
+
+      fn_followup_job_current: { Args: { p_org: string; p_job: string; p_enrollment: string; p_node: string }; Returns: boolean }
+      fn_agenda_minutes: { Args: { p_settings: Json; p_key: string; p_default: number }; Returns: number }
+      fn_followup_claim_current: { Args: { p_org: string; p_job: string; p_worker: string; p_acquired_at: string }; Returns: boolean }
+      fn_appointment_change: { Args: { p_org: string; p_id: string; p_revision: number; p_patch: Json }; Returns: Json }
+      fn_appointment_recover: { Args: { p_org: string; p_event: string }; Returns: Json }
+      fn_appointment_confirmation_sweep: { Args: { p_limit?: number; p_now?: string }; Returns: number }
+      fn_appointment_enrollment_current: { Args: { p_org: string; p_id: string; p_node?: string | null }; Returns: boolean }
+      fn_agenda_settings: { Args: { p_org: string; p_config: Json }; Returns: Json }
+      fn_followup_patch: { Args: { p_org: string; p_id: string; p_revision: number; p_patch: Json }; Returns: number }
+      fn_followup_apply_step: { Args: { p_org: string; p_id: string; p_revision: number; p_patch: Json; p_event: Json }; Returns: number }
+      fn_followup_inline_settle: { Args: { p_org: string; p_id: string; p_worker: string; p_done: boolean; p_error?: string | null; p_retry_at?: string | null; p_hold?: boolean; p_acquired_at?: string }; Returns: boolean }
+      fn_service_observe_command: { Args: { p_org: string; p_contact: string }; Returns: Json }
+      fn_service_event_origin: {
+        Args: { p_org: string; p_event: string; p_contact: string; p_session?: string }
+        Returns: Json
+      }
+
+      fn_service_observe: {
+        Args: { p_contact: string; p_org: string }
+        Returns: Json
+      }
+      fn_service_boundary: {
+        Args: { p_conversation: string; p_org: string }
+        Returns: Json
+      }
+      fn_service_begin: {
+        Args: {
+          p_contact: string
+          p_observed?: Json
+          p_org: string
+          p_session?: string
+        }
+        Returns: Json
+      }
+      fn_demanda_encerrar: {
+        Args: {
+          p_actor: string
+          p_demanda: string
+          p_desfecho: string
+          p_expected: number
+          p_org: string
+        }
+        Returns: {
+          aberta_em: string
+          agent_case_id: string | null
+          assunto: string | null
+          contact_id: string
+          created_at: string
+          desfecho: string | null
+          dono_kind: string
+          dono_user_id: string | null
+          encerrada_por: string | null
+          estado: string
+          fechada_em: string | null
+          id: string
+          lead_id: string | null
+          organization_id: string
+          origem: string
+          prazo_em: string | null
+          proximo_passo: string | null
+          proximo_passo_em: string | null
+          revision: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "demandas"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      fn_service_status: {
+        Args: {
+          p_conversation: string
+          p_expected?: number
+          p_org: string
+          p_status: string
+        }
+        Returns: {
+          active_agent_set_at: string | null
+          active_ai_agent_id: string | null
+          active_intent: string | null
+          assigned_at: string | null
+          assigned_to_user_id: string | null
+          assigned_to_user_name: string | null
+          assignee_kind: string | null
+          bot_silenced_until: string | null
+          channel: string
+          channel_session_id: string
+          contact_id: string
+          created_at: string
+          current_demanda_id: string | null
+          group_chat_id: string | null
+          id: string
+          is_group: boolean
+          last_handoff_at: string | null
+          last_handoff_reason: string | null
+          last_inbound_at: string | null
+          last_message_at: string | null
+          last_message_preview: string | null
+          last_outbound_at: string | null
+          metadata: Json
+          organization_id: string
+          provider_conversation_id: string | null
+          rag_review_status: string | null
+          service_closed_at: string | null
+          service_revision: number
+          service_started_at: string | null
+          snooze_until: string | null
+          snoozed_at: string | null
+          snoozed_by_user_id: string | null
+          status: string
+          status_changed_at: string
+          tags: string[]
+          unread_count_for_assignee: number
+          updated_at: string
+          usable_for_rag: boolean
+          usable_for_rag_marked_at: string | null
+          usable_for_rag_marked_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "conversations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      fn_service_inbound: { Args: { p_message: string }; Returns: undefined }
+      fn_service_lock: {
+        Args: { p_contact: string; p_org: string }
+        Returns: undefined
+      }
+      fn_create_tenant_with_owner: {
+        Args: { p_actor: string; p_key: string; p_request: Json; p_hash: string }
+        Returns: Json
+      }
+      fn_accept_team_invite: {
+        Args: { p_user: string; p_org: string; p_role: string; p_invited_by: string | null; p_issued_at: string | null; p_invited_at: string; p_interface_settings?: Json }
+        Returns: Json
+      }
+
+      fn_support_context: { Args: Record<PropertyKey, never>; Returns: Json }
+      fn_support_write_allowed: { Args: { p_org: string }; Returns: boolean }
+      fn_support_storage_write_allowed: { Args: { p_name: string }; Returns: boolean }
+      fn_support_callback_write_allowed: { Args: { p_org: string; p_actor?: string; p_session?: string }; Returns: boolean }
+      fn_start_support: { Args: { p_actor: string; p_session: string; p_org: string; p_previous: string | null; p_mode?: string; p_ttl?: number }; Returns: string }
+      fn_end_support: { Args: { p_actor: string; p_session: string }; Returns: Json }
+
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string }
         Returns: undefined
@@ -7241,6 +7963,10 @@ export type Database = {
       }
       fn_gasto_de_ia_do_mes: { Args: { p_org: string }; Returns: number }
       fn_is_platform_admin: { Args: never; Returns: boolean }
+      fn_lgpd_anonymize_contact: {
+        Args: { p_contact_id: string; p_organization_id: string }
+        Returns: Json
+      }
       fn_lgpd_cascade_redact_contact: {
         Args: {
           p_contact_id: string
@@ -7290,8 +8016,39 @@ export type Database = {
         Args: { p_limite?: number; p_retencao_dias?: number }
         Returns: number
       }
+      fn_reply_action: {
+        Args: {
+          p_org: string;
+          p_id: string;
+          p_revision: string;
+          p_action: string;
+          p_body?: string | null;
+          p_feedback?: string | null;
+        };
+        Returns: string;
+      }
+      fn_agent_legacy_notice: {
+        Args: {p_org:string;p_agent:string;p_code:string;p_title:string;p_body:string};
+        Returns:boolean;
+      }
+      fn_reply_record_receipt: {
+        Args: {p_org:string;p_job:string;p_worker:string;p_acquired_at:string;p_message:string;p_external:string|null;p_echo_ids?:string[]};
+        Returns:Json;
+      }
+      fn_reply_receipt_policy: {
+        Args: { p_org: string; p_job: string; p_worker: string; p_acquired_at: string };
+        Returns: Json;
+      }
+      fn_reply_delivery_policy: {
+        Args: { p_org: string; p_job: string; p_worker: string; p_acquired_at: string };
+        Returns: Json;
+      }
+      fn_reply_prepare: {
+        Args: { p_org: string; p_job: string; p_worker: string; p_acquired_at: string };
+        Returns: boolean;
+      }
       fn_publish_ai_agent_version: {
-        Args: { p_agent_id: string; p_org_id: string; p_version_id: string }
+        Args: { p_agent_id: string; p_org_id: string; p_version_id: string; p_platform_credential_verified?:boolean; p_expected_provenance?:string|null }
         Returns: {
           agent_id: string
           previous_version_id: string

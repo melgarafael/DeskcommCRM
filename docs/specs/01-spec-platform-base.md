@@ -28,7 +28,7 @@ A Plataforma Base é a camada onde **identidade, tenancy, autorização, auditor
 5. **Lista canônica de ~50 actions auditadas** com naming convention `{entity}.{action}`
 6. **Contratos da API REST `/api/v1/`** — wrappers, paginação cursor HMAC-protected, idempotência, rate limit, error codes
 7. **Endpoints LGPD** (`data-request`, `redact`) com cascade SQL e layout de export
-8. **Onboarding de tenant** via CLI + UI super-admin
+8. **Criação administrativa de organização** com vínculo, convite e idempotência
 9. **Health check + observability hooks**
 10. **Plano de validação** (testes E2E mínimos)
 11. **Sequência de migrations**
@@ -135,7 +135,8 @@ create table public.user_organizations (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   role            text not null
                   check (role in ('viewer','agent','manager','admin')),
-  -- Para 'agent', restringe leads visíveis a owner_user_id = self quando aplicável
+  -- Apresentação por vínculo; autorização continua no papel/RLS.
+  interface_settings jsonb not null default '{"preset":"completa"}'::jsonb,
   invited_by      uuid references auth.users(id) on delete set null,
   invited_at      timestamptz,
   accepted_at     timestamptz,
@@ -155,6 +156,8 @@ create index idx_user_orgs_org_role  on public.user_organizations(organization_i
 comment on column public.user_organizations.role is '4 roles canônicos: viewer (1) < agent (2) < manager (3) < admin (4). Hierarquia.';
 ```
 
+`interface_settings` aceita preset `completa` ou `simplificada` e pode carregar uma lista não vazia de `destinos` do catálogo canônico. O default `completa` preserva vínculos legados. Esse campo controla apresentação; todo destino continua intersectado com RBAC e não se torna autorização de URL ou API.
+
 ### 2.3 `platform_admins` (tabela separada — decisão registrada)
 
 > **Trade-off**: optei por **tabela separada** em vez de coluna `is_platform_admin` em `auth.users` por três razões: (1) `auth.users` é gerenciada pelo Supabase e mexer no schema dela é frágil entre upgrades; (2) tabela separada permite metadata rica (granted_by, granted_at, scope, mfa_required); (3) revogação fica atômica e auditada via `revoked_at`, sem alterar a row do user.
@@ -166,15 +169,17 @@ create table public.platform_admins (
   granted_at      timestamptz not null default now(),
   scope           text not null default 'full'
                   check (scope in ('full','support_readonly')),
-  mfa_required    boolean not null default true,
+  mfa_required    boolean not null default false,
   reason          text not null, -- justificativa obrigatória
   revoked_at      timestamptz,
   revoked_by      uuid references auth.users(id) on delete set null,
   revoke_reason   text
 );
 
-comment on table public.platform_admins is 'Super-admins que cruzam tenants. Modificação SOMENTE via DBA + double-confirmation. T-04.';
+comment on table public.platform_admins is 'Administração transversal da instalação. Acompanhamento de dados tenant usa sessão temporária; modificação da autoridade não é exposta pela API.';
 ```
+
+> **Contrato vigente (2026-09):** `platform_admins` define autoridade e escopo máximos; não materializa acesso operacional permanente a toda organização. `platform_support_sessions` liga alvo, ator real e `auth.session_id`, escolhe `full` ou `support_readonly`, limita o prazo a uma hora e preserva saída explícita. Não cria membership nem confina globalmente o JWT. A política de cadastro de MFA tem default desligado; quem já possui fator verificado continua obrigado a provar `aal2` nas rotas protegidas. Detalhes e limites de auditoria/OAuth: [`docs/support-sessions.md`](../support-sessions.md).
 
 ### 2.4 `api_tokens` (Bearer server-to-server)
 
@@ -275,7 +280,7 @@ create index idx_idem_expiry on public.idempotency_keys(expires_at);
 
 ```sql
 -- ============================================================
--- Helper 1: orgs do usuário corrente
+-- Helper 1: orgs do usuário corrente + alvo de suporte ainda válido
 -- ============================================================
 create or replace function public.fn_user_org_ids()
 returns setof uuid
@@ -286,7 +291,11 @@ as $$
   select organization_id
   from public.user_organizations
   where user_id = auth.uid()
-    and revoked_at is null;
+    and revoked_at is null
+  union
+  select (support->>'organization_id')::uuid
+  from (select public.fn_support_context() as support) current_support
+  where support->>'status' = 'active';
 $$;
 
 -- ============================================================
@@ -306,7 +315,7 @@ as $$
 $$;
 
 -- ============================================================
--- Helper 3: role do usuário em uma org específica (hierárquico)
+-- Helper 3: role efetivo em uma org (membership ou suporte temporário)
 -- ============================================================
 create or replace function public.fn_user_role_in_org(p_org uuid)
 returns text
@@ -314,13 +323,25 @@ language sql stable
 security definer
 set search_path = public
 as $$
-  select role
-  from public.user_organizations
-  where user_id = auth.uid()
-    and organization_id = p_org
-    and revoked_at is null
-  limit 1;
+  select case
+    when support->>'status' = 'active'
+      and (support->>'organization_id')::uuid = p_org
+      then case when support->>'access_mode' = 'full' then 'admin' else 'viewer' end
+    else (
+      select role from public.user_organizations
+      where user_id = auth.uid()
+        and organization_id = p_org
+        and revoked_at is null
+      limit 1
+    )
+  end
+  from (select public.fn_support_context() as support) current_support;
 $$;
+
+-- Suporte não é membership. Cercas restritivas fazem support_readonly prevalecer
+-- até sobre vínculo físico admin no alvo. Ler os templates históricos abaixo
+-- junto da migration vigente e de docs/support-sessions.md: fn_is_platform_admin()
+-- isolada não substitui a fronteira temporária.
 
 -- ============================================================
 -- Helper 4: comparador hierárquico de role
@@ -1430,53 +1451,21 @@ commit;
 
 ---
 
-## 9. Onboarding de tenant (CLI + UI super-admin)
+## 9. Criação administrativa e primeiro acesso
 
-### 9.1 CLI
+### 9.1 Porta e transação
 
-```bash
-$ deskcomm tenant create \
-    --legal-name "Loja Exemplo LTDA" \
-    --display-name "Loja Exemplo" \
-    --cnpj "12345678000190" \
-    --slug "loja-exemplo" \
-    --admin-email "lojista@exemplo.com" \
-    --timezone "America/Sao_Paulo"
+A porta vigente é Administração → Gerenciar organizações. Ela aparece para uma pessoa com autoridade de plataforma `full` mesmo quando existe apenas uma organização. A requisição de criação exige autenticação, payload validado, MFA em dívida quitado e uma chave idempotente UUID.
 
-[1/5] Validando inputs...                 ok
-[2/5] Criando organization...             ok (id=33333333-...)
-[3/5] Seed pipeline default (T-06)...    ok (7 stages)
-[4/5] Convidando admin (link 24h)...     ok (sent to lojista@exemplo.com)
-[5/5] Audit + verificação pós-criação... ok
+`fn_create_tenant_with_owner` grava, numa única transação, a organização, o vínculo `admin` aceito do ator criador e um recibo de procedência protegida. A chave é isolada por ator e endpoint, vincula o hash do pedido e expira em 24 horas. Repetir o mesmo pedido recupera a mesma organização e o mesmo identificador de convite; mudar o payload sob a mesma chave falha em conflito. Replay não repete a auditoria da criação nem afirma que um e-mail anterior foi entregue.
 
-Tenant criado:
-  ID:    33333333-3333-3333-3333-333333333333
-  Slug:  loja-exemplo
-  URL:   https://loja-exemplo.deskcomm.com (DNS pending)
-  Admin invite: https://app.deskcomm.com/invite/<jwt-1h>
+### 9.2 Convite e aceite
 
-Próximos passos:
-  - Admin completa MFA enrollment
-  - Conectar Nuvemshop (OAuth) — Sub-PRD 06
-  - Conectar WhatsApp (QR) — Sub-PRD 03
-```
+Se o responsável é diferente do ator criador, `issueInvite` emite o convite somente depois do commit. O resultado sempre mostra link copiável e validade, além do estado real da tentativa de e-mail. Sem `RESEND_API_KEY`, ou se o envio falhar, a organização permanece criada e a pessoa administradora entrega o link manualmente; não há mensagem de entrega fictícia.
 
-**Implementação**: script Node em `scripts/tenant-create.ts` que chama API interna `POST /api/v1/admin/organizations` (autenticado com chave de admin de plataforma).
+O token assina convite, organização, papel, emissor, instante e `interface_settings`. O aceite é serializado por `fn_accept_team_invite`: cria ou reativa o vínculo e aplica a interface assinada; replay de vínculo já ativo devolve `changed=false` antes de alterar papel ou preferência. Um vínculo revogado exige convite emitido depois da revogação. Após o aceite, a organização convidada se torna ativa no cookie.
 
-### 9.2 UI super-admin
-
-Wizard em `https://admin.deskcomm.com/tenants/new` com mesma sequência:
-1. **Identidade**: legal_name, display_name, CNPJ, slug
-2. **Configurações**: timezone, locale, rate_limit_rps, ai_budget_cents
-3. **Admin inicial**: email + nome (gera invite link)
-4. **Confirmação**: preview + botão "Criar tenant"
-
-Pós-criação, redireciona pra detalhe do tenant com checklist:
-- [x] Pipeline default seedado
-- [ ] Admin aceitou convite
-- [ ] Nuvemshop conectado
-- [ ] WhatsApp conectado
-- [ ] Primeiro lead criado
+Criação, convite e troca de organização não prometem seed de pipeline, OAuth ou conexão WhatsApp. Esses fluxos mantêm seus próprios contratos. A interface de troca valida membership aceita e não revogada, organização ativa e MFA em dívida, audita origem/destino e usa navegação de documento completo para estabelecer a nova fronteira de cache.
 
 ### 9.3 Trigger de seed (T-06)
 

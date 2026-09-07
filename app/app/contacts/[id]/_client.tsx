@@ -58,7 +58,7 @@ export function ContactDetailClient({ contactId }: Props) {
 
   const contact = q.data.data;
   const isAdmin =
-    user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
+    (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
 
   // Uma decisão, um lugar (lib/contacts/rotulo-do-contato.ts). Esta tela era
   // uma das DUAS que ignoravam o telefone: contato com número e sem nome
@@ -103,7 +103,7 @@ export function ContactDetailClient({ contactId }: Props) {
             {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
-        {!contact.is_anonymized && (
+        {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
           <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
             <PencilSimple size={16} weight="bold" aria-hidden />
             <span>{t("Editar")}</span>
@@ -117,7 +117,7 @@ export function ContactDetailClient({ contactId }: Props) {
           tela que PEDE uma ação. Enterrado numa aba, viraria pendência que só
           quem já sabe que existe encontra — e a fila deixaria de ser fila.
           Some sozinho quando não há nada aguardando. */}
-      {!contact.is_anonymized && (
+      {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
         <PropostasDeDado
           contactId={contactId}
           podeDecidir={Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent)}

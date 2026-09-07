@@ -1,3 +1,5 @@
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
+import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 /**
  * Handoff orchestrator — central point que executa a transição bot→humano
  * para os 4 gatilhos OR-lógicos (G1/G2/G3/G4) do EPIC-06.
@@ -51,6 +53,7 @@ export type HandoffReason =
   | "orcamento_de_ia";
 
 export interface TriggerHandoffInput {
+  serviceBoundary?: ServiceBoundary;
   conversationId: string;
   organizationId: string;
   reason: HandoffReason;
@@ -72,6 +75,13 @@ export async function triggerHandoff(
 ): Promise<TriggerHandoffResult> {
   try {
     const admin = createAdminClient();
+    const guard = async () => {
+      if (input.serviceBoundary) {
+        if (input.serviceBoundary.organization_id !== input.organizationId || input.serviceBoundary.conversation_id !== input.conversationId) throw new Error("service_scope_mismatch");
+        await assertServiceBoundarySupabase(admin, input.serviceBoundary);
+      }
+    };
+    await guard();
 
     // Idempotency check: se um handoff aconteceu há <5s pra esta conversa COM
     // a mesma reason, é provavelmente uma race entre G2/G3/G4 disparando em
@@ -149,12 +159,14 @@ export async function triggerHandoff(
             conversationId: input.conversationId,
             contactId,
             reason: input.reason,
+            serviceBoundary: input.serviceBoundary,
           });
 
     // Step 1 — flip conversation to pending + silence bot indefinitely.
     // We use 'infinity' (Postgres timestamp special) so any later comparison
     // `bot_silenced_until > now()` is always true. supabase-js sends as text
     // and Postgres parses correctly for timestamptz columns.
+    await guard();
     const { error: updErr } = await admin
       .from("conversations")
       .update({
@@ -182,6 +194,7 @@ export async function triggerHandoff(
 
     // Step 2 — timeline activity (best-effort; missing leadId is OK).
     if (input.leadId) {
+      await guard();
       const { error: actErr } = await admin.from("crm_lead_activities").insert({
         organization_id: input.organizationId,
         lead_id: input.leadId,
@@ -207,10 +220,12 @@ export async function triggerHandoff(
       // Step 2.5 — best-effort: move o card para a etapa "chamar humano" do
       // pipeline dele, quando o tenant configurou uma (ver docstring do
       // arquivo). Nunca bloqueia nem derruba o handoff em si.
+      await guard();
       await moverLeadParaEtapaDeHandoff(admin, {
         organizationId: input.organizationId,
         leadId: input.leadId,
         reason: input.reason,
+        serviceBoundary: input.serviceBoundary,
       }).catch((err) => {
         logger.warn("[handoff-orchestrator] moverLeadParaEtapaDeHandoff failed", {
           lead_id: input.leadId,

@@ -160,6 +160,16 @@ export interface PontoDeIa {
 }
 
 export const PONTOS_DE_IA: readonly PontoDeIa[] = [
+  {
+    id: "agent_preview",
+    rotulo: "Testar ou revisar resposta",
+    oQueFaz: "Prepara uma resposta com a versão e o conhecimento do agente, sem aplicar alterações ao cliente.",
+    papel: "atender",
+    exige: {tools:true,imagem:true},
+    emissor: "lib/agent-engine/agent/inbound-turn.ts",
+    sintomaDeFalha: "O teste ou a sugestão não consegue preparar a resposta para revisão.",
+    registraEm: "llm_calls",
+  },
   // ─────────────────────────── Atender o cliente ───────────────────────────
   {
     id: "agent_turn",

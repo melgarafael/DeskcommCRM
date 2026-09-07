@@ -13,6 +13,7 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { fail } from "@/lib/api/wrappers";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
@@ -20,6 +21,7 @@ import type { FlowGraph, FlowNode, FlowEdge } from "@/lib/followup/graph-schema"
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -159,10 +161,11 @@ function makeDb(
     return b;
   }
 
-  return { from: (table: string) => builder(table) };
+  return { from: (table: string) => builder(table), rpc: async () => ({ data: { organization_id: ORG_ID, contact_id: CONTACT_ID, conversation_id: "conv-1", service_revision: 1, demanda_id: null, demanda_revision: null, status: "open", demanda_fechada_em: null }, error: null }) };
 }
 
 function session(effectiveRole: Role, db: ReturnType<typeof makeDb>) {
+  vi.mocked(createAdminClient).mockReturnValue(db as never);
   const user: AuthUser = {
     id: USER_ID,
     email: "m@example.com",
@@ -389,3 +392,10 @@ describe("GET /api/v1/ai/followups/enrollments", () => {
     expect(body.data[0]!.id).toBe("b");
   });
 });
+
+// Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
+vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  requireSupportWrite: vi.fn(async () => null),
+  authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
+}));

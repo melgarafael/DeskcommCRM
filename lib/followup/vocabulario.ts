@@ -480,6 +480,7 @@ export const DESFECHOS: Record<EnrollmentOutcome, string> = {
  * que `followup-builder.spec.ts` seleciona pelo nome — mantidos ao pé da letra.
  */
 export const GATILHOS: Record<TipoDeGatilho, string> = {
+  appointment_no_show:"Falta confirmada pela equipe",
   manual: "Manual",
   webhook: "Disparado por uma automação em Webhooks",
   silence: "Silêncio",

@@ -35,6 +35,8 @@ interface AuditEntry {
   action: AuditAction;
   actorUserId?: string | null;
   actorApiTokenId?: string | null;
+  /** Somente identidade de state OAuth assinado e validado; nunca input bruto. */
+  actorAuthSessionId?: string | null;
   organizationId?: string | null;
   resourceType?: string | null;
   resourceId?: string | null;
@@ -53,6 +55,32 @@ export async function audit(entry: AuditEntry): Promise<void> {
     // role is missing in dev — RLS policy `audit_log_insert_tenant_member` has
     // null qual so authenticated users can insert their own audit rows.
     const client = isServiceRoleConfigured() ? createAdminClient() : await createClient();
+    let supportMetadata: Record<string, unknown> = {};
+    try {
+      if (entry.actorUserId && entry.actorAuthSessionId && entry.organizationId && !entry.actorApiTokenId) {
+        // Callback SameSite=Strict não traz cookie. O state já autenticou ator/sessão;
+        // a cerca do callback já revalidou a autorização antes do efeito.
+        const { data: support } = await createAdminClient().from("platform_support_sessions")
+          .select("id, access_mode, auth_session_id, ended_at")
+          .eq("actor_user_id", entry.actorUserId).eq("auth_session_id", entry.actorAuthSessionId)
+          .eq("organization_id", entry.organizationId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (support && !support.ended_at) supportMetadata = {
+          support_session_id: support.id, support_access_mode: support.access_mode,
+          support_auth_session_id: support.auth_session_id,
+        };
+      } else if (entry.actorUserId && !entry.actorApiTokenId) {
+        const db = await createClient();
+        const { data: { user } } = await db.auth.getUser();
+        if (user?.id === entry.actorUserId) {
+          const { readSupportContext } = await import("@/lib/impersonate/support");
+          const support = await readSupportContext(db);
+          if (support && support.organization_id === entry.organizationId) supportMetadata = {
+            support_session_id: support.id, support_access_mode: support.access_mode,
+            support_auth_session_id: support.auth_session_id,
+          };
+        }
+      }
+    } catch { /* Audit principal segue, inclusive sem request (workers). */ }
     const { error } = await client.from("api_audit_log").insert({
       action: entry.action,
       actor_user_id: entry.actorUserId ?? null,
@@ -60,12 +88,12 @@ export async function audit(entry: AuditEntry): Promise<void> {
       organization_id: entry.organizationId ?? null,
       resource_type: entry.resourceType ?? null,
       resource_id: entry.resourceId ?? null,
-      metadata: entry.metadata ?? {},
+      metadata: { ...entry.metadata, ...supportMetadata },
       request_id: entry.requestId ?? null,
       actor_ip: entry.ip ?? null,
       actor_user_agent: entry.userAgent ?? null,
       bypassed_rls: entry.bypassedRls ?? false,
-      acting_as_platform_admin: entry.actingAsPlatformAdmin ?? false,
+      acting_as_platform_admin: !!supportMetadata.support_session_id || (entry.actingAsPlatformAdmin ?? false),
     });
     if (error) {
       reportAuditFailure(error.message, entry);

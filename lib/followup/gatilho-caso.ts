@@ -1,3 +1,5 @@
+import { parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 /**
  * Gatilho de CASO ABERTO (`trigger_config.kind='case_opened'`) — o follow-up
  * passa a nascer sozinho quando o agente abre um caso de escalação, e a morrer
@@ -89,6 +91,7 @@ export interface GatilhoCasoDb {
   carregaContatoDaConversa(orgId: string, conversationId: string): Promise<string | null>;
   carregaNoDeGatilho(orgId: string, versionId: string): Promise<string | null>;
   insereEnrollment(input: {
+    source_case_id?: string | null;
     organization_id: string;
     pointer_id: string;
     version_id: string;
@@ -99,7 +102,7 @@ export interface GatilhoCasoDb {
     // `next_eval_at` OMITIDO de propósito: o `default now()` da 0147 decide. O
     // "agora" do processo é FUTURO para o `now()` do Postgres (17–34 ms medidos)
     // e o claim pularia o tick.
-  }): Promise<{ inserted: boolean; id: string | null }>;
+  }): Promise<{ inserted: boolean; id: string | null; reason?: "stale_origin" }>;
   insereEventoDoEnrollment(evento: {
     organization_id: string;
     enrollment_id: string;
@@ -126,6 +129,7 @@ export interface GatilhoCasoSummary {
   pointers_barrados_pelo_gate: number;
   enrolled: number;
   skipped_existing: number;
+  skipped_stale_origin?: number;
   /** Conversa sem contato — não há a quem escrever. Contado, nunca calado. */
   sem_contato: number;
   cancelados: number;
@@ -253,7 +257,8 @@ export async function aplicaGatilhoDeCaso(
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
 
-    const { inserted, id } = await deps.db.insereEnrollment({
+    const { inserted, id, reason } = await deps.db.insereEnrollment({
+      source_case_id: textoOuNulo(row.payload.case_id),
       organization_id: row.organization_id,
       pointer_id: pointer.id,
       version_id: pointer.active_version_id,
@@ -263,7 +268,8 @@ export async function aplicaGatilhoDeCaso(
       agent_id: agentId,
     });
     if (!inserted) {
-      summary.skipped_existing++;
+      if (reason === "stale_origin") summary.skipped_stale_origin = (summary.skipped_stale_origin ?? 0) + 1;
+      else summary.skipped_existing++;
       continue;
     }
     summary.enrolled++;
@@ -351,9 +357,18 @@ export function createSupabaseGatilhoCasoDb(admin: SupabaseClient): GatilhoCasoD
     },
 
     async insereEnrollment(input) {
+      const { source_case_id, ...values } = input;
+      const { data: source, error: sourceError } = await admin.from("agent_cases").select("context_snapshot")
+        .eq("organization_id", input.organization_id).eq("id", source_case_id ?? "").maybeSingle();
+      if (sourceError) throw sourceError;
+      const boundary = parseServiceBoundary(source?.context_snapshot?.service_boundary);
+      if (!boundary) return { inserted: false, id: null, reason: "stale_origin" };
+      try { await assertServiceBoundarySupabase(admin, boundary); } catch (error) {
+        if (error instanceof StaleServiceBoundaryError) return { inserted: false, id: null, reason: "stale_origin" }; throw error;
+      }
       const { data, error } = await admin
         .from("followup_enrollments")
-        .insert(input)
+        .insert({ ...values, service_boundary: boundary })
         .select("id")
         .maybeSingle();
       if (error) {

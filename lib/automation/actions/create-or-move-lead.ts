@@ -1,3 +1,4 @@
+import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 /**
  * Ação `create_or_move_lead` — reusa os handlers core de /api/v1/leads
  * (mesmo caminho que REST/MCP) em vez de duplicar a lógica de criação/move.
@@ -25,10 +26,15 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     actor: { type: "webhook_source", id: ctx.ruleId },
     requestId: `rule:${ctx.ruleId}`,
   };
-  const lead = ctx.context.lead as { id: string; pipeline_id: string } | undefined;
+  const lead = ctx.context.lead as { id: string; pipeline_id: string; contact_id?: string } | undefined;
   const contact = ctx.context.contact as
     | { id: string; name?: string | null; display_name?: string | null; phone_number?: string | null }
     | undefined;
+
+  const contactId = contact?.id ?? lead?.contact_id;
+  handlerCtx.serviceOrigin = contactId
+    ? (await originFromAutomationEvent(ctx, contactId)) ?? { kind: "unavailable", reason: "origin_capture_failed" }
+    : { kind: "unavailable", reason: "origin_capture_failed" };
 
   try {
     if (lead) {

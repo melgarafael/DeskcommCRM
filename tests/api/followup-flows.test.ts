@@ -632,6 +632,16 @@ describe("POST /api/v1/ai/followup-flows/:id/publish", () => {
     expect(res.status).toBe(200);
   });
 
+  it("appointment_no_show com consumidor ativo publica versão e mantém gatilhos desconhecidos recusados",async()=>{
+    const id="33333333-3333-4333-8333-333333333333";
+    const db=makeDb([{id,organization_id:ORG_ID,status:"draft",draft_graph:VALID_GRAPH,trigger_config:{kind:"appointment_no_show"}}],[]);
+    session("manager",db);
+    const {POST}=await import("@/app/api/v1/ai/followup-flows/[id]/publish/route");
+    expect((await POST(req("POST"),ctx(id))).status).toBe(200);
+    const {data}=(await db.from("followup_flow_pointers").select().eq("id",id)) as {data:Row[]};
+    expect(data[0]).toMatchObject({status:"active"});expect(data[0]?.active_version_id).toBeTruthy();
+  });
+
   it("trigger_config.kind='manual' → publica normalmente", async () => {
     const db = makeDb(
       [
@@ -799,3 +809,10 @@ describe("DELETE /api/v1/ai/followup-flows/:id", () => {
     expect(res.status).toBe(403);
   });
 });
+
+// Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
+vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  requireSupportWrite: vi.fn(async () => null),
+  authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
+}));

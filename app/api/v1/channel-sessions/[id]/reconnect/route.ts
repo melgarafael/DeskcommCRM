@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/channel-sessions/[id]/reconnect — reconecta um canal caído.
  *
@@ -34,6 +35,9 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { assertWahaConnectionIdle, ChannelConnectionError } from "@/lib/channels/connect-waha";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { mfaEmDivida } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -50,6 +54,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await params;
 
@@ -70,6 +77,7 @@ export async function POST(
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
+  if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
 
   const supabase = await createClient();
   const buscar = (colunas: string) =>
@@ -126,21 +134,17 @@ export async function POST(
   }
 
   try {
+    await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id);
     await waha.stopSession(nomeSessao);
     // Só no modo forçado: descartar a credencial é irreversível — obriga a
     // reescanear o QR mesmo que ela ainda estivesse boa.
     if (force) await waha.logoutSession(nomeSessao);
     const remote = (await waha.startSession(nomeSessao)) as { status?: string };
     const nextStatus = remote.status ?? "STARTING";
-    await supabase
-      .from("channel_sessions")
-      .update({
-        status: "STARTING",
-        last_status_change_at: new Date().toISOString(),
-        consecutive_health_fails: 0,
-      })
-      .eq("organization_id", activeOrg.orgId)
-      .eq("id", id);
+    const patch = { status: nextStatus, status_reason: null, last_status_change_at: new Date().toISOString(), consecutive_health_fails: 0 };
+    const { error: syncError } = await supabase.from("channel_sessions").update(patch).eq("organization_id", activeOrg.orgId).eq("id", id);
+
+    if (syncError) throw new Error("connection_sync_failed");
 
     void audit({
       action: "channel.reconnected",
@@ -154,6 +158,9 @@ export async function POST(
 
     return ok({ id, status: nextStatus, force }, { requestId });
   } catch (err) {
+    if (err instanceof ChannelConnectionError) return fail(err.code, "Uma conexão está em andamento. Aguarde e tente novamente.", err.status, { requestId });
+    await supabase.from("channel_sessions").update({ status: "FAILED", status_reason: "connection_repair_required", last_status_change_at: new Date().toISOString() })
+      .eq("organization_id", activeOrg.orgId).eq("id", id);
     return fail("waha_error", wahaFriendlyError(err), 502, { requestId });
   }
 }

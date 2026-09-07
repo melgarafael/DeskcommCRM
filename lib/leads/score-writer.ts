@@ -1,3 +1,4 @@
+import { protecaoAgendaPg } from "@/lib/agenda/protecao-followup";
 import type pg from "pg";
 
 import { calculaScore, type SinaisDoLead } from "@/lib/leads/score-formula";
@@ -66,7 +67,10 @@ export async function recalculaScoreDoLead(
   // Recência SEMPRE pelo classificador único — a fórmula recebe o bucket
   // pronto e não conhece hora nenhuma.
   const referencia = lead.last_activity_at ?? lead.created_at;
+  const agenda = lead.contact_id ? await protecaoAgendaPg(db, organizationId, lead.contact_id, agora) : undefined;
+  if (agenda?.motivo === "leitura_indisponivel") return { leadId, gravou: false, motivo: "agenda_indisponivel" };
   const risco = classifyRisk({
+    agenda,
     lastActivityAt: new Date(referencia),
     now: agora,
     inFlight: false,

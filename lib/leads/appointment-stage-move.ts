@@ -1,3 +1,4 @@
+import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
@@ -113,6 +114,7 @@ export async function moverLeadParaEtapaDeAgendamento(
     .eq("id", leadRow.stage_id)
     .maybeSingle();
 
+  const serviceOrigin = await observeServiceOrigin(admin, input.organizationId, leadRow.contact_id);
   const { data: atualizadas, error: erroUpdate } = await admin
     .from("crm_leads")
     .update({ stage_id: etapaRow.id })
@@ -162,6 +164,7 @@ export async function moverLeadParaEtapaDeAgendamento(
     p_entity_kind: "crm_lead",
     p_entity_id: leadRow.id,
     p_payload: {
+      service_origin: serviceOrigin,
       pipeline_id: leadRow.pipeline_id,
       from_stage_id: leadRow.stage_id,
       to_stage_id: etapaRow.id,

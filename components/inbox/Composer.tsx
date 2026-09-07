@@ -14,7 +14,7 @@ import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
 import { AttachmentPreviewDialog } from "@/components/inbox/composer/AttachmentPreviewDialog";
 import { ContactPickerDialog } from "@/components/inbox/composer/ContactPickerDialog";
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
-import { DraftReplyButton } from "@/components/inbox/composer/DraftReplyButton";
+import { ReplyReviewPanel } from "@/components/inbox/composer/ReplyReviewPanel";
 import { EmojiButton } from "@/components/inbox/composer/EmojiButton";
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
@@ -157,17 +157,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     });
   }
 
-  function applyDraft(draft: string) {
-    // O rascunho é uma resposta COMPLETA sugerida — substitui o conteúdo, nunca
-    // concatena (inserir no cursor grudaria dois textos completos, gerando uma
-    // mensagem sem sentido). O vendedor edita/envia a partir daqui.
-    setText(draft);
-    requestAnimationFrame(() => {
-      taRef.current?.focus();
-      autoresize();
-    });
-  }
-
   /**
    * Ctrl/Cmd+V com imagem no clipboard cai no MESMO caminho do menu "+":
    * abre o preview com legenda e envia por ali. Nada de atalho paralelo — a
@@ -215,6 +204,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
+        {mode === "reply" && (
+          <ReplyReviewPanel conversationId={conversationId} disabled={isDisabled} />
+        )}
         <TemplateMenu
           open={menuOpen}
           query={slash.query}
@@ -286,9 +278,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               onPickContact={() => setContactPickerOpen(true)}
             />
           )}
-          {mode === "reply" && (
-            <DraftReplyButton conversationId={conversationId} disabled={isDisabled} onDraft={applyDraft} />
-          )}
           <EmojiButton
             disabled={isDisabled}
             onPick={(emoji) => {
@@ -330,7 +319,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             // uma nota interna precisa saber que ela não vai para o cliente, e
             // essa informação não pode depender de abrir um diálogo.
             placeholder={
-              mode === "note" ? t("Escreva uma nota interna… (só o time vê)") : t("Escreva uma mensagem…")
+              mode === "note"
+                ? t("Escreva uma nota interna… (só o time vê)")
+                : t("Escreva uma mensagem…")
             }
             title={
               mode === "note"
@@ -338,8 +329,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 : t("Enter envia · Shift+Enter quebra linha")
             }
             className={cn(
-              "min-h-9 max-h-40 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "placeholder:text-muted-foreground focus:outline-hidden focus:ring-1 focus:ring-ring",
+              "max-h-40 min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm",
+              "placeholder:text-muted-foreground focus:ring-1 focus:ring-ring focus:outline-hidden",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}

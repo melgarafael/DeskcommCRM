@@ -36,6 +36,7 @@
  * trocaria uma mentira por uma parede. Por isso a TELA passa a mandar quem tem
  * versão publicada para o editor de versões, que grava onde o motor lê.
  */
+import ts from "typescript";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -159,9 +160,9 @@ describe("PATCH /api/v1/ai/agents/:id — conteúdo de versão publicada não se
   });
 
   it("⭐ o rag_bot SEM versão publicada continua editando pelo cadastro", async () => {
-    // Aqui `ai_agents.system_prompt` É a fonte legítima: é o que
-    // `workers/ai-response-worker.ts` lê. Endurecer isto seria regressão na
-    // instalação nova, que é o estado mais comum do produto self-host.
+    // Antes da primeira publicação o cadastro ainda preserva o prompt a ser
+    // reconciliado. Depois dela, somente o editor de versões altera o texto
+    // executável; o worker legado não volta a responder por esta permissão.
     const r = await patch({ system_prompt: "Texto novo do atendente, com pelo menos vinte caracteres." }, agente({ published_version_id: null }));
 
     expect(r.status, JSON.stringify(r.corpo)).toBe(200);
@@ -182,30 +183,80 @@ describe("PATCH /api/v1/ai/agents/:id — conteúdo de versão publicada não se
   });
 });
 
-describe("a TELA manda quem tem versão publicada para o editor que grava onde o motor lê", () => {
-  const fonte = readFileSync(
-    join(process.cwd(), "app/app/ai/agents/[id]/page.tsx"),
-    "utf8",
-  );
+function elementosDaPagina(fonte: string) {
+  const ast = ts.createSourceFile("page.tsx", fonte, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const elements: ts.JsxSelfClosingElement[] = [];
+  const calls: ts.CallExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxSelfClosingElement(node)) elements.push(node);
+    if (ts.isCallExpression(node)) calls.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  return { ast, elements, calls };
+}
+function recoveryGuard(fonte: string): ts.Expression {
+  const { elements } = elementosDaPagina(fonte);
+  const recovery = elements.filter(n => n.tagName.getText() === "LegacyRecovery");
+  expect(recovery).toHaveLength(1);
+  let parent: ts.Node | undefined = recovery[0]!.parent;
+  while (parent && !ts.isJsxExpression(parent)) parent = parent.parent;
+  if (!parent || !ts.isJsxExpression(parent) || !parent.expression) throw new Error("recuperação sem condição");
+  return parent.expression;
+}
+/** Evaluate only the Boolean UI guard, not arbitrary source or component code. */
+function mostraRecuperacao(node: ts.Expression, agent: { kind: string | null; published_version_id: string | null }): unknown {
+  if (ts.isParenthesizedExpression(node)) return mostraRecuperacao(node.expression, agent);
+  if (ts.isJsxSelfClosingElement(node)) return true;
+  if (ts.isStringLiteral(node)) return node.text;
+  if (ts.isPropertyAccessExpression(node) && node.expression.getText() === "agent") return agent[node.name.text as keyof typeof agent];
+  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) return !mostraRecuperacao(node.operand, agent);
+  if (ts.isBinaryExpression(node)) {
+    const left = mostraRecuperacao(node.left, agent);
+    switch (node.operatorToken.kind) {
+      case ts.SyntaxKind.QuestionQuestionToken: return left ?? mostraRecuperacao(node.right, agent);
+      case ts.SyntaxKind.AmpersandAmpersandToken: return left && mostraRecuperacao(node.right, agent);
+      case ts.SyntaxKind.ExclamationEqualsEqualsToken: return left !== mostraRecuperacao(node.right, agent);
+    }
+  }
+  throw new Error(`Condição não reconhecida pelo instrumento: ${node.getText()}`);
+}
 
-  it("o instrumento está vivo: acha o desvio de editor (controle positivo)", () => {
-    // Sem isto, um arquivo reescrito faria as asserções abaixo passarem por
-    // vacuidade — procurando um trecho que não existe mais.
-    expect(fonte).toContain("AgentEditorClient");
-    expect(fonte).toContain('!== "mcp_agent"');
+describe("a TELA usa o editor de versões e limita recuperação ao legado não publicado", () => {
+  const fonte = readFileSync(join(process.cwd(), "app/app/ai/agents/[id]/page.tsx"), "utf8");
+
+  it("editor de versões recebe a seleção baseada no pointer publicado", () => {
+    const { elements, calls } = elementosDaPagina(fonte);
+    const tabs = elements.filter(n => n.tagName.getText() === "AgentTabs");
+    expect(tabs).toHaveLength(1);
+    const attrs = tabs[0]!.attributes.properties.filter(ts.isJsxAttribute);
+    for (const name of ["agent", "draft", "published", "base", "versions"])
+      expect(attrs.find(a => a.name.getText() === name)?.initializer?.getText()).toBe(`{${name}}`);
+    const selector = calls.filter(c => c.expression.getText() === "escolherVersoesDaTela");
+    expect(selector).toHaveLength(1);
+    expect(selector[0]!.arguments[0]!.getText()).toBe("versions");
+    expect(selector[0]!.arguments[1]!.getText()).toContain("agent.published_version_id");
+    expect(elements.some(n => n.tagName.getText() === "AgentEditorClient")).toBe(false);
   });
 
-  it("⭐ o desvio para o editor legado consulta published_version_id", () => {
-    // A régua do runtime (`lib/ai/agents/no-ar.ts`) é: versão publicada manda,
-    // e `kind` só decide quando NÃO há versão. A tela era o último lugar que
-    // perguntava `kind` primeiro — e por isso oferecia um campo decorativo.
-    // A condição contém parênteses (`agent.kind ?? "rag_bot"`), então recortar
-    // por `[^)]*` pararia no primeiro fecha — e devolveria string vazia, que
-    // passaria por vacuidade. Recorta-se a LINHA do desvio até o `{`.
-    const desvio = /if \(.*!== "mcp_agent".*\) \{/.exec(fonte)?.[0] ?? "";
-    expect(
-      desvio,
-      "o desvio de editor ignora published_version_id: agente publicado cai no editor legado, que grava em ai_agents — a coluna que o motor NÃO lê",
-    ).toContain("published_version_id");
+  it("agente publicado de qualquer kind não volta à recuperação; legado sem versão continua alcançável", () => {
+    const guard = recoveryGuard(fonte);
+    for (const kind of ["rag_bot", "mcp_agent", null])
+      expect(mostraRecuperacao(guard, { kind, published_version_id: VERSAO })).toBe(false);
+    expect(mostraRecuperacao(guard, { kind: "rag_bot", published_version_id: null })).toBe(true);
+    expect(mostraRecuperacao(guard, { kind: "mcp_agent", published_version_id: null })).toBe(false);
+  });
+
+  it("controle negativo: ignorar o pointer volta a oferecer recuperação a um agente publicado", () => {
+    const sabotado = fonte.replace(/&&\s*!agent\.published_version_id/, "");
+    expect(sabotado).not.toBe(fonte);
+    expect(mostraRecuperacao(recoveryGuard(sabotado), { kind: "rag_bot", published_version_id: VERSAO })).toBe(true);
   });
 });
+
+// Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
+vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  requireSupportWrite: vi.fn(async () => null),
+  authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
+}));

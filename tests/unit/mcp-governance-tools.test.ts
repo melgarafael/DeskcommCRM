@@ -297,6 +297,12 @@ describe("crm_get_queue_status", () => {
         error: null,
       };
     }
+    if (q.table === "user_organizations") {
+      return { data: [{ user_id: USER_A }, { user_id: USER_B }], error: null };
+    }
+    if (["channel_sessions", "channel_routing_policies", "channel_routing_responsibles"].includes(q.table)) {
+      throw new Error("organization_summary must not resolve an individual channel policy");
+    }
     if (q.table === "attendant_availability") {
       return {
         data: [
@@ -318,6 +324,25 @@ describe("crm_get_queue_status", () => {
       now,
     );
     expect(res).toEqual({ queue_size: 3, avg_wait_seconds: 20, online_eligible_count: 2 });
+  });
+
+  it("disponibilidade sem membership ativa não conta como elegível", async () => {
+    const onlyA: Resolver = (q) => q.table === "user_organizations"
+      ? { data: [{ user_id: USER_A }], error: null } : resolve(q);
+    const res = await getQueueStatus(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeSupabase(onlyA, makeCap()) as any, ORG, now,
+    );
+    expect(res).toEqual({ queue_size: 3, avg_wait_seconds: 20, online_eligible_count: 1 });
+  });
+
+  it("erro ao ler membership não é publicado como zero elegíveis", async () => {
+    const failed: Resolver = (q) => q.table === "user_organizations"
+      ? { data: null, error: { message: "membership unavailable" } } : resolve(q);
+    await expect(getQueueStatus(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeSupabase(failed, makeCap()) as any, ORG, now,
+    )).rejects.toThrow("membership unavailable");
   });
 
   it("tool handler retorna o shape documentado", async () => {

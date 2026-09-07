@@ -76,36 +76,11 @@ describe("o canal volta sozinho", () => {
   });
 });
 
-describe("o token atrasado: o defeito foi eliminado, não afrouxado", () => {
-  /**
-   * ESTE BLOCO GUARDAVA QUATRO CASOS QUE NÃO EXISTEM MAIS, e a razão de terem
-   * saído importa mais que os casos.
-   *
-   * Eles cobriam uma corrida: o hook buscava o token, dava `setAuth` e assinava,
-   * com teto de 4s e remontagem quando o token chegava atrasado. Toda essa
-   * engenharia existia para compensar o supabase-js não enxergar a sessão
-   * (cookie httpOnly).
-   *
-   * ⚠️ E ELA PAROU DE FUNCIONAR NUM BUMP DE DEPENDÊNCIA, com os testes verdes.
-   * Do realtime-js 2.112.x em diante a callback `accessToken` do client vence o
-   * token manual, e a callback padrão sem sessão visível devolve a ANON KEY.
-   * Medido no socket: o token do usuário durava ~2ms; o join seguinte ia
-   * anônimo. Os testes não viram porque exercitavam um cliente FAKE e
-   * afirmavam que `setAuth` fora CHAMADO — o que morreu foi o EFEITO.
-   *
-   * A fonte do token passou a ser a callback, em `lib/supabase/browser.ts`, que
-   * o socket resolve ANTES de emitir o join. Sem corrida, não há teto a vencer
-   * nem canal a remontar por atraso: a classe inteira de defeito deixou de ser
-   * representável. Quem a vigia agora é `realtime-token-do-socket.test.ts`.
-   */
-  it("a corrida com teto não voltou ao hook", () => {
-    expect(FONTE, "voltou a esperar token antes de assinar").not.toMatch(/esperarAuth/);
-    expect(FONTE, "voltou o teto da corrida de auth").not.toMatch(/AUTH_TIMEOUT_MS/);
-  });
-
-  it("o subscribe é direto — nada bloqueia o join", () => {
-    // Se o join voltar a depender de uma promessa nossa, a corrida volta junto.
-    expect(FONTE).toMatch(/novo\.subscribe\(\(s\) => \{/);
+describe("o primeiro join aguarda a autenticação compartilhada", () => {
+  it("não inventa timeout de auth nem assina anon em falha", () => {
+    expect(FONTE).not.toMatch(/AUTH_TIMEOUT_MS/);
+    expect(FONTE).toMatch(/await prepareRealtimeAuthentication\(\)/);
+    expect(FONTE).toMatch(/if \(cancelado\) return;/);
   });
 });
 

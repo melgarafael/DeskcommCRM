@@ -63,7 +63,7 @@ export async function updateProfile(input: ProfileInput): Promise<UpdateProfileR
   });
 
   // Best-effort emit (event_log is org-scoped; skip if no org).
-  if (activeOrg) {
+  if (activeOrg && authUser.support?.access_mode !== "support_readonly") {
     await supabase
       .rpc("emit_event", {
         p_event_type: "user.profile_updated",

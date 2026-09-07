@@ -44,10 +44,10 @@ const ESCOPOS = "https://www.googleapis.com/auth/calendar.events https://www.goo
  */
 let ultimoNonce = "";
 
-function estadoValido(): string {
+function estadoValido(authSessionId?: string): string {
   ultimoNonce = `nonce-de-teste-${noncesGravados.length}-${Math.random().toString(36).slice(2)}`;
   return emitirEstado(
-    { organizationId: ORG, userId: ANA },
+    { organizationId: ORG, userId: ANA, authSessionId },
     { segredo: SEGREDO, agora: new Date(), nonce: ultimoNonce },
   );
 }
@@ -495,3 +495,21 @@ describe("GET /api/v1/agenda/google/callback", () => {
     }
   });
 });
+
+const { callbackAllowed } = vi.hoisted(() => ({ callbackAllowed: vi.fn(async () => true) }));
+vi.mock("@/lib/impersonate/support", () => ({ supportCallbackWriteAllowed: callbackAllowed }));
+it("suporte restrito recusa callback antes de trocar código ou gravar conexão", async () => {
+  callbackAllowed.mockResolvedValueOnce(false);
+  googleRespondendoBem();
+  const res = await chamar({ code: "o-codigo", state: estadoValido() });
+  expect(await destino(res)).toContain("erro=retorno_nao_verificavel");
+  expect(upsertRecebido).toBeNull();
+});
+
+ it("auditoria recebe ator e sessão do state validado sem cookie JWT", async () => {
+  googleRespondendoBem();
+  const session = "33333333-3333-4333-8333-333333333333";
+  const { GET } = await import("@/app/api/v1/agenda/google/callback/route");
+  await GET(pedido({ state: estadoValido(session), code: "legitimo" }));
+  expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "agenda.google.conexao_concluida", actorUserId: ANA, actorAuthSessionId: session, organizationId: ORG }));
+ });

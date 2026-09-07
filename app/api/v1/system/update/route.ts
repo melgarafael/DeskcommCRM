@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/system/update — o clique do dono.
  *
@@ -19,6 +20,9 @@ export const dynamic = "force-dynamic";
 const RUN_IN_PROGRESS_MESSAGE = "Já existe uma atualização em andamento.";
 
 export async function POST(_req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const user = await loadAuthUser();
   // `unauthenticated` (não `unauthorized`): esse último é reservado ao segredo
   // interno das rotas host↔app (lib/api/errors.ts) — aqui falta é sessão.

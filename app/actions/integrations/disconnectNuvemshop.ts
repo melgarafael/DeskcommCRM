@@ -8,6 +8,7 @@
  * may not have a valid token if the disconnect was triggered by token expiry).
  */
 
+import { supportWriteError } from "@/lib/impersonate/support";
 import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -21,6 +22,7 @@ export async function disconnectNuvemshop(): Promise<DisconnectResult> {
   const user = await loadAuthUser();
   if (!user) return { ok: false, error: "auth_required" };
 
+  if (supportWriteError(user.support)) return { ok: false, error: "forbidden" };
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) return { ok: false, error: "no_active_org" };
 

@@ -35,6 +35,7 @@
  * chega à FÁBRICA de modelo (onde a escolha vira chamada de verdade).
  */
 import { describe, expect, it, vi } from "vitest";
+import ts from "typescript";
 
 import {
   decidirBinding,
@@ -74,6 +75,7 @@ const PONTOS_AUXILIARES = [
   "jailbreak_detect",
   "promise_semantic",
   "compaction",
+  "flush",
   "checkpoint",
   "draft_suggestion",
   "automation_ai_message",
@@ -175,7 +177,7 @@ function registrySpiao() {
 }
 
 describe("o seam instancia o modelo do agente, não o do padrão da org", () => {
-  it("reproduz o turno que morria na VPS e prova que ele passa", async () => {
+  it.each(["stage_classifier", "flush", "agent_preview"])("%s: a fábrica recebe o par íntegro do agente", async purpose => {
     const { registry, chamadas } = registrySpiao();
 
     const r = await runModelCall(
@@ -183,7 +185,7 @@ describe("o seam instancia o modelo do agente, não o do padrão da org", () => 
       { anthropicApiKey: "chave-anthropic", openaiApiKey: "chave-openai", cacheTtl: "1h" as const },
       {
         tenantId: "11111111-1111-4111-8111-111111111111",
-        purpose: "stage_classifier",
+        purpose,
         // Exatamente o que `auxModelArgs` monta com o knob de env vazio.
         model: "gpt-5.6-luna",
         llmOverride: { provider: "openai", credentialId: null },
@@ -218,30 +220,24 @@ describe("o seam instancia o modelo do agente, não o do padrão da org", () => 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-/** Sobe até a `{` que abre o objeto do índice e desce até a `}` que o fecha. */
-function objetoQueContem(fonte: string, indice: number): string {
-  let profundidade = 0;
-  let i = indice;
-  for (; i >= 0; i--) {
-    const c = fonte[i];
-    if (c === "}") profundidade++;
-    else if (c === "{") {
-      if (profundidade === 0) break;
-      profundidade--;
+/** Read the actual object owning purpose; braces in prompts cannot alter its boundary. */
+function objetosComPurpose(fonte: string) {
+  const ast = ts.createSourceFile("source.ts", fonte, ts.ScriptTarget.Latest, true);
+  const out: Array<{ purpose: string; objeto: string }> = [];
+  const literals = (node: ts.Expression): string[] => {
+    if (ts.isStringLiteralLike(node)) return [node.text];
+    if (ts.isConditionalExpression(node)) return [...literals(node.whenTrue), ...literals(node.whenFalse)];
+    if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) return literals(node.expression);
+    return [];
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isPropertyAssignment(node) && node.name.getText(ast).replace(/["']/g, "") === "purpose" && ts.isObjectLiteralExpression(node.parent)) {
+      for (const purpose of literals(node.initializer)) out.push({ purpose, objeto: node.parent.getText(ast) });
     }
-  }
-  if (i < 0) return "";
-  const inicio = i;
-  profundidade = 0;
-  for (let j = i; j < fonte.length; j++) {
-    const c = fonte[j];
-    if (c === "{") profundidade++;
-    else if (c === "}") {
-      profundidade--;
-      if (profundidade === 0) return fonte.slice(inicio, j + 1);
-    }
-  }
-  return "";
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  return out;
 }
 
 function arquivosDoMotor(dir: string): string[] {
@@ -265,15 +261,23 @@ describe("nenhum call site empresta o modelo do agente sem o provider dele", () 
     const mapa = new Map<string, { arquivo: string; objeto: string }[]>();
     for (const arquivo of arquivosDoMotor(join(process.cwd(), "lib/agent-engine"))) {
       const fonte = readFileSync(arquivo, "utf-8");
-      for (const m of fonte.matchAll(/purpose:\s*['"]([a-z_]+)['"]/g)) {
-        const objeto = objetoQueContem(fonte, m.index);
-        const lista = mapa.get(m[1]!) ?? [];
+      for (const { purpose, objeto } of objetosComPurpose(fonte)) {
+        const lista = mapa.get(purpose) ?? [];
         lista.push({ arquivo, objeto });
-        mapa.set(m[1]!, lista);
+        mapa.set(purpose, lista);
       }
     }
     return mapa;
   })();
+
+  it("instrumento preserva ramos condicionais e detecta provider ausente no objeto certo", () => {
+    const fonte = `const a = { purpose: preview ? 'agent_preview' : 'agent_turn', model: agentConfig.model }; const b = { purpose: 'checkpoint', llmOverride: {} };`;
+    const rows = objetosComPurpose(fonte);
+    expect(rows.map(r => r.purpose)).toEqual(["agent_preview", "agent_turn", "checkpoint"]);
+    const semProvider = rows.filter(r => /model:\s*(agentConfig|agent)\./.test(r.objeto) && !r.objeto.includes("llmOverride"));
+    expect(semProvider.map(r => r.purpose)).toEqual(["agent_preview", "agent_turn"]);
+    expect(objetosComPurpose(`// purpose: 'fantasma'\ntype T = { purpose: 'tipo' };`)).toEqual([]);
+  });
 
   it("a varredura enxerga o motor — controle positivo", () => {
     // Sem isto, uma varredura que não achasse arquivo nenhum passaria em tudo

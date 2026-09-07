@@ -1,3 +1,4 @@
+import type { MeetingBookingContext } from "@/lib/agenda/meet-delivery";
 /**
  * Tipos compartilhados do MCP server interno (Spec 11).
  *
@@ -12,6 +13,8 @@ import type { Actor } from "@/lib/api/handlers/types";
 import type { Role } from "@/lib/auth/types";
 
 export interface McpContext {
+  /** Somente o runtime in-process fornece o job original, nunca o cliente MCP. */
+  meetingBooking?: MeetingBookingContext;
   organizationId: string;
   role: Role;
   actor: Actor;

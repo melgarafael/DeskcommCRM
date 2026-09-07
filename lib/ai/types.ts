@@ -1,3 +1,4 @@
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Shared shapes for the EPIC-06 AI/RAG pipeline.
  *
@@ -74,6 +75,7 @@ export type SkipReason =
   | "nao_elegivel_para_ia";
 
 export interface BotContext {
+  serviceBoundary?: ServiceBoundary;
   organization_id: string;
   conversation_id: string;
   contact_id: string;
@@ -82,6 +84,12 @@ export interface BotContext {
   inbound_body: string;
   recent_messages: RecentMessage[];
   agent: {
+    kind?: string | null;
+    // Quem decide "este agente atende?" (`elegivelParaWorkerLegado`) lê esta
+    // coluna. Sem ela no contexto, a decisão recebia `undefined` e um agente
+    // PAUSADO passava — o defeito que dá nome à branch. `FatosDoAgente` a exige
+    // justamente para que o compilador ache os pontos que a esqueceram.
+    paused_at: string | null;
     id: string;
     model: string;
     system_prompt: string;

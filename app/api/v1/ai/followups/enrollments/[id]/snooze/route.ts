@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followups/enrollments/:id/snooze (manager+) — remarca o
  * próximo passo para o horário que a pessoa escolheu, sem tirar o follow-up do
@@ -28,6 +29,9 @@ const bodySchema = z.object({ next_eval_at: z.string().min(1) });
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   const invalido = validaIdDaRota(id, requestId);

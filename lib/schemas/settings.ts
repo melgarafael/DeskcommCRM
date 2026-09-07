@@ -224,3 +224,10 @@ export const marcaDaOrganizacaoSchema = z.object({
     .nullable(),
 });
 export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
+
+/** Prazos por organização. Leitura legada degrada; escrita usa schema estrito. */
+export const agendaSettingsWriteSchema = z.strictObject({
+  confirmation_delay_minutes: z.number().int().min(1).max(10080),
+  unknown_protection_minutes: z.number().int().min(1).max(10080),
+}).refine(v => v.unknown_protection_minutes >= v.confirmation_delay_minutes, {message:"O prazo de proteção deve ser maior que o prazo de confirmação."});
+export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmation_delay_minutes:10,unknown_protection_minutes:1440});

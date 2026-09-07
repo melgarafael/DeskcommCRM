@@ -33,6 +33,7 @@ vi.mock("next/navigation", () => ({ redirect: () => { throw new Error("redirect"
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
+    rpc: async () => ({ data: null, error: null }),
     auth: {
       getUser: async () => ({
         data: { user: { id: "u1", email: "a@b.c", user_metadata: {} } },
@@ -116,7 +117,7 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
       // `locale` é o idioma padrão da organização, que entra na membership para
       // a resolução do idioma da sessão não precisar de uma segunda consulta.
       // Aqui vem `null` porque o dublê não devolve a coluna.
-      { organization_id: "o1", organization_name: "Acme", role: "admin", locale: null },
+      { organization_id: "o1", organization_name: "Acme", role: "admin", locale: null, interface_settings: { preset: "completa" } },
     ]);
   });
 });

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/channel-sessions/[id]/qr — proxy do QR de UM canal específico.
  *
@@ -32,6 +33,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   const { id } = await params;
 
   const user = await loadAuthUser();

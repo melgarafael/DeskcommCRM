@@ -1,3 +1,4 @@
+import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
 /**
  * SEAM ÚNICO de chamada de modelo: TODA chamada de LLM do harness passa por
  * runModelCall — agente, classificadores auxiliares e compaction usam esta MESMA
@@ -422,7 +423,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       model: factory(config.apiKey, model, decisao.baseUrl ?? undefined),
       system: prefix.system,
       messages: input.messages,
-      tools: prefix.tools,
+      tools: guardServiceTools(prefix.tools),
       stopWhen: input.maxSteps === undefined ? undefined : stepCountIs(input.maxSteps),
       temperature,
       topP,

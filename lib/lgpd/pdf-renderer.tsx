@@ -123,6 +123,21 @@ function encarregado(data: ExportPayload): string {
   return data.dpo_email || env.LGPD_DPO_EMAIL || "não informado pelo controlador";
 }
 
+// Concluir o processamento do job não comprova envio: ele também pode terminar
+// com um bloqueio. O relatório conserva essa diferença, sem anunciar entrega.
+const deliveryStatus: Record<string, string> = {
+  pending: "Pendente",
+  running: "Em processamento",
+  done: "Processamento concluído",
+  failed: "Falha no processamento",
+  dead: "Tentativas encerradas",
+};
+const noticeStatus: Record<string, string> = {
+  open: "Aberto",
+  resolved: "Resolvido",
+  dismissed: "Dispensado",
+};
+
 export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElement {
   const shortId = data.request_id.slice(0, 8);
 
@@ -311,9 +326,65 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
                 </Text>
                 {c.description ? <Text style={styles.small}>{c.description}</Text> : null}
                 {c.notes ? <Text style={styles.small}>Anotação: {c.notes}</Text> : null}
+                {c.meeting_url ? <Text style={styles.small}>Link da reunião: {c.meeting_url}</Text> : null}
                 {c.cancellation_reason ? (
                   <Text style={styles.small}>Cancelado: {c.cancellation_reason}</Text>
                 ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* O fluxo entrega este PDF; armazenar as categorias só no JSON não
+            as disponibiliza ao titular. Consumir apenas a projeção do coletor. */}
+        {data.reply_drafts?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Sugestões e respostas revisadas</Text>
+            {data.reply_drafts.map(reply=><View key={reply.id} style={styles.itemBlock}>
+              <Text>Estado: {reply.status}</Text>
+              {reply.original_body?<Text>Sugestão: {reply.original_body}</Text>:null}
+              {reply.edited_body&&reply.edited_body!==reply.original_body?<Text>Edição: {reply.edited_body}</Text>:null}
+              {reply.approved_body?<Text>Texto aprovado: {reply.approved_body}</Text>:null}
+              {reply.feedback?<Text>Revisão: {JSON.stringify(reply.feedback)}</Text>:null}
+              {Array.isArray(reply.proposals)&&reply.proposals.length?<Text>Propostas: {JSON.stringify(reply.proposals)}</Text>:null}
+              <Text style={styles.small}>Criado em {fmtDate(reply.created_at)}</Text>
+            </View>)}
+          </View>
+        ):null}
+
+        {data.meeting_deliveries?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Entregas de links de reunião</Text>
+            {data.meeting_deliveries.map((delivery) => (
+              <View key={delivery.id} style={styles.itemBlock}>
+                <Text>{deliveryStatus[delivery.status] ?? delivery.status}</Text>
+                <Text style={styles.small}>Registro: {delivery.id}</Text>
+                <Text style={styles.small}>
+                  Compromisso: {delivery.appointment_id ?? "referência indisponível"}
+                </Text>
+                <Text style={styles.small}>
+                  Criado em {fmtDate(delivery.created_at)} · Programado para {fmtDate(delivery.run_after)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {data.appointment_notices?.length ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Avisos sobre compromissos</Text>
+            {data.appointment_notices.map((notice) => (
+              <View key={notice.id} style={styles.itemBlock}>
+                <Text>{notice.title} · {noticeStatus[notice.status] ?? notice.status}</Text>
+                {notice.body ? <Text>{notice.body}</Text> : null}
+                <Text style={styles.small}>Registro: {notice.id}</Text>
+                <Text style={styles.small}>
+                  Compromisso: {notice.ref_id ?? "referência indisponível"}
+                </Text>
+                <Text style={styles.small}>
+                  Criado em {fmtDate(notice.created_at)}
+                  {notice.resolved_at ? ` · Resolvido em ${fmtDate(notice.resolved_at)}` : ""}
+                </Text>
               </View>
             ))}
           </View>

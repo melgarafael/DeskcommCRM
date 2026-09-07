@@ -1,6 +1,8 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 
+import { usePermission } from "@/hooks/auth/AuthProvider";
+
 import { apiClient } from "@/lib/api/client";
 
 /**
@@ -13,7 +15,9 @@ import { apiClient } from "@/lib/api/client";
  * trata `undefined` como "não afirme nada".
  */
 export function useAutomaticoAtivo() {
+  const podeConsultar = usePermission("ai.automatico.view");
   return useQuery({
+    enabled: podeConsultar,
     queryKey: ["ai", "automatico-ativo"],
     queryFn: async () => {
       const r = await apiClient.get<{ data: { ativo: boolean } }>(

@@ -8,7 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createClient } from "@/lib/supabase/browser";
+import { Providers } from "@/app/providers";
+import { createClient, resetRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg, Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
 
@@ -34,6 +35,25 @@ export function AuthProvider({
   const [refreshing, setRefreshing] = useState(false);
   const supabaseRef = useRef(createClient());
 
+  useEffect(() => {
+    resetRealtimeAuthentication();
+    return resetRealtimeAuthentication;
+  }, [user.id, activeOrg?.orgId, user.support?.id, user.support?.access_mode]);
+
+  // Revogação/scope no banco também derrubam o snapshot aberto de UI/realtime.
+  useEffect(() => {
+    if (!user.support) return;
+    const expected = `${user.support.id}:${user.support.access_mode}:${user.support.status}`;
+    const check = async () => {
+      const response = await fetch("/api/v1/auth/support", { cache: "no-store" }).catch(() => null);
+      if (!response?.ok) return;
+      const result = await response.json();
+      if (result.data.signature !== expected) window.location.reload();
+    };
+    const timer = setInterval(() => { void check(); }, 15000);
+    return () => clearInterval(timer);
+  }, [user.support]);
+
   // Refresh session every 40 minutes (JWT default 1h, with margin).
   useEffect(() => {
     const interval = setInterval(
@@ -57,6 +77,7 @@ export function AuthProvider({
       isAuthenticated: true,
       refreshing,
       signOut: async () => {
+        resetRealtimeAuthentication();
         const { signOut } = await import("@/app/actions/auth/signOut");
         await signOut();
       },
@@ -64,7 +85,9 @@ export function AuthProvider({
     [user, activeOrg, refreshing],
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={value}>
+    <Providers key={`${user.id}:${activeOrg?.orgId ?? "none"}:${user.support?.id ?? "normal"}:${user.support?.access_mode ?? ""}`}>{children}</Providers>
+  </Ctx.Provider>;
 }
 
 export function useAuth(): AuthCtx {
@@ -101,6 +124,10 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   "settings.write": "admin",
   "lgpd.execute_redact": "admin",
   "audit.view": "manager",
+  "ai.automatico.view": "agent",
+  "ai.inbox.view": "agent",
+  "inbox.notes.view": "agent",
+  "message-templates.view": "agent",
   "ai.agents.view": "manager",
   "ai.agents.write": "admin",
   "ai.memory.view": "manager",
@@ -117,7 +144,7 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
 
 export function usePermission(action: string): boolean {
   const { user, activeOrg } = useAuth();
-  if (user.is_platform_admin) return true;
+  if (user.is_platform_admin && !user.support) return true;
   if (!activeOrg) return false;
   const required = ACTION_MIN_ROLE[action];
   if (!required) return false;

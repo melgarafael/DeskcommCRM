@@ -1,3 +1,11 @@
+import { createApprovedReplyHandler } from "@/lib/agent-engine/agent/approved-reply";
+import { turnKnobsFromEnv } from "@/lib/agent-engine/agent/turn-knobs";
+import { createMeetDeliveryHandler } from "@/lib/agent-engine/agent/meet-delivery";
+import { claimOfJob } from "@/lib/agent-engine/queue/claim";
+import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import { avisarRespostaDeCasoObsoleto } from "@/lib/atendimento/aviso-caso-obsoleto";
+import { withServiceJob } from "@/lib/atendimento/fronteira-server";
+import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 /**
  * Worker 24/7 do agent-engine (fusão Vendaval → DeskcommCRM) — o processo
  * long-running que o CRM não tinha: fila durável, cron/follow-up, drain do
@@ -27,9 +35,9 @@
 // `isCommunityDsn` (issue #100), e os hooks de scrub de `lib/sentry/scrub.ts`.
 // O `@sentry/nextjs` funciona fora do Next — aqui é só `Sentry.init` puro,
 // sem `instrumentation.ts` porque o worker não é um processo Next.
-import * as Sentry from '@sentry/nextjs';
-import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from '@/lib/sentry/dsn';
-import { sentryScrubHooks } from '@/lib/sentry/scrub';
+import * as Sentry from "@sentry/nextjs";
+import { resolveSentryDsn, isCommunityDsn, DEFAULT_SENTRY_DSN } from "@/lib/sentry/dsn";
+import { sentryScrubHooks } from "@/lib/sentry/scrub";
 
 const sentryDsn = resolveSentryDsn(process.env.SENTRY_DSN);
 const sentryCommunity = isCommunityDsn(sentryDsn);
@@ -49,48 +57,51 @@ Sentry.init({
 // adaptada para o processo worker): uma linha no boot dizendo o que está
 // ativo e como desligar.
 if (!sentryDsn) {
-  console.info('[telemetria] worker: Desligada (SENTRY_DSN=off) — nenhum erro é enviado.');
+  console.info("[telemetria] worker: Desligada (SENTRY_DSN=off) — nenhum erro é enviado.");
 } else if (sentryDsn === DEFAULT_SENTRY_DSN) {
   console.info(
-    '[telemetria] worker: Relatórios de erro anonimizados ATIVOS (Sentry da comunidade). ' +
-      'Sem rastreamento de performance nem replay de sessão. ' +
-      'Desligue com SENTRY_DSN=off, ou envie pro seu com SENTRY_DSN=<seu-dsn>.',
+    "[telemetria] worker: Relatórios de erro anonimizados ATIVOS (Sentry da comunidade). " +
+      "Sem rastreamento de performance nem replay de sessão. " +
+      "Desligue com SENTRY_DSN=off, ou envie pro seu com SENTRY_DSN=<seu-dsn>.",
   );
 } else {
-  console.info('[telemetria] worker: Erros sendo enviados ao Sentry configurado em SENTRY_DSN.');
+  console.info("[telemetria] worker: Erros sendo enviados ao Sentry configurado em SENTRY_DSN.");
 }
 
-import http from 'node:http';
-import { hostname } from 'node:os';
-import { setTimeout as sleep } from 'node:timers/promises';
+import http from "node:http";
+import { hostname } from "node:os";
+import { setTimeout as sleep } from "node:timers/promises";
 
-import type pg from 'pg';
+import type pg from "pg";
 
-import { createInboundTurnHandler } from '@/lib/agent-engine/agent/inbound-turn';
-import { createFollowupTurnHandler, type FollowupTurnDeps } from '@/lib/agent-engine/agent/followup-turn';
-import { createCaseReplyTurnHandler } from '@/lib/agent-engine/agent/case-reply-turn';
-import { createOperatorTurnHandler } from '@/lib/agent-engine/agent/operator-turn';
-import { completeTurnForEnrollment, createPgAdminClient } from '@/lib/followup/turn-bridge';
-import { seedPlatformPlaybook } from '@/lib/agent-engine/agent/playbook-seed';
-import { runCronLoop } from '@/lib/agent-engine/cron/scheduler';
-import { createPool } from '@/lib/agent-engine/db/pool';
-import { runDrainLoop } from '@/lib/agent-engine/edge/crm/drain';
-import { runEventLogDrainLoop } from '@/lib/event-log/drain-loop';
-import { crmEdgeConfigFromEnv } from '@/lib/agent-engine/edge/crm/mcp-client';
-import { enforceHolds, sessionHealthMetrics } from '@/lib/agent-engine/edge/crm/session-watchdog';
-import { runSessionWatchdogLoop } from '@/lib/agent-engine/edge/crm/session-reconciler';
-import { runHealthLoop } from '@/lib/agent-engine/health/circuit';
-import { runFlywheelLoop } from '@/lib/agent-engine/flywheel/live';
-import { llmEdgeConfigFromEnv } from '@/lib/agent-engine/edge/llm/run-model-call';
-import { loadEnv, type Env } from '@/lib/agent-engine/env';
-import { createLogger, type Logger } from '@/lib/agent-engine/obs/logger';
+import { createInboundTurnHandler } from "@/lib/agent-engine/agent/inbound-turn";
+import {
+  createFollowupTurnHandler,
+  type FollowupTurnDeps,
+} from "@/lib/agent-engine/agent/followup-turn";
+import { createCaseReplyTurnHandler } from "@/lib/agent-engine/agent/case-reply-turn";
+import { createOperatorTurnHandler } from "@/lib/agent-engine/agent/operator-turn";
+import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
+import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
+import { runCronLoop } from "@/lib/agent-engine/cron/scheduler";
+import { createPool } from "@/lib/agent-engine/db/pool";
+import { runDrainLoop } from "@/lib/agent-engine/edge/crm/drain";
+import { runEventLogDrainLoop } from "@/lib/event-log/drain-loop";
+import { crmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/crm/mcp-client";
+import { enforceHolds, sessionHealthMetrics } from "@/lib/agent-engine/edge/crm/session-watchdog";
+import { runSessionWatchdogLoop } from "@/lib/agent-engine/edge/crm/session-reconciler";
+import { runHealthLoop } from "@/lib/agent-engine/health/circuit";
+import { runFlywheelLoop } from "@/lib/agent-engine/flywheel/live";
+import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/run-model-call";
+import { loadEnv, type Env } from "@/lib/agent-engine/env";
+import { createLogger, type Logger } from "@/lib/agent-engine/obs/logger";
 import {
   evaluateCacheHitAlert,
   metricsSnapshot,
   recordRunMetrics,
   type CacheAlertKnobs,
-} from '@/lib/agent-engine/obs/metrics';
-import { rodarLoopDaFila } from '@/lib/agent-engine/queue/loop';
+} from "@/lib/agent-engine/obs/metrics";
+import { rodarLoopDaFila } from "@/lib/agent-engine/queue/loop";
 import {
   cancelJob,
   claimJobs,
@@ -100,7 +111,7 @@ import {
   reapExpiredJobs,
   type JobKind,
   type JobRow,
-} from '@/lib/agent-engine/queue/queue';
+} from "@/lib/agent-engine/queue/queue";
 
 export interface JobHandlerContext {
   workerId: string;
@@ -110,7 +121,7 @@ export type JobHandler = (job: JobRow, pool: pg.Pool, ctx: JobHandlerContext) =>
 /** 1ª linha, truncada — PII fora de log. */
 function errMsg(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  return (message.split('\n', 1)[0] ?? '').slice(0, 300);
+  return (message.split("\n", 1)[0] ?? "").slice(0, 300);
 }
 
 /**
@@ -149,7 +160,9 @@ function errMsg(err: unknown): string {
  *     sobra é o `budget_exceeded` na Central, que é o alerta que explica.
  */
 function ehVetoPermanenteDeNegocio(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { terminal?: unknown }).terminal === true;
+  return (
+    typeof err === "object" && err !== null && (err as { terminal?: unknown }).terminal === true
+  );
 }
 
 /**
@@ -157,7 +170,7 @@ function ehVetoPermanenteDeNegocio(err: unknown): boolean {
  * só confere que o schema do harness existe e recusa subir sem ele.
  */
 async function assertHarnessSchema(pool: pg.Pool): Promise<void> {
-  const sentinels = ['job_queue', 'lead_checkpoints', 'agent_inbox_items', 'send_ledger'];
+  const sentinels = ["job_queue", "lead_checkpoints", "agent_inbox_items", "send_ledger"];
   const { rows } = await pool.query<{ missing: string }>(
     `select t.name as missing
      from unnest($1::text[]) as t(name)
@@ -166,46 +179,50 @@ async function assertHarnessSchema(pool: pg.Pool): Promise<void> {
   );
   if (rows.length > 0) {
     throw new Error(
-      `schema do harness ausente no banco (tabelas: ${rows.map((r) => r.missing).join(', ')}) — aplique a migration 0050_agent_harness antes de subir o worker`,
+      `schema do harness ausente no banco (tabelas: ${rows.map((r) => r.missing).join(", ")}) — aplique a migration 0050_agent_harness antes de subir o worker`,
     );
   }
 }
 
 /** /healthz + /metrics do worker (bind 0.0.0.0 — o container expõe a porta). */
-export function createHealthzServer(pool: pg.Pool, log: Logger, metricsWindowMs: number): http.Server {
+export function createHealthzServer(
+  pool: pg.Pool,
+  log: Logger,
+  metricsWindowMs: number,
+): http.Server {
   const respond = (res: http.ServerResponse, code: number, body: unknown): void => {
-    res.writeHead(code, { 'content-type': 'application/json' });
+    res.writeHead(code, { "content-type": "application/json" });
     res.end(JSON.stringify(body));
   };
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
-    const route = (req.url ?? '').split('?', 1)[0];
-    if (req.method !== 'GET' || (route !== '/healthz' && route !== '/metrics')) {
-      respond(res, 404, { error: 'not_found' });
+    const route = (req.url ?? "").split("?", 1)[0];
+    if (req.method !== "GET" || (route !== "/healthz" && route !== "/metrics")) {
+      respond(res, 404, { error: "not_found" });
       return;
     }
-    if (route === '/metrics') {
+    if (route === "/metrics") {
       try {
         respond(res, 200, await metricsSnapshot(pool, metricsWindowMs));
       } catch (err) {
-        log.error('metrics: snapshot indisponível', { error: errMsg(err) });
-        respond(res, 503, { status: 'degraded', db: 'error' });
+        log.error("metrics: snapshot indisponível", { error: errMsg(err) });
+        respond(res, 503, { status: "degraded", db: "error" });
       }
       return;
     }
     const uptime_s = Math.round(process.uptime());
     try {
       const { rows } = await pool.query<{ status: string; n: number }>(
-        'select status, count(*)::int as n from job_queue group by status',
+        "select status, count(*)::int as n from job_queue group by status",
       );
       const queue = { pending: 0, running: 0, dead: 0 };
       for (const row of rows) {
         if (row.status in queue) queue[row.status as keyof typeof queue] = row.n;
       }
       const sessions = await sessionHealthMetrics(pool);
-      respond(res, 200, { status: 'ok', db: 'ok', queue, sessions, uptime_s });
+      respond(res, 200, { status: "ok", db: "ok", queue, sessions, uptime_s });
     } catch (err) {
-      log.error('healthz: banco indisponível', { error: errMsg(err) });
-      respond(res, 503, { status: 'degraded', db: 'error', queue: null, sessions: null, uptime_s });
+      log.error("healthz: banco indisponível", { error: errMsg(err) });
+      respond(res, 503, { status: "degraded", db: "error", queue: null, sessions: null, uptime_s });
     }
   };
   return http.createServer((req, res) => void handle(req, res));
@@ -217,7 +234,7 @@ export async function startWorker(
   log: Logger = createLogger(),
 ): Promise<void> {
   const pool = createPool(env.SUPABASE_DB_URL, (err) =>
-    log.error('pool: conexão caiu — recria no próximo uso', { error: errMsg(err) }),
+    log.error("pool: conexão caiu — recria no próximo uso", { error: errMsg(err) }),
   );
   const workerId = `agent-engine-${hostname()}-${process.pid}`;
 
@@ -227,24 +244,24 @@ export async function startWorker(
   // age quando não existe ponteiro nenhum (regra dura nº 10 — nunca move
   // ponteiro existente) e é concorrência-safe (advisory lock).
   const playbookSeed = await seedPlatformPlaybook(pool);
-  if (playbookSeed === 'seeded') {
-    log.info('playbook platform seedado no boot (primeiro boot do self-host)');
+  if (playbookSeed === "seeded") {
+    log.info("playbook platform seedado no boot (primeiro boot do self-host)");
   }
 
   const bootReap = await reapExpiredJobs(pool, {
     visibilityTimeoutMs: env.QUEUE_VISIBILITY_TIMEOUT_MS,
   });
   if (bootReap.revived + bootReap.dead > 0) {
-    log.warn('órfãos soltos no boot', bootReap);
+    log.warn("órfãos soltos no boot", bootReap);
   }
 
   const server = createHealthzServer(pool, log, env.METRICS_WINDOW_MS);
   await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(env.HEALTH_PORT, '0.0.0.0', resolve);
+    server.once("error", reject);
+    server.listen(env.HEALTH_PORT, "0.0.0.0", resolve);
   });
   const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : env.HEALTH_PORT;
+  const port = typeof address === "object" && address !== null ? address.port : env.HEALTH_PORT;
 
   let shuttingDown = false;
   const inFlight = new Set<Promise<void>>();
@@ -252,9 +269,9 @@ export async function startWorker(
   const reaperTimer = setInterval(() => {
     reapExpiredJobs(pool, { visibilityTimeoutMs: env.QUEUE_VISIBILITY_TIMEOUT_MS })
       .then((reaped) => {
-        if (reaped.revived + reaped.dead > 0) log.warn('reaper devolveu jobs órfãos', reaped);
+        if (reaped.revived + reaped.dead > 0) log.warn("reaper devolveu jobs órfãos", reaped);
       })
-      .catch((err: unknown) => log.error('reaper falhou', { error: errMsg(err) }));
+      .catch((err: unknown) => log.error("reaper falhou", { error: errMsg(err) }));
   }, env.QUEUE_REAPER_INTERVAL_MS);
 
   // Holds de sessão/saúde: retém jobs de envio de número fora do ar (WORKING é a
@@ -262,9 +279,9 @@ export async function startWorker(
   const holdsTimer = setInterval(() => {
     enforceHolds(pool)
       .then(({ held, released }) => {
-        if (held + released > 0) log.info('holds de sessão aplicados', { held, released });
+        if (held + released > 0) log.info("holds de sessão aplicados", { held, released });
       })
-      .catch((err: unknown) => log.error('enforceHolds falhou', { error: errMsg(err) }));
+      .catch((err: unknown) => log.error("enforceHolds falhou", { error: errMsg(err) }));
   }, env.QUEUE_REAPER_INTERVAL_MS);
 
   const loopsAbort = new AbortController();
@@ -272,8 +289,11 @@ export async function startWorker(
   // Drain do event_log (mesmo banco pós-fusão) — transforma dispatch_requested em
   // jobs. Fase 0 (convergência, spec 2026-07-23): o drain liga SEMPRE — o
   // dispatcher nativo EPIC-13 foi aposentado, o engine é o único consumidor.
-  if (env.AGENT_DISPATCH_CONSUMER === 'native') {
-    log.warn('AGENT_DISPATCH_CONSUMER=native é OBSOLETO (Fase 0) — o drain do engine é o único consumidor; valor ignorado', {});
+  if (env.AGENT_DISPATCH_CONSUMER === "native") {
+    log.warn(
+      "AGENT_DISPATCH_CONSUMER=native é OBSOLETO (Fase 0) — o drain do engine é o único consumidor; valor ignorado",
+      {},
+    );
   }
   const drainLoop = runDrainLoop(
     pool,
@@ -322,7 +342,7 @@ export async function startWorker(
           log,
           loopsAbort.signal,
         )
-      : (log.warn('watchdog de sessão OFF — WAHA_API_BASE_URL/WAHA_API_KEY ausentes no env', {}),
+      : (log.warn("watchdog de sessão OFF — WAHA_API_BASE_URL/WAHA_API_KEY ausentes no env", {}),
         Promise.resolve());
 
   // Circuito de saúde do número (block/response rate → hold).
@@ -370,29 +390,60 @@ export async function startWorker(
       if (!handler) {
         throw new Error(`nenhum handler registrado para kind=${job.kind}`);
       }
-      await handler(job, pool, { workerId });
-      await completeJob(pool, job.id, workerId);
-      log.info('job concluído', { job_id: job.id, kind: job.kind });
+      // Entrega transacional liquida estado do compromisso + job na mesma RPC cercada.
+      if (job.kind === "transactional_delivery" || job.kind === "approved_reply") {
+        await handler(job, pool, { workerId });
+        return;
+      }
+      await withServiceJob(pool, job, () => handler(job, pool, { workerId }));
+      await completeJob(pool, job.id, workerId, undefined, claimOfJob(job)?.acquired_at);
+      log.info("job concluído", { job_id: job.id, kind: job.kind });
       try {
         const wrote = await recordRunMetrics(pool, job);
         if (wrote > 0) {
           await evaluateCacheHitAlert(pool, job.organization_id, cacheAlertKnobs);
         }
       } catch (metricsErr) {
-        log.error('métricas do run não registradas', { job_id: job.id, error: errMsg(metricsErr) });
+        log.error("métricas do run não registradas", { job_id: job.id, error: errMsg(metricsErr) });
       }
     } catch (err) {
-      const terminal = ehVetoPermanenteDeNegocio(err);
+      if (job.kind === "transactional_delivery" || job.kind === "approved_reply") {
+        // O consumer é dono do settle atômico; falha de armazenamento ou claim
+        // ausente deixa a aquisição ao reaper, sem fallback por locked_by.
+        log.error("entrega transacional aguarda recuperação da fila", {
+          job_id: job.id,
+          code:
+            err instanceof StaleServiceBoundaryError
+              ? "claim_missing_or_stale"
+              : "settle_unavailable",
+        });
+        return;
+      }
+      if (err instanceof AgendaDeferredError && err.protection.motivo !== "leitura_indisponivel") {
+        await pool.query(
+          "update job_queue set status='pending',run_after=$4,locked_by=null,locked_at=null,attempts=greatest(attempts-1,0),last_error=$5 where id=$1 and organization_id=$2 and locked_by=$3 and status='running' and locked_at=$6",
+          [
+            job.id,
+            job.organization_id,
+            workerId,
+            err.protection.reavaliar_em,
+            err.message,
+            claimOfJob(job)?.acquired_at ?? null,
+          ],
+        );
+        return;
+      }
+      const terminal = err instanceof StaleServiceBoundaryError || ehVetoPermanenteDeNegocio(err);
       // `warn`, não `error`: veto de negócio é o sistema funcionando como
       // configurado. Rotulá-lo de erro treina quem opera a ignorar o painel.
       if (terminal) {
-        log.warn('job cancelado por veto permanente de negócio', {
+        log.warn("job cancelado por veto permanente de negócio", {
           job_id: job.id,
           kind: job.kind,
           error: errMsg(err),
         });
       } else {
-        log.error('job falhou', { job_id: job.id, kind: job.kind, error: errMsg(err) });
+        log.error("job falhou", { job_id: job.id, kind: job.kind, error: errMsg(err) });
         // Só o caminho não-terminal: veto de negócio (acima) é o sistema
         // funcionando como configurado, não um incidente — mandar isso pro
         // Sentry afogaria o painel com o mesmo ruído que `ehVetoPermanenteDeNegocio`
@@ -401,13 +452,20 @@ export async function startWorker(
         Sentry.captureException(err);
       }
       try {
+        if (
+          err instanceof StaleServiceBoundaryError &&
+          job.kind === "case_reply_turn" &&
+          typeof job.payload.case_id === "string"
+        ) {
+          await avisarRespostaDeCasoObsoleto(pool, job.organization_id, job.payload.case_id);
+        }
         if (terminal) {
-          await cancelJob(pool, job.id, workerId, errMsg(err));
+          await cancelJob(pool, job.id, workerId, errMsg(err), claimOfJob(job)?.acquired_at);
         } else {
-          await failJob(pool, job.id, workerId, err);
+          await failJob(pool, job.id, workerId, err, claimOfJob(job)?.acquired_at);
         }
       } catch (failErr) {
-        log.error('disposição do job indisponível — lease expira via reaper', {
+        log.error("disposição do job indisponível — lease expira via reaper", {
           job_id: job.id,
           error: errMsg(failErr),
         });
@@ -435,7 +493,10 @@ export async function startWorker(
     // logo abaixo, matando o processo antes do drain dos jobs em voo.
     dormir: (ms) => sleep(ms, undefined, { signal: loopsAbort.signal }),
     deveParar: () => shuttingDown,
-    intervalos: { ociosoMs: env.QUEUE_POLL_INTERVAL_MS, retryMs: env.QUEUE_CLAIM_RETRY_INTERVAL_MS },
+    intervalos: {
+      ociosoMs: env.QUEUE_POLL_INTERVAL_MS,
+      retryMs: env.QUEUE_CLAIM_RETRY_INTERVAL_MS,
+    },
     log,
   });
 
@@ -447,7 +508,7 @@ export async function startWorker(
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info('sinal recebido — parando de claimar e drenando jobs em curso', {
+    log.info("sinal recebido — parando de claimar e drenando jobs em curso", {
       signal,
       in_flight: inFlight.size,
     });
@@ -456,36 +517,43 @@ export async function startWorker(
     server.close();
     server.closeIdleConnections();
     loopsAbort.abort();
-    await Promise.all([drainLoop, eventLogLoop, healthLoop, cronLoop, sessionWatchdogLoop, flywheelLoop]);
+    await Promise.all([
+      drainLoop,
+      eventLogLoop,
+      healthLoop,
+      cronLoop,
+      sessionWatchdogLoop,
+      flywheelLoop,
+    ]);
     await workerLoop;
     let graceTimer: NodeJS.Timeout | undefined;
-    const grace = new Promise<'grace'>((resolve) => {
-      graceTimer = setTimeout(() => resolve('grace'), env.SHUTDOWN_GRACE_MS);
+    const grace = new Promise<"grace">((resolve) => {
+      graceTimer = setTimeout(() => resolve("grace"), env.SHUTDOWN_GRACE_MS);
     });
     const outcome = await Promise.race([
-      Promise.all([...inFlight]).then(() => 'drained' as const),
+      Promise.all([...inFlight]).then(() => "drained" as const),
       grace,
     ]);
     clearTimeout(graceTimer);
-    if (outcome === 'grace') {
-      log.error('shutdown: jobs em curso não drenaram no prazo — saindo sem esperar', {
+    if (outcome === "grace") {
+      log.error("shutdown: jobs em curso não drenaram no prazo — saindo sem esperar", {
         grace_ms: env.SHUTDOWN_GRACE_MS,
         in_flight: inFlight.size,
       });
       process.exit(1);
     }
     await pool.end();
-    log.info('worker encerrado limpo', {});
+    log.info("worker encerrado limpo", {});
     resolveStopped();
   };
-  process.once('SIGTERM', (signal) => void shutdown(signal));
-  process.once('SIGINT', (signal) => void shutdown(signal));
+  process.once("SIGTERM", (signal) => void shutdown(signal));
+  process.once("SIGINT", (signal) => void shutdown(signal));
 
   // A linha que a Fase 0 exige ver: worker conectado ao Supabase, schema ok, pronto.
   // Os dois intervalos vão junto porque governam a conta de egress do banco (issue
   // #258) e quem os ajusta precisa conseguir CONFERIR o que está em vigor sem ler
   // o código-fonte — foi o que o autor da issue teve de fazer para achar o knob.
-  log.info('agent-engine pronto', {
+  log.info("agent-engine pronto", {
     worker_id: workerId,
     healthz_port: port,
     max_concurrency: env.QUEUE_MAX_CONCURRENCY,
@@ -500,9 +568,12 @@ export async function startWorker(
   // RECUSAR subir numa máquina cujo .env já tem um valor maior, e a doutrina de
   // packaging proíbe atualização que exija edição manual de arquivo.
   if (env.QUEUE_POLL_INTERVAL_MS >= 10_000) {
-    log.warn('QUEUE_POLL_INTERVAL_MS ≥ 10s — cada rodada ociosa reconecta ao banco e gasta MAIS que um valor menor', {
-      poll_ocioso_ms: env.QUEUE_POLL_INTERVAL_MS,
-    });
+    log.warn(
+      "QUEUE_POLL_INTERVAL_MS ≥ 10s — cada rodada ociosa reconecta ao banco e gasta MAIS que um valor menor",
+      {
+        poll_ocioso_ms: env.QUEUE_POLL_INTERVAL_MS,
+      },
+    );
   }
   await stopped;
 }
@@ -517,68 +588,37 @@ export async function main(): Promise<void> {
       SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
     }),
     llmCfg: llmEdgeConfigFromEnv(env),
-    knobs: {
-      historyLimit: env.LEAD_CONTEXT_HISTORY_LIMIT,
-      maxContextTokens: env.LEAD_CONTEXT_MAX_TOKENS,
-      notesIndexMaxTokens: env.LEAD_NOTES_INDEX_MAX_TOKENS,
-      maxSteps: env.AGENT_MAX_STEPS,
-      maxSendsPerTurn: env.MAX_SENDS_PER_TURN,
-      queuedRetryDelayMs: env.SEND_QUEUED_RETRY_MS,
-      breaker: {
-        exactFailureWarn: env.TOOL_BREAKER_EXACT_WARN,
-        exactFailureBlock: env.TOOL_BREAKER_EXACT_BLOCK,
-        sameToolFailureWarn: env.TOOL_BREAKER_SAME_TOOL_WARN,
-        sameToolFailureHalt: env.TOOL_BREAKER_SAME_TOOL_HALT,
-        noProgressWarn: env.TOOL_BREAKER_NO_PROGRESS_WARN,
-        noProgressBlock: env.TOOL_BREAKER_NO_PROGRESS_BLOCK,
-      },
-      followup: {
-        minAheadMs: env.FOLLOWUP_MIN_AHEAD_MS,
-        maxAheadMs: env.FOLLOWUP_MAX_AHEAD_MS,
-        staggerWindowMs: env.CRON_STAGGER_WINDOW_MS,
-      },
-      compaction: {
-        triggerMessages: env.COMPACTION_TRIGGER_MESSAGES,
-        ...(env.COMPACTION_MODEL !== undefined ? { model: env.COMPACTION_MODEL } : {}),
-        transcriptMaxTokens: env.COMPACTION_TRANSCRIPT_MAX_TOKENS,
-      },
-      prune: {
-        windowTurns: env.PRUNE_TOOL_RESULTS_WINDOW_TURNS,
-        minResultTokens: env.PRUNE_TOOL_RESULTS_MIN_RESULT_TOKENS,
-      },
-      goldenCandidatesDir: env.GOLDEN_CANDIDATES_DIR,
-      stageClassifier: {
-        ...(env.STAGE_CLASSIFIER_MODEL !== undefined ? { model: env.STAGE_CLASSIFIER_MODEL } : {}),
-      },
-      jailbreak: {
-        ...(env.JAILBREAK_CLASSIFIER_MODEL !== undefined ? { model: env.JAILBREAK_CLASSIFIER_MODEL } : {}),
-      },
-      disclosureMode: env.DISCLOSURE_MODE,
-      promiseSemantic: {
-        enabled: env.PROMISE_SEMANTIC_ENABLED,
-        ...(env.PROMISE_SEMANTIC_MODEL !== undefined ? { model: env.PROMISE_SEMANTIC_MODEL } : {}),
-      },
-      followupAi: {
-        ...(env.FOLLOWUP_AI_MODEL !== undefined ? { model: env.FOLLOWUP_AI_MODEL } : {}),
-      },
-      allowlistTtlMs: env.AI_ALLOWLIST_TTL_DAYS * 24 * 60 * 60 * 1000,
-    },
+    knobs: turnKnobsFromEnv(env),
     log,
     // Onda 5 (Task 5.1): fecha o turno dirigido por fluxo de volta no enrollment —
     // o worker fala pg puro (nunca Supabase client), então usa o adapter pg de
     // lib/followup/turn-bridge.ts (equivalente ao createSupabaseAdminClient das
     // rotas Next.js, mas pra este processo).
-    completeFollowupTurn: (pool, { organizationId, enrollmentId, nodeId, result }) =>
-      completeTurnForEnrollment(createPgAdminClient(pool), organizationId, enrollmentId, nodeId, result),
+    completeFollowupTurn: (
+      pool,
+      { organizationId, enrollmentId, nodeId, jobId, jobClaim, result },
+    ) =>
+      completeTurnForEnrollment(
+        createPgAdminClient(pool),
+        organizationId,
+        enrollmentId,
+        nodeId,
+        result,
+        undefined,
+        jobId,
+        jobClaim,
+      ),
   };
-  handlers.set('inbound_turn', createInboundTurnHandler(turnDeps));
-  handlers.set('followup_turn', createFollowupTurnHandler(turnDeps));
-  handlers.set('case_reply_turn', createCaseReplyTurnHandler(turnDeps));
+  handlers.set("approved_reply", createApprovedReplyHandler(turnDeps));
+  handlers.set("transactional_delivery", createMeetDeliveryHandler(turnDeps));
+  handlers.set("inbound_turn", createInboundTurnHandler(turnDeps));
+  handlers.set("followup_turn", createFollowupTurnHandler(turnDeps));
+  handlers.set("case_reply_turn", createCaseReplyTurnHandler(turnDeps));
   // Spec 16 §3.2 — o papel OPERADOR. Registrado sempre; quem decide se ele age é
   // `operator_enabled` na versão publicada (default false), lido a cada job. Um
   // worker que não conhecesse o kind faria os jobs morrerem em 'dead' sem que
   // ninguém entendesse por quê.
-  handlers.set('operator_turn', createOperatorTurnHandler(turnDeps));
+  handlers.set("operator_turn", createOperatorTurnHandler(turnDeps));
   await startWorker(env, handlers, log);
 }
 

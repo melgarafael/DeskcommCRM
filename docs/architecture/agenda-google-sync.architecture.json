@@ -1,0 +1,426 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agenda Google: seleção e reconciliação",
+    "subtitle": "Claim original, revisão de domínio e intenção publicável têm autoridades distintas",
+    "output": "agenda-google-sync.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "humano",
+      "label": "humano"
+    },
+    {
+      "id": "borda",
+      "label": "borda"
+    },
+    {
+      "id": "execucao",
+      "label": "execucao"
+    },
+    {
+      "id": "banco",
+      "label": "banco"
+    },
+    {
+      "id": "externo",
+      "label": "externo"
+    }
+  ],
+  "mainPath": [
+    "settings",
+    "selection",
+    "cursor",
+    "calendar",
+    "executor",
+    "transport",
+    "google"
+  ],
+  "nodes": [
+    {
+      "id": "settings",
+      "lane": "humano",
+      "col": 0,
+      "type": "service",
+      "label": "AgendasConectadas: fontes e um destino entre contas"
+    },
+    {
+      "id": "detail",
+      "lane": "humano",
+      "col": 1,
+      "type": "service",
+      "label": "SincronizacaoDoCompromisso: erro, comparação e decisão"
+    },
+    {
+      "id": "selection",
+      "lane": "borda",
+      "col": 2,
+      "type": "service",
+      "label": "GET/PATCH calendarios: sessão, papel, dono e vetor de revisões"
+    },
+    {
+      "id": "resolve",
+      "lane": "borda",
+      "col": 3,
+      "type": "service",
+      "label": "POST resolver/retry: CAS e autoria humana"
+    },
+    {
+      "id": "cron",
+      "lane": "execucao",
+      "col": 4,
+      "type": "service",
+      "label": "Crons push/sync existentes; candidatos por revisão e prazo"
+    },
+    {
+      "id": "calendar",
+      "lane": "execucao",
+      "col": 0,
+      "type": "service",
+      "label": "calendar-executor: catálogo completo e uma página retomável"
+    },
+    {
+      "id": "executor",
+      "lane": "execucao",
+      "col": 1,
+      "type": "service",
+      "label": "sync-executor: GET exato, três vias e escrita desconhecida"
+    },
+    {
+      "id": "transport",
+      "lane": "execucao",
+      "col": 2,
+      "type": "service",
+      "label": "transport: POST estável / PATCH e DELETE If-Match"
+    },
+    {
+      "id": "google",
+      "lane": "externo",
+      "col": 3,
+      "type": "service",
+      "label": "Google Calendar v3: versão remota e páginas"
+    },
+    {
+      "id": "appointment",
+      "lane": "banco",
+      "col": 4,
+      "type": "service",
+      "label": "calendar_appointments: tupla, revisão local, base/hash, conflito e claim"
+    },
+    {
+      "id": "cursor",
+      "lane": "banco",
+      "col": 0,
+      "type": "service",
+      "label": "calendar_connection_calendars: seleção, claim, cursor e cobertura"
+    },
+    {
+      "id": "cache",
+      "lane": "banco",
+      "col": 1,
+      "type": "service",
+      "label": "calendar_selected_external_events: ocupação somente das fontes selecionadas"
+    },
+    {
+      "id": "domain",
+      "lane": "banco",
+      "col": 2,
+      "type": "service",
+      "label": "fn_appointment_change_core: mutex e efeitos Task6 preservados"
+    },
+    {
+      "id": "lgpd",
+      "lane": "banco",
+      "col": 3,
+      "type": "service",
+      "label": "Redação do contato: limpa snapshots/claim; view de elegibilidade exclui vínculos antes do lote"
+    },
+    {
+      "id": "hours",
+      "lane": "humano",
+      "col": 4,
+      "type": "service",
+      "label": "Agenda/horários livres: ocupação e aviso de cobertura parcial"
+    },
+    {
+      "id": "meet",
+      "lane": "banco",
+      "col": 5,
+      "type": "service",
+      "label": "Meet no appointment: request/receipt e intenção de entrega separados da revisão"
+    },
+    {
+      "id": "meet-detail",
+      "lane": "humano",
+      "col": 5,
+      "type": "service",
+      "label": "MeetDoCompromisso: link, erro e destino escolhido explicitamente"
+    },
+    {
+      "id": "meet-job",
+      "lane": "execucao",
+      "col": 5,
+      "type": "service",
+      "label": "transactional_delivery no worker existente: corpo determinístico, fronteira e aquisição original"
+    },
+    {
+      "id": "meet-sink",
+      "lane": "execucao",
+      "col": 6,
+      "type": "service",
+      "label": "beforeSend → ponte send de lib/channels/runtime → ledger/handler/adapter; settle cercado"
+    },
+    {
+      "id": "meet-export",
+      "lane": "execucao",
+      "col": 7,
+      "type": "service",
+      "label": "export-collector: entregas e avisos do titular, projeção paginada sem payload/claim"
+    },
+    {
+      "id": "meet-pdf",
+      "lane": "humano",
+      "col": 8,
+      "type": "service",
+      "label": "PDF LGPD entregue: dados pessoais, controlador e DPO; sem marca ou autorização privada"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "settings",
+      "to": "selection",
+      "label": "editar com revisão original"
+    },
+    {
+      "id": "e2",
+      "from": "selection",
+      "to": "cursor",
+      "label": "validar dono/capacidade; escolha não migra tupla"
+    },
+    {
+      "id": "e3",
+      "from": "cursor",
+      "to": "settings",
+      "label": "capacidade/erro/frescor"
+    },
+    {
+      "id": "e4",
+      "from": "detail",
+      "to": "resolve",
+      "label": "decisão explícita com revisões/etag"
+    },
+    {
+      "id": "e5",
+      "from": "resolve",
+      "to": "appointment",
+      "label": "registrar escolha e rearmar prazo"
+    },
+    {
+      "id": "e6",
+      "from": "appointment",
+      "to": "detail",
+      "label": "DTO sem base nem credenciais"
+    },
+    {
+      "id": "e7",
+      "from": "appointment",
+      "to": "cron",
+      "label": "intenção pendente ou vínculo a reler"
+    },
+    {
+      "id": "e8",
+      "from": "cron",
+      "to": "executor",
+      "label": "claim compartilhado por compromisso"
+    },
+    {
+      "id": "e9",
+      "from": "cron",
+      "to": "calendar",
+      "label": "catálogo e página por calendário"
+    },
+    {
+      "id": "e10",
+      "from": "calendar",
+      "to": "cursor",
+      "label": "fence original em item/página/prune"
+    },
+    {
+      "id": "e11",
+      "from": "cursor",
+      "to": "calendar",
+      "label": "retomar mesma geração/token-base"
+    },
+    {
+      "id": "e12",
+      "from": "calendar",
+      "to": "executor",
+      "label": "resolver tupla antes de anti-eco/lápide"
+    },
+    {
+      "id": "e13",
+      "from": "executor",
+      "to": "appointment",
+      "label": "reservar intenção antes de HTTP; CAS após"
+    },
+    {
+      "id": "e14",
+      "from": "executor",
+      "to": "transport",
+      "label": "GET exato e delta local"
+    },
+    {
+      "id": "e15",
+      "from": "calendar",
+      "to": "transport",
+      "label": "CalendarList/Events.list"
+    },
+    {
+      "id": "e16",
+      "from": "transport",
+      "to": "google",
+      "label": "request com parâmetros/If-Match"
+    },
+    {
+      "id": "e17",
+      "from": "google",
+      "to": "transport",
+      "label": "etag/páginas/410/erro"
+    },
+    {
+      "id": "e18",
+      "from": "appointment",
+      "to": "domain",
+      "label": "mudança remota aceita sob mutex/CAS"
+    },
+    {
+      "id": "e19",
+      "from": "domain",
+      "to": "appointment",
+      "label": "revisão de domínio, vínculos e presença humana"
+    },
+    {
+      "id": "e20",
+      "from": "calendar",
+      "to": "cache",
+      "label": "lápide/ocupação sem título; prune ao concluir full"
+    },
+    {
+      "id": "e21",
+      "from": "cursor",
+      "to": "cache",
+      "label": "seleção filtrada no banco"
+    },
+    {
+      "id": "e22",
+      "from": "cache",
+      "to": "hours",
+      "label": "grade/lista/horários livres"
+    },
+    {
+      "id": "e23",
+      "from": "cursor",
+      "to": "hours",
+      "label": "janela concluída, erro e frescor"
+    },
+    {
+      "id": "e24",
+      "from": "hours",
+      "to": "settings",
+      "label": "configurar origem e retentar"
+    },
+    {
+      "id": "e25",
+      "from": "lgpd",
+      "to": "appointment",
+      "label": "limpar base/conflito/pending e invalidar claim"
+    },
+    {
+      "id": "e26",
+      "from": "appointment",
+      "to": "lgpd",
+      "label": "exportar os snapshots mínimos associados ao titular"
+    },
+    {
+      "id": "e27",
+      "from": "executor",
+      "to": "meet",
+      "label": "GET observa requestId; metadata não reconhece horário"
+    },
+    {
+      "id": "e28",
+      "from": "meet",
+      "to": "executor",
+      "label": "pending agenda polling com backoff; mesma identidade/claim"
+    },
+    {
+      "id": "e29",
+      "from": "meet",
+      "to": "meet-detail",
+      "label": "link pronto e entrega são estados distintos"
+    },
+    {
+      "id": "e30",
+      "from": "meet-detail",
+      "to": "meet",
+      "label": "RPC sessão: MFA/owner/papel/suporte/CAS; nova fronteira só por clique"
+    },
+    {
+      "id": "e31",
+      "from": "appointment",
+      "to": "meet",
+      "label": "booking interno valida job/claim e fronteira da operação"
+    },
+    {
+      "id": "e32",
+      "from": "meet",
+      "to": "meet-job",
+      "label": "ready + intenção ativa materializam uma entrega por geração"
+    },
+    {
+      "id": "e33",
+      "from": "meet-job",
+      "to": "meet-sink",
+      "label": "comando humano comprovado dispensa só autonomia; dados/canal/claim/fronteira sempre exigidos"
+    },
+    {
+      "id": "e34",
+      "from": "meet-sink",
+      "to": "meet",
+      "label": "recibo aceito liquida; queued retenta; stale/falha abre aviso"
+    },
+    {
+      "id": "e35",
+      "from": "lgpd",
+      "to": "meet",
+      "label": "apaga URL, request e fronteira; invalida callbacks"
+    },
+    {
+      "id": "e36",
+      "from": "lgpd",
+      "to": "meet-job",
+      "label": "limpa payload e cancela pendências; contexto derivado minimizado"
+    },
+    {
+      "id": "e37",
+      "from": "meet-job",
+      "to": "meet-export",
+      "label": "tenant/contato/kind e referência validada ao compromisso"
+    },
+    {
+      "id": "e38",
+      "from": "meet",
+      "to": "meet-export",
+      "label": "compromissos e avisos associados, paginação do footprint"
+    },
+    {
+      "id": "e39",
+      "from": "meet-export",
+      "to": "meet-pdf",
+      "label": "renderLgpdPdf → assinatura/entrega existente; arrays vazios compatíveis"
+    }
+  ]
+}

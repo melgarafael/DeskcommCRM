@@ -9,7 +9,7 @@
  * capacidade que a IA usa para consultar quem esfriou (IA 360 · wave 2): a tela e
  * o agente têm de dizer a MESMA coisa sobre o mesmo negócio.
  *
- * Admin client bypassa RLS: a organização vem do JWT via requireRole, nunca do body.
+ * Client de sessão preserva RLS; organização e papel vêm de requireRole, nunca do body.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -18,7 +18,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { carregaRadarDeRisco, RADAR_MIN_HOURS_PADRAO } from "@/lib/leads/radar-de-risco";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -49,8 +49,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { limit, min_hours } = parsed.data;
 
   try {
-    const radar = await carregaRadarDeRisco(createAdminClient(), {
+    const radar = await carregaRadarDeRisco(await createClient(), {
       organizationId: org.orgId,
+      humanRole: org.role,
       limit,
       minHours: min_hours,
     });

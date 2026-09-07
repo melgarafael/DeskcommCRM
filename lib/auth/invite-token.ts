@@ -10,17 +10,22 @@
  * Production deployments MUST set one of the first two. Verification uses
  * `timingSafeEqual` to avoid timing oracles.
  */
+import { z } from "zod";
+import { interfaceSettingsSchema, type InterfaceSettings } from "@/lib/navigation/interface";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const SECRET = (): string =>
   process.env.INVITE_TOKEN_SECRET ?? process.env.INTERNAL_SECRET ?? "dev-fallback";
 
 export interface InvitePayload {
+  interface_settings?: InterfaceSettings;
   invite_id: string;
   email: string;
   organization_id: string;
   role: string;
   exp: number; // epoch seconds
+  iat?: number;
+  invited_by?: string;
 }
 
 function b64url(buf: Buffer): string {
@@ -57,15 +62,20 @@ export function verifyInviteToken(token: string): InvitePayload | null {
     return null;
   }
 
-  if (
-    typeof payload.invite_id !== "string" ||
-    typeof payload.email !== "string" ||
-    typeof payload.organization_id !== "string" ||
-    typeof payload.role !== "string" ||
-    typeof payload.exp !== "number"
-  ) {
-    return null;
-  }
+  const checked = z
+    .object({
+      invite_id: z.string().uuid(),
+      email: z.string().email(),
+      organization_id: z.string().uuid(),
+      role: z.enum(["viewer", "agent", "manager", "admin"]),
+      exp: z.number().int().positive(),
+      iat: z.number().int().positive().optional(),
+      invited_by: z.string().uuid().optional(),
+      interface_settings: interfaceSettingsSchema.optional(),
+    })
+    .safeParse(payload);
+  if (!checked.success) return null;
+  payload = checked.data;
 
   if (payload.exp * 1000 < Date.now()) return null;
   return payload;

@@ -74,6 +74,8 @@ const LEAD = "lead-1";
 const CONVERSA = "conversa-1";
 const CANAL = "canal-1";
 
+const boundary = { organization_id: ORG, contact_id: LEAD, conversation_id: CONVERSA, service_revision: 1, demanda_id: null, demanda_revision: null };
+
 function job(payload: Record<string, unknown>): JobRow {
   return {
     id: "job-1",
@@ -81,7 +83,7 @@ function job(payload: Record<string, unknown>): JobRow {
     contact_id: LEAD,
     kind: "followup_turn",
     source_event_id: null,
-    payload,
+    payload: { ...payload, service_boundary: boundary },
     status: "running",
     priority: 0,
     run_after: new Date(),
@@ -97,11 +99,12 @@ function job(payload: Record<string, unknown>): JobRow {
 /** Pool mínimo: resolve a conversa e devolve a escolha da organização. */
 function fakePool(camadaDaOrg: boolean) {
   const query = vi.fn(async (sql: string): Promise<{ rows: Array<Record<string, unknown>> }> => {
+    if (sql.includes("d.fechada_em::text")) return { rows: [{ ...boundary, status: "open", demanda_fechada_em: null }] };
     if (/from org_guardrail_layers/.test(sql)) {
       return { rows: [{ layer: "promessa_semantica", enabled: camadaDaOrg }] };
     }
     if (/from conversations/.test(sql)) {
-      return { rows: [{ id: CONVERSA, channel_session_id: CANAL, channel_archived_at: null }] };
+      return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
     }
     return { rows: [] };
   });

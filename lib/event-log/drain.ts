@@ -6,11 +6,7 @@
  * handler no registry e ficam intocados.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  dispatchEvent,
-  getRegisteredHandlers,
-  type EventRow,
-} from "@/lib/event-log/dispatcher";
+import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
 import { logger } from "@/lib/logger";
 
 const MAX_ATTEMPTS = 5;
@@ -19,6 +15,13 @@ const MAX_ATTEMPTS = 5;
 const PROCESSING_STALE_MS = 10 * 60 * 1000;
 
 export interface DrainSummary {
+  /**
+   * Os `skipped` COM motivo, para o resumo poder ser lido de fora do banco.
+   *
+   * Opcional de propósito: quem monta um `DrainSummary` literal (por exemplo
+   * `tests/unit/event-log-drain-loop.test.ts`) não precisa mudar.
+   */
+  pulados?: string[];
   scanned: number;
   done: number;
   retried: number;
@@ -37,7 +40,14 @@ export async function drainEventLog(
   opts: { limit?: number } = {},
 ): Promise<DrainSummary> {
   const limit = opts.limit ?? 50;
-  const summary: DrainSummary = { scanned: 0, done: 0, retried: 0, failed: 0, dead: 0 };
+  const summary: DrainSummary = {
+    scanned: 0,
+    done: 0,
+    retried: 0,
+    failed: 0,
+    dead: 0,
+    pulados: [],
+  };
 
   const handledTypes = [...new Set(getRegisteredHandlers().flatMap((h) => h.events))];
   if (!handledTypes.length) return summary;
@@ -95,10 +105,9 @@ export async function drainEventLog(
 
   if (error) {
     logger.error("[event-log.drain] select failed", { error: error.message });
-  
+
     return summary;
   }
-
 
   for (const raw of rows ?? []) {
     const row = raw as unknown as EventRow;
@@ -115,7 +124,9 @@ export async function drainEventLog(
 
     const results = await dispatchEvent(row);
 
-    const okKeys = results.filter((r) => r.status === "ok" || r.status === "skipped").map((r) => r.consumer_key);
+    const okKeys = results
+      .filter((r) => r.status === "ok" || r.status === "skipped")
+      .map((r) => r.consumer_key);
     const consumedBy = [...new Set([...row.consumed_by, ...okKeys])];
     const retry = results.find((r) => r.status === "retry");
     const errors = results.filter((r) => r.status === "error");
@@ -136,7 +147,11 @@ export async function drainEventLog(
           next_attempt_at: retryAt,
           updated_at: new Date().toISOString(),
           ...(errors.length
-            ? { last_error: errors.map((e) => `${e.consumer_key}: ${e.detail ?? "error"}`).join("; ") }
+            ? {
+                last_error: errors
+                  .map((e) => `${e.consumer_key}: ${e.detail ?? "error"}`)
+                  .join("; "),
+              }
             : {}),
         })
         .eq("id", row.id);
@@ -167,6 +182,17 @@ export async function drainEventLog(
       //
       // Não muda o desfecho do evento; só deixa de jogar fora a resposta.
       const pulados = results.filter((r) => r.status === "skipped" && r.detail);
+      // E o motivo sai também no RESUMO, não só na linha.
+      //
+      // A linha basta para quem tem psql; não basta para o CI, onde o único
+      // artefato que sobrevive ao job é o trace — e o trace guarda o CORPO da
+      // resposta HTTP. Um e2e que morre porque o gatilho pulou ficava sem poder
+      // dizer QUAL pulo foi: travou por horas o diagnóstico de
+      // `gatilho-de-etapa.spec.ts`, com `failed=0` e nenhuma pista.
+      if (pulados.length)
+        summary.pulados?.push(
+          ...pulados.map((r) => `${row.event_type}/${r.consumer_key}: ${r.detail}`),
+        );
       await admin
         .from("event_log")
         .update({
