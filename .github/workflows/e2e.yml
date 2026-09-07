@@ -11,7 +11,7 @@ name: e2e
 #
 # A execução é dividida em DUAS invocações do playwright de propósito: o
 # limitador de login do produto é por IP (60/300s) e no CI todos os specs vêm do
-# mesmo 127.0.0.1. Ver o comentário do passo "E2E — parte 1 de 2".
+# mesmo 127.0.0.1. Ver o comentário do passo "E2E — parte 1 de 3".
 #
 # É CHECK OBRIGATÓRIO. A régua, para reconferir em vez de acreditar nesta linha:
 #   $ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
@@ -76,7 +76,7 @@ jobs:
   # "REBALANCEAMENTO DE 2026-09-04" mais abaixo — que também traz o comando que
   # produz o número, porque número escrito envelhece e comando não.
   #
-  # E há um ganho que não era o objetivo: a razão de existirem duas partes é
+  # E há um ganho que não era o objetivo: a razão de existirem partes separadas é
   # "processo novo, contador de login zerado" — o teto por IP. Runners de
   # matrix são máquinas diferentes, com IPs diferentes, então a separação
   # deixa de depender de reiniciar o processo.
@@ -93,7 +93,7 @@ jobs:
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2]
+        parte: [1, 2, 3]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -139,7 +139,7 @@ jobs:
     # consertos são complementares — nenhum torna o outro dispensável:
     #
     #  - `a60cae2d` (main, PR #220) desligou a telemetria NO AMBIENTE DO CI:
-    #    `SENTRY_DSN: "off"` no build e nas duas partes (e no `perf.yml`). Ver o
+    #    `SENTRY_DSN: "off"` no build e em todas as partes (e no `perf.yml`). Ver o
     #    comentário do passo "Build de produção" abaixo — a armadilha é que vazio NÃO
     #    desliga, seleciona o Sentry da comunidade.
     #  - `77b4a486` (este PR) consertou O PRODUTO: o SDK do browser mandava duas SESSÕES
@@ -314,10 +314,16 @@ jobs:
       # spec, que passou a limpar as DUAS camadas de marca e por isso as specs
       # seguintes deixaram de ver logo gravado.
       #
-      # O que continua verdade: as duas partes rodam como passos do MESMO job,
-      # contra o MESMO banco, sem reset entre elas — o que uma spec deixa
-      # gravado, as seguintes enxergam. Quem protege contra isso é a limpeza da
-      # spec, não a posição dela nesta lista.
+      # O que continua verdade, e a frase precisou ser corrigida em 2026-09-07
+      # porque descrevia o mundo de ANTES da matrix: as specs de UMA MESMA parte
+      # rodam contra o MESMO banco, sem reset entre elas — o que uma spec deixa
+      # gravado, as seguintes daquela parte enxergam. Quem protege contra isso é
+      # a limpeza da spec, não a posição dela nesta lista.
+      #
+      # Entre partes DIFERENTES não há banco compartilhado: cada job da matrix é
+      # um runner próprio que paga o seu setup inteiro (~8,5 min, medidos iguais
+      # em cada um). É por isso que mover spec entre partes é risco: ela troca de
+      # vizinhança, e a vizinhança é que deixou o banco no estado que ela espera.
       #
       # ⚠️ Ela esteve no TOPO desta lista por três commits, pela razão errada.
       # Eu media "carga de login por parte" com um regex que contava a PALAVRA
@@ -365,51 +371,38 @@ jobs:
       # Se um dia uma spec de follow-up entrar na PARTE_1 com nome depois de
       # `relogio-`, é aqui que se olha: ou ela vai para a PARTE_2, ou esta vai.
       SPECS_PARTE_2: >-
-        autonomia-assistida.spec.ts
-        roteamento-por-canal.spec.ts
-        central-avisos-destino.spec.ts
-        agenda-presenca-recuperacao.spec.ts
-        agenda-google-sync.spec.ts
-        agenda-google-meet.spec.ts
-        encerramento-atendimento.spec.ts
-        interface-por-vinculo.spec.ts
-        agente-marca-consulta.spec.ts agenda-marcar-pela-tela.spec.ts agenda-remarcar-e-cancelar.spec.ts
-        agenda-tipos-de-agendamento.spec.ts agenda-grade-interativa.spec.ts
-        agente-novo-e-uso.spec.ts agente-organiza-operacao.spec.ts
-        central-de-avisos-capacidades.spec.ts escalacao-ciclo.spec.ts
-        olhar-telas-do-epico.spec.ts pipelines-gestao.spec.ts
-        qa-agente-usa-as-maos.spec.ts qa-selo-no-funil-usado.spec.ts
-        qa-telas-descobertas-w4.spec.ts retorno-anti-morte.spec.ts
-        followup-builder.spec.ts followup-queue.spec.ts
-        distribuicao-atendimento.spec.ts followup-journey.spec.ts
-        webhooks.spec.ts
+        agente-marca-consulta.spec.ts
+        agenda-marcar-pela-tela.spec.ts
+        agenda-remarcar-e-cancelar.spec.ts
+        agenda-tipos-de-agendamento.spec.ts
+        agenda-grade-interativa.spec.ts
+        agente-novo-e-uso.spec.ts
+        agente-organiza-operacao.spec.ts
+        central-de-avisos-capacidades.spec.ts
+        escalacao-ciclo.spec.ts
+        followup-builder.spec.ts
+        followup-queue.spec.ts
+        distribuicao-atendimento.spec.ts
+        followup-journey.spec.ts
         capacidades-do-agente.spec.ts
         escopo-de-funil-do-agente.spec.ts
-        followup-dossie.spec.ts followup-tempo-adaptativo.spec.ts
-        gatilho-de-etapa.spec.ts gatilho-de-caso.spec.ts
-        marca-logo.spec.ts
-        historico-de-captacao.spec.ts
+        followup-dossie.spec.ts
+        followup-tempo-adaptativo.spec.ts
+        gatilho-de-etapa.spec.ts
+        gatilho-de-caso.spec.ts
         agenda-ocupacao-do-google-na-grade.spec.ts
         agenda-ocupacao-do-google-no-historico.spec.ts
         followup-publicado-abre-no-construtor.spec.ts
         automacao-diz-a-verdade.spec.ts
-        inbox-quem-manda.spec.ts
         acervo-de-conhecimento.spec.ts
         agenda-kit-visual.spec.ts
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
-        troca-de-organizacao-tem-volta.spec.ts
-        organizacoes-criacao-convite-e-cache.spec.ts
-        suporte-temporario.spec.ts
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
-        i18n-espanhol-na-tela.spec.ts
-        inbox-abas-espelham-o-comando.spec.ts
-        moeda-da-organizacao.spec.ts
-        zona-de-perigo-apaga-dados-de-teste.spec.ts
       # `moeda-da-organizacao` entrou na PARTE_2 em 2026-09-04, ao lado de
       # `navegacao` — mesmo domínio (Configurações) e a mesma ausência de
       # dependência: sem WAHA, Resend, Nuvemshop ou Redis. Toca a organização
@@ -433,9 +426,9 @@ jobs:
       #
       #   (2) `orgRow()` resolvia a organização com `.limit(1).single()` em
       #       `organizations`, SEM `where` — pressupondo banco de UMA organização
-      #       só. O banco do CI é compartilhado entre as duas partes do job, e
-      #       `signup-journey.spec.ts:32` cria uma segunda org sem cleanup: quando
-      #       a parte 2 começa, já há ≥2.
+      #       só. O banco de uma parte é compartilhado entre as specs dela, e
+      #       `signup-journey.spec.ts:32` cria uma segunda org sem cleanup: depois
+      #       que ela roda, já há ≥2 na mesma parte.
       #
       #       ⚠️ ESTA LINHA DIZIA QUE "o `.single()` falha". É FALSO, e a frase
       #       errada é o motivo de a classe ter sobrevivido em quatro lugares:
@@ -554,6 +547,56 @@ jobs:
       #      com consentimento pré-aprovado. Sem ela o job pararia num
       #      `accounts.google.com` esperando login humano — e é por isto que ela
       #      fica FORA do CI em vez de ficar sem existir.
+      # ─── PARTE 3 — nasceu em 2026-09-07, e o teto de 30 min é quem a pediu ───
+      #
+      # A parte 2 foi CANCELADA aos 30 min neste PR (job 101799282999), com 55 dos
+      # 57 arquivos terminados. Não foi defeito de spec: foi a suíte crescendo —
+      # o PR acrescenta 10 specs e todas as 10 caíram na parte 2 (47 → 57).
+      #
+      # Duas partes não davam mais para equilibrar com segurança. Medido pelo
+      # instrumento desta seção no próprio run cancelado: 24,9 min de relógio na
+      # parte 2 contra 13,7 min na parte 1, e o setup custa ~8,5 min IGUAIS em
+      # cada job. Dividir 39,7 min de Playwright em dois daria 28,4 min por job —
+      # 1,6 min abaixo do teto, que é folga que a próxima spec consome. Em três,
+      # dá ~22 min, a mesma folga que a parte 1 tem hoje.
+      #
+      # O corte é o ponto onde o relógio ACUMULADO da parte 2 chega à metade, na
+      # ordem em que o Playwright executa — não por contagem de arquivos, que
+      # esta seção já registra como proxy que inverte o sinal. Ficaram
+      # 32 arquivos (13.3 min) na parte 2 e 25 (11.7 min) aqui.
+      #
+      # A parte 3 é a CAUDA contígua da parte 2, e isso é deliberado: as specs de
+      # uma parte compartilham o banco sem reset, então cada vizinhança rompida é
+      # risco de contaminação. Uma cauda rompe UMA fronteira; um sorteio romperia
+      # todas. Os 3 arquivos que o cancelamento impediu de medir vêm junto, porque
+      # eles são justamente o fim da fila.
+      SPECS_PARTE_3: >-
+        autonomia-assistida.spec.ts
+        roteamento-por-canal.spec.ts
+        central-avisos-destino.spec.ts
+        agenda-presenca-recuperacao.spec.ts
+        agenda-google-sync.spec.ts
+        agenda-google-meet.spec.ts
+        encerramento-atendimento.spec.ts
+        interface-por-vinculo.spec.ts
+        olhar-telas-do-epico.spec.ts
+        pipelines-gestao.spec.ts
+        qa-agente-usa-as-maos.spec.ts
+        qa-selo-no-funil-usado.spec.ts
+        qa-telas-descobertas-w4.spec.ts
+        retorno-anti-morte.spec.ts
+        webhooks.spec.ts
+        marca-logo.spec.ts
+        historico-de-captacao.spec.ts
+        inbox-quem-manda.spec.ts
+        troca-de-organizacao-tem-volta.spec.ts
+        organizacoes-criacao-convite-e-cache.spec.ts
+        suporte-temporario.spec.ts
+        i18n-espanhol-na-tela.spec.ts
+        inbox-abas-espelham-o-comando.spec.ts
+        moeda-da-organizacao.spec.ts
+        zona-de-perigo-apaga-dados-de-teste.spec.ts
+
       FORA_DO_CI: >-
         vps-fresh-onboarding.spec.ts
         inbox-tempo-real.spec.ts
@@ -790,20 +833,25 @@ jobs:
       # workers, dois specs gerando o mesmo código no mesmo intervalo de 30s
       # fazem o segundo ser recusado como replay. Foi o que derrubava a
       # `reset-password-mfa` (issue #80): ela passa sozinha e falha em paralelo.
-      - name: E2E — parte ${{ matrix.parte }} de 2
+      - name: E2E — parte ${{ matrix.parte }} de 3
         run: |
           set -euo pipefail
           # A lista sai da matrix, e as duas variáveis continuam existindo no
           # `env:` do job porque é DELAS que `e2e-cobertura-completa.test.ts` lê
           # a cobertura. Ler por indireção aqui e não duplicar a lista mantém
           # UMA fonte por parte.
-          if [ "${{ matrix.parte }}" = "1" ]; then LISTA="$SPECS_PARTE_1"; else LISTA="$SPECS_PARTE_2"; fi
+          case "${{ matrix.parte }}" in
+            1) LISTA="$SPECS_PARTE_1" ;;
+            2) LISTA="$SPECS_PARTE_2" ;;
+            3) LISTA="$SPECS_PARTE_3" ;;
+            *) echo "::error::parte ${{ matrix.parte }} sem lista"; exit 1 ;;
+          esac
           # Falha alto se a variável vier vazia: sem isto, um typo no nome faria
           # o playwright rodar a suíte INTEIRA (ou nenhuma) e o job ficaria
           # verde medindo outra coisa.
           [ -n "$LISTA" ] || { echo "::error::lista da parte ${{ matrix.parte }} vazia"; exit 1; }
           # `--reporter=list` NÃO é preferência de leitura: é o INSTRUMENTO que
-          # mede o custo de cada spec, e sem ele a partição das duas listas volta
+          # mede o custo de cada spec, e sem ele a partição das listas volta
           # a ser chutada.
           #
           # O reporter default em CI é o `dot`, e ele destrói justamente o dado
@@ -935,7 +983,7 @@ jobs:
           {
             echo "## E2E — cobertura deste job"
             echo ""
-            echo "**Rodou: ${RODOU} de ${NO_DISCO} specs**, em duas partes paralelas."
+            echo "**Rodou: ${RODOU} de ${NO_DISCO} specs**, em partes paralelas."
             echo ""
             echo "**Não rodou (${FORA}):**"
             for s in $FORA_LISTA; do echo "- \`${s}\` — precisa de WAHA + Redis + Resend + Nuvemshop (P0 da doutrina de QA Visual)"; done
