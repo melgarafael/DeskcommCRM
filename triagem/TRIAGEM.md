@@ -314,6 +314,41 @@ convite para olhar QUAIS arquivos — e ali os nomes contam a história inteira.
 
 ---
 
+### Antes de tudo: num workflow de MATRIZ, o rodapé disponível é de METADE
+
+Quando um job de matriz falha, o GitHub **cancela os irmãos**. O irmão cancelado morre antes do
+bloco de resumo: não imprime `N failed`, não lista as specs e não mostra asserção nenhuma — só os
+`✘` da linha de progresso, que ninguém procura.
+
+Resultado: a disciplina correta desta casa — *"o rodapé é a autoridade, o grep é conveniência"* —
+encontra **o rodapé de uma metade** e o lê como o todo. E o erro é sempre na direção otimista.
+
+Medido em 2026-09-07, no PR #613:
+
+```
+e2e-parte (1): completed/failure   → 4 ✘, COM rodapé (`3 failed`, um dos ✘ é um test.fail)
+e2e-parte (2): completed/cancelled → 7 ✘, SEM rodapé nenhum
+```
+
+O triador contou **4** e escreveu isso no briefing de seis agentes. O número era **10**, em 9
+arquivos de spec — e **8 desses arquivos eram pré-existentes e intocados**, o que muda o veredito de
+*"conserte o que você trouxe"* para *"o PR quebra funcionalidade já entregue"*. Só apareceu porque um
+cético foi **contar os `✘`** em vez de ler o rodapé.
+
+**A conta, antes de qualquer conclusão sobre um workflow de matriz:**
+
+```bash
+gh run view <id> --json jobs --jq '.jobs[]|select(.name|startswith("<job>"))|"\(.name): \(.conclusion)"'
+gh run view <id> --log > /tmp/full.log
+for p in 1 2; do echo "parte $p: $(grep -acE "^<job> \($p\).*✘" /tmp/full.log)"; done
+```
+
+Irmão com `conclusion: cancelled` é **prova de que há falhas não relatadas do outro lado**. E ao
+pedir o rerun, note que `gh run rerun --failed` fala de `failed`: confirme que o job **cancelado**
+também voltou (`status: in_progress` nos dois) antes de esperar por ele.
+
+---
+
 ### E há uma quarta origem: a sonda que você mesmo escreveu
 
 Antes de acreditar num diagnóstico de infra, confira se o comando que o produziu **existe**.
