@@ -12,6 +12,7 @@ export interface NovoAgendamento {
   starts_at: string;
   owner_user_id?: string;
   contact_id?: string;
+  conversation_id?: string;
   title?: string;
   notes?: string;
   /**

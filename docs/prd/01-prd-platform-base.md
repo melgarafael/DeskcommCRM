@@ -18,7 +18,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 A Plataforma Base resolve o **problema fundacional**: todo dado tocado pelo DeskcommCRM precisa estar autenticado, isolado por tenant, autorizado por role, auditado por mutação, e respeitar LGPD desde o primeiro request. Sem isso, qualquer feature em cima vira risco regulatório e operacional.
 
-No modo BPO atual, a Plataforma Base também sustenta a **operação cross-tenant** da empresa operadora (super-admin que cruza tenants). No modo SaaS futuro, é o que permite cada lojista operar seu próprio tenant sem reescrita.
+A Plataforma Base também sustenta a administração transversal da instalação. Quando uma pessoa administradora precisa acompanhar uma organização, o acesso operacional é uma sessão temporária com alvo, modo e prazo próprios; não é um bypass permanente nem uma membership implícita. O contrato vigente está em [`docs/support-sessions.md`](../support-sessions.md).
 
 Esta camada **é invisível pro cliente final** mas governa todas as garantias de segurança, conformidade e operação multi-tenant do produto.
 
@@ -105,21 +105,23 @@ Esta camada **é invisível pro cliente final** mas governa todas as garantias d
 
 ### 3.4 Super-admin de plataforma
 
-**O que provê.** Role especial que atravessa tenants, exclusiva da empresa operadora (modo BPO). No modo SaaS futuro, continua existindo mas restrita à equipe DeskcommCRM como suporte.
+**O que provê.** Autoridade transversal para administrar a instalação e iniciar acompanhamento temporário de uma organização sem assumir a identidade de cliente.
 
 **Princípios.**
-- Marcação via coluna `is_platform_admin boolean not null default false` em `auth.users` ou tabela auxiliar `platform_admins` (decisão na Spec)
-- Helper RLS retorna TRUE pra essa role em qualquer policy de qualquer tabela
-- UI separada (subdomain `admin.deskcomm.com`) com listagem de tenants + busca + caixa de entrada unificada cross-tenant
-- Toda ação de super-admin é logada com flag `as_platform_admin=true`
-- MFA TOTP **obrigatório** sem exceção
-- Super-admin **NÃO pode** se adicionar ou remover via API; mudanças de status passam por processo manual de DBA + audit
+- A autoridade vive em `platform_admins`; `scope` limita o máximo efetivo e revogação encerra a continuidade.
+- Dados de uma organização são acompanhados por uma linha em `platform_support_sessions`, ligada ao ator e à `auth.session_id`, com modo `full` ou `support_readonly` e TTL máximo de uma hora.
+- A sessão projeta a organização e o papel efetivos sem criar `user_organizations`. Outra sessão do mesmo ator mantém seu próprio contexto, e direitos de plataforma preexistentes fora do alvo não são removidos.
+- `support_readonly` prevalece até sobre membership admin física no alvo; cercas de banco e guardas da aplicação bloqueiam efeitos sem paralisar workers ou outros usuários.
+- O início e cada uso reconfirmam autoridade, sessão, alvo, prazo e política de MFA. Expiração ou revogação exigem saída explícita; a saída restaura a organização anterior.
+- Operações pelas superfícies do aplicativo registram o ator real e `support_session_id`; não há promessa de auditoria de DML bruto fora dessas superfícies.
 
 **ACs principais.**
-- Super-admin loga e vê dropdown com lista de todos os tenants
-- Super-admin abre conversa do tenant X e a interação é registrada com `acting_as_platform_admin=true`
-- Tentativa de criar/remover platform_admin via API retorna 403
-- Super-admin sem MFA não consegue completar login
+- A pessoa administradora escolhe edição ou somente leitura no detalhe da organização e vê banner com ação de saída durante todo o acompanhamento.
+- Outra sessão do mesmo ator não muda de organização. Expiração ou revogação retiram o snapshot até a saída; downgrade `full → support_readonly` retira escrita e estado de admin, mas mantém a leitura permitida na sessão ativa.
+- Somente leitura não marca inbox como lida, não executa mutações e continua restritiva mesmo se o ator for admin físico no alvo.
+- O acompanhamento termina pela posse da própria sessão, mesmo se a autoridade de plataforma tiver sido revogada.
+
+Contrato completo e limites OAuth: [`docs/support-sessions.md`](../support-sessions.md).
 
 ### 3.5 Audit trail
 
@@ -162,22 +164,23 @@ Esta camada **é invisível pro cliente final** mas governa todas as garantias d
 - Tentativa de reverter anonimização retorna 403 `lgpd_anonymization_irreversible`
 - Audit do redact registra `who`, `which contact`, `mode`, `cascaded_to=[conversations:N, messages:M, activities:K]`
 
-### 3.7 Onboarding de tenant
+### 3.7 Criação e primeiro acesso de uma organização
 
-**O que provê.** Fluxo de criação de novo tenant. **No MVP**, é executado manualmente pela equipe operadora (super-admin via UI ou CLI). **No SaaS futuro**, fica self-service.
+**O que provê.** Em Administração → Gerenciar organizações, uma pessoa com autoridade de plataforma `full` cria a organização e define o responsável. A porta continua visível mesmo quando ela possui um único vínculo.
 
 **Princípios.**
-- 1 organização criada → seed automático de pipeline default ("Pedidos") com stages canônicas e-commerce ("Carrinho abandonado / Aguardando pagamento / Pago / Em separação / Enviado / Entregue / Pós-venda")
-- 1 admin do tenant criado por convite (link assinado de 24h)
-- Credenciais de plataforma e-commerce (Nuvemshop) configuradas na onboarding via OAuth (detalhes no Sub-PRD 06)
-- Conexão WhatsApp via QR fica num passo separado (pode ser feita pelo admin do tenant após login) (detalhes no Sub-PRD 03)
-- 1 webhook secret é gerado por organização pra eventos LGPD da Nuvemshop
+- A criação valida UUID, payload, autoridade e MFA em dívida. Organização, vínculo `admin` aceito do ator criador e recibo idempotente confiável são gravados na mesma transação; falha intermediária reverte o conjunto.
+- A chave idempotente pertence ao ator e ao payload normalizado, vale por 24 horas e permite recuperar a mesma organização e o mesmo link após perda de resposta, sem repetir envio nem auditoria da criação. Recibo antigo ou editável não é autoridade.
+- Se o responsável é outra pessoa, o convite HMAC é emitido depois do commit. O link assinado de 24 horas é sempre exibido e pode ser copiado; ausência ou falha do Resend não desfaz a criação nem finge e-mail entregue.
+- O aceite serializa o vínculo. Replay de vínculo já ativo não altera papel ou interface; vínculo revogado só pode ser reativado por convite emitido depois da revogação.
+- O aceite ativa a organização convidada; troca normal continua sendo uma operação distinta, baseada em membership aceita e ativa.
+- OAuth, conexão WhatsApp e seed de pipeline são fluxos independentes; este contrato de criação não os declara concluídos.
 
 **ACs principais.**
-- Super-admin cria tenant via UI/CLI em ≤5 cliques/comandos
-- Tenant criado vem com pipeline default já populado
-- Convite de admin expira em 24h e não pode ser reutilizado
-- Tentativa de criar tenant duplicado (mesmo CNPJ) retorna 409 `tenant_already_exists`
+- A criação devolve organização, validade, estado real do envio e link copiável mesmo sem Resend.
+- Repetir a mesma intenção dentro do TTL recupera o mesmo resultado; trocar o payload sob a mesma chave retorna conflito.
+- Responsável aceita o convite e entra na organização; replay não promove papel nem sobrescreve preferência alterada depois.
+- Falha da troca mantém cookie, contexto e dados da organização anterior e apresenta erro.
 
 ### 3.8 API base & convenções
 
@@ -242,13 +245,13 @@ Esta camada **é invisível pro cliente final** mas governa todas as garantias d
 
 A Plataforma Base é considerada **MVP-completa** quando:
 
-1. ✅ 2 tenants podem ser criados, cada um com pipeline default seedado, e isolamento de dados é verificado por teste automatizado no CI
-2. ✅ Login com MFA TOTP funciona pra admin; usuário sem MFA é forçado a configurar
+1. ✅ 2 tenants podem ser criados pela porta administrativa com vínculo inicial e recibo idempotente atômicos; isolamento de dados é verificado por teste automatizado no CI
+2. ✅ MFA TOTP pode ser exigido pelas políticas independentes da plataforma e da organização; quem já possui fator verificado prova `aal2` nas rotas protegidas
 3. ✅ Bearer token criado pelo admin permite chamada server-to-server, e tem audit log de criação/uso
 4. ✅ Endpoint LGPD `data-request` gera export JSON + PDF em ≤7 dias úteis pra um contato real
 5. ✅ Endpoint LGPD `redact` anonimiza um contato com cascade pra conversations/messages/activities, sem perda de histórico de pedidos
 6. ✅ Audit log captura todas as mutações listadas e não pode ser editado via API
-7. ✅ Super-admin de plataforma loga, troca de tenant pela UI, e ações são auditadas com `as_platform_admin=true`
+7. ✅ Super-admin inicia acompanhamento temporário em edição ou somente leitura, sai para o contexto anterior e mantém auditoria do ator real nas operações do aplicativo
 8. ✅ Rate limit funciona em endpoint crítico (login + criação de lead)
 9. ✅ Health check endpoint retorna 200 com status de Supabase, Redis e WAHA
 10. ✅ Documentação operacional (runbook LGPD + matriz RBAC + lista de eventos auditados) entregue

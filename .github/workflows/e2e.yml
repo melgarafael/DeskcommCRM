@@ -272,6 +272,8 @@ jobs:
     # 8-9 min é pago por parte, então três partes custam ~9 min de runner a mais
     # e devolvem ~9 min de relógio a cada uma.
     env:
+      # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
+      INTERNAL_AGENT_RUN_STUB: "true"
       SPECS_PARTE_1: >-
         pre-go-live-whatsapp.spec.ts
         smoke.spec.ts auth.spec.ts error-pages.spec.ts
@@ -363,6 +365,14 @@ jobs:
       # Se um dia uma spec de follow-up entrar na PARTE_1 com nome depois de
       # `relogio-`, é aqui que se olha: ou ela vai para a PARTE_2, ou esta vai.
       SPECS_PARTE_2: >-
+        autonomia-assistida.spec.ts
+        roteamento-por-canal.spec.ts
+        central-avisos-destino.spec.ts
+        agenda-presenca-recuperacao.spec.ts
+        agenda-google-sync.spec.ts
+        agenda-google-meet.spec.ts
+        encerramento-atendimento.spec.ts
+        interface-por-vinculo.spec.ts
         agente-marca-consulta.spec.ts agenda-marcar-pela-tela.spec.ts agenda-remarcar-e-cancelar.spec.ts
         agenda-tipos-de-agendamento.spec.ts agenda-grade-interativa.spec.ts
         agente-novo-e-uso.spec.ts agente-organiza-operacao.spec.ts
@@ -391,6 +401,8 @@ jobs:
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         troca-de-organizacao-tem-volta.spec.ts
+        organizacoes-criacao-convite-e-cache.spec.ts
+        suporte-temporario.spec.ts
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts

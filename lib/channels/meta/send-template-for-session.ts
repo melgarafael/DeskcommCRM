@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendTemplate } from "./send-template";
 
 export interface SendTemplateForSessionInput {
+  beforeSend?: () => Promise<void>;
   organizationId: string;
   /** Destinatário em dígitos E.164, já resolvido pelo adapter. */
   to: string;
@@ -52,6 +53,7 @@ export async function sendTemplateForSession(
 
   if (error) throw new Error(`template_lookup_failed: ${error.message}`);
 
+  await input.beforeSend?.();
   const resultado = await sendTemplate({
     phoneNumberId: process.env.META_PHONE_NUMBER_ID ?? "",
     token: process.env.META_SYSTEM_USER_TOKEN ?? "",

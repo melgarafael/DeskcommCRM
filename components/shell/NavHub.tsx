@@ -1,3 +1,4 @@
+import type { InterfaceSettings } from "@/lib/navigation/interface";
 import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
@@ -7,6 +8,7 @@ import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { hubSections, type NavGroupId } from "@/lib/navigation/registry";
 
 interface NavHubProps {
+  interfaceSettings?: InterfaceSettings;
   group: NavGroupId;
   isPlatformAdmin: boolean;
   role: Role | null;
@@ -47,8 +49,16 @@ function slug(texto: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export function NavHub({ group, isPlatformAdmin, role, title, subtitle, locale = IDIOMA_PADRAO }: NavHubProps) {
-  const secoes = hubSections(group, isPlatformAdmin, role);
+export function NavHub({
+  group,
+  isPlatformAdmin,
+  role,
+  title,
+  subtitle,
+  interfaceSettings,
+  locale = IDIOMA_PADRAO,
+}: NavHubProps) {
+  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings);
 
   return (
     <div className="flex h-full flex-col gap-8 p-6">
@@ -58,10 +68,14 @@ export function NavHub({ group, isPlatformAdmin, role, title, subtitle, locale =
       </header>
 
       {secoes.map(({ section, items }) => (
-        <section key={section} aria-labelledby={`hub-${group}-${slug(section)}`} className="space-y-3">
+        <section
+          key={section}
+          aria-labelledby={`hub-${group}-${slug(section)}`}
+          className="space-y-3"
+        >
           <h2
             id={`hub-${group}-${slug(section)}`}
-            className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+            className="text-xs font-medium tracking-wider text-muted-foreground uppercase"
           >
             {traduzir(section, locale)}
           </h2>
@@ -71,10 +85,17 @@ export function NavHub({ group, isPlatformAdmin, role, title, subtitle, locale =
               return (
                 <Link key={item.href} href={item.href} className="block">
                   <Card className="flex h-full gap-3 p-4 transition-colors hover:border-border-strong">
-                    <Icon size={20} weight="regular" aria-hidden className="mt-0.5 shrink-0 text-muted-foreground" />
+                    <Icon
+                      size={20}
+                      weight="regular"
+                      aria-hidden
+                      className="mt-0.5 shrink-0 text-muted-foreground"
+                    />
                     <div>
                       <h3 className="text-sm font-semibold">{traduzir(item.label, locale)}</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">{traduzir(item.description, locale)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {traduzir(item.description, locale)}
+                      </p>
                     </div>
                   </Card>
                 </Link>

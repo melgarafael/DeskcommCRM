@@ -1,83 +1,50 @@
 "use client";
-/**
- * ImpersonateBanner (S-11.07) — sticky amber banner shown at the top of /app/*
- * when the platform admin holds an active impersonate cookie.
- *
- * Server-side, `app/app/layout.tsx` reads & verifies the cookie and passes the
- * tenant identity through `impersonating`. This component renders nothing if
- * the prop is null, so it is safe to mount unconditionally inside the layout.
- *
- * "Sair" calls POST /api/v1/admin/impersonate/end which deletes the cookie,
- * then we navigate the admin back to the tenant detail page in /admin.
- */
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
+import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useOrganizationTransition } from "@/components/shell/OrganizationTransitionProvider";
 
 export interface ImpersonatingInfo {
   tenantId: string;
   tenantName: string;
-  expiresAt: string; // ISO-8601
+  expiresAt: string;
+  accessMode?: "full" | "support_readonly";
 }
-
-interface Props {
-  impersonating: ImpersonatingInfo | null;
+export function notifySupportTransition() {
+  localStorage.setItem("support-context-transition", String(Date.now()));
 }
-
-export function ImpersonateBanner({ impersonating }: Props) {
+export function ImpersonateBanner({ impersonating, ended = false }: {
+  impersonating: ImpersonatingInfo | null; ended?: boolean;
+}) {
   const t = useT();
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
-
+  const transition = useOrganizationTransition();
+  useEffect(() => {
+    if (!impersonating || ended) return;
+    const timer = setTimeout(() => {
+      transition.begin("Acompanhamento encerrado. Confirmando acesso…");
+      window.location.assign("/support-ended");
+    }, Math.max(0, new Date(impersonating.expiresAt).getTime()-Date.now()));
+    return () => clearTimeout(timer);
+  }, [impersonating, ended, transition]);
   if (!impersonating) return null;
-
   async function handleEnd() {
-    if (!impersonating) return;
-    setBusy(true);
+    flushSync(() => { setBusy(true); transition.begin("Encerrando acompanhamento…"); });
     try {
-      const res = await fetch("/api/v1/admin/impersonate/end", {
-        method: "POST",
-      });
-      if (!res.ok) {
-        toast.error(t("Falha ao encerrar impersonate"));
-        return;
-      }
-      // Hard navigation so the cleared cookie takes effect on next request.
-      window.location.assign(`/admin/tenants/${impersonating.tenantId}`);
-      router.push(`/admin/tenants/${impersonating.tenantId}`);
-    } catch (err) {
-      toast.error(t("Erro de rede ao encerrar impersonate"));
-      console.error("[impersonate] end error", err);
-    } finally {
-      setBusy(false);
+      const res = await fetch("/api/v1/admin/impersonate/end", { method: "POST" });
+      if (!res.ok) throw new Error("Não foi possível encerrar o acompanhamento. Tente novamente.");
+      notifySupportTransition();
+      window.location.assign("/app/inbox");
+    } catch (error) {
+      transition.cancel(); setBusy(false);
+      toast.error(error instanceof Error ? error.message : "Falha de conexão.");
     }
   }
-
-  return (
-    <div
-      role="alert"
-      aria-live="polite"
-      className="sticky top-0 z-50 flex items-center justify-between gap-4 border-b border-amber-300 bg-amber-100/95 px-4 py-2 text-sm text-amber-950 backdrop-blur dark:border-amber-700/60 dark:bg-amber-950/70 dark:text-amber-50"
-    >
-      <div className="flex items-center gap-2">
-        <span aria-hidden>🛡️</span>
-        <span>
-          {t("Modo Impersonate — atuando como")}{" "}
-          <strong className="font-semibold">{impersonating.tenantName}</strong>
-        </span>
-      </div>
-      <Button
-        size="sm"
-        variant="outline"
-        className="border-amber-400 bg-white/60 text-amber-950 hover:bg-white dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-50 dark:hover:bg-amber-900/70"
-        onClick={handleEnd}
-        disabled={busy}
-        aria-label={t("Encerrar impersonate e voltar ao admin")}
-      >
-        {busy ? t("Encerrando…") : t("Sair")}
-      </Button>
-    </div>
-  );
+  return <div role="alert" className="sticky top-0 z-50 flex items-center justify-between gap-4 border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-950">
+    <span>{ended ? t("Acompanhamento encerrado") : t("Suporte à organização")} <strong>{impersonating.tenantName}</strong>
+      {!ended && (impersonating.accessMode === "support_readonly" ? ` — ${t("Somente leitura")}` : ` — ${t("Edição permitida")}`)}</span>
+    <Button size="sm" variant="outline" onClick={handleEnd} disabled={busy}>{t("Sair do acompanhamento")}</Button>
+  </div>;
 }

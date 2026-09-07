@@ -33,8 +33,9 @@ export function CaseReplyPanel({ caseId, status }: { caseId: string; status: Cas
     reply.mutate(
       { id: caseId, action, body: body.trim() },
       {
-        onSuccess: () => {
-          toast.success(t("Resposta enviada."));
+        onSuccess: (result) => {
+          if (result.delivery === "service_stale") toast.info(t("Resposta registrada; não repassada porque o atendimento mudou. Revise a conversa."));
+          else toast.success(t("Resposta registrada para processamento."));
           setBody("");
           setAction(null);
         },

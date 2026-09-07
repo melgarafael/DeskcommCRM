@@ -346,6 +346,8 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         fim: a.terminaEm,
         fuso: a.fuso,
         situacao: a.situacao,
+        meet_state: a.meetingState,
+        meeting_url: a.meetingState === "ready" ? a.meetingUrl : null,
         contato_id: a.contatoId,
         atendente_id: a.donoId,
       })),
@@ -421,7 +423,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
   description:
     "Marca um compromisso com HORA COMBINADA entre o cliente e um atendente — consulta, sessão, " +
     "visita, reunião. Use quando o cliente ESCOLHEU um horário e vai comparecer: isto reserva o " +
-    "tempo de uma pessoa da equipe, e o cliente conta com ele. " +
+    "tempo de uma pessoa da equipe, e o cliente conta com ele. No atendimento atual, marcar Google Meet também agenda a entrega do link nesta conversa quando ficar pronto. " +
     "NÃO use para 'voltar a falar com o cliente depois' — isso é retorno, e a ferramenta é " +
     "`crm_schedule_followup`. A diferença: aqui as DUAS partes combinaram e alguém vai esperar; " +
     "lá é decisão interna nossa e o cliente não sabe de nada. " +
@@ -443,7 +445,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
       }
       const r = await marcarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, meetingBooking: ctx.meetingBooking },
         {
           event_type_id: tipo.id,
           starts_at: input.starts_at,
@@ -453,7 +455,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           ...(input.notes ? { notes: input.notes } : {}),
         },
       );
-      return { marcado: true, compromisso: r };
+      return { marcado: true, compromisso: r, ...(r.meeting_state === "pending" ? { mensagem: "O compromisso foi marcado; o link ainda está sendo criado. Não invente um link nem afirme que ele já foi enviado." } : {}) };
     }),
 };
 
@@ -572,19 +574,18 @@ const desfechoShape = {
 export const crmSetAppointmentOutcome: McpToolDefinition<typeof desfechoShape> = {
   name: "crm_set_appointment_outcome",
   description:
-    "Registra o que ACONTECEU num compromisso que JÁ PASSOU: a pessoa foi atendida (`completed`) ou " +
-    "não apareceu (`no_show`). " +
-    "SÓ DEPOIS DA HORA — compromisso futuro é recusado, porque você não sabe o que ainda vai " +
-    "acontecer. Veja a hora do compromisso em `crm_list_appointments` e compare com a data de hoje. " +
-    "NÃO use para quem AVISOU que não vem: isso é `crm_cancel_appointment`, que desmarca com o motivo " +
-    "registrado e libera o horário para outra pessoa. `no_show` é para quem não avisou e não veio — " +
-    "é um registro sobre o passado, e a equipe lê isso como falta.",
+    "Propõe à equipe registrar comparecimento ou falta depois do início do compromisso. " +
+    "A presença exige confirmação humana na Agenda; texto interpretado pelo assistente não é autorização. " +
+    "Se a pessoa avisou que não vem, use crm_cancel_appointment para o cancelamento operacional.",
   inputSchema: desfechoShape,
   category: "write",
   requiresRole: "ai_operator",
   requiresScope: "mcp:write",
   handler: async (input, ctx) =>
     semDerrubarOTurno("registrado", async () => {
+      if (ctx.actor.type !== "user") return { registrado: false, requer_confirmacao_humana: true,
+        orientacao: "Peça à equipe para abrir o compromisso na Agenda e confirmar a presença.",
+        href: `/app/agenda?compromisso=${input.appointment_id}` };
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
         { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },

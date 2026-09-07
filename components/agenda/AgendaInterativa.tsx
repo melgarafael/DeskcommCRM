@@ -208,6 +208,7 @@ export function AgendaInterativa({
 
   return (
     <div className={cn("flex min-h-0 flex-col gap-2", className)}>
+      {horarios?.google_cobertura_parcial && <p role="status" className="text-xs text-warning">{t("Ocupação do Google ainda não verificada neste período.")}</p>}
       {tipos.length > 1 && (
         <div
           data-testid="tipo-da-grade"

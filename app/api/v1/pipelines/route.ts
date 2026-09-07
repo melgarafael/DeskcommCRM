@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/pipelines — lista os funis da org ativa (nome + slug), RLS-scoped.
  * Existia só o handler interno (usado pelo MCP); expõe REST pro Select de
@@ -66,6 +67,9 @@ function etapasIniciais(orgId: string, pipelineId: string) {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "crm_pipelines" });
   if (!authz.ok) return authz.response;

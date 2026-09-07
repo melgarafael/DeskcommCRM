@@ -1,3 +1,4 @@
+import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 /**
  * Ação `start_message_flow` — inscreve o contato do contexto num follow-up
  * publicado. Reusa enrollFollowupFlow (mesmo caminho do POST de enrollments).
@@ -35,6 +36,7 @@ export async function executeStartMessageFlow(
   }
 
   const result = await enrollFollowupFlow(ctx.admin, {
+    resolveServiceBoundary: () => serviceForAutomation(ctx, contactId),
     organizationId: ctx.organizationId,
     pointerId,
     contactId,

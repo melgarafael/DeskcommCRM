@@ -197,14 +197,17 @@ export const wahaAdapter: ChannelAdapter = {
         envelope.contact.phoneNumber,
         resolvedId ?? envelope.contact.whatsappId,
       );
+      await envelope.beforeSend?.();
       res = await client.sendContactVcard(envelope.sessionRef, to, [contact]);
     } else if (envelope.media) {
+      await envelope.beforeSend?.();
       res = await client.sendMedia(
         envelope.sessionRef,
         to,
         wahaSendPlanFor(envelope.kind, envelope.media),
       );
     } else {
+      await envelope.beforeSend?.();
       res = await client.sendMessage(
         envelope.sessionRef,
         to,

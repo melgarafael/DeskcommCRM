@@ -157,6 +157,7 @@ export type ConversationTags = z.infer<typeof conversationTagsSchema>;
 export const patchConversationSchema = z
   .object({
     status: conversationStatusSchema.optional(),
+    expected_revision: z.number().int().positive().optional(),
     tags: conversationTagsSchema.optional(),
   })
   .refine((d) => d.status !== undefined || d.tags !== undefined, {
@@ -180,7 +181,7 @@ export const openConversationWithContactSchema = z
 export type OpenConversationWithContactInput = z.infer<typeof openConversationWithContactSchema>;
 
 /**
- * Estados TERMINAIS: a conversa acabou e não volta sozinha.
+ * Estados TERMINAIS: atendimento encerrado; nova entrada válida pode reabrir.
  *
  * Vive aqui, e não espalhado em cada `.not(...)`, porque "acabou" é uma decisão
  * de produto — se um dia `resolved` deixar de ser legado e passar a valer, o

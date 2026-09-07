@@ -16,6 +16,7 @@ import type { Agendamento } from "@/components/agenda/tipos";
  * contra o nome do código). O SHA da branch estava alcançável, então li lá.
  */
 interface AgendamentoListado {
+  revision?:number;
   id: string;
   titulo: string;
   iniciaEm: string;
@@ -77,6 +78,7 @@ export function useAgendamentos(recorte: RecorteDaGrade | null) {
           (r as unknown as AgendamentoListado[]);
         return (lista ?? []).map((a) => ({
           id: a.id,
+          revision:a.revision,
           titulo: a.titulo,
           responsavelId: a.donoId ?? "",
           comeca: a.iniciaEm,

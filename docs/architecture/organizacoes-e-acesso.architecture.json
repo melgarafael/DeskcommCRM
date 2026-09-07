@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Organizações com acesso e convite",
+    "subtitle": "Criar, entrar e trocar com contexto único",
+    "output": "organizacoes-e-acesso.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "humano",
+      "label": "Pessoa"
+    },
+    {
+      "id": "app",
+      "label": "Aplicativo"
+    },
+    {
+      "id": "db",
+      "label": "Banco"
+    }
+  ],
+  "mainPath": [
+    "porta",
+    "criar",
+    "vinculo",
+    "convite",
+    "aceite",
+    "context",
+    "cache"
+  ],
+  "nodes": [
+    {
+      "id": "porta",
+      "lane": "humano",
+      "col": 0,
+      "type": "ui",
+      "label": "TenantSwitcher → Gerenciar organizações"
+    },
+    {
+      "id": "criar",
+      "lane": "app",
+      "col": 1,
+      "type": "service",
+      "label": "POST admin/tenants",
+      "sublabel": "JWT + full + MFA + Zod; chave preservada no retry"
+    },
+    {
+      "id": "vinculo",
+      "lane": "db",
+      "col": 2,
+      "type": "database",
+      "label": "fn_create_tenant_with_owner",
+      "sublabel": "org + admin + recibo trusted; transação; RLS server-only"
+    },
+    {
+      "id": "convite",
+      "lane": "app",
+      "col": 3,
+      "type": "service",
+      "label": "issueInvite",
+      "sublabel": "24h, HMAC; envio após commit; link sem Resend"
+    },
+    {
+      "id": "aceite",
+      "lane": "db",
+      "col": 4,
+      "type": "database",
+      "label": "fn_accept_team_invite",
+      "sublabel": "serializa vínculo; replay preserva papel e revogação"
+    },
+    {
+      "id": "troca",
+      "lane": "app",
+      "col": 5,
+      "type": "service",
+      "label": "setActiveOrg",
+      "sublabel": "membership aceita, não revogada + org ativa"
+    },
+    {
+      "id": "cache",
+      "lane": "humano",
+      "col": 6,
+      "type": "ui",
+      "label": "Novo documento + cache usuário/org",
+      "sublabel": "AuthProvider e guarda visual no TenantSwitcher"
+    },
+    {
+      "id": "audit",
+      "lane": "humano",
+      "col": 3,
+      "type": "ui",
+      "label": "Admin → Auditoria",
+      "sublabel": "criação, convite, aceite, troca; nenhum token"
+    },
+    {
+      "id": "context",
+      "lane": "app",
+      "col": 6,
+      "type": "service",
+      "label": "resolveActiveOrg → AuthProvider",
+      "sublabel": "cookie e membership; cache user/org, guarda na raiz"
+    },
+    {
+      "id": "suporte",
+      "lane": "app",
+      "col": 2,
+      "type": "service",
+      "label": "Acompanhar organização",
+      "sublabel": "JWT real + modo + MFA; cookie apenas referencia sessão"
+    },
+    {
+      "id": "sessao-suporte",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "platform_support_sessions",
+      "sublabel": "actor/session_id/TTL; grant temporário B; sem membership"
+    },
+    {
+      "id": "cerca-suporte",
+      "lane": "db",
+      "col": 4,
+      "type": "database",
+      "label": "Cerca de efeito readonly",
+      "sublabel": "RLS restritiva + RPC + API/actions; workers preservados"
+    },
+    {
+      "id": "saida-suporte",
+      "lane": "humano",
+      "col": 5,
+      "type": "ui",
+      "label": "Banner e saída explícita",
+      "sublabel": "Revogação/prazo bloqueiam; volta org anterior sem cache velho"
+    }
+  ],
+  "edges": [
+    {
+      "from": "porta",
+      "to": "criar"
+    },
+    {
+      "from": "criar",
+      "to": "vinculo"
+    },
+    {
+      "from": "vinculo",
+      "to": "convite"
+    },
+    {
+      "from": "convite",
+      "to": "aceite"
+    },
+    {
+      "from": "criar",
+      "to": "audit"
+    },
+    {
+      "from": "convite",
+      "to": "audit"
+    },
+    {
+      "from": "aceite",
+      "to": "audit"
+    },
+    {
+      "from": "troca",
+      "to": "audit"
+    },
+    {
+      "from": "cache",
+      "to": "porta"
+    },
+    {
+      "from": "aceite",
+      "to": "context"
+    },
+    {
+      "from": "troca",
+      "to": "context"
+    },
+    {
+      "from": "context",
+      "to": "cache"
+    },
+    {
+      "from": "porta",
+      "to": "suporte"
+    },
+    {
+      "from": "suporte",
+      "to": "sessao-suporte"
+    },
+    {
+      "from": "sessao-suporte",
+      "to": "context"
+    },
+    {
+      "from": "sessao-suporte",
+      "to": "cerca-suporte"
+    },
+    {
+      "from": "cerca-suporte",
+      "to": "audit"
+    },
+    {
+      "from": "context",
+      "to": "saida-suporte"
+    },
+    {
+      "from": "saida-suporte",
+      "to": "cache"
+    },
+    {
+      "from": "suporte",
+      "to": "audit"
+    }
+  ]
+}

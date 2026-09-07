@@ -174,7 +174,7 @@ describe("crm_set_appointment_outcome — desfecho é sobre o passado", () => {
 
     const r = (await crmSetAppointmentOutcome.handler(
       { appointment_id: "33333333-3333-4333-8333-333333333333", outcome: "no_show" },
-      ctx,
+      { ...ctx, actor: { type: "user", id: "bbbbbbbb-1111-4111-8111-111111111111", role: "manager" } },
     )) as { registrado: boolean; motivo: string; mensagem: string };
 
     expect(r.registrado).toBe(false);
@@ -188,13 +188,18 @@ describe("crm_set_appointment_outcome — desfecho é sobre o passado", () => {
 
     await crmSetAppointmentOutcome.handler(
       { appointment_id: "33333333-3333-4333-8333-333333333333", outcome: "completed" },
-      ctx,
+      { ...ctx, actor: { type: "user", id: "bbbbbbbb-1111-4111-8111-111111111111", role: "manager" } },
     );
 
     expect(vi.mocked(handlers.alterarAgendamentoHandler).mock.calls[0]?.[2]).toMatchObject({
       id: "33333333-3333-4333-8333-333333333333",
       status: "completed",
     });
+  });
+  it.each(["completed","no_show"] as const)("modelo propõe %s ao humano e não escreve presença",async outcome=>{
+    const r=await crmSetAppointmentOutcome.handler({appointment_id:"33333333-3333-4333-8333-333333333333",outcome},ctx);
+    expect(r).toMatchObject({registrado:false,requer_confirmacao_humana:true,href:"/app/agenda?compromisso=33333333-3333-4333-8333-333333333333"});
+    expect(handlers.alterarAgendamentoHandler).not.toHaveBeenCalled();
   });
 });
 
@@ -239,6 +244,7 @@ function horariosRespondem(slots: { inicio: Date; fim: Date }[]): void {
     fusoSuposto: false,
     fontesDefasadas: [],
     agendaExternaNuncaLida: false,
+    googleCoberturaParcial: false,
   } as ResultadoDaConsulta);
 }
 

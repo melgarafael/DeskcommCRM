@@ -92,8 +92,13 @@ export function parseStageSuggestion(text: string): LeadStage | null {
 export async function classifyStage(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
-  ids: { tenantId: string; leadId: string; jobId?: string },
-  args: { context: LeadContext; currentStage: LeadStage; model?: string; llmOverride?: LlmResolveOverride },
+  ids: { tenantId: string; leadId: string | null; jobId?: string },
+  args: {
+    context: LeadContext;
+    currentStage: LeadStage;
+    model?: string;
+    llmOverride?: LlmResolveOverride;
+  },
   deps: { registry?: ProviderRegistry; log: Logger },
 ): Promise<LeadStage | null> {
   const call = await runModelCall(
@@ -106,14 +111,18 @@ export async function classifyStage(
       purpose: 'stage_classifier',
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.llmOverride !== undefined ? { llmOverride: args.llmOverride } : {}),
-      messages: [{ role: 'user', content: buildClassifierMessage(args.context, args.currentStage) }],
+      messages: [
+        { role: 'user', content: buildClassifierMessage(args.context, args.currentStage) },
+      ],
     },
     { registry: deps.registry, log: deps.log },
   );
   const suggestion = parseStageSuggestion(call.result.text);
   if (suggestion === null) {
     // aux batch sem estágio reconhecível NÃO é incidente do turno: sem PII, só o aviso.
-    deps.log.warn('stage-classifier: saída do modelo auxiliar sem estágio reconhecível — turno segue sem hint');
+    deps.log.warn(
+      'stage-classifier: saída do modelo auxiliar sem estágio reconhecível — turno segue sem hint',
+    );
   }
   return suggestion;
 }
@@ -149,7 +158,13 @@ export interface StageDivergence {
  */
 export async function recordStageDivergenceCandidate(
   dir: string,
-  trace: { tenantId: string; leadId: string; jobId: string; signal: string; divergence: StageDivergence },
+  trace: {
+    tenantId: string;
+    leadId: string;
+    jobId: string;
+    signal: string;
+    divergence: StageDivergence;
+  },
   log: Logger,
 ): Promise<void> {
   const { suggested, confirmed } = trace.divergence;

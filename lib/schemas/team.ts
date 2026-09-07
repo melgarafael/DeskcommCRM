@@ -6,6 +6,7 @@
  * with the DB constraint when adding/removing roles.
  */
 import { z } from "zod";
+import { interfaceSettingsSchema, interfaceTemDestino } from "@/lib/navigation/interface";
 
 export const ROLES = ["viewer", "agent", "manager", "admin"] as const;
 export type Role = (typeof ROLES)[number];
@@ -13,10 +14,16 @@ export type Role = (typeof ROLES)[number];
 export const inviteMemberSchema = z.object({
   invitations: z
     .array(
-      z.object({
-        email: z.string().email(),
-        role: z.enum(ROLES),
-      }),
+      z
+        .object({
+          email: z.string().email(),
+          role: z.enum(ROLES),
+          interface_settings: interfaceSettingsSchema.optional(),
+        })
+        .refine((v) => !v.interface_settings || interfaceTemDestino(v.interface_settings, v.role), {
+          message: "Selecione ao menos uma área permitida ao papel.",
+          path: ["interface_settings"],
+        }),
     )
     .min(1)
     .max(20),

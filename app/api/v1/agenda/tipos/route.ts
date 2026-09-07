@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * TIPOS DE AGENDAMENTO — criar, alterar e desativar pela API.
  *
@@ -125,6 +126,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = req.headers.get("x-request-id") ?? undefined;
   const autorizado = await requireRole("manager", { requestId, resource: "calendar_event_types" });
   if (!autorizado.ok) return autorizado.response;
@@ -150,6 +154,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   await audit({
+    actorUserId: autorizado.user.id,
     action: "agenda.tipo_criado",
     organizationId: autorizado.org.orgId,
     resourceType: "calendar_event_types",
@@ -160,6 +165,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = req.headers.get("x-request-id") ?? undefined;
   const autorizado = await requireRole("manager", { requestId, resource: "calendar_event_types" });
   if (!autorizado.ok) return autorizado.response;
@@ -188,6 +196,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (!data) return fail("not_found", "Tipo de agendamento não encontrado.", 404, { requestId });
 
   await audit({
+    actorUserId: autorizado.user.id,
     action: "agenda.tipo_alterado",
     organizationId: autorizado.org.orgId,
     resourceType: "calendar_event_types",
@@ -198,6 +207,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 }
 
 export async function DELETE(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = req.headers.get("x-request-id") ?? undefined;
   const autorizado = await requireRole("manager", { requestId, resource: "calendar_event_types" });
   if (!autorizado.ok) return autorizado.response;
@@ -218,6 +230,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   if (!data) return fail("not_found", "Tipo de agendamento não encontrado.", 404, { requestId });
 
   await audit({
+    actorUserId: autorizado.user.id,
     action: "agenda.tipo_desativado",
     organizationId: autorizado.org.orgId,
     resourceType: "calendar_event_types",

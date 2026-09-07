@@ -22,15 +22,12 @@ describe("deriveAgentStatus", () => {
     expect(deriveAgentStatus({ ...base, kind: "mcp_agent", published_version_id: null } as AgentRow)).toBe("draft");
   });
 
-  it("rag_bot legado ATIVO e sem versão é PUBLICADO — porque ele responde ao cliente", () => {
-    // Este caso dizia "draft", com a justificativa de que "os dois runtimes o
-    // ignoram". MEDIDO como falso: existe um terceiro runtime,
-    // `workers/ai-response-worker.ts`, que seleciona exatamente por
-    // `is_active` e responde ao cliente por ele — ver
-    // `tests/unit/agente-pausado-nao-atende.test.ts`, caso "rag_bot legado
-    // ATIVO e nunca publicado continua atendendo", onde a requisição sai para
-    // api.anthropic.com. A tela chamava de "Rascunho" um agente no ar.
-    expect(deriveAgentStatus({ ...base, is_active: true, published_version_id: null })).toBe("published");
+  it("rag_bot legado ATIVO e sem versão é RASCUNHO — precisa de publicação para voltar a atender", () => {
+    // Todos os caminhos de atendimento exigem `published_version_id`. O
+    // `is_active` legado não torna mais uma configuração sem versão executável;
+    // o badge deve orientar recuperação/publicação em vez de anunciar que o
+    // agente está no ar.
+    expect(deriveAgentStatus({ ...base, is_active: true, published_version_id: null })).toBe("draft");
   });
 
   it("rag_bot legado DESATIVADO e sem versão é RASCUNHO", () => {

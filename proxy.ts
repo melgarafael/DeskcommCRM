@@ -90,9 +90,8 @@ export async function proxy(request: NextRequest) {
 
   // EPIC-11 S-11.07: validate impersonate cookie on /app/* paths. Middleware
   // runs in Edge — no DB access, only HMAC + expiry. On any failure we delete
-  // the cookie (defence-in-depth) and let the request continue (the layout
-  // re-checks server-side; downstream code that depends on the cookie will
-  // simply see no impersonation in effect).
+  // the presentation cookie. The database support session remains authoritative:
+  // expired/revoked support still blocks the app until explicit exit.
   if (pathname.startsWith("/app")) {
     const impCookie = request.cookies.get(IMPERSONATE_COOKIE_NAME_EDGE)?.value;
     if (impCookie) {

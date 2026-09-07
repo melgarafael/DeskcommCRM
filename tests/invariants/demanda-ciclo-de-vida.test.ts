@@ -14,7 +14,7 @@ import { GOV_ORG, GOV_SESSION, lastLine, seedGov, sql } from "./gov-helpers";
  *   1. inbound de contato sem demanda aberta ABRE   → a garantia de cobertura;
  *   2. segunda mensagem NÃO duplica                 → senão cada mensagem
  *      viraria uma demanda e o denominador do índice explodiria;
- *   3. conversa encerrada FECHA a demanda           → sem isso o denominador
+ *   3. conversa encerrada PRESERVA a demanda           → sem isso o denominador
  *      (que conta fechadas) ficaria vazio para sempre, em silêncio;
  *   4. mensagem depois do fechamento abre OUTRA     → N demandas por conversa
  *      ao longo do tempo, que é o modelo da 0119;
@@ -87,17 +87,16 @@ describe("demanda nasce e morre no ponto de entrada", () => {
     expect(contaDemandas()).toBe(1);
   });
 
-  it("3. encerrar a conversa FECHA a demanda, com desfecho", () => {
+  it("3. encerrar a conversa preserva a demanda sem inventar desfecho", () => {
     sql(`update public.conversations set status = 'resolved' where id = '${CV}';`);
-    expect(contaDemandas("and fechada_em is not null")).toBe(1);
-    expect(lastLine(sql(`select desfecho from public.demandas where contact_id = '${CT}';`)))
-      .toBe("resolvida");
+    expect(contaDemandas("and fechada_em is not null")).toBe(0);
+    expect(contaDemandas("and proximo_passo is not null and desfecho is null")).toBe(1);
   });
 
   it("4. mensagem DEPOIS do fechamento abre uma demanda NOVA", () => {
     inbound("voltei com outro problema");
     expect(contaDemandas()).toBe(2);
-    expect(contaDemandas("and fechada_em is null")).toBe(1);
+    expect(contaDemandas("and fechada_em is null")).toBe(2);
   });
 
   it("5. mensagem NOSSA nao abre demanda — so o cliente traz demanda", () => {

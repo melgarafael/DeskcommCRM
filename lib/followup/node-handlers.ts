@@ -1,3 +1,4 @@
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Node handlers for the follow-up flow engine (Task 4.1) — PURE, no DB access.
  * `engine.ts` owns the tick/DB orchestration; this file only decides "given
@@ -25,6 +26,10 @@ export type EnrollmentOutcome = "converted" | "replied" | "exhausted" | "opted_o
  * can produce it. Field names mirror the table (migration 0054) 1:1.
  */
 export interface EnrollmentRow {
+  service_boundary?: ServiceBoundary | null;
+  revision?: number;
+  appointment_id?: string | null;
+  appointment_revision?: number | null;
   id: string;
   organization_id: string;
   pointer_id: string;

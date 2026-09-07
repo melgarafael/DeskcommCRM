@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH  /api/v1/tasks/[id] — edita uma tarefa.
  * DELETE /api/v1/tasks/[id] — apaga uma tarefa.
@@ -47,6 +48,9 @@ interface Contexto {
 }
 
 export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
@@ -120,6 +124,9 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
 }
 
 export async function DELETE(_req: NextRequest, ctx: Contexto): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
 

@@ -51,7 +51,7 @@ export async function getQueueStatus(
   }
   const avgWaitSeconds = queueSize === 0 ? 0 : Math.round(totalWaitMs / queueSize / 1000);
 
-  const eligibles = await loadEligibleAttendants(supabase, organizationId, now);
+  const eligibles = await loadEligibleAttendants(supabase, organizationId, now, { kind: "organization_summary" });
 
   return {
     queue_size: queueSize,

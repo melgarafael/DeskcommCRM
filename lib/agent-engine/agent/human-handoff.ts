@@ -1,3 +1,4 @@
+import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 /**
  * Handoff humano como cidadão de 1ª classe (F4-06; blueprint 5.5 — escalação humana
  * clara e imediata é EXIGÊNCIA fiscalizada da Meta, não fallback). Dois gatilhos, uma
@@ -137,6 +138,7 @@ export async function performHumanHandoff(
   },
 ): Promise<void> {
   // (a) FONTE DA VERDADE: force_human no contato — irrevogável pelo agente (regra dura 2).
+  await guardServiceEffect();
   await db.query(`update contacts set force_human = true where organization_id = $1 and id = $2`, [
     ids.tenantId,
     ids.leadId,
@@ -147,6 +149,7 @@ export async function performHumanHandoff(
   // está (nunca rouba do humano nem reabre encerrada). Fase 3: junto, zera a aderência
   // ao agente do router — se o bot for reativado, o router decide de novo (não reassume
   // o mesmo agente por inércia).
+  await guardServiceEffect();
   await db.query(
     `update conversations
         set status = case when status = 'ai_handling' then 'pending' else status end,
@@ -162,10 +165,12 @@ export async function performHumanHandoff(
 
   // (c) Cancela os crons PENDENTES do lead (follow-ups agendados — F3-01/02). Idempotente,
   // via o cancel compartilhado (mesma garantia que o opt-out irrevogável usa — F4-07).
+  await guardServiceEffect();
   await cancelPendingCronsForLead(db, ids.tenantId, ids.leadId);
 
   // (d) inbox de escalação com o resumo da conversa. Dedup por episódio ABERTO (mesmo padrão
   // do escalateJailbreakPromise): 2× no mesmo handoff aberto → 1 item.
+  await guardServiceEffect();
   await db.query(
     `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
      select $1, 'handoff', 'critical', $2, $3, 'contact', $4

@@ -1,3 +1,4 @@
+import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 /**
  * Handler do job `operator_turn` — o papel OPERADOR (spec 16 §3.2).
  *
@@ -126,7 +127,8 @@ export function renderBriefingDoOperador(
   const linhas = ['Foi isto que aconteceu na conversa que acabou:'];
   if (declaracao.intencoes.length > 0) {
     linhas.push('', 'O que a pessoa quer:');
-    for (const i of declaracao.intencoes) linhas.push(`- ${i.o_que} (na conversa: "${i.evidencia}")`);
+    for (const i of declaracao.intencoes)
+      linhas.push(`- ${i.o_que} (na conversa: "${i.evidencia}")`);
   }
   if (promessas.length > 0) {
     linhas.push('', 'O que foi prometido a ela (precisa existir no sistema):');
@@ -155,7 +157,9 @@ export type DesfechoDoOperador =
  * exatamente o alarme falso que este conserto existe para matar.
  */
 export function nomesDasFerramentasChamadas(
-  saida: { result: { steps: ReadonlyArray<{ toolCalls?: ReadonlyArray<{ toolName?: string }> }> } } | null,
+  saida: {
+    result: { steps: ReadonlyArray<{ toolCalls?: ReadonlyArray<{ toolName?: string }> }> };
+  } | null,
 ): string[] {
   if (saida === null) return [];
   return saida.result.steps.flatMap((s) =>
@@ -166,7 +170,10 @@ export function nomesDasFerramentasChamadas(
 /** Quem ficou responsável pela promessa que o Conversador declarou. */
 export type DonoDaPromessa =
   | { assumida: true; por: 'ferramenta_do_operador' | 'retorno_agendado' }
-  | { assumida: false; porque: 'operador_sem_ferramentas' | 'operador_nao_agiu' | 'operador_nao_rodou' };
+  | {
+      assumida: false;
+      porque: 'operador_sem_ferramentas' | 'operador_nao_agiu' | 'operador_nao_rodou';
+    };
 
 /**
  * A APURAÇÃO — pura, testável sem banco, sem modelo e sem fila, como
@@ -193,7 +200,8 @@ export function apuraDonoDaPromessa(input: {
   operadorRodou: boolean;
   operadorTemFerramentas: boolean;
 }): DonoDaPromessa {
-  if (input.ferramentasChamadas.length > 0) return { assumida: true, por: 'ferramenta_do_operador' };
+  if (input.ferramentasChamadas.length > 0)
+    return { assumida: true, por: 'ferramenta_do_operador' };
   if (input.temRetornoVivo) return { assumida: true, por: 'retorno_agendado' };
   if (!input.operadorRodou) return { assumida: false, porque: 'operador_nao_rodou' };
   if (!input.operadorTemFerramentas) return { assumida: false, porque: 'operador_sem_ferramentas' };
@@ -323,11 +331,18 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
     // alguém publicar o primeiro agente — saía antes de apurar qualquer coisa, e
     // uma promessa feita ali não gerava rede nenhuma. Primeira impressão é onde
     // um lead perdido custa o cliente inteiro.
-    const { declaracao, houveCheckpoint } = await lerDeclaracaoDoTurno(pool, tenantId, leadId, payload.origin_job_id);
+    const { declaracao, houveCheckpoint } = await lerDeclaracaoDoTurno(
+      pool,
+      tenantId,
+      leadId,
+      payload.origin_job_id,
+    );
     const promessas = promessasEmAberto(declaracao);
 
     const agentConfig =
-      payload.agent_id === null ? null : await loadPublishedAgentConfigById(pool, tenantId, payload.agent_id);
+      payload.agent_id === null
+        ? null
+        : await loadPublishedAgentConfigById(pool, tenantId, payload.agent_id);
     if (agentConfig === null) {
       // Sem agente publicado não há config de papel para ler. Não é erro: é o
       // turno que rodou no genérico. Mas a promessa continua tendo de ter dono.
@@ -355,6 +370,14 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       return;
     }
 
+    if (agentConfig.pausedAt || agentConfig.operationMode === 'assisted') return;
+    if (agentConfig.operationRevision)
+      setExecutionAgentOperation({
+        organizationId: tenantId,
+        agentId: agentConfig.agentId,
+        versionId: agentConfig.versionId,
+        revision: agentConfig.operationRevision,
+      });
     const decisao = decidirSeRoda({ papelLigado: agentConfig.operatorEnabled, declaracao });
 
     if (!decisao.roda) {
@@ -410,7 +433,9 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
         // derruba o job, mas também não morre no log de um contêiner que
         // ninguém abre — o aviso vai para a Central.
         const detalhe = (err instanceof Error ? err.message : String(err)).slice(0, 200);
-        log.error('capacidades do operador não montadas — o papel segue sem elas', { error: detalhe });
+        log.error('capacidades do operador não montadas — o papel segue sem elas', {
+          error: detalhe,
+        });
         await avisarCapacidadesAusentes(pool, tenantId, payload.conversation_id, detalhe, log);
       }
     }
@@ -680,4 +705,3 @@ async function registrarDesfecho(
     });
   }
 }
-

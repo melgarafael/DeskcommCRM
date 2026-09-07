@@ -108,6 +108,7 @@ function fakeSupabase(resolve: Resolver, cap: Capturas) {
     from,
     rpc: (fn: string, args: Record<string, unknown>) => {
       cap.rpcs.push({ fn, args });
+      if (fn === 'fn_service_begin') return Promise.resolve({ data: { organization_id: ORG, contact_id: CONTATO, conversation_id: 'conv-1', service_revision: 1, demanda_id: null, demanda_revision: null, status: 'open', demanda_fechada_em: null }, error: null });
       return Promise.resolve({ data: null, error: null });
     },
   };
@@ -826,6 +827,7 @@ describe("crm_list_at_risk_leads", () => {
     // às irmãs: a garantia é POR CONSULTA, não por função.
     const espiao: Resolver = (c) => {
       filtros.push({ table: c.table, ...c.filtros });
+      if(c.table==="organizations") return {data:{settings:{}},error:null};
       if (c.table !== "crm_leads") return { data: [], error: null };
       return {
         data: [
@@ -858,13 +860,15 @@ describe("crm_list_at_risk_leads", () => {
       "conversations",
       "contacts",
       "demandas",
+      "organizations",
+      "calendar_appointments",
     ]) {
       // Guarda de vacuidade por tabela: uma leitura que deixe de acontecer não
       // pode passar como "leitura sem vazamento".
       expect(tabelas, `o radar não leu "${esperada}"`).toContain(esperada);
     }
     for (const leitura of filtros) {
-      expect(leitura.organization_id, `leitura de "${leitura.table}" sem filtro de org`).toBe(ORG);
+      expect(leitura.table === "organizations" ? leitura.id : leitura.organization_id, `leitura de "${leitura.table}" sem filtro de org`).toBe(ORG);
     }
   });
 

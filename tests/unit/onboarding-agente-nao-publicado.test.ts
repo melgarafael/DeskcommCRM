@@ -41,6 +41,7 @@ const USER = "11111111-1111-4111-8111-111111111111";
 
 const redirects: string[] = [];
 let responder: (c: Consulta) => Resposta;
+let responderRpc: (nome: string, args: Record<string, unknown>) => Resposta;
 
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
@@ -117,7 +118,11 @@ function clienteFalso() {
     };
     return b;
   };
-  return { from: abrir } as never;
+  return {
+    from: abrir,
+    rpc: (nome: string, args: Record<string, unknown>) =>
+      Promise.resolve(responderRpc(nome, args)),
+  } as never;
 }
 
 interface Estado {
@@ -197,6 +202,41 @@ function montarBanco(mundo: Mundo = {}): Estado {
 
   const modelos = mundo.modelosPorProvedor ?? { anthropic: "claude-sonnet-9" };
 
+  responderRpc = (nome, args) => {
+    if (nome !== "fn_publish_ai_agent_version") {
+      throw new Error(`rpc não dublada no teste: ${nome}`);
+    }
+    const versao = estado.versoes.find(
+      (v) =>
+        v.id === args.p_version_id &&
+        v.agent_id === args.p_agent_id &&
+        v.organization_id === args.p_org_id,
+    );
+    if (!versao) return { data: null, error: { message: "version_not_found" } };
+    if (
+      args.p_expected_provenance &&
+      versao.provisioning_origin !== args.p_expected_provenance
+    ) {
+      return { data: null, error: { message: "existing_version_requires_review" } };
+    }
+    const agente = estado.agentes.find(
+      (a) => a.id === args.p_agent_id && a.organization_id === args.p_org_id,
+    );
+    if (!agente) return { data: null, error: { message: "agent_not_found" } };
+    const anterior = (agente.published_version_id as string | null | undefined) ?? null;
+    versao.status = "published";
+    agente.published_version_id = versao.id;
+    return {
+      data: [{
+        agent_id: agente.id,
+        version_id: versao.id,
+        previous_version_id: anterior,
+        published_at: "2026-09-06T12:00:00.000Z",
+      }],
+      error: null,
+    };
+  };
+
   // A chave da instalação é lida do `process.env` por `chaveDePlataforma`. O
   // default é TER a chave, que é o retrato de quem instalou pelo kit — e é a
   // precondição dos casos que exercitam OUTRA coisa. Um teste que rodasse sem
@@ -271,10 +311,19 @@ function montarBanco(mundo: Mundo = {}): Estado {
         estado.versoes.push(linha);
         return { data: { id: linha.id }, error: null };
       }
-      const achada = estado.versoes.find(
-        (v) => v.agent_id === c.filtros.agent_id && v.version_number === c.filtros.version_number,
+      const candidatas = estado.versoes.filter(
+        (v) =>
+          v.agent_id === c.filtros.agent_id &&
+          (!c.filtros.organization_id || v.organization_id === c.filtros.organization_id),
       );
-      return { data: achada ? { id: achada.id } : null, error: null };
+      if (c.filtros.id) {
+        return { data: candidatas.find((v) => v.id === c.filtros.id) ?? null, error: null };
+      }
+      if (c.filtros.version_number !== undefined) {
+        const achada = candidatas.find((v) => v.version_number === c.filtros.version_number);
+        return { data: achada ? { id: achada.id } : null, error: null };
+      }
+      return { data: candidatas, error: null };
     }
 
     if (c.table === "organizations") {
@@ -439,17 +488,53 @@ describe("onboarding: publicação impossível não pode terminar em silêncio",
     expect(estado.eventos[0]?.payload).toMatchObject({ published: false });
   });
 
-  it("versão já gravada por uma passagem anterior: repontar, não bater em duplicate key", async () => {
+  it("versão do próprio onboarding já gravada: concluir o retry sem duplicar", async () => {
     const estado = montarBanco({
       agentes: [{ id: "agente-1", organization_id: ORG, is_default: true, published_version_id: null }],
-      versoes: [{ id: "versao-1", agent_id: "agente-1", version_number: 1 }],
+      versoes: [{
+        id: "versao-1",
+        organization_id: ORG,
+        agent_id: "agente-1",
+        version_number: 1,
+        provisioning_origin: "onboarding",
+        status: "draft",
+        provider: "anthropic",
+        credential_id: null,
+      }],
     });
 
     const res = await clicar();
 
     expect(res).toBe("redirecionou");
     expect(estado.versoes).toHaveLength(1);
+    expect(estado.versoes[0]?.status).toBe("published");
     expect(estado.agentes[0]?.published_version_id).toBe("versao-1");
+  });
+
+  it("rascunho criado por uma pessoa não é publicado pelo retry do onboarding", async () => {
+    const estado = montarBanco({
+      agentes: [{ id: "agente-1", organization_id: ORG, is_default: true, published_version_id: null }],
+      versoes: [{
+        id: "versao-1",
+        organization_id: ORG,
+        agent_id: "agente-1",
+        version_number: 1,
+        provisioning_origin: null,
+        status: "draft",
+        provider: "anthropic",
+        credential_id: null,
+      }],
+    });
+
+    const res = await clicar();
+
+    expect(res).not.toBe("redirecionou");
+    const r = res as CreateAgentResult;
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.publish_error).toBe("existing_version_requires_review");
+    expect(estado.versoes).toHaveLength(1);
+    expect(estado.versoes[0]?.status).toBe("draft");
+    expect(estado.agentes[0]?.published_version_id ?? null).toBeNull();
   });
 
   it("falha ao gravar a versão também chega à tela (era um return mudo)", async () => {

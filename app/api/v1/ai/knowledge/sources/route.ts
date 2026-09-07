@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/ai/knowledge/sources — os materiais da organização
  * POST /api/v1/ai/knowledge/sources — cadastra um material
@@ -103,6 +104,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });

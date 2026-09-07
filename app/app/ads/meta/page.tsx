@@ -35,7 +35,7 @@ export default async function MetaAdsPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
-  if (!user.is_platform_admin && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
+  if (!(user.is_platform_admin && !user.support) && ROLE_RANK[activeOrg.role] < ROLE_RANK.manager) {
     redirect("/403");
   }
 
@@ -47,7 +47,7 @@ export default async function MetaAdsPage() {
   // Quem NÃO pode conectar não deve ler "vá em Configurações" — a tela lá é
   // `admin`, e mandar um manager para uma porta que devolve 403 é pior que
   // dizer a verdade: ele precisa pedir para alguém.
-  const podeConectar = user.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+  const podeConectar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
   return (
     /*

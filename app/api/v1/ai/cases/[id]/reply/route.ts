@@ -1,3 +1,7 @@
+import { withServiceBoundary } from "@/lib/atendimento/fronteira-server";
+import { parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { registrarRespostaDeCasoObsoleto } from "@/lib/atendimento/aviso-caso-obsoleto";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/cases/:id/reply — a ação do humano sobre um caso aberto
  * (spec 15 §7/§9, Wave 5). Três ações: `resolved` (fecha e repassa ao lead),
@@ -61,6 +65,7 @@ const NEW_STATUS: Record<z.infer<typeof bodySchema>["action"], string> = {
 };
 
 interface CaseRow {
+  context_snapshot: Record<string, unknown> | null;
   status: string;
   title: string;
   summary: string;
@@ -70,6 +75,9 @@ interface CaseRow {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "agent_cases" });
   if (!authz.ok) return authz.response;
@@ -99,7 +107,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   }
 
   const { rows } = await pool.query<CaseRow>(
-    `select ac.status, ac.title, ac.summary, ac.blocker, ac.conversation_id, conv.contact_id
+    `select ac.status, ac.title, ac.summary, ac.blocker, ac.conversation_id, ac.context_snapshot, conv.contact_id
        from agent_cases ac
        join conversations conv
          on conv.id = ac.conversation_id and conv.organization_id = ac.organization_id
@@ -126,23 +134,16 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const { conversation_id: conversationId, contact_id: contactId } = caseRow;
 
   if (action === "escalate") {
-    // AVISA O LEAD ANTES DE SILENCIAR.
-    //
-    // Até aqui o automático estava CONVERSANDO com o cliente — abrir um caso não
-    // silencia ninguém (`CASES_SYSTEM_BLOCK`: "você CONTINUA conversando"). O
-    // `performHumanHandoff` da linha seguinte é que corta, e corta de vez. Sem
-    // esta mensagem, do lado de fora, o atendimento simplesmente para no meio.
-    //
-    // Emissor do lado do CRM (`avisarLeadDoCrm`), e não o do motor: aqui não há
-    // job da fila, e `runBeforeSend` grava o ledger por `(job_id, seq)`. Forjar
-    // um job para mandar uma frase seria pior que perder os gates de pacing —
-    // que, neste caminho, protegem contra um risco que não existe: é UMA
-    // mensagem, disparada por um clique humano, dentro de uma conversa aberta.
+    const boundary = parseServiceBoundary(caseRow.context_snapshot?.service_boundary);
+    try {
+      if (boundary && (boundary.organization_id !== org.orgId || boundary.contact_id !== contactId || boundary.conversation_id !== conversationId)) throw new StaleServiceBoundaryError();
+      await withServiceBoundary(pool, boundary, async () => {
     const aviso = await avisarLeadDoCrm(createAdminClient(), {
       organizationId: org.orgId,
       conversationId,
       contactId,
       reason: body,
+      serviceBoundary: boundary!,
     });
 
     // O handoff roda ANTES de fechar o caso, e nesta ordem de propósito: ele é
@@ -160,6 +161,16 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
         log: createLogger(),
       },
     );
+      });
+    } catch (error) {
+      if (!(error instanceof StaleServiceBoundaryError)) throw error;
+      // A resposta humana fica registrada, mas não altera o atendimento novo.
+      const registered = await registrarRespostaDeCasoObsoleto(pool, org.orgId, caseId, user.id, body);
+      if (!registered) return fail("invalid_state", "Este caso já foi respondido por outra pessoa.", 409, { requestId });
+      await audit({ action: "ai.case_replied", actorUserId: user.id, organizationId: org.orgId,
+        resourceType: "agent_case", resourceId: caseId, requestId, metadata: { case_action: action, service_stale: true } });
+      return ok({ status: "resolved", delivery: "service_stale" }, { requestId });
+    }
     const escalated = await escalateCase(pool, org.orgId, caseId, user.id, body);
     if (!escalated) {
       // Corrida perdida entre a leitura e o update. O handoff já aconteceu (e é

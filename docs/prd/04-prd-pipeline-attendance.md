@@ -112,17 +112,19 @@ Decisões herdadas: multi-pipeline desde o schema; ticket reusa `crm_leads` em p
 
 ### 3.4 Conversation status & transições
 
-Estados: `open` (humano/IA ativos OU aguardando 1ª resposta) — `pending` (última msg foi do atendente; aguardando cliente) — `resolved` (atendente fechou).
+O vocabulário operacional aceito é `open`, `pending`, `ai_handling`, `claimed`, `closed`, `resolved` e `archived`. A UI **Fechar** grava `closed` e audita `conversation.closed`; `closed`, `resolved` e `archived` são terminais compatíveis. Um status terminal encerra a fronteira operacional da conversa, mas não declara por si só o desfecho da demanda.
 
 **Princípios.**
-- Toda transição é evento auditado, gera atividade `conversation_status_changed` na timeline do(s) lead(s) vinculado(s)
-- Cliente respondendo em `pending` → volta automaticamente pra `open`
-- Cliente respondendo em `resolved` dentro de janela X (default 24h, decisão na Spec) reabre a conversation
-- IA pode marcar `resolved` em handoff de saída claro (vide Sub-PRD 05)
+- Fechar conversa preserva a demanda vinculada e invalida o trabalho ainda não aceito pelo transporte. O desfecho da demanda é um comando explícito e separado, protegido por revisão/CAS.
+- Mudança cujo estado anterior ou novo é terminal serializa pelo lock canônico de organização + contato e avança `service_revision`; transição entre dois estados não terminais não avança essa fronteira. Encerrar a demanda é outra operação CAS: avança `demandas.revision`, capturada na fronteira como `demanda_revision`.
+- Cliente respondendo em `pending` continua na fronteira corrente. Um inbound válido persistido depois de `closed`, `resolved` ou `archived` inicia nova fronteira e cria nova demanda, preservando a anterior como histórico; nunca escolhe outra demanda aberta do contato apenas por recência.
+- Jobs capturam `organization_id`, contato, conversa, `service_revision`, demanda e `demanda_revision`, e revalidam essa fronteira antes de ferramenta mutável e envio. Encerrar ou reabrir torna o trabalho antigo obsoleto; efeito já aceito pelo transporte não pode ser desfeito.
+- Notas duráveis permanecem no contato. O contexto operacional usa somente mensagens, checkpoint e próxima ação da fronteira vigente; histórico anterior pode expor desfecho e resumo rotulados, sem transportar tarefas pendentes.
 
 **ACs principais.**
-- Botão "Resolver" marca `resolved`, conversation some da fila default, atividade auditada
-- Cliente em `resolved` manda nova msg após 1h → volta pra `open`; atendente notificado
+- Botão "Fechar" grava `closed`, retira a conversa da fila corrente, audita `conversation.closed` e não inventa desfecho para a demanda.
+- Desfecho explícito usa a revisão capturada; conflito mantém a escolha para revisão humana e não renova silenciosamente a autoridade.
+- Um inbound posterior cria nova demanda e invalida jobs da fronteira anterior; os demais canais e vínculos históricos do contato permanecem intactos.
 
 ### 3.5 Tickets modelados como `crm_leads`
 
@@ -320,7 +322,7 @@ Pipeline + Atendimento é considerado **MVP-completo** quando:
 5. ✅ Claim concorrente resolve com 1 vencedor (lock otimista, 409 pro perdedor)
 6. ✅ Manager em modo supervisor: composer desabilitado + audit gerada
 7. ✅ Round-robin distribui em ordem cíclica; 0 online → "Sem responsável" com alarme
-8. ✅ Status `pending → open → resolved` audita transições e filtra na lista
+8. ✅ A UI fecha em `closed`; `closed`/`resolved`/`archived` são terminais compatíveis, fechamento não infere desfecho e inbound posterior cria nova fronteira e nova demanda
 9. ✅ Pipeline "Suporte" ativável; ticket linkado a pedido via `crm_lead_links`; abas no painel
 10. ✅ Quick reply `{nome}` interpolado antes do envio; variável obrigatória vazia bloqueia
 11. ✅ Bulk em 30 cards: `move_stage` em <3s; >50 retorna 422
@@ -342,14 +344,12 @@ Pipeline + Atendimento é considerado **MVP-completo** quando:
 ### Decisões deferidas pra Spec (não bloqueantes)
 - Estratégia de virtualização (react-window vs react-virtual) e threshold
 - Threshold inactivity `online → busy` (sugestão 5min)
-- Threshold reabertura automática `resolved → open` (sugestão 24h)
 - Implementação do round-robin (TS worker / Postgres function / `assignment_queue`)
 - Formato dos quick replies (jsonb em settings vs tabela `message_templates`)
 - Threshold de "atrasado" no card; configurabilidade por pipeline
 - Política de auto-online/offline (heartbeat, timeouts, comportamento ao fechar última aba)
 - Layout mobile do `<CRMSidePanel>` (drawer vs bottom sheet vs tab)
 - Atalhos de teclado canônicos finais
-- Comportamento de reabrir conversation `resolved` (mesma vs nova)
 - Cache strategy do TanStack Query (staleTime, gcTime)
 
 ---
@@ -401,13 +401,12 @@ A serem decididas em `docs/specs/04-spec-pipeline-attendance.md`:
 6. Estratégia de virtualização (biblioteca + threshold)
 7. Layout mobile do `<CRMSidePanel>` (drawer / bottom sheet / tab)
 8. Atalhos de teclado canônicos finais
-9. Comportamento ao reabrir conversation `resolved` (mesma vs nova)
-10. UX de bulk action (shift-click + checkbox; comportamento em erro parcial)
-11. Catálogo final de `audit.action` desta camada (`conversation.claimed/reassigned/resolved/reopened/viewed_as_supervisor`, `lead.bulk_*`, `quick_reply.sent`, `pipeline.created`, `stage.created/renamed/removed`)
-12. Nomes e contratos de eventos `event_log` emitidos
-13. Cache strategy do TanStack Query (staleTime, gcTime, refetchOnFocus)
-14. Limite de canais Realtime por aba e estratégia de consolidação
-15. Política de retry no `useSendMessage` em falha de rede
+9. UX de bulk action (shift-click + checkbox; comportamento em erro parcial)
+10. Catálogo final de `audit.action` desta camada (`conversation.claimed/reassigned/closed/reopened/viewed_as_supervisor`, `lead.bulk_*`, `quick_reply.sent`, `pipeline.created`, `stage.created/renamed/removed`)
+11. Nomes e contratos de eventos `event_log` emitidos
+12. Cache strategy do TanStack Query (staleTime, gcTime, refetchOnFocus)
+13. Limite de canais Realtime por aba e estratégia de consolidação
+14. Política de retry no `useSendMessage` em falha de rede
 
 ---
 

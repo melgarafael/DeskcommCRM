@@ -47,6 +47,17 @@ const CASE_ID = "33333333-3333-4333-8333-333333333333";
 const CONV_ID = "44444444-4444-4444-8444-444444444444";
 const CONTACT_ID = "55555555-5555-4555-8555-555555555555";
 
+const CASE_BOUNDARY = {
+  organization_id: ORG_ID,
+  contact_id: CONTACT_ID,
+  conversation_id: CONV_ID,
+  service_revision: 1,
+  demanda_id: null,
+  demanda_revision: null,
+  status: "open",
+  demanda_fechada_em: null,
+};
+
 function session(effectiveRole: Role) {
   const user: AuthUser = {
     id: USER_ID,
@@ -90,7 +101,8 @@ describe("GET /api/v1/ai/cases", () => {
         return chain;
       },
       order: () => Promise.resolve({ data: rows, error: null }),
-      then: (onF: (v: unknown) => unknown) => Promise.resolve({ data: rows, error: null }).then(onF),
+      then: (onF: (v: unknown) => unknown) =>
+        Promise.resolve({ data: rows, error: null }).then(onF),
     };
     return { from: () => chain, __calls: calls };
   }
@@ -98,7 +110,9 @@ describe("GET /api/v1/ai/cases", () => {
   it("viewer é barrado (403 forbidden_role), sem chegar a consultar o banco", async () => {
     session("viewer");
     const admin = makeAdminStub([]);
-    vi.mocked(createAdminClient).mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin as unknown as ReturnType<typeof createAdminClient>,
+    );
     const { GET } = await import("@/app/api/v1/ai/cases/route");
     const res = await GET(new NextRequest("http://localhost/api/v1/ai/cases?status=open"));
     expect(res.status).toBe(403);
@@ -111,6 +125,7 @@ describe("GET /api/v1/ai/cases", () => {
     const rows = [
       {
         id: CASE_ID,
+        context_snapshot: { service_boundary: CASE_BOUNDARY },
         title: "Desconto especial",
         summary: "Cliente quer 20%",
         blocker: "Alçada",
@@ -121,7 +136,9 @@ describe("GET /api/v1/ai/cases", () => {
       },
     ];
     const admin = makeAdminStub(rows);
-    vi.mocked(createAdminClient).mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin as unknown as ReturnType<typeof createAdminClient>,
+    );
     const { GET } = await import("@/app/api/v1/ai/cases/route");
     const res = await GET(new NextRequest("http://localhost/api/v1/ai/cases?status=open"));
     expect(res.status).toBe(200);
@@ -130,9 +147,9 @@ describe("GET /api/v1/ai/cases", () => {
     };
     expect(body.data.cases).toHaveLength(1);
     expect(body.data.cases[0]?.contact_name).toBe("Fulano");
-    expect(admin.__calls.eqCalls.some(([col, val]) => col === "organization_id" && val === ORG_ID)).toBe(
-      true,
-    );
+    expect(
+      admin.__calls.eqCalls.some(([col, val]) => col === "organization_id" && val === ORG_ID),
+    ).toBe(true);
     expect(
       admin.__calls.inCalls.some(
         ([col, val]) => col === "status" && Array.isArray(val) && val.includes("awaiting_human"),
@@ -179,9 +196,21 @@ describe("GET /api/v1/ai/cases/:id", () => {
         conversation_id: CONV_ID,
         conversations: { contacts: { name: "Maria", phone_number: "+5511" } },
       },
-      [{ id: "e1", kind: "opened", actor_kind: "agent", actor_user_id: null, human_action: null, body: null, created_at: "2026-07-23T10:00:00Z" }],
+      [
+        {
+          id: "e1",
+          kind: "opened",
+          actor_kind: "agent",
+          actor_user_id: null,
+          human_action: null,
+          body: null,
+          created_at: "2026-07-23T10:00:00Z",
+        },
+      ],
     );
-    vi.mocked(createAdminClient).mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin as unknown as ReturnType<typeof createAdminClient>,
+    );
 
     const { GET } = await import("@/app/api/v1/ai/cases/[id]/route");
     const res = await GET(new NextRequest(`http://localhost/api/v1/ai/cases/${CASE_ID}`), {
@@ -205,7 +234,9 @@ describe("GET /api/v1/ai/cases/:id", () => {
   it("caso de outra org → 404 not_found", async () => {
     session("agent");
     const admin = makeDetailStub(null, []);
-    vi.mocked(createAdminClient).mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin as unknown as ReturnType<typeof createAdminClient>,
+    );
 
     const { GET } = await import("@/app/api/v1/ai/cases/[id]/route");
     const res = await GET(new NextRequest(`http://localhost/api/v1/ai/cases/${CASE_ID}`), {
@@ -230,11 +261,22 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
    */
   function makePoolStub(caseRow: Record<string, unknown> | undefined) {
     const client = {
-      query: vi.fn(async () => ({ rows: [] })),
+      query: vi.fn(async (sql: string) => ({
+        rows:
+          sql.includes("select conversation_id from agent_cases") && caseRow
+            ? [{ conversation_id: caseRow.conversation_id }]
+            : [],
+      })),
       release: vi.fn(),
     };
     const pool = {
-      query: vi.fn(async () => ({ rows: caseRow ? [caseRow] : [] })),
+      query: vi.fn(async (sql: string) => ({
+        rows: sql.includes("from conversations c left join demandas")
+          ? [CASE_BOUNDARY]
+          : caseRow
+            ? [caseRow]
+            : [],
+      })),
       connect: vi.fn(async () => client),
       __client: client,
     };
@@ -248,6 +290,7 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
   function caseRowFixture(overrides: Partial<Record<string, unknown>> = {}) {
     return {
       status: "awaiting_human",
+      context_snapshot: { service_boundary: CASE_BOUNDARY },
       title: "Desconto especial",
       summary: "Cliente quer 20%",
       blocker: "Alçada",
@@ -300,9 +343,11 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
     );
     expect(txCommands(pool.__client)).toEqual(["begin", "commit"]);
     expect(
-      vi.mocked(audit).mock.calls.some(
-        ([e]) => e.action === "ai.case_replied" && e.metadata?.case_action === "need_lead_info",
-      ),
+      vi
+        .mocked(audit)
+        .mock.calls.some(
+          ([e]) => e.action === "ai.case_replied" && e.metadata?.case_action === "need_lead_info",
+        ),
     ).toBe(true);
   });
 
@@ -314,9 +359,12 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
     const { performHumanHandoff } = await import("@/lib/agent-engine/agent/human-handoff");
 
     const { POST } = await import("@/app/api/v1/ai/cases/[id]/reply/route");
-    const res = await POST(replyReq({ action: "escalate", body: "Fora do playbook, precisa de humano" }), {
-      params: Promise.resolve({ id: CASE_ID }),
-    });
+    const res = await POST(
+      replyReq({ action: "escalate", body: "Fora do playbook, precisa de humano" }),
+      {
+        params: Promise.resolve({ id: CASE_ID }),
+      },
+    );
 
     expect(res.status).toBe(200);
     const resBody = (await res.json()) as { data: { status: string } };
@@ -343,6 +391,59 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
     expect(handoffOrder).toBeLessThan(escalateOrder);
   });
 
+  it("escalate de caso antigo registra resposta e aviso, sem handoff no atendimento novo", async () => {
+    session("agent");
+    const pool = makePoolStub(
+      caseRowFixture({
+        context_snapshot: { service_boundary: { ...CASE_BOUNDARY, service_revision: 0 } },
+      }),
+    );
+    vi.mocked(getRequestPool).mockReturnValue(pool as unknown as ReturnType<typeof getRequestPool>);
+    const { POST } = await import("@/app/api/v1/ai/cases/[id]/reply/route");
+    const { performHumanHandoff } = await import("@/lib/agent-engine/agent/human-handoff");
+    const { resolveCaseFromHuman } = await import("@/lib/agent-engine/agent/human-cases");
+    const response = await POST(replyReq({ action: "escalate", body: "Resposta humana antiga" }), {
+      params: Promise.resolve({ id: CASE_ID }),
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.delivery).toBe("service_stale");
+    expect(performHumanHandoff).not.toHaveBeenCalled();
+    expect(resolveCaseFromHuman).toHaveBeenCalled();
+    expect(
+      pool.__client.query.mock.calls.some(([sql]) => sql.includes("insert into agent_inbox_items")),
+    ).toBe(true);
+    expect(txCommands(pool.__client)).toContain("commit");
+  });
+  it("aviso de caso stale falha: rollback preserva retry e audit só ocorre após commit", async () => {
+    session("agent");
+    const pool = makePoolStub(
+      caseRowFixture({
+        context_snapshot: { service_boundary: { ...CASE_BOUNDARY, service_revision: 0 } },
+      }),
+    );
+    vi.mocked(getRequestPool).mockReturnValue(pool as unknown as ReturnType<typeof getRequestPool>);
+    const original = pool.__client.query.getMockImplementation()!;
+    let failNotice = true;
+    pool.__client.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("insert into agent_inbox_items") && failNotice)
+        throw new Error("notice unavailable");
+      return original(sql);
+    });
+    const { POST } = await import("@/app/api/v1/ai/cases/[id]/reply/route");
+    const { audit } = await import("@/lib/audit");
+    const request = () =>
+      POST(replyReq({ action: "escalate", body: "Resposta preservada" }), {
+        params: Promise.resolve({ id: CASE_ID }),
+      });
+    await expect(request()).rejects.toThrow("notice unavailable");
+    expect(txCommands(pool.__client)).toContain("rollback");
+    expect(txCommands(pool.__client)).not.toContain("commit");
+    expect(audit).not.toHaveBeenCalled();
+    failNotice = false;
+    expect((await request()).status).toBe(200);
+    expect(txCommands(pool.__client)).toContain("commit");
+    expect(audit).toHaveBeenCalledOnce();
+  });
   it("need_lead_info: enqueue falhando dá rollback — o caso NÃO sai de awaiting_human", async () => {
     session("agent");
     const pool = makePoolStub(caseRowFixture());
@@ -423,3 +524,10 @@ describe("POST /api/v1/ai/cases/:id/reply", () => {
     expect(pool.query).toHaveBeenCalledWith(expect.any(String), [ORG_ID, CASE_ID]);
   });
 });
+
+// Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
+vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/impersonate/support")>()),
+  requireSupportWrite: vi.fn(async () => null),
+  authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
+}));

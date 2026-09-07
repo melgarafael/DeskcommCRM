@@ -1,3 +1,6 @@
+import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
+import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
+import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
 /**
  * Cadeia de guardrails `before_send` (F2-13; edge-contract §2, blueprint 5.2) — o
  * seam determinístico entre a decisão do modelo (tool `send_message`) e o canal.
@@ -256,7 +259,13 @@ export type GateVerdict =
   // restrição não existe NESTE canal. Passa, mas o trace registra que não se aplicava — um
   // `pass` silencioso apagaria a diferença entre "não regrediu" e "provo que não regrediu".
   | { pass: true; waitMs?: number; amendBody?: string; skipped?: 'not_applicable' }
-  | { pass: false; code: string; reason: string; nextAllowedAt?: Date; detail?: Record<string, string | number> };
+  | {
+      pass: false;
+      code: string;
+      reason: string;
+      nextAllowedAt?: Date;
+      detail?: Record<string, string | number>;
+    };
 
 export interface Gate {
   readonly name: string;
@@ -562,7 +571,12 @@ export const pacingGate: Gate = {
       rng: ctx.pacing.rng,
     });
     if (!decision.allow) {
-      return { pass: false, code: decision.code, reason: decision.reason, nextAllowedAt: decision.nextAllowedAt };
+      return {
+        pass: false,
+        code: decision.code,
+        reason: decision.reason,
+        nextAllowedAt: decision.nextAllowedAt,
+      };
     }
     return banRisk
       ? { pass: true, waitMs: decision.waitMs }
@@ -622,7 +636,9 @@ const spinningGate: Gate = {
       window: ctx.spinning.window,
       knobs: ctx.spinning.knobs,
     });
-    return decision.allow ? { pass: true } : { pass: false, code: decision.code, reason: decision.reason };
+    return decision.allow
+      ? { pass: true }
+      : { pass: false, code: decision.code, reason: decision.reason };
   },
 };
 
@@ -713,6 +729,10 @@ export type BeforeSendResult =
     };
 
 export interface RunBeforeSendArgs {
+  agentOperation?: AgentOperationContext;
+  approvedReply?: ApprovedReplyContext;
+  /** Contexto interno do único comando Meet; a origem é relida, nunca um booleano de bypass. */
+  meetingDelivery?: MeetingDeliveryContext;
   pool: pg.Pool;
   log: Logger;
   tenantId: string;
@@ -813,6 +833,53 @@ export interface RunBeforeSendArgs {
   send: (body: string) => Promise<ChannelSendResult>;
 }
 
+/** Pure chain shared by real delivery and preview; no locks, writes or transport. */
+export function evaluateBeforeSend(
+  initial: GateContext,
+  gates: readonly Gate[] = BEFORE_SEND_GATES,
+) {
+  const ctx = { ...initial };
+  const trace: GateTraceEntry[] = [];
+  let veto: { gate: string; code: string; message: string; nextAllowedAt?: Date } | null = null;
+  let throttleWaitMs = 0;
+  for (const gate of gates) {
+    if (veto !== null) {
+      trace.push({ gate: gate.name, verdict: 'skipped' });
+      continue;
+    }
+    const verdict = gate.evaluate(ctx);
+    if (verdict.pass) {
+      // Gate que não se aplicava ao canal entra no trace como 'skipped' COM código
+      // (invariante 4): o 'skipped' sem código acima é o outro caso — gate não avaliado
+      // porque um anterior vetou. Passar como 'pass' apagaria a distinção na auditoria.
+      trace.push(
+        verdict.skipped !== undefined
+          ? { gate: gate.name, verdict: 'skipped', code: verdict.skipped }
+          : { gate: gate.name, verdict: 'pass' },
+      );
+      if (verdict.waitMs !== undefined && verdict.waitMs > throttleWaitMs)
+        throttleWaitMs = verdict.waitMs;
+      // Emenda de corpo (F4-05 inject): o corpo a enviar passa a ser o emendado; gates
+      // seguintes na cadeia o veem (ex.: spinning avalia o texto que de fato vai ao lead).
+      if (verdict.amendBody !== undefined) ctx.body = verdict.amendBody;
+    } else {
+      trace.push({
+        gate: gate.name,
+        verdict: 'veto',
+        code: verdict.code,
+        ...(verdict.detail !== undefined ? { detail: verdict.detail } : {}),
+      });
+      veto = {
+        gate: gate.name,
+        code: verdict.code,
+        message: verdict.reason,
+        ...(verdict.nextAllowedAt !== undefined ? { nextAllowedAt: verdict.nextAllowedAt } : {}),
+      };
+    }
+  }
+  return { body: ctx.body, trace, veto, throttleWaitMs };
+}
+
 const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -831,20 +898,72 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // Estado confiável carregado SOB o lock (os contadores de cap/janela de copies
     // são racy — precisam ver o que o worker anterior já efetivou).
     const provider = await loadChannelProvider(client, args.tenantId, args.channelSessionId);
-    const optedOut = args.optedOutThisTurn || (await readStopFlags(client, args.tenantId, args.leadId));
-    const pacingCfg = await loadChannelKnobs(client, args.tenantId, args.channelSessionId, args.log);
+    if (
+      args.meetingDelivery &&
+      (args.meetingDelivery.organizationId !== args.tenantId ||
+        args.meetingDelivery.jobId !== args.jobId)
+    )
+      throw new Error('meet_scope_mismatch');
+    const meetingPolicy = args.meetingDelivery
+      ? await assertMeetingDeliveryPg(client, args.meetingDelivery)
+      : null;
+    if (
+      meetingPolicy &&
+      (meetingPolicy.contactId !== args.leadId ||
+        meetingPolicy.channelSessionId !== args.channelSessionId)
+    )
+      throw new Error('meet_scope_mismatch');
+    if (args.agentOperation) await assertAgentOperationPg(client, args.agentOperation);
+    const replyPolicy = args.approvedReply
+      ? await assertApprovedReplyPg(client, args.approvedReply)
+      : null;
+    if (
+      args.approvedReply &&
+      (args.approvedReply.organizationId !== args.tenantId ||
+        args.approvedReply.jobId !== args.jobId ||
+        replyPolicy?.contact_id !== args.leadId ||
+        replyPolicy?.channel_session_id !== args.channelSessionId ||
+        replyPolicy?.body !== args.body)
+    )
+      throw new Error('reply_scope_mismatch');
+    const optedOut =
+      args.optedOutThisTurn ||
+      (await readStopFlags(
+        client,
+        args.tenantId,
+        args.leadId,
+        meetingPolicy?.humanCommand === true || replyPolicy !== null,
+      ));
+    const pacingCfg = await loadChannelKnobs(
+      client,
+      args.tenantId,
+      args.channelSessionId,
+      args.log,
+    );
     const pacingState = await loadPacingState(client, args.tenantId, args.channelSessionId, {
       now: args.now,
       timezone: pacingCfg.knobs.timezone,
       numberActivatedAt: pacingCfg.numberActivatedAt,
     });
-    const spinningKnobs = await loadSpinningKnobs(client, args.tenantId, args.channelSessionId, args.log);
-    const window = await loadRecentCopies(client, args.tenantId, args.channelSessionId, spinningKnobs.windowSize);
+    const spinningKnobs = await loadSpinningKnobs(
+      client,
+      args.tenantId,
+      args.channelSessionId,
+      args.log,
+    );
+    const window = await loadRecentCopies(
+      client,
+      args.tenantId,
+      args.channelSessionId,
+      spinningKnobs.windowSize,
+    );
     // org de fonte confiável (RunBeforeSendArgs.tenantId = organization_id do row do job) — regra dura nº 1.
     const promise = await loadPromiseTable(client, args.tenantId);
     // Camada semântica (F4-02): a chamada de modelo (async) roda AQUI, sob o lock, e o
     // veredito entra no ctx para o `semanticPromiseGate` (sync) ler. Ausente = camada off.
-    const semanticPromise = args.classifyPromiseSemantic ? await args.classifyPromiseSemantic(args.body) : null;
+    const semanticPromise = args.classifyPromiseSemantic
+      ? await args.classifyPromiseSemantic(args.body)
+      : null;
     // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
     // send_ledger (só conta se há template — sem template o gate é no-op de qualquer forma).
     const disclosure = await loadDisclosureTemplate(client, args.tenantId);
@@ -868,10 +987,18 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       optedOut,
       provider,
       messagingWindow: { lastInboundAt, ...(args.isTemplate === true ? { isTemplate: true } : {}) },
-      pacing: { knobs: pacingCfg.knobs, state: pacingState, crmDailyLimit: args.crmDailyLimit, rng: args.rng },
+      pacing: {
+        knobs: pacingCfg.knobs,
+        state: pacingState,
+        crmDailyLimit: args.crmDailyLimit,
+        rng: args.rng,
+      },
       spinning: { knobs: spinningKnobs, window },
       ...(args.enforceSpinning === false ? { spinningEnforced: false as const } : {}),
-      promise: { table: promise?.table ?? null, ...(promise?.versionId !== undefined ? { versionId: promise.versionId } : {}) },
+      promise: {
+        table: promise?.table ?? null,
+        ...(promise?.versionId !== undefined ? { versionId: promise.versionId } : {}),
+      },
       semanticPromise,
       disclosure: {
         template: disclosure?.body ?? null,
@@ -890,43 +1017,8 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
     };
 
-    const trace: GateTraceEntry[] = [];
-    let veto: { gate: string; code: string; message: string; nextAllowedAt?: Date } | null = null;
-    let throttleWaitMs = 0;
-    for (const gate of gates) {
-      if (veto !== null) {
-        trace.push({ gate: gate.name, verdict: 'skipped' });
-        continue;
-      }
-      const verdict = gate.evaluate(ctx);
-      if (verdict.pass) {
-        // Gate que não se aplicava ao canal entra no trace como 'skipped' COM código
-        // (invariante 4): o 'skipped' sem código acima é o outro caso — gate não avaliado
-        // porque um anterior vetou. Passar como 'pass' apagaria a distinção na auditoria.
-        trace.push(
-          verdict.skipped !== undefined
-            ? { gate: gate.name, verdict: 'skipped', code: verdict.skipped }
-            : { gate: gate.name, verdict: 'pass' },
-        );
-        if (verdict.waitMs !== undefined && verdict.waitMs > throttleWaitMs) throttleWaitMs = verdict.waitMs;
-        // Emenda de corpo (F4-05 inject): o corpo a enviar passa a ser o emendado; gates
-        // seguintes na cadeia o veem (ex.: spinning avalia o texto que de fato vai ao lead).
-        if (verdict.amendBody !== undefined) ctx.body = verdict.amendBody;
-      } else {
-        trace.push({
-          gate: gate.name,
-          verdict: 'veto',
-          code: verdict.code,
-          ...(verdict.detail !== undefined ? { detail: verdict.detail } : {}),
-        });
-        veto = {
-          gate: gate.name,
-          code: verdict.code,
-          message: verdict.reason,
-          ...(verdict.nextAllowedAt !== undefined ? { nextAllowedAt: verdict.nextAllowedAt } : {}),
-        };
-      }
-    }
+    const { body: evaluatedBody, trace, veto, throttleWaitMs } = evaluateBeforeSend(ctx, gates);
+    ctx.body = evaluatedBody;
     emitTrace(args.log, args.channelSessionId, trace);
     // Auditoria DURÁVEL por run (F4-08 acceptance 3): escrita autônoma (pool, fora da tx
     // serializada) — o trace do VETO tem de sobreviver ao rollback abaixo. Nunca bloqueia
@@ -967,7 +1059,11 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // regularizar. Escrita autônoma no pool (fora da tx serializada), como o trace — sobrevive
     // ao rollback do veto e nunca derruba o message-plane (o gate já barrou o envio).
     if (veto !== null && veto.code.startsWith('lgpd_')) {
-      await escalateLgpdVeto(args.pool, { tenantId: args.tenantId, leadId: args.leadId, code: veto.code }, args.log);
+      await escalateLgpdVeto(
+        args.pool,
+        { tenantId: args.tenantId, leadId: args.leadId, code: veto.code },
+        args.log,
+      );
     }
 
     if (veto !== null) {
@@ -980,6 +1076,8 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     if (throttleWaitMs > 0) await (args.sleep ?? realSleep)(throttleWaitMs);
 
     // ctx.body é o corpo FINAL (emendado pelo disclosureGate F4-05 quando aplicável).
+    if (args.approvedReply && ctx.body !== args.body)
+      throw new Error('reply_body_changed_reapproval_required');
     const outcome = await args.send(ctx.body);
 
     // Registra pacing + copy SÓ no envio físico fresco ('sent'). 'already_sent'/'queued'
@@ -1034,9 +1132,16 @@ export async function loadChannelProvider(
   return provider === undefined ? DEFAULT_CHANNEL_PROVIDER : (provider as ChannelProvider);
 }
 
-async function readStopFlags(db: Queryable, organizationId: string, contactId: string): Promise<boolean> {
+async function readStopFlags(
+  db: Queryable,
+  organizationId: string,
+  contactId: string,
+  humanMeetingCommand = false,
+): Promise<boolean> {
   const { rows } = await db.query<{ stopped: boolean }>(
-    'select (is_blocked or force_human) as stopped from contacts where organization_id = $1 and id = $2',
+    humanMeetingCommand
+      ? 'select is_blocked as stopped from contacts where organization_id = $1 and id = $2'
+      : 'select (is_blocked or force_human) as stopped from contacts where organization_id = $1 and id = $2',
     [organizationId, contactId],
   );
   return rows[0]?.stopped === true;
@@ -1125,6 +1230,9 @@ async function rollback(client: pg.PoolClient, cause: unknown): Promise<void> {
   try {
     await client.query('rollback');
   } catch (rollbackErr) {
-    throw new AggregateError([cause, rollbackErr], 'rollback falhou após erro na cadeia before_send');
+    throw new AggregateError(
+      [cause, rollbackErr],
+      'rollback falhou após erro na cadeia before_send',
+    );
   }
 }

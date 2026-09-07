@@ -1,3 +1,6 @@
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
+import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
+import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 /**
  * Inscrição de um contato num fluxo publicado.
  *
@@ -18,6 +21,7 @@ export const ENROLLMENT_LIST_COLUMNS =
 
 export type EnrollFollowupInput = {
   organizationId: string;
+  resolveServiceBoundary?: () => Promise<ServiceBoundary>;
   pointerId: string;
   contactId: string;
   agentId?: string;
@@ -107,6 +111,8 @@ export async function enrollFollowupFlow(
     );
   }
 
+  const boundary = input.resolveServiceBoundary ? await input.resolveServiceBoundary() : await beginServiceAtOrigin(supabase, organizationId, contactId);
+  if (input.resolveServiceBoundary) await assertServiceBoundarySupabase(supabase, boundary);
   const { data: created, error: insErr } = await supabase
     .from("followup_enrollments")
     .insert({
@@ -119,6 +125,8 @@ export async function enrollFollowupFlow(
       // next_eval_at omite: default now() do banco (migration 0147). new Date()
       // do processo fica 17–34 ms à frente e o claim `<= now()` pula o tick.
       agent_id: agentId,
+      service_boundary: boundary,
+      conversation_id: boundary.conversation_id,
     })
     .select(ENROLLMENT_LIST_COLUMNS)
     .single();

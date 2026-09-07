@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/contacts/import — importa contatos de planilha CSV.
  *
@@ -53,6 +54,9 @@ interface ImportSummary {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const supabase = await createClient();
   // spec 13 §4: escrita é agent+ (viewer é read-only), igual ao POST unitário.

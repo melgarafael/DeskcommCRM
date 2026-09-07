@@ -40,6 +40,8 @@ const LEAD = "lead-1";
 const CONVERSA = "conversa-1";
 const CANAL = "canal-1";
 
+const boundary = { organization_id: ORG, contact_id: LEAD, conversation_id: CONVERSA, service_revision: 1, demanda_id: null, demanda_revision: null };
+
 function job(over: Partial<JobRow> = {}): JobRow {
   return {
     id: "job-1",
@@ -47,7 +49,7 @@ function job(over: Partial<JobRow> = {}): JobRow {
     contact_id: LEAD,
     kind: "followup_turn",
     source_event_id: null,
-    payload: {},
+    payload: { service_boundary: boundary },
     status: "running",
     priority: 0,
     run_after: new Date(),
@@ -73,6 +75,7 @@ function fakePool(opts: PoolOpts = {}) {
   // Cada SQL devolve um shape diferente; o dublê não tenta unificar colunas.
   const query = vi.fn(async (sql: string): Promise<{ rows: Array<Record<string, unknown>> }> => {
     consultas.push(sql);
+    if (sql.includes("d.fechada_em::text")) return { rows: [{ ...boundary, status: "open", demanda_fechada_em: null }] };
     // Regra do Postgres: referência DIRETA a coluna inexistente é 42703. A
     // expressão `to_jsonb(cs) ->> 'archived_at'` não referencia coluna nenhuma —
     // lê uma chave de um json, e chave ausente é NULL.
@@ -84,7 +87,7 @@ function fakePool(opts: PoolOpts = {}) {
         {
           id: CONVERSA,
           channel_session_id: CANAL,
-          channel_archived_at: opts.semColuna === true ? null : (opts.archivedAt ?? null),
+          archived_at: opts.semColuna === true ? null : (opts.archivedAt ?? null),
         },
       ],
     };
@@ -174,11 +177,11 @@ describe("followup_turn — canal arquivado", () => {
     });
     const run = handler();
 
-    await expect(run(job(), pool, ctx)).rejects.toThrow(/impossível retomar o contato/i);
+    await expect(run(job(), pool, ctx)).rejects.toThrow(/service_boundary_stale/i);
     expect(runAgentTurn).not.toHaveBeenCalled();
   });
 
-  it("contato sem conversa, org com número: abre a thread e segue o turno", async () => {
+  it("job sem conversa de origem não cria uma thread no disparo", async () => {
     runAgentTurn.mockClear();
     const { pool, query } = fakePool();
     query.mockImplementation(async (sql: string) => {
@@ -189,7 +192,8 @@ describe("followup_turn — canal arquivado", () => {
     });
     const run = handler();
 
-    await run(job(), pool, ctx);
-    expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    await expect(run(job(), pool, ctx)).rejects.toThrow(/service_boundary_stale/);
+    expect(runAgentTurn).not.toHaveBeenCalled();
+    expect(query.mock.calls.some(([sql]) => /insert into conversations/.test(sql))).toBe(false);
   });
 });

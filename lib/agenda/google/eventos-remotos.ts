@@ -61,8 +61,8 @@ export async function listarEventos(
 
   do {
     const parametros = new URLSearchParams({ singleEvents: "true", maxResults: "250" });
-    if (syncToken && paginas === 0) {
-      parametros.set("syncToken", syncToken);
+    if (opcoes.syncToken) {
+      parametros.set("syncToken", opcoes.syncToken);
     } else if (!opcoes.syncToken) {
       // Só no primeiro sync. Nunca junto do syncToken — o Google devolve 400.
       const fim = new Date(opcoes.agora.getTime() + JANELA_INICIAL_DIAS * 24 * 60 * 60 * 1000);

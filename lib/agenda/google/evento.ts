@@ -32,7 +32,7 @@
  *   escrevemos.
  * - `recurrence` — recorrência está fora do escopo (`03-DECISOES.md` §5). Nós
  *   lemos instância expandida; nunca criamos série.
- * - `conferenceData` / `conferenceDataVersion` / `sendUpdates` — não são corpo
+ * - `conferenceDataVersion` / `sendUpdates` — não são corpo
  *   de evento, são parâmetros da requisição. Moram na chamada, não aqui.
  * - `guestsCanSeeOtherGuests` — o padrão do Google já é `true`. Mandar o padrão
  *   é payload sem decisão dentro.
@@ -145,6 +145,11 @@ export interface ParticipanteDoGoogle {
 
 /** O recurso `events` do Google, no recorte que lemos e escrevemos. */
 export interface EventoDoGoogle {
+  conferenceData?: unknown;
+  hangoutLink?: string | null;
+  etag?: string | null;
+  organizer?: ParticipanteDoGoogle | null;
+  originalStartTime?: InstanteDoGoogle | null;
   id?: string | null;
   status?: string | null;
   /** `default | outOfOffice | focusTime | workingLocation | birthday | fromGmail`. */
@@ -248,8 +253,9 @@ function localDoEvento(a: AgendamentoParaGoogle): string | undefined {
     case "whatsapp":
       return detalhes ? `WhatsApp — ${detalhes}` : "WhatsApp";
     case "video_link":
-    case "google_meet":
       return a.meeting_url?.trim() || detalhes || undefined;
+    case "google_meet":
+      return detalhes || undefined;
   }
 }
 

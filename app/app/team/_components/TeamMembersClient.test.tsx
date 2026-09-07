@@ -88,10 +88,14 @@ beforeEach(() => {
 
 describe("TeamMembersClient — seletor de papel (G2-02)", () => {
   it("não-admin não vê seletor de papel (só badge)", async () => {
+    const rows = members();
+    rows[1]!.interface_settings = { preset: "completa", destinos: ["/app/tasks"] };
+    vi.mocked(apiClient.get).mockResolvedValue({ data: rows });
     renderClient({ canManage: false });
     expect(await screen.findByText("agente@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.getByText("agent")).toBeInTheDocument();
+    expect(screen.getByText("Personalizada")).toBeInTheDocument();
   });
 
   it("admin seleciona novo papel → PATCH /api/v1/team/[user_id] com estado otimista", async () => {

@@ -271,6 +271,38 @@
       "type": "frontend",
       "label": "Alertas",
       "sublabel": "a Central (/app/ai/inbox)"
+    },
+    {
+      "id": "transactional_delivery",
+      "lane": "worker",
+      "col": 5,
+      "type": "service",
+      "label": "Entrega transacional Meet",
+      "sublabel": "Corpo determinístico no idioma contato/org; claim/fronteira originais; ponte send existente, sem LLM"
+    },
+    {
+      "id": "meet_intent",
+      "lane": "app",
+      "col": 5,
+      "type": "service",
+      "label": "Intenção Meet no compromisso",
+      "sublabel": "Booking no atendimento ou clique humano explícito; ready + intenção válida agenda entrega"
+    },
+    {
+      "id": "reply_review",
+      "lane": "humano",
+      "col": 6,
+      "type": "frontend",
+      "label": "Sugestão para revisão",
+      "sublabel": "Mesma configuração e core; texto editável e feedback por atendimento; propostas exigem autorização própria"
+    },
+    {
+      "id": "approved_reply",
+      "lane": "worker",
+      "col": 6,
+      "type": "service",
+      "label": "Entrega da resposta aprovada",
+      "sublabel": "Texto autorizado, fronteira e aquisição originais; recibo e liquidação recuperáveis, sem novo LLM"
     }
   ],
   "edges": [
@@ -610,6 +642,69 @@
         692,
         1565
       ]
+    },
+    {
+      "id": "meet-existing-gates",
+      "from": "transactional_delivery",
+      "to": "gates",
+      "label": "beforeSend canônico → ledger → sink; callback cercado",
+      "route": "drop"
+    },
+    {
+      "id": "meet-delivery-notice",
+      "from": "transactional_delivery",
+      "to": "inbox",
+      "label": "stale/falha pede nova ação humana",
+      "route": "drop"
+    },
+    {
+      "id": "booking-meet-intent",
+      "from": "turn",
+      "to": "meet_intent",
+      "label": "booking com contexto interno do job",
+      "route": "drop"
+    },
+    {
+      "id": "meet-intent-job",
+      "from": "meet_intent",
+      "to": "transactional_delivery",
+      "label": "ready + intenção ativa, job sem URL/corpo",
+      "route": "drop"
+    },
+    {
+      "id": "meet-job-receipt",
+      "from": "transactional_delivery",
+      "to": "meet_intent",
+      "label": "settle cercado; ready não significa sent",
+      "route": "drop"
+    },
+    {
+      "id": "turn-reply-review",
+      "from": "turn",
+      "to": "reply_review",
+      "label": "modo assistido ou sugestão humana executa prévia sem efeitos externos",
+      "route": "drop"
+    },
+    {
+      "id": "review-approved-reply",
+      "from": "reply_review",
+      "to": "approved_reply",
+      "label": "aprovação explícita do texto e revisão atual cria intenção única",
+      "route": "drop"
+    },
+    {
+      "id": "approved-reply-gates",
+      "from": "approved_reply",
+      "to": "gates",
+      "label": "beforeSend canônico, ledger e envio na mesma cadeia",
+      "route": "drop"
+    },
+    {
+      "id": "approved-reply-receipt",
+      "from": "approved_reply",
+      "to": "reply_review",
+      "label": "envio, falha ou contexto obsoleto aparecem na conversa",
+      "route": "drop"
     }
   ],
   "cards": [

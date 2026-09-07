@@ -4,6 +4,7 @@
  * lead.tag_added/contact.tag_added com metadata.caused_by_rule — é a ação, e
  * não um handler reusado, então é ela quem carrega o anti-loop.
  */
+import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 
@@ -11,7 +12,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   const tags = Array.isArray(config.tags) ? config.tags.map(String) : [];
   if (!tags.length) return { type: "add_tag", status: "skipped", detail: { reason: "no_tags" } };
 
-  const lead = ctx.context.lead as { id: string; tags?: string[] } | undefined;
+  const lead = ctx.context.lead as { id: string; contact_id?: string; tags?: string[] } | undefined;
   const contact = ctx.context.contact as { id: string; tags?: string[] } | undefined;
   const target = lead
     ? { table: "crm_leads", row: lead, event: "lead.tag_added", kind: "crm_lead" }
@@ -24,6 +25,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   const added = tags.filter((t) => !prev.includes(t));
   if (!added.length) return { type: "add_tag", status: "success", detail: { added: [] } };
 
+  const contactId = lead?.contact_id ?? contact?.id;
+  const serviceOrigin = contactId
+    ? await originFromAutomationEvent(ctx, contactId)
+    : null;
   const merged = [...prev, ...added];
   const { error } = await ctx.admin
     .from(target.table)
@@ -36,7 +41,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     p_event_type: target.event,
     p_entity_kind: target.kind,
     p_entity_id: target.row.id,
-    p_payload: { added_tags: added, tags: merged },
+    p_payload: { added_tags: added, tags: merged, service_origin: serviceOrigin },
     p_metadata: { caused_by_rule: ctx.ruleId },
     p_organization_id: ctx.organizationId,
   });

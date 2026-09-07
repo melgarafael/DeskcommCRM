@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Responsáveis por canal e conexão recuperável",
+    "subtitle": "Capacidade global, origem preservada e falha visível",
+    "output": "roteamento-por-canal.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "humano",
+      "label": "Pessoa"
+    },
+    {
+      "id": "app",
+      "label": "Aplicativo"
+    },
+    {
+      "id": "db",
+      "label": "Banco"
+    }
+  ],
+  "mainPath": [
+    "editor",
+    "policy",
+    "loader",
+    "claim",
+    "notice"
+  ],
+  "nodes": [
+    {
+      "id": "editor",
+      "lane": "humano",
+      "col": 0,
+      "type": "ui",
+      "label": "Atendimento: responsáveis por número"
+    },
+    {
+      "id": "policy",
+      "lane": "db",
+      "col": 1,
+      "type": "database",
+      "label": "Policy + membros ativos por organização"
+    },
+    {
+      "id": "loader",
+      "lane": "app",
+      "col": 2,
+      "type": "service",
+      "label": "Escopo do canal; carga global e rodízio local"
+    },
+    {
+      "id": "claim",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Advisories → canal → conversa; claim atômico"
+    },
+    {
+      "id": "notice",
+      "lane": "app",
+      "col": 4,
+      "type": "service",
+      "label": "Fila durável e aviso acionável"
+    },
+    {
+      "id": "connect",
+      "lane": "humano",
+      "col": 0,
+      "type": "ui",
+      "label": "Conectar / reparar número"
+    },
+    {
+      "id": "receipt",
+      "lane": "db",
+      "col": 1,
+      "type": "database",
+      "label": "Reserva org-owned e recibo cercado"
+    },
+    {
+      "id": "remote",
+      "lane": "app",
+      "col": 2,
+      "type": "service",
+      "label": "WAHA: identidade e pós-condição"
+    },
+    {
+      "id": "finish",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Confirmar ou preservar FAILED para retry da mesma identidade"
+    }
+  ],
+  "edges": [
+    {
+      "from": "editor",
+      "to": "policy",
+      "label": "Salvar lista ou reset explícito"
+    },
+    {
+      "from": "policy",
+      "to": "loader",
+      "label": "Elegibilidade restrita"
+    },
+    {
+      "from": "loader",
+      "to": "claim",
+      "label": "Candidato e fatos persistidos"
+    },
+    {
+      "from": "claim",
+      "to": "notice",
+      "label": "Sem vaga: retry + aviso"
+    },
+    {
+      "from": "notice",
+      "to": "editor",
+      "label": "Ajustar equipe e retomar"
+    },
+    {
+      "from": "claim",
+      "to": "editor",
+      "label": "Atribuição observada e aviso resolvido"
+    },
+    {
+      "from": "connect",
+      "to": "receipt",
+      "label": "Idempotency-Key"
+    },
+    {
+      "from": "receipt",
+      "to": "remote",
+      "label": "Criação/início confirmados"
+    },
+    {
+      "from": "remote",
+      "to": "finish",
+      "label": "Pós-condição e lease"
+    },
+    {
+      "from": "finish",
+      "to": "connect",
+      "label": "Estado visível ou reparo"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET/PUT /api/v1/pipelines/[id]/agent-mapping — quem diz ao agente onde ficam
  * as etapas DESTE funil.
@@ -168,6 +169,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 }
 
 export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "pipeline_agent_mapping" });
   if (!authz.ok) return authz.response;

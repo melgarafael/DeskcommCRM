@@ -13,6 +13,7 @@
  * sem "ativar", a verificação fica INALCANÇÁVEL; sem "desativar", ligá-la é uma
  * porta sem volta.
  */
+import { supportWriteError } from "@/lib/impersonate/support";
 import { revalidatePath } from "next/cache";
 
 import { audit } from "@/lib/audit";
@@ -35,6 +36,7 @@ export type ResultadoDaPolitica = { ok: true } | { ok: false; erro: string };
 export async function definirExigenciaDeMfa(exigir: boolean): Promise<ResultadoDaPolitica> {
   const user = await loadAuthUser();
   if (!user) return { ok: false, erro: "Sua sessão expirou. Entre de novo." };
+  if (supportWriteError(user.support)) return { ok: false, erro: "Acompanhamento somente leitura ou encerrado." };
   const org = await resolveActiveOrg(user);
   if (!org) return { ok: false, erro: "Nenhuma empresa ativa." };
 
@@ -89,6 +91,7 @@ export async function definirExigenciaDeMfa(exigir: boolean): Promise<ResultadoD
 export async function desativarMfaDaConta(): Promise<ResultadoDaPolitica> {
   const user = await loadAuthUser();
   if (!user) return { ok: false, erro: "Sua sessão expirou. Entre de novo." };
+  if (supportWriteError(user.support)) return { ok: false, erro: "Acompanhamento somente leitura ou encerrado." };
   const org = await resolveActiveOrg(user);
 
   if (!(await isMfaEnrolled())) return { ok: true };

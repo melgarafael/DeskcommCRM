@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followup-flows/:id/publish — valida o draft_graph
  * (validateFlowForPublish, Task 2.2) e, se válido, publica atomicamente via
@@ -28,6 +29,9 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {
@@ -59,8 +63,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   //
   // Kind entra neste conjunto só DEPOIS de ter motor de enrollment vivo:
   // `manual`/`webhook` (POST enroll + ação de regra), `silence` (silence-sweep),
-  // `stage_change` (gatilho-etapa) e `case_opened` (gatilho-caso).
-  const KINDS_COM_MOTOR = new Set(["manual", "webhook", "silence", "stage_change", "case_opened"]);
+  // `stage_change` (gatilho-etapa), `case_opened` (gatilho-caso) e
+  // `appointment_no_show` (followup-gatilho-presenca.v1, confirmação humana).
+  const KINDS_COM_MOTOR = new Set(["manual", "webhook", "silence", "stage_change", "case_opened", "appointment_no_show"]);
   const trigger = (pointer.trigger_config ?? { kind: "manual" }) as {
     kind?: string;
     params?: { stage_id?: string };

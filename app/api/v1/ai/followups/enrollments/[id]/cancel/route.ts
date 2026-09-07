@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followups/enrollments/:id/cancel (manager+) — encerra um
  *   enrollment VIVO (active|waiting_reply|paused_handoff) manualmente pela
@@ -28,6 +29,9 @@ const LIVE_STATUSES = ["active", "waiting_reply", "paused_handoff", "paused_manu
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {

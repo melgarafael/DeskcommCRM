@@ -99,7 +99,14 @@ function tabelasComDadoDePessoa(): string[] {
     .filter(Boolean);
 }
 
-/** Tabelas que a função REALMENTE toca — lida do corpo no banco, não do arquivo. */
+/**
+ * Tabelas tocadas pela cascata e pelo redator0227 instalado em contacts.
+ * A cobertura do trigger vem do corpo REAL no banco, nunca de uma isenção da tabela.
+ * Prova de efeito: autonomia-authority.test.ts, "redação limpa todos os corpos...".
+ * A integração da RPC canônica e o controle de vizinho vivem em
+ * comunidade-integracao.test.ts, "mutex e cascata0229 alcançam drafts0227...".
+ * Outros triggers legados permanecem sujeitos ao censo e à catraca existentes.
+ */
 function tabelasNaCascata(): string[] {
   return sql(`
     select distinct m[1]
@@ -108,6 +115,21 @@ function tabelasNaCascata(): string[] {
              pg_get_functiondef(p.oid),
              '(?:update|delete from)\\s+(?:public\\.)?"?([a-z_]+)"?', 'gi') m
      where p.proname = 'fn_lgpd_cascade_redact_contact'
+        or (
+          p.pronamespace = 'public'::regnamespace
+          and p.proname = 'fn_reply_redact'
+          and exists (
+            select 1 from pg_trigger t
+             where t.tgfoid = p.oid
+               and t.tgrelid = 'public.contacts'::regclass
+               and t.tgname = 'trg_reply_redact'
+               and not t.tgisinternal
+               and t.tgenabled in ('O', 'A')
+               and t.tgtype = 17 -- AFTER UPDATE FOR EACH ROW
+               and (select attnum from pg_attribute
+                     where attrelid = t.tgrelid and attname = 'is_anonymized') = any(t.tgattr)
+          )
+        )
      order by 1;
   `)
     .trim()
@@ -130,6 +152,10 @@ describe("LGPD: a cascata alcança toda tabela que guarda dado de pessoa", () =>
     const naCascata = tabelasNaCascata();
     expect(naCascata.length).toBeGreaterThanOrEqual(5);
     expect(naCascata).toContain("contacts");
+  });
+
+  it("CONTROLE: o redator0227 ativo alcança ai_reply_drafts pelo corpo instalado", () => {
+    expect(tabelasNaCascata()).toContain("ai_reply_drafts");
   });
 
   it("nenhuma tabela NOVA guarda dado de pessoa fora da cascata", () => {

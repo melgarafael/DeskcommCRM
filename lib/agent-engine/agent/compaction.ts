@@ -29,7 +29,11 @@ import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
-import { countPayloadTokens, type LeadContext, type LeadContextMessage } from '../edge/crm/get-lead-context';
+import {
+  countPayloadTokens,
+  type LeadContext,
+  type LeadContextMessage,
+} from '../edge/crm/get-lead-context';
 import { applySaveLeadNote } from './lead-notes';
 
 /** Knobs da compaction (env COMPACTION_*; defaults conservadores no .env.example). */
@@ -74,9 +78,7 @@ export const compactionOutputSchema = z.object({
 export type CompactionOutput = z.infer<typeof compactionOutputSchema>;
 
 const flushOutputSchema = z.object({
-  notes: z
-    .array(z.object({ headline: z.string().min(1), body: z.string().min(1) }))
-    .default([]),
+  notes: z.array(z.object({ headline: z.string().min(1), body: z.string().min(1) })).default([]),
 });
 
 /** Extrai o JSON do texto do modelo (tolerante a cerca de código/prosa) SEM ecoar o texto (PII). */
@@ -101,7 +103,8 @@ export function renderCompactedSummary(c: CompactionOutput): string {
   if (c.stage) parts.push(`Estágio do funil: ${c.stage}.`);
   if (c.commitments.length > 0) parts.push(`Compromissos: ${c.commitments.join('; ')}.`);
   if (c.objections.length > 0) parts.push(`Objeções do lead: ${c.objections.join('; ')}.`);
-  if (c.personal_data.length > 0) parts.push(`Dados pessoais citados: ${c.personal_data.join('; ')}.`);
+  if (c.personal_data.length > 0)
+    parts.push(`Dados pessoais citados: ${c.personal_data.join('; ')}.`);
   return parts.length > 0 ? parts.join('\n') : '—';
 }
 
@@ -110,7 +113,10 @@ export function renderCompactedSummary(c: CompactionOutput): string {
  * (a cauda recente é a que importa; o que sai foi absorvido pelo resumo compactado).
  * Função pura e determinística — o custo é medido pela mesma heurística chars/3,5 do resto.
  */
-export function trimTranscriptToBudget(messages: LeadContextMessage[], maxTokens: number): LeadContextMessage[] {
+export function trimTranscriptToBudget(
+  messages: LeadContextMessage[],
+  maxTokens: number,
+): LeadContextMessage[] {
   let tail = messages;
   while (tail.length > 0 && countPayloadTokens(JSON.stringify(tail)) > maxTokens) {
     tail = tail.slice(1);
@@ -118,7 +124,11 @@ export function trimTranscriptToBudget(messages: LeadContextMessage[], maxTokens
   return tail;
 }
 
-function buildTranscriptMessage(context: LeadContext, previousSummary: string, instruction: string): string {
+function buildTranscriptMessage(
+  context: LeadContext,
+  previousSummary: string,
+  instruction: string,
+): string {
   return [
     '## Resumo acumulado até aqui',
     previousSummary.trim() || '—',
@@ -139,9 +149,19 @@ function buildTranscriptMessage(context: LeadContext, previousSummary: string, i
 async function runFlush(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
-  ids: { tenantId: string; leadId: string; jobId?: string },
-  args: { context: LeadContext; previousSummary: string; model?: string; notesIndexMaxTokens: number },
-  deps: { registry?: ProviderRegistry; log: Logger },
+  ids: { tenantId: string; leadId: string | null; jobId?: string },
+  args: {
+    context: LeadContext;
+    previousSummary: string;
+    model?: string;
+    llmOverride?: LlmResolveOverride;
+    notesIndexMaxTokens: number;
+  },
+  deps: {
+    registry?: ProviderRegistry;
+    log: Logger;
+    noteSink?: (note: { headline: string; body: string }) => void;
+  },
 ): Promise<void> {
   const call = await runModelCall(
     db,
@@ -151,8 +171,14 @@ async function runFlush(
       leadId: ids.leadId,
       ...(ids.jobId !== undefined ? { jobId: ids.jobId } : {}),
       purpose: 'flush',
+      ...(args.llmOverride ? { llmOverride: args.llmOverride } : {}),
       ...(args.model !== undefined ? { model: args.model } : {}),
-      messages: [{ role: 'user', content: buildTranscriptMessage(args.context, args.previousSummary, FLUSH_INSTRUCTION) }],
+      messages: [
+        {
+          role: 'user',
+          content: buildTranscriptMessage(args.context, args.previousSummary, FLUSH_INSTRUCTION),
+        },
+      ],
     },
     { registry: deps.registry, log: deps.log },
   );
@@ -163,12 +189,24 @@ async function runFlush(
   } catch {
     // Aux batch malformado NÃO é incidente do turno: loga sem PII e segue (a compaction
     // ainda roda; a memória durável simplesmente não ganha notas neste turno).
-    deps.log.warn('flush pré-compaction: saída do modelo auxiliar sem JSON de notas — nenhuma nota gravada');
+    deps.log.warn(
+      'flush pré-compaction: saída do modelo auxiliar sem JSON de notas — nenhuma nota gravada',
+    );
     return;
   }
 
   for (const note of notes) {
-    const res = await applySaveLeadNote(db, ids, { budgetTokens: args.notesIndexMaxTokens }, note);
+    if (deps.noteSink) {
+      deps.noteSink(note);
+      continue;
+    }
+    if (!ids.leadId) throw new Error('compaction_note_sink_required');
+    const res = await applySaveLeadNote(
+      db,
+      { ...ids, leadId: ids.leadId },
+      { budgetTokens: args.notesIndexMaxTokens },
+      note,
+    );
     if (!res.ok) {
       // ponytail: hard cap do índice (F3-05) no flush automático — loga LOUD e segue
       // (best-effort). Se saturar recorrentemente, subir COMPACTION para consolidar via
@@ -190,14 +228,18 @@ async function runFlush(
 export async function maybeCompact(
   db: pg.Pool,
   cfg: LlmEdgeConfig,
-  ids: { tenantId: string; leadId: string; jobId?: string },
+  ids: { tenantId: string; leadId: string | null; jobId?: string },
   args: {
     context: LeadContext;
     previousSummary: string;
     knobs: CompactionKnobs & { llmOverride?: LlmResolveOverride };
     notesIndexMaxTokens: number;
   },
-  deps: { registry?: ProviderRegistry; log: Logger },
+  deps: {
+    registry?: ProviderRegistry;
+    log: Logger;
+    noteSink?: (note: { headline: string; body: string }) => void;
+  },
 ): Promise<CompactionOutput | null> {
   if (args.context.messages.length < args.knobs.triggerMessages) {
     return null;
@@ -213,6 +255,7 @@ export async function maybeCompact(
       context: args.context,
       previousSummary: args.previousSummary,
       ...(args.knobs.model !== undefined ? { model: args.knobs.model } : {}),
+      ...(args.knobs.llmOverride ? { llmOverride: args.knobs.llmOverride } : {}),
       notesIndexMaxTokens: args.notesIndexMaxTokens,
     },
     deps,
@@ -231,7 +274,14 @@ export async function maybeCompact(
       // publicado — ver `aux-model-args.ts`.
       ...(args.knobs.llmOverride !== undefined ? { llmOverride: args.knobs.llmOverride } : {}),
       messages: [
-        { role: 'user', content: buildTranscriptMessage(args.context, args.previousSummary, COMPACTION_INSTRUCTION) },
+        {
+          role: 'user',
+          content: buildTranscriptMessage(
+            args.context,
+            args.previousSummary,
+            COMPACTION_INSTRUCTION,
+          ),
+        },
       ],
     },
     { registry: deps.registry, log: deps.log },
@@ -240,7 +290,9 @@ export async function maybeCompact(
   try {
     return compactionOutputSchema.parse(extractJson(call.result.text));
   } catch {
-    deps.log.warn('compaction: saída do modelo auxiliar sem JSON estruturado — turno segue com transcript cru');
+    deps.log.warn(
+      'compaction: saída do modelo auxiliar sem JSON estruturado — turno segue com transcript cru',
+    );
     return null;
   }
 }

@@ -144,6 +144,7 @@ function coletaOk(): ResultadoDaConsulta {
     fusoSuposto: false,
     fontesDefasadas: [],
     agendaExternaNuncaLida: false,
+    googleCoberturaParcial: false,
   };
 }
 
@@ -204,6 +205,10 @@ function cliente(): SupabaseClient {
     }),
     rpc: async (fn: string, args: Linha) => {
       banco.rpc.push({ fn, args });
+      if(fn==="fn_appointment_change") {
+        expect(args.p_org).toBe(ORG);expect(args.p_id).toBe(AGENDAMENTO);
+        return {data:{...banco.agendamento,...args.p_patch as Linha,revision:2},error:null};
+      }
       return { data: null, error: null };
     },
   } as unknown as SupabaseClient;

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/pipelines/[id]/stages — cria uma etapa no fim do funil.
  *
@@ -37,6 +38,9 @@ interface RouteCtx {
 const bodySchema = z.object({ name: z.string().min(1).max(80) }).strict();
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "crm_stages" });
   if (!authz.ok) return authz.response;

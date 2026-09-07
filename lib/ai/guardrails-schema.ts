@@ -106,6 +106,8 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
 
 export const agentPatchSchema = z
   .object({
+    operation_mode: z.enum(["automatic", "assisted"]).optional(),
+    paused_at: z.iso.datetime().nullable().optional(),
     name: z.string().min(2).max(120).optional(),
     description: z.string().max(500).nullable().optional(),
     is_active: z.boolean().optional(),
@@ -141,7 +143,10 @@ export const SYSTEM_PROMPT_PLACEHOLDERS: Array<{ token: string; description: str
   { token: "{{vocabulary.lead}}", description: "Vocabulário do tenant para 'lead' (ex: cliente)" },
   { token: "{{vocabulary.deal}}", description: "Vocabulário do tenant para 'deal' (ex: pedido)" },
   { token: "{{vocabulary.won}}", description: "Vocabulário do tenant para 'won' (ex: pago)" },
-  { token: "{{vocabulary.lost}}", description: "Vocabulário do tenant para 'lost' (ex: cancelado)" },
+  {
+    token: "{{vocabulary.lost}}",
+    description: "Vocabulário do tenant para 'lost' (ex: cancelado)",
+  },
   { token: "{{contact_name}}", description: "Nome do contato em atendimento" },
   { token: "{{contact_locale}}", description: "Locale do contato (ex: pt-BR)" },
   { token: "{{recent_messages}}", description: "Últimas N mensagens da conversa" },

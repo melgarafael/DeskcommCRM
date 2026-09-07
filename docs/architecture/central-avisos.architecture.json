@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Central de avisos com contexto",
+    "subtitle": "Abrir não resolve; autorização por registro decide o destino",
+    "output": "central-avisos.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "app",
+      "label": "Aplicativo"
+    },
+    {
+      "id": "db",
+      "label": "Banco"
+    },
+    {
+      "id": "humano",
+      "label": "Pessoa"
+    }
+  ],
+  "mainPath": [
+    "produtores",
+    "central",
+    "projecao",
+    "ui",
+    "contexto"
+  ],
+  "nodes": [
+    {
+      "id": "produtores",
+      "lane": "app",
+      "col": 0,
+      "type": "service",
+      "label": "Runtime, canal, follow-up e cron → agent_inbox_items"
+    },
+    {
+      "id": "central",
+      "lane": "app",
+      "col": 1,
+      "type": "service",
+      "label": "GET /api/v1/ai/inbox: cookie agent+ e org ativa"
+    },
+    {
+      "id": "rls",
+      "lane": "db",
+      "col": 2,
+      "type": "database",
+      "label": "Client autenticado: RLS por registro + organização"
+    },
+    {
+      "id": "projecao",
+      "lane": "app",
+      "col": 3,
+      "type": "service",
+      "label": "inbox-destino: catálogo, lote e fallback"
+    },
+    {
+      "id": "ui",
+      "lane": "humano",
+      "col": 4,
+      "type": "ui",
+      "label": "AgentInboxList: contexto ou orientação"
+    },
+    {
+      "id": "contexto",
+      "lane": "humano",
+      "col": 5,
+      "type": "ui",
+      "label": "Conversa / contato / negócio / configuração real"
+    },
+    {
+      "id": "status",
+      "lane": "app",
+      "col": 6,
+      "type": "service",
+      "label": "PATCH separado: resolver ou reabrir + auditoria"
+    }
+  ],
+  "edges": [
+    {
+      "from": "produtores",
+      "to": "central",
+      "label": "listagem filtrada por org"
+    },
+    {
+      "from": "central",
+      "to": "rls",
+      "label": "consulta em lote com JWT"
+    },
+    {
+      "from": "rls",
+      "to": "projecao",
+      "label": "apenas IDs autorizados"
+    },
+    {
+      "from": "central",
+      "to": "projecao",
+      "label": "papel efetivo e referências"
+    },
+    {
+      "from": "projecao",
+      "to": "ui",
+      "label": "destination validado; erro sem URL"
+    },
+    {
+      "from": "ui",
+      "to": "contexto",
+      "label": "Link sem PATCH"
+    },
+    {
+      "from": "contexto",
+      "to": "ui",
+      "label": "voltar: aviso ainda aberto"
+    },
+    {
+      "from": "ui",
+      "to": "status",
+      "label": "decisão humana explícita"
+    },
+    {
+      "from": "status",
+      "to": "central",
+      "label": "reconsultar abertos/resolvidos"
+    }
+  ]
+}

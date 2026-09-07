@@ -1,3 +1,5 @@
+import { StaleServiceBoundaryError, type ServiceBoundary } from "@/lib/atendimento/fronteira";
+import { assertServiceBoundarySupabase, observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
@@ -45,6 +47,7 @@ export async function moverLeadParaEtapaDeHandoff(
     leadId: string;
     /** `HandoffReason` de `lib/ai/handoff/orchestrator.ts` — string aqui para não acoplar os dois módulos. */
     reason: string;
+    serviceBoundary?: ServiceBoundary;
   },
 ): Promise<ResultadoDoMovimentoDeHandoff> {
   const { data: lead, error: erroLead } = await admin
@@ -110,6 +113,13 @@ export async function moverLeadParaEtapaDeHandoff(
     .eq("id", leadRow.stage_id)
     .maybeSingle();
 
+  if (input.serviceBoundary) {
+    if (input.serviceBoundary.organization_id !== input.organizationId || input.serviceBoundary.contact_id !== leadRow.contact_id) throw new StaleServiceBoundaryError();
+    await assertServiceBoundarySupabase(admin, input.serviceBoundary);
+  }
+  const serviceOrigin = input.serviceBoundary
+    ? { kind: "continuation" as const, boundary: input.serviceBoundary }
+    : await observeServiceOrigin(admin, input.organizationId, leadRow.contact_id);
   const { data: atualizadas, error: erroUpdate } = await admin
     .from("crm_leads")
     .update({ stage_id: etapaRow.id })
@@ -159,6 +169,7 @@ export async function moverLeadParaEtapaDeHandoff(
     p_entity_kind: "crm_lead",
     p_entity_id: leadRow.id,
     p_payload: {
+      service_origin: serviceOrigin,
       pipeline_id: leadRow.pipeline_id,
       from_stage_id: leadRow.stage_id,
       to_stage_id: etapaRow.id,

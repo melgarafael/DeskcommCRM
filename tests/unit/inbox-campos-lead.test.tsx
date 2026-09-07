@@ -147,3 +147,5 @@ describe("painel do inbox — campos do lead", () => {
     expect(secao.textContent).not.toMatch(/sem leads/i);
   });
 });
+
+vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => ({ user: { support: null } }) }));

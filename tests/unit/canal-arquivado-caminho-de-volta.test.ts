@@ -151,6 +151,9 @@ function makeDb(opts: DbOpts = {}): Registro {
       this.filtros.push([col, val]);
       return this;
     }
+    in(col: string, val: unknown[]): this {
+      this.filtros.push([col, val]); return this;
+    }
     is(col: string, val: unknown): this {
       this.filtros.push([col, val]);
       return this;
@@ -183,7 +186,7 @@ function makeDb(opts: DbOpts = {}): Registro {
     }
 
     private casam(): Linha[] {
-      return linhas.filter((l) => this.filtros.every(([c, v]) => (l[c] ?? null) === v));
+      return linhas.filter((l) => this.filtros.every(([c, v]) => Array.isArray(v) ? v.includes(l[c]) : (l[c] ?? null) === v));
     }
 
     private executar(): { data: unknown; error: unknown } {
@@ -223,6 +226,25 @@ function makeDb(opts: DbOpts = {}): Registro {
   }
 
   const client = {
+    rpc: async (fn: string, args: Linha) => {
+      if (fn === "fn_reserve_channel_connection") {
+        let channel = linhas.find(l => l.organization_id === args.p_org && l.waha_session_name === NOME_SESSAO);
+        if (!channel) {
+          channel = canalQr({ id: CANAL, status: "STARTING", phone_number: null }); linhas.push(channel);
+          registro.escritas.push({ tipo: "insert", table: "channel_sessions", patch: channel, recusada: false });
+        }
+        return { data: { replay: false, channel: { ...channel }, receipt_id: CANAL, lease_token: USER }, error: null };
+      }
+      if (fn === "fn_finish_channel_connection") {
+        if (args.p_status === "remote_created") return { data: {}, error: null };
+        const channel = linhas.find(l => l.organization_id === args.p_org && l.id === CANAL);
+        if (!channel) return { data: null, error: { message: "missing" } };
+        if (channel.archived_at) channel.phone_number = null;
+        Object.assign(channel, { status: args.p_status, archived_at: null });
+        return { data: { ...channel }, error: null };
+      }
+      return { data: null, error: null };
+    },
     from: (table: string) => ({
       select: (cols?: string) => new Q(table, "select").select(cols),
       update: (patch: Linha) => new Q(table, "update", patch),
@@ -254,6 +276,8 @@ function authOk(): void {
 
 function transporteOk() {
   const cliente = {
+    createSession: vi.fn(async (name: string) => ({ created: false, session: { name, status: "STOPPED" } })),
+    startExistingSession: vi.fn(async (name: string) => ({ name, status: "STARTING" })),
     stopSession: vi.fn(async () => undefined),
     logoutSession: vi.fn(async () => undefined),
     startSession: vi.fn(async () => ({ status: "STARTING" })),
@@ -489,9 +513,9 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
 
 describe("POST /api/v1/onboarding/whatsapp/session — retomar o pareamento ressuscita", () => {
   const req = () =>
-    new Request("http://localhost/api/v1/onboarding/whatsapp/session", { method: "POST" });
+    new Request("http://localhost/api/v1/onboarding/whatsapp/session", { method: "POST", headers: { "Idempotency-Key": USER } });
 
-  it("⭐ linha arquivada com o mesmo nome de sessão volta ATIVA antes de subir o transporte", async () => {
+  it("⭐ linha arquivada com o mesmo nome de sessão volta ATIVA após confirmar o transporte", async () => {
     authOk();
     const db = makeDb({
       sessions: [canalQr({ archived_at: ARQUIVADO_EM, status: "STOPPED" })],
@@ -506,7 +530,7 @@ describe("POST /api/v1/onboarding/whatsapp/session — retomar o pareamento ress
     // O número só se sabe depois do escaneamento — e o health check só preenche
     // o campo quando ele está vazio, então guardar o antigo o congelaria errado.
     expect(db.linhas[0]?.phone_number).toBeNull();
-    expect(waha.startSession).toHaveBeenCalledWith(NOME_SESSAO);
+    expect(waha.startExistingSession).toHaveBeenCalledWith(NOME_SESSAO);
   });
 
   it("linha ATIVA é reaproveitada sem escrita nenhuma", async () => {
@@ -640,7 +664,7 @@ describe("toda ressurreição é auditada — nenhuma nasce muda", () => {
       chamar: async () => {
         const { POST } = await import("@/app/api/v1/onboarding/whatsapp/session/route");
         return POST(
-          new Request("http://localhost/api/v1/onboarding/whatsapp/session", { method: "POST" }),
+          new Request("http://localhost/api/v1/onboarding/whatsapp/session", { method: "POST", headers: { "Idempotency-Key": USER } }),
         );
       },
     },

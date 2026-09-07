@@ -1,10 +1,14 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
+import { createTenantSchema } from "@/lib/schemas/tenant-creation";
+import { issueInvite } from "@/lib/auth/issue-invite";
+import { mfaEmDivida } from "@/lib/auth/server";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -15,19 +19,6 @@ const querySchema = z.object({
   status: z.enum(["active", "suspended", "onboarding", "redacted"]).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
-});
-
-const createSchema = z.object({
-  display_name: z.string().min(2).max(120),
-  slug: z
-    .string()
-    .min(2)
-    .max(40)
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
-  legal_name: z.string().min(2).max(255).optional(),
-  cnpj: z.string().optional(),
-  plan: z.enum(["standard", "pro", "enterprise"]).default("standard"),
-  owner_email: z.string().email(),
 });
 
 // ---------------------------------------------------------------------------
@@ -65,9 +56,7 @@ export async function GET(req: NextRequest) {
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
-  const parsed = querySchema.safeParse(
-    Object.fromEntries(req.nextUrl.searchParams.entries()),
-  );
+  const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
   if (!parsed.success) {
     return fail("validation_error", "Invalid query params", 400, {
       requestId,
@@ -108,9 +97,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (q) {
-    query = query.or(
-      `display_name.ilike.%${q}%,slug::text.ilike.%${q}%,cnpj.ilike.%${q}%`,
-    );
+    query = query.or(`display_name.ilike.%${q}%,slug::text.ilike.%${q}%,cnpj.ilike.%${q}%`);
   }
 
   if (cursorPayload) {
@@ -164,6 +151,9 @@ export async function GET(req: NextRequest) {
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
@@ -173,6 +163,18 @@ export async function POST(req: NextRequest) {
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
+  if (adminCtx.platformAdmin.scope !== "full") {
+    return fail("forbidden", "Seu acesso de suporte não permite criar organizações", 403, {
+      requestId,
+    });
+  }
+  if (await mfaEmDivida())
+    return fail("mfa_required", "Confirme a verificação em duas etapas", 403, { requestId });
+  const key = req.headers.get("Idempotency-Key") ?? randomUUID();
+  if (!z.string().uuid().safeParse(key).success) {
+    return fail("validation_error", "Idempotency-Key deve ser UUID", 400, { requestId });
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -180,7 +182,7 @@ export async function POST(req: NextRequest) {
     return fail("validation_error", "Invalid JSON body", 400, { requestId });
   }
 
-  const parsed = createSchema.safeParse(body);
+  const parsed = createTenantSchema.safeParse(body);
   if (!parsed.success) {
     return fail("validation_error", "Invalid request body", 400, {
       requestId,
@@ -188,58 +190,64 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { display_name, slug, legal_name, cnpj, plan, owner_email } = parsed.data;
   const admin = createAdminClient();
-
-  const { data: org, error: insertError } = await admin
-    .from("organizations")
-    .insert({
-      display_name,
-      slug,
-      legal_name: legal_name ?? null,
-      cnpj: cnpj ?? null,
-      // A check constraint de organizations.status não tem 'onboarding' — o
-      // marcador de onboarding é onboarded_at null (mesmo modelo do signup).
-      status: "active",
-      settings: { plan },
-      created_by: adminCtx.user.id,
-    })
-    .select("id, slug, display_name")
-    .single();
-
-  if (insertError) {
-    if (insertError.code === "23505") {
-      return fail("conflict", "Slug already exists", 409, { requestId });
+  const request = { ...parsed.data, owner_email: parsed.data.owner_email.trim().toLowerCase() };
+  const { data: org, error } = await admin.rpc("fn_create_tenant_with_owner", {
+    p_actor: adminCtx.user.id,
+    p_key: key,
+    p_request: request,
+    p_hash: createHash("sha256").update(JSON.stringify(request)).digest("hex"),
+  });
+  if (error) {
+    if (error.code === "23505" || error.code === "22023") {
+      return fail("conflict", "Slug já existe ou a chave foi usada com outros dados", 409, {
+        requestId,
+      });
     }
-    return fail("internal_error", "Failed to create tenant", 500, {
+    return fail("internal_error", "Não foi possível criar a organização", 500, { requestId });
+  }
+  if (org.created) {
+    await audit({
+      action: "tenant.created_by_platform_admin",
+      actorUserId: adminCtx.user.id,
+      actingAsPlatformAdmin: true,
+      bypassedRls: true,
+      organizationId: org.id,
+      resourceType: "organization",
+      resourceId: org.id,
       requestId,
-      details: insertError.message,
+      metadata: {
+        slug: org.slug,
+        display_name: org.display_name,
+        plan: request.plan,
+        creator_role: "admin",
+      },
     });
   }
-
-  void audit({
-    action: "tenant.created_by_platform_admin",
-    actorUserId: adminCtx.user.id,
-    actingAsPlatformAdmin: true,
-    bypassedRls: true,
-    organizationId: org.id,
-    resourceType: "organization",
-    resourceId: org.id,
-    requestId,
-    metadata: {
+  const ownerInvitation =
+    request.owner_email === adminCtx.user.email?.trim().toLowerCase()
+      ? null
+      : await issueInvite({
+          email: request.owner_email,
+          role: "admin",
+          interfaceSettings: request.owner_interface_settings,
+          organizationId: org.id,
+          orgName: org.display_name,
+          inviterId: adminCtx.user.id,
+          inviterName:
+            adminCtx.user.user_metadata?.full_name ?? adminCtx.user.email ?? "Administrador",
+          requestId,
+          inviteId: org.invite_id,
+          issuedAt: org.issued_at,
+          dispatch: org.created,
+        });
+  return ok(
+    {
+      id: org.id,
       slug: org.slug,
       display_name: org.display_name,
-      plan,
-      owner_email_hash: owner_email
-        ? Buffer.from(owner_email.trim().toLowerCase())
-            .toString("hex")
-            .slice(0, 12) + "..."
-        : null,
+      owner_invitation: ownerInvitation,
     },
-  });
-
-  return ok(
-    { id: org.id, slug: org.slug, display_name: org.display_name },
     { status: 201, requestId },
   );
 }

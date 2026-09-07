@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/contacts/merge — junta dois cadastros da MESMA pessoa em um.
  *
@@ -38,6 +39,7 @@ export const dynamic = "force-dynamic";
  * operador "o sistema quebrou" quando o que houve foi "esse contato não serve".
  */
 const DESFECHOS: Record<string, { code: string; status: number; message: string }> = {
+  mescla_conversas_colidentes: { code: "conflict", status: 409, message: "Estes contatos têm conversas no mesmo canal. Nada foi mesclado; os históricos foram preservados." },
   insufficient_role: {
     code: "forbidden_role",
     status: 403,
@@ -76,6 +78,9 @@ interface ResultadoDaFusao {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   const authz = await requireRole("manager", { requestId, resource: "contact" });

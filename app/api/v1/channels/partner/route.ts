@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channels/partner — estado da conexão por credencial + o que colar no provedor.
  * POST /api/v1/channels/partner — VALIDA a credencial e só então grava.
@@ -95,6 +96,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   // Conectar um canal move dinheiro e expõe a conta da empresa: é decisão de
   // dono, não de quem atende.

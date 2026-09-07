@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PUT /api/v1/ai/routers/:id/members — substitui a lista INTEIRA de membros
  * do router (admin), audit `ai.router_members_updated`. `position` = índice
@@ -30,6 +31,9 @@ const membersPutSchema = z.object({
 });
 
 export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {

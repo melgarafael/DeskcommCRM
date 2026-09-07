@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -192,7 +193,7 @@ export function HistoricoDaAgenda({
                     </div>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm">{a.quemSeraAtendido ?? t(a.titulo)}</div>
+                    <Link className="block truncate text-sm underline" href={`/app/agenda?compromisso=${a.id}`}>{a.quemSeraAtendido ?? t(a.titulo)}</Link>
                     <div className="truncate text-[11px] text-text-muted">
                       {a.tipo ? t(a.tipo) : t("Agendamento")}
                       {pessoa ? ` · ${t("com")} ${pessoa.nome}` : ""}

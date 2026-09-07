@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/agents/:id/pause (admin)
  *
@@ -20,6 +21,9 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
@@ -43,18 +47,9 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
 
   const previousVersionId = existing.published_version_id as string | null;
 
-  if (previousVersionId) {
-    await admin
-      .from("ai_agent_versions")
-      .update({ status: "superseded", superseded_at: new Date().toISOString() })
-      .eq("id", previousVersionId)
-      .eq("organization_id", activeOrg.orgId)
-      .eq("status", "published");
-  }
-
   const { error } = await admin
     .from("ai_agents")
-    .update({ published_version_id: null, updated_at: new Date().toISOString() })
+    .update({ paused_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId);
 
@@ -70,5 +65,8 @@ export async function POST(_req: NextRequest, ctx: Ctx): Promise<Response> {
     metadata: { previous_version_id: previousVersionId },
   });
 
-  return ok({ id, published_version_id: null }, { requestId });
+  return ok(
+    { id, published_version_id: previousVersionId, paused_at: new Date().toISOString() },
+    { requestId },
+  );
 }

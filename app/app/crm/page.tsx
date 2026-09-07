@@ -28,10 +28,14 @@ export default async function CrmHubPage() {
   return (
     <NavHub
       group="crm"
-      isPlatformAdmin={user.is_platform_admin}
+      isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}
+      interfaceSettings={activeOrg?.interface_settings}
       title={traduzir("CRM", idioma)}
-      subtitle={traduzir("Onde a venda acontece — e o que você define uma vez para ela funcionar.", idioma)}
+      subtitle={traduzir(
+        "Onde a venda acontece — e o que você define uma vez para ela funcionar.",
+        idioma,
+      )}
       locale={idioma}
     />
   );

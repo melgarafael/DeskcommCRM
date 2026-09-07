@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET /api/v1/metrics/atrito — o Índice de Atrito (spec 17; doutrina
  * `docs/doctrine/sistema-vivo/03-medida-do-proposito.md`).
@@ -187,6 +188,9 @@ const patchSchema = z.object({
  * tela diria "salvo" e nada teria sido gravado.
  */
 export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   const authz = await requireRole("manager", { requestId, resource: "metrics" });

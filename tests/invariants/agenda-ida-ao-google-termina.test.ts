@@ -2,44 +2,13 @@ import { execFileSync } from "node:child_process";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-/**
- * A IDA AO GOOGLE COMEÇA — E TERMINA.
- *
- * ═══ O defeito, medido em produção ═══════════════════════════════════════════
- * `agenda-google-push` pedia os pendentes com
- * `.or("google_synced_at.is.null,updated_at.gt.google_synced_at")`. O PostgREST
- * trata o lado DIREITO de `gt.` como VALOR LITERAL, então ele tentava converter
- * a string "google_synced_at" em `timestamptz` e recusava a consulta INTEIRA:
- *
- *   invalid input syntax for type timestamp with time zone: "google_synced_at"
- *
- * um `warn` a cada 5 minutos desde o deploy da v1.7.0, zero linhas lidas. A ida
- * ao Google nunca aconteceu em instalação nenhuma.
- *
- * ═══ Por que o teste unitário existente ficou verde ══════════════════════════
- * `tests/unit/agenda-google-push-worker.test.ts` usa dublê que aceita qualquer
- * string de filtro — ele guarda a CHAMADA, não o EFEITO. Uma string que o
- * Postgres recusa é, para o dublê, indistinguível de uma que ele aceita. É por
- * isso que esta cerca vive aqui, contra Postgres REAL: é o único lugar onde
- * "o filtro é válido" e "o filtro seleciona o que deveria" são a mesma pergunta.
- *
- * ═══ A METADE QUE QUASE NÃO FOI ESCRITA ══════════════════════════════════════
- * Trocar o filtro pela coluna gerada, e só isso, substituiria "nunca empurra"
- * por "empurra PARA SEMPRE" — e o segundo é pior, porque queima a cota da API
- * do Google reenviando o mesmo evento a cada 5 minutos enquanto o log de
- * sucesso parece saudável.
- *
- * A razão são DOIS RELÓGIOS: `updated_at` vem do `now()` do Postgres (trigger
- * `fn_set_updated_at`), e `google_synced_at` vinha do `new Date()` do Node,
- * calculado no worker ANTES de a requisição sair. O do Node é sempre anterior —
- * latência mais desvio de relógio entre contêineres —, então logo depois de uma
- * sincronização bem-sucedida `updated_at > google_synced_at` continuava
- * verdadeiro e a linha voltava à fila.
- *
- * O caso `depois de sincronizar, a linha SAI da fila` é o que prende isso, e ele
- * escreve o carimbo com um instante do PASSADO de propósito: é essa a forma
- * exata do que o worker mandava. Sem o trigger `fn_carimbar_ida_ao_google`, ele
- * reprova.
+/** A coluna gerada seleciona intenção publicável, sem comparar dois relógios.
+ * Migration0225 mantém a prova de entrada/saída/edição e o carimbo legado.
+ * O aceite agora captura a revisão local; retry não inventa uma edição nova.
+ * O defeito histórico era um filtro PostgREST que comparava coluna com string
+ * literal; dublês o aceitavam. O filtro novo é exercitado pelo PostgREST na
+ * jornada agenda-google-sync, além das provas de coluna abaixo.
+ * Claims/CAS/HTTP reais estão em agenda-google-reconciliacao.test.ts.
  */
 
 const container = process.env.TEST_DB_CONTAINER;
@@ -118,8 +87,8 @@ describe("needs_google_push: quem entra na fila do Google", () => {
   });
 
   it("depois de sincronizar, a linha SAI da fila", () => {
-    // ⚠️ O CARIMBO VAI COM UM INSTANTE DO PASSADO, e isso é a forma EXATA do que
-    // o worker manda: `new Date().toISOString()` do Node é calculado antes de a
+    // ⚠️ O CARIMBO VAI COM UM INSTANTE DO PASSADO, e isso reproduz o cenário legado em que
+    // o worker mandava: `new Date().toISOString()` do Node é calculado antes de a
     // requisição sair, então chega ao banco já velho. Um teste que escrevesse
     // `now()` aqui mediria um mundo que não existe e ficaria verde sem o trigger.
     const id = "bbbbbbbb-0200-4000-8000-000000000002";
@@ -127,15 +96,15 @@ describe("needs_google_push: quem entra na fila do Google", () => {
     sql(`
       update public.calendar_appointments
          set google_event_id = 'evt_0200',
-             google_synced_at = now() - interval '5 seconds'
+             google_synced_at = now() - interval '5 seconds',
+             google_synced_local_revision = google_local_revision
        where id = '${id}';
     `);
     expect(
       precisaIr(id),
       "a linha continuou na fila logo depois de sincronizar — é o LAÇO: o worker " +
         "reenviaria o mesmo evento ao Google a cada 5 minutos, para sempre. " +
-        "Falta o trigger fn_carimbar_ida_ao_google, que faz os dois lados da " +
-        "comparação saírem do mesmo relógio.",
+        "O aceite precisa alcançar a revisão publicável capturada.",
     ).toBe(false);
   });
 
@@ -162,7 +131,7 @@ describe("needs_google_push: quem entra na fila do Google", () => {
     // acima passariam: uma alteração de verdade tem de voltar a pedir ida.
     const id = "bbbbbbbb-0200-4000-8000-000000000004";
     marcar(id, "2030-03-13 14:00:00-03");
-    sql(`update public.calendar_appointments set google_synced_at = now() where id = '${id}';`);
+    sql(`update public.calendar_appointments set google_synced_at = now(), google_synced_local_revision = google_local_revision where id = '${id}';`);
     expect(precisaIr(id), "a linha nem chegou a sair da fila — o caso anterior é quem cobre isso").toBe(false);
 
     sql(`update public.calendar_appointments set title = 'Retorno remarcado' where id = '${id}';`);
@@ -172,16 +141,21 @@ describe("needs_google_push: quem entra na fila do Google", () => {
     ).toBe(true);
   });
 
-  it("zerar o carimbo força a re-sincronização (e o trigger não atrapalha)", () => {
-    // `NULL` é o pedido explícito de "manda de novo". O trigger só carimba valor
-    // NÃO nulo justamente para não engolir esse pedido.
+  it("retry rearma a próxima tentativa sem inventar edição; carimbo não é intenção", () => {
     const id = "bbbbbbbb-0200-4000-8000-000000000005";
     marcar(id, "2030-03-14 14:00:00-03");
-    sql(`update public.calendar_appointments set google_synced_at = now() where id = '${id}';`);
+    sql(`update public.calendar_appointments set google_synced_at = now(), google_synced_local_revision = google_local_revision where id = '${id}';`);
     expect(precisaIr(id)).toBe(false);
 
     sql(`update public.calendar_appointments set google_synced_at = null where id = '${id}';`);
-    expect(precisaIr(id), "zerei o carimbo e a linha não voltou para a fila").toBe(true);
+    expect(precisaIr(id), "zerar um diagnóstico não pode fabricar uma intenção nova").toBe(false);
+    const revision = sql(`select google_local_revision from public.calendar_appointments where id='${id}'`);
+    sql(`update public.calendar_appointments set google_next_attempt_at=now() where id='${id}'`);
+    expect(sql(`select google_local_revision from public.calendar_appointments where id='${id}'`)).toBe(revision);
+    sql(`update public.calendar_appointments set title='Nova intenção' where id='${id}'`);
+    expect(precisaIr(id)).toBe(true);
+    sql(`update public.calendar_appointments set google_synced_local_revision=${revision} where id='${id}'`);
+    expect(precisaIr(id), "aceite da revisão antiga não confirma a nova").toBe(true);
   });
 
   it("o índice parcial do worker existe e casa o recorte que ele lê", () => {

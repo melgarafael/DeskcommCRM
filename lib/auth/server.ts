@@ -1,3 +1,4 @@
+import { lerInterface } from "@/lib/navigation/interface";
 /**
  * Server-side auth helpers — load AuthUser, resolve active org, gate routes.
  *
@@ -6,6 +7,7 @@
  * intentional here because we resolve the user from the validated JWT first
  * and then filter by `user_id` (a trusted source).
  */
+import { readSupportContext } from "@/lib/impersonate/support";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { logger } from "@/lib/logger";
@@ -18,6 +20,7 @@ import type { AuthUser, Role, UserOrgMembership, ActiveOrg } from "./types";
 const ACTIVE_ORG_COOKIE = "active_org";
 
 interface RawMembershipRow {
+  interface_settings?: unknown;
   organization_id: string;
   role: string;
   /** Só para ORDENAR — a lista decide qual organização fica ativa sem cookie. */
@@ -175,7 +178,9 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   // de quem foi convidado para várias no mesmo lote).
   const { data: rawMemberships, error: membErro } = await supabase
     .from("user_organizations")
-    .select("organization_id, role, accepted_at, organizations(display_name, locale)")
+    .select(
+      "organization_id, role, interface_settings, accepted_at, organizations(display_name, locale)",
+    )
     .eq("user_id", user.id)
     .is("revoked_at", null)
     .order("accepted_at", { ascending: true, nullsFirst: true })
@@ -221,10 +226,12 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
       organization_id: row.organization_id,
       organization_name: org?.display_name ?? "—",
       role: row.role as Role,
+      interface_settings: lerInterface(row.interface_settings).settings,
       locale: org?.locale ?? null,
     };
   });
 
+  const support = await readSupportContext(supabase);
   const fullName = (user.user_metadata?.full_name as string | undefined) ?? null;
   const avatarUrl = (user.user_metadata?.avatar_url as string | undefined) ?? null;
   const locale = (user.user_metadata?.locale as string | undefined) ?? null;
@@ -235,7 +242,9 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
   // própria, e quem não pertence a organização nenhuma, não têm o que resolver.
   // Ler assim mesmo faria toda tela do produto tocar o cookie para descartar o
   // valor em seguida.
-  const idioma = normalizarIdioma(locale ?? (await localeDaOrgAtiva(memberships)));
+  const idioma = normalizarIdioma(
+    locale ?? support?.locale ?? (await localeDaOrgAtiva(memberships)),
+  );
   const timezone = (user.user_metadata?.timezone as string | undefined) ?? null;
 
   return {
@@ -248,6 +257,7 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
     idioma,
     timezone,
     organizations: memberships,
+    support,
   };
 }
 
@@ -257,10 +267,23 @@ export async function loadAuthUser(): Promise<AuthUser | null> {
  * Returns null if user has zero memberships.
  */
 export async function resolveActiveOrg(authUser: AuthUser): Promise<ActiveOrg | null> {
+  if (authUser.support) {
+    if (authUser.support.status !== "active") redirect("/support-ended");
+    return {
+      orgId: authUser.support.organization_id,
+      name: authUser.support.name,
+      role: authUser.support.access_mode === "full" ? "admin" : "viewer",
+    };
+  }
   const store = await cookies();
   const ativo = escolherMembroAtivo(authUser.organizations, store.get(ACTIVE_ORG_COOKIE)?.value);
   if (!ativo) return null;
-  return { orgId: ativo.organization_id, name: ativo.organization_name, role: ativo.role };
+  return {
+    orgId: ativo.organization_id,
+    name: ativo.organization_name,
+    role: ativo.role,
+    interface_settings: ativo.interface_settings,
+  };
 }
 
 /**

@@ -32,10 +32,7 @@ export type SignInResult = {
  *
  * On failure: returns an error discriminator. Caller renders inline message.
  */
-export async function signInWithPassword(
-  input: LoginInput,
-  next?: string,
-): Promise<SignInResult> {
+export async function signInWithPassword(input: LoginInput, next?: string): Promise<SignInResult> {
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -107,5 +104,5 @@ export async function signInWithPassword(
   });
 
   // Server-side redirect ensures fresh session cookie is sent to browser.
-  redirect(safeNext(next, "/app/inbox"));
+  redirect(safeNext(next, "/app"));
 }

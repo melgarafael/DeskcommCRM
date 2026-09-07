@@ -171,7 +171,7 @@ No menu lateral → **Storage** → **New bucket**:
 
 ## 3. WAHA — WhatsApp
 
-**O que é:** Servidor que se conecta ao WhatsApp e expõe API HTTP. Roda em Docker. Em dev, sobe local; em prod, num VPS. **Custo:** WAHA Plus = $19/mês ([devlikeapro.com](https://waha.devlikeapro.com/)). Tem trial grátis. **Não use a versão Core** — não suporta multi-tenant nem retry.
+**O que é:** Servidor que se conecta ao WhatsApp e expõe API HTTP. O default fixo é `devlikeapro/waha:latest-2026.7.2`, engine NOWEB. A prova local desta versão criou duas sessões CORE simultâneas até `SCAN_QR_CODE`; não houve pairing nem envio real. Versão/engine e pós-condição da operação determinam a compatibilidade; o tier sozinho não bloqueia um segundo número.
 
 ### Passo 1 — gerar a API key (plaintext + hash)
 
@@ -254,7 +254,7 @@ WAHA_WEBHOOK_BASE_URL=https://abc-123-456.ngrok-free.app
 docker compose up -d
 ```
 
-Confira em <http://localhost:3030/dashboard/> que o WAHA está respondendo (UI do WAHA Plus). Pra criar sessão e escanear QR, veja a doc oficial: <https://waha.devlikeapro.com/docs/overview/quick-start/>.
+Confira em <http://localhost:3030/dashboard/> que o WAHA está respondendo (painel do WAHA). Pra criar sessão e escanear QR, veja a doc oficial: <https://waha.devlikeapro.com/docs/overview/quick-start/>.
 
 ---
 

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET/PUT /api/v1/ai/guardrail-layers — as duas verificações que custam dinheiro.
  *
@@ -88,6 +89,9 @@ const corpoDoPut = z.object({
 });
 
 export async function PUT(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const authz = await requireRole("admin", { resource: "ai_guardrail_layers" });
   if (!authz.ok) return authz.response;
   const { user, org } = authz;

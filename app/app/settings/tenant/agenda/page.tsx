@@ -39,7 +39,7 @@ export default async function TiposDeAgendamentoPage() {
   // `viewer` vê a lista (é informação de operação: quanto dura uma consulta);
   // criar e alterar é `manager`, e a rota cobra de novo — a tela esconder não é
   // autorização, é cortesia.
-  const podeEditar = user.is_platform_admin || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  const podeEditar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
   const supabase = await createClient();
   const [{ data: tipos }, { data: pessoas }] = await Promise.all([
@@ -90,6 +90,7 @@ export default async function TiposDeAgendamentoPage() {
             nomes.get(String(p.user_id)) ?? `${String(p.user_id).slice(0, 8)} · ${String(p.role)}`,
         }))}
         usuarioAtualId={user.id}
+        podeConfigurarGoogle={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
         podeEditar={podeEditar}
       />
     </div>

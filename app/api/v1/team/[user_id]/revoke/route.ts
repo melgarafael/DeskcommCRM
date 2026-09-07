@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/team/[user_id]/revoke — revoke a member.
  *
@@ -20,6 +21,9 @@ export async function POST(
   _req: NextRequest,
   ctx: { params: Promise<{ user_id: string }> },
 ): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { user_id: targetUserId } = await ctx.params;
 

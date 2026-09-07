@@ -1,3 +1,9 @@
+import type { AgentOperationContext } from "@/lib/ai/agents/operation";
+import type { ApprovedReplyContext } from "@/lib/ai/replies/delivery";
+import type { MeetingDeliveryContext, MeetingBookingContext } from "@/lib/agenda/meet-delivery";
+import type { ProactiveContext } from "@/lib/agenda/efeito";
+import type { ServiceOrigin } from "@/lib/atendimento/origem";
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Shared types for `app/api/v1/<resource>/_handler.ts` core functions.
  *
@@ -27,6 +33,16 @@ export type Actor =
   | { type: "webhook_source"; id: string };
 
 export interface HandlerCtx {
+  agentOperation?: AgentOperationContext;
+  meetingDelivery?: MeetingDeliveryContext;
+  approvedReply?: ApprovedReplyContext;
+  meetingBooking?: MeetingBookingContext;
+  internalMessageId?: string;
+  proactiveContext?: ProactiveContext;
+  /** Trusted origin captured by the runtime, never request-body metadata. */
+  serviceBoundary?: ServiceBoundary | null;
+  /** Origem de evento derivado; não é campo de input público. */
+  serviceOrigin?: ServiceOrigin;
   organization_id: string;
   actor: Actor;
   requestId: string;

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH  /api/v1/message-templates/[id] — atualiza título/corpo/atalho.
  * DELETE /api/v1/message-templates/[id] — remove o template.
@@ -23,6 +24,9 @@ interface RouteParams {
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "message_templates" });
   if (!authz.ok) return authz.response;
@@ -61,6 +65,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 }
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "message_templates" });
   if (!authz.ok) return authz.response;

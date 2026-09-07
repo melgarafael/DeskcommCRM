@@ -54,6 +54,7 @@ export type { OrigemDoAgendamento, SituacaoDoAgendamento } from "@/lib/agenda/ti
 import type { OrigemDoAgendamento, SituacaoDoAgendamento, TrilhaDaAgenda } from "@/lib/agenda/tipos";
 
 export type Agendamento = {
+  revision?:number;
   id: string;
   titulo: string;
   /** Quem vai ser atendido. Ausente em ocupação vinda do Google. */

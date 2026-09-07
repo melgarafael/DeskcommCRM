@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
-import {
-  moverLeadParaEtapaDeHandoff,
-  SLUG_ETAPA_HANDOFF,
-} from "@/lib/leads/handoff-stage-move";
+import { moverLeadParaEtapaDeHandoff, SLUG_ETAPA_HANDOFF } from "@/lib/leads/handoff-stage-move";
 
 vi.mock("@/lib/leads/activity-emitter", async (orig) => ({
   ...(await orig<typeof import("@/lib/leads/activity-emitter")>()),
@@ -159,11 +156,52 @@ describe("moverLeadParaEtapaDeHandoff", () => {
   });
 
   it("erro no UPDATE é falha_de_escrita", async () => {
-    const r = await mover(cenario({ update: { data: null, error: { message: "constraint violation" } } }));
+    const r = await mover(
+      cenario({ update: { data: null, error: { message: "constraint violation" } } }),
+    );
     expect(r).toEqual({ moveu: false, motivo: "falha_de_escrita" });
   });
 
   it("SLUG_ETAPA_HANDOFF é o slug estável que a tela de Provedores/Pipelines deve usar", () => {
     expect(SLUG_ETAPA_HANDOFF).toBe("chamar-humano");
   });
+});
+
+it("handoff derivado mantém a continuação do canal A sem observar/iniciar B", async () => {
+  const rpcs: ChamadaRpc[] = [];
+  const admin = fakeAdmin(cenario(), rpcs);
+  const boundary = {
+    organization_id: ORG,
+    contact_id: LEAD.contact_id,
+    conversation_id: "canal-A",
+    service_revision: 1,
+    demanda_id: null,
+    demanda_revision: null,
+  };
+  admin.rpc = async (fn: string, args: Record<string, unknown>) => {
+    rpcs.push({ fn, args });
+    return {
+      data:
+        fn === "fn_service_boundary"
+          ? { ...boundary, status: "open", demanda_fechada_em: null }
+          : null,
+      error: null,
+    };
+  };
+  expect(
+    (
+      await moverLeadParaEtapaDeHandoff(admin, {
+        organizationId: ORG,
+        leadId: LEAD.id,
+        reason: "requested_human",
+        serviceBoundary: boundary,
+      })
+    ).moveu,
+  ).toBe(true);
+  const event = rpcs.find((call) => call.fn === "emit_event");
+  expect(event?.args.p_payload).toMatchObject({
+    service_origin: { kind: "continuation", boundary },
+  });
+  expect(rpcs.map((call) => call.fn)).not.toContain("fn_service_observe_command");
+  expect(rpcs.map((call) => call.fn)).not.toContain("fn_service_begin");
 });

@@ -1,3 +1,4 @@
+import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
  *
@@ -37,6 +38,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(automationRulesHandler);
   registerHandler(followupGatilhoEtapaHandler);
   registerHandler(followupGatilhoCasoHandler);
+  registerHandler(followupGatilhoPresencaHandler);
   registerHandler(mediaPersistHandler);
   registerHandler(mediaDeriveHandler);
   registerHandler(webPushInboundHandler);

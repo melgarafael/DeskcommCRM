@@ -37,6 +37,7 @@ vi.mock("@/hooks/inbox/useClaimConversation", () => ({
 }));
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useReopenConversation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
   useReleaseConversation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -50,6 +51,7 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
   useResumeAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
+  usePermission: () => true,
   useAuth: () => ({ user: { id: "u-1" }, activeOrg: { orgId: "org-1", role: "manager" } }),
 }));
 

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * A imagem do cabeçalho de uma definição — subir do computador, sem colar URL.
  *
@@ -46,6 +47,9 @@ const TIPOS = new Set(["image/jpeg", "image/png"]);
 const TAMANHO_MAX = 5 * 1024 * 1024;
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   const user = await loadAuthUser();

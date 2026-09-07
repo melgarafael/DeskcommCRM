@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/messages — envia mensagem outbound (handler em ./_handler.ts).
  */
@@ -15,6 +16,9 @@ import { sendMessageHandler } from "./_handler";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const supabase = await createClient();
 

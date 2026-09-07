@@ -1,0 +1,93 @@
+{
+  "run": "task6-browser-r3",
+  "product_commit": "bfa2ab2f",
+  "reviewed_head": "dba29ec4",
+  "cases": 7,
+  "result": "passed",
+  "screenshots": [
+    {
+      "image": "evidence/comunidade-360/task6-presenca-desktop.png",
+      "source": ".superpowers/evidence/comunidade-360/task6-browser-r3/agenda-presenca-recuperaca-c50ea-ença-com-evidência-e-snooze-chromium/presenca-desktop/loaded.png",
+      "sha256": "e49a18b3885e99c62beb862affd1f825c66195a188b77e0446905fc7ac8b0907",
+      "measures": {
+        "left": 896,
+        "right": 1280,
+        "width": 384,
+        "viewport": 1280,
+        "visibility": "visible",
+        "scrollWidth": 383,
+        "clientWidth": 383
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task6-presenca-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task6-browser-r3/agenda-presenca-recuperaca-c50ea-ença-com-evidência-e-snooze-chromium/presenca-mobile/loaded.png",
+      "sha256": "791429eb6f22484fc73a395afe2ad8053b41dca595c98b72d732e0e62a706f2c",
+      "measures": {
+        "left": 97.5,
+        "right": 390,
+        "width": 292.5,
+        "viewport": 390,
+        "visibility": "visible",
+        "scrollWidth": 292,
+        "clientWidth": 292
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task6-datas-pt-BR-desktop.png",
+      "source": ".superpowers/evidence/comunidade-360/task6-browser-r3/agenda-presenca-recuperaca-c4c8d-ia-e-o-instante-da-presença-chromium/datas-pt-BR-desktop/loaded.png",
+      "sha256": "3afdfa7e76a107213f62b3704cc387a3006ca8710c5b02c09a8961df74b0e2e4",
+      "measures": {
+        "left": 896,
+        "right": 1280,
+        "width": 384,
+        "viewport": 1280,
+        "visibility": "visible",
+        "scrollWidth": 383,
+        "clientWidth": 383
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task6-datas-pt-BR-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task6-browser-r3/agenda-presenca-recuperaca-c4c8d-ia-e-o-instante-da-presença-chromium/datas-pt-BR-mobile/loaded.png",
+      "sha256": "c147abe9ad4d9aef72c7465facbe1e2521e65eb7053ea02e3b55f99921bfb143",
+      "measures": {
+        "left": 97.5,
+        "right": 390,
+        "width": 292.5,
+        "viewport": 390,
+        "visibility": "visible",
+        "scrollWidth": 292,
+        "clientWidth": 292
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task6-datas-es-desktop.png",
+      "source": ".superpowers/evidence/comunidade-360/task6-browser-r3/agenda-presenca-recuperaca-c4c8d-ia-e-o-instante-da-presença-chromium/datas-es-desktop/loaded.png",
+      "sha256": "90abc2be7b462a2d32383c6a1500a70bc72f7a922f0defc487ab0dd6c2f30e5e",
+      "measures": {
+        "left": 896,
+        "right": 1280,
+        "width": 384,
+        "viewport": 1280,
+        "visibility": "visible",
+        "scrollWidth": 383,
+        "clientWidth": 383
+      }
+    },
+    {
+      "image": "evidence/comunidade-360/task6-datas-es-mobile.png",
+      "source": ".superpowers/evidence/comunidade-360/task6-browser-r3/agenda-presenca-recuperaca-c4c8d-ia-e-o-instante-da-presença-chromium/datas-es-mobile/loaded.png",
+      "sha256": "9afce60044ff7c242ec418aa746cfe8cc64fc93e190c14a641aca56d0fcfe4fd",
+      "measures": {
+        "left": 97.5,
+        "right": 390,
+        "width": 292.5,
+        "viewport": 390,
+        "visibility": "visible",
+        "scrollWidth": 292,
+        "clientWidth": 292
+      }
+    }
+  ]
+}

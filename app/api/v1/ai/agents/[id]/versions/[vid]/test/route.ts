@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/agents/:id/versions/:vid/test (admin)
  *
@@ -20,11 +21,13 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
+import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
+import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +36,9 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type Ctx = { params: Promise<{ id: string; vid: string }> };
 
 export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id, vid } = await ctx.params;
   if (!UUID_RX.test(id) || !UUID_RX.test(vid)) {
@@ -97,37 +103,52 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   let resultPayload: Record<string, unknown>;
 
-  if (env.INTERNAL_AGENT_RUN_STUB) {
-    resultPayload = await runStubbedTest({
-      runId: runRow.id,
-      orgId: activeOrg.orgId,
+  try {
+    const result = await testAgentVersion(getRequestPool(), requestTurnDeps(), {
+      organizationId: activeOrg.orgId,
+      agentId: id,
       versionId: vid,
+      runId: runRow.id,
       sampleMessage: parsed.data.sample_message,
       sampleContact: parsed.data.sample_contact,
-      version,
-      startedAt,
+      channelId: version.channel_session_id,
     });
-  } else {
-    // Runtime real (S-13.08). Falha aqui é o caso comum de instalação nova —
-    // credencial de IA ausente. Um 500 cru mandaria a pessoa pro log do
-    // servidor; devolvemos o porquê legível na própria tela.
-    try {
-      resultPayload = await callInternalRuntime({
-        runId: runRow.id,
-        orgId: activeOrg.orgId,
-        versionId: vid,
-        sampleMessage: parsed.data.sample_message,
-        sampleContact: parsed.data.sample_contact,
-      });
-    } catch (err) {
-      const detalhe = err instanceof Error ? err.message : String(err);
-      return fail(
-        "internal_error",
-        `Não consegui executar o agente: ${detalhe}. Confira as credenciais de IA da organização.`,
-        500,
-        { requestId },
-      );
-    }
+    const finalText = result.candidates.map((c) => c.body).join("\n\n");
+    resultPayload = {
+      run_id: runRow.id,
+      status: result.candidates.length ? "ok" : "blocked",
+      latency_ms: Date.now() - startedAt.getTime(),
+      final_text: finalText,
+      tool_calls: result.proposals,
+      ...result,
+      stub: process.env.INTERNAL_AGENT_RUN_STUB === "true",
+      guardrails: avaliarRespostaDeTeste(finalText),
+    };
+    await admin
+      .from("ai_agent_runs")
+      .update({
+        status: "ok",
+        completed_at: new Date().toISOString(),
+        tool_calls: JSON.parse(JSON.stringify(result.proposals)),
+      })
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", runRow.id);
+  } catch {
+    await admin
+      .from("ai_agent_runs")
+      .update({
+        status: "error",
+        completed_at: new Date().toISOString(),
+        error_code: "preview_failed",
+      })
+      .eq("organization_id", activeOrg.orgId)
+      .eq("id", runRow.id);
+    return fail(
+      "preview_failed",
+      "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.",
+      422,
+      { requestId },
+    );
   }
 
   void audit({
@@ -141,106 +162,4 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   });
 
   return ok(resultPayload, { requestId });
-}
-
-interface StubArgs {
-  runId: string;
-  orgId: string;
-  versionId: string;
-  sampleMessage: string;
-  sampleContact?: { name?: string; phone?: string };
-  version: {
-    system_prompt: string;
-    provider: string;
-    model: string;
-    channel_session_id: string;
-    tool_ids: unknown;
-  };
-  startedAt: Date;
-}
-
-async function runStubbedTest(args: StubArgs): Promise<Record<string, unknown>> {
-  const finishedAt = new Date();
-  const latencyMs = finishedAt.getTime() - args.startedAt.getTime();
-
-  // Trace fake plausível pra UI testar render. Nada disso é executado.
-  const toolCalls = [
-    {
-      step: 1,
-      tool_name: "(stub)",
-      args: { sample_message: args.sampleMessage },
-      result: { ok: true, note: "INTERNAL_AGENT_RUN_STUB=true — runtime real chega na S-13.08." },
-      started_at: args.startedAt.toISOString(),
-      ended_at: finishedAt.toISOString(),
-    },
-  ];
-
-  const finalText = `[STUB] Resposta simulada para "${args.sampleMessage.slice(0, 80)}".`;
-
-  const admin = createAdminClient();
-  await admin
-    .from("ai_agent_runs")
-    .update({
-      status: "completed",
-      tokens_in: 0,
-      tokens_out: 0,
-      cost_cents: 0,
-      latency_ms: latencyMs,
-      steps_count: 1,
-      tool_calls: toolCalls,
-      completed_at: finishedAt.toISOString(),
-    })
-    .eq("id", args.runId)
-    .eq("organization_id", args.orgId);
-
-  return {
-    run_id: args.runId,
-    status: "completed",
-    final_text: finalText,
-    // O stub também passa pela avaliação: um caminho que não a tivesse voltaria
-    // a ser o "verde que não olhou para nada" — só que mais difícil de notar,
-    // porque conviveria com um caminho que olha.
-    guardrails: avaliarRespostaDeTeste(finalText),
-    tool_calls: toolCalls,
-    tokens_in: 0,
-    tokens_out: 0,
-    cost_cents: 0,
-    latency_ms: latencyMs,
-    would_send_to: {
-      session: args.version.channel_session_id,
-      chat_id: args.sampleContact?.phone ?? null,
-    },
-    stub: true,
-  };
-}
-
-async function callInternalRuntime(args: {
-  runId: string;
-  orgId: string;
-  versionId: string;
-  sampleMessage: string;
-  sampleContact?: { name?: string; phone?: string };
-}): Promise<Record<string, unknown>> {
-  // S-13.08 wires the real runtime. We invoke `runAgent` in-process to avoid
-  // a fetch loopback (no cold-start, no INTERNAL_SECRET required in dev).
-  // The run row is already in is_dry_run=true mode so the runtime bypasses
-  // WAHA dispatch + outbound message insert.
-  const { runAgent } = await import("@/lib/ai/runtime/agent");
-  const result = await runAgent({
-    runId: args.runId,
-    override: {
-      sampleMessage: args.sampleMessage,
-      sampleContact: args.sampleContact,
-    },
-  });
-  // O runtime desta rota é o `@deprecated`, e ele NÃO importa `runBeforeSend` —
-  // a cadeia de guardrails vive no processo do worker e está ausente do build do
-  // app. Sem a linha abaixo, o botão "Testar" mostra uma resposta que nenhum
-  // gate examinou, e o self-hoster publica achando que viu o comportamento real.
-  //
-  // A avaliação cobre o que é decidível só com o texto e DECLARA o resto (ver
-  // lib/ai/agents/avaliar-resposta-de-teste.ts): fabricar o estado do turno para
-  // rodar a cadeia toda daria um veredito inventado, que é pior do que um
-  // "não avaliado" visível.
-  return { ...result, stub: false, guardrails: avaliarRespostaDeTeste(result.final_text) };
 }

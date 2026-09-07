@@ -132,6 +132,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       // Fechado na ação, aberto na informação: o horário fica bloqueado, e a
       // tela pode dizer desde quando a agenda conectada parou de atualizar.
       fontes_defasadas: consulta.fontesDefasadas,
+      google_cobertura_parcial: consulta.googleCoberturaParcial,
       // Diferente de `fontes_defasadas`: lá a conexão já trouxe eventos e parou
       // de atualizar; aqui ela nunca trouxe nada, e a grade pode estar mentindo
       // por inteiro. Sai da mesma função que serve às ferramentas MCP, para a

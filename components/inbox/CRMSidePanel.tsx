@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
@@ -82,6 +83,7 @@ interface ActivityRow {
  */
 interface DemandaRow {
   id: string;
+  revision: number;
   aberta_em: string;
   origem: string;
   estado: string;
@@ -89,6 +91,50 @@ interface DemandaRow {
   proximo_passo_em: string | null;
   prazo_em: string | null;
 }
+
+interface DesfechoDraft {
+  conversationId: string;
+  contactId: string;
+  demandaId: string;
+  revision: number;
+  desfecho: string;
+  salvando: boolean;
+}
+
+function EncerrarDemanda({ draft, onAbrir, onAlterar, onFechar, onPronto }: {
+  draft: DesfechoDraft | null;
+  onAbrir: () => void;
+  onAlterar: (patch: Partial<Pick<DesfechoDraft, "desfecho" | "salvando">>) => void;
+  onFechar: () => void;
+  onPronto: () => void;
+}) {
+  const t = useT();
+  if (!draft) return <Button size="sm" variant="ghost" onClick={onAbrir}>{t("Encerrar demanda")}</Button>;
+  return <form className="mt-2 space-y-2" onSubmit={async (event) => {
+    event.preventDefault(); onAlterar({ salvando: true });
+    try {
+      await apiClient.patch(`/api/v1/demandas/${draft.demandaId}`, { action: "encerrar", desfecho: draft.desfecho, expected_revision: draft.revision });
+      toast.success(t("Desfecho registrado.")); onFechar(); onPronto();
+    } catch { toast.error(t("Não foi possível encerrar. Cancele esta edição e abra novamente para revisar o desfecho.")); onPronto(); }
+    finally { onAlterar({ salvando: false }); }
+  }}>
+    <label className="block">{t("Desfecho")}
+      <select aria-label={t("Desfecho da demanda")} className="mt-1 w-full rounded-md border bg-background p-2" value={draft.desfecho} onChange={(e) => onAlterar({ desfecho: e.target.value })}>
+        <option value="resolvida">{t("Resolvida")}</option><option value="convertida">{t("Convertida")}</option>
+        <option value="nao_procede">{t("Não procede")}</option><option value="encerrada_pelo_cliente">{t("Encerrada pelo cliente")}</option>
+        <option value="perdida">{t("Perdida")}</option><option value="expirada_sem_resposta">{t("Expirada sem resposta")}</option>
+      </select>
+    </label>
+    <p>{t("Registra o resultado desta demanda. As conversas dos outros canais permanecem disponíveis.")}</p>
+    <Button size="sm" disabled={draft.salvando} type="submit">{t("Confirmar desfecho")}</Button>
+    <Button size="sm" variant="ghost" type="button" disabled={draft.salvando} onClick={onFechar}>{t("Cancelar")}</Button>
+  </form>;
+}
+
+const DESFECHO_LEGIVEL: Record<string, string> = {
+  resolvida: "Resolvida", convertida: "Convertida", nao_procede: "Não procede",
+  encerrada_pelo_cliente: "Encerrada pelo cliente", perdida: "Perdida", expirada_sem_resposta: "Expirada sem resposta",
+};
 
 /** Vocabulário de quem atende, não o do banco. */
 const ESTADO_LEGIVEL: Record<string, string> = {
@@ -356,16 +402,27 @@ function CamposDoFunil({
 }
 
 export function CRMSidePanel({ conversation }: Props) {
+  const { user } = useAuth();
+  const readonly = user.support?.access_mode === "support_readonly";
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
   const contactId = contact?.id ?? null;
+  const [desfechoDraft, setDesfechoDraft] = useState<DesfechoDraft | null>(null);
+  // A saída do filtro produz null enquanto o detalhe carrega. O rascunho não
+  // some nessa lacuna; outra conversa/contato real o descarta, sem expô-lo.
+  useEffect(() => {
+    if (conversation && desfechoDraft && (conversation.id !== desfechoDraft.conversationId || contactId !== desfechoDraft.contactId)) setDesfechoDraft(null);
+  }, [conversation, contactId, desfechoDraft]);
+
 
   const [leads, setLeads] = useState<LeadRow[] | null>(null);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [activities, setActivities] = useState<ActivityRow[] | null>(null);
   const [demandas, setDemandas] = useState<DemandaRow[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [fatos, setFatos] = useState<Array<{ id: string; headline: string; body: string }>>([]);
+  const [historico, setHistorico] = useState<Array<{ id: string; desfecho: string; fechada_em: string }>>([]);
+  const [summaryContactId, setSummaryContactId] = useState<string | null>(null);
   /**
    * O TERCEIRO ESTADO. Antes existiam dois — carregando e "tem N itens" — e a
    * falha era traduzida para lista vazia, virando "Sem leads.": uma afirmação
@@ -393,11 +450,12 @@ export function CRMSidePanel({ conversation }: Props) {
       setOrders(null);
       setActivities(null);
       setDemandas(null);
+      setFatos([]); setHistorico([]);
       setLeadAtivoId(null);
       return;
     }
     let cancelled = false;
-    setLoading(true);
+
     setErro(false);
 
     // Pela ROTA, não pelo cliente de navegador: o cookie de sessão é httpOnly,
@@ -411,9 +469,12 @@ export function CRMSidePanel({ conversation }: Props) {
             orders: OrderRow[];
             activities: ActivityRow[];
             demandas: DemandaRow[];
+            fatos?: Array<{ id: string; headline: string; body: string }>;
+            historico?: Array<{ id: string; desfecho: string; fechada_em: string }>;
           };
         }>(`/api/v1/contacts/${contactId}/crm-summary`);
         if (cancelled) return;
+        setSummaryContactId(contactId);
         setLeads(r.data.leads);
         setOrders(r.data.orders);
         setActivities(r.data.activities);
@@ -422,6 +483,7 @@ export function CRMSidePanel({ conversation }: Props) {
         // mostraria esqueleto para sempre num contato sem demanda aberta —
         // que é o caso saudável.
         setDemandas(r.data.demandas ?? []);
+        setFatos(r.data.fatos ?? []); setHistorico(r.data.historico ?? []);
       } catch {
         if (cancelled) return;
         // Falha NÃO vira lista vazia. Os dados ficam `null` e o painel diz que
@@ -431,8 +493,7 @@ export function CRMSidePanel({ conversation }: Props) {
         setOrders(null);
         setActivities(null);
         setDemandas(null);
-      } finally {
-        if (!cancelled) setLoading(false);
+        setFatos([]); setHistorico([]);
       }
     }
 
@@ -452,7 +513,7 @@ export function CRMSidePanel({ conversation }: Props) {
     // Depender do DADO que muda é mais honesto que um contador de invalidação:
     // `assigned_to_user_id` cobre assumir/transferir/liberar e `bot_silenced_until`
     // cobre pausar e devolver — que são exatamente os quatro gestos que geram linha.
-  }, [contactId, tentativa, conversation?.assigned_to_user_id, conversation?.bot_silenced_until]);
+  }, [contactId, tentativa, conversation?.assigned_to_user_id, conversation?.bot_silenced_until, conversation?.service_revision, conversation?.current_demanda_id]);
 
   // Recarrega o resumo pelo MESMO caminho do "Tentar de novo": o efeito depende
   // de `tentativa`, então a demanda recém-marcada volta do servidor em vez de
@@ -472,8 +533,8 @@ export function CRMSidePanel({ conversation }: Props) {
   const sectionsLoading = useMemo(
     () =>
       !erro &&
-      (loading || (leads === null && orders === null && activities === null && demandas === null)),
-    [erro, loading, leads, orders, activities, demandas],
+      (summaryContactId !== contactId || (leads === null && orders === null && activities === null && demandas === null)),
+    [erro, summaryContactId, contactId, leads, orders, activities, demandas],
   );
 
   if (!conversation) {
@@ -505,11 +566,12 @@ export function CRMSidePanel({ conversation }: Props) {
             </div>
           )}
           <div className="flex flex-wrap gap-2 pt-1">
+            {contactId&&conversation?<Link className="underline" href={`/app/agenda?contato=${contactId}&conversa=${conversation.id}`}>{t("Marcar compromisso")}</Link>:null}
             <Button
               size="sm"
               variant="outline"
               className="h-7 px-2 text-xs"
-              disabled={!contactId}
+              disabled={readonly || !contactId}
               aria-pressed={tagEditorOpen}
               onClick={() => setTagEditorOpen((v) => !v)}
             >
@@ -519,7 +581,7 @@ export function CRMSidePanel({ conversation }: Props) {
               size="sm"
               variant="outline"
               className="h-7 px-2 text-xs"
-              disabled={!contactId || (leadDialogOpen && defaultPipeline.isLoading)}
+              disabled={readonly || !contactId || (leadDialogOpen && defaultPipeline.isLoading)}
               onClick={() => setLeadDialogOpen(true)}
             >
               <Users size={12} className="mr-1" weight="regular" aria-hidden />
@@ -554,11 +616,11 @@ export function CRMSidePanel({ conversation }: Props) {
 
       <Separator />
 
-      <ConversationTagsEditor
+      {!readonly && <ConversationTagsEditor
         conversationId={conversation.id}
         orgId={conversation.organization_id}
         tags={conversation.tags ?? []}
-      />
+      />}
 
       <Separator />
 
@@ -602,7 +664,15 @@ export function CRMSidePanel({ conversation }: Props) {
                       vazamento e tinha de sair da tela para resolver — peça que
                       só recebe é ilha pelo invariante 1, e foi o gate dos mapas
                       de arquitetura que apontou isso. */}
-                  {semPasso ? <MarcarProximoPasso demandaId={d.id} onPronto={recarregar} /> : null}
+                  {d.id === conversation.current_demanda_id && <Badge variant="outline">{t("Demanda vigente neste canal")}</Badge>}
+                  {!readonly && <EncerrarDemanda
+                    draft={desfechoDraft?.conversationId === conversation.id && desfechoDraft.contactId === contactId && desfechoDraft.demandaId === d.id ? desfechoDraft : null}
+                    onAbrir={() => { if (contactId) setDesfechoDraft({ conversationId: conversation.id, contactId, demandaId: d.id, revision: d.revision, desfecho: "resolvida", salvando: false }); }}
+                    onAlterar={(patch) => setDesfechoDraft((current) => current?.conversationId === conversation.id && current.contactId === contactId && current.demandaId === d.id ? { ...current, ...patch } : current)}
+                    onFechar={() => setDesfechoDraft((current) => current?.conversationId === conversation.id && current.contactId === contactId && current.demandaId === d.id ? null : current)}
+                    onPronto={recarregar}
+                  />}
+                  {semPasso && !readonly ? <MarcarProximoPasso demandaId={d.id} onPronto={recarregar} /> : null}
                 </li>
               );
             })}
@@ -618,6 +688,15 @@ export function CRMSidePanel({ conversation }: Props) {
 
       <Separator />
 
+      <section data-testid="inbox-memoria">
+        <h3 className="text-xs font-semibold">{t("Memória do contato")}</h3>
+        <p className="mt-1 text-xs text-muted-foreground">{t("Fatos duráveis registrados nas notas. Pendências pertencem à demanda vigente.")}</p>
+        {!sectionsLoading && fatos.map((f) => <details key={f.id} className="mt-2 text-xs"><summary>{f.headline}</summary><p className="mt-1 whitespace-pre-wrap">{f.body}</p></details>)}
+        {!sectionsLoading && fatos.length === 0 && <p className="mt-2 text-xs text-muted-foreground">{t("Nenhum fato durável registrado.")}</p>}
+        {!sectionsLoading && historico.length > 0 && <div className="mt-3 text-xs"><h4>{t("Histórico encerrado — sem tarefas pendentes")}</h4>{historico.map((h) => <p key={h.id}>{t(DESFECHO_LEGIVEL[h.desfecho] ?? h.desfecho)}</p>)}</div>}
+      </section>
+      <Separator />
+
       <section data-testid="inbox-campos-lead">
         <h3 className="text-xs font-semibold text-text">
           {t("Leads recentes")}
@@ -625,12 +704,12 @@ export function CRMSidePanel({ conversation }: Props) {
         {sectionsLoading ? (
           <Skeleton className="mt-2 h-14 w-full" />
         ) : leads && leads.length > 0 ? (
-          <InboxLeadEditor
+          <fieldset disabled={readonly}><InboxLeadEditor
             leads={leads}
             selecionadoId={leadAtivoId}
             onSelecionar={setLeadAtivoId}
             onSalvo={recarregar}
-          />
+          /></fieldset>
         ) : (
           <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
         )}

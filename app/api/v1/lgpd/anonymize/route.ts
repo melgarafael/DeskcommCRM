@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/lgpd/anonymize
  *
@@ -18,6 +19,7 @@
  * `already_anonymized` — que é a frase que descreve o DEFEITO (issue #310).
  */
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
@@ -35,6 +37,9 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   const supabase = await createClient();
@@ -99,36 +104,21 @@ export async function POST(req: NextRequest): Promise<Response> {
   // O passo 1 continua rodando uma vez só — repetí-lo reescreveria
   // `anonymized_at` e apagaria a data real do exercício do direito, que é o que
   // responde ao prazo legal.
-  const retomada = existing.is_anonymized === true;
-
-  const nowIso = new Date().toISOString();
-  const shortId = existing.id.slice(0, 8);
-
-  // Step 1 — contacts.
-  const { error: c1Err } = retomada
-    ? { error: null }
-    : await supabase
-    .from("contacts")
-    .update({
-      name: null,
-      display_name: `Contato Anonimizado #${shortId}`,
-      email: null,
-      // `email_normalized` sai daqui pelo mesmo motivo do handler de contatos:
-      // é coluna GERADA e a atribuição abortava o UPDATE. O efeito aqui era pior
-      // que um 500 — a ANONIMIZAÇÃO NÃO ACONTECIA, num direito do titular que a
-      // LGPD dá prazo para cumprir. Zerar `email` já zera a derivada.
-      phone_number: null,
-      cpf_encrypted: null,
-      cpf_hash: null,
-      birthdate: null,
-      is_anonymized: true,
-      anonymized_at: nowIso,
-      updated_at: nowIso,
-    })
-        .eq("id", existing.id);
+  // O passo transacional adquire o mutex antes de conferir a retomada e escrever.
+  // A leitura acima só resolveu organização/autorização; não decide idempotência.
+  const { data: stepData, error: c1Err } = await supabase.rpc("fn_lgpd_anonymize_contact", {
+    p_organization_id: existing.organization_id,
+    p_contact_id: existing.id,
+  });
   if (c1Err) {
+    if (c1Err.code === "42501") return fail("forbidden", "Sem permissão para anonimizar este contato.", 403, { requestId });
+    if (c1Err.code === "P0002") return fail("not_found", "Contato não encontrado.", 404, { requestId });
+    if (c1Err.code === "40001") return fail("state_conflict", "O contato está em atualização. Tente novamente.", 409, { requestId });
     return fail("internal_error", `contacts: ${c1Err.message}`, 500, { requestId });
   }
+  const step = z.object({ already_anonymized: z.boolean(), anonymized_at: z.string().nullable() }).safeParse(stepData);
+  if (!step.success) return fail("internal_error", "Não foi possível confirmar a anonimização.", 500, { requestId });
+  const retomada = step.data.already_anonymized;
 
   // ── Passos 2 e 3 — a MESMA função que o cron de retenção usa ──────────
   //
@@ -198,7 +188,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   return ok(
     {
       contact_id: existing.id,
-      anonymized_at: retomada ? existing.anonymized_at : nowIso,
+      anonymized_at: step.data.anonymized_at,
       action: desfecho,
       redacted_lead_ids: redacao.leadsRedigidas,
       redacted_activities: redacao.atividadesRedigidas,

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * Épico Operação Visível (F1) — memória geral da org (spec harness, migration
  * 0067): documento versionado (versões imutáveis + ponteiro, mesmo padrão de
@@ -82,6 +83,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("admin", { requestId, resource: "org_memory" });
   if (!authz.ok) return authz.response;

@@ -242,6 +242,18 @@ create table if not exists auth.users (
   created_at timestamptz not null default now()
 );
 
+-- Contrato Supabase usado pelo suporte: sessão é do Auth, nunca do produto.
+create table if not exists auth.sessions (
+ id uuid primary key, user_id uuid not null references auth.users(id),
+ aal text, not_after timestamptz
+);
+create table if not exists auth.mfa_factors (
+ id uuid primary key, user_id uuid not null references auth.users(id), status text, factor_type text default 'totp'
+);
+create or replace function auth.jwt() returns jsonb language sql stable as $$
+ select coalesce(nullif(current_setting('request.jwt.claim',true),''),nullif(current_setting('request.jwt.claims',true),''))::jsonb;
+$$;
+
 -- Stub de auth.uid() lendo o claim `sub` de request.jwt.claims (mesmo contrato
 -- do Supabase; os testes simulam o JWT via set_config).
 --

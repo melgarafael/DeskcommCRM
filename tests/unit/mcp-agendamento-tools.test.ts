@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type * as AgendaConsulta from "@/lib/agenda/consulta";
 import type { ResultadoDaConsulta } from "@/lib/agenda/consulta";
 import type { McpContext } from "@/lib/mcp/types";
 
@@ -29,7 +30,7 @@ vi.mock("@/app/api/v1/agenda/agendamentos/_handler", () => ({
 }));
 
 vi.mock("@/lib/agenda/consulta", async (original) => {
-  const real = await original<typeof import("@/lib/agenda/consulta")>();
+  const real = await original<typeof AgendaConsulta>();
   return { ...real, horariosLivresDaOrg: vi.fn(), listaAgendamentos: vi.fn(), idDoTipoPorSlug: vi.fn() };
 });
 
@@ -71,6 +72,7 @@ const SUCESSO: ResultadoDaConsulta = {
   fusoSuposto: false,
   fontesDefasadas: [],
   agendaExternaNuncaLida: false,
+    googleCoberturaParcial: false,
 };
 
 describe("crm_find_free_slots", () => {
@@ -320,4 +322,21 @@ describe("as escritas de agenda", () => {
     );
     expect(vi.mocked(handlers.cancelarAgendamentoHandler).mock.calls[0]![1].organization_id).toBe("org-1");
   });
+});
+
+describe('Meet no contrato do atendimento',()=>{
+ it('booking pendente transporta contexto interno e não promete link pronto/enviado',async()=>{
+  vi.mocked(idDoTipoPorSlug).mockResolvedValue({id:'tipo'} as never);
+  vi.mocked(handlers.marcarAgendamentoHandler).mockResolvedValue({id:'appointment',meeting_state:'pending',meeting_url:null});
+  const meetingBooking={sourceJobId:'job',claim:{worker_id:'worker',acquired_at:'2026-09-06 10:00:00.123456+00'},boundary:{organization_id:ctx.organizationId,contact_id:'contact',conversation_id:'conversation',service_revision:1,demanda_id:null,demanda_revision:null}};
+  const result=await crmBookAppointment.handler({event_type_slug:'meet',starts_at:'2030-01-01T12:00:00Z',contact_id:'contact'},{...ctx,meetingBooking});
+  expect(handlers.marcarAgendamentoHandler).toHaveBeenCalledWith(ctx.supabase,expect.objectContaining({meetingBooking}),expect.anything());
+  expect(result).toMatchObject({marcado:true,compromisso:{meeting_state:'pending',meeting_url:null},mensagem:expect.stringContaining('link ainda está sendo criado')});
+  expect(crmBookAppointment.inputSchema).not.toHaveProperty('meetingBooking');expect(crmBookAppointment.inputSchema).not.toHaveProperty('authorized');
+ });
+ it('lista retorna URL pronta utilizável, mas não URL quando pendente',async()=>{
+  vi.mocked(listaAgendamentos).mockResolvedValue({ok:true,agendamentos:[{id:'ready',meetingState:'ready',meetingUrl:'https://meet.google.com/abc-defg-hij'},{id:'pending',meetingState:'pending',meetingUrl:'https://meet.google.com/old-link'}]} as never);
+  const result=await crmListAppointments.handler({contact_id:'contact'},ctx);
+  expect(JSON.stringify(result)).toContain('https://meet.google.com/abc-defg-hij');expect(JSON.stringify(result)).not.toContain('old-link');
+ });
 });

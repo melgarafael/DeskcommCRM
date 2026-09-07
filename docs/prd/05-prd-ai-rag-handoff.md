@@ -336,6 +336,32 @@ A decidir em `docs/specs/05-spec-ai-rag-handoff.md`:
 
 > Contrato detalhado: `docs/superpowers/specs/2026-07-21-followup-system-design.md`.
 > Pesquisa de referência (odysseus/hermes/openclaw + autópsia TomikCRM): `docs/research/followup-reference-mining.md`.
+>
+> **Contrato vigente (Tasks 6–7, 2026-09):** a extensão operacional está em
+> `docs/architecture/ponte-agendamento-followup.md` e
+> `docs/architecture/agenda-google-sync.architecture.json`. O desenho de 2026-07
+> abaixo continua como referência do motor, sujeito aos contratos atuais.
+
+Um compromisso fica ligado a contato e, opcionalmente, a conversa, ou é marcado
+explicitamente como pessoal. Comparecimento e falta são desfechos confirmados por
+uma pessoa após o início; relógio e Google nunca os inferem. Compromisso vivo ou
+presença ainda desconhecida protegem o contato do follow-up proativo até o
+horizonte configurado. Vencê-lo retira somente essa proteção: não registra falta
+nem inicia recuperação. A falta confirmada pode iniciar o fluxo publicado
+configurado, vinculado ao compromisso e à sua revisão; inbound canônico novo
+invalida o recibo ou interrompe a recuperação já iniciada, preservando o
+resultado original para revisão humana.
+
+Na integração Google, a pessoa seleciona calendários fonte de ocupação e um
+destino gravável entre as próprias conexões. Publicação e reconciliação preservam
+a identidade estável de organização, conexão, calendário e evento; trocar o
+destino não move evento já publicado. Alterações incompatíveis no mesmo aspecto
+compartilhado ou substituição de uma edição remota exigem resolução explícita;
+mudanças compatíveis são reconciliadas preservando os campos não alterados. A
+cobertura do cache tem janela e frescor locais, sem prometer visão completa fora
+delas. A prova de transporte usou receiver HTTP
+controlado e não comprova conta Google real, consentimento OAuth ou entrega de
+convite.
 
 O agente ganhou um subsistema de follow-up com **um motor, um enrollment, um relógio** (`followup_enrollments.next_eval_at`) — silêncio, demanda ("me chama em X dias") e campanha são gatilhos do MESMO grafo, nunca motores paralelos (o anti-padrão-raiz do CRM anterior).
 

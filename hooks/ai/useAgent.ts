@@ -21,6 +21,9 @@ export interface AgentRow {
   kind?: "rag_bot" | "mcp_agent" | null;
   priority?: number | null;
   published_version_id?: string | null;
+  paused_at?: string | null;
+  operation_mode?: "automatic" | "assisted";
+  operation_revision?: number;
   /**
    * Provedor e modelo da versão PUBLICADA — o que de fato responde. Vem por join
    * na lista, e é opcional porque nem todo chamador precisa dele. Sem isto, a

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/automation-rules/runs/[runId]/resend — reexecuta SÓ as ações
  * `call_webhook` da regra do run, contra o evento original (`event_log` do
@@ -29,6 +30,9 @@ interface RuleAction {
 }
 
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { runId } = await ctx.params;
   const authz = await requireRole("manager", { requestId, resource: "automation_rules" });

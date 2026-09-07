@@ -18,3 +18,7 @@ Escopo previsto:
 3. Grupos: SKIP CRM binding se `chatId.endsWith("@g.us")`; sender é `p.author`
 4. Idempotência: `unique (organization_id, external_id)` + captura `code === "23505"`
 5. Cron `recover-stuck-messages`: `status='sending'` há >5min → `failed`
+
+## Sessões e reserva local
+
+`lib/channels/connect-waha.ts` reserva a identidade por organização e Idempotency-Key antes de criar/iniciar remoto. Erro desconhecido 409/422 não é sucesso; o cliente exige envelope conhecido, identidade exata e pós-condição. Falha preserva FAILED e a identidade; nova tentativa reutiliza a mesma sessão via reserva. Não há compensação destrutiva automática. `tier=CORE` não implica limite de uma sessão; a prova 2026.7.2/NOWEB chega somente a duas SCAN_QR_CODE, sem pairing ou envio.

@@ -21,7 +21,7 @@ quebra no clone fresco é um bug de produto, não um detalhe de ambiente.
 
 Next.js 16 (App Router) · React 19 · TypeScript 6 estrito · Tailwind 4 ·
 shadcn/ui · Supabase (Postgres + Auth + Realtime + Storage) · Upstash Redis ·
-Vercel AI Gateway (`@ai-sdk/anthropic|openai|google`) · WAHA Plus (engine NOWEB) ·
+Vercel AI Gateway (`@ai-sdk/anthropic|openai|google`) · WAHA 2026.7.2 (engine NOWEB; sem bloqueio por tier) ·
 Zod 4 · Vitest 4 · Playwright 1 · Sentry 10.
 
 Só a **major**, de propósito: é onde o idioma muda, e é o que

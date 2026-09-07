@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/leads/import — o funil a partir da planilha que a empresa já tem.
  * GET  /api/v1/leads/import — a planilha modelo, para quem não sabe por onde começar.
@@ -46,6 +47,9 @@ interface ResumoDaImportacao {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   // Mesma régua do POST unitário de lead: escrita é `agent` para cima.
   const authz = await requireRole("agent", { requestId, resource: "crm_leads" });

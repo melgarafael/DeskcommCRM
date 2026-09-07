@@ -1,3 +1,4 @@
+import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Shared shapes for the EPIC-06 AI/RAG pipeline.
  *
@@ -74,6 +75,7 @@ export type SkipReason =
   | "nao_elegivel_para_ia";
 
 export interface BotContext {
+  serviceBoundary?: ServiceBoundary;
   organization_id: string;
   conversation_id: string;
   contact_id: string;
@@ -82,6 +84,7 @@ export interface BotContext {
   inbound_body: string;
   recent_messages: RecentMessage[];
   agent: {
+    kind?: string | null;
     id: string;
     model: string;
     system_prompt: string;

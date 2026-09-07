@@ -1,3 +1,5 @@
+import { currentExecutionBoundary, currentExecutionJob } from '@/lib/atendimento/fronteira-server';
+import { claimOfJob } from '@/lib/agent-engine/queue/claim';
 /**
  * Tools MCP habilitadas NA TELA entrando no turno do engine (Fase 2B-tools).
  *
@@ -48,6 +50,7 @@ export async function buildMcpTurnTools(
   ids: { organizationId: string; jobId: string },
   agentConfig: PublishedAgentConfig,
   log: Logger,
+  options?: { readOnly: boolean },
 ): Promise<McpTurnTools | null> {
   const allowed = agentConfig.toolIds.filter((id) => !BLOCKED_TOOL_IDS.has(id));
   const blocked = agentConfig.toolIds.filter((id) => BLOCKED_TOOL_IDS.has(id));
@@ -64,11 +67,18 @@ export async function buildMcpTurnTools(
   const ephemeral = await mintEphemeralToken({
     organizationId: ids.organizationId,
     runId: ids.jobId,
+    readOnly: options?.readOnly,
     versionCreatedBy: agentConfig.versionCreatedBy ?? undefined,
     agentCreatedBy: agentConfig.agentCreatedBy ?? undefined,
   });
 
+  const originJob = currentExecutionJob();
+  const boundary = currentExecutionBoundary();
+  const claim = originJob ? claimOfJob(originJob) : undefined;
   const ctx: McpContext = {
+    ...(originJob?.id === ids.jobId && boundary && claim
+      ? { meetingBooking: { sourceJobId: originJob.id, claim, boundary } }
+      : {}),
     organizationId: ids.organizationId,
     role: 'ai_operator',
     // `agent_id` explícito porque é ele que vai para colunas com FK (atividade
@@ -89,7 +99,9 @@ export async function buildMcpTurnTools(
     role: 'ai_operator',
     actor: ctx.actor,
     apiTokenId: ephemeral.id,
-    scopes: ['mcp:read', 'mcp:write', 'actor:ai_agent'],
+    scopes: options?.readOnly
+      ? ['mcp:read', 'actor:ai_agent']
+      : ['mcp:read', 'mcp:write', 'actor:ai_agent'],
   };
   // O engine não usa o sinal de handoff da ponte (a tool está bloqueada) — dummy.
   const handoffSignal: RuntimeHandoffSignal = { triggered: false };

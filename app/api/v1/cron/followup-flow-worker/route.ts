@@ -64,6 +64,9 @@ async function handle(req: NextRequest): Promise<Response> {
     enqueueJob,
   };
 
+  const confirmation=await admin.rpc("fn_appointment_confirmation_sweep",{});
+  if(confirmation.error) return fail("internal_error","Não foi possível verificar as confirmações de presença.",500,{requestId});
+  if(Number(confirmation.data)>0) void audit({action:"agenda.confirmation_sweep_run",organizationId:null,bypassedRls:true,requestId,metadata:{avisos:Number(confirmation.data)}});
   let summary;
   try {
     summary = await runFollowupTick(deps);

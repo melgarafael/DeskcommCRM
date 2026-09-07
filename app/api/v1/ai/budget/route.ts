@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET   /api/v1/ai/budget — o estado do orçamento da org ativa (manager+).
  * PATCH /api/v1/ai/budget — muda teto, limiar e MODO (admin).
@@ -95,6 +96,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("admin", { requestId, resource: "ai_budget" });
   if (!authz.ok) return authz.response;

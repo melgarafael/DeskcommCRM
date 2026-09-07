@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/ai/followups/enrollments — lista enrollments da org ativa
  *   (any member), filtro opcional `?status=`.
@@ -9,6 +10,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { createFollowupEnrollmentSchema } from "@/lib/followup/api-schemas";
 import { ENROLLMENT_LIST_COLUMNS, enrollFollowupFlow } from "@/lib/followup/enroll";
@@ -50,6 +52,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "followup_enrollments" });
   if (!authz.ok) return authz.response;
@@ -70,8 +75,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
-  const result = await enrollFollowupFlow(supabase, {
+  const result = await enrollFollowupFlow(createAdminClient(), {
     organizationId: activeOrg.orgId,
     pointerId: parsed.data.pointer_id,
     contactId: parsed.data.contact_id,

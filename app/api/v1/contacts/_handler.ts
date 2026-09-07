@@ -8,6 +8,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { createAdminClient } from "@/lib/supabase/admin";
+import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
@@ -452,6 +454,7 @@ export async function patchContactHandler(
     .select(
       "id, organization_id, is_anonymized, tags, email, phone_number, name, display_name, consent, custom_fields",
     )
+    .eq("organization_id", ctx.organization_id)
     .eq("id", contactId)
     .maybeSingle();
 
@@ -527,11 +530,15 @@ export async function patchContactHandler(
     );
   }
 
+  const tagServiceOrigin = input.tags !== undefined
+    ? await observeServiceOrigin(createAdminClient(), ctx.organization_id, contactId)
+    : null;
   patch.updated_at = new Date().toISOString();
 
   const { data: updated, error: updErr } = await supabase
     .from("contacts")
     .update(patch)
+    .eq("organization_id", ctx.organization_id)
     .eq("id", contactId)
     .select(SELECT_COLS)
     .maybeSingle();
@@ -595,12 +602,12 @@ export async function patchContactHandler(
     const prevTags: string[] = (existing as { tags?: string[] }).tags ?? [];
     const addedTags = input.tags.filter((t) => !prevTags.includes(t));
     if (addedTags.length) {
-      await supabase
+      await createAdminClient()
         .rpc("emit_event", {
           p_event_type: "contact.tag_added",
           p_entity_kind: "contact",
           p_entity_id: contact.id,
-          p_payload: { added_tags: addedTags, tags: input.tags },
+          p_payload: { added_tags: addedTags, tags: input.tags, service_origin: tagServiceOrigin },
           p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
           p_organization_id: contact.organization_id,
         })

@@ -58,6 +58,8 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const CONV_ID = "44444444-4444-4444-8444-444444444444";
 const MSG_ID = "55555555-5555-4555-8555-555555555555";
 const CONTACT_ID = "66666666-6666-4666-8666-666666666666";
+const SERVICE = { organization_id: ORG_ID, contact_id: CONTACT_ID, conversation_id: CONV_ID,
+  service_revision: 1, demanda_id: null, demanda_revision: null, status: "open", demanda_fechada_em: null };
 const AGENT_ID = "88888888-8888-4888-8888-888888888888";
 const VERSION_ID = "99999999-9999-4999-8999-999999999999";
 
@@ -94,7 +96,7 @@ function makeAdminStub(agente: AgenteNoBanco) {
             },
           }
         : table === "messages"
-          ? { id: MSG_ID, body: INBOUND_BODY, direction: "inbound", organization_id: ORG_ID }
+          ? { ...SERVICE, id: MSG_ID, body: INBOUND_BODY, direction: "inbound", organization_id: ORG_ID }
           : table === "ai_agents"
             ? {
                 id: AGENT_ID,
@@ -155,7 +157,8 @@ function makeAdminStub(agente: AgenteNoBanco) {
             table === "messages"
               ? [
                   {
-                    id: MSG_ID,
+                    ...SERVICE,
+              id: MSG_ID,
                     body: INBOUND_BODY,
                     direction: "inbound",
                     created_at: new Date().toISOString(),
@@ -200,7 +203,7 @@ function makeAdminStub(agente: AgenteNoBanco) {
   };
 
   const inserted: Array<{ table: string; row: Record<string, unknown> }> = [];
-  const rpc = () => Promise.resolve({ data: [], error: null });
+  const rpc = (name: string) => Promise.resolve({ data: name === "fn_service_boundary" ? SERVICE : [], error: null });
   return { stub: { from, rpc }, inserted };
 }
 
@@ -276,18 +279,11 @@ describe("worker legado — o que a tela chama de Rascunho/Arquivado não respon
     expect(result.status).not.toBe("sent_to_dispatch");
   });
 
-  it("rag_bot legado ATIVO e nunca publicado continua atendendo — o caminho que este worker existe para servir", async () => {
-    // A outra ponta, e ela não é decorativa: um conserto que só silencia
-    // deixaria este caso verde por acidente. Quem nunca publicou versão nenhuma
-    // depende deste worker — é o que o comentário de `engine_owns_reply` promete.
-    armar({ kind: "rag_bot", is_active: true, published_version_id: null, archived_at: null });
-
-    const result = await processMessageReceived(eventRow);
-
-    expect(
-      destinos,
-      `o worker legado deixou de atender quem depende dele (status: ${result.status}, reason: ${result.reason ?? "-"})`,
-    ).toContain("api.anthropic.com");
+  it("rag_bot ativo sem versão exige recuperação e não chama o motor retirado", async () => {
+    armar({kind:"rag_bot",is_active:true,published_version_id:null,archived_at:null});
+    const result=await processMessageReceived(eventRow);
+    expect(destinos).toEqual([]);
+    expect(result).toMatchObject({status:"skipped",reason:"agent_inactive_or_missing"});
   });
 
   it("rag_bot DESATIVADO não fala com o cliente", async () => {

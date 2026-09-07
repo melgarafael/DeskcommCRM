@@ -11,6 +11,10 @@ export interface Conversation {
   channel: string;
   status: string;
   status_changed_at: string;
+  service_revision?: number;
+  service_closed_at?: string | null;
+  service_started_at?: string | null;
+  current_demanda_id?: string | null;
   assigned_to_user_id: string | null;
   /**
    * Cópia desnormalizada do nome de quem atende (migration 0202), escrita por

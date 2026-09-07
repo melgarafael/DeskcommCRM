@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/tasks — as tarefas da organização, em ordem de prazo.
  * POST /api/v1/tasks — cria uma tarefa.
@@ -105,6 +106,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
 
   // `agent` e não `manager`: criar tarefa é o gesto de quem ATENDE, todo dia.

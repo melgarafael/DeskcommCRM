@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH /api/v1/attendants/availability/[user_id] — grava disponibilidade.
  *
@@ -33,6 +34,9 @@ export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ user_id: string }> },
 ): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { user_id: targetUserId } = await ctx.params;
 

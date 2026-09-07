@@ -205,6 +205,7 @@ describe("aplicaGatilhoDeEtapa — o enrollment que nasce", () => {
     expect(s.enrolled).toBe(1);
     expect(reg.enrollments).toEqual([
       {
+        event_id: evento().id,
         organization_id: ORG,
         pointer_id: POINTER,
         version_id: VERSION,

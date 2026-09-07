@@ -24,6 +24,8 @@ export const IMPERSONATE_COOKIE_NAME = "deskcomm-impersonate";
 export const IMPERSONATE_TTL_SECONDS = 3600; // 1 hour
 
 export interface ImpersonatePayload {
+  /** Referência à sessão; banco é a autoridade, inclusive depois de vencer. */
+  sessionId?: string;
   /** Tenant the platform admin is acting as. */
   tenantId: string;
   /** Auth user id of the platform admin. */

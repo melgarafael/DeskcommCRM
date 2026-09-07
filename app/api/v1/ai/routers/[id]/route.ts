@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET    /api/v1/ai/routers/:id — detalhe do router + membros (agent+).
  * PATCH  /api/v1/ai/routers/:id — atualiza campos (admin), audit `ai.router_updated`.
@@ -79,6 +80,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {
@@ -163,6 +167,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 // ---------------------------------------------------------------------------
 
 export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {

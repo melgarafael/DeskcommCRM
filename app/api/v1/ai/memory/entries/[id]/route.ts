@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * Épico Operação Visível (F1) — PATCH: arquiva/reativa uma entrada de memória
  * da org (migration 0067). Filtro `organization_id` sempre (admin client
@@ -20,6 +21,9 @@ const patchSchema = z.object({ status: z.enum(["archived", "active"]) });
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {

@@ -11,7 +11,10 @@ export default defineConfig([
   // `node_modules/` próprios) — nunca fonte deste repo; lintá-los explode o eslint
   // com dezenas de milhares de falsos positivos em JS gerado. (Na CI, checkout
   // limpo, o diretório nem existe.)
-  globalIgnores([".next/", "node_modules/", "dist/", "supabase/", "next-env.d.ts", ".claude/worktrees/"]),
+  // Cópias compiladas da demonstração e binários baixados pelo Playwright
+  // vivem no scratch local. Os scripts escritos à mão em .superpowers seguem
+  // sob lint; somente estes dois tipos de artefato gerado ficam de fora.
+  globalIgnores([".next/", "node_modules/", "dist/", "supabase/", "next-env.d.ts", ".claude/worktrees/", ".superpowers/**/bundles/", ".superpowers/**/playwright-browsers/"]),
   nextPlugin.configs["core-web-vitals"],
   reactHooks.configs.flat.recommended,
   ...tseslint.configs.recommended,

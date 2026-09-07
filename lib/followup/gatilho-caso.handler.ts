@@ -46,7 +46,7 @@ export const followupGatilhoCasoHandler: EventHandler = {
         // conclusão errada e manda o operador procurar no lugar errado.
         detail:
           `armados=${summary.pointers_armados} enrolled=${summary.enrolled} ` +
-          `ja_vivo=${summary.skipped_existing} gate=${summary.pointers_barrados_pelo_gate} ` +
+          `origem_obsoleta=${summary.skipped_stale_origin ?? 0} ja_vivo=${summary.skipped_existing} gate=${summary.pointers_barrados_pelo_gate} ` +
           `sem_contato=${summary.sem_contato} cancelados=${summary.cancelados} ` +
           `vencidos=${summary.vencidos}`,
       };

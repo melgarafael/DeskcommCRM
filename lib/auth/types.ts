@@ -1,3 +1,4 @@
+import type { InterfaceSettings } from "@/lib/navigation/interface";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
 /**
@@ -63,6 +64,7 @@ export type VisibilityMode = "all" | "own_and_unassigned" | "own";
 export const DEFAULT_VISIBILITY_MODE: VisibilityMode = "own_and_unassigned"; // G1-06a
 
 export interface UserOrgMembership {
+  interface_settings?: InterfaceSettings;
   organization_id: string;
   organization_name: string;
   role: Role;
@@ -77,6 +79,7 @@ export interface UserOrgMembership {
 }
 
 export interface AuthUser {
+  support?: import("@/lib/impersonate/support").SupportContext | null;
   id: string;
   email: string;
   full_name: string | null;
@@ -134,6 +137,7 @@ export interface AuthUser {
 }
 
 export interface ActiveOrg {
+  interface_settings?: InterfaceSettings;
   orgId: string;
   name: string;
   role: Role;

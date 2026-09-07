@@ -3,9 +3,13 @@
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import type { ChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { toast } from "sonner";
 
 import type { ChannelDeletionImpact } from "@/app/api/v1/channel-sessions/[id]/route";
+import { copyToClipboard } from "@/lib/clipboard";
+import { randomId } from "@/lib/random-id";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import {
@@ -111,6 +115,9 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     schemaOutdated,
   } = useChannelSessions({ refetchInterval: 10_000 });
   const [busyId, setBusyId] = useState<string | null>(null);
+  const createKey = useRef<string | null>(null);
+  const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
+  const routing = useQuery({ queryKey: ["channel-routing-settings"], queryFn: () => apiClient.get<{ data: ChannelRoutingSettings }>("/api/v1/settings/routing/channels") });
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
@@ -151,15 +158,20 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
 
   const handleConnectNew = useCallback(async () => {
     setCreating(true);
+    setConnectionDetail(null);
     try {
       const res = await apiClient.post<{ data: ChannelSession }>(
         "/api/v1/channel-sessions",
         {},
+        { idempotencyKey: createKey.current ??= randomId(), timeoutMs: 120_000 },
       );
       invalidate();
+      createKey.current = null;
       setQr({ sessionId: res.data.id, title: t("Conectar novo WhatsApp") });
     } catch (err) {
       toast.error(errMsg(err, "Não foi possível iniciar a conexão.", t));
+      if (err instanceof ApiError) setConnectionDetail(JSON.stringify({ code: err.code, request_id: err.requestId, ...err.details }, null, 2));
+      invalidate();
     } finally {
       setCreating(false);
     }
@@ -247,6 +259,11 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       <p className="text-sm text-muted-foreground">
         {t("Novos canais começam em modo de teste, sem respostas automáticas até você autorizar números ou liberar o público.")}
       </p>
+      {connectionDetail && <details className="rounded-md border p-3 text-sm"><summary>{t("Detalhes para suporte")}</summary><pre className="mt-2 whitespace-pre-wrap break-words">{connectionDetail}</pre><Button variant="outline" size="sm" onClick={async () => {
+        if (await copyToClipboard(connectionDetail)) toast.success(t("Copiado!"));
+        else toast.error(t("Não foi possível copiar. Selecione e copie manualmente."));
+      }}>{t("Copiar detalhes")}</Button></details>}
+      <Link href="/app/settings/atendimento" className="text-sm underline">{t("Configurar responsáveis por número")}</Link>
       {!wahaConfigured && (
         <div className="rounded-md border border-warning bg-warning-bg p-4 text-sm text-warning-fg">
           <p className="font-medium">{t("O serviço do WhatsApp não está configurado.")}</p>
@@ -309,6 +326,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {list.map((c) => {
             const info = statusInfo(c.status, t);
+            const policy = routing.data?.data?.channels?.find((channel) => channel.id === c.id);
             // Sem o serviço no ar a rota de exclusão falha fechado (503) para
             // quem depende dele: oferecer o botão seria prometer uma ação que
             // não acontece. O canal oficial não passa pelo transporte e continua
@@ -337,6 +355,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     : t("Ainda não verificado")}
                 </p>
                 <ChannelAiAccess channelId={c.id} />
+                <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
                 <div className="mt-auto flex flex-wrap gap-2">
                   {/* Some no canal oficial em vez de aparecer desabilitado: não é
                       indisponibilidade passageira (como o Excluir sem o serviço no

@@ -7,11 +7,14 @@
  * executa a Action. Isso mantém as 5 regras do acceptance testáveis por unit
  * sem precisar de um Postgres vivo.
  */
+import type { Json } from "@/lib/database.types";
 import type { RoutingConfig, RoutingMode } from "@/lib/schemas/routing";
 
 /** Um atendente já FILTRADO por elegibilidade (§5: disponível ∧ horário ∧ folga). */
 export interface RoutingCandidate {
   userId: string;
+  /** Fato persistido relido no claim, sem confundir com defaults do parser. */
+  scheduleSnapshot?: Json;
   /** Conversas abertas atribuídas (carga atual) — desempate no modo round_robin. */
   currentLoad: number;
   /** Epoch ms da última atribuição recebida; null = nunca (prioridade máxima no rodízio). */
@@ -23,9 +26,7 @@ export type RoutingAction =
   /** Marca o evento consumido sem atribuir (já tem dono, modo manual, modo não suportado). */
   | { kind: "skip"; reason: string }
   /** Sem elegível: reenfileira com backoff (fica na fila até haver quem atenda). */
-  | { kind: "requeue"; nextAttemptAt: string; attempts: number }
-  /** Estourou max_retries sem elegível: desiste do evento; conversa fica na fila (G5-03 mostra). */
-  | { kind: "dead"; reason: string };
+  | { kind: "requeue"; nextAttemptAt: string; attempts: number };
 
 export interface DecideRoutingInput {
   mode: RoutingMode | string;
@@ -70,10 +71,9 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   if (picked) return { kind: "assign", userId: picked };
 
   // Sem elegível (acceptance 4): re-agenda com backoff da config (não hardcoded).
-  const nextAttempts = input.attempts + 1;
-  if (nextAttempts > input.config.max_retries) {
-    return { kind: "dead", reason: "max_retries_no_eligible" };
-  }
-  const nextAttemptAt = new Date(input.now.getTime() + input.config.backoff_seconds * 1000).toISOString();
-  return { kind: "requeue", nextAttemptAt, attempts: nextAttempts };
+  const attempts = Math.min(input.attempts + 1, input.config.max_retries);
+  const slow = input.attempts >= input.config.max_retries;
+  const seconds = slow ? Math.max(900, input.config.backoff_seconds) : input.config.backoff_seconds;
+  const nextAttemptAt = new Date(input.now.getTime() + seconds * 1000).toISOString();
+  return { kind: "requeue", nextAttemptAt, attempts };
 }

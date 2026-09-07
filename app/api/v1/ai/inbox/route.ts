@@ -11,6 +11,8 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
 
 export const dynamic = "force-dynamic";
 
@@ -57,5 +59,6 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("organization_id", org.orgId)
     .eq("status", "open");
 
-  return ok({ items: data ?? [], open_count: openCount ?? 0 }, { requestId });
+  const items = await resolverDestinosDosAvisos(await createClient(), org.orgId, org.role, data ?? []);
+  return ok({ items, open_count: openCount ?? 0 }, { requestId });
 }

@@ -41,7 +41,7 @@ export type SpinningDecision =
   | { allow: false; code: 'mass_identical'; matchCount: number; reason: string };
 
 export function normalizeCopy(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, ' ').trim();
+  return text.toLowerCase().replace(/https:\/\/meet\.google\.com\/[a-z0-9-]+\/?/g, '[meet-link]').replace(/\s+/g, ' ').trim();
 }
 
 export function hashNormalized(normalized: string): string {
