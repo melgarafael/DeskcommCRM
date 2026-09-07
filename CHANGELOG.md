@@ -8,6 +8,96 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.17.0] — 2026-09-07
+
+### Adicionado
+
+- **Acompanhar uma organização com acesso temporário de verdade** A administração abre a organização escolhida com a identidade real de quem
+  presta suporte. É possível escolher edição ou somente leitura, sem adicionar
+  um membro permanente à equipe. O banner identifica a organização e oferece a
+  saída; ao encerrar, os dados da organização anterior são carregados novamente.
+
+  O modo somente leitura também impede alterações feitas por chamadas diretas.
+  Quando o prazo ou a permissão terminam, a tela pede encerrar o acompanhamento
+  antes de continuar.
+
+  As atualizações em tempo real aguardam a autenticação antes de abrir os canais,
+  inclusive ao trocar de organização ou acompanhar em mais de uma aba.
+
+- **Crie o Google Meet e acompanhe a entrega do link na conversa** Compromissos com local Google Meet solicitam o link na agenda Google escolhida. O detalhe mostra criação pendente, link pronto ou falha com nova verificação. Quando pronto, você pode abrir e copiar o link.
+
+  O envio na conversa tem autorização e estado próprios. Escolha o atendimento e use “Enviar quando ficar pronto” ou “Enviar link ao cliente”. Marcar pelo assistente no atendimento atual agenda essa entrega. Se o atendimento mudar, a equipe recebe um aviso e pode autorizar uma nova entrega. Criar o link não significa que a mensagem já foi enviada.
+
+  Autorizar somente o link em um atendimento humano não ativa a IA nem muda o responsável ou o silêncio configurado. Bloqueios de mensagens e restrições do canal continuam valendo, com orientação no detalhe.
+
+  Depois de encerrar e reabrir o atendimento, uma nova entrega exige outro clique de autorização. Avisos da Central abrem o compromisso correspondente. O PDF de acesso aos dados também inclui entregas de links e avisos sobre compromissos, com seus estados e datas.
+
+- **Escolha suas agendas e resolva mudanças entre a Agenda e o Google** Em Configurações → Agenda, escolha quais agendas Google ocupam seus horários e um destino gravável para novos compromissos. Os já publicados continuam na agenda original. Mudanças de horário e cancelamento são reconciliadas; quando ambos os lados mudam, o detalhe mostra a comparação e pede uma decisão. Alterar só o horário preserva os campos modificados diretamente no Google.
+
+  A tela informa erro, última sincronização, leitura parcial e retentativa. Comparecimento e falta continuam sendo fatos registrados pela equipe; mudanças no Google preservam o contato, a conversa e o histórico daqui.
+
+  Retentativas conservam a identidade do compromisso. Uma edição concorrente continua pendente até ser reconciliada; corrigir uma série no Google permite retomar a comparação. A anonimização encerra a sincronização daquele titular sem impedir outros compromissos.
+
+- **Confirme presença e acompanhe faltas pela Agenda** Compromissos podem ser ligados ao contato e à conversa. A equipe registra comparecimento, falta ou cancelamento; a Central lembra quando falta confirmar, com prazos ajustáveis em Configurações. A agenda protege o cliente de cobranças de silêncio indevidas. Faltas confirmadas podem iniciar um fluxo configurado, e o compromisso mostra quando outro acompanhamento ou a configuração impedem o início. Resposta do cliente, cancelamento e remarcação interrompem a recuperação antiga.
+
+  As datas do detalhe seguem o idioma escolhido e o fuso do compromisso, inclusive quando ele termina no dia seguinte.
+
+- **Testar o agente e revisar suas respostas antes de enviar** O agente pode preparar sugestões automaticamente para revisão humana. É possível editar,
+  aprovar ou rejeitar o texto na conversa, acompanhar o envio e informar o que deve melhorar.
+  Uma conversa alterada exige nova revisão. A aprovação do texto não executa mudanças no CRM
+  ou na agenda.
+
+  Pausar o atendimento automático preserva a versão publicada e mantém a assistência
+  à equipe. O teste usa o motor e o conhecimento do agente, apresenta propostas sem
+  aplicá-las ao cliente e fica disponível antes da publicação. Agentes antigos podem
+  concluir a configuração pela própria tela, preservando instruções e conhecimento.
+
+- **Abra o contexto dos avisos sem perder o acompanhamento** A Central oferece acesso à conversa, ao contato, ao negócio ou à configuração correspondente quando seu acesso permite. Contextos removidos ou indisponíveis recebem orientação sem link quebrado. Abrir o contexto mantém o aviso aberto; resolver e reabrir continuam sendo escolhas separadas.
+
+- **Encerre a conversa e registre o resultado da demanda separadamente** O atendimento agora diferencia fechar uma conversa de concluir a demanda do cliente. O painel mostra a demanda vigente, permite registrar seu resultado e mantém os fatos duráveis do contato e o histórico encerrado.
+
+  Uma nova mensagem após o fechamento reabre a fila com uma nova demanda. Trabalhos automáticos de um atendimento encerrado deixam de executar ações ou enviar respostas antigas depois da reabertura.
+
+- **Escolha as áreas visíveis para cada pessoa da equipe** Quem administra pode escolher uma interface completa, simplificada ou personalizada por membro, inclusive antes de enviar o convite. A escolha vale em cada organização e atualiza a navegação de quem já está trabalhando sem fechar sua tela.
+
+  A interface simplificada mantém as áreas de trabalho e Conexões quando o papel permite. A seleção muda o menu, a busca e a página inicial; permissões e links das conversas continuam seguindo o papel da pessoa.
+
+- **Criar organizações já entrega acesso e convite ao responsável** Quem administra a instalação encontra Gerenciar organizações no seletor, mesmo
+  quando só participa de uma empresa. A nova organização já inclui seu criador
+  como administrador e oferece um convite copiável ao responsável, inclusive sem
+  e-mail configurado. Falhas de criação não deixam empresas sem administrador.
+
+  A troca de empresa reinicia os dados da tela e aceita somente acessos ativos.
+  Reabrir um convite antigo não restaura privilégios removidos.
+
+  Se a resposta da criação se perder, tentar novamente recupera a mesma organização
+  e o link. O recibo dessa operação é protegido contra alterações por membros.
+
+- **Escolha quem atende cada número e recupere conexões com segurança** Em Configurações › Atendimento, escolha os responsáveis de cada número. A capacidade da pessoa continua compartilhada entre canais; uma lista vazia deixa as conversas na fila, com aviso e novas tentativas. Conexões mostra o resumo e o caminho para ajustar a equipe.
+
+  Conectar um número preserva a identidade em falhas e permite reparar a tentativa. Conflitos do serviço só contam como sucesso depois da confirmação da sessão correta. A versão padrão mantém a possibilidade de mais de uma sessão sem bloqueio por tier; a prova local cobre duas sessões aguardando QR, sem pairing ou envio real.
+
+### Corrigido
+
+- **A instalação não para mais no passo de criar o primeiro administrador** Instalar numa VPS podia falhar bem no fim, ao criar o primeiro administrador,
+  com uma mensagem de erro do banco de dados. Quando acontecia, o banco já estava
+  montado e as configurações já estavam gravadas — a instalação parava com tudo
+  quase pronto e a tela oferecendo recomeçar do zero.
+
+  O passo foi corrigido e o instalador passa a verificar isso sozinho antes de
+  publicar uma versão nova, para que a falha não volte.
+
+- **O endereço responde mesmo quando a hospedagem usa nomes próprios de porta** Em hospedagens com painel próprio (EasyPanel, entre outras), a instalação podia
+  terminar com tudo no ar por dentro e o endereço mostrando a página de erro do
+  painel: o instalador supunha os nomes que a hospedagem dá às portas 80 e 443, e
+  quando eles eram diferentes o roteamento simplesmente não acontecia — sem erro
+  em lugar nenhum.
+
+  Agora o instalador lê esses nomes da própria hospedagem e mostra quais
+  encontrou. Quem já tinha escolhido os nomes à mão continua com a escolha; quem
+  instalou antes e ficou com o endereço mudo pode rodar a instalação de novo para
+  que ela os detecte.
+
 ## [1.16.1] — 2026-09-07
 
 ### Corrigido
@@ -3135,7 +3225,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.16.1...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.17.0...HEAD
+[1.17.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.16.1...v1.17.0
 [1.16.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.1...v1.16.0
 [1.15.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.0...v1.15.1
