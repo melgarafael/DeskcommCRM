@@ -1743,3 +1743,58 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
     se apaga junto com ela. Meça-a, e se ela sobreviver à medição, transforme-a em asserção **pelo
     caminho de leitura de produção** — nunca por um `select` equivalente escrito à mão, que
     continuaria verde se o filtro sumisse do código.
+
+42. **O PR de release mescla com MERGE COMMIT, nunca com squash — e a tag se confere depois.**
+    Medido em 2026-09-07: mesclei "Release 1.17.0" com `--squash`, por hábito, e o corte reprovou:
+
+    ```
+    ::error::Este commit apagou 12 fragmento(s) de .changes/ mas não foi assinado
+             pelo App da release (assinante: deskcommcrm-release[bot]).
+    ::error::A tag v1.17.0 NÃO foi criada.
+    ```
+
+    A guarda lê o autor de `HEAD^2` — o segundo pai, que num merge commit é a ponta do branch de
+    release assinada pelo App. **Squash não tem segundo pai**, então quem responde passa a ser
+    quem mesclou. O `release.yml` já dizia isso num comentário, e eu mesclei sem ler.
+
+    O desfecho é o pior possível porque é SILENCIOSO para quem opera: a `main` fica com o
+    CHANGELOG anunciando a versão, os fragmentos consumidos e **nenhuma tag**. O texto afirma
+    que a versão saiu; o registry não tem nada. Quem está na "última versão" não recebe.
+
+    Na prática, e nesta ordem:
+
+    ```bash
+    gh pr merge <n> --merge                       # NUNCA --squash no PR de release
+    git ls-remote --tags origin | grep vX.Y.Z     # a tag existe?
+    ```
+
+    Se o corte falhou, o conserto é reverter o merge (os fragmentos voltam para `.changes/`),
+    rodar o workflow de release de novo e mesclar o PR novo com merge commit. E confira a
+    ASSINATURA antes de mesclar, que custa um comando: `git log -1 --format='%an' origin/release/X.Y.Z`.
+
+43. **"Falhou N vezes" não é taxa — divida pelo número de EXECUÇÕES antes de acusar.**
+    Passei a tratar a parte 3 do e2e como frágil e cheguei a escrever "falhou 3 de 5 execuções",
+    montando em cima disso uma hipótese estrutural (o bloco `trace`-on rodando primeiro contra um
+    servidor frio) e quase mexendo na partição por causa dela. A medição nos últimos 30 runs:
+
+    | parte | falhas | sucessos |
+    |---|---|---|
+    | 1 | 2 | 27 |
+    | 2 | 8 (+2 canceladas) | 19 |
+    | 3 | **1** | **15** |
+
+    A parte 3 era a MAIS estável das três. Eu vinha somando as falhas que via sem dividir pelas
+    execuções que não via — e as 8 da parte 2, que eu não tinha contado, eram os defeitos de
+    produto reais.
+
+    O viés tem nome próprio aqui: você OLHA para o job que falhou, e nunca olha para os que
+    passaram. A amostra que chega aos seus olhos é enviesada por construção. Antes de propor
+    conserto para "aquilo que vive quebrando", conte os dois lados:
+
+    ```bash
+    for p in 1 2 3; do printf "parte %s: " $p
+      gh run list --workflow=e2e.yml --limit 30 --json databaseId --jq '.[].databaseId' \
+      | while read r; do gh run view $r --json jobs \
+          --jq ".jobs[] | select(.name|test(\"parte \\\\($p\\\\)\")) | .conclusion" 2>/dev/null; done \
+      | sort | uniq -c | tr '\n' ' '; echo; done
+    ```
