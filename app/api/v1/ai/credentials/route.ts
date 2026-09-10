@@ -84,6 +84,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   const input = parsed.data;
   const provider = input.provider as Provider;
 
+  // Assinatura não se cola: o vínculo OAuth nasce em
+  // POST /api/v1/ai/credentials/codex (tabela própria, refresh cifrado).
+  // Aceitar aqui gravaria em ai_provider_credentials uma linha que o resolver
+  // nunca leria — credencial fantasma com tela dizendo "salva".
+  if (provider === "openai-codex") {
+    return fail("validation_failed", t("Assinatura ChatGPT se conecta via OAuth, não colando chave."), 422, {
+      requestId,
+    });
+  }
+
   // O miolo — cifrar, gravar, auditar e validar em segundo plano — mora em
   // `lib/ai/credenciais/guardar.ts` porque o wizard precisa exatamente do mesmo
   // e cada item dessa lista tem consequência de segurança se as duas cópias

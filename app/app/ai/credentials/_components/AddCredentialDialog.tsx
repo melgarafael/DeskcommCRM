@@ -32,7 +32,7 @@ import {
   type CredentialRow,
   type Provider,
 } from "@/hooks/ai/useCredentials";
-import { IDS_DE_PROVEDOR, PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { IDS_DE_PROVEDOR, PROVEDORES, PROVEDORES_COM_CHAVE_MANUAL } from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -151,7 +151,10 @@ export function AddCredentialDialog({ open, onOpenChange }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PROVEDORES.map((p) => (
+                {/* Só chave colada à mão: assinatura (openai-codex) se conecta
+                    via OAuth em outra tela, e colar "token" aqui criaria uma
+                    credencial que o turno nunca leria. */}
+                {PROVEDORES_COM_CHAVE_MANUAL.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.rotulo}
                   </SelectItem>

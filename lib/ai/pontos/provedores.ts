@@ -40,6 +40,13 @@ export interface ProvedorSuportado {
   ondePegarAChave: string;
   /** Como a chave começa — vira placeholder do campo, para a pessoa reconhecer que copiou a coisa certa. */
   prefixoDaChave: string;
+  /**
+   * Aceita cadastro de chave colada à mão (BYOK clássico)? `false` no
+   * `openai-codex`: assinatura se CONECTA via OAuth (device-code), não se
+   * cola — e gravar um "token" colado em `ai_provider_credentials` criaria
+   * uma credencial que o resolver nunca lê (ele lê `ai_provider_oauth`).
+   */
+  chaveManual: boolean;
 }
 
 export const PROVEDORES = [
@@ -52,6 +59,7 @@ export const PROVEDORES = [
     catalogoSincronizavel: false,
     ondePegarAChave: "https://console.anthropic.com/settings/keys",
     prefixoDaChave: "sk-ant-…",
+    chaveManual: true,
   },
   {
     id: "openai",
@@ -62,6 +70,7 @@ export const PROVEDORES = [
     catalogoSincronizavel: false,
     ondePegarAChave: "https://platform.openai.com/api-keys",
     prefixoDaChave: "sk-…",
+    chaveManual: true,
   },
   {
     id: "google",
@@ -72,6 +81,7 @@ export const PROVEDORES = [
     catalogoSincronizavel: false,
     ondePegarAChave: "https://aistudio.google.com/apikey",
     prefixoDaChave: "AIza…",
+    chaveManual: true,
   },
   {
     id: "openrouter",
@@ -82,6 +92,7 @@ export const PROVEDORES = [
     catalogoSincronizavel: true,
     ondePegarAChave: "https://openrouter.ai/keys",
     prefixoDaChave: "sk-or-…",
+    chaveManual: true,
   },
   {
     id: "openai-codex",
@@ -92,6 +103,7 @@ export const PROVEDORES = [
     catalogoSincronizavel: false,
     ondePegarAChave: "https://chatgpt.com/codex",
     prefixoDaChave: "login OAuth…",
+    chaveManual: false,
   },
 ] as const satisfies readonly ProvedorSuportado[];
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais
@@ -115,6 +127,12 @@ export const IDS_DE_PROVEDOR = PROVEDORES.map((p) => p.id) as unknown as readonl
 export const PROVEDOR_POR_ID: ReadonlyMap<string, ProvedorSuportado> = new Map(
   PROVEDORES.map((p) => [p.id, p]),
 );
+
+/**
+ * Os que o diálogo "Adicionar credencial" pode oferecer para COLAR chave.
+ * OAuth (openai-codex) se conecta em `POST /api/v1/ai/credentials/codex`, não aqui.
+ */
+export const PROVEDORES_COM_CHAVE_MANUAL = PROVEDORES.filter((p) => p.chaveManual);
 
 export function ehProvedorSuportado(id: string): boolean {
   return PROVEDOR_POR_ID.has(id);
