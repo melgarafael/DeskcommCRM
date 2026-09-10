@@ -34,6 +34,182 @@ export type Database = {
   }
   public: {
     Tables: {
+      academia_audiences: {
+        Row: {
+          active: boolean
+          age_pending: boolean
+          created_at: string
+          id: string
+          max_age: number | null
+          min_age: number | null
+          name: string
+          notes: string
+          organization_id: string
+          revision: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          age_pending?: boolean
+          created_at?: string
+          id?: string
+          max_age?: number | null
+          min_age?: number | null
+          name: string
+          notes?: string
+          organization_id: string
+          revision?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          age_pending?: boolean
+          created_at?: string
+          id?: string
+          max_age?: number | null
+          min_age?: number | null
+          name?: string
+          notes?: string
+          organization_id?: string
+          revision?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academia_audiences_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      academia_modalities: {
+        Row: {
+          active: boolean
+          aliases: string[]
+          created_at: string
+          id: string
+          name: string
+          notes: string
+          organization_id: string
+          revision: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          aliases?: string[]
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string
+          organization_id: string
+          revision?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          aliases?: string[]
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string
+          organization_id?: string
+          revision?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academia_modalities_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      academia_spaces: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          notes: string
+          organization_id: string
+          revision: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string
+          organization_id: string
+          revision?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string
+          organization_id?: string
+          revision?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academia_spaces_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      academia_teachers: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          notes: string
+          organization_id: string
+          revision: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string
+          organization_id: string
+          revision?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string
+          organization_id?: string
+          revision?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academia_teachers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_reply_drafts: {
         Row: {
           id: string;
@@ -7546,6 +7722,14 @@ export type Database = {
       }
     }
     Functions: {
+      fn_academia_catalog_write_allowed: {
+        Args: { p_org: string }
+        Returns: boolean
+      }
+      fn_definir_modulo_academia: {
+        Args: { p_enabled: boolean; p_org: string }
+        Returns: boolean
+      }
       fn_channel_routing_claim: {
         Args: {
           p_channel: string

@@ -1993,3 +1993,11 @@ Pareamento e envio/recebimento de mensagens ainda dependem do celular do usuári
 - `tests/e2e/academia-modulo-local.spec.ts` é opt-in: credenciais locais dedicadas e nenhum reset.
 - PostgreSQL verifica admin/manager/cross-org/anon e merge não destrutivo.
 - Mapa: `docs/architecture/academia.md`.
+
+## Cadastros da academia
+
+Em Minha Academia: criar e editar cada tipo, modificar faixa provisória, desativar/reativar;
+repetir POST com a mesma identidade não duplica, PATCH com revisão antiga retorna 409.
+Teste local opt-in `academia-cadastros-local.spec.ts` inclui navegação e viewport 390px.
+`tests/invariants/academia-catalogs.test.ts` prova quatro tabelas, outra empresa, viewer,
+manager, flag, colunas imutáveis e integridade dos limites de idade. Nenhuma mensagem enviada.

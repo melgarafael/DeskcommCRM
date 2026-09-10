@@ -66,6 +66,7 @@ const ANON_PERMITIDO: readonly Excecao[] = [];
  * chamada com o client de sessão do usuário, nunca com o de service role.
  */
 const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
+  { fn: "fn_academia_catalog_write_allowed(uuid)", razao: "Helper booleano de RLS das quatro tabelas academia; só informa permissão do auth.uid atual, exige manager, módulo, suporte de escrita e MFA. tests/invariants/academia-catalogs.test.ts prova isolamento e negativas." },
   {
     fn: "fn_definir_modulo_academia(uuid,boolean)",
     razao: "PATCH app/api/v1/modules/route.ts usa createClient da sessão. " +

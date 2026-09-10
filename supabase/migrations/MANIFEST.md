@@ -289,3 +289,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260910130000` | `0232_nome_sessao_waha` | Reserva cria nomes de 45 caracteres, dentro do limite WAHA de 54; preserva UUID aleatório, isolamento e identidades existentes. |
 
 | `20260910160000` | `0233_modulo_academia` | Ativação opt-in da academia, por admin da organização; merge atômico preserva configurações e dados, com suporte/MFA. |
+
+| `20260910180000` | `0234_academia_cadastros` | Públicos, modalidades, professores e ambientes com RLS, módulo ativo, manager, revisão e preservação por desativação. |

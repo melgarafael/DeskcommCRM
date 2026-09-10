@@ -601,6 +601,7 @@ jobs:
       # academia-modulo-local usa credenciais explícitas de uma instalação local, sem reset de dados.
       FORA_DO_CI: >-
         academia-modulo-local.spec.ts
+        academia-cadastros-local.spec.ts
         vps-fresh-onboarding.spec.ts
         inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts
