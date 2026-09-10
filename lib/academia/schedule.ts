@@ -49,10 +49,10 @@ export function scheduleValues(record: ScheduleRecord): ScheduleValues {
   };
 }
 
-export function formatClassEnd(start: string, duration: number): string {
+export function formatClassEnd(start: string, duration: number, nextDayLabel = "+1 dia"): string {
   const [hours = 0, minutes = 0] = start.split(":").map(Number);
   const end = hours * 60 + minutes + duration;
   const hh = Math.floor((end % 1440) / 60).toString().padStart(2, "0");
   const mm = (end % 60).toString().padStart(2, "0");
-  return `${hh}:${mm}${end >= 1440 ? " (+1 dia)" : ""}`;
+  return `${hh}:${mm}${end >= 1440 ? ` (${nextDayLabel})` : ""}`;
 }

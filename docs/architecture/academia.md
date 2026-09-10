@@ -1,7 +1,8 @@
 # Academia opcional por empresa
 
-Entregas atuais: ativação por administrador, navegação, fronteira de acesso e cadastros básicos.
-Grade, preços e ferramentas de consulta da IA entram nas próximas entregas.
+Entregas atuais: ativação por administrador, navegação, fronteira de acesso, cadastros básicos
+e grade semanal de referência. Exceções por data, preços e ferramentas de consulta da IA
+entram nas próximas entregas.
 
 ```mermaid
 flowchart LR
@@ -51,10 +52,57 @@ DELETE concedido; active=false preserva histórico. API audita academia_catalog.
 
 Públicos aceitam limites vazios como não informados; age_pending começa true. Nenhuma faixa, professor
 ou modalidade é cadastrada automaticamente. Aliases são nomes alternativos locais da modalidade;
-a resolução desses nomes no agente ainda não existe. FKs da grade deverão usar organização + id.
+a resolução desses nomes no agente ainda não existe. FKs da grade usam organização + id.
 
 Laço de retorno: erro permanece no formulário; falha de rede permite retry sem duplicação. Revisão
 conflitante exige fechar, atualizar a lista e reabrir. A lista revalida ao voltar à tela e após salvar;
 falha na lista é mostrada explicitamente. Nenhum envio WhatsApp ou ferramenta de IA nesta entrega.
 
 Tipos de `lib/database.types.ts` para os novos objetos gerados pelo Supabase CLI 2.117.0 a partir da migration aplicada; demais declarações preservadas.
+
+## Grade semanal (0235)
+
+CONFIRMADO pelo contrato `lib/academia/schedule.ts`, API `/api/v1/academia/schedule`
+e migration 0235: uma aula vincula modalidade, público, professor e ambiente da mesma
+organização, com dia ISO (1=segunda, 7=domingo), início local HH:mm e duração em minutos.
+O término é calculado e indica virada de dia. Não representa instante UTC nem ocorrência
+datada. Nenhuma faixa etária, equivalência, duração ou aula real é presumida.
+
+```mermaid
+flowchart LR
+  Cadastros[Cadastros da academia] --> Grade[Minha Academia / Grade semanal]
+  Grade --> API[GET, POST, PATCH /academia/schedule]
+  API --> Banco[academia_weekly_classes: RLS e FKs compostas]
+  Banco --> Grade
+  API --> Audit[api_audit_log: ator e alteração]
+  Audit --> Painel[Painel de auditoria da plataforma]
+  Recusa[Conflito de revisão ou vínculo inválido] --> Formulario[Erro no formulário]
+  Formulario --> Releitura[Atualizar grade e corrigir vínculos]
+  Releitura --> Grade
+```
+
+Leitura depende do módulo ligado e do vínculo com a empresa; escrita exige manager,
+suporte com escrita e prova de MFA quando aplicável, também no banco. FKs compostas
+proíbem referências a outra empresa. INSERT e troca de vínculo exigem cadastros ativos;
+reativação da aula revalida os quatro. Desativar um cadastro não apaga nem altera a aula
+existente: a tela sinaliza o vínculo inativo para revisão. Não há exclusão por horário:
+simultaneidade é permitida pelo roadmap.
+
+POST usa Idempotency-Key UUID como identidade durável (mesmo padrão de cadastros);
+retry de valores iguais não duplica nem audita novamente, mesmo após desativar um vínculo.
+Reutilizar a chave com outros valores gera 409. PATCH exige id + revision e faz comparação
+atômica no banco. Horários TIME retornam em precisão de minuto. GET pagina por UUID,
+50 linhas por página; a tela lê todas as páginas antes de agrupar por dia e filtrar.
+
+Living System Checklist: entrada = quatro cadastros; saída = grade consultável na tela;
+atividades = academia_schedule.created/updated, com ator, data e identidade no painel de
+auditoria; porta = registro existente Minha Academia, abas Grade semanal e Cadastros;
+configuração = formulário de aula; anti-morte = aviso de cadastros ausentes/inativos,
+erros explícitos e releitura por foco/Atualizar grade; retorno = conflito impede sobrescrita
+e exige releitura/correção. Não há decisão automatizada ou continuidade IA↔humano nesta
+etapa: ferramentas da IA permanecem explicitamente pendentes no roadmap.
+
+Escopo desta entrega: referência semanal editável e preservação por desativação. Ainda
+não implementa cancelamento de ocorrência, alteração de série futura, feriados, publicação
+de rascunhos ou consulta por data. A tela informa esse limite; não usar esta referência
+sozinha para prometer funcionamento em uma data ou feriado.

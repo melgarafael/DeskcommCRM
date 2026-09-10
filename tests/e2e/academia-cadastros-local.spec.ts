@@ -10,6 +10,7 @@ test("cadastros pela tela, revisão, retry, desativação e tela móvel",async({
  await page.goto("/login");await page.locator("#email").fill(process.env.ACADEMIA_E2E_EMAIL!);await page.locator("#password").fill(process.env.ACADEMIA_E2E_PASSWORD!);await page.getByRole("button",{name:/entrar/i}).click();await page.waitForURL(/\/app(?:\/|$)/);
  await page.getByRole("link",{name:"Minha Academia",exact:true}).click();
  await expect(page.getByRole("heading",{name:"Minha Academia",exact:true})).toBeVisible();
+ await page.getByRole("button",{name:"Cadastros",exact:true}).click();
  try {
  for(const [kind,label] of [["audiences","Públicos"],["modalities","Modalidades"],["teachers","Professores"],["spaces","Ambientes"]] as const){
   await page.getByRole("button",{name:label,exact:true}).click();

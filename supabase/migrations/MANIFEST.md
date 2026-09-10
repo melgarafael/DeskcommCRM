@@ -291,3 +291,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260910160000` | `0233_modulo_academia` | Ativação opt-in da academia, por admin da organização; merge atômico preserva configurações e dados, com suporte/MFA. |
 
 | `20260910180000` | `0234_academia_cadastros` | Públicos, modalidades, professores e ambientes com RLS, módulo ativo, manager, revisão e preservação por desativação. |
+| `20260910200000` | `0235_academia_grade_semanal` | Grade semanal com vínculos da mesma empresa, RLS, revisão e aulas simultâneas. |

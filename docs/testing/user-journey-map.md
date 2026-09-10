@@ -2001,3 +2001,16 @@ repetir POST com a mesma identidade não duplica, PATCH com revisão antiga reto
 Teste local opt-in `academia-cadastros-local.spec.ts` inclui navegação e viewport 390px.
 `tests/invariants/academia-catalogs.test.ts` prova quatro tabelas, outra empresa, viewer,
 manager, flag, colunas imutáveis e integridade dos limites de idade. Nenhuma mensagem enviada.
+
+## Academia — grade semanal (10/09/2026)
+
+Spec opt-in `tests/e2e/academia-grade-local.spec.ts`: instalação local dedicada, dono por
+`scripts/bootstrap-owner.ts` e banco fresco aplicado de `supabase/baseline.sql`.
+Jornada: ligar módulo pela tela, cadastrar os quatro vínculos, criar aulas simultâneas,
+editar início/duração com virada de dia, desativar/reativar, filtrar dia e usar formulário
+em 390 CSS px. Retry e revisão antiga também exercitados pela API autenticada.
+Evidências locais em `.superpowers/evidence/grade-desktop.png` e
+`.superpowers/evidence/grade-mobile.png`.
+Invariantes `academia-schedule.test.ts`: isolamento, permissões, vínculos cross-tenant,
+revisão, validação temporal, cadastros inativos e módulo desligado.
+Não prova exceções por data ou respostas da IA, ainda fora desta implementação.

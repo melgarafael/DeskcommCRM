@@ -45,12 +45,13 @@ async function write(req: Request, create: boolean) {
   if (!parsedId.success) return fail("validation_failed", "Identificador inválido. Recarregue o formulário e tente novamente.", 422, { requestId });
   const id = parsedId.data;
   const values = envelope.data.values;
+  const orgId = auth.org.orgId;
   const db = await createClient();
 
   // Um retry continua válido se um vínculo tiver sido desativado após a criação.
   // A leitura também não revela identidades pertencentes a outra organização.
   async function existing() {
-    return db.from(table).select(scheduleColumns).eq("organization_id", auth.org.orgId).eq("id", id).maybeSingle();
+    return db.from(table).select(scheduleColumns).eq("organization_id", orgId).eq("id", id).maybeSingle();
   }
   if (create) {
     const { data: previous, error } = await existing();
