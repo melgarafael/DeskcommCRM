@@ -160,4 +160,98 @@ describe("criarModeloCodex", () => {
     const modelo = criarModeloCodex({ accessToken: "at", modelId: "m", fetchImpl });
     await expect(modelo.doGenerate(PROMPT)).rejects.toThrow(/codex_sem_terminal/);
   });
+
+  it("terminal vazio + deltas → remonta (o caso real com store:false)", async () => {
+    const eventos = [
+      { type: "response.output_text.delta", delta: "o" },
+      { type: "response.output_text.delta", delta: "k" },
+      {
+        type: "response.completed",
+        response: { id: "r", model: "m", output: [], usage: { input_tokens: 13, output_tokens: 5 } },
+      },
+    ];
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(eventos.map((e) => `data: ${JSON.stringify(e)}`).join("\n")));
+        c.close();
+      },
+    });
+    const fetchImpl = vi.fn(
+      async () => new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    );
+    const modelo = criarModeloCodex({ accessToken: "at", modelId: "m", fetchImpl });
+    const r = await modelo.doGenerate(PROMPT);
+    expect(r.content).toEqual([{ type: "text", text: "ok" }]);
+    expect(r.finishReason).toMatchObject({ unified: "stop" });
+  });
+
+  it("tool via deltas (added + arguments.delta + done) → tool-call", async () => {
+    const eventos = [
+      {
+        type: "response.output_item.added",
+        item: { type: "function_call", id: "i1", call_id: "call-7", name: "somar", arguments: "" },
+      },
+      { type: "response.function_call_arguments.delta", item_id: "call-7", delta: '{"a":' },
+      { type: "response.function_call_arguments.delta", item_id: "call-7", delta: "2}" },
+      {
+        type: "response.output_item.done",
+        item: { type: "function_call", id: "i1", call_id: "call-7", name: "somar", arguments: '{"a":2}' },
+      },
+      {
+        type: "response.completed",
+        response: { id: "r", model: "m", output: [], usage: { input_tokens: 9, output_tokens: 4 } },
+      },
+    ];
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(eventos.map((e) => `data: ${JSON.stringify(e)}`).join("\n")));
+        c.close();
+      },
+    });
+    const fetchImpl = vi.fn(
+      async () => new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    );
+    const modelo = criarModeloCodex({ accessToken: "at", modelId: "m", fetchImpl });
+    const r = await modelo.doGenerate(PROMPT);
+    expect(r.content).toEqual([
+      { type: "tool-call", toolCallId: "call-7", toolName: "somar", input: '{"a":2}' },
+    ]);
+    expect(r.finishReason).toMatchObject({ unified: "tool-calls" });
+  });
+});
+
+describe("fusão de anúncio duplo (medido ao vivo)", () => {
+  it("added sem nome + done com call_id → UMA tool-call, sem fantasma", async () => {
+    const { criarModeloCodex: criar } = await import("@/lib/ai/codex/modelo-responses");
+    const eventos = [
+      { type: "response.output_item.added", item: { type: "function_call", id: "fc_x" } },
+      { type: "response.function_call_arguments.delta", item_id: "fc_x", delta: '{"a":' },
+      { type: "response.function_call_arguments.delta", item_id: "fc_x", delta: "2}" },
+      {
+        type: "response.output_item.done",
+        item: { type: "function_call", id: "fc_x", call_id: "call_y", name: "somar", arguments: '{"a":2}' },
+      },
+      {
+        type: "response.completed",
+        response: { id: "r", model: "m", output: [], usage: { input_tokens: 1, output_tokens: 1 } },
+      },
+    ];
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(eventos.map((e) => `data: ${JSON.stringify(e)}`).join("\n")));
+        c.close();
+      },
+    });
+    const { vi: vitest } = await import("vitest");
+    const fetchImpl = vitest.fn(
+      async () => new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    );
+    const modelo = criar({ accessToken: "at", modelId: "m", fetchImpl });
+    const r = await modelo.doGenerate({
+      prompt: [{ role: "user", content: [{ type: "text" as const, text: "oi" }] }],
+    });
+    expect(r.content).toEqual([
+      { type: "tool-call", toolCallId: "call_y", toolName: "somar", input: '{"a":2}' },
+    ]);
+  });
 });

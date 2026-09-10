@@ -73,11 +73,13 @@ function montarInput(mensagens: LanguageModelV3CallOptions["prompt"]): ItemRespo
             content: [{ type: "output_text", text: parte.text }],
           });
         } else if (parte.type === "tool-call") {
+          // `input` aqui é OBJETO (o AI SDK já parseou); o Responses exige
+          // `arguments` STRING — mandar o objeto dá 400 `invalid_type`.
           itens.push({
             type: "function_call",
             call_id: parte.toolCallId,
             name: parte.toolName,
-            arguments: parte.input,
+            arguments: typeof parte.input === "string" ? parte.input : JSON.stringify(parte.input),
           });
         }
         // reasoning/file: internos do modelo, não voltam ao input.
@@ -187,7 +189,11 @@ export function criarModeloCodex(opts: CodexModeloOpts): LanguageModelV3 {
 
   async function executar(
     options: LanguageModelV3CallOptions,
-  ): Promise<{ resposta: Record<string, unknown>; corpoEnviado: Record<string, unknown> }> {
+  ): Promise<{
+    resposta: Record<string, unknown>;
+    deltas: { texto: string; chamadas: Array<{ callId: string; name: string; arguments: string }> };
+    corpoEnviado: Record<string, unknown>;
+  }> {
     const instructions = options.prompt
       .map((m) => (m.role === "system" ? m.content : ""))
       .filter((t) => t !== "")
@@ -228,9 +234,9 @@ export function criarModeloCodex(opts: CodexModeloOpts): LanguageModelV3 {
       err.status = res.status;
       throw err;
     }
-    const carga = (await lerRespostaSSE(res)) as Record<string, unknown> | null;
-    if (!carga) throw new Error("codex_sem_terminal: o stream fechou sem response.completed");
-    return { resposta: carga, corpoEnviado: corpo };
+    const carga = await lerRespostaSSE(res);
+    if (!carga.resposta) throw new Error("codex_sem_terminal: o stream fechou sem response.completed");
+    return { resposta: carga.resposta, deltas: { texto: carga.texto, chamadas: carga.chamadas }, corpoEnviado: corpo };
   }
 
   const modelo: LanguageModelV3 = {
@@ -239,8 +245,28 @@ export function criarModeloCodex(opts: CodexModeloOpts): LanguageModelV3 {
     modelId,
     supportedUrls: {},
     async doGenerate(options) {
-      const { resposta } = await executar(options);
-      const { conteudo, temTool } = mapearConteudo(resposta["output"]);
+      const { resposta, deltas } = await executar(options);
+      // Terminal preenchido manda; terminal vazio (o caso `store:false`
+      // medido) cai nos deltas acumulados — nunca resposta vazia silenciosa.
+      const terminal = mapearConteudo(resposta["output"]);
+      // Chamada sem nome é malformada (o backend às vezes anuncia o item duas
+      // vezes, uma sem nome): inexequível pelo AI SDK e 400 no turno seguinte.
+      // O acumulador já funde apelidos; o que restar sem nome cai aqui — e se
+      // nada restar, o erro é alto (`NoOutputGeneratedError`), nunca 400 mudo.
+      const chamadasValidas = deltas.chamadas.filter((c) => c.name !== "");
+      const conteudo =
+        terminal.conteudo.length > 0
+          ? terminal.conteudo
+          : [
+              ...(deltas.texto !== "" ? [{ type: "text" as const, text: deltas.texto }] : []),
+              ...chamadasValidas.map((c) => ({
+                type: "tool-call" as const,
+                toolCallId: c.callId,
+                toolName: c.name,
+                input: c.arguments === "" ? "{}" : c.arguments,
+              })),
+            ];
+      const temTool = terminal.temTool || chamadasValidas.length > 0;
       const finishReason: LanguageModelV3FinishReason = temTool
         ? { unified: "tool-calls", raw: "completed" }
         : { unified: "stop", raw: "completed" };
