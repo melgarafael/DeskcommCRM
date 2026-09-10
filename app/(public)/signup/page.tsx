@@ -20,7 +20,7 @@ export const metadata = { title: "Criar conta" };
  * o e-mail). Quem decide o que ele vale é o servidor, duas vezes: ao criar a
  * conta e ao confirmar o e-mail.
  *
- * ── A recusa por política (migration 0231) ──────────────────────────────────
+ * ── A recusa por política (migration 0232) ──────────────────────────────────
  *
  * Quando a instalação está em `so_convite`, esta tela RECUSA em vez de mostrar
  * o formulário — mas só nesse modo, e só sem convite válido. Ela é a SUPERFÍCIE

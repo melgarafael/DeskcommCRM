@@ -286,4 +286,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 
 | `20260907060000` | `0230_reserva_pre_go_live` | A reserva transacional de novos canais WAHA preserva o pré-go-live da plataforma; retry mantém política e identidade existentes. Forward-fix da integração, sem alterar 0228 aplicada. |
 
-| `20260910120000` | `0231_politica_de_cadastro` | `platform_settings` (singleton id=1) guarda se a instalação aceita cadastro aberto ou só por convite. Default `aberto` — preserva o comportamento anterior. RLS ligada com zero policies; só `service_role` lê e escreve. Baseline PG15, idempotente. |
+| `20260910120000` | `0232_politica_de_cadastro` | `platform_settings` (singleton id=1) guarda se a instalação aceita cadastro aberto ou só por convite. Default `aberto` — preserva o comportamento anterior. RLS ligada com zero policies; só `service_role` lê e escreve. Baseline PG15, idempotente. |

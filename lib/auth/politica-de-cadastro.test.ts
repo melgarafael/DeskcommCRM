@@ -64,7 +64,7 @@ beforeEach(() => {
 });
 
 describe("modoDeCadastro", () => {
-  it("sem linha na tabela vale 'aberto' — o comportamento anterior à 0231", async () => {
+  it("sem linha na tabela vale 'aberto' — o comportamento anterior à 0232", async () => {
     bancoQue(ok(null));
     await expect(modoDeCadastro()).resolves.toBe("aberto");
   });

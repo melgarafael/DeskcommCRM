@@ -107,7 +107,7 @@ describe("signUp — a tela precisa saber se a sessão já veio aberta", () => {
 });
 
 /**
- * A instalação em `so_convite` (migration 0231).
+ * A instalação em `so_convite` (migration 0232).
  *
  * A tela de `/signup` também recusa, mas a tela é adulterável e esta action é
  * chamável direto — sem os casos abaixo, o modo fechado seria decoração.

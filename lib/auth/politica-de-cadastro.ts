@@ -28,7 +28,7 @@
  *   - responder `aberto` sempre → uma instalação fechada reabre sozinha durante
  *     um soluço do banco, e ninguém percebe;
  *   - responder `so_convite` sempre → toda instalação que ainda não aplicou a
- *     migration 0231 (a tabela não existe: `42P01`) para de aceitar cadastro,
+ *     migration 0232 (a tabela não existe: `42P01`) para de aceitar cadastro,
  *     inclusive quem nunca pediu para fechar. É o oposto de "preserva o
  *     comportamento anterior".
  *

@@ -23281,7 +23281,7 @@ grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid
 grant execute on function public.fn_update_budget_consumption() to service_role;
 
 
--- ---- política de cadastro da instalação (migration 0231) ----
+-- ---- política de cadastro da instalação (migration 0232) ----
 create table if not exists public.platform_settings (
   id           smallint    primary key default 1,
   signup_mode  text        not null default 'aberto',
@@ -23292,7 +23292,7 @@ create table if not exists public.platform_settings (
 );
 
 comment on table public.platform_settings is
-  'Configuração da INSTALAÇÃO (não do tenant) — linha única id=1. Hoje só a política de cadastro. Lida/escrita apenas server-side (service_role); a ausência da linha significa o default, que é o comportamento anterior à 0231. Ver lib/auth/politica-de-cadastro.ts.';
+  'Configuração da INSTALAÇÃO (não do tenant) — linha única id=1. Hoje só a política de cadastro. Lida/escrita apenas server-side (service_role); a ausência da linha significa o default, que é o comportamento anterior à 0232. Ver lib/auth/politica-de-cadastro.ts.';
 
 comment on column public.platform_settings.signup_mode is
   'aberto = qualquer pessoa cria conta em /signup (comportamento histórico). so_convite = só quem chega com convite válido; sem convite, /signup recusa com tela e /auth/confirm NÃO provisiona organização.';
