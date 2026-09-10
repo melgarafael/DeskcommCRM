@@ -20,7 +20,8 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const pollSchema = z.object({
-  device_code: z.string().trim().min(8).max(512),
+  device_auth_id: z.string().trim().min(8).max(512),
+  user_code: z.string().trim().min(4).max(32),
   label: z.string().trim().min(1).max(80).default("ChatGPT"),
 });
 
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   let troca;
   try {
-    troca = await trocarDeviceCodePorTokens(parsed.data.device_code);
+    troca = await trocarDeviceCodePorTokens(parsed.data.device_auth_id, parsed.data.user_code);
   } catch (err) {
     const motivo = err instanceof Error ? err.message : String(err);
     if (motivo.includes("OPENAI_CODEX_CLIENT_ID")) {

@@ -73,7 +73,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       user_code: sessao.userCode,
       verification_uri: sessao.verificationUri,
       expires_in: sessao.expiresIn,
-      device_code: sessao.deviceCode,
+      device_auth_id: sessao.deviceAuthId,
     },
     { requestId },
   );

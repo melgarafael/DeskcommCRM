@@ -94,7 +94,7 @@ it("POST iniciar sem client configurado → 500 misconfigured (R1, sem throw cru
 it("poll pendente não grava nada", async () => {
   deps.role.mockResolvedValue(admin);
   deps.trocar.mockResolvedValue({ pendente: true });
-  const res = await POLL(post({ device_code: "device-12345" }));
+  const res = await POLL(post({ device_auth_id: "device-12345", user_code: "ABCD-1234" }));
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ data: { pendente: true } });
   expect(deps.salvar).not.toHaveBeenCalled();
@@ -111,7 +111,7 @@ it("poll aprovado conecta sem vazar token e audita", async () => {
     expiresIn: 3600,
   });
   deps.salvar.mockResolvedValue({ id: "vinc-1" });
-  const res = await POLL(post({ device_code: "device-12345", label: "ChatGPT" }));
+  const res = await POLL(post({ device_auth_id: "device-12345", user_code: "ABCD-1234", label: "ChatGPT" }));
   expect(res.status).toBe(200);
   const corpo = (await res.json()) as { data: Record<string, unknown> };
   expect(corpo.data).toEqual({ conectado: true });

@@ -10,6 +10,12 @@ function respostaJson(status: number, corpo: unknown): Response {
   return new Response(JSON.stringify(corpo), { status });
 }
 
+/** Sequência de respostas por chamada (poll → exchange). */
+function fetchSequencia(respostas: Response[]): typeof fetch {
+  let i = 0;
+  return (async () => respostas[Math.min(i++, respostas.length - 1)]) as typeof fetch;
+}
+
 describe("quarentena Codex", () => {
   it("invalid_grant é definitivo (não re-tenta em loop)", () => {
     expect(ehRevogacaoDefinitiva(400, "invalid_grant")).toBe(true);
@@ -19,48 +25,55 @@ describe("quarentena Codex", () => {
   });
 });
 
-describe("poll do device-code", () => {
-  it("authorization_pending volta como pendente (não é erro)", async () => {
-    const fetchImpl = (async () =>
-      respostaJson(400, { error: "authorization_pending" })) as typeof fetch;
+describe("poll do device-code (forma observada)", () => {
+  it("403/404 volta como pendente (não é erro)", async () => {
+    const fetchImpl = fetchSequencia([respostaJson(404, { error: "not_found" })]);
     await expect(
-      trocarDeviceCodePorTokens("device-123", fetchImpl, "client-de-teste"),
-    ).resolves.toEqual({
-      pendente: true,
-    });
+      trocarDeviceCodePorTokens("da-123", "ABCD-1234", fetchImpl, "client-de-teste"),
+    ).resolves.toEqual({ pendente: true });
   });
 
-  it("aprovação devolve os dois tokens", async () => {
-    const fetchImpl = (async () =>
-      respostaJson(200, {
+  it("aprovação → troca no token endpoint (FORM) e devolve os tokens", async () => {
+    let corpoTroca: string | undefined;
+    let contentTroca: string | null | undefined;
+    const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
+      const url = String(_url);
+      if (url.includes("deviceauth/token")) {
+        return respostaJson(200, { authorization_code: "auth-code", code_verifier: "verifier" });
+      }
+      corpoTroca = init?.body as string;
+      contentTroca = new Headers(init?.headers).get("content-type");
+      return respostaJson(200, {
         refresh_token: "rt",
         access_token: "at",
+        id_token: "h.e30.s",
         expires_in: 3600,
-      })) as typeof fetch;
+      });
+    }) as typeof fetch;
     await expect(
-      trocarDeviceCodePorTokens("device-123", fetchImpl, "client-de-teste"),
+      trocarDeviceCodePorTokens("da-123", "ABCD-1234", fetchImpl, "client-de-teste"),
     ).resolves.toEqual({
       pendente: false,
       refreshToken: "rt",
       accessToken: "at",
-      idToken: null,
+      idToken: "h.e30.s",
       expiresIn: 3600,
     });
+    // A troca é FORM com redirect fixo do device-flow — não JSON.
+    expect(contentTroca).toContain("application/x-www-form-urlencoded");
+    const params = new URLSearchParams(corpoTroca);
+    expect(params.get("grant_type")).toBe("authorization_code");
+    expect(params.get("code")).toBe("auth-code");
+    expect(params.get("code_verifier")).toBe("verifier");
+    expect(params.get("redirect_uri")).toBe("https://auth.openai.com/deviceauth/callback");
+    expect(params.get("client_id")).toBe("client-de-teste");
   });
 
-  it("troca em form-urlencoded com scope (forma observada, não JSON)", async () => {
-    let corpo: string | undefined;
-    let contentType: string | null | undefined;
-    const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
-      corpo = init?.body as string;
-      contentType = new Headers(init?.headers).get("content-type");
-      return respostaJson(200, { refresh_token: "rt", access_token: "at", expires_in: 1 });
-    }) as typeof fetch;
-    await trocarDeviceCodePorTokens("device-123", fetchImpl, "client-de-teste");
-    expect(contentType).toContain("application/x-www-form-urlencoded");
-    const params = new URLSearchParams(corpo);
-    expect(params.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:device_code");
-    expect(params.get("client_id")).toBe("client-de-teste");
+  it("500 no poll não é pendente — é erro (sessão morta, não operador lento)", async () => {
+    const fetchImpl = fetchSequencia([respostaJson(500, { error: "x" })]);
+    await expect(
+      trocarDeviceCodePorTokens("da-123", "ABCD-1234", fetchImpl, "client-de-teste"),
+    ).rejects.toThrow(/codex_device_poll_500/);
   });
 });
 

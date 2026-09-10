@@ -2,35 +2,32 @@
  * Protocolo OAuth device-code do Codex — PURO (fetch injetável, sem SQL, sem
  * framework). O SQL mora em `armazenamento.ts`; a borda HTTP, nas rotas.
  *
- * Forma observada (NÃO documentada pela OpenAI — reconstruída do Codex CLI e
- * de terceiros como OpenCode/CLIProxyAPI): token endpoint em
- * `application/x-www-form-urlencoded`, scope com `offline_access` (sem ele,
- * sem refresh), device-code para ambientes sem browser local (o nosso caso:
- * VPS). Divergir da forma observada (ex.: JSON no token endpoint) é o jeito
- * mais rápido de ganhar um 400 que parece revogação.
+ * FORMA OBSERVADA (NÃO documentada pela OpenAI — espelha `ai-sdk-codex-oauth`
+ * e o Codex CLI):
+ *   1. `iniciarDeviceCode` → POST deviceauth/usercode (JSON `{client_id}`) →
+ *      `{user_code, device_auth_id, interval}`; o OPERADOR abre
+ *      `https://auth.openai.com/codex/device` e digita o código;
+ *   2. `trocarDeviceCodePorTokens` → POST deviceauth/token (JSON
+ *      `{device_auth_id, user_code}`) → 403/404 = pendente; 200 =
+ *      `{authorization_code, code_verifier}` → troca no token endpoint
+ *      (FORM `{grant_type: authorization_code, ...}`) → tokens;
+ *   3. cada turno chama `renovarAccessToken` (FORM `{grant_type:
+ *      refresh_token, ...}`) — o access vive só em memória.
  *
- * Fluxo: `iniciarDeviceCode` → operador abre `verificationUri` e digita
- * `userCode` no browser → tela faz poll em `trocarDeviceCodePorTokens` até
- * sair de `{pendente: true}` → refresh + account_id salvos cifrados. Depois,
- * cada turno chama `renovarAccessToken` (o access vive só em memória).
- *
- * Regra de quarentena (padrão Hermes): `invalid_grant`/401/403 é definitivo —
- * repetir o refresh morto só gera um rio de 401 idênticos. Quem marca é o
- * resolver; `ehRevogacaoDefinitiva` é o predicado único dos dois lados.
+ * Regra de quarentena (padrão Hermes): `invalid_grant`/401/403 no REFRESH é
+ * definitivo — repetir o refresh morto só gera um rio de 401 idênticos. Quem
+ * marca é o resolver; `ehRevogacaoDefinitiva` é o predicado único dos dois lados.
  */
-import { CODEX_OAUTH_DEVICE_URL, CODEX_OAUTH_TOKEN_URL, codexClientId } from "./constantes";
+import {
+  CODEX_DEVICE_AUTH_URL,
+  CODEX_DEVICE_REDIRECT_URI,
+  CODEX_DEVICE_TOKEN_URL,
+  CODEX_DEVICE_VERIFY_URL,
+  CODEX_OAUTH_TOKEN_URL,
+  codexClientId,
+} from "./constantes";
 
 const TIMEOUT_MS = 8_000;
-
-/** Scope do Codex: `offline_access` é o que garante o refresh token. */
-export const CODEX_SCOPE = "openid profile email offline_access";
-
-function corpoForm(campos: Record<string, string>): { headers: Record<string, string>; body: string } {
-  return {
-    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-    body: new URLSearchParams(campos).toString(),
-  };
-}
 
 async function timedFetch(
   url: string,
@@ -44,6 +41,13 @@ async function timedFetch(
   } finally {
     clearTimeout(t);
   }
+}
+
+function corpoForm(campos: Record<string, string>): { headers: Record<string, string>; body: string } {
+  return {
+    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+    body: new URLSearchParams(campos).toString(),
+  };
 }
 
 /**
@@ -89,10 +93,14 @@ export function ehRevogacaoDefinitiva(status: number, code?: string): boolean {
 }
 
 export interface DeviceCodeSessao {
-  deviceCode: string;
+  /** O que o operador digita em CODEX_DEVICE_VERIFY_URL. */
   userCode: string;
+  /** Id da sessão de device (vai no poll junto do userCode). */
+  deviceAuthId: string;
   verificationUri: string;
+  /** Segundos até a sessão expirar (quando o provedor informa). */
   expiresIn: number;
+  /** Segundos entre polls (margem anti-429 já aplicada pelo chamador). */
   intervalSecs: number;
 }
 
@@ -101,24 +109,28 @@ export async function iniciarDeviceCode(
   clientId: string = codexClientId(),
 ): Promise<DeviceCodeSessao> {
   const res = await timedFetch(
-    CODEX_OAUTH_DEVICE_URL,
-    { method: "POST", ...corpoForm({ client_id: clientId }) },
+    CODEX_DEVICE_AUTH_URL,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ client_id: clientId }),
+    },
     fetchImpl,
   );
   if (!res.ok) throw new Error(`codex_device_init_${res.status}`);
   const j = (await res.json()) as {
-    device_code: string;
     user_code: string;
-    verification_uri: string;
-    expires_in: number;
-    interval?: number;
+    device_auth_id: string;
+    verification_uri?: string;
+    expires_in?: number;
+    interval?: number | string;
   };
   return {
-    deviceCode: j.device_code,
     userCode: j.user_code,
-    verificationUri: j.verification_uri,
-    expiresIn: j.expires_in,
-    intervalSecs: j.interval ?? 5,
+    deviceAuthId: j.device_auth_id,
+    verificationUri: j.verification_uri ?? CODEX_DEVICE_VERIFY_URL,
+    expiresIn: typeof j.expires_in === "number" ? j.expires_in : 600,
+    intervalSecs: Number(j.interval ?? 5),
   };
 }
 
@@ -128,45 +140,59 @@ export type TrocaDeDevice =
       pendente: false;
       refreshToken: string;
       accessToken: string;
-      /** JWT de identidade — dele se extrai o `chatgpt_account_id` (ver abaixo). */
+      /** JWT de identidade — dele se extrai o `chatgpt_account_id` (ver acima). */
       idToken: string | null;
       expiresIn: number;
     };
 
 export async function trocarDeviceCodePorTokens(
-  deviceCode: string,
+  deviceAuthId: string,
+  userCode: string,
   fetchImpl: typeof fetch = fetch,
   clientId: string = codexClientId(),
 ): Promise<TrocaDeDevice> {
-  const res = await timedFetch(
+  const poll = await timedFetch(
+    CODEX_DEVICE_TOKEN_URL,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ device_auth_id: deviceAuthId, user_code: userCode }),
+    },
+    fetchImpl,
+  );
+  // 403/404 = o operador ainda não aprovou. Qualquer outro não-200 aqui é
+  // erro de verdade (sessão expirada, p. ex.) — não "pendente".
+  if (poll.status === 403 || poll.status === 404) return { pendente: true };
+  if (!poll.ok) throw new Error(`codex_device_poll_${poll.status}`);
+  const aprovado = (await poll.json()) as { authorization_code: string; code_verifier: string };
+
+  const troca = await timedFetch(
     CODEX_OAUTH_TOKEN_URL,
     {
       method: "POST",
       ...corpoForm({
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        device_code: deviceCode,
+        grant_type: "authorization_code",
+        code: aprovado.authorization_code,
+        redirect_uri: CODEX_DEVICE_REDIRECT_URI,
         client_id: clientId,
+        code_verifier: aprovado.code_verifier,
       }),
     },
     fetchImpl,
   );
-  if (res.status === 400) {
-    const j = (await res.json().catch(() => ({}))) as { error?: string };
-    if (j.error === "authorization_pending" || j.error === "slow_down") return { pendente: true };
-  }
-  if (!res.ok) throw new Error(`codex_device_poll_${res.status}`);
-  const j = (await res.json()) as {
+  if (!troca.ok) throw new Error(`codex_device_exchange_${troca.status}`);
+  const j = (await troca.json()) as {
     refresh_token: string;
     access_token: string;
     id_token?: string;
-    expires_in: number;
+    expires_in?: number;
   };
   return {
     pendente: false,
     refreshToken: j.refresh_token,
     accessToken: j.access_token,
     idToken: j.id_token ?? null,
-    expiresIn: j.expires_in,
+    expiresIn: typeof j.expires_in === "number" ? j.expires_in : 3600,
   };
 }
 
@@ -179,12 +205,7 @@ export async function renovarAccessToken(
     CODEX_OAUTH_TOKEN_URL,
     {
       method: "POST",
-      ...corpoForm({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: clientId,
-        scope: CODEX_SCOPE,
-      }),
+      ...corpoForm({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId }),
     },
     fetchImpl,
   );
@@ -195,6 +216,6 @@ export async function renovarAccessToken(
     err.code = code;
     throw err;
   }
-  const j = (await res.json()) as { access_token: string; expires_in: number };
-  return { accessToken: j.access_token, expiresIn: j.expires_in };
+  const j = (await res.json()) as { access_token: string; expires_in?: number };
+  return { accessToken: j.access_token, expiresIn: typeof j.expires_in === "number" ? j.expires_in : 3600 };
 }
