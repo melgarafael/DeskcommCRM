@@ -14283,7 +14283,7 @@ alter table public.webhook_events_log
   drop constraint if exists webhook_events_log_provider_check;
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
-    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio'
+    'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'ryze'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----
@@ -23279,3 +23279,34 @@ grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
 grant execute on function public.fn_encrypt_oauth(text) to service_role;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_update_budget_consumption() to service_role;
+
+
+-- -----------------------------------------------------------------------------
+-- MIGRATION APÊNDICE: 20260910180000_0210_canal_ryze_vocabulario.sql
+-- -----------------------------------------------------------------------------
+alter table public.channel_sessions
+  add column if not exists ryze_instance_name text,
+  add column if not exists ryze_token_encrypted bytea;
+
+alter table public.channel_sessions
+  drop constraint if exists channel_sessions_provider_check;
+
+alter table public.channel_sessions
+  add constraint channel_sessions_provider_check
+  check (provider in ('waha', 'meta_cloud', 'zernio', 'ryze'));
+
+alter table public.channel_sessions
+  drop constraint if exists channel_sessions_provider_ref_check;
+
+alter table public.channel_sessions
+  add constraint channel_sessions_provider_ref_check
+  check (
+    (provider = 'waha' and waha_session_name is not null) or
+    (provider = 'meta_cloud' and meta_phone_number_id is not null) or
+    (provider = 'zernio' and zernio_account_id is not null) or
+    (provider = 'ryze' and ryze_instance_name is not null)
+  );
+
+create unique index if not exists idx_channel_sessions_ryze_instance_name_active
+  on public.channel_sessions (ryze_instance_name)
+  where archived_at is null and ryze_instance_name is not null;

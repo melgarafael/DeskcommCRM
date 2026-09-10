@@ -15,7 +15,7 @@ import {
   type ChannelProvider,
 } from "@/lib/channels/capabilities";
 
-const PROVIDERS = ["waha", "meta_cloud", "zernio"] as const satisfies readonly ChannelProvider[];
+const PROVIDERS = ["waha", "meta_cloud", "zernio", "ryze"] as const satisfies readonly ChannelProvider[];
 
 /**
  * Esquecer um provider aqui passa a ser erro de COMPILAÇÃO.

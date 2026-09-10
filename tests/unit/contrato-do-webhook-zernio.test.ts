@@ -40,6 +40,7 @@ vi.mock("@/lib/channels/archived", () => ({
 vi.mock("@/lib/webhooks/secrets", () => ({ decryptWebhookSecret: async () => SECRET }));
 
 vi.mock("@/lib/channels/arquivo-de-webhook", () => ({
+  sanitizarCorpoDoWebhook: (provider: string, raw: string) => raw,
   abrirArquivoDoWebhook: async () => "arquivo-1",
   fecharArquivoDoWebhook: async (_a: unknown, _id: unknown, desfecho: (typeof arquivoFechado)[number]) => {
     arquivoFechado.push(desfecho);

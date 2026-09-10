@@ -42,6 +42,7 @@ const FONTE: Record<ChannelProvider, FonteDeTemplates | null> = {
   waha: null,
   meta_cloud: "oficial",
   zernio: "parceiro",
+  ryze: null,
 };
 
 /** `null` quando este canal não trabalha com definições aprovadas. */

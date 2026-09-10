@@ -35,10 +35,12 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import {
   abrirArquivoDoWebhook,
   fecharArquivoDoWebhook,
+  sanitizarCorpoDoWebhook,
 } from "@/lib/channels/arquivo-de-webhook";
 import { acceptsInboundWebhook, handleInboundWebhook } from "@/lib/channels/inbound";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -99,6 +101,9 @@ export async function POST(
   const cifrado = sessao.webhook_secret_encrypted;
   const secret = cifrado ? await decryptWebhookSecret(admin, cifrado as string) : null;
 
+  // O arquivo recebe somente a cópia sanitizada; o corpo cru permanece em memória.
+  const rawBodyForArchive = sanitizarCorpoDoWebhook(sessao.provider, rawBody);
+
   // ─── O corpo cru vai para o arquivo ANTES de qualquer processamento ────────
   //
   // Se o processo morrer no meio — exceção, OOM, deploy no instante errado — o
@@ -109,7 +114,7 @@ export async function POST(
     organizationId: sessao.organization_id,
     channelSessionId: sessao.id,
     provider: sessao.provider,
-    rawBody,
+    rawBody: rawBodyForArchive,
     headers: req.headers,
   });
 

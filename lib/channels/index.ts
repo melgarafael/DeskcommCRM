@@ -3,6 +3,7 @@
  * pede o adapter do provider da conversa e o descritor de capabilities.
  */
 import { metaCloudAdapter } from "./adapters/meta-cloud";
+import { ryzeAdapter } from "./adapters/ryze";
 import { wahaAdapter } from "./adapters/waha";
 import { zernioAdapter } from "./adapters/zernio";
 import type { ChannelAdapter, ChannelProvider } from "./types";
@@ -11,6 +12,7 @@ const ADAPTERS: Record<ChannelProvider, ChannelAdapter | null> = {
   waha: wahaAdapter,
   meta_cloud: metaCloudAdapter,
   zernio: zernioAdapter,
+  ryze: ryzeAdapter,
 };
 
 /**

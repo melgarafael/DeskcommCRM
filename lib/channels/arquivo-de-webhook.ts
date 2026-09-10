@@ -31,7 +31,12 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { sanitizeRyzeWebhookBody } from "@/lib/channels/ryze/webhook";
 import { logger } from "@/lib/logger";
+
+export function sanitizarCorpoDoWebhook(provider: string, rawBody: string): string {
+  return provider === "ryze" ? sanitizeRyzeWebhookBody(rawBody) : rawBody;
+}
 
 /** Cabeçalhos que NUNCA entram no arquivo, por menor que seja a chance. */
 const PROIBIDOS = ["authorization", "cookie", "x-api-key"];
