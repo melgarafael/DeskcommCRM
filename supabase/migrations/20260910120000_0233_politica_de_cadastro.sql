@@ -1,4 +1,4 @@
--- 0232 — a instalação decide se aceita cadastro aberto
+-- 0233 — a instalação decide se aceita cadastro aberto
 --
 -- ─── O problema ─────────────────────────────────────────────────────────────
 --
@@ -45,7 +45,7 @@ create table if not exists public.platform_settings (
 );
 
 comment on table public.platform_settings is
-  'Configuração da INSTALAÇÃO (não do tenant) — linha única id=1. Hoje só a política de cadastro. Lida/escrita apenas server-side (service_role); a ausência da linha significa o default, que é o comportamento anterior à 0232. Ver lib/auth/politica-de-cadastro.ts.';
+  'Configuração da INSTALAÇÃO (não do tenant) — linha única id=1. Hoje só a política de cadastro. Lida/escrita apenas server-side (service_role); a ausência da linha significa o default, que é o comportamento anterior à 0233. Ver lib/auth/politica-de-cadastro.ts.';
 
 comment on column public.platform_settings.signup_mode is
   'aberto = qualquer pessoa cria conta em /signup (comportamento histórico). so_convite = só quem chega com convite válido; sem convite, /signup recusa com tela e /auth/confirm NÃO provisiona organização.';

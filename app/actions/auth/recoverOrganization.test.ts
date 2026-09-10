@@ -193,7 +193,7 @@ describe("o laço está cortado nos três pontos que o formavam", () => {
 });
 
 /**
- * A QUARTA PORTA do modo `so_convite` (migration 0232), e a que não estava no
+ * A QUARTA PORTA do modo `so_convite` (migration 0233), e a que não estava no
  * desenho — apareceu medindo quais caminhos provisionam organização.
  *
  * Esta action é a saída de emergência de quem ficou logado sem empresa. Numa

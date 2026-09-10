@@ -299,7 +299,7 @@ export const AUDIT_ACTIONS = [
   // event_log (nenhum handler consumiria o tipo — ver register-handlers.ts).
   "platform_branding.updated",
   // A política de cadastro da INSTALAÇÃO trocada em `platform_settings`
-  // (migration 0232) — mutação de plataforma, sem `organization_id`. Auditável
+  // (migration 0233) — mutação de plataforma, sem `organization_id`. Auditável
   // porque decide quem consegue ENTRAR no sistema inteiro, e "por que ninguém
   // mais cria conta?" só tem resposta aqui: não há event_log que cubra o tipo
   // (nenhum handler o consumiria — ver register-handlers.ts) e a troca não
