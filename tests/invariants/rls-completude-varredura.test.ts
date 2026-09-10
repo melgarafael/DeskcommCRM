@@ -210,6 +210,23 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "da organização viraram venda, e quem o lê é o servidor com o admin client " +
       "filtrando organization_id à mão (a tela `/app/settings/conversoes`).",
   },
+  // ─── O vínculo OAuth Codex (migration 0232) ───
+  //
+  // Mesma postura das três do eixo de anúncios acima (deny-all, não policy de
+  // tenant), pelo mesmo motivo: a linha guarda o refresh token OAuth da
+  // assinatura ChatGPT da organização. Entrada ADITIVA junto da migration, como
+  // a mensagem do caso "sem prova" manda ("declare em PROVA_PROPRIA citando-o");
+  // nenhum caso existente foi tocado.
+  {
+    tabela: "ai_provider_oauth",
+    razao:
+      "tests/invariants/codex-oauth-isolamento.test.ts — RLS ligada, zero policies, " +
+      "privilégio NENHUM para anon/authenticated (`permission denied` medido sob " +
+      "`set role`), privilégio total para service_role (controle positivo do papel " +
+      "que usa), e `organization_id` NOT NULL com FK em cascata. Deny-all em vez " +
+      "de policy de tenant porque a linha guarda o refresh token, e quem o lê é o " +
+      "servidor com o admin client filtrando organization_id à mão.",
+  },
 ];
 
 /**
