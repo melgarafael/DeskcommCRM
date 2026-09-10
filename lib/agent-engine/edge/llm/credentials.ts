@@ -136,6 +136,12 @@ export interface OrgLlmConfig {
   provider: string;
   /** plaintext decifrado — existe só em memória, jamais logado/persistido */
   apiKey: string;
+  /**
+   * `chatgpt_account_id` do vínculo (só `openai-codex`) — monta o envelope de
+   * identidade do turno. Null = vínculo antigo sem a coluna preenchida; o
+   * spike preenche no primeiro refresh com id_token.
+   */
+  accountId?: string | null;
   defaultModel: string | null;
   params: Record<string, unknown>;
   enabledModels: string[];
@@ -322,6 +328,7 @@ export async function resolveOrgLlmConfig(
       );
 
   let apiKey: string;
+  let accountId: string | null = null;
   const cred = credRows[0];
   if (cred !== undefined) {
     apiKey = decryptKey({
@@ -351,6 +358,7 @@ export async function resolveOrgLlmConfig(
     try {
       const renovado = await renovarAccessToken(vinculo.refreshToken);
       apiKey = renovado.accessToken;
+      accountId = vinculo.accountId ?? null;
     } catch (err) {
       const status = (err as { status?: number }).status ?? 500;
       const code = (err as { code?: string }).code;
@@ -366,6 +374,7 @@ export async function resolveOrgLlmConfig(
   return {
     provider,
     apiKey,
+    accountId,
     defaultModel: settings.default_model ?? null,
     params: settings.params,
     enabledModels: settings.enabled_models,

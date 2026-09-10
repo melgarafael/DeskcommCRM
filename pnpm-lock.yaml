@@ -185,6 +185,9 @@ importers:
         specifier: ^4.5.4
         version: 4.5.4
     devDependencies:
+      '@ai-sdk/provider':
+        specifier: 4.0.10
+        version: 4.0.10
       '@axe-core/playwright':
         specifier: ^4.13.0
         version: 4.13.0(playwright-core@1.62.1)

@@ -13,7 +13,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 vi.mock("@/lib/ai/codex/armazenamento", () => ({
   lerRefreshToken: vi.fn(async (_admin: unknown, orgId: string) =>
-    orgId === "org-com-vinculo" ? { id: "vinc-1", refreshToken: "rt-1" } : null,
+    orgId === "org-com-vinculo" ? { id: "vinc-1", refreshToken: "rt-1", accountId: "acc-1" } : null,
   ),
   quarentenarVinculo: quarentenarMock,
 }));
@@ -44,6 +44,7 @@ describe("codex no resolver", () => {
     const cfg = await resolveOrgLlmConfig(poolCom({ provider: "openai-codex" }), {}, "org-com-vinculo");
     expect(cfg.provider).toBe("openai-codex");
     expect(cfg.apiKey).toBe("at-novo");
+    expect(cfg.accountId).toBe("acc-1");
   });
 
   it("sem vínculo OAuth → LlmNotConfiguredError (não fallback silencioso)", async () => {

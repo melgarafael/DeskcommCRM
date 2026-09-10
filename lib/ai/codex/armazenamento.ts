@@ -46,22 +46,28 @@ export async function salvarVinculo(p: {
 export async function lerRefreshToken(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-): Promise<{ id: string; refreshToken: string } | null> {
+): Promise<{ id: string; refreshToken: string; accountId: string | null } | null> {
   const { data } = await admin
     .from("ai_provider_oauth")
-    .select("id, refresh_encrypted, refresh_iv, refresh_tag")
+    .select("id, refresh_encrypted, refresh_iv, refresh_tag, account_id")
     .eq("organization_id", orgId)
     .eq("provider", "openai-codex")
     .eq("status", "active")
     .maybeSingle();
   if (!data) return null;
-  const row = data as { id: string; refresh_encrypted: unknown; refresh_iv: unknown; refresh_tag: unknown };
+  const row = data as {
+    id: string;
+    refresh_encrypted: unknown;
+    refresh_iv: unknown;
+    refresh_tag: unknown;
+    account_id: string | null;
+  };
   const refreshToken = decryptKey({
     ciphertext: byteaToBuffer(row.refresh_encrypted),
     iv: byteaToBuffer(row.refresh_iv),
     tag: byteaToBuffer(row.refresh_tag),
   });
-  return { id: row.id, refreshToken };
+  return { id: row.id, refreshToken, accountId: row.account_id ?? null };
 }
 
 export async function quarentenarVinculo(

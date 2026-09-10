@@ -31,9 +31,9 @@ import { generateText, stepCountIs, type LanguageModel, type StopCondition, type
 // Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
 import {
   cabecalhosDeAtribuicaoOpenRouter,
-  CODEX_INFERENCE_BASE_URL,
   OPENROUTER_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
+import { criarModeloCodex } from "@/lib/ai/codex/modelo-responses";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
@@ -164,7 +164,12 @@ export function chaveDePlataforma(provider: string): string | null {
   return v === "" ? null : v;
 }
 
-export function buildModel(provider: string, apiKey: string, modelId: string): LanguageModel {
+export function buildModel(
+  provider: string,
+  apiKey: string,
+  modelId: string,
+  accountId?: string | null,
+): LanguageModel {
   switch (provider) {
     case "anthropic":
       return createAnthropic({ apiKey })(modelId);
@@ -187,9 +192,9 @@ export function buildModel(provider: string, apiKey: string, modelId: string): L
     // backend do Codex, nunca api.openai.com. Sem este caso, o dono com agente
     // em openai-codex publicaria, clicaria em "Teste" e receberia
     // `unsupported_provider` — enquanto a mensagem real seria respondida.
-    // (Mesma ressalva do registry: transporte Responses pendente de spike.)
+    // (Modelo Responses nativo; mesma ressalva de transporte do registry.)
     case "openai-codex":
-      return createOpenAI({ apiKey, baseURL: CODEX_INFERENCE_BASE_URL })(modelId);
+      return criarModeloCodex({ accessToken: apiKey, accountId, modelId });
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }
@@ -310,7 +315,34 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     // Ensaio mais rígido que a produção não é cautela: é dizer que está
     // quebrado o que está funcionando.
     let credentialApiKey: string;
-    if (version.credential_id) {
+    let credentialAccountId: string | null = null;
+    if (version.provider === "openai-codex") {
+      // Assinatura: sem BYOK e sem chave de plataforma — o vínculo OAuth da
+      // org (mesma ordem do turno de produção). Access renovado aqui, em
+      // memória, nunca persistido.
+      const { lerRefreshToken, quarentenarVinculo } = await import("@/lib/ai/codex/armazenamento");
+      const { renovarAccessToken, ehRevogacaoDefinitiva } = await import("@/lib/ai/codex/oauth");
+      const vinculo = await lerRefreshToken(admin, run.organization_id);
+      if (!vinculo) {
+        return await failRun(
+          run,
+          "credential_invalid",
+          "sem vínculo ChatGPT nesta organização: conecte em IA › Credenciais",
+          startedAt,
+        );
+      }
+      try {
+        credentialApiKey = (await renovarAccessToken(vinculo.refreshToken)).accessToken;
+        credentialAccountId = vinculo.accountId ?? null;
+      } catch (err) {
+        const status = (err as { status?: number }).status ?? 500;
+        const code = (err as { code?: string }).code;
+        if (ehRevogacaoDefinitiva(status, code)) {
+          await quarentenarVinculo(admin, run.organization_id, `${status}: ${code ?? "revogado"}`);
+        }
+        return await failRun(run, "credential_invalid", "vínculo ChatGPT inválido: reconecte em IA › Credenciais", startedAt);
+      }
+    } else if (version.credential_id) {
       try {
         const credential = await loadCredential(version.credential_id, run.organization_id);
         credentialApiKey = credential.apiKey;
@@ -500,7 +532,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       : [];
 
     // 9) Build LM directly against the provider (BYOK credential — see buildModel doc).
-    const model = buildModel(version.provider, credentialApiKey, version.model);
+    const model = buildModel(version.provider, credentialApiKey, version.model, credentialAccountId);
 
     // 10) Cost/token guard. Fires BEFORE the next step is taken.
     let abortReason: string | null = null;

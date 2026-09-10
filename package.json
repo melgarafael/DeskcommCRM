@@ -93,6 +93,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "4.0.10",
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",

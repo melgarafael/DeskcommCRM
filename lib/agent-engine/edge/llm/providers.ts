@@ -10,6 +10,7 @@ import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
 import { CODEX_INFERENCE_BASE_URL } from '@/lib/ai/codex/constantes';
+import { criarModeloCodex } from '@/lib/ai/codex/modelo-responses';
 import { allowlistedFetch, buildAllowlist } from '../egress';
 
 /** Re-export para o runtime de ensaio (`lib/ai/runtime/agent.ts`) — fonte única do endpoint. */
@@ -28,7 +29,7 @@ export { CODEX_INFERENCE_BASE_URL };
  */
 export type ProviderRegistry = Record<
   string,
-  (apiKey: string, modelId: string, baseUrl?: string) => LanguageModel
+  (apiKey: string, modelId: string, baseUrl?: string, accountId?: string) => LanguageModel
 >;
 
 /**
@@ -123,16 +124,19 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
      * do Codex (`chatgpt.com`), nunca `api.openai.com`. A allowlist do egress
      * é a DELE, como nos demais canônicos.
      *
-     * PENDENTE spike com assinatura real: o backend do Codex fala Responses
-     * API (`POST /responses`, SSE), não `chat/completions` — observado pela
-     * comunidade, sem contrato documentado pela OpenAI. Esta factory é o ponto
-     * de fiação; o turno real contra ela ainda precisa ser provado com token
-     * de verdade antes de qualquer org apontar chat para cá.
+     * Transporte Responses NATIVO (`lib/ai/codex/modelo-responses.ts`), não
+     * chat-completions: o `.responses()` do `@ai-sdk/openai` v4 é BATCH
+     * (não entra em `generateText`) e o backend REJEITA `temperature`/
+     * `max_tokens`. O `accountId` (4º argumento) monta o envelope de
+     * identidade — sem ele a chamada cai.
      */
-    'openai-codex': (accessToken, modelId) =>
-      createOpenAI({ apiKey: accessToken, baseURL: CODEX_INFERENCE_BASE_URL, fetch: contain(CODEX_INFERENCE_BASE_URL) })(
+    'openai-codex': (accessToken, modelId, _baseUrl, accountId) =>
+      criarModeloCodex({
+        accessToken,
+        accountId,
         modelId,
-      ),
+        fetchImpl: (input, init) => contain(CODEX_INFERENCE_BASE_URL)(input, init),
+      }),
   };
 }
 
