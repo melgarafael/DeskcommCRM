@@ -239,6 +239,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "`X-Client-Info` enviado ao Supabase — identifica o cliente nos logs e na telemetria DELES. Não é texto de interface e nunca chega ao usuário",
     marcas: ["deskcomm-crm"],
   },
+  "lib/ai/codex/modelo-responses.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "header `originator` enviado ao backend do Codex — identifica a família do cliente na telemetria e no roteamento DELES, e é a alternativa honesta a impersonar `codex_cli_rs`. Não é texto de interface e nunca chega ao usuário",
+    marcas: ["deskcomm-crm"],
+  },
   "lib/nuvemshop/config.ts": {
     categoria: "PROTOCOLO",
     motivo:
