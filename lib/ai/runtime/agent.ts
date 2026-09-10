@@ -187,6 +187,7 @@ export function buildModel(provider: string, apiKey: string, modelId: string): L
     // backend do Codex, nunca api.openai.com. Sem este caso, o dono com agente
     // em openai-codex publicaria, clicaria em "Teste" e receberia
     // `unsupported_provider` — enquanto a mensagem real seria respondida.
+    // (Mesma ressalva do registry: transporte Responses pendente de spike.)
     case "openai-codex":
       return createOpenAI({ apiKey, baseURL: CODEX_INFERENCE_BASE_URL })(modelId);
     default:

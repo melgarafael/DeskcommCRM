@@ -227,8 +227,14 @@ Não avaliado por falta de execução/instância:
   (resposta de WhatsApp 24/7) pode violar os termos do plano ChatGPT; confirmar
   antes de ligar em produção, por organização; (b) semântica de cota do Codex não
   é documentada pelo Hermes nem pela OpenAI — não prometer economia vs API key;
-  (c) o vínculo é POR ORG de propósito: uma assinatura de plataforma dividida
-  entre tenants misturaria faturamento e rate-limit interativo; (d) embeddings e
+  (c) o backend do Codex (`chatgpt.com/backend-api/codex`) é superfície INTERNA
+  sem contrato documentado (fala Responses API, não chat/completions; обслуido
+  pela comunidade, pode mudar — issue openai/codex#36886 pede o contrato em
+  aberto): por isso esta entrega NÃO fabrica chamada de chat contra ele — o
+  turno real exige spike com assinatura de verdade, e o validador falha fechado
+  (`codex_exige_vinculo_oauth`) em vez de sondar endpoint que não existe; (d) o
+  vínculo é POR ORG de propósito: uma assinatura de plataforma dividida entre
+  tenants misturaria faturamento e rate-limit interativo; (e) embeddings e
   transcrição continuam em `OPENAI_API_KEY` por construção, então Codex não elimina
   a API key. Contenções implementadas: tabela deny-all (`ai_provider_oauth`, sem
   policies, sem grants fora `service_role`), refresh só em memória do turno,

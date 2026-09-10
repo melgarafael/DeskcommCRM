@@ -122,6 +122,12 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
      * pelo resolver), nunca uma API key `sk-...` — e o endpoint é o backend
      * do Codex (`chatgpt.com`), nunca `api.openai.com`. A allowlist do egress
      * é a DELE, como nos demais canônicos.
+     *
+     * PENDENTE spike com assinatura real: o backend do Codex fala Responses
+     * API (`POST /responses`, SSE), não `chat/completions` — observado pela
+     * comunidade, sem contrato documentado pela OpenAI. Esta factory é o ponto
+     * de fiação; o turno real contra ela ainda precisa ser provado com token
+     * de verdade antes de qualquer org apontar chat para cá.
      */
     'openai-codex': (accessToken, modelId) =>
       createOpenAI({ apiKey: accessToken, baseURL: CODEX_INFERENCE_BASE_URL, fetch: contain(CODEX_INFERENCE_BASE_URL) })(

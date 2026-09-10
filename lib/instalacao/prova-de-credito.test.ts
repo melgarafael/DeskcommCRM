@@ -16,10 +16,17 @@ import {
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
 
 describe("montarRequisicaoDeProva", () => {
-  it("sabe cobrar TODOS os provedores que a lista oferece", () => {
-    // Se a lista ganhar um provedor e este módulo não souber testá-lo, o
-    // diagnóstico ficaria mudo justamente para quem escolheu o mais novo.
-    const semProva = IDS_DE_PROVEDOR.filter(
+  it("sabe cobrar TODOS os provedores de chave que a lista oferece", () => {
+    // Se a lista ganhar um provedor de CHAVE e este módulo não souber testá-lo,
+    // o diagnóstico ficaria mudo justamente para quem escolheu o mais novo.
+    //
+    // `openai-codex` é a exceção declarada, não uma lacuna: assinatura se prova
+    // no CONECTAR (o device exchange só sucede com aprovação do dono) e no
+    // refresh a cada turno — o instalador nunca tem um token OAuth na mão, então
+    // não há geração mínima a montar aqui. Retornar `null` para ele é o
+    // fail-closed de sempre, não um "ok" por omissão.
+    const COM_PROVA_DE_INSTALACAO = IDS_DE_PROVEDOR.filter((id) => id !== "openai-codex");
+    const semProva = COM_PROVA_DE_INSTALACAO.filter(
       (id) => montarRequisicaoDeProva(id, "k", "m") === null,
     );
     expect(semProva).toEqual([]);
@@ -28,6 +35,7 @@ describe("montarRequisicaoDeProva", () => {
   it("é uma GERAÇÃO, não uma listagem — é o que o provedor cobra", () => {
     // O ponto do arquivo inteiro: listar modelos passa com saldo zero.
     for (const id of IDS_DE_PROVEDOR) {
+      if (id === "openai-codex") continue; // ver o caso acima: sem chave no install, sem prova aqui
       const req = montarRequisicaoDeProva(id, "k", "modelo-x");
       expect(req, id).not.toBeNull();
       expect(req!.url, `${id} está batendo num endpoint de catálogo`).not.toMatch(/\/models$/);

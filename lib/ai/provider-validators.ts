@@ -9,7 +9,6 @@
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
-import { CODEX_INFERENCE_BASE_URL } from "@/lib/ai/codex/constantes";
 
 /**
  * Os provedores cuja CHAVE este arquivo sabe validar.
@@ -171,33 +170,22 @@ export async function validateOpenRouterKey(apiKey: string): Promise<ValidationR
 }
 
 /**
- * Valida um access token OAuth do Codex contra o backend do Codex
- * (`chatgpt.com`), NUNCA contra `api.openai.com` — lá um Bearer OAuth não é
- * credencial válida e um 401 de lá não provaria nada sobre o vínculo.
+ * Codex NÃO se valida colando token — e é por isso que esta função não faz
+ * HTTP nenhum, embora as irmãs façam.
  *
- * O catálogo do Codex não é público nem estável como prova: token inválido →
- * 401; qualquer outra coisa (incluindo endpoint de descoberta ausente)
- * devolve lista vazia com `ok: true`, como o ramo OpenRouter faz quando o
- * catálogo cai — disponibilidade não recusa credencial.
+ * A validade do vínculo é provada em dois lugares que já existem: o device
+ * exchange (`trocarDeviceCodePorTokens` — a troca só sucede com aprovação do
+ * dono) e o refresh a cada turno (`renovarAccessToken` — sucesso prova,
+ * `invalid_grant` quarentena). Não há endpoint de catálogo no backend do
+ * Codex para sondar: bater em `/models` (que nem existe lá) e tratar
+ * "não-401" como válido repetiria exatamente o bug OpenRouter de 2026-09-02,
+ * onde QUALQUER string ganhava `validated_at`.
+ *
+ * Por isso fail-closed com código próprio: quem chamar recebe a direção, não
+ * um selo verde vazio.
  */
-export async function validateCodexToken(accessToken: string): Promise<ValidationResult> {
-  try {
-    const res = await timedFetch(`${CODEX_INFERENCE_BASE_URL}/models`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: "auth_failed_401" };
-    }
-    if (!res.ok) {
-      return { ok: true, models: [] };
-    }
-    const json = (await res.json()) as { data?: { id?: string }[] };
-    const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
-    return { ok: true, models };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
-  }
+export async function validateCodexToken(_accessToken: string): Promise<ValidationResult> {
+  return { ok: false, error: "codex_exige_vinculo_oauth" };
 }
 
 export function validateProviderKey(
