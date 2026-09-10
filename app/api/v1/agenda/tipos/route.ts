@@ -60,6 +60,50 @@ const camposDoTipo = {
   buffer_after_minutes: z.number().int().min(0).max(720).optional(),
   minimum_notice_minutes: z.number().int().min(0).max(43_200).optional(),
   booking_window_days: z.number().int().min(1).max(365).optional(),
+  /**
+   * O LEMBRETE — os dois campos que o cron `agenda-reminder` lê e que ninguém
+   * conseguia escrever.
+   *
+   * A 0177 criou as colunas, a 0194 as pôs em `default false` deixando escrito
+   * que ligar por padrão "fica com o dono do produto NO DIA em que o disparador
+   * nascer", e o `99c33257` fez o disparador nascer. Faltava a outra metade do
+   * par: `reminder_enabled` não estava em schema nenhum aqui nem na tela, então
+   * a rodada do cron devolvia zero linhas em TODA instalação — capacidade que
+   * existe e não tem como ser usada (invariante 6 do Sistema Vivo).
+   *
+   * **Continua nascendo desligado.** Não há `.default(true)`: quem não manda o
+   * campo não liga nada, e o default da coluna segue sendo `false`. Mandar
+   * mensagem para o telefone de um cliente é irreversível.
+   */
+  reminder_enabled: z.boolean().optional(),
+  /**
+   * ⚠️ ESTA FAIXA É MAIS ESTREITA QUE O CHECK DO BANCO, E ISSO CONTRARIA O
+   * PARÁGRAFO ACIMA DE PROPÓSITO.
+   *
+   * A coluna aceita `between 0 and 43200`, e os campos vizinhos copiam o CHECK
+   * porque lá a borda do banco É a borda do sentido: `buffer_after_minutes = 0`
+   * é "sem folga", uma configuração legítima. Aqui as duas bordas do CHECK
+   * produzem lembrete que não lembra:
+   *
+   * - **0 min** nunca sai. `estaNaHora` recusa `comeca <= agora`, então um
+   *   lembrete marcado para o próprio instante do compromisso é descartado em
+   *   toda rodada até a linha sair da varredura. O piso é 15 min porque o cron
+   *   roda a cada 5: abaixo de três ciclos, uma rodada atrasada come a
+   *   antecedência inteira e o aviso chega depois de a pessoa já ter saído.
+   * - **43200 min (30 dias)** não é lembrete, é convite. O teto é 10080 (7
+   *   dias), que cobre o "semana que vem" de clínica e imobiliária.
+   *
+   * A borda continua sendo do banco para quem escreve por SQL — aqui a recusa é
+   * só antes, com nome. Uma linha semeada fora desta faixa (só por SQL direto;
+   * o default da 0177 é 1440) segue valendo no banco e o cron a respeita: o que
+   * ela perde é poder ser reenviada por esta rota sem entrar na faixa.
+   */
+  reminder_minutes_before: z
+    .number()
+    .int()
+    .min(15, { message: "O lembrete precisa sair pelo menos 15 minutos antes do compromisso." })
+    .max(10_080, { message: "O lembrete não pode sair mais de 7 dias (10080 minutos) antes." })
+    .optional(),
 };
 
 const criarSchema = z.object(camposDoTipo);
@@ -121,6 +165,11 @@ export async function GET(req: NextRequest): Promise<Response> {
       buffer_after_minutes: t.bufferDepoisMin,
       minimum_notice_minutes: t.antecedenciaMinimaMin,
       booking_window_days: t.janelaDeAgendamentoDias,
+      // Sem estes dois, quem chama a rota não tem como SABER se o lembrete está
+      // ligado — só como pedir que ligue. Um PATCH cego sobre um estado que a
+      // leitura não conta é o mesmo controle decorativo, do outro lado.
+      reminder_enabled: t.lembreteLigado,
+      reminder_minutes_before: t.lembreteAntecedenciaMin,
     })),
     { requestId },
   );
@@ -137,7 +186,11 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const lido = criarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
-    return fail("validation_failed", lido.error.issues[0]?.message ?? t("corpo inválido"), 422, { requestId });
+    // A mensagem do Zod passa pelo dicionário, e não direto ao corpo da resposta:
+    // as recusas de `reminder_minutes_before` são escritas em português nesta
+    // rota, e quem opera em espanhol as receberia cruas. Texto sem entrada
+    // degrada para ele mesmo — que é o contrato de `traduzir`.
+    return fail("validation_failed", t(lido.error.issues[0]?.message ?? "corpo inválido"), 422, { requestId });
   }
 
   const admin = createAdminClient();
@@ -177,7 +230,9 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   const lido = alterarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
-    return fail("validation_failed", lido.error.issues[0]?.message ?? t("corpo inválido"), 422, { requestId });
+    // Idem ao POST: o dicionário na borda, para a recusa do lembrete chegar
+    // legível a quem opera em espanhol.
+    return fail("validation_failed", t(lido.error.issues[0]?.message ?? "corpo inválido"), 422, { requestId });
   }
   const { id, ...campos } = lido.data;
   if (Object.keys(campos).length === 0) {

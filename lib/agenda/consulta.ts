@@ -625,6 +625,18 @@ export interface TipoDeAtendimento {
   bufferDepoisMin: number;
   antecedenciaMinimaMin: number;
   janelaDeAgendamentoDias: number;
+  /**
+   * O LEMBRETE deste tipo — o que o cron `agenda-reminder` lê para decidir se
+   * manda mensagem, e quantos minutos antes.
+   *
+   * Também NÃO vão ao modelo, e pelo mesmo motivo dos quatro acima: a IA não
+   * dispara lembrete nem tem o que fazer com a antecedência dele. Estão aqui
+   * porque quem administra o cadastro precisa LER o estado antes de mudá-lo —
+   * uma tela que só sabe pedir "ligue" e nunca sabe se está ligado é o mesmo
+   * controle decorativo, invertido.
+   */
+  lembreteLigado: boolean;
+  lembreteAntecedenciaMin: number;
 }
 
 export type ResultadoDosTipos =
@@ -654,7 +666,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_enabled, reminder_minutes_before",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -690,6 +702,8 @@ export async function listaTiposDeAtendimento(
       bufferDepoisMin: Number(t.buffer_after_minutes),
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),
       janelaDeAgendamentoDias: Number(t.booking_window_days),
+      lembreteLigado: Boolean(t.reminder_enabled),
+      lembreteAntecedenciaMin: Number(t.reminder_minutes_before),
     })),
   };
 }

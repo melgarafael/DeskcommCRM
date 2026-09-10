@@ -71,7 +71,11 @@ export interface Message {
   media_mime: string | null;
   media_size_bytes: number | null;
   media_storage_path: string | null;
-  sent_via: "user" | "ai" | "system";
+  // Espelha o CHECK do banco (messages_sent_via_check): 'crm', 'external_device',
+  // 'automation', 'ai', 'user', 'system'. O tipo listava só três e o TypeScript
+  // aceitava os demais só porque o dado vem do Supabase sem cast — a tela então
+  // não conseguia nem NOMEAR o valor para exibi-lo (ver MessageBubble).
+  sent_via: "user" | "ai" | "system" | "external_device" | "automation" | "crm";
   sent_by_user_id: string | null;
   sent_at: string;
   delivered_at: string | null;

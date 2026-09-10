@@ -8,6 +8,18 @@ Leia o `triagem/TRIAGEM.md` **do `origin/main`** e siga-o à risca:
 git fetch origin && git show origin/main:triagem/TRIAGEM.md
 ```
 
+**E confira que você leu o inteiro, porque cópia velha lê como completa.** Em 08/09/2026 uma sessão
+abriu o arquivo do disco: **319 linhas**, terminando direitinho na seção "Modos de falha", sem nada
+indicando que faltava alguma coisa — o `origin/main` tinha **1800**. Vinte seções não foram lidas, e
+o passe 0-bis foi reinventado do zero. Nenhum sintoma; documento velho não avisa que é velho.
+
+```bash
+echo "disco: $(wc -l < triagem/TRIAGEM.md) | main: $(git show origin/main:triagem/TRIAGEM.md | wc -l)"
+```
+
+Se os dois números divergirem, **o do disco não existe para esta sessão** — nem para consulta rápida,
+nem para "só conferir uma coisa". O mesmo vale para este arquivo de comando.
+
 O número do PR veio no argumento; se não veio, monte a fila com **os dois** comandos abaixo — o
 segundo não é opcional, e está explicado no passe 0-bis:
 

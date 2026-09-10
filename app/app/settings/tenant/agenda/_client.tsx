@@ -25,6 +25,8 @@ export interface TipoRow {
   default_owner_user_id: string | null;
   requires_confirmation: boolean;
   is_active: boolean;
+  reminder_enabled: boolean;
+  reminder_minutes_before: number;
 }
 
 /**
@@ -71,6 +73,66 @@ const VAZIO: Rascunho = {
   location_kind: "in_person",
   default_owner_user_id: "",
 };
+
+/**
+ * O LEMBRETE DO COMPROMISSO — o par de controles que faltava.
+ *
+ * O cron `agenda-reminder` lê `reminder_enabled` e `reminder_minutes_before`
+ * desde o `99c33257`, e nenhum dos dois estava em rota ou tela: ligar era
+ * impossível, então a varredura devolvia zero linhas em toda instalação. Isto é
+ * a outra metade do par (invariante 6 do Sistema Vivo: configuração tem
+ * superfície).
+ *
+ * ─── Componente próprio, e não mais dois campos no formulário ─────────────
+ *
+ * "Quantos minutos antes" só faz sentido com o aviso LIGADO, e um campo ativo
+ * ao lado de uma caixa desmarcada é o controle decorativo desta casa: quem
+ * digita 60 ali conclui que agendou alguma coisa. Isso exige estado, o resto do
+ * formulário de edição é não-controlado (`FormData`), e o formulário nasce e
+ * morre com o `editandoId` — então o estado inicial é sempre o que veio do
+ * servidor, sem `useEffect` de sincronização.
+ *
+ * ⚠️ **CAMPO DESABILITADO NÃO ENTRA NO `FormData`, e isso é o desenho.** Com o
+ * aviso desligado o `PATCH` manda `reminder_enabled: false` e OMITE os minutos:
+ * a antecedência guardada fica intacta para quando alguém religar, em vez de
+ * ser sobrescrita por um valor que a tela não deixou ninguém escolher.
+ */
+function LembreteDoCompromisso({ tipo }: { tipo: TipoRow }) {
+  const t = useT();
+  const [ligado, setLigado] = React.useState(tipo.reminder_enabled);
+
+  return (
+    <>
+      <label className="flex items-center gap-2 text-xs text-text-muted sm:col-span-2">
+        <input
+          type="checkbox"
+          name="reminder_enabled"
+          checked={ligado}
+          data-testid={`editar-lembrete-${tipo.id}`}
+          onChange={(e) => setLigado(e.target.checked)}
+          className="size-4 rounded-sm border-border accent-accent"
+        />
+        {t("Avisar o cliente antes do compromisso, pelo WhatsApp")}
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-text-muted">
+        {t("Quantos minutos antes")}
+        <input
+          name="reminder_minutes_before"
+          type="number"
+          // Os limites do `criarSchema` da rota, repetidos aqui para a recusa
+          // chegar no campo em vez de virar um toast vindo do servidor. Quem
+          // decide continua sendo a rota — a tela só evita a viagem.
+          min={15}
+          max={10080}
+          disabled={!ligado}
+          defaultValue={tipo.reminder_minutes_before}
+          data-testid={`editar-lembrete-minutos-${tipo.id}`}
+          className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text disabled:opacity-50"
+        />
+      </label>
+    </>
+  );
+}
 
 export function TiposDeAgendamentoClient({
   tiposIniciais,
@@ -305,6 +367,17 @@ export function TiposDeAgendamentoClient({
                   </span>
                 )
               ) : null}
+              {tipo.reminder_enabled ? (
+                // O estado tem de aparecer SEM abrir o formulário: um aviso que
+                // sai sozinho para o telefone do cliente é a última coisa que
+                // pode viver escondida atrás de um clique em "Editar".
+                <span
+                  data-testid={`lembrete-ligado-${tipo.id}`}
+                  className="text-xs tabular-nums text-text-muted"
+                >
+                  {t("avisa o cliente")} {tipo.reminder_minutes_before} min {t("antes")}
+                </span>
+              ) : null}
               {!tipo.is_active ? <span className="text-xs text-text-subtle">{t("desativado")}</span> : null}
               {podeEditar ? (
                 <span className="ml-auto flex gap-1">
@@ -380,6 +453,19 @@ export function TiposDeAgendamentoClient({
                         // voltar — que é o laço de retorno correto.
                         default_owner_user_id:
                           String(dados.get("default_owner_user_id") ?? "") || null,
+                        // Caixa desmarcada não aparece no `FormData` — daí a
+                        // comparação, e não um `Boolean(...)` do valor ausente.
+                        reminder_enabled: dados.get("reminder_enabled") === "on",
+                        // O campo desabilitado também não aparece, e omitir é o
+                        // certo: desligar o aviso não pode apagar a antecedência
+                        // que alguém escolheu (ver `LembreteDoCompromisso`).
+                        ...(dados.get("reminder_minutes_before")
+                          ? {
+                              reminder_minutes_before: Number(
+                                dados.get("reminder_minutes_before"),
+                              ),
+                            }
+                          : {}),
                       }),
                     "Tipo alterado.",
                   );
@@ -423,6 +509,7 @@ export function TiposDeAgendamentoClient({
                     ))}
                   </select>
                 </label>
+                <LembreteDoCompromisso tipo={tipo} />
                 <div className="flex justify-end sm:col-span-3">
                   <Button type="submit" size="sm" data-testid={`salvar-${tipo.id}`} disabled={salvando}>
                     {salvando ? t("Salvando…") : t("Salvar")}

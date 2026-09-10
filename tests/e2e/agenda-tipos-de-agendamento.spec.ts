@@ -275,3 +275,73 @@ test("desativar tira o tipo da tela de marcar, sem apagar a história", async ({
     "tipo desativado continua oferecido para marcar",
   ).toHaveCount(0);
 });
+
+test("ligo o aviso do compromisso pela tela, e ele fica ligado", async ({ page }) => {
+  /**
+   * O OUTRO MEIO DO PAR — o caso que faltava para a entrega do lembrete existir.
+   *
+   * O cron `agenda-reminder` lê `reminder_enabled` e `reminder_minutes_before`
+   * desde que nasceu, e nenhum dos dois estava em rota ou tela: a varredura
+   * devolvia zero linhas em toda instalação e não havia como mudar isso.
+   * Configuração sem superfície é capacidade morta (invariante 6 do Sistema
+   * Vivo), e é por AQUI — a tela — que se prova que deixou de ser.
+   *
+   * O caso vive nesta spec, e não num arquivo novo, porque é a MESMA tela e o
+   * mesmo login: um arquivo à parte custaria mais uma sessão num job que já
+   * vive perto do teto de logins por IP, sem cobrir nada a mais.
+   */
+  const creds = lerCreds();
+  await entrar(page, creds);
+  await page.goto("/app/settings/tenant/agenda");
+  await expect(page.getByTestId("tipos-de-agendamento-config")).toBeVisible({ timeout: 20_000 });
+
+  const nome = `Lembrete E2E ${Date.now().toString().slice(-6)}`;
+  await page.getByTestId("abrir-novo-tipo").click();
+  await page.getByTestId("novo-tipo-nome").fill(nome);
+  await page.getByTestId("salvar-novo-tipo").click();
+
+  const linha = page.getByTestId("lista-de-tipos").getByRole("listitem").filter({ hasText: nome });
+  await expect(linha).toBeVisible({ timeout: 20_000 });
+
+  // ── NASCE DESLIGADO. A migration 0194 é explícita: mandar mensagem para o
+  //    telefone de um cliente é irreversível, e ninguém é inscrito por default.
+  await expect(
+    linha.getByTestId(/^lembrete-ligado-/),
+    "o tipo nasceu com o aviso LIGADO — ninguém escolheu isso",
+  ).toHaveCount(0);
+
+  await linha.getByRole("button", { name: "Editar" }).click();
+  const caixa = linha.getByTestId(/^editar-lembrete-[0-9a-f]/).first();
+  const minutos = linha.getByTestId(/^editar-lembrete-minutos-/).first();
+  await expect(caixa).toBeVisible({ timeout: 15_000 });
+
+  // ── O CAMPO DESLIGADO NÃO MENTE. Um campo de minutos editável ao lado de uma
+  //    caixa desmarcada faz quem digita 60 concluir que agendou alguma coisa.
+  await expect(
+    minutos,
+    "o campo de minutos está ativo com o aviso desligado — controle decorativo",
+  ).toBeDisabled();
+
+  await caixa.check();
+  await expect(minutos, "marquei o aviso e o campo continuou travado").toBeEnabled();
+  await minutos.fill("60");
+  await linha.getByTestId(/^salvar-/).first().click();
+
+  // ── O ESTADO APARECE SEM ABRIR NADA ────────────────────────────────────────
+  await expect(
+    linha.getByTestId(/^lembrete-ligado-/),
+    "liguei o aviso e a lista não conta isso — quem olha a tela não sabe que mensagem vai sair",
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(linha).toContainText("60 min");
+
+  // ── E FICOU GRAVADO. Sem o recarregamento, isto mediria estado de React.
+  await page.reload();
+  const depois = page.getByTestId("lista-de-tipos").getByRole("listitem").filter({ hasText: nome });
+  await expect(
+    depois.getByTestId(/^lembrete-ligado-/),
+    "o aviso voltou desligado depois de recarregar — não chegou ao banco",
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(depois).toContainText("60 min");
+
+  await page.screenshot({ path: "evidence/calendario/lembrete-ligado.png", fullPage: true });
+});
