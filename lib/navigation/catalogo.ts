@@ -196,6 +196,19 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Módulo VoIP (migration 0232). No CRM e no sidebar pelo mesmo critério de
+    // Tarefas: quem atende confere ligações perdidas e transcrições no dia a
+    // dia, não como revisão deliberada.
+    href: "/app/calls",
+    label: "Chamadas",
+    description: "Histórico de ligações (voz por IA) com transcrição.",
+    icon: "Phone",
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "manager",
+    sidebar: true,
+  },
+  {
     // ⚠️ Esta tela nasceu porque a FERRAMENTA já existia sem ela. O agente de IA
     // vinha com "procurar produto na loja" ligada por padrão, lendo uma tabela
     // que ninguém nunca preencheu — e o efeito não era silêncio: era o agente

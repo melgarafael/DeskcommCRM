@@ -39,6 +39,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // typedRoutes moved out of experimental in Next 15.5+
   typedRoutes: true,
+  // Dev-only: permite acessar o dev server via IP do Tailscale (não afeta build/prod).
+  allowedDevOrigins: ["100.119.120.104"],
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
   },

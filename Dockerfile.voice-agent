@@ -1,0 +1,20 @@
+# Worker de voz (SIP/ARI + IA em tempo real) — mesmo padrão do Dockerfile.worker:
+# roda TS direto via tsx (sem build), imagem single-stage com devDeps.
+FROM node:22-alpine
+
+WORKDIR /app
+
+LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCRM" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.title="DeskcommCRM voice-agent"
+
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+CMD ["pnpm", "exec", "tsx", "workers/voice-agent/index.ts"]

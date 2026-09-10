@@ -261,6 +261,43 @@ const PARES: Array<{
     arquivo: "lib/tarefas/tipos.ts",
     simbolo: "SITUACOES_DA_TAREFA",
   },
+  // Módulo VoIP (migration 0232) — 5 pares nascem juntos no mesmo commit,
+  // como manda a nota de "taxa" no topo deste arquivo.
+  {
+    tabela: "crm_calls",
+    coluna: "direction",
+    // lib/voip/call-vocabulary.ts -> CallDirection
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "CallDirection",
+  },
+  {
+    tabela: "crm_calls",
+    coluna: "status",
+    // lib/voip/call-vocabulary.ts -> CallStatus
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "CallStatus",
+  },
+  {
+    tabela: "crm_calls",
+    coluna: "handled_by",
+    // lib/voip/call-vocabulary.ts -> CallHandledBy
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "CallHandledBy",
+  },
+  {
+    tabela: "phone_numbers",
+    coluna: "routing_mode",
+    // lib/voip/call-vocabulary.ts -> PhoneNumberRoutingMode
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "PhoneNumberRoutingMode",
+  },
+  {
+    tabela: "ai_agents",
+    coluna: "channel",
+    // lib/voip/call-vocabulary.ts -> AiAgentChannel
+    arquivo: "lib/voip/call-vocabulary.ts",
+    simbolo: "AiAgentChannel",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */
