@@ -1,4 +1,5 @@
 /** Apresentação por vínculo. Nunca é autorização de página, API ou ação. */
+import type { ModulesState } from "@/lib/modules/config";
 import { z } from "zod";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { NAV_CATALOG, type NavMetadata, type NavDestinationId } from "./catalogo";
@@ -74,9 +75,10 @@ export function destinosDaInterface(
   raw: unknown,
   platform: boolean,
   role: Role | null,
+  modules?: ModulesState,
 ): NavMetadata[] {
   const { settings } = lerInterface(raw);
-  const allowed = permitidos(platform, role);
+  const allowed = permitidos(platform, role).filter((d) => !d.module || modules?.[d.module] === true);
   const chosen =
     settings.destinos ?? (settings.preset === "simplificada" ? SIMPLIFICADA : undefined);
   return allowed.filter(

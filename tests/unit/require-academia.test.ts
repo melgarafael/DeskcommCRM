@@ -1,0 +1,12 @@
+import { beforeEach, expect, it, vi } from "vitest";
+vi.mock("@/lib/auth/require-role",()=>({requireRole:vi.fn()}));
+vi.mock("@/lib/modules/server",()=>({carregarModulos:vi.fn()}));
+import { requireRole } from "@/lib/auth/require-role";
+import { carregarModulos } from "@/lib/modules/server";
+import { requireAcademia } from "@/lib/modules/require-academia";
+const auth={ok:true,org:{orgId:"org-do-cookie"},user:{id:"user"}};
+beforeEach(()=>{vi.resetAllMocks();vi.mocked(requireRole).mockResolvedValue(auth as never);});
+it("off bloqueia acesso direto",async()=>{vi.mocked(carregarModulos).mockResolvedValue({academia:false});const r=await requireAcademia("request");expect(r.ok).toBe(false);if(!r.ok)expect(r.response.status).toBe(403);});
+it("on usa organização autenticada",async()=>{vi.mocked(carregarModulos).mockResolvedValue({academia:true});expect(await requireAcademia("request")).toBe(auth);expect(carregarModulos).toHaveBeenCalledWith("org-do-cookie");});
+it("falha de leitura não libera acesso",async()=>{vi.mocked(carregarModulos).mockRejectedValue(new Error("offline"));const r=await requireAcademia("request");expect(r.ok).toBe(false);if(!r.ok)expect(r.response.status).toBe(500);});
+it("sessão ausente não consulta módulos",async()=>{const denied={ok:false,response:new Response(null,{status:401})};vi.mocked(requireRole).mockResolvedValue(denied as never);expect(await requireAcademia("request")).toBe(denied);expect(carregarModulos).not.toHaveBeenCalled();});

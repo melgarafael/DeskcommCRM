@@ -1,3 +1,4 @@
+import { carregarModulos } from "@/lib/modules/server";
 import { NavHub } from "@/components/shell/NavHub";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -27,6 +28,7 @@ export default async function CrmHubPage() {
 
   return (
     <NavHub
+      modules={activeOrg ? await carregarModulos(activeOrg.orgId) : undefined}
       group="crm"
       isPlatformAdmin={user.is_platform_admin && !user.support}
       role={activeOrg?.role ?? null}

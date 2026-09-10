@@ -1,3 +1,4 @@
+import type { ModulesState } from "@/lib/modules/config";
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
@@ -137,6 +138,7 @@ export interface AuthUser {
 }
 
 export interface ActiveOrg {
+  modules?: ModulesState;
   interface_settings?: InterfaceSettings;
   orgId: string;
   name: string;

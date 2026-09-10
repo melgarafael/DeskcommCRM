@@ -1,3 +1,5 @@
+import { ModuleRefresh } from "@/components/shell/ModuleRefresh";
+import { lerModulos } from "@/lib/modules/config";
 import { InterfaceRefresh } from "@/hooks/auth/InterfaceRefresh";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -50,7 +52,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // Fonte confiável (admin client, org do cookie validado) — nunca do body.
     const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)
       ?.visibility_mode;
-    activeOrg = { ...activeOrg, visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE };
+    activeOrg = { ...activeOrg, visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE, modules: lerModulos(orgRow?.settings) };
 
     // `marcaDaInstalacao()` é memoizada por TTL no PROCESSO (`lib/branding/
     // instalacao.ts`), e a derivação da cor é cacheada por régua+semente em
@@ -139,6 +141,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // acoplamento com a autenticação que derrubou 32 casos.
     <IdiomaProvider locale={user.idioma}>
     <AuthProvider user={user} activeOrg={activeOrg}>
+      {activeOrg && <ModuleRefresh key={activeOrg.orgId} orgId={activeOrg.orgId} enabled={activeOrg.modules?.academia ?? false} />}
       <InterfaceRefresh userId={user.id} org={activeOrg} support={!!user.support} />
       {/*
         O MARCADOR da marca da organização — o elemento cuja existência define o

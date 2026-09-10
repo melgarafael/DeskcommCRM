@@ -43,6 +43,7 @@ export interface NavMetadata {
   /** Ausente = só no hub. `true` = uso diário, sobe para o sidebar. */
   sidebar?: boolean;
   healthDot?: boolean;
+  module?: "academia";
 }
 
 /**
@@ -103,6 +104,8 @@ export const GRUPO_NO_RODAPE: NavGroupId = "organizacao";
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_CATALOG = [
+  { href: "/app/academia", label: "Minha Academia", description: "A área da academia desta empresa.", icon: "Buildings", group: "crm", section: "Academia", sidebar: true, module: "academia" },
+  { href: "/app/settings/modules", label: "Módulos da empresa", description: "Ative ou desative os recursos específicos do seu negócio.", icon: "PuzzlePiece", group: "organizacao", section: "Empresa", minRole: "admin" },
   // ---- Atendimento — onde o operador passa o dia ----
   {
     href: "/app/inbox",

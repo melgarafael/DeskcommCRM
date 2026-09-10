@@ -67,6 +67,12 @@ const ANON_PERMITIDO: readonly Excecao[] = [];
  */
 const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
   {
+    fn: "fn_definir_modulo_academia(uuid,boolean)",
+    razao: "PATCH app/api/v1/modules/route.ts usa createClient da sessão. " +
+      "RPC exige admin da organização, suporte permitido e MFA comprovada; " +
+      "modules-academia.test.ts prova negativa cruzada, manager/anon e preservação dos dados.",
+  },
+  {
     fn: "fn_reply_action(uuid,uuid,text,text,text,text)",
     razao:
       "POST app/api/v1/ai/replies/[id]/route.ts usa createClient da sessão. " +

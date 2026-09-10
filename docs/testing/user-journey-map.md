@@ -1984,3 +1984,12 @@ imagem carregada (naturalWidth > 0), sem banner de falha. Evidência local em
 `.superpowers/evidence/waha-local-fix/qr-verificado.png` e `verification.json`.
 Aplicação → WAHA autenticado e WAHA → aplicação responderam HTTP 200.
 Pareamento e envio/recebimento de mensagens ainda dependem do celular do usuário.
+
+## Academia opcional — módulo por organização
+
+- Administrador ativa/desativa por Configurações → Módulos da empresa.
+- Desligado: sem menu, busca ou hub; API 403 e página indisponível pelo acesso direto.
+- Religar preserva dados e demais configurações; outra empresa não herda ativação.
+- `tests/e2e/academia-modulo-local.spec.ts` é opt-in: credenciais locais dedicadas e nenhum reset.
+- PostgreSQL verifica admin/manager/cross-org/anon e merge não destrutivo.
+- Mapa: `docs/architecture/academia.md`.

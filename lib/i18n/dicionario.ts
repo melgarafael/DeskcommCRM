@@ -37,6 +37,20 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Minha Academia": { es: "Mi gimnasio" },
+  "Módulo ativo": { es: "Módulo activo" },
+  "Esta empresa tem acesso à área da academia. A ativação pode ser alterada por um administrador, sem apagar os dados.": { es: "Esta empresa tiene acceso al área del gimnasio. Un administrador puede cambiar la activación sin borrar los datos." },
+  "Gerenciar módulos": { es: "Gestionar módulos" },
+  "Configuração salva.": { es: "Configuración guardada." },
+  "Não foi possível confirmar a alteração. Atualize a página para conferir e tente novamente.": { es: "No se pudo confirmar el cambio. Actualiza la página para comprobarlo e inténtalo de nuevo." },
+  "Academia": { es: "Gimnasio" },
+  "Habilitar módulo Academia": { es: "Habilitar módulo Gimnasio" },
+  "Ao ativar, Minha Academia aparece para a equipe. Ao desativar, o acesso ao módulo é bloqueado e os dados são preservados.": { es: "Al activarlo, Mi gimnasio aparece para el equipo. Al desactivarlo, se bloquea el acceso al módulo y se conservan los datos." },
+  "Esta opção vale somente para esta empresa e não altera o atendimento do CRM.": { es: "Esta opción solo se aplica a esta empresa y no modifica la atención del CRM." },
+  "Abrir Minha Academia": { es: "Abrir Mi gimnasio" },
+  "Módulos da empresa": { es: "Módulos de la empresa" },
+  "Ative os recursos que fazem sentido para o seu negócio.": { es: "Activa las funciones adecuadas para tu negocio." },
+
   "números de teste autorizados": { es: "números de prueba autorizados" },
   "1 número de teste autorizado": { es: "1 número de prueba autorizado" },
   "Nenhum número autorizado — a IA não responde ninguém neste canal.": {

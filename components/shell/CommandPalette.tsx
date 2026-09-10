@@ -60,8 +60,9 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
         user.is_platform_admin && !user.support,
         activeOrg?.role ?? null,
         activeOrg?.interface_settings,
+        activeOrg?.modules,
       ),
-    [user.is_platform_admin, user.support, activeOrg?.role, activeOrg?.interface_settings],
+    [user.is_platform_admin, user.support, activeOrg?.role, activeOrg?.interface_settings, activeOrg?.modules],
   );
 
   const resultados = useMemo(() => {

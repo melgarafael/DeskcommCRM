@@ -1,3 +1,4 @@
+import type { ModulesState } from "@/lib/modules/config";
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import Link from "next/link";
 
@@ -9,6 +10,7 @@ import { hubSections, type NavGroupId } from "@/lib/navigation/registry";
 
 interface NavHubProps {
   interfaceSettings?: InterfaceSettings;
+  modules?: ModulesState;
   group: NavGroupId;
   isPlatformAdmin: boolean;
   role: Role | null;
@@ -56,9 +58,10 @@ export function NavHub({
   title,
   subtitle,
   interfaceSettings,
+  modules,
   locale = IDIOMA_PADRAO,
 }: NavHubProps) {
-  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings);
+  const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings, modules);
 
   return (
     <div className="flex h-full flex-col gap-8 p-6">

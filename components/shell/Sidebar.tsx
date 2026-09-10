@@ -43,6 +43,7 @@ export function SidebarContent({
     user.is_platform_admin && !user.support,
     activeOrg?.role ?? null,
     activeOrg?.interface_settings,
+    activeOrg?.modules,
   );
   // Configurações sai da área que rola e vai para o rodapé fixo: medido em
   // 1280x768, ele caía fora da dobra mesmo em telas de 1080px.
