@@ -174,6 +174,10 @@ const schema = z.object({
   VERCEL_AI_GATEWAY_URL: z.string().optional().default(""),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
+  // ChatGPT por assinatura (OAuth Codex, provider `openai-codex`) — client OAuth
+  // próprio (D1). Opcional: ausente, o botão Conectar responde `misconfigured`
+  // em vez de quebrar. Nunca tem default — default aqui seria faturar na conta errada.
+  OPENAI_CODEX_CLIENT_ID: z.string().optional().default(""),
 
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron

@@ -29,6 +29,10 @@ const envSchema = z.object({
   // OpenAI e a chave no `.env` continuava sem credencial utilizável, e a única
   // saída era cadastrar BYOK pela tela — sem nada dizendo isso.
   OPENAI_API_KEY: z.string().min(1).optional(),
+  // A QUARTA irmã (provider `openai-codex`): o client OAuth da assinatura
+  // ChatGPT. Opcional como as três — ausente, só o ramo Codex responde
+  // `misconfigured`; o resto do turno nem nota.
+  OPENAI_CODEX_CLIENT_ID: z.string().min(1).optional(),
   // A TERCEIRA irmã, e a que mais doía faltar: OpenRouter é a opção **[1]** do
   // menu do instalador, a que ele chama de caminho mais simples. O ramo
   // `provider === 'openrouter'` existe em `resolveOrgLlmConfig` e

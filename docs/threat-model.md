@@ -222,6 +222,18 @@ Não avaliado por falta de execução/instância:
   de existir junto com o arquivo (a rota apaga o anterior na troca).
 - Escopo do service role key no Supabase e rotação de chaves.
 - Efetividade do `beforeSend` do Sentry contra PII real.
+- Assinatura ChatGPT via OAuth (provider `openai-codex`, migration 0232) — INFERIDO,
+  não medido contra a OpenAI: (a) ToS — uso automatizado voltado ao cliente final
+  (resposta de WhatsApp 24/7) pode violar os termos do plano ChatGPT; confirmar
+  antes de ligar em produção, por organização; (b) semântica de cota do Codex não
+  é documentada pelo Hermes nem pela OpenAI — não prometer economia vs API key;
+  (c) o vínculo é POR ORG de propósito: uma assinatura de plataforma dividida
+  entre tenants misturaria faturamento e rate-limit interativo; (d) embeddings e
+  transcrição continuam em `OPENAI_API_KEY` por construção, então Codex não elimina
+  a API key. Contenções implementadas: tabela deny-all (`ai_provider_oauth`, sem
+  policies, sem grants fora `service_role`), refresh só em memória do turno,
+  quarentena em `invalid_grant`, plaintext nunca em log/resposta (provado em
+  `tests/invariants/codex-oauth-isolamento.test.ts` e `tests/api/codex-vinculo.test.ts`).
 
 ---
 
