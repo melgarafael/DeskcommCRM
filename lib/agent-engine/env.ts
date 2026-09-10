@@ -106,7 +106,20 @@ const envSchema = z.object({
   // Drain do event_log (mesmo banco pós-fusão) — lote, ritmo e backoff ocioso.
   CRM_DRAIN_BATCH_SIZE: z.coerce.number().int().positive().default(20),
   CRM_DRAIN_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
-  CRM_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
+  // O ocioso é o que o PRIMEIRO cliente da rajada espera, e ninguém mede isso
+  // olhando o gráfico de carga: quando a instalação está parada — que é o
+  // estado normal de uma academia às 9h da manhã —, a mensagem que chega fica
+  // parada até o próximo tick. Era 15_000, e as seis respostas medidas no
+  // piloto esperaram 3,0 / 4,3 / 7,6 / 8,3 / 10,0 / 12,1 segundos SÓ para o
+  // job nascer: média 7,6s, que é exatamente metade da soneca — a assinatura
+  // de espera por polling, não de trabalho.
+  //
+  // O custo de descer para 3_000 é medido, não estimado: o tick são DOIS
+  // updates indexados, então 8/min viram 40/min. O laço da fila ao lado já
+  // roda a cada 2_000 no mesmo processo, então isto não muda a ordem de
+  // grandeza do que o worker já consulta — e continua 4× mais espaçado que
+  // ele. Quem paga egress por byte e prefere o silêncio sobe o valor de volta.
+  CRM_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(3_000),
   // Evento 'processing' órfão (crash do worker) volta a 'pending' após isto.
   CRM_EVENT_REAP_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
   // Drain dos HANDLERS do event_log (mídia, branding, follow-up…), à parte do

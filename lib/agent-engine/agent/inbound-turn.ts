@@ -3389,41 +3389,70 @@ async function executarTurnoDoAgente(
     const currentStage: LeadStage = leadState?.stage ?? 'new';
     let stageSuggestion: LeadStage | null = null;
     let stageHintBlock = '';
-    if (deps.knobs.stageClassifier !== undefined) {
-      stageSuggestion = await classifyStage(
-        pool,
-        deps.llmCfg,
-        { tenantId, leadId: leadId || null, jobId: job?.id },
-        {
-          context: effectiveContext,
-          currentStage,
-          ...argsAux(deps.knobs.stageClassifier.model),
-        },
-        { registry: deps.registry, log: runLog },
-      );
-      if (stageSuggestion !== null) {
-        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
-      }
-    }
 
     // F4-04: classifier ADVISÓRIO anti-jailbreak sobre a mensagem INBOUND do lead (o
     // skillSignal já é a última inbound). Roda pelo seam agnóstico (modelo BARATO, budget
     // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
     // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
     let jailbreakLevel: JailbreakLevel = 'none';
-    if (camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
-      const verdict = await classifyJailbreak(
-        pool,
-        deps.llmCfg,
-        { tenantId, leadId: leadId || null, jobId: job?.id },
-        {
-          message: skillSignal,
-          // Knob ausente + organização ligando = roda com o modelo padrão dela,
-          // que é a convenção já usada pelo stageClassifier.
-          ...argsAux(deps.knobs.jailbreak?.model),
-        },
-        { registry: deps.registry, log: runLog },
-      );
+
+    // ═══ OS DOIS AUXILIARES ROLAM JUNTOS ═══
+    //
+    // Eram sequenciais, e a espera somava no relógio do cliente: medido no
+    // piloto, 3,3s de `stage_classifier` MAIS 3,9s de `jailbreak_detect` antes
+    // de o turno começar a ser gerado — 7,2s em que ninguém do outro lado vê
+    // nada acontecer.
+    //
+    // Nada os obriga a essa ordem: cada um lê contexto JÁ pronto (o estágio
+    // atual e a última inbound), nenhum lê a saída do outro, e os dois só são
+    // consumidos depois — a sugestão de estágio vira hint no sufixo do prompt,
+    // e o nível de jailbreak só é correlacionado no fim do turno. Em paralelo,
+    // o custo passa a ser o do mais lento em vez da soma.
+    //
+    // `Promise.all` e não `allSettled` de propósito: a escolta que envolve o
+    // turno inteiro é quem trata erro de auxiliar (ver o bloco grande acima
+    // sobre teto de orçamento), e engolir aqui devolveria o silêncio que
+    // aquela escolta foi criada para acabar.
+    const rodaStage = deps.knobs.stageClassifier !== undefined;
+    const rodaJailbreak = camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined);
+    const [sugestao, verdict] = await Promise.all([
+      rodaStage
+        ? classifyStage(
+            pool,
+            deps.llmCfg,
+            { tenantId, leadId: leadId || null, jobId: job?.id },
+            {
+              context: effectiveContext,
+              currentStage,
+              ...argsAux(deps.knobs.stageClassifier!.model),
+            },
+            { registry: deps.registry, log: runLog },
+          )
+        : Promise.resolve(null),
+      rodaJailbreak
+        ? classifyJailbreak(
+            pool,
+            deps.llmCfg,
+            { tenantId, leadId: leadId || null, jobId: job?.id },
+            {
+              message: skillSignal,
+              // Knob ausente + organização ligando = roda com o modelo padrão dela,
+              // que é a convenção já usada pelo stageClassifier.
+              ...argsAux(deps.knobs.jailbreak?.model),
+            },
+            { registry: deps.registry, log: runLog },
+          )
+        : Promise.resolve(null),
+    ]);
+
+    if (rodaStage) {
+      stageSuggestion = sugestao;
+      if (stageSuggestion !== null) {
+        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+      }
+    }
+
+    if (verdict !== null) {
       jailbreakLevel = verdict.level;
       if (verdict.flag) {
         // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
