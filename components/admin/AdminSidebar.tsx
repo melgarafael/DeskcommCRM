@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   CalendarBlank,
   Palette,
+  Key,
   ArrowRight,
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
@@ -44,6 +45,10 @@ const NAV_ITEMS: NavItem[] = [
   // A porta da tela do app OAuth do Google — mesma razão da de cima: é
   // configuração da INSTALAÇÃO, e /admin tem navegação própria.
   { href: "/admin/google", label: "Google Agenda", icon: CalendarBlank },
+  // A porta da tela que decide quem pode criar conta nesta instalação — mesma
+  // razão das duas de cima: é configuração da INSTALAÇÃO, e /admin tem
+  // navegação própria (o registro de `lib/navigation/` cobre só `app/app/**`).
+  { href: "/admin/cadastro", label: "Cadastro", icon: Key },
 ];
 
 interface AdminSidebarProps {

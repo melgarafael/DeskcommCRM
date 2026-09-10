@@ -64,6 +64,16 @@ export default async function LoginPage({
           )}
         </div>
       )}
+      {error === "cadastro_por_convite" && (
+        <div
+          className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          role="alert"
+        >
+          {t(
+            "Sua conta foi confirmada, mas esta instalação aceita cadastro apenas por convite — então não criamos uma empresa para você. Peça um convite a quem administra o sistema; o link dele já traz tudo o que falta.",
+          )}
+        </div>
+      )}
       {error === "template_padrao" && (
         <div
           className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"

@@ -28,6 +28,7 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ensureTenantForUser } from "@/lib/auth/provision";
+import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 
 vi.mock("next/headers", () => ({ headers: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -41,6 +42,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/auth/server", () => ({ requireAuth: vi.fn(), resolveActiveOrg: vi.fn() }));
 vi.mock("@/lib/auth/provision", () => ({ ensureTenantForUser: vi.fn() }));
+vi.mock("@/lib/auth/politica-de-cadastro", () => ({
+  modoDeCadastro: vi.fn(async () => "aberto"),
+}));
 vi.mock("@/lib/audit", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   audit: vi.fn(async () => undefined),
@@ -65,6 +69,7 @@ describe("recoverOrganization", () => {
     } as never);
     vi.mocked(requireAuth).mockResolvedValue({ id: USUARIO.id } as never);
     vi.mocked(resolveActiveOrg).mockResolvedValue(null);
+    vi.mocked(modoDeCadastro).mockResolvedValue("aberto");
     vi.mocked(ensureTenantForUser).mockResolvedValue({
       provisioned: true,
       organizationId: "22222222-2222-4222-8222-222222222222",
@@ -184,5 +189,60 @@ describe("o laço está cortado nos três pontos que o formavam", () => {
     const { join } = await import("node:path");
     const fonte = readFileSync(join(process.cwd(), "app/app/inbox/page.tsx"), "utf8");
     expect(fonte).toContain('href="/get-started"');
+  });
+});
+
+/**
+ * A QUARTA PORTA do modo `so_convite` (migration 0231), e a que não estava no
+ * desenho — apareceu medindo quais caminhos provisionam organização.
+ *
+ * Esta action é a saída de emergência de quem ficou logado sem empresa. Numa
+ * instalação fechada ela reabriria tudo o que as outras três fecham: bastaria
+ * ter conta por qualquer via e pedir a recuperação.
+ */
+describe("recoverOrganization — instalação que só aceita convidados", () => {
+  // Setup próprio: o `beforeEach` acima é do outro `describe`, e sem este as
+  // contagens de chamada vazam do caso anterior — foi o que aconteceu na
+  // primeira escrita deste bloco, e o teste passou a acusar uma chamada que era
+  // de outro caso.
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.mocked(headers).mockResolvedValue({
+      get: (k: string) => (k === "x-forwarded-for" ? "203.0.113.43" : null),
+    } as never);
+    vi.mocked(requireAuth).mockResolvedValue({ id: USUARIO.id } as never);
+    vi.mocked(resolveActiveOrg).mockResolvedValue(null);
+    vi.mocked(ensureTenantForUser).mockResolvedValue({
+      provisioned: true,
+      organizationId: "22222222-2222-4222-8222-222222222222",
+    } as never);
+    comUsuario();
+  });
+
+  it("recusa, e não chega a provisionar", async () => {
+    vi.mocked(modoDeCadastro).mockResolvedValue("so_convite");
+
+    const { recoverOrganization } = await import("./recoverOrganization");
+    const res = await recoverOrganization("Plata Iphones");
+
+    expect(res).toEqual({ ok: false, error: "somente_convite" });
+    expect(ensureTenantForUser).not.toHaveBeenCalled();
+  });
+
+  it("CONTROLE — aberto, a recuperação continua funcionando", async () => {
+    // Sem este caso, uma recusa incondicional passaria — e quem ficou logado
+    // sem empresa numa instalação ABERTA perderia a única saída que tem.
+    vi.mocked(modoDeCadastro).mockResolvedValue("aberto");
+
+    const { recoverOrganization } = await import("./recoverOrganization");
+    // O caminho de sucesso NÃO retorna: ele redireciona, e o stub do
+    // `next/navigation` transforma isso em throw — é como os demais casos
+    // verdes deste arquivo distinguem "saiu pela porta" de "seguiu adiante".
+    await expect(recoverOrganization("Plata Iphones")).rejects.toThrow(
+      "NEXT_REDIRECT:/onboarding/welcome",
+    );
+
+    expect(ensureTenantForUser).toHaveBeenCalled();
   });
 });

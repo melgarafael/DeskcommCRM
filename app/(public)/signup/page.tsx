@@ -1,8 +1,10 @@
 import Link from "next/link";
 
 import { SignupForm } from "@/components/auth/SignupForm";
+import { Button } from "@/components/ui/button";
 import { branding } from "@/lib/branding";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { createClient } from "@/lib/supabase/server";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -17,6 +19,19 @@ export const metadata = { title: "Criar conta" };
  * O token só é lido aqui para MONTAR a tela (esconder o nome da empresa, travar
  * o e-mail). Quem decide o que ele vale é o servidor, duas vezes: ao criar a
  * conta e ao confirmar o e-mail.
+ *
+ * ── A recusa por política (migration 0231) ──────────────────────────────────
+ *
+ * Quando a instalação está em `so_convite`, esta tela RECUSA em vez de mostrar
+ * o formulário — mas só nesse modo, e só sem convite válido. Ela é a SUPERFÍCIE
+ * da recusa, nunca a autoridade: `signUp()` e `/auth/confirm` recusam por conta
+ * própria, porque esta tela é adulterável e a server action é chamável direto.
+ *
+ * Por que uma tela e não um 403 do proxy: um 403 cru não tem marca, não tem
+ * idioma e não tem saída — é o `return` mudo que o invariante 6(c) do Sistema
+ * Vivo proíbe, e é péssima primeira impressão de um produto que se vende pela
+ * instalação. Medido: a regra de nginx que fazia isso numa instalação real
+ * barrou junto o `/signup?invite=…`, porque proxy não sabe o que é um convite.
  */
 export default async function SignupPage({
   searchParams,
@@ -36,6 +51,33 @@ export default async function SignupPage({
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
   const t = (texto: string) => traduzir(texto, idioma);
+
+  // Convite VÁLIDO passa em qualquer modo — é o ponto inteiro do convite.
+  const soPorConvite = !convite && (await modoDeCadastro()) === "so_convite";
+
+  if (soPorConvite) {
+    return (
+      <div className="space-y-6 text-center">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t("Cadastro apenas por convite")}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {conviteExpirado
+              ? t(
+                  "Esse convite expirou ou não é mais válido. Peça um novo a quem te convidou — esta instalação não aceita cadastro sem convite.",
+                )
+              : t(
+                  "Esta instalação não aceita cadastro aberto. Se você foi convidado, use o link que chegou no seu e-mail — ele já vem com o convite.",
+                )}
+          </p>
+        </div>
+        <Button asChild className="w-full">
+          <Link href="/login">{t("Entrar")}</Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
