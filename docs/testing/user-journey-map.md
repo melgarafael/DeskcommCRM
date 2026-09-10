@@ -2014,3 +2014,12 @@ Evidências locais em `.superpowers/evidence/grade-desktop.png` e
 Invariantes `academia-schedule.test.ts`: isolamento, permissões, vínculos cross-tenant,
 revisão, validação temporal, cadastros inativos e módulo desligado.
 Não prova exceções por data ou respostas da IA, ainda fora desta implementação.
+
+Publicada na instalação local do piloto em 10/09/2026, com dump do banco antes
+(`pg_dump` completo) e a migration 0235 aplicada duas vezes para provar a
+idempotência — as contagens de organização, contatos, professores e modalidades
+não se moveram. Validada pela tela na própria instalação, já com atendimento
+real em curso: `.superpowers/evidence/konnen-grade-desktop.png` e
+`.superpowers/evidence/konnen-grade-mobile.png`, ambas sem erro de página e com
+`scrollWidth - clientWidth` igual a zero em 390 CSS px. O retorno é restaurar o
+dump e repontar o `WorkingDirectory` da unit systemd do app.
