@@ -12,7 +12,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { trocarDeviceCodePorTokens } from "@/lib/ai/codex/oauth";
+import { trocarDeviceCodePorTokens, extrairIdDaConta } from "@/lib/ai/codex/oauth";
 import { salvarVinculo } from "@/lib/ai/codex/armazenamento";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -57,6 +57,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     userId: authz.user.id,
     label: parsed.data.label,
     refreshToken: troca.refreshToken,
+    // Identidade da conta para o futuro spike de execução (header
+    // `ChatGPT-Account-ID`). Null quando o provedor não a devolveu — o
+    // vínculo continua válido para refresh; o spike preenche depois.
+    accountId: extrairIdDaConta(troca.idToken),
   });
   await audit({
     action: "ai.codex.conexao",

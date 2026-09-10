@@ -23222,6 +23222,11 @@ create table if not exists public.ai_provider_oauth (
   refresh_iv bytea not null,
   refresh_tag bytea not null,
   access_expires_at timestamptz,
+  -- Identidade da conta ChatGPT (vai no header `ChatGPT-Account-ID` de cada
+  -- chamada de chat; sem ela o spike de execução não monta o envelope).
+  -- Nullable de propósito: vínculo antigo continua válido, e o spike o
+  -- preenche no primeiro refresh que devolver id_token.
+  account_id text,
   status text not null default 'pending' check (status in ('pending','active','quarantined','revoked')),
   quarantined_reason text,
   created_by uuid references auth.users(id),

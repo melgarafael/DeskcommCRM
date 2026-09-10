@@ -22,7 +22,8 @@ vi.mock("@/lib/supabase/admin", () => ({
     }),
   }),
 }));
-vi.mock("@/lib/ai/codex/oauth", () => ({
+vi.mock("@/lib/ai/codex/oauth", async (importOriginal) => ({
+  ...((await importOriginal()) as object),
   iniciarDeviceCode: deps.iniciar,
   trocarDeviceCodePorTokens: deps.trocar,
 }));
@@ -106,6 +107,7 @@ it("poll aprovado conecta sem vazar token e audita", async () => {
     pendente: false,
     refreshToken: "rt-secreto",
     accessToken: "at-secreto",
+    idToken: null,
     expiresIn: 3600,
   });
   deps.salvar.mockResolvedValue({ id: "vinc-1" });
@@ -115,7 +117,12 @@ it("poll aprovado conecta sem vazar token e audita", async () => {
   expect(corpo.data).toEqual({ conectado: true });
   expect(JSON.stringify(corpo)).not.toMatch(/rt-secreto|at-secreto/);
   expect(deps.salvar).toHaveBeenCalledWith(
-    expect.objectContaining({ orgId: "org-1", label: "ChatGPT", refreshToken: "rt-secreto" }),
+    expect.objectContaining({
+      orgId: "org-1",
+      label: "ChatGPT",
+      refreshToken: "rt-secreto",
+      accountId: null,
+    }),
   );
   expect(deps.audit).toHaveBeenCalledWith(
     expect.objectContaining({ action: "ai.codex.conexao", resourceId: "vinc-1" }),

@@ -15,6 +15,8 @@ export async function salvarVinculo(p: {
   userId: string;
   label: string;
   refreshToken: string;
+  /** `chatgpt_account_id` extraído do id_token no connect; null se ausente. */
+  accountId?: string | null;
 }): Promise<{ id: string }> {
   const enc = encryptKey(p.refreshToken);
   const { data, error } = await p.admin
@@ -27,6 +29,7 @@ export async function salvarVinculo(p: {
         refresh_encrypted: bufToBytea(enc.ciphertext),
         refresh_iv: bufToBytea(enc.iv),
         refresh_tag: bufToBytea(enc.tag),
+        account_id: p.accountId ?? null,
         status: "active",
         quarantined_reason: null,
         created_by: p.userId,
