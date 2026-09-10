@@ -285,3 +285,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260907050000` | `0229_mfa_e_lgpd_agenda` | MFA nas quatro ações humanas, ordem de locks LGPD/agenda e footprint de avisos de presença/Meet na redação; baseline e backfill idempotentes. |
 
 | `20260907060000` | `0230_reserva_pre_go_live` | A reserva transacional de novos canais WAHA preserva o pré-go-live da plataforma; retry mantém política e identidade existentes. Forward-fix da integração, sem alterar 0228 aplicada. |
+
+| `20260910130000` | `0232_nome_sessao_waha` | Reserva cria nomes de 45 caracteres, dentro do limite WAHA de 54; preserva UUID aleatório, isolamento e identidades existentes. |

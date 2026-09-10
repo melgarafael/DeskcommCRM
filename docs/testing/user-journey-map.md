@@ -1959,3 +1959,28 @@ Produto `7f1d0f3e`, integrado à main `ca895850`: as dez specs de organizações
 Evidência local preservada em `.superpowers/evidence/comunidade-360/final-qa-targeted-r4/` e log `.superpowers/sdd/comunidade-360/final-qa-targeted-r4.log`. A rodada inclui atualização concorrente da interface sem perder formulário, sugestão obsoleta sem confirmação antiga de sucesso e encerramento de suporte com retorno ao contexto original.
 
 Validação integral do mesmo produto: 733 arquivos unitários / 7.911 casos aprovados + 1 falha esperada; 184 arquivos de banco / 1.466 casos aprovados + 1 falha esperada e 1 ignorado, com INSTALL e UPDATE; tipos, lint (0 erros, 344 avisos) e build aprovados. `lint:channels`, validadores shell e conferência de release também passaram. Os checks remotos continuam sendo condição do merge pelo revisor da PR #613.
+
+## Diagnóstico local — J1.5, 2026-09-10
+
+No WSL, WAHA 2026.7.2 / NOWEB / CORE respondeu à API com autenticação válida,
+mas recusou POST /api/sessions: HTTP 400, name acima de 54 caracteres.
+A reserva 0230 concatenava 69 caracteres. Migration 0232 gera 45 mantendo
+UUID aleatório completo e os mesmos guards/leases. O invariante de reserva
+falha na versão anterior e verifica o limite após a correção.
+
+O reparo da instalação local só renomeia sua tentativa após confirmar no
+WAHA a ausência de sessões remotas, ausência de número e de recibos de sucesso
+ou criação remota. Há backup anterior à alteração; a migration genérica
+preserva nomes existentes. Não houve reset de organização ou do onboarding.
+
+Sistema vivo: entrada na escolha QR do onboarding; reserva em
+fn_reserve_channel_connection; transporte WahaClient; saída no proxy do QR;
+recibos/lease e channel.connected continuam existentes. Retry conserva a
+identidade; regressão do limite fica em channel-routing.test.ts. Nenhum novo
+componente de arquitetura ou fluxo de envio foi introduzido.
+
+J1.5 verificado via navegador real: escolha QR, texto "Pronto para conectar",
+imagem carregada (naturalWidth > 0), sem banner de falha. Evidência local em
+`.superpowers/evidence/waha-local-fix/qr-verificado.png` e `verification.json`.
+Aplicação → WAHA autenticado e WAHA → aplicação responderam HTTP 200.
+Pareamento e envio/recebimento de mensagens ainda dependem do celular do usuário.

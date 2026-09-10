@@ -81,6 +81,9 @@ describe("reserva de conexão org-owned", () => {
   beforeEach(()=>query("delete from channel_connection_requests where organization_id=$1",[org]));
   it("concorrência da mesma chave não cria duas identidades; payload distinto conflita", async () => {
     const first = await reserve(); expect(first.channel.organization_id).toBe(org);
+    // WAHA 2026.7.2 rejeita a criação acima de 54 caracteres com HTTP 400.
+    expect(first.channel.waha_session_name.length).toBeLessThanOrEqual(54);
+    expect(first.channel.waha_session_name).toMatch(/^org_[0-9a-f]{8}_[0-9a-f]{32}$/);
     await expect(reserve()).rejects.toThrow("connection_in_progress");
     await expect(reserve("b".repeat(64))).rejects.toThrow("idempotency_conflict");
     await query("select fn_finish_channel_connection($1,$2,$3,'SCAN_QR_CODE')",[org,first.receipt_id,first.lease_token]);
