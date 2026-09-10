@@ -106,8 +106,13 @@ describe("serialização — os dois blocos", () => {
 
   it("o valor por tema difere — senão a alternância estaria morta", () => {
     // Guarda de vacuidade: dois blocos idênticos passariam em tudo acima e
-    // deixariam o tema escuro com a cor do claro.
-    const blocos = lerBlocos(cssDaMarca(corDe("#2563eb")).css ?? "");
+    // deixariam o tema escuro com a cor do claro. `#2563eb` não serve mais de
+    // fixture aqui: contra o fundo quase preto do "Dark Neon Purple" ele passa
+    // no piso sem deslocamento em NENHUM dos dois temas, e os dois blocos
+    // acabam com o mesmo valor cru — o mesmo `#0f172a` (navy) usado como
+    // fixture adversarial no resto da suíte de branding continua precisando de
+    // deslocamento só no escuro, então os dois blocos divergem de verdade.
+    const blocos = lerBlocos(cssDaMarca(corDe("#0f172a")).css ?? "");
     expect(blocos[":root:root"]?.["--color-accent"]).not.toBe(
       blocos[':root:root[data-theme="dark"]']?.["--color-accent"],
     );
@@ -207,8 +212,10 @@ describe("o escopo da organização", () => {
 
   it("o valor por tema difere também no escopo da organização", () => {
     // Guarda de vacuidade do caso acima: dois blocos idênticos passariam nele e
-    // deixariam o tema escuro do tenant com a cor do claro.
-    const blocos = lerBlocos(cssDaMarca(corDe("#2563eb"), ESCOPO_DA_ORGANIZACAO).css ?? "");
+    // deixariam o tema escuro do tenant com a cor do claro. Mesma troca de
+    // fixture do teste irmão acima, pelo mesmo motivo: `#0f172a` continua
+    // precisando de deslocamento só no tema escuro.
+    const blocos = lerBlocos(cssDaMarca(corDe("#0f172a"), ESCOPO_DA_ORGANIZACAO).css ?? "");
     expect(blocos[CLARO]?.["--color-accent"]).not.toBe(blocos[ESCURO]?.["--color-accent"]);
   });
 

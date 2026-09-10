@@ -291,7 +291,15 @@ describe("catraca: ninguém mais repete o namespace", () => {
     ].map((d) => `--exclude-dir=${d}`);
     // `.bak`/`.orig`/`.rej`/`~` são sobra de editor e de `sed -i.bak`. Sem isto,
     // uma sabotagem local deixa o gate vermelho pelo motivo errado.
-    const excluiArq = ["*.md", "*.bak", "*.orig", "*.rej", "*~"].map((g) => `--exclude=${g}`);
+    //
+    // `.env`/`.env.local` são ESTADO DE MÁQUINA, gitignorado — nunca existem num
+    // checkout fresco nem em CI. Uma instalação real copia `.env.hostgator.example`
+    // (que já está em `PERMITIDO`) para `.env` e herda o mesmo literal resolvido;
+    // varrer esse arquivo reprovaria toda VPS de verdade rodando `pnpm test:unit`
+    // localmente, pelo mesmo texto que o exemplo já tem permissão de ter.
+    const excluiArq = ["*.md", "*.bak", "*.orig", "*.rej", "*~", ".env", ".env.local"].map(
+      (g) => `--exclude=${g}`,
+    );
 
     let saida = "";
     try {

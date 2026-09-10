@@ -39,6 +39,35 @@ export function isCommunityDsn(dsn: string | undefined): boolean {
 export const INTEGRACAO_DE_SESSAO = "BrowserSession";
 
 /**
+ * Integração default do SDK que instrumenta performance (pageload/navegação) e,
+ * como parte disso, registra `PerformanceObserver`s para Web Vitals (CLS/LCP/TTFB
+ * etc. — `browserTracingIntegration` → `@sentry/react` → uma cópia interna do
+ * `web-vitals`). Mesma classe de custo que `INTEGRACAO_DE_SESSAO`: no DSN da
+ * comunidade `tracesSampleRate` já é 0 (declarado logo abaixo), então nenhum
+ * trace desses observers É ENVIADO — mas os observers continuam INSTALADOS e
+ * RODANDO mesmo assim, porque a decisão de amostragem do SDK acontece depois da
+ * coleta, não antes de instalar o listener.
+ *
+ * Achado em produção (self-host, 2026-09-09): `TypeError: Cannot read
+ * properties of undefined (reading 'startTime')` no console do navegador, saindo
+ * de dentro do coletor de CLS/LCP desta integração — a lista de entries de um
+ * `PerformanceObserver` trouxe um item `undefined`, quase certamente por uma
+ * extensão do navegador que intercepta/corrompe a Performance API da página (o
+ * mesmo usuário via outros dois erros de console vindos de uma extensão sua,
+ * na mesma tela). O bug em si é upstream (`web-vitals`/Sentry SDK, não dá pra
+ * corrigir daqui) — mas rodar esse coletor sem NUNCA poder enviar nada é o
+ * exato "custo invisível" que este arquivo já rejeita para sessão. Tirar a
+ * integração pra quem está na comunidade elimina o crash pra essa população
+ * inteira, de graça, sem perder telemetria nenhuma (não havia o que perder).
+ *
+ * Quem aponta pro PRÓPRIO Sentry (`tracesSampleRate: 1`) mantém a integração —
+ * ali o trace tem para onde ir, e o crash upstream (se acontecer, sob a mesma
+ * combinação de extensão de navegador) é risco que a pessoa já assumiu ao
+ * habilitar tracing de verdade.
+ */
+export const INTEGRACAO_DE_TRACING = "BrowserTracing";
+
+/**
  * Quais integrações do browser valem para o DSN em uso.
  *
  * A política de `isCommunityDsn` estava DECLARADA e não estava em vigor. As duas
@@ -67,5 +96,7 @@ export function integracoesDoCliente<T extends { name: string }>(
   paraAComunidade: boolean,
 ): T[] {
   if (!paraAComunidade) return [...padraoDoSdk];
-  return padraoDoSdk.filter((i) => i.name !== INTEGRACAO_DE_SESSAO);
+  return padraoDoSdk.filter(
+    (i) => i.name !== INTEGRACAO_DE_SESSAO && i.name !== INTEGRACAO_DE_TRACING,
+  );
 }

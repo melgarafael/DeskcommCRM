@@ -285,3 +285,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260907050000` | `0229_mfa_e_lgpd_agenda` | MFA nas quatro ações humanas, ordem de locks LGPD/agenda e footprint de avisos de presença/Meet na redação; baseline e backfill idempotentes. |
 
 | `20260907060000` | `0230_reserva_pre_go_live` | A reserva transacional de novos canais WAHA preserva o pré-go-live da plataforma; retry mantém política e identidade existentes. Forward-fix da integração, sem alterar 0228 aplicada. |
+| `20260909000000` | `0232_fix_waha_session_name_length` | `fn_reserve_channel_connection` gerava `waha_session_name` de 69 caracteres; o WAHA (`devlikeapro/waha:latest-2026.7.2`) recusa acima de 54 — toda conexão nova de WhatsApp (fora do onboarding) falhava sempre, sem nenhuma sessão remota chegando a existir. Encurtado para 33 caracteres. Forward-fix, mesma assinatura de 0230. |

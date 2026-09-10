@@ -60,7 +60,7 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     expect(REGUA.rampaDoProduto).toHaveLength(11);
     expect(REGUA.rampaDoProduto[6]).toBe("#506d48");
     expect(REGUA.claro.neutros).toHaveLength(11);
-    expect(REGUA.escuro.neutros[9]).toBe("#161510");
+    expect(REGUA.escuro.neutros[9]).toBe("#0d0714");
     expect(REGUA.claro.base.map((b) => b.chave)).toEqual([
       "--color-bg",
       "--color-surface",
@@ -85,10 +85,11 @@ describe("extrairRegua — os pares saem do globals.css, nunca de lista à mão"
     const fg = REGUA.claro.papeis.find((p) => p.token === "--color-accent-fg");
     expect(fg?.tipo).toBe("texto");
     expect(REGUA.claro.tingidas.map((t) => t.chave)).toEqual(["--color-accent-soft"]);
-    // No escuro o token é o literal `rgba(130,160,119,0.16)` — verde Sage cru, sem
-    // referência à rampa. É por isso que ele precisa ser REANCORADO na derivação.
+    // No escuro o token é o literal `rgba(109, 40, 217, 0.10)` — violeta cru do
+    // "Dark Neon Purple", sem referência à rampa. É por isso que ele precisa ser
+    // REANCORADO na derivação.
     expect(REGUA.escuro.indices.soft).toBeNull();
-    expect(REGUA.escuro.alfaDoSoft).toBeCloseTo(0.16, 6);
+    expect(REGUA.escuro.alfaDoSoft).toBeCloseTo(0.1, 6);
   });
 
   it("enumera o conjunto esperado de papéis e pares (guarda de vacuidade)", () => {
@@ -231,8 +232,10 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
     const amarelo = resultados.find((r) => r.semente === "#f5c518")!.marca;
     expect(amarelo.claro.deslocamento).toBeGreaterThan(0);
     expect(amarelo.claro.grauDoAccent).toBe(900);
-    // …e o hex EXATO do cliente reaparece como accent do tema escuro.
-    expect(amarelo.escuro.accent).toBe("#f5c518");
+    // …e no escuro, contra o fundo quase preto do "Dark Neon Purple", o amarelo
+    // cru também não alcança 3:1 em todo papel — a caminhada anda até o grau
+    // 800 e o accent que sobra é `#8d721a`, não mais o hex exato do cliente.
+    expect(amarelo.escuro.accent).toBe("#8d721a");
   });
 
   it("nunca torce o accent: ele é sempre um stop da rampa da marca", () => {
@@ -295,8 +298,8 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
     // O literal `rgba(130, 160, 119, 0.16)` sobreviveria intacto a qualquer override da
     // rampa — seria um pedaço da NOSSA marca dentro da instalação do cliente.
     const azul = derivarMarca("#2563eb", REGUA);
-    expect(azul.escuro.accentSoft).toMatch(/^rgba\(\d+, \d+, \d+, 0\.16\)$/);
-    expect(azul.escuro.accentSoft).not.toContain("130, 160, 119");
+    expect(azul.escuro.accentSoft).toMatch(/^rgba\(\d+, \d+, \d+, 0\.1\)$/);
+    expect(azul.escuro.accentSoft).not.toContain("109, 40, 217");
     // E o claro continua opaco, como o tema declara.
     expect(azul.claro.accentSoft).toMatch(/^#[0-9a-f]{6}$/);
   });
@@ -304,30 +307,41 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
 
 describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
   it("a Sage pura já nasce colidida e dispara a reconciliação (controle positivo)", () => {
-    // `--color-success` do bloco escuro é `#82a077`, a MESMA string de
-    // `--color-accent-400` (globals.css:167 e :193). Δ = 0,0°. Se o mecanismo não
-    // disparasse aqui, ele não dispararia em lugar nenhum.
-    expect(REGUA.escuro.semanticas.find((s) => s.nome === "success")?.hex).toBe(
-      REGUA.rampaDoProduto[4],
-    );
-
+    // No tema claro (Sage, inalterado pelo rebrand), `success` do bloco claro é
+    // `#5a8a5f` — perto o bastante do accent Sage (`#506d48`) para colidir sob
+    // dicromacia. Se o mecanismo não disparasse aqui, não dispararia em lugar
+    // nenhum: é o controle positivo do tema que NÃO mudou.
+    //
+    // O tema escuro NÃO serve mais de controle positivo para esta semente: o
+    // "Dark Neon Purple" desacoplou as quatro semânticas do accent (elas são
+    // literais fixos, não mais derivados da rampa), e nenhuma delas fica perto
+    // o bastante de um accent Sage-derivado para colidir. Ver o teste abaixo,
+    // que cobre a mesma reconciliação no escuro com uma semântica sintética.
     const sage = derivarMarca("#506d48", REGUA);
     const movidas = sage.motivos.filter((m) => m.codigo === "semantica_deslocada");
     expect(movidas.length).toBeGreaterThan(0);
-    expect(movidas).toHaveLength(3);
-    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual([
-      "claro/error",
-      "escuro/warning",
-      "escuro/error",
-    ]);
+    expect(movidas).toHaveLength(1);
+    expect(movidas.map((m) => `${m.tema}/${m.alvo}`)).toEqual(["claro/error"]);
   });
 
   it("devolve sinal — e não distorção — quando não há rotação que resolva", () => {
     // O laço de retorno do invariante 7 da doutrina Sistema Vivo: a peça diz o que muda
-    // no sistema quando ela não consegue resolver. Na Sage, `success` do tema escuro é
-    // literalmente o accent; girar até 60° ou colide com o accent ou colide com `info`.
-    const sage = derivarMarca("#506d48", REGUA);
-    const sinais = sage.motivos.filter(
+    // no sistema quando ela não consegue resolver.
+    //
+    // Nenhuma das 16 sementes da fixture força esse branch no tema escuro de hoje: as
+    // quatro semânticas do "Dark Neon Purple" (`success`/`warning`/`error`/`info`) são
+    // literais bem separados em matiz, então sempre sobra alguma rotação que resolve.
+    // Por isso este teste usa a MESMA régua escura real (base e papéis de
+    // `app/globals.css`, para a caminhada de contraste continuar de verdade) com uma
+    // única semântica SINTÉTICA de croma zero — o mesmo truque de "girar não muda nada"
+    // do teste seguinte, agora atravessando `derivarMarca` para provar a TRADUÇÃO em
+    // `Motivo`, não só o mecanismo cru de `reconciliarSemanticas`.
+    const REGUA_COM_SEMANTICA_IMPOSSIVEL = {
+      ...REGUA,
+      escuro: { ...REGUA.escuro, semanticas: [{ nome: "success", hex: "#848484" }] },
+    };
+    const marca = derivarMarca("#14b8a6", REGUA_COM_SEMANTICA_IMPOSSIVEL);
+    const sinais = marca.motivos.filter(
       (m) => m.codigo === "redundancia_nao_cromatica_necessaria",
     );
     expect(sinais).toHaveLength(1);
@@ -375,8 +389,11 @@ describe("reconciliação — quem se move são as NOSSAS semânticas", () => {
         }
       }
     }
-    // Guarda de vacuidade do run inteiro: 23 movimentos medidos nas 16 sementes.
-    expect(movimentosNoRun).toBe(23);
+    // Guarda de vacuidade do run inteiro: 11 movimentos medidos nas 16 sementes. Era 23
+    // com o antigo tema escuro Sage-derivado; o "Dark Neon Purple" tem as quatro
+    // semânticas bem mais separadas em matiz do accent violeta, então menos sementes
+    // precisam de reconciliação no escuro.
+    expect(movimentosNoRun).toBe(11);
   });
 });
 
@@ -407,12 +424,14 @@ describe("marca acromática — o accent do produto permanece", () => {
         separacaoDoNeutro(regua, tema.grauDoAccent, tema.accent),
       ).toBeGreaterThanOrEqual(PISO_DE_SEPARACAO_DO_NEUTRO);
     }
-    // Os números exatos, fixados: 0,0681 no claro (accent-600 × neutral-600) e 0,1994 no
-    // escuro (accent-400 × neutral-400). São eles que mostram por que o piso do briefing
-    // (8, na convenção ×100 — ou seja 0,08 aqui) não podia ser aceito sem medir: ele
-    // reprovaria o controle positivo do próprio produto no tema claro.
+    // Os números exatos, fixados: 0,0681 no claro (accent-600 × neutral-600) e 0,1599 no
+    // escuro (accent-600 × neutral-600 — o "Dark Neon Purple" pousa a marca acromática no
+    // MESMO grau 600 nos dois temas, diferente do antigo tema escuro, que pousava no 400).
+    // São eles que mostram por que o piso do briefing (8, na convenção ×100 — ou seja 0,08
+    // aqui) não podia ser aceito sem medir: ele reprovaria o controle positivo do próprio
+    // produto no tema claro.
     expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeCloseTo(0.0681, 4);
-    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.1994, 4);
+    expect(separacaoDoNeutro(REGUA.escuro, marca.escuro.grauDoAccent, marca.escuro.accent)).toBeCloseTo(0.1599, 4);
     expect(separacaoDoNeutro(REGUA.claro, marca.claro.grauDoAccent, marca.claro.accent)).toBeLessThan(0.08);
 
     // Controle negativo: um accent cinza reprovaria as duas guardas. Sem esta linha, os

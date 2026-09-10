@@ -55,7 +55,7 @@ export function EmptyState({
   const t = useT();
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground dark:bg-[rgba(109,40,217,0.10)] dark:text-[#9061f9] dark:shadow-[0_0_14px_rgba(144,97,249,0.22)]">
         <Icon size={24} weight="duotone" />
       </div>
       <h3 className="text-base font-semibold">{t(headline)}</h3>
