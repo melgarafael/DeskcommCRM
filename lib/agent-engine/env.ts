@@ -135,6 +135,14 @@ const envSchema = z.object({
   FOLLOWUP_MAX_AHEAD_MS: z.coerce.number().int().positive().default(RETORNO_MAX_AHEAD_MS_PADRAO),
   // TTL do prefixo estável de prompt cache (doutrina: 1h).
   LLM_CACHE_TTL: z.enum(['5m', '1h']).default('1h'),
+  // Quanto o modelo PENSA antes de responder — só vale para família de
+  // raciocínio da OpenAI (gpt-5, o1/o3/o4); ver esforco-de-raciocinio.ts.
+  // O default é `low` porque o raciocínio não aparece no texto mas aparece no
+  // relógio: medido no piloto, respostas de ~30 tokens de texto custavam até
+  // 2047 tokens de saída e 50s. A/B com o mesmo prompt: padrão 8954ms, `low`
+  // 2252ms, `minimal` 1527ms — e `low` respondeu igual. `provider` devolve o
+  // comportamento do provedor, sem opinião nossa.
+  LLM_REASONING_EFFORT: z.enum(['minimal', 'low', 'medium', 'high', 'provider']).default('low'),
   // Payload curado da tool get_lead_context.
   LEAD_CONTEXT_HISTORY_LIMIT: z.coerce.number().int().positive().default(20),
   LEAD_CONTEXT_MAX_TOKENS: z.coerce.number().int().positive().default(1_000),

@@ -203,6 +203,19 @@ const schema = z.object({
    */
   AI_BUDGET_ENFORCEMENT: z.string().optional().default("on"),
 
+  /**
+   * Quanto o modelo PENSA antes de responder (família de raciocínio da OpenAI:
+   * gpt-5, o1/o3/o4). Precisa existir NOS DOIS donos de env — aqui e em
+   * `lib/agent-engine/env.ts` —, porque `loadEnv` do worker remove o que o
+   * schema dele não declara, e o turno de produção roda lá.
+   *
+   * `z.string()` e não `z.enum` pelo mesmo motivo do `AI_BUDGET_ENFORCEMENT`
+   * logo acima: quem valida é `llmEdgeConfigFromEnv`, que resolve valor
+   * desconhecido para o default em vez de derrubar o app na primeira
+   * requisição. Valores: minimal | low | medium | high | provider.
+   */
+  LLM_REASONING_EFFORT: z.string().optional().default("low"),
+
   // `EVENT_LOG_WORKER_ENABLED` viveu aqui até 2026-08-25 e NUNCA teve leitor: o
   // campo era declarado, documentado no `.env.example` com `false` e lido por
   // ninguém (medido: zero ocorrências fora da própria declaração). Saiu junto

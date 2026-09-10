@@ -36,6 +36,7 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
+import { esforcoDeRaciocinio } from './esforco-de-raciocinio';
 import { costCents } from './pricing';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
@@ -90,6 +91,10 @@ const paramsSchema = z
     topP: z.number().optional(),
     topK: z.number().int().optional(),
     maxOutputTokens: z.number().int().positive().optional(),
+    // Fica `unknown` de propósito: é jsonb livre no banco, e um valor inválido
+    // aqui não pode derrubar o turno. Quem sanea é `esforcoDeRaciocinio`, que
+    // descarta o que não conhece e cai no padrão.
+    reasoningEffort: z.unknown().optional(),
   })
   .passthrough();
 
@@ -378,6 +383,19 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   }
   const { temperature, topP, topK, maxOutputTokens } = parsedParams.data;
 
+  // O raciocínio do modelo não aparece no texto, mas aparece no relógio de
+  // quem espera no WhatsApp. Ver o cabeçalho de esforco-de-raciocinio.ts para
+  // a medição que fixou o default.
+  const esforco = esforcoDeRaciocinio({
+    provider: config.provider,
+    modelId: model,
+    configurado: parsedParams.data.reasoningEffort,
+    // Vem do dono de env do processo (`llmEdgeConfigFromEnv`), como o cacheTtl
+    // logo abaixo — ler `process.env` daqui funcionaria no app e sumiria no
+    // worker, que é justo onde a IA responde.
+    padrao: cfg.reasoningEffort ?? 'low',
+  });
+
   // ═══ O TETO, LOGO ANTES DE SAIR BYTE ═══
   //
   // Fica DEPOIS da resolução de modelo/provider, e não antes como o
@@ -429,6 +447,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       topP,
       topK,
       maxOutputTokens,
+      // Só entra no corpo quando o modelo entende o campo — `esforco` já é
+      // null para provider ou família que não aceita, e mandar assim mesmo
+      // seria 400 no lugar de lentidão.
+      ...(esforco === null ? {} : { providerOptions: { openai: { reasoningEffort: esforco } } }),
     });
   } catch (err) {
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
