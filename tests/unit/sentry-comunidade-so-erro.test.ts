@@ -34,6 +34,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   INTEGRACAO_DE_SESSAO,
+  INTEGRACAO_DE_TRACING,
   integracoesDoCliente,
   isCommunityDsn,
   resolveSentryDsn,
@@ -43,6 +44,7 @@ const PADRAO_FALSO = [
   { name: "InboundFilters" },
   { name: "Breadcrumbs" },
   { name: INTEGRACAO_DE_SESSAO },
+  { name: INTEGRACAO_DE_TRACING },
   { name: "GlobalHandlers" },
 ] as const;
 
@@ -50,6 +52,22 @@ describe("integracoesDoCliente", () => {
   it("no DSN da comunidade a sessão de release health NÃO vai", () => {
     const saida = integracoesDoCliente(PADRAO_FALSO, true).map((i) => i.name);
     expect(saida).not.toContain(INTEGRACAO_DE_SESSAO);
+  });
+
+  /**
+   * `BrowserTracing` instrumenta Web Vitals (CLS/LCP/TTFB) via `PerformanceObserver`
+   * mesmo com `tracesSampleRate: 0` — a amostragem decide se o trace é ENVIADO, não
+   * se o observer é INSTALADO. Achado em produção (2026-09-09): um item `undefined`
+   * na lista de entries (uma extensão de navegador mexendo na Performance API da
+   * página) derrubava o coletor com `TypeError: Cannot read properties of
+   * undefined (reading 'startTime')`, direto no console de quem opera o self-host
+   * — sem nenhum trace chegando a existir para explicar o quê. Tirar a integração
+   * pra quem está no DSN da comunidade elimina o crash de graça: não havia telemetria
+   * nenhuma sendo enviada por ela ali.
+   */
+  it("no DSN da comunidade o tracing/Web Vitals (fonte do crash de PerformanceObserver) NÃO vai", () => {
+    const saida = integracoesDoCliente(PADRAO_FALSO, true).map((i) => i.name);
+    expect(saida).not.toContain(INTEGRACAO_DE_TRACING);
   });
 
   it("no DSN da comunidade o RESTO continua — não é desligar telemetria, é escolher o quê", () => {
@@ -116,6 +134,41 @@ describe("o nome da integração casa com o SDK instalado", () => {
       "não achei o módulo da integração de sessão do @sentry/browser — ENSINE ESTE TESTE",
     ).toBeTruthy();
     expect(fonte).toContain(`name: "${INTEGRACAO_DE_SESSAO}"`);
+  });
+
+  it("o @sentry/browser instalado ainda chama a integração de tracing assim", () => {
+    const store = path.join(process.cwd(), "node_modules", ".pnpm");
+    const pastas = readdirSync(store).filter((d) => d.startsWith("@sentry+browser@"));
+    expect(
+      pastas.length,
+      "não achei o @sentry/browser no store do pnpm — ENSINE ESTE TESTE",
+    ).toBeGreaterThan(0);
+
+    const fonte = pastas
+      .map((d) =>
+        path.join(
+          store,
+          d,
+          "node_modules/@sentry/browser/build/npm/cjs/prod/tracing/browserTracingIntegration.js",
+        ),
+      )
+      .map((p) => {
+        try {
+          return readFileSync(p, "utf8");
+        } catch {
+          return "";
+        }
+      })
+      .find((c) => c.length > 0);
+
+    expect(
+      fonte,
+      "não achei o módulo de tracing do @sentry/browser — ENSINE ESTE TESTE",
+    ).toBeTruthy();
+    // A constante fica no MESMO arquivo (não é import de outro módulo), então o
+    // literal sobrevive ao build — é o mesmo motivo pelo qual checar o arquivo
+    // isolado (em vez de rodar o SDK inteiro) já é prova suficiente do nome.
+    expect(fonte).toContain(`= "${INTEGRACAO_DE_TRACING}"`);
   });
 });
 
