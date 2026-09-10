@@ -31,6 +31,7 @@ import { generateText, stepCountIs, type LanguageModel, type StopCondition, type
 // Repetir a URL aqui criaria dois lugares para consertar quando ela mudar.
 import {
   cabecalhosDeAtribuicaoOpenRouter,
+  CODEX_INFERENCE_BASE_URL,
   OPENROUTER_ENDPOINT,
 } from "@/lib/agent-engine/edge/llm/providers";
 import { CredentialUnavailableError, loadCredential } from "@/lib/ai/credentials";
@@ -182,6 +183,12 @@ export function buildModel(provider: string, apiKey: string, modelId: string): L
         baseURL: OPENROUTER_ENDPOINT,
         headers: cabecalhosDeAtribuicaoOpenRouter(),
       })(modelId);
+    // O ensaio precisa alcançar o Codex como o turno real: Bearer OAuth no
+    // backend do Codex, nunca api.openai.com. Sem este caso, o dono com agente
+    // em openai-codex publicaria, clicaria em "Teste" e receberia
+    // `unsupported_provider` — enquanto a mensagem real seria respondida.
+    case "openai-codex":
+      return createOpenAI({ apiKey, baseURL: CODEX_INFERENCE_BASE_URL })(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }

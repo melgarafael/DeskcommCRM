@@ -9,7 +9,11 @@ import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 
+import { CODEX_INFERENCE_BASE_URL } from '@/lib/ai/codex/constantes';
 import { allowlistedFetch, buildAllowlist } from '../egress';
+
+/** Re-export para o runtime de ensaio (`lib/ai/runtime/agent.ts`) — fonte única do endpoint. */
+export { CODEX_INFERENCE_BASE_URL };
 
 /**
  * provider name → (chave BYOK da org, id do modelo, endpoint opcional) → modelo
@@ -112,6 +116,17 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
         fetch: contain(endpoint),
       })(modelId);
     },
+    /**
+     * Assinatura ChatGPT via OAuth (provider `openai-codex`). O primeiro
+     * parâmetro AQUI é o access token de curta duração (renovado a cada turno
+     * pelo resolver), nunca uma API key `sk-...` — e o endpoint é o backend
+     * do Codex (`chatgpt.com`), nunca `api.openai.com`. A allowlist do egress
+     * é a DELE, como nos demais canônicos.
+     */
+    'openai-codex': (accessToken, modelId) =>
+      createOpenAI({ apiKey: accessToken, baseURL: CODEX_INFERENCE_BASE_URL, fetch: contain(CODEX_INFERENCE_BASE_URL) })(
+        modelId,
+      ),
   };
 }
 

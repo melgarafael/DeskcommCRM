@@ -83,6 +83,16 @@ export const PROVEDORES = [
     ondePegarAChave: "https://openrouter.ai/keys",
     prefixoDaChave: "sk-or-…",
   },
+  {
+    id: "openai-codex",
+    rotulo: "ChatGPT (assinatura, via Codex)",
+    quandoUsar:
+      "Usa a sua assinatura ChatGPT via login OAuth em vez de API key. Não serve para transcrever áudio nem indexar material — esses dois pontos continuam na OpenAI via API key.",
+    aceitaEndpointProprio: false,
+    catalogoSincronizavel: false,
+    ondePegarAChave: "https://chatgpt.com/codex",
+    prefixoDaChave: "login OAuth…",
+  },
 ] as const satisfies readonly ProvedorSuportado[];
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais
 // e `Provider` viraria `string`, deixando o compilador aceitar qualquer texto

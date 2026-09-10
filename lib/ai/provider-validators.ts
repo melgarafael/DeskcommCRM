@@ -9,6 +9,7 @@
  * Timeout 5s, sem retry. Erros 401 são distintos de erros de rede.
  */
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import { CODEX_INFERENCE_BASE_URL } from "@/lib/ai/codex/constantes";
 
 /**
  * Os provedores cuja CHAVE este arquivo sabe validar.
@@ -169,6 +170,36 @@ export async function validateOpenRouterKey(apiKey: string): Promise<ValidationR
   }
 }
 
+/**
+ * Valida um access token OAuth do Codex contra o backend do Codex
+ * (`chatgpt.com`), NUNCA contra `api.openai.com` — lá um Bearer OAuth não é
+ * credencial válida e um 401 de lá não provaria nada sobre o vínculo.
+ *
+ * O catálogo do Codex não é público nem estável como prova: token inválido →
+ * 401; qualquer outra coisa (incluindo endpoint de descoberta ausente)
+ * devolve lista vazia com `ok: true`, como o ramo OpenRouter faz quando o
+ * catálogo cai — disponibilidade não recusa credencial.
+ */
+export async function validateCodexToken(accessToken: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch(`${CODEX_INFERENCE_BASE_URL}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: true, models: [] };
+    }
+    const json = (await res.json()) as { data?: { id?: string }[] };
+    const models = (json.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
 export function validateProviderKey(
   provider: Provider,
   apiKey: string,
@@ -182,6 +213,8 @@ export function validateProviderKey(
       return validateGoogleKey(apiKey);
     case "openrouter":
       return validateOpenRouterKey(apiKey);
+    case "openai-codex":
+      return validateCodexToken(apiKey);
     default: {
       // Sem `never` aqui: `Provider` agora é derivado de PROVEDORES, e a lista
       // cresce sem que este arquivo saiba. Provedor novo cadastrado antes de
