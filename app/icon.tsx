@@ -1,7 +1,21 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
 import { ImageResponse } from "next/og";
 
 import { letraDoIcone } from "@/lib/branding/icone";
 import { marcaDaSaida } from "@/lib/branding/saida";
+
+/**
+ * Ícone BUNDLED desta instalação (Verta) — arquivo estático em
+ * `public/branding/`, lido do DISCO, nunca da rede. Isto NÃO reabre o
+ * SSRF que o comentário abaixo descreve: `logo_url` é texto livre digitado
+ * por quem administra e viraria um `fetch()` de saída a cada carregamento de
+ * página; este caminho é fixo, decidido em build, e nunca lê nada do banco.
+ * Instalação sem este arquivo (o clone "de fábrica", sem customização) cai
+ * no `catch` e segue exatamente com o comportamento de sempre: cor + inicial.
+ */
+const ICONE_BUNDLED = path.join(process.cwd(), "public", "branding", "verta-icon-64.png");
 
 /**
  * O ícone da aba, DESENHADO em runtime com a marca da instalação.
@@ -64,6 +78,19 @@ export const size = { width: 64, height: 64 };
 export const contentType = "image/png";
 
 export default async function Icon() {
+  try {
+    const bytes = await readFile(ICONE_BUNDLED);
+    return new Response(new Uint8Array(bytes), {
+      headers: {
+        "content-type": contentType,
+        "cache-control": "public, max-age=60, stale-while-revalidate=600",
+      },
+    });
+  } catch {
+    // Sem arquivo bundled (instalação padrão, sem customização) — segue com
+    // o gerador de cor + inicial de sempre.
+  }
+
   const marca = await marcaDaSaida(null);
   const letra = letraDoIcone(marca.nome);
 

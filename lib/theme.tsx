@@ -19,14 +19,22 @@ type ThemeContextValue = {
 const ThemeContext = React.createContext<ThemeContextValue | null>(null);
 
 function readStoredTheme(): Theme {
-  if (typeof window === "undefined") return "system";
+  // Fallback "dark", não "system": esta instalação tem tema padrão escuro
+  // ("dark neon purple", pedido do dono). Sem isto, quem nunca tocou no
+  // seletor de tema caía em "system" e, com o SO em modo claro, o efeito de
+  // hidratação abaixo sobrescrevia o `data-theme="dark"` que o script inline
+  // do `layout.tsx` já tinha pintado — mesmo defeito, duas fontes, precisa
+  // corrigir as duas (ver THEME_INIT_SCRIPT). Quem ESCOLHE "Seguir o sistema"
+  // explicitamente continua funcionando normal: `setTheme("system")` grava a
+  // escolha e este fallback nunca entra em jogo pra essa pessoa.
+  if (typeof window === "undefined") return "dark";
   try {
     const v = window.localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch {
     // localStorage indisponível (modo privado, sandbox) — segue com default.
   }
-  return "system";
+  return "dark";
 }
 
 function getSystemTheme(): ResolvedTheme {

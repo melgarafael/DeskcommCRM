@@ -120,6 +120,11 @@
   --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
   --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
   --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  /* Glow é conceito exclusivo do tema "Dark Neon Purple" — o padrão do produto não
+     brilha. `[data-theme="dark"]` sobrescreve os três com o roxo translúcido. */
+  --shadow-glow-sm: none;
+  --shadow-glow-md: none;
+  --shadow-glow-lg: none;
 
   /* Density — Aerada */
   --density-row: 56px;
@@ -228,7 +233,7 @@
    Custom property herdada não tem como voltar ao valor do `:root` dentro de
    uma subárvore (`initial`/`revert` a deixam sem valor, não com o valor de
    cima), então redeclarar é obrigação da linguagem, não escolha. O conjunto
-   redeclarado é EXATAMENTE o que `[data-theme="dark"]` sobrescreve — 59
+   redeclarado é EXATAMENTE o que `[data-theme="dark"]` sobrescreve — 70
    props — e um teste (`tests/unit/branding-tema-claro-escopavel.test.ts`)
    reprova quando os dois divergem; sem ele a cópia envelhece calada.
 
@@ -291,6 +296,12 @@
   --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
   --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
   --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  /* O glow roxo é conceito exclusivo do "Dark Neon Purple" — sem reset aqui, uma
+     subárvore `[data-theme="light"]` dentro de página escura herdaria o glow do
+     `<html>` e um elemento ativo/hover brilharia roxo dentro de um cartão claro. */
+  --shadow-glow-sm: none;
+  --shadow-glow-md: none;
+  --shadow-glow-lg: none;
   --background: var(--color-bg);
   --foreground: var(--color-text);
   --card: var(--color-surface);
@@ -327,71 +338,86 @@
 }
 
 [data-theme="dark"] {
+  /* ── Tema "Dark Neon Purple" — pedido do dono da instalação (Verta) ───────
+   * V2 (2026-09-08): mesmo tom de violeta, mais escuro e sóbrio — pedido
+   * explícito de "sensação tecnológica/séria" em vez de "brilho de festa".
+   * Fundo quase-preto absoluto, accent principal migrou de #8B5CF6 (violet-500)
+   * pra #6D28D9 (violet-700), glow/hover de #A78BFA pra #9061F9. Glows com
+   * menos opacidade em toda parte, e só aparecem em elemento ATIVO/hover —
+   * nunca em repouso (ver `dark:` no Card, que agora não tem glow nenhum).
+   */
   /* Surfaces (dark — drawn) */
-  --color-bg: #161510;
-  --color-surface: #1d1c17;
-  --color-surface-elevated: #272620;
-  --color-overlay: rgba(0, 0, 0, 0.55);
+  --color-bg: #050208;
+  --color-surface: #0d0714;
+  --color-surface-elevated: #120a1e;
+  --color-overlay: rgba(2, 1, 4, 0.7);
 
   /* Text (dark) */
-  --color-text: #f5f4ef;
-  --color-text-muted: #8e8b7f;
-  --color-text-subtle: #605e54;
+  --color-text: #f5f3ff;
+  --color-text-muted: #9ca3af;
+  --color-text-subtle: #6b6483;
 
-  /* Borders (dark) */
-  --color-border: #33312a;
-  --color-border-strong: #444239;
+  /* Borders (dark) — bem finas e discretas (pedido explícito: 1px, sem
+     brilho constante); o glow entra só via `hover:`/`active` nos componentes. */
+  --color-border: rgba(144, 97, 249, 0.08);
+  --color-border-strong: rgba(144, 97, 249, 0.18);
 
-  /* Accent stays same hex stops; default shifts up for dark contrast */
-  --color-accent-50:  #f3f6f1;
-  --color-accent-100: #e4ebe0;
-  --color-accent-200: #c8d6c1;
-  --color-accent-300: #a4ba9a;
-  --color-accent-400: #82a077;
-  --color-accent-500: #67885d;
-  --color-accent-600: #506d48;
-  --color-accent-700: #41573b;
-  --color-accent-800: #374731;
-  --color-accent-900: #2f3c2b;
-  --color-accent-950: #171f15;
-  --color-accent: var(--color-accent-400);
-  --color-accent-fg: #161510;
-  --color-accent-soft: rgba(130, 160, 119, 0.16);
-  --color-accent-hover: var(--color-accent-300);
+  /* Accent — rampa violet, ANCORADA UM DEGRAU MAIS ESCURO que a v1: o que
+     era 500 (#8b5cf6, principal) e 400 (#a78bfa, glow) viraram 600 e 400
+     numa rampa mais profunda — main agora é #6d28d9, glow é #9061f9. */
+  --color-accent-50:  #f5f3ff;
+  --color-accent-100: #ede9fe;
+  --color-accent-200: #ddd6fe;
+  --color-accent-300: #c4b5fd;
+  --color-accent-400: #9061f9;
+  --color-accent-500: #7c3aed;
+  --color-accent-600: #6d28d9;
+  --color-accent-700: #5b21b6;
+  --color-accent-800: #4c1d95;
+  --color-accent-900: #3b1578;
+  --color-accent-950: #2e1065;
+  --color-accent: var(--color-accent-600);
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: rgba(109, 40, 217, 0.10);
+  --color-accent-hover: var(--color-accent-400);
 
-  /* Neutrals — greige (11 stops, dark) */
-  --color-neutral-50:  #f5f4ef;
-  --color-neutral-100: #e6e4dc;
-  --color-neutral-200: #bbb8ac;
-  --color-neutral-300: #8e8b7f;
-  --color-neutral-400: #605e54;
-  --color-neutral-500: #444239;
-  --color-neutral-600: #33312a;
-  --color-neutral-700: #272620;
-  --color-neutral-800: #1d1c17;
-  --color-neutral-900: #161510;
-  --color-neutral-950: #0c0b08;
+  /* Neutrals — tingidos de roxo (11 stops, dark), em vez de cinza puro */
+  --color-neutral-50:  #f5f3ff;
+  --color-neutral-100: #e4dffa;
+  --color-neutral-200: #c7bfea;
+  --color-neutral-300: #9ca3af;
+  --color-neutral-400: #7c7a99;
+  --color-neutral-500: #5b5770;
+  --color-neutral-600: #423f58;
+  --color-neutral-700: #2e2a42;
+  --color-neutral-800: #120a1e;
+  --color-neutral-900: #0d0714;
+  --color-neutral-950: #050208;
 
-  /* States (dark) */
-  --color-success: #82a077;
-  --color-success-bg: rgba(130, 160, 119, 0.18);
-  --color-success-fg: #a4ba9a;
-  --color-warning: #d09455;
-  --color-warning-bg: rgba(208, 148, 85, 0.18);
-  --color-warning-fg: #e0ad77;
-  --color-error: #c87263;
-  --color-error-bg: rgba(200, 114, 99, 0.18);
-  --color-error-fg: #d99182;
-  --color-info: #7da9bf;
-  --color-info-bg: rgba(125, 169, 191, 0.18);
-  --color-info-fg: #9bbfd2;
+  /* States (dark) — mantidos, mas em tom neon discreto sobre o fundo roxo-escuro */
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.14);
+  --color-success-fg: #6ee7b7;
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.14);
+  --color-warning-fg: #fcd34d;
+  --color-error: #fb7185;
+  --color-error-bg: rgba(251, 113, 133, 0.14);
+  --color-error-fg: #fda4af;
+  --color-info: #38bdf8;
+  --color-info-bg: rgba(56, 189, 248, 0.14);
+  --color-info-fg: #7dd3fc;
 
-  /* Shadows — heavier in dark */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.30);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.40), 0 1px 1px 0 rgba(0, 0, 0, 0.20);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45), 0 2px 4px -1px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.40);
-  --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.65), 0 8px 16px -4px rgba(0, 0, 0, 0.50);
+  /* Shadows — glow roxo bem mais discreto que a v1 (pedido: "menos chapado") */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(144, 97, 249, 0.05);
+  --shadow-md: 0 4px 16px -2px rgba(109, 40, 217, 0.16), 0 2px 6px -1px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 16px 40px -8px rgba(109, 40, 217, 0.22), 0 6px 16px -2px rgba(0, 0, 0, 0.60);
+  --shadow-xl: 0 28px 60px -12px rgba(109, 40, 217, 0.25), 0 10px 24px -4px rgba(0, 0, 0, 0.65);
+  /* Glow dedicado — só para elemento ATIVO/hover, nunca em repouso */
+  --shadow-glow-sm: 0 0 10px 1px rgba(144, 97, 249, 0.22);
+  --shadow-glow-md: 0 0 16px 1px rgba(144, 97, 249, 0.28);
+  --shadow-glow-lg: 0 8px 28px -8px rgba(109, 40, 217, 0.30);
 
   /* shadcn-compat aliases */
   --background: var(--color-bg);
@@ -424,6 +450,27 @@
   --agenda-pessoa-6: #6c97e7;
   --agenda-pessoa-7: #be9ef6;
   --agenda-pessoa-8: #cc77b1;
+}
+
+/* Fundo com gradiente radial sutil (roxo bem escuro → preto nas bordas),
+   pedido explícito do tema "dark neon purple". Fica FORA do bloco de tokens
+   porque `background-image` não é custom property herdável útil aqui — é
+   regra visual do `body`, escopada por `[data-theme="dark"]` do mesmo jeito
+   que o resto do tema. `background-color` continua vindo do token `--color-bg`
+   (utilitário `bg-bg` em `app/layout.tsx`); o gradiente só pinta por cima. */
+:where([data-theme="dark"]) body {
+  /* V2: gradiente mais escuro (era #1a0f2e) + grid técnico quase imperceptível
+     (linhas de 1px a cada 40px, 3.5% de opacidade) — textura de "painel de
+     controle" pedida junto do resto dos ajustes sóbrios. */
+  background-image:
+    radial-gradient(ellipse 80% 55% at 50% -5%, #120a1e 0%, transparent 70%),
+    repeating-linear-gradient(0deg, rgba(144, 97, 249, 0.035) 0px, rgba(144, 97, 249, 0.035) 1px, transparent 1px, transparent 40px),
+    repeating-linear-gradient(90deg, rgba(144, 97, 249, 0.035) 0px, rgba(144, 97, 249, 0.035) 1px, transparent 1px, transparent 40px);
+  background-attachment: fixed;
+  /* Números alinhados por largura fixa — toque técnico, zero risco de
+     legibilidade, vale pro texto inteiro (dígitos de tabela/timestamp/ID
+     ficam retos mesmo fora de `code/kbd/pre/samp`, que já usam a mono). */
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

@@ -40,6 +40,8 @@ const AvatarFallback = React.forwardRef<
     ref={ref}
     className={cn(
       "flex h-full w-full items-center justify-center rounded-full bg-muted",
+      // Tema escuro: leve tom roxo no círculo, em vez do cinza neutro.
+      "dark:bg-[rgba(109,40,217,0.16)] dark:text-[#c4b5fd]",
       className
     )}
     {...props}

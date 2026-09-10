@@ -166,7 +166,12 @@ describe("marcaDaSaida — as duas classes", () => {
 describe("marcaDaSaida — o tema é CLARO, sempre", () => {
   it("devolve o accent do tema claro, não o do escuro", async () => {
     const { marcaDaSaida } = await carregar();
-    const semente = "#2563eb";
+    // `#2563eb` não serve mais de fixture aqui: contra o fundo quase preto do
+    // "Dark Neon Purple" ele passa no piso sem deslocamento nos dois temas, e
+    // os dois acabam no MESMO valor cru — trocar um pelo outro deixaria de ser
+    // observável. `#0f172a` (navy), a mesma fixture adversarial do resto da
+    // suíte de branding, ainda precisa de deslocamento só no tema escuro.
+    const semente = "#0f172a";
     linhaDaInstalacao = { accent_hex: semente };
 
     const marca = await marcaDaSaida(null);

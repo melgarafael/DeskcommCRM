@@ -30,9 +30,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs dark:shadow-[0_0_0_1px_rgba(144,97,249,0.25)] dark:hover:shadow-[0_0_14px_1px_rgba(144,97,249,0.35)]",
         default:
-          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs",
+          "bg-accent text-accent-foreground hover:bg-accent-hover shadow-xs dark:shadow-[0_0_0_1px_rgba(144,97,249,0.25)] dark:hover:shadow-[0_0_14px_1px_rgba(144,97,249,0.35)]",
         secondary:
           "bg-surface-elevated text-text border border-border hover:border-accent hover:text-accent",
         outline:

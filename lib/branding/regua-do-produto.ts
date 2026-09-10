@@ -183,15 +183,15 @@ export const REGUA_DO_PRODUTO: Regua = {
     base: [
       {
         chave: "--color-bg",
-        hex: "#161510",
+        hex: "#050208",
       },
       {
         chave: "--color-surface",
-        hex: "#1d1c17",
+        hex: "#0d0714",
       },
       {
         chave: "--color-surface-elevated",
-        hex: "#272620",
+        hex: "#120a1e",
       },
     ],
     tingidas: [
@@ -199,8 +199,8 @@ export const REGUA_DO_PRODUTO: Regua = {
         chave: "--color-accent-soft",
         fonte: {
           tipo: "literal",
-          hex: "#82a077",
-          alfa: 0.16,
+          hex: "#6d28d9",
+          alfa: 0.1,
         },
       },
     ],
@@ -210,7 +210,7 @@ export const REGUA_DO_PRODUTO: Regua = {
         tipo: "componente",
         fonte: {
           tipo: "grau",
-          indice: 4,
+          indice: 6,
           alfa: 1,
         },
         contra: null,
@@ -222,14 +222,14 @@ export const REGUA_DO_PRODUTO: Regua = {
           tipo: "frenteCalculada",
           sobre: {
             tipo: "grau",
-            indice: 4,
+            indice: 6,
             alfa: 1,
           },
         },
         contra: [
           {
             tipo: "grau",
-            indice: 4,
+            indice: 6,
             alfa: 1,
           },
         ],
@@ -239,7 +239,7 @@ export const REGUA_DO_PRODUTO: Regua = {
         tipo: "componente",
         fonte: {
           tipo: "grau",
-          indice: 3,
+          indice: 4,
           alfa: 1,
         },
         contra: null,
@@ -284,39 +284,39 @@ export const REGUA_DO_PRODUTO: Regua = {
     semanticas: [
       {
         nome: "success",
-        hex: "#82a077",
+        hex: "#34d399",
       },
       {
         nome: "warning",
-        hex: "#d09455",
+        hex: "#fbbf24",
       },
       {
         nome: "error",
-        hex: "#c87263",
+        hex: "#fb7185",
       },
       {
         nome: "info",
-        hex: "#7da9bf",
+        hex: "#38bdf8",
       },
     ],
     neutros: [
-      "#f5f4ef",
-      "#e6e4dc",
-      "#bbb8ac",
-      "#8e8b7f",
-      "#605e54",
-      "#444239",
-      "#33312a",
-      "#272620",
-      "#1d1c17",
-      "#161510",
-      "#0c0b08",
+      "#f5f3ff",
+      "#e4dffa",
+      "#c7bfea",
+      "#9ca3af",
+      "#7c7a99",
+      "#5b5770",
+      "#423f58",
+      "#2e2a42",
+      "#120a1e",
+      "#0d0714",
+      "#050208",
     ],
     indices: {
-      accent: 4,
-      hover: 3,
+      accent: 6,
+      hover: 4,
       soft: null,
     },
-    alfaDoSoft: 0.16,
+    alfaDoSoft: 0.1,
   },
 } as const;
