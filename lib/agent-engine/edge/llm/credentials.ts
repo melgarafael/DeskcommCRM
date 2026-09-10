@@ -335,6 +335,30 @@ export async function resolveOrgLlmConfig(
     apiKey = cfg.openaiApiKey;
   } else if (provider === 'openrouter' && cfg.openrouterApiKey) {
     apiKey = cfg.openrouterApiKey;
+  } else if (provider === 'openai-codex') {
+    // Assinatura ChatGPT via OAuth: o vínculo é POR ORG (ai_provider_oauth) e
+    // o access token é renovado A CADA turno — nunca persistido, nunca logado,
+    // nunca reaproveitado entre turnos. Sem vínculo, sem refresh válido ou com
+    // vínculo quarentenado, o erro é o tipado de sempre (a tela o traduz em
+    // "reconecte o ChatGPT"), nunca fallback silencioso para a API key de
+    // outro faturamento.
+    const { createAdminClient } = await import('@/lib/supabase/admin');
+    const { lerRefreshToken, quarentenarVinculo } = await import('@/lib/ai/codex/armazenamento');
+    const { renovarAccessToken, ehRevogacaoDefinitiva } = await import('@/lib/ai/codex/oauth');
+    const admin = createAdminClient();
+    const vinculo = await lerRefreshToken(admin, organizationId);
+    if (!vinculo) throw new LlmNotConfiguredError();
+    try {
+      const renovado = await renovarAccessToken(vinculo.refreshToken);
+      apiKey = renovado.accessToken;
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 500;
+      const code = (err as { code?: string }).code;
+      if (ehRevogacaoDefinitiva(status, code)) {
+        await quarentenarVinculo(admin, organizationId, `${status}: ${code ?? 'revogado'}`);
+      }
+      throw new LlmNotConfiguredError();
+    }
   } else {
     throw new LlmNotConfiguredError();
   }
