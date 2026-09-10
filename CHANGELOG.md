@@ -8,6 +8,129 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.18.0] — 2026-09-10
+
+### Adicionado
+
+- **A IA espera e mostra "digitando…" antes da primeira resposta** O atendimento automático deixa de responder no mesmo instante em que termina de pensar. Antes da primeira mensagem de cada resposta, ele acende o "digitando…" no WhatsApp do cliente e espera um tempo proporcional ao tamanho do texto — entre 1,2 e 7,5 segundos.
+
+  A pausa acontece uma vez por resposta. O intervalo entre as mensagens seguintes continua sendo o mesmo de sempre, o que protege o número contra bloqueio.
+
+  Nada muda na configuração: não há variável nova para preencher nem passo de atualização.
+
+  Trabalho original de @w4rlockem, a partir do relato de um dono de instalação de que a IA "responde rápido demais, parece robô".
+
+- **Central de avisos ganha o botão "Marcar todos resolvidos"** A Central de avisos (`/app/ai/inbox`) só resolvia aviso por aviso. Com a lista acumulando —
+  144 abertos numa instalação real — a única saída era clicar item a item. Agora, na aba
+  "Abertos", o botão **Marcar todos resolvidos** fecha todos de uma vez: uma única atualização
+  escopada à sua organização, registrada na auditoria com a contagem. Se o lote falhar, a tela
+  avisa e pede para conferir a lista — nada é fechado em silêncio.
+
+  No mesmo passe, o título e o texto de cada aviso deixaram de passar pelo tradutor da
+  interface. Eles são escritos no momento do evento e carregam nome de cliente, número e o que
+  você cadastrou; quem usa o sistema em espanhol passa a ler o aviso exatamente como ele foi
+  gravado. Os rótulos da tela seguem traduzidos.
+
+  Trabalho original de @rafaelbatistazz.
+
+- **A IA passa a preencher os campos que você criou no funil** Você pode declarar até 50 campos por funil — prescritor, metragem do imóvel,
+  convênio, o que o seu negócio precisa — e a ficha do lead desenha todos eles.
+  Só que nenhum agente de IA conseguia escrever num campo desses: ele lia a
+  conversa, entendia o dado e não tinha onde guardar.
+
+  Agora tem. Quando o agente descobre uma informação que você declarou como campo
+  do funil, ele grava ali — e a mudança aparece na linha do tempo do lead como
+  qualquer outra edição, com o autor identificado.
+
+  Nada muda para quem não usa campos personalizados, e nada muda no que os agentes
+  já faziam. Quem instrui o agente a preencher um campo passa a ser obedecido; quem
+  não instrui, segue igual.
+
+  Contribuição de **@rafaeskytrabalho**.
+
+- **O balão do atendimento mostra de onde saiu cada mensagem** O balão de uma mensagem enviada agora identifica a origem dela: **Celular** para
+  a resposta dada pelo WhatsApp do telefone (fora do CRM), **IA** para o agente,
+  **Você** para o que você mesmo digitou no CRM e **Atendente** para o que outra
+  pessoa da equipe digitou.
+
+  Antes, só a IA era identificada. A resposta dada pelo celular chegava à conversa
+  sem rótulo e parecia ter sido digitada no CRM — enquanto o painel de atividade já
+  contava esse atendimento como feito por fora. Agora a conversa mostra o que o
+  painel sempre soube.
+
+- **O aviso de compromisso ganha quem o dispare — e quem o ligue** O tipo de agendamento sempre teve "avisar o cliente antes" e quantos minutos
+  antes avisar. Não havia quem lesse nem quem ligasse: a configuração existia no
+  banco, nenhuma parte do sistema olhava para ela, e não havia controle nenhum na
+  tela.
+
+  Agora existe o par inteiro. Em **Configurações › Tipos de agendamento**, cada
+  tipo tem "Avisar o cliente antes do compromisso, pelo WhatsApp" e quantos
+  minutos antes — de 15 minutos a 7 dias. A lista mostra quem está ligado, sem
+  precisar abrir nada: quem olha a tela sabe de que tipo vai sair mensagem.
+
+  A cada cinco minutos o sistema procura compromisso confirmado que está chegando,
+  cuja antecedência já venceu e que ainda não foi avisado, e manda para a pessoa
+  vinculada uma mensagem no WhatsApp com o que é, quando e onde.
+
+  Só chega a quem está vinculado ao compromisso: agendamento sem pessoa vinculada
+  continua sendo só uma linha na sua agenda, como era. O aviso respeita a janela
+  de envio do canal — ninguém é acordado às seis da manhã por causa de uma
+  retirada às dez —, e sai uma vez só por compromisso.
+
+  Quem recusou receber campanha **continua recebendo** o aviso do próprio
+  compromisso: dizer a alguém que o pedido dele está pronto não é propaganda.
+
+  **Nada começa a sair sozinho.** O aviso nasce desligado em todo tipo de
+  agendamento, e atualizar não liga nada em lugar nenhum: mandar mensagem para o
+  telefone de um cliente é irreversível, e ninguém deve ser inscrito nisso por um
+  valor padrão. Enquanto ninguém marcar a caixa, nenhuma instalação envia lembrete.
+
+  Desligar o aviso guarda a antecedência escolhida — religar amanhã não faz
+  começar de novo.
+
+  Contribuição de **@rafaeskytrabalho**.
+
+### Corrigido
+
+- **A barra lateral volta a acompanhar a página** Em tela com conteúdo longo — a agenda, o kanban cheio, a lista de contatos — a
+  barra de navegação rolava junto com a página: você descia, o menu subia e sumia,
+  e sobrava uma faixa vazia no lugar dele. Para trocar de tela era preciso voltar
+  ao topo.
+
+  Ela agora fica parada enquanto o conteúdo rola, que é como sempre foi a intenção.
+
+  Nada muda no que você faz nem na configuração; é comportamento de tela.
+
+  Contribuição de **@rafaeskytrabalho**.
+
+- **A IA não envia falso aviso de mensagem vazia** Antes de enviar uma resposta, o atendimento automático bloqueia a afirmação de que a mensagem chegou vazia quando o texto recebido está confirmado no CRM.
+
+  Trabalho original de @CristianoFF43, medido na instalação dele.
+
+- **Abrir uma conversa por link direto para de esperar a lista carregar** Quem chega ao Inbox por um link direto para uma conversa — `/app/inbox/<id>`, o clique num
+  aviso, o retorno de uma tela de IA — via a coluna do contato (demandas, memória, negócios)
+  demorar vários segundos a mais que o resto da tela, sobretudo quando a conversa não aparece na
+  aba aberta (por exemplo, uma conversa já encerrada).
+
+  A causa era ordem, não peso: a busca da conversa por id só começava depois de a lista de
+  conversas terminar de carregar — e a lista carrega **duas vezes** por abertura de tela, porque
+  o filtro da aba Fila muda quando o sistema descobre se a organização tem atendimento automático
+  de pé. Eram quatro idas ao servidor em fila indiana antes de o painel do contato poder começar.
+
+  Agora a busca da conversa sai junto com a lista, e não atrás dela.
+
+- **A IA para de perder os horários da noite quando o cliente pede um dia** Quando o cliente nomeava uma data ("pode ser dia 13?"), o atendimento automático
+  montava o dia de meia-noite a meia-noite no relógio de Londres. Em quem atende no
+  Amazonas, esse dia terminava às 19h59 — e um horário das 21h que o próprio
+  atendimento tinha acabado de oferecer sumia da consulta seguinte, como se a agenda
+  estivesse cheia. Agora o dia pedido é o dia do fuso da agenda, do começo ao fim.
+
+  Achado e corrigido por @CristianoFF43, na instalação dele, no PR #612.
+
+- **A IA passa a responder à última mensagem recebida** O atendimento automático deixa de tratar como vazia uma mensagem que chegou com texto quando um resumo anterior estiver incorreto.
+
+  Trabalho original de @CristianoFF43, medido na instalação dele.
+
 ## [1.17.0] — 2026-09-08
 
 ### Adicionado
@@ -3225,7 +3348,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.17.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.17.0...v1.18.0
 [1.17.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.16.1...v1.17.0
 [1.16.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.16.0...v1.16.1
 [1.16.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.15.1...v1.16.0
