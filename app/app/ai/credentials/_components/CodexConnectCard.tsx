@@ -28,12 +28,19 @@ interface Props {
 
 const TETO_POLL_MS = 270_000;
 
-async function lerJson(res: Response): Promise<{ data?: Record<string, unknown> }> {
+async function lerJson(res: Response): Promise<{ data?: Record<string, unknown>; error?: { code?: string } }> {
   try {
-    return (await res.json()) as { data?: Record<string, unknown> };
+    return (await res.json()) as { data?: Record<string, unknown>; error?: { code?: string } };
   } catch {
     return {};
   }
+}
+
+function mensagemDeFalha(codigo: string | undefined, generica: string, t: (s: string) => string): string {
+  if (codigo === "misconfigured") {
+    return t("Assinatura ChatGPT não configurada nesta instalação. Defina o client OAuth e tente de novo.");
+  }
+  return t(generica);
 }
 
 /**
@@ -87,9 +94,9 @@ export function CodexConnectCard({ canWrite, intervaloPollMs = 8_000 }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({}),
       });
-      const { data } = await lerJson(res);
+      const { data, error } = await lerJson(res);
       if (!res.ok || !data?.["user_code"]) {
-        setFalha(t("Não consegui abrir a sessão de conexão. Tente de novo."));
+        setFalha(mensagemDeFalha(error?.code, "Não consegui abrir a sessão de conexão. Tente de novo.", t));
         return;
       }
       tentativas.current = 0;
@@ -116,9 +123,9 @@ export function CodexConnectCard({ canWrite, intervaloPollMs = 8_000 }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ device_auth_id: sessao.device_auth_id, user_code: sessao.user_code }),
       });
-      const { data } = await lerJson(res);
+      const { data, error } = await lerJson(res);
       if (!res.ok) {
-        setFalha(t("A verificação falhou. Tente de novo."));
+        setFalha(mensagemDeFalha(error?.code, "A verificação falhou. Tente de novo.", t));
         return;
       }
       if (data?.["conectado"]) {

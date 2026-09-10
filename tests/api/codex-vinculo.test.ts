@@ -91,6 +91,15 @@ it("POST iniciar sem client configurado → 500 misconfigured (R1, sem throw cru
   expect(corpo.error.code).toBe("misconfigured");
 });
 
+it("POST iniciar com provedor fora → 502 ai_provider_error (sem throw cru)", async () => {
+  deps.role.mockResolvedValue(admin);
+  deps.iniciar.mockRejectedValue(new Error("codex_device_init_500"));
+  const res = await POST(post({}));
+  expect(res.status).toBe(502);
+  const corpo = (await res.json()) as { error: { code: string } };
+  expect(corpo.error.code).toBe("ai_provider_error");
+});
+
 it("poll pendente não grava nada", async () => {
   deps.role.mockResolvedValue(admin);
   deps.trocar.mockResolvedValue({ pendente: true });
@@ -135,4 +144,30 @@ it("disconnect revoga e audita", async () => {
   expect(res.status).toBe(200);
   expect(deps.revogar).toHaveBeenCalledOnce();
   expect(deps.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "ai.codex.desconexao" }));
+});
+
+it("poll com troca falhando → 502 ai_provider_error (sem throw cru)", async () => {
+  deps.role.mockResolvedValue(admin);
+  deps.trocar.mockRejectedValue(new Error("codex_device_exchange_401"));
+  const res = await POLL(post({ device_auth_id: "device-12345", user_code: "ABCD-1234" }));
+  expect(res.status).toBe(502);
+  const corpo = (await res.json()) as { error: { code: string } };
+  expect(corpo.error.code).toBe("ai_provider_error");
+  expect(deps.salvar).not.toHaveBeenCalled();
+});
+
+it("poll aprovado mas banco falhando → 500 internal_error (sem throw cru)", async () => {
+  deps.role.mockResolvedValue(admin);
+  deps.trocar.mockResolvedValue({
+    pendente: false,
+    refreshToken: "rt-secreto",
+    accessToken: "at-secreto",
+    idToken: null,
+    expiresIn: 3600,
+  });
+  deps.salvar.mockRejectedValue(new Error("codex_vinculo_banco: connection refused"));
+  const res = await POLL(post({ device_auth_id: "device-12345", user_code: "ABCD-1234" }));
+  expect(res.status).toBe(500);
+  const corpo = (await res.json()) as { error: { code: string } };
+  expect(corpo.error.code).toBe("internal_error");
 });

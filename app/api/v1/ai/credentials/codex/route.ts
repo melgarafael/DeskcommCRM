@@ -14,6 +14,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { iniciarDeviceCode } from "@/lib/ai/codex/oauth";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -47,7 +48,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!parsed.success) return fail("validation_failed", t("Campos inválidos."), 422, { requestId });
 
   // R1 (ledger do SDD): sem OPENAI_CODEX_CLIENT_ID, fail instrutivo —
-  // nunca throw cru na borda.
+  // nunca throw cru na borda. Qualquer outro erro do provedor (rede, 5xx no
+  // deviceauth) também vira fail com código — throw aqui seria 500 sem corpo
+  // e o cartão mostraria genérico sem diagnóstico (bug do connect fantasma).
   let sessao;
   try {
     sessao = await iniciarDeviceCode();
@@ -58,7 +61,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         requestId,
       });
     }
-    throw err;
+    logger.error("ai.codex.inicio falhou no provedor", { error: motivo, requestId });
+    return fail("ai_provider_error", t("O provedor não respondeu. Tente de novo."), 502, {
+      requestId,
+    });
   }
 
   await audit({

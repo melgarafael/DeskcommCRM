@@ -97,6 +97,21 @@ describe("CodexConnectCard — fluxo de conexão", () => {
     expect(screen.queryByTestId("codex-user-code")).toBeNull();
   });
 
+  it("sem client configurado explica a config em vez de genérico", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      montarFetch([
+        json({ provider: "openai-codex", status: "ausente" }),
+        new Response(JSON.stringify({ error: { code: "misconfigured" } }), { status: 500 }),
+      ]),
+    );
+    montar(true);
+    await user.click(await screen.findByRole("button", { name: "Conectar ChatGPT" }));
+    expect(await screen.findByText(/não configurada nesta instalação/)).toBeInTheDocument();
+    expect(screen.queryByTestId("codex-user-code")).toBeNull();
+  });
+
   it("Desconectar volta a ausente", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
