@@ -32,6 +32,7 @@
  */
 
 import net from "node:net";
+import { randomUUID } from "node:crypto";
 import {
   connectAriEvents,
   hangupChannel,
@@ -42,6 +43,8 @@ import {
 import { AudioSocketCallBridge } from "./audioSocketBridge";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveVoiceAgent } from "@/lib/ai/agents";
+import { resolveOrCreateCallerContact } from "@/lib/voip/resolve-caller";
+import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
 
 const supabaseAdmin = createAdminClient();
 
@@ -62,15 +65,40 @@ async function handleStasisStart(event: AriEvent) {
     return;
   }
 
+  const callerNumber = channel.caller?.number ?? "unknown";
+
+  // Identificador de ligações: acha (ou cria) o contato pelo número de quem
+  // liga. Não bloqueia a chamada se falhar — o pior caso é a tela mostrar só
+  // o número, igual antes desta função existir.
+  let callerContactId: string | null = null;
+  try {
+    callerContactId = await resolveOrCreateCallerContact(supabaseAdmin, routing.organization_id, callerNumber);
+  } catch (err) {
+    console.error(`[voice-agent] falha ao resolver contato de ${callerNumber}:`, err);
+  }
+
+  // channel.id é o identificador NATIVO do canal no Asterisk (formato
+  // "<epoch>.<sequencia>", ex.: "1789081888.0") — válido pras chamadas REST
+  // do ARI (hangup/setChannelVariable/continueDialplan), mas NAO é um UUID:
+  // app_audiosocket.c rejeita com "Failed to parse UUID" se receber isto
+  // (visto ao vivo, toda chamada de entrada). Na SAÍDA isso nunca aparece
+  // porque lá QUEM escolhe channel.id somos nós (route.ts gera o UUID e
+  // passa em `channelId` pro ARI no originate) — na ENTRADA o Asterisk já
+  // criou o canal, com o id dele, antes deste código rodar. Por isso aqui
+  // se gera um UUID SEPARADO só pra correlação do AudioSocket/crm_calls;
+  // as chamadas ARI continuam endereçando o canal por channel.id.
+  const audioSocketUuid = randomUUID();
+
   const { data: callRow, error } = await supabaseAdmin
     .from("crm_calls")
     .insert({
       organization_id: routing.organization_id,
       direction: "inbound",
       status: "ringing",
-      from_number: channel.caller?.number ?? "unknown",
+      from_number: callerNumber,
       to_number: dialedNumber,
-      asterisk_channel_id: channel.id,
+      contact_id: callerContactId,
+      asterisk_channel_id: audioSocketUuid,
       started_at: new Date().toISOString(),
     })
     .select()
@@ -82,24 +110,69 @@ async function handleStasisStart(event: AriEvent) {
     return;
   }
 
+  // A ligação é uma demanda nova, igual a uma mensagem de WhatsApp: sem isto,
+  // quem liga e não é atendido fica de fora do funil e do radar de risco (os
+  // dois trabalham sobre crm_leads, não sobre crm_calls). Idempotente por
+  // contato — reusa o mesmo mecanismo do WhatsApp (nascimento-do-lead.ts),
+  // só troca o rótulo/source de origem. Best-effort: não derruba a ligação.
+  if (callerContactId) {
+    try {
+      const nascimento = await garantirLeadDaConversa(supabaseAdmin, {
+        organizationId: routing.organization_id,
+        contactId: callerContactId,
+        conversationId: callRow.id,
+        nomeDoContato: channel.caller?.name ?? null,
+        origem: { rotulo: "chamada", source: "voip", motivo: "primeira ligação recebida" },
+      });
+      if (!nascimento.criado) {
+        console.info(`[voice-agent] lead não criado para ${callerNumber}: ${nascimento.motivo}`);
+      }
+    } catch (err) {
+      console.error(`[voice-agent] falha ao garantir lead da chamada de ${callerNumber}:`, err);
+    }
+  }
+
   // channel.id JÁ é o asterisk_channel_id gravado acima — reusa como UUID do
   // AudioSocket (mesmo padrão da saída), pra handleAudioSocketConnection
   // achar a linha certa assim que a conexão TCP chegar.
-  await setChannelVariable(channel.id, "AUDIOSOCKET_UUID", channel.id);
+  await setChannelVariable(channel.id, "AUDIOSOCKET_UUID", audioSocketUuid);
   await continueDialplan(channel.id, "from-trunk-audiosocket", "s", 1);
 }
 
-async function resolveInboundNumber(dialedNumber: string) {
+type RoteamentoInbound = {
+  organization_id: string;
+  routing_mode: "ai" | "human" | "ai_then_human";
+  default_ai_agent_id: string | null;
+  fallback_user_id: string | null;
+};
+
+async function resolveInboundNumber(dialedNumber: string): Promise<RoteamentoInbound | null> {
+  // Trunks de DID único mandam a extensão "s" no Request-URI em vez dos
+  // dígitos do número discado (ver extensions.conf, contexto [from-trunk] —
+  // "extension not found" antes desta função nem rodar era o sintoma).  Sem
+  // DNIS real não dá pra saber QUAL número foi discado — mas com exatamente
+  // UM número ativo cadastrado não tem ambiguidade nenhuma: só pode ser ele.
+  // Se um dia existir mais de um, isto recusa (ambíguo) em vez de adivinhar.
+  if (dialedNumber === "s") {
+    const { data, error } = await supabaseAdmin
+      .from("phone_numbers")
+      .select("organization_id, routing_mode, default_ai_agent_id, fallback_user_id")
+      .eq("is_active", true)
+      .limit(2);
+    if (error || !data || data.length !== 1) {
+      console.error(
+        `[voice-agent] extensão "s" (trunk de DID único) só resolve com exatamente 1 número ativo — achei ${data?.length ?? 0}`,
+      );
+      return null;
+    }
+    return data[0] as RoteamentoInbound;
+  }
+
   const { data, error } = await supabaseAdmin
     .rpc("fn_resolve_inbound_number", { p_number: dialedNumber })
     .single();
   if (error || !data) return null;
-  return data as {
-    organization_id: string;
-    routing_mode: "ai" | "human" | "ai_then_human";
-    default_ai_agent_id: string | null;
-    fallback_user_id: string | null;
-  };
+  return data as RoteamentoInbound;
 }
 
 // ---------- AudioSocket (entrada E saída convergem aqui) ----------

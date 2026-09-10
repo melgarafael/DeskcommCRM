@@ -36,6 +36,23 @@ const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`;
 
 const FRAME_TYPE = { HANGUP: 0x00, UUID: 0x01, DTMF: 0x03, AUDIO: 0x10 } as const;
 
+/**
+ * Sem isto a ligação só termina quando o CLIENTE desliga — a IA nunca
+ * desliga sozinha, mesmo tendo se despedido (ouvido ao vivo: a chamada
+ * ficava pendurada em silêncio até o cliente encerrar do lado dele). O
+ * modelo chama esta function DEPOIS de dizer a despedida; o áudio da
+ * resposta ainda é tocado até o fim — só então a ligação é encerrada (ver
+ * `pumpOutboundQueue`, que drena a fila pendente antes de fechar o socket).
+ */
+const ENCERRAR_CHAMADA_TOOL_NAME = "encerrar_chamada";
+
+const INSTRUCAO_ENCERRAR_CHAMADA = `
+
+Quando a conversa chegar a uma conclusão natural (o cliente se despediu, o
+assunto foi resolvido, ou não há mais nada a tratar), diga a despedida em
+voz e, na mesma resposta, chame a function "${ENCERRAR_CHAMADA_TOOL_NAME}"
+para desligar a ligação. Não chame antes de terminar de falar a despedida.`;
+
 export interface AudioSocketCallContext {
   callId: string;
   organizationId: string;
@@ -60,6 +77,9 @@ export class AudioSocketCallBridge {
   private recvBuffer = Buffer.alloc(0);
   private isTalkspurtStart = true;
   private closed = false;
+  /** setado quando o modelo chama a function de encerrar — a fila de
+   *  áudio pendente ainda drena normalmente antes do hangup de fato. */
+  private endCallRequested = false;
 
   // Fila de PCM16 pendente pra mandar pro Asterisk + um pacer que dreia um
   // frame de 320 bytes a cada 20ms — SEM isto, "response.output_audio.delta"
@@ -93,13 +113,26 @@ export class AudioSocketCallBridge {
 
   /** Roda a cada 20ms — manda NO MÁXIMO um frame por tick, nunca a fila inteira de uma vez. */
   private pumpOutboundQueue() {
-    if (this.outboundQueue.length < FRAME_BYTES) return;
     if (this.socket.destroyed) return;
 
-    const frame = this.outboundQueue.subarray(0, FRAME_BYTES);
-    this.outboundQueue = this.outboundQueue.subarray(FRAME_BYTES);
-    this.socket.write(buildFrame(FRAME_TYPE.AUDIO, frame));
-    this.isTalkspurtStart = false;
+    if (this.outboundQueue.length >= FRAME_BYTES) {
+      const frame = this.outboundQueue.subarray(0, FRAME_BYTES);
+      this.outboundQueue = this.outboundQueue.subarray(FRAME_BYTES);
+      this.socket.write(buildFrame(FRAME_TYPE.AUDIO, frame));
+      this.isTalkspurtStart = false;
+      return;
+    }
+
+    // Sem áudio cheio de 320 bytes pendente: só encerra se o modelo já
+    // pediu (endCallRequested) — a despedida some do meio da frase se a
+    // gente fechar sem antes drenar o restinho que sobrou (< 1 frame).
+    if (!this.endCallRequested) return;
+    if (this.outboundQueue.length > 0) {
+      this.socket.write(buildFrame(FRAME_TYPE.AUDIO, this.outboundQueue));
+      this.outboundQueue = Buffer.alloc(0);
+      return; // mais um tick de 20ms pro Asterisk tocar isto antes do hangup
+    }
+    this.handleEnd("ia encerrou a chamada");
   }
 
   private setupSocket() {
@@ -149,7 +182,7 @@ export class AudioSocketCallBridge {
             type: "realtime",
             model: REALTIME_MODEL,
             output_modalities: ["audio"],
-            instructions: this.ctx.agentInstructions,
+            instructions: this.ctx.agentInstructions + INSTRUCAO_ENCERRAR_CHAMADA,
             audio: {
               input: {
                 format: { type: "audio/pcmu" },
@@ -159,8 +192,22 @@ export class AudioSocketCallBridge {
               output: {
                 format: { type: "audio/pcmu" },
                 voice: "marin",
+                // Ouvido ao vivo: a fala do modelo saía rápido demais pro
+                // ritmo de uma ligação telefônica. 0.5 = metade da
+                // velocidade padrão (faixa aceita pela API: 0.25 a 1.5).
+                speed: 0.85,
               },
             },
+            tools: [
+              {
+                type: "function",
+                name: ENCERRAR_CHAMADA_TOOL_NAME,
+                description:
+                  "Encerra a ligação. Use depois de dizer a despedida final ao cliente, quando a conversa chegou a uma conclusão natural.",
+                parameters: { type: "object", properties: {}, required: [] },
+              },
+            ],
+            tool_choice: "auto",
           },
         }),
       );
@@ -186,6 +233,17 @@ export class AudioSocketCallBridge {
         case "conversation.item.input_audio_transcription.completed":
           this.ctx.onTranscriptTurn({ speaker: "customer", text: event.transcript });
           break;
+        case "response.done": {
+          const output = (event.response?.output ?? []) as Array<{ type?: string; name?: string }>;
+          const pediuEncerrar = output.some(
+            (item) => item.type === "function_call" && item.name === ENCERRAR_CHAMADA_TOOL_NAME,
+          );
+          if (pediuEncerrar) {
+            console.info(`[realtime] call=${this.ctx.callId} agente pediu pra encerrar a chamada`);
+            this.endCallRequested = true;
+          }
+          break;
+        }
         case "error":
           console.error(`[realtime] call=${this.ctx.callId} erro:`, JSON.stringify(event.error));
           break;

@@ -157,7 +157,7 @@ export async function continueDialplan(channelId: string, context: string, exten
 export interface AriChannel {
   id: string;
   dialplan?: { exten?: string };
-  caller?: { number?: string };
+  caller?: { number?: string; name?: string };
 }
 
 export interface AriEvent {
