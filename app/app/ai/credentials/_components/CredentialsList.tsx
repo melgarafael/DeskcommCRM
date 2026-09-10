@@ -9,6 +9,7 @@ import { useCredentialsList, type CredentialRow, type Provider } from "@/hooks/a
 import { useT } from "@/hooks/i18n/useT";
 import { CredentialCard } from "./CredentialCard";
 import { AddCredentialDialog } from "./AddCredentialDialog";
+import { CodexConnectCard } from "./CodexConnectCard";
 
 interface Props {
   initialData: CredentialRow[];
@@ -57,6 +58,8 @@ export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
             </Button>
           )}
         </Card>
+        {/* Alternativa sem chave colada: a assinatura se conecta via OAuth. */}
+        <CodexConnectCard canWrite={canWrite} />
         <AddCredentialDialog open={addOpen} onOpenChange={setAddOpen} />
       </>
     );
@@ -71,6 +74,7 @@ export function CredentialsList({ initialData, canWrite, usageMap }: Props) {
           </Button>
         )}
       </div>
+      <CodexConnectCard canWrite={canWrite} />
       {PROVIDER_ORDER.map((p) => {
         // `?? []` porque a lista de provedores pode crescer sem que exista
         // credencial daquele provedor — o agrupamento só tem chave para quem
