@@ -1,0 +1,13 @@
+; asterisk/ari.conf.example
+; Copiar pra ari.conf (git-ignorado, tem credencial real) e trocar a senha.
+
+[general]
+enabled = yes
+pretty = yes
+
+; Credenciais consumidas por ARI_USERNAME / ARI_PASSWORD no worker.
+; Trocar por algo forte — não deixar o default em produção.
+[voice-agent-user]
+type = user
+read_only = no
+password = TROCAR_SENHA_FORTE

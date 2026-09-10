@@ -1,0 +1,81 @@
+# ============================================================
+# docker-compose.voip.yml
+# Extensão do docker-compose.yml existente — não mexe em nada
+# do WAHA/app/worker atuais. Subir junto:
+#   docker compose -f docker-compose.yml -f docker-compose.voip.yml up -d
+# ============================================================
+
+services:
+  asterisk:
+    image: andrius/asterisk:20-alpine   # imagem community mantida, PJSIP + ARI prontos
+    container_name: deskcomm-asterisk
+    restart: unless-stopped
+    ports:
+      # SIP (registro no seu trunk genérico — a maioria usa UDP 5060)
+      - "5060:5060/udp"
+      # RTP de MÍDIA entre o Asterisk e seu trunk (faixa típica pjsip.conf)
+      - "10000-10200:10000-10200/udp"
+      # ARI (REST + WebSocket) — só precisa ser alcançável pelo worker,
+      # não expor pra fora do docker network em produção
+      - "8088:8088"
+    volumes:
+      - ./asterisk/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./asterisk/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./asterisk/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./asterisk/http.conf:/etc/asterisk/http.conf:ro
+      - ./asterisk/rtp.conf:/etc/asterisk/rtp.conf:ro
+      - asterisk-data:/var/lib/asterisk
+      - asterisk-logs:/var/log/asterisk
+    networks:
+      - deskcommcrm_default
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show uptime"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  voice-agent:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    build:
+      context: .
+      dockerfile: Dockerfile.voice-agent
+    container_name: deskcomm-voice-agent
+    restart: unless-stopped
+    depends_on:
+      asterisk:
+        condition: service_healthy
+    # env_file completo (mesmo padrão do serviço `worker`): lib/supabase/admin.ts
+    # e lib/env.ts validam TODAS as vars da app via Zod no import, não só as de
+    # voz — um environment: parcial aqui derrubaria o container no boot.
+    env_file:
+      - .env
+      - .env.local
+    environment:
+      ARI_URL: "http://asterisk:8088"
+      ARI_WS_URL: "ws://asterisk:8088/ari/events"
+      ARI_APP: "voice-agent"
+      # .env.local tem OPENAI_API_KEY= vazio (override de dev que também afasta
+      # o worker principal da chave real) — env_file carrega .env.local por
+      # último e vence; força de volta pro valor real de .env aqui.
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+    # a ponte RTP abre portas UDP locais dinâmicas (40000-40100) — mesma
+    # network do Asterisk, sem precisar publicar pro host
+    networks:
+      - deskcommcrm_default
+
+networks:
+  deskcommcrm_default:
+    external: true   # mesma network que app/worker/scheduler já usam
+
+volumes:
+  asterisk-data:
+  asterisk-logs:

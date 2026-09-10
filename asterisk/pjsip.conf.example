@@ -1,0 +1,58 @@
+; asterisk/pjsip.conf.example
+; Copiar pra pjsip.conf (git-ignorado, tem credenciais reais) e preencher
+; com os dados do SEU provedor de trunk SIP genérico.
+
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+; NAT: sem isto, Asterisk anuncia o IP PRIVADO do container no SDP, e o
+; provedor SIP não tem como mandar RTP de volta — testado ao vivo: com isto
+; ausente, sinalização/registro funcionam mas ZERO pacote de mídia chega.
+; Trocar pelo IP PÚBLICO real do seu servidor.
+external_media_address=SEU_IP_PUBLICO
+external_signaling_address=SEU_IP_PUBLICO
+local_net=172.16.0.0/12
+
+; ---------- Autenticação no seu provedor ----------
+[trunk-auth]
+type=auth
+auth_type=userpass
+username=SEU_USUARIO_SIP
+password=SUA_SENHA_SIP
+
+; ---------- Onde o provedor está (endereço de registro/proxy) ----------
+[trunk-aor]
+type=aor
+contact=sip:SEU_PROVEDOR_SIP:5060
+qualify_frequency=30
+
+[trunk-identify]
+type=identify
+endpoint=trunk-endpoint
+match=SEU_PROVEDOR_SIP   ; IP ou host do provedor — usado pra reconhecer chamadas de entrada
+
+; ---------- Registration (se o provedor exigir REGISTER) ----------
+[trunk-registration]
+type=registration
+outbound_auth=trunk-auth
+server_uri=sip:SEU_PROVEDOR_SIP
+client_uri=sip:SEU_USUARIO_SIP@SEU_PROVEDOR_SIP
+retry_interval=60
+
+; ---------- Endpoint (referenciado em ariClient.ts como trunkEndpoint) ----------
+[trunk-endpoint]
+type=endpoint
+transport=transport-udp
+context=from-trunk           ; ver extensions.conf — pra onde vai a chamada de ENTRADA
+disallow=all
+allow=ulaw                   ; casa com o formato usado no AudioSocket (evita transcodificação)
+allow=alaw
+outbound_auth=trunk-auth
+aors=trunk-aor
+from_user=SEU_USUARIO_SIP
+; Sem isto, o header From vaza o IP PRIVADO do container mesmo com
+; external_signaling_address certo no transport — testado ao vivo via
+; tcpdump: alguns provedores (ex.: NextBilling) matam a ligação com BYE ~1s
+; depois do 183 se virem um From malformado/privado.
+from_domain=SEU_IP_PUBLICO
