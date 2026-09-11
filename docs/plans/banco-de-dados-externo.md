@@ -9,11 +9,11 @@
 
 ## Status atual
 
-- **Fase:** 1 — Schema (em andamento) · próxima: Fase 2 — Núcleo `lib/external-db/`
+- **Fase:** 2 — Núcleo `lib/external-db/` (concluída) · próxima: Fase 3 — API `/api/v1/external-db/`
 - **Última atualização:** 2026-09-11
-- **Próximo passo concreto:** `pnpm test:db` (Docker) para aplicar a migration `0233` em install e update; depois regenerar `lib/database.types.ts` (Fase 3, quando houver código).
+- **Próximo passo concreto:** Fase 3 — rotas `GET/POST connections`, `test`, `schemas` e leitura paginada; antes disso, regenerar `lib/database.types.ts` (a tabela passa a ser usada por código).
 - **Bloqueios:** nenhum.
-- **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11).
+- **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commit da Fase 1: `73a274ef` (o hash da Fase 2 não fica aqui: seria autorreferente — vive no diário em `/root/arquivos/deskcomm-banco-externo.md`).
 
 ---
 
@@ -145,12 +145,12 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 
 ### Fase 2 — Núcleo `lib/external-db/`
 
-- [ ] `credenciais.ts` — cifra via `lib/crypto/aes_gcm.ts`; leitura **sempre** com `organization_id`
-- [ ] `guardas.ts` — resolve DNS/IP; bloqueia `169.254.0.0/16` e faixas especiais; política p/ privado (default fecha)
-- [ ] `conexao.ts` — pool read-only com timeouts; teto de pools; invalidação por `updated_at`; `end()` ao remover
-- [ ] `introspeccao.ts` — schemas/tabelas/colunas/PK/estimativa de linhas via `information_schema`+`pg_catalog`
-- [ ] `leitura.ts` — `SELECT` montado no servidor: identificadores quotados do allowlist, valores parametrizados, cursor + `LIMIT`
-- [ ] Testes unit: guarda de IP, builder de query (injeção por nome de tabela/coluna), cifra, introspecção
+- [x] `credenciais.ts` — cifra via `lib/crypto/aes_gcm.ts`; leitura **sempre** com `organization_id`
+- [x] `guardas.ts` — resolve DNS/IP; bloqueia `169.254.0.0/16` e faixas especiais; política p/ privado (RFC1918 permitido — LAN é caso real)
+- [x] `conexao.ts` — pool read-only com timeouts; teto de pools; invalidação por `updated_at`; `end()` ao remover
+- [x] `introspeccao.ts` — schemas/tabelas/colunas/estimativa de linhas via `information_schema`+`pg_catalog` (PK ainda não)
+- [x] `leitura.ts` — `SELECT` montado no servidor: identificadores quotados do catálogo, valores parametrizados, `LIMIT`/`OFFSET`
+- [x] Testes unit: guarda de IP (inclui IPv6 normalizado), builder de query (injeção por identificador), cifra, pool, introspecção — 65 verdes via Docker, `tsc`/`eslint` zerados
 
 ### Fase 3 — API `/api/v1/external-db/`
 
