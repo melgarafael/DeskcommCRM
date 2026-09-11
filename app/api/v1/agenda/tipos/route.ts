@@ -18,6 +18,20 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * DELETE aqui grava `is_active = false`: some da tela de marcar e continua
  * respondendo pelo passado. É o mesmo raciocínio do anti-pattern 7 da doutrina
  * (cascade fantasma).
+ *
+ * ─── E a volta mora AO LADO, não aqui ────────────────────────────────────
+ *
+ * Reativar é `POST /api/v1/agenda/tipos/reativar`. `is_active` está fora de
+ * `camposDoTipo` DE PROPÓSITO: aceitá-lo no PATCH deixaria o mesmo pedido que
+ * muda a duração poder desligar o tipo, e a trilha registraria a religada como
+ * `agenda.tipo_alterado { campos: ["is_active"] }` — indistinguível de uma
+ * alteração de campo qualquer.
+ *
+ * ⚠️ Essa exclusão é silenciosa e já custou: Zod DESCARTA chave desconhecida sem
+ * dizer nada, então o botão "Reativar" da tela mandou `is_active` para cá
+ * durante toda a vida dele e recebeu 422 "Nenhum campo para alterar." — uma
+ * recusa que não nomeia o que foi descartado. Quem vigia a travessia hoje é
+ * `tests/unit/agenda-reativar-tipo.test.ts`.
  */
 import { type NextRequest } from "next/server";
 import { z } from "zod";

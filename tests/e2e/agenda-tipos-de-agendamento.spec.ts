@@ -238,7 +238,21 @@ test("o tipo NASCE com responsável — e quem escolhe 'Definir depois' recebe a
   await page.screenshot({ path: "evidence/calendario/d6-tipo-com-responsavel.png", fullPage: true });
 });
 
-test("desativar tira o tipo da tela de marcar, sem apagar a história", async ({ page }) => {
+test("desativar tira o tipo da tela de marcar, e reativar o traz de volta", async ({ page }) => {
+  /**
+   * ⚠️ ESTE CASO JÁ EXISTIA E CONFERIA O BOTÃO "Reativar" SÓ COM `toBeVisible`.
+   *
+   * Foi exatamente assim que ele sobreviveu morto. O botão mandava
+   * `PATCH /api/v1/agenda/tipos` com `{ id, is_active: true }`; o
+   * `alterarSchema` daquela rota é `criarSchema.partial()`, onde `is_active` não
+   * existe, e Zod descarta chave desconhecida em silêncio — o corpo chegava
+   * vazio e a resposta era 422 "Nenhum campo para alterar.". Nunca funcionou uma
+   * vez, desde que a tela nasceu.
+   *
+   * Ver que o controle está DESENHADO não é ver que ele ABRE. O caso agora
+   * clica, e cobra o efeito nos dois lugares: o rótulo "desativado" sai da lista
+   * e o tipo volta a ser oferecido em /app/agenda.
+   */
   const creds = lerCreds();
   await entrar(page, creds);
   await page.goto("/app/settings/tenant/agenda");
@@ -274,6 +288,33 @@ test("desativar tira o tipo da tela de marcar, sem apagar a história", async ({
     page.getByRole("button", { name: new RegExp(`^${nome}`) }),
     "tipo desativado continua oferecido para marcar",
   ).toHaveCount(0);
+
+  // ─── A VOLTA ────────────────────────────────────────────────────────────
+  //
+  // Sem esta metade, desativar é uma porta que só abre para um lado: o nome
+  // continua ocupado pelo tipo desligado (o slug é único), então quem errou o
+  // clique não consegue nem recriar com o mesmo nome.
+  await page.goto("/app/settings/tenant/agenda");
+  await expect(page.getByTestId("tipos-de-agendamento-config")).toBeVisible({ timeout: 20_000 });
+  await linha.getByRole("button", { name: "Reativar" }).click();
+
+  await expect(
+    linha.getByText("desativado"),
+    "cliquei em Reativar e o tipo continua marcado como desativado",
+  ).toHaveCount(0, { timeout: 20_000 });
+  await expect(
+    linha.getByRole("button", { name: "Desativar" }),
+    "o tipo voltou mas a lista não oferece desligar de novo",
+  ).toBeVisible();
+
+  // E volta a aparecer onde importa — o mesmo lugar de onde saiu.
+  await page.goto("/app/agenda");
+  await page.getByRole("button", { name: /novo agendamento/i }).click();
+  await expect(page.getByTestId("tipos-de-agendamento")).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^${nome}`) }),
+    "reativei o tipo e ele não voltou para a tela de marcar",
+  ).toHaveCount(1);
 });
 
 test("ligo o aviso do compromisso pela tela, e ele fica ligado", async ({ page }) => {
