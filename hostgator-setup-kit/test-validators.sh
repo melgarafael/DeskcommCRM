@@ -2566,6 +2566,33 @@ reexec_neg() {
 reexec_neg
 reexec_ok "o bloco de variáveis conhecidas acha o kit depois do cd"
 
+echo "cron numa VPS sem crontab nenhum (#715)"
+# VPS nova não tem crontab para o root: `crontab -l` sai 1. As rodadas acima
+# nunca mediram isso, porque o sandbox já tinha linhas quando elas agendavam — e
+# o install.sh morria em "Ativando as automações" em toda VPS recém-criada. As
+# duas funções rodam aqui sob o MESMO `set -euo pipefail` do install.sh, com o
+# dublê de crontab apontado para um arquivo que não existe.
+cron_vazio() (
+  # Subshell: `montar_vps` define VPS_* globais, e os blocos seguintes da suíte
+  # não podem herdar esta fixture.
+  montar_vps "$SUITE_TMP/cron-vazio" projeto < <(printf '#!/bin/sh\nexit 0\n')
+  local sandbox="$SUITE_TMP/crontab-vazio.txt"; rm -f "$sandbox"
+  local out rc
+  out="$(cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" CRONTAB_SANDBOX="$sandbox" \
+    INTERNAL_SECRET=segredo-de-teste NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br PROJECT_DIR="$VPS_PROJ" \
+    bash -c 'set -euo pipefail; . "$1/_common.sh"; psql_run() { :; }
+             setup_event_log_drain_cron; setup_update_agent_cron; echo CHEGOU-AO-FIM' _ "$VPS_RAIZ" 2>&1)" \
+    && rc=0 || rc=$?
+  if [ $rc -ne 0 ] || ! printf '%s' "$out" | grep -q CHEGOU-AO-FIM; then
+    printf '  ✗ agendar o cron numa VPS sem crontab derrubou o script (saída %s)\n' "$rc"; return 1
+  fi
+  if [ "$(grep -c '# deskcomm:' "$sandbox" 2>/dev/null)" != 2 ]; then
+    printf '  ✗ esperava 2 linhas (drain + agente) no crontab, veio %s\n' "$(grep -c '# deskcomm:' "$sandbox" 2>/dev/null || echo 0)"; return 1
+  fi
+  printf '  ✓ sem crontab prévio, drain e agente agendados e o script segue\n'
+)
+cron_vazio || fail=1
+
 echo "isolamento: a suíte não escreve no crontab da máquina"
 # Isto não é hipótese defensiva: os testes JÁ escreveram 10 linhas órfãs no
 # crontab do mantenedor, uma delas um `curl` com Bearer disparando a cada minuto
