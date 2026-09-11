@@ -23390,10 +23390,17 @@ create policy tenant_isolation_external_db_connections_select on public.external
   using (organization_id in (select * from public.fn_user_org_ids()));
 
 drop policy if exists tenant_isolation_external_db_connections_modify on public.external_db_connections;
-create policy tenant_isolation_external_db_connections_modify on public.external_db_connections
+drop policy if exists tenant_isolation_external_db_connections_write on public.external_db_connections;
+create policy tenant_isolation_external_db_connections_write on public.external_db_connections
   for all
-  using (organization_id in (select * from public.fn_user_org_ids()))
-  with check (organization_id in (select * from public.fn_user_org_ids()));
+  using (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  )
+  with check (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  );
 
 revoke all on public.external_db_connections from anon;
 

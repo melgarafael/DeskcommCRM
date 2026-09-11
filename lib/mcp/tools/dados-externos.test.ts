@@ -134,7 +134,7 @@ describe("crm_query_external_data", () => {
   it("recusa tabela inexistente sem tocar no banco", async () => {
     vi.mocked(colunasDaTabela).mockResolvedValue(null);
     const r = (await crmQueryExternalData.handler(
-      { connection_id: "conn-1", schema: "public", tabela: "nao_existe" },
+      { connection_id: "conn-1", schema: "public", tabela: "nao_existe", limite: 20 },
       ctxFake(),
     )) as Record<string, unknown>;
     expect(r.erro).toBe("tabela_nao_encontrada");
@@ -144,7 +144,13 @@ describe("crm_query_external_data", () => {
   it("pedido inválido (coluna/operador) vira erro de ensino, não exceção", async () => {
     vi.mocked(lerTabela).mockRejectedValue(new LeituraInvalidaError("coluna_inexistente:senha"));
     const r = (await crmQueryExternalData.handler(
-      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", filtros: [{ coluna: "senha", operador: "eq", valor: "x" }] },
+      {
+        connection_id: "conn-1",
+        schema: "public",
+        tabela: "assinaturas",
+        filtros: [{ coluna: "senha", operador: "eq", valor: "x" }],
+        limite: 20,
+      },
       ctxFake(),
     )) as Record<string, unknown>;
     expect(r.erro).toBe("pedido_invalido");
@@ -159,7 +165,7 @@ describe("crm_query_external_data", () => {
       offset: 0,
     });
     const r = (await crmQueryExternalData.handler(
-      { connection_id: "conn-1", schema: "public", tabela: "assinaturas" },
+      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 20 },
       ctxFake(),
     )) as Record<string, unknown>;
     expect(r.linhas).toHaveLength(1);
@@ -170,7 +176,7 @@ describe("crm_query_external_data", () => {
   it("descobre o schema quando ele não é informado e há só uma candidata", async () => {
     vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [], limite: 20, offset: 0 });
     const r = (await crmQueryExternalData.handler(
-      { connection_id: "conn-1", tabela: "assinaturas" },
+      { connection_id: "conn-1", tabela: "assinaturas", limite: 20 },
       ctxFake(),
     )) as Record<string, unknown>;
     expect(r.schema).toBe("public");

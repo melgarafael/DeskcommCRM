@@ -95,11 +95,23 @@ create policy tenant_isolation_external_db_connections_select on public.external
   for select
   using (organization_id in (select * from public.fn_user_org_ids()));
 
+-- Leitura: qualquer membro (D2). Escrita: a policy também exige `admin` — não
+-- é redundância com a API, que já pede `admin`; é a mesma regra na camada que
+-- sobrevive a uma rota nova. E é o que mantém a tabela fora da dívida de RBAC
+-- (policy `ALL` só-tenancy): um `viewer` falando direto com o PostgREST não
+-- reconfigura a credencial da fonte de dados.
 drop policy if exists tenant_isolation_external_db_connections_modify on public.external_db_connections;
-create policy tenant_isolation_external_db_connections_modify on public.external_db_connections
+drop policy if exists tenant_isolation_external_db_connections_write on public.external_db_connections;
+create policy tenant_isolation_external_db_connections_write on public.external_db_connections
   for all
-  using (organization_id in (select * from public.fn_user_org_ids()))
-  with check (organization_id in (select * from public.fn_user_org_ids()));
+  using (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  )
+  with check (
+    organization_id in (select * from public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin')
+  );
 
 revoke all on public.external_db_connections from anon;
 
