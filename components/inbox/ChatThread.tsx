@@ -247,6 +247,10 @@ export function ChatThread({ conversationId, onResponder }: Props) {
                   // citada é antiga demais e ficou fora da página, o fio some —
                   // que é melhor que segurar a conversa esperando.
                   citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
+                  // Sem isto o balão diz "Você" em toda mensagem digitada no
+                  // CRM — inclusive nas do colega, porque `sent_via='user'` só
+                  // registra que um humano digitou, nunca qual.
+                  viewerUserId={currentUser.id}
                 />
               ),
             )}

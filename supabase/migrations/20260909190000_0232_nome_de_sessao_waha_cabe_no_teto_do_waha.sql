@@ -1,7 +1,56 @@
--- 0232 — nomes novos cabem no limite de 54 caracteres do WAHA 2026.7.2.
--- 4 + 8 + 1 + 32 = 45 caracteres. O UUID aleatório completo conserva a unicidade;
--- ownership continua na organization_id e nos guards, nunca no prefixo do nome.
--- Não renomeia sessões existentes: elas podem estar conectadas em outro servidor.
+-- ============================================================================
+-- 0232 — O NOME DA SESSÃO WAHA ESTOURA O TETO QUE O WAHA IMPÕE
+--
+-- `fn_reserve_channel_connection` (nasceu na 0228, forward-fix na 0230) gera o
+-- `waha_session_name` de canal novo como:
+--
+--   'org_' || replace(p_org::text,'-','') || '_' || replace(gen_random_uuid()::text,'-','')
+--   = 'org_' (4) + uuid da org sem hífen (32) + '_' (1) + uuid aleatório sem hífen (32)
+--   = 69 caracteres
+--
+-- O `devlikeapro/waha:latest-2026.7.2` (o pino do `docker-compose.prod.yml` e o
+-- que a doutrina fixa) valida `POST /api/sessions` com `@MaxLength(54)` no campo
+-- `name`. A resposta é literal:
+--
+--   400 {"message":["name must be shorter than or equal to 54 characters"],
+--        "error":"Bad Request","statusCode":400}
+--
+-- Ou seja: NENHUM canal WAHA novo consegue ser criado numa instalação que roda
+-- um WAHA de verdade. O sintoma na tela é `waha_create_400` ("Falha na
+-- comunicação com o WhatsApp") ao Conectar um número ou ao Reconectar — e o
+-- canal fica preso em FAILED/STOPPED com `connection_repair_required`. O
+-- `stop`/`get`/`restart` que o fluxo de Reconectar tenta antes nem chega a
+-- importar: não há sessão do lado do WAHA para reiniciar, porque o `create`
+-- morre na validação de tamanho.
+--
+-- Não foi pego porque o `connect-waha.test.ts` e os e2e de pré-go-live usam um
+-- `Transport` falso — a validação de tamanho só existe contra um WAHA real.
+--
+-- ─── O conserto: encurtar o prefixo da org para 8, como o resto do código já
+--     esperava ────────────────────────────────────────────────────────────────
+--
+-- A MESMA função, duas linhas acima do INSERT, procura o canal de onboarding
+-- por `waha_session_name = 'org_' || left(p_org::text,8)` — o formato curto
+-- `org_<8>` que já produzia `org_11db0f22` e que o WAHA aceita (12 caracteres).
+-- O INSERT é que divergiu. Alinhando os dois:
+--
+--   'org_' || left(replace(p_org::text,'-',''),8) || '_' || replace(gen_random_uuid()::text,'-','')
+--   = 'org_' (4) + 8 + '_' (1) + 32 = 45 caracteres  ≤ 54 ✓
+--
+-- Mantém os 128 bits de aleatoriedade do sufixo (a UNIQUE de `waha_session_name`
+-- continua garantida com folga) e não toca em `metadataInicialDoCanal` nem no
+-- resto do corpo — só a expressão do nome muda.
+--
+-- ─── Reparo dos canais já quebrados (auto-curativo, genérico, conservador) ──
+--
+-- Toda linha `provider='waha'` cujo nome passou de 54 e que NUNCA pareou
+-- (`phone_number is null`) e não está WORKING recebe um nome novo no formato
+-- curto. São canais que o WAHA nunca aceitou — renomear não pode quebrar uma
+-- sessão que não existe lá fora. Canal WORKING ou já pareado NÃO é tocado (não
+-- há nenhum com nome > 54 nesse estado, por construção — o create falhava
+-- antes de qualquer pareamento — mas a guarda fica explícita).
+-- ============================================================================
+
 create or replace function public.fn_reserve_channel_connection(p_org uuid,p_key uuid,p_hash text,p_display_name text default null,p_onboarding boolean default false)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare receipt public.channel_connection_requests; channel public.channel_sessions; token uuid:=gen_random_uuid();
@@ -57,3 +106,15 @@ end;
 $$;
 revoke all on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) from public,anon;
 grant execute on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) to authenticated;
+
+-- Reparo dos nomes já gravados fora do teto — só canais WAHA que nunca pararam de pé.
+update public.channel_sessions
+   set waha_session_name = 'org_'||left(replace(organization_id::text,'-',''),8)||'_'||replace(gen_random_uuid()::text,'-',''),
+       updated_at = now()
+ where provider = 'waha'
+   and waha_session_name is not null
+   and length(waha_session_name) > 54
+   and phone_number is null
+   and status <> 'WORKING';
+
+notify pgrst,'reload schema';

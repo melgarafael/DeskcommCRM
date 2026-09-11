@@ -23205,11 +23205,11 @@ grant execute on function public.fn_reserve_channel_connection(uuid,uuid,text,te
 
 notify pgrst,'reload schema';
 
--- ---- Nome de sessão compatível com WAHA (migration 0232) ----
--- 0232 — nomes novos cabem no limite de 54 caracteres do WAHA 2026.7.2.
--- 4 + 8 + 1 + 32 = 45 caracteres. O UUID aleatório completo conserva a unicidade;
--- ownership continua na organization_id e nos guards, nunca no prefixo do nome.
--- Não renomeia sessões existentes: elas podem estar conectadas em outro servidor.
+-- ---- nome de sessão WAHA cabe no teto do WAHA (migration 0232) ----
+-- O `devlikeapro/waha:latest-2026.7.2` valida `name` de sessão com @MaxLength(54);
+-- `org_<32>_<32>` = 69 e todo `POST /api/sessions` de canal novo tomava 400. O
+-- prefixo da org encurta para 8 (`org_<8>_<32>` = 45), alinhado com a busca de
+-- canal de onboarding logo acima no corpo. Idempotente: `create or replace`.
 create or replace function public.fn_reserve_channel_connection(p_org uuid,p_key uuid,p_hash text,p_display_name text default null,p_onboarding boolean default false)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare receipt public.channel_connection_requests; channel public.channel_sessions; token uuid:=gen_random_uuid();
@@ -23265,6 +23265,14 @@ end;
 $$;
 revoke all on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) from public,anon;
 grant execute on function public.fn_reserve_channel_connection(uuid,uuid,text,text,boolean) to authenticated;
+
+-- Auto-curativo: canal WAHA com nome fora do teto que nunca pareou nem está de
+-- pé recebe um nome curto. Sessão que o WAHA nunca aceitou; renomear é seguro.
+update public.channel_sessions
+   set waha_session_name = 'org_'||left(replace(organization_id::text,'-',''),8)||'_'||replace(gen_random_uuid()::text,'-',''),
+       updated_at = now()
+ where provider = 'waha' and waha_session_name is not null
+   and length(waha_session_name) > 54 and phone_number is null and status <> 'WORKING';
 
 -- ---- Academia opcional por empresa (migration 0233) ----
 -- 0233 — módulo Academia opt-in por organização; ausência equivale a desligado.

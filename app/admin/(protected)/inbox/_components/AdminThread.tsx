@@ -90,6 +90,10 @@ export function AdminThreadClient({ conversationId }: Props) {
               {t("Sem mensagens nesta conversa.")}
             </p>
           ) : (
+            // Sem `viewerUserId` de propósito: quem lê aqui é o super-admin da
+            // plataforma, olhando a conversa de OUTRA organização. Nenhuma
+            // mensagem é dele, então "Você" seria falso em todas — sem o id, o
+            // balão rotula "Atendente", que é o que o dado sustenta.
             messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
           )}
         </div>

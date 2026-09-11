@@ -51,6 +51,21 @@ gh api repos/{owner}/{repo}/issues/<n>/timeline --jq '.[]|select(.event=="closed
 gh pr view <n> --json comments --jq '[.comments[]|select(.body|test("pass=9|pass=10"))]|length'
 ```
 
+**Em 08/09/2026 a varredura rendeu mais seis, e o padrão ficou nítido:** #612 (@CristianoFF43,
+fechado **29 minutos** depois de abrir), #622 (@rafaelbatistazz, **3min34s**), e #421/#423/#424/#425
+(@rafaeskytrabalho, **os quatro no mesmo segundo**). Comentários humanos nos seis: **zero**. Dentro
+deles, nove consertos com teste e fragmento — entre os quais o lembrete de compromisso que nunca
+dispara, a IA sem onde gravar campo personalizado, e o fuso do dia civil que faz o horário oferecido
+sumir da consulta seguinte. As frases com que fecharam ("aberto no repo errado", "cancelando",
+"ruído") são de gente pedindo desculpa por existir. **Nenhuma tinha errado.**
+
+**A terceira pergunta, que faltava aqui e é a única que decide:** *o defeito ainda está vivo na
+`main` de hoje?* Não se responde por semelhança de nome de arquivo, e **rastro não é resgate** —
+`git log --grep="#<n>"` achar commit prova que alguém mexeu no assunto, não que o conteúdo entrou
+(um resgate desta casa levou 3 de 16 arquivos, corretamente). E um teste na `main` com nome parecido
+não é o mesmo teste: `barra-lateral-nao-flutua` e `barra-lateral-nao-perde-o-sticky` medem coisas
+diferentes. Leia o diff dele e confira a linha.
+
 **Fechado pelo autor + zero veredito nosso = recuperar.** Em 06/09/2026, @maugarciasa fechou #595 e
 #596 **no mesmo segundo**, duas horas depois de abrir. Levavam três consertos medidos **em
 produção**: um id de modelo fixo (`claude-haiku-4-5`) que matava o flywheel em toda instalação
@@ -144,6 +159,18 @@ Esta linha listava **três** — faltavam `e2e` e `imagens-ok`, que são justame
 cobrem o artefato que o self-hoster instala. Um triador que a lesse declararia "passou os
 obrigatórios" tendo rodado 3 de 5, dentro do próprio documento que o `CLAUDE.md` aponta
 como o lugar onde medir contra a régua errada é o modo de falha número um.
+
+**A prévia precisa virar worktree, senão não se roda nada nela.** `merge-tree` devolve uma *tree*,
+e tree não se faz checkout. São dois comandos, e sem eles o passe 3 fica na teoria:
+
+```bash
+T=$(git merge-tree --write-tree origin/main <sha-do-pr>)
+C=$(git commit-tree $T -p origin/main -p <sha-do-pr> -m "prévia do merge (não publicar)")
+git branch -f previa/<n> $C && git worktree add ../wt/previa-<n> previa/<n>
+```
+
+Apague os dois no fim (`git worktree remove`, `git branch -D`) — eles não vão a lugar nenhum, e o
+passe 12-bis cobra o disco.
 
 Meça exit code **direto**. `cmd | tail` devolve o exit do `tail` — verde falso.
 
@@ -544,6 +571,16 @@ escrito código para um defeito inexistente.
 **Nenhum pedido sai sem a medição que prova o defeito, anexada ao pedido.** Se você não mediu, não é
 pedido: é pergunta, e vai redigido como pergunta.
 
+**E há uma classe de afirmação que nunca é publicável: a que se apoia em ausência de registro
+público.** Medido em 08/09/2026: a spec do PR #628 dizia que uma decisão de produto fora *"tomada
+diretamente com o dono do produto"*, e não havia issue, discussão ou comentário registrando isso. O
+veredito em rascunho dizia *"decidiu no lugar do dono"*. O cético derrubou, e com razão: a
+explicação concorrente — **a conversa aconteceu em canal privado** — não é eliminável por quem tria.
+Só o dono elimina.
+
+*Não achei registro* mede a **sua busca**, não a **conduta dele**. Vira pergunta ao dono antes de
+publicar; ao contribuidor vai marcada como pergunta, com essas palavras.
+
 ---
 
 ## 8. Reconciliação
@@ -693,6 +730,22 @@ VERSÃO:      <patch | minor | major | nenhuma> — <o que o dono da VPS precisa
 **`NÃO MEDIDO` é campo obrigatório.** Veredito sem ele é recusado pelo cético e não vai para o PR.
 Ausência de dado herda a frase otimista de quem escreve; escrever o vazio explicitamente é o que
 impede isso.
+
+**Há um segundo campo que o cético cobra, e ele é sobre o TOM: de quem é a dívida.** Para cada
+bloqueador, antes de escrever, responda — *existia uma guarda que deveria ter pego isto, e ela
+estava cega?* Se sim, o bloqueador é **nosso**, ele não tinha como saber, e o texto muda de "faltou"
+para "a nossa guarda não enxerga, e eu conserto".
+
+Medido em 08/09/2026, no PR #628: **dois dos cinco bloqueadores que eu ia cobrar dele eram nossos.**
+As duas guardas de packaging (`canal-stable-move-em-bloco.test.ts:78` e
+`packaging-artefato-do-cliente.test.ts:226`) trazem a lista das nossas imagens **escrita à mão** e
+fazem `toContain` sobre ela — uma quarta imagem é invisível por construção, e as duas passaram. Ele
+tinha atualizado todos os gates que sabem contar. O terceiro era uma regressão de tradução nascida
+no **commit de merge** dele, colateral de conflito num hunk vizinho: sem a atribuição, lê como
+desleixo.
+
+O custo de errar essa separação é assimétrico. Cobrar dele o que é nosso queima quem contribuiu de
+graça; assumir o que é dele não custa quase nada.
 
 Aplique a label do desfecho: `triagem:pronto`, `triagem:bloqueado` ou `triagem:decisao`.
 
@@ -889,6 +942,20 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
 9. `NÃO MEDIDO` ausente. É campo obrigatório.
 10. Exigir sem medir (passe 7).
 11. Tratar rede de segurança como durável só porque existe. Tag, backup e réplica também se medem.
+12. **Ler este arquivo do disco.** É o modo de falha nº 1 aplicado ao próprio procedimento, e ele
+    foi cometido em 08/09/2026: a árvore de trabalho estava numa branch cujo `TRIAGEM.md` tinha
+    **319 linhas** enquanto o do `origin/main` tinha **1800**. Vinte seções nunca foram lidas —
+    inclusive o 0-bis, que a triagem reinventou do zero achando que era passe novo. A primeira linha
+    da sessão é `git show origin/main:triagem/TRIAGEM.md`, e o controle é `wc -l` nos dois.
+13. `gh run view --log-failed` devolve *"run is still in progress"* enquanto **outro job do mesmo
+    run** estiver pendente — e isso lê como "não consegui medir". Meça pelo job (`--job <id> --log`)
+    ou espere o run inteiro fechar.
+14. Contar o vermelho do CI pela lembrança em vez do rodapé de agora. Um veredito de 08/09/2026
+    dizia dois portões vermelhos quando eram **três**: o `e2e` estava pendente na hora da medição,
+    fechou vermelho depois, e ficou em `NÃO MEDIDO`. **Reconfira `gh pr checks` imediatamente antes
+    de publicar** — o alvo se move enquanto você escreve.
+15. Publicar afirmação apoiada em ausência de registro público (passe 7).
+16. Cobrar do contribuidor bloqueador cuja guarda nossa estava cega (passe 9).
 12. **Fila medida em paralelo satura a máquina, e a saturação mente em vermelho.** Medido em
     2026-09-03: sete agentes de triagem rodando ao mesmo tempo levaram o `load average` de 0,9 para
     **90,7**, e nesse regime o `next build` morreu duas vezes com `ELIFECYCLE 143` — `SIGTERM`, não

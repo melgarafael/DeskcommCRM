@@ -6151,6 +6151,12 @@ export const DICIONARIO: Traducoes = {
   "Duração": { es: "Duración" },
   "Quem atende": { es: "Quién atiende" },
   "O que se pode marcar, quanto dura e quem atende. É isto que a tela de marcar e o agente de IA oferecem ao cliente.": { es: "Qué se puede agendar, cuánto dura y quién atiende. Esto es lo que la pantalla de agendar y el agente de IA le ofrecen al cliente." },
+  "Avisar o cliente antes do compromisso, pelo WhatsApp": { es: "Avisar al cliente antes de la cita, por WhatsApp" },
+  "Quantos minutos antes": { es: "Cuántos minutos antes" },
+  "avisa o cliente": { es: "avisa al cliente" },
+  "antes": { es: "antes" },
+  "O lembrete precisa sair pelo menos 15 minutos antes do compromisso.": { es: "El recordatorio debe salir al menos 15 minutos antes de la cita." },
+  "O lembrete não pode sair mais de 7 dias (10080 minutos) antes.": { es: "El recordatorio no puede salir más de 7 días (10080 minutos) antes." },
   "Ação contém": { es: "La acción contiene" },
   "Ator": { es: "Actor" },
   "Nenhum log no período.": { es: "Ningún registro en el período." },
@@ -8214,6 +8220,17 @@ export const DICIONARIO: Traducoes = {
   "Sua reunião está marcada para": { es: "Tu reunión está programada para" },
   "Link do Google Meet:": { es: "Enlace de Google Meet:" },
 
+
+  // ─── app/api/v1/cron/agenda-reminder (o lembrete que sai no WhatsApp) ───
+  //
+  // Não é tela: é mensagem que sai para o telefone de um cliente. Sem estas
+  // entradas, uma instalação em espanhol mandaria a frase em português com a
+  // data em espanhol — a mesma metade-traduzida que o guarda de data proíbe,
+  // só que irreversível, porque a mensagem já saiu. `às` já existia acima.
+  "Oi,": { es: "¡Hola," },
+  "Oi!": { es: "¡Hola!" },
+  "Passando pra lembrar do seu compromisso:": { es: "Te recuerdo tu cita:" },
+  "Endereço": { es: "Dirección" },
 
   // ─── lib/ai/pontos/resolver.ts (avisos do painel de Provedores de IA) ───
   "Este ponto usa o modelo definido na versão publicada do agente; a escolha do painel não se aplica.": {
