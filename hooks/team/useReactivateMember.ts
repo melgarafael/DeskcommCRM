@@ -1,8 +1,10 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { useT } from "@/hooks/i18n/useT";
 import type { TeamMember } from "@/hooks/team/useTeamMembers";
 
 const MEMBERS_KEY = ["team", "members"] as const;
@@ -26,6 +28,7 @@ const MEMBERS_KEY = ["team", "members"] as const;
  */
 export function useReactivateMember() {
   const qc = useQueryClient();
+  const t = useT();
   return useMutation({
     mutationFn: async (userId: string) =>
       apiClient.post<{
@@ -51,6 +54,12 @@ export function useReactivateMember() {
       // servidor recusou reativar — pior que não ter atualizado.
       if (context?.previous) qc.setQueryData(MEMBERS_KEY, context.previous);
       showApiError(err);
+    },
+    onSuccess: () => {
+      // Revogar avisa; devolver nao avisava. Achado pela tela: quem clicava
+      // ficava sem confirmacao de que o clique valeu — e a acao e justamente
+      // a que a pessoa faz com receio de ter errado.
+      toast.success(t("Acesso devolvido."));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["team"] });
