@@ -9,11 +9,17 @@
 
 ## Status atual
 
-- **Fase:** todas as fases entregues em `feat/banco-externo-do-agente`. Verificação pendente no CI (`test:db`, `test:e2e`, `gov:verify` completo).
-- **Última atualização:** 2026-09-11
-- **Próximo passo concreto:** abrir o PR e deixar o CI rodar os gates de banco e E2E; conferir `invariants`/`e2e` na branch protection.
-- **Bloqueios:** nenhum de código. Dívidas declaradas: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature) e os gates de banco/E2E não rodaram neste host.
-- **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commit da Fase 1: `73a274ef` (o hash da Fase 2 não fica aqui: seria autorreferente — vive no diário em `/root/arquivos/deskcomm-banco-externo.md`).
+- **Fase:** todas as fases entregues em `feat/banco-externo-do-agente`. **PR #1 aberto** (`vgamkt/DeskcommCRM`, base `main`), `mergeable: clean`, e **CI 100% verde** no head `3864c756`. Ainda **não mergeado**.
+- **Última atualização:** 2026-09-11 (noite)
+- **Próximo passo concreto:** mergear o **PR #1** na `main` do fork e, em seguida, o **deploy** (namespace das imagens: o fork publica em `ghcr.io/vgamkt/…`, mas o `.env` desta VPS e o `_common.sh` ainda apontam para o upstream `ghcr.io/melgarafael`).
+- **Bloqueios:** nenhum de código. Dívidas declaradas: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature) e o deploy não feito.
+- **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commits: `73a274ef` (schema) → `2d411302` → `f994fa15` → `d750a2b8` → `6189887c` → `42e99715` → `7e8e2bbf` → `8f145f18` → `3864c756` (HEAD). Histórico detalhado no diário em `/root/arquivos/deskcomm-banco-externo.md`.
+
+### Resolvido (2026-09-11) — pacote das tools
+
+`8f145f18` colocou as duas tools do banco externo em `atender` (e `vender`/`reter`), elevando "Atender" de 18 para 20 e reprovando o `e2e`: a jornada de teto pressupõe 18 (`8 + 18 = 26 > 25` → faltam 1; desligar uma do seed deixa `7 + 18 = 25`, exato). Com 20 vira `28` (faltam 3) e o teste libera só 1 vaga.
+
+**Correção `3864c756`:** as duas tools são de **fonte de dados**, não de conversa, e passam a pertencer **só a `organizar`**. "Atender" volta a 18 e a jornada do teste volta a valer. Arquivos: `lib/mcp/tools/catalogo/dados-externos.ts` e `tests/e2e/capacidades-do-agente.spec.ts`. CI verde.
 
 ---
 
@@ -165,7 +171,7 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 
 ### Fase 4 — Tela
 
-- [x] Entrada em `lib/navigation/catalogo.ts` — grupo `organizacao`, section `Dados e acesso`, `icon: PlugsConnected`, sem `minRole` (D2: todos veem). **SEM `sidebar`**: tarefa de uma vez, fica no hub (mesma decisão de Marca — o menu já estourou a dobra antes)
+- [x] Entrada em `lib/navigation/catalogo.ts` — grupo `organizacao`, section **`Fontes de dados`** (corrigido em `8f145f18`: era `Dados e acesso`, seção admin-only que some para `viewer` e não pode reaparecer para quem não administra; a tela é de todos — D2), `icon: PlugsConnected`, sem `minRole`. **SEM `sidebar`**: tarefa de uma vez, fica no hub (mesma decisão de Marca — o menu já estourou a dobra antes)
 - [x] `app/app/integracao-dados/page.tsx` — lista de conexões + formulário (admin); leitura pela sessão (RLS), não service role
 - [x] `app/app/integracao-dados/[id]/page.tsx` — árvore de tabelas por schema + grade paginada, com ordenação por coluna e marcação de PK
 - [x] Estados vazio/erro/loading; senha **nunca** exibida após salva (o formulário nasce vazio no campo de senha)
@@ -180,12 +186,14 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 - [x] Limite de linhas/bytes devolvidos ao modelo (teto de bytes na página) + aviso anti prompt-injection
 - [x] Auditoria sem PII: `McpToolDefinition.redigirParaAuditoria` tira os valores de filtro do `api_audit_log`; `organizationId` sempre de `ctx`
 - [x] Unit provando que a tool recusa tabela inexistente e que a leitura passa por `BEGIN READ ONLY` (núcleo `consultar`, coberto em `introspeccao.test.ts`). Sem allowlist (D6)
+- [x] Pacote das tools: `8f145f18` as pôs em `atender`/`vender`/`reter`; `3864c756` corrigiu para **só `organizar`** (são capacidades de fonte de dados). "Atender" volta a 18 (17 automáticas + 1 crítica): `8 + 18 = 26 > 25` → faltam 1; `7 + 18 = 25` aplica
 
 ### Fase 6 — Verificação e distribuição
 
+- [x] CI do PR #1, head `3864c756`: **todos os checks verdes** — `verify`, `invariants`, `build-and-size`, `imagens-ok` (+ 3 imagens), `e2e` (as 3 partes) e `publish-image` (build-only). Rodadas anteriores (`42e99715`, `7e8e2bbf`) corrigidas por `7e8e2bbf` (typecheck/RLS/RBAC), `8f145f18` (marca/i18n/nav/tailwind/e2e) e `3864c756` (pacote das tools)
 - [x] `tsc --noEmit` e `eslint` zerados (via Docker); `lint:channels` e `lint:role-rank` ok
 - [x] Subconjunto unitário relevante verde (310 testes: external-db, tools, catálogo, pacotes, navegação, mapas, service-boundary). A suíte `test:unit` INTEIRA não terminou dentro do tempo deste host (sem Node) — vai no CI
-- [ ] `pnpm test:db` (RLS) · `pnpm test:e2e` (tela + navegação) — NÃO rodaram aqui (sem app/DB); vão no CI
+- [x] `pnpm test:db` (RLS) e `pnpm test:e2e` (tela + navegação) — não rodam no host (sem app/DB), mas rodaram **verdes no CI** (`invariants` e `e2e`, head `3864c756`)
 - [ ] `pnpm gov:verify` completo — não rodou ponta a ponta pela mesma razão; as partes rodadas estão verdes
 - [x] Fragmento em `.changes/dados-externos-do-agente.md` (`capacidade_nova`/`adicionado`), conferido com `release:conferir` (exit 0)
 - [x] Doc em `docs/specs/18-spec-banco-de-dados-externo.md`. Sem env var nova; o padrão novo (`redigirParaAuditoria`) está documentado no `lib/mcp/types.ts` e na spec
