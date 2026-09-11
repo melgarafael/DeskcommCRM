@@ -23274,6 +23274,67 @@ update public.channel_sessions
 
 notify pgrst,'reload schema';
 
+-- ---- guarda contra replay do gateway do Supabase (migration 0237) ----
+-- O gateway entre o Cloudflare e o PostgREST reexecuta resposta 5xx sem limite.
+-- Um `raise ... errcode='40001'` (conflito benigno) vira HTTP 500 no PostgREST;
+-- 8 requisições de dois dias antes, reexecutadas ~280×/s cada, ocuparam o pool
+-- inteiro, o schema cache não carregou e TODA requisição virou 503 PGRST002 —
+-- o produto inteiro em "Algo deu errado" (2026-09-11). Este hook responde 409 a
+-- requisição cujo `sb-request-id` (UUIDv7) tem mais de 5 minutos: 4xx não é
+-- reexecutado. Idempotente: `create or replace`, grants e `alter role` repetíveis.
+create or replace function public.fn_pgrst_recusar_replay_do_gateway()
+returns void
+language plpgsql
+stable
+set search_path = ''
+as $$
+declare
+  rid text;
+  aceito_ha interval;
+begin
+  rid := coalesce(nullif(current_setting('request.headers', true), '')::jsonb ->> 'sb-request-id', '');
+  -- Só UUIDv7 (versão 7 no 3º grupo) carrega instante; qualquer outro formato passa.
+  if rid !~ '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-' then
+    return;
+  end if;
+  aceito_ha := now() - to_timestamp((('x' || replace(left(rid, 13), '-', ''))::bit(48)::bigint) / 1000.0);
+  if aceito_ha > interval '5 minutes' then
+    raise exception 'gateway_replay'
+      using errcode = 'PT409',
+            detail  = format('sb-request-id %s foi aceito pelo gateway há %s', rid, aceito_ha),
+            hint    = 'A requisição original já expirou; esta é uma reexecução do gateway de uma resposta 5xx antiga.';
+  end if;
+exception
+  when sqlstate 'PT409' then
+    raise;
+  when others then
+    -- A guarda nunca derruba uma requisição por defeito próprio (cabeçalho fora do esperado etc.).
+    return;
+end;
+$$;
+
+comment on function public.fn_pgrst_recusar_replay_do_gateway() is
+  'pgrst.db_pre_request: responde 409 a requisição que o gateway do Supabase reexecuta há >5 min (sb-request-id UUIDv7 velho), para não alimentar o loop de retry de 5xx que esgota o pool do PostgREST.';
+
+-- Roda sob o papel da REQUISIÇÃO (anon/authenticated/service_role), então os três
+-- precisam de EXECUTE; sem isso a própria guarda vira "permission denied" → 5xx.
+-- Não é definer e não lê nada além dos GUCs da requisição: expô-la não amplia nada.
+revoke all on function public.fn_pgrst_recusar_replay_do_gateway() from public, anon;
+grant execute on function public.fn_pgrst_recusar_replay_do_gateway() to anon, authenticated, service_role;
+
+-- O papel `authenticator` só existe onde há PostgREST (Supabase). No Postgres
+-- descartável do `test:db` não existe, e um ALTER ROLE sem guarda derrubaria o
+-- install fresco (ON_ERROR_STOP=1).
+do $$
+begin
+  if to_regrole('authenticator') is not null then
+    execute $c$alter role authenticator set pgrst.db_pre_request = 'public.fn_pgrst_recusar_replay_do_gateway'$c$;
+  end if;
+end $$;
+
+notify pgrst, 'reload config';
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
