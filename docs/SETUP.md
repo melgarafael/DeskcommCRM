@@ -8,6 +8,38 @@
 
 ---
 
+## Instalação local em Ubuntu/VM (PostgreSQL + serviços em Docker)
+
+Para uma instalação reproduzível sem Supabase Cloud, execute na raiz do clone:
+
+```bash
+chmod +x ubuntu-local-installer.sh
+./ubuntu-local-installer.sh
+```
+
+O instalador sobe o Supabase local em Docker (PostgreSQL com `pgvector`, Auth,
+PostgREST, Storage e Realtime), aplica `supabase/baseline.sql`, e inicia o app,
+worker, scheduler, WAHA e Redis/SRH pelo `docker-compose.local.yml`. As chaves
+ficam somente em `.env.local`, que não é versionado. O primeiro build pode levar
+alguns minutos e precisa de espaço para as imagens do Supabase e do WAHA.
+
+Depois, use os atalhos:
+
+```bash
+pnpm local:status
+pnpm local:logs          # ou: bash scripts/local-stack.sh logs worker
+pnpm local:down
+pnpm local:up
+```
+
+O endereço e a porta são mostrados ao final do instalador. Se a porta 3000 já
+estiver ocupada, ele escolhe a próxima porta livre. O painel local do Supabase
+fica em `http://127.0.0.1:54323` e o WAHA em `http://127.0.0.1:3030`.
+
+> A cadeia histórica de migrations contém dependências antigas e não é usada
+> para uma instalação fresca. O helper inicia a infraestrutura sem aplicá-la e
+> carrega o baseline versionado, que é o artefato de instalação do self-host.
+
 ## Índice
 
 1. [Antes de começar](#antes-de-começar)

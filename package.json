@@ -33,6 +33,10 @@
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm lint:role-rank && pnpm test:unit",
     "worker": "tsx --env-file=.env --env-file=.env.local workers/agent-worker/main.ts",
     "dev:crons": "tsx --env-file=.env --env-file=.env.local scripts/dev-crons.ts",
+    "local:up": "bash scripts/local-stack.sh up",
+    "local:down": "bash scripts/local-stack.sh down",
+    "local:status": "bash scripts/local-stack.sh status",
+    "local:logs": "bash scripts/local-stack.sh logs",
     "flywheel:judge": "tsx --env-file=.env --env-file=.env.local scripts/flywheel-judge-live.ts"
   },
   "dependencies": {

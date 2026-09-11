@@ -1,0 +1,130 @@
+# Stack local completa para desenvolvimento e VM Ubuntu.
+#
+# O Supabase local é gerenciado pelo `supabase start` e roda em Docker com os
+# serviços oficiais de Postgres, Auth, PostgREST, Storage e Realtime. Este
+# arquivo sobe os serviços da aplicação na mesma máquina, usando as portas
+# publicadas pelo Supabase local.
+#
+# Uso: bash scripts/local-stack.sh up
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    image: deskcomm-app:local
+    pull_policy: never
+    restart: unless-stopped
+    env_file: ${LOCAL_ENV_FILE:-.env.local}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      waha:
+        condition: service_healthy
+      srh:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    image: deskcomm-worker:local
+    pull_policy: never
+    restart: unless-stopped
+    env_file: ${LOCAL_ENV_FILE:-.env.local}
+    environment:
+      WAHA_API_BASE_URL: http://waha:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      waha:
+        condition: service_healthy
+    ports:
+      - "8787:8787"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    image: deskcomm-scheduler:local
+    pull_policy: never
+    restart: unless-stopped
+    env_file: ${LOCAL_ENV_FILE:-.env.local}
+    environment:
+      TZ: UTC
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+    depends_on:
+      app:
+        condition: service_healthy
+
+  waha:
+    image: devlikeapro/waha:latest-2026.7.2
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    environment:
+      # O WAHA recebe o hash com o prefixo para hashear a chave plaintext
+      # enviada pelo app em X-Api-Key.
+      WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512}"
+      WHATSAPP_HOOK_URL: http://host.docker.internal:${APP_PORT:-3000}/api/v1/webhooks/waha
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,session.status,state.change"
+      WHATSAPP_HOOK_HMAC: ${WAHA_HMAC_SECRET}
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WAHA_DASHBOARD_ENABLED: "true"
+      WHATSAPP_RESTART_ALL_SESSIONS: "True"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - waha-data:/app/.sessions
+      - waha-media:/app/.media
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  srh:
+    image: hiett/serverless-redis-http@sha256:5b0bb9239fce53abf87b2018a7a0deb9ec7bd900c5360738fe5fbeeb426f9150
+    restart: unless-stopped
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${SRH_TOKEN}
+      SRH_CONNECTION_STRING: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  waha-data:
+  waha-media:
