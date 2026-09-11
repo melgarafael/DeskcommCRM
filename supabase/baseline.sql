@@ -18957,8 +18957,36 @@ begin
     insert into public.user_organizations(organization_id, user_id, role, invited_by, invited_at, accepted_at, interface_settings)
       values (p_org, p_user, p_role, p_invited_by, p_invited_at, now(), p_interface_settings) returning * into m;
   end if;
+
+  -- O DONO ASSUMIU: o criador provisório sai. Depois do vínculo do dono estar
+  -- gravado, nunca antes — a organização não pode ficar sem ninguém no meio.
+  if p_role = 'admin' then
+    delete from public.attendant_availability av
+      using public.organizations o
+      where o.id = p_org
+        and av.organization_id = p_org
+        and av.user_id = o.created_by
+        and av.user_id <> p_user
+        and exists (select 1 from public.user_organizations uo
+                     where uo.organization_id = p_org and uo.user_id = o.created_by
+                       and uo.invited_at is null)
+        and exists (select 1 from public.platform_admins pa
+                     where pa.user_id = o.created_by and pa.revoked_at is null);
+
+    delete from public.user_organizations uo
+      using public.organizations o
+      where o.id = p_org
+        and uo.organization_id = p_org
+        and uo.user_id = o.created_by
+        and uo.user_id <> p_user
+        and uo.invited_at is null
+        and exists (select 1 from public.platform_admins pa
+                     where pa.user_id = o.created_by and pa.revoked_at is null);
+  end if;
+
   return jsonb_build_object('id', m.id, 'changed', true);
 end $$;
+
 revoke all on function public.fn_accept_team_invite(uuid, uuid, text, uuid, timestamptz, timestamptz, jsonb) from public, anon, authenticated;
 grant execute on function public.fn_accept_team_invite(uuid, uuid, text, uuid, timestamptz, timestamptz, jsonb) to service_role;
 
@@ -23967,3 +23995,35 @@ grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
 grant execute on function public.fn_encrypt_oauth(text) to service_role;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_update_budget_consumption() to service_role;
+
+-- ---- Criador do tenant sai quando o dono assume (migration 0237) ----
+-- A função acima já saiu com a regra; isto é o expurgo dos vínculos que
+-- nasceram antes dela. Idempotente: um banco sem nenhum caso apaga zero linhas,
+-- e reaplicar não tem o que apagar de novo.
+delete from public.attendant_availability av
+  using public.organizations o
+  where av.organization_id = o.id
+    and av.user_id = o.created_by
+    and exists (select 1 from public.user_organizations uo
+                 where uo.organization_id = o.id and uo.user_id = o.created_by
+                   and uo.invited_at is null)
+    and exists (select 1 from public.platform_admins pa
+                 where pa.user_id = o.created_by and pa.revoked_at is null)
+    and exists (select 1 from public.user_organizations dono
+                 where dono.organization_id = o.id and dono.user_id <> o.created_by
+                   and dono.role = 'admin' and dono.accepted_at is not null
+                   and dono.revoked_at is null);
+
+delete from public.user_organizations uo
+  using public.organizations o
+  where uo.organization_id = o.id
+    and uo.user_id = o.created_by
+    and uo.invited_at is null
+    and exists (select 1 from public.platform_admins pa
+                 where pa.user_id = o.created_by and pa.revoked_at is null)
+    and exists (select 1 from public.user_organizations dono
+                 where dono.organization_id = o.id and dono.user_id <> o.created_by
+                   and dono.role = 'admin' and dono.accepted_at is not null
+                   and dono.revoked_at is null);
+
+notify pgrst, 'reload schema';

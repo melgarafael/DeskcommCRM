@@ -59,6 +59,62 @@ describe("organização criada leva acesso e convite seguro", () => {
         raise exception 'legacy restored revocation'; exception when insufficient_privilege then null; end;
     end $$;`));
 
+  /**
+   * O CRIADOR SAI QUANDO O DONO ASSUME (migration 0237).
+   *
+   * `fn_create_tenant_with_owner` inscreve o criador como admin aceito — e é
+   * necessário, senão a organização nasce sem ninguém dentro. O que faltava era
+   * a saída: nada nunca o tirava de lá, e numa revenda o cliente encontrava o
+   * e-mail pessoal do revendedor listado como colega na própria Equipe.
+   *
+   * O instante da saída é a entrega: o dono aceitar o convite. Antes dele a
+   * organização precisa de alguém; depois dele o criador não tem o que fazer.
+   */
+  it("o criador SAI quando o dono assume — e a organização não fica vazia", () => prove(`
+    do $$ declare r jsonb; org uuid; begin
+      r := ${call}; org := (r->>'id')::uuid;
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 1
+        then raise exception 'criador nao entrou na criacao'; end if;
+      perform public.fn_accept_team_invite('${guest}',org,'admin','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 0
+        then raise exception 'criador continuou no tenant do cliente'; end if;
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${guest}' and role='admin' and revoked_at is null) <> 1
+        then raise exception 'dono nao assumiu'; end if;
+      -- A ordem importa: o vínculo do dono é gravado ANTES de o criador sair.
+      -- Invertida, existiria um instante com a organização sem ninguém.
+      if (select count(*) from public.user_organizations where organization_id=org and revoked_at is null) < 1
+        then raise exception 'organizacao ficou vazia'; end if;
+    end $$;`));
+
+  it("papel que NÃO é o do dono não expulsa o criador — colega entrando não é entrega", () => prove(`
+    do $$ declare r jsonb; org uuid; begin
+      r := ${call}; org := (r->>'id')::uuid;
+      perform public.fn_accept_team_invite('${guest}',org,'agent','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 1
+        then raise exception 'criador saiu por um convite que nao era a entrega'; end if;
+    end $$;`));
+
+  it("vínculo que veio de CONVITE não é confundido com o da criação", () => prove(`
+    do $$ declare r jsonb; org uuid; begin
+      r := ${call}; org := (r->>'id')::uuid;
+      -- O criador passa a ter vínculo de convite aceito (invited_at preenchido):
+      -- deixa de casar com a regra, que só alcança quem entrou pela criação.
+      update public.user_organizations set invited_at = now() - interval '2 minutes'
+        where organization_id=org and user_id='${actor}';
+      perform public.fn_accept_team_invite('${guest}',org,'admin','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 1
+        then raise exception 'expulsou quem tinha convite de verdade'; end if;
+    end $$;`));
+
+  it("criador que NÃO é platform admin não é tocado", () => prove(`
+    do $$ declare r jsonb; org uuid; begin
+      r := ${call}; org := (r->>'id')::uuid;
+      update public.platform_admins set revoked_at = now() where user_id='${actor}';
+      perform public.fn_accept_team_invite('${guest}',org,'admin','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 1
+        then raise exception 'regra alcancou quem nao e dono do servidor'; end if;
+    end $$;`));
+
   it("convidado só enxerga organização aceita, com RLS real", () => prove(`
     select ${call};
     insert into public.organizations(slug,display_name,legal_name) values ('outra-0218','Outra','Outra');
