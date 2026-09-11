@@ -21,6 +21,7 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
+import { sinalDeConversaSobreGrade } from '@/lib/academia/consulta-grade';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -118,6 +119,12 @@ export async function previewGateContext(
     openedCaseThisTurn: false,
     humanPromiseExtraTargets: p.agent.handoffKeywords,
     agenda: { active: p.agent.toolIds.includes('crm_book_appointment'), toolCalledThisTurn: false },
+    academiaGrade: {
+      active:
+        p.agent.toolIds.includes('crm_find_academia_classes') &&
+        sinalDeConversaSobreGrade(p.context.context.messages),
+      toolCalledThisTurn: false,
+    },
     internalVocabularyEnforced: true,
   };
 }
@@ -126,6 +133,7 @@ const SCENARIO_READS = new Set([
   'crm_list_stages',
   'crm_list_appointment_types',
   'crm_find_free_slots',
+  'crm_find_academia_classes',
 ]);
 /** Unknown tools fail closed. A write proposal never calls its original execute. */
 export function applyPreviewPolicy(

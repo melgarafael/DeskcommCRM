@@ -139,6 +139,42 @@ it('refreshes agenda read state for each candidate while writes stay proposals',
   await execute(tools, 'send_message', { body: 'Vou verificar o horário para você.' });
   expect(p.result.candidates).toHaveLength(1);
 });
+
+it('consulta a grade real no cenário e só libera o horário depois da execução', async () => {
+  const p = preview();
+  let called = false;
+  const ctx = {
+    ...gate(),
+    academiaGrade: { active: true, toolCalledThisTurn: false },
+  };
+  const tools = applyPreviewPolicy(
+    {
+      crm_find_academia_classes: definition(() => {
+        called = true;
+        return { ok: true, aulas: [{ modalidade: 'CrossFit', inicio: '08:00' }] };
+      }),
+      send_message: definition(vi.fn()),
+    },
+    p,
+    ctx,
+    () => [],
+    undefined,
+    () => ({
+      academiaGrade: { active: true, toolCalledThisTurn: called },
+    }),
+  );
+
+  await execute(tools, 'send_message', { body: 'O CrossFit de segunda-feira é às 08:00.' });
+  expect(p.result.impediments.some((i) => i.code === 'academia_grade_stall_sem_ferramenta')).toBe(
+    true,
+  );
+
+  await execute(tools, 'crm_find_academia_classes', { modalidade: 'CrossFit', dia_semana: 1 });
+  expect(called).toBe(true);
+  await execute(tools, 'send_message', { body: 'O CrossFit de segunda-feira é às 08:00.' });
+  expect(p.result.candidates).toHaveLength(1);
+});
+
 it('uses only supplied in-memory sample contact in sandbox', () => {
   const context = scenarioContext([], { name: 'Maria Cenário', phone: '+5511999999999' });
   expect(context.context.contact.name).toBe('Maria Cenário');

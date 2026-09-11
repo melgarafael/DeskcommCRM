@@ -1,5 +1,6 @@
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
+import { sinalDeConversaSobreGrade } from '@/lib/academia/consulta-grade';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
@@ -807,6 +808,22 @@ const AGENDA_TOOL_NAMES = new Set([
   'crm_book_appointment',
   'crm_reschedule_appointment',
 ]);
+
+/**
+ * Bloco residente da grade semanal. A fonte é sempre a tool estruturada; o modelo não deve
+ * tentar reconstruir horários pelo histórico ou pelo conhecimento vetorial. Datas específicas
+ * (feriado, cancelamento, substituição) não são fatos da grade recorrente e pedem atendimento.
+ */
+const ACADEMIA_GRADE_SYSTEM_BLOCK =
+  '## Grade semanal da academia — consulte antes de responder\n' +
+  'Quando o lead perguntar por modalidade, dia da semana, período ou público de uma aula, chame ' +
+  'crm_find_academia_classes NESTE turno e responda somente com os dados retornados. Não invente, ' +
+  'não use o histórico como fonte e não diga que vai verificar depois. Professor "A definir" é ' +
+  'informação pendente, mas não invalida os demais dados da aula. A consulta representa a semana ' +
+  'recorrente; para uma data específica, feriado, cancelamento ou substituição, explique esse ' +
+  'limite e use request_human_handoff para confirmar com a equipe.';
+
+const ACADEMIA_GRADE_TOOL_NAMES = new Set(['crm_find_academia_classes']);
 
 export interface InboundTurnKnobs {
   /** últimas N mensagens no contexto de abertura (LEAD_CONTEXT_HISTORY_LIMIT) */
@@ -1873,6 +1890,9 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
   }
+  if (agentConfig !== null && agentConfig.toolIds.includes('crm_find_academia_classes')) {
+    blocosResidentes.push(ACADEMIA_GRADE_SYSTEM_BLOCK);
+  }
   if (preview)
     blocosResidentes.push(
       'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',
@@ -2234,6 +2254,7 @@ async function executarTurnoDoAgente(
   // as tools do modelo rodam em passos anteriores do mesmo loop, o valor já está certo
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
+  let academiaGradeToolCalledThisTurn = false;
   const outcomes: ChannelSendResult[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -2252,6 +2273,10 @@ async function executarTurnoDoAgente(
   // para decidir se a tool entra no turno (mesmo padrão de gate de search_knowledge/
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
   const skillSignal = latestInboundSignal(effectiveContext.messages);
+  const academiaGradeRequestActive =
+    agentConfig !== null &&
+    agentConfig.toolIds.includes('crm_find_academia_classes') &&
+    sinalDeConversaSobreGrade(effectiveContext.messages);
   const skillMatch = matchSkills(skills, skillSignal);
   const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
@@ -2619,6 +2644,10 @@ async function executarTurnoDoAgente(
             agenda: {
               active: agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment'),
               toolCalledThisTurn: agendaToolCalledThisTurn,
+            },
+            academiaGrade: {
+              active: academiaGradeRequestActive,
+              toolCalledThisTurn: academiaGradeToolCalledThisTurn,
             },
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
@@ -3289,14 +3318,17 @@ async function executarTurnoDoAgente(
           mcpCleanup = mcp.cleanup;
           for (const [name, mcpTool] of Object.entries(mcp.tools)) {
             if (name in rawTools) continue;
-            // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
-            // precisa saber para não vetar um turno que já checou a agenda de verdade.
-            if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
+            // Marca a EXECUÇÃO (não só a decisão de chamar): os gates devem distinguir uma
+            // capacidade publicada de uma consulta que realmente ocorreu neste turno.
+            const marcaAgenda = AGENDA_TOOL_NAMES.has(name);
+            const marcaGradeAcademia = ACADEMIA_GRADE_TOOL_NAMES.has(name);
+            if ((marcaAgenda || marcaGradeAcademia) && typeof mcpTool.execute === 'function') {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
               rawTools[name] = {
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
-                  agendaToolCalledThisTurn = true;
+                  if (marcaAgenda) agendaToolCalledThisTurn = true;
+                  if (marcaGradeAcademia) academiaGradeToolCalledThisTurn = true;
                   return executeOriginal(...args);
                 }) as typeof mcpTool.execute,
               };
@@ -3373,7 +3405,16 @@ async function executarTurnoDoAgente(
             },
             () => pendingCitations,
             semanticClassifier,
-            () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
+            () => ({
+              agenda: {
+                active: previewContext.agenda?.active ?? false,
+                toolCalledThisTurn: agendaToolCalledThisTurn,
+              },
+              academiaGrade: {
+                active: previewContext.academiaGrade?.active ?? false,
+                toolCalledThisTurn: academiaGradeToolCalledThisTurn,
+              },
+            }),
           )
         : rawTools;
     const tools = wrapToolsWithBreaker(previewTools, {
