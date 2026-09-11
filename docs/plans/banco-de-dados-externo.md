@@ -9,10 +9,10 @@
 
 ## Status atual
 
-- **Fase:** 5 — tool do agente (concluída) · próxima: Fase 6 — verificação e distribuição
+- **Fase:** todas as fases entregues em `feat/banco-externo-do-agente`. Verificação pendente no CI (`test:db`, `test:e2e`, `gov:verify` completo).
 - **Última atualização:** 2026-09-11
-- **Próximo passo concreto:** Fase 6 — `pnpm gov:verify` (typecheck/lint/test:unit), `pnpm test:db`, `pnpm test:e2e`, fragmento em `.changes/`, doc em `docs/specs/` e memória viva.
-- **Bloqueios:** nenhum. Dívidas: `lib/database.types.ts` não regenerado (clients untyped; arquivo já desatualizado além desta feature); `test:db`/`test:e2e` não rodaram neste host (sem app/DB) — vão no CI.
+- **Próximo passo concreto:** abrir o PR e deixar o CI rodar os gates de banco e E2E; conferir `invariants`/`e2e` na branch protection.
+- **Bloqueios:** nenhum de código. Dívidas declaradas: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature) e os gates de banco/E2E não rodaram neste host.
 - **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commit da Fase 1: `73a274ef` (o hash da Fase 2 não fica aqui: seria autorreferente — vive no diário em `/root/arquivos/deskcomm-banco-externo.md`).
 
 ---
@@ -183,12 +183,13 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 
 ### Fase 6 — Verificação e distribuição
 
-- [ ] `pnpm typecheck` · `pnpm lint` · `pnpm test:unit`
-- [ ] `pnpm test:db` (RLS) · `pnpm test:e2e` (tela + navegação)
-- [ ] `pnpm gov:verify`
-- [ ] Fragmento em `.changes/` (`capacidade_nova` ou `exige_acao`), conferido com `pnpm release:conferir`
-- [ ] Doc em `docs/specs/` + atualizar `AGENTS.md`/`CLAUDE.md` se criar env var ou padrão novo
-- [ ] Registrar na memória viva (`docs/architecture/`) com ≥2 arestas (Living System Checklist)
+- [x] `tsc --noEmit` e `eslint` zerados (via Docker); `lint:channels` e `lint:role-rank` ok
+- [x] Subconjunto unitário relevante verde (310 testes: external-db, tools, catálogo, pacotes, navegação, mapas, service-boundary). A suíte `test:unit` INTEIRA não terminou dentro do tempo deste host (sem Node) — vai no CI
+- [ ] `pnpm test:db` (RLS) · `pnpm test:e2e` (tela + navegação) — NÃO rodaram aqui (sem app/DB); vão no CI
+- [ ] `pnpm gov:verify` completo — não rodou ponta a ponta pela mesma razão; as partes rodadas estão verdes
+- [x] Fragmento em `.changes/dados-externos-do-agente.md` (`capacidade_nova`/`adicionado`), conferido com `release:conferir` (exit 0)
+- [x] Doc em `docs/specs/18-spec-banco-de-dados-externo.md`. Sem env var nova; o padrão novo (`redigirParaAuditoria`) está documentado no `lib/mcp/types.ts` e na spec
+- [x] Memória viva: `docs/architecture/banco-de-dados-externo.architecture.json` (17 peças, 28 arestas) + linha no README; gate `mapas-de-arquitetura` verde
 
 ### Fora de escopo (backlog)
 
