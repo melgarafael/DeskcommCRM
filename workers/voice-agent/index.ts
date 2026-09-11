@@ -45,6 +45,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveVoiceAgent } from "@/lib/ai/agents";
 import { resolveOrCreateCallerContact } from "@/lib/voip/resolve-caller";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
+import { buscarConhecimento, resolverAcervoDoAgente } from "@/lib/ai/knowledge/busca";
 
 const supabaseAdmin = createAdminClient();
 
@@ -226,12 +227,39 @@ async function handleAudioSocketConnection(socket: net.Socket, uuid: string, lef
     return;
   }
 
+  // Mesmo acervo que o agente de texto (WhatsApp) já usa — reaproveita
+  // resolverAcervoDoAgente/buscarConhecimento em vez de reimplementar RAG
+  // pro canal de voz. Sem materiais publicados, a tool nem é oferecida ao
+  // modelo (ver audioSocketBridge.ts) — não custa nada e evita ele "chamar
+  // no escuro".
+  const knowledgeSourceIds = await resolverAcervoDoAgente(
+    supabaseAdmin,
+    callRow.organization_id,
+    agent.id,
+  ).catch((err) => {
+    console.error(`[audiosocket] falha ao resolver acervo do agente de voz:`, err);
+    return [] as string[];
+  });
+
   const bridge = new AudioSocketCallBridge(socket, {
     callId: callRow.id,
     organizationId: callRow.organization_id,
     agentInstructions: agent.systemPrompt,
     onTranscriptTurn: (turn) => appendAudioSocketTranscriptTurn(uuid, turn),
     onCallEnded: () => finalizeAudioSocketCall(uuid),
+    searchKnowledge:
+      knowledgeSourceIds.length > 0
+        ? async (pergunta: string) => {
+            const resultado = await buscarConhecimento(supabaseAdmin, {
+              organizationId: callRow.organization_id,
+              knowledgeSourceIds,
+              pergunta,
+              topK: 5,
+              limiar: 0.4,
+            });
+            return { trechos: resultado.trechos };
+          }
+        : undefined,
   });
 
   activeAudioSocketCalls.set(uuid, { bridge, callRowId: callRow.id, transcript: [] });

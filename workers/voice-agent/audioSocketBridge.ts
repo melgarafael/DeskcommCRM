@@ -45,13 +45,20 @@ const FRAME_TYPE = { HANGUP: 0x00, UUID: 0x01, DTMF: 0x03, AUDIO: 0x10 } as cons
  * `pumpOutboundQueue`, que drena a fila pendente antes de fechar o socket).
  */
 const ENCERRAR_CHAMADA_TOOL_NAME = "encerrar_chamada";
+const CONSULTAR_CONHECIMENTO_TOOL_NAME = "consultar_conhecimento";
 
 const INSTRUCAO_ENCERRAR_CHAMADA = `
 
 Quando a conversa chegar a uma conclusão natural (o cliente se despediu, o
 assunto foi resolvido, ou não há mais nada a tratar), diga a despedida em
 voz e, na mesma resposta, chame a function "${ENCERRAR_CHAMADA_TOOL_NAME}"
-para desligar a ligação. Não chame antes de terminar de falar a despedida.`;
+para desligar a ligação. Não chame antes de terminar de falar a despedida.
+
+Quando o cliente perguntar algo específico da empresa (preço, política,
+horário, procedimento, catálogo) que você não tem certeza, chame a function
+"${CONSULTAR_CONHECIMENTO_TOOL_NAME}" com a pergunta antes de responder — não
+invente. Se a busca não achar nada, diga que vai verificar e retornar, não
+afirme um fato sem fonte.`;
 
 export interface AudioSocketCallContext {
   callId: string;
@@ -59,6 +66,14 @@ export interface AudioSocketCallContext {
   agentInstructions: string;
   onTranscriptTurn: (turn: { speaker: "agent" | "customer"; text: string }) => void;
   onCallEnded: () => void;
+  /**
+   * Busca na base de conhecimento da org (mesmo acervo do agente de texto).
+   * `undefined` quando o agente não tem material publicado — a tool nem é
+   * oferecida ao modelo nesse caso (ver setupRealtime).
+   */
+  searchKnowledge?: (pergunta: string) => Promise<{
+    trechos: Array<{ content: string; source_name?: string | null }>;
+  }>;
 }
 
 /** Monta um frame AudioSocket (tipo + tamanho BE + payload). */
@@ -80,6 +95,10 @@ export class AudioSocketCallBridge {
   /** setado quando o modelo chama a function de encerrar — a fila de
    *  áudio pendente ainda drena normalmente antes do hangup de fato. */
   private endCallRequested = false;
+  /** call_id -> nome da function, preenchido em response.output_item.added
+   *  (onde o nome chega) e consumido em response.function_call_arguments.done
+   *  (onde os argumentos chegam completos, mas sem o nome de novo). */
+  private pendingFunctionCalls = new Map<string, string>();
 
   // Fila de PCM16 pendente pra mandar pro Asterisk + um pacer que dreia um
   // frame de 320 bytes a cada 20ms — SEM isto, "response.output_audio.delta"
@@ -206,6 +225,26 @@ export class AudioSocketCallBridge {
                   "Encerra a ligação. Use depois de dizer a despedida final ao cliente, quando a conversa chegou a uma conclusão natural.",
                 parameters: { type: "object", properties: {}, required: [] },
               },
+              ...(this.ctx.searchKnowledge
+                ? [
+                    {
+                      type: "function" as const,
+                      name: CONSULTAR_CONHECIMENTO_TOOL_NAME,
+                      description:
+                        "Busca na base de conhecimento da empresa (documentos, FAQ, políticas, catálogo) por uma pergunta específica do cliente. Use antes de responder algo que dependa de informação da empresa que você não tem certeza.",
+                      parameters: {
+                        type: "object",
+                        properties: {
+                          pergunta: {
+                            type: "string",
+                            description: "A pergunta ou tópico a buscar na base de conhecimento.",
+                          },
+                        },
+                        required: ["pergunta"],
+                      },
+                    },
+                  ]
+                : []),
             ],
             tool_choice: "auto",
           },
@@ -233,6 +272,21 @@ export class AudioSocketCallBridge {
         case "conversation.item.input_audio_transcription.completed":
           this.ctx.onTranscriptTurn({ speaker: "customer", text: event.transcript });
           break;
+        case "response.output_item.added": {
+          const item = event.item as { type?: string; call_id?: string; name?: string } | undefined;
+          if (item?.type === "function_call" && item.call_id && item.name) {
+            this.pendingFunctionCalls.set(item.call_id, item.name);
+          }
+          break;
+        }
+        case "response.function_call_arguments.done": {
+          const nome = this.pendingFunctionCalls.get(event.call_id);
+          this.pendingFunctionCalls.delete(event.call_id);
+          if (nome === CONSULTAR_CONHECIMENTO_TOOL_NAME) {
+            void this.handleKnowledgeQuery(event.call_id, event.arguments);
+          }
+          break;
+        }
         case "response.done": {
           const output = (event.response?.output ?? []) as Array<{ type?: string; name?: string }>;
           const pediuEncerrar = output.some(
@@ -269,6 +323,48 @@ export class AudioSocketCallBridge {
     this.realtimeWs.send(
       JSON.stringify({ type: "input_audio_buffer.append", audio: ulawChunk.toString("base64") }),
     );
+  }
+
+  /**
+   * Roda a busca, devolve o resultado como function_call_output e pede uma
+   * NOVA resposta (response.create) pro modelo continuar falando com a
+   * informação em mãos — sem isto o turno fica parado esperando algo que
+   * nunca chega, porque o resultado da function sozinho não dispara resposta.
+   */
+  private async handleKnowledgeQuery(callId: string, argsJson: string) {
+    let pergunta = "";
+    try {
+      pergunta = (JSON.parse(argsJson) as { pergunta?: string }).pergunta ?? "";
+    } catch {
+      // argumentos malformados -- segue com pergunta vazia, cai no "nada encontrado" abaixo
+    }
+
+    let output: string;
+    try {
+      const resultado =
+        pergunta.trim() === "" || !this.ctx.searchKnowledge
+          ? { trechos: [] }
+          : await this.ctx.searchKnowledge(pergunta);
+      output =
+        resultado.trechos.length > 0
+          ? resultado.trechos.map((t) => `[${t.source_name ?? "material"}] ${t.content}`).join("\n\n")
+          : "Nada encontrado na base de conhecimento para esta pergunta -- responda com o que você já sabe e não invente fatos.";
+    } catch (err) {
+      console.error(
+        `[realtime] call=${this.ctx.callId} busca de conhecimento falhou:`,
+        err instanceof Error ? err.message : err,
+      );
+      output = "A base de conhecimento está indisponível agora -- responda com o que você já sabe e não invente fatos.";
+    }
+
+    if (this.realtimeWs.readyState !== WebSocket.OPEN) return;
+    this.realtimeWs.send(
+      JSON.stringify({
+        type: "conversation.item.create",
+        item: { type: "function_call_output", call_id: callId, output },
+      }),
+    );
+    this.realtimeWs.send(JSON.stringify({ type: "response.create" }));
   }
 
   private outboundFramesLogged = false;
