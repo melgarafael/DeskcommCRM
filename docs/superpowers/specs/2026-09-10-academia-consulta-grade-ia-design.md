@@ -236,15 +236,17 @@ system prompt manda:
 - não transformar grade em disponibilidade, vaga ou reserva.
 
 Instrução textual não é garantia. O runtime marca a execução real da tool no
-turno, como já faz para Agenda. Um gate próprio veta, quando a capacidade está
-ativa e ainda não foi executada:
+turno, como já faz para Agenda. Um gate próprio veta quando a capacidade está
+publicada, as seis mensagens mais recentes contêm sinal de grade e a tool ainda
+não foi executada neste turno:
 
 - “vou consultar/verificar a grade e retorno” e variações medidas;
 - afirmação de horário de aula com hora explícita como se viesse da grade.
 
 O veto volta ao modelo com uma ação concreta: chamar a tool ou, se o pedido for
 uma data específica/feriado, chamar a ferramenta de handoff disponível no turno.
-O gate não é ativado para agentes sem a capacidade e não reaproveita
+Essa combinação evita atingir assuntos sem relação, como rastreio ou outra consulta
+genérica. O gate não é ativado para agentes sem a capacidade e não reaproveita
 `agendaStallGate`: compromisso individual e grade de aulas são domínios
 diferentes.
 

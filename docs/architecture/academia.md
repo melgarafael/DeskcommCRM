@@ -1,8 +1,8 @@
 # Academia opcional por empresa
 
-Entregas atuais: ativação por administrador, navegação, fronteira de acesso, cadastros básicos
-e grade semanal de referência. Exceções por data, preços e ferramentas de consulta da IA
-entram nas próximas entregas.
+Entregas atuais: ativação por administrador, navegação, fronteira de acesso, cadastros básicos,
+grade semanal de referência e consulta estruturada dessa grade pela IA. Exceções por data e
+preços entram nas próximas entregas.
 
 ```mermaid
 flowchart LR
@@ -25,8 +25,8 @@ Entrada: switch em Configurações, visível a admin. Saídas: menu/hub/busca, A
 Retorno da falha: erro de salvamento visível, nenhuma promessa de sucesso sem resposta;
 admin pode reler e retentar. Audit registra ator, empresa e valor da flag.
 Testes: modules-academia (unit e PostgreSQL), require-academia e academia-modulo-local (browser).
-O gate de ferramentas da IA será aplicado quando as primeiras ferramentas de academia
-forem criadas; esta entrega não registra ferramentas nem altera prompts do CRM.
+O módulo também controla a primeira ferramenta de Academia da IA: desligado, o handler
+`crm_find_academia_classes` falha fechado antes de ler ou devolver qualquer catálogo.
 
 
 ## Cadastros básicos (0234)
@@ -51,8 +51,8 @@ quando aplicável. Usuário não pode mudar tenant, identidade, criação ou rev
 DELETE concedido; active=false preserva histórico. API audita academia_catalog.created/updated.
 
 Públicos aceitam limites vazios como não informados; age_pending começa true. Nenhuma faixa, professor
-ou modalidade é cadastrada automaticamente. Aliases são nomes alternativos locais da modalidade;
-a resolução desses nomes no agente ainda não existe. FKs da grade usam organização + id.
+ou modalidade é cadastrada automaticamente. Aliases são nomes alternativos locais da modalidade e a
+consulta da IA os resolve por igualdade normalizada. FKs da grade usam organização + id.
 
 Laço de retorno: erro permanece no formulário; falha de rede permite retry sem duplicação. Revisão
 conflitante exige fechar, atualizar a lista e reabrir. A lista revalida ao voltar à tela e após salvar;
@@ -94,15 +94,43 @@ Reutilizar a chave com outros valores gera 409. PATCH exige id + revision e faz 
 atômica no banco. Horários TIME retornam em precisão de minuto. GET pagina por UUID,
 50 linhas por página; a tela lê todas as páginas antes de agrupar por dia e filtrar.
 
-Living System Checklist: entrada = quatro cadastros; saída = grade consultável na tela;
+Living System Checklist: entrada = quatro cadastros; saída = grade consultável na tela e pela IA;
 atividades = academia_schedule.created/updated, com ator, data e identidade no painel de
 auditoria; porta = registro existente Minha Academia, abas Grade semanal e Cadastros;
 configuração = formulário de aula; anti-morte = aviso de cadastros ausentes/inativos,
 erros explícitos e releitura por foco/Atualizar grade; retorno = conflito impede sobrescrita
-e exige releitura/correção. Não há decisão automatizada ou continuidade IA↔humano nesta
-etapa: ferramentas da IA permanecem explicitamente pendentes no roadmap.
+e exige releitura/correção. A continuidade IA↔humano da consulta está descrita abaixo.
 
 Escopo desta entrega: referência semanal editável e preservação por desativação. Ainda
 não implementa cancelamento de ocorrência, alteração de série futura, feriados, publicação
 de rascunhos ou consulta por data. A tela informa esse limite; não usar esta referência
 sozinha para prometer funcionamento em uma data ou feriado.
+
+## Consulta da grade pela IA
+
+`crm_find_academia_classes` lê diretamente a grade semanal vigente da organização do
+turno. Resolve nome ou alias, filtra dia, período e público e projeta somente os fatos
+adequados ao cliente. Toda consulta service-role leva `organization_id` explícito;
+módulo desligado falha fechado. Observações, capacidade, vagas e UUIDs não chegam ao modelo.
+
+```mermaid
+flowchart LR
+  Mensagem[Mensagem sobre aula] --> Turno[Turno do agente]
+  Turno --> Tool[crm_find_academia_classes]
+  Tool --> Modulo[organizations.settings.modules.academia]
+  Tool --> Grade[Grade semanal e vínculos ativos]
+  Grade --> Resposta[Resposta com fatos regulares]
+  Falha[Data específica, feriado ou falha] --> Handoff[Atendimento humano]
+  Gate[academia_grade_stall] --> Tool
+```
+
+A ferramenta aparece apenas quando publicada em `ai_agent_versions.tool_ids`. O runtime
+mantém uma instrução residente, identifica sinal de grade nas seis mensagens mais recentes
+e registra se a consulta realmente executou no turno. Nesse contexto, o gate
+`academia_grade_stall` veta tanto a promessa vazia de “vou verificar” quanto a afirmação de
+horário sem lastro. Conversas sem sinal de grade e agentes sem a capacidade não armam o gate.
+
+A grade é recorrente, não uma agenda de ocorrências. Pedido por data específica, feriado,
+cancelamento ou substituição segue para atendimento humano. Uma futura cópia no RAG poderá
+ajudar descoberta narrativa, mas será uma derivação atualizada após mudanças e reconciliada
+periodicamente; horário, professor e ambiente continuam confirmados pela consulta direta.

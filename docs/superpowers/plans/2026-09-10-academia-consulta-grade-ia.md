@@ -49,6 +49,8 @@
 
 ### Task 1: Regras puras da grade semanal
 
+**Status:** concluída em `f68edf6a`.
+
 **Files:**
 - Create: `lib/academia/consulta-grade.ts`
 - Test: `tests/unit/academia-consulta-grade.test.ts`
@@ -189,6 +191,8 @@ git commit -m "feat(academia): define consulta semanal para a IA"
 ```
 
 ### Task 2: Tool MCP tenant-aware e catálogo
+
+**Status:** concluída em `43fab94f`.
 
 **Files:**
 - Create: `lib/mcp/tools/academia.ts`
@@ -375,6 +379,8 @@ git commit -m "feat(academia): expõe a grade semanal à IA"
 
 ### Task 3: Gate determinístico contra evasão
 
+**Status:** concluída em `d57b208e`.
+
 **Files:**
 - Modify: `lib/agent-engine/guardrails/before-send.ts`
 - Create: `tests/unit/gate-academia-grade-stall.test.ts`
@@ -457,6 +463,8 @@ git commit -m "fix(academia): impede promessa de consultar sem consultar"
 
 ### Task 4: Turno real, prompt residente e prévia
 
+**Status:** concluída em `9bd8122e`.
+
 **Files:**
 - Modify: `lib/agent-engine/agent/inbound-turn.ts`
 - Modify: `lib/agent-engine/agent/preview.ts`
@@ -533,6 +541,8 @@ git commit -m "feat(academia): conecta a consulta ao turno do agente"
 ```
 
 ### Task 5: Documentação viva e nota de produto
+
+**Status:** concluída neste lote de documentação.
 
 **Files:**
 - Modify: `docs/architecture/academia.md`
