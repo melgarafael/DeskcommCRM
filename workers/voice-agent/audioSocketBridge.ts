@@ -30,7 +30,6 @@ import WebSocket from "ws";
 import type { Socket } from "node:net";
 import { pcm16ToUlaw, ulawToPcm16 } from "@/lib/voip/ulaw";
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 // Fallback só pra quem ainda não configurou nada na aba Voz do agente
 // (config.voice_model) -- normalmente this.ctx.voiceModel já vem preenchido
 // pelo worker, que lê do agente antes de instanciar esta classe.
@@ -73,6 +72,8 @@ export interface AudioSocketCallContext {
   voiceSpeed: number;
   /** Modelo Realtime (gpt-realtime, gpt-realtime-2.1, ...) -- ver guardrails-schema.ts. */
   voiceModel?: string;
+  /** Chave da OpenAI pra esta org -- ver resolverChaveOpenAiDaVoz em lib/ai/agents.ts. */
+  apiKey?: string;
   onTranscriptTurn: (turn: { speaker: "agent" | "customer"; text: string }) => void;
   onCallEnded: () => void;
   /**
@@ -126,9 +127,10 @@ export class AudioSocketCallBridge {
     private ctx: AudioSocketCallContext,
   ) {
     this.realtimeModel = ctx.voiceModel ?? REALTIME_MODEL_FALLBACK;
+    const apiKey = ctx.apiKey || process.env.OPENAI_API_KEY!;
     const realtimeUrl = `wss://api.openai.com/v1/realtime?model=${this.realtimeModel}`;
     this.realtimeWs = new WebSocket(realtimeUrl, {
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
 
     // Sem isto o algoritmo de Nagle empaca nossos writes pequenos e
