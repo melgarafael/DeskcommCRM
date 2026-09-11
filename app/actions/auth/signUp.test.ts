@@ -27,8 +27,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 
 vi.mock("next/headers", () => ({ headers: vi.fn() }));
+// Mockada aqui em vez de deixar bater no banco: a política é lida em TODO
+// cadastro, e sem o mock cada caso deste arquivo tentaria uma conexão real.
+vi.mock("@/lib/auth/politica-de-cadastro", () => ({
+  modoDeCadastro: vi.fn(async () => "aberto"),
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
@@ -57,6 +63,7 @@ describe("signUp — a tela precisa saber se a sessão já veio aberta", () => {
     vi.mocked(createClient).mockResolvedValue({
       auth: { signUp: signUpDoProvedor },
     } as never);
+    vi.mocked(modoDeCadastro).mockResolvedValue("aberto");
   });
 
   it('"Confirm email" DESLIGADO: o provedor devolve sessão → sessao_ativa', async () => {
@@ -96,5 +103,64 @@ describe("signUp — a tela precisa saber se a sessão já veio aberta", () => {
     const res = await signUp(entrada());
 
     expect(res).toEqual({ ok: false, error: "signup_failed" });
+  });
+});
+
+/**
+ * A instalação em `so_convite` (migration 0233).
+ *
+ * A tela de `/signup` também recusa, mas a tela é adulterável e esta action é
+ * chamável direto — sem os casos abaixo, o modo fechado seria decoração.
+ */
+describe("signUp — instalação que só aceita convidados", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    signUpDoProvedor.mockReset();
+    vi.mocked(headers).mockResolvedValue({
+      get: (k: string) => (k === "x-forwarded-for" ? `203.0.113.${n % 250}` : null),
+    } as never);
+    vi.mocked(createClient).mockResolvedValue({
+      auth: { signUp: signUpDoProvedor },
+    } as never);
+    vi.mocked(modoDeCadastro).mockResolvedValue("so_convite");
+  });
+
+  it("sem convite: recusa, e NÃO cria conta no provedor", async () => {
+    const { signUp } = await import("./signUp");
+    const res = await signUp(entrada());
+
+    expect(res).toEqual({ ok: false, error: "somente_convite" });
+    // A parte que importa: a recusa acontece ANTES do provedor. Se a conta
+    // nascesse e só o provisionamento fosse barrado depois, a instalação
+    // acumularia contas órfãs de quem nunca poderia entrar.
+    expect(signUpDoProvedor).not.toHaveBeenCalled();
+  });
+
+  it("CONTROLE — com convite VÁLIDO, o modo fechado não atrapalha", async () => {
+    // Sem este caso, uma recusa que ignorasse o convite passaria — e o modo
+    // fechado trancaria justamente quem ele existe para deixar entrar. É o
+    // mesmo erro que a regra de nginx cometeu na instalação real.
+    const { signInviteToken, INVITE_TTL_SECONDS } = await import("@/lib/auth/invite-token");
+    const dados = entrada();
+    const token = signInviteToken({
+      invite_id: "00000000-0000-4000-8000-000000000003",
+      email: dados.email,
+      organization_id: "00000000-0000-4000-8000-000000000001",
+      role: "agent",
+      exp: Math.floor(Date.now() / 1000) + INVITE_TTL_SECONDS,
+    });
+    signUpDoProvedor.mockResolvedValue({
+      data: { user: { id: "u-3" }, session: null },
+      error: null,
+    });
+
+    const { signUp } = await import("./signUp");
+    const res = await signUp(
+      { email: dados.email, password: dados.password, password_confirm: dados.password_confirm },
+      token,
+    );
+
+    expect(res).toEqual({ ok: true, sessao_ativa: false });
+    expect(signUpDoProvedor).toHaveBeenCalled();
   });
 });

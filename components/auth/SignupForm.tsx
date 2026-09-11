@@ -96,6 +96,14 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
         setServerError(t("Muitas tentativas. Aguarde alguns minutos."));
       } else if (res.error === "validation_error") {
         setServerError(t("Dados inválidos. Confira os campos."));
+      } else if (res.error === "somente_convite") {
+        // Ramo próprio porque o `else` diria "Tente novamente", e aqui tentar
+        // de novo nunca vai funcionar — é política, não falha transitória.
+        setServerError(
+          t(
+            "Esta instalação aceita cadastro apenas por convite. Se você foi convidado, use o link que chegou no seu e-mail.",
+          ),
+        );
       } else {
         setServerError(t("Não foi possível criar a conta. Tente novamente."));
       }

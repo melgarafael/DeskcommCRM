@@ -4,6 +4,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
+import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
@@ -128,6 +129,23 @@ export async function GET(request: NextRequest) {
     // clique cai no `acceptInviteAction` que já existe — auditado e idempotente.
     // Nenhuma lógica de membership nova mora aqui.
     return redirectTo(`/team/accept-invite/${decisao.token}`);
+  }
+
+  // A TRAVA QUE MAIS IMPORTA. Aqui é onde a organização nasce, e este ponto
+  // pega inclusive a conta que nasceu FORA da tela de cadastro — por uma chamada
+  // direta à server action, ou por uma conta criada pela admin API do GoTrue.
+  // Sem ele, fechar o cadastro seria decoração: bastaria pular a tela.
+  //
+  // Depois de `decidirConviteDoSignup`, de propósito: quem tem convite válido já
+  // saiu acima, então esta guarda só alcança quem chegou sem convite nenhum.
+  if ((await modoDeCadastro()) === "so_convite") {
+    await audit({
+      action: "auth.signup_provision_recusado",
+      actorUserId: data.user.id,
+      metadata: { motivo: "somente_convite" },
+      requestId,
+    });
+    return redirectTo("/login?error=cadastro_por_convite");
   }
 
   try {

@@ -18,6 +18,8 @@ const MENSAGENS: Record<string, string> = {
   rate_limited: "Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.",
   invite_pending:
     "Esta conta tem um convite pendente ou inválido. Use o link do convite ou peça um novo ao administrador.",
+  somente_convite:
+    "Esta instalação aceita cadastro apenas por convite. Peça um convite a quem administra o sistema.",
   provision_failed:
     "Não foi possível concluir a organização agora. Tente novamente ou contate o administrador da instalação.",
 };
