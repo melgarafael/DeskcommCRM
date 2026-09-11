@@ -220,12 +220,15 @@ export class AudioSocketCallBridge {
             audio: {
               input: {
                 format: { type: "audio/pcmu" },
-                // Default da API é silence_duration_ms=500 -- curto demais pra
-                // uma ligação de telefone: pausa natural no meio da frase (ex.:
-                // pensando, respirando) já bastava pra o modelo achar que a
-                // pessoa tinha terminado e começar a responder por cima. 700ms
-                // dá mais folga sem deixar a resposta perceptivelmente lenta.
-                turn_detection: { type: "server_vad", silence_duration_ms: 700 },
+                // server_vad com threshold alto ainda disparava com ruído de
+                // linha/eco de viva-voz -- ele julga só volume, sem saber se o
+                // som é fala de verdade. semantic_vad usa um classificador que
+                // avalia o CONTEÚDO (é fala? faz sentido como turno
+                // terminado?), não só amplitude -- muito mais resistente a
+                // ruído/eco. eagerness "low": espera mais confiança antes de
+                // considerar que a pessoa terminou de falar, custa alguma
+                // latência mas evita a IA emendar resposta em cima de nada.
+                turn_detection: { type: "semantic_vad", eagerness: "low" },
                 transcription: { model: "whisper-1" },
               },
               output: {

@@ -22,6 +22,11 @@ export function ThemeToggle() {
       size="icon"
       onClick={cycle}
       aria-label={`Tema: ${theme}. Cmd+Shift+L para alternar.`}
+      // O servidor não sabe a preferência salva no navegador do usuário --
+      // renderiza um valor default e o cliente corrige pro valor real assim
+      // que hidrata. É o mismatch ESPERADO de todo seletor de tema; React
+      // "corrige" sozinho no primeiro render, só reclamava no console.
+      suppressHydrationWarning
     >
       <Icon size={16} aria-hidden />
     </Button>
