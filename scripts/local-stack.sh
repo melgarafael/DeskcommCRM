@@ -26,8 +26,9 @@ ensure_supabase() {
 
 case "${1:-}" in
   up)
-    require_env
     ensure_supabase
+    ./scripts/local-env.sh ensure
+    require_env
     "${COMPOSE[@]}" up -d --build
     ;;
   down)

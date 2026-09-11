@@ -18,6 +18,8 @@ services:
     pull_policy: never
     restart: unless-stopped
     env_file: ${LOCAL_ENV_FILE:-.env.local}
+    environment:
+      WAHA_API_BASE_URL: http://waha:3000
     ports:
       - "${APP_PORT:-3000}:3000"
     extra_hosts:
