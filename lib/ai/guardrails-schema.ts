@@ -96,6 +96,21 @@ export const AGENT_VOICE_OPTIONS = [
 export const agentVoiceSchema = z.enum(AGENT_VOICE_OPTIONS);
 export type AgentVoice = z.infer<typeof agentVoiceSchema>;
 
+// Modelos Realtime da OpenAI que falam por voz de ponta a ponta (audio in ->
+// audio out) -- não é o mesmo catálogo de AGENT_MODELS (texto, Vercel AI
+// Gateway): a ligação nunca passa por ali. Default "gpt-realtime" == o que
+// já rodava fixo via env OPENAI_REALTIME_MODEL antes deste campo existir.
+export const AGENT_VOICE_MODEL_OPTIONS = [
+  "gpt-realtime",
+  "gpt-realtime-mini",
+  "gpt-realtime-2.1",
+  "gpt-realtime-2.1-mini",
+  "gpt-4o-realtime-preview",
+  "gpt-4o-mini-realtime-preview",
+] as const;
+export const agentVoiceModelSchema = z.enum(AGENT_VOICE_MODEL_OPTIONS);
+export type AgentVoiceModel = z.infer<typeof agentVoiceModelSchema>;
+
 export const agentConfigSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.4),
   max_tokens: z.number().int().min(64).max(4096).default(1024),
@@ -110,6 +125,7 @@ export const agentConfigSchema = z.object({
   // Faixa aceita pela Realtime API da OpenAI é 0.25–1.5 — fora disso a
   // sessão rejeita a configuração.
   voice_speed: z.number().min(0.25).max(1.5).default(0.85),
+  voice_model: agentVoiceModelSchema.default("gpt-realtime"),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -122,6 +138,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   confidence_threshold: 0.6,
   voice: "marin",
   voice_speed: 0.85,
+  voice_model: "gpt-realtime",
 };
 
 // ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ import { useT } from "@/hooks/i18n/useT";
 import {
   AGENT_CONFIG_DEFAULTS,
   AGENT_MODELS,
+  AGENT_VOICE_MODEL_OPTIONS,
   AGENT_VOICE_OPTIONS,
   agentConfigSchema,
   agentPatchSchema,
@@ -242,25 +243,33 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
 
         <TabsContent value="model">
           <Card className="space-y-4 p-4">
-            <div className="space-y-1">
-              <Label>{t("Modelo")}</Label>
-              <Select
-                value={formState.model}
-                onValueChange={(v) => patchForm({ model: v as AgentModel })}
-                disabled={disabled}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {AGENT_MODELS.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {agent.channel === "voice" ? (
+              <p className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+                {t(
+                  "Este agente fala pela Realtime API da OpenAI -- o modelo de voz se escolhe na aba Voz, não aqui.",
+                )}
+              </p>
+            ) : (
+              <div className="space-y-1">
+                <Label>{t("Modelo")}</Label>
+                <Select
+                  value={formState.model}
+                  onValueChange={(v) => patchForm({ model: v as AgentModel })}
+                  disabled={disabled}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AGENT_MODELS.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <SystemPromptEditor
               value={formState.system_prompt}
@@ -366,6 +375,25 @@ export function AgentEditor({ agentId, initialData, readOnly = false }: Props) {
         {agent.channel === "voice" && (
           <TabsContent value="voz">
             <Card className="space-y-4 p-4">
+              <div className="space-y-1">
+                <Label>{t("Modelo de voz")}</Label>
+                <Select
+                  value={formState.config.voice_model}
+                  onValueChange={(v) => patchConfig({ voice_model: v as AgentConfig["voice_model"] })}
+                  disabled={disabled}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AGENT_VOICE_MODEL_OPTIONS.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div className="space-y-1">
                   <Label>{t("Voz do modelo")}</Label>

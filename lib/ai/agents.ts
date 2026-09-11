@@ -16,6 +16,7 @@ export interface VoiceAgentConfig {
   voiceSpeed: number;
   ragTopK: number;
   ragSimilarityThreshold: number;
+  voiceModel: string;
 }
 
 export async function getActiveVoiceAgent(organizationId: string): Promise<VoiceAgentConfig | null> {
@@ -42,6 +43,7 @@ export async function getActiveVoiceAgent(organizationId: string): Promise<Voice
     systemPrompt: data.system_prompt,
     voice: cfg.voice,
     voiceSpeed: cfg.voice_speed,
+    voiceModel: cfg.voice_model,
     ragTopK: cfg.rag_top_k,
     ragSimilarityThreshold: cfg.rag_similarity_threshold,
   };

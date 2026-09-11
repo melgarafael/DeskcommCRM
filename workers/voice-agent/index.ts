@@ -247,6 +247,7 @@ async function handleAudioSocketConnection(socket: net.Socket, uuid: string, lef
     agentInstructions: agent.systemPrompt,
     voice: agent.voice,
     voiceSpeed: agent.voiceSpeed,
+    voiceModel: agent.voiceModel,
     onTranscriptTurn: (turn) => appendAudioSocketTranscriptTurn(uuid, turn),
     onCallEnded: () => finalizeAudioSocketCall(uuid),
     searchKnowledge:

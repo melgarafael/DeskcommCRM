@@ -31,8 +31,10 @@ import type { Socket } from "node:net";
 import { pcm16ToUlaw, ulawToPcm16 } from "@/lib/voip/ulaw";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
-const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime";
-const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`;
+// Fallback só pra quem ainda não configurou nada na aba Voz do agente
+// (config.voice_model) -- normalmente this.ctx.voiceModel já vem preenchido
+// pelo worker, que lê do agente antes de instanciar esta classe.
+const REALTIME_MODEL_FALLBACK = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime";
 
 const FRAME_TYPE = { HANGUP: 0x00, UUID: 0x01, DTMF: 0x03, AUDIO: 0x10 } as const;
 
@@ -69,6 +71,8 @@ export interface AudioSocketCallContext {
   voice: string;
   /** 0.25-1.5, 1.0 = padrao do modelo. */
   voiceSpeed: number;
+  /** Modelo Realtime (gpt-realtime, gpt-realtime-2.1, ...) -- ver guardrails-schema.ts. */
+  voiceModel?: string;
   onTranscriptTurn: (turn: { speaker: "agent" | "customer"; text: string }) => void;
   onCallEnded: () => void;
   /**
@@ -115,11 +119,15 @@ export class AudioSocketCallBridge {
   private outboundQueue = Buffer.alloc(0);
   private pacerTimer: NodeJS.Timeout | null = null;
 
+  private readonly realtimeModel: string;
+
   constructor(
     private socket: Socket,
     private ctx: AudioSocketCallContext,
   ) {
-    this.realtimeWs = new WebSocket(REALTIME_URL, {
+    this.realtimeModel = ctx.voiceModel ?? REALTIME_MODEL_FALLBACK;
+    const realtimeUrl = `wss://api.openai.com/v1/realtime?model=${this.realtimeModel}`;
+    this.realtimeWs = new WebSocket(realtimeUrl, {
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
     });
 
@@ -204,7 +212,7 @@ export class AudioSocketCallBridge {
           type: "session.update",
           session: {
             type: "realtime",
-            model: REALTIME_MODEL,
+            model: this.realtimeModel,
             output_modalities: ["audio"],
             instructions: this.ctx.agentInstructions + INSTRUCAO_ENCERRAR_CHAMADA,
             audio: {
