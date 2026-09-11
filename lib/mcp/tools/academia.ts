@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import {
   projetarAulaSemanal,
+  resumirAulasParaResposta,
   resolverModalidade,
   resolverPublico,
   type ItemModalidadeAcademia,
@@ -60,6 +61,7 @@ interface ResultadoConsultaGrade {
     publico?: string;
   };
   aulas: AulaPublica[];
+  resumo_para_resposta?: string;
   total: number;
   ha_mais: boolean;
   motivo?: "modalidade_nao_encontrada" | "modalidade_ambigua" | "publico_nao_encontrado";
@@ -268,6 +270,7 @@ export const crmFindAcademiaClasses: McpToolDefinition<typeof inputShape> = {
       modalidade: resolucao.nome,
       filtros: filtrosDaConsulta(input, publico?.name),
       aulas,
+      resumo_para_resposta: resumirAulasParaResposta(aulas),
       total: aulas.length,
       ha_mais: candidatas.length > input.limite,
       ...(aulas.length === 0

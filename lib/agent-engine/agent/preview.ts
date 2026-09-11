@@ -21,7 +21,10 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
-import { sinalDeConversaSobreGrade } from '@/lib/academia/consulta-grade';
+import {
+  sinalDeConversaSobreGrade,
+  sinalDePedidoComercialDaAcademia,
+} from '@/lib/academia/consulta-grade';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -124,6 +127,9 @@ export async function previewGateContext(
         p.agent.toolIds.includes('crm_find_academia_classes') &&
         sinalDeConversaSobreGrade(p.context.context.messages),
       toolCalledThisTurn: false,
+      commercialFollowupAllowed: sinalDePedidoComercialDaAcademia(
+        p.context.context.messages.filter((message) => message.direction === 'inbound').at(-1)?.body ?? '',
+      ),
     },
     internalVocabularyEnforced: true,
   };

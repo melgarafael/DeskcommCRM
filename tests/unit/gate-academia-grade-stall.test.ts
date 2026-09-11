@@ -68,6 +68,38 @@ describe("academiaGradeStallGate", () => {
     expect(verdict.pass).toBe(true);
   });
 
+  it("veta oferta de vaga ou reserva que a pessoa não pediu", () => {
+    const verdict = academiaGradeStallGate.evaluate(
+      baseCtx({
+        body:
+          "O CrossFit é segunda, das 08:00 às 09:00, no Box. Quer que eu reserve uma vaga?",
+        academiaGrade: {
+          active: true,
+          toolCalledThisTurn: true,
+          commercialFollowupAllowed: false,
+        },
+      }),
+    );
+    expect(verdict.pass).toBe(false);
+    if (verdict.pass) throw new Error("inalcançável");
+    expect(verdict.code).toBe("academia_grade_oferta_nao_solicitada");
+  });
+
+  it("permite tratar vaga quando a própria pessoa pediu", () => {
+    const verdict = academiaGradeStallGate.evaluate(
+      baseCtx({
+        body:
+          "O CrossFit é segunda, das 08:00 às 09:00, no Box. Vou verificar a disponibilidade da vaga.",
+        academiaGrade: {
+          active: true,
+          toolCalledThisTurn: true,
+          commercialFollowupAllowed: true,
+        },
+      }),
+    );
+    expect(verdict.pass).toBe(true);
+  });
+
   it("é no-op para agente ou conversa sem a capacidade armada", () => {
     const body = "Vou verificar isso para você.";
     expect(academiaGradeStallGate.evaluate(baseCtx({ body })).pass).toBe(true);

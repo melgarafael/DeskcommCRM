@@ -4,8 +4,10 @@ import {
   normalizarTermoAcademia,
   periodoDoInicio,
   projetarAulaSemanal,
+  resumirAulasParaResposta,
   resolverModalidade,
   resolverPublico,
+  sinalDePedidoComercialDaAcademia,
   sinalDeConversaSobreGrade,
 } from "@/lib/academia/consulta-grade";
 
@@ -112,6 +114,26 @@ describe("consulta da grade da academia", () => {
     });
   });
 
+  it("gera um resumo completo para a resposta direta da IA", () => {
+    expect(
+      resumirAulasParaResposta([
+        {
+          dia_semana: 1,
+          dia: "Segunda-feira",
+          inicio: "08:00",
+          fim: "09:00",
+          duracao_minutos: 60,
+          publico: "Adulto",
+          professor: "A definir",
+          ambiente: "Box",
+          pendencias: ["professor"],
+        },
+      ]),
+    ).toBe(
+      "Segunda-feira, 08:00-09:00 (60 minutos), público Adulto, professor A definir, ambiente Box.",
+    );
+  });
+
   it("não cria pendência para professor definido", () => {
     expect(
       projetarAulaSemanal(
@@ -154,5 +176,11 @@ describe("consulta da grade da academia", () => {
         { direction: "outbound", body: "Vou olhar o rastreio." },
       ]),
     ).toBe(false);
+  });
+
+  it("distingue consulta de grade de pedido de vaga ou reserva", () => {
+    expect(sinalDePedidoComercialDaAcademia("CrossFit segunda pela manhã")).toBe(false);
+    expect(sinalDePedidoComercialDaAcademia("Tem vaga no CrossFit de segunda?")).toBe(true);
+    expect(sinalDePedidoComercialDaAcademia("Quero reservar uma aula experimental")).toBe(true);
   });
 });

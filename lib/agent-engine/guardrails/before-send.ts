@@ -249,7 +249,11 @@ export interface GateContext {
    * contém sinal inequívoco de grade da academia. `toolCalledThisTurn` registra a execução
    * real da consulta neste turno — ter a tool publicada, sozinho, não autoriza afirmar horário.
    */
-  academiaGrade?: { active: boolean; toolCalledThisTurn: boolean };
+  academiaGrade?: {
+    active: boolean;
+    toolCalledThisTurn: boolean;
+    commercialFollowupAllowed?: boolean;
+  };
 }
 
 /**
@@ -537,6 +541,10 @@ const ACADEMIA_GRADE_STALL_PATTERN =
 const ACADEMIA_GRADE_HOUR_PATTERN =
   /\b(aula|turma|treino|cross ?fit|spinning|ciclismo|pilates|yoga|musculacao)\b[^.!?\n]{0,90}\b([01]\d|2[0-3]):[0-5]\d\b/i;
 
+/** Oferta em forma de pergunta que transforma consulta de grade em abordagem comercial. */
+const ACADEMIA_GRADE_UNSOLICITED_OFFER_PATTERN =
+  /\b(quer|deseja|posso|gostaria)\b[^?\n]{0,120}\b(vaga|disponibilidade|reservar|reserva|experimental)\b/i;
+
 /**
  * Garante que conversa sobre grade não termine em promessa vazia nem em horário inventado.
  * Desarmado por default para preservar todos os callers que não conhecem o módulo Academia.
@@ -545,9 +553,23 @@ export const academiaGradeStallGate: Gate = {
   name: 'academia_grade_stall',
   evaluate: (ctx) => {
     if (ctx.academiaGrade === undefined || !ctx.academiaGrade.active) return { pass: true };
-    if (ctx.academiaGrade.toolCalledThisTurn) return { pass: true };
 
     const bodySemAcento = semAcento(ctx.body);
+    if (ctx.academiaGrade.toolCalledThisTurn) {
+      if (
+        ctx.academiaGrade.commercialFollowupAllowed !== true &&
+        ACADEMIA_GRADE_UNSOLICITED_OFFER_PATTERN.test(bodySemAcento)
+      ) {
+        return {
+          pass: false,
+          code: 'academia_grade_oferta_nao_solicitada',
+          reason:
+            'A pessoa pediu somente a grade. Responda diretamente com todos os dados retornados ' +
+            'e encerre sem perguntar sobre vaga, disponibilidade, reserva ou aula experimental.',
+        };
+      }
+      return { pass: true };
+    }
     if (
       !ACADEMIA_GRADE_STALL_PATTERN.test(bodySemAcento) &&
       !ACADEMIA_GRADE_HOUR_PATTERN.test(bodySemAcento)
@@ -883,7 +905,11 @@ export interface RunBeforeSendArgs {
    * Arma o `academiaGradeStallGate` para ESTA tentativa. Ausente = no-op, preservando os
    * caminhos determinísticos e agentes sem o módulo Academia.
    */
-  academiaGrade?: { active: boolean; toolCalledThisTurn: boolean };
+  academiaGrade?: {
+    active: boolean;
+    toolCalledThisTurn: boolean;
+    commercialFollowupAllowed?: boolean;
+  };
   /**
    * Enviado SÓ se TODOS os gates passarem — ChannelAdapter (própria tx/idempotência). Recebe o
    * corpo FINAL (o disclosureGate F4-05 pode emendá-lo via `amendBody`): quem monta o send DEVE

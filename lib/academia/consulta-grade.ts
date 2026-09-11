@@ -81,6 +81,9 @@ export function resolverPublico(
 const TERMOS_DE_GRADE =
   /\b(grade|aula|aulas|modalidade|turma|treino|cross ?fit|spinning|ciclismo|pilates|yoga|musculacao|professor|professora|box)\b/i;
 
+const TERMOS_DE_PEDIDO_COMERCIAL =
+  /\b(vaga|vagas|disponibilidade|reservar|reserva|matricula|aula experimental)\b/i;
+
 /**
  * O gate usa somente uma janela curta. Assim ele acompanha “Cross fit → manhã →
  * segunda” sem transformar uma conversa antiga sobre aula num veto permanente.
@@ -90,6 +93,11 @@ export function sinalDeConversaSobreGrade(
 ): boolean {
   const janela = mensagens.slice(-6).map((mensagem) => mensagem.body).join(" ");
   return TERMOS_DE_GRADE.test(normalizarTermoAcademia(janela));
+}
+
+/** Separa uma consulta informativa de um pedido explícito de próximo passo. */
+export function sinalDePedidoComercialDaAcademia(texto: string): boolean {
+  return TERMOS_DE_PEDIDO_COMERCIAL.test(normalizarTermoAcademia(texto));
 }
 
 export function projetarAulaSemanal(
@@ -109,4 +117,22 @@ export function projetarAulaSemanal(
     ambiente: vinculos.ambiente,
     ...(professorPendente ? { pendencias: ["professor"] } : {}),
   };
+}
+
+export type AulaSemanalProjetada = ReturnType<typeof projetarAulaSemanal>;
+
+/**
+ * Linha determinística e completa para o modelo não resumir justamente o dado
+ * que a pessoa pediu. Continua sendo só apresentação da consulta estruturada.
+ */
+export function resumirAulasParaResposta(
+  aulas: readonly AulaSemanalProjetada[],
+): string {
+  return aulas
+    .map(
+      (aula) =>
+        `${aula.dia}, ${aula.inicio}-${aula.fim} (${aula.duracao_minutos} minutos), ` +
+        `público ${aula.publico}, professor ${aula.professor}, ambiente ${aula.ambiente}.`,
+    )
+    .join("\n");
 }

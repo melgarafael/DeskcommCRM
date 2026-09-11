@@ -1,6 +1,9 @@
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
-import { sinalDeConversaSobreGrade } from '@/lib/academia/consulta-grade';
+import {
+  sinalDeConversaSobreGrade,
+  sinalDePedidoComercialDaAcademia,
+} from '@/lib/academia/consulta-grade';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
@@ -110,6 +113,7 @@ import {
   promessasEmAberto,
   type DeclaracaoDoTurno,
 } from './declaracao';
+import { ACADEMIA_GRADE_SYSTEM_BLOCK } from './academia-grade-prompt';
 import {
   projetarContexto,
   projetarRetornoDeTool,
@@ -808,20 +812,6 @@ const AGENDA_TOOL_NAMES = new Set([
   'crm_book_appointment',
   'crm_reschedule_appointment',
 ]);
-
-/**
- * Bloco residente da grade semanal. A fonte é sempre a tool estruturada; o modelo não deve
- * tentar reconstruir horários pelo histórico ou pelo conhecimento vetorial. Datas específicas
- * (feriado, cancelamento, substituição) não são fatos da grade recorrente e pedem atendimento.
- */
-const ACADEMIA_GRADE_SYSTEM_BLOCK =
-  '## Grade semanal da academia — consulte antes de responder\n' +
-  'Quando o lead perguntar por modalidade, dia da semana, período ou público de uma aula, chame ' +
-  'crm_find_academia_classes NESTE turno e responda somente com os dados retornados. Não invente, ' +
-  'não use o histórico como fonte e não diga que vai verificar depois. Professor "A definir" é ' +
-  'informação pendente, mas não invalida os demais dados da aula. A consulta representa a semana ' +
-  'recorrente; para uma data específica, feriado, cancelamento ou substituição, explique esse ' +
-  'limite e use request_human_handoff para confirmar com a equipe.';
 
 const ACADEMIA_GRADE_TOOL_NAMES = new Set(['crm_find_academia_classes']);
 
@@ -2277,6 +2267,9 @@ async function executarTurnoDoAgente(
     agentConfig !== null &&
     agentConfig.toolIds.includes('crm_find_academia_classes') &&
     sinalDeConversaSobreGrade(effectiveContext.messages);
+  const academiaGradeCommercialFollowupAllowed = sinalDePedidoComercialDaAcademia(
+    currentInboundText ?? skillSignal,
+  );
   const skillMatch = matchSkills(skills, skillSignal);
   const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
@@ -2648,6 +2641,7 @@ async function executarTurnoDoAgente(
             academiaGrade: {
               active: academiaGradeRequestActive,
               toolCalledThisTurn: academiaGradeToolCalledThisTurn,
+              commercialFollowupAllowed: academiaGradeCommercialFollowupAllowed,
             },
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
@@ -3413,6 +3407,8 @@ async function executarTurnoDoAgente(
               academiaGrade: {
                 active: previewContext.academiaGrade?.active ?? false,
                 toolCalledThisTurn: academiaGradeToolCalledThisTurn,
+                commercialFollowupAllowed:
+                  previewContext.academiaGrade?.commercialFollowupAllowed ?? false,
               },
             }),
           )

@@ -153,6 +153,8 @@ describe("crm_find_academia_classes", () => {
         ambiente: "Box",
         pendencias: ["professor"],
       }],
+      resumo_para_resposta:
+        "Segunda-feira, 08:00-09:00 (60 minutos), público Adulto, professor A definir, ambiente Box.",
       total: 1,
       ha_mais: false,
     });
