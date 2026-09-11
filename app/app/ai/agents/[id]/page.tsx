@@ -12,6 +12,7 @@ import { LegacyRecovery } from "./_components/LegacyRecovery";
 import { AgentOperation } from "./_components/AgentOperation";
 import type { MaterialDoAcervo } from "./_components/BasesDoAgente";
 import { AgentTabs } from "./_components/AgentTabs";
+import { AgentEditorClient } from "./_client";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { coberturaDoFunil, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
 import type { CoberturaPorFunil } from "./_components/FunisDoAgente";
@@ -21,7 +22,7 @@ import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
 export const dynamic = "force-dynamic";
 
 const AGENT_COLUMNS =
-  "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
+  "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, channel, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
 
 const VERSION_COLUMNS =
   "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin";
@@ -66,6 +67,20 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
 
   const agent = agentRow as unknown as AgentRow;
   const readOnly = ROLE_RANK[activeOrg.role] < ROLE_RANK.admin;
+
+  // Agente de voz não passa pelo fluxo de versão/publicação (esse é todo
+  // desenhado em torno de `channel_session_id`, um número de WhatsApp
+  // conectado -- uma ligação nem tem isso). O editor simples
+  // (system_prompt + config direto em `ai_agents`, sem versão) é o que se
+  // aplica: mesma tela que já existe pra config geral/modelo/RAG/voz,
+  // sem forçar o agente de voz a fingir que tem canal do WhatsApp.
+  if (agent.channel === "voice") {
+    return (
+      <div className="flex h-full flex-col gap-6 p-6">
+        <AgentEditorClient agentId={id} initialData={agent} readOnly={readOnly} />
+      </div>
+    );
+  }
 
   // mcp_agent: busca versions + lookups.
   const [versionsRes, credentialsRes, channelSessions, routerMemberRes, funisRes, acervoRes] =
