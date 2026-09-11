@@ -75,6 +75,30 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  {
+    tabela: "academia_audiences",
+    razao:
+      "tests/invariants/academia-catalogs.test.ts — viewer da organização lê, " +
+      "membro de outra organização não lê nem altera, e INSERT cruzado é recusado por JWT",
+  },
+  {
+    tabela: "academia_modalities",
+    razao: "tests/invariants/academia-catalogs.test.ts — mesma prova comportamental cross-tenant",
+  },
+  {
+    tabela: "academia_teachers",
+    razao: "tests/invariants/academia-catalogs.test.ts — mesma prova comportamental cross-tenant",
+  },
+  {
+    tabela: "academia_spaces",
+    razao: "tests/invariants/academia-catalogs.test.ts — mesma prova comportamental cross-tenant",
+  },
+  {
+    tabela: "academia_weekly_classes",
+    razao:
+      "tests/invariants/academia-schedule.test.ts — viewer da organização lê; membro de " +
+      "outra organização não lê nem edita, e vínculo cross-tenant é recusado",
+  },
   { tabela: "channel_routing_policies", razao: "tests/invariants/channel-routing.test.ts — dois tenants reais, leitura positiva local e negativa cruzada por JWT; FK composta rejeita canal de outra org" },
   { tabela: "channel_routing_responsibles", razao: "tests/invariants/channel-routing.test.ts — JWT do tenant B não lê responsáveis de A; revogação remove vínculo e claim revalida membro ativo" },
   { tabela: "channel_connection_requests", razao: "tests/invariants/channel-routing.test.ts — recibo privado sem SELECT authenticated; reserva admin com MFA e finalização service-only cercada por org e lease" },
