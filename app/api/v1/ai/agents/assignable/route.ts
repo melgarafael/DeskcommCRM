@@ -51,18 +51,25 @@ export interface AssignableAgent {
   version_number: number | null;
 }
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "ai_agents" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
 
+  // Filtro opcional por canal: quem monta um picker de destino de VOZ (ex.:
+  // cadastro de número de telefone) não pode oferecer um agente de WhatsApp
+  // como opção — ele simplesmente não sabe atender ligação nenhuma.
+  const channel = new URL(req.url).searchParams.get("channel");
+
   const supabase = await createClient();
-  const { data: agents, error } = await supabase
+  let query = supabase
     .from("ai_agents")
     .select("id, name, published_version_id, kind, is_active, paused_at, archived_at")
     .eq("organization_id", orgId)
-    .is("archived_at", null)
+    .is("archived_at", null);
+  if (channel === "whatsapp" || channel === "voice") query = query.eq("channel", channel);
+  const { data: agents, error } = await query
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true });
 

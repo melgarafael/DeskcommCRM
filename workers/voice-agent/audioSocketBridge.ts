@@ -64,6 +64,11 @@ export interface AudioSocketCallContext {
   callId: string;
   organizationId: string;
   agentInstructions: string;
+  /** Voz da Realtime API (marin, cedar, alloy, ...) -- configuravel por
+   *  agente em Configuracoes > Agente > aba Voz. */
+  voice: string;
+  /** 0.25-1.5, 1.0 = padrao do modelo. */
+  voiceSpeed: number;
   onTranscriptTurn: (turn: { speaker: "agent" | "customer"; text: string }) => void;
   onCallEnded: () => void;
   /**
@@ -210,11 +215,10 @@ export class AudioSocketCallBridge {
               },
               output: {
                 format: { type: "audio/pcmu" },
-                voice: "marin",
-                // Ouvido ao vivo: a fala do modelo saía rápido demais pro
-                // ritmo de uma ligação telefônica. 0.5 = metade da
-                // velocidade padrão (faixa aceita pela API: 0.25 a 1.5).
-                speed: 0.85,
+                // Configuráveis por agente (Configurações > Agente > aba
+                // Voz) -- default "marin"/0.85, ver AGENT_CONFIG_DEFAULTS.
+                voice: this.ctx.voice,
+                speed: this.ctx.voiceSpeed,
               },
             },
             tools: [

@@ -245,6 +245,8 @@ async function handleAudioSocketConnection(socket: net.Socket, uuid: string, lef
     callId: callRow.id,
     organizationId: callRow.organization_id,
     agentInstructions: agent.systemPrompt,
+    voice: agent.voice,
+    voiceSpeed: agent.voiceSpeed,
     onTranscriptTurn: (turn) => appendAudioSocketTranscriptTurn(uuid, turn),
     onCallEnded: () => finalizeAudioSocketCall(uuid),
     searchKnowledge:
@@ -254,8 +256,8 @@ async function handleAudioSocketConnection(socket: net.Socket, uuid: string, lef
               organizationId: callRow.organization_id,
               knowledgeSourceIds,
               pergunta,
-              topK: 5,
-              limiar: 0.4,
+              topK: agent.ragTopK,
+              limiar: agent.ragSimilarityThreshold,
             });
             return { trechos: resultado.trechos };
           }
