@@ -24,7 +24,7 @@ import { aplicarNoChangelog, montarSecao } from "../lib/release/montar-secao";
 const RAIZ = path.resolve(__dirname, "..");
 const DIR_FRAGMENTOS = path.join(RAIZ, ".changes");
 const CHANGELOG = path.join(RAIZ, "CHANGELOG.md");
-const REPO = "melgarafael/DeskcommCRM";
+const REPO = "vgamkt/DeskcommCRM";
 
 const compararUrl = (de: string, para: string) => `https://github.com/${REPO}/compare/${de}...${para}`;
 
