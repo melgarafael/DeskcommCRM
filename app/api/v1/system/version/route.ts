@@ -12,7 +12,13 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractChangelogRange } from "@/lib/system/changelog";
-import { isRunStale, rollbackFoiSuperado, type RunStatus, type RunStep } from "@/lib/system/update-run";
+import {
+  isRunStale,
+  rollbackFoiSuperado,
+  sucessoJaInstalado,
+  type RunStatus,
+  type RunStep,
+} from "@/lib/system/update-run";
 
 export const dynamic = "force-dynamic";
 
@@ -90,10 +96,18 @@ export async function GET(_req: NextRequest): Promise<Response> {
     current,
     run,
   );
+  // O outro lado do mesmo silêncio: o run deu CERTO e o host ainda não bateu.
+  // `current_version` segue nomeando a versão antiga por até 5 minutos, e sem
+  // isto `update_available` continua verdadeiro — a tela volta do reinício
+  // oferecendo "Atualizar agora" para a versão que acabou de ser instalada.
+  const acabouDeInstalar = sucessoJaInstalado(version?.updated_at, run?.finished_at, run);
+
   const running =
     run?.status === "failed_rolled_back" && run.from_version && !rollbackSuperado
       ? run.from_version
-      : current;
+      : acabouDeInstalar && run?.to_version
+        ? run.to_version
+        : current;
 
   if (!user.is_platform_admin) {
     return ok({ current_version: running, is_owner: false });
@@ -127,6 +141,11 @@ export async function GET(_req: NextRequest): Promise<Response> {
     // não tocada por nenhum heartbeat, coluna com o default da migration).
     has_known_release: version?.has_known_release ?? true,
     agent_online: !Number.isNaN(lastSeen) && now.getTime() - lastSeen < AGENT_OFFLINE_AFTER_MS,
+    // A janela em que a atualização TERMINOU e o host ainda não contou. É o que
+    // deixa a tela dizer "pronto, está na versão X" em vez de cair no texto
+    // genérico de quem nunca atualizou nada — e ela se fecha sozinha na batida
+    // seguinte do agente.
+    just_updated: acabouDeInstalar,
     notes:
       faixa && faixa.secoes.length > 0
         ? {
@@ -147,6 +166,10 @@ export async function GET(_req: NextRequest): Promise<Response> {
     run: run
       ? {
           id: run.id,
+          // A tela CONTA o tempo desde aqui. Sem esta data, o intervalo entre o
+          // clique e o agente pegar o pedido é uma lista de quatro círculos
+          // vazios, parada, sem nada que se mexa.
+          dispatched_at: run.dispatched_at,
           // `unknown` é derivado aqui, não gravado: um agente morto não
           // consegue anunciar a própria morte.
           status:

@@ -271,30 +271,58 @@ test("o dono vê a versão nova na sidebar e atualiza pela tela", async ({ page,
   expect(atencao!.y).toBeLessThan(botao!.y);
 
   await page.getByRole("button", { name: /atualizar agora/i }).click();
-  await expect(page.getByRole("heading", { name: /atualizando para a versão 1\.1\.0/i })).toBeVisible();
-  await expect(page.getByText(/Guardando uma cópia de segurança/)).toBeVisible();
-  await page.screenshot({ path: ".superpowers/evidence/task9-2-atualizando.png" });
+
+  // ── PONTA 1: o clique NÃO começa a atualização ──────────────────────────
+  //
+  // O `POST /update` só registra o pedido; quem executa é o `agent.sh`, que
+  // roda de 5 em 5 minutos no host. Este caso AFIRMAVA o defeito: esperava a
+  // lista de passos ("Guardando uma cópia de segurança") logo depois do clique
+  // — a tela dizia que o sistema estava trabalhando quando ele ainda nem tinha
+  // recebido a ordem, e ficava assim, imóvel, por até cinco minutos.
+  await expect(
+    page.getByRole("heading", { name: /pedido enviado/i }),
+    "logo após o clique a tela ainda afirma que está atualizando",
+  ).toBeVisible();
+  await expect(page.getByText(/ficar parada nesse tempo é normal/i)).toBeVisible();
+  await expect(page.getByTestId("espera-decorrida")).toBeVisible();
+  await page.screenshot({ path: ".superpowers/evidence/task9-2a-pedido-enviado.png" });
 
   // O agente do host detecta o pedido no próximo heartbeat...
   const { data } = await heartbeat(request, { latest_version: "1.1.0" });
   expect(data.update_requested).toBe(true);
   expect(data.run_id).not.toBeNull();
 
+  // ...e aí sim a lista de passos aparece, porque aí sim há um passo.
+  await runProgress(request, data.run_id!, "backup");
+  await expect(page.getByRole("heading", { name: /atualizando para a versão 1\.1\.0/i })).toBeVisible();
+  await expect(page.getByText(/Guardando uma cópia de segurança/)).toBeVisible();
+  await page.screenshot({ path: ".superpowers/evidence/task9-2b-atualizando.png" });
+
   // ...executa (fora deste teste — é o `agent.sh`/`update.sh` reais, provados
   // na task 8) e reporta o desfecho.
-  const runResult = await request.post("/api/v1/system/agent", {
-    headers: { Authorization: `Bearer ${SECRET}` },
-    data: { kind: "run_result", run_id: data.run_id, status: "success", log_tail: "ok" },
-  });
-  expect(runResult.status()).toBe(200);
+  await runResult(request, data.run_id!, "success", "ok");
 
-  // Depois do sucesso, o agente reinicia e o próximo heartbeat já anuncia a
-  // versão nova como a instalada — é o que a tela usa pra sair do estado
-  // "atualizando" e mostrar "você está em dia".
+  // ── PONTA 2: terminou, e o host ainda não teve chance de contar ─────────
+  //
+  // `run_result` fecha o run e NÃO escreve `current_version` — quem escreve é o
+  // heartbeat, até 5 minutos depois. Sem o conserto, esta recarga trazia de
+  // volta "Versão 1.1.0 disponível" e o botão "Atualizar agora", oferecendo a
+  // versão que acabou de ser instalada. Repare que NENHUM heartbeat foi enviado
+  // entre o `run_result` e esta linha: é exatamente a janela do defeito.
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: /pronto — você está na versão 1\.1\.0/i }),
+    "a tela voltou oferecendo a versão que acabou de ser instalada",
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /atualizar agora/i })).toHaveCount(0);
+  await page.screenshot({ path: ".superpowers/evidence/task9-3a-acabou-de-atualizar.png" });
+
+  // E quando o host finalmente confirma, a janela se fecha sozinha: volta o
+  // texto normal de quem está em dia, sem ninguém limpar estado nenhum.
   await heartbeat(request, { current_version: "1.1.0", latest_version: "1.1.0" });
   await page.reload();
-  await expect(page.getByRole("heading", { name: /você está na versão 1\.1\.0/i })).toBeVisible();
-  await page.screenshot({ path: ".superpowers/evidence/task9-3-em-dia.png" });
+  await expect(page.getByRole("heading", { name: /^você está na versão 1\.1\.0/i })).toBeVisible();
+  await page.screenshot({ path: ".superpowers/evidence/task9-3b-em-dia.png" });
 });
 
 test("quando a atualização falha, a tela nomeia a versão certa, mostra o log e dá saída", async ({
