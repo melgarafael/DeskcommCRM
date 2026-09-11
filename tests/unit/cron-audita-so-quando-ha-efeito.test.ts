@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *
  * ─── O defeito, medido (issue #261) ─────────────────────────────────────────
  *
- * `routing-worker` roda 1×/min e `attendant-heartbeat` 1×/5min, e os dois
- * chamavam `audit()` FORA de qualquer condição: **51.840 linhas/mês** numa
+ * `routing-worker` roda 1×/min e `attendant-heartbeat` rodava 1×/5min, e os
+ * dois chamavam `audit()` FORA de qualquer condição: **51.840 linhas/mês** numa
  * instalação que não atende ninguém, numa tabela append-only que até agora não
  * tinha expurgo nenhum. Não é hipótese: numa VPS real, **95% do audit log** era
  * batida de cron vazia — 1.175 de 1.236 linhas em ~9 h paradas
@@ -175,8 +175,9 @@ vi.mock("@/lib/audit", () => ({ audit: (...args: unknown[]) => auditou(...args) 
 const rodarRouting = vi.fn();
 vi.mock("@/lib/routing/worker", () => ({ runRoutingWorker: () => rodarRouting() }));
 
-/** O que o UPDATE de `attendant_availability` devolve nesta rodada. */
-let varridos: { user_id: string }[] = [];
+// Dublê genérico do admin client: o que sobrou nesta suíte é o `routing-worker`,
+// que não lê linhas daqui. A fixture nomeada (`varridos`) existia para o
+// `attendant-heartbeat`, que saiu junto com o cron.
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: () => {
@@ -184,7 +185,7 @@ vi.mock("@/lib/supabase/admin", () => ({
       for (const metodo of ["update", "eq", "or"]) {
         cadeia[metodo] = () => cadeia;
       }
-      cadeia.select = async () => ({ data: varridos, error: null });
+      cadeia.select = async () => ({ data: [], error: null });
       return cadeia;
     },
   }),
@@ -236,27 +237,3 @@ describe("routing-worker — audita quando drenou, cala quando não drenou", () 
   });
 });
 
-describe("attendant-heartbeat — audita quando derrubou alguém", () => {
-  beforeEach(() => {
-    auditou.mockClear();
-  });
-
-  it("varredura que não derrubou ninguém NÃO audita", async () => {
-    varridos = [];
-    const { GET } = await import("@/app/api/v1/cron/attendant-heartbeat/route");
-    const resposta = await GET(requisicaoAutorizada() as never);
-    expect(resposta.status).toBe(200);
-    expect(auditou).not.toHaveBeenCalled();
-  });
-
-  it("varredura que derrubou dois atendentes AUDITA", async () => {
-    varridos = [{ user_id: "a" }, { user_id: "b" }];
-    const { GET } = await import("@/app/api/v1/cron/attendant-heartbeat/route");
-    await GET(requisicaoAutorizada() as never);
-    expect(auditou).toHaveBeenCalledTimes(1);
-    expect(auditou.mock.calls[0]?.[0]).toMatchObject({
-      action: "attendant.heartbeat_swept",
-      metadata: { swept: 2 },
-    });
-  });
-});

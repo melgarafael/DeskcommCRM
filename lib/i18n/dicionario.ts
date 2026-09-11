@@ -3852,6 +3852,12 @@ export const DICIONARIO: Traducoes = {
   "Não consegui iniciar a atualização. Tente de novo em instantes.": {
     es: "No pude iniciar la actualización. Intenta de nuevo en instantes.",
   },
+  // ── Os três estados do plantão do atendente. "Fora do horário" é estado
+  //    PRÓPRIO de propósito: confundi-lo com "Desligado" faz o operador ir
+  //    procurar defeito onde só existe uma jornada que terminou.
+  "De plantão": { es: "De guardia" },
+  "Fora do horário": { es: "Fuera del horario" },
+  "Desligado": { es: "Apagado" },
   "Atualizando para a versão": { es: "Actualizando a la versión" },
   "O sistema sai do ar por alguns instantes e volta sozinho. Pode deixar esta página aberta.": {
     es: "El sistema se apaga por unos instantes y vuelve solo. Puedes dejar esta página abierta.",
