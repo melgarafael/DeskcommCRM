@@ -320,11 +320,15 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/ai/credentials",
-    label: "Credenciais",
+    label: "Credenciais de IA",
     description: "A chave do provedor de IA que os agentes usam para pensar.",
     icon: "Key",
-    group: "ia",
-    section: "Montar o agente",
+    // "organizacao"/"Sua empresa", não "ia": era alcançável só digitando a
+    // URL -- não tinha `sidebar: true` nem aparecia em nenhum hub, e ninguém
+    // achava. Junto de Billing/Meta Ads (outras "conecte uma conta" do
+    // negócio) é onde quem procura "cadastrar uma chave" de fato olha.
+    group: "organizacao",
+    section: "Sua empresa",
     minRole: "manager",
   },
   {
