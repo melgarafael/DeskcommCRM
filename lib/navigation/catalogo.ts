@@ -685,7 +685,11 @@ export const NAV_CATALOG = [
       "Conecte um banco de dados de outro sistema para o agente consultar em tempo real.",
     icon: "PlugsConnected",
     group: "organizacao",
-    section: "Dados e acesso",
+    // Seção PRÓPRIA, e não "Dados e acesso": aquela é admin-only (LGPD, API
+    // Tokens), e a regra de lá é que ela some para um `viewer`. Esta fonte é de
+    // todos (D2), então divide-la seria mentir sobre quem vê o quê — e faria a
+    // seção admin aparecer para quem não administra.
+    section: "Fontes de dados",
     // SEM `sidebar`: o menu de Organização já estourou a dobra uma vez e hub é
     // onde se agrupa por uso. Configurar fonte de dados é tarefa de uma vez.
   },

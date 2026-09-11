@@ -62,7 +62,7 @@ function configDe(c: ConexaoExterna): pg.PoolConfig {
     max: MAX_CONEXOES_POR_POOL,
     connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
     idleTimeoutMillis: IDLE_TIMEOUT_MS,
-    application_name: "deskcomm-external-db",
+    application_name: "external-db-readonly",
   };
 }
 

@@ -113,7 +113,7 @@ export function ExploradorDeDados({ connectionId }: Props) {
                       <button
                         type="button"
                         onClick={() => selecionar(tabela)}
-                        className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-sm hover:bg-accent-soft ${
+                        className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-accent-soft ${
                           ativa ? "bg-accent-soft font-medium" : ""
                         }`}
                       >
@@ -223,7 +223,7 @@ export function ExploradorDeDados({ connectionId }: Props) {
                               title={ehPk ? t("Chave primária") : undefined}
                             >
                               {ehPk && (
-                                <span className="rounded bg-surface-elevated px-1 text-[10px] font-semibold text-text-muted">
+                                <span className="rounded-md bg-surface-elevated px-1 text-[10px] font-semibold text-text-muted">
                                   PK
                                 </span>
                               )}

@@ -8169,6 +8169,74 @@ export const DICIONARIO: Traducoes = {
   "Este ponto usa o modelo definido na versão publicada do agente; a escolha do painel não se aplica.": {
     es: "Este punto usa el modelo definido en la versión publicada del agente; la elección del panel no se aplica.",
   },
+
+  // ─── Integração de dados (banco externo do agente) ───
+  "Dados externos": { es: "Datos externos" },
+  "Conecte um banco de dados de outro sistema — o seu segundo CRM, um ERP, uma planilha em PostgreSQL — e o agente passa a consultá-lo em tempo real. A conexão é sempre somente leitura: nada que o agente faz altera o banco de origem.": {
+    es: "Conecta una base de datos de otro sistema — tu segundo CRM, un ERP, una hoja de cálculo en PostgreSQL — y el agente pasa a consultarla en tiempo real. La conexión es siempre de solo lectura: nada de lo que hace el agente modifica la base de origen.",
+  },
+  "Nenhum banco externo conectado ainda": { es: "Aún no hay ninguna base externa conectada" },
+  "Quando o seu outro sistema escreve num PostgreSQL, conecte-o aqui e o agente passa a responder com esses dados — pedido, assinatura, matrícula, saldo.": {
+    es: "Cuando tu otro sistema escribe en un PostgreSQL, conéctalo aquí y el agente pasa a responder con esos datos — pedido, suscripción, matrícula, saldo.",
+  },
+  "Conectar banco de dados": { es: "Conectar base de datos" },
+  "Nova conexão": { es: "Nueva conexión" },
+  "1 conexão": { es: "1 conexión" },
+  "Conectada": { es: "Conectada" },
+  "Falha no último teste": { es: "Falla en la última prueba" },
+  "Não testada": { es: "Sin probar" },
+  "Conexão bem-sucedida.": { es: "Conexión exitosa." },
+  "Conexão removida.": { es: "Conexión eliminada." },
+  "Explorar": { es: "Explorar" },
+  "Testar": { es: "Probar" },
+  "Remover esta conexão?": { es: "¿Eliminar esta conexión?" },
+  "A senha guardada é apagada e o agente deixa de enxergar esse banco. O banco de origem não é tocado — só a conexão daqui.": {
+    es: "La contraseña guardada se elimina y el agente deja de ver esa base. La base de origen no se toca — solo la conexión de aquí.",
+  },
+  "Editar conexão": { es: "Editar conexión" },
+  "A senha é cifrada antes de gravar e nunca é mostrada de volta. A conexão é somente leitura e só aceita TLS por padrão.": {
+    es: "La contraseña se cifra antes de guardar y nunca se muestra de nuevo. La conexión es de solo lectura y solo acepta TLS por defecto.",
+  },
+  "Nome da conexão": { es: "Nombre de la conexión" },
+  "Ex: CRM de assinaturas": { es: "Ej: CRM de suscripciones" },
+  "Host": { es: "Host" },
+  "Porta": { es: "Puerto" },
+  "Banco de dados": { es: "Base de datos" },
+  "Guardada — preencha só para trocar": { es: "Guardada — completa solo para cambiarla" },
+  "Segurança da conexão (TLS)": { es: "Seguridad de la conexión (TLS)" },
+  "Conexão ativa": { es: "Conexión activa" },
+  "Desative para o agente parar de usar esta fonte sem apagar o cadastro.": {
+    es: "Desactiva para que el agente deje de usar esta fuente sin borrar el registro.",
+  },
+  "Informe a senha do banco.": { es: "Indica la contraseña de la base." },
+  "Conexão atualizada.": { es: "Conexión actualizada." },
+  "Conexão criada. Use Testar para conferir o acesso.": {
+    es: "Conexión creada. Usa Probar para verificar el acceso.",
+  },
+  "Tabelas": { es: "Tablas" },
+  "Lendo o catálogo…": { es: "Leyendo el catálogo…" },
+  "Não foi possível ler o catálogo.": { es: "No se pudo leer el catálogo." },
+  "Este banco não tem tabelas visíveis.": { es: "Esta base no tiene tablas visibles." },
+  "view": { es: "vista" },
+  "Escolha uma tabela à esquerda para ver os dados.": {
+    es: "Elige una tabla a la izquierda para ver los datos.",
+  },
+  "linhas (estimativa)": { es: "filas (estimación)" },
+  "Linhas por página": { es: "Filas por página" },
+  "pág.": { es: "pág." },
+  "Página anterior": { es: "Página anterior" },
+  "Próxima página": { es: "Página siguiente" },
+  "Carregando dados…": { es: "Cargando datos…" },
+  "Não foi possível consultar esta tabela agora.": {
+    es: "No se pudo consultar esta tabla ahora.",
+  },
+  "Nenhuma linha retornada.": { es: "No se devolvió ninguna fila." },
+  "Chave primária": { es: "Clave primaria" },
+  "nada a mostrar": { es: "nada que mostrar" },
+  "somente leitura": { es: "solo lectura" },
+  "Esta conexão está desativada. Ative-a na lista para consultar os dados.": {
+    es: "Esta conexión está desactivada. Actívala en la lista para consultar los datos.",
+  },
 };
 
 /**
