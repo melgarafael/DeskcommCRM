@@ -128,10 +128,9 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     renderPainel();
 
     const fixas = CONFERENCIAS_DE_SAIDA.filter((c) => c.escolha === null);
-    // 10 das 11 hoje (subiu de 9/10 quando `agenda_stall` entrou na cadeia — ver
-    // `before-send.ts`). A contagem entra na asserção de propósito: se alguém tornar
+    // 11 das 12 hoje. A contagem entra na asserção de propósito: se alguém tornar
     // uma delas "configurável", este número muda e a mudança tem de ser deliberada.
-    expect(fixas).toHaveLength(10);
+    expect(fixas).toHaveLength(11);
     for (const c of fixas) {
       const linha = screen.getByTestId(`conferencia-${c.nome}-fixa`);
       expect(linha.textContent).toContain("não se desliga");
@@ -142,7 +141,7 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
 
   it("as configuráveis dizem o CUSTO — é o que torna a escolha uma escolha", () => {
     // O custo é a única razão pela qual estas duas são configuráveis e as outras
-    // dez não. Sem o número na tela, o interruptor vira preferência estética.
+    // demais não. Sem o número na tela, o interruptor vira preferência estética.
     //
     // A frase de ONDE a decisão vem tem caso próprio abaixo: ela depende do
     // estado carregado, e misturar as duas fazia esta asserção medir o texto de

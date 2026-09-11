@@ -5,7 +5,7 @@
  * ## Por que esta lista existe
  *
  * A cadeia de conferências roda em `lib/agent-engine/guardrails/before-send.ts` e
- * é boa: dez verificações, veto instrutivo, trace por linha. Só que o dono do
+ * é boa: verificações ordenadas, veto instrutivo, trace por linha. Só que o dono do
  * negócio **não sabia que ela existia**. A spec 16 §3.3 chamou o papel de
  * "Segurança" e disse, com todas as letras, que o que faltava era *superfície* —
  * e o épico dos três papéis foi entregue com dois papéis na tela.
@@ -27,7 +27,7 @@
  * verdade (arquivo de teste pode importar `pg`) e reprova nos DOIS sentidos:
  * conferência que roda e não aparece, e conferência que aparece e não roda.
  *
- * ## A política: 9 não se desligam, e isso não é rigidez
+ * ## A política: proteções determinísticas não se desligam, e isso não é rigidez
  *
  * Um botão só existe onde há escolha real. Desligar o que impede o número do
  * cliente de ser bloqueado, ou o que respeita quem pediu para parar, não é
@@ -164,6 +164,16 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     porQueNaoSeDesliga:
       "É a mesma promessa vazia do 'vou pedir pro responsável', só que sobre agenda: o cliente " +
       "fica esperando uma confirmação que nunca foi checada. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
+    nome: "academia_grade_stall",
+    rotulo: "Não informar a grade sem consultar de verdade",
+    oQueProtege:
+      'Barra o “vou verificar a grade” e horários de aula sem que o assistente tenha consultado os dados cadastrados nesta resposta.',
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Evita deixar o cliente esperando ou informar um horário inventado quando a grade já pode ser consultada. Regra fixa, sem custo.",
     camada: null,
   },
   {
