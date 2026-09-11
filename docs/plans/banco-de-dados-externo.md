@@ -9,10 +9,10 @@
 
 ## Status atual
 
-- **Fase:** 3 — API `/api/v1/external-db/` (concluída) · próxima: Fase 4 — tela `/app/integracao-dados`
+- **Fase:** 4 — tela `/app/integracao-dados` (concluída) · próxima: Fase 5 — tool do agente
 - **Última atualização:** 2026-09-11
-- **Próximo passo concreto:** Fase 4 — entrada no `lib/navigation/catalogo.ts` e telas de lista/formulário/árvore de tabelas/grade.
-- **Bloqueios:** nenhum. Dívida: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature).
+- **Próximo passo concreto:** Fase 5 — `lib/mcp/tools/dados-externos.ts` (`crm_describe_external_data` e `crm_query_external_data`), catálogo e registro nos índices; marcar como leitura em `tool-breaker.ts` e `guardServiceTools`.
+- **Bloqueios:** nenhum. Dívidas: `lib/database.types.ts` não regenerado (clients untyped; arquivo já desatualizado além desta feature) e `tests/e2e/navegacao.spec.ts` não rodou neste host (sem app/DB).
 - **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commit da Fase 1: `73a274ef` (o hash da Fase 2 não fica aqui: seria autorreferente — vive no diário em `/root/arquivos/deskcomm-banco-externo.md`).
 
 ---
@@ -165,11 +165,11 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 
 ### Fase 4 — Tela
 
-- [ ] Entrada em `lib/navigation/catalogo.ts` (grupo + `section` + `minRole` + `sidebar`)
-- [ ] `app/app/integracao-dados/page.tsx` — lista de conexões + formulário (admin)
-- [ ] `app/app/integracao-dados/[id]/page.tsx` — árvore de tabelas + schema + grade de dados
-- [ ] Estados vazio/erro/loading; senha **nunca** exibida após salva
-- [ ] Rodar `tests/e2e/navegacao.spec.ts` — item novo pode estourar a dobra do sidebar
+- [x] Entrada em `lib/navigation/catalogo.ts` — grupo `organizacao`, section `Dados e acesso`, `icon: PlugsConnected`, sem `minRole` (D2: todos veem). **SEM `sidebar`**: tarefa de uma vez, fica no hub (mesma decisão de Marca — o menu já estourou a dobra antes)
+- [x] `app/app/integracao-dados/page.tsx` — lista de conexões + formulário (admin); leitura pela sessão (RLS), não service role
+- [x] `app/app/integracao-dados/[id]/page.tsx` — árvore de tabelas por schema + grade paginada, com ordenação por coluna e marcação de PK
+- [x] Estados vazio/erro/loading; senha **nunca** exibida após salva (o formulário nasce vazio no campo de senha)
+- [ ] Rodar `tests/e2e/navegacao.spec.ts` — não rodou neste host (sem app/DB); o item NÃO entrou no sidebar, então não muda a dobra. Rodar no CI
 
 ### Fase 5 — Tool do agente (D3)
 
