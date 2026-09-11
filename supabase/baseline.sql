@@ -23348,3 +23348,84 @@ grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
 grant execute on function public.fn_encrypt_oauth(text) to service_role;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_update_budget_consumption() to service_role;
+
+-- ---- banco de dados externo do agente: cadastro da conexão (migration 0233) ----
+-- A senha é cifrada no APP (AES-256-GCM, AI_CRED_AES_KEY), como
+-- `ai_provider_credentials`; não usa pgcrypto porque quem abre a conexão é o Node
+-- via `pg`. A `_safe` view omite as três colunas cifradas. Idempotente.
+create table if not exists public.external_db_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  label text not null,
+  host text not null,
+  port integer not null default 5432,
+  database_name text not null,
+  username text not null,
+  password_encrypted bytea not null,
+  password_iv bytea not null,
+  password_tag bytea not null,
+  ssl_mode text not null default 'require',
+  enabled boolean not null default true,
+  last_tested_at timestamptz,
+  last_test_ok boolean,
+  last_test_error text,
+  created_by uuid references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint external_db_connections_label_uk unique (organization_id, label),
+  constraint external_db_connections_port_valido check (port between 1 and 65535),
+  constraint external_db_connections_ssl_conhecido
+    check (ssl_mode in ('disable', 'prefer', 'require', 'verify-ca', 'verify-full'))
+);
+
+create index if not exists external_db_connections_org_idx
+  on public.external_db_connections (organization_id)
+  where enabled;
+
+alter table public.external_db_connections enable row level security;
+
+drop policy if exists tenant_isolation_external_db_connections_select on public.external_db_connections;
+create policy tenant_isolation_external_db_connections_select on public.external_db_connections
+  for select
+  using (organization_id in (select * from public.fn_user_org_ids()));
+
+drop policy if exists tenant_isolation_external_db_connections_modify on public.external_db_connections;
+create policy tenant_isolation_external_db_connections_modify on public.external_db_connections
+  for all
+  using (organization_id in (select * from public.fn_user_org_ids()))
+  with check (organization_id in (select * from public.fn_user_org_ids()));
+
+revoke all on public.external_db_connections from anon;
+
+drop view if exists public.external_db_connections_safe;
+create view public.external_db_connections_safe
+  with (security_invoker = true)
+  as
+  select id, organization_id, label, host, port, database_name, username,
+         ssl_mode, enabled, last_tested_at, last_test_ok, last_test_error,
+         created_by, created_at, updated_at
+  from public.external_db_connections;
+
+revoke all on public.external_db_connections_safe from anon;
+grant select on public.external_db_connections_safe to authenticated;
+
+drop trigger if exists trg_external_db_connections_updated_at on public.external_db_connections;
+create trigger trg_external_db_connections_updated_at
+  before update on public.external_db_connections
+  for each row execute function public.fn_set_updated_at();
+
+drop trigger if exists trg_external_db_connections_audit on public.external_db_connections;
+create trigger trg_external_db_connections_audit
+  after insert or update or delete on public.external_db_connections
+  for each row execute function public.fn_audit_log_row();
+
+comment on table public.external_db_connections is
+  'Conexão da organização com um PostgreSQL externo (outro CRM/sistema). A senha é cifrada com AES-GCM (AI_CRED_AES_KEY) e nunca é exposta: a tela lê external_db_connections_safe. O schema do banco externo não é espelhado — a introspecção é ao vivo.';
+comment on column public.external_db_connections.password_encrypted is
+  'Ciphertext AES-256-GCM. Par de password_iv (12 bytes) e password_tag (16 bytes). Sem AI_CRED_AES_KEY a leitura falha fechada.';
+comment on column public.external_db_connections.ssl_mode is
+  'Modo TLS da conexão pg. Default require: remoto sem TLS vaza credencial e dado.';
+comment on column public.external_db_connections.last_test_error is
+  'Erro do último teste de conexão, truncado e sem segredo. Superfície de falha lida pela tela.';
+
+-- ---- fim banco de dados externo do agente (migration 0233) ----
