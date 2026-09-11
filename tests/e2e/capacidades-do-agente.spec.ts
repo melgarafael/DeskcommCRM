@@ -213,14 +213,8 @@ test.describe("Configurar o que o agente pode fazer", () => {
 
     // O TETO ENTRA NA JORNADA (issue #162), e entra antes do clique.
     //
-    // "Atender" exige 20 vagas (19 automáticas + a crítica que o pacote
-    // deliberadamente NÃO liga). Com as 8 do seed dá 28, acima do teto.
-    //
-    // De 18 para 20 subiu por causa das DUAS tools do banco externo (Fase 5):
-    // quem liga a jornada de responder ao cliente passa a poder consultar o
-    // banco conectado. O número é consequência; a propriedade testada (recusar e
-    // dizer quantas vagas faltam) não mudou — e este parágrafo fica ao lado da
-    // asserção para quem vier depois não "consertar" o teste sem ler.
+    // "Atender" exige 18 vagas (17 automáticas + a crítica que o pacote
+    // deliberadamente NÃO liga). Com as 8 do seed dá 26, acima do teto.
     //
     // ⚠️ AS 8 SÃO O QUE MANTÉM ESTE CASO VIVO. Eram 3, e 3 + 18 = 21 estourava o
     // teto de 20. Quando o teto foi para 25 essas mesmas 21 passaram a caber: a
@@ -233,7 +227,7 @@ test.describe("Configurar o que o agente pode fazer", () => {
     // não permitia fazer, sem dizer por quê. Agora recusa e diz quantas vagas
     // faltam, e o operador faz o que a própria tela manda.
     await page.getByTestId("switch-pacote-atender").click();
-    await expect(page.getByTestId("aviso-teto")).toContainText(/faltam? 3 vagas/);
+    await expect(page.getByTestId("aviso-teto")).toContainText(/faltam? 1 vaga/);
     await expect(
       page.getByTestId("pacote-atender"),
       "recusar significa NÃO aplicar: pacote meio-ligado seria o pior dos dois mundos",
