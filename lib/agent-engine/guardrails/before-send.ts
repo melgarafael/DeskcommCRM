@@ -8,7 +8,7 @@ import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agen
  * como erro instrutivo (o modelo a vê no turno seguinte); só se TODOS passarem a
  * mensagem alcança o `ChannelAdapter` (e, por baixo, o sink idempotente F2-06).
  *
- * Ordem FINAL v6 (DECLARATIVA + VERSIONADA — `BEFORE_SEND_GATES`/`BEFORE_SEND_CHAIN_VERSION`,
+ * Ordem FINAL v8 (DECLARATIVA + VERSIONADA — `BEFORE_SEND_GATES`/`BEFORE_SEND_CHAIN_VERSION`,
  * F4-08/F4-09): (1) stop/opt-out — irrevogável; (2) lgpd — anonimização/base legal de
  * prospecção (F4-09); (3) anti-ban (janela/throttle/warm-up/caps — F2-11); (3.5) janela de
  * atendimento; (4) spinning (F2-12); (5) promise determinística (F4-01); (6) promise
@@ -243,6 +243,13 @@ export interface GateContext {
    * chamada neste turno (rastreado no call site, que é quem monta as tools).
    */
   agenda?: { active: boolean; toolCalledThisTurn: boolean };
+  /**
+   * Arma o `academiaGradeStallGate`. Ausente = no-op. `active` exige as duas condições
+   * do runtime: a versão publicada possui `crm_find_academia_classes` E a conversa recente
+   * contém sinal inequívoco de grade da academia. `toolCalledThisTurn` registra a execução
+   * real da consulta neste turno — ter a tool publicada, sozinho, não autoriza afirmar horário.
+   */
+  academiaGrade?: { active: boolean; toolCalledThisTurn: boolean };
 }
 
 /**
@@ -519,6 +526,47 @@ export const agendaStallGate: Gate = {
 };
 
 /**
+ * Frases de adiamento medidas no atendimento: o modelo promete uma consulta futura em vez de
+ * usar a consulta estruturada já disponível no turno. O padrão fica estreito de propósito:
+ * primeira pessoa/permissão perto de um verbo de checagem, sem tentar classificar toda frase.
+ */
+const ACADEMIA_GRADE_STALL_PATTERN =
+  /\b(vou|irei|estou|posso|deixa eu)\b[^.!?\n]{0,70}\b(consultar|verificar|verificando|checando|checar|confirmar|vendo)\b/i;
+
+/** Afirmação de horário de aula sem lastro na consulta estruturada deste turno. */
+const ACADEMIA_GRADE_HOUR_PATTERN =
+  /\b(aula|turma|treino|cross ?fit|spinning|ciclismo|pilates|yoga|musculacao)\b[^.!?\n]{0,90}\b([01]\d|2[0-3]):[0-5]\d\b/i;
+
+/**
+ * Garante que conversa sobre grade não termine em promessa vazia nem em horário inventado.
+ * Desarmado por default para preservar todos os callers que não conhecem o módulo Academia.
+ */
+export const academiaGradeStallGate: Gate = {
+  name: 'academia_grade_stall',
+  evaluate: (ctx) => {
+    if (ctx.academiaGrade === undefined || !ctx.academiaGrade.active) return { pass: true };
+    if (ctx.academiaGrade.toolCalledThisTurn) return { pass: true };
+
+    const bodySemAcento = semAcento(ctx.body);
+    if (
+      !ACADEMIA_GRADE_STALL_PATTERN.test(bodySemAcento) &&
+      !ACADEMIA_GRADE_HOUR_PATTERN.test(bodySemAcento)
+    )
+      return { pass: true };
+
+    return {
+      pass: false,
+      code: 'academia_grade_stall_sem_ferramenta',
+      reason:
+        'Você tentou adiar a consulta ou afirmar um horário de aula sem chamar ' +
+        'crm_find_academia_classes NESTE turno. Chame a ferramenta agora e responda somente ' +
+        'com base no retorno dela; para uma data específica, explique que a grade é semanal e ' +
+        'encaminhe para atendimento humano.',
+    };
+  },
+};
+
+/**
  * Gate de disclosure (F4-05; blueprint 5.7) — garante que a PRIMEIRA mensagem outbound a um
  * lead novo se apresenta como assistente virtual (template versionado por org). Decisão de
  * produto que blinda hoje (CDC) e amanhã (PL 2338), não exigência da Meta. Sem template
@@ -671,9 +719,12 @@ const spinningGate: Gate = {
  * a instrução presente e por último no prompt). Nasce DESARMADO por default (ver
  * `GateContext.agenda`): só o caminho do agente o arma quando o agente publicado tem
  * `crm_book_appointment` nas tools, então a v7 também não muda o destino de nenhum envio que
- * já existia fora desse caso — muda o TRACE e passa a medir/impedir a promessa vazia.
+ * já existia fora desse caso — muda o TRACE e passa a medir/impedir a promessa vazia. v8 =
+ * insere `academiaGradeStallGate` depois de `agendaStallGate`: quando a conversa recente é
+ * sobre a grade e a versão publicada possui a consulta estruturada, impede adiamento e horário
+ * sem execução de `crm_find_academia_classes` no turno. Também nasce desarmado por default.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 7;
+export const BEFORE_SEND_CHAIN_VERSION = 8;
 
 /**
  * Ordem FINAL da cadeia (F4-08/F4-09; edge-contract §before_send / blueprint órgão 5) — DADO
@@ -690,6 +741,8 @@ export const BEFORE_SEND_CHAIN_VERSION = 7;
  *         `separacao-fala-e-operacao.md`); antes do disclosure porque ele pode emendar o corpo;
  *   (6.9) agenda_stall — "vou verificar/confirmar horário" sem ter chamado a ferramenta de
  *         agenda neste turno; antes do disclosure pelo mesmo motivo do internal_vocabulary;
+ *   (7) academia_grade_stall — promessa de consultar a grade ou horário de aula afirmado sem
+ *       executar a consulta estruturada neste turno;
  *   (8) disclosure — 1ª mensagem se apresenta como assistente virtual (F4-05).
  * (O anti-jailbreak F4-04 é INBOUND advisório, não gate de before_send — não entra aqui.)
  */
@@ -704,6 +757,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   casePromiseGate,
   internalVocabularyGate,
   agendaStallGate,
+  academiaGradeStallGate,
   disclosureGate,
 ];
 
@@ -825,6 +879,11 @@ export interface RunBeforeSendArgs {
    * no-op (retrocompatível com todo caller que não conhece agenda, ex.: `followup-turn.ts`).
    */
   agenda?: { active: boolean; toolCalledThisTurn: boolean };
+  /**
+   * Arma o `academiaGradeStallGate` para ESTA tentativa. Ausente = no-op, preservando os
+   * caminhos determinísticos e agentes sem o módulo Academia.
+   */
+  academiaGrade?: { active: boolean; toolCalledThisTurn: boolean };
   /**
    * Enviado SÓ se TODOS os gates passarem — ChannelAdapter (própria tx/idempotência). Recebe o
    * corpo FINAL (o disclosureGate F4-05 pode emendá-lo via `amendBody`): quem monta o send DEVE
@@ -1015,6 +1074,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         : {}),
       internalVocabularyEnforced: args.enforceInternalVocabulary ?? false,
       ...(args.agenda !== undefined ? { agenda: args.agenda } : {}),
+      ...(args.academiaGrade !== undefined ? { academiaGrade: args.academiaGrade } : {}),
     };
 
     const { body: evaluatedBody, trace, veto, throttleWaitMs } = evaluateBeforeSend(ctx, gates);
