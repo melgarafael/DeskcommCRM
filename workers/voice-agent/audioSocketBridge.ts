@@ -220,7 +220,12 @@ export class AudioSocketCallBridge {
             audio: {
               input: {
                 format: { type: "audio/pcmu" },
-                turn_detection: { type: "server_vad" },
+                // Default da API é silence_duration_ms=500 -- curto demais pra
+                // uma ligação de telefone: pausa natural no meio da frase (ex.:
+                // pensando, respirando) já bastava pra o modelo achar que a
+                // pessoa tinha terminado e começar a responder por cima. 700ms
+                // dá mais folga sem deixar a resposta perceptivelmente lenta.
+                turn_detection: { type: "server_vad", silence_duration_ms: 700 },
                 transcription: { model: "whisper-1" },
               },
               output: {

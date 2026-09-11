@@ -163,6 +163,8 @@ export interface AriChannel {
 export interface AriEvent {
   type: string;
   channel?: AriChannel;
+  /** Só em ChannelDestroyed -- motivo do fim da chamada (texto ITU Q.850). */
+  cause_txt?: string;
 }
 
 export type AriEventHandler = (event: AriEvent) => void | Promise<void>;

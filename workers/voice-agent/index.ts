@@ -323,12 +323,48 @@ function assertEnv() {
   }
 }
 
+/**
+ * Chamada de SAÍDA nunca passa pela Stasis (ver cabeçalho do arquivo) -- por
+ * isso nenhum outro handler fecha o ciclo de vida dela. Sem isto, uma
+ * ligação que toca e não é atendida (ou cai antes do AudioSocket conectar)
+ * fica com status "ringing" pra sempre na tela, mesmo com o canal já tendo
+ * sumido do Asterisk há muito tempo -- foi visto ao vivo assim.
+ *
+ * Só mexe em linha ainda "ringing": se o AudioSocket já rodou,
+ * finalizeAudioSocketCall() já marcou "completed" e este handler não deve
+ * sobrescrever isso (ChannelDestroyed chega DEPOIS, no fim normal da
+ * ligação, não é exclusivo de "nunca atendida").
+ */
+async function handleChannelDestroyed(event: AriEvent) {
+  const channelId = event.channel?.id;
+  if (!channelId) return;
+
+  const { data, error } = await supabaseAdmin
+    .from("crm_calls")
+    .update({ status: "no_answer", ended_at: new Date().toISOString() })
+    .eq("asterisk_channel_id", channelId)
+    .eq("status", "ringing")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[voice-agent] falha ao marcar no_answer pro canal ${channelId}:`, error.message);
+    return;
+  }
+  if (data) {
+    console.info(
+      `[voice-agent] chamada ${data.id} marcada no_answer (${event.cause_txt ?? "motivo desconhecido"})`,
+    );
+  }
+}
+
 function main() {
   assertEnv();
   console.info("[voice-agent] worker iniciado, conectando ao ARI...");
   connectAriEvents(async (event) => {
     try {
       if (event.type === "StasisStart") await handleStasisStart(event);
+      if (event.type === "ChannelDestroyed") await handleChannelDestroyed(event);
     } catch (err) {
       console.error("[voice-agent] erro processando evento ARI:", err);
     }
