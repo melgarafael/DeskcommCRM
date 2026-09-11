@@ -60,6 +60,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
           (rawArgs ?? {}) as Record<string, unknown>,
         );
         const args = higiene.limpos;
+        const argsAudit = tool.redigirParaAuditoria ? tool.redigirParaAuditoria(args) : args;
         const ctx: McpContext = {
           organizationId: auth.organizationId,
           role: auth.role,
@@ -79,7 +80,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
           await auditMcpToolCall({
             ctx,
             toolName: tool.name,
-            args,
+            args: argsAudit,
             durationMs,
             success: true,
             resultSummary: summarizeResult(result),
@@ -96,7 +97,7 @@ export function createMcpServer(auth: McpAuthResult, requestId: string): McpServ
           await auditMcpToolCall({
             ctx,
             toolName: tool.name,
-            args,
+            args: argsAudit,
             durationMs,
             success: false,
             errorMessage: message,

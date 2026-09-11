@@ -9,10 +9,10 @@
 
 ## Status atual
 
-- **Fase:** 4 — tela `/app/integracao-dados` (concluída) · próxima: Fase 5 — tool do agente
+- **Fase:** 5 — tool do agente (concluída) · próxima: Fase 6 — verificação e distribuição
 - **Última atualização:** 2026-09-11
-- **Próximo passo concreto:** Fase 5 — `lib/mcp/tools/dados-externos.ts` (`crm_describe_external_data` e `crm_query_external_data`), catálogo e registro nos índices; marcar como leitura em `tool-breaker.ts` e `guardServiceTools`.
-- **Bloqueios:** nenhum. Dívidas: `lib/database.types.ts` não regenerado (clients untyped; arquivo já desatualizado além desta feature) e `tests/e2e/navegacao.spec.ts` não rodou neste host (sem app/DB).
+- **Próximo passo concreto:** Fase 6 — `pnpm gov:verify` (typecheck/lint/test:unit), `pnpm test:db`, `pnpm test:e2e`, fragmento em `.changes/`, doc em `docs/specs/` e memória viva.
+- **Bloqueios:** nenhum. Dívidas: `lib/database.types.ts` não regenerado (clients untyped; arquivo já desatualizado além desta feature); `test:db`/`test:e2e` não rodaram neste host (sem app/DB) — vão no CI.
 - **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commit da Fase 1: `73a274ef` (o hash da Fase 2 não fica aqui: seria autorreferente — vive no diário em `/root/arquivos/deskcomm-banco-externo.md`).
 
 ---
@@ -173,13 +173,13 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 
 ### Fase 5 — Tool do agente (D3)
 
-- [ ] `lib/mcp/tools/dados-externos.ts` — `crm_describe_external_data` (read)
-- [ ] `lib/mcp/tools/dados-externos.ts` — `crm_query_external_data` (read, parametrizada, limite)
-- [ ] `lib/mcp/tools/catalogo/dados-externos.ts` + registro nos dois índices
-- [ ] Adicionar os nomes a `READ_ONLY_TOOLS` e ao `reads` de `guardServiceTools`
-- [ ] Limite de linhas/bytes devolvidos ao modelo (orçamento de token) + tratamento de dado não confiável (anti prompt-injection)
-- [ ] Auditoria sem PII (sem valores de filtro); `organizationId` sempre de `ctx`
-- [ ] E2E/unit provando que a tool recusa tabela fora do allowlist e que a query é read-only
+- [x] `lib/mcp/tools/dados-externos.ts` — `crm_describe_external_data` (read)
+- [x] `lib/mcp/tools/dados-externos.ts` — `crm_query_external_data` (read, parametrizada, limite)
+- [x] `lib/mcp/tools/catalogo/dados-externos.ts` + registro nos dois índices (`catalogo/index.ts` e `tools/index.ts`)
+- [x] Adicionar os nomes a `READ_ONLY_TOOLS` e ao `reads` de `guardServiceTools`
+- [x] Limite de linhas/bytes devolvidos ao modelo (teto de bytes na página) + aviso anti prompt-injection
+- [x] Auditoria sem PII: `McpToolDefinition.redigirParaAuditoria` tira os valores de filtro do `api_audit_log`; `organizationId` sempre de `ctx`
+- [x] Unit provando que a tool recusa tabela inexistente e que a leitura passa por `BEGIN READ ONLY` (núcleo `consultar`, coberto em `introspeccao.test.ts`). Sem allowlist (D6)
 
 ### Fase 6 — Verificação e distribuição
 

@@ -142,6 +142,11 @@ export function guardServiceTools(tools: ToolSet | undefined): ToolSet | undefin
     "get_lead_note",
     "search_knowledge",
     "read_skill_reference",
+    // Leitura do banco externo (Fase 5): não toca o CRM, então não há efeito a
+    // proteger com a fronteira de atendimento — o SELECT já corre em transação
+    // somente-leitura no banco de origem.
+    "crm_describe_external_data",
+    "crm_query_external_data",
   ]);
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {

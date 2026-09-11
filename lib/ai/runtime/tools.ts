@@ -85,8 +85,11 @@ function wrapMcpTool(
         def.inputSchema as Record<string, z.ZodTypeAny>,
         (args ?? {}) as Record<string, unknown>,
       );
-      const argsRecord = higiene.limpos;
-      if (higiene.descartados.length > 0) {
+        const argsRecord = higiene.limpos;
+        // O que vai ao audit não é necessariamente o que vai ao handler: a tool
+        // pode declarar como tirar PII dos args (ex.: valores de filtro).
+        const argsAudit = def.redigirParaAuditoria ? def.redigirParaAuditoria(argsRecord) : argsRecord;
+        if (higiene.descartados.length > 0) {
         // Não é cosmético: sem esta linha o defeito passa a se curar em
         // silêncio e ninguém descobre que um modelo faz isso o tempo todo.
         logger.info("uuid de aterro descartado do payload da tool", {
@@ -161,7 +164,7 @@ function wrapMcpTool(
           void auditMcpToolCall({
             ctx: input.ctx,
             toolName: def.name,
-            args: argsRecord,
+            args: argsAudit,
             durationMs: Date.now() - startedAt,
             success: false,
             errorMessage: `escopo_de_funil:${veredito.motivo}`,
@@ -184,7 +187,7 @@ function wrapMcpTool(
         void auditMcpToolCall({
           ctx: input.ctx,
           toolName: def.name,
-          args: argsRecord,
+          args: argsAudit,
           durationMs: Date.now() - startedAt,
           success: true,
         });
@@ -194,7 +197,7 @@ function wrapMcpTool(
         void auditMcpToolCall({
           ctx: input.ctx,
           toolName: def.name,
-          args: argsRecord,
+          args: argsAudit,
           durationMs: Date.now() - startedAt,
           success: false,
           errorMessage: message,
