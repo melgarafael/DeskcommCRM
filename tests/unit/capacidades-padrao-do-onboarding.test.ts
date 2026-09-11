@@ -18,11 +18,20 @@ import { BLOCKED_TOOL_IDS } from "@/lib/agent-engine/edge/crm/mcp-tools";
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
 import { TETO_TOOLS_POR_AGENTE, estadoDoPacote } from "@/lib/mcp/tools/selecao-por-pacote";
 
-const IDS = capacidadesPadraoDoOnboarding();
-const CATALOGO = catalogoComHandler();
+const IDS = capacidadesPadraoDoOnboarding({ academia: false });
+const CATALOGO = catalogoComHandler({ academia: false });
 const porNome = new Map(TOOL_CATALOG.map((c) => [c.name, c]));
 
 describe("capacidades padrão do onboarding", () => {
+  it("só liga a consulta da grade quando a organização tem o módulo Academia", () => {
+    expect(capacidadesPadraoDoOnboarding({ academia: false })).not.toContain(
+      "crm_find_academia_classes",
+    );
+    expect(capacidadesPadraoDoOnboarding({ academia: true })).toContain(
+      "crm_find_academia_classes",
+    );
+  });
+
   it("não é vazio — o agente entregue precisa alcançar o CRM", () => {
     // O defeito de origem: `tool_ids='{}'` faz o turno não montar ferramenta
     // nenhuma, e o funil nunca anda.

@@ -25,6 +25,7 @@
 import { allTools } from "@/lib/mcp/tools";
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
 import { ligarPacote } from "@/lib/mcp/tools/selecao-por-pacote";
+import type { ModulesState } from "@/lib/modules/config";
 
 /** O pacote que o primeiro agente recebe ligado. */
 export const PACOTE_PADRAO_DO_ONBOARDING = "vender" as const;
@@ -34,13 +35,21 @@ export const PACOTE_PADRAO_DO_ONBOARDING = "vender" as const;
  * implementação viraria um id gravado em `tool_ids` que nunca monta ferramenta:
  * a tela mostraria a capacidade ligada e o turno não teria a mão.
  */
-export function catalogoComHandler() {
+const MODULOS_DESLIGADOS: ModulesState = { academia: false };
+
+export function catalogoComHandler(modulos: ModulesState = MODULOS_DESLIGADOS) {
   const comHandler = new Set(allTools.map((t) => t.name));
-  return TOOL_CATALOG.filter((c) => comHandler.has(c.name));
+  return TOOL_CATALOG.filter(
+    (c) =>
+      comHandler.has(c.name) &&
+      (c.name !== "crm_find_academia_classes" || modulos.academia),
+  );
 }
 
-export function capacidadesPadraoDoOnboarding(): string[] {
-  const catalogo = catalogoComHandler();
+export function capacidadesPadraoDoOnboarding(
+  modulos: ModulesState = MODULOS_DESLIGADOS,
+): string[] {
+  const catalogo = catalogoComHandler(modulos);
   // `ligarPacote` já respeita as duas regras que importam: capacidade de risco
   // crítico nunca entra por pacote, e a ordem é a do catálogo (para o diff de
   // versão do agente ser legível).

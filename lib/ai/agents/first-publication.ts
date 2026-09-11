@@ -1,9 +1,11 @@
-import { listSelectableChannels, type SelectableChannel } from "@/lib/channels/selectable";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { listSelectableChannels } from "@/lib/channels/selectable";
+import type { SelectableChannel } from "@/lib/channels/selectable";
+import type { createAdminClient } from "@/lib/supabase/admin";
 import { capacidadesPadraoDoOnboarding } from "./capacidades-padrao";
 import { escolherModeloDoProvedor } from "./escolher-modelo";
 import { chaveDePlataforma } from "@/lib/ai/runtime/agent";
 import { publishAgentVersion } from "./publish";
+import { lerModulos } from "@/lib/modules/config";
 interface AgenteDoOnboarding {
   id: string;
   published_version_id: string | null;
@@ -197,7 +199,7 @@ export async function publishFirstVersion(
       // Sem capacidades o turno não monta ferramenta nenhuma: o agente
       // entregue conversa e não alcança contato, lead nem funil.
       credential_id: credentialId,
-      tool_ids: selection ? [] : capacidadesPadraoDoOnboarding(),
+      tool_ids: selection ? [] : capacidadesPadraoDoOnboarding(lerModulos(org?.settings)),
       pipeline_ids: pipelineIds,
       channel_session_id: canal.id,
       status: "draft",
