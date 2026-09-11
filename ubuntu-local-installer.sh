@@ -14,7 +14,12 @@ step()  { printf '\n'; paint 32 "▶ $1"; }
 error() { printf '\n'; paint 31 "✖ $1"; exit 1; }
 
 step "Verificando dependências do sistema..."
-sudo apt-get update
+if ! sudo apt-get update; then
+  # Um repositório de terceiro quebrado não deve impedir a instalação quando
+  # os índices dos repositórios necessários já estão disponíveis localmente.
+  # Não usamos AllowInsecureRepositories nem ignoramos assinatura GPG.
+  paint 33 "⚠ Um repositório APT externo falhou; vou tentar instalar usando os índices válidos já disponíveis."
+fi
 sudo apt-get install -y curl git jq openssl iproute2
 
 if ! command -v docker >/dev/null 2>&1; then
