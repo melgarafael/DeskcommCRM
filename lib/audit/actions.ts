@@ -461,6 +461,16 @@ export const AUDIT_ACTIONS = [
   "crm_task.updated",
   "crm_task.deleted",
   "organization.switched",
+
+  // O banco de dados externo do agente (migration 0233). Dado de terceiro pode
+  // ter PII: a configuração da conexão é auditada, e a LEITURA também — mas o
+  // metadata de `read` carrega só o QUE foi lido (schema/tabela), nunca os
+  // valores de filtro, que viajariam como PII para o log.
+  "external_db_connection.created",
+  "external_db_connection.updated",
+  "external_db_connection.deleted",
+  "external_db_connection.tested",
+  "external_db_connection.read",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

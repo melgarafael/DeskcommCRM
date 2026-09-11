@@ -11,10 +11,28 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { byteaToBuffer, decryptKey } from "@/lib/crypto/aes_gcm";
+import { bufToBytea, byteaToBuffer, decryptKey, encryptKey } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 
 import type { ConexaoExterna, ModoTls } from "./types";
+
+/**
+ * Cifra a senha para gravação. As três colunas seguem `ai_provider_credentials`
+ * (AES-256-GCM). O chamador descarta o plaintext logo depois do INSERT/UPDATE;
+ * ele nunca é logado nem devolvido.
+ */
+export function cifrarSenha(senha: string): {
+  password_encrypted: string;
+  password_iv: string;
+  password_tag: string;
+} {
+  const e = encryptKey(senha);
+  return {
+    password_encrypted: bufToBytea(e.ciphertext),
+    password_iv: bufToBytea(e.iv),
+    password_tag: bufToBytea(e.tag),
+  };
+}
 
 export type MotivoSemConexao =
   | "nao_encontrada"

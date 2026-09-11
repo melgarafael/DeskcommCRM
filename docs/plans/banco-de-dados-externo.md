@@ -9,10 +9,10 @@
 
 ## Status atual
 
-- **Fase:** 2 — Núcleo `lib/external-db/` (concluída) · próxima: Fase 3 — API `/api/v1/external-db/`
+- **Fase:** 3 — API `/api/v1/external-db/` (concluída) · próxima: Fase 4 — tela `/app/integracao-dados`
 - **Última atualização:** 2026-09-11
-- **Próximo passo concreto:** Fase 3 — rotas `GET/POST connections`, `test`, `schemas` e leitura paginada; antes disso, regenerar `lib/database.types.ts` (a tabela passa a ser usada por código).
-- **Bloqueios:** nenhum.
+- **Próximo passo concreto:** Fase 4 — entrada no `lib/navigation/catalogo.ts` e telas de lista/formulário/árvore de tabelas/grade.
+- **Bloqueios:** nenhum. Dívida: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature).
 - **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commit da Fase 1: `73a274ef` (o hash da Fase 2 não fica aqui: seria autorreferente — vive no diário em `/root/arquivos/deskcomm-banco-externo.md`).
 
 ---
@@ -138,7 +138,7 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 - [x] Linha na tabela "Applied" de `supabase/migrations/MANIFEST.md`
 - [x] View `external_db_connections_safe` + `revoke`/`grant` de anon/authenticated
 - [x] Invariante RLS 2-org em `tests/invariants/banco-externo-rls.test.ts`
-- [ ] Regenerar `lib/database.types.ts` do schema (depende de DB; adiado para a Fase 3, quando houver código que use a tabela)
+- [ ] Regenerar `lib/database.types.ts` do schema (pendente — ver o item equivalente no fim da Fase 3: dívida declarada, clients untyped)
 - [x] `baseline.sql` aplica em install **e** update com `ON_ERROR_STOP=1` (validado via Docker `pgvector/pgvector:pg15`, 2026-09-11)
 - [x] Asserções do invariante verificadas à mão contra pg15 (isolamento, view sem cifra, privilégios) — 2026-09-11
 - [ ] `pnpm test:db` completo + `typecheck`/`lint` rodados no CI (o host desta sessão não tem Node/pnpm; o app roda em Docker)
@@ -154,13 +154,14 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 
 ### Fase 3 — API `/api/v1/external-db/`
 
-- [ ] `GET/POST  connections` (lista: manager+; criação: admin)
-- [ ] `GET/PATCH/DELETE connections/[id]` (admin)
-- [ ] `POST connections/[id]/test` (admin) — testa conexão e grava `last_test_*`
-- [ ] `GET  connections/[id]/schemas` — tabelas/colunas (autenticado)
-- [ ] `GET  connections/[id]/tables/[schema]/[tabela]` — dados paginados (autenticado)
-- [ ] Zod em todo input; `ok()`/`fail()`; `audit()` em toda mutação; rate limit
-- [ ] Confirmar D6 e implementar a allowlist de exposição à IA
+- [x] `GET/POST  connections` (lista: autenticado — D2; criação: admin)
+- [x] `GET/PATCH/DELETE connections/[id]` (leitura: autenticado; PATCH/DELETE: admin)
+- [x] `POST connections/[id]/test` (admin) — testa conexão e grava `last_test_*` (200 mesmo em falha do teste)
+- [x] `GET  connections/[id]/schemas` — tabelas/colunas/PK/estimativa (autenticado)
+- [x] `GET  connections/[id]/tables/[schema]/[tabela]` — dados paginados (autenticado; sem filtro na querystring)
+- [x] Zod em todo input; `ok()`/`fail()`; `audit()` em mutação E em leitura (metadata sem PII); rate limit por org
+- [x] D6 confirmada (2026-09-11): **sem allowlist por tabela**. As travas que ficam: conexão somente-leitura, timeout, teto de linhas e auditoria sem valores
+- [ ] `lib/database.types.ts` — regenerar do schema (dívida: o arquivo já está desatualizado além desta feature; os clients em uso são untyped, então nada quebra. Regenerar quando houver caminho tipado)
 
 ### Fase 4 — Tela
 
