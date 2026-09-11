@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "titulo": "Banco de dados externo do agente",
+  "descricao": "O agente consulta, em tempo real, um PostgreSQL externo (o segundo CRM/ERP do dono). A conexão é cadastrada por admin, lida por qualquer autenticado e usada como tool SOMENTE-LEITURA pelo agente. Schema lido ao vivo, nada hard-coded.",
+  "lanes": [
+    { "id": "dados", "label": "Cadastro e segredo (Supabase)" },
+    { "id": "nucleo", "label": "Núcleo lib/external-db" },
+    { "id": "api", "label": "API /api/v1/external-db" },
+    { "id": "ui", "label": "Tela /app/integracao-dados" },
+    { "id": "agente", "label": "Agente (tools MCP)" }
+  ],
+  "mainPath": ["migration0233", "credenciais", "acesso", "toolQuery", "runtimeAgent"],
+  "nodes": [
+    {
+      "id": "migration0233",
+      "lane": "dados",
+      "label": "external_db_connections",
+      "sublabel": "migration 0233 · tenant-aware, RLS, senha AES-GCM",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "safeview",
+      "lane": "dados",
+      "label": "external_db_connections_safe",
+      "sublabel": "view sem as colunas cifradas · a única que a tela lê",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "auditlog",
+      "lane": "dados",
+      "label": "api_audit_log",
+      "sublabel": "mutações e leituras — sem os valores de filtro (PII)",
+      "type": "table",
+      "dot": "slate"
+    },
+    {
+      "id": "credenciais",
+      "lane": "nucleo",
+      "label": "credenciais.ts",
+      "sublabel": "leitura SEMPRE com organization_id; cifra just-in-time",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "guardas",
+      "lane": "nucleo",
+      "label": "guardas.ts",
+      "sublabel": "política de rede: LAN permitida, link-local/loopback sempre bloqueados; IPv6 normalizado",
+      "type": "lib",
+      "dot": "red"
+    },
+    {
+      "id": "pool",
+      "lane": "nucleo",
+      "label": "conexao.ts",
+      "sublabel": "pool por conexão, invalidado por updated_at; BEGIN READ ONLY + timeouts",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "introspeccao",
+      "lane": "nucleo",
+      "label": "introspeccao.ts",
+      "sublabel": "catálogo ao vivo: tabelas, campos, chave, estimativa",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "leitura",
+      "lane": "nucleo",
+      "label": "leitura.ts",
+      "sublabel": "SELECT montado no servidor: identificadores quotados, valores parametrizados, teto de linhas",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "acesso",
+      "lane": "nucleo",
+      "label": "acesso.ts",
+      "sublabel": "carrega a conexão + revalida o destino antes de abrir o pool",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "apiConnections",
+      "lane": "api",
+      "label": "GET/POST/PATCH/DELETE connections",
+      "sublabel": "lista: autenticado · criar/editar/apagar: admin · valida o host no cadastro",
+      "type": "api",
+      "dot": "green"
+    },
+    {
+      "id": "apiTest",
+      "lane": "api",
+      "label": "POST connections/[id]/test",
+      "sublabel": "Client descartável, grava last_test_*; 200 mesmo em falha do teste",
+      "type": "api",
+      "dot": "green"
+    },
+    {
+      "id": "apiLeitura",
+      "lane": "api",
+      "label": "GET .../schemas e .../tables/[schema]/[tabela]",
+      "sublabel": "autenticado · sem filtro na querystring (PII não vai a log)",
+      "type": "api",
+      "dot": "green"
+    },
+    {
+      "id": "telaLista",
+      "lane": "ui",
+      "label": "Lista de conexões",
+      "sublabel": "todos veem · card de cadastro/edição só para admin",
+      "type": "route",
+      "dot": "purple"
+    },
+    {
+      "id": "telaExplorador",
+      "lane": "ui",
+      "label": "Explorador",
+      "sublabel": "árvore por schema + grade paginada com ordem e PK",
+      "type": "route",
+      "dot": "purple"
+    },
+    {
+      "id": "toolDescribe",
+      "lane": "agente",
+      "label": "crm_describe_external_data",
+      "sublabel": "read · catálogo para o modelo escolher a tabela",
+      "type": "tool",
+      "dot": "amber"
+    },
+    {
+      "id": "toolQuery",
+      "lane": "agente",
+      "label": "crm_query_external_data",
+      "sublabel": "read · filtros parametrizados, teto de bytes, aviso anti prompt-injection",
+      "type": "tool",
+      "dot": "amber"
+    },
+    {
+      "id": "runtimeAgent",
+      "lane": "agente",
+      "label": "wrapMcpTool / /api/mcp",
+      "sublabel": "os dois ingressos auditam os args já redigidos",
+      "type": "service",
+      "dot": "amber"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "migration0233", "to": "safeview", "label": "expõe sem cifra" },
+    { "id": "e2", "from": "migration0233", "to": "credenciais", "label": "linha decifrada" },
+    { "id": "e3", "from": "safeview", "to": "apiConnections", "label": "lista e detalhe" },
+    { "id": "e4", "from": "safeview", "to": "toolDescribe", "label": "resolve a conexão" },
+    { "id": "e5", "from": "safeview", "to": "toolQuery", "label": "resolve a conexão" },
+    { "id": "e6", "from": "credenciais", "to": "acesso", "label": "conexão decifrada" },
+    { "id": "e7", "from": "credenciais", "to": "apiTest", "label": "carrega para testar" },
+    { "id": "e8", "from": "guardas", "to": "acesso", "label": "revalida o destino" },
+    { "id": "e9", "from": "guardas", "to": "apiConnections", "label": "valida no cadastro" },
+    { "id": "e10", "from": "pool", "to": "acesso", "label": "pool da conexão" },
+    { "id": "e11", "from": "pool", "to": "introspeccao", "label": "consultar read-only" },
+    { "id": "e12", "from": "pool", "to": "leitura", "label": "consultar read-only" },
+    { "id": "e13", "from": "introspeccao", "to": "apiLeitura", "label": "catálogo" },
+    { "id": "e14", "from": "introspeccao", "to": "toolDescribe", "label": "tabelas e campos" },
+    { "id": "e15", "from": "leitura", "to": "apiLeitura", "label": "dados paginados" },
+    { "id": "e16", "from": "leitura", "to": "toolQuery", "label": "linhas filtradas" },
+    { "id": "e17", "from": "acesso", "to": "apiLeitura", "label": "pool pronto" },
+    { "id": "e18", "from": "acesso", "to": "toolDescribe", "label": "pool pronto" },
+    { "id": "e19", "from": "acesso", "to": "toolQuery", "label": "pool pronto" },
+    { "id": "e20", "from": "apiConnections", "to": "telaLista", "label": "lista" },
+    { "id": "e21", "from": "telaLista", "to": "apiConnections", "label": "criar/editar/testar" },
+    { "id": "e22", "from": "apiConnections", "to": "auditlog", "label": "audita mutação" },
+    { "id": "e23", "from": "apiTest", "to": "auditlog", "label": "audita teste" },
+    { "id": "e24", "from": "apiLeitura", "to": "telaExplorador", "label": "grade" },
+    { "id": "e25", "from": "telaLista", "to": "telaExplorador", "label": "abre a conexão" },
+    { "id": "e26", "from": "toolDescribe", "to": "runtimeAgent", "label": "monta" },
+    { "id": "e27", "from": "toolQuery", "to": "runtimeAgent", "label": "monta" },
+    { "id": "e28", "from": "toolQuery", "to": "auditlog", "label": "audita sem valores de filtro" }
+  ],
+  "cards": [
+    {
+      "id": "card-leitura",
+      "tone": "blue",
+      "title": "Somente leitura, imposta pelo banco",
+      "body": "Toda consulta roda dentro de `BEGIN READ ONLY` com statement_timeout/lock_timeout. Mesmo que algo escapasse da montagem do SELECT, o Postgres recusaria a escrita. O teto de linhas (200) existe para uma tabela de milhões não derrubar o worker."
+    },
+    {
+      "id": "card-rede",
+      "tone": "red",
+      "title": "A guarda de rede roda a CADA abertura de pool",
+      "body": "Validar só no cadastro deixaria a janela do DNS binding aberta entre o POST e o primeiro SELECT. `abrirAcesso` revalida o destino em toda leitura. RFC1918 é permitido (Postgres na LAN é caso real); link-local/metadata, loopback e CGNAT nunca."
+    },
+    {
+      "id": "card-pii",
+      "tone": "amber",
+      "title": "O audit guarda o QUE foi lido, nunca o CONTEÚDO",
+      "body": "A leitura externa pode carregar PII. `McpToolDefinition.redigirParaAuditoria` remove os valores de filtro antes do `api_audit_log`, nos dois ingressos (runtime e /api/mcp). A tela não filtra por querystring pelo mesmo motivo."
+    },
+    {
+      "id": "card-nao-ligacao",
+      "tone": "slate",
+      "title": "Não-ligação declarada: sem allowlist por tabela (D6)",
+      "body": "A IA lê QUALQUER tabela da conexão; a trava não é uma lista, é a conexão somente-leitura + teto de linhas + auditoria sem valores. Uma allowlist seria uma segunda lista para manter em sincronia com um schema que muda todo dia."
+    }
+  ]
+}

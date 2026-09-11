@@ -94,6 +94,17 @@ export const ApiErrorCodes = {
   ads_campo_invalido: "ads_campo_invalido",
   ads_cifra_indisponivel: "ads_cifra_indisponivel",
 
+  // ─── BANCO DE DADOS EXTERNO DO AGENTE (0233) ───
+  //
+  // Declarados aqui pelo mesmo motivo dos da Agenda/Anúncios: `fail()` aceita
+  // qualquer string, então o código só é contrato se estiver nesta lista. A tela
+  // distingue "destino bloqueado pela política de rede" de "senha cifrada não
+  // pôde ser lida" — cada um pede uma ação diferente de quem lê.
+  external_db_destino_bloqueado: "external_db_destino_bloqueado",
+  external_db_label_em_uso: "external_db_label_em_uso",
+  external_db_desativada: "external_db_desativada",
+  external_db_sem_chave: "external_db_sem_chave",
+
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",

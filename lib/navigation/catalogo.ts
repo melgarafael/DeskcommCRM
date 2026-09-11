@@ -672,6 +672,27 @@ export const NAV_CATALOG = [
     section: "Dados e acesso",
     minRole: "admin",
   },
+  {
+    // A porta da fonte de dados externa (migration 0233). Fica em "Dados e
+    // acesso" porque é o MESMO eixo de API Tokens: por onde dado entra e sai do
+    // CRM. NÃO é `admin` como as vizinhas de propósito — a decisão do dono (D2)
+    // é que QUALQUER autenticado vê a lista e consulta os dados; só CRIAR e
+    // editar conexão é `admin`. Gatear a leitura em `manager` esconderia do
+    // atendente exatamente a fonte que responde o que o cliente pergunta.
+    href: "/app/integracao-dados",
+    label: "Dados externos",
+    description:
+      "Conecte um banco de dados de outro sistema para o agente consultar em tempo real.",
+    icon: "PlugsConnected",
+    group: "organizacao",
+    // Seção PRÓPRIA, e não "Dados e acesso": aquela é admin-only (LGPD, API
+    // Tokens), e a regra de lá é que ela some para um `viewer`. Esta fonte é de
+    // todos (D2), então divide-la seria mentir sobre quem vê o quê — e faria a
+    // seção admin aparecer para quem não administra.
+    section: "Fontes de dados",
+    // SEM `sidebar`: o menu de Organização já estourou a dobra uma vez e hub é
+    // onde se agrupa por uso. Configurar fonte de dados é tarefa de uma vez.
+  },
 ] as const satisfies readonly NavMetadata[];
 
 export type NavDestinationId = (typeof NAV_CATALOG)[number]["href"];

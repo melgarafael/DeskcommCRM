@@ -210,6 +210,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "da organização viraram venda, e quem o lê é o servidor com o admin client " +
       "filtrando organization_id à mão (a tela `/app/settings/conversoes`).",
   },
+  {
+    tabela: "external_db_connections",
+    razao:
+      "tests/invariants/banco-externo-rls.test.ts — dois usuários reais de " +
+      "organizações distintas (`countAs`, que é `set role authenticated` + " +
+      "`request.jwt.claims` + contagem), controle positivo da própria org, 0 " +
+      "linhas da vizinha pela TABELA e pela VIEW `_safe`, e a view sem as três " +
+      "colunas cifradas. A migration 0233 (banco externo do agente).",
+  },
 ];
 
 /**
