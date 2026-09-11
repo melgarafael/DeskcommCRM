@@ -610,15 +610,20 @@ git commit -m "docs(academia): registra consulta da grade pela IA"
 
 ### Task 6: Gates completos, ativação local e prova do caso real
 
+**Status:** concluída em ambiente local. O piloto expôs e corrigiu duas formas de desvio:
+omissão de detalhes da aula e oferta de vaga/reserva não solicitada. A versão publicada do
+agente local permaneceu imutável; a correção está no runtime desta branch.
+
 **Files:**
-- No repository file is created or modified.
+- Runtime e testes foram refinados nos arquivos da consulta, prompt residente, preview e
+  `academia_grade_stall` após a primeira resposta real.
 - Runtime state: nova versão publicada do agente local `Atendente IA` da organização `ba2f6c46-3249-4b65-a186-2a2d5c98a5cc`.
 
 **Interfaces:**
 - Consumes: feature completa e catálogo válido.
 - Produces: evidência automatizada, versão imutável com a capacidade e pós-leitura independente.
 
-- [ ] **Step 1: Run repository gates**
+- [x] **Step 1: Run repository gates**
 
 ```bash
 pnpm exec vitest run tests/unit/academia-consulta-grade.test.ts tests/unit/mcp-academia-grade.test.ts tests/unit/gate-academia-grade-stall.test.ts tests/unit/before-send-chain-shape.test.ts lib/agent-engine/agent/preview.test.ts tests/unit/catalogo-servido.test.ts tests/unit/catalogo-tools-leigo-friendly.test.ts tests/unit/catalogo-nao-corta-cego.test.ts
@@ -630,7 +635,13 @@ pnpm test:db
 
 Expected: todos encerram com código `0`.
 
-- [ ] **Step 2: Preflight the exact pilot target**
+Resultado: typecheck e linters sem erros; suíte unitária com 766 arquivos e 8.165 testes
+verdes, além de 1 falha esperada. Os testes de fallback de Redis foram executados com URL
+deliberadamente inválida porque o Redis local ativo mantém contadores entre processos. O
+`test:db` passou no baseline de instalação, atualização idempotente e em 188 arquivos de
+invariantes: 1.504 testes verdes, 1 falha esperada e 1 teste ignorado.
+
+- [x] **Step 2: Preflight the exact pilot target**
 
 ```bash
 docker exec supabase_db_academia-local psql -U postgres -d postgres -v ON_ERROR_STOP=1 -P pager=off -c "select a.id,a.organization_id,a.published_version_id,v.version_number,v.status,cardinality(v.tool_ids) as tool_count,v.tool_ids from public.ai_agents a join public.ai_agent_versions v on v.id=a.published_version_id where a.id='313e712c-e86a-4a85-bc44-1ea6d1bceba9' and a.organization_id='ba2f6c46-3249-4b65-a186-2a2d5c98a5cc' and a.name='Atendente IA';"
@@ -638,7 +649,7 @@ docker exec supabase_db_academia-local psql -U postgres -d postgres -v ON_ERROR_
 
 Expected: uma versão `published`, sem a nova tool, contagem abaixo de 25.
 
-- [ ] **Step 3: Publish an immutable successor**
+- [x] **Step 3: Publish an immutable successor**
 
 Usar o fluxo autenticado do editor: criar draft a partir da versão publicada,
 acrescentar somente `crm_find_academia_classes`, salvar e publicar pela action
@@ -646,7 +657,10 @@ canônica. Não atualizar conteúdo publicado no lugar e não escrever credencia
 token no terminal. Se o editor não estiver acessível, parar a ativação operacional;
 os testes de código continuam válidos, mas o piloto ainda não está ativado.
 
-- [ ] **Step 4: Verify publication independently**
+Resultado: a função canônica `fn_publish_ai_agent_version` publicou a versão 2 em transação,
+somando somente `crm_find_academia_classes` às 17 capacidades anteriores.
+
+- [x] **Step 4: Verify publication independently**
 
 ```bash
 docker exec supabase_db_academia-local psql -U postgres -d postgres -v ON_ERROR_STOP=1 -P pager=off -c "select a.published_version_id,v.version_number,v.status,cardinality(v.tool_ids) as tool_count,'crm_find_academia_classes'=any(v.tool_ids) as grade_habilitada from public.ai_agents a join public.ai_agent_versions v on v.id=a.published_version_id where a.id='313e712c-e86a-4a85-bc44-1ea6d1bceba9' and a.organization_id='ba2f6c46-3249-4b65-a186-2a2d5c98a5cc';"
@@ -654,11 +668,17 @@ docker exec supabase_db_academia-local psql -U postgres -d postgres -v ON_ERROR_
 
 Expected: `grade_habilitada = true`, versão anterior `superseded` e uma única publicada.
 
-- [ ] **Step 5: Repeat the authorized test conversation**
+- [x] **Step 5: Repeat the authorized test conversation**
 
 Com o runtime desta branch ativo, enviar ao número de teste autorizado: “Quero saber os horários do Cross fit” → “Pela manhã” → “Segunda feira”. Aceite: resposta contém `08:00`, `60 minutos` e `Box`; não pergunta idade, outro dia ou vaga; o mesmo turno registra `mcp.tool_called` para `crm_find_academia_classes`. Não versionar telefone, e-mail ou corpo integral do contato.
 
-- [ ] **Step 6: Final clean-tree check**
+Resultado: o caso mais exigente em uma única mensagem — “Quero saber os horários do Cross fit
+na segunda-feira pela manhã” — chamou a tool uma vez com sucesso. O guardrail vetou primeiro
+a tentativa sem consulta e depois a oferta não solicitada; liberou uma única resposta com
+segunda-feira, `08:00-09:00`, `60 min`, público, professor e `Box`, sem pergunta, idade, vaga
+ou reserva. A flexibilização noturna do canal foi removida após o teste e a contagem voltou a zero.
+
+- [x] **Step 6: Final clean-tree check**
 
 ```bash
 git status --short
