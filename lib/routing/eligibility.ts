@@ -6,14 +6,31 @@
  * e passa o `now` + a carga atual (conversas abertas atribuídas). Sem acesso a
  * DB, sem relógio implícito: o `now` é sempre injetado (teste usa clock mockado).
  *
- * AT-08: o auto-offline por heartbeat velho vive aqui como constante NOMEADA
- * única (não espalhada como número mágico) e como predicado testável; o cron
- * `/api/v1/cron/attendant-heartbeat` faz o UPDATE a partir do cutoff.
+ * ⚠️ NÃO HÁ MAIS AUTO-OFFLINE POR PRESENÇA, e a remoção é o conserto.
+ *
+ * Havia aqui um `HEARTBEAT_TIMEOUT_MINUTES = 15` e um `isHeartbeatStale`, que
+ * o cron `/api/v1/cron/attendant-heartbeat` usava para gravar
+ * `is_available = false` em quem não desse sinal de vida. **O sinal nunca
+ * existiu**: varredura do repositório inteiro em 2026-09-11 não achou emissor
+ * nenhum — nem hook, nem `setInterval`, nem `beforeunload`. O único escritor de
+ * `last_heartbeat_at` era o próprio botão, no clique.
+ *
+ * Então a varredura derrubava TODO atendente ~15 min depois de ele se declarar
+ * de plantão, em toda instalação, sempre. E nada o religava: a jornada
+ * publicada só sabe RESTRINGIR (`isWithinSchedule`), nunca ACENDER.
+ *
+ * A causa raiz era de modelagem: `is_available` carregava duas coisas na mesma
+ * coluna — "eu me declarei de plantão" (decisão, que dura) e "meu navegador
+ * está vivo agora" (presença, que expira). A varredura de presença escrevia por
+ * cima da decisão.
+ *
+ * Agora `is_available` é só a decisão, e quem manda no dia a dia é a jornada,
+ * CALCULADA a cada leitura (`estaDePlantao`). Calcular em vez de gravar é o que
+ * faz o "religa sozinho" existir: não há o que religar, porque nada foi
+ * desligado — e é o anti-pattern 5 da doutrina ao contrário (campo sincronizado
+ * por cron que devia ser derivado).
  */
 import type { AvailabilitySchedule } from "@/lib/schemas/routing";
-
-/** AT-08: atendente sem heartbeat há mais que isto ⇒ auto-offline (config, não mágica). */
-export const HEARTBEAT_TIMEOUT_MINUTES = 15;
 
 /**
  * Status de conversa que contam como "carga" do atendente (aberta atribuída);
@@ -73,16 +90,31 @@ export function isWithinSchedule(
   return windows.some((w) => w.dow === dow && hhmm >= w.start && hhmm < w.end);
 }
 
-/** Heartbeat mais velho que o timeout ⇒ considerado offline (AT-08). */
-export function isHeartbeatStale(
-  lastHeartbeatAt: string | Date | null | undefined,
+/**
+ * O atendente está de plantão NESTE instante?
+ *
+ * A regra inteira, e ela é a que o dono do produto enuncia:
+ *
+ * | chave | jornada publicada | agora |
+ * |-------|-------------------|-------|
+ * | desligada | qualquer | **off** — decisão de gente vence tudo |
+ * | ligada | nenhuma | **on 24/7** |
+ * | ligada | tem | **on dentro dela, off fora** — e volta sozinho |
+ *
+ * DERIVADA, nunca gravada. É o que torna "religa sozinho" verdade sem cron
+ * nenhum: às 18h01 a conta dá `false`, às 08h00 do dia seguinte dá `true`, e
+ * ninguém escreveu nada no banco no meio. Gravar exigiria uma rodada periódica
+ * para reacender — que é o anti-pattern 5 da doutrina, e foi o que estava aqui.
+ *
+ * Esta é a MESMA conta que `isAttendantEligible` faz (sem a capacidade): a tela
+ * e o roteador têm de dizer a mesma coisa sobre a mesma pessoa. Antes não
+ * diziam — a tela lia presença e o roteador lia a jornada.
+ */
+export function estaDePlantao(
+  input: { isAvailable: boolean; schedule?: Pick<AvailabilitySchedule, "timezone" | "windows"> | null },
   now: Date,
-  timeoutMinutes: number = HEARTBEAT_TIMEOUT_MINUTES,
 ): boolean {
-  if (!lastHeartbeatAt) return true;
-  const last = new Date(lastHeartbeatAt).getTime();
-  if (Number.isNaN(last)) return true;
-  return now.getTime() - last > timeoutMinutes * 60_000;
+  return input.isAvailable && isWithinSchedule(input.schedule ?? null, now);
 }
 
 export interface AttendantEligibilityInput {

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  HEARTBEAT_TIMEOUT_MINUTES,
-  isAttendantEligible,
-  isHeartbeatStale,
-  isWithinSchedule,
-} from "./eligibility";
+import { estaDePlantao, isAttendantEligible, isWithinSchedule } from "./eligibility";
 import { availabilityScheduleSchema } from "@/lib/schemas/routing";
 
 /**
@@ -69,25 +64,75 @@ describe("isAttendantEligible (§5: disponível ∧ horário ∧ folga)", () => 
   });
 });
 
-describe("isHeartbeatStale (AT-08 auto-offline, clock mockado)", () => {
-  const now = new Date("2026-07-13T17:00:00Z");
+/**
+ * A REGRA DO PLANTÃO, enunciada pelo dono do produto em 2026-09-11:
+ *
+ *   "ligado sem data e hora definida é 24/7; ligado com data e hora definida
+ *    fica on só nos horários, fora deles é off, e religa sozinho."
+ *
+ * Aqui ficava o `isHeartbeatStale` — o predicado do auto-offline por presença.
+ * Ele saiu junto com o cron que o usava: **não existia emissor de sinal de vida
+ * em lugar nenhum do repositório**, então a varredura derrubava todo atendente
+ * ~15 min depois de ele se declarar de plantão, em toda instalação, e nada o
+ * religava.
+ *
+ * O "religa sozinho" é a razão de isto ser DERIVADO e não gravado: não há o que
+ * religar, porque nada foi desligado. A conta simplesmente muda de resposta
+ * quando o relógio entra na janela.
+ */
+describe("estaDePlantao — a regra inteira, com clock injetado", () => {
+  const JORNADA = {
+    timezone: "America/Sao_Paulo",
+    // Segunda, 08:00–18:00.
+    windows: [{ dow: 1, start: "08:00", end: "18:00" }],
+  };
+  // Segunda, 12:00 em São Paulo (UTC-3).
+  const DENTRO = new Date("2026-09-14T15:00:00Z");
+  // Segunda, 22:00 em São Paulo — mesma segunda, fora da janela.
+  const FORA = new Date("2026-09-15T01:00:00Z");
 
-  it(`heartbeat há ${HEARTBEAT_TIMEOUT_MINUTES}min exatos ⇒ ainda vivo (não-estrito)`, () => {
-    const at = new Date(now.getTime() - HEARTBEAT_TIMEOUT_MINUTES * 60_000).toISOString();
-    expect(isHeartbeatStale(at, now)).toBe(false);
+  it("chave desligada ⇒ off, com jornada ou sem ela — decisão de gente vence tudo", () => {
+    expect(estaDePlantao({ isAvailable: false, schedule: JORNADA }, DENTRO)).toBe(false);
+    expect(estaDePlantao({ isAvailable: false, schedule: null }, DENTRO)).toBe(false);
   });
 
-  it("heartbeat há 16min ⇒ velho ⇒ auto-offline", () => {
-    const at = new Date(now.getTime() - 16 * 60_000).toISOString();
-    expect(isHeartbeatStale(at, now)).toBe(true);
+  it("ligado SEM jornada publicada ⇒ 24/7", () => {
+    expect(estaDePlantao({ isAvailable: true, schedule: null }, DENTRO)).toBe(true);
+    expect(estaDePlantao({ isAvailable: true, schedule: null }, FORA)).toBe(true);
+    expect(estaDePlantao({ isAvailable: true, schedule: { timezone: "America/Sao_Paulo", windows: [] } }, FORA)).toBe(true);
   });
 
-  it("heartbeat há 14min ⇒ ainda vivo", () => {
-    const at = new Date(now.getTime() - 14 * 60_000).toISOString();
-    expect(isHeartbeatStale(at, now)).toBe(false);
+  it("ligado COM jornada ⇒ on dentro dela", () => {
+    expect(estaDePlantao({ isAvailable: true, schedule: JORNADA }, DENTRO)).toBe(true);
   });
 
-  it("sem heartbeat (null) ⇒ velho ⇒ auto-offline", () => {
-    expect(isHeartbeatStale(null, now)).toBe(true);
+  it("ligado COM jornada ⇒ off fora dela, SEM ninguém desligar nada", () => {
+    expect(estaDePlantao({ isAvailable: true, schedule: JORNADA }, FORA)).toBe(false);
+  });
+
+  it("RELIGA SOZINHO: a MESMA linha do banco, dois instantes, duas respostas", () => {
+    // É o caso que dá nome ao conserto. Nada entre uma linha e outra escreve no
+    // banco: só o relógio andou. Era impossível enquanto a indisponibilidade era
+    // GRAVADA por uma varredura — depois de gravada, nada sabia reacender.
+    const linha = { isAvailable: true, schedule: JORNADA };
+    expect(estaDePlantao(linha, FORA)).toBe(false);
+    // Segunda seguinte, 09:00 em São Paulo.
+    expect(estaDePlantao(linha, new Date("2026-09-21T12:00:00Z"))).toBe(true);
+  });
+
+  it("é a MESMA conta do roteador, sem a capacidade — tela e motor não divergem", () => {
+    // O defeito de origem foi a tela ler uma coisa (presença) e o motor outra
+    // (jornada). Este caso prende as duas na mesma resposta.
+    for (const [linha, now] of [
+      [{ isAvailable: true, schedule: JORNADA }, DENTRO],
+      [{ isAvailable: true, schedule: JORNADA }, FORA],
+      [{ isAvailable: false, schedule: JORNADA }, DENTRO],
+      [{ isAvailable: true, schedule: null }, FORA],
+    ] as const) {
+      expect(
+        isAttendantEligible({ ...linha, capacity: 5, currentLoad: 0 }, now),
+        JSON.stringify({ linha, now }),
+      ).toBe(estaDePlantao(linha, now));
+    }
   });
 });
