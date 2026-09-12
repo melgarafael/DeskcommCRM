@@ -57,7 +57,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
+    # proxy_network: mesma rede externa que docker-compose.npm.yml usa para o
+    # `app` — nesta VPS o WAHA (dashboard) e o worker (healthz) também são
+    # publicados pelo NPM, e precisam sobreviver a um `docker network connect`
+    # manual virar permanente (ver docker-compose.npm.yml).
+    networks:
+      - default
+      - proxy_network
   # Worker 24/7 do agent-engine (fusão Vendaval): fila, cron/follow-up, drain do
   # event_log e turnos do agente rico. Postgres = Supabase (SUPABASE_DB_URL no
   # .env.local). Sobe junto do WAHA: `docker compose up -d`.
@@ -83,7 +89,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-
+    networks:
+      - default
+      - proxy_network
 volumes:
   waha-data:
   waha-media:
+
+networks:
+  default:
+  proxy_network:
+    external: true
+    name: ${PROXY_NETWORK_NAME:-proxy_network}
