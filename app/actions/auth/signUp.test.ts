@@ -30,6 +30,12 @@ import { createClient } from "@/lib/supabase/server";
 
 vi.mock("next/headers", () => ({ headers: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({ auth: { admin: { updateUserById: vi.fn(async () => ({ error: null })) } } })) }));
+vi.mock("@/lib/auth/registration-requests", () => ({
+  createRegistrationRequest: vi.fn(async () => ({ created: true, id: "11111111-1111-4111-8111-111111111111", status: "pending" })),
+  notifyRegistrationApprovers: vi.fn(async () => ({ ok: true })),
+  registrationIntentFromMetadata: vi.fn(() => ({ kind: "create_organization", organizationName: "Plata Iphones" })),
+}));
 vi.mock("@/lib/audit", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   audit: vi.fn(async () => undefined),
@@ -41,6 +47,7 @@ const signUpDoProvedor = vi.fn();
 let n = 0;
 const entrada = () => ({
   org_name: "Plata Iphones",
+  registration_kind: "create_organization" as const,
   email: `cadastro-${++n}-${Date.now()}@exemplo.test`,
   password: "SenhaForte!2026",
   password_confirm: "SenhaForte!2026",
@@ -69,7 +76,7 @@ describe("signUp — a tela precisa saber se a sessão já veio aberta", () => {
     const { signUp } = await import("./signUp");
     const res = await signUp(entrada());
 
-    expect(res).toEqual({ ok: true, sessao_ativa: true });
+    expect(res).toEqual({ ok: true, sessao_ativa: true, aguardando_aprovacao: true });
   });
 
   it("CONTROLE — confirmação LIGADA: sem sessão, a tela do e-mail continua certa", async () => {
@@ -83,7 +90,7 @@ describe("signUp — a tela precisa saber se a sessão já veio aberta", () => {
     const { signUp } = await import("./signUp");
     const res = await signUp(entrada());
 
-    expect(res).toEqual({ ok: true, sessao_ativa: false });
+    expect(res).toEqual({ ok: true, sessao_ativa: false, aguardando_aprovacao: true });
   });
 
   it("CONTROLE — o provedor recusar continua sendo erro, não sessão", async () => {

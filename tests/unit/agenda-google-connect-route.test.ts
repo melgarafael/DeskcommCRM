@@ -16,6 +16,20 @@ import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined), isServiceRoleConfigured: vi.fn(() => true) }));
+// O contrato da rota é testado contra as variáveis passadas ao cenário. Sem
+// dublê, uma credencial salva no banco da máquina de quem roda a suíte vence o
+// ambiente e torna os casos "sem chave" dependentes do estado local.
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error: null }),
+        }),
+      }),
+    }),
+  }),
+}));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const ANA = "11111111-1111-4111-8111-111111111111";
@@ -37,6 +51,12 @@ const orgAtiva: ActiveOrg = { orgId: ORG, name: "Clínica", role: "agent" };
 function pedido(): NextRequest {
   return new NextRequest("https://crm.exemplo/api/v1/agenda/google/connect", {
     headers: { "x-request-id": "req-1" },
+  });
+}
+
+function pedidoLocal(): NextRequest {
+  return new NextRequest("http://localhost:3001/api/v1/agenda/google/connect", {
+    headers: { "x-request-id": "req-local", host: "localhost:3001" },
   });
 }
 
@@ -72,6 +92,13 @@ describe("GET /api/v1/agenda/google/connect", () => {
     // Sugerir a conta evita autorizar com a conta pessoal que já estava logada
     // no navegador e ver a agenda errada aparecer no CRM.
     expect(destino.searchParams.get("login_hint")).toBe("ana@clinica.com.br");
+  });
+
+  it("usa localhost como callback quando o navegador abre a instalação local por localhost", async () => {
+    const { GET } = await rotaComEnv({ ...CONFIGURADO, NEXT_PUBLIC_APP_URL: "http://192.168.0.21:3001" });
+    const res = await GET(pedidoLocal());
+    const destino = new URL(res.headers.get("location") ?? "");
+    expect(destino.searchParams.get("redirect_uri")).toBe("http://localhost:3001/api/v1/agenda/google/callback");
   });
 
   it("o `state` carrega a PESSOA, não só a organização", async () => {

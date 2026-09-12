@@ -6,6 +6,7 @@ import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { createClient } from "@/lib/supabase/server";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const metadata = { title: "Criar conta" };
 
@@ -36,6 +37,12 @@ export default async function SignupPage({
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
   const t = (texto: string) => traduzir(texto, idioma);
+  // A escolha é explícita no cadastro, para que o pedido seja encaminhado ao
+  // administrador da empresa certa. Só expomos organizações ativas.
+  const admin = createAdminClient();
+  const { data: organizations } = convite
+    ? { data: [] as { id: string; display_name: string }[] }
+    : await admin.from("organizations").select("id, display_name").eq("status", "active").order("display_name");
 
   return (
     <div className="space-y-6">
@@ -59,7 +66,10 @@ export default async function SignupPage({
         </p>
       )}
 
-      <SignupForm convite={convite} />
+      <SignupForm
+        convite={convite}
+        organizations={(organizations ?? []).map((organization) => ({ id: organization.id, name: organization.display_name }))}
+      />
 
       <p className="text-center text-sm text-muted-foreground">
         {t("Já tem conta?")}{" "}

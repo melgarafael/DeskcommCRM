@@ -68,6 +68,7 @@ export const AUDIT_ACTIONS = [
   "member.accepted",
   "member.role_changed",
   "member.revoked",
+  "member.activated",
   "token.created",
   "token.revoked",
   "profile.updated",
@@ -256,6 +257,9 @@ export const AUDIT_ACTIONS = [
   "auth.signup_confirmed",
   "auth.signup_provision_failed",
   "auth.signup_provision_recovery_failed",
+  "registration.requested",
+  "registration.approved",
+  "registration.rejected",
   "auth.email_link_rejected",
   "auth.password_reset_requested",
   "auth.password_reset_request_failed",
@@ -299,6 +303,7 @@ export const AUDIT_ACTIONS = [
   // event_log (nenhum handler consumiria o tipo — ver register-handlers.ts).
   "platform_branding.updated",
   "platform_google_oauth.updated",
+  "platform_smtp_settings.updated",
   // A conexão da ORGANIZAÇÃO com a conta de anúncios (migration 0213).
   // Auditável porque o token gravado aqui escreve conversões na conta de
   // mídia do cliente: "quem apontou minhas vendas para este destino?" só tem

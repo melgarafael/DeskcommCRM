@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
-import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
+import { createRegistrationRequest, registrationIntentFromMetadata } from "@/lib/auth/registration-requests";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
@@ -130,8 +130,27 @@ export async function GET(request: NextRequest) {
     return redirectTo(`/team/accept-invite/${decisao.token}`);
   }
 
+  const intent = registrationIntentFromMetadata(data.user.user_metadata);
+  if (!intent) {
+    await audit({
+      action: "auth.signup_provision_recusado",
+      actorUserId: data.user.id,
+      metadata: { motivo: "cadastro_sem_destino" },
+      requestId,
+    });
+    return redirectTo("/login?error=cadastro_invalido");
+  }
+
   try {
-    await ensureTenantForUser(data.user);
+    const request = await createRegistrationRequest(data.user.id, intent);
+    await audit({
+      action: "registration.requested",
+      actorUserId: data.user.id,
+      resourceType: "registration_request",
+      resourceId: request.id ?? undefined,
+      requestId,
+      metadata: { kind: intent.kind, created: request.created },
+    });
   } catch (e) {
     await audit({
       action: "auth.signup_provision_failed",
@@ -142,7 +161,7 @@ export async function GET(request: NextRequest) {
     // A sessão JÁ está firmada (o `verifyOtp`/`exchangeCodeForSession` acima
     // passou). Mandar para `/login` deixava a pessoa logada e sem organização,
     // sem nenhum caminho de volta — ver `app/actions/auth/recoverOrganization.ts`.
-    return redirectTo("/get-started");
+    return redirectTo("/login?error=cadastro_pendente_indisponivel");
   }
 
   void audit({
@@ -152,5 +171,5 @@ export async function GET(request: NextRequest) {
     requestId,
   });
 
-  return redirectTo("/onboarding/welcome");
+  return redirectTo("/cadastro/aguardando");
 }

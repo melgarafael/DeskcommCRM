@@ -585,6 +585,16 @@ export const NAV_CATALOG = [
     platformOnly: true,
   },
   {
+    href: "/app/settings/cadastros",
+    label: "Cadastros pendentes",
+    description: "Aprovar solicitações para criar novas empresas.",
+    icon: "Users",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+    platformOnly: true,
+  },
+  {
     // A porta que faltava (issue #144): rodízio de atendimento e restrição de
     // visibilidade existiam inteiros no backend e não tinham NENHUMA tela — só
     // dava para ligar com UPDATE à mão no banco.

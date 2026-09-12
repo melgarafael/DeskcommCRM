@@ -13,6 +13,8 @@ import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { audit, hashEmail } from "@/lib/audit";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { env } from "@/lib/env";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createRegistrationRequest, notifyRegistrationApprovers, registrationIntentFromMetadata } from "@/lib/auth/registration-requests";
 
 export type SignUpResult =
   | {
@@ -33,6 +35,12 @@ export type SignUpResult =
        * Achado de @KIRAzinx566, com um cliente real travado nessa tela.
        */
       sessao_ativa: boolean;
+      /**
+       * O convite pode ser concluído automaticamente: o link assinado e o
+       * e-mail do convite já são a prova de posse; o SMTP só entrega o link.
+       */
+      aceitar_convite_automaticamente?: boolean;
+      aguardando_aprovacao?: boolean;
     }
   | {
       ok: false;
@@ -100,6 +108,12 @@ export async function signUp(
   }
 
   const supabase = await createClient();
+  // O convite é uma credencial HMAC emitida pelo administrador. Se o usuário
+  // chegou por esse link e criou a senha para o e-mail assinado, não depende
+  // de um segundo e-mail SMTP para concluir o acesso. Isso também cobre
+  // o caso em que o SMTP tem configuração, mas recusou o remetente
+  // e o sistema devolveu o link copiável ao administrador.
+  const confirmarConvitePorLink = Boolean(convite);
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
@@ -113,7 +127,11 @@ export async function signUp(
       // decisão que importa acontece com o e-mail JÁ confirmado pelo provedor.
       data: convite
         ? { invite_token: convite }
-        : { org_name: (parsed.data as SignupInput).org_name },
+        : {
+            registration_kind: (parsed.data as SignupInput).registration_kind,
+            org_name: (parsed.data as SignupInput).org_name,
+            requested_organization_id: (parsed.data as SignupInput).requested_organization_id,
+          },
     },
   });
 
@@ -141,8 +159,99 @@ export async function signUp(
     userAgent,
   });
 
+  if (!confirmarConvitePorLink && data.user) {
+    const intent = registrationIntentFromMetadata(data.user.user_metadata);
+    if (!intent) return { ok: false, error: "signup_failed" };
+    try {
+      const admin = createAdminClient();
+      const { error: confirmError } = await admin.auth.admin.updateUserById(data.user.id, { email_confirm: true });
+      if (confirmError) return { ok: false, error: "signup_failed" };
+      const request = await createRegistrationRequest(data.user.id, intent);
+      // A falta de SMTP não impede a fila: a aprovação continua disponível na tela.
+      void notifyRegistrationApprovers(intent, parsed.data.email);
+      await audit({
+        action: "registration.requested",
+        actorUserId: data.user.id,
+        resourceType: "registration_request",
+        resourceId: request.id ?? undefined,
+        requestId,
+        ip,
+        userAgent,
+        metadata: { kind: intent.kind, created: request.created },
+      });
+      return { ok: true, sessao_ativa: Boolean(data.session), aguardando_aprovacao: true };
+    } catch {
+      return { ok: false, error: "signup_failed" };
+    }
+  }
+
+  // No convite, o token já foi validado acima contra o e-mail do formulário.
+  // Fazemos isso para um usuário novo ou para a conta pendente criada por uma
+  // tentativa anterior deste mesmo convite. Uma conta já confirmada nunca é
+  // alterada por este caminho, preservando anti-enumeração e segurança.
+  if (
+    confirmarConvitePorLink &&
+    data.user &&
+    !data.session
+  ) {
+    const admin = createAdminClient();
+    const isNewUser = (data.user.identities?.length ?? 0) > 0;
+    let canComplete = isNewUser;
+    if (!isNewUser) {
+      const { data: existing } = await admin.auth.admin.getUserById(data.user.id);
+      canComplete = Boolean(
+        existing.user &&
+        !existing.user.email_confirmed_at &&
+        existing.user.email?.trim().toLowerCase() === parsed.data.email.trim().toLowerCase(),
+      );
+    }
+    if (!canComplete) {
+      return { ok: true, sessao_ativa: false };
+    }
+
+    const { error: confirmError } = await admin.auth.admin.updateUserById(data.user.id, {
+      email_confirm: true,
+      password: parsed.data.password,
+    });
+    if (confirmError) {
+      await audit({
+        action: "auth.signup_failed",
+        actorUserId: data.user.id,
+        metadata: { email_hash: hashEmail(parsed.data.email), reason: "invite_auto_confirm_failed" },
+        requestId,
+        ip,
+        userAgent,
+      });
+      return { ok: false, error: "signup_failed" };
+    }
+
+    const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({
+      email: parsed.data.email,
+      password: parsed.data.password,
+    });
+    if (signInError || !signedIn.session) {
+      await audit({
+        action: "auth.signup_failed",
+        actorUserId: data.user.id,
+        metadata: { email_hash: hashEmail(parsed.data.email), reason: "invite_auto_signin_failed" },
+        requestId,
+        ip,
+        userAgent,
+      });
+      return { ok: false, error: "signup_failed" };
+    }
+
+    return {
+      ok: true,
+      sessao_ativa: true,
+      aceitar_convite_automaticamente: true,
+    };
+  }
+
   // `data.session` é o único sinal confiável de que o provedor não vai mandar
   // e-mail nenhum: ele vem preenchido exatamente quando a confirmação está
   // desligada (ou já resolvida) e o GoTrue devolveu tokens junto do usuário.
-  return { ok: true, sessao_ativa: data.session !== null };
+  return confirmarConvitePorLink
+    ? { ok: true, sessao_ativa: data.session !== null, aceitar_convite_automaticamente: data.session !== null }
+    : { ok: true, sessao_ativa: data.session !== null };
 }

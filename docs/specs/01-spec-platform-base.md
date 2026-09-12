@@ -38,7 +38,7 @@ A Plataforma Base é a camada onde **identidade, tenancy, autorização, auditor
 - Modelagem de domínio (contacts, leads, pipelines) — vai pra Specs 02/04
 - Webhooks externos (Nuvemshop, WAHA) — vai pras Specs 03/06
 - UI completa do super-admin — esta spec define apenas as APIs e o contrato de auditoria
-- Self-service signup público — fora do MVP
+- Signup público abre uma solicitação pendente: administrador da instalação aprova criação de empresa; administrador do tenant aprova entrada de membro.
 
 ### 1.3 Restrições de stack (herdadas)
 

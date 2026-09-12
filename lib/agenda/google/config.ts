@@ -64,6 +64,41 @@ export function enderecoDeRetorno(urlDaAplicacao: string = env.NEXT_PUBLIC_APP_U
 }
 
 /**
+ * A URL canônica continua sendo a do ambiente, mas uma pessoa desenvolvendo
+ * no próprio computador pode abrir o mesmo processo por `localhost` enquanto
+ * o instalador local guardou o IP da rede. OAuth compara o redirect byte a
+ * byte; nesse caso, usar o IP exibido pela configuração manda o navegador para
+ * outra origem e a conexão não termina.
+ *
+ * Só aceitamos loopback como exceção. Host arbitrário nunca vence a URL
+ * canônica da instalação, para que um cabeçalho Host forjado não troque o
+ * endereço a que o Google devolverá o código de autorização.
+ */
+export function origemLocalDoNavegador(origem: string | null | undefined): string | null {
+  if (!origem) return null;
+  try {
+    const url = new URL(origem);
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return url.origin;
+  } catch {
+    // Cabeçalho ausente ou inválido: a URL canônica segue sendo o piso seguro.
+  }
+  return null;
+}
+
+/**
+ * A URL montada pelo runtime pode refletir a URL canônica da instalação mesmo
+ * quando o navegador abriu o Docker por localhost. Para OAuth local, a fonte
+ * correta é o Host que chegou na requisição; é ele que a página já exibe e é a
+ * origem para a qual o navegador conseguirá voltar depois do consentimento.
+ */
+export function origemLocalDosCabecalhos(cabecalhos: Pick<Headers, "get">): string | null {
+  const host = cabecalhos.get("x-forwarded-host") ?? cabecalhos.get("host");
+  const protocolo = (cabecalhos.get("x-forwarded-proto") ?? "http").split(",")[0]?.trim() || "http";
+  return origemLocalDoNavegador(host ? `${protocolo}://${host}` : null);
+}
+
+/**
  * O que o AMBIENTE traz — puro, síncrono, sem banco.
  *
  * Continua existindo separado de propósito. Ele é o PISO DE ROLLBACK: o
@@ -75,7 +110,7 @@ export function enderecoDeRetorno(urlDaAplicacao: string = env.NEXT_PUBLIC_APP_U
  *
  * E ser síncrono e sem banco mantém testável o que é regra pura.
  */
-export function configuracaoDoAmbiente(): AppDoGoogleConfigurado | null {
+export function configuracaoDoAmbiente(urlDaAplicacao?: string): AppDoGoogleConfigurado | null {
   const clientId = texto(env.GOOGLE_CALENDAR_CLIENT_ID);
   const clientSecret = texto(env.GOOGLE_CALENDAR_CLIENT_SECRET);
   if (!clientId || !clientSecret) return null;
@@ -87,7 +122,7 @@ export function configuracaoDoAmbiente(): AppDoGoogleConfigurado | null {
   // morto, e o teste que a exercitava não conseguia sequer montar o cenário: o
   // próprio `env.ts` lançava antes. Guarda inalcançável é pior que guarda
   // ausente — ela dá a sensação de defesa e não pode ser testada.
-  return { clientId, clientSecret, redirectUri: enderecoDeRetorno() };
+  return { clientId, clientSecret, redirectUri: enderecoDeRetorno(urlDaAplicacao) };
 }
 
 /**
@@ -104,7 +139,6 @@ export function configuracaoDoAmbiente(): AppDoGoogleConfigurado | null {
 const TTL_MS = 30_000;
 
 declare global {
-  // eslint-disable-next-line no-var
   var __memoDoAppDoGoogle: { readonly valor: LinhaDoApp | null; readonly expiraEm: number } | null | undefined;
 }
 
@@ -163,7 +197,7 @@ async function linhaDoBanco(): Promise<LinhaDoApp | null> {
  *
  * Nunca lança — ver o cabeçalho.
  */
-export async function configuracaoDoGoogle(): Promise<AppDoGoogleConfigurado | null> {
+export async function configuracaoDoGoogle(urlDaAplicacao?: string): Promise<AppDoGoogleConfigurado | null> {
   const linha = await linhaDoBanco();
   const clientId = texto(linha?.client_id);
   const cifrado = texto(linha?.client_secret_encrypted);
@@ -175,12 +209,12 @@ export async function configuracaoDoGoogle(): Promise<AppDoGoogleConfigurado | n
     // par que não existe em app OAuth nenhum, e o erro do Google apontaria para
     // o lugar errado. Cai inteiro para o ambiente.
     if (segredo) {
-      return { clientId, clientSecret: segredo, redirectUri: enderecoDeRetorno() };
+      return { clientId, clientSecret: segredo, redirectUri: enderecoDeRetorno(urlDaAplicacao) };
     }
     logger.warn("[agenda.google.config] segredo do banco não decifrou; vale o .env inteiro");
   }
 
-  return configuracaoDoAmbiente();
+  return configuracaoDoAmbiente(urlDaAplicacao);
 }
 
 /** Conectar o Google está disponível nesta instalação? */

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 
-import { configuracaoDoAmbiente, enderecoDeRetorno } from "@/lib/agenda/google/config";
+import { configuracaoDoAmbiente, enderecoDeRetorno, origemLocalDosCabecalhos } from "@/lib/agenda/google/config";
 import { loadAuthUser } from "@/lib/auth/server";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -46,6 +47,8 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   const usuario = await loadAuthUser();
   if (!usuario?.is_platform_admin) notFound();
+  const cabecalhos = await headers();
+  const origemLocal = origemLocalDosCabecalhos(cabecalhos);
 
   // A tabela é server-side only (RLS ligada, zero policies, grants revogados de
   // anon/authenticated), então o admin client é o único caminho — como em
@@ -82,7 +85,7 @@ export default async function Page() {
           : null
       }
       temNoAmbiente={doAmbiente !== null}
-      enderecoDeRetorno={enderecoDeRetorno()}
+      enderecoDeRetorno={enderecoDeRetorno(origemLocal ?? undefined)}
     />
   );
 }

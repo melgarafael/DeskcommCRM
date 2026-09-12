@@ -299,7 +299,7 @@ A Plataforma Base é considerada **MVP-completa** quando:
 - Pentest formal externo — entra na Fase 1.5 (Hardening)
 - Certificações SOC 2, ISO 27001 — entram na Fase 2+ conforme demanda comercial
 - Multi-fator avançado (WebAuthn / passkey) — Fase 1.5 ou 2
-- Self-service de criação de tenant (signup público) — Fase SaaS
+- Cadastro público com aprovação: criação de empresa é decidida pelo administrador da instalação; pedido de entrada é decidido pelo administrador da empresa escolhida.
 - Permissão por pipeline (`user_pipeline_access`) — adicionar quando 1º cliente real pedir
 - Localização (multi-language) — produto começa só em PT-BR
 

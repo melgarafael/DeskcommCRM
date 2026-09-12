@@ -31,7 +31,7 @@ export default async function ProfilePage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Perfil", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
-          {traduzir("Informações pessoais. Email só pode ser trocado em breve.", idioma)}
+          {traduzir("Informações pessoais e credenciais de acesso.", idioma)}
         </p>
       </header>
       <ProfileForm

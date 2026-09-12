@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TeamMembersClient } from "./_components/TeamMembersClient";
 import { AttendantsClient } from "./_components/AttendantsClient";
+import { RegistrationRequestsClient } from "@/components/registration/RegistrationRequestsClient";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,14 @@ export default async function TeamPage({
   const activeOrg = await resolveActiveOrg(user);
   const isAdmin = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   const isManager = !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  const admin = createAdminClient();
+  const { data: joinRequests } = isAdmin && activeOrg
+    ? await admin.from("registration_requests").select("id, user_id, created_at").eq("kind", "join_organization").eq("requested_organization_id", activeOrg.orgId).eq("status", "pending").order("created_at")
+    : { data: [] as { id: string; user_id: string; created_at: string }[] };
+  const pendingJoinRequests = await Promise.all((joinRequests ?? []).map(async (request) => {
+    const { data } = await admin.auth.admin.getUserById(request.user_id);
+    return { ...request, email: data.user?.email ?? null };
+  }));
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -57,6 +67,8 @@ export default async function TeamPage({
           </Button>
         ) : null}
       </header>
+
+      {isAdmin ? <RegistrationRequestsClient title={t("Solicitações para entrar na empresa")} empty={t("Não há solicitações pendentes.")} requests={pendingJoinRequests} mode="join" /> : null}
 
       <Tabs defaultValue={abaInicial} className="flex flex-1 flex-col">
         <TabsList>

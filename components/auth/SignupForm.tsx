@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { signUp } from "@/app/actions/auth/signUp";
 
 /**
@@ -28,7 +29,13 @@ export interface ConviteDoSignup {
   email: string;
 }
 
-export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
+export function SignupForm({
+  convite,
+  organizations = [],
+}: {
+  convite?: ConviteDoSignup;
+  organizations?: { id: string; name: string }[];
+}) {
   const t = useT();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -38,6 +45,8 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<SignupInput>({
     // O formulário tem UM tipo e DOIS contratos: no modo convite o campo de
@@ -48,13 +57,16 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
       ? zodResolver(signupComConviteSchema)
       : zodResolver(signupSchema)) as Resolver<SignupInput>,
     defaultValues: {
+      registration_kind: "create_organization",
       org_name: "",
+      requested_organization_id: "",
       email: convite?.email ?? "",
       password: "",
       password_confirm: "",
     },
   });
 
+  const registrationKind = watch("registration_kind");
   const onSubmit = (values: SignupInput) => {
     setServerError(null);
     startTransition(async () => {
@@ -85,7 +97,9 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
          */
         if (res.sessao_ativa) {
           router.replace(
-            convite ? `/team/accept-invite/${convite.token}` : "/get-started",
+            convite
+              ? `/team/accept-invite/${convite.token}${res.aceitar_convite_automaticamente ? "?auto=1" : ""}`
+              : res.aguardando_aprovacao ? "/cadastro/aguardando" : "/get-started",
           );
           return;
         }
@@ -108,10 +122,10 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
         className="space-y-2 rounded-md border bg-muted/40 px-4 py-6 text-center"
         role="status"
       >
-        <p className="text-sm font-medium">{t("Confirme seu e-mail")}</p>
+        <p className="text-sm font-medium">{t("Cadastro em análise")}</p>
         <p className="text-sm text-muted-foreground">
-          {t("Enviamos um link de confirmação para")} <strong>{sentTo}</strong>.{" "}
-          {t("Abra o e-mail e clique no link para ativar sua conta.")}
+          {t("Seu cadastro foi recebido para")} <strong>{sentTo}</strong>.{" "}
+          {t("Aguarde a aprovação do administrador para acessar a aplicação.")}
         </p>
       </div>
     );
@@ -120,7 +134,19 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
   return (
     <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       {!convite && (
+      <>
       <div className="space-y-1.5">
+        <Label htmlFor="registration_kind">{t("O que você deseja fazer?")}</Label>
+        <input type="hidden" {...register("registration_kind")} />
+        <Select value={registrationKind} onValueChange={(value) => setValue("registration_kind", value as SignupInput["registration_kind"], { shouldValidate: true })}>
+          <SelectTrigger id="registration_kind"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="create_organization">{t("Criar uma nova empresa")}</SelectItem>
+            <SelectItem value="join_organization">{t("Entrar em uma empresa existente")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {registrationKind === "create_organization" ? <div className="space-y-1.5">
         <Label htmlFor="org_name">{t("Nome da empresa")}</Label>
         <Input
           id="org_name"
@@ -133,7 +159,18 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
         {errors.org_name && (
           <p className="text-xs text-destructive">{t(errors.org_name.message ?? "")}</p>
         )}
-      </div>
+      </div> : <div className="space-y-1.5">
+        <Label htmlFor="requested_organization_id">{t("Empresa existente")}</Label>
+        <input type="hidden" {...register("requested_organization_id")} />
+        <Select onValueChange={(value) => setValue("requested_organization_id", value, { shouldValidate: true })}>
+          <SelectTrigger id="requested_organization_id"><SelectValue placeholder={t("Selecione a empresa em que deseja entrar")} /></SelectTrigger>
+          <SelectContent>
+            {organizations.map((organization) => <SelectItem key={organization.id} value={organization.id}>{organization.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">{t("O administrador da empresa escolhida precisará aprovar sua entrada.")}</p>
+      </div>}
+      </>
       )}
       <div className="space-y-1.5">
         <Label htmlFor="email">Email</Label>

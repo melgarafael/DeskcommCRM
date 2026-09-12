@@ -21,7 +21,9 @@ export const organizationNameSchema = z
 
 export const signupSchema = z
   .object({
-    org_name: organizationNameSchema,
+    registration_kind: z.enum(["create_organization", "join_organization"]),
+    org_name: z.string().trim().max(120).optional(),
+    requested_organization_id: z.string().uuid().optional(),
     email: z.string().email("Email inválido"),
     password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
     password_confirm: z.string(),
@@ -29,6 +31,17 @@ export const signupSchema = z
   .refine((v) => v.password === v.password_confirm, {
     path: ["password_confirm"],
     message: "As senhas não coincidem",
+  })
+  .superRefine((value, ctx) => {
+    if (value.registration_kind === "create_organization") {
+      const result = organizationNameSchema.safeParse(value.org_name);
+      if (!result.success) {
+        ctx.addIssue({ code: "custom", path: ["org_name"], message: result.error.issues[0]?.message ?? "Nome da empresa inválido" });
+      }
+    }
+    if (value.registration_kind === "join_organization" && !value.requested_organization_id) {
+      ctx.addIssue({ code: "custom", path: ["requested_organization_id"], message: "Selecione a empresa em que deseja entrar" });
+    }
   });
 
 export type SignupInput = z.infer<typeof signupSchema>;

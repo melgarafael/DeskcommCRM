@@ -1,7 +1,8 @@
 import { addDays, startOfWeek } from "date-fns";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 
-import { enderecoDeRetorno, faltaParaConectarOGoogle, googleEstaConfigurado } from "@/lib/agenda/google/config";
+import { enderecoDeRetorno, faltaParaConectarOGoogle, googleEstaConfigurado, origemLocalDosCabecalhos } from "@/lib/agenda/google/config";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
@@ -43,6 +44,8 @@ export default async function AgendaPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
+  const cabecalhos = await headers();
+  const origemLocal = origemLocalDosCabecalhos(cabecalhos);
 
   // `user.timezone` e não `user_metadata.timezone`: o AuthUser deste projeto
   // não expõe o metadata cru — ele extrai o que toda tela precisa no primeiro
@@ -199,7 +202,7 @@ export default async function AgendaPage() {
       fusoDeApresentacao={fusoDeApresentacao}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map(c => c.account_email).join(", ") || null}
-      enderecoDeRetorno={enderecoDeRetorno()}
+      enderecoDeRetorno={enderecoDeRetorno(origemLocal ?? undefined)}
       faltaNoGoogle={faltaNoGoogle}
       // SÓ para quem administra a INSTALAÇÃO. A tela do app OAuth vive em
       // `/admin` e faz `notFound()` para o resto — oferecer o link a quem não

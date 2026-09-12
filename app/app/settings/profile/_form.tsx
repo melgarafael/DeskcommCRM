@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateProfile } from "@/app/actions/settings/updateProfile";
+import { updateCredentials } from "@/app/actions/settings/updateCredentials";
 import { useT } from "@/hooks/i18n/useT";
 import {
   profileSchema,
@@ -50,6 +51,8 @@ export function ProfileForm({
   const [locale, setLocale] = useState<Locale | typeof SEM_PREFERENCIA_DE_IDIOMA>(initialLocale);
   const [timezone, setTimezone] = useState(initialTimezone);
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl ?? "");
+  const [accountEmail, setAccountEmail] = useState(email);
+  const [newPassword, setNewPassword] = useState("");
   const [isPending, startTransition] = useTransition();
 
   function handleSubmit(e: React.FormEvent) {
@@ -65,9 +68,9 @@ export function ProfileForm({
       return;
     }
     startTransition(async () => {
-      const r = await updateProfile(parsed.data);
-      if (r.ok) toast.success(t("Perfil atualizado."));
-      else toast.error(`${t("Erro")}: ${r.error}`);
+      const [r, credentials] = await Promise.all([updateProfile(parsed.data), updateCredentials({ email: accountEmail, password: newPassword })]);
+      if (r.ok && credentials.ok) toast.success(credentials.emailConfirmationRequired ? t("Perfil atualizado. Confirme o novo e-mail para concluir a troca.") : t("Perfil atualizado."));
+      else toast.error(`${t("Erro")}: ${!r.ok ? r.error : credentials.error}`);
     });
   }
 
@@ -76,10 +79,11 @@ export function ProfileForm({
       <Card className="space-y-4 p-6">
         <div className="space-y-2">
           <Label htmlFor="email">{t("Email")}</Label>
-          <Input id="email" value={email} disabled />
-          <p className="text-xs text-muted-foreground">
-            {t("Trocar email — em breve.")}
-          </p>
+          <Input id="email" type="email" value={accountEmail} onChange={(e) => setAccountEmail(e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="new_password">{t("Nova senha")}</Label>
+          <Input id="new_password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder={t("Deixe em branco para manter a atual")} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="full_name">{t("Nome completo")}</Label>
