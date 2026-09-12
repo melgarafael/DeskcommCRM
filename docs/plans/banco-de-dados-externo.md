@@ -9,17 +9,39 @@
 
 ## Status atual
 
-- **Fase:** todas as fases entregues em `feat/banco-externo-do-agente`. **PR #1 aberto** (`vgamkt/DeskcommCRM`, base `main`), `mergeable: clean`, e **CI 100% verde** no head `3864c756`. Ainda **não mergeado**.
-- **Última atualização:** 2026-09-11 (noite)
-- **Próximo passo concreto:** mergear o **PR #1** na `main` do fork e, em seguida, o **deploy** (namespace das imagens: o fork publica em `ghcr.io/vgamkt/…`, mas o `.env` desta VPS e o `_common.sh` ainda apontam para o upstream `ghcr.io/melgarafael`).
-- **Bloqueios:** nenhum de código. Dívidas declaradas: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature) e o deploy não feito.
-- **Branch:** `feat/banco-externo-do-agente` (criada de `main` em 2026-09-11). Commits: `73a274ef` (schema) → `2d411302` → `f994fa15` → `d750a2b8` → `6189887c` → `42e99715` → `7e8e2bbf` → `8f145f18` → `3864c756` (HEAD). Histórico detalhado no diário em `/root/arquivos/deskcomm-banco-externo.md`.
+- **Fase:** **ENTREGUE E EM PRODUÇÃO.** Feature mergeada (`f62d4663`), rebrand de namespace (`f446379`) e release **1.19.0** cortada/tagueada (`baec3923`). A VPS roda `app`/`worker`/`scheduler` em `ghcr.io/vgamkt/…:1.19.0`, **saudáveis**.
+- **Última atualização:** 2026-09-12.
+- **Próximo passo concreto:** obter um token do Supabase (`sbp_…`) e rodar `bash hostgator-setup-kit/marca-emails.sh --projeto /root/DeskcommCRM` para ajustar **Site URL** = `https://app.vgasistemas.app` e a lista de URLs permitidas (e os moldes de e-mail). Sem token não dá para ler nem ajustar — o Supabase é na nuvem e o endpoint público não devolve `site_url`.
+- **Bloqueios:** nenhum de código. Dívida declarada: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature).
+- **Histórico:** `feat/banco-externo-do-agente` (10 commits, `73a274ef` → `a46b330c`; merge `f62d4663`); rebrand `chore/namespace-do-fork` (PR #2, `6c46626d`; merge `f446379`); release PR #3 (`a42172af`; merge `baec3923`; tag `v1.19.0`). Diário completo em `/root/arquivos/deskcomm-banco-externo.md`.
 
 ### Resolvido (2026-09-11) — pacote das tools
 
 `8f145f18` colocou as duas tools do banco externo em `atender` (e `vender`/`reter`), elevando "Atender" de 18 para 20 e reprovando o `e2e`: a jornada de teto pressupõe 18 (`8 + 18 = 26 > 25` → faltam 1; desligar uma do seed deixa `7 + 18 = 25`, exato). Com 20 vira `28` (faltam 3) e o teste libera só 1 vaga.
 
 **Correção `3864c756`:** as duas tools são de **fonte de dados**, não de conversa, e passam a pertencer **só a `organizar`**. "Atender" volta a 18 e a jornada do teste volta a valer. Arquivos: `lib/mcp/tools/catalogo/dados-externos.ts` e `tests/e2e/capacidades-do-agente.spec.ts`. CI verde.
+
+### Deploy em produção (2026-09-12)
+
+- PRs: #1 (feature) → `f62d4663`; #2 (rebrand do namespace das imagens para o fork) → `f446379`; #3 (release 1.19.0) → `baec3923`; tag **`v1.19.0`**.
+- Imagens publicadas e **públicas** em `ghcr.io/vgamkt/{deskcommcrm,deskcomm-worker,deskcomm-scheduler}:{1.19.0,stable}`.
+- Deploy pela VPS com `bash hostgator-setup-kit/update.sh` (alvo `v1.19.0`): backup automático, `baseline.sql` reaplicado (migration 0233), o próprio script **reescreveu as três `*_IMAGE`** do `.env` para o fork, `pull` + `up -d` + Caddy recriado. Verificação: os três contêineres em 1.19.0 **healthy**, `/api/v1/health` = 200, `/app/integracao-dados` = 307 (login).
+- **Corte manual:** o fork não tem o GitHub App do workflow `release` (`RELEASE_APP_ID`/`RELEASE_APP_PRIVATE_KEY`), então `release:cortar` rodou local → PR #3 → merge → tag criada via API → `publish-image` publicou. Para futuras releases, configurar o App (ou repetir o manual).
+- Correção de conteúdo antes do corte: o fragmento citava a seção antiga "Dados e acesso"; ajustado para **"Fontes de dados"**.
+
+### Configuração pela tela (front end)
+
+Não é preciso editar `.env` para conectar o banco. Caminho: **Organização › Fontes de dados › Dados externos** (`/app/integracao-dados`).
+
+- **Quem vê:** todos os autenticados. **Quem cria/edita/testa:** `admin` (D2).
+- **Campos** (`app/app/integracao-dados/_components/FormularioDeConexao.tsx`): `label` (Nome da conexão), `host`, `port` (padrão 5432), `database_name` (Banco de dados), `username` (Usuário), `password` (Senha), `ssl_mode` (Segurança — `require` padrão, `verify-full`, `verify-ca`, `prefer`, `disable`) e `enabled` (Conexão ativa).
+- A senha é cifrada (AES-GCM) e **nunca** volta à tela; ao editar, deixá-la em branco mantém a guardada.
+- **Testar** valida o acesso e grava `last_test_*`; o explorador (`[id]/page.tsx`) mostra a árvore de tabelas e a grade paginada.
+- Contrato de entrada em `lib/external-db/schemas.ts` — a tela e a API usam o mesmo vocabulário.
+
+### Pendência ativa — Site URL do Supabase (2026-09-12)
+
+O Supabase é **na nuvem** (`nsvmksypszelwxefgluw.supabase.co`). O endpoint público não devolve `site_url`; para ler/ajustar é preciso um token `sbp_…` (Management API) ou o painel. O app manda o link para `https://app.vgasistemas.app/auth/confirm`, que precisa estar na lista de URLs permitidas — senão o Supabase cai no Site URL (possivelmente `http://localhost:3000`, quebrando "esqueci a senha"). **Ação:** rodar `bash hostgator-setup-kit/marca-emails.sh --projeto /root/DeskcommCRM` com `SUPABASE_ACCESS_TOKEN=sbp_…`.
 
 ---
 
@@ -198,6 +220,8 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 - [x] Fragmento em `.changes/dados-externos-do-agente.md` (`capacidade_nova`/`adicionado`), conferido com `release:conferir` (exit 0)
 - [x] Doc em `docs/specs/18-spec-banco-de-dados-externo.md`. Sem env var nova; o padrão novo (`redigirParaAuditoria`) está documentado no `lib/mcp/types.ts` e na spec
 - [x] Memória viva: `docs/architecture/banco-de-dados-externo.architecture.json` (17 peças, 28 arestas) + linha no README; gate `mapas-de-arquitetura` verde
+- [x] Rebrand do namespace das imagens para o fork (`chore/namespace-do-fork`, PR #2) e release **1.19.0** publicada (tag `v1.19.0`; imagens `ghcr.io/vgamkt/...` públicas)
+- [x] **Deploy em produção:** VPS com `app`/`worker`/`scheduler` em `ghcr.io/vgamkt/...:1.19.0`, healthy (2026-09-12)
 
 ### Fora de escopo (backlog)
 
