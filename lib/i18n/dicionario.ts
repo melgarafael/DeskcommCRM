@@ -82,6 +82,17 @@ export const DICIONARIO: Traducoes = {
   "Enviando resposta aprovada…": { es: "Enviando respuesta aprobada…" },
   "Resposta aprovada enviada": { es: "Respuesta aprobada enviada" },
   "Sugestão rejeitada": { es: "Sugerencia rechazada" },
+  "Nenhum agente publicado atende este canal. Publique uma versão do agente em IA › Agentes.": {
+    es: "Ningún agente publicado atiende este canal. Publica una versión del agente en IA › Agentes.",
+  },
+  "Não dá para sugerir nesta conversa: o contato pediu para não receber mensagens, foi anonimizado, ou o histórico não pôde ser lido.":
+    {
+      es: "No se puede sugerir en esta conversación: el contacto pidió no recibir mensajes, fue anonimizado, o no se pudo leer el historial.",
+    },
+  "Não foi possível gerar a sugestão. O motivo ficou registrado no servidor com o identificador abaixo.":
+    {
+      es: "No se pudo generar la sugerencia. El motivo quedó registrado en el servidor con el identificador de abajo.",
+    },
   "Sugestão obsoleta: a conversa mudou": { es: "Sugerencia obsoleta: la conversación cambió" },
   "Não foi possível concluir a sugestão ou o envio": {
     es: "No se pudo completar la sugerencia o el envío",
