@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -5,6 +6,7 @@ import { InboxLayout } from "@/components/inbox/InboxLayout";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Inbox" };
 
 export default async function InboxPage({
   searchParams,

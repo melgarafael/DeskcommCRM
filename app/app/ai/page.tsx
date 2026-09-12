@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import { NavHub } from "@/components/shell/NavHub";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Agente de IA" };
 
 /**
  * Hub da área de IA.
