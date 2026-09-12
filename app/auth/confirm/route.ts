@@ -24,6 +24,13 @@ import { env } from "@/lib/env";
  *   customizados gravados, e um `PATCH` de `mailer_templates_*` num projeto
  *   sem SMTP responde 200 e persiste byte a byte (conferido relendo com GET).
  *   O que exige SMTP próprio é o VOLUME de envio, não o corpo do e-mail.
+ *   ⚠️ MUDOU EM 2026-09-12: o Supabase passou a RECUSAR a edição dos moldes em
+ *   projeto FREE TIER com o provedor de e-mail padrão — `PATCH
+ *   mailer_templates_*` responde "Email template modification is not available
+ *   for free tier projects using the default email provider". A medição de
+ *   2026-08-14 segue válida para projeto com SMTP próprio (ou plano pago). Sem
+ *   um dos dois, os moldes customizados não entram e o link cai no formato
+ *   `code`/PKCE descrito abaixo — que não fecha neste app.
  * - `code` (PKCE): template PADRÃO do Supabase (o de quem nunca configurou os
  *   templates — caso mais comum em instalação fresca). O e-mail linka pro
  *   `/auth/v1/verify` do próprio GoTrue, que valida e SÓ ENTÃO redireciona pra

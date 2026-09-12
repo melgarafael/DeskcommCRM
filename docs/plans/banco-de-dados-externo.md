@@ -11,7 +11,7 @@
 
 - **Fase:** **ENTREGUE E EM PRODUÇÃO.** Feature mergeada (`f62d4663`), rebrand de namespace (`f446379`) e release **1.19.0** cortada/tagueada (`baec3923`). A VPS roda `app`/`worker`/`scheduler` em `ghcr.io/vgamkt/…:1.19.0`, **saudáveis**.
 - **Última atualização:** 2026-09-12.
-- **Próximo passo concreto:** obter um token do Supabase (`sbp_…`) e rodar `bash hostgator-setup-kit/marca-emails.sh --projeto /root/DeskcommCRM` para ajustar **Site URL** = `https://app.vgasistemas.app` e a lista de URLs permitidas (e os moldes de e-mail). Sem token não dá para ler nem ajustar — o Supabase é na nuvem e o endpoint público não devolve `site_url`.
+- **Próximo passo concreto:** **nada bloqueante**. O **Site URL** do Supabase foi corrigido para `https://app.vgasistemas.app` e a lista de URLs permitidas inclui `/auth/confirm` e `/**` (via Management API). Resta opcional: customizar os **moldes de e-mail** — bloqueado no free tier (`Email template modification is not available for free tier projects using the default email provider`); exige SMTP próprio (ex.: Resend) ou plano pago, e depois rodar `marca-emails.sh`.
 - **Bloqueios:** nenhum de código. Dívida declarada: `lib/database.types.ts` não regenerado (clients untyped; o arquivo já estava desatualizado além desta feature).
 - **Histórico:** `feat/banco-externo-do-agente` (10 commits, `73a274ef` → `a46b330c`; merge `f62d4663`); rebrand `chore/namespace-do-fork` (PR #2, `6c46626d`; merge `f446379`); release PR #3 (`a42172af`; merge `baec3923`; tag `v1.19.0`). Diário completo em `/root/arquivos/deskcomm-banco-externo.md`.
 
@@ -39,9 +39,14 @@ Não é preciso editar `.env` para conectar o banco. Caminho: **Organização �
 - **Testar** valida o acesso e grava `last_test_*`; o explorador (`[id]/page.tsx`) mostra a árvore de tabelas e a grade paginada.
 - Contrato de entrada em `lib/external-db/schemas.ts` — a tela e a API usam o mesmo vocabulário.
 
-### Pendência ativa — Site URL do Supabase (2026-09-12)
+### Site URL do Supabase — RESOLVIDO (parcial) (2026-09-12)
 
-O Supabase é **na nuvem** (`nsvmksypszelwxefgluw.supabase.co`). O endpoint público não devolve `site_url`; para ler/ajustar é preciso um token `sbp_…` (Management API) ou o painel. O app manda o link para `https://app.vgasistemas.app/auth/confirm`, que precisa estar na lista de URLs permitidas — senão o Supabase cai no Site URL (possivelmente `http://localhost:3000`, quebrando "esqueci a senha"). **Ação:** rodar `bash hostgator-setup-kit/marca-emails.sh --projeto /root/DeskcommCRM` com `SUPABASE_ACCESS_TOKEN=sbp_…`.
+O Supabase é **na nuvem** (`nsvmksypszelwxefgluw.supabase.co`); o endpoint público não devolve `site_url`, então foi usada a Management API com token `sbp_…`.
+
+- **Antes:** `site_url = http://localhost:3000`, `uri_allow_list` vazio → "esqueci a senha" cairia em localhost.
+- **Depois (PATCH 200, relido):** `site_url = https://app.vgasistemas.app`; `uri_allow_list = https://app.vgasistemas.app/auth/confirm,https://app.vgasistemas.app/**`.
+- **Moldes de e-mail: bloqueados no free tier** (`Email template modification is not available for free tier projects using the default email provider`). O `marca-emails.sh` faz um PATCH único com moldes + URLs, e a recusa dos moldes derrubou o lote — por isso as URLs foram aplicadas em PATCH separado. Sem os moldes customizados, os e-mails usam o modelo padrão (`code`/PKCE), que `app/auth/confirm/route.ts` documenta como **não-fechável** em clique de webmail. Conserto: SMTP próprio ou plano pago; depois `marca-emails.sh`.
+- **Nota de código:** o comentário de `app/auth/confirm/route.ts` (medição de 2026-08-14) dizia que `PATCH mailer_templates_*` funciona sem SMTP; a política do Supabase mudou — adicionada nota datada.
 
 ---
 
