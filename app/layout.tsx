@@ -215,7 +215,7 @@ async function EstiloDaMarca() {
   // no texto (foi como a prova em tela deste marco teve de fazer), e distinguir
   // o bloco da INSTALAÇÃO do bloco da ORGANIZAÇÃO — que a fase seguinte injeta —
   // seria impossível. Vale para diagnóstico, para spec de e2e e para o suporte.
-  return <style id="marca-instalacao" dangerouslySetInnerHTML={{ __html: css }} />;
+  return <style id="marca-instalacao" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: css }} />;
 }
 
 /**

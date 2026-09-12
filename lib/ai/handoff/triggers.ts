@@ -23,6 +23,38 @@ export function checkG1(body: string): boolean {
   return G1_REGEX.test(body);
 }
 
+/**
+ * Rede de segurança para confirmação de handoff pós-pergunta do agente.
+ *
+ * Quando o modelo pergunta "posso encaminhar para a equipe humana?" e o lead
+ * responde "sim"/"pode"/"claro", o G1 original não cobre — ele só detecta
+ * pedidos explícitos ("quero falar com humano"). Esta função fecha o gap:
+ * se a última mensagem do bot ofereceu handoff E a resposta atual é afirmativa,
+ * trata como gatilho G1.
+ *
+ * Falsos positivos são mitigados pelo contexto: só ativa quando AMBOS os lados
+ * (pergunta + resposta) estão presentes. Um "sim" isolado sem oferta prévia não
+ * aciona.
+ */
+const HANDOFF_OFFER_PATTERN =
+  /\b(encaminhar|transferir|equipe\s+humana|atendente\s+humano|falar\s+com\s+(algu[eé]m|uma\s+pessoa|um\s+atendente))\b/i;
+
+const AFFIRMATIVE_RESPONSE_PATTERN =
+  /^\s*(sim|pode|podes|claro|ok|tá|ta|belezinha|beleza|quero|quero\s+sim|isso|confirmo|pode\s+encaminhar|pode\s+transferir)\s*[.!]?$/i;
+
+export interface CheckG1ConfirmationInput {
+  /** Corpo da mensagem inbound do lead. */
+  body: string;
+  /** Última mensagem enviada pelo bot na conversa (se disponível). */
+  lastBotMessage?: string | null;
+}
+
+export function checkG1Confirmation(input: CheckG1ConfirmationInput): boolean {
+  const { body, lastBotMessage } = input;
+  if (!body || !lastBotMessage) return false;
+  return HANDOFF_OFFER_PATTERN.test(lastBotMessage) && AFFIRMATIVE_RESPONSE_PATTERN.test(body.trim());
+}
+
 export function checkG4Legal(body: string): boolean {
   if (!body) return false;
   return G4_LEGAL_REGEX.test(body);

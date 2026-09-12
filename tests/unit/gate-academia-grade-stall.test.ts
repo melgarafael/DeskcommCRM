@@ -120,4 +120,38 @@ describe("academiaGradeStallGate", () => {
     );
     expect(verdict.pass).toBe(true);
   });
+
+  it("permite responder sobre feriado com handoff sem afirmar horário", () => {
+    const verdict = academiaGradeStallGate.evaluate(
+      baseCtx({
+        body:
+          "A grade é semanal e não cobre feriados. Para saber se haverá aula no feriado, vou te encaminhar para nossa equipe.",
+        academiaGrade: { active: true, toolCalledThisTurn: false },
+      }),
+    );
+    expect(verdict.pass).toBe(true);
+  });
+
+  it("veta afirmação de funcionamento em feriado sem consulta", () => {
+    const verdict = academiaGradeStallGate.evaluate(
+      baseCtx({
+        body: "No feriado a academia abre das 08:00 às 12:00.",
+        academiaGrade: { active: true, toolCalledThisTurn: false },
+      }),
+    );
+    expect(verdict.pass).toBe(false);
+    if (verdict.pass) throw new Error("inalcançável");
+    expect(verdict.code).toBe("academia_grade_stall_sem_ferramenta");
+  });
+
+  it("permite handoff após consulta quando a pergunta é sobre exceção", () => {
+    const verdict = academiaGradeStallGate.evaluate(
+      baseCtx({
+        body:
+          "A grade regular de CrossFit é segunda às 08:00. Como você perguntou sobre o feriado, vou te encaminhar para a equipe confirmar.",
+        academiaGrade: { active: true, toolCalledThisTurn: true },
+      }),
+    );
+    expect(verdict.pass).toBe(true);
+  });
 });

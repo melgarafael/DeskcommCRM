@@ -65,6 +65,38 @@ export function detectHumanHandoffRequest(message: string): boolean {
   return HUMAN_HANDOFF_PATTERNS.some((re) => re.test(normalized));
 }
 
+/**
+ * Rede de segurança para confirmação de handoff pós-pergunta do agente.
+ *
+ * Quando o modelo pergunta "posso encaminhar para a equipe humana?" e o lead
+ * responde "sim"/"pode"/"claro", o G1 original não cobre — ele só detecta
+ * pedidos explícitos ("quero falar com humano"). Esta função fecha o gap:
+ * se a última mensagem do bot ofereceu handoff E a resposta atual é afirmativa,
+ * trata como gatilho de handoff determinístico.
+ *
+ * Falsos positivos são mitigados pelo contexto: só ativa quando AMBOS os lados
+ * (pergunta + resposta) estão presentes. Um "sim" isolado sem oferta prévia não
+ * aciona.
+ */
+const HANDOFF_OFFER_PATTERN =
+  /\b(encaminhar|transferir|equipe\s+humana|atendente\s+humano|falar\s+com\s+(?:algu[eé]m|uma\s+pessoa|um\s+atendente))\b/i;
+
+const AFFIRMATIVE_RESPONSE_PATTERN =
+  /^\s*(sim|pode|podes|claro|ok|t[aá]|belezinha|beleza|quero|quero\s+sim|isso|confirmo|pode\s+encaminhar|pode\s+transferir)\s*[.!]?$/i;
+
+export interface DetectHandoffConfirmationInput {
+  /** Corpo da mensagem inbound do lead. */
+  message: string;
+  /** Última mensagem enviada pelo bot na conversa (se disponível). */
+  lastBotMessage?: string | null;
+}
+
+export function detectHandoffConfirmation(input: DetectHandoffConfirmationInput): boolean {
+  const { message, lastBotMessage } = input;
+  if (!message || !lastBotMessage) return false;
+  return HANDOFF_OFFER_PATTERN.test(lastBotMessage) && AFFIRMATIVE_RESPONSE_PATTERN.test(message.trim());
+}
+
 
 /**
  * True se a última mensagem do lead SUGERE opt-out. A regra mora em
@@ -170,21 +202,42 @@ export async function performHumanHandoff(
 
   // (d) inbox de escalação com o resumo da conversa. Dedup por episódio ABERTO (mesmo padrão
   // do escalateJailbreakPromise): 2× no mesmo handoff aberto → 1 item.
-  await guardServiceEffect();
-  await db.query(
-    `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
-     select $1, 'handoff', 'critical', $2, $3, 'contact', $4
-     where not exists (
-       select 1 from agent_inbox_items
-       where organization_id = $1 and kind = 'handoff' and ref_kind = 'contact' and ref_id = $4 and status = 'open'
-     )`,
-    [
-      ids.tenantId,
-      opts.inboxTitle ?? 'Handoff humano solicitado — assumir a conversa',
-      `Motivo: ${opts.reason}. ${linhaDoAviso(opts.avisoAoLead)}Resumo da conversa até aqui:\n${opts.conversationSummary}`,
-      ids.leadId,
-    ],
-  );
+  //
+  // Try/catch porque o inbox é o ALERTA — sem ele a conversa fica na fila mas
+  // invisível para a equipe (medido em produção 2026-09-12: handoff aplicado com
+  // sucesso, status=pending correto, mas zero item na Central). O handoff em si
+  // já aconteceu (force_human + silêncio); perder o inbox não pode desfazer isso.
+  try {
+    await guardServiceEffect();
+    const result = await db.query(
+      `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
+       select $1, 'handoff', 'critical', $2, $3, 'contact', $4
+       where not exists (
+         select 1 from agent_inbox_items
+         where organization_id = $1 and kind = 'handoff' and ref_kind = 'contact' and ref_id = $4 and status = 'open'
+       )`,
+      [
+        ids.tenantId,
+        opts.inboxTitle ?? 'Handoff humano solicitado — assumir a conversa',
+        `Motivo: ${opts.reason}. ${linhaDoAviso(opts.avisoAoLead)}Resumo da conversa até aqui:\n${opts.conversationSummary}`,
+        ids.leadId,
+      ],
+    );
+    if (result.rowCount === 0) {
+      opts.log.warn('handoff: inbox item não criado (dedup ou race)', {
+        conversation_id: ids.conversationId,
+        lead_id: ids.leadId,
+        reason: opts.reason,
+      });
+    }
+  } catch (err) {
+    opts.log.warn('handoff: inbox item falhou — conversa na fila mas sem alerta na Central', {
+      conversation_id: ids.conversationId,
+      lead_id: ids.leadId,
+      reason: opts.reason,
+      error: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    });
+  }
 
   // (e) A IDA na linha do tempo do NEGÓCIO. `triggerHandoff` (o caminho do CRM)
   // já gravava `handoff_triggered`; este caminho — o do harness e o do "Assumir

@@ -188,7 +188,6 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
     // e não o registro de todo mundo.
     const { renderLgpdPdf } = await import("@/lib/lgpd/pdf-renderer");
     const padesConfigured = isPadesConfigured();
-    const { renderLgpdPdf } = await import("@/lib/lgpd/pdf-renderer");
     const pdfBuffer = await renderLgpdPdf(data, { unsignedWarning: !padesConfigured });
 
     // 5. Sign (stubbed when key missing).

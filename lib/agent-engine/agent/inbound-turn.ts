@@ -89,6 +89,7 @@ import {
   applyRequestHumanHandoff,
   buildHandoffSummary,
   detectAmbiguousOptOut,
+  detectHandoffConfirmation,
   detectHumanHandoffRequest,
   isLeadInHandoff,
   performHumanHandoff,
@@ -1993,6 +1994,7 @@ async function executarTurnoDoAgente(
     inboundsPendentes.some(
       (texto) =>
         detectHumanHandoffRequest(texto) ||
+        detectHandoffConfirmation({ message: texto, lastBotMessage: previous?.body ?? null }) ||
         (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
     )
   ) {

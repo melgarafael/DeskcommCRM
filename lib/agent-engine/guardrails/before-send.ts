@@ -541,6 +541,10 @@ const ACADEMIA_GRADE_STALL_PATTERN =
 const ACADEMIA_GRADE_HOUR_PATTERN =
   /\b(aula|turma|treino|cross ?fit|spinning|ciclismo|pilates|yoga|musculacao)\b[^.!?\n]{0,90}\b([01]\d|2[0-3]):[0-5]\d\b/i;
 
+/** Afirmação de horário de funcionamento ou abertura sem lastro na consulta estruturada. */
+const ACADEMIA_GRADE_OPENING_PATTERN =
+  /\b(abre|fecha|aberto|fechado|funciona|funcionamento|horario|expediente)\b[^.!?\n]{0,90}\b([01]\d|2[0-3]):[0-5]\d\b/i;
+
 /** Oferta em forma de pergunta que transforma consulta de grade em abordagem comercial. */
 const ACADEMIA_GRADE_UNSOLICITED_OFFER_PATTERN =
   /\b(quer|deseja|posso|gostaria)\b[^?\n]{0,120}\b(vaga|disponibilidade|reservar|reserva|experimental)\b/i;
@@ -572,7 +576,8 @@ export const academiaGradeStallGate: Gate = {
     }
     if (
       !ACADEMIA_GRADE_STALL_PATTERN.test(bodySemAcento) &&
-      !ACADEMIA_GRADE_HOUR_PATTERN.test(bodySemAcento)
+      !ACADEMIA_GRADE_HOUR_PATTERN.test(bodySemAcento) &&
+      !ACADEMIA_GRADE_OPENING_PATTERN.test(bodySemAcento)
     )
       return { pass: true };
 

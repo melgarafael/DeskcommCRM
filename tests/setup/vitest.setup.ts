@@ -69,6 +69,20 @@ for (const [chave, valor] of Object.entries(PLACEHOLDERS)) {
   process.env[chave] ??= valor;
 }
 
+// ─── Isolamento contra vazamento de env vars do Claude Code ───────────────
+// Quando os testes rodam dentro do Claude Code (extensão VSCode / CLI),
+// variáveis como ANTHROPIC_BASE_URL=https://ghostcli.dev e ANTHROPIC_API_KEY=gcli_*
+// vazam do processo pai para o vitest. O SDK Anthropic lê ANTHROPIC_BASE_URL
+// e redireciona todas as requisições para o proxy do Claude Code, fazendo com
+// que testes que esperam api.anthropic.com recebam ghostcli.dev — e falhem.
+// A correção é LIMPAR essas vars antes de qualquer import de app code, já que
+// os testes usam seus próprios mocks/stubs de provider (ver ai-response-worker-
+// model-routing.test.ts). Sem isto, ~16 suites falham por host errado.
+delete process.env.ANTHROPIC_BASE_URL;
+delete process.env.ANTHROPIC_API_KEY;
+delete process.env.CLAUDE_CODE_EXECPATH;
+delete process.env.VSCEXT_PROXY_URL;
+
 import "@testing-library/jest-dom/vitest";
 
 // jsdom não implementa ResizeObserver; Radix (ex.: Switch) usa em layout effects.
