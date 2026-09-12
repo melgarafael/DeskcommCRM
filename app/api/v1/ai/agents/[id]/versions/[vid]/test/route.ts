@@ -129,7 +129,11 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     await admin
       .from("ai_agent_runs")
       .update({
-        status: "ok",
+        // 'ok'/'error' NÃO existem em ai_agent_runs_status_check
+        // ('pending','running','completed','failed','aborted','handoff'): todo
+        // update falhava por violação de CHECK e, como o retorno não era lido,
+        // o erro sumia — os runs ficavam 'running' para sempre.
+        status: "completed",
         completed_at: new Date().toISOString(),
         tool_calls: JSON.parse(JSON.stringify(result.proposals)),
       })
@@ -139,7 +143,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     await admin
       .from("ai_agent_runs")
       .update({
-        status: "error",
+        status: "failed",
         completed_at: new Date().toISOString(),
         error_code: "preview_failed",
       })

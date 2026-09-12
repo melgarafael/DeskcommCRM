@@ -414,6 +414,9 @@ export async function publishAgentAction(
     .insert({
       organization_id: activeOrg.orgId,
       event_type: "ai_agent.published",
+      // NOT NULL sem default: sem esta linha o insert viola a constraint e o
+      // evento de publicação nunca é gravado.
+      entity_kind: "ai_agent",
       payload: {
         agent_id: result.agent_id,
         version_id: result.version_id,
@@ -614,6 +617,9 @@ export async function revertToVersionAction(
     .insert({
       organization_id: activeOrg.orgId,
       event_type: "ai_agent.published",
+      // NOT NULL sem default: sem esta linha o insert viola a constraint e o
+      // evento de publicação nunca é gravado.
+      entity_kind: "ai_agent",
       payload: {
         agent_id: result.agent_id,
         version_id: result.version_id,
