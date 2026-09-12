@@ -6017,6 +6017,7 @@ export const DICIONARIO: Traducoes = {
   //  de compilação, e é assim que o dicionário evita duas traduções da mesma
   //  frase divergirem.)
   "Devolver acesso": { es: "Devolver el acceso" },
+  "Acesso devolvido.": { es: "Acceso devuelto." },
   // ("Seu nome" já existe mais acima — a chave é o próprio texto.)
   "Informe seu nome": { es: "Escribe tu nombre" },
   "Você já tem uma conta com este e-mail": {
