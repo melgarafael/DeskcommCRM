@@ -1912,6 +1912,106 @@ provedor_ok "OpenAI: instala e o .env sai inteiro"      OPENAI_API_KEY     sk-te
 provedor_ok "Anthropic: instala e o .env sai inteiro"   ANTHROPIC_API_KEY  sk-ant-teste   anthropic
 
 
+echo "integração: instalar SEM chave de IA — o caminho que a documentação prometia (issue #670)"
+# A issue #670: `docs/deploy-selfhost` promete "deixe vazio e cadastre a chave
+# depois em IA › Credenciais", e o runtime concorda — `lib/env.ts` trata as três
+# chaves como opcionais, e faltar todas é `warn`, não erro. O instalador, não:
+# exigia uma chave que PASSASSE numa chamada real ao provedor, e a instalação
+# inteira parava sem ela. Não havia caminho para subir o produto sem antes abrir
+# conta num provedor de IA.
+#
+# O que este cenário mede é o caminho inteiro, com o .env de quem não tem conta
+# em provedor nenhum: BASE_ENV sem as três chaves e sem o AI Gateway (que tem
+# precedência na resolução do chat). Com o campo de volta a obrigatório, o
+# `ask_one` morre em "Falta ANTHROPIC_API_KEY (modo --yes exige .env
+# preenchido)" na coleta de configuração, e é a PRIMEIRA asserção que fica
+# vermelha.
+TMP_SEM_IA="$(mktemp -d)"
+(
+  montar_vps "$TMP_SEM_IA" "crmsemia" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+
+  # O .env da entrevista pulada: BASE_ENV sem NENHUMA chave de IA.
+  printf '%s\n' "$BASE_ENV" \
+    | grep -vE '^(ANTHROPIC|OPENROUTER|OPENAI)_API_KEY=|^AI_GATEWAY_API_KEY=' > "$VPS_PROJ/.env"
+
+  rodar_sem_ia() {
+    : > "$VPS_LOG"
+    (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" \
+      CRONTAB_SANDBOX="$CRONTAB_SANDBOX" SUPABASE_ACCESS_TOKEN= \
+      bash "$VPS_RAIZ/install.sh" --yes 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
+  }
+
+  saida="$(rodar_sem_ia)"
+
+  # A marca do defeito: com o campo obrigatório, o instalador morre aqui.
+  if printf '%s' "$saida" | grep -q 'exige .env preenchido'; then
+    printf '  ✗ o instalador ainda morre sem chave de IA — o campo do provedor não é `opcional`\n'
+    printf '     %s\n' "$(printf '%s' "$saida" | grep -m1 'exige .env preenchido')"
+    exit 1
+  fi
+  # CONTROLE POSITIVO: "não morreu" só significa alguma coisa se a instalação
+  # chegou ao fim; sem esta âncora, um install que parasse antes passaria.
+  if ! printf '%s' "$saida" | grep -q 'Instalação concluída'; then
+    printf '  ✗ a instalação sem chave de IA não chegou à tela final — cenário inconclusivo, não verde\n'
+    printf '     última linha: %s\n' "$(printf '%s' "$saida" | grep -v '^$' | tail -1)"
+    exit 1
+  fi
+  # O .env sai INTEIRO: sem chave, a última linha do bloco continua presente —
+  # a mesma régua dos cenários de provedor acima.
+  if ! grep -qE '^OWNER_PASSWORD="' "$VPS_PROJ/.env"; then
+    printf '  ✗ o .env saiu pela metade na instalação sem chave de IA\n'
+    printf '     últimas chaves gravadas: %s\n' \
+      "$(grep -oE '^[A-Z_]+=' "$VPS_PROJ/.env" | tail -3 | tr '\n' ' ')"
+    exit 1
+  fi
+  # A chave que ninguém respondeu sai DECLARADA e vazia — a mesma distinção
+  # entre ausente e declarada-e-vazia que o caso do APP_ACCENT_HEX guarda.
+  if ! grep -qE '^ANTHROPIC_API_KEY=' "$VPS_PROJ/.env"; then
+    printf '  ✗ ANTHROPIC_API_KEY nem apareceu no .env (esperado: declarada e vazia)\n'; exit 1
+  fi
+  if [ -n "$(valor_no_env "$VPS_PROJ/.env" ANTHROPIC_API_KEY)" ]; then
+    printf '  ✗ ANTHROPIC_API_KEY veio com valor [%s] — ninguém digitou nada\n' \
+      "$(valor_no_env "$VPS_PROJ/.env" ANTHROPIC_API_KEY)"; exit 1
+  fi
+  # A TELA FINAL lembra o caminho de volta. A medição é no RABO (depois de
+  # "Instalação concluída"), como no caso do Site URL: é a única tela que a
+  # pessoa lê inteira, e um aviso no meio do log de dez minutos não conta.
+  rabo="${saida##*Instalação concluída}"
+  if ! printf '%s' "$rabo" | grep -q 'A IA ainda não atende'; then
+    printf '  ✗ a tela final não avisa que a IA ainda não atende\n'; exit 1
+  fi
+  if ! printf '%s' "$rabo" | grep -q 'IA › Credenciais'; then
+    printf '  ✗ o aviso da tela final não diz ONDE cadastrar a chave (IA › Credenciais)\n'; exit 1
+  fi
+  printf '  ✓ sem chave de IA: instala, .env inteiro, e a tela final dá o caminho de volta\n'
+
+  # ── O outro lado: com a chave, o aviso NÃO aparece ────────────────────────
+  # Sem isto, um `pendencia_da_ia` que imprimisse sempre passaria no caso acima
+  # e viraria ruído em toda instalação que já tem chave — inclusive nas rodadas
+  # de `provedor_ok` logo acima.
+  printf '%s\n' "$BASE_ENV" > "$VPS_PROJ/.env"
+  saida="$(rodar_sem_ia)"
+  if ! printf '%s' "$saida" | grep -q 'Instalação concluída'; then
+    printf '  ✗ (controle) a segunda rodada, com chave, não chegou à tela final — cenário inconclusivo\n'
+    exit 1
+  fi
+  rabo="${saida##*Instalação concluída}"
+  if printf '%s' "$rabo" | grep -q 'A IA ainda não atende'; then
+    printf '  ✗ com a chave presente, a tela final avisou que falta chave de IA\n'; exit 1
+  fi
+  printf '  ✓ com a chave presente, o lembrete não aparece (o aviso não é ruído permanente)\n'
+) || fail=1
+rm -rf "$TMP_SEM_IA"
+
+
 echo "integração: instalação NOVA numa VPS com Traefik em modo host"
 # O install.sh roda contra um `docker` dublê que imita a Hostinger: 80/443
 # ocupadas, NINGUÉM publicando, um Traefik em `--network host`, e a rede do

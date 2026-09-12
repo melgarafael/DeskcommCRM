@@ -109,9 +109,11 @@ o baseline de hoje deduplica sozinho ao atualizar (`update.sh`), depois reinicie
 
 ## Instalação e atualização
 
-**Instalador exige chave de IA "válida" e para** (issue #670): a documentação diz que dá para
-deixar vazia e cadastrar depois, mas o instalador não aceita. Enquanto isso não muda, consiga a
-chave antes (OpenRouter é o caminho mais rápido de criar).
+**Instalador exigia chave de IA "válida" e parava** (issue #670, **resolvida**): a documentação
+dizia que dava para deixar vazia e cadastrar depois, mas o instalador não aceitava — era preciso
+conseguir a chave antes (OpenRouter é o caminho mais rápido de criar). Agora a chave é opcional:
+dá para instalar sem ela e cadastrar depois em IA › Credenciais; a tela final lembra quem pulou.
+Vale para quem atualizar para a versão seguinte.
 
 **Telemetria ligada sem ninguém escolher** (issue #668): acontece quando o `.env` foi copiado do
 exemplo. Para desligar: `SENTRY_DSN=off` no `.env` e `docker compose -f docker-compose.prod.yml up -d`.
