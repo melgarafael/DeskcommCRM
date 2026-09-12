@@ -6,6 +6,7 @@
  * mostra o valor); preenchido = override desta conexão.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { FUSOS_OFERECIDOS } from "@/lib/tempo/fusos";
 import { toast } from "sonner";
 
@@ -73,6 +74,7 @@ const msOrNull = (s: string): number | null =>
 export function AntiBanSheet({ item, canWrite, onClose }: Props) {
   const t = useT();
   const update = useUpdatePacingKnobs();
+  const qc = useQueryClient();
   const [form, setForm] = useState<FormState | null>(null);
 
   useEffect(() => {
@@ -87,7 +89,46 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
     return nomeDoCanal(item.channel_session, t);
   }, [item, t]);
 
-  if (!item || !form) return null;
+  // Duas saídas mudas moravam aqui, e as duas mentiam. `item` nulo NÃO é "painel
+  // fechado": o painel só é montado quando alguém o abre (ConnectionsClient), então
+  // item nulo significa que a conexão pedida sumiu da lista — excluída em outra aba
+  // ou máquina, cache velho — e o botão morria sem dizer nada, exatamente o
+  // `return` mudo que o Sistema Vivo proíbe. Virou estado visível, com caminho de
+  // volta: "Tentar de novo" invalida `pacing-knobs`; quando o item reaparecer, o
+  // efeito acima re-hidrata o formulário e o painel normal assume. Já `form` nulo é
+  // só o frame transitório entre o item chegar e a hidratação rodar (um render) —
+  // pintar o formulário nesse instante é que seria mentira. Por isso `!form`
+  // continua mudo, e só ele.
+  if (!item) {
+    return (
+      <Sheet open onOpenChange={(open) => !open && onClose()}>
+        <SheetContent className="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>{t("Proteção de envio")}</SheetTitle>
+            <SheetDescription data-testid="anti-ban-indisponivel">
+              {t(
+                "Não foi possível carregar a proteção de envio desta conexão. Ela pode ter sido removida, ou esta lista está desatualizada.",
+              )}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-auto flex justify-end gap-2 border-t border-border px-4 py-3">
+            <Button variant="ghost" onClick={onClose}>
+              {t("Fechar")}
+            </Button>
+            <Button
+              onClick={() => void qc.invalidateQueries({ queryKey: ["pacing-knobs"] })}
+              data-testid="anti-ban-tentar-de-novo"
+            >
+              {t("Tentar de novo")}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  if (!form) return null;
   const eff = item.effective;
   const set = (patch: Partial<FormState>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
