@@ -42,6 +42,45 @@
 
 ---
 
+## 🖥️ Rodar localmente em Ubuntu/VM
+
+Para desenvolver, testar ou manter uma instalação local com PostgreSQL e os demais
+serviços em Docker, clone o repositório e rode, uma única vez, na raiz:
+
+```bash
+chmod +x ubuntu-local-installer.sh
+./ubuntu-local-installer.sh
+```
+
+O instalador local cria o `.env.local`, sobe Supabase/PostgreSQL, Redis, WAHA,
+aplicação, worker e scheduler, aplica o `supabase/baseline.sql` e cria o primeiro
+usuário. Ele também escolhe uma porta disponível e informa o endereço ao final.
+
+Depois da instalação, os comandos do dia a dia são:
+
+```bash
+pnpm local:up       # inicia ou recria a stack e carrega o .env.local
+pnpm local:status   # mostra o estado dos serviços
+pnpm local:logs     # acompanha os logs
+pnpm local:down     # para a stack
+```
+
+Após alterar o `.env.local` ou baixar uma atualização do código, use:
+
+```bash
+git pull --ff-only  # somente se for atualizar o clone
+pnpm local:up
+```
+
+`pnpm local:up` recria os containers para que as variáveis novas sejam carregadas;
+`docker compose restart` sozinho não atualiza o ambiente. Não use o instalador da
+próxima seção para o ambiente local: `hostgator-setup-kit/install.sh` é destinado
+à instalação em VPS/self-host.
+
+Guia detalhado: [`docs/SETUP.md`](docs/SETUP.md#instalação-local-em-ubuntuvm-postgresql--serviços-em-docker).
+
+---
+
 ## ⚡ Instalar na sua VPS (o caminho principal)
 
 ### 1. Entre na sua VPS
