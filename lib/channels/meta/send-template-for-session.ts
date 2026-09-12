@@ -43,6 +43,24 @@ export async function sendTemplateForSession(
     throw new Error("template_incompleto: nome e idioma são obrigatórios em type=template");
   }
 
+  // A credencial de AMBIENTE é o único caminho deste envio, e a guarda vem
+  // ANTES da consulta ao espelho de propósito: "canal não conectado" é desfecho
+  // da classe `queued` (recuperável), e a ordem dos desfechos é comportamento
+  // neste repo. Sem ela, uma instalação que conectou o número pela TELA
+  // (credencial cifrada no banco, `.env` sem chave) tentaria a Graph com
+  // `Bearer` vazio e viraria `failed` com um erro que não nomeia o motivo real
+  // — a mudança de elegibilidade da #674 transformaria uma fila recuperável em
+  // falha. Com ela, o desfecho é o mesmo de antes do #674: `queued` com
+  // `meta_not_configured`.
+  //
+  // Enviar template com a credencial da SESSÃO é um passo próprio (o adapter
+  // ainda não implementa `sendTemplate`); até lá, este caminho é só do env.
+  if (!process.env.META_PHONE_NUMBER_ID || !process.env.META_SYSTEM_USER_TOKEN) {
+    throw new Error(
+      "meta_not_configured: sem credencial de ambiente para enviar template (a conexão feita pela tela ainda não é usada por este caminho).",
+    );
+  }
+
   const { data: linha, error } = await db
     .from("meta_templates")
     .select("name, language, status, contract_hash, components")
