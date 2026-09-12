@@ -15,20 +15,27 @@ json_value() {
 }
 
 start_without_legacy_migrations() {
-  local backup
-  backup="$(mktemp -d "${TMPDIR:-/tmp}/deskcomm-migrations.XXXXXX")"
+  local backup_dir
+  backup_dir="$(mktemp -d "${TMPDIR:-/tmp}/deskcomm-migrations.XXXXXX")"
   restore() {
-    if [[ -d "$backup/migrations" ]]; then
+    # O EXIT trap pode executar depois que esta função saiu do escopo. Não
+    # dependa de uma variável local no trap: com `set -u`, isso mascara o erro
+    # real do `supabase start` como "backup: unbound variable".
+    if [[ -d "${DESKCOMM_MIGRATIONS_BACKUP_DIR:-}/migrations" ]]; then
       rm -rf supabase/migrations
-      mv "$backup/migrations" supabase/migrations
+      mv "$DESKCOMM_MIGRATIONS_BACKUP_DIR/migrations" supabase/migrations
     fi
-    rmdir "$backup" 2>/dev/null || true
+    if [[ -n "${DESKCOMM_MIGRATIONS_BACKUP_DIR:-}" ]]; then
+      rmdir "$DESKCOMM_MIGRATIONS_BACKUP_DIR" 2>/dev/null || true
+    fi
+    DESKCOMM_MIGRATIONS_BACKUP_DIR=""
   }
+  DESKCOMM_MIGRATIONS_BACKUP_DIR="$backup_dir"
   trap restore EXIT
 
   # A cadeia histórica contém migrations fora de ordem e dependências que só
   # existiam no Supabase Cloud. O baseline é o artefato de instalação fresca.
-  mv supabase/migrations "$backup/migrations"
+  mv supabase/migrations "$backup_dir/migrations"
   mkdir supabase/migrations
   cli start "$@"
   restore
