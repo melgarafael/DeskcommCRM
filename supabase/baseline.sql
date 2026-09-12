@@ -23992,6 +23992,112 @@ create trigger trg_org_voice_calls_set_updated_at
 
 notify pgrst, 'reload schema';
 
+-- ---- Registro não nasce `pending` (migration 0239) ----
+--
+-- Racional completo no cabeçalho da migration 0239. Em uma linha: tipo de evento
+-- que ninguém consome não é fila — é registro, e a linha nasce `done`.
+--
+-- O defeito medido (issue #753): `event_log.status` nasce `pending` e nenhum
+-- drain seleciona tipo sem handler (`drain.ts` filtra por
+-- `event_type in (handlers)`; o drain do agent-engine filtra
+-- `ai_agent.dispatch_requested`), então o registro acaba a vida `pending` — 626
+-- linhas em 8 tipos na instalação da issue, indistinguíveis de fila entupida.
+--
+-- A lista mora no BANCO porque é o banco que escreve o status: quem emitir um
+-- tipo novo sem consumidor cai em
+-- `tests/unit/evento-de-fato-nao-fica-pendente.test.ts`, que lê a lista daqui e
+-- a cobra exaustiva em relação ao que o código emite.
+create or replace function public.fn_event_log_e_registro(p_event_type text)
+returns boolean
+language sql
+immutable
+set search_path to 'public', 'pg_temp'
+as $$
+  select p_event_type = any (array[
+    -- IA e agente
+    'ai.responded',
+    'ai_agent.created',
+    'ai_agent.published',
+    'ai_agent.run_completed',
+    'ai_agent.run_failed',
+    'ai_agent.run_started',
+    -- agente (harness) — o motor registra quando não há negócio para pendurar
+    'agent.activity_unrouted',
+    -- canal e conversa
+    'channel_session.status_changed',
+    'conversation.claimed',
+    'conversation.transferred',
+    'whatsapp.chat_id_not_recognized',
+    'whatsapp.conversation_mark_failed',
+    -- contato, lead, organização e plataforma
+    'contact.anonymized',
+    'contact.created',
+    'contact.deleted',
+    'contact.updated',
+    'crm.activity_write_failed',
+    'incident.resolved',
+    'lead.bulk_assigned',
+    'lead.bulk_deleted',
+    'lead.bulk_tagged',
+    'lead.reopened',
+    'lead.risk_backlog_seeded',
+    'lead.updated',
+    'org.updated',
+    'tenant.onboarded',
+    'tenant.reactivated',
+    'tenant.suspended',
+    'user.profile_updated',
+    -- mensagem
+    'message.failed',
+    'message.outbound',
+    'message.sending',
+    'message.sent',
+    -- LGPD
+    'lgpd.export_delivered',
+    'lgpd.export_generated',
+    'lgpd.redact_applied',
+    'lgpd.redact_failed'
+  ]::text[]);
+$$;
+
+-- Mesma ACL de `fn_log_event` (migration 0034): função pura de leitura, útil no
+-- SQL editor de uma instalação, e nunca alcançável pela anon key.
+revoke all on function public.fn_event_log_e_registro(text) from public, anon;
+grant execute on function public.fn_event_log_e_registro(text) to authenticated, service_role;
+
+create or replace function public.fn_event_log_marca_registro()
+returns trigger
+language plpgsql
+set search_path to 'public', 'pg_temp'
+as $$
+begin
+  -- Só o que nasce `pending`: quem escolhe status na origem não é reescrito
+  -- (o agent-engine insere `ai_agent.dispatch_requested` e
+  -- `agent.operator_turn` com o status que quer).
+  if new.status = 'pending' and public.fn_event_log_e_registro(new.event_type) then
+    new.status := 'done';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.fn_event_log_marca_registro() from public, anon;
+grant execute on function public.fn_event_log_marca_registro() to service_role;
+
+drop trigger if exists trg_event_log_marca_registro on public.event_log;
+create trigger trg_event_log_marca_registro
+  before insert on public.event_log
+  for each row
+  execute function public.fn_event_log_marca_registro();
+
+-- Backfill do estoque: só os tipos da lista, e só `pending` — `processing`
+-- (claim perdido, dono é o reaper do drain) e `dead` (erro de consumidor) são
+-- outra história, com outro dono.
+update public.event_log
+   set status = 'done'
+ where status = 'pending'
+   and public.fn_event_log_e_registro(event_type);
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
