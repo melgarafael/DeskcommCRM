@@ -1,4 +1,5 @@
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
+import { runFollowupTick } from "@/lib/followup/engine";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
@@ -306,6 +307,110 @@ describe("presença e recuperação transacionais", () => {
         await pool.query(
           "select count(*)::int n from agent_inbox_items where ref_id=$1 and kind='appointment_recovery_review'",
           [a.id],
+        )
+      ).rows[0].n,
+    ).toBe(1);
+  });
+  it("régua de recuperação esgotada sem resposta abre aviso na Central referenciando o compromisso", async () => {
+    await stopFlows();
+    // Fluxo mínimo que chega direto ao fim com outcome `exhausted` — o motor
+    // conclui num tick só e o hook de `no-show-recuperacao-esgotada` dispara.
+    const v = (
+      await pool.query(
+        "insert into followup_flow_versions(organization_id,graph) values($1,$2) returning id",
+        [
+          GOV_ORG,
+          {
+            nodes: [
+              { id: "t", type: "trigger", label: "Falta", position: { x: 0, y: 0 }, config: {} },
+              { id: "end", type: "end", label: "Fim", position: { x: 0, y: 1 }, config: { outcome: "exhausted" } },
+            ],
+            edges: [{ id: "e", source: "t", target: "end", priority: 0, condition: { type: "always" } }],
+          },
+        ],
+      )
+    ).rows[0].id;
+    const p = (
+      await pool.query(
+        "insert into followup_flow_pointers(organization_id,name,status,active_version_id,trigger_config) values($1,'Recuperação esgotável '||gen_random_uuid(),'active',$2,$3) returning id",
+        [GOV_ORG, v, { kind: "appointment_no_show", cancel_on_reply: false }],
+      )
+    ).rows[0].id;
+    const agent = (
+      await pool.query(
+        "insert into ai_agents(organization_id,name,system_prompt) values($1,'Recuperação esgotável '||gen_random_uuid(),'Prompt') returning id",
+        [GOV_ORG],
+      )
+    ).rows[0].id;
+    await pool.query(
+      "insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,followup) values($1,$2,1,'Prompt','anthropic','claude-sonnet-4-6',$3,'published',$4)",
+      [GOV_ORG, agent, GOV_SESSION, { enabled: true, flow_pointer_ids: [p] }],
+    );
+
+    const a = await fixture();
+    await change(a.id);
+    const rec = await recover(a.id);
+    expect(rec.result).toBe("started");
+
+    // O enrollment recém-criado pode estar a alguns ms no futuro para o Postgres
+    // (ver followup-relogio.ts) — força-o a devido antes do tick.
+    await pool.query(
+      "update followup_enrollments set next_eval_at = now() - interval '1 second' where id = $1",
+      [rec.enrollment_id],
+    );
+
+    // ⚠️ DOIS TICKS, e não é folga: o motor avança UM nó por rodada.
+    //
+    // O primeiro tick tira o enrollment do gatilho e o deixa PARADO no nó
+    // `end` (`current_node_id='end'`, ainda `status='active'`); é o SEGUNDO que
+    // EXECUTA o `end` e conclui com `outcome='exhausted'`, que é o que dispara
+    // o aviso. Em produção o cron roda a cada minuto e isso é invisível.
+    //
+    // Medido, porque a primeira versão deste teste tinha um tick só e o
+    // diagnóstico foi para o lugar errado — a suspeita (minha e do autor) era
+    // de que `fn_claim_due_followup_enrollments` estivesse falhando, já que
+    // `claimed: 0` é indistinguível de "nada vencido". Sondei a função direto:
+    //
+    //   SONDA-CLAIM-OK  {"n":1}
+    //   SONDA-TICK      {"claimed":1,"advanced":1,"scheduled":0,"failed":0}
+    //   SONDA-POS       {"status":"active","current_node_id":"end"}
+    //
+    // O claim funcionava o tempo todo. Faltava uma rodada.
+    for (let rodada = 0; rodada < 2; rodada += 1) {
+      await pool.query(
+        "update followup_enrollments set next_eval_at = now() - interval '1 second' where id = $1 and status = 'active'",
+        [rec.enrollment_id],
+      );
+      await runFollowupTick(
+        { db: createPgAdminClient(pool), clock: () => new Date(), enqueueJob: async () => {} },
+        { limit: 10 },
+      );
+    }
+
+    const enr = (
+      await pool.query("select status, outcome from followup_enrollments where id = $1", [rec.enrollment_id])
+    ).rows[0];
+    expect(enr).toMatchObject({ status: "completed", outcome: "exhausted" });
+
+    const aviso = (
+      await pool.query(
+        "select severity, ref_kind, appointment_revision::int rev from agent_inbox_items where organization_id=$1 and ref_id=$2 and kind='appointment_recovery_review'",
+        [GOV_ORG, a.id],
+      )
+    ).rows;
+    expect(aviso).toHaveLength(1);
+    expect(aviso[0]).toMatchObject({ severity: "warn", ref_kind: "appointment", rev: 2 });
+
+    // Idempotente: reprocessar o mesmo passo não abre um segundo aviso.
+    await runFollowupTick(
+      { db: createPgAdminClient(pool), clock: () => new Date(), enqueueJob: async () => {} },
+      { limit: 10 },
+    );
+    expect(
+      (
+        await pool.query(
+          "select count(*)::int n from agent_inbox_items where organization_id=$1 and ref_id=$2 and kind='appointment_recovery_review'",
+          [GOV_ORG, a.id],
         )
       ).rows[0].n,
     ).toBe(1);
@@ -642,5 +747,99 @@ describe("presença e recuperação transacionais", () => {
       outcome_message_id: null,
       outcome_user_id: GOV_AGENT_A,
     });
+  });
+  it("contato ANONIMIZADO não ganha aviso — a régua termina calada", async () => {
+    // ═══ POR QUE ESTE CASO EXISTE ═══
+    //
+    // A cascata de LGPD **não cancela** `followup_enrollments`. Então um contato
+    // anonimizado com régua em curso chega ao fim dela DEPOIS da redação, e a
+    // porta do aviso reabriria um item apontando para o compromisso que a
+    // anonimização tinha desligado.
+    //
+    // As outras três portas para `appointment_recovery_review` já guardam isso
+    // (`fn_appointment_recover` recusa contato anonimizado,
+    // `fn_meet_redact_contact` resolve os abertos, e há um bloco de cura no
+    // baseline). Esta era a quarta e nascia sem — e nenhum invariante cobrava a
+    // guarda de quem escreve o `kind` pelo TypeScript. Por isso ela mora DENTRO
+    // do `insert ... select` em `turn-bridge.ts`, e não num `if` antes dele:
+    // no `select`, quem mudar a consulta tem de apagar a linha de propósito.
+    await stopFlows();
+    const v = (
+      await pool.query(
+        "insert into followup_flow_versions(organization_id,graph) values($1,$2) returning id",
+        [
+          GOV_ORG,
+          {
+            nodes: [
+              { id: "t", type: "trigger", label: "Falta", position: { x: 0, y: 0 }, config: {} },
+              { id: "end", type: "end", label: "Fim", position: { x: 0, y: 1 }, config: { outcome: "exhausted" } },
+            ],
+            edges: [{ id: "e", source: "t", target: "end", priority: 0, condition: { type: "always" } }],
+          },
+        ],
+      )
+    ).rows[0].id;
+    const ponteiro = (
+      await pool.query(
+        "insert into followup_flow_pointers(organization_id,name,status,active_version_id,trigger_config) values($1,'Recuperação anonimizada '||gen_random_uuid(),'active',$2,$3) returning id",
+        [GOV_ORG, v, { kind: "appointment_no_show", cancel_on_reply: false }],
+      )
+    ).rows[0].id;
+    const agent = (
+      await pool.query(
+        "insert into ai_agents(organization_id,name,system_prompt) values($1,'Recuperação anonimizada '||gen_random_uuid(),'Prompt') returning id",
+        [GOV_ORG],
+      )
+    ).rows[0].id;
+    await pool.query(
+      "insert into ai_agent_versions(organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,followup) values($1,$2,1,'Prompt','anthropic','claude-sonnet-4-6',$3,'published',$4)",
+      [GOV_ORG, agent, GOV_SESSION, { enabled: true, flow_pointer_ids: [ponteiro] }],
+    );
+
+    const a = await fixture();
+    await change(a.id);
+    const rec = await recover(a.id);
+    expect(rec.result).toBe("started");
+
+    // A redação acontece DEPOIS da matrícula — é exatamente a ordem que cria o
+    // problema, e a que a cascata de LGPD produz hoje.
+    await pool.query(
+      "update contacts set is_anonymized = true, anonymized_at = now(), display_name = 'Cliente Anonimizado #1' where id = $1",
+      [a.contact],
+    );
+
+    // CONTROLE POSITIVO: o enrollment continua vivo depois da anonimização.
+    // Sem isto, "nenhum aviso" poderia ser porque a régua já tinha morrido — e
+    // o teste passaria sem medir a guarda.
+    expect(
+      (await pool.query("select status from followup_enrollments where id = $1", [rec.enrollment_id])).rows[0].status,
+      "a cascata de LGPD passou a cancelar o enrollment — se isso mudou de propósito, este caso perdeu o objeto",
+    ).toBe("active");
+
+    for (let rodada = 0; rodada < 2; rodada += 1) {
+      await pool.query(
+        "update followup_enrollments set next_eval_at = now() - interval '1 second' where id = $1 and status = 'active'",
+        [rec.enrollment_id],
+      );
+      await runFollowupTick(
+        { db: createPgAdminClient(pool), clock: () => new Date(), enqueueJob: async () => {} },
+        { limit: 10 },
+      );
+    }
+
+    // CONTROLE: a régua CHEGOU AO FIM — senão "nenhum aviso" seria trivial.
+    expect(
+      (await pool.query("select status, outcome from followup_enrollments where id = $1", [rec.enrollment_id])).rows[0],
+    ).toMatchObject({ status: "completed", outcome: "exhausted" });
+
+    expect(
+      (
+        await pool.query(
+          "select count(*)::int n from agent_inbox_items where organization_id=$1 and ref_id=$2 and kind='appointment_recovery_review'",
+          [GOV_ORG, a.id],
+        )
+      ).rows[0].n,
+      "abriu aviso para um contato anonimizado — o item aponta para um compromisso que a redação desligou",
+    ).toBe(0);
   });
 });

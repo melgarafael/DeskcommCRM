@@ -1,0 +1,6 @@
+interface:
+  display_name: "Analisar métricas do CRM"
+  short_description: "Conversão, funil, resposta, handoff, follow-up e custo de IA — com régua declarada e sem dado pessoal"
+  default_prompt: "Use a skill deskcomm-metricas e analise o desempenho da minha instalação nos últimos 30 dias."
+policy:
+  allow_implicit_invocation: true

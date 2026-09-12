@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# pre-commit do contribuidor — dois guardas, e só os irreversíveis.
+# Armado por: bash .agents/skills/deskcomm-contribuir/scripts/armar-hooks.sh
+set -euo pipefail
+aqui="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+"$aqui/check-migration-triple.sh"
+"$aqui/avisar-identidade.sh" || true   # aviso, nunca bloqueio

@@ -232,6 +232,28 @@ beforeAll(() => {
                     (select id from public.crm_leads where organization_id = v_org limit 1));
         end if;
 
+        -- voice_calls (0232): a chamada pendurada na sessão de canal da org.
+        -- O wacalls_call_id varia por organizacao porque a tabela tem
+        -- unique (organization_id, wacalls_call_id) — mesmo cuidado do endpoint
+        -- de push_subscriptions logo abaixo.
+        -- (sem crase nesta prosa: o bloco inteiro é um template literal de JS.)
+        if not exists (select 1 from public.voice_calls where organization_id = v_org) then
+          insert into public.voice_calls
+            (organization_id, channel_session_id, contact_id, wacalls_call_id,
+             direction, peer_phone, status)
+            values (v_org, v_sess, v_contact, 'rls-' || v_org::text,
+                    'inbound', '5511900000000', 'ended');
+        end if;
+
+        -- org_voice_calls (0236): o opt-in da chamada de voz, uma linha por
+        -- organizacao. A PK e o proprio organization_id, entao a semente e
+        -- idempotente por construcao — mas o if not exists fica pelo mesmo
+        -- motivo das vizinhas: o seed roda duas vezes, uma por org.
+        if not exists (select 1 from public.org_voice_calls where organization_id = v_org) then
+          insert into public.org_voice_calls (organization_id, enabled)
+            values (v_org, false);
+        end if;
+
         if not exists (select 1 from public.push_subscriptions where organization_id = v_org) then
           insert into public.push_subscriptions
             (organization_id, user_id, endpoint, p256dh, auth)
@@ -294,6 +316,17 @@ export const TABLES = [
   "crm_tasks",
   // 0227 — texto de sugestões: org + visibilidade da conversa por authenticated.
   "ai_reply_drafts",
+  // 0232/0235 — chamada de voz. Guarda `peer_phone` (telefone da outra ponta) e
+  // `owner_user_id` (quem atendeu): vazar a linha entrega ao vizinho com quem a
+  // organização falou, quando, por quanto tempo e por meio de quem. A policy
+  // nasceu SEM o `for all` explícito, e o comportamento casava com o nome
+  // `_all` por default do Postgres, não por declaração — a 0235 a reescreve e
+  // este é o caso que mede a reescrita pelo desfecho.
+  "voice_calls",
+  // migration 0236 — o opt-in por organizacao da chamada de voz. Guarda quem
+  // aceitou o risco do segundo aparelho vinculado: vazar entre organizacoes
+  // diria a uma empresa quem, na outra, ligou a feature e quando.
+  "org_voice_calls",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

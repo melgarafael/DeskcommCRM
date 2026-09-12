@@ -2,6 +2,11 @@
 
 🇧🇷 Português · [🇺🇸 English](README.en.md) · [🇪🇸 Español](README.es.md)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/deskcomm-logo-dark.svg">
+  <img src="docs/brand/deskcomm-logo.svg" alt="Deskcomm CRM" width="420">
+</picture>
+
 # 🛠️ DeskcommCRM — o Sistema Operacional de Vendas com IA, open source, pro WhatsApp
 
 **Agentes de IA que atendem, qualificam e vendem no WhatsApp — dentro de um CRM open source rodando no seu servidor.**
@@ -132,6 +137,11 @@ Jogue a pasta `hostgator-setup-kit/` no chat do **Claude Code** rodando dentro d
 ## 🔄 Atualizar
 
 Saiu versão nova? Há dois caminhos, e o primeiro **não exige terminal**.
+
+Com o repositório clonado, o **guia de instalação** já vem dentro — `.agents/skills/deskcomm-instalar/` —
+e carrega sozinho no Claude Code, Codex, Cursor, OpenCode ou Antigravity aberto na pasta. Diga só
+*"quero instalar o CRM na minha VPS"*. Há guias também para montar um cliente por nicho, analisar
+métricas, afinar o prompt do agente e contribuir (`AGENTS.md`, seção "Guias do assistente").
 
 ### Pela tela (recomendado)
 

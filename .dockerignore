@@ -15,3 +15,13 @@ docs
 tasks
 scratchpad
 .vercel
+# Harness de sessão de IA (skills, hooks, config de CLI): não é código de
+# runtime e entrava inteiro na imagem do worker (`COPY . .`).
+.claude
+.agents
+.agent
+.codex
+.cursor
+.opencode
+.specs
+.changes

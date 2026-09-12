@@ -82,6 +82,20 @@ export function resolveBranding(
  * produto nos DOIS lados e mostraria a marca errada em SILÊNCIO. Divergir é
  * barulhento (o console acusa), e barulhento é o modo de falhar que se conserta.
  */
+/**
+ * A marca em vigor é a do PRODUTO — e é só então que o símbolo e o logotipo
+ * de `lib/branding/desenho.ts` podem aparecer.
+ *
+ * Duas condições, e as duas são necessárias: sem logo configurado E com o nome
+ * padrão. Quem só trocou o nome (para "Acme CRM") não pode receber um logotipo
+ * que soletra outro nome; quem só subiu um logo já tem o dele na tela. Trocar a
+ * cor de destaque não conta — a marca do produto continua sendo a que está
+ * escrita, só pintada de outro jeito.
+ */
+export function marcaEhADoProduto(marca: Pick<Branding, "name" | "logoUrl">): boolean {
+  return marca.logoUrl === null && marca.name === DEFAULT_APP_NAME;
+}
+
 export function branding(): Branding {
   if (typeof window !== "undefined") {
     const runtime = window.__PUBLIC_ENV__;

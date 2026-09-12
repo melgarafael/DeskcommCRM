@@ -135,7 +135,7 @@ export function HistoricoDaAgenda({
                 "flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs transition-colors duration-fast ease-out",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
                 aba === a.id
-                  ? "bg-accent font-semibold text-accent-fg"
+                  ? "bg-accent font-semibold text-accent-foreground"
                   : "text-text-muted hover:bg-surface-elevated hover:text-text",
               )}
             >
@@ -147,7 +147,7 @@ export function HistoricoDaAgenda({
                 data-testid={`contador-${a.id}`}
                 className={cn(
                   "rounded-full px-1.5 text-[10px] tabular-nums",
-                  aba === a.id ? "bg-accent-fg/20" : "bg-surface-elevated text-text-subtle",
+                  aba === a.id ? "bg-accent-foreground/20" : "bg-surface-elevated text-text-subtle",
                 )}
               >
                 {n}

@@ -17,6 +17,19 @@ export interface AgentActivityInput {
   /** O QUE SUSTENTA. Sem isto a linha entra como 'system' (constraint 0071). */
   evidence?: ActivityEvidence | null;
   agentId?: string | null;
+  /**
+   * A PESSOA que agiu, quando houve uma.
+   *
+   * Existe porque nem tudo que o worker registra é ato de máquina. Uma chamada
+   * de voz é atendida por um atendente de carne e osso, e a ponte de eventos
+   * (`lib/wacalls/events-bridge.ts`) sabe quem — o WaCalls devolve, em `owner`,
+   * o `clientId` que NÓS mandamos, que é o `auth.users.id` de quem atendeu.
+   *
+   * Sem este campo a linha caía em `webhook_source` → `actor_kind='system'`, e a
+   * linha do tempo do negócio dizia "Sistema" onde havia um nome. Precede
+   * `agentId` na decisão: quando os dois vierem, quem agiu foi a pessoa.
+   */
+  usuarioId?: string | null;
   payload?: Record<string, unknown>;
 }
 
@@ -81,11 +94,14 @@ export async function emitAgentActivityForContact(
     type: input.type,
     sourceModule: input.sourceModule,
     sourceId: input.sourceId ?? null,
-    actor: input.agentId
-      ? // `agent_id` explícito: é ele que vai para a coluna com FK. Ver o ⚠️ de
-        // `Actor` em lib/api/handlers/types.ts.
-        { type: "ai_agent", id: input.agentId, agent_id: input.agentId, role: "agent" }
-      : { type: "webhook_source", id: input.sourceModule },
+    actor: input.usuarioId
+      ? // Pessoa antes de máquina: quem tem nome assina.
+        { type: "user", id: input.usuarioId }
+      : input.agentId
+        ? // `agent_id` explícito: é ele que vai para a coluna com FK. Ver o ⚠️ de
+          // `Actor` em lib/api/handlers/types.ts.
+          { type: "ai_agent", id: input.agentId, agent_id: input.agentId, role: "agent" }
+        : { type: "webhook_source", id: input.sourceModule },
     reason: input.reason,
     evidence: input.evidence ?? null,
     payload: input.payload ?? {},

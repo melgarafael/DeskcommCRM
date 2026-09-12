@@ -94,11 +94,33 @@ export const ApiErrorCodes = {
   ads_campo_invalido: "ads_campo_invalido",
   ads_cifra_indisponivel: "ads_cifra_indisponivel",
 
+  // ─── CHAMADA DE VOZ (spec 18, migration 0234) ───
+  //
+  // Três recusas que pedem TRÊS ações diferentes de quem lê, e por isso não
+  // podem colapsar num genérico. A tela e a IA precisam distinguir:
+  //
+  //   • a organização não ligou a feature      → um admin liga em Segurança;
+  //   • o admin tentou ligar sem aceitar o risco → ler o aviso e confirmar;
+  //   • a instalação não oferece o serviço      → falar com quem administra a
+  //     VPS; nenhum clique na tela resolve.
+  //
+  // O terceiro é 503 (dependência de instalação, como `waha_not_configured`);
+  // os dois primeiros são 422 (recurso desligado por configuração da própria
+  // organização, como `agenda_tipo_desativado`).
+  voice_desligada_na_organizacao: "voice_desligada_na_organizacao",
+  voice_risco_nao_aceito: "voice_risco_nao_aceito",
+  voice_indisponivel_na_instalacao: "voice_indisponivel_na_instalacao",
+  // 503: a leitura do estado não voltou. Separado dos dois acima de propósito —
+  // "não sei" não pode se disfarçar de "está desligada", que mandaria a pessoa
+  // procurar um interruptor quando o problema é o banco.
+  voice_estado_indeterminado: "voice_estado_indeterminado",
+
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
   waha_error: "waha_error",
+  wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   ai_provider_error: "ai_provider_error",
   nuvemshop_error: "nuvemshop_error",
 } as const;

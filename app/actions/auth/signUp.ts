@@ -36,7 +36,12 @@ export type SignUpResult =
     }
   | {
       ok: false;
-      error: "validation_error" | "rate_limited" | "signup_failed";
+      /**
+       * `conta_ja_existe`: só acontece COM convite na mão. Sem convite a
+       * resposta continua indistinguível de sucesso — ver o parágrafo de
+       * anti-enumeração abaixo.
+       */
+      error: "validation_error" | "rate_limited" | "signup_failed" | "conta_ja_existe";
       details?: Record<string, unknown>;
     };
 
@@ -111,14 +116,56 @@ export async function signUp(
       // O convite é revalidado no servidor mesmo tendo sido validado ao montar
       // a tela: o campo de e-mail do formulário é adulterável no cliente, e a
       // decisão que importa acontece com o e-mail JÁ confirmado pelo provedor.
+      // `full_name` vai junto no convite: sem ele a pessoa entra na equipe sem
+      // nome e aparece como um pedaço de identificador em toda tela que a
+      // nomeia. No caminho sem convite ele não existe — ali quem dá o nome é o
+      // onboarding, que o convidado não percorre.
       data: convite
-        ? { invite_token: convite }
+        ? {
+            invite_token: convite,
+            full_name: (parsed.data as SignupComConviteInput).full_name,
+          }
         : { org_name: (parsed.data as SignupInput).org_name },
     },
   });
 
   if (error) {
     if (error.status === 429) return { ok: false, error: "rate_limited" };
+
+    // ── O BECO SEM SAÍDA DE QUEM JÁ TEM CONTA ────────────────────────────
+    //
+    // Medido em produção em 2026-09-10: quem foi revogado e recebeu convite
+    // novo chega aqui, porque já tem conta. O GoTrue devolve
+    // "User already registered", e a tela dizia "Não foi possível criar a
+    // conta. Tente novamente." — instrução impossível: tentar de novo nunca
+    // vai funcionar. A pessoa tentou TRÊS vezes; está nas três linhas de
+    // `auth.signup_failed` da trilha.
+    //
+    // O caminho certo existe e é curto (entrar e aceitar o convite), mas a
+    // tela não levava até ele.
+    //
+    // ⚠️ POR QUE ISTO NÃO FURA A ANTI-ENUMERAÇÃO. O cabeçalho desta função
+    // explica que e-mail já cadastrado recebe a MESMA resposta de sucesso,
+    // para ninguém descobrir quem tem conta aqui testando endereços. A regra
+    // continua inteira: este ramo só existe quando há um CONVITE ASSINADO
+    // para este e-mail. Quem tem o convite já sabe que este endereço foi
+    // convidado — a assinatura é a prova. Sem convite, `convite` é `null` e a
+    // resposta segue sendo `signup_failed`, indistinguível como antes.
+    const jaExiste = /already\s*registered|already\s*exists/i.test(error.message);
+    if (jaExiste && convite !== null) {
+      await audit({
+        action: "auth.signup_failed",
+        metadata: {
+          email_hash: hashEmail(parsed.data.email),
+          reason: "conta_ja_existe_com_convite",
+        },
+        requestId,
+        ip,
+        userAgent,
+      });
+      return { ok: false, error: "conta_ja_existe" };
+    }
+
     await audit({
       action: "auth.signup_failed",
       metadata: {

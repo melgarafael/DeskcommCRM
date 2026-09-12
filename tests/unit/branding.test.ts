@@ -239,6 +239,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
       "`X-Client-Info` enviado ao Supabase — identifica o cliente nos logs e na telemetria DELES. Não é texto de interface e nunca chega ao usuário",
     marcas: ["deskcomm-crm"],
   },
+  "lib/wacalls/events-bridge.ts": {
+    categoria: "PROTOCOLO",
+    motivo:
+      "X-Client-Id enviado ao processo WaCalls (spec 18) — identifica o worker como o operador dono da conexão SSE nos logs e na lógica de exclusividade de chamada dele. Não é texto de interface e nunca chega ao usuário",
+    marcas: ["deskcomm-worker"],
+  },
   "lib/nuvemshop/config.ts": {
     categoria: "PROTOCOLO",
     motivo:

@@ -23,6 +23,7 @@ import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { DialButton } from "@/components/voice/DialButton";
 
 interface Props {
   contactId: string;
@@ -104,10 +105,13 @@ export function ContactDetailClient({ contactId }: Props) {
           </div>
         </div>
         {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
-          <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
-            <PencilSimple size={16} weight="bold" aria-hidden />
-            <span>{t("Editar")}</span>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
+            <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
+              <PencilSimple size={16} weight="bold" aria-hidden />
+              <span>{t("Editar")}</span>
+            </Button>
+          </div>
         )}
       </header>
 

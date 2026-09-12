@@ -89,7 +89,14 @@ describe("estado inicial", () => {
     getMock.mockResolvedValue(conectado);
     render(<CanalParceiroClient />);
     const campo = await screen.findByLabelText(/Chave de API/);
-    expect(campo).toHaveAttribute("placeholder", expect.stringMatching(/gravada/i));
+    // O campo existe no PRIMEIRO render, antes de a leitura do estado voltar —
+    // e é só depois dela que o placeholder passa a dizer "gravada". Afirmar
+    // isso na linha seguinte ao `findByLabelText` é uma corrida: ela é ganha
+    // quase sempre, e perdida quando a máquina está carregada (medido: duas
+    // rodadas da suíte inteira, mesma árvore, desfechos diferentes).
+    await waitFor(() =>
+      expect(campo).toHaveAttribute("placeholder", expect.stringMatching(/gravada/i)),
+    );
     expect((campo as HTMLInputElement).value).toBe("");
     expect(campo).toHaveAttribute("type", "password");
   });

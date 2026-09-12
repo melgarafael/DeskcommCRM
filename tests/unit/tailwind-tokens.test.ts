@@ -98,6 +98,59 @@ describe("Tailwind 4 — a ponte token → utilitário", () => {
     expect(orfaos, `tokens referenciados no @theme mas ausentes do :root`).toEqual([]);
   });
 
+  it("nenhum componente usa, como utilitário, token do `:root` que o `@theme` não faz ponte", () => {
+    // A MÃO INVERSA do teste acima, e o defeito que ela pega é pior, porque é
+    // invisível: o teste anterior olha do `@theme` para o `:root` e pega o token
+    // que não existe; este olha do COMPONENTE para o `@theme` e pega a classe
+    // que não existe.
+    //
+    // A armadilha é o nome. Quem lê `--color-accent-fg` no `:root` conclui que
+    // `text-accent-fg` é o utilitário — mas o Tailwind gera utilitário a partir
+    // das CHAVES do `@theme inline`, e lá a chave é `--color-accent-foreground`.
+    // O resultado de `text-accent-fg` não é erro: é NADA. A classe não é
+    // emitida, o elemento não recebe `color`, e o texto herda a cor da página.
+    //
+    // Medido no CSS que o dev server servia quando esta guarda nasceu:
+    // `bg-accent` aparecia 24 vezes e `text-accent-fg`, ZERO. Os dois vinham na
+    // mesma `className` — então o fundo pintava com o accent da marca e a letra
+    // ficava na cor do texto da página. Numa instalação com marca escura
+    // (`#062b46`, medida em cliente real) isso é escuro sobre escuro: a aba
+    // ativa da agenda ficou ilegível em 6 arquivos, com build, lint e a suíte
+    // inteira verdes.
+    //
+    // Por que a guarda é esta e não "proibir `-fg`": porque o produto tem
+    // `--color-success-fg` e irmãs, que TÊM ponte e são utilitários legítimos.
+    // O que define o defeito não é o sufixo, é a ausência de ponte — então a
+    // guarda deriva a lista de proibidos do próprio CSS, e não de uma lista
+    // digitada aqui, que envelheceria na primeira ponte nova.
+    const doTema = new Set(propsDe(bloco("@theme inline")));
+    const semPonte = [...new Set(propsDe(bloco(":root")))]
+      .filter((p) => p.startsWith("--color-") && !doTema.has(p))
+      .map((p) => p.replace("--color-", ""));
+
+    // Se um dia TODO token do `:root` ganhar ponte, esta guarda fica sem alvo e
+    // passa por vacuidade. Isso é sucesso, não buraco — mas registre-se que o
+    // conjunto medido no nascimento era exatamente um: `accent-fg`.
+    const culpados = semPonte.flatMap((nome) =>
+      ocorrencias(
+        listarFontes(["app", "components", "lib", "hooks"]),
+        // Os prefixos são os que consomem `--color-*`. A variante (`hover:`,
+        // `dark:`, `data-[…]:`) entra pelo lookbehind, igual às guardas de
+        // `rounded`/`shadow` — sem ela, `hover:text-accent-fg` passaria verde
+        // enquanto pinta errado sob o cursor, que é o modo mais difícil de ver.
+        new RegExp(
+          `(?<=[\\s"'\`:])(?:text|bg|border|ring|outline|fill|stroke|from|via|to|divide|accent|caret|shadow)-${nome}(?=[\\s"'\`/!]|$)`,
+          "g",
+        ),
+      ).map((onde) => `${onde}  (${nome})`),
+    );
+
+    expect(
+      culpados,
+      "classe montada com nome de token que o `@theme inline` não faz ponte — ela não gera CSS nenhum",
+    ).toEqual([]);
+  });
+
   it("o `@source` cobre toda pasta que realmente escreve className", () => {
     // `source(none)` desliga a descoberta automática. O preço é este: pasta de
     // UI nova fora da lista perde TODAS as classes, sem erro de build — a tela

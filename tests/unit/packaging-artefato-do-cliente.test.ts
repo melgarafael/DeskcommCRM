@@ -80,11 +80,19 @@ const servicos = lerServicos(compose);
 const NOSSOS = ["app", "worker", "scheduler"] as const;
 
 describe("packaging — o artefato que o cliente instala", () => {
-  it("o parser enxerga os 7 serviços de produção", () => {
+  it("o parser enxerga os 8 serviços de produção", () => {
     // Guarda do próprio instrumento: se o parser parar de enxergar os serviços,
     // todos os testes abaixo passariam vazios — verde por não ter medido nada.
+    //
+    // `wacalls` (chamada de voz, spec 18) está aqui e NÃO está em `NOSSOS`, e a
+    // distinção é a doutrina, não um detalhe de lista: WaCalls é peça UPSTREAM
+    // (github.com/JotaDev66/WaCalls, MIT), então nós a REFERENCIAMOS por digest
+    // e nunca a republicamos — "a regra vale para todas, não só a licenciada,
+    // porque a exceção é o que apaga a regra" (docs/doctrine/packaging.md).
+    // Movê-lo para `NOSSOS` seria assumir o build de um binário de terceiro
+    // dentro de uma imagem nossa.
     expect([...servicos.keys()].sort()).toEqual(
-      ["app", "caddy", "redis", "scheduler", "srh", "waha", "worker"].sort(),
+      ["app", "caddy", "redis", "scheduler", "srh", "wacalls", "waha", "worker"].sort(),
     );
   });
 

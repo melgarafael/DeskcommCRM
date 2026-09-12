@@ -716,6 +716,42 @@ para renumeração**, e quem lê a mensagem dele achando que é vai renumerar co
 
 ---
 
+## 8-quinquies. O PR cujo conteúdo foi REESCRITO — o merge de história
+
+Há um caso que o 8-bis não cobre: o PR que **originou** um épico e cujo código foi refeito por
+inteiro antes de entrar. Nem `git merge <head>` (traria de volta o que a revisão substituiu) nem
+fechar o PR (o histórico diria que o trabalho dele não entrou) estão certos.
+
+O desfecho é `git merge -s ours <head>` numa branch a partir da `main`: a história recebe os
+commits dele, o conteúdo fica como está, e o GitHub fecha o PR como **mergeado**.
+
+**A estratégia só é honesta com a medição ao lado, e a medição é a sobrevivência dos arquivos:**
+
+```bash
+tot=0; viv=0
+for f in $(git diff --name-only $(git merge-base pr<N> origin/main) pr<N>); do
+  tot=$((tot+1)); git cat-file -e origin/main:$f 2>/dev/null && viv=$((viv+1))
+done
+echo "trazidos=$tot vivos_na_main=$viv"
+```
+
+No épico da voz (PR #628, 11/09/2026) deu `trazidos=52 vivos_na_main=49`. **Com esse número, `-s
+ours` registra um fato; sem ele, é carimbo.** Se a sobrevivência for baixa, não é este o caso — o
+desfecho volta a ser fechar o PR com a explicação.
+
+Três regras duras:
+
+1. **O corpo do merge diz que é de história, não de conteúdo**, e diz por que trazer o conteúdo
+   reverteria a revisão. Escreva o que mudou e por quê — no #628 era LGPD, opt-out, desligar de
+   verdade, o desparear que não existia, e a troca para uma versão do upstream **que tem
+   autenticação, coisa que a original não tinha**.
+2. **`git diff --stat main HEAD` tem de ser vazio.** É a prova de que nada foi revertido, e ela vai
+   no corpo do PR.
+3. **Isto não é atalho para PR grande e chato.** É para o PR cuja arquitetura virou a do produto.
+   Se você está usando `-s ours` para não resolver conflito, está fazendo a coisa errada.
+
+---
+
 ## 9. Veredito com proveniência
 
 ```
@@ -835,6 +871,20 @@ documentado. Então: **se o PR muda comportamento e não traz fragmento, escreva
 própria, creditando o autor — é reconciliação mecânica (passe 8), não decisão de projeto. Só volta
 como pergunta se você não souber dizer o que muda para quem opera.
 
+> **⚠️ NÃO QUEBRE LINHA DENTRO DE PARÁGRAFO DE FRAGMENTO.** Escreva cada parágrafo do `.changes/`
+> numa linha só, por mais longa que fique — o Markdown renderiza igual.
+>
+> `fragmentos-de-release.test.ts` reprova `**` que abre numa linha e fecha na outra, porque os
+> asteriscos chegam **literais** à tela de quem lê o CHANGELOG. Quem escreve prosa quebrando a ~80
+> colunas por hábito acerta por acidente na maioria das vezes e erra quando a quebra cai no meio da
+> ênfase. Aconteceu **três vezes em 11/09/2026**, em três fragmentos diferentes — a terceira
+> **depois** de este aviso já estar escrito dizendo "o negrito cabe numa linha só".
+>
+> Foi por isso que a regra mudou de forma: "tome cuidado com o negrito" é disciplina, e disciplina
+> falhou três vezes no mesmo dia. "Não quebre linha nenhuma" é mecânico — não há como executá-la
+> pela metade. O gate só olha o `.changes/` do PR, então o vermelho chega junto com a suíte inteira
+> e parece defeito de código.
+
 O impacto se **mede**, não se chuta. A pergunta é uma: *o operador precisa fazer alguma coisa?*
 Variável nova é o caso clássico — abra `lib/env.ts` e veja se ela é `required()` ou
 `optional().default(...)`. Obrigatória sem default é `exige_acao`, e o fragmento **precisa** trazer o
@@ -853,6 +903,28 @@ produziria uma seção duplicada, ou um número que já saiu.
 ```bash
 gh pr diff <n> | grep -E '^\+## \[[0-9]+\.[0-9]+\.[0-9]+\]'   # vazio é o esperado
 ```
+
+### A sonda da release se CALIBRA na versão anterior, antes de valer na nova
+
+A release só terminou quando as três imagens estão no registro e a tag `stable` aponta para elas —
+e isso se confere por HTTP, não pelo status verde do robô (passe 12). Só que a sonda que confere
+também erra, e o erro dela lê como "a release não saiu".
+
+**Rode a sonda contra a versão ANTERIOR primeiro.** Ela tem de dizer "tudo no ar". Em 11/09/2026
+essa calibração pegou dois defeitos numa sonda recém-escrita, os dois invisíveis de outro jeito:
+
+| o que a sonda fez | o que parecia | o que era |
+|---|---|---|
+| `gh release view vX --json isLatest` | "release vX não existe" | `isLatest` **só existe em `gh release list`**; o `Unknown JSON field` foi engolido por um `\|\|` |
+| `echo "== \`stable\` aponta… =="` | `stable: comando não encontrado` | crase dentro de aspas DUPLAS executa, mesmo o heredoc sendo `<<'SH'` |
+
+O segundo é o [[feedback_heredoc_sem_aspas_executa_a_prosa]] pelo avesso: o heredoc citado preservou
+a crase **literal no arquivo**, e quem a executou foi o bash ao RODAR o script. Citar o heredoc
+protege a escrita, não a execução.
+
+E a tag de versão deste projeto **não tem o prefixo `v` no registro de imagens** (`1.19.0`), embora
+a tag do git tenha (`v1.19.0`). Uma sonda que peça `v1.19.0` ao GHCR devolve 404 para uma imagem que
+está lá — foi o primeiro resultado que eu obtive, e ele lê como "não publicou".
 
 ### Depois do merge, a versão sai — e isso não é opcional
 
@@ -1865,3 +1937,170 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
           --jq ".jobs[] | select(.name|test(\"parte \\\\($p\\\\)\")) | .conclusion" 2>/dev/null; done \
       | sort | uniq -c | tr '\n' ' '; echo; done
     ```
+
+44. **Você commitou a SABOTAGEM, e o corpo do commit afirma a restauração que não entrou.**
+    O ciclo "sabote, confirme o vermelho, restaure" termina numa restauração que vive **no disco**.
+    Se o `git commit --only <paths>` seguinte não incluir aqueles paths, o que vai ao remoto é o
+    estado sabotado — com o conserto ao lado, correto e inerte.
+
+    Medido em 11/09/2026, na reconciliação do PR #643: o `patchedDependencies` do `package.json`
+    foi publicado apagado, e o arquivo em `patches/` seguiu versionado e correto, sem ninguém para
+    aplicá-lo. O corpo daquele commit dizia, textualmente, *"previsto 1 vermelho, observado 1
+    failed | 3 passed. **Restaurado: 4 passed.**"*
+
+    Duas coisas que tornam esta a pior variante da família (memória
+    `feedback_sabotar_antes_de_commitar`):
+
+    - **A mensagem de commit mente com sinceridade.** Ela descreve o que você FEZ NO DISCO; o
+      commit é o que você PUBLICOU. Este é o único erro em que as duas divergem, e dias depois
+      você lê o próprio corpo como se fosse evidência de estado. Não é.
+    - **O sintoma chega disfarçado de diferença de ambiente.** Passa na sua máquina (o disco tem a
+      restauração) e reprova no CI (o commit não tem). A primeira explicação que se escreve é
+      "o pnpm do CI não aplica o patch" — e daí se gasta meia hora rastreando cadeia de import
+      para um sintoma cuja causa é sua.
+
+    **A sonda, e ela vem ANTES de qualquer hipótese de ambiente:**
+
+    ```bash
+    git diff HEAD --stat                       # o disco diverge do que eu publiquei?
+    git show HEAD:<arquivo> | diff - <arquivo> # e diverge exatamente onde o gate lê?
+    ```
+
+    Se houver divergência em qualquer arquivo que o gate leia, a explicação acabou ali. E ao
+    sabotar: `git status --porcelain` depois de restaurar **e** `git diff --cached` antes de
+    commitar — o `--only` não protege de esquecer um path.
+
+45. **`git checkout <pr> -- <arquivo>` reverte trabalho mais novo, e o diff de contexto esconde
+    isso.** Um PR que esperou tem branch de antes. Pegar o arquivo inteiro dele para extrair uma
+    correção de duas linhas traz junto a ausência de tudo que entrou depois.
+
+    Medido em 11/09/2026 ao extrair o conserto do crontab do PR #683:
+
+    ```
+    $ git checkout pr683 -- hostgator-setup-kit/_common.sh
+    $ git diff --stat origin/main -- hostgator-setup-kit/_common.sh
+     1 file changed, 11 insertions(+), 41 deletions(-)
+                                        ^^^^^^^^^^^^^^ 41 linhas da main iam embora
+    ```
+
+    **O controle é o `--stat`, e ele é obrigatório depois de todo `checkout <ref> -- <path>`.**
+    Se o número de deleções for maior que o tamanho da correção que você queria, restaure e aplique
+    à mão. Dizer isso ao contribuidor não é crítica dele: é o custo normal de um PR que esperou, e
+    a espera foi nossa.
+
+46. **PR que mistura conserto de P0 e decisão do dono — extraia o conserto, mantenha o PR aberto.**
+    Um PR com quatro coisas dentro, três consertos e uma escolha de identidade visual, não tem
+    desfecho único. Segurar tudo até a decisão vir deixa um P0 de instalação na fila atrás de uma
+    questão de gosto; mergear tudo decide a cara do produto sem o dono.
+
+    O desfecho é **dois**: o conserto sai num PR próprio, creditado, hoje; o PR original fica aberto
+    com um documento de decisão, e o contribuidor recebe a explicação de por que o trabalho dele foi
+    partido — incluindo a frase que importa: *"não estou recusando; quem decide isto não sou eu"*.
+
+47. **O CI é recurso compartilhado e saturável, e quem satura é você.** Abrir seis PRs de
+    reconciliação em vinte minutos pôs **41 execuções na fila** da conta em 11/09/2026, com 8 em
+    voo — e a primeira vítima foi o próprio corte de versão, que ficou `queued` por mais de uma
+    hora atrás dos checks dos PRs que ele ia publicar.
+
+    É o `feedback_saturacao_sem_perguntar_quem_satura` aplicado ao CI em vez da máquina local.
+
+    **⚠️ A sonda óbvia mente, e mente para baixo.** `gh run list --limit 20 | select(queued)`
+    devolveu **17** no mesmo instante em que a API dizia 41: o `--limit` corta a lista ANTES do
+    filtro, então o número que sai é no máximo o limite. É o
+    `feedback_ausencia_afirmada_a_partir_de_lista_truncada` — para CONTAR, pergunte ao contador:
+
+    ```bash
+    gh api "repos/<owner>/<repo>/actions/runs?status=queued"      --jq .total_count
+    gh api "repos/<owner>/<repo>/actions/runs?status=in_progress" --jq .total_count
+    ```
+
+    A regra prática: **antes de abrir o próximo PR, conte com o `total_count`.** Acima de ~15 na
+    fila, termine o que está em voo antes de empilhar mais. E o corte de versão vai **antes** da
+    próxima leva, nunca depois — ele é o que entrega, e os outros só preparam.
+
+48. **A sonda de status do monitor casa o nome errado e declara verde.** Um filtro
+    `test("^(verify|invariants|e2e|build-and-size|imagens-ok)$")` parece a lista exata dos cinco
+    checks obrigatórios. Ele **não casa quase nada do que existe**, e o nome dos jobs é a razão —
+    medido em 11/09/2026 com `gh pr checks <N> --json name,bucket`:
+
+    | o que a `branch protection` exige | o que aparece em `gh pr checks` |
+    |---|---|
+    | `e2e` | `e2e-parte (1)`, `e2e-parte (2)`, `e2e-parte (3)` — com espaço e parênteses |
+    | `imagens-ok` | `imagem-do-app-sobe` e três `build-and-push (…, Dockerfile…, …)` |
+    | `verify`, `invariants`, `build-and-size` | iguais |
+
+    Os contextos exigidos são **agregadores**, e só aparecem quando as partes fecham. Um filtro de
+    igualdade exata sobre esses cinco nomes pegou **três** checks de dezessete, e um monitor
+    anunciou `#707 VERDE` com duas das três partes do e2e ainda rodando.
+
+    É o modo de falha 7 (controle positivo) aplicado a filtro de nome: **uma sonda que não encontra
+    o job é indistinguível de um job que passou.** Não enumere nomes — pergunte pelo estado:
+
+    ```bash
+    gh pr checks <N> --json name,bucket --jq '
+      [.[]|select(.bucket!="skipping")|select(.name|test("^Vercel")|not)]
+      | if   (any(.bucket=="fail"))    then "VERMELHO"
+        elif (any(.bucket=="pending")) then "AINDA RODANDO"
+        else "VERDE" end'
+    ```
+
+    A sonda corrigida pegou, no primeiro ciclo, um `e2e-parte (1)` vermelho que a anterior tinha
+    declarado verde.
+
+49. **O valor do fixture contém a palavra que a asserção procura.** Um e-mail semeado como
+    `convite.pendente.<uuid>@deskcomm.test` fez `row.getByText("Pendente")` casar **duas** coisas na
+    mesma linha — a célula do e-mail e o selo de status —, e o Playwright reprovou por strict mode.
+
+    O defeito não está na asserção nem na tela: está no **fixture**, que embute o vocabulário que o
+    teste usa para afirmar. É a família de [[feedback_mesmo_texto_significados_opostos]] com os
+    papéis trocados — aqui o texto igual é acidente do dado, não do produto.
+
+    Conserto: `{ exact: true }` (o selo diz exatamente a palavra; o endereço, não), **com o motivo
+    escrito na linha** — porque quem ler `getByText("Pendente")` daqui a um mês não tem como
+    adivinhar que a causa mora no endereço semeado trinta linhas acima.
+
+50. **O `origin` é do repositório, não do worktree — e trocá-lo quebra todas as sessões.**
+    Um `git push` falhou com `fatal: repository 'https://github.com/alguem/DeskcommCRM.git/' not
+    found`: o remoto tinha sido apontado para o **endereço de exemplo** da documentação.
+
+    `[remote "origin"]` mora no `.git/config` do repositório PRINCIPAL, e worktree não tem config
+    próprio de remoto. Um `set-url` numa sessão quebra `fetch` e `push` de **todas as outras** ao
+    mesmo tempo — inclusive as que não fizeram nada —, e o erro lê como problema de credencial.
+
+    É irmão do stash compartilhado: o worktree isola a ÁRVORE, não a CONFIGURAÇÃO.
+
+    **A sonda, antes de mexer em token ou em `gh auth`:** `git remote get-url origin`. E, antes de
+    restaurar, PROVE qual é a certa em vez de reconstruir de memória:
+
+    ```bash
+    curl -s -o /dev/null -w "%{http_code}\n" https://github.com/<candidata>/<repo>
+    gh repo view --json nameWithOwner --jq .nameWithOwner
+    ```
+
+51. **O Next põe um `role="alert"` em toda página, e ele ganha do seu.**
+    `<div role="alert" aria-live="assertive" id="__next-route-announcer__">`, vazio, existe em
+    QUALQUER rota. Um `getByRole("alert")` casa os dois e reprova por strict mode — com o seu
+    alerta visível e correto na tela, o que faz o vermelho parecer defeito de produto.
+
+    Peça o elemento (`p[role="alert"]`), não só o papel. Mesma família do modo 49: o alvo
+    ambíguo não é culpa da asserção nem da tela, é de um terceiro que ninguém escreveu.
+
+52. **O mecanismo que "falhou" pode só precisar de mais uma rodada — sonde a função antes de acusá-la.**
+    Um invariante do PR #657 reprovava com o enrollment parado em `active`, e a hipótese —
+    do autor e minha — era que `fn_claim_due_followup_enrollments` estivesse falhando. A hipótese
+    era boa: o motor **engole falha de claim**, e o comentário dele diz que `claimed: 0` é
+    indistinguível de "nada vencido". Mas ela estava errada.
+
+    ```
+    SONDA-CLAIM-OK  {"n":1}                        ← a função reclamava normalmente
+    SONDA-TICK      {"claimed":1,"advanced":1}     ← e o tick avançou
+    SONDA-POS       {"status":"active","current_node_id":"end"}
+    ```
+
+    O motor avança **um nó por rodada**: o primeiro tick levou o enrollment até o nó final, o
+    segundo é que o executa. O teste tinha um tick só.
+
+    **A regra:** quando um mecanismo documentadamente silencioso é o suspeito, chame-o **direto**,
+    isolado, antes de escrever uma linha de diagnóstico. Três `console.log` num teste de invariante
+    custam uma rodada de `test:db` e trocam uma teoria por um número. O silêncio dele torna a
+    acusação fácil demais — e é exatamente por isso que ela precisa de prova.

@@ -7,8 +7,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { ArrowRight } from "@/lib/ui/icons";
+import { ArrowRight, Trash } from "@/lib/ui/icons";
 import { conditionKey } from "@/lib/followup/edge-condition-options";
 import { branchIdForCondition, nodeBranches } from "@/lib/followup/graph-schema";
 import type { FlowEdge, FlowNode } from "@/lib/followup/graph-schema";
@@ -20,6 +21,7 @@ interface Props {
   targetNode: FlowNode | undefined;
   condition: FlowEdge["condition"];
   onChange: (condition: FlowEdge["condition"]) => void;
+  onDelete: () => void;
 }
 
 /**
@@ -32,7 +34,7 @@ interface Props {
  * Um controle que a tela oferece e o motor ignora é pior que um ausente — o
  * ausente o usuário contorna, o decorativo ele acredita.
  */
-export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange }: Props) {
+export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange, onDelete }: Props) {
   const t = useT();
   const options = nodeBranches(
     sourceNode ?? { type: "trigger", config: {} },
@@ -83,6 +85,20 @@ export function EdgeConfigPanel({ sourceNode, targetNode, condition, onChange }:
             {t("São as saídas do nó")} &quot;{sourceNode.label}&quot; — {t("as mesmas que aparecem no card.")}
           </p>
         )}
+      </div>
+
+      <div className="mt-auto border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full text-destructive"
+          data-testid="delete-edge"
+          onClick={onDelete}
+        >
+          <Trash size={14} aria-hidden className="mr-1" />
+          {t("Excluir aresta")}
+        </Button>
       </div>
     </div>
   );

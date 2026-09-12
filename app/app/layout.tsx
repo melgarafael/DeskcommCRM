@@ -20,12 +20,29 @@ import {
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
+import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
+import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await loadAuthUser();
   if (!user) redirect("/login");
 
   let activeOrg = await resolveActiveOrg(user);
+
+  // Sem organização ativa existem DOIS estados, e eles pedem telas opostas:
+  //
+  //  - nunca teve  → provisionamento que falhou no signup. `/get-started`
+  //                  existe exatamente para isso e continua sendo o caminho.
+  //  - teve e foi revogada → precisa SABER disso. Até 2026-09-10 essa pessoa
+  //                  caía aqui mesmo, via a casca vazia e a oferta "Configure
+  //                  sua organização" — uma revogação virando criação de
+  //                  tenant. Medido numa instalação real.
+  //
+  // A consulta só roda neste ramo, que é o raro: quem tem organização não paga
+  // nada por ela.
+  if (!activeOrg && !user.support && (await acessoFoiRevogado(user.id))) {
+    redirect("/acesso-revogado");
+  }
 
   /**
    * A cor desta organização, serializada, ou `null` quando ela não tem uma.
@@ -133,7 +150,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     user.id,
     activeOrg?.orgId,
   );
-  const shell = <AppShell sidebarCollapsed={collapsed}>{children}</AppShell>;
+  const shell = (
+    <VoiceCallProvider>
+      <AppShell sidebarCollapsed={collapsed}>{children}</AppShell>
+    </VoiceCallProvider>
+  );
 
   return (
     // O idioma envolve a árvore inteira e recebe o código PRONTO — ele não

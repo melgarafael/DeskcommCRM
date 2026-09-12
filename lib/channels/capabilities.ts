@@ -6,11 +6,18 @@
  * nasce de uma diferença real e medida entre WAHA e Meta Cloud; capability que
  * ninguém consome é código morto, e o teste de matriz reprova.
  */
-import type { ChannelCapabilities, ChannelProvider } from "./types";
+import type { ChannelCapabilities, ChannelProvider, ProviderDeMensagem } from "./types";
 
-export type { ChannelProvider, ChannelCapabilities };
+export type { ChannelProvider, ChannelCapabilities, ProviderDeMensagem };
 
-export const CHANNEL_CAPABILITIES: Record<ChannelProvider, ChannelCapabilities> = {
+/**
+ * A matriz descreve o que um canal de MENSAGEM permite — por isso a chave é
+ * `ProviderDeMensagem`, não `ChannelProvider`. Perguntar a uma linha de voz se
+ * ela manda texto fora da janela de 24h é erro de categoria, e responder
+ * qualquer coisa (inclusive tudo `false`) faria a pergunta parecer legítima.
+ * `capabilitiesOf` segue falhando fechado para quem não está aqui.
+ */
+export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilities> = {
   // Auto-restrição: falo quando quiser, mas o WhatsApp me bane se eu abusar.
   waha: {
     freeformOutsideWindow: true,
@@ -90,9 +97,82 @@ export const DEFAULT_CHANNEL_PROVIDER: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_WAHA: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
+/** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
+export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
+
+/**
+ * Os providers por onde MENSAGEM entra e sai — a única lista que responde
+ * "este canal serve para conversar?".
+ *
+ * Existe porque `channel_sessions` deixou de ser só a tabela dos transportes de
+ * texto quando a voz entrou nela, e ~39 leituras daquela tabela não filtram
+ * provider nenhum: elas dizem "canal" e querem dizer "canal de mensagem". Sem
+ * esta lista, uma organização que pareia voz vê a linha de voz virar opção no
+ * seletor "Número conectado", nascer amarrada ao primeiro agente publicado,
+ * contar como canal conectado no retrato da instalação e ser escolhida por uma
+ * automação para mandar texto — por um canal que não manda texto.
+ *
+ * `satisfies` e não anotação solta: um provider novo que não seja de mensagem
+ * precisa ser DECIDIDO aqui, não esquecido.
+ */
+export const PROVIDERS_DE_MENSAGEM = [
+  "waha",
+  "meta_cloud",
+  "zernio",
+] as const satisfies readonly ProviderDeMensagem[];
+
+/**
+ * `true` quando a linha de `channel_sessions` é um canal de mensagem.
+ *
+ * Aceita `string | null | undefined` de propósito: quem chama está lendo uma
+ * coluna do banco, que pode trazer um provider mais novo que este código (um
+ * clone que atualizou o schema antes da imagem). Provider desconhecido responde
+ * `false` — falhar fechado aqui significa "não use este canal para mandar
+ * recado", que é o erro barato; o caro é mandar por um canal que não entrega.
+ * A coluna é `not null default 'waha'`, então `null` só aparece quando a linha
+ * não pôde ser lida, e aí também não há canal a usar.
+ */
+export function transportaMensagem(provider: string | null | undefined): boolean {
+  return (PROVIDERS_DE_MENSAGEM as readonly string[]).includes(provider ?? "");
+}
+
+/**
+ * Os providers que ESTE código conhece e que, sabidamente, não conversam.
+ *
+ * A diferença para `!transportaMensagem(p)` é a que separa "categoria" de
+ * "falha", e ela decide o que o vigia de conexão faz com a linha:
+ *
+ *   - `wacalls` está aqui: ignorar em silêncio é o certo, e um aviso por sessão
+ *     de voz a cada minuto seria ruído perpétuo.
+ *   - um provider que o CHECK do banco já aceita e esta imagem ainda não conhece
+ *     (o clone que aplicou o baseline antes de puxar a imagem nova) NÃO está
+ *     aqui — ele tem de fazer barulho, porque uma conexão sem vigia e sem
+ *     rastro é exatamente o buraco mudo que ninguém descobre.
+ *
+ * `transportaMensagem` responde `false` para os dois, e é o que se quer lá: na
+ * hora de escolher por onde mandar recado, o desconhecido é tão inútil quanto a
+ * voz. Aqui a pergunta é outra.
+ */
+export const PROVIDERS_SEM_MENSAGEM = ["wacalls"] as const;
+
+/**
+ * Erro de COMPILAÇÃO enquanto sobrar provider fora das duas listas. Provider
+ * novo obriga a decidir se ele conversa — esquecer não é uma opção disponível.
+ */
+type ProviderNaoClassificado = Exclude<
+  ChannelProvider,
+  (typeof PROVIDERS_DE_MENSAGEM)[number] | (typeof PROVIDERS_SEM_MENSAGEM)[number]
+>;
+const _todoProviderFoiClassificado: ProviderNaoClassificado extends never ? true : never = true;
+void _todoProviderFoiClassificado;
+
+/** `true` só para provider conhecido cuja natureza não é mensagem. */
+export function canalConhecidoSemMensagem(provider: string | null | undefined): boolean {
+  return (PROVIDERS_SEM_MENSAGEM as readonly string[]).includes(provider ?? "");
+}
 
 export function capabilitiesOf(provider: ChannelProvider): ChannelCapabilities {
-  const caps = CHANNEL_CAPABILITIES[provider];
+  const caps = CHANNEL_CAPABILITIES[provider as ProviderDeMensagem];
   // Fail-closed: provider fora da matriz não herda o default do WAHA. O tipo
   // barra em compilação; isto barra o que vem do banco em runtime.
   if (!caps) throw new Error(`unknown_channel_provider: ${provider}`);

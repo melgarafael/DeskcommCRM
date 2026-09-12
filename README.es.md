@@ -2,6 +2,11 @@
 
 [🇧🇷 Português](README.md) · [🇺🇸 English](README.en.md) · 🇪🇸 Español
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/deskcomm-logo-dark.svg">
+  <img src="docs/brand/deskcomm-logo.svg" alt="Deskcomm CRM" width="420">
+</picture>
+
 # 🛠️ DeskcommCRM — el Sistema Operativo de Ventas con IA, open source, para WhatsApp
 
 **Agentes de IA que atienden, califican y venden en WhatsApp — dentro de un CRM open source que corre en tu propio servidor.**

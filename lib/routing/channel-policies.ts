@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 
 export interface ChannelRoutingSettings {
   channels: Array<{ id: string; display_name: string | null; phone_number: string | null; user_ids: string[]; mode: "legacy_unconfigured" | "restricted" | "restricted_empty" }>;
@@ -7,7 +8,7 @@ export interface ChannelRoutingSettings {
 }
 export async function loadChannelRoutingSettings(db: SupabaseClient, org: string): Promise<ChannelRoutingSettings> {
   const results = await Promise.all([
-    db.from("channel_sessions").select("id, display_name, phone_number").eq("organization_id", org).is("archived_at", null).order("created_at"),
+    db.from("channel_sessions").select("id, display_name, phone_number").eq("organization_id", org).is("archived_at", null).in("provider", [...PROVIDERS_DE_MENSAGEM]).order("created_at"),
     db.from("user_organizations").select("user_id").eq("organization_id", org).is("revoked_at", null).in("role", ["agent", "manager", "admin"]),
     db.from("channel_routing_policies").select("id, channel_session_id").eq("organization_id", org),
     db.from("channel_routing_responsibles").select("policy_id, user_id").eq("organization_id", org),

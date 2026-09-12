@@ -1,0 +1,6 @@
+interface:
+  display_name: "Instalar o DeskcommCRM"
+  short_description: "Instala, atualiza e conserta o CRM numa VPS, passo a passo, para quem não é técnico"
+  default_prompt: "Use a skill deskcomm-instalar e me conduza na instalação do DeskcommCRM na minha VPS."
+policy:
+  allow_implicit_invocation: true

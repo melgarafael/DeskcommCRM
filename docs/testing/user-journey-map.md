@@ -168,6 +168,11 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 | J5.7 | Revogar atendente | perde acesso na hora (próxima navegação) |
 | J5.8 | Revogar último admin | bloqueado com explicação |
 | J5.9 | Link de convite expirado/adulterado | tela clara, sem stack |
+| J5.10 `[P0]` | Convite pendente aparece na aba **Membros** | seção "Convites" lista e-mail, papel, interface, status (Pendente/Aceito/Expirado/Revogado), data de envio e de expiração, quem convidou · antes só existia numa lista efêmera dentro do modal "Convidar membros" · `lib/team/convite-status.test.ts` + `tests/e2e/invite-lifecycle.spec.ts` casos 13–16 |
+| J5.11 `[P0]` | E-mail do convite **não saiu** (VPS sem Resend) | a linha mostra "Não saiu" + botão **Copiar link** ali mesmo (usa `team_invites.email_dispatched`, antes só legível no `api_audit_log`) — o admin não fica achando que enviou |
+| J5.12 | Admin **revoga** um convite pendente | `POST /api/v1/team/invites/[id]/revoke` marca `revoked_at`; o aceite passa a recusar o token mesmo dentro da validade; audita `member.invite_revoked` |
+| J5.13 | Admin **reenvia** um convite | `POST /api/v1/team/invites/[id]/resend` re-assina o mesmo `invite_id`, renova 24h, audita `member.invited`; reconvidar o mesmo e-mail pendente pela tela de convite RENOVA a linha (índice único parcial) |
+| J5.14 | Manager vê a lista, mas não as ações | leitura é `team_invites_select` (manager+); reenviar/revogar são admin-only (403) |
 
 ## J6 — Webhooks: receber, automatizar, provar `[P0]`
 
@@ -1669,6 +1674,32 @@ alimentado com 7 classes, emitiu **4** — nenhuma das 3 com barra.
 | **ANTES/DEPOIS**: as duas versões contra o MESMO banco, comparadas elemento a elemento | `[P0]` | **PASS**. `tests/sonda-tailwind-4-antes-depois.ts` sobe v3 em `:3002` e v4 em `:3001`, casa cada elemento pelo **caminho estrutural no DOM** (não pelo `className`, que a migração renomeou) e reporta todo estilo computado que divergiu, mais o diff de pixel. Pares em `evidence/tailwind-4/{antes,depois}/`, números em `antes-depois.json` |
 | Telas internas (`/app`, kanban, inbox, contatos) | — | **NÃO COBERTO.** Numa instalação fresca todas redirecionam para `/onboarding/welcome`; alcançá-las pede concluir o onboarding, o que pede WAHA e chave de IA. A sonda registra o redirecionamento em vez de fingir cobertura |
 | O efeito visual das 252 revividas foi *revisto por um designer* | — | **NÃO MEDIDO.** A migração provou que passaram a pintar; não provou que cada uma pinta o que a tela precisa. Onde a intenção original estava errada, o erro agora está visível |
+
+### O que a linha "NÃO COBERTO" acima custou: `text-accent-fg` (2026-09-10)
+
+A tabela acima declara, desde 2026-08-26, que as telas internas de `/app` não
+foram medidas — porque numa instalação fresca elas redirecionam para o
+onboarding, e alcançá-las pede WAHA e chave de IA. **Um defeito morou exatamente
+ali por duas semanas, e quem o encontrou foi uma clínica em produção.**
+
+A classe `text-accent-fg` **nunca existiu**. O `@theme inline` faz a ponte com o
+nome `--color-accent-foreground`; `--color-accent-fg` é o token do `:root`, e
+token do `:root` não vira utilitário sozinho. Escrever `text-accent-fg` não é
+erro — é NADA: a regra não é emitida, o elemento não recebe `color`, e o texto
+herda a cor da página. Como a mesma `className` trazia `bg-accent`, que existe, o
+resultado era fundo da marca com letra da página.
+
+Medido no CSS que o dev server servia: `bg-accent` 24 vezes, `text-accent-fg`
+**zero**. Numa instalação com marca escura (`#062b46`, cliente real) isso deu
+escuro sobre escuro em 9 lugares de 6 arquivos — aba do histórico, dia de hoje na
+grade, dia e horário escolhidos na marcação. Com a paleta Sage padrão o defeito
+existia igual, só menos gritante, e por isso ninguém viu.
+
+| caso | prioridade | estado |
+|---|---|---|
+| Toda classe de cor usada em componente corresponde a chave do `@theme inline` | `[P0]` | **PASS**, congelado em `tests/unit/tailwind-tokens.test.ts`. A guarda deriva a lista de proibidos do próprio CSS (token do `:root` sem ponte), não de lista digitada — no nascimento o conjunto era exatamente um: `accent-fg`. Sabotagem provada nas duas direções |
+| A letra sobre `bg-accent` passa no contraste, nos dois temas, com marca de cliente | `[P0]` | **PASS** por medição de token: `#062b46` dá 14.57 no claro e 6.97 no escuro; a auditoria completa da marca deu **0 reprovas** em 18 + 26 pares |
+| As telas internas de `/app` medidas na tela, em instalação com marca | `[P0]` | **CONTINUA NÃO COBERTO.** Este defeito foi achado por leitura de CSS e por print de usuário, não por sonda. A lacuna que o produziu segue aberta |
 
 ### O defeito que só o antes/depois encontrou: o rótulo colado no campo
 

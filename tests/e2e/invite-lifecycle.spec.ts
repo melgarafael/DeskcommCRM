@@ -393,6 +393,159 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // E cai no signup COMUM só depois do aviso — nunca em silêncio.
     await expect(page.getByLabel("Nome da empresa")).toBeVisible();
   });
+
+  /**
+   * ─── A LISTA DE CONVITES na aba Membros (migration 0238) ──────────────────
+   *
+   * Até aqui o convite pendente só existia numa lista efêmera dentro do modal
+   * "Convidar membros". Estes casos provam pela tela: o convite aparece com
+   * status, o e-mail que não saiu vira aviso + link copiável, e reenviar /
+   * revogar funcionam — com a revogação barrando o token ainda dentro do prazo.
+   */
+  const FRESH_EMAIL = `convite.pendente.${randomUUID().slice(0, 8)}@deskcomm.test`;
+
+  test.beforeAll(async () => {
+    // Conta para o convidado do caso 16 (aceite do link revogado). Sufixo
+    // aleatório + banco fresco no CI = sem colisão; em rerun local, ignora o
+    // "já registrado".
+    const { error } = await svc.auth.admin.createUser({
+      email: FRESH_EMAIL,
+      password: base.password,
+      email_confirm: true,
+    });
+    if (error && !/already/i.test(error.message)) throw error;
+  });
+
+  test("13. convite pendente aparece na aba Membros, com status e quem convidou", async ({
+    browser,
+  }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await loginAdminTotp(page);
+    const { acceptUrl } = await issueInvite(page, FRESH_EMAIL, "agent");
+    expect(acceptUrl).toContain("/team/accept-invite/");
+
+    await page.goto("/app/team");
+    const row = page.getByRole("row", { name: new RegExp(FRESH_EMAIL, "i") });
+    await expect(row).toBeVisible();
+    // ⚠️ `exact: true`, e a razão está no endereço logo acima: o e-mail semeado
+    // CONTÉM a palavra "pendente" (`convite.pendente.<uuid>@…`). Sem `exact`, o
+    // `getByText` é substring e casa DUAS coisas na mesma linha — a célula do
+    // e-mail e o selo de status —, e o Playwright reprova por strict mode.
+    // Medido no CI em 11/09: `resolved to 2 elements`, com a célula do e-mail
+    // como a primeira. O selo diz exatamente "Pendente"; o endereço, não.
+    await expect(row.getByText("Pendente", { exact: true })).toBeVisible();
+    // CI não configura Resend → o e-mail não sai, e a tela diz isso.
+    await expect(row.getByText(/Não saiu/i)).toBeVisible();
+    await expect(row.getByRole("button", { name: /Copiar link/i }).first()).toBeVisible();
+    await ctx.close();
+  });
+
+  test("14. admin reenvia pelo menu da linha", async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await loginAdminTotp(page);
+    await page.goto("/app/team");
+    const row = page.getByRole("row", { name: new RegExp(FRESH_EMAIL, "i") });
+    await row.getByRole("button", { name: /Ações/i }).click();
+    await page.getByRole("menuitem", { name: /Reenviar/i }).click();
+    await expect(page.getByText(/Convite reenviado/i)).toBeVisible();
+
+    const { data } = await svc
+      .from("team_invites")
+      .select("resend_count")
+      .eq("organization_id", inv.org_id)
+      .eq("email", FRESH_EMAIL)
+      .single();
+    expect((data as { resend_count: number }).resend_count).toBeGreaterThanOrEqual(1);
+    await ctx.close();
+  });
+
+  test("15. admin revoga; o token deixa de valer mesmo dentro do prazo", async ({ browser }) => {
+    const adminCtx = await browser.newContext();
+    const adminPage = await adminCtx.newPage();
+    await loginAdminTotp(adminPage);
+
+    // captura o link ANTES de revogar (a API de listagem devolve o accept_url)
+    const listRes = await adminPage.request.get("/api/v1/team/invites");
+    const lista = (await listRes.json()) as {
+      data: Array<{ email: string; accept_url: string | null }>;
+    };
+    const linkAntes = lista.data.find((i) => i.email === FRESH_EMAIL)?.accept_url ?? "";
+    expect(linkAntes).toContain("/team/accept-invite/");
+
+    await adminPage.goto("/app/team");
+    const row = adminPage.getByRole("row", { name: new RegExp(FRESH_EMAIL, "i") });
+    await row.getByRole("button", { name: /Ações/i }).click();
+    await adminPage.getByRole("menuitem", { name: /Revogar/i }).click();
+    await adminPage.getByRole("button", { name: /^Revogar$/ }).click();
+    await expect(adminPage.getByText(/Convite revogado/i)).toBeVisible();
+
+    const { data } = await svc
+      .from("team_invites")
+      .select("revoked_at")
+      .eq("organization_id", inv.org_id)
+      .eq("email", FRESH_EMAIL)
+      .single();
+    expect((data as { revoked_at: string | null }).revoked_at).not.toBeNull();
+    await adminCtx.close();
+
+    // o convidado tenta aceitar o link antigo → recusado, apesar de assinado e no prazo
+    const inviteeCtx = await browser.newContext();
+    const ip = await inviteeCtx.newPage();
+    await ip.goto("/login");
+    await ip.locator("#email").fill(FRESH_EMAIL);
+    await ip.locator("#password").fill(base.password);
+    await ip.getByRole("button", { name: /entrar/i }).click();
+    await expect
+      .poll(
+        async () =>
+          (await inviteeCtx.cookies()).some((c) => c.name.startsWith("sb-deskcomm-auth")),
+        { timeout: 40_000 },
+      )
+      .toBe(true);
+    await ip.goto(new URL(linkAntes).pathname);
+    await ip.getByRole("button", { name: /Aceitar convite/i }).click();
+
+    // ⚠️ ALERTA, não HEADING — e a diferença não é de estilo, é de QUEM recusa.
+    //
+    // O heading "Convite inválido ou expirado" é do SERVIDOR, e sai só quando
+    // `verifyInviteToken` devolve `null`: token adulterado ou vencido. Aqui o
+    // token está íntegro e dentro das 24h — o que o invalidou foi a LINHA
+    // (`team_invites.revoked_at`), e essa recusa acontece na server action, já
+    // com a página desenhada. Ela chega pelo `<p role="alert">` do
+    // `AcceptInviteForm`.
+    //
+    // Pedir o heading fazia o caso não poder passar nunca. Ele não chegou a
+    // reprovar antes porque, na execução anterior, o caso 13 falhou e este foi
+    // PULADO — a primeira vez que ele rodou de verdade foi a segunda.
+    // `p[role="alert"]`, e não `getByRole("alert")`: o Next injeta o PRÓPRIO
+    // anunciador de rota — `<div role="alert" aria-live="assertive"
+    // id="__next-route-announcer__">`, vazio — em toda página, e um
+    // `getByRole("alert")` casa os dois e reprova por strict mode. Medido no
+    // CI; o nosso é o `<p>` do `AcceptInviteForm`.
+    await expect(
+      ip.locator('p[role="alert"]'),
+      "a tela não disse nada ao convidado: o aceite foi recusado em silêncio",
+    ).toContainText(/revogado|vencido|não foi possível/i);
+
+    // E o outro lado, que é o que o caso existe para provar: NÃO entrou.
+    // Sem isto, um alerta visível junto com um aceite bem-sucedido passaria.
+    await expect(ip).toHaveURL(/\/team\/accept-invite\//);
+    expect(
+      (
+        await svc
+          .from("user_organizations")
+          .select("user_id")
+          .eq("organization_id", inv.org_id)
+          .eq("user_id", (await svc.auth.admin.listUsers()).data.users.find(
+            (u) => (u.email ?? "").toLowerCase() === FRESH_EMAIL.toLowerCase(),
+          )?.id ?? "00000000-0000-4000-8000-000000000000")
+      ).data ?? [],
+      "o convite revogado criou vínculo mesmo assim",
+    ).toEqual([]);
+    await inviteeCtx.close();
+  });
 });
 
 // helper: extrai só o path (relativo) do accept_url absoluto pro page.goto

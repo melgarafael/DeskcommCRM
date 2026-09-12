@@ -89,6 +89,7 @@ import { runDrainLoop } from "@/lib/agent-engine/edge/crm/drain";
 import { runEventLogDrainLoop } from "@/lib/event-log/drain-loop";
 import { crmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/crm/mcp-client";
 import { enforceHolds, sessionHealthMetrics } from "@/lib/agent-engine/edge/crm/session-watchdog";
+import { runVoiceCallsBridgeLoop } from "@/lib/wacalls/events-bridge";
 import { runSessionWatchdogLoop } from "@/lib/agent-engine/edge/crm/session-reconciler";
 import { runHealthLoop } from "@/lib/agent-engine/health/circuit";
 import { runFlywheelLoop } from "@/lib/agent-engine/flywheel/live";
@@ -345,6 +346,19 @@ export async function startWorker(
       : (log.warn("watchdog de sessão OFF — WAHA_API_BASE_URL/WAHA_API_KEY ausentes no env", {}),
         Promise.resolve());
 
+  // Ponte de eventos WaCalls (spec 18, §4.2) — chamada de voz, opt-in por
+  // org. Sem a env, fica OFF: instalação que não usa a feature não paga o
+  // custo de uma conexão SSE tentando alcançar um serviço que não existe.
+  const voiceCallsBridgeLoop =
+    env.WACALLS_API_BASE_URL !== undefined
+      ? runVoiceCallsBridgeLoop(
+          pool,
+          { baseUrl: env.WACALLS_API_BASE_URL, maxBackoffMs: env.WACALLS_BRIDGE_MAX_BACKOFF_MS },
+          log,
+          loopsAbort.signal,
+        )
+      : (log.info('ponte WaCalls OFF — WACALLS_API_BASE_URL ausente no env', {}), Promise.resolve());
+
   // Circuito de saúde do número (block/response rate → hold).
   const healthLoop = runHealthLoop(
     pool,
@@ -524,6 +538,7 @@ export async function startWorker(
       cronLoop,
       sessionWatchdogLoop,
       flywheelLoop,
+      voiceCallsBridgeLoop,
     ]);
     await workerLoop;
     let graceTimer: NodeJS.Timeout | undefined;

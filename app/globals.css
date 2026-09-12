@@ -794,6 +794,36 @@
   }
 }
 
+/* ---- XYFlow · controles do canvas de follow-up --------------------------
+   A lib pinta o botão de zoom com fundo `#fefefe` e `color: inherit`. O SVG
+   usa `fill: currentColor`. No tema escuro o texto da página é claro, então
+   o ícone some no branco: o usuário vê um retângulo branco e os botões de
+   zoom/encaixe parecem ausentes.
+
+   As vars SEM o sufixo `-default` vencem o fallback da folha da lib. Os
+   tokens já trocam com `[data-theme]`, então claro e escuro saem do mesmo
+   bloco — não precisa do `colorMode` do React Flow (que no SSR nasceria
+   `light` e divergiria do `data-theme` já pintado pelo script do layout). */
+.react-flow {
+  --xy-controls-button-background-color: var(--color-surface);
+  --xy-controls-button-background-color-hover: var(--color-surface-elevated);
+  --xy-controls-button-color: var(--color-text);
+  --xy-controls-button-color-hover: var(--color-text);
+  --xy-controls-button-border-color: var(--color-border);
+  --xy-controls-box-shadow: var(--shadow-md);
+  --xy-edge-label-background-color: var(--color-surface);
+  --xy-edge-label-color: var(--color-text);
+  --xy-handle-background-color: var(--color-accent);
+  --xy-handle-border-color: var(--color-surface);
+}
+
+.react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
 /* ---- Pulso de chegada no card do Kanban (CRM Vivo, Wave 3) --------------
    Vivo é o que RESPONDE, não o que se agita: um pulso, uma vez, e cessa.
    A animação não repete (sem `infinite`) — ficar animando é rejeição de review.

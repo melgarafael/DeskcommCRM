@@ -632,6 +632,45 @@ gravar_imagens() {
   set_env_var "$envfile" SCHEDULER_PULL_POLICY "$politica"
 }
 
+# ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
+#
+# A doutrina de packaging é literal: "bump de versão não pode exigir que o
+# operador edite `.env`, compose ou qualquer arquivo à mão". A chamada de voz
+# (spec 18) trouxe três chaves novas, e o serviço NÃO SOBE sem duas delas.
+#
+# Quem instalou antes desta versão não as tem. Sem esta função, o dia em que ele
+# quisesse ligar a voz começaria por inventar dois segredos num editor de texto
+# dentro de uma VPS — que é exatamente o passo que a doutrina proíbe.
+#
+# LACUNA APENAS, como `completar_pin_ausente`: chave já presente (mesmo vazia
+# por escolha de quem operou) é intocável. Preencher só o que falta é a
+# diferença entre curar e sobrescrever.
+#
+# ⚠️ ISTO NÃO LIGA A FEATURE. As chaves geradas ficam paradas até alguém pôr
+# `voz` em COMPOSE_PROFILES: sem o profile, o compose nem cria o contêiner.
+# Gerar credencial para um serviço desligado não é risco — é o que faz o
+# desligado poder virar ligado sem passo manual.
+completar_segredos_da_voz() {  # completar_segredos_da_voz [envfile]
+  local envfile="${1:-.env}" criados="" chave
+  [ -f "$envfile" ] || return 0
+  # Somente-leitura (montagem read-only, permissão errada): não é erro daqui.
+  [ -w "$envfile" ] || return 0
+
+  for chave in WACALLS_ADMIN_USER WACALLS_ADMIN_PASSWORD WACALLS_API_TOKEN; do
+    # `^CHAVE=` casa inclusive a linha com valor vazio — que é presença, não
+    # lacuna. Só a AUSÊNCIA da linha é preenchida.
+    grep -qE "^${chave}=" "$envfile" && continue
+    if [ "$chave" = "WACALLS_ADMIN_USER" ]; then
+      set_env_var "$envfile" "$chave" "deskcomm"
+    else
+      set_env_var "$envfile" "$chave" "$(openssl rand -hex 32)"
+    fi
+    criados="$criados $chave"
+  done
+
+  printf '%s' "${criados# }"
+}
+
 # Grava (ou reescreve) uma chave no .env — sem duplicar linha se ela já existe.
 #   set_env_var .env APP_IMAGE ghcr.io/…:1.1.0
 #
@@ -756,7 +795,23 @@ setup_event_log_drain_cron() {
   if crontab -l 2>/dev/null | grep -qF -e "$url_drain"; then first_time=0; fi
 
   local cron_line="* * * * * curl -fsS -H \"Authorization: Bearer ${secret}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
-  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
+  # ⚠️ `|| true` OBRIGATÓRIO, e não é defensividade: `crontab -l` sai com status
+  # 1 (sem stdout, só um aviso no stderr) quando o usuário NUNCA teve crontab —
+  # o caso NORMAL de uma VPS recém-provisionada, que é o caso normal de quem
+  # instala este produto. Sob `set -o pipefail` (linha 3 deste arquivo, e
+  # `install.sh:12`) esse 1 vaza pelo pipe mesmo com os estágios seguintes
+  # bem-sucedidos — `false | true` também sai 1 —, e o `set -e` mata o
+  # instalador AQUI, no bloco 11, DEPOIS de a linha do cron já ter sido gravada.
+  # O dono vê o script morrer sem mensagem, numa instalação que na verdade
+  # funcionou.
+  #
+  # Reproduzido com um dublê de `crontab` que sai 1 no `-l`: sem o `|| true`, a
+  # linha seguinte a este bloco nunca é alcançada. Vigiado por
+  # `tests/shell/cron-sem-crontab-previo.test.sh`.
+  #
+  # Stdin vazio para o `cron_merge` é exatamente o que "sem crontab prévio" deve
+  # produzir — o comportamento não muda, só o status.
+  ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$url_drain" "$cron_line" ) | crontab -
   c_grn "✓ automações ativas (cron do event-log-drain, a cada minuto)"
 
   if [ "$first_time" = 1 ]; then
@@ -795,7 +850,9 @@ setup_update_agent_cron() {
   local legado="cd ${PROJECT_DIR} && bash hostgator-setup-kit/agent.sh"
   local marcador; marcador="$(cron_tag agent)"
   local cron_line="*/5 * * * * ${legado} >/dev/null 2>&1 ${marcador}"
-  ( crontab -l 2>/dev/null | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
+  # Mesmo motivo do drain acima, e é por isso que o conserto é nos DOIS: a
+  # primeira instalação passa pelos dois blocos na mesma rodada.
+  ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
   c_grn "✓ atualização pela tela ativa (agente a cada 5 minutos)"
 }
 

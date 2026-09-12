@@ -78,7 +78,7 @@ function canal(over: Partial<ChannelSession> = {}): ChannelSession {
 
 const IMPACTO_ARQUIVA: ChannelDeletionImpact = {
   outcome: "archive",
-  history: { conversations: 12, messages: 340, agent_versions: 0 },
+  history: { conversations: 12, messages: 340, agent_versions: 0, voice_calls: 0 },
   configuration: { ai_routers: 1, channel_knobs: 0, before_send_traces: 7 },
 };
 
@@ -247,7 +247,7 @@ describe("frasesDoImpacto", () => {
     expect(
       frasesDoImpacto({
         outcome: "delete",
-        history: { conversations: 0, messages: 0, agent_versions: 0 },
+        history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 0 },
         configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
       }),
     ).toEqual(["Este número não tem conversa, mensagem nem configuração ligada a ele."]);
@@ -256,16 +256,42 @@ describe("frasesDoImpacto", () => {
   it("contagem zero não vira frase", () => {
     const frases = frasesDoImpacto({
       outcome: "archive",
-      history: { conversations: 0, messages: 0, agent_versions: 2 },
+      history: { conversations: 0, messages: 0, agent_versions: 2, voice_calls: 0 },
       configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
     });
     expect(frases).toEqual(["Fica salvo, mas sem número — para de atender: 2 versões de agente."]);
   });
 
+  it("chamada de voz pendurada: a frase aparece, e o número dela é o que o painel mostra", () => {
+    // Sem este caso, `voice_calls` seria campo decorativo: o tipo o exige, a rota
+    // o conta, a tela monta a frase — e nenhuma asserção veria se ele some. Foi
+    // exatamente o que quase aconteceu, porque as quatro fixtures deste arquivo
+    // nasceram com 0 só para o typecheck parar de reclamar.
+    //
+    // A frase é "Continua no inbox", e não "para de atender", de propósito: o
+    // registro da ligação é histórico COM O CLIENTE, do mesmo tipo da conversa,
+    // e sobrevive ao arquivamento do número. Era isso que sumia por cascade.
+    const frases = frasesDoImpacto({
+      outcome: "archive",
+      history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 3 },
+      configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
+    });
+    expect(frases).toEqual(["Continua no inbox: 3 chamadas de voz."]);
+  });
+
+  it("uma chamada só: a frase vai no singular", () => {
+    const frases = frasesDoImpacto({
+      outcome: "archive",
+      history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 1 },
+      configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
+    });
+    expect(frases).toEqual(["Continua no inbox: 1 chamada de voz."]);
+  });
+
   it("só auditoria pendurada: explica o arquivamento em vez de prometer que não há nada", () => {
     const frases = frasesDoImpacto({
       outcome: "archive",
-      history: { conversations: 0, messages: 0, agent_versions: 0 },
+      history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 0 },
       configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 4 },
     });
     expect(frases).toEqual([

@@ -44,7 +44,8 @@ function payload(): ExportPayload {
         run_after: "2030-01-03T14:00:00Z",
       },
     ],
-    appointment_notices: [
+    voice_calls: [],
+  appointment_notices: [
       {
         id: "aviso-aberto",
         ref_id: "compromisso-confirmado",

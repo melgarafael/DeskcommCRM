@@ -449,6 +449,11 @@ export function frasesDoImpacto(
     [
       contar(impact.history.conversations, "conversa", "conversas", t),
       contar(impact.history.messages, "mensagem", "mensagens", t),
+      // Registro de ligação entra na MESMA frase de "continua no inbox": para
+      // quem opera, conversa e chamada são o mesmo histórico com o cliente. A
+      // contagem nem existia, e o diálogo mostrava zeros enquanto o histórico
+      // de voz sumia por cascade.
+      contar(impact.history.voice_calls, "chamada de voz", "chamadas de voz", t),
     ],
     t,
   );

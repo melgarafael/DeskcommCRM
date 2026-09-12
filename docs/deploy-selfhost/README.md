@@ -197,21 +197,36 @@ sem quebrar nada.
 `GOTRUE_SITE_URL=https://SEU_DOMINIO`,
 `GOTRUE_URI_ALLOW_LIST=https://SEU_DOMINIO/auth/confirm`,
 `GOTRUE_SMTP_{HOST,PORT,USER,PASS}` e
-`GOTRUE_MAILER_TEMPLATES_{CONFIRMATION,RECOVERY}` apontando para os templates
-de `supabase/templates/` (mesmo link `token_hash` acima).
-
-⚠️ **Não aponte para os arquivos do repositório direto.** Eles são MODELOS: o
-nome da marca e a cor do botão são `__APP_NAME__` / `__ACCENT__`, e o cliente
-receberia isso literalmente. Renderize antes e aponte para o resultado:
+`GOTRUE_MAILER_TEMPLATES_{CONFIRMATION,RECOVERY}` apontando para as **rotas do
+próprio app**:
 
 ```bash
-bash hostgator-setup-kit/marca-emails.sh --render-em /opt/deskcomm/emails
-# GOTRUE_MAILER_TEMPLATES_CONFIRMATION=/opt/deskcomm/emails/confirmation.html
-# GOTRUE_MAILER_TEMPLATES_RECOVERY=/opt/deskcomm/emails/recovery.html
+GOTRUE_MAILER_TEMPLATES_CONFIRMATION=https://SEU_DOMINIO/email-templates/confirmation
+GOTRUE_MAILER_TEMPLATES_RECOVERY=https://SEU_DOMINIO/email-templates/recovery
+GOTRUE_MAILER_SUBJECTS_CONFIRMATION="Confirme seu e-mail · SUA MARCA"
+GOTRUE_MAILER_SUBJECTS_RECOVERY="Redefinir sua senha · SUA MARCA"
 ```
 
-Num Supabase próprio não existe Management API, então este é o único caminho —
-e é preciso repetir o comando quando a marca mudar.
+O app serve o modelo já com a marca resolvida **do banco** — então trocar nome,
+cor ou logo em **Configurações › Marca** chega ao e-mail sozinho, em até 10
+minutos (`GOTRUE_MAILER_TEMPLATE_MAX_AGE`), sem reiniciar nada e sem rodar
+script.
+
+> ⚠️ **Tem de ser URL `http(s)`. Caminho de arquivo NÃO funciona — e falha
+> calado.** O GoTrue cola o que não começa com `http` no fim do `SITE_URL` e faz
+> um GET (`supabase/auth` v2.196.0,
+> `internal/mailer/templatemailer/template.go:456`). Apontar para
+> `/opt/.../confirmation.html` faz ele buscar
+> `https://SEU_DOMINIO/opt/.../confirmation.html`, receber o HTML da tela de
+> login e **mandar isso para a caixa de entrada do cliente**. Medido em
+> 2026-09-09 numa instalação real: o Gmail marcou como phishing.
+>
+> Esta seção mandava exatamente isso até 2026-09-10. Se você seguiu a versão
+> antiga, troque as duas variáveis pelas URLs acima.
+
+`bash hostgator-setup-kit/marca-emails.sh --render-em <dir>` continua existindo
+para **inspecionar** o HTML antes, ou para quem prefere servir os moldes por
+conta própria — num caminho HTTP seu, nunca como caminho de arquivo.
 
 ## 4. Conectar o WhatsApp
 

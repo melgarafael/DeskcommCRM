@@ -180,6 +180,10 @@ export async function ingestMetaInbound(
       type: e.type === "text" ? "text" : e.type,
       body: e.type === "contact" ? (e.sharedContact?.name ?? e.text) : e.text,
       external_id: e.externalId,
+      // O webhook oficial entrega o media_id, não um arquivo que o browser
+      // consiga abrir. Mantemos um ponteiro opaco para o adapter resolver pela
+      // Graph API; sem ele a bolha nem é renderizada e o worker pula a mídia.
+      media_url: e.media ? `meta-media:${e.media.id}` : null,
       media_mime: e.media?.mime ?? null,
       sent_at: e.sentAt.toISOString(),
       metadata: {
@@ -208,6 +212,22 @@ export async function ingestMetaInbound(
   } as never);
 
   const messageId = (inserida as { id: string } | null)?.id ?? "";
+  if (e.media && messageId) {
+    const { error: erroPersistencia } = await admin.rpc("emit_event" as never, {
+      p_event_type: "media.persist_requested",
+      p_entity_kind: "message",
+      p_entity_id: messageId,
+      p_payload: { message_id: messageId, conversation_id: conversationId as string },
+      p_metadata: { source: "meta_webhook" },
+      p_organization_id: orgId,
+    } as never);
+    if (erroPersistencia) {
+      console.error(
+        "[meta.ingest] emit media.persist_requested failed",
+        erroPersistencia.message,
+      );
+    }
+  }
   await aplicarEfeitosPosEntrada(admin, {
     organizationId: orgId,
     contactId: contactId as string,

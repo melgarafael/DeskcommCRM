@@ -29,9 +29,23 @@ import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { collectExportData } from "@/lib/lgpd/export-collector";
 import { findLgpdRequest } from "@/lib/lgpd/repository";
-// ⚠️ `@/lib/lgpd/pdf-renderer` NÃO entra aqui em cima — ver o comentário na
-// chamada, em "4. Render PDF". Import estático deste módulo tira do ar TODOS
-// os handlers do event_log no worker.
+// IMPORT TARDIO, e a razão é o laço rápido do `event_log`.
+//
+// `lib/event-log/register-handlers.ts` — cujo próprio comentário pede "keep it
+// lightweight" — importa o handler da LGPD no topo, e ele importava este
+// arquivo, que importava o gerador de PDF, que arrasta `@react-pdf/renderer`
+// inteiro. Resultado: TODA montagem do laço carregava a pilha de PDF só para
+// registrar um handler que, na esmagadora maioria das rodadas, não roda.
+//
+// Isso deixou de ser só desperdício em 29/08, quando `@react-pdf/hyphenate`
+// passou a declarar `exports` sem a condição `require`: sob `tsx` (que é como o
+// worker roda, e diferente do vitest, que resolve pelo Vite) o import falhava,
+// `carregarDeps()` caía no catch, e o laço rápido MORRIA — 10 dias e três
+// releases, com a guarda 6/6 verde.
+//
+// O patch em `patches/` conserta a dependência e continua valendo. Este import
+// tardio conserta a CAUSA: o laço deixa de depender de PDF para existir. Um
+// depende de o pnpm aplicar o patch em todo ambiente; o outro, não.
 import { signPdfPades, isPadesConfigured } from "@/lib/lgpd/pades-signer";
 import {
   EmailNotConfigured,
@@ -174,6 +188,7 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
     // e não o registro de todo mundo.
     const { renderLgpdPdf } = await import("@/lib/lgpd/pdf-renderer");
     const padesConfigured = isPadesConfigured();
+    const { renderLgpdPdf } = await import("@/lib/lgpd/pdf-renderer");
     const pdfBuffer = await renderLgpdPdf(data, { unsignedWarning: !padesConfigured });
 
     // 5. Sign (stubbed when key missing).

@@ -28,6 +28,11 @@ import {
   respondiLeadTitle,
   type RespondiMapped,
 } from "@/lib/webhooks/respondi";
+import {
+  isRdStationPayload,
+  mapRdStationPayload,
+  type RdStationMapped,
+} from "@/lib/webhooks/rdstation";
 import { origemDaPagina, registrarCaptacao } from "@/lib/webhooks/captacao";
 import { ipDoClienteParaInet } from "@/lib/http/ip-do-cliente";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
@@ -179,6 +184,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     ? mapRespondiPayload(payload)
     : null;
 
+  // RD Station manda `{ leads: [ {...} ] }` — mesmo problema do Respondi (o
+  // mapeador genérico só lê chave de topo). Detecta a forma UMA vez; alimenta
+  // o idempotency key e o mapeamento de campos abaixo. Respondi tem
+  // precedência: um payload nunca é dos dois.
+  const rdStationMapped: RdStationMapped | null =
+    respondiMapped === null && isRdStationPayload(payload)
+      ? mapRdStationPayload(payload)
+      : null;
+
   // Idempotência (spec §5): `external_id` é campo reservado do envio — quem
   // integra via sistema (Zapier/n8n/loja) manda o ID único do disparo e o
   // reenvio automático (retry por timeout) NUNCA duplica o lead. O índice
@@ -201,7 +215,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       // uuid de 36 chars, ~60× abaixo do limiar. É higiene de simetria: dois
       // ramos do mesmo `?:` produzindo a mesma coluna com regras diferentes é o
       // tipo de coisa que só aparece quando alguém manda um corpo fabricado.
-      : (respondiMapped?.externalId?.slice(0, 255) ?? null);
+      : (respondiMapped?.externalId?.slice(0, 255) ??
+        rdStationMapped?.externalId?.slice(0, 255) ??
+        null);
 
   const respondWithLead = (leadId: string): NextResponse => {
     if (isForm && source.redirect_to) {
@@ -240,8 +256,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   //
   // O `respondiMapped ??` é do PR #326: sem ele o payload aninhado do Respondi
   // volta a cair no mapeador genérico, que é o defeito que aquele PR conserta.
+  // O `rdStationMapped ??` é a mesma figura para o envelope `leads[]` do RD
+  // Station (achado 2026-09-08). Ordem: Respondi, RD Station, genérico.
   const mapped =
-    respondiMapped ?? mapInboundPayload(externalId ? payloadForMapping : payload, fieldMap);
+    respondiMapped ??
+    rdStationMapped ??
+    mapInboundPayload(externalId ? payloadForMapping : payload, fieldMap);
   if (!mapped.phone) {
     const rawPhone = findRawPhoneIfUnnormalized(payload, fieldMap);
     if (rawPhone) mapped.source_metadata.raw_phone = rawPhone;

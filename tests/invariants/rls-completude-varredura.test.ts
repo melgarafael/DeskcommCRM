@@ -192,6 +192,15 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "manager da org A NÃO lê linhas da org B (0 rows)\") prova isolamento " +
       "com `countAs` real, além do self-read do agent.",
   },
+  {
+    tabela: "team_invites",
+    razao:
+      "tests/invariants/convites-de-time-rls.test.ts — isolamento cross-tenant " +
+      "(manager A lê 0 de B, sem porta dos fundos) + gate de papel (agent/viewer " +
+      "leem 0; manager não revoga, só admin). Fora de TABLES de propósito: o " +
+      "usuário semeado em rls-isolation.test.ts é `agent`, e `team_invites_select` " +
+      "exige `manager` — o controle positivo falharia por ACERTO ali.",
+  },
   // ─── As três do eixo de anúncios (migrations 0213/0214) ───
   //
   // ⚠️ PROVA DE OUTRO TIPO, e a diferença está escrita de propósito: as demais

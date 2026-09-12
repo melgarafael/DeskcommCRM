@@ -4,6 +4,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
+import { aplicarConvite } from "@/lib/auth/aplicar-convite";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
@@ -84,7 +85,26 @@ export async function GET(request: NextRequest) {
       ? await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
       : await supabase.auth.exchangeCodeForSession(code as string);
 
-  if (error || !data.user) {
+  // CLICAR DUAS VEZES NO MESMO LINK não é motivo para expulsar ninguém.
+  // O token é de uso único: o segundo clique cai aqui com "Email link is
+  // invalid or has expired" — e a pessoa está logada, porque o PRIMEIRO clique
+  // firmou a sessão. Medido em 2026-09-10, no rig e numa instalação real:
+  // `@supabase/ssr` NÃO apaga o cookie de sessão quando o `verifyOtp` falha
+  // (o cookie continua na jar e o `getUser()` seguinte devolve o usuário).
+  // Mandar essa pessoa para `/login?error=link_invalido` era, medido, o que
+  // fazia dois convidados reais reentrarem pela senha e perderem o fio do
+  // convite — terminando dentro do CRM sem organização e sem menu.
+  let usuario = data?.user ?? null;
+  let sessaoPreservada = false;
+  if (error || !usuario) {
+    const { data: jaAutenticado } = await supabase.auth.getUser();
+    if (jaAutenticado.user) {
+      usuario = jaAutenticado.user;
+      sessaoPreservada = true;
+    }
+  }
+
+  if (!usuario) {
     await audit({
       action: "auth.email_link_rejected",
       // `formato` é o campo que faltava: sem ele os dois modos de falha
@@ -100,6 +120,24 @@ export async function GET(request: NextRequest) {
     return redirectTo(viaTokenHash ? "/login?error=link_invalido" : "/login?error=template_padrao");
   }
 
+  if (sessaoPreservada) {
+    // O link falhou — isso continua sendo fato e continua auditado. O que muda
+    // é o desfecho: seguimos com a sessão que já existia, e o `formato` mais o
+    // `sessao_preservada` deixam a triagem distinguir este caso do outro sem
+    // adivinhar.
+    await audit({
+      action: "auth.email_link_rejected",
+      actorUserId: usuario.id,
+      metadata: {
+        type,
+        formato: viaTokenHash ? "token_hash" : "code",
+        reason: error?.message ?? "no_user",
+        sessao_preservada: true,
+      },
+      requestId,
+    });
+  }
+
   if (type === "recovery") {
     return redirectTo("/login/reset");
   }
@@ -109,14 +147,14 @@ export async function GET(request: NextRequest) {
   // nenhum, e `ensureTenantForUser` faz o que faria com qualquer visitante:
   // abre uma empresa e o torna admin dela. A pessoa fica com uma organização
   // fantasma, um wizard que não é dela e o gate de MFA de administrador.
-  const decisao = decidirConviteDoSignup(data.user);
+  const decisao = decidirConviteDoSignup(usuario);
 
   if (decisao.tipo === "recusar") {
     // Falha FECHADA: havia convite e ele não vale (expirado ou de outra pessoa).
     // Provisionar aqui seria devolver o defeito com um conserto por cima.
     await audit({
       action: "auth.signup_provision_recusado",
-      actorUserId: data.user.id,
+      actorUserId: usuario.id,
       metadata: { motivo: decisao.motivo },
       requestId,
     });
@@ -124,18 +162,35 @@ export async function GET(request: NextRequest) {
   }
 
   if (decisao.tipo === "convite") {
-    // A sessão já está firmada, então a tela de aceite reconhece o usuário e o
-    // clique cai no `acceptInviteAction` que já existe — auditado e idempotente.
-    // Nenhuma lógica de membership nova mora aqui.
+    // TERMINAR O SERVIÇO. Aqui já se sabe tudo o que o botão "Aceitar convite"
+    // exigia — e com garantia mais forte: o token verificou (via
+    // `decidirConviteDoSignup`) e o e-mail do convite bate com o que o PROVEDOR
+    // DE AUTH acabou de confirmar, não com o que a sessão diz.
+    //
+    // Daqui saía um redirect para uma tela com um botão. Medido em duas
+    // tentativas reais de um mesmo convidado: ninguém chegava a apertá-lo — na
+    // primeira o segundo clique no e-mail derrubou o fluxo, na segunda a tela
+    // veio pedindo login — e a pessoa terminava autenticada, sem organização e
+    // sem menu, porque o VÍNCULO é o que dá as duas coisas.
+    const aceite = await aplicarConvite({
+      userId: usuario.id,
+      payload: decisao.payload,
+      requestId,
+    });
+    if (aceite.ok) return redirectTo("/app");
+
+    // Convite revogado, ou banco fora: a tela de aceite continua existindo e
+    // sabe explicar cada caso. Degradar para ela preserva exatamente o
+    // comportamento anterior, em vez de deixar a pessoa sem saída.
     return redirectTo(`/team/accept-invite/${decisao.token}`);
   }
 
   try {
-    await ensureTenantForUser(data.user);
+    await ensureTenantForUser(usuario);
   } catch (e) {
     await audit({
       action: "auth.signup_provision_failed",
-      actorUserId: data.user.id,
+      actorUserId: usuario.id,
       metadata: { reason: e instanceof Error ? e.message : String(e) },
       requestId,
     });
@@ -147,7 +202,7 @@ export async function GET(request: NextRequest) {
 
   void audit({
     action: "auth.signup_confirmed",
-    actorUserId: data.user.id,
+    actorUserId: usuario.id,
     metadata: {},
     requestId,
   });

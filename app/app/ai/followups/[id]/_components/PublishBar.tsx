@@ -24,6 +24,7 @@ import {
   useUpdateHandoffPolicy,
   type FollowupFlowDetailRow,
 } from "@/hooks/followup/useFollowupFlow";
+import { Trash, TreeStructure } from "@/lib/ui/icons";
 import { FlowStatusBadge } from "../../_components/FlowStatusBadge";
 import { DeleteFollowupFlowButton } from "../../_components/DeleteFollowupFlowButton";
 import { TriggerConfigControl } from "./TriggerConfigControl";
@@ -33,9 +34,13 @@ interface Props {
   flow: FollowupFlowDetailRow;
   graph: FlowGraph;
   dirty: boolean;
+  selection: "node" | "edge" | null;
+  onDeleteSelection: () => void;
   onSaved: (graph: FlowGraph) => void;
   onPublishErrors: (errorsByNode: Record<string, string[]>) => void;
   onPublishSuccess: () => void;
+  onAutoFit?: () => void;
+  canAutoFit?: boolean;
 }
 
 const HANDOFF_LABEL: Record<FollowupFlowDetailRow["handoff_policy"], string> = {
@@ -44,7 +49,19 @@ const HANDOFF_LABEL: Record<FollowupFlowDetailRow["handoff_policy"], string> = {
   allow: "Permitir durante handoff",
 };
 
-export function PublishBar({ flowId, flow, graph, dirty, onSaved, onPublishErrors, onPublishSuccess }: Props) {
+export function PublishBar({
+  flowId,
+  flow,
+  graph,
+  dirty,
+  selection,
+  onDeleteSelection,
+  onSaved,
+  onPublishErrors,
+  onPublishSuccess,
+  onAutoFit,
+  canAutoFit = false,
+}: Props) {
   const t = useT();
   const save = useSaveFollowupFlowDraft(flowId);
   const publish = usePublishFollowupFlow(flowId);
@@ -149,7 +166,34 @@ export function PublishBar({ flowId, flow, graph, dirty, onSaved, onPublishError
         >
           {t("Rollback")}
         </Button>
-        <DeleteFollowupFlowButton flowId={flowId} flowName={flow.name} redirectToList />
+        {onAutoFit && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!canAutoFit}
+            onClick={onAutoFit}
+            data-testid="auto-fit-flow"
+          >
+            <TreeStructure size={14} aria-hidden className="mr-1" />
+            {t("Organizar")}
+          </Button>
+        )}
+        {selection ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-destructive"
+            data-testid="delete-selection"
+            onClick={onDeleteSelection}
+          >
+            <Trash size={14} aria-hidden className="mr-1" />
+            {selection === "node" ? t("Excluir nó") : t("Excluir aresta")}
+          </Button>
+        ) : (
+          <DeleteFollowupFlowButton flowId={flowId} flowName={flow.name} redirectToList />
+        )}
       </div>
     </div>
   );

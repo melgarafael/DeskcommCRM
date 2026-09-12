@@ -20,6 +20,7 @@ export default async function ConnectionsPage() {
   const wahaConfigured = Boolean(
     process.env.WAHA_API_BASE_URL && key && key !== "dev_plaintext_change_me",
   );
+  const wacallsConfigured = Boolean(process.env.WACALLS_API_BASE_URL);
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
@@ -32,7 +33,7 @@ export default async function ConnectionsPage() {
           )}
         </p>
       </header>
-      <ConexoesShell wahaConfigured={wahaConfigured} />
+      <ConexoesShell wahaConfigured={wahaConfigured} wacallsConfigured={wacallsConfigured} />
     </div>
   );
 }

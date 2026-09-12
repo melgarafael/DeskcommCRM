@@ -13,6 +13,7 @@ import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 
 
 /** Sessão viva da org: WORKING primeiro; senão qualquer uma não arquivada. */
@@ -25,6 +26,9 @@ export async function sessaoProntaParaEnvio(
       .from("channel_sessions")
       .select("id")
       .eq("organization_id", organizationId);
+    // Voz não manda texto: escolher a linha de chamada aqui faria a automação
+    // "enviar" por um canal sem transporte de mensagem (spec 18).
+    q = q.in("provider", [...PROVIDERS_DE_MENSAGEM]);
     if (soWorking) q = q.eq("status", "WORKING");
     if (ignorarArquivadas) q = q.is(ARCHIVED_AT, null);
     return q.order("created_at", { ascending: true }).limit(1);

@@ -17,6 +17,8 @@ import {
 } from "@/lib/ui/icons";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
+import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -71,7 +73,11 @@ export function AdminSidebar({ userEmail, variant = "desktop" }: AdminSidebarPro
         isMobile ? "h-full w-full" : "hidden w-60 shrink-0 lg:flex",
       )}
     >
-      <div className="flex h-14 items-center border-b px-4">
+      <div className="flex h-14 items-center gap-3 border-b px-4">
+        {/* O nome já está escrito ao lado — o símbolo é reforço, não legenda. */}
+        {marcaEhADoProduto(marca) && (
+          <SimboloDoProduto nome={marca.name} decorativo className="h-8 w-8" />
+        )}
         <div className="flex flex-col">
           <span className="text-xs uppercase tracking-wider text-muted-foreground">
             {marca.name}

@@ -93,6 +93,7 @@ interface Dados {
   provedores: Provedor[];
   credenciais: Credencial[];
   modelos: Modelo[];
+  padrao: { provider: string; defaultModel: string | null };
   podeEditar: boolean;
 }
 
@@ -197,6 +198,8 @@ export function PainelDeProvedores() {
         </Card>
       )}
 
+      <CartaoDoPadrao dados={dados} aoSalvar={carregar} />
+
       <div className="space-y-8">
         {porPapel.map(({ papel, info, pontos }) => (
           <section key={papel} data-testid={`papel-${papel}`}>
@@ -239,6 +242,125 @@ export function PainelDeProvedores() {
 }
 
 /** O que o grupo usa hoje, sem obrigar a abrir ponto a ponto. */
+function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Promise<void> }) {
+  const t = useT();
+  const [provider, setProvider] = useState(dados.padrao.provider);
+  const [modelId, setModelId] = useState(dados.padrao.defaultModel ?? "");
+  const [salvando, setSalvando] = useState(false);
+
+  const modelosDoProvedor = useMemo(
+    () => dados.modelos.filter((m) => m.provider === provider),
+    [dados.modelos, provider],
+  );
+
+  // Quantos pontos herdam HOJE. É o número que explica por que esta caixa
+  // importa: numa instalação nova são 24 de 25, e trocar aqui muda os 24.
+  const herdam = dados.pontos.filter((p) => p.efetivo.origem === "padrao_da_organizacao");
+
+  // Os que o padrão NÃO resolve sozinho: embedding precisa de modelo de
+  // embedding (com a dimensão certa) e áudio precisa de transcritor. Dizer
+  // isto aqui é mais barato que deixar a busca degradar em silêncio depois —
+  // que é o modo de falha que `avisosDeLeitura` no resolver já descreve.
+  const especialistas = dados.pontos.filter(
+    (p) => p.exige.embeddingDims !== undefined || p.exige.audio === true,
+  );
+
+  const mudou = provider !== dados.padrao.provider || modelId !== (dados.padrao.defaultModel ?? "");
+
+  async function salvar() {
+    setSalvando(true);
+    try {
+      const res = await fetch("/api/v1/ai/providers", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider, default_model: modelId }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
+        return;
+      }
+      toast.success(`${t("O padrão agora é")} ${modelId}`);
+      await aoSalvar();
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Card className="mb-6 p-4" data-testid="cartao-do-padrao">
+      <h2 className="text-base font-semibold">{t("Modelo padrão")}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {t("Vale em todo ponto que você não configurou individualmente — hoje,")} {herdam.length}{" "}
+        {t("de")} {dados.pontos.length}. {t("Trocar aqui muda todos eles de uma vez.")}
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <div className="min-w-48">
+          <Label className="text-xs">{t("Provedor")}</Label>
+          <Select
+            value={provider}
+            onValueChange={(v) => {
+              setProvider(v);
+              // Modelo de outro provedor não vale nada aqui: a rota confere o
+              // par (provider, model_id) no catálogo e devolveria 404.
+              setModelId("");
+            }}
+          >
+            <SelectTrigger data-testid="padrao-provider">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {dados.provedores.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {t(p.rotulo)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="min-w-64">
+          <Label className="text-xs">{t("Modelo")}</Label>
+          <Select value={modelId} onValueChange={setModelId}>
+            <SelectTrigger data-testid="padrao-modelo">
+              <SelectValue placeholder={t("escolha")} />
+            </SelectTrigger>
+            <SelectContent>
+              {modelosDoProvedor.map((m) => (
+                <SelectItem key={m.model_id} value={m.model_id}>
+                  {m.display_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {dados.podeEditar && (
+          <Button
+            size="sm"
+            disabled={salvando || !mudou || modelId === ""}
+            onClick={() => void salvar()}
+            data-testid="salvar-padrao"
+          >
+            {salvando ? t("Salvando…") : t("Salvar padrão")}
+          </Button>
+        )}
+      </div>
+
+      {especialistas.length > 0 && (
+        <p className="mt-3 text-xs text-muted-foreground" data-testid="padrao-especialistas">
+          {especialistas.length}{" "}
+          {t(
+            "pontos precisam de um modelo especialista (embedding ou áudio) e não seguem este padrão — configure cada um abaixo:",
+          )}{" "}
+          {especialistas.map((p) => t(p.rotulo)).join(", ")}.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function ResumoDoGrupo({ pontos }: { pontos: Ponto[] }) {
   const t = useT();
   const modelos = [...new Set(pontos.map((p) => p.efetivo.modelId ?? t("não definido")))];

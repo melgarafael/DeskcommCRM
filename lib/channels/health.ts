@@ -30,6 +30,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { PROVIDERS_DE_MENSAGEM } from "./capabilities";
+
 /** Único estado em que mensagem entra e sai. Contrato do CRM (uppercase). */
 export const STATUS_SAUDAVEL = "WORKING";
 
@@ -181,6 +183,11 @@ export async function listarConexoesCaidas(
     .select("id, display_name, phone_number, status")
     .eq("organization_id", organizationId)
     .is("archived_at", null)
+    // A faixa diz "nenhuma mensagem entra nem sai por esta conexão" e leva a
+    // Conexões. A linha de chamada de voz (spec 18) não é vigiada pelo cron de
+    // saúde (nenhum adapter a consulta), então o `status` dela envelhece parado:
+    // anunciá-la aqui seria a faixa permanente que ensina a ignorar a faixa.
+    .in("provider", [...PROVIDERS_DE_MENSAGEM])
     .in("status", [...STATUS_QUE_AVISAM]);
 
   return (data ?? []).map((s) => ({

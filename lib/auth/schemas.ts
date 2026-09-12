@@ -43,6 +43,19 @@ export type SignupInput = z.infer<typeof signupSchema>;
  */
 export const signupComConviteSchema = z
   .object({
+    /**
+     * QUEM ENTRA POR CONVITE NUNCA TINHA ONDE DIZER O PRÓPRIO NOME.
+     *
+     * O dono da instalação preenche o nome no onboarding; quem é convidado pula
+     * o onboarding inteiro e ficava sem nome para sempre. Medido em produção em
+     * 2026-09-10: no diálogo de transferir conversa, o colega aparecia como
+     * "Atendente 528ebd09" — um pedaço do identificador interno, para a equipe
+     * toda, indefinidamente.
+     *
+     * É o campo de UMA linha que fecha isso na origem, em vez de cada tela
+     * inventar o próprio remendo para a ausência.
+     */
+    full_name: z.string().trim().min(2, "Informe seu nome").max(120),
     email: z.string().email("Email inválido"),
     password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
     password_confirm: z.string(),

@@ -65,6 +65,11 @@ export const KIND_LABEL = {
   // Diz o que ACONTECEU com o material, e nunca "a indexação falhou": quem
   // subiu um PDF quer saber que o agente ainda não sabe o que está nele.
   conhecimento_nao_indexado: "Um material que você enviou não entrou na base de conhecimento",
+  // Diz o que ficou por fazer, não o que o sistema registrou: "chamada perdida"
+  // é o fato, e o que a pessoa precisa saber é que alguém tentou falar e não
+  // conseguiu. O motivo cru do upstream (`user_ended`, `do_not_disturb`) nunca
+  // chega à tela — vira frase de gente no corpo do aviso, escrito pelo worker.
+  voice_call_missed: "Alguém ligou e ninguém atendeu",
   other: "Aviso do assistente",
 } as const satisfies Record<InboxKind, string>;
 

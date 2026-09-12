@@ -598,6 +598,7 @@ jobs:
         moeda-da-organizacao.spec.ts
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         central-avisos-resolver-em-lote.spec.ts
+        voz-desligada-por-padrao.spec.ts
 
       # academia-*-local usa credenciais explícitas de uma instalação local dedicada.
       FORA_DO_CI: >-

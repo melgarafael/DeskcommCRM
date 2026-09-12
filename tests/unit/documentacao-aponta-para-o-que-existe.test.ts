@@ -50,6 +50,9 @@ const AUTORIDADE = [
   "docs/runbooks",
   "docs/adr",
   "triagem",
+  // Skills embutidas: alguém as lê para AGIR (instalar, contribuir). A fonte é
+  // `.agents/skills`; o espelho `.claude/skills` é byte-idêntico (gate próprio).
+  ".agents/skills",
 ];
 
 /**
@@ -78,7 +81,7 @@ const EH_PLACEHOLDER =
 
 const LINK_RELATIVO = /\[[^\]]*\]\((?!https?:|#|mailto:)([^)#\s]+)/g;
 const PATH_EM_CRASE =
-  /`((?:app|lib|components|workers|scripts|tests|supabase|hooks|docs|hostgator-setup-kit|triagem|\.github)\/[A-Za-z0-9_./[\]-]+\.(?:ts|tsx|sql|sh|yml|yaml|json|md))`/g;
+  /`((?:app|lib|components|workers|scripts|tests|supabase|hooks|docs|hostgator-setup-kit|triagem|\.github|\.agents|\.claude|\.codex|\.cursor|\.opencode)\/[A-Za-z0-9_./[\]-]+\.(?:ts|tsx|sql|sh|yml|yaml|json|md|mdc|toml|mjs))`/g;
 
 function markdownsRastreados(): string[] {
   const saida = execFileSync("git", ["ls-files", "*.md"], { cwd: RAIZ, encoding: "utf8" });

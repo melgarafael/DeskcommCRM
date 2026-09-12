@@ -218,6 +218,53 @@ describe("adapter meta_cloud — envio", () => {
   });
 });
 
+describe("adapter meta_cloud — mídia recebida", () => {
+  it("resolve o media_id na Graph e baixa os bytes com a credencial da sessão", async () => {
+    configurar();
+    sessaoNoBanco.token = "token-da-sessao";
+    const bytes = new Uint8Array([79, 103, 103, 83]);
+    const spy = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          id: "987654321",
+          url: "https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=987654321",
+          mime_type: "audio/ogg; codecs=opus",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers({ "content-type": "audio/ogg" }),
+        arrayBuffer: async () => bytes.buffer,
+      });
+    vi.stubGlobal("fetch", spy);
+
+    const media = await a().fetchInboundMedia!({
+      organizationId: ORG,
+      sessionRef: "sessao-pn",
+      url: "meta-media:987654321",
+      hintMime: "audio/ogg; codecs=opus",
+    });
+
+    expect([...media.buffer]).toEqual([79, 103, 103, 83]);
+    expect(media.mime).toBe("audio/ogg");
+    expect(spy.mock.calls.map(([url]) => url)).toEqual([
+      "https://graph.facebook.com/v22.0/987654321",
+      "https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=987654321",
+    ]);
+    for (const [, init] of spy.mock.calls) {
+      expect((init.headers as Record<string, string>).Authorization).toBe(
+        "Bearer token-da-sessao",
+      );
+    }
+  });
+});
+
 describe("credencial por sessão — o que destrava multi-tenant", () => {
   it("com token na SESSÃO, o env deixa de valer", async () => {
     // Ordem sessão-primeiro: um env esquecido não pode silenciar o que foi

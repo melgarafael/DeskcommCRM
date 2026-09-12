@@ -556,8 +556,8 @@ export function PainelDeMarcacao({
                   "flex h-9 items-center justify-center rounded-sm text-sm tabular-nums transition-colors duration-fast ease-out",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
                   !isSameMonth(d, mes) && "text-text-subtle",
-                  disponivel && !escolhido && "bg-accent-soft text-text hover:bg-accent hover:text-accent-fg",
-                  escolhido && "bg-accent font-semibold text-accent-fg",
+                  disponivel && !escolhido && "bg-accent-soft text-text hover:bg-accent hover:text-accent-foreground",
+                  escolhido && "bg-accent font-semibold text-accent-foreground",
                   !disponivel && "cursor-default text-text-subtle",
                   isSameDay(d, agora) && !escolhido && "ring-1 ring-inset ring-border-strong",
                 )}
@@ -671,7 +671,7 @@ export function PainelDeMarcacao({
                   "h-11 shrink-0 rounded-sm border text-sm tabular-nums transition-colors duration-fast ease-out",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
                   horario?.instante === h.instante
-                    ? "border-accent bg-accent font-semibold text-accent-fg"
+                    ? "border-accent bg-accent font-semibold text-accent-foreground"
                     : "border-border bg-surface text-text hover:border-accent hover:bg-accent-soft",
                 )}
               >

@@ -19,11 +19,13 @@ Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois
 > de tentar subir um Caddy que não caberia. Ver
 > [VPS que já vem com proxy próprio](#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy).
 
-## 🤖 Caminho fácil: deixe o Claude Code fazer
+## 🤖 Caminho fácil: deixe o assistente de código fazer
 
 1. Contrate um **VPS na HostGator** e acesse-o por SSH.
-2. Jogue esta pasta (ou o `.zip`) no chat do **Claude Code** rodando dentro do VPS.
-3. Diga: *"instala o DeskcommCRM pra mim"*. Ele lê o `CLAUDE.md` e conduz tudo —
+2. Clone o repositório (`git clone --depth 1 https://github.com/melgarafael/DeskcommCRM.git deskcommcrm`)
+   e abra a pasta no **Claude Code, Codex, Cursor, OpenCode ou Antigravity** dentro do VPS —
+   ou jogue só esta pasta no chat: o `CLAUDE.md` daqui manda clonar e abre o guia.
+3. Diga: *"instala o DeskcommCRM pra mim"*. O guia `deskcomm-instalar` conduz tudo —
    cria o banco, gera as senhas, sobe o CRM e te ajuda a conectar o WhatsApp.
 
 ## ⚙️ Caminho manual: um comando

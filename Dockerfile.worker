@@ -16,6 +16,7 @@ ENV APP_VERSION=$APP_VERSION
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
 COPY . .

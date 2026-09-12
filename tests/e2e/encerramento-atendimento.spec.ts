@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
 const credentials = credenciaisSupabaseDeTeste();
@@ -17,6 +17,34 @@ async function insert(table: string, values: Record<string, unknown>) {
   if (error) throw error;
   return data.id as string;
 }
+/**
+ * ABRIR UMA CONVERSA PELO LINK DIRETO, E ESPERAR O REDIRECIONAMENTO TERMINAR.
+ *
+ * `/app/inbox/<id>` não é a URL final: a tela redireciona para
+ * `/app/inbox?id=<id>` e só DEPOIS monta os painéis. Um `goto` seguido de
+ * asserção começa a medir enquanto a navegação ainda está em curso — o painel
+ * já existe no DOM, vazio, e o texto chega alguns instantes depois.
+ *
+ * Medido em 11/09/2026, com o CI saturado, em DOIS PRs diferentes e em
+ * asserções diferentes do mesmo arquivo:
+ *
+ *   linha 142  getByTestId('inbox-demandas').getByText('Demanda vigente…')
+ *              → "waiting for navigation to finish"
+ *   linha 223  getByTestId('inbox-memoria') toContainText('Histórico encerrado')
+ *              → "3 × locator resolved to <section …>" — existia e estava vazio
+ *
+ * Duas asserções distintas quebrando no mesmo ponto do fluxo não são duas
+ * flakinesses: é o mesmo defeito de espera, e é a SEGUNDA vez que esta classe
+ * morde este repositório.
+ *
+ * O conserto NÃO relaxa asserção nenhuma — nenhum timeout foi aumentado. Ele
+ * apenas espera o que é determinístico (a URL final) antes de começar a medir.
+ */
+async function abrirConversa(page: Page, conversation: string): Promise<void> {
+  await page.goto(`/app/inbox/${conversation}`);
+  await page.waitForURL(new RegExp(`/app/inbox\\?id=${conversation}`));
+}
+
 test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à fila", async ({
   browser,
 }) => {
@@ -137,7 +165,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await page.getByLabel(/senha/i).fill(password);
     await page.getByRole("button", { name: /entrar/i }).click();
     await page.waitForURL(/\/app(?:\/|$)/);
-    await page.goto(`/app/inbox/${conversation}`);
+    await abrirConversa(page, conversation);
     const panel = page.getByTestId("inbox-demandas");
     await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible();
     await expect(page.getByTestId("inbox-memoria")).toContainText("Preferência de horário");
@@ -219,7 +247,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await expect(page.getByRole("heading", { name: "Central de avisos" })).toBeVisible();
     await expect(page.getByTestId("inbox-item")).toContainText("Resposta registrada; atendimento mudou");
     await page.screenshot({ path: `${evidence}/task4-caso-obsoleto-aviso.png`, fullPage: true });
-    await page.goto(`/app/inbox/${conversation}`);
+    await abrirConversa(page, conversation);
     await expect(page.getByTestId("inbox-memoria")).toContainText("Histórico encerrado");
     const language = await db.auth.admin.updateUserById(user, { user_metadata: { locale: "es" } });
     if (language.error) throw language.error;

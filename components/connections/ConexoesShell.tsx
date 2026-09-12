@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
+import { CanalVozClient } from "./CanalVozClient";
 import { ConnectionsClient } from "./ConnectionsClient";
 import { TemplatesClient } from "./TemplatesClient";
 import { TemplatesParceiroClient } from "./TemplatesParceiroClient";
@@ -33,12 +34,25 @@ import { useT } from "@/hooks/i18n/useT";
  * apontando a aba certa, e um link colado no chat abre onde deveria. Aba que só
  * existe em `useState` transforma todo link salvo em "abre e procura de novo".
  */
-export function ConexoesShell({ wahaConfigured }: { wahaConfigured: boolean }) {
+export function ConexoesShell({
+  wahaConfigured,
+  wacallsConfigured,
+}: {
+  wahaConfigured: boolean;
+  wacallsConfigured: boolean;
+}) {
   const t = useT();
   const router = useRouter();
   const params = useSearchParams();
   const abaParam = params.get("aba");
-  const aba = abaParam === "oficial" ? "oficial" : abaParam === "parceiro" ? "parceiro" : "numeros";
+  const aba =
+    abaParam === "oficial"
+      ? "oficial"
+      : abaParam === "parceiro"
+        ? "parceiro"
+        : abaParam === "voz"
+          ? "voz"
+          : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
@@ -71,10 +85,15 @@ export function ConexoesShell({ wahaConfigured }: { wahaConfigured: boolean }) {
             porque no dia em que houver um segundo parceiro esta aba não muda.
             Aqui fica o CONCEITO; lá dentro o cartão diz de quem se trata. */}
         <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
+        <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
       </TabsList>
 
       <TabsContent value="numeros" className="mt-0">
         <ConnectionsClient wahaConfigured={wahaConfigured} />
+      </TabsContent>
+
+      <TabsContent value="voz" className="mt-0">
+        <CanalVozClient wacallsConfigured={wacallsConfigured} />
       </TabsContent>
 
       <TabsContent value="parceiro" className="mt-0">

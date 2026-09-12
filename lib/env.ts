@@ -151,6 +151,21 @@ const schema = z.object({
   // assine — aí a verificação passa a ser obrigatória.
   WAHA_WEBHOOK_REQUIRE_SIGNATURE: z.string().optional().default("false"),
 
+  // ─── Chamada de voz WhatsApp (WaCalls, spec 18) ───
+  //
+  // NUNCA `required()`: o serviço `wacalls` vive num profile do compose que
+  // nasce DESLIGADO, então a instalação normal não o tem. Exigir aqui
+  // derrubaria o boot de todo self-host que não usa a feature.
+  //
+  // Vazio = a instalação não oferece a chamada de voz. É essa string vazia que
+  // `instalacaoOfereceVoz()` lê para dizer à tela que nenhum clique resolve.
+  WACALLS_API_BASE_URL: z.string().optional().default(""),
+  // O upstream autenticado NÃO tem modo aberto: sem este Bearer, a API só é
+  // alcançável pelo cookie de login do navegador, e um processo
+  // server-to-server não tem cookie. URL sem token dá um cliente que constrói e
+  // devolve 401 em toda chamada — por isso `getWacallsClient()` exige os dois.
+  WACALLS_API_TOKEN: z.string().optional().default(""),
+
   // Upstash Redis
   UPSTASH_REDIS_REST_URL: required("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: required("UPSTASH_REDIS_REST_TOKEN"),

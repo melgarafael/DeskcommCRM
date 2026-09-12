@@ -56,8 +56,31 @@ export const POLITICAS_DE_AVISO = {
   promise_unfulfilled: { refs: ["conversation"], orientacao: "Confira o compromisso descrito e defina quem fica responsável." },
   contact_proposal_expired: { refs: ["organization"], orientacao: "A sugestão venceu. Se a informação ainda for relevante, confirme com o cliente antes de editar sua ficha." },
   conhecimento_nao_indexado: { refs: ["ai_knowledge_source"], orientacao: "Peça ao gestor para conferir o material e o motivo da falha na base de conhecimento." },
+  // Aponta para o CONTATO, e não para a chamada: a ficha do contato é onde mora
+  // o botão de ligar (`components/voice/DialButton.tsx`), então "abrir o
+  // contexto" e "fazer o que o aviso pede" viram o mesmo clique. Uma tela de
+  // detalhe da ligação mostraria o registro de algo que já acabou e deixaria a
+  // ação — retornar — a mais dois passos de distância.
+  //
+  // Chamada de número que não casou com contato nenhum entra sem referência e
+  // cai em "sem destino" com a orientação abaixo: o telefone está no corpo do
+  // aviso, escrito pelo worker.
+  voice_call_missed: { refs: ["contact"], orientacao: "Retorne a ligação quando puder — quem ligou não foi atendido." },
   other: { refs: ["lead", "channel_session", "appointment", "ai_agent"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
+
+/**
+ * Quando o rótulo do BOTÃO depende do aviso, não do alvo.
+ *
+ * `REFERENCIAS_DE_AVISO.contact` diz "Ver contato" — certo para um aviso que
+ * pede conferência, errado para um que pede AÇÃO. Numa chamada perdida o botão
+ * tem de dizer o que a pessoa vai fazer ao clicar; "ver contato" transforma um
+ * pedido em um convite a olhar.
+ */
+const ROTULO_POR_KIND: Record<string, string> = {
+  message_send_stuck: "Abrir uma conversa afetada",
+  voice_call_missed: "Ligar de volta",
+};
 
 const SEM_DESTINO: DestinoDoAviso = { estado: "sem_destino", orientacao: "Este aviso não tem um contexto que possa ser aberto nesta versão." };
 const INDISPONIVEL: DestinoDoAviso = { estado: "indisponivel", orientacao: "Este contexto não está disponível para você. Ele pode ter sido removido ou seu acesso pode ter mudado." };
@@ -132,7 +155,7 @@ export async function resolverDestinosDosAvisos<T extends ReferenciaDoAviso>(
         if (a) {
           destination = !permite(papel, a.papel) ? semPermissao(a.papel)
             : visiveis.get(item.ref_kind!)?.has(item.ref_id!)
-              ? { estado: "disponivel", rotulo: item.kind === "message_send_stuck" ? "Abrir uma conversa afetada" : a.rotulo, href: a.href(item.ref_id!, funilPorLead.get(item.ref_id!)) }
+              ? { estado: "disponivel", rotulo: ROTULO_POR_KIND[item.kind] ?? a.rotulo, href: a.href(item.ref_id!, funilPorLead.get(item.ref_id!)) }
               : INDISPONIVEL;
         } else if (item.ref_kind === "ai_budget" || item.ref_kind === "organization") {
           destination = item.ref_id !== organizationId ? INDISPONIVEL

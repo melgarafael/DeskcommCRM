@@ -45,6 +45,27 @@ import { describe, expect, it } from "vitest";
  * de que a classe está fechada — que é pior do que não existir, porque ninguém
  * volta a olhar.
  *
+ * ─── A TERCEIRA FORMA, e esta varredura NÃO A PEGA (escopo declarado) ────────
+ * As duas formas acima são de FIAÇÃO DE TELA: o clique não chega a lugar nenhum.
+ * Existe uma terceira em que a tela está inteira e correta — o clique chama a
+ * rota, a rota grava, a tela reflete — e mesmo assim o controle é decorativo,
+ * porque **ninguém LÊ o que foi gravado**.
+ *
+ * Foi o caso do interruptor de chamada de voz (11/09/2026): a tela pedia um
+ * consentimento com caixa obrigatória, o `PUT` gravava `org_voice_calls.enabled`,
+ * e a função que deveria exigi-lo — `exigirVozLigada` — tinha **zero
+ * chamadores** no repositório inteiro. Dava para parear o segundo aparelho indo
+ * direto a Conexões, sem passar pelo aviso.
+ *
+ * Esta varredura é cega para isso **por construção**: ela olha JSX, e aqui o JSX
+ * está certo. Prender a terceira forma exige perguntar, por valor persistido,
+ * "quem lê isto fora do caminho que escreve?" — e não há gate genérico para
+ * isso hoje. A instância da voz está presa por
+ * `tests/unit/voz-consentimento-e-portao-de-verdade.test.ts`.
+ *
+ * O escopo está escrito aqui de propósito: um comentário que defende bem uma
+ * ausência incompleta impede a próxima pessoa de questioná-la.
+ *
  * ─── O que conta como "ligado" ───────────────────────────────────────────────
  * Um caller em `app/app/**` — a tela do PRODUTO. A vitrine (`app/vitrine-*`) e
  * as páginas de demonstração não contam de propósito: passar a callback lá

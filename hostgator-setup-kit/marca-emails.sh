@@ -233,14 +233,27 @@ HTML_CONFIRM="$(renderizar "$PROJ_DIR/supabase/templates/confirmation.html")" ||
 HTML_RECOVERY="$(renderizar "$PROJ_DIR/supabase/templates/recovery.html")" || instrua_e_saia "não achei supabase/templates/ — rode de dentro do repositório."
 
 if [ -n "$RENDER_EM" ]; then
-  # O caminho de quem roda GoTrue self-hosted: lá não existe Management API, e
-  # `GOTRUE_MAILER_TEMPLATES_*` aponta para ARQUIVO. Apontar para o modelo cru
-  # entregaria `__APP_NAME__` ao cliente final.
+  # Renderiza os modelos com a marca do .env e para por aqui.
+  #
+  # ATENCAO -- ISTO NAO E O CAMINHO SELF-HOSTED. `GOTRUE_MAILER_TEMPLATES_*`
+  # NAO aceita caminho de arquivo: o que nao comeca com `http` o GoTrue COLA no
+  # fim do SITE_URL e busca por HTTP (supabase/auth v2.196.0,
+  # internal/mailer/templatemailer/template.go:456). Apontar para um arquivo faz
+  # ele buscar `https://SEU_DOMINIO/caminho/do/arquivo`, receber a tela de login
+  # e mandar ISSO por e-mail -- medido em 2026-09-09, e o Gmail marcou como
+  # phishing.
+  #
+  # Quem roda self-hosted aponta para a ROTA DO APP (ver abaixo). Este ramo
+  # serve para inspecionar o HTML antes, ou para quem prefere servir por conta
+  # propria num caminho HTTP seu.
   mkdir -p "$RENDER_EM" || instrua_e_saia "não consegui escrever em $RENDER_EM"
   printf '%s\n' "$HTML_CONFIRM"  > "$RENDER_EM/confirmation.html"
   printf '%s\n' "$HTML_RECOVERY" > "$RENDER_EM/recovery.html"
   c_grn "✓ modelos renderizados em $RENDER_EM (marca: $APP_NOME, accent: $ACCENT)"
-  c_dim "  GoTrue self-hosted: aponte GOTRUE_MAILER_TEMPLATES_CONFIRMATION/RECOVERY para eles."
+  c_dim "  Isto e so o HTML renderizado -- NAO aponte GOTRUE_MAILER_TEMPLATES_* para estes arquivos."
+  c_dim "  Num Supabase proprio, aponte para a rota do app, que resolve a marca pelo BANCO:"
+  c_dim "    GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/confirmation"
+  c_dim "    GOTRUE_MAILER_TEMPLATES_RECOVERY=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/recovery"
   exit 0
 fi
 
@@ -259,8 +272,12 @@ case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
 esac
 [ -n "$REF" ] || instrua_e_saia \
   "NEXT_PUBLIC_SUPABASE_URL não é um projeto da nuvem do Supabase (${NEXT_PUBLIC_SUPABASE_URL:-vazio}).
-    Num Supabase próprio, use GOTRUE_MAILER_TEMPLATES_* apontando para os
-    arquivos de \`marca-emails.sh --render-em <dir>\`."
+    Num Supabase próprio não há Management API — o caminho é apontar o GoTrue
+    para a rota do app, que serve o modelo já com a marca do banco:
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/confirmation
+      GOTRUE_MAILER_TEMPLATES_RECOVERY=${NEXT_PUBLIC_APP_URL:-https://SEU_DOMINIO}/email-templates/recovery
+    Tem de ser URL http(s): caminho de arquivo o GoTrue cola no fim do SITE_URL
+    e busca, e o cliente recebe a tela de login dentro do e-mail."
 
 api() {  # api <método> <caminho> [corpo]
   local method="$1" path="$2" body="${3:-}"

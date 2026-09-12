@@ -224,6 +224,93 @@ services:
     logging: *default-logging
     networks: [internal]
 
+  # ── Chamada de voz WhatsApp (spec 18) — DESLIGADA POR PADRÃO ──────────────
+  #
+  # ═══ POR QUE ELA VIVE NUM PROFILE ═══
+  #
+  # A chamada de voz vincula um SEGUNDO APARELHO ao mesmo número que já atende,
+  # por um caminho que não é o oficial: o risco é a CONTA ser bloqueada. Serviço
+  # que sobe em toda instalação transforma esse risco em padrão — e um contêiner
+  # a mais custa RAM numa VPS onde o WAHA já registrou 893 MiB de pico.
+  #
+  # `profiles:` é o mesmo mecanismo com que `docker-compose.traefik.yml` desliga
+  # o Caddy: sem o profile ativo, o compose NÃO cria o contêiner. Ligar é uma
+  # linha no .env — `COMPOSE_PROFILES=voz` — e nada mais.
+  #
+  # ⚠️ DUAS ARMADILHAS MEDIDAS, as duas do próprio Compose:
+  #
+  #   1. Nomear o serviço explicitamente (`docker compose up -d wacalls`) ATIVA
+  #      o profile e sobe o contêiner mesmo com COMPOSE_PROFILES vazio. É por
+  #      isso que o update.sh checa antes de recriar o caddy, e vale igual aqui.
+  #   2. `app` e `worker` NÃO podem ganhar `depends_on: wacalls`. Dependência
+  #      em serviço de profile inativo não sobe — o CRM inteiro deixaria de
+  #      subir em toda instalação que não usa a feature.
+  #
+  # ═══ POR QUE A IMAGEM É DO UPSTREAM, PINADA POR DIGEST ═══
+  #
+  # WaCalls (github.com/JotaDev66/WaCalls, MIT) é peça UPSTREAM, e a doutrina
+  # (docs/doctrine/packaging.md) é explícita: peça upstream se REFERENCIA, nunca
+  # se republica — "a regra vale para todas, não só a licenciada, porque a
+  # exceção é o que apaga a regra". Construir e publicar `deskcomm-wacalls`
+  # seria republicar.
+  #
+  # O digest é o pin mais forte que existe e o único disponível aqui: `:latest`
+  # e `:latest-pure` NÃO existem neste registry (404 medido em 2026-09-08); as
+  # tags publicadas são `develop` e `sha-*`. Ele resolve para
+  # `sha-d16a076`/`develop`, index OCI multi-arch (linux/amd64 + linux/arm64).
+  #
+  # `pull_policy: missing` porque o digest é imutável: com `always`, um GHCR
+  # fora do ar impediria o contêiner de subir mesmo com a imagem já no disco.
+  #
+  # ═══ SEM `ports:` — E ISSO É VIGIADO ═══
+  #
+  # A API do WaCalls fica só na rede interna, alcançável pelo app e pelo worker.
+  # `tests/unit/portas-do-compose.test.ts` reprova quem publicar porta aqui.
+  wacalls:
+    profiles: ["voz"]
+    mem_limit: 256m
+    image: ${WACALLS_IMAGE:-ghcr.io/jotadev66/wacalls@sha256:9ff52ef9455cf42125a911c38bb8c855f0cc205516cada2054e5c05546909022}
+    pull_policy: ${WACALLS_PULL_POLICY:-missing}
+    restart: unless-stopped
+    environment:
+      # O serviço NÃO SOBE sem estes dois — é o upstream que exige, e é o que
+      # substitui o build anterior, cujo README dizia "the API has no
+      # authentication ... run it only on a trusted LAN".
+      WACALLS_ADMIN_USER: ${WACALLS_ADMIN_USER:-}
+      WACALLS_ADMIN_PASSWORD: ${WACALLS_ADMIN_PASSWORD:-}
+      # Bearer da automação. Sem ele a API só aceita o cookie de login, que um
+      # processo server-to-server não tem: o app não conseguiria falar nada.
+      WACALLS_API_TOKEN: ${WACALLS_API_TOKEN:-}
+      # Vazio = same-origin. Nossa UI não fala com o WaCalls direto do browser —
+      # tudo passa pelas rotas /api/v1/voice/*, então não há origem a liberar.
+      WACALLS_CORS_ORIGINS: ${WACALLS_CORS_ORIGINS:-}
+      WACALLS_TRUSTED_PROXIES: ${WACALLS_TRUSTED_PROXIES:-}
+      WACALLS_PUBLIC_IP: ${WACALLS_PUBLIC_IP:-}
+      # A porta que o áudio usa, e ela precisa ser FIXA. Sem esta variável o
+      # upstream não monta o mux de UDP e cai em portas efêmeras aleatórias —
+      # impossíveis de publicar aqui, e o áudio nunca sai da máquina.
+      WACALLS_WEBRTC_UDP_PORT: ${WACALLS_WEBRTC_UDP_PORT:-7881}
+    ports:
+      # A ÚNICA porta publicada por um serviço nosso que não é o proxy, e ela é
+      # UDP. Não é exceção sem razão: o áudio do WebRTC não fala HTTP, então não
+      # há proxy que o carregue — o Caddy é L7 e não repassa UDP.
+      #
+      # host == contêiner de PROPÓSITO. O número entra no candidato SDP que o
+      # navegador recebe; um remap (7881:7882) faria o navegador mandar mídia
+      # para uma porta que o host não escuta, e a ligação ficaria muda com tudo
+      # "certo" nos logs.
+      #
+      # NUNCA TCP: a API HTTP do serviço continua só na rede interna, alcançável
+      # apenas pelo app e pelo worker. Publicar TCP aqui exporia a interface de
+      # administração dele à internet.
+      - "${WACALLS_WEBRTC_UDP_PORT:-7881}:${WACALLS_WEBRTC_UDP_PORT:-7881}/udp"
+    volumes:
+      # wacalls.db guarda a credencial de sessão do WhatsApp — mesmo padrão do
+      # waha-data. Apagar o volume desvincula todos os aparelhos.
+      - wacalls-data:/data
+    logging: *default-logging
+    networks: [internal]
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -246,6 +333,7 @@ services:
 volumes:
   waha-data:
   waha-media:
+  wacalls-data:
   caddy-data:
   caddy-config:
 

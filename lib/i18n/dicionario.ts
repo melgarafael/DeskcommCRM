@@ -1013,6 +1013,18 @@ export const DICIONARIO: Traducoes = {
   Custa: { es: "Cuesta" },
   ". O modelo usado se escolhe em": { es: ". El modelo usado se elige en" },
   "Provedores de IA": { es: "Proveedores de IA" },
+  "Modelo padrão": { es: "Modelo predeterminado" },
+  "Vale em todo ponto que você não configurou individualmente — hoje,": {
+    es: "Vale en todo punto que no configuraste individualmente — hoy,",
+  },
+  "Trocar aqui muda todos eles de uma vez.": {
+    es: "Cambiar aquí los cambia todos de una vez.",
+  },
+  "Salvar padrão": { es: "Guardar predeterminado" },
+  "O padrão agora é": { es: "El predeterminado ahora es" },
+  "pontos precisam de um modelo especialista (embedding ou áudio) e não seguem este padrão — configure cada um abaixo:": {
+    es: "puntos necesitan un modelo especialista (embedding o audio) y no siguen este predeterminado — configurá cada uno abajo:",
+  },
   "Antes de cada mensagem sair": { es: "Antes de que cada mensaje salga" },
   "O assistente escreve, e o sistema confere. São": {
     es: "El asistente escribe, y el sistema revisa. Son",
@@ -1360,6 +1372,9 @@ export const DICIONARIO: Traducoes = {
       es: "Inicio del flujo — sin configuración adicional. El disparo (manual, cambio de etapa, silencio o fin de conversación) se define en la configuración del flujo.",
     },
   "Condição da aresta": { es: "Condición de la arista" },
+  "Excluir nó": { es: "Eliminar nodo" },
+  "Excluir aresta": { es: "Eliminar arista" },
+  Organizar: { es: "Organizar" },
   "Quando seguir por esta aresta": { es: "Cuándo seguir por esta arista" },
   "São as saídas do nó": { es: "Son las salidas del nodo" },
   "as mesmas que aparecem no card.": { es: "las mismas que aparecen en la tarjeta." },
@@ -3452,7 +3467,6 @@ export const DICIONARIO: Traducoes = {
   "Escopos:": { es: "Alcances:" },
   "Webhooks registrados:": { es: "Webhooks registrados:" },
   "Proteção de envio atualizada.": { es: "Protección de envío actualizada." },
-  "Não foi possível salvar.": { es: "No se pudo guardar." },
   "Proteção de envio —": { es: "Protección de envío —" },
   "Estes limites protegem o número contra bloqueio do WhatsApp. Campo vazio usa o padrão seguro do sistema (mostrado no campo).": {
     es: "Estos límites protegen el número contra el bloqueo de WhatsApp. Campo vacío usa el valor seguro predeterminado del sistema (que se muestra en el campo).",
@@ -4110,7 +4124,6 @@ export const DICIONARIO: Traducoes = {
     es: "¿Desactivar la verificación en dos pasos de esta cuenta?",
   },
   "Verificação desligada.": { es: "Verificación desactivada." },
-  "Desligando…": { es: "Desactivando…" },
 
   // ─── app/actions/auth/politicaDeMfa.ts (erros do painel de Segurança/MFA) ───
   "Sua sessão expirou. Entre de novo.": { es: "Tu sesión expiró. Entra de nuevo." },
@@ -4148,6 +4161,76 @@ export const DICIONARIO: Traducoes = {
   "Regenerar códigos de recuperação": { es: "Regenerar códigos de recuperación" },
   "Habilite MFA antes de gerar códigos.": { es: "Habilita MFA antes de generar códigos." },
   "Sessões ativas": { es: "Sesiones activas" },
+
+  // ── Chamada de voz pelo WhatsApp (spec 18) ──────────────────────────────
+  // O aviso de risco é a peça mais importante desta tela, e traduzi-lo pela
+  // metade seria pior que não traduzir: quem lê espanhol veria o botão em
+  // espanhol e o RISCO em português — a parte que precisa ser entendida.
+  "Chamada de voz pelo WhatsApp": { es: "Llamadas de voz por WhatsApp" },
+  "Ligada. Sua equipe pode ligar e receber chamadas pelo número conectado.": {
+    es: "Activada. Tu equipo puede llamar y recibir llamadas por el número conectado.",
+  },
+  "Desligada. Ninguém consegue ligar nem receber chamadas por aqui.": {
+    es: "Desactivada. Nadie puede llamar ni recibir llamadas por aquí.",
+  },
+  "A chamada de voz está desligada nesta empresa.": {
+    es: "La llamada de voz está desactivada en esta empresa.",
+  },
+  "Conectar o aparelho exige ligá-la antes, em Configurações › Segurança — é lá que está o aviso sobre o risco de o WhatsApp bloquear a conta, e quem liga precisa ter lido.":
+    {
+      es: "Conectar el dispositivo exige activarla antes, en Configuración › Seguridad — allí está el aviso sobre el riesgo de que WhatsApp bloquee la cuenta, y quien la activa tiene que haberlo leído.",
+    },
+  "Leia antes de ligar": { es: "Lee antes de activar" },
+  "Para fazer chamadas, o sistema precisa conectar um segundo aparelho ao mesmo número de WhatsApp que você já usa para atender. Essa conexão não é feita pelo caminho oficial do WhatsApp.":
+    {
+      es: "Para hacer llamadas, el sistema necesita conectar un segundo dispositivo al mismo número de WhatsApp que ya usas para atender. Esa conexión no se hace por la vía oficial de WhatsApp.",
+    },
+  "O WhatsApp pode entender isso como uso indevido e bloquear a CONTA — não só a chamada. Se isso acontecer, você perde também as mensagens desse número, e recuperar depende do WhatsApp, não de nós.":
+    {
+      es: "WhatsApp puede considerarlo un uso indebido y bloquear la CUENTA, no solo la llamada. Si eso ocurre, también pierdes los mensajes de ese número, y recuperarlo depende de WhatsApp, no de nosotros.",
+    },
+  "Ligue apenas se a chamada de voz valer esse risco para o seu negócio. Você pode desligar a qualquer momento aqui mesmo — e o aparelho é desconectado na hora.":
+    {
+      es: "Actívala solo si las llamadas de voz valen ese riesgo para tu negocio. Puedes desactivarla en cualquier momento aquí mismo, y el dispositivo se desconecta al instante.",
+    },
+  "Este servidor não tem a chamada de voz instalada. Quem cuida da instalação precisa ligá-la antes — depois esta opção fica disponível aqui.":
+    {
+      es: "Este servidor no tiene las llamadas de voz instaladas. Quien administra la instalación debe activarlas antes; después esta opción aparece aquí.",
+    },
+  "Só quem é administrador desta empresa pode mudar isto.": {
+    es: "Solo quien es administrador de esta empresa puede cambiar esto.",
+  },
+  "Risco aceito em": { es: "Riesgo aceptado el" },
+  "Não consegui verificar se a chamada de voz está ligada nesta empresa. Recarregue a página; se continuar, avise quem cuida da instalação.":
+    {
+      es: "No pude verificar si las llamadas de voz están activadas en esta empresa. Recarga la página; si continúa, avisa a quien administra la instalación.",
+    },
+  "Desligar e desconectar o aparelho": { es: "Desactivar y desconectar el dispositivo" },
+  "Desligando…": { es: "Desactivando…" },
+  "Eu li o aviso acima e aceito o risco de o WhatsApp bloquear esta conta.": {
+    es: "He leído el aviso anterior y acepto el riesgo de que WhatsApp bloquee esta cuenta.",
+  },
+  "Ligar chamada de voz": { es: "Activar llamadas de voz" },
+  "Ligando…": { es: "Activando…" },
+  // Mensagens que as rotas de voz devolvem traduzidas (`traduzir(..., idioma)`).
+  "Chamada de voz ligada.": { es: "Llamadas de voz activadas." },
+  "Chamada de voz desligada.": { es: "Llamadas de voz desactivadas." },
+  "Chamada de voz desligada e aparelho desconectado.": {
+    es: "Llamadas de voz desactivadas y dispositivo desconectado.",
+  },
+  "Não foi possível salvar.": { es: "No se pudo guardar." },
+  "Para ligar a chamada de voz é preciso aceitar o risco de vincular um segundo aparelho ao seu número.":
+    {
+      es: "Para activar las llamadas de voz hay que aceptar el riesgo de vincular un segundo dispositivo a tu número.",
+    },
+  "A chamada de voz não está disponível neste servidor. Quem administra a instalação precisa ligá-la antes.":
+    {
+      es: "Las llamadas de voz no están disponibles en este servidor. Quien administra la instalación debe activarlas antes.",
+    },
+  "A chamada de voz não está disponível neste servidor — sem ela o aparelho não pode ser desconectado.":
+    {
+      es: "Las llamadas de voz no están disponibles en este servidor; sin ellas el dispositivo no puede desconectarse.",
+    },
   "Listagem de sessões — em breve. Por enquanto, deslogue todos os dispositivos:": {
     es: "Listado de sesiones — próximamente. Por ahora, cierra sesión en todos los dispositivos:",
   },
@@ -5496,7 +5579,28 @@ export const DICIONARIO: Traducoes = {
   },
   "503 — Em manutenção": { es: "503 — En mantenimiento" },
   "Voltamos em alguns minutos.": { es: "Volvemos en unos minutos." },
+  // A recusa por modelo padrão passou a nomear as DUAS topologias: na nuvem o
+  // conserto é o script; num Supabase próprio ele não tem Management API para
+  // usar, e o caminho são as rotas do app.
+  "Este link veio do modelo de e-mail padrão do Supabase, que não fecha o acesso nesta instalação — pedir outro link não resolve. Quem administra o sistema precisa configurar os modelos de e-mail: na nuvem do Supabase, com ":
+    {
+      es: "Este enlace vino de la plantilla de correo predeterminada de Supabase, que no cierra el acceso en esta instalación — pedir otro enlace no lo resuelve. Quien administra el sistema necesita configurar las plantillas de correo: en la nube de Supabase, con ",
+    },
+  "; num Supabase próprio, apontando GOTRUE_MAILER_TEMPLATES_* para as rotas /email-templates/ do app.":
+    {
+      es: "; en un Supabase propio, apuntando GOTRUE_MAILER_TEMPLATES_* a las rutas /email-templates/ de la app.",
+    },
   "Conta suspensa": { es: "Cuenta suspendida" },
+  // Tela irmã de `/account-suspended`: quem TINHA acesso e não tem mais.
+  "Acesso revogado": { es: "Acceso revocado" },
+  "Seu acesso a esta organização foi retirado. Se você acredita que isso é um engano, fale com quem administra a empresa — só ela pode devolvê-lo.":
+    {
+      es: "Tu acceso a esta organización fue retirado. Si crees que es un error, habla con quien administra la empresa — solo ella puede devolvértelo.",
+    },
+  "Seu acesso a esta organização foi retirado. Fale com quem administra a empresa — criar uma organização nova não devolve o acesso.":
+    {
+      es: "Tu acceso a esta organización fue retirado. Habla con quien administra la empresa — crear una organización nueva no devuelve el acceso.",
+    },
   "Sua conta está suspensa. Entre em contato com": {
     es: "Tu cuenta está suspendida. Contacta a",
   },
@@ -5973,9 +6077,6 @@ export const DICIONARIO: Traducoes = {
   "Sua conta foi confirmada, mas o convite não vale mais — ele expirou ou foi emitido para outro e-mail. Peça um novo a quem te convidou. Não criamos uma empresa nova para você, porque não era isso que você estava fazendo.": {
     es: "Tu cuenta fue confirmada, pero la invitación ya no vale — venció o fue emitida para otro correo. Pide una nueva a quien te invitó. No creamos una empresa nueva para ti, porque no era eso lo que estabas haciendo.",
   },
-  "Este link veio do modelo de e-mail padrão do Supabase, que não fecha o acesso nesta instalação — pedir outro link não resolve. Quem administra o sistema precisa configurar os e-mails de acesso (": {
-    es: "Este enlace vino de la plantilla de correo predeterminada de Supabase, que no cierra el acceso en esta instalación — pedir otro enlace no resuelve. Quien administra el sistema necesita configurar los correos de acceso (",
-  },
   ", no kit de instalação).": { es: ", en el kit de instalación)." },
   "Sua conta foi confirmada, mas houve um erro ao preparar seu ambiente. Tente entrar novamente em instantes.": {
     es: "Tu cuenta fue confirmada, pero hubo un error al preparar tu ambiente. Intenta entrar de nuevo en unos instantes.",
@@ -5995,6 +6096,23 @@ export const DICIONARIO: Traducoes = {
   "em minutos": { es: "en minutos" },
   "Esse convite expirou ou não é mais válido. Peça um novo a quem te convidou — criar uma conta agora abriria uma empresa nova, e não é isso que você quer.": {
     es: "Esa invitación venció o ya no es válida. Pide una nueva a quien te invitó — crear una cuenta ahora abriría una empresa nueva, y no es eso lo que quieres.",
+  },
+  // ── Revogação reversível (2026-09-10) ─────────────────────────────────────
+  // ("Revogado" já existe mais acima — a chave é o texto, então repetir é erro
+  //  de compilação, e é assim que o dicionário evita duas traduções da mesma
+  //  frase divergirem.)
+  "Devolver acesso": { es: "Devolver el acceso" },
+  // ("Seu nome" já existe mais acima — a chave é o próprio texto.)
+  "Informe seu nome": { es: "Escribe tu nombre" },
+  "Você já tem uma conta com este e-mail": {
+    es: "Ya tienes una cuenta con este correo",
+  },
+  "Entre com ela para aceitar o convite — não é preciso criar outra.": {
+    es: "Entra con ella para aceptar la invitación — no hace falta crear otra.",
+  },
+  "Entrar e aceitar o convite": { es: "Entrar y aceptar la invitación" },
+  "Recebeu um convite novo? Abra o link que chegou no seu e-mail — ele funciona mesmo com esta tela aberta, e devolve o seu acesso.": {
+    es: "¿Recibiste una invitación nueva? Abre el enlace que llegó a tu correo — funciona incluso con esta pantalla abierta, y te devuelve el acceso.",
   },
   "Já tem conta?": { es: "¿Ya tienes cuenta?" },
   "Email ou senha incorretos.": { es: "Correo o contraseña incorrectos." },
@@ -7203,6 +7321,66 @@ export const DICIONARIO: Traducoes = {
   "Salvar produto": { es: "Guardar producto" },
   "em estoque": { es: "en stock" },
   "sem controle de estoque": { es: "sin control de stock" },
+
+  // Chamada de voz WhatsApp (WaCalls, spec 18)
+  // "Chamar", não "Ligar" — a chave já existe com outro sentido (ativar/toggle,
+  // linha ~3725: "Ligar" -> "Activar"). Mesma palavra em PT, contextos
+  // diferentes; o dicionário é chaveado pelo texto, não por significado, então
+  // a colisão vira TS1117 (chave duplicada) se as duas usarem a mesma string.
+  "Chamar": { es: "Llamar" },
+  "Em ligação": { es: "En llamada" },
+  "Chamada de voz recebida": { es: "Llamada de voz recibida" },
+  "Recusar chamada": { es: "Rechazar llamada" },
+  "Atender chamada": { es: "Atender llamada" },
+  "Chamando…": { es: "Llamando…" },
+  // "Conectando…" já existe (linha ~3708, saúde do canal) com a MESMA
+  // tradução — reaproveitado, não duplicado aqui.
+  "Chamada em andamento": { es: "Llamada en curso" },
+  "Reativar microfone": { es: "Reactivar micrófono" },
+  "Silenciar microfone": { es: "Silenciar micrófono" },
+  "Encerrar chamada": { es: "Finalizar llamada" },
+  // Estado do TRANSPORTE de áudio, não da ligação — ver
+  // `hooks/voice/useVoiceCallSession.ts` (`EstadoDaMidia`).
+  "Abrindo o áudio…": { es: "Abriendo el audio…" },
+  "Sem áudio: o canal de voz não abriu": { es: "Sin audio: el canal de voz no se abrió" },
+  "Chamada de voz": { es: "Llamada de voz" },
+  "A chamada de voz não está configurada.": { es: "La llamada de voz no está configurada." },
+  "Falta o endereço do serviço (": { es: "Falta la dirección del servicio (" },
+  ") nas variáveis de ambiente desta instalação.": {
+    es: ") en las variables de entorno de esta instalación.",
+  },
+  "Chamada de voz por WhatsApp": { es: "Llamada de voz por WhatsApp" },
+  "Um segundo aparelho vinculado ao mesmo número já conectado, só para ligar e atender chamadas. Escaneie uma vez para ativar.":
+    {
+      es: "Un segundo dispositivo vinculado al mismo número ya conectado, solo para llamar y atender llamadas. Escanee una vez para activar.",
+    },
+  "Não pareado": { es: "No emparejado" },
+  "Aparelho pareado": { es: "Dispositivo emparejado" },
+  "QR Code para parear chamada de voz": { es: "Código QR para emparejar llamada de voz" },
+  "Parear chamada de voz": { es: "Emparejar llamada de voz" },
+  "Risco aceito: um segundo aparelho vinculado ao mesmo número pode ser sinalizado pelo WhatsApp.":
+    {
+      es: "Riesgo aceptado: un segundo dispositivo vinculado al mismo número puede ser señalado por WhatsApp.",
+    },
+  "Pronto para ligar — o botão de chamar aparece nos contatos com telefone.": {
+    es: "Listo para llamar — el botón de llamar aparece en los contactos con teléfono.",
+  },
+  "Chamada de voz pareada!": { es: "¡Llamada de voz emparejada!" },
+  // Central de avisos: o RÓTULO DO KIND e a ORIENTAÇÃO passam por `t()`; o
+  // título e o corpo do aviso NÃO — são linha de `agent_inbox_items`, escrita
+  // pelo worker com dado de gente dentro (o telefone de quem ligou), e o
+  // dicionário é chaveado pela frase inteira. Mesma regra de todo kind irmão:
+  // nenhum título de aviso está aqui.
+  "Alguém ligou e ninguém atendeu": { es: "Alguien llamó y nadie atendió" },
+  "Retorne a ligação quando puder — quem ligou não foi atendido.": {
+    es: "Devuelva la llamada cuando pueda — quien llamó no fue atendido.",
+  },
+  "Ligar de volta": { es: "Devolver la llamada" },
+  // Diálogo de exclusão de canal (`frasesDoImpacto`): singular e plural.
+  "chamada de voz": { es: "llamada de voz" },
+  "chamadas de voz": { es: "llamadas de voz" },
+  "Não foi possível iniciar o pareamento.": { es: "No fue posible iniciar el emparejamiento." },
+
   // Mensajes de error de importación de planilha (lib/catalogo/planilha.ts)
   "A planilha está vazia.": { es: "La planilla está vacía." },
   // Uma frase por combinação do que falta: a recusa NOMEIA a coluna ausente, e
@@ -8236,6 +8414,30 @@ export const DICIONARIO: Traducoes = {
   "Este ponto usa o modelo definido na versão publicada do agente; a escolha do painel não se aplica.": {
     es: "Este punto usa el modelo definido en la versión publicada del agente; la elección del panel no se aplica.",
   },
+
+  // ─── app/app/team/_components/TeamInvitesClient.tsx (lista de convites) ───
+  "Convites": { es: "Invitaciones" },
+  "Convites enviados e seu status. Um convite aceito vira membro na lista acima.": {
+    es: "Invitaciones enviadas y su estado. Una invitación aceptada se vuelve miembro en la lista de arriba.",
+  },
+  "Nenhum convite enviado.": { es: "Ninguna invitación enviada." },
+  "Erro ao carregar convites.": { es: "Error al cargar las invitaciones." },
+  "E-mail enviado": { es: "Correo enviado" },
+  "Enviado em": { es: "Enviado el" },
+  "Convidado por": { es: "Invitado por" },
+  "Expirado": { es: "Expirada" },
+  "Não saiu": { es: "No salió" },
+  "reenviado": { es: "reenviado" },
+  "Revogar convite": { es: "Revocar invitación" },
+  "não poderá mais usar este convite para entrar. Você pode enviar um novo depois.": {
+    es: "ya no podrá usar esta invitación para entrar. Puedes enviar una nueva después.",
+  },
+  "Link do convite copiado.": { es: "Enlace de la invitación copiado." },
+  "Não foi possível copiar. Copie da barra do navegador.": {
+    es: "No se pudo copiar. Cópialo desde la barra del navegador.",
+  },
+  "Convite reenviado.": { es: "Invitación reenviada." },
+  "Convite revogado.": { es: "Invitación revocada." },
 };
 
 /**

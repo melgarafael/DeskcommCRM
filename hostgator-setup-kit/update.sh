@@ -232,6 +232,15 @@ export WORKER_IMAGE="${IMG_WORKER}:${VERSAO_ALVO}"
 export SCHEDULER_IMAGE="${IMG_SCHEDULER}:${VERSAO_ALVO}"
 gravar_imagens .env "$VERSAO_ALVO"
 
+# Os segredos da chamada de voz (spec 18), para quem instalou antes dela existir.
+# LACUNA apenas — chave presente, mesmo vazia, é decisão de quem opera. Isto NÃO
+# liga a feature: sem `voz` em COMPOSE_PROFILES o serviço nem é criado. O que
+# isto compra é o dia em que o dono QUISER ligar não começar por inventar dois
+# segredos num editor dentro da VPS, que é o passo manual que a doutrina de
+# packaging proíbe.
+VOZ_CRIADA="$(completar_segredos_da_voz .env)" || VOZ_CRIADA=""
+[ -n "$VOZ_CRIADA" ] && c_ylw "  (preparei as credenciais da chamada de voz no .env — ela segue DESLIGADA)"
+
 # `dc pull` falha se alguma das três imagens ainda não existir no registro — o
 # que acontece numa instalação atualizando para a primeira versão publicada
 # depois desta mudança, ou se um run de publicação quebrou. Nesse caso o compose

@@ -3251,6 +3251,9 @@ export type Database = {
           status: string
           status_reason: string | null
           updated_at: string
+          wacalls_jid: string | null
+          wacalls_paired_at: string | null
+          wacalls_session_id: string | null
           waha_session_name: string | null
           warmup_completed_at: string | null
           warmup_started_at: string | null
@@ -3281,6 +3284,9 @@ export type Database = {
           status?: string
           status_reason?: string | null
           updated_at?: string
+          wacalls_jid?: string | null
+          wacalls_paired_at?: string | null
+          wacalls_session_id?: string | null
           waha_session_name?: string | null
           warmup_completed_at?: string | null
           warmup_started_at?: string | null
@@ -3311,6 +3317,9 @@ export type Database = {
           status?: string
           status_reason?: string | null
           updated_at?: string
+          wacalls_jid?: string | null
+          wacalls_paired_at?: string | null
+          wacalls_session_id?: string | null
           waha_session_name?: string | null
           warmup_completed_at?: string | null
           warmup_started_at?: string | null
@@ -7473,6 +7482,85 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      voice_calls: {
+        Row: {
+          answered_at: string | null
+          channel_session_id: string
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          direction: string
+          duration_ms: number | null
+          end_reason: string | null
+          ended_at: string | null
+          id: string
+          organization_id: string
+          peer_phone: string
+          started_at: string
+          status: string
+          updated_at: string
+          wacalls_call_id: string
+        }
+        Insert: {
+          answered_at?: string | null
+          channel_session_id: string
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          direction: string
+          duration_ms?: number | null
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          organization_id: string
+          peer_phone: string
+          started_at?: string
+          status: string
+          updated_at?: string
+          wacalls_call_id: string
+        }
+        Update: {
+          answered_at?: string | null
+          channel_session_id?: string
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          direction?: string
+          duration_ms?: number | null
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          organization_id?: string
+          peer_phone?: string
+          started_at?: string
+          status?: string
+          updated_at?: string
+          wacalls_call_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_calls_channel_session_id_fkey"
+            columns: ["channel_session_id"]
+            isOneToOne: false
+            referencedRelation: "channel_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_calls_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_calls_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       watchdog_cursors: {
         Row: {

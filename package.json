@@ -24,10 +24,11 @@
     "test:journeys": "playwright test -c tests/journeys/playwright.config.ts",
     "test:unit": "vitest run",
     "test:db": "bash scripts/test-db.sh",
-    "test:shell": "bash tests/shell/update-guard.test.sh && bash tests/shell/dono-do-projeto.test.sh && bash tests/shell/scheduler-entrypoint.test.sh && bash tests/shell/owner-id-por-email.test.sh && bash hostgator-setup-kit/test-validators.sh",
+    "test:shell": "bash tests/shell/update-guard.test.sh && bash tests/shell/dono-do-projeto.test.sh && bash tests/shell/scheduler-entrypoint.test.sh && bash tests/shell/cron-sem-crontab-previo.test.sh && bash tests/shell/owner-id-por-email.test.sh && bash tests/shell/deskcomm-contribuir.test.sh && bash hostgator-setup-kit/test-validators.sh",
     "test:invariants": "bash scripts/test-db.sh",
     "lint:channels": "tsx scripts/lint-channels.ts",
     "lint:role-rank": "tsx scripts/lint-role-rank.ts",
+    "skills:sync": "tsx scripts/sincronizar-skills.ts",
     "release:conferir": "tsx scripts/cortar-release.ts",
     "release:cortar": "tsx scripts/cortar-release.ts --escrever",
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm lint:role-rank && pnpm test:unit",
@@ -134,6 +135,9 @@
       "fast-uri": "^3.1.7",
       "qs": "^6.16.0",
       "browserslist": "^4.28.8"
+    },
+    "patchedDependencies": {
+      "@react-pdf/hyphenate": "patches/@react-pdf__hyphenate.patch"
     }
   }
 }

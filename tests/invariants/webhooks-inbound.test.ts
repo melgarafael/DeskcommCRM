@@ -282,6 +282,7 @@ const WHIN_SOURCE_FORM = "dddddddd-5555-4000-8000-000000000002";
 const WHIN_SOURCE_INACTIVE = "dddddddd-5555-4000-8000-000000000003";
 const WHIN_SOURCE_SECRET = "dddddddd-5555-4000-8000-000000000004";
 const WHIN_SOURCE_RESPONDI = "dddddddd-5555-4000-8000-000000000005";
+const WHIN_SOURCE_RDSTATION = "dddddddd-5555-4000-8000-000000000006";
 // Fixture própria (namespace ffffffff, mesmo padrão de webhooks-rls.test.ts) —
 // org B só pra provar que o fallback por e-mail não cruza tenant.
 const WHIN_ORG_B = "ffffffff-0000-4000-8000-000000000101";
@@ -289,6 +290,8 @@ const WHIN_PIPELINE_B = "ffffffff-5555-4000-8000-000000000101";
 const WHIN_STAGE_B = "ffffffff-5555-4000-8000-000000000102";
 const WHIN_SOURCE_RESPONDI_B = "ffffffff-5555-4000-8000-000000000103";
 const TOKEN_RESPONDI_B = "wh-in-respondi-org-b-token-1234";
+const WHIN_SOURCE_RDSTATION_B = "ffffffff-5555-4000-8000-000000000104";
+const TOKEN_RDSTATION_B = "wh-in-rdstation-org-b-token-1234";
 const SECRET = "test-webhook-secret-abc123";
 const REDIRECT_TO = "https://example.com/obrigado";
 
@@ -298,6 +301,7 @@ const TOKEN_INACTIVE = "wh-in-inactive-token-1234";
 const TOKEN_SECRET = "wh-in-secret-token-1234";
 const TOKEN_UNKNOWN = "wh-in-does-not-exist-1234";
 const TOKEN_RESPONDI = "wh-in-respondi-token-1234";
+const TOKEN_RDSTATION = "wh-in-rdstation-token-1234";
 
 /** Fixture sanitizada — mesma FORMA do payload real do Respondi (webhook_events_log, 2026-08-25). */
 const RESPONDI_FIXTURE = JSON.parse(
@@ -375,6 +379,14 @@ beforeAll(() => {
     insert into public.webhook_sources
       (id, organization_id, name, path_token, default_pipeline_id, default_stage_id)
       values ('${WHIN_SOURCE_RESPONDI_B}', '${WHIN_ORG_B}', 'Respondi Org B', '${TOKEN_RESPONDI_B}', '${WHIN_PIPELINE_B}', '${WHIN_STAGE_B}')
+      on conflict do nothing;
+    insert into public.webhook_sources
+      (id, organization_id, name, path_token, default_pipeline_id, default_stage_id)
+      values ('${WHIN_SOURCE_RDSTATION}', '${GOV_ORG}', 'RD Station JBA (fixture)', '${TOKEN_RDSTATION}', '${GOV_PIPELINE}', '${GOV_STAGE}')
+      on conflict do nothing;
+    insert into public.webhook_sources
+      (id, organization_id, name, path_token, default_pipeline_id, default_stage_id)
+      values ('${WHIN_SOURCE_RDSTATION_B}', '${WHIN_ORG_B}', 'RD Station Org B', '${TOKEN_RDSTATION_B}', '${WHIN_PIPELINE_B}', '${WHIN_STAGE_B}')
       on conflict do nothing;
   `);
 });
@@ -1128,5 +1140,182 @@ describe("POST /api/v1/webhooks/in/[token] — classificação inicial (2026-08-
     const contact = rows(`select consent from public.contacts where id = '${lead.contact_id}'`)[0]!;
     const consent = contact.consent as { marketing: { granted_at: string | null } };
     expect(consent.marketing.granted_at).not.toBeNull();
+  });
+});
+
+/**
+ * POST /api/v1/webhooks/in/[token] — RD Station (envelope `leads[]`, achado 2026-09-08).
+ *
+ * Mesma figura do bloco Respondi acima: o payload real do RD Station vem em
+ * `{ leads: [ {...} ] }` e o mapeador GENÉRICO só lê chave de topo, então os
+ * três campos batiam null e a rota devolvia 400 — 5 recebimentos reais
+ * recusados, 0 lead (checkpoint JBA-RDSTATION-WEBHOOK-DIAGNOSTICO.txt). O
+ * normalizador dedicado (`lib/webhooks/rdstation.ts`) reconhece o envelope,
+ * extrai identidade dos caminhos comprovados e deriva a chave de idempotência
+ * `rdstation:evt:<event_uuid>` (fallback `rdstation:lead:<id>`), que reusa o
+ * índice `uniq_crm_leads_org_source_external` já existente — sem migration.
+ */
+function rdStationEnvelope(opts: {
+  name?: string | null;
+  email?: string | null;
+  mobilePhone?: string | null;
+  celular?: string | null;
+  eventUuid?: string | null;
+  leadId?: string;
+}) {
+  const eventUuid = opts.eventUuid === undefined ? "22222222-2222-4222-8222-000000000001" : opts.eventUuid;
+  const celular = opts.celular === undefined ? "+55 (11) 98888-7777" : opts.celular;
+  const content: Record<string, unknown> = {
+    event_type: "CONVERSION",
+    identificador: "jardim-bela-aurora",
+    conversion_identifier: "jardim-bela-aurora",
+    conversion_url: "https://viver.example.com.br/jardim-bela-aurora",
+    email_lead: opts.email === undefined ? "maria.rd@example.com" : opts.email,
+    Nome: opts.name === undefined ? "Maria RD" : opts.name,
+    Celular: celular,
+    phone_lead: null,
+  };
+  if (eventUuid) {
+    content.__cdp__original_event = {
+      event_uuid: eventUuid,
+      event_batch_uuid: "33333333-3333-4333-8333-000000000001",
+      event_type: "CONVERSION",
+      event_family: "CDP",
+    };
+  }
+  return {
+    leads: [
+      {
+        id: opts.leadId ?? "5035951450",
+        uuid: "11111111-1111-4111-8111-000000000001",
+        name: opts.name === undefined ? "Maria RD" : opts.name,
+        email: opts.email === undefined ? "maria.rd@example.com" : opts.email,
+        phone: null,
+        personal_phone: null,
+        mobile_phone: opts.mobilePhone === undefined ? "+55 (11) 98888-7777" : opts.mobilePhone,
+        lead_stage: "Lead",
+        public_url: "http://app.rdstation.com.br/leads/public/11111111-1111-4111-8111-000000000001",
+        number_conversions: "2",
+        custom_fields: {},
+        first_conversion: { content },
+        last_conversion: { content },
+      },
+    ],
+  };
+}
+
+describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", () => {
+  it("rd 1 — envelope real: cria contato + lead, nome/telefone/email dos caminhos do RD, external_id = rdstation:evt:*, metadados rd_*", async () => {
+    const res = await POST(
+      jsonReq(TOKEN_RDSTATION, rdStationEnvelope({ eventUuid: "aaaa0001-0000-4000-8000-000000000001", mobilePhone: "+55 (32) 9922-8971" })),
+      reqCtx(TOKEN_RDSTATION),
+    );
+    expect(res.status).toBe(200);
+    const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
+
+    const lead = rows(`select * from public.crm_leads where id = '${leadId}'`)[0]!;
+    expect(lead.source).toBe("webhook");
+    expect(lead.organization_id).toBe(GOV_ORG);
+    expect(lead.external_id).toBe("rdstation:evt:aaaa0001-0000-4000-8000-000000000001");
+    expect(lead.title).toBe("Maria RD");
+    const cf = lead.custom_fields as Record<string, unknown>;
+    expect(cf.rd_lead_id).toBe("5035951450");
+    expect(cf.rd_conversion_identifier).toBe("jardim-bela-aurora");
+    expect(cf.rd_event_uuid).toBe("aaaa0001-0000-4000-8000-000000000001");
+
+    const contact = rows(`select * from public.contacts where id = '${lead.contact_id}'`)[0]!;
+    // canonicalPhoneBR injeta o 9º dígito no celular BR.
+    expect(contact.phone_number).toBe("+5532999228971");
+    expect(contact.email).toBe("maria.rd@example.com");
+  });
+
+  it("rd 2 — MESMO event_uuid reenviado NÃO duplica: 200 com o lead existente", async () => {
+    const payload = rdStationEnvelope({ eventUuid: "aaaa0002-0000-4000-8000-000000000002", leadId: "5035999002" });
+    const first = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
+    const firstId = ((await first.json()) as { data: { lead_id: string } }).data.lead_id;
+
+    const second = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
+    expect(second.status).toBe(200);
+    const secondId = ((await second.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(secondId).toBe(firstId);
+
+    const count = rows(
+      `select count(*)::int as n from public.crm_leads where organization_id = '${GOV_ORG}' and external_id = 'rdstation:evt:aaaa0002-0000-4000-8000-000000000002'`,
+    )[0]!;
+    expect(count.n).toBe(1);
+  });
+
+  it("rd 3 — sem event_uuid: usa rdstation:lead:<id> como chave de idempotência", async () => {
+    const payload = rdStationEnvelope({ eventUuid: null, leadId: "5035999003" });
+    const res = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
+    expect(res.status).toBe(200);
+    const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
+    const lead = rows(`select external_id from public.crm_leads where id = '${leadId}'`)[0]!;
+    expect(lead.external_id).toBe("rdstation:lead:5035999003");
+  });
+
+  it("rd 4 — nome + email e SEM telefone em lugar nenhum: ainda cria lead (regra atual)", async () => {
+    const payload = rdStationEnvelope({
+      eventUuid: "aaaa0004-0000-4000-8000-000000000004",
+      leadId: "5035999004",
+      mobilePhone: null,
+      celular: null,
+    });
+    const res = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
+    expect(res.status).toBe(200);
+    const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
+    const lead = rows(`select * from public.crm_leads where id = '${leadId}'`)[0]!;
+    expect(lead.title).toBe("Maria RD");
+    expect(lead.contact_id).toBeNull(); // sem telefone → contato não é criado (mesma regra do genérico)
+  });
+
+  it("rd 5 — sem identidade nenhuma (nome/email/telefone ausentes): 400 invalid_request, sem lead", async () => {
+    const payload = rdStationEnvelope({
+      eventUuid: "aaaa0005-0000-4000-8000-000000000005",
+      leadId: "5035999005",
+      name: null,
+      email: null,
+      mobilePhone: null,
+      celular: null,
+    });
+    const res = await POST(jsonReq(TOKEN_RDSTATION, payload), reqCtx(TOKEN_RDSTATION));
+    expect(res.status).toBe(400);
+    const n = rows(
+      `select count(*)::int as n from public.crm_leads where organization_id = '${GOV_ORG}' and external_id = 'rdstation:evt:aaaa0005-0000-4000-8000-000000000005'`,
+    )[0]!;
+    expect(n.n).toBe(0);
+  });
+
+  it("rd 6 — isolamento: MESMO event_uuid em org A e org B cria DOIS leads distintos", async () => {
+    const uuid = "aaaa0006-0000-4000-8000-000000000006";
+    const resA = await POST(
+      jsonReq(TOKEN_RDSTATION, rdStationEnvelope({ eventUuid: uuid, leadId: "5035999006", email: "orga.rd@example.com" })),
+      reqCtx(TOKEN_RDSTATION),
+    );
+    const resB = await POST(
+      jsonReq(TOKEN_RDSTATION_B, rdStationEnvelope({ eventUuid: uuid, leadId: "5035999006", email: "orgb.rd@example.com" })),
+      reqCtx(TOKEN_RDSTATION_B),
+    );
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+    const idA = ((await resA.json()) as { data: { lead_id: string } }).data.lead_id;
+    const idB = ((await resB.json()) as { data: { lead_id: string } }).data.lead_id;
+    expect(idA).not.toBe(idB);
+    const orgA = rows(`select organization_id from public.crm_leads where id = '${idA}'`)[0]!;
+    const orgB = rows(`select organization_id from public.crm_leads where id = '${idB}'`)[0]!;
+    expect(orgA.organization_id).toBe(GOV_ORG);
+    expect(orgB.organization_id).toBe(WHIN_ORG_B);
+  });
+
+  it("rd 7 — payload FLAT no mesmo endpoint continua caindo no mapeador genérico (sem regressão)", async () => {
+    const res = await POST(
+      jsonReq(TOKEN_RDSTATION, { nome: "Flat No RD Source", telefone: "11955550007" }),
+      reqCtx(TOKEN_RDSTATION),
+    );
+    expect(res.status).toBe(200);
+    const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
+    const lead = rows(`select external_id, title from public.crm_leads where id = '${leadId}'`)[0]!;
+    expect(lead.title).toBe("Flat No RD Source");
+    expect(lead.external_id).toBeNull(); // genérico sem external_id de topo
   });
 });

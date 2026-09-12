@@ -931,6 +931,40 @@ else
   printf '  ✗ Supabase próprio: rc=%s, mensagem sem GOTRUE_MAILER_TEMPLATES\n' "$rc_me"; fail=1
 fi
 
+# (2b) CONTRATO, e não é preferência de estilo: `GOTRUE_MAILER_TEMPLATES_*` só
+#      aceita URL http(s). O GoTrue COLA no fim do SITE_URL tudo o que não
+#      começa com `http` e busca por HTTP (supabase/auth v2.196.0,
+#      internal/mailer/templatemailer/template.go:456) — então um caminho de
+#      arquivo não dá erro: ele faz o GoTrue pedir `https://DOMINIO/opt/...`,
+#      receber o HTML da tela de login e mandar ISSO na caixa de entrada.
+#      Aconteceu numa instalação real em 2026-09-09 e o Gmail marcou como
+#      phishing. Varremos o kit inteiro porque três scripts imprimem estas
+#      linhas hoje (install.sh, marca-emails.sh, healthcheck.sh) e o quarto que
+#      aparecer não vai lembrar deste parágrafo.
+fora_do_contrato="$(grep -rhoE 'GOTRUE_MAILER_TEMPLATES_[A-Z]+=[^ "'"'"']*' ./*.sh \
+                    | grep -vE '=(https?://|\$\{[A-Za-z_]+:-https?://)' || true)"
+if [ -z "$fora_do_contrato" ]; then
+  printf '  ✓ todo GOTRUE_MAILER_TEMPLATES_* que o kit imprime é URL http(s)\n'
+else
+  printf '  ✗ o kit imprime GOTRUE_MAILER_TEMPLATES_* que NÃO é URL http(s):\n'
+  printf '%s\n' "$fora_do_contrato" | sed 's/^/      /'
+  fail=1
+fi
+
+# (2c) VACUIDADE do healthcheck: ele decide "o app serve o molde certo"
+#      procurando `token_hash={{ .TokenHash }}` na resposta da rota. Se o
+#      gerador do molde parar de emitir essa string, a sonda passa a responder
+#      "versão anterior à correção" para TODA instalação — inclusive as
+#      corretas —, e ninguém percebe, porque o aviso é plausível. Este caso
+#      amarra os dois lados.
+assinatura='token_hash={{ .TokenHash }}'
+if grep -qF "$assinatura" ./healthcheck.sh \
+   && grep -qF "$assinatura" ../lib/email/templates/acesso-gotrue.ts; then
+  printf '  ✓ a sonda do healthcheck procura a assinatura que o molde emite\n'
+else
+  printf '  ✗ healthcheck e lib/email/templates/acesso-gotrue.ts discordam da assinatura\n'; fail=1
+fi
+
 # (3) VACUIDADE: os modelos no disco precisam TER o placeholder, senão o caso
 #     (4) compararia a ausência de marca com a ausência de marca e passaria.
 for modelo in ../supabase/templates/confirmation.html ../supabase/templates/recovery.html; do

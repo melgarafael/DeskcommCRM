@@ -1,0 +1,6 @@
+interface:
+  display_name: "Sistema Vivo"
+  short_description: "Gate de arquitetura: nada é ilha, todo laço se fecha — antes de declarar uma peça pronta"
+  default_prompt: "Use a skill sistema-vivo ao implementar ou mudar qualquer peça que atende pessoas."
+policy:
+  allow_implicit_invocation: true

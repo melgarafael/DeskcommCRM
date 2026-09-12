@@ -26,6 +26,7 @@ interface Builder {
   select(colunas: string): Builder;
   eq(coluna: string, valor: string): Builder;
   is(coluna: string, valor: null): Builder;
+  in(coluna: string, valores: readonly string[]): Builder;
   order(coluna: string, opts: { ascending: boolean }): Builder;
   then(resolve: (v: Resposta) => unknown): Promise<unknown>;
 }
@@ -53,6 +54,10 @@ function fakeDb(respostas: Resposta[]) {
       },
       is(coluna, valor) {
         trilha.push(`is(${coluna}=${String(valor)})`);
+        return b;
+      },
+      in(coluna, valores) {
+        trilha.push(`in(${coluna}=[${[...valores].join("|")}])`);
         return b;
       },
       order(coluna, opts) {
@@ -149,6 +154,24 @@ describe("listSelectableChannels", () => {
 
     expect(canais[0]?.display_name).not.toContain("org_");
     expect(canais[0]?.display_name).toBe("Número sem nome");
+  });
+
+  it("a linha de chamada de voz não é oferecida como canal de mensagem", async () => {
+    // O seletor lê `channel_sessions`, e a sessão de voz mora lá também. Sem o
+    // filtro por provider ela apareceria como "Número conectado" no editor de
+    // agente, no roteador e no onboarding — e um agente amarrado a ela nunca
+    // receberia mensagem nenhuma, com o onboarding declarando sucesso.
+    //
+    // Este caso guarda o FILTRO, não a saída: com a fixture devolvendo só a
+    // linha de mensagem, apagar o `.in()` da fonte deixaria a saída idêntica e
+    // a suíte verde. É a consulta montada que precisa provar a intenção.
+    const { db, chamadas } = fakeDb([{ data: [LINHA], error: null }, { data: [], error: null }]);
+    await listSelectableChannels(db, "org-1");
+
+    const consulta = chamadas[0]?.join(" ") ?? "";
+    expect(consulta).toContain("in(provider=");
+    expect(consulta).toContain("waha");
+    expect(consulta).not.toContain("wacalls");
   });
 
   it("o apelido continua vencendo tudo", async () => {

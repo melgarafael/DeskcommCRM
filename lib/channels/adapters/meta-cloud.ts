@@ -185,6 +185,84 @@ export const metaCloudAdapter: ChannelAdapter = {
     unknownError: "meta_unknown",
   },
 
+  async fetchInboundMedia(input): Promise<{ buffer: Buffer; mime: string }> {
+    const creds = await resolveMetaCreds(createAdminClient(), {
+      organizationId: input.organizationId,
+      phoneNumberId: input.sessionRef,
+    });
+    if (!creds) {
+      throw new Error("meta_not_configured: sem credencial para baixar a mídia.");
+    }
+
+    const prefix = "meta-media:";
+    if (!input.url.startsWith(prefix)) {
+      throw new Error("meta_media_invalid_ref: ponte não reconhecido.");
+    }
+    const mediaId = input.url.slice(prefix.length);
+    if (!/^[A-Za-z0-9._~-]+$/.test(mediaId)) {
+      throw new Error("meta_media_invalid_ref: media_id inválido.");
+    }
+
+    const headers = { Authorization: `Bearer ${creds.token}` };
+    const lookup = await fetch(
+      `https://graph.facebook.com/${creds.graphVersion}/${encodeURIComponent(mediaId)}`,
+      { headers, signal: AbortSignal.timeout(15_000) },
+    );
+    const metadata = (await lookup.json().catch(() => ({}))) as {
+      url?: string;
+      mime_type?: string;
+      error?: { code?: number; message?: string };
+    };
+    if (!lookup.ok || metadata.error || !metadata.url) {
+      const detalhe = metadata.error?.message ?? lookup.statusText ?? "sem URL";
+      throw new Error(
+        `meta_media_lookup_failed: ${metadata.error?.code ?? lookup.status} ${detalhe}`.trim(),
+      );
+    }
+
+    // ⚠️ ALLOWLIST DE HOST, e ela é fail-closed de propósito: a `url` vem da
+    // resposta da Graph API, e seguir cegamente uma URL que chegou de fora é
+    // SSRF — mesmo vindo de um endereço autenticado.
+    //
+    // O sufixo, e não o host exato. O `lookaside.fbsbx.com` é o que a
+    // documentação da Meta cita, e era o que estava aqui; a leitura mais ampla
+    // (inclusive implementações de referência) descreve a mídia saindo também de
+    // hosts `*.fbcdn.net`. Não consegui MEDIR isso — não há conta Meta nesta
+    // casa —, e essa incerteza decide a direção do erro: um host legítimo
+    // recusado faz a mídia NUNCA chegar, com uma mensagem que parece problema de
+    // segurança e manda quem opera investigar o lugar errado. Um sufixo da Meta
+    // a mais não abre superfície nova.
+    //
+    // Se algum dia a lista precisar crescer de novo, cresça por SUFIXO de
+    // domínio da Meta — nunca para host arbitrário, e nunca sem `https:`.
+    const HOSTS_DE_MIDIA_DA_META = [".fbsbx.com", ".fbcdn.net"] as const;
+    const mediaUrl = new URL(metadata.url);
+    const hostPermitido = HOSTS_DE_MIDIA_DA_META.some(
+      (sufixo) => mediaUrl.hostname === sufixo.slice(1) || mediaUrl.hostname.endsWith(sufixo),
+    );
+    if (mediaUrl.protocol !== "https:" || !hostPermitido) {
+      throw new Error(
+        `meta_media_lookup_failed: host de mídia inesperado (${mediaUrl.protocol}//${mediaUrl.hostname}).`,
+      );
+    }
+
+    const download = await fetch(mediaUrl.toString(), {
+      headers,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!download.ok) {
+      throw new Error(`meta_media_download_failed: ${download.status} ${download.statusText}`.trim());
+    }
+
+    const buffer = Buffer.from(await download.arrayBuffer());
+    const mime =
+      download.headers.get("content-type")?.split(";")[0]?.trim() ||
+      metadata.mime_type ||
+      input.hintMime ||
+      "application/octet-stream";
+    return { buffer, mime };
+  },
+
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
     // Sessão primeiro, env como fallback. O `sessionRef` do canal oficial É o
     // `phone_number_id` (ver `resolveSessionRef`), então ele é a chave da busca.

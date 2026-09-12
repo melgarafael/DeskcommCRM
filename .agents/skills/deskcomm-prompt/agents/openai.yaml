@@ -1,0 +1,6 @@
+interface:
+  display_name: "Afinar o prompt do agente"
+  short_description: "Diagnóstico pelas execuções e vetos, versão nova em rascunho, antes/depois pelo Testar"
+  default_prompt: "Use a skill deskcomm-prompt e me ajude a melhorar o prompt do meu agente, que não está respondendo bem."
+policy:
+  allow_implicit_invocation: true

@@ -51,7 +51,22 @@ export interface ChannelDeletionImpact {
    * enquanto elas existirem. É o que torna o arquivamento obrigatório, não uma
    * preferência.
    */
-  history: { conversations: number; messages: number; agent_versions: number };
+  history: {
+    conversations: number;
+    messages: number;
+    agent_versions: number;
+    /**
+     * Chamadas de voz (migration 0232). Entra em `history`, e não em
+     * `configuration`, porque é REGISTRO do que aconteceu com pessoas — não
+     * ajuste que se refaz. A FK nasceu `on delete cascade` e a lista aqui nem a
+     * enumerava: o diálogo mostrava zeros, oferecia "excluir", e o histórico de
+     * ligações sumia junto. A 0235 a tornou `on delete restrict`, então agora é
+     * o Postgres que garante o arquivamento — esta contagem existe para o
+     * diálogo poder DIZER isso antes do clique, em vez de o usuário descobrir
+     * por um 23503.
+     */
+    voice_calls: number;
+  };
   /**
    * Referências com ON DELETE CASCADE que NÃO são estado de runtime: sumiriam em
    * silêncio junto com a linha. `ai_routers` leva os `ai_router_members` dele
@@ -69,6 +84,7 @@ type DependentTable =
   | "conversations"
   | "messages"
   | "ai_agent_versions"
+  | "voice_calls"
   | "ai_routers"
   | "channel_knobs"
   | "before_send_traces";
@@ -101,16 +117,23 @@ async function loadDeletionImpact(
     return n ?? 0;
   };
 
-  const [conversations, messages, agentVersions, routers, knobs, traces] = await Promise.all([
-    count("conversations"),
-    count("messages"),
-    count("ai_agent_versions"),
-    count("ai_routers"),
-    count("channel_knobs"),
-    count("before_send_traces"),
-  ]);
+  const [conversations, messages, agentVersions, voiceCalls, routers, knobs, traces] =
+    await Promise.all([
+      count("conversations"),
+      count("messages"),
+      count("ai_agent_versions"),
+      count("voice_calls"),
+      count("ai_routers"),
+      count("channel_knobs"),
+      count("before_send_traces"),
+    ]);
 
-  const history = { conversations, messages, agent_versions: agentVersions };
+  const history = {
+    conversations,
+    messages,
+    agent_versions: agentVersions,
+    voice_calls: voiceCalls,
+  };
   const configuration = {
     ai_routers: routers,
     channel_knobs: knobs,

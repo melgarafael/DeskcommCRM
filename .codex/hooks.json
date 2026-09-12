@@ -1,0 +1,16 @@
+{
+  "$comment": "Codex só roda hooks do repositório depois que a pessoa os aprova em /hooks (trust por hash). Este imprime um lembrete de início de sessão apenas em clone de contribuidor — ver .agents/skills/deskcomm-contribuir/scripts/hooks/sessao.sh.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/skills/deskcomm-contribuir/scripts/hooks/sessao.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

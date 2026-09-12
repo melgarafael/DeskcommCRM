@@ -177,6 +177,16 @@ async function connectHandles(
   await page.waitForTimeout(200);
 }
 
+/** Flow-space position from the node's own transform — not the viewport box. */
+async function nodeFlowPosition(page: Page, id: string): Promise<{ x: number; y: number }> {
+  const style = await page.locator(`.react-flow__node[data-id="${id}"]`).getAttribute("style");
+  const m =
+    /translate3d\((-?[\d.]+)px,\s*(-?[\d.]+)px/.exec(style ?? "") ??
+    /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(style ?? "");
+  if (!m) throw new Error(`transform ausente em ${id}: ${style}`);
+  return { x: Number(m[1]), y: Number(m[2]) };
+}
+
 /** All React Flow node ids currently rendered whose id starts with `${prefix}-`, in DOM order. */
 async function nodeIdsByPrefix(page: Page, prefix: string): Promise<string[]> {
   const els = await page.locator(`.react-flow__node[data-id^="${prefix}-"]`).all();
@@ -272,6 +282,79 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
 
     await expect(page.locator(".react-flow__edge")).toHaveCount(3);
     await page.screenshot({ path: "test-results/followup-6.2-02-connected.png", fullPage: true });
+  });
+
+  test("Organizar empilha o fluxo conectado de cima pra baixo, à esquerda de Excluir", async ({
+    page,
+  }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/followups");
+    const flowName = `E2E Organizar ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nome").fill(flowName);
+    await dialog.getByRole("button", { name: "Criar fluxo" }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
+    await expect(page.locator(".react-flow")).toBeVisible();
+
+    await page.getByTestId("palette-add-trigger").click();
+    await page.getByTestId("palette-add-wait").click();
+    await page.getByTestId("palette-add-action").click();
+    await page.getByTestId("palette-add-end").click();
+
+    const zoomOut = page.locator(".react-flow__controls-zoomout");
+    for (let i = 0; i < 5; i++) await zoomOut.click();
+
+    const triggerId = await page
+      .locator('.react-flow__node[data-id^="trigger-"]')
+      .getAttribute("data-id");
+    const waitId = await page
+      .locator('.react-flow__node[data-id^="wait-"]')
+      .getAttribute("data-id");
+    const actionId = await page
+      .locator('.react-flow__node[data-id^="action-"]')
+      .getAttribute("data-id");
+    const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
+    if (!triggerId || !waitId || !actionId || !endId) throw new Error("node ids ausentes");
+
+    await connectHandles(page, triggerId, waitId);
+    await connectHandles(page, waitId, actionId);
+    await connectHandles(page, actionId, endId);
+
+    // Desseleciona a última aresta pra o slot da direita voltar a ser Excluir
+    // (fluxo) — o Organizar tem que ficar imediatamente à esquerda dele.
+    await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+    const organize = page.getByTestId("auto-fit-flow");
+    const excluir = page.getByTestId("delete-followup-flow");
+    await expect(organize).toBeVisible();
+    await expect(excluir).toBeVisible();
+    const organizeBox = await organize.boundingBox();
+    const excluirBox = await excluir.boundingBox();
+    if (!organizeBox || !excluirBox) throw new Error("botões Organizar/Excluir sem bounding box");
+    expect(organizeBox.x).toBeLessThan(excluirBox.x);
+
+    await organize.click();
+    await expect(page.getByTestId("dirty-indicator")).toBeVisible();
+    await page.waitForTimeout(400);
+
+    const t = await nodeFlowPosition(page, triggerId);
+    const w = await nodeFlowPosition(page, waitId);
+    const a = await nodeFlowPosition(page, actionId);
+    const e = await nodeFlowPosition(page, endId);
+    expect(t.y).toBeLessThan(w.y);
+    expect(w.y).toBeLessThan(a.y);
+    expect(a.y).toBeLessThan(e.y);
+    expect(Math.abs(t.x - w.x)).toBeLessThanOrEqual(8);
+    expect(Math.abs(w.x - a.x)).toBeLessThanOrEqual(8);
+    expect(Math.abs(a.x - e.x)).toBeLessThanOrEqual(8);
+
+    await page.screenshot({
+      path: "test-results/followup-6.2-organizar-coluna.png",
+      fullPage: true,
+    });
   });
 
   test("clica no nó Aguardar e configura 10min; clica no nó Ação e configura o prompt_hint", async ({
@@ -464,6 +547,68 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
 
     // 8. Rollback disabled — only 1 version exists (this is the first publish).
     await expect(page.getByTestId("rollback-button")).toBeDisabled();
+  });
+
+  test("exclui nó pelo painel e pela barra; exclui aresta pelo painel", async ({ page }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/followups");
+    const flowName = `E2E Excluir ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nome").fill(flowName);
+    await dialog.getByRole("button", { name: "Criar fluxo" }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.locator("li", { hasText: flowName }).getByRole("link").click();
+    await page.waitForURL(/\/app\/ai\/followups\/[0-9a-f-]+$/);
+    await expect(page.locator(".react-flow")).toBeVisible();
+
+    await page.getByTestId("palette-add-wait").click();
+    await page.getByTestId("palette-add-end").click();
+    await expect(page.locator('[data-testid^="node-card-wait-"]')).toBeVisible();
+    await expect(page.locator('[data-testid^="node-card-end-"]')).toBeVisible();
+
+    await page.locator('[data-testid^="node-card-wait-"]').click();
+    await expect(page.getByTestId("node-config-panel")).toBeVisible();
+    await expect(page.getByTestId("delete-selection")).toHaveText("Excluir nó");
+    await page.getByTestId("delete-node").click();
+    await expect(page.locator('[data-testid^="node-card-wait-"]')).toHaveCount(0);
+    await expect(page.getByTestId("node-config-sheet")).toHaveCount(0);
+
+    await page.locator('[data-testid^="node-card-end-"]').click();
+    await expect(page.getByTestId("delete-selection")).toHaveText("Excluir nó");
+    await page.getByTestId("delete-selection").click();
+    await expect(page.locator('[data-testid^="node-card-end-"]')).toHaveCount(0);
+
+    await page.getByTestId("palette-add-trigger").click();
+    await page.getByTestId("palette-add-end").click();
+    const zoomOut = page.locator(".react-flow__controls-zoomout");
+    for (let i = 0; i < 5; i++) await zoomOut.click();
+    const triggerId = await page
+      .locator('.react-flow__node[data-id^="trigger-"]')
+      .getAttribute("data-id");
+    const endId = await page.locator('.react-flow__node[data-id^="end-"]').getAttribute("data-id");
+    if (!triggerId || !endId) throw new Error("node ids ausentes");
+    await connectHandles(page, triggerId, endId);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+
+    // A grade da paleta (220px) é mais estreita que o card (224px): trigger e
+    // end nascem na mesma linha e a etiqueta da aresta senta debaixo do
+    // destino (`node-card-end-4` no CI). Organizar empilha em coluna e deixa
+    // o rótulo no vão — o mesmo gesto que o operador faria. O pane click
+    // fecha o painel do nó que o connectHandles pode ter deixado aberto.
+    await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+    await page.getByTestId("auto-fit-flow").click();
+    await page.waitForTimeout(400);
+
+    const edgeId = await page.locator(".react-flow__edge").getAttribute("data-id");
+    if (!edgeId) throw new Error("aresta sem id");
+    await page.locator(`[data-testid="rf__edge-${edgeId}"] .react-flow__edge-textbg`).click();
+    await expect(page.getByTestId("edge-config-panel")).toBeVisible();
+    await expect(page.getByTestId("delete-selection")).toHaveText("Excluir aresta");
+    await page.getByTestId("delete-edge").click();
+    await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+    await expect(page.getByTestId("edge-config-sheet")).toHaveCount(0);
   });
 });
 

@@ -41,14 +41,21 @@ type Resultado = { data: { user: unknown }; error: { message: string } | null };
 
 const RECUSA: Resultado = { data: { user: null }, error: { message: "Token has expired" } };
 
-function supabaseQue(resposta: Resultado) {
+function supabaseQue(resposta: Resultado, jaLogado: unknown = null) {
   const verifyOtp = vi.fn(async () => resposta);
   const exchangeCodeForSession = vi.fn(async () => resposta);
+  // `getUser` passou a importar em 2026-09-10: quando o link falha, a rota
+  // pergunta se JÁ existe sessão antes de expulsar (clicar duas vezes no mesmo
+  // link é o caso comum, e o segundo clique não pode deslogar quem o primeiro
+  // logou). Todos os casos abaixo são "ninguém logado", que é o cenário em que
+  // a recusa continua sendo recusa — o contrário mora em
+  // `app/auth/confirm/route.test.ts`.
+  const getUser = vi.fn(async () => ({ data: { user: jaLogado } }));
   vi.mocked(createClient).mockResolvedValue({
-    auth: { verifyOtp, exchangeCodeForSession },
+    auth: { verifyOtp, exchangeCodeForSession, getUser },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
-  return { verifyOtp, exchangeCodeForSession };
+  return { verifyOtp, exchangeCodeForSession, getUser };
 }
 
 const chamar = (query: string) =>

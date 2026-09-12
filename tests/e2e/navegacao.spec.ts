@@ -54,11 +54,13 @@ const sidebar = (page: Page) => page.getByRole("navigation", { name: "Navegaçã
 async function expectSemOverflowHorizontal(page: Page, contexto: string): Promise<void> {
   const m = await page.evaluate(() => ({
     // ⚠️ `body.scrollWidth`, NÃO `documentElement`. `app/globals.css` põe
-    // `overflow-x: hidden` em `html` E em `body` (linhas 422 e 440), e sob isso
-    // o `scrollWidth` do `documentElement` é GRAMPEADO no `clientWidth`: a
-    // conta dá zero mesmo com um filho de 3000px dentro. Medido com o chromium
-    // do repo, viewport 390x844, filho de 3000px — `visible` → 2610,
-    // `hidden` → 0, e `body.scrollWidth` = 3000 nos DOIS casos.
+    // `overflow-x: clip` em `html` E em `body` (é `clip` e não `hidden` porque
+    // `hidden` derruba o sticky da barra — ver barra-lateral-nao-flutua).
+    // Com `hidden`, o `scrollWidth` do `documentElement` era GRAMPEADO no
+    // `clientWidth`: a conta dava zero mesmo com um filho de 3000px dentro.
+    // Medido com o chromium do repo, viewport 390x844, filho de 3000px —
+    // `visible` → 2610, `hidden` → 0, e `body.scrollWidth` = 3000 nos DOIS
+    // casos. A medida fica no `body` para não voltar a ser incapaz de falhar.
     //
     // A asserção existia e era incapaz de falhar. Trocar a medida é o conserto;
     // o caso de sabotagem ao lado é o que prova que a nova consegue.

@@ -31,6 +31,30 @@ export interface PipelineRow {
   settings: Record<string, unknown> | null;
 }
 
+/**
+ * Os tipos de campo que esta tela oferece — DERIVADOS do schema, nunca
+ * reescritos à mão.
+ *
+ * Quando a lista era digitada aqui, ela encolheu sem ninguém ver: `multiselect`
+ * existia em `customFieldSchema`, era gravado pela API e aparecia no dossiê
+ * (`components/contacts/CustomFieldsEditor.tsx`), mas faltava nesta lista. O
+ * efeito para quem abria a tela era um campo que parecia corrompido — o
+ * `<Select>` recebia `value="multiselect"`, nenhum `SelectItem` casava, e o
+ * seletor ficava EM BRANCO. Pior: as opções do campo só apareciam para
+ * `select`, então um multiselect ficava sem como ser editado, e a saída óbvia
+ * (escolher um tipo para "consertar" o branco) transformava a escolha múltipla
+ * em escolha única.
+ *
+ * Derivar do schema faz a divergência deixar de ser possível: tipo novo lá
+ * nasce oferecido aqui.
+ */
+export const TIPOS_DE_CAMPO = customFieldSchema.shape.type.options;
+
+/** Tipos cujo valor sai de uma lista fechada — são os que mostram o campo de opções. */
+export function tipoTemOpcoes(tipo: CustomFieldDef["type"]): boolean {
+  return tipo === "select" || tipo === "multiselect";
+}
+
 function readLostReasons(settings: Record<string, unknown> | null): string[] {
   if (!settings) return [];
   const r = (settings as { lost_reasons?: unknown }).lost_reasons;
@@ -121,17 +145,6 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
     });
   }
 
-  const TIPOS: CustomFieldDef["type"][] = [
-    "text",
-    "textarea",
-    "number",
-    "date",
-    "boolean",
-    "email",
-    "phone",
-    "url",
-    "select",
-  ];
 
   return (
     <div className="space-y-4 border-t border-border pt-6">
@@ -200,7 +213,7 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TIPOS.map((tipo) => (
+                {TIPOS_DE_CAMPO.map((tipo) => (
                   <SelectItem key={tipo} value={tipo}>
                     {tipo}
                   </SelectItem>
@@ -216,7 +229,7 @@ function PipelineEditor({ pipeline }: { pipeline: PipelineRow }) {
             >
               <Trash size={14} aria-hidden />
             </Button>
-            {f.type === "select" && (
+            {tipoTemOpcoes(f.type) && (
               <Input
                 className="md:col-span-3"
                 aria-label={`${t("Opções do campo")} ${i + 1}`}

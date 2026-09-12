@@ -1,0 +1,51 @@
+[
+ {
+  "fase": "antes (origin/main sem os guias)",
+  "cli": "claude",
+  "pergunta": "p2_cliente",
+  "skill_esperada": "deskcomm-cliente-novo",
+  "skill_acionada": false,
+  "ferramentas": 158,
+  "turnos": 15,
+  "duracao_s": 426,
+  "custo_usd": 9.775741750000002,
+  "inicio_da_resposta": "Aqui vai o roteiro, na ordem que o produto exige. A ordem importa porque o agente só usa material e só dispara follow-up na **versão publicada**, e só enxerga fluxos de follow-up que **já foram publicados**. Então você monta as peças primeiro e publica o agente por último.\n\n## 1. Base de conheciment"
+ },
+ {
+  "fase": "antes (origin/main sem os guias)",
+  "cli": "claude",
+  "pergunta": "p3_metricas",
+  "skill_esperada": "deskcomm-metricas",
+  "skill_acionada": false,
+  "ferramentas": 191,
+  "turnos": 3,
+  "duracao_s": 399,
+  "custo_usd": 9.936217500000001,
+  "inicio_da_resposta": "O plano está escrito em `~/.claude/plans/meu-agente-est-atendendo-playful-bonbon.md`. Resumo do que encontrei e do que proponho.\n\n**O produto já responde boa parte, mas não tudo.** Existem três funções SQL prontas e três telas: Desempenho em `/app/metrics` (ganhos, perdidos e 1ª resposta por atenden"
+ },
+ {
+  "fase": "antes (origin/main sem os guias)",
+  "cli": "claude",
+  "pergunta": "p4_prompt",
+  "skill_esperada": "deskcomm-prompt",
+  "skill_acionada": false,
+  "ferramentas": 175,
+  "turnos": 6,
+  "duracao_s": 526,
+  "custo_usd": 11.628729749999996,
+  "inicio_da_resposta": "Não comece pelo prompt. Medi no código como o agente decide escalar, e o texto que você escreve é uma de nove camadas que o modelo lê. Três coisas mais prováveis que o prompt explicam o sintoma, e todas se checam antes de mudar uma palavra.\n\n**Comece por aqui, nesta ordem:**\n\n1. **Confira se a ferra"
+ },
+ {
+  "fase": "antes (origin/main sem os guias)",
+  "cli": "claude",
+  "pergunta": "p5_contribuir",
+  "skill_esperada": "deskcomm-contribuir",
+  "skill_acionada": false,
+  "ferramentas": 14,
+  "turnos": 3,
+  "duracao_s": 11811,
+  "custo_usd": 2.07542375,
+  "observacao": "duração anômala: o processo ficou parado ~3 h (pressão de memória na máquina); comparar só ferramentas e custo",
+  "inicio_da_resposta": "API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)"
+ }
+]

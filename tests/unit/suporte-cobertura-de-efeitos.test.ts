@@ -2,7 +2,25 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 import { expect, it } from "vitest";
-function files(dir:string):string[]{return readdirSync(dir,{withFileTypes:true}).flatMap(item=>item.isDirectory()?files(join(dir,item.name)):[join(dir,item.name)]);}
+
+import { emBarraNormal } from "./helpers/caminho";
+// A varredura devolve SEMPRE barra normal. Sem isto, no Windows ela devolvia
+// `app\api\v1\...` e os dois `it` abaixo erravam em direções opostas: o
+// `endsWith("/route.ts")` do primeiro casava ZERO arquivos (253 rotas passavam
+// sem inspeção, e o gate ficava verde sem ter olhado nada), e o
+// `p.split("/").at(-1)` do segundo devolvia o caminho inteiro, então as três
+// exceções declaradas no `Set` de `exceptions` nunca casavam e os três arquivos
+// justificados viravam acusação. No CI (Linux) passava, que é o que manteve o
+// defeito vivo até aqui.
+function files(dir:string):string[]{return readdirSync(dir,{withFileTypes:true}).flatMap(item=>item.isDirectory()?files(join(dir,item.name)):[join(dir,item.name)]).map(emBarraNormal);}
+
+// Controle positivo: sem ele, uma varredura quebrada devolve zero arquivos e
+// zero é indistinguível de "está tudo em ordem" — foi assim que o separador de
+// caminho passou despercebido. Mesma doutrina de `helpers/varrer-codigo.ts`.
+it("a varredura enxerga os handlers e as actions que ela diz cobrir",()=>{
+ expect(files("app/api/v1").filter(p=>p.endsWith("/route.ts")).length).toBeGreaterThan(100);
+ expect(files("app/actions").filter(p=>!p.endsWith(".test.ts")).length).toBeGreaterThan(10);
+});
 it("todo handler mutante do app declara guarda de suporte ou é infraestrutura identificada",()=>{
  const uncovered:string[]=[];
  for(const path of files("app/api/v1").filter(p=>p.endsWith("/route.ts"))){

@@ -1,13 +1,17 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { issueInvite } from "@/lib/auth/issue-invite";
+import { emitirConvite } from "@/lib/team/convites";
 import { isServiceRoleConfigured } from "@/lib/audit";
 /**
  * POST /api/v1/team/invite — bulk-invite up to 20 emails.
  *
- * Pragmatic MVP: invitations are stateless HMAC tokens (no team_invites table).
- * If a user with that email already has an active membership in the org, we
- * skip with reason `already_member`. Otherwise we sign a 24h token containing
- * a fresh invite_id (uuid) + email + org_id + role and email the link.
+ * O que viaja no e-mail é um token HMAC stateless (`lib/auth/invite-token.ts`).
+ * Quando o service-role está configurado, cada convite também vira uma linha em
+ * `team_invites` (migration 0238) — é o que a tela de Equipe lista e o que
+ * torna a revogação possível. Reconvidar um e-mail com convite pendente RENOVA
+ * a linha. Sem service-role, degrada para só-token (nada some, só não persiste).
+ *
+ * Se o e-mail já tem membership ATIVA na org, pula com `already_member`.
  *
  * Membership row is created at /accept-invite time (Server Action) — that's
  * also when audit emits `member.accepted`. Here we audit `member.invited`.
@@ -90,8 +94,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    sent.push(
-      await issueInvite({
+    if (admin) {
+      const { convite, accept_url, email_dispatched } = await emitirConvite(admin, {
         email,
         role: inv.role,
         interfaceSettings: inv.interface_settings,
@@ -100,8 +104,28 @@ export async function POST(req: NextRequest): Promise<Response> {
         inviterId: authUser.id,
         inviterName,
         requestId,
-      }),
-    );
+      });
+      sent.push({
+        email,
+        invite_id: convite.id,
+        expires_at: convite.expires_at,
+        email_dispatched,
+        accept_url,
+      });
+    } else {
+      sent.push(
+        await issueInvite({
+          email,
+          role: inv.role,
+          interfaceSettings: inv.interface_settings,
+          organizationId: activeOrg.orgId,
+          orgName: activeOrg.name,
+          inviterId: authUser.id,
+          inviterName,
+          requestId,
+        }),
+      );
+    }
   }
 
   return ok({ sent, failed }, { status: 201, requestId });

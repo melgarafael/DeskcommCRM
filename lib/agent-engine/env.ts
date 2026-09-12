@@ -80,6 +80,11 @@ const envSchema = z.object({
   WATCHDOG_REDRIVE_MIN_AGE_MS: z.coerce.number().int().positive().default(30_000),
   WATCHDOG_REDRIVE_BATCH_SIZE: z.coerce.number().int().positive().default(10),
   WATCHDOG_REDRIVE_SPACING_MS: z.coerce.number().int().positive().default(4_000),
+  // Ponte de eventos WaCalls (spec 18) — chamada de voz, opt-in por org. Sem
+  // WACALLS_API_BASE_URL a ponte fica OFF (warn), mesmo princípio do watchdog
+  // WAHA acima.
+  WACALLS_API_BASE_URL: z.string().url().optional(),
+  WACALLS_BRIDGE_MAX_BACKOFF_MS: z.coerce.number().int().positive().default(30_000),
   // Dono ÚNICO dos eventos ai_agent.dispatch_requested (mesma chave do app):
   // 'engine' (default) = o drain deste worker consome; 'native' = o dispatcher
   // EPIC-13 consome e o drain daqui NÃO liga. Nunca os dois.

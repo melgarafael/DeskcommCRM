@@ -12,10 +12,12 @@ import { describe, expect, it } from "vitest";
 import {
   CHANNEL_CAPABILITIES,
   capabilitiesOf,
+  transportaMensagem,
   type ChannelProvider,
+  type ProviderDeMensagem,
 } from "@/lib/channels/capabilities";
 
-const PROVIDERS = ["waha", "meta_cloud", "zernio"] as const satisfies readonly ChannelProvider[];
+const PROVIDERS = ["waha", "meta_cloud", "zernio"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * Esquecer um provider aqui passa a ser erro de COMPILAÇÃO.
@@ -25,7 +27,7 @@ const PROVIDERS = ["waha", "meta_cloud", "zernio"] as const satisfies readonly C
  * afirmando exaustividade que não tinha. O tipo abaixo é `never` enquanto
  * sobrar provider fora da lista, e `tsc` reprova — antes do teste rodar.
  */
-type ProviderNaoVarrido = Exclude<ChannelProvider, (typeof PROVIDERS)[number]>;
+type ProviderNaoVarrido = Exclude<ProviderDeMensagem, (typeof PROVIDERS)[number]>;
 const _todoProviderEstaNaLista: ProviderNaoVarrido extends never ? true : never = true;
 void _todoProviderEstaNaLista;
 const CAPABILITIES = [
@@ -58,6 +60,21 @@ describe("matriz capability × provider é exaustiva", () => {
 
   it("resolução é fail-closed — provider desconhecido lança", () => {
     expect(() => capabilitiesOf("telegram" as ChannelProvider)).toThrow(/unknown_channel_provider/);
+  });
+
+  it("chamada de voz não responde a pergunta de canal de mensagem", () => {
+    // `wacalls` É um provider válido de `channel_sessions` (o CHECK do banco o
+    // aceita desde a migration 0232) e NÃO é canal de mensagem. Perguntar a ele
+    // o que a matriz mede é erro de categoria, e a resposta certa é lançar —
+    // não um objeto com tudo `false`, que faria a pergunta parecer legítima e
+    // deixaria o chamador seguir adiante achando que tem um canal na mão.
+    expect(() => capabilitiesOf("wacalls" as ChannelProvider)).toThrow(/unknown_channel_provider/);
+    expect(transportaMensagem("wacalls")).toBe(false);
+    for (const p of PROVIDERS) expect(transportaMensagem(p)).toBe(true);
+    // Provider mais novo que este código (clone que atualizou o schema antes da
+    // imagem) também não serve para mandar recado.
+    expect(transportaMensagem("telegram")).toBe(false);
+    expect(transportaMensagem(null)).toBe(false);
   });
 
   it("as duas famílias de restrição são mutuamente exclusivas por provider", () => {

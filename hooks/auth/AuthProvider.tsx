@@ -140,6 +140,14 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   "ai.credentials.view": "manager",
   "ai.credentials.write": "admin",
   "webhooks.manage": "manager",
+  // Chamada de voz (spec 18). `agent` porque ligar e atender é ato de
+  // atendimento, não de configuração — e porque é o piso que as rotas de
+  // `app/api/v1/voice/calls/*` exigem. Quem não alcança este piso (viewer, e
+  // acompanhamento administrativo somente-leitura, que é rebaixado a viewer em
+  // `resolveActiveOrg`) não sonda, não assina e não vê telefone tocar: um
+  // banner de chamada para quem não pode atendê-la é uma promessa falsa, e a
+  // sondagem por trás dele levava 403 em toda navegação.
+  "voice.call": "agent",
 };
 
 export function usePermission(action: string): boolean {

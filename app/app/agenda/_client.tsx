@@ -417,7 +417,7 @@ export function AgendaClient({
                   "rounded-sm px-2.5 py-1 text-xs transition-colors duration-fast ease-out",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500",
                   visao === v.id
-                    ? "bg-accent font-semibold text-accent-fg"
+                    ? "bg-accent font-semibold text-accent-foreground"
                     : "text-text-muted hover:bg-surface-elevated hover:text-text",
                 )}
               >

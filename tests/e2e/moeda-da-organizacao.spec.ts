@@ -43,6 +43,14 @@ async function loginAdmin(page: Page): Promise<void> {
 /** Código único por execução — reruns num banco compartilhado ficam verdes. */
 const SUFIXO = Date.now().toString(36);
 
+// Dois casos, cada um com `loginComoAdmin`. O helper espera a janela TOTP
+// virar quando o código da suíte já foi usado — e essa espera sozinha come os
+// 30 s do teto global. Medido no CI: o primeiro caso passou em 7,9 s; o segundo
+// estourou 30 s esperando a linha do produto, enquanto o `afterEach` já tinha
+// navegado de volta para Configurações. Mesmo padrão de `navegacao.spec.ts` e
+// `prova-painel-provedores.spec.ts`.
+test.describe.configure({ timeout: 90_000 });
+
 test.describe("moeda da organização", () => {
   test.afterEach(async ({ page }) => {
     // Devolve o padrão para não vazar estado a outros specs do mesmo banco.
@@ -95,16 +103,19 @@ test.describe("moeda da organização", () => {
     await expect(page.getByText(/organiza..o atualizada/i)).toBeVisible({ timeout: 10_000 });
 
     await page.goto("/app/products");
+    await expect(page.getByTestId("tela-produtos")).toBeVisible();
     await page.getByTestId("novo-produto").click();
+    await expect(page.getByTestId("form-produto")).toBeVisible();
 
     const codigo = `E2E-MXN-${SUFIXO}`;
     await page.getByTestId("produto-codigo").fill(codigo);
     await page.getByLabel(/^Nome$/).fill("Producto de prueba MXN");
     await page.getByTestId("produto-preco").fill("249,90");
     await page.getByTestId("salvar-produto").click();
+    await expect(page.getByText(/produto cadastrado/i)).toBeVisible({ timeout: 15_000 });
 
     const linha = page.getByTestId(`produto-${codigo}`);
-    await expect(linha).toBeVisible({ timeout: 10_000 });
+    await expect(linha).toBeVisible({ timeout: 15_000 });
 
     // ⚠️ A ASSERÇÃO É O NÚMERO, não a presença da linha. `comoMoeda()` (o
     // ajudante que este PR removeu) mostraria "MXN 249,90" aqui — os mesmos

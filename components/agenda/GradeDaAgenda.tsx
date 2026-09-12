@@ -565,7 +565,7 @@ function ColunaDeDia({
         <span
           className={cn(
             "flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums",
-            ehHoje ? "bg-accent text-accent-fg font-semibold" : "text-text",
+            ehHoje ? "bg-accent text-accent-foreground font-semibold" : "text-text",
           )}
         >
           {format(dia, "d")}
@@ -677,7 +677,7 @@ function VisaoDeMes({
                   className={cn(
                     "flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums",
                     isSameDay(d, agora)
-                      ? "bg-accent font-semibold text-accent-fg"
+                      ? "bg-accent font-semibold text-accent-foreground"
                       : doMes
                         ? "text-text"
                         : "text-text-subtle",

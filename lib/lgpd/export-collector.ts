@@ -197,6 +197,19 @@ export interface AppointmentNoticeRow {
   resolved_at: string | null;
 }
 
+/** Uma chamada de voz do titular — o registro, não a gravação (não gravamos). */
+export interface VoiceCallRow {
+  id: string;
+  direction: string;
+  peer_phone: string;
+  status: string;
+  end_reason: string | null;
+  started_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
+}
+
 export interface ExportPayload {
   request_id: string;
   organization_id: string;
@@ -226,6 +239,16 @@ export interface ExportPayload {
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
   appointment_notices: AppointmentNoticeRow[];
+  /**
+   * Chamadas de voz (migration 0232).
+   *
+   * Entra porque a anonimização APAGA: a 0235 pôs `voice_calls` na cascata de
+   * redação, e o que se apaga a pedido do titular é o que se entrega a pedido
+   * dele. Sem este bloco o relatório dizia "houve uma atividade de chamada" na
+   * linha do tempo e não mostrava chamada nenhuma — export incoerente com o
+   * próprio cascade.
+   */
+  voice_calls: VoiceCallRow[];
   reply_drafts?: Array<{
     id: string;
     status: string;
@@ -583,6 +606,32 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Chamadas de voz — `contact_id` direto em `voice_calls` (migration 0232).
+  //
+  // O que existe aqui é o REGISTRO da ligação, nunca o áudio: gravação está
+  // deliberadamente fora do produto (spec 18 §1.2), então não há mídia a
+  // enfileirar como acontece com foto e anexo.
+  let voice_calls: VoiceCallRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("voice_calls")
+      .select(
+        "id, direction, peer_phone, status, end_reason, started_at, answered_at, ended_at, duration_ms",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("started_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] voice calls load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      voice_calls = data as VoiceCallRow[];
+    }
+  }
+
   // Captação por webhook — a MESMA classe do bloco acima, achada pelo gate.
   let webhook_captures: CaptureRow[] = [];
   if (contactId) {
@@ -757,6 +806,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     reply_drafts,
     meeting_deliveries,
     appointment_notices,
+    voice_calls,
   };
 }
 
@@ -787,5 +837,6 @@ function emptyPayload(
     audit_log_extract: [],
     meeting_deliveries: [],
     appointment_notices: [],
+    voice_calls: [],
   };
 }

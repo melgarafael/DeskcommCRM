@@ -63,12 +63,18 @@ supabase/.branches/
 .claude/*
 !.claude/agents/
 !.claude/commands/
-# skills/: allowlist explícita — só as deste repo. Liberar a pasta inteira
+# settings.json: só o hook de início de sessão dos guias (fala apenas em clone de contribuidor)
+!.claude/settings.json
+# skills/: allowlist por PREFIXO — só as deste repo. Liberar a pasta inteira
 # arrastaria skills locais de outros apps (Lina etc.) para o versionamento.
+# `.claude/skills/` é ESPELHO gerado de `.agents/skills/` (fonte única, lida
+# por Codex/Cursor/OpenCode/Antigravity); `pnpm skills:sync` regrava e
+# `tests/unit/skills-embutidas.test.ts` reprova divergência — inclusive uma
+# skill nova que este arquivo esconda do `git add`.
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/sistema-vivo/
-!.claude/skills/DeskcommCRM/
+!.claude/skills/deskcomm-*/
 
 # Local docker volumes (WAHA)
 .waha-data/

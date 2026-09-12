@@ -252,6 +252,22 @@ sem: typecheck/lint zerados, testes relevantes verdes, RLS testada se tocou tabe
 tenant-aware, migration + baseline + MANIFEST se mudou schema, prova visual se mudou UI, e a
 regra de packaging acima se mudou o artefato que o self-hoster instala.
 
+## Guias do assistente (skills embutidas)
+
+O repositório embute guias em `.agents/skills/` — lidos por Codex, Cursor, OpenCode e
+Antigravity; o Claude Code lê o espelho em `.claude/skills/` (`pnpm skills:sync` regrava, e
+`tests/unit/skills-embutidas.test.ts` reprova divergência). Carregue o guia quando o pedido
+casar, mesmo que a pessoa não saiba que ele existe:
+
+| situação | guia |
+|---|---|
+| instalar, atualizar ou consertar a instalação numa VPS; domínio, Supabase, WhatsApp que não conecta | `deskcomm-instalar` |
+| configurar o CRM para um cliente ou nicho: agentes, roteadores, follow-ups, base de conhecimento | `deskcomm-cliente-novo` |
+| desempenho, conversão, custo de IA, funil, relatório | `deskcomm-metricas` |
+| o agente responde errado, passa tudo para humano, não usa a agenda; melhorar o prompt | `deskcomm-prompt` |
+| contribuir: corrigir bug, abrir ou atualizar PR, migration, conflito com a `main` | `deskcomm-contribuir` — que fica quieto quando `bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh` responde `mantenedor` |
+| escrever ou revisar código aqui | `deskcomm-doutrina` (as três regras que mais custam) e `sistema-vivo` (o gate de arquitetura) |
+
 ## Regra final — não invente
 
 Este repositório tem PRDs, specs, regras de negócio e doutrina escritos

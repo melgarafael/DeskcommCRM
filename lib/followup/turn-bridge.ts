@@ -360,6 +360,49 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
         [item.organization_id, item.title, item.body, item.ref_id],
       );
     },
+    async abrirAvisoRecuperacaoEsgotada(item) {
+      // ⚠️ `insert ... select`, e NÃO `insert ... values`. A diferença é a
+      // guarda de LGPD, e ela precisa estar DENTRO da escrita.
+      //
+      // Esta é a QUARTA porta para `appointment_recovery_review`, e as outras
+      // três já guardam anonimização — `fn_appointment_recover` recusa contato
+      // anonimizado, `fn_meet_redact_contact` resolve os abertos, e há um bloco
+      // de cura no baseline. Esta nascia sem, e a consequência é concreta:
+      //
+      //   a cascata de LGPD NÃO cancela `followup_enrollments` (medido, com
+      //   controle positivo). Um contato anonimizado com régua em curso chega
+      //   ao fim dela DEPOIS da redação — e reabriria, aqui, um aviso
+      //   apontando para o compromisso que a anonimização tinha desligado.
+      //
+      // Um `if` em TypeScript antes do insert resolveria o caso e deixaria a
+      // guarda a um refactor de distância de sumir. No `select` ela é parte da
+      // escrita: quem mudar a consulta tem de apagar a linha de propósito.
+      //
+      // O contato vem do COMPROMISSO, não do enrollment: é o vínculo que a
+      // anonimização de fato percorre.
+      //
+      // `on conflict do nothing` casa o índice parcial da 0224
+      // (inbox_appointment_revision_unique): repetir num reprocesso é no-op.
+      await pool.query(
+        `insert into agent_inbox_items
+           (organization_id, kind, severity, title, body, ref_kind, ref_id, appointment_revision)
+         select $1, 'appointment_recovery_review', 'warn',
+                'Cliente faltou e não respondeu à recuperação',
+                'As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.',
+                'appointment', a.id, $3
+           from calendar_appointments a
+           join contacts c
+             on c.organization_id = a.organization_id
+            and c.id = a.contact_id
+          where a.organization_id = $1
+            and a.id = $2
+            and not c.is_anonymized
+         on conflict (organization_id, ref_id, appointment_revision, kind)
+           where ref_kind = 'appointment' and appointment_revision is not null
+           do nothing`,
+        [item.organization_id, item.appointment_id, item.appointment_revision],
+      );
+    },
     async persistirRespostaFollowup(input) {
       await persistirRespostaFollowupPg((sql, params) => pool.query(sql, params), input);
     },

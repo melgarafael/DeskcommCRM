@@ -1,0 +1,250 @@
+[
+ {
+  "fase": "depois",
+  "cli": "claude",
+  "pergunta": "p1_instalar",
+  "skill_esperada": "deskcomm-instalar",
+  "skill_acionada": true,
+  "ferramentas": 1,
+  "turnos": 3,
+  "duracao_s": 40,
+  "custo_usd": 1.7558174999999998,
+  "leituras_de_skill": [
+   "Skill → deskcomm-instalar"
+  ],
+  "inicio_da_resposta": "Você já tem o principal, que é o servidor. A partir daqui o caminho é curto: eu faço a parte técnica e você só me entrega o que só você tem. Antes de qualquer comando, preciso de três coisas que a instalação vai pedir:\n\n1. **Uma chave de inteligência artificial.** É o que faz o atendente virtual da "
+ },
+ {
+  "fase": "depois",
+  "cli": "codex",
+  "pergunta": "p1_instalar",
+  "skill_esperada": "deskcomm-instalar",
+  "skill_acionada": true,
+  "ferramentas": 1,
+  "turnos": 1,
+  "duracao_s": 15,
+  "custo_usd": null,
+  "leituras_de_skill": [
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-instalar/SKILL.md'"
+  ],
+  "inicio_da_resposta": "Oi! Vamos por etapas. Primeiro acessamos sua VPS; depois instalamos o CRM e configuramos o atendimento da clínica.\n\nA VPS é o computador que ficará ligado na HostGator para manter o sistema funcionando. A instalação precisa acontecer dentro dele.\n\n**Você está no seu computador, com o painel da HostG"
+ },
+ {
+  "fase": "depois",
+  "cli": "opencode",
+  "pergunta": "p1_instalar",
+  "skill_esperada": "deskcomm-instalar",
+  "skill_acionada": true,
+  "ferramentas": 1,
+  "turnos": 2,
+  "duracao_s": 54,
+  "custo_usd": 0,
+  "leituras_de_skill": [
+   "skill → {\"name\":\"deskcomm-instalar\"}"
+  ],
+  "inicio_da_resposta": "Oi! Vamos instalar o CRM na sua VPS. Para eu te guiar no caminho certo, preciso de uma informação:\n\n**Você já está conectada na VPS pelo terminal (SSH)?** Ou ainda está no seu computador e precisa de ajuda para entrar no servidor?\n\nSe nunca entrou por SSH antes, tudo bem — me avisa que te explico co"
+ },
+ {
+  "fase": "depois",
+  "cli": "claude",
+  "pergunta": "p2_cliente",
+  "skill_esperada": "deskcomm-cliente-novo",
+  "skill_acionada": true,
+  "ferramentas": 8,
+  "turnos": 10,
+  "duracao_s": 90,
+  "custo_usd": 2.27266825,
+  "leituras_de_skill": [
+   "Skill → deskcomm-cliente-novo",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-cliente-novo/references/nichos.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-cliente-novo/references/triagem.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-cliente-novo/references/pela-tela.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-cliente-novo/references/prompt-do-agente.md"
+  ],
+  "inicio_da_resposta": "O roteiro completo está em `/Users/rafaelmelgaco/.claude/plans/j-instalei-o-crm-adaptive-dusk.md`. Segui o guia embutido do próprio CRM para montar cliente por nicho, adaptado a odontologia. O resumo do caminho:\n\n**Antes de mexer em qualquer tela, me passe as respostas da triagem.** Sem elas o agent"
+ },
+ {
+  "fase": "depois",
+  "cli": "codex",
+  "pergunta": "p2_cliente",
+  "skill_esperada": "deskcomm-cliente-novo",
+  "skill_acionada": true,
+  "ferramentas": 2,
+  "turnos": 1,
+  "duracao_s": 24,
+  "custo_usd": null,
+  "leituras_de_skill": [
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-cliente-novo/SKILL.md'",
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-cliente-novo/references/triagem.md .agents/skills/deskcomm-cliente-novo/references/nichos.md .agents/skills/"
+  ],
+  "inicio_da_resposta": "Vamos montar por etapas: **base de conhecimento → follow-ups → agente → teste → publicação**. Primeiro precisamos definir as regras da sua clínica para preparar os textos certos.\n\nPara começar, a proposta é **um agente de recepção**, responsável por tirar dúvidas e ajudar no agendamento. O roteiro n"
+ },
+ {
+  "fase": "depois",
+  "cli": "opencode",
+  "pergunta": "p2_cliente",
+  "skill_esperada": "deskcomm-cliente-novo",
+  "skill_acionada": true,
+  "ferramentas": 1,
+  "turnos": 2,
+  "duracao_s": 15,
+  "custo_usd": 0,
+  "leituras_de_skill": [
+   "skill → {\"name\":\"deskcomm-cliente-novo\"}"
+  ],
+  "inicio_da_resposta": "Perfeito — instalação feita, WhatsApp conectado. Falta a parte que faz o agente **vender** para seus pacientes.\n\nAntes de montar tudo, preciso entender o seu negócio. Vou te fazer perguntas uma por vez.\n\n**Pergunta 1:** Esse CRM é para o seu próprio consultório ou você está configurando para um clie"
+ },
+ {
+  "fase": "depois",
+  "cli": "claude",
+  "pergunta": "p3_metricas",
+  "skill_esperada": "deskcomm-metricas",
+  "skill_acionada": true,
+  "ferramentas": 12,
+  "turnos": 14,
+  "duracao_s": 175,
+  "custo_usd": 2.6288324999999997,
+  "leituras_de_skill": [
+   "Skill → deskcomm-metricas",
+   "Bash → ls -la /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-metricas/references/ && wc -l /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/des",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-metricas/references/acesso-e-lgpd.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-metricas/references/consultas.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-metricas/references/regua-e-armadilhas.md"
+  ],
+  "inicio_da_resposta": "Plano escrito. Falta só o que depende de você.\n\n**Consigo analisar, e o caminho já está montado.** O repositório traz um guia próprio de métricas com as consultas prontas, a régua de cada número e a fronteira de privacidade (só agregados, nunca conversa, nome ou telefone). O plano está em `/Users/ra"
+ },
+ {
+  "fase": "depois",
+  "cli": "codex",
+  "pergunta": "p3_metricas",
+  "skill_esperada": "deskcomm-metricas",
+  "skill_acionada": true,
+  "ferramentas": 2,
+  "turnos": 1,
+  "duracao_s": 22,
+  "custo_usd": null,
+  "leituras_de_skill": [
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-metricas/SKILL.md'",
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-metricas/references/acesso-e-lgpd.md'"
+  ],
+  "inicio_da_resposta": "Vamos analisar três pontos:\n\n- **Vendas:** ganhos, perdas, taxa de ganho sobre negócios fechados e tempo até vender, distinguindo a participação da IA e da equipe quando os registros permitirem.\n- **Gargalos:** quantidade e tempo parado em cada etapa, motivos de perda, encaminhamentos para humanos e"
+ },
+ {
+  "fase": "depois",
+  "cli": "opencode",
+  "pergunta": "p3_metricas",
+  "skill_esperada": "deskcomm-metricas",
+  "skill_acionada": true,
+  "ferramentas": 1,
+  "turnos": 2,
+  "duracao_s": 22,
+  "custo_usd": 0,
+  "leituras_de_skill": [
+   "skill → {\"name\":\"deskcomm-metricas\"}"
+  ],
+  "inicio_da_resposta": "Boa, vamos analisar. Antes de rodar qualquer consulta no banco, preciso alinhar a régua:\n\n**Passo 0 — Acesso aos dados**\n\nPara ler o banco, preciso de um de dois caminhos:\n\n1. **Connection string do Supabase** (`SUPABASE_DB_URL` do `.env` da VPS) — acesso direto ao Postgres via `psql`. Manda a strin"
+ },
+ {
+  "fase": "depois",
+  "cli": "claude",
+  "pergunta": "p4_prompt",
+  "skill_esperada": "deskcomm-prompt",
+  "skill_acionada": true,
+  "ferramentas": 7,
+  "turnos": 9,
+  "duracao_s": 88,
+  "custo_usd": 2.16219975,
+  "leituras_de_skill": [
+   "Skill → deskcomm-prompt",
+   "Bash → ls /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-prompt/references/ && wc -l /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-prompt/references/diagnostico.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.claude/skills/deskcomm-prompt/references/anatomia-e-antipadroes.md",
+   "Bash → sed -n 480,530p lib/agent-engine/guardrails/before-send.ts; echo \"=== nichos imobiliária ===\"; rg -n -i -B2 -A25 \"imobili\" .claude/skills/deskcomm-client"
+  ],
+  "inicio_da_resposta": "Comece pela capacidade, não pelo texto. O guia embutido no repositório (`deskcomm-prompt`) trata exatamente esse sintoma, e ele manda diagnosticar antes de reescrever.\n\n**Por que não abrir o prompt primeiro.** O motor tem um portão chamado `agenda_stall` que barra frases como \"vou confirmar o horári"
+ },
+ {
+  "fase": "depois",
+  "cli": "codex",
+  "pergunta": "p4_prompt",
+  "skill_esperada": "deskcomm-prompt",
+  "skill_acionada": true,
+  "ferramentas": 2,
+  "turnos": 1,
+  "duracao_s": 26,
+  "custo_usd": null,
+  "leituras_de_skill": [
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-prompt/SKILL.md'",
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-prompt/references/diagnostico.md .agents/skills/deskcomm-prompt/references/anatomia-e-antipadroes.md'"
+  ],
+  "inicio_da_resposta": "Comece por **descobrir por que ele transfere antes de tentar agendar**. Pode ser uma instrução ampla no prompt, como “encaminhe qualquer dúvida ao corretor”, mas também pode faltar acesso à agenda ou informação sobre os imóveis.\n\nO caminho é:\n\n1. **Identificar a versão publicada** e conferir se ela "
+ },
+ {
+  "fase": "depois",
+  "cli": "opencode",
+  "pergunta": "p4_prompt",
+  "skill_esperada": "deskcomm-prompt",
+  "skill_acionada": true,
+  "ferramentas": 1,
+  "turnos": 2,
+  "duracao_s": 35,
+  "custo_usd": 0,
+  "leituras_de_skill": [
+   "skill → {\"name\":\"deskcomm-prompt\"}"
+  ],
+  "inicio_da_resposta": "O diagnóstico primeiro, reescrita depois. O sintoma que você descreve — \"passa tudo pro corretor e não marca visita\" — tem pelo menos 3 causas possíveis, e nem todas são o prompt:\n\n| Causa provável | Sinal que confirma |\n|---|---|\n| **Prompt manda encaminhar a uma pessoa nomeada** | \"Vou passar pro "
+ },
+ {
+  "fase": "depois",
+  "cli": "claude",
+  "pergunta": "p5_contribuir",
+  "skill_esperada": "deskcomm-contribuir",
+  "skill_acionada": true,
+  "ferramentas": 11,
+  "turnos": 13,
+  "duracao_s": 100,
+  "custo_usd": 2.4154639999999996,
+  "leituras_de_skill": [
+   "Skill → deskcomm-contribuir",
+   "Bash → bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh 2>&1; echo \"exit=$?\"",
+   "Bash → ls .agents/skills/deskcomm-contribuir/scripts .agents/skills/deskcomm-contribuir/references 2>&1; git remote -v; git config user.email; git branch --show",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.agents/skills/deskcomm-contribuir/references/pre-voo.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.agents/skills/deskcomm-contribuir/references/erros-recorrentes.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.agents/skills/deskcomm-contribuir/references/depois-do-pr.md",
+   "Read → /Users/rafaelmelgaco/wt/prova-skills/.agents/skills/deskcomm-contribuir/references/receita-e2e-local.md"
+  ],
+  "inicio_da_resposta": "O repositório já traz um guia de contribuidor embutido, e ele se aplica a você: o script de identidade respondeu \"contribuidor\". Antes do roteiro, três coisas que medi neste checkout e que travam o passo 1:\n\n- **O `origin` não existe.** `git fetch origin` devolve \"Repository not found\" para `github."
+ },
+ {
+  "fase": "depois",
+  "cli": "codex",
+  "pergunta": "p5_contribuir",
+  "skill_esperada": "deskcomm-contribuir",
+  "skill_acionada": true,
+  "ferramentas": 5,
+  "turnos": 1,
+  "duracao_s": 64,
+  "custo_usd": null,
+  "leituras_de_skill": [
+   "command → /bin/zsh -lc 'cat .agents/skills/deskcomm-contribuir/SKILL.md'",
+   "command → /bin/zsh -lc 'bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh'"
+  ],
+  "inicio_da_resposta": "O caminho é **reproduzir o bug, criar uma branch da `main` oficial, corrigir com teste e abrir o PR com evidências**. Conferi o [guia de contribuição](/Users/rafaelmelgaco/wt/prova-skills/CONTRIBUTING.md): seu `origin` aponta para um fork, e este checkout está sem branch ativa.\n\n1. **Registre o bug "
+ },
+ {
+  "fase": "depois",
+  "cli": "opencode",
+  "pergunta": "p5_contribuir",
+  "skill_esperada": "deskcomm-contribuir",
+  "skill_acionada": true,
+  "ferramentas": 2,
+  "turnos": 3,
+  "duracao_s": 39,
+  "custo_usd": 0,
+  "leituras_de_skill": [
+   "skill → {\"name\":\"deskcomm-contribuir\"}",
+   "bash → {\"command\":\"bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh\",\"workdir\":\"/Users/rafaelmelgaco/wt/prova-skills\"}"
+  ],
+  "inicio_da_resposta": "Perfeito! Vamos seguir o processo completo. Primeiro, descobrir quem você é neste repositório:Ok, você é **contribuidor** via fork. Vamos seguir o processo completo. Aqui está o plano:\n\n---\n\n## Seu checklist de contribuição\n\n### **Passo 0 — Sincronizar com a main**\n```bash\ngit fetch origin\n```\nDepoi"
+ }
+]

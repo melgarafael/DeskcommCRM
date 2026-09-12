@@ -41,6 +41,10 @@ import {
   type NodeResult,
 } from "./node-handlers";
 import { coletarEsperasAdaptativas, type EsperaAdaptativa, type TimingPlan } from "./timing-plan";
+import {
+  avisoDeRecuperacaoEsgotada,
+  type AvisoRecuperacaoEsgotada,
+} from "./no-show-recuperacao-esgotada";
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
 
 const MAX_STEPS = 80;
@@ -125,6 +129,13 @@ export interface AdminClient {
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
   loadFlowPointerName(orgId: string, pointerId: string): Promise<string | null>;
   insertDeadInboxItem(item: { organization_id: string; title: string; body: string; ref_id: string }): Promise<void>;
+  /**
+   * Régua de recuperação de falta esgotada sem resposta — abre um item na
+   * Central referenciando o COMPROMISSO. Opcional: só a produção precisa; os
+   * adaptadores de teste que não exercitam no-show podem omitir. Ver
+   * `no-show-recuperacao-esgotada.ts`.
+   */
+  abrirAvisoRecuperacaoEsgotada?(item: AvisoRecuperacaoEsgotada): Promise<void>;
   persistirRespostaFollowup(input: {
     organization_id: string;
     contact_id: string;
@@ -447,6 +458,16 @@ async function applyResult(
       patch.outcome = result.outcome;
       if (result.cancel_reason) patch.cancel_reason = result.cancel_reason;
       break;
+  }
+
+  // Aviso ANTES do `status='completed'`, mesma ordem (e mesma razão) de
+  // `markDead`: se cair entre as duas escritas, o enrollment continua
+  // claimable e um tick futuro re-executa `complete` → re-tenta o aviso (o
+  // índice único da 0224 torna a repetição um no-op). A ordem inversa
+  // arriscaria o aviso NUNCA sair.
+  const avisoEsgotada = avisoDeRecuperacaoEsgotada(enrollment, result, isReplay);
+  if (avisoEsgotada) {
+    await db.abrirAvisoRecuperacaoEsgotada?.(avisoEsgotada);
   }
 
   await db.updateEnrollment(enrollment.id, enrollment.organization_id, patch);
@@ -827,6 +848,27 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         ref_id: item.ref_id,
       });
       if (error) throw new Error(error.message);
+    },
+    async abrirAvisoRecuperacaoEsgotada(item) {
+      const { error } = await admin.from("agent_inbox_items").insert({
+        organization_id: item.organization_id,
+        // Reusa o kind da 0224 (mesma família: "a recuperação desta falta
+        // precisa de olhar humano") — evita migration só para um rótulo, e a
+        // Central já sabe renderizar `ref_kind='appointment'`.
+        kind: "appointment_recovery_review",
+        severity: "warn",
+        title: "Cliente faltou e não respondeu à recuperação",
+        body:
+          "As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. " +
+          "Decida o próximo passo e mova o card no funil.",
+        ref_kind: "appointment",
+        ref_id: item.appointment_id,
+        appointment_revision: item.appointment_revision,
+      });
+      // 23505 = já há aviso para esta (compromisso, revisão): o índice único
+      // `inbox_appointment_revision_unique` (0224) garante um por revisão,
+      // inclusive depois de resolvido. Repetição é no-op, não erro.
+      if (error && error.code !== "23505") throw new Error(error.message);
     },
     async persistirRespostaFollowup(input) {
       await persistirRespostaFollowupSupabase(admin, input);

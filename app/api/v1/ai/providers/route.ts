@@ -30,6 +30,7 @@ import {
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado } from "@/lib/ai/pontos/provedores";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -187,6 +188,11 @@ export async function GET(): Promise<Response> {
   return ok({
     papeis: PAPEIS,
     pontos,
+    // O padrão decide o modelo de TODO ponto sem binding explícito — numa
+    // instalação nova, 24 dos 25. Ele já era usado aqui para resolver cada
+    // ponto; o que faltava era CHEGAR À TELA, e sem isso não havia como
+    // mostrá-lo nem trocá-lo (invariante 6: toda configuração tem superfície).
+    padrao: padraoDaOrganizacao,
     provedores: PROVEDORES,
     credenciais: credsRes.data ?? [],
     modelos,
@@ -335,4 +341,119 @@ export async function PUT(req: NextRequest): Promise<Response> {
   });
 
   return ok({ binding: gravado, avisos: validacao.avisos });
+}
+
+
+const corpoDoPatch = z.object({
+  provider: z
+    .string()
+    .min(1)
+    .refine(ehProvedorSuportado, {
+      message:
+        "provedor não suportado por esta instalação — escolha um da lista em Agente de IA → Provedores",
+    }),
+  default_model: z.string().min(1),
+});
+
+/**
+ * Troca o PADRÃO da organização — o modelo que vale em todo ponto sem binding
+ * explícito.
+ *
+ * Uma escrita aqui muda o comportamento de dezenas de pontos de uma vez, e é
+ * por isso que exige `admin` como o PUT: quem pode mudar um ponto pode mudar
+ * todos, mas quem não pode mudar nenhum não muda o padrão pela porta dos fundos.
+ */
+export async function PATCH(req: NextRequest): Promise<Response> {
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
+  const authz = await requireRole("admin", { resource: "ai_providers" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const { user, org } = authz;
+
+  const parsed = corpoDoPatch.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return fail("invalid_body", t("corpo inválido"), 422, { details: parsed.error.issues });
+  }
+  const corpo = parsed.data;
+
+  const db = await createClient();
+
+  // O modelo tem de existir no catálogo DAQUELE provedor. Sem esta conferência,
+  // um erro de digitação vira padrão da organização e derruba todo ponto
+  // herdado — o mesmo modo de falha que o `PUT` já evita ponto a ponto.
+  const { data: modelo } = await db
+    .from("ai_models")
+    .select("model_id")
+    .eq("provider", corpo.provider)
+    .eq("model_id", corpo.default_model)
+    .maybeSingle();
+  if (!modelo) {
+    return fail(
+      "modelo_desconhecido",
+      t(`"${corpo.default_model}" não está no catálogo de ${corpo.provider}`),
+      404,
+    );
+  }
+
+  // ⚠️ CLIENTE ADMIN, E NÃO É ATALHO: a RLS de `organizations` só deixa
+  // ESCREVER quem é platform admin. Com o cliente de sessão, o `update` abaixo
+  // casa ZERO linhas para o `admin` do próprio tenant — e o PostgREST devolve
+  // SUCESSO, sem erro. Medido: `admin` da org → 0 linhas afetadas; mesmo
+  // comando com o cliente admin → 1. É a pior forma de falhar, porque a tela
+  // diria "salvo".
+  //
+  // Como o `install.sh` cria o dono da instalação COMO platform admin, o
+  // caminho funcionaria na máquina de quem testa e quebraria para o segundo
+  // administrador do time — o tipo de defeito que só aparece no cliente.
+  //
+  // É o que fazem os oito escritores de `organizations` deste repo, com o
+  // gêmeo exato em `app/actions/auth/politicaDeMfa.ts:62`, que escreve o MESMO
+  // jsonb. O `.eq("id", org.orgId)` abaixo é obrigatório e não decorativo: o
+  // service role passa por cima da RLS, então o filtro de tenant vira
+  // responsabilidade deste arquivo. `org.orgId` vem do `requireRole` (cookie/
+  // JWT), nunca do corpo.
+  const admin = createAdminClient();
+
+  // MERGE, nunca sobrescrita. `organizations.settings` é um jsonb compartilhado
+  // — `branding` (a marca da instalação) e `security` (a política de MFA) moram
+  // nele. Um `update({ settings: { llm } })` ingênuo apaga os dois em silêncio, e
+  // o sintoma aparece dias depois, longe daqui.
+  const { data: orgAtual } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", org.orgId)
+    .maybeSingle();
+
+  const settingsAtuais = ((orgAtual?.settings ?? {}) as Record<string, unknown>) || {};
+  const settings = {
+    ...settingsAtuais,
+    llm: { provider: corpo.provider, default_model: corpo.default_model },
+  };
+
+  const { data: gravado, error } = await admin
+    .from("organizations")
+    .update({ settings })
+    .eq("id", org.orgId)
+    .select("settings")
+    .maybeSingle();
+
+  if (error) return fail("save_failed", error.message, 500);
+  if (!gravado) {
+    // Mesma armadilha do PUT: no PostgREST, update que casa zero linhas volta
+    // como sucesso, e a tela diria "salvo" sem nada ter sido gravado.
+    return fail("save_failed", t("nada foi gravado — verifique as permissões da organização"), 500);
+  }
+
+  void audit({
+    action: "ai.org_default_updated",
+    organizationId: org.orgId,
+    actorUserId: user.id,
+    resourceType: "organization",
+    resourceId: org.orgId,
+    metadata: { provider: corpo.provider, default_model: corpo.default_model },
+  });
+
+  return ok({ padrao: { provider: corpo.provider, defaultModel: corpo.default_model } });
 }

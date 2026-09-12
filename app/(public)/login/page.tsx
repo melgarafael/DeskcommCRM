@@ -70,10 +70,12 @@ export default async function LoginPage({
           role="alert"
         >
           {t(
-            "Este link veio do modelo de e-mail padrão do Supabase, que não fecha o acesso nesta instalação — pedir outro link não resolve. Quem administra o sistema precisa configurar os e-mails de acesso (",
+            "Este link veio do modelo de e-mail padrão do Supabase, que não fecha o acesso nesta instalação — pedir outro link não resolve. Quem administra o sistema precisa configurar os modelos de e-mail: na nuvem do Supabase, com ",
           )}
           <code>marca-emails.sh</code>
-          {t(", no kit de instalação).")}
+          {t(
+            "; num Supabase próprio, apontando GOTRUE_MAILER_TEMPLATES_* para as rotas /email-templates/ do app.",
+          )}
         </div>
       )}
       {error === "provisionamento" && (

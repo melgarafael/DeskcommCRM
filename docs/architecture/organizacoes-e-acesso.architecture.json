@@ -92,7 +92,23 @@
       "col": 3,
       "type": "ui",
       "label": "Admin → Auditoria",
-      "sublabel": "criação, convite, aceite, troca; nenhum token"
+      "sublabel": "criação, convite, aceite, troca, revogação de convite; nenhum token"
+    },
+    {
+      "id": "registro-convite",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "team_invites",
+      "sublabel": "linha por convite pendente; id = invite_id do token; status derivado; RLS manager+/admin"
+    },
+    {
+      "id": "tela-convites",
+      "lane": "humano",
+      "col": 4,
+      "type": "ui",
+      "label": "Equipe › Membros → Convites",
+      "sublabel": "status, e-mail despachado, link copiável; reenviar/revogar (admin)"
     },
     {
       "id": "context",
@@ -151,6 +167,27 @@
     {
       "from": "convite",
       "to": "aceite"
+    },
+    {
+      "from": "convite",
+      "to": "registro-convite"
+    },
+    {
+      "from": "aceite",
+      "to": "registro-convite"
+    },
+    {
+      "from": "registro-convite",
+      "to": "tela-convites"
+    },
+    {
+      "from": "tela-convites",
+      "to": "convite",
+      "label": "reenviar"
+    },
+    {
+      "from": "tela-convites",
+      "to": "audit"
     },
     {
       "from": "criar",

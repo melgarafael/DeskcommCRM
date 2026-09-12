@@ -39,6 +39,16 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
   /^\/api\/internal\//,
   /^\/api\/mcp(\/.*)?$/,
+  // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a
+  // MESMA dualidade de `/api/mcp` acima. Sem esta entrada, o proxy responde
+  // 401 antes de o Bearer chegar à rota, porque `getUser()` aqui só enxerga
+  // cookie. A auth de verdade (sessão OU token, org nunca vinda do cliente)
+  // mora DENTRO da rota (`app/api/v1/contacts/route.ts`), igual aos casos de
+  // `/api/v1/system/agent` e `/api/v1/cron/` acima — "público" aqui quer dizer
+  // "o proxy não decide", não "sem autenticação". Ancorado com `$`: só o
+  // `GET` da listagem, não `/api/v1/contacts/[id]` nem `/import`, que ainda
+  // não têm suporte a Bearer.
+  /^\/api\/v1\/contacts$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —
@@ -51,6 +61,16 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/manifest\.webmanifest$/,
   /^\/team\/accept-invite\/.+$/,
   /^\/account-suspended$/,
+  // OS MOLDES DE E-MAIL DO GoTrue. Quem busca é o GoTrue, um processo de
+  // terceiro que não tem — nem pode ter — sessão nossa. O conteúdo é HTML com
+  // placeholders Go (`{{ .TokenHash }}`) mais nome, cor e logo da instalação,
+  // que já aparecem na tela de login sem sessão. Sem esta linha o `proxy`
+  // devolve 307 para `/login` e o GoTrue manda a TELA DE LOGIN dentro do
+  // e-mail — o modo de falha exato que esta rota existe para acabar.
+  //
+  // Âncorado nos dois nomes: `/^\/email-templates\//` deixaria qualquer
+  // sub-path futuro nascer público de carona.
+  /^\/email-templates\/(confirmation|recovery)$/,
   // Documentos legais. O checkbox obrigatório de `/onboarding/welcome` linka os
   // dois, e o aceite acontece antes de a pessoa ter qualquer coisa no sistema —
   // exigir sessão para LER o que se está aceitando inverte a ordem. Âncorado nos

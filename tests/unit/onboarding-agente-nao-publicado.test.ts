@@ -104,6 +104,12 @@ function clienteFalso() {
         c.filtros[coluna] = valor;
         return b;
       },
+      // `listSelectableChannels` filtra `.in("provider", PROVIDERS_DE_MENSAGEM)`
+      // para a linha de chamada de voz não ser oferecida como canal de mensagem.
+      in: (coluna: string, valores: readonly unknown[]) => {
+        c.filtros[`in:${coluna}`] = [...valores];
+        return b;
+      },
       // A busca da credencial da organização usa `.not("validated_at","is",null)`:
       // credencial que o provedor ainda não confirmou não é utilizável pelo turno.
       not: (coluna: string, _op: string, valor: unknown) => {

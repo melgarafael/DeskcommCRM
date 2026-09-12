@@ -1,0 +1,6 @@
+interface:
+  display_name: "Doutrina de código do DeskcommCRM"
+  short_description: "As regras que mais custam caro quando esquecidas — antes de escrever código aqui"
+  default_prompt: "Use a skill deskcomm-doutrina antes de escrever ou revisar código neste repositório."
+policy:
+  allow_implicit_invocation: true

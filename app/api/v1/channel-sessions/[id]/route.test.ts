@@ -493,6 +493,14 @@ describe("GET /api/v1/channel-sessions/[id]", () => {
       rows: {
         conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL }],
         ai_routers: [{ id: "r1", organization_id: ORG, channel_session_id: CANAL }],
+        // Duas ligações semeadas de propósito: a contagem tem de vir do BANCO.
+        // Com `voice_calls: 0` na expectativa, a rota podia ter parado de contar
+        // e o caso continuaria verde — e o histórico de voz sumiria no cascade
+        // sem o diálogo avisar, que é exatamente o defeito que esta onda fecha.
+        voice_calls: [
+          { id: "v1", organization_id: ORG, channel_session_id: CANAL },
+          { id: "v2", organization_id: ORG, channel_session_id: CANAL },
+        ],
       },
     });
     wahaOk(db);
@@ -501,7 +509,7 @@ describe("GET /api/v1/channel-sessions/[id]", () => {
 
     expect(body.data.deletion_impact).toEqual({
       outcome: "archive",
-      history: { conversations: 1, messages: 0, agent_versions: 0 },
+      history: { conversations: 1, messages: 0, agent_versions: 0, voice_calls: 2 },
       configuration: { ai_routers: 1, channel_knobs: 0, before_send_traces: 0 },
     });
   });

@@ -17,6 +17,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
+import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import { createChannelSchema } from "@/lib/schemas/channels";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
@@ -39,7 +40,12 @@ export async function GET(): Promise<Response> {
     supabase
       .from("channel_sessions")
       .select(CHANNEL_COLUMNS)
-      .eq("organization_id", activeOrg.orgId);
+      .eq("organization_id", activeOrg.orgId)
+      // Só canal de MENSAGEM. A linha de chamada de voz (spec 18) mora na mesma
+      // tabela, tem card próprio em Conexões e não tem `waha_session_name` nem
+      // telefone: entrando aqui, ela vira um número a mais no seletor do inbox e
+      // na barra lateral — sem nome, sem estado vigiado e sem para onde mandar.
+      .in("provider", [...PROVIDERS_DE_MENSAGEM]);
   // Canais arquivados sobrevivem só como âncora das FKs RESTRICT
   // (conversations/messages). Para o usuário eles foram excluídos.
   //

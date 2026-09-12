@@ -1,0 +1,16 @@
+{
+  "$comment": "Hook de início de sessão do Claude Code: fala UMA vez, e só quando o clone é de contribuidor (ver .agents/skills/deskcomm-contribuir/scripts/hooks/sessao.sh). Para o mantenedor, silêncio.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.agents/skills/deskcomm-contribuir/scripts/hooks/sessao.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
