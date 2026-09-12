@@ -29,6 +29,11 @@ export const PROMPT_TEMPLATES = [
   "ecommerce_friendly",
   "ecommerce_professional",
   "support_minimal",
+  "clinica",
+  "imobiliaria",
+  "servicos",
+  "curso",
+  "loja",
 ] as const;
 export type PromptTemplate = (typeof PROMPT_TEMPLATES)[number];
 

@@ -780,6 +780,47 @@ const TRANSPARENCIA_SYSTEM_BLOCK =
  * pra essas outras decisões (aprovar desconto, exceção de política etc.),
  * porque este parágrafo só fala de checar/marcar horário.
  */
+/**
+ * Carrega o vocabulary do pipeline padrão da organização e renderiza como bloco
+ * de system prompt. Retorna null quando não há vocabulary configurado — zero
+ * custo para orgs que usam os termos padrão.
+ *
+ * ⚠️ ORG-LEVEL, não por lead: pipeline_id do lead só é resolvido DEPOIS da
+ * montagem do prompt (query de crm_leads na linha ~3879). O vocabulary aqui é
+ * o do pipeline PADRÃO da org, que cobre o caso mais comum (um funil só) e
+ * não exige reestruturação do fluxo de montagem. Orgs com múltiplos funis
+ * podem usar o system_prompt do agente para sobrescrever termos específicos.
+ */
+async function loadPipelineVocabularyBlock(
+  db: pg.Pool,
+  tenantId: string,
+): Promise<string | null> {
+  try {
+    const { rows } = await db.query<{ vocabulary: Record<string, string> | null }>(
+      `select vocabulary from crm_pipelines
+       where organization_id = $1 and is_default = true and is_archived = false
+       limit 1`,
+      [tenantId],
+    );
+    const vocab = rows[0]?.vocabulary;
+    if (!vocab || typeof vocab !== 'object') return null;
+    const entries = Object.entries(vocab).filter(
+      ([k, v]) => typeof v === 'string' && v.trim().length > 0,
+    );
+    if (entries.length === 0) return null;
+    const linhas = entries.map(([k, v]) => `- ${k}: ${v}`);
+    return (
+      '## Vocabulário do funil\n' +
+      'Use ESTES termos ao falar sobre o funil com o lead — nunca use os nomes internos:\n' +
+      linhas.join('\n')
+    );
+  } catch {
+    // Falha silenciosa: vocabulary é enriquecimento, não bloqueio. Sem ele o
+    // agente usa os termos do playbook, que é o comportamento anterior.
+    return null;
+  }
+}
+
 const AGENDA_SYSTEM_BLOCK =
   '## Agenda — nunca confirme sem checar\n' +
   'Você só pode dizer a um lead que um horário/consulta/visita está confirmado DEPOIS de chamar ' +
@@ -1884,6 +1925,14 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_find_academia_classes')) {
     blocosResidentes.push(ACADEMIA_GRADE_SYSTEM_BLOCK);
   }
+  // Vocabulary do pipeline padrão da org — injetado como bloco residente para que
+  // o agente use os termos que o admin configurou ("Aluno" em vez de "Lead",
+  // "Matriculado" em vez de "Won"). Carregado aqui porque pipeline_id do lead
+  // NÃO está disponível antes da montagem do prompt (a query de crm_leads é
+  // pós-turno, na linha ~3879). Fallback seguro: sem vocabulary configurado,
+  // nenhum bloco é adicionado e o agente usa os termos padrão do playbook.
+  const vocabularyBlock = await loadPipelineVocabularyBlock(pool, tenantId);
+  if (vocabularyBlock !== null) blocosResidentes.push(vocabularyBlock);
   if (preview)
     blocosResidentes.push(
       'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',

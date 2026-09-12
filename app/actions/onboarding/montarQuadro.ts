@@ -23,7 +23,94 @@ import {
   type PropostaDeFunil,
 } from "@/lib/onboarding/proposta-de-funil";
 import { escolherPacotePorTexto, sugerirFunil, type Sugestao } from "@/lib/onboarding/sugerir-funil";
+import { PACOTES, type PacoteDeFunil } from "@/lib/onboarding/pacotes-de-funil";
 import { requireOnboardingCtx, patchOnboardingState, loadOnboardingState, OnboardingError } from "./_shared";
+
+/**
+ * Deriva o vocabulary do pipeline a partir do pacote de funil escolhido no
+ * onboarding. Os nomes das etapas já viajam no quadro; o vocabulary é o
+ * conjunto de termos que o agente usa AO FALAR sobre o funil ("lead" → "Aluno",
+ * "won" → "Matriculado"). Sem isto, o admin escolhe "Clínica" no wizard, as
+ * colunas ficam certas, mas o agente continua falando "lead/deal/won/lost".
+ *
+ * Retorna null quando não há pacote correspondente (origem "ia" com sugestão
+ * válida) — nesse caso o vocabulary fica como estava (provavelmente null), e
+ * o admin pode editar depois em settings/tenant/pipelines.
+ */
+function derivarVocabularyDoPacote(pacoteId: string | undefined): Record<string, string> | null {
+  if (!pacoteId) return null;
+  const pacote = PACOTES.find((p) => p.id === pacoteId);
+  if (!pacote) return null;
+
+  // Mapeamento padrão por nicho — derivado dos nomes das etapas de cada pacote.
+  // O vocabulary tem duas camadas: os termos do funil (lead/deal/won/lost) e os
+  // plurais/rótulos de UI (stage/stage_plural). O agente usa os primeiros no
+  // prompt; os segundos aparecem na tela de pipelines e no dossiê do lead.
+  const mapping: Record<string, Record<string, string>> = {
+    clinica: {
+      lead: "Paciente",
+      lead_plural: "Pacientes",
+      deal: "Agendamento",
+      deal_plural: "Agendamentos",
+      won: "Marcado",
+      lost: "Não marcou",
+      stage: "Etapa",
+      stage_plural: "Etapas",
+    },
+    imobiliaria: {
+      lead: "Interessado",
+      lead_plural: "Interessados",
+      deal: "Negócio",
+      deal_plural: "Negócios",
+      won: "Fechado",
+      lost: "Desistiu",
+      stage: "Etapa",
+      stage_plural: "Etapas",
+    },
+    servicos: {
+      lead: "Cliente",
+      lead_plural: "Clientes",
+      deal: "Orçamento",
+      deal_plural: "Orçamentos",
+      won: "Fechado",
+      lost: "Não fechou",
+      stage: "Etapa",
+      stage_plural: "Etapas",
+    },
+    curso: {
+      lead: "Aluno",
+      lead_plural: "Alunos",
+      deal: "Matrícula",
+      deal_plural: "Matrículas",
+      won: "Matriculado",
+      lost: "Desistiu",
+      stage: "Etapa",
+      stage_plural: "Etapas",
+    },
+    loja: {
+      lead: "Cliente",
+      lead_plural: "Clientes",
+      deal: "Pedido",
+      deal_plural: "Pedidos",
+      won: "Pago",
+      lost: "Não comprou",
+      stage: "Etapa",
+      stage_plural: "Etapas",
+    },
+    generico: {
+      lead: "Cliente",
+      lead_plural: "Clientes",
+      deal: "Negócio",
+      deal_plural: "Negócios",
+      won: "Fechado",
+      lost: "Não fechou",
+      stage: "Etapa",
+      stage_plural: "Etapas",
+    },
+  };
+
+  return mapping[pacoteId] ?? null;
+}
 
 /** O funil que o gatilho semeou — o que a pessoa tem antes deste passo. */
 export interface QuadroAtual {
@@ -229,6 +316,16 @@ export async function aplicarQuadro(formData: FormData): Promise<ResultadoDoQuad
     "funil",
   );
 
+  // O vocabulary viaja junto com o quadro: o pacote escolhido no wizard define
+  // os termos que o agente usa ("Aluno" em vez de "Lead", "Matriculado" em vez
+  // de "Won"). Sem isto, o funil fica certo na tela mas o agente fala errado.
+  // Origem "ia" sem pacote correspondente → null → não mexe no vocabulary
+  // existente (o admin edita depois em settings/tenant/pipelines).
+  // O pacoteId vem do FormData (enviado pelo _client.tsx quando origem=pacote),
+  // NÃO do estado do onboarding — o estado só persiste pipeline_id e origem.
+  const pacoteId = formData.get("pacoteId") ? String(formData.get("pacoteId")) : undefined;
+  const vocabulary = derivarVocabularyDoPacote(pacoteId);
+
   const { data: resposta, error } = await admin.rpc("fn_aplicar_quadro_do_onboarding", {
     p_organization_id: ctx.orgId,
     p_pipeline_id: atual.pipelineId,
@@ -242,6 +339,7 @@ export async function aplicarQuadro(formData: FormData): Promise<ResultadoDoQuad
       is_lost: e.is_lost,
       agent_stage_hint: e.agent_stage_hint,
     })),
+    p_vocabulary: vocabulary,
   });
 
   if (error) return { ok: false, erro: `Não consegui salvar o quadro: ${error.message}` };

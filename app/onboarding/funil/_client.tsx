@@ -32,6 +32,12 @@ export function QuadroClient({
 
   const [quadro, setQuadro] = useState<PropostaDeFunil>(inicial);
   const [origem, setOrigem] = useState<"ia" | "pacote">(sugestao.origem);
+  // ID do pacote escolhido — viaja no FormData para o servidor derivar o
+  // vocabulary do funil. Inicializado quando a sugestão já vem de pacote;
+  // setado em usarPacote(); null quando origem é "ia" (sem vocabulary fixo).
+  const [pacoteId, setPacoteId] = useState<string | null>(
+    sugestao.origem === "pacote" ? sugestao.pacote.id : null,
+  );
   const [trocando, setTrocando] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -74,6 +80,7 @@ export function QuadroClient({
     // A origem acompanha: o resumo do onboarding registra de onde o quadro veio,
     // e manter "ia" depois de a pessoa escolher outro seria registrar mentira.
     setOrigem("pacote");
+    setPacoteId(id);
     setTrocando(false);
   }
 
@@ -255,6 +262,15 @@ export function QuadroClient({
               const fd = new FormData();
               fd.set("quadro", JSON.stringify(quadro));
               fd.set("origem", origem);
+              // O ID do pacote viaja junto para que o servidor possa derivar o
+              // vocabulary do funil. Sem ele, o admin escolhe "Clínica" no wizard,
+              // as colunas ficam certas, mas o agente continua falando "lead/won".
+              // Origem "ia" → null → o servidor não mexe no vocabulary existente.
+              // Usa o estado pacoteId (setado em usarPacote) em vez de derivar pelo
+              // nome do quadro, que o usuário pode editar na UI e quebraria o match.
+              if (origem === "pacote" && pacoteId) {
+                fd.set("pacoteId", pacoteId);
+              }
               const res = await aplicarQuadro(fd);
               // Sucesso redireciona no servidor; só o desfecho ruim volta.
               if (res && !res.ok) toast.error(res.erro);

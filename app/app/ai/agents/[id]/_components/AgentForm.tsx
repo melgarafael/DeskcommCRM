@@ -247,6 +247,28 @@ function toCadastroPayload(s: FormState) {
   };
 }
 
+/**
+ * Templates de prompt por nicho — pontos de partida contextualizados para o
+ * system_prompt do agente. Derivados dos pacotes de funil (`pacotes-de-funil.ts`)
+ * e dos PROMPT_BODIES do onboarding, mas disponíveis aqui para edição posterior.
+ *
+ * ⚠️ NÃO é a fonte de verdade do onboarding: `createDefaultAgent.ts` tem seus
+ * próprios corpos (que recebem o nome da org como parâmetro). Estes são versões
+ * genéricas para quando o admin quer trocar o prompt DEPOIS do wizard.
+ */
+const PROMPT_TEMPLATES_BY_NICHE: Record<string, string> = {
+  clinica:
+    "Você é o assistente de atendimento desta clínica. Fale com empatia e paciência — quem procura você pode estar com dor, ansiedade ou urgência. Confirme dados antes de agendar, explique procedimentos de forma simples e nunca dê diagnóstico ou prescrição. Quando algo fugir da sua alçada, diga que vai passar para a equipe e faça o handoff imediatamente.",
+  imobiliaria:
+    "Você atende interessados desta imobiliária. Seja objetivo e prestativo: entenda o perfil (compra, aluguel, investimento), confirme faixa de valor e localização preferida antes de sugerir imóveis. Não invente disponibilidade nem preço — quando não souber, diga que vai verificar com o corretor responsável e faça o handoff.",
+  servicos:
+    "Você atende clientes desta empresa de serviços. Entenda o projeto ou problema antes de falar de preço. Peça fotos, medidas ou detalhes quando necessário para um orçamento preciso. Não prometa prazo nem valor sem confirmar com a equipe técnica — quando precisar, informe que vai consultar e faça o handoff.",
+  curso:
+    "Você atende interessados deste curso/mentoria. Tire dúvidas sobre conteúdo, formato, duração e investimento com clareza. Não pressione matrícula — ajude a pessoa a decidir se faz sentido pra ela. Quando a pergunta for sobre financeiro (parcelamento, desconto, boleto) ou acesso à plataforma, passe para a equipe e faça o handoff.",
+  loja:
+    "Você atende clientes desta loja. Ajude a encontrar o produto certo: pergunte uso, tamanho, preferência e orçamento antes de sugerir. Confirme estoque e prazo antes de fechar qualquer venda. Não invente informação — quando não souber, diga que vai verificar e faça o handoff.",
+};
+
 function toVersionPayload(s: FormState) {
   return {
     system_prompt: s.system_prompt,
@@ -887,6 +909,36 @@ export function AgentForm(props: Props) {
           <Card className="space-y-2 p-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium">{t("As instruções dele")}</h3>
+            </div>
+            {/* Templates de prompt por nicho — preenche o textarea com um ponto
+                de partida contextualizado. Só aparece quando o campo está editável
+                e o prompt atual é curto (provavelmente vazio ou padrão). Clicar
+                substitui o conteúdo; o admin sempre pode editar depois. */}
+            {!disabled && form.system_prompt.trim().length < 200 && (
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { id: "clinica", label: "Clínica" },
+                  { id: "imobiliaria", label: "Imobiliária" },
+                  { id: "servicos", label: "Serviços" },
+                  { id: "curso", label: "Curso" },
+                  { id: "loja", label: "Loja" },
+                ].map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() =>
+                      patch({
+                        system_prompt: PROMPT_TEMPLATES_BY_NICHE[tpl.id] ?? "",
+                      })
+                    }
+                    className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                  >
+                    {tpl.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {/* O contador é o aviso que chega ANTES do erro: quem cola um
                     texto grande vê na hora que ele não vai caber, em vez de
