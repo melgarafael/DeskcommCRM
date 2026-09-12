@@ -805,9 +805,25 @@ setup_event_log_drain_cron() {
   # O dono vê o script morrer sem mensagem, numa instalação que na verdade
   # funcionou.
   #
+  # ACHADO DUAS VEZES, POR DUAS PESSOAS QUE NÃO SE FALARAM, NO MESMO DIA:
+  # @luiscgc91 (PR #683) e @rafaelbatistazz (issue #715 + PR #726), os dois
+  # instalando numa VPS limpa. Os dois escreveram EXATAMENTE a mesma linha. Isso
+  # não é redundância — é a medida de quanto o defeito doía, e a razão de este
+  # comentário ser longo: ele existe para a terceira pessoa não precisar
+  # descobrir de novo.
+  #
+  # A issue #715 descreve o sintoma como quem o viveu: o instalador para logo
+  # depois de "✓ chave de cifra ativa no banco", cai na tela "A instalação
+  # parou", e os contêineres estão SAUDÁVEIS. Rodar de novo passa — porque aí o
+  # crontab já não está vazio, o que faz o defeito parecer fantasma.
+  #
   # Reproduzido com um dublê de `crontab` que sai 1 no `-l`: sem o `|| true`, a
-  # linha seguinte a este bloco nunca é alcançada. Vigiado por
-  # `tests/shell/cron-sem-crontab-previo.test.sh`.
+  # linha seguinte a este bloco nunca é alcançada. Vigiado por DOIS testes, de
+  # propósito: `tests/shell/cron-sem-crontab-previo.test.sh` mede cada função
+  # isolada, e o bloco `cron numa VPS sem crontab nenhum` de
+  # `hostgator-setup-kit/test-validators.sh` (de @rafaelbatistazz) roda AS DUAS
+  # no mesmo processo — como o `install.sh` faz — e confere que as duas linhas
+  # foram gravadas.
   #
   # Stdin vazio para o `cron_merge` é exatamente o que "sem crontab prévio" deve
   # produzir — o comportamento não muda, só o status.
