@@ -321,7 +321,7 @@ export function ConnectWhatsappClient({
         await markWhatsappConfigured(confirmedSession, "WORKING");
       } catch (err) {
         if (isRedirectError(err)) throw err;
-        toast.error("Falha ao avançar: " + String(err));
+        toast.error(`${t("Falha ao avançar:")} ${String(err)}`);
       }
     });
   }, [status, info.session, t]);

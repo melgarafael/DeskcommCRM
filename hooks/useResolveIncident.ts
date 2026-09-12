@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
+import { useT } from "@/hooks/i18n/useT";
 
 export interface ResolveIncidentPayload {
   id: string;
@@ -9,6 +10,7 @@ export interface ResolveIncidentPayload {
 }
 
 export function useResolveIncident() {
+  const t = useT();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -21,10 +23,10 @@ export function useResolveIncident() {
       void queryClient.invalidateQueries({
         queryKey: ["admin", "incident", variables.id],
       });
-      toast.success("Incidente resolvido com sucesso");
+      toast.success(t("Incidente resolvido com sucesso"));
     },
     onError: (err: Error) => {
-      toast.error("Erro ao resolver incidente", { description: err.message });
+      toast.error(t("Erro ao resolver incidente"), { description: err.message });
     },
   });
 }

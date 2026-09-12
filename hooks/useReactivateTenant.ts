@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
+import { useT } from "@/hooks/i18n/useT";
 
 export interface ReactivateTenantPayload {
   id: string;
@@ -9,6 +10,7 @@ export interface ReactivateTenantPayload {
 }
 
 export function useReactivateTenant() {
+  const t = useT();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -17,10 +19,10 @@ export function useReactivateTenant() {
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "tenant", variables.id] });
       void queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
-      toast.success("Tenant reativado com sucesso");
+      toast.success(t("Tenant reativado com sucesso"));
     },
     onError: (err: Error) => {
-      toast.error("Erro ao reativar tenant", { description: err.message });
+      toast.error(t("Erro ao reativar tenant"), { description: err.message });
     },
   });
 }

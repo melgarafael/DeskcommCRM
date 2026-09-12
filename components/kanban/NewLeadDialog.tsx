@@ -116,7 +116,7 @@ export function NewLeadDialog({
     const parsed = createLeadSchema.safeParse(payload);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
-      toast.error(first?.message ?? "Dados inválidos");
+      toast.error(first?.message ?? t("Dados inválidos"));
       return;
     }
 
@@ -144,7 +144,7 @@ export function NewLeadDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Novo Lead</DialogTitle>
+          <DialogTitle>{t("Novo Lead")}</DialogTitle>
           <DialogDescription>
             {t("Crie um lead manualmente neste pipeline.")}
           </DialogDescription>
