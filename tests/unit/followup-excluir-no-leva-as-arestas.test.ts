@@ -19,12 +19,14 @@ import { describe, expect, it } from "vitest";
  * da conexão é a da própria aresta.
  *
  * O estrago é grafo com aresta órfã (source/target apontando para nó que não
- * existe mais), e o schema o ACEITA no salvamento — medido com controle
- * positivo: `flowGraphSchema.safeParse` devolve `success=true` para aresta
- * apontando a nó inexistente E para dois nós com o mesmo id (o defeito da
- * issue #586), enquanto rejeita campo desconhecido. Enquanto o schema não
- * fechar essa porta (decisão de produto: um `refine` que rejeita tranca quem
- * JÁ tem rascunho corrompido), o call site é a única rede.
+ * existe mais). No HEAD da prévia o schema o ACEITAVA no salvamento — medido
+ * com controle positivo: `flowGraphSchema.safeParse` devolvia `success=true`
+ * para aresta apontando a nó inexistente E para dois nós com o mesmo id (o
+ * defeito da issue #586), enquanto rejeitava campo desconhecido. A porta foi
+ * fechada na #699 (superRefine de integridade em `flowGraphSchema`, casos em
+ * `lib/followup/graph-schema.test.ts`). O call site continua sendo a PRIMEIRA
+ * rede: não produzir o grafo órfão é melhor do que só reprovar o rascunho
+ * depois de corrompido.
  *
  * Guarda de FONTE, não de comportamento: o canvas não renderiza em jsdom
  * (XYFlow precisa de medição de DOM). O recorte é o corpo do `deleteNode`,

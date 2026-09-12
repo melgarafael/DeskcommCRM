@@ -417,11 +417,62 @@ export type FlowEdgeCondition = FlowEdge['condition'];
 /**
  * Complete flow graph schema.
  * Contains nodes and edges defining the flow automation.
+ *
+ * O `strictObject` valida cada nó e cada aresta SOZINHOS; o `superRefine`
+ * abaixo é a catraca de INTEGRIDADE entre eles. Sem ela, um grafo com aresta
+ * apontando para nó inexistente ou com ids repetidos (o defeito que o #586
+ * produz no canvas) passava no `safeParse` de qualquer consumidor — salvar o
+ * rascunho (`draft_graph`), carregar a versão (engine, turn-bridge, enroll,
+ * silence-sweep, intervenção) e publicar. A porta é a mesma para todos: quem
+ * JÁ tiver rascunho corrompido recebe o erro com o id a corrigir em vez de um
+ * grafo que só quebra adiante, no meio de um disparo. Sem migração de
+ * rascunho — decisão registrada na issue #699.
  */
-export const flowGraphSchema = z.strictObject({
-  nodes: z.array(flowNodeSchema).min(2).max(60),
-  edges: z.array(flowEdgeSchema).max(120),
-});
+export const flowGraphSchema = z
+  .strictObject({
+    nodes: z.array(flowNodeSchema).min(2).max(60),
+    edges: z.array(flowEdgeSchema).max(120),
+  })
+  .superRefine((grafo, ctx) => {
+    const idsDeNo = new Set<string>();
+    grafo.nodes.forEach((no, i) => {
+      if (idsDeNo.has(no.id)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `id de nó repetido: "${no.id}"`,
+          path: ['nodes', i],
+        });
+      }
+      idsDeNo.add(no.id);
+    });
+
+    const idsDeAresta = new Set<string>();
+    grafo.edges.forEach((aresta, i) => {
+      if (idsDeAresta.has(aresta.id)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `id de aresta repetido: "${aresta.id}"`,
+          path: ['edges', i],
+        });
+      }
+      idsDeAresta.add(aresta.id);
+
+      if (!idsDeNo.has(aresta.source)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `aresta "${aresta.id}" aponta para nó inexistente: "${aresta.source}"`,
+          path: ['edges', i],
+        });
+      }
+      if (!idsDeNo.has(aresta.target)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `aresta "${aresta.id}" aponta para nó inexistente: "${aresta.target}"`,
+          path: ['edges', i],
+        });
+      }
+    });
+  });
 
 export type FlowGraph = z.infer<typeof flowGraphSchema>;
 
