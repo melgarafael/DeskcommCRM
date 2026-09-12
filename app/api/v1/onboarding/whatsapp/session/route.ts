@@ -42,7 +42,9 @@ export async function POST(req: Request): Promise<Response> {
     return ok({ status: result.channel.status, session: result.channel.waha_session_name, channel_session_id: result.channel.id }, { requestId });
   } catch (error) {
     if (error instanceof ChannelConnectionError) return fail(error.code,
-      error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente." : "Não foi possível concluir a conexão. Tente novamente ou repare o número em Conexões.",
+      error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente."
+        : error.code === "connection_session_name_too_long" ? "O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente."
+        : "Não foi possível concluir a conexão. Tente novamente ou repare o número em Conexões.",
       error.status, { requestId, details: error.technical });
     return fail("internal_error", "Não foi possível concluir a conexão. Tente novamente.", 500, { requestId });
   }
