@@ -135,10 +135,49 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
       message: "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.",
     });
     expect(body.error?.message).not.toContain("AI_GATEWAY_API_KEY");
+    // 'failed', não 'error': ai_agent_runs_status_check aceita
+    // ('pending','running','completed','failed','aborted','handoff'). Este teste
+    // fixava o valor que o código gravava, não o que a tabela aceita — e por isso
+    // passava enquanto todo update falhava calado em produção.
     expect(atualizacoes).toContainEqual(expect.objectContaining({
-      status: "error",
+      status: "failed",
       error_code: "preview_failed",
     }));
+  });
+  /**
+   * O run bem-sucedido tem de sair de `running`.
+   *
+   * `ai_agent_runs_status_check` aceita
+   * ('pending','running','completed','failed','aborted','handoff'). O código
+   * gravava 'ok' — fora da lista —, o UPDATE falhava por violação de CHECK e o
+   * retorno não era lido, então o erro não chegava a log nenhum. Efeito medido
+   * numa instalação real: 19 runs em 'running', inclusive os que a tela
+   * reportou como concluídos.
+   *
+   * O assert é contra a LISTA da constraint, não contra a string: fixar apenas
+   * "completed" deixaria o próximo valor inventado passar do mesmo jeito.
+   */
+  it("run que conclui sai de running com status aceito pela constraint", async () => {
+    const STATUS_ACEITOS = ["pending", "running", "completed", "failed", "aborted", "handoff"];
+    vi.mocked(testAgentVersion).mockResolvedValueOnce({
+      candidates: [{ body: "Oi! Posso te ajudar." }],
+      proposals: [],
+    } as never);
+
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sample_message: "oi" }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+
+    expect(res.status).toBe(200);
+    const gravados = atualizacoes.map((u) => u.status);
+    expect(gravados).toContain("completed");
+    for (const st of gravados) {
+      expect(STATUS_ACEITOS).toContain(st);
+    }
   });
 });
 

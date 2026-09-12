@@ -171,9 +171,18 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           ...(contactPhone.trim() ? { phone: contactPhone.trim() } : {}),
         };
       }
+      // O teste roda o MESMO runner do agente: cinco chamadas ao provedor
+      // (stage_classifier, jailbreak_detect, promise_semantic, o turno e o
+      // checkpoint). Medido em instalação real: ~9s no caso rápido e >20s com
+      // modelo lento ou provedor sob rate limit. O padrão do apiClient é 10s,
+      // então a tela abortava a requisição enquanto o servidor ainda trabalhava
+      // — e como AbortError não é ApiError, o usuário via "Erro inesperado."
+      // sem nenhuma pista. O Caddyfile já reserva 320s para esse runner em
+      // /api/internal/agents/run*; aqui o cliente precisava da mesma folga.
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        { timeoutMs: 300_000 },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
