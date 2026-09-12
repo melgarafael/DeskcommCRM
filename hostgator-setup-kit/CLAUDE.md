@@ -47,7 +47,8 @@ discordarem, vale o guia; quando o guia e `install.sh` discordarem, vale o insta
 - **Qual IA vai atender** — o instalador pergunta antes das chaves: OpenRouter (uma chave, muitos
   modelos, o mais simples), Anthropic (Claude, padrão do Enter) ou OpenAI. Se não for OpenAI, ele
   pede a chave da OpenAI à parte e **opcional** (áudio e base de conhecimento — dá para cadastrar
-  depois pela tela).
+  depois pela tela). A chave do provedor principal **também é opcional**: dá para instalar sem ela
+  e cadastrar depois pela tela (IA › Credenciais).
 - O **e-mail e a senha** que ela quer para entrar no CRM (o primeiro admin).
 
 ## Passo a passo que você conduz

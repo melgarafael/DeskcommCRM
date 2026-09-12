@@ -1161,10 +1161,19 @@ escolher_provedor
 
 # O campo da chave do provedor ESCOLHIDO — e só dele. Pedir as três faria a
 # pessoa achar que precisa das três.
+#
+# O campo é `opcional` (issue #670). `docs/deploy-selfhost` promete que dá para
+# "deixar vazio e cadastrar a chave depois", e o runtime concorda (`lib/env.ts`
+# trata as três chaves como opcionais; faltar todas é `warn`, não erro) — mas o
+# instalador exigia uma chave que PASSASSE numa chamada real, e não havia
+# caminho para subir o produto sem antes abrir conta num provedor de IA. Quem
+# pula instala, e o caminho de volta sai na tela final (`pendencia_da_ia`, no
+# fecho). O validador continua valendo para quem digita uma chave — o que
+# mudou é que pular deixou de ser erro.
 case "$AI_PROVIDER" in
-  openrouter) CAMPO_IA="OPENROUTER_API_KEY|Chave da OpenRouter — a IA que atende (openrouter.ai/keys)||v_openrouter|secret|";;
-  openai)     CAMPO_IA="OPENAI_API_KEY|Chave da OpenAI — a IA que atende (platform.openai.com/api-keys)||v_openai|secret|";;
-  *)          CAMPO_IA="ANTHROPIC_API_KEY|Chave da Anthropic — a IA que atende (console.anthropic.com)||v_anthropic|secret|";;
+  openrouter) CAMPO_IA="OPENROUTER_API_KEY|Chave da OpenRouter — a IA que atende (openrouter.ai/keys; Enter pula: dá para cadastrar depois pela tela, em IA › Credenciais)||v_openrouter|secret|opcional";;
+  openai)     CAMPO_IA="OPENAI_API_KEY|Chave da OpenAI — a IA que atende (platform.openai.com/api-keys; Enter pula: dá para cadastrar depois pela tela, em IA › Credenciais)||v_openai|secret|opcional";;
+  *)          CAMPO_IA="ANTHROPIC_API_KEY|Chave da Anthropic — a IA que atende (console.anthropic.com; Enter pula: dá para cadastrar depois pela tela, em IA › Credenciais)||v_anthropic|secret|opcional";;
 esac
 
 # A chave da OpenAI é pedida À PARTE quando ela NÃO é o provedor de conversa,
@@ -1927,6 +1936,42 @@ $(sed 's/^/    /' "$PENDENCIA_EMAIL")
 PEND
 }
 
+# ── A pendência da IA, quando a chave ficou para depois ─────────────────────
+# A #670 tornou o campo da chave `opcional`: antes o instalador morria sem uma
+# chave que passasse numa chamada real, contra a doc e contra o runtime.
+# Instalar sem chave é legítimo; o que não pode é a pessoa terminar sem saber
+# que a IA ainda não atende e ONDE cadastrar depois. Este bloco repete o
+# caminho na TELA FINAL, que é a única tela que a pessoa lê inteira.
+#
+# Critério: nenhuma credencial DE AMBIENTE preenchida — nem a do provedor
+# escolhido, nem o AI Gateway (que tem precedência na resolução do chat, ver
+# `.env.hostgator.example`). Credencial cadastrada pela tela (banco) não dá
+# para ver daqui; quem já cadastrou reconhece o aviso e ignora.
+pendencia_da_ia() {
+  local chave="" rotulo=""
+  case "${AI_PROVIDER:-anthropic}" in
+    openrouter) chave="${OPENROUTER_API_KEY:-}"; rotulo="OpenRouter" ;;
+    openai)     chave="${OPENAI_API_KEY:-}";     rotulo="OpenAI" ;;
+    *)          chave="${ANTHROPIC_API_KEY:-}";  rotulo="Anthropic" ;;
+  esac
+  [ -n "$chave" ] && return 0
+  [ -n "${AI_GATEWAY_API_KEY:-}" ] && return 0
+
+  cat <<PEND
+
+$(c_ylw "  ─── A IA ainda não atende — falta cadastrar a chave ───")
+
+  Você deixou a chave de IA para depois, e o CRM está no ar sem ela. O que
+  ainda não funciona é o agente: ele responde quando uma credencial existir.
+
+  Quando tiver a chave da ${rotulo}, cadastre em:
+
+      IA › Credenciais
+
+  A chave fica CIFRADA no banco — não precisa mexer no .env nem reiniciar nada.
+PEND
+}
+
 PENDENCIA_EMAIL="$(mktemp)"
 PENDENCIA_ARQUIVO="$PENDENCIA_EMAIL" \
   SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}" \
@@ -2139,6 +2184,7 @@ $(c_grn " Instalação concluída!")
 $(c_grn "═══════════════════════════════════════════════════════")
 
 $(pendencia_dos_emails)
+$(pendencia_da_ia)
   1. Acesse:  https://${DOMAIN}
      (o SSL leva ~1min pra emitir no primeiro acesso)
 

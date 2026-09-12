@@ -109,8 +109,9 @@ Se precisar do modo sem perguntas (`--yes` com `.env` pronto), duas armadilhas m
 - escreva `SENTRY_DSN=off` se a pessoa **não** quer enviar relatórios de erro. Com o `.env` copiado
   do exemplo, a pergunta de telemetria não aparece e a instalação sai enviando (issue #668).
 
-Também medido (issue #670): o instalador **exige** uma chave de IA válida, mesmo que a documentação
-diga que dá para deixar vazia e cadastrar depois. Enquanto isso não muda, peça a chave antes.
+A chave de IA é **opcional** (issue #670, resolvida): dá para instalar sem conta em provedor de IA
+e cadastrar depois em IA › Credenciais — a tela final da instalação lembra quem pulou, com o
+caminho. Se a pessoa já tiver a chave em mãos, ótimo: ela é validada na hora.
 
 ### 6. Depois do "Instalação concluída!"
 
