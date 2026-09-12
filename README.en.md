@@ -291,7 +291,7 @@ pnpm dev
 
 App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/health>
 
-[`docs/SETUP.md`](docs/SETUP.md) is the complete tutorial for **every integration** (Supabase, WAHA, AI providers, Upstash, Sentry, Resend, Nuvemshop) — ~60–90 min from zero to a running app. *(Docs are in Brazilian Portuguese; translations welcome!)*
+[`docs/SETUP.md`](docs/SETUP.md) is the complete tutorial for **every integration** (Supabase, WAHA, AI providers, Upstash, Sentry, SMTP, Nuvemshop) — ~60–90 min from zero to a running app. *(Docs are in Brazilian Portuguese; translations welcome!)*
 
 ---
 
@@ -321,7 +321,7 @@ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
 | `build-and-size` | `pnpm build` on Node 22 |
 | `e2e` | boots a local Supabase, applies `baseline.sql` and runs **44 of the 45** Playwright specs through the frontend |
 
-The only spec outside `e2e` is `vps-fresh-onboarding` — it needs a real WAHA + Redis + Resend + Nuvemshop. It is the **P0** of our visual-QA doctrine, so a green `e2e` does **not** prove the fresh-install journey; that one is proven on a VPS.
+The only spec outside `e2e` is `vps-fresh-onboarding` — it needs a real WAHA + Redis + SMTP + Nuvemshop. It is the **P0** of our visual-QA doctrine, so a green `e2e` does **not** prove the fresh-install journey; that one is proven on a VPS.
 
 Among the invariants is the **RLS isolation test**: it creates 2 organizations, simulates JWT claims through the same `auth.uid()` / `fn_user_org_ids()` path production policies use, and proves a user of org A sees **zero rows** of org B in `conversations`, `messages`, `contacts` and `crm_leads`. A control case first proves org B's rows actually exist — without it, the test would pass against an empty table.
 

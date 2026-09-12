@@ -1461,7 +1461,7 @@ A porta vigente é Administração → Gerenciar organizações. Ela aparece par
 
 ### 9.2 Convite e aceite
 
-Se o responsável é diferente do ator criador, `issueInvite` emite o convite somente depois do commit. O resultado sempre mostra link copiável e validade, além do estado real da tentativa de e-mail. Sem `RESEND_API_KEY`, ou se o envio falhar, a organização permanece criada e a pessoa administradora entrega o link manualmente; não há mensagem de entrega fictícia.
+Se o responsável é diferente do ator criador, `issueInvite` emite o convite somente depois do commit. O resultado sempre mostra link copiável e validade, além do estado real da tentativa de e-mail. Sem SMTP completo (`SMTP_HOST` e `SMTP_FROM_EMAIL`), ou se o envio falhar, a organização permanece criada e a pessoa administradora entrega o link manualmente; não há mensagem de entrega fictícia.
 
 O token assina convite, organização, papel, emissor, instante e `interface_settings`. O aceite é serializado por `fn_accept_team_invite`: cria ou reativa o vínculo e aplica a interface assinada; replay de vínculo já ativo devolve `changed=false` antes de alterar papel ou preferência. Um vínculo revogado exige convite emitido depois da revogação. Após o aceite, a organização convidada se torna ativa no cookie.
 
@@ -1795,8 +1795,14 @@ APP_VERSION=
 CURSOR_SIGNING_KEY=             # 32+ bytes random
 CPF_ENCRYPTION_KEY=             # rotação trimestral (L-07)
 
-# Mail (LGPD export delivery)
-RESEND_API_KEY=
+# Mail (LGPD export delivery and team invites)
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+SMTP_FROM_NAME=
 
 # Auth
 AUTH_COOKIE_DOMAIN=.deskcomm.com

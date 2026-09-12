@@ -33,7 +33,7 @@ export interface AmbienteDaInstalacao {
   chavesDeProvedor: Record<string, boolean>;
   /** Gateway de IA configurado (alternativa a chave direta de provedor). */
   gateway: boolean;
-  /** Envio de e-mail configurado — falso em toda instalação pelo kit hoje. */
+  /** Envio de e-mail configurado no ambiente da instalação. */
   email: boolean;
   /**
    * O transporte de WhatsApp está apontado e com chave?
@@ -74,7 +74,7 @@ export function lerAmbiente(source: FonteDeAmbiente = process.env): AmbienteDaIn
   return {
     chavesDeProvedor,
     gateway: preenchida(source, "AI_GATEWAY_API_KEY"),
-    email: preenchida(source, "RESEND_API_KEY"),
+    email: preenchida(source, "SMTP_HOST") && preenchida(source, "SMTP_FROM_EMAIL"),
     transporteDeWhatsapp: lerTransporteDeWhatsapp(source),
   };
 }

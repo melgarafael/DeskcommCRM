@@ -15,7 +15,7 @@ import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/smtp";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { inviteOnboardingSchema } from "@/lib/schemas/onboarding";
 import { requireOnboardingCtx, patchOnboardingState, OnboardingError } from "./_shared";
@@ -27,7 +27,7 @@ export type SendInvitesResult =
       ok: true;
       sent: number;
       failed: number;
-      /** Convites cujo email NÃO saiu (ex.: Resend não configurado) — o link
+      /** Convites cujo email NÃO saiu (ex.: SMTP não configurado) — o link
        * de aceite é devolvido para o admin enviar manualmente. */
       undelivered?: { email: string; accept_url: string }[];
     }
@@ -143,7 +143,7 @@ export async function sendOnboardingInvites(payload: InvitePayload): Promise<Sen
     metadata: { count: sent + failed, sent, failed },
   });
 
-  // Email falhou (ex.: VPS sem RESEND_API_KEY): NÃO redireciona em silêncio —
+  // Email falhou (ex.: VPS sem SMTP completo): NÃO redireciona em silêncio —
   // devolve os links de aceite pro admin enviar manualmente (mesmo contrato do
   // fallback de /app/team/invite). Redirect só no caminho 100% entregue.
   if (failed > 0) {

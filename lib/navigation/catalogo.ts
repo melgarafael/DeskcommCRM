@@ -40,6 +40,8 @@ export interface NavMetadata {
   section?: string;
   /** Ausente = viewer. Ver a regra de escolha abaixo. */
   minRole?: Role;
+  /** Destino da instalação, disponível somente ao administrador de plataforma. */
+  platformOnly?: boolean;
   /** Ausente = só no hub. `true` = uso diário, sobe para o sidebar. */
   sidebar?: boolean;
   healthDot?: boolean;
@@ -571,6 +573,16 @@ export const NAV_CATALOG = [
     icon: "UsersThree",
     group: "organizacao",
     section: "Sua empresa",
+  },
+  {
+    href: "/app/settings/resend",
+    label: "E-mail e convites",
+    description: "Configurar o SMTP usado nos convites da equipe.",
+    icon: "EnvelopeSimple",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+    platformOnly: true,
   },
   {
     // A porta que faltava (issue #144): rodízio de atendimento e restrição de

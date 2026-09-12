@@ -171,13 +171,13 @@ Contrato completo e limites OAuth: [`docs/support-sessions.md`](../support-sessi
 **Princípios.**
 - A criação valida UUID, payload, autoridade e MFA em dívida. Organização, vínculo `admin` aceito do ator criador e recibo idempotente confiável são gravados na mesma transação; falha intermediária reverte o conjunto.
 - A chave idempotente pertence ao ator e ao payload normalizado, vale por 24 horas e permite recuperar a mesma organização e o mesmo link após perda de resposta, sem repetir envio nem auditoria da criação. Recibo antigo ou editável não é autoridade.
-- Se o responsável é outra pessoa, o convite HMAC é emitido depois do commit. O link assinado de 24 horas é sempre exibido e pode ser copiado; ausência ou falha do Resend não desfaz a criação nem finge e-mail entregue.
+- Se o responsável é outra pessoa, o convite HMAC é emitido depois do commit. O link assinado de 24 horas é sempre exibido e pode ser copiado; ausência ou falha de SMTP não desfaz a criação nem finge e-mail entregue.
 - O aceite serializa o vínculo. Replay de vínculo já ativo não altera papel ou interface; vínculo revogado só pode ser reativado por convite emitido depois da revogação.
 - O aceite ativa a organização convidada; troca normal continua sendo uma operação distinta, baseada em membership aceita e ativa.
 - OAuth, conexão WhatsApp e seed de pipeline são fluxos independentes; este contrato de criação não os declara concluídos.
 
 **ACs principais.**
-- A criação devolve organização, validade, estado real do envio e link copiável mesmo sem Resend.
+- A criação devolve organização, validade, estado real do envio e link copiável mesmo sem SMTP.
 - Repetir a mesma intenção dentro do TTL recupera o mesmo resultado; trocar o payload sob a mesma chave retorna conflito.
 - Responsável aceita o convite e entra na organização; replay não promove papel nem sobrescreve preferência alterada depois.
 - Falha da troca mantém cookie, contexto e dados da organização anterior e apresenta erro.

@@ -839,7 +839,7 @@ Coberto em §6.2. Verificação trimestral: restore em VPS de staging, conferir 
 | `SUPABASE_S3_SECRET_KEY` | WAHA VPS | string | trimestral | idem |
 | `WASABI_ACCESS_KEY` / `WASABI_SECRET` | WAHA VPS + cron | string | anual | Wasabi |
 | `NEXT_PUBLIC_APP_URL` | público | URL | nunca | infra |
-| `RESEND_API_KEY` (notifs email) | server | string | trimestral | Resend |
+| `SMTP_PASSWORD` (notifs email) | server | string | trimestral | operador SMTP |
 | `SLACK_WEBHOOK_ALERTS_URL` | server | URL | quando vazado | Slack admin |
 | `PAGERDUTY_INTEGRATION_KEY` | server | string | quando vazado | PagerDuty |
 
@@ -1371,7 +1371,7 @@ Trigger: manual via super-admin. Auto-trigger desligado (risco de flap).
 | AI Gateway markup (~2%) | variável | incluso | Vercel Pro |
 | Anthropic via Gateway | variável | $50–300/tenant | depende de volume; Sonnet $3/1M in, $15/1M out |
 | Wasabi/R2 backup storage | mensal | $5 | <1TB |
-| Resend (transacional email) | free tier | $0 | 3k emails/mês free |
+| SMTP transacional | variável | variável | conforme o provedor escolhido pelo operador |
 | UptimeRobot | free tier | $0 | 50 monitors |
 | Logflare/Axiom | free tier | $0–25 | escolher após 30d uso |
 | Domínio + DNS Cloudflare | anual | ~$1/mês | |

@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e1d374bb48e0 -->
+<!-- traduzido-de: docs/white-label.md@69e9d03c2d89 -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -109,16 +109,29 @@ It uploads the subject and the body of both e-mails with **your** name and **you
 
 They go out with the brand of the **organization** that originated them — because whoever processed the request, inside your client's product, is your client's system.
 
-To send them, fill in the two variables (`install.sh` asks for both):
+To send them, configure **Settings → Email and invitations** or fill in the
+SMTP variables in `install.sh`:
 
 ```bash
-RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=no-reply@yourcompany.com
+SMTP_HOST=smtp.yourcompany.com
+SMTP_PORT=465
+SMTP_SECURITY=tls
+SMTP_USERNAME=no-reply@yourcompany.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM_EMAIL=no-reply@yourcompany.com
+SMTP_FROM_NAME=Your brand
 ```
 
-**The address has to belong to a domain verified in YOUR Resend account.** That is the one piece the brand does not solve: the name that shows up in the inbox is the brand; the address belongs to whoever hosts.
+Use **465 + `tls`** for implicit SSL/TLS, or **587 + `starttls`** for STARTTLS.
+`SMTP_HOST` takes only the hostname, without `smtp://` or the port. The address
+and credentials belong to the hosting operator; the displayed name comes from
+the organization brand unless `SMTP_FROM_NAME` is set.
 
-**Leaving them blank is a supported choice, not a defect.** Without them the system does not try to send and does not fail silently: the invite shows the acceptance link **on the screen itself**, for you to copy and send however you like, and the LGPD export stays pending review instead of vanishing. Before, a blank address made every send fail over at Resend with an opaque message, and the operator would go hunting network, container and key because of an empty variable.
+**Leaving them blank is a supported choice, not a defect.** Without a complete
+SMTP configuration the system does not try to send and does not fail silently:
+the invite shows the acceptance link **on the screen itself**, for you to copy
+and send however you like, and the LGPD export stays pending review instead of
+vanishing.
 
 ### The support address your clients see
 

@@ -9,7 +9,8 @@ import { env } from "@/lib/env";
 import { audit } from "@/lib/audit";
 import { signInviteToken, INVITE_TTL_SECONDS } from "@/lib/auth/invite-token";
 import { buildInviteEmail } from "@/lib/email/templates/invite";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/smtp";
+import type { EmailDeliveryError } from "@/lib/email/smtp";
 import { marcaDaSaida } from "@/lib/branding/saida";
 
 /** Link sempre existe, inclusive quando a instalação não configurou e-mail. */
@@ -47,6 +48,7 @@ export async function issueInvite(input: {
   });
   const acceptUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/team/accept-invite/${token}`;
   let dispatched = false;
+  let deliveryError: EmailDeliveryError | undefined;
   // Falhas de infraestrutura não desfazem a organização já criada nem o link.
   if (input.dispatch !== false) {
     try {
@@ -69,8 +71,10 @@ export async function issueInvite(input: {
         ],
       });
       dispatched = result.ok;
+      deliveryError = result.ok ? undefined : result.error;
     } catch {
       /* A superfície de recuperação é o link devolvido abaixo. */
+      deliveryError = "send_failed";
     }
     await audit({
       action: "member.invited",
@@ -79,7 +83,7 @@ export async function issueInvite(input: {
       resourceType: "membership",
       resourceId: inviteId,
       requestId: input.requestId,
-      metadata: { email, role: input.role, email_dispatched: dispatched },
+      metadata: { email, role: input.role, email_dispatched: dispatched, email_error: deliveryError ?? null },
     });
   }
   return {
@@ -87,6 +91,7 @@ export async function issueInvite(input: {
     invite_id: inviteId,
     expires_at: new Date(exp * 1000).toISOString(),
     email_dispatched: dispatched,
+    email_error: deliveryError,
     accept_url: acceptUrl,
   };
 }

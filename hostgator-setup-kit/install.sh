@@ -1103,7 +1103,7 @@ fi
 # Cada linha: VARIÁVEL|pergunta|padrão|validador|secret|opcional
 # A ordem importa: a URL do projeto vem antes das chaves porque os validadores
 # das chaves batem contra ela (chave de outro projeto é erro comum e mudo).
-# O bloco final (APP_NAME, SUPPORT_EMAIL, RESEND_*) fica por último de
+# O bloco final (APP_NAME, SUPPORT_EMAIL, SMTP_*) fica por último de
 # propósito: é tudo opcional, e perguntar no meio das credenciais faria parecer
 # obrigatório. Todas as quatro aceitam Enter — e, quando vazias, o produto
 # degrada de forma declarada (marca padrão; tela de suspensão sem endereço;
@@ -1259,8 +1259,13 @@ FIELDS=(
   # comportamento de sempre para quem não tem marca própria.
   "APP_ACCENT_HEX|Cor da sua marca em hex, ex.: #7a5cd6 (Enter usa a cor do sistema)||v_hex||opcional"
   "SUPPORT_EMAIL|E-mail de suporte que SEUS clientes veem (Enter pula)||v_email||opcional"
-  "RESEND_API_KEY|Chave da Resend — envia convite e e-mail de LGPD (resend.com/api-keys, Enter pula)|||secret|opcional"
-  "RESEND_FROM_EMAIL|Remetente dos e-mails, de um domínio verificado na Resend (Enter pula)||v_email||opcional"
+  "SMTP_HOST|Servidor SMTP, sem smtp:// nem :porta (Enter pula)||||opcional"
+  "SMTP_PORT|Porta SMTP (465 para TLS; 587 para STARTTLS)|587|||opcional"
+  "SMTP_SECURITY|Segurança SMTP: starttls, tls ou none|starttls|||opcional"
+  "SMTP_USERNAME|Usuário SMTP (Enter pula)||||opcional"
+  "SMTP_PASSWORD|Senha SMTP (Enter pula)|||secret|opcional"
+  "SMTP_FROM_EMAIL|E-mail remetente (Enter pula)||v_email||opcional"
+  "SMTP_FROM_NAME|Nome exibido no remetente (Enter pula)||||opcional"
 )
 
 field_at() { IFS='|' read -r F_VAR F_PROMPT F_DEF F_VAL F_SEC F_OPT <<< "${FIELDS[$1]}"; }
@@ -1607,13 +1612,18 @@ esac
   # As três acima e as duas abaixo entram aqui pelo MESMO motivo, e não por
   # simetria: o .env é escrito com truncamento (`} > .env`, no fecho deste
   # bloco), então chave que este script não grava é APAGADA na execução
-  # seguinte. Quem pôs a chave da Resend à mão a perdia no primeiro update —
-  # num script que o README vende como idempotente.
-  printf '# E-mail transacional. RESEND_FROM_EMAIL tem de ser de um domínio\n'
-  printf '# VERIFICADO na SUA conta Resend. Vazio = e-mail desligado: o convite\n'
-  printf '# mostra o link de aceite na tela e o export de LGPD fica pendente.\n'
-  envq RESEND_API_KEY "${RESEND_API_KEY:-}"
-  envq RESEND_FROM_EMAIL "${RESEND_FROM_EMAIL:-}"
+  # seguinte. Quem configurou SMTP à mão não pode perder a configuração no
+  # primeiro update de um script que se apresenta como idempotente.
+  printf '# E-mail transacional. Use só o host (sem smtp:// nem :porta).\n'
+  printf '# Porta 465 usa SMTP sobre TLS; 587 usa STARTTLS. Vazio mantém o\n'
+  printf '# convite com link copiável e o export de LGPD em revisão pendente.\n'
+  envq SMTP_HOST "${SMTP_HOST:-}"
+  envq SMTP_PORT "${SMTP_PORT:-587}"
+  envq SMTP_SECURITY "${SMTP_SECURITY:-starttls}"
+  envq SMTP_USERNAME "${SMTP_USERNAME:-}"
+  envq SMTP_PASSWORD "${SMTP_PASSWORD:-}"
+  envq SMTP_FROM_EMAIL "${SMTP_FROM_EMAIL:-}"
+  envq SMTP_FROM_NAME "${SMTP_FROM_NAME:-}"
   printf '# Qual provedor você escolheu na instalação. É o que faz a 2ª execução do\n'
   printf '# install.sh já vir com a sua escolha como padrão, em vez de re-adivinhar\n'
   printf '# pelas chaves presentes. A app não lê esta variável.\n'

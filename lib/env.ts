@@ -228,21 +228,15 @@ const schema = z.object({
   // Sentry
   SENTRY_DSN: z.string().optional().default(""),
 
-  /**
-   * Resend — o transporte de TODO e-mail transacional (convite, LGPD, alarme).
-   *
-   * Estavam lidas de `process.env` CRU dentro de `lib/email/resend.ts`, fora do
-   * Zod e fora do `.env.example` (medido: `grep -n RESEND lib/env.ts` → nada;
-   * `grep -c -i resend .env.example` → 0). Duas consequências que só apareciam
-   * na VPS: o `env-example-sync` nunca cobrou a documentação da chave, e o
-   * `install.sh` não a gravava — como o `.env` é escrito com truncamento
-   * (`} > .env`), a chave posta à mão era DESCARTADA na instalação seguinte,
-   * num script que o README vende como idempotente.
-   *
-   * `RESEND_FROM_EMAIL` vazio NÃO cai num domínio nosso: ver `fromAddress()`.
-   */
-  RESEND_API_KEY: z.string().optional().default(""),
-  RESEND_FROM_EMAIL: z.string().optional().default(""),
+  // SMTP é o transporte de todos os e-mails transacionais. O banco prevalece;
+  // estas variáveis servem para provisionamento sem interface.
+  SMTP_HOST: z.string().optional().default(""),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(587),
+  SMTP_SECURITY: z.enum(["starttls", "tls", "none"]).optional().default("starttls"),
+  SMTP_USERNAME: z.string().optional().default(""),
+  SMTP_PASSWORD: z.string().optional().default(""),
+  SMTP_FROM_EMAIL: z.string().optional().default(""),
+  SMTP_FROM_NAME: z.string().optional().default(""),
 
   /**
    * E-mail de suporte que a instalação mostra ao CLIENTE FINAL (tela de conta

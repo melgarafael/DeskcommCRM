@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ send: vi.fn(), audit: vi.fn() }));
 vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "http://localhost:3013" } }));
-vi.mock("@/lib/email/resend", () => ({ sendEmail: h.send }));
+vi.mock("@/lib/email/smtp", () => ({ sendEmail: h.send }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
 vi.mock("@/lib/branding/saida", () => ({ marcaDaSaida: async () => ({ nome: "Local", cor: "#000000" }) }));
 vi.mock("@/lib/email/templates/invite", () => ({ buildInviteEmail: () => ({ subject: "Convite", html: "Convite", text: "Convite" }) }));
@@ -16,6 +16,7 @@ it("sem serviço de e-mail continua com link assinado, validade e auditoria sem 
   const result = await issueInvite(input);
   const token = result.accept_url.split("/").at(-1)!;
   expect(result.email_dispatched).toBe(false);
+  expect(result.email_error).toBe("not_configured");
   expect(verifyInviteToken(token)).toMatchObject({ invited_by: input.inviterId, organization_id: input.organizationId, role: "admin" });
   expect(Date.parse(result.expires_at)).toBeGreaterThan(Date.now());
   expect(JSON.stringify(h.audit.mock.calls)).not.toContain(token);
@@ -24,6 +25,7 @@ it("falha lançada pelo envio continua com recuperação visível", async () => 
   h.send.mockRejectedValue(new Error("network failure"));
   const result = await issueInvite(input);
   expect(result.email_dispatched).toBe(false);
+  expect(result.email_error).toBe("send_failed");
   expect(result.accept_url).toContain("/team/accept-invite/");
 });
 it("replay usa identidade/prazo estáveis e não reenvia", async () => {

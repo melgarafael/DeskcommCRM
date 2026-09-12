@@ -10,7 +10,7 @@
  *   6. Upload PDF + JSON to bucket `lgpd-exports/{org}/{request}/...`.
  *   7. Create signed URL (LGPD_EXPORT_EXPIRES_HOURS, default 72h).
  *   8. Resolve delivery email: request_payload.delivery.address || contact.email.
- *   9. sendExportEmail (Resend) — sha256(email) in logs only.
+ *   9. sendExportEmail (SMTP) — sha256(email) in logs only.
  *   10. Mark status='completed', persist result metadata (paths, sha256, signed flag,
  *       delivered_to_hash, message_id, warning).
  *   11. Emit lgpd.export_generated + lgpd.export_delivered.
@@ -241,7 +241,7 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
 
     const deliveredHash = hashEmail(deliveryEmail);
 
-    // 9. Send email (Resend). Failure here is retriable.
+    // 9. Send email (SMTP). Failure here is retriable.
     let messageId: string | null = null;
     try {
       // Classe A: há organização, então o e-mail diz quem PROCESSOU — a marca
@@ -293,7 +293,7 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
           detail: "email_not_configured",
         };
       }
-      // Generic Resend failure — set status back so cron retries.
+      // Generic SMTP failure — set status back so cron retries.
       const detail = err instanceof EmailSendFailed ? err.message : String(err);
       logger.warn("[lgpd-export-worker] email send failed", {
         request_id: shortId(requestId),

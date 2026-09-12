@@ -40,11 +40,11 @@ export function essencial(d: NavMetadata, role: Role | null, platform = false): 
   );
 }
 export function canSee(
-  d: Pick<NavMetadata, "href" | "minRole">,
+  d: Pick<NavMetadata, "href" | "minRole" | "platformOnly">,
   platform: boolean,
   role: Role | null,
 ): boolean {
-  return platform || (!!role && ROLE_RANK[role] >= ROLE_RANK[d.minRole ?? "viewer"]);
+  return platform || (!d.platformOnly && !!role && ROLE_RANK[role] >= ROLE_RANK[d.minRole ?? "viewer"]);
 }
 export function permitidos(platform: boolean, role: Role | null): NavMetadata[] {
   return NAV_CATALOG.filter((d) => canSee(d, platform, role));

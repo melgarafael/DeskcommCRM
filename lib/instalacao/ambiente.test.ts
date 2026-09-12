@@ -55,11 +55,13 @@ describe("lerAmbiente", () => {
   // `lib/channels/transporte.test.ts`.
 
   it("e-mail configurado é o que decide se o convite sai de verdade", () => {
-    // Falso em toda instalação pelo kit hoje: o `install.sh` não coleta essa
-    // chave. É por isso que o passo de convites precisa tratar o link manual
-    // como caminho NORMAL, e não como exceção.
+    // A ausência mantém o link manual como caminho normal, não como exceção.
     expect(lerAmbiente({}).email).toBe(false);
-    expect(lerAmbiente({ RESEND_API_KEY: "re_x" }).email).toBe(true);
+    expect(lerAmbiente({ SMTP_HOST: "smtp.exemplo.test" }).email).toBe(false);
+    expect(
+      lerAmbiente({ SMTP_HOST: "smtp.exemplo.test", SMTP_FROM_EMAIL: "suporte@exemplo.test" })
+        .email,
+    ).toBe(true);
   });
 });
 
@@ -68,9 +70,9 @@ describe("nomeAindaEhPlaceholder", () => {
     // O `install.sh` nunca pergunta o nome do negócio: toda instalação nasce
     // "Minha Empresa", e esse texto aparece no cabeçalho do wizard.
     expect(nomeAindaEhPlaceholder({ slug: "minha-empresa", display_name: "Qualquer" })).toBe(true);
-    expect(nomeAindaEhPlaceholder({ slug: "outro", display_name: NOME_PLACEHOLDER_DA_INSTALACAO })).toBe(
-      true,
-    );
+    expect(
+      nomeAindaEhPlaceholder({ slug: "outro", display_name: NOME_PLACEHOLDER_DA_INSTALACAO }),
+    ).toBe(true);
   });
 
   it("não acusa quem já deu um nome ao negócio", () => {

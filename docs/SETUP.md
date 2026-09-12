@@ -73,7 +73,7 @@ fica em `http://127.0.0.1:54323` e o WAHA em `http://127.0.0.1:3030`.
 6. [Anthropic + Vercel AI Gateway — IA](#4-anthropic--vercel-ai-gateway--ia)
 7. [OpenAI — embeddings do RAG](#5-openai--embeddings-do-rag)
 8. [Sentry — monitoramento de erros](#6-sentry--monitoramento-de-erros)
-9. [Resend — email transacional](#7-resend--email-transacional)
+9. [SMTP — email transacional](#7-smtp--email-transacional)
 10. [Nuvemshop — integração e-commerce](#8-nuvemshop--integração-e-commerce)
 11. [Chaves geradas localmente](#9-chaves-geradas-localmente--encryption--secrets)
 12. [Verificação final](#verificação-final)
@@ -122,7 +122,7 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 **⚪ Pode ficar vazio em dev (degradam graciosamente):**
 
 - [Sentry](#6-sentry--monitoramento-de-erros) — não monitora erros, mas app sobe.
-- [Resend](#7-resend--email-transacional) — emails não saem (vão pro console.log), mas app sobe.
+- [SMTP](#7-smtp--email-transacional) — e-mails não saem, mas o app sobe com link de convite copiável.
 - [Nuvemshop](#8-nuvemshop--integração-e-commerce) — UI mostra "Integração não configurada".
 
 ---
@@ -382,25 +382,31 @@ SENTRY_DSN=https://abc123@o456.ingest.sentry.io/789
 
 ---
 
-## 7. Resend — email transacional
+## 7. SMTP — email transacional
 
-**O que é:** Serviço de envio de email. Usado pra magic links, reset de senha, exports LGPD, notificações. **Free tier:** 3k emails/mês, 100/dia. Suficiente pra dev e MVP.
-
-1. Acesse <https://resend.com> → **Sign up** com GitHub.
-2. **API Keys → Create API Key**:
-   - **Name:** `deskcomm-dev`
-   - **Permission:** `Sending access` (não `Full access`).
-   - **Domain:** `All domains` (em dev) — em prod, restrinja ao domínio verificado.
-3. Copie a chave (começa com `re_...`). **Ela só aparece uma vez.**
+Convites de equipe, entrega de export LGPD e alarmes usam o servidor SMTP da sua
+empresa. A configuração preferida fica em **Configurações → E-mail e convites**
+(`/app/settings/resend` por compatibilidade de URL); ela é criptografada no banco
+da instalação. O mesmo transporte também pode ser provisionado no `.env`.
 
 ```env
-RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=onboarding@resend.dev
+SMTP_HOST=smtp.seudominio.com
+SMTP_PORT=465
+SMTP_SECURITY=tls
+SMTP_USERNAME=suporte@seudominio.com
+SMTP_PASSWORD=uma-senha-de-aplicativo
+SMTP_FROM_EMAIL=suporte@seudominio.com
+SMTP_FROM_NAME=Minha Empresa
 ```
 
-> 💡 O domínio `onboarding@resend.dev` é compartilhado e funciona no plano free pra testes. Em prod, **verifique seu próprio domínio** no Resend (DNS records SPF + DKIM) e use `noreply@seudominio.com`.
->
-> ℹ️ Se você não configurar o Resend, o app sobe normal — só faz `console.log` em vez de enviar emails de verdade. Bom pra dev sem precisar gastar quota.
+Use **465 + `tls`** para SMTP com SSL/TLS implícito, ou **587 + `starttls`**
+para STARTTLS. Em `SMTP_HOST`, informe somente o hostname — sem `smtp://` e sem
+`:465`. O campo de remetente recebe apenas o e-mail, por exemplo
+`suporte@seudominio.com`.
+
+> ℹ️ Sem host ou remetente, o app continua funcionando: o convite mostra o link
+> de aceite para copiar e o export LGPD fica em `pending_review`. Não há envio
+> incompleto nem domínio padrão do produto.
 
 ---
 
@@ -560,9 +566,12 @@ Provável: você botou o **hash** em `WAHA_API_KEY` em vez do **plaintext**. Con
 
 Algum outro processo rodando. Mata com `lsof -ti:3000 | xargs kill -9` ou roda o Next em outra porta: `pnpm dev -- -p 3001` (e atualize `WAHA_WEBHOOK_BASE_URL` no ngrok pra apontar pra nova porta).
 
-### `RESEND_API_KEY is undefined` (mas o app sobe)
+### SMTP não envia (mas o app sobe)
 
-Esperado em dev se você ainda não configurou o Resend. Emails caem no `console.log`. Só configure se for testar fluxos de email (LGPD export, magic link).
+Confira em **Configurações → E-mail e convites** se o teste de conexão conclui e
+se a combinação de porta e segurança está correta: **465 + TLS** ou **587 +
+STARTTLS**. O host não deve conter `smtp://` ou a porta. Sem SMTP configurado,
+convites continuam com link copiável e o restante do app segue disponível.
 
 ### Migrations não rodam
 

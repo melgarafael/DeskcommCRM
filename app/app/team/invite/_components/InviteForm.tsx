@@ -24,7 +24,7 @@ import { ROLES, type Role } from "@/lib/schemas/team";
 import { descreverMotivoDaFalha } from "./motivo-da-falha";
 
 interface ResultState {
-  sent: Array<{ email: string; accept_url: string; email_dispatched: boolean; expires_at: string }>;
+  sent: Array<{ email: string; accept_url: string; email_dispatched: boolean; email_error?: "not_configured" | "send_failed" | "rate_limited" | "sender_rejected"; expires_at: string }>;
   failed: Array<{ email: string; reason: string }>;
 }
 
@@ -35,6 +35,13 @@ export function InviteForm() {
   const [role, setRole] = useState<Role>("agent");
   const [result, setResult] = useState<ResultState | null>(null);
   const invite = useInviteMembers();
+  const mensagemDeEntrega = (item: ResultState["sent"][number]) => {
+    if (item.email_dispatched) return t("Email enviado.");
+    if (item.email_error === "sender_rejected") return t("O servidor SMTP recusou o remetente configurado.");
+    if (item.email_error === "rate_limited") return t("O servidor SMTP limitou temporariamente o envio. Tente novamente em instantes.");
+    if (item.email_error === "send_failed") return t("O servidor SMTP recusou ou não conseguiu entregar este convite. Verifique a configuração de e-mail.");
+    return t("SMTP não configurado — link copiável abaixo.");
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,9 +133,7 @@ export function InviteForm() {
                     <li key={s.email} className="rounded-md border p-2">
                       <div className="font-medium">{s.email}</div>
                       <div className="text-xs text-muted-foreground">
-                        {s.email_dispatched
-                          ? t("Email enviado.")
-                          : t("Resend não configurado — link copiável abaixo (DEV).")}
+                        {mensagemDeEntrega(s)}
                       </div>
                       {!s.email_dispatched ? (
                         <code className="mt-1 block text-xs break-all">{s.accept_url}</code>

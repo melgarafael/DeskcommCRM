@@ -29,6 +29,7 @@ interface SentItem {
   invite_id: string;
   expires_at: string;
   email_dispatched: boolean;
+  email_error?: "not_configured" | "send_failed" | "rate_limited" | "sender_rejected";
   accept_url: string;
 }
 interface FailedItem {

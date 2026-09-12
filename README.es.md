@@ -292,7 +292,7 @@ pnpm dev
 
 App: <http://localhost:3000> · Health check: <http://localhost:3000/api/v1/health>
 
-[`docs/SETUP.md`](docs/SETUP.md) es el tutorial completo de **todas las integraciones** (Supabase, WAHA, proveedores de IA, Upstash, Sentry, Resend, Nuvemshop) — ~60–90 min de cero a la app corriendo. *(La documentación está en portugués de Brasil; ¡las traducciones son bienvenidas!)*
+[`docs/SETUP.md`](docs/SETUP.md) es el tutorial completo de **todas las integraciones** (Supabase, WAHA, proveedores de IA, Upstash, Sentry, SMTP, Nuvemshop) — ~60–90 min de cero a la app corriendo. *(La documentación está en portugués de Brasil; ¡las traducciones son bienvenidas!)*
 
 ---
 
@@ -322,7 +322,7 @@ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
 | `build-and-size` | `pnpm build` en Node 22 |
 | `e2e` | levanta un Supabase local, aplica `baseline.sql` y corre **44 de las 45** specs de Playwright por el frontend |
 
-La única spec fuera del `e2e` es `vps-fresh-onboarding` — necesita WAHA + Redis + Resend + Nuvemshop de verdad. Es la **P0** de nuestra doctrina de QA visual, así que un `e2e` verde **no** prueba el recorrido de instalación fresca; ese se prueba en un VPS.
+La única spec fuera del `e2e` es `vps-fresh-onboarding` — necesita WAHA + Redis + SMTP + Nuvemshop de verdad. Es la **P0** de nuestra doctrina de QA visual, así que un `e2e` verde **no** prueba el recorrido de instalación fresca; ese se prueba en un VPS.
 
 Entre los invariantes está el **test de aislamiento RLS**: crea 2 organizaciones, simula los claims JWT por el mismo camino `auth.uid()` / `fn_user_org_ids()` que usan las policies de producción, y prueba que un usuario de la org A ve **cero filas** de la org B en `conversations`, `messages`, `contacts` y `crm_leads`. Antes, un caso de control prueba que las filas de la org B realmente existen — sin él, el test pasaría con la tabla vacía.
 

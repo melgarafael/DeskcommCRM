@@ -57,18 +57,18 @@ Configuração sobrevive a toda atualização. É por isso que a marca é lida e
 
 ## Marca por organização
 
-**Uma instalação atende várias organizações, e cada uma pode ter a própria marca.** O admin de cada organização abre `Configurações → Marca` (`/app/settings/marca`) e define **nome**, **cor** e **logo** dela — sem precisar de você, e sem enxergar as outras.
+**Uma instalação atende várias organizações, e cada uma pode ter a própria marca.** O admin de cada organização abre `Configurações → Marca` (`/app/settings/marca`) e define **nome**, **cor** e **logo** dela — sem precisar de você, e sem enxergar as outras. O logo escolhido também é sincronizado com a fachada do login nesta instalação.
 
 A fronteira, que é deliberada:
 
 | Onde | Qual marca aparece |
 |---|---|
-| `/login`, cadastro, recuperação de senha, verificação em duas etapas | A da **instalação** (a sua) |
+| `/login`, cadastro, recuperação de senha, verificação em duas etapas | O logo sincronizado com a **instalação**; nome e cor seguem a marca da instalação |
 | Dentro do sistema (`/app/...`), depois de entrar | A da **organização**, se ela tiver; senão, a da instalação |
 | E-mails de acesso (confirmação de conta, recuperação de senha) | A da **instalação** |
 | Convite de time, e-mails de LGPD | A da **organização** que enviou |
 
-O motivo de o login ficar de fora não é limitação: **antes de a pessoa entrar, o sistema não sabe de qual organização ela é.** Pintar o login com a cor de alguma delas seria escolher uma no escuro.
+O login continua sem organização ativa antes da autenticação. Por isso, o upload do logo em `Configurações → Marca` atualiza também a referência da instalação, permitindo que a mesma imagem seja mostrada sem sessão.
 
 Isso não torna a instalação dedicada obsoleta — ver a comparação abaixo, que continua valendo por infra, isolamento e discurso de venda.
 
@@ -107,16 +107,28 @@ Ele sobe o assunto e o corpo dos dois e-mails com o **seu** nome e a **sua** cor
 
 Saem com a marca da **organização** que os originou — porque quem processou a solicitação, no produto do seu cliente, é o sistema do seu cliente.
 
-Para enviá-los, preencha as duas variáveis (o `install.sh` pergunta as duas):
+Para enviá-los, configure **Configurações → E-mail e convites** ou preencha as
+variáveis SMTP no `install.sh`:
 
 ```bash
-RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=nao-responda@suaempresa.com.br
+SMTP_HOST=smtp.suaempresa.com.br
+SMTP_PORT=465
+SMTP_SECURITY=tls
+SMTP_USERNAME=nao-responda@suaempresa.com.br
+SMTP_PASSWORD=sua-senha-de-aplicativo
+SMTP_FROM_EMAIL=nao-responda@suaempresa.com.br
+SMTP_FROM_NAME=Sua marca
 ```
 
-**O endereço tem de ser de um domínio verificado na SUA conta Resend.** Esse é o único pedaço que a marca não resolve: o nome que aparece na caixa de entrada é a marca; o endereço é de quem hospeda.
+Use **465 + `tls`** para SSL/TLS implícito, ou **587 + `starttls`** para
+STARTTLS. `SMTP_HOST` recebe somente o hostname, sem `smtp://` e sem a porta.
+O endereço e as credenciais são de quem hospeda; o nome exibido vem da marca da
+organização, salvo se `SMTP_FROM_NAME` for preenchido.
 
-**Deixar em branco é uma escolha suportada, não um defeito.** Sem elas, o sistema não tenta enviar e não falha calado: o convite mostra o link de aceite **na própria tela**, para você copiar e mandar por onde quiser, e o export de LGPD fica pendente de revisão em vez de sumir. Antes, um endereço em branco fazia todo envio falhar lá na Resend com uma mensagem opaca, e o operador ia caçar rede, contêiner e chave por causa de uma variável vazia.
+**Deixar em branco é uma escolha suportada, não um defeito.** Sem SMTP completo,
+o sistema não tenta enviar e não falha calado: o convite mostra o link de aceite
+**na própria tela**, para você copiar e mandar por onde quiser, e o export de
+LGPD fica pendente de revisão em vez de sumir.
 
 ### O endereço de suporte que os seus clientes veem
 

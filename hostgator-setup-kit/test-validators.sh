@@ -1451,9 +1451,9 @@ chegou_na_deteccao() {
   return 1
 }
 # As RESPOSTAS do modo interativo, na ordem em que o instalador pergunta: o
-# proxy (o que se testa aqui), depois os 7 campos que o BASE_ENV deixa vazios de
-# propósito (APP_IMAGE, OPENAI_API_KEY, APP_NAME, APP_ACCENT_HEX, SUPPORT_EMAIL,
-# RESEND_API_KEY, RESEND_FROM_EMAIL — todos com Enter), a tela de conferência,
+# proxy (o que se testa aqui), depois os campos que o BASE_ENV deixa vazios de
+# propósito (imagem, provedor de IA, marca, suporte e SMTP — todos com Enter),
+# a tela de conferência,
 # a telemetria e o aviso de DNS ('c' = seguir assim mesmo).
 # As respostas que vêm DEPOIS da do proxy reverso, na ordem em que o install.sh
 # as consome. É uma fila posicional: pergunta nova no meio do script desloca
@@ -1469,9 +1469,9 @@ chegou_na_deteccao() {
 # Contagem de Enters antes do 'c', medida com
 #   eval "$(grep -m1 '^RESTO_DAS_PERGUNTAS=' test-validators.sh)"
 #   printf '%s' "${RESTO_DAS_PERGUNTAS%%c*}" | grep -c ''
-# → era 9 antes de APP_ACCENT_HEX entrar em FIELDS, 10 depois dela, e é 11
-#   desde que APP_LOCALE (o idioma da instalação) entrou logo após APP_NAME.
-RESTO_DAS_PERGUNTAS=$'\n\n\n\n\n\n\n\n\n\n\n\nc\n'
+# → a quantidade depende do questionário atual do instalador. O último `c`
+#   confirma o aviso de DNS.
+RESTO_DAS_PERGUNTAS="$(for _ in {1..17}; do printf '\n'; done; printf 'c\n')"
 
 # A posição da cor DENTRO da fila acima — SUPABASE_ACCESS_TOKEN + 1 provedor +
 # APP_IMAGE + OPENAI + APP_NAME + APP_LOCALE e ela é a 7ª. Fica numa variável porque a fila com a cor RESPONDIDA

@@ -1,5 +1,5 @@
 /**
- * LGPD export email delivery (Resend).
+ * LGPD export email delivery (SMTP).
  *
  * NEVER logs the recipient address in plaintext (CLAUDE.md §LGPD L-08).
  * Only sha256(email) appears in logs/audit metadata.
@@ -27,18 +27,18 @@
 import { createHash } from "node:crypto";
 
 import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/smtp";
 
 export class EmailNotConfigured extends Error {
   constructor() {
-    super("RESEND_API_KEY missing or invalid");
+    super("SMTP is not configured");
     this.name = "EmailNotConfigured";
   }
 }
 
 export class EmailSendFailed extends Error {
   constructor(detail: string) {
-    super(`Resend send failed: ${detail}`);
+    super(`SMTP send failed: ${detail}`);
     this.name = "EmailSendFailed";
   }
 }

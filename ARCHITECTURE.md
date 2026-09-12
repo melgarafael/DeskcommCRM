@@ -75,7 +75,7 @@ pelos 10 endpoints em `app/api/v1/cron/`. Contrato: [`docs/specs/07-spec-events-
 | **Vercel AI Gateway** | LLM + embeddings (`@ai-sdk/anthropic\|openai\|google`) | `lib/ai/` | agente não responde |
 | **Nuvemshop** | e-commerce: pedidos, produtos, webhooks LGPD | `lib/nuvemshop/` | opcional (`NUVEMSHOP_ENABLED`) |
 | **Sentry** | erros + performance, `beforeSend` higieniza PII | `sentry.*.config.ts`, `instrumentation*.ts` | opcional |
-| **Resend** | e-mail transacional (convite de time) | `lib/email/` | opcional — o convite cai em copy-to-clipboard |
+| **SMTP** | e-mail transacional (convite de time, LGPD e alertas) | `lib/email/` | opcional — o convite cai em copy-to-clipboard |
 | **MCP** | CRM exposto como tools para agentes | `app/api/mcp/`, `lib/mcp/` | — |
 
 ## Hardening

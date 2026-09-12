@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e1d374bb48e0 -->
+<!-- traduzido-de: docs/white-label.md@69e9d03c2d89 -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -109,16 +109,29 @@ Sube el asunto y el cuerpo de los dos correos con **tu** nombre y **tu** color, 
 
 Salen con la marca de la **organización** que los originó — porque quien procesó la solicitud, dentro del producto de tu cliente, es el sistema de tu cliente.
 
-Para enviarlos, rellena las dos variables (el `install.sh` pregunta las dos):
+Para enviarlos, configura **Configuración → Correo e invitaciones** o completa
+las variables SMTP en `install.sh`:
 
 ```bash
-RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=no-responder@tuempresa.com
+SMTP_HOST=smtp.tuempresa.com
+SMTP_PORT=465
+SMTP_SECURITY=tls
+SMTP_USERNAME=no-responder@tuempresa.com
+SMTP_PASSWORD=tu-contrasena-de-aplicacion
+SMTP_FROM_EMAIL=no-responder@tuempresa.com
+SMTP_FROM_NAME=Tu marca
 ```
 
-**La dirección tiene que ser de un dominio verificado en TU cuenta de Resend.** Ese es el único pedazo que la marca no resuelve: el nombre que aparece en la bandeja de entrada es la marca; la dirección es de quien aloja.
+Usa **465 + `tls`** para SSL/TLS implícito o **587 + `starttls`** para
+STARTTLS. `SMTP_HOST` recibe solamente el hostname, sin `smtp://` ni el puerto.
+La dirección y las credenciales pertenecen a quien aloja; el nombre mostrado
+viene de la marca de la organización, salvo que se configure `SMTP_FROM_NAME`.
 
-**Dejarlas en blanco es una elección soportada, no un defecto.** Sin ellas, el sistema no intenta enviar y no falla callado: la invitación muestra el enlace de aceptación **en la propia pantalla**, para que lo copies y lo mandes por donde quieras, y la exportación de LGPD queda pendiente de revisión en vez de desaparecer. Antes, una dirección en blanco hacía que todo envío fallara allá en Resend con un mensaje opaco, y el operador se iba a cazar red, contenedor y clave por culpa de una variable vacía.
+**Dejarlas en blanco es una elección soportada, no un defecto.** Sin una
+configuración SMTP completa, el sistema no intenta enviar ni falla en silencio:
+la invitación muestra el enlace de aceptación **en la propia pantalla**, para
+que lo copies y lo mandes por donde quieras, y la exportación de LGPD queda
+pendiente de revisión en vez de desaparecer.
 
 ### La dirección de soporte que ven tus clientes
 

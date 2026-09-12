@@ -2,7 +2,7 @@
  * LGPD export PDF renderer (PT-BR).
  *
  * Template para Art. 18, II — direito de acesso aos dados. Renderizado para
- * Buffer via @react-pdf/renderer e entregue ao titular via Resend.
+ * Buffer via @react-pdf/renderer e entregue ao titular via SMTP.
  *
  * ── ESTE DOCUMENTO NÃO LEVA MARCA. É decisão, não esquecimento ──────────────
  *

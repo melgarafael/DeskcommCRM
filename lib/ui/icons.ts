@@ -49,6 +49,7 @@ export {
   List,
   Bell,
   BellSlash,
+  EnvelopeSimple,
   PaperPlaneTilt,
   Smiley,
   Check,

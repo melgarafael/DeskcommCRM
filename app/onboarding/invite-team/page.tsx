@@ -1,4 +1,4 @@
-import { isEmailConfigured } from "@/lib/email/resend";
+import { getSmtpConfig } from "@/lib/email/config";
 import { InviteTeamForm } from "./_form";
 import { requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export default async function InviteTeamPage() {
   const user = await requireAuth();
   const idioma = user.idioma;
-  const emailReady = isEmailConfigured();
+  const smtp = await getSmtpConfig();
+  const emailReady = Boolean(smtp.host && smtp.fromEmail);
   return (
     <div className="space-y-6">
       <header>

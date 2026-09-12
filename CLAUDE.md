@@ -388,7 +388,7 @@ Ao mexer em schema, RLS, RBAC, atribuição, escopo, roteamento, follow-up, webh
 **O que "recurso real" significa (e o que NÃO conta):**
 - **Conta.** Prova pela tela, dirigindo o browser (Playwright), logando com conta de teste real. `curl`/chamada de API **não** provam UX — validam o backend, mas não o que o usuário vê, clica e entende. Use curl só como diagnóstico.
 - **Banco fresco estilo VPS.** Postgres limpo aplicado do `supabase/baseline.sql` (não das `migrations/` — a cadeia fresh não sobe) + `scripts/bootstrap-owner.ts` (o que o `install.sh` faz). O ambiente do teste = o que o clone recém-instalado tem: sem os seus dados, sem os seus envs opcionais.
-- **Dependências como na VPS.** WAHA local, Redis local (`redis` + `serverless-redis-http`), cron drain via endpoint. E **teste com os envs opcionais AUSENTES** (ex.: sem `RESEND_API_KEY`) — é o estado real de um primeiro deploy, e é onde moram os piores bugs de primeira impressão.
+- **Dependências como na VPS.** WAHA local, Redis local (`redis` + `serverless-redis-http`), cron drain via endpoint. E **teste com os envs opcionais AUSENTES** (ex.: sem `SMTP_HOST`) — é o estado real de um primeiro deploy, e é onde moram os piores bugs de primeira impressão.
 - **Efeito colateral externo provado com receiver real.** Webhook outbound, envio — suba um receiver HTTP de verdade e prove o que chegou (ou que foi barrado). Mock não estressa o egress real (anti-SSRF, projeção de payload, https em prod).
 
 **Prioridade: primeira impressão acima de tudo.** Onboarding e as primeiras ações (criar conta, conectar canal, primeiro lead, primeiro convite) são a primeira impressão do usuário — bug ali é abandono. Teste esses caminhos primeiro e com o maior rigor.

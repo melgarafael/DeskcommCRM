@@ -36,7 +36,7 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 | J1.5 | Connect WhatsApp: WAHA ativo → QR aparece | sessão criada, QR renderiza via proxy, poll de status roda |
 | J1.6 | Connect WhatsApp: "Pular por enquanto" | avança pro step correto (setup-ai quando Nuvemshop off) |
 | J1.7 | Setup IA: criar agente default | `ai_agents` criado **e a versão publicada aponta para o provedor que a instalação escolheu**, com o modelo curado DAQUELE provedor; avança |
-| J1.8 | Invite team: enviar convite SEM Resend configurado (realidade da VPS fresca) | UI **não mente**: mostra que email não saiu + oferece `accept_url` copiável |
+| J1.8 | Invite team: enviar convite SEM SMTP configurado (realidade da VPS fresca) | UI **não mente**: mostra que email não saiu + oferece `accept_url` copiável |
 | J1.9 | Done: "Ir para o Inbox" | seta `onboarded_at`, cai no `/app/inbox` |
 | J1.10 | Gate MFA pós-onboarding | blocker aparece; enrolar TOTP + ver/salvar recovery codes funciona de ponta a ponta |
 | J1.11 | Abandonar no meio e voltar (fecha browser no step 3) | retoma exatamente no step pendente |
@@ -68,7 +68,7 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 
 > **Cobertura em camadas (J1.22/J1.23):** a decisão de *não provisionar* é provada por unitário, porque é uma função pura e roda no gate obrigatório. O caso de tela cobre o caminho visível (CTA → signup com o token → campos certos). O que **não** está coberto ponta a ponta é a volta do link de confirmação de e-mail: exigiria caixa de e-mail no e2e, e a spec que faria isso é a de instalação fresca, que está fora do CI.
 
-> **A jornada J1 passou a ter GATE.** `tests/e2e/wizard-do-funcionario.spec.ts` roda no CI (SPECS_PARTE_1) e cobre o wizard inteiro pela tela — do login ao "Começar a usar" — criando a PRÓPRIA organização, porque o seed compartilhado entrega uma já onboardada e zerá-la mandaria as specs seguintes para dentro do onboarding. Fica de fora só o ensaio com resposta real, que exige chave de IA com saldo. `vps-fresh-onboarding.spec.ts` continua fora do gate (depende de WAHA, Redis, Resend e Nuvemshop) e segue sendo a prova mais completa, para rodar à mão.
+> **A jornada J1 passou a ter GATE.** `tests/e2e/wizard-do-funcionario.spec.ts` roda no CI (SPECS_PARTE_1) e cobre o wizard inteiro pela tela — do login ao "Começar a usar" — criando a PRÓPRIA organização, porque o seed compartilhado entrega uma já onboardada e zerá-la mandaria as specs seguintes para dentro do onboarding. Fica de fora só o ensaio com resposta real, que exige chave de IA com saldo. `vps-fresh-onboarding.spec.ts` continua fora do gate (depende de WAHA, Redis, SMTP e Nuvemshop) e segue sendo a prova mais completa, para rodar à mão.
 
 > **Achado ABERTO (não é regressão, é primeira impressão):** percorrendo o wizard inteiro num tenant fresco, o botão "Começar a usar" entrega o dono no Inbox e a PRIMEIRA coisa que ele vê é um modal bloqueante de verificação em duas etapas — um sétimo passo que a barra de progresso do wizard nunca anunciou. O MFA obrigatório para `admin` é decisão de produto e está correto; o que está errado é ele aparecer como surpresa depois de seis passos que se apresentaram como o caminho completo. Conserto natural: virar passo do wizard, ou ao menos ser anunciado na tela final. Fora do escopo da frente do quadro de clientes.
 
@@ -159,7 +159,7 @@ fonte só (`lib/onboarding/passos.ts`) — eram três listas que discordavam. Ga
 
 | # | Caso | Expectativa |
 |---|------|-------------|
-| J5.1 | Admin convida atendente pela UI (sem Resend) | UI diz a verdade + accept_url copiável |
+| J5.1 | Admin convida atendente pela UI (sem SMTP) | UI diz a verdade + accept_url copiável |
 | J5.2 | Convidado abre link, cria sessão, aceita | vira membro agent, cai no inbox |
 | J5.3 | Atendente vê APENAS fila + suas conversas | escopo RLS na prática |
 | J5.4 | Atendente dá claim numa conversa da fila | claim ok; 2º atendente levando 409 amigável |
@@ -855,7 +855,7 @@ Critério: nenhuma tela quebra, nenhum stack trace, nenhum texto de erro cru.
 | M8 | Kanban: colisão de fractional index aborta drag sem feedback | explorer CRM | Baixa |
 | M9 | Toasts com códigos crus (`db_error`, `invalid_input`) no onboarding | explorer onboarding | Baixa |
 | M10 | Onboarding: pular WhatsApp redirecionava hardcoded pro connect-nuvemshop (step oculto quando Nuvemshop off) | execução J1.6 | Alta (travava wizard) |
-| M11 | Onboarding: convite sem Resend redirecionava em silêncio, sem dar o accept_url | execução J1.8 | Alta |
+| M11 | Onboarding: convite sem SMTP redirecionava em silêncio, sem dar o accept_url | execução J1.8 | Alta |
 | M12 | MFA gate: revalidação do Server Action desmontava o modal e o usuário nunca via os recovery codes | execução J1.10 | Crítica |
 
 ## Ordem de execução
@@ -1219,7 +1219,7 @@ software que ele não contratou. Não há gravidade média nisso.
 |---|---|---|
 | `M1` `[P0]` | Instalação com a marca do revendedor: a **aba** mostra o nome dele e o **ícone** carrega **deslogado** | **PASS por comportamento** (2026-08-13, build de produção): com `app_name='Vendas Turbo'` e `accent_hex='#f2c94c'` gravados, o ícone virou **V sobre `#6e5c28`** — o accent DERIVADO, não a semente crua — e o título trocou. Spec `tests/e2e/icone-da-marca.spec.ts` no disco **e inscrita** em `SPECS_PARTE_1` (`.github/workflows/e2e.yml:106`). **NÃO medido: a primeira execução dela no CI** |
 | `M2` `[P0]` | O **e-mail de confirmação de conta** chega com a marca do revendedor — ou, sem `SUPABASE_ACCESS_TOKEN`, o passo manual é impresso e a instalação segue | **PARCIAL.** O mecanismo foi medido contra a API real num projeto descartável: `PATCH /v1/projects/{ref}/config/auth` com `mailer_templates_*` **é aceito e PERSISTE sem SMTP customizado** (releitura por `GET`, estado restaurado). Achado do rig: **projeto pausado responde 400 "Project is paused."** — modo de falha que um script confiando em 2xx reportaria como sucesso, e por isso `marca-emails.sh` relê o que gravou. **NÃO medido: um e-mail efetivamente entregue numa caixa de entrada** |
-| `M3` `[P0]` | **Convite de time**: assunto e corpo com a marca; sem `RESEND_*`, a tela mostra o `accept_url` em vez de falhar calada | **COBERTO POR TESTE, NÃO PROVADO NA TELA.** `tests/unit/email-marca-e-remetente.test.ts` e `tests/unit/branding-saida.test.ts` guardam a resolução e o remetente; `RESEND_FROM_EMAIL` vazio passa a significar `not_configured`, que cai no caminho que já existia (`accept_url` na tela, `pending_review` no worker de LGPD). Falta dirigir o browser num ambiente fresco **sem** `RESEND_API_KEY` |
+| `M3` `[P0]` | **Convite de time**: assunto e corpo com a marca; sem SMTP completo, a tela mostra o `accept_url` em vez de falhar calada | **COBERTO POR TESTE, NÃO PROVADO NA TELA.** `tests/unit/email-marca-e-remetente.test.ts` e `tests/unit/branding-saida.test.ts` guardam a resolução e o remetente; `SMTP_FROM_EMAIL` vazio passa a significar `not_configured`, que cai no caminho que já existia (`accept_url` na tela, `pending_review` no worker de LGPD). Falta dirigir o browser num ambiente fresco **sem** `SMTP_HOST` |
 | `M4` `[P1]` | **Cadastro de MFA**: o app autenticador registra a marca da instalação | **ENTREGUE, PROVA CONTRA GoTrue REAL NÃO LOCALIZADA.** `app/actions/auth/enrollMfa.ts:59` passa `issuer: marca.nome` — o campo que de fato grava no celular (`friendlyName` **não** entra na URI `otpauth://`, medido contra GoTrue v2.188.1). O plano exigia repetir o rig de enroll real antes de fechar; não achei registro dessa execução. **Vale só para quem enrolar depois: trocar o `issuer` não reescreve fator já cadastrado** |
 | `M5` `[P1]` | **Export de LGPD**: o PDF nomeia o **controlador** (`legal_name`) e o DPO — **nunca** a marca do revendedor | **COBERTO POR TESTE.** O teste isola o rodapé e exige que o texto entre `Controlador:` e `· Relatório LGPD` seja **exatamente** o `legal_name` (a primeira versão só checava `/deskcomm/i` e teria deixado passar a marca de um revendedor). Vigiado também no mapa de arquitetura, que reprova quem ligar o PDF ao resolvedor de marca. **Armadilha viva:** `legal_name` nasce igual ao nome fantasia — o caso ruim é o valor plausível e errado, e quem resolve é a tela `/app/settings/tenant` |
 | `M6` `[P1]` | **Marca por organização**: a cor da org pinta `/app` e **não** vaza para o `/login` | **PASS na tela** (2026-08-13), com admin de tenant PURO — a precondição falhou primeiro e era a armadilha prevista (`e2e-admin` **era** `platform_admin`; medi `count=1`, revoguei, reafirmei `count=0`, só então testei). `#b3261e` no claro, `#f16051` no escuro, persistido no reload, e **ausente** em `/login` sem sessão. Evidência: `evidence/org-1-tela.png`, `evidence/org-2-digitado.png`, `evidence/org-3-salvo.png`, `evidence/org-4-recarregado.png`, `evidence/org-5-login.png` |
@@ -1250,8 +1250,8 @@ evidências, e mova os achados para a tabela de defeitos.
 
 **Pré-condição:** VPS limpa com acesso SSH, um domínio apontado para ela, um projeto
 Supabase novo (ou `SUPABASE_ACCESS_TOKEN` exportado, para o `install.sh` criar), e uma chave
-da Anthropic. **Deliberadamente SEM `RESEND_API_KEY`** — é o estado do primeiro deploy, e é
-onde moram os piores defeitos de primeira impressão (`lib/email/resend.ts:94-108` devolve
+da Anthropic. **Deliberadamente SEM `SMTP_HOST`** — é o estado do primeiro deploy, e é
+onde moram os piores defeitos de primeira impressão (`lib/email/smtp.ts` devolve
 `{ok:false,"not_configured"}` **em silêncio**).
 
 ```bash
@@ -1261,7 +1261,7 @@ bash install.sh
 #      APP_NAME        → Vendas Turbo
 #      APP_ACCENT_HEX  → #f2c94c   (o instalador valida a forma: # + 6 dígitos)
 #      SUPPORT_EMAIL   → suporte@vendasturbo.exemplo
-#      RESEND_API_KEY  → (Enter, pule)
+#      SMTP_HOST       → (Enter, pule)
 #    ⚠️ Até `c8fc877d` o instalador NÃO perguntava a cor (`grep -c APP_ACCENT_HEX
 #       install.sh` → 0), e todo revendedor recebia o verde do produto nos e-mails
 #       de acesso. Se a pergunta não aparecer na sua execução, é regressão — o
@@ -1279,7 +1279,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/
 | `J10.1` | **Aba** — quem abre o domínio vê o nome do revendedor | O `<title>` contém `Vendas Turbo` e **não** contém `Deskcomm` | `curl -s https://<DOMAIN>/login \| grep -o '<title>[^<]*</title>'` |
 | `J10.2` | **Ícone** — o favicon carrega **deslogado**, na cor do revendedor | `/icon` responde 200 e o SVG tem o accent DERIVADO (não a semente crua) | `curl -s -o /dev/null -w '%{http_code}\n' https://<DOMAIN>/icon` e abrir a aba no browser |
 | `J10.3` | **E-mail de acesso** — o "confirme sua conta" do GoTrue chega com a marca | Rodar `bash marca-emails.sh` e conferir na caixa real. **Sem `SUPABASE_ACCESS_TOKEN`, o script imprime o passo manual e a instalação segue** — esse ramo também é PASS, e é o caminho da maioria | caixa de entrada de verdade, não log |
-| `J10.4` | **Convite** — sem `RESEND_API_KEY`, a tela mostra o `accept_url` em vez de falhar calada | `/app/team/invite` → convidar → a tela exibe o link | pela tela |
+| `J10.4` | **Convite** — sem `SMTP_HOST`, a tela mostra o `accept_url` em vez de falhar calada | `/app/team/invite` → convidar → a tela exibe o link | pela tela |
 | `J10.5` | **Endereço de suporte** — o cliente do revendedor nunca vê o nosso | `SUPPORT_EMAIL` (resolvido em `lib/branding/saida.ts:238`) aparece em `/app/settings/billing` e em `/account-suspended`; sem ele, o parágrafo some em vez de mostrar um endereço nosso | pela tela, nas duas rotas |
 
 **Armadilha conhecida (mede-se antes de concluir):** o bloco que escreve o `.env` é
@@ -1810,7 +1810,7 @@ achado.
 ### [P0] Organizações: criar, convidar e alternar (comunidade 360)
 
 - Porta: `TenantSwitcher` → **Gerenciar organizações**, inclusive com uma membership, somente platform admin.
-- `organizacoes-criacao-convite-e-cache.spec.ts`: organização A única → formulário cria B e vínculo do criador → link copiável e validade sem Resend → inbox A→B→A com contatos distinguíveis e novo documento → responsável aceita convite e chega a B. Seeds exclusivos locais; nenhuma pessoa real recebe mensagem.
+- `organizacoes-criacao-convite-e-cache.spec.ts`: organização A única → formulário cria B e vínculo do criador → link copiável e validade sem SMTP → inbox A→B→A com contatos distinguíveis e novo documento → responsável aceita convite e chega a B. Seeds exclusivos locais; nenhuma pessoa real recebe mensagem.
 - Rodada de correção 1: navegador em produção verde; contatos verificados dentro de `[data-conversation-id]` (o banner de canal não vale como prova da lista). Evidência adicional da falha de troca registrada no relatório local da Task1.
 - Recuperação após resposta perdida: três respostas reais pós-commit abortadas, novo clique conserva chave, ID e link; recibo legado forjado é ignorado pelo handler. Falha de rede na troca libera a guarda e mantém cookie, organização e inbox. Proteção do recibo (INSERT/UPDATE/DELETE/TRUNCATE e namespaces LGPD/MCP) coberta em `organizacoes-recibo-confiavel.test.ts`.
 - Aceite preserva `invited_by`; replay não regrava papel ativo e convite anterior/legado não desfaz revogação. Prova no banco em `organizacoes-criacao-e-convite.test.ts`; resposta antiga em voo e troca de usuário cobertas em `organizacoes-cache-por-contexto.test.tsx`.

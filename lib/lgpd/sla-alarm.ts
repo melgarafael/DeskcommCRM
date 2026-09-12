@@ -14,7 +14,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import { NEUTROS_DE_SAIDA, type MarcaDeSaida } from "@/lib/branding/saida";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendEmail } from "@/lib/email/resend";
+import { sendEmail } from "@/lib/email/smtp";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import type { LgpdRequest } from "./types";
