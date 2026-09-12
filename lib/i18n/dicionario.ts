@@ -3853,6 +3853,35 @@ export const DICIONARIO: Traducoes = {
     es: "No pude iniciar la actualización. Intenta de nuevo en instantes.",
   },
   "Atualizando para a versão": { es: "Actualizando a la versión" },
+  // ── A espera antes de o servidor pegar o pedido, e o fim reconhecido na hora.
+  //    Os dois estados que a tela ganhou quando parou de fingir que a conversa
+  //    com o host é instantânea (ver o cabeçalho do `UpdatePanel`).
+  "Pedido enviado — esperando o servidor pegar": {
+    es: "Pedido enviado — esperando que el servidor lo tome",
+  },
+  "Anotei o pedido de atualizar para a versão": {
+    es: "Anoté el pedido de actualizar a la versión",
+  },
+  "O servidor confere se há algo a fazer de poucos em poucos minutos, então a atualização pode levar até cerca de cinco minutos para começar.": {
+    es: "El servidor revisa si hay algo que hacer cada pocos minutos, así que la actualización puede tardar hasta unos cinco minutos en empezar.",
+  },
+  "Esta tela ficar parada nesse tempo é normal": {
+    es: "Que esta pantalla quede quieta durante ese tiempo es normal",
+  },
+  " — ela se mexe sozinha assim que o servidor começar.": {
+    es: " — se mueve sola en cuanto el servidor empiece.",
+  },
+  "Esperando há": { es: "Esperando hace" },
+  "Pode fechar esta página: o pedido já está registrado e não se perde.": {
+    es: "Puedes cerrar esta página: el pedido ya está registrado y no se pierde.",
+  },
+  "Pronto — você está na versão": { es: "Listo — estás en la versión" },
+  "A atualização terminou e o sistema já está no ar na versão": {
+    es: "La actualización terminó y el sistema ya está en línea en la versión",
+  },
+  "O servidor confirma isso na próxima vez que falar comigo, daqui a alguns minutos — até lá, esta tela já sabe.": {
+    es: "El servidor lo confirma la próxima vez que hable conmigo, en unos minutos — hasta entonces, esta pantalla ya lo sabe.",
+  },
   "O sistema sai do ar por alguns instantes e volta sozinho. Pode deixar esta página aberta.": {
     es: "El sistema se apaga por unos instantes y vuelve solo. Puedes dejar esta página abierta.",
   },

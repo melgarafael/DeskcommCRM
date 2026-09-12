@@ -1,6 +1,6 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
@@ -88,6 +88,25 @@ export function UpdatePanel() {
   const nova = semV(data.latest_version);
 
   if (rodando) {
+    /**
+     * ESTE É O TRECHO EM QUE A TELA PARECIA TRAVADA.
+     *
+     * O `POST /update` não executa nada: ele registra o pedido e vai embora.
+     * Quem executa é o `agent.sh` no host, e ele roda de 5 em 5 minutos — entre
+     * o clique e o primeiro passo passam até 5 minutos. Nesse intervalo
+     * `last_step` é nulo, os quatro círculos ficam todos vazios e nada se mexe.
+     *
+     * A pessoa que clicou não tem como distinguir isso de "quebrou". E a lista
+     * de passos, mostrada antes de qualquer passo existir, afirma que o sistema
+     * está trabalhando quando ele ainda nem recebeu a ordem.
+     *
+     * Então o estado de espera é SEU PRÓPRIO estado, com nome, com a razão da
+     * demora e com um relógio que anda.
+     */
+    if (!data.run?.last_step) {
+      return <AguardandoOServidor dispatchedAt={data.run?.dispatched_at} destino={nova} />;
+    }
+
     return (
       <Layout titulo={`${t("Atualizando para a versão")} ${nova}`}>
         <ol className="space-y-2 text-sm">
@@ -105,6 +124,35 @@ export function UpdatePanel() {
         <p className="mt-4 text-sm text-muted-foreground">
           {t(
             "O sistema sai do ar por alguns instantes e volta sozinho. Pode deixar esta página aberta.",
+          )}
+        </p>
+      </Layout>
+    );
+  }
+
+  /**
+   * O OUTRO LADO DO MESMO SILÊNCIO — e este era pior que parecer travado.
+   *
+   * `run_result` com sucesso fecha o run e não toca `current_version`: quem
+   * escreve essa coluna é o heartbeat do host, de 5 em 5 minutos. Nesse
+   * intervalo `update_available` continuava verdadeiro, e a tela voltava do
+   * reinício oferecendo "Atualizar agora" para a versão que ACABOU de ser
+   * instalada — quem clicou fazia tudo de novo, ou concluía que não funcionou.
+   *
+   * `just_updated` é essa janela, e só ela: na batida seguinte o host confirma,
+   * o campo vira `false` sozinho e a tela cai no texto normal de quem está em
+   * dia. Não é um estado que alguém precise fechar.
+   */
+  if (data.just_updated) {
+    return (
+      <Layout titulo={`${t("Pronto — você está na versão")} ${versao}`}>
+        <p className="text-sm">
+          {t("A atualização terminou e o sistema já está no ar na versão")}{" "}
+          <strong>{versao}</strong>.
+        </p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {t(
+            "O servidor confirma isso na próxima vez que falar comigo, daqui a alguns minutos — até lá, esta tela já sabe.",
           )}
         </p>
       </Layout>
@@ -370,6 +418,74 @@ export function UpdatePanel() {
       <BotaoAtualizar mutate={() => atualizar.mutate()} isPending={atualizar.isPending} erro={erro} />
     </Layout>
   );
+}
+
+/**
+ * A ESPERA, com nome e com relógio.
+ *
+ * O pedido fica numa fila que o servidor lê de tempos em tempos — o `agent.sh`
+ * roda de 5 em 5 minutos no host. Antes disto a tela já mostrava a lista dos
+ * quatro passos, todos vazios, dizendo "Atualizando para a versão X": afirmava
+ * trabalho que ainda não tinha começado, e ficava imóvel por até cinco minutos.
+ *
+ * Três coisas, e nenhuma é enfeite:
+ *
+ * 1. **O nome certo do estado.** "Pedido enviado" ≠ "atualizando".
+ * 2. **A razão da demora**, dita antes de ela assustar. Quem sabe que o
+ *    servidor confere a cada poucos minutos não lê a imobilidade como defeito.
+ * 3. **Um relógio que anda.** É o que separa "esperando" de "travou" quando
+ *    não há mais nada se mexendo na tela — e ele conta o tempo do SERVIDOR
+ *    (`dispatched_at`), não o de quando a aba foi aberta: recarregar a página
+ *    não zera a conta.
+ */
+function AguardandoOServidor({
+  dispatchedAt,
+  destino,
+}: {
+  dispatchedAt: string | undefined;
+  destino: string;
+}) {
+  const t = useT();
+  // Um segundo, e não os 5s do poll: o poll traz dado do servidor, este tique
+  // só faz o relógio andar. Sem ele o número saltaria de 5 em 5 segundos.
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setAgora(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const inicio = dispatchedAt ? Date.parse(dispatchedAt) : NaN;
+  const segundos = Number.isNaN(inicio) ? null : Math.max(0, Math.floor((agora - inicio) / 1000));
+
+  return (
+    <Layout titulo={t("Pedido enviado — esperando o servidor pegar")}>
+      <p className="text-sm">
+        {t("Anotei o pedido de atualizar para a versão")} <strong>{destino}</strong>.{" "}
+        {t(
+          "O servidor confere se há algo a fazer de poucos em poucos minutos, então a atualização pode levar até cerca de cinco minutos para começar.",
+        )}
+      </p>
+      <p className="mt-3 text-sm">
+        <strong>{t("Esta tela ficar parada nesse tempo é normal")}</strong>
+        {t(" — ela se mexe sozinha assim que o servidor começar.")}
+      </p>
+      {segundos !== null && (
+        <p className="mt-3 text-sm tabular-nums text-muted-foreground" data-testid="espera-decorrida">
+          {t("Esperando há")} {formataEspera(segundos)}.
+        </p>
+      )}
+      <p className="mt-3 text-sm text-muted-foreground">
+        {t("Pode fechar esta página: o pedido já está registrado e não se perde.")}
+      </p>
+    </Layout>
+  );
+}
+
+/** "43 segundos" / "2 min 05 s" — sem biblioteca, e sem virar "0:5". */
+function formataEspera(segundos: number): string {
+  if (segundos < 60) return `${segundos} s`;
+  const min = Math.floor(segundos / 60);
+  return `${min} min ${String(segundos % 60).padStart(2, "0")} s`;
 }
 
 function BotaoAtualizar({
