@@ -1,6 +1,7 @@
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
 import { metaPodeReceber } from "@/lib/channels/meta/webhook";
+import { nomeCurtoDaSessao } from "@/lib/channels/nome-da-sessao";
 import { getWahaClient } from "@/lib/waha/client";
 import { ConnectWhatsappClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -37,7 +38,7 @@ export default async function ConnectWhatsappPage() {
       </p>
       <ConnectWhatsappClient
         wahaConfigured={wahaConfigured}
-        sessionName={`org_${activeOrg.orgId.slice(0, 8)}`}
+        sessionName={nomeCurtoDaSessao(activeOrg.orgId)}
         oficialPodeReceber={oficialPodeReceber}
       />
     </div>

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
+import { TETO_NOME_DE_SESSAO_WAHA, nomeDaSessaoCabeNoWaha } from "@/lib/channels/nome-da-sessao";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
 
@@ -51,6 +52,22 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
     });
     if (result.error) throw new ChannelConnectionError("connection_checkpoint_failed", 503);
     return result.data;
+  }
+  // Teto do WAHA conferido AQUI, antes de qualquer chamada ao transporte.
+  //
+  // Deixar passar é o defeito da issue #667: o WAHA devolve um 400 opaco no meio
+  // do fluxo, com a reserva já feita, e o card de Conexões fica preso em
+  // `Parado`. Nome acima do teto não é falha de transporte — é dado de uma
+  // instalação que ainda não encurtou o identificador, e o operador precisa
+  // saber disso, não receber um erro genérico. A reserva é fechada em `FAILED`
+  // para não travar a próxima tentativa.
+  if (!nomeDaSessaoCabeNoWaha(channel.waha_session_name)) {
+    await finish("FAILED", "session_name_too_long");
+    throw new ChannelConnectionError("connection_session_name_too_long", 409, {
+      waha_session_name: channel.waha_session_name,
+      comprimento: channel.waha_session_name.length,
+      teto: TETO_NOME_DE_SESSAO_WAHA,
+    });
   }
   try {
     if (input.restart) await waha.stopSession(channel.waha_session_name);

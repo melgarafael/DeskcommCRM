@@ -5,15 +5,16 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 const org = "20000000-0000-4000-8000-000000000001";
 const key = "20000000-0000-4000-8000-000000000002";
 const channel = { id: key, organization_id: org, waha_session_name: "owned", status: "STARTING", archived_at: null };
-function fixture() {
+function fixture(nomeDaSessao = "owned") {
   const finishes: Record<string, unknown>[] = [];
+  const reservado = { ...channel, waha_session_name: nomeDaSessao };
   const db = { rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
-    if (name === "fn_reserve_channel_connection") return { data: { channel, receipt_id: key, lease_token: key, replay: false }, error: null };
+    if (name === "fn_reserve_channel_connection") return { data: { channel: reservado, receipt_id: key, lease_token: key, replay: false }, error: null };
     finishes.push(args);
-    return { data: { ...channel, status: args.p_status }, error: null };
+    return { data: { ...reservado, status: args.p_status }, error: null };
   }) } as unknown as SupabaseClient;
-  const transport = { getVerifiedSession: vi.fn(async () => null), createSession: vi.fn(async () => ({ created: true, session: { name: "owned", status: "STOPPED" } })),
-    startExistingSession: vi.fn(async () => ({ name: "owned", status: "SCAN_QR_CODE" })),
+  const transport = { getVerifiedSession: vi.fn(async () => null), createSession: vi.fn(async () => ({ created: true, session: { name: nomeDaSessao, status: "STOPPED" } })),
+    startExistingSession: vi.fn(async () => ({ name: nomeDaSessao, status: "SCAN_QR_CODE" })),
     deleteSession: vi.fn(async () => {}), stopSession: vi.fn(async () => {}) };
   return { db, transport, finishes, input: { organizationId: org, idempotencyKey: key, userId: key, requestId: key } };
 }
@@ -64,5 +65,37 @@ describe("conexão recuperável", () => {
     vi.mocked(f.db.rpc).mockResolvedValue({ data: { channel: { ...channel, status: "SCAN_QR_CODE" }, receipt_id: key, replay: true }, error: null } as never);
     expect((await connectWahaChannel(f.db, f.db, f.transport, f.input)).replay).toBe(true);
     expect(f.transport.createSession).not.toHaveBeenCalled();expect(f.transport.deleteSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("teto do nome da sessão no WAHA", () => {
+  // Formato que o banco gerava antes de encurtar o identificador: `org_<32>_<32>`,
+  // 69 caracteres. É o nome que fazia o botão de Conexões falhar sempre, com
+  // `400 name must be shorter than or equal to 54 characters`.
+  const nomeAntigo = `org_${org.replaceAll("-", "")}_${key.replaceAll("-", "")}`;
+  it("nome acima do teto morre no CRM, com motivo, sem chegar ao transporte", async () => {
+    expect(nomeAntigo).toHaveLength(69);
+    const f = fixture(nomeAntigo);
+    await expect(connectWahaChannel(f.db, f.db, f.transport, f.input)).rejects.toMatchObject({
+      code: "connection_session_name_too_long", status: 409,
+      technical: { waha_session_name: nomeAntigo, comprimento: 69, teto: 54 },
+    });
+    expect(f.transport.createSession).not.toHaveBeenCalled();
+    expect(f.transport.startExistingSession).not.toHaveBeenCalled();
+    expect(f.transport.deleteSession).not.toHaveBeenCalled();
+    expect(f.finishes.at(-1)).toMatchObject({ p_status: "FAILED", p_reason: "session_name_too_long" });
+  });
+  it("nome exatamente no teto (54) segue pelo caminho normal", async () => {
+    const nome = "o".repeat(54);
+    const f = fixture(nome);
+    expect((await connectWahaChannel(f.db, f.db, f.transport, f.input)).channel.status).toBe("SCAN_QR_CODE");
+    expect(f.transport.createSession).toHaveBeenCalledWith(nome);
+  });
+  it("nome que o banco gera hoje (45) segue pelo caminho normal", async () => {
+    const nome = `org_${org.replaceAll("-", "").slice(0, 8)}_${key.replaceAll("-", "")}`;
+    expect(nome).toHaveLength(45);
+    const f = fixture(nome);
+    expect((await connectWahaChannel(f.db, f.db, f.transport, f.input)).channel.status).toBe("SCAN_QR_CODE");
+    expect(f.transport.startExistingSession).toHaveBeenCalledWith(nome);
   });
 });
