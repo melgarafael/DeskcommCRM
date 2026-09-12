@@ -369,10 +369,13 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       // anonimizado, `fn_meet_redact_contact` resolve os abertos, e há um bloco
       // de cura no baseline. Esta nascia sem, e a consequência é concreta:
       //
-      //   a cascata de LGPD NÃO cancela `followup_enrollments` (medido, com
+      //   a cascata de LGPD não cancelava `followup_enrollments` (medido, com
       //   controle positivo). Um contato anonimizado com régua em curso chega
       //   ao fim dela DEPOIS da redação — e reabriria, aqui, um aviso
       //   apontando para o compromisso que a anonimização tinha desligado.
+      //   Desde o #701 a cascata cancela a régua, e ESTA guarda continua sendo a
+      //   segunda linha: um turno já reivindicado pode terminar depois do
+      //   cancelamento, e é nesta escrita que ele não vira aviso.
       //
       // Um `if` em TypeScript antes do insert resolveria o caso e deixaria a
       // guarda a um refactor de distância de sumir. No `select` ela é parte da

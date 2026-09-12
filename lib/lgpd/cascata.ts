@@ -1,5 +1,5 @@
 /**
- * A CASCATA DE ANONIMIZAÇÃO — os passos 2 e 3, num lugar só (issue #310).
+ * A CASCATA DE ANONIMIZAÇÃO — os passos 2 a 4, num lugar só (issues #310 e #701).
  *
  * ─── Por que este arquivo existe ────────────────────────────────────────────
  *
@@ -45,6 +45,23 @@ export const TITULO_PRESERVADO = 20;
 
 /** O payload que substitui o conteúdo de uma atividade. */
 export const PAYLOAD_REDIGIDO: Record<string, unknown> = { redacted: true };
+
+/**
+ * Os status em que a régua de recuperação ainda CORRE — e portanto ainda pode
+ * mandar mensagem ou abrir aviso.
+ *
+ * São os mesmos que o cancelamento por compromisso desfeito usa em SQL
+ * (`fn_appointment_change`) e que o índice de claim filtra. Divergir daqui é
+ * deixar régua viva para trás: `completed`, `cancelled` e `dead` são terminais,
+ * e é a ausência deles nesta lista que torna o passo idempotente.
+ */
+export const STATUS_DA_REGUA_VIVA = ["active", "waiting_reply", "paused_handoff", "paused_manual"] as const;
+
+/**
+ * O motivo gravado em `cancel_reason` — curto, sem PII, e greppável na
+ * auditoria, no mesmo vocabulário de `nono_digito_merge`.
+ */
+export const MOTIVO_CANCELAMENTO_POR_LGPD = "Contato anonimizado (LGPD)";
 
 export function jaRedigida(titulo: string | null): boolean {
   return (titulo ?? "").endsWith(SUFIXO_ANONIMIZADO);
@@ -102,7 +119,7 @@ export function houveRedacao(r: ResultadoDaRedacao): boolean {
 }
 
 /**
- * Passos 2 e 3 da cascata, idempotentes, para UM contato já anonimizado (ou
+ * Passos 2 a 4 da cascata, idempotentes, para UM contato já anonimizado (ou
  * sendo anonimizado agora).
  *
  * Best-effort de propósito, e a direção foi escolhida: derrubar a requisição
@@ -171,6 +188,58 @@ export async function completarRedacaoDoContato(
       atividadesRedigidas = pendentes.length;
       tabelas.push("crm_lead_activities");
     }
+  }
+
+  // ── Passo 4 — a RÉGUA DE RECUPERAÇÃO do contato (issue #701) ──
+  //
+  // A cascata redigia contatos, leads e atividades — e deixava a régua de
+  // recuperação CORRENDO. Medido na issue, com controle positivo:
+  // `git grep -l "followup" lib/lgpd/` voltava vazio.
+  //
+  // A consequência não é cosmética: a régua esgota DEPOIS da redação e o
+  // adaptador de `abrirAvisoRecuperacaoEsgotada` abre um aviso novo apontando
+  // para o compromisso que a anonimização tinha desligado. O aviso ressuscita o
+  // vínculo que a LGPD mandou cortar — e, antes dele, as mensagens da própria
+  // régua chegam a quem pediu para ser esquecido.
+  //
+  // Mora AQUI, e não na RPC `fn_lgpd_cascade_redact_contact`, porque este
+  // arquivo é a unidade que as DUAS bocas compartilham (a rota e o cron) — ver o
+  // cabeçalho. Cancelar só na RPC deixaria a RETOMADA (`lgpd.anonymize_catchup`,
+  // que não passa pela RPC de cascata) sem cancelamento, e é justamente por ela
+  // que o contato anonimizado antes desta issue é alcançado.
+  //
+  // SELECT antes do UPDATE, como no passo anterior e pelo mesmo motivo: em
+  // regime a régua já está cancelada, e escrever de novo seria gravar sobre dado
+  // certo em toda rodada diária, com a auditoria registrando efeito que não
+  // houve. É a mesma cadeia que torna o passo idempotente — `cancelled` não está
+  // em `STATUS_DA_REGUA_VIVA`, então a segunda passada não encontra linha.
+  const { data: reguaData, error: reguaSelErr } = await db
+    .from("followup_enrollments")
+    .select("id")
+    .eq("organization_id", contato.organizationId)
+    .eq("contact_id", contato.id)
+    .in("status", [...STATUS_DA_REGUA_VIVA]);
+  if (reguaSelErr) falhas.push(`followup_enrollments select: ${reguaSelErr.message}`);
+
+  const reguasVivas = ((reguaData ?? []) as { id: string }[]).map((r) => r.id);
+  if (reguasVivas.length > 0) {
+    const { error } = await db
+      .from("followup_enrollments")
+      .update({
+        status: "cancelled",
+        cancel_reason: MOTIVO_CANCELAMENTO_POR_LGPD,
+        completed_at: new Date().toISOString(),
+        // Soltar o relógio e o lease é parte do cancelamento: sem isto a linha
+        // cancelada continua com cara de reivindicável para o claim do worker.
+        next_eval_at: null,
+        claimed_until: null,
+      })
+      .eq("organization_id", contato.organizationId)
+      .in("id", reguasVivas);
+    if (error) falhas.push(`followup_enrollments: ${error.message}`);
+    // `tabelas` é o que a auditoria grava como tocado de verdade: numa retomada,
+    // esta linha é a diferença entre "não faltava nada" e "a régua foi cortada".
+    else tabelas.push("followup_enrollments");
   }
 
   return { leadsRedigidas, atividadesRedigidas, tabelas, falhas };
