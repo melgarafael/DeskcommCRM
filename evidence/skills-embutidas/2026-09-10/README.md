@@ -52,14 +52,27 @@ prompt e contribuição o Claude também leu as referências e rodou `quem-sou.s
 Resumo em `antes.json`. Em nenhuma das cinco a IA achou um guia — não havia; ela varreu o
 repositório (até 191 ferramentas numa pergunta) e respondeu por conta própria.
 
+## Antigravity — o CLI (`agy --print`), 11/set
+
+O app instala um CLI (`agy`) com modo sem interface. Rodei as cinco perguntas nele (modo plano,
+permissões auto-aprovadas — sem isso o primeiro comando pedido pela doutrina global do dono
+encerra a corrida sem resposta). Resultado: **o CLI não enxerga as skills do workspace** —
+perguntado diretamente "quais skills do workspace você tem no contexto?", respondeu "NENHUMA".
+Nas cinco corridas, o guia certo foi encontrado **por exploração** em duas (montar clínica: leu o
+`SKILL.md` e as referências depois de 30 ferramentas; instalar: foi buscar o guia no GitHub), e não
+foi encontrado em três (métricas, prompt, contribuir), que responderam por conta própria. Resumo
+em `antigravity.json`. A prova do **app** Antigravity (que, pelas docs, lê `.agents/skills/`)
+segue à mão.
+
 ## O que NÃO ficou provado
 
 - **Hook de início de sessão** (`.claude/settings.json` → `sessao.sh`): em `claude -p` os hooks
   de projeto **não executaram** nesta versão, mesmo com a pasta confiada em `~/.claude.json` —
   medido com um hook que gravava um marcador em disco (nunca apareceu). A sessão interativa não foi
   medida. O acionamento não depende dele: a descrição basta.
-- **Cursor e Antigravity**: sem modo sem interface nesta máquina. Roteiro à mão em
-  "Decisão Implementações/CRED-003".
+- **Cursor**: o CLI (`agent`) foi instalado em 11/set e exige `agent login` — a prova fica para
+  depois do login. **Antigravity**: o CLI não carrega skills do workspace (acima); o app segue com o
+  roteiro à mão em "Decisão Implementações/CRED-003".
 - **Codex com muitas skills globais**: numa instalação com centenas de skills pessoais o Codex
   encurta e depois remove as descrições da lista (medido em 08/set); o gate limita o que o repo
   gasta desse orçamento, mas não o que a pessoa já tem.

@@ -12,11 +12,12 @@
  * 200 s, US$ 3,08 para "por onde eu começo a instalar?") e o "depois". Um
  * teste automatizado não prova acionamento; só uma sessão real prova.
  *
- *   node scripts/skills-embutidas/provar.mjs --cli claude --dir /caminho/do/clone \
+ *   node scripts/skills-embutidas/provar.mjs --cli claude|codex|opencode|agy --dir /caminho/do/clone \
  *     --prompt "Comprei uma VPS e quero instalar o CRM. Por onde começo?" \
  *     --out /tmp/prova.jsonl [--max-turns 12] [--env CODEX_HOME=/tmp/codex-limpo] [--env GH_TOKEN=x]
  *
- * Cursor e Antigravity não têm modo sem interface: a prova neles é à mão.
+ * Antigravity roda por `agy --print` (o CLI que o app instala em ~/.local/bin). O Cursor
+ * tem o `agent` (curl https://cursor.com/install | bash), que exige `agent login`.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -39,6 +40,10 @@ const cmd = {
   claude: ["claude", ["-p", opt.prompt, "--output-format", "stream-json", "--verbose", "--max-turns", String(opt["max-turns"] || 12), "--permission-mode", "plan"]],
   codex: ["codex", ["exec", "--json", "--ephemeral", "-s", "read-only", opt.prompt]],
   opencode: ["opencode", ["run", "--format", "json", "--dir", opt.dir, opt.prompt]],
+  // --dangerously-skip-permissions: em modo sem interface ninguém clica "permitir", e o
+  // primeiro run_command (que uma doutrina global do usuário pode pedir) encerra a corrida
+  // sem resposta. Auto-aprovar é o substituto fiel do clique; o clone de prova é descartável.
+  agy: ["agy", ["--print", opt.prompt, "--output-format", "stream-json", "--mode", "plan", "--print-timeout", "10m", "--dangerously-skip-permissions"]],
 }[opt.cli];
 if (!cmd) { console.error("cli desconhecido"); process.exit(2); }
 
@@ -50,7 +55,7 @@ if (r.stderr) fs.writeFileSync(opt.out + ".err", r.stderr);
 
 const linhas = (r.stdout || "").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
 const tools = []; let final = ""; let turns = 0; let custo = null; let uso = null;
-const ehSkill = (s) => /SKILL\.md|\.claude\/skills|\.agents\/skills|\.codex\/skills|\.opencode\/skill|\.cursor\/(rules|skills)|\.agent\/(skills|rules|workflows)/i.test(s || "");
+const ehSkill = (s) => /SKILL\.md|\.claude\/skills|\.agents\/skills|\.codex\/skills|\.opencode\/skill|\.cursor\/(rules|skills)|\.agent\/(skills|rules|workflows)|deskcomm-[a-z-]+/i.test(s || "");
 
 if (opt.cli === "claude") {
   for (const m of linhas) {
@@ -71,6 +76,14 @@ if (opt.cli === "claude") {
       else if (it.type === "error") tools.push({ nome: "ERRO", alvo: String(it.message || "").slice(0, 200) });
     }
     if (m.type === "turn.completed") { turns++; uso = m.usage; }
+  }
+} else if (opt.cli === "agy") {
+  for (const m of linhas) {
+    const su = m.step_update;
+    if (m.event === "step_update" && su && su.step_type === "tool" && su.state === "ACTIVE") {
+      tools.push({ nome: String(su.tool_name || "tool"), alvo: JSON.stringify(su.tool_info?.parameters || {}).slice(0, 160) });
+    }
+    if (m.event === "result" && m.result) { final = String(m.result.response || ""); turns = m.result.num_turns; uso = m.result.usage; }
   }
 } else if (opt.cli === "opencode") {
   for (const m of linhas) {
