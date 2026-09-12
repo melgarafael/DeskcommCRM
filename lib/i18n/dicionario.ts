@@ -8354,6 +8354,9 @@ export const DICIONARIO: Traducoes = {
   "Convite reenviado.": { es: "Invitación reenviada." },
   "Convite revogado.": { es: "Invitación revocada." },
   // --- i18n ES: NAV + toasts (contrib) ---
+  "Tudo que define quem atende por você — e como acompanhar o que ele faz.": {
+    es: "Todo lo que define quién atiende por ti — y cómo seguir lo que hace.",
+  },
   "Falha ao avançar:": { es: "Error al avanzar:" },
   "Credenciais": { es: "Credenciales" },
   "Provedores": { es: "Proveedores" },
