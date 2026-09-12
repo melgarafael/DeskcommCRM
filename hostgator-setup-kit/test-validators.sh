@@ -1337,6 +1337,45 @@ STUB
 rede_e2e "overlay attachable: install/update seguem" segue overlay true
 rede_e2e "overlay sem attachable: morre explicando"  morre overlay false
 
+echo "proxy reverso: NPM (Nginx Proxy Manager)"
+# NPM nunca é auto-detectado (ao contrário do Traefik, ele não fala por labels) —
+# é sempre REVERSE_PROXY=npm escrito à mão no .env. O que precisa de prova é o
+# CALL SITE: dc()/dc_files() entram o override certo, e garantir_rede_do_proxy
+# não deixa o `up -d` morrer no erro opaco do compose quando a rede do NPM sumiu
+# (prune, down -v) — o mesmo risco que o Traefik já tinha, e o update.sh roda
+# sozinho pelo agent.sh, sem ninguém lendo a tela.
+if REVERSE_PROXY=npm dc_files | grep -q 'docker-compose.npm.yml'; then
+  printf '  ✓ dc_files() entra o docker-compose.npm.yml com REVERSE_PROXY=npm\n'
+else
+  printf '  ✗ dc_files() não entrou o docker-compose.npm.yml com REVERSE_PROXY=npm (deu: %s)\n' \
+    "$(REVERSE_PROXY=npm dc_files)"; fail=1
+fi
+if REVERSE_PROXY=caddy dc_files | grep -q 'docker-compose.npm.yml'; then
+  printf '  ✗ dc_files() entrou o docker-compose.npm.yml SEM REVERSE_PROXY=npm (vacuidade)\n'; fail=1
+else
+  printf '  ✓ REVERSE_PROXY=caddy (default): dc_files() não menciona o override do NPM\n'
+fi
+
+npm_rede_e2e() {  # npm_rede_e2e <descrição> <segue|morre> <rede existe: 0 ok, 1 sumiu>
+  local desc="$1" esperado="$2" existe="$3" dir real kit="$PWD"
+  dir="$(mktemp -d)"; mkdir -p "$dir/bin"
+  cat > "$dir/bin/docker" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/chamadas.log"
+[ "\$1" = network ] && [ "\$2" = inspect ] && exit $existe
+exit 0
+STUB
+  chmod +x "$dir/bin/docker"
+  if (cd "$dir" && env PATH="$dir/bin:$PATH" REVERSE_PROXY=npm PROJECT_DIR="$dir" \
+        bash -c '. "$1/_common.sh"; garantir_rede_do_proxy' _ "$kit") >/dev/null 2>&1
+  then real=segue; else real=morre; fi
+  rm -rf "$dir"
+  if [ "$real" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
+  else printf '  ✗ %s  (deu %s, esperava %s)\n' "$desc" "$real" "$esperado"; fail=1; fi
+}
+npm_rede_e2e "rede do NPM presente: install/update seguem"        segue 0
+npm_rede_e2e "rede do NPM sumiu (prune/down -v): morre explicando" morre 1
+
 echo "proxy reverso: quanta confiança a eleição merece"
 # A eleição por porta publicada traz a evidência (a coluna Ports diz ':80->'); a
 # varredura por modo host não traz nenhuma — em modo host a coluna é vazia para
@@ -2470,6 +2509,84 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
   printf '  ✓ o update.sh recria a bridge do proxy antes de subir a stack\n'
 ) || fail=1
 rm -rf "$TMP6"
+
+echo "integração: update.sh quando a rede do NPM sumiu"
+# NPM nunca é "nossa" bridge — ninguém cria de novo, só morre explicando ANTES
+# do `up -d`, em vez do opaco "network X declared as external, but could not
+# be found" (o mesmo cuidado que o Traefik já tinha, agora pro segundo proxy
+# que não fala por labels).
+TMP7="$(mktemp -d)"
+(
+  montar_vps "$TMP7" "crmupdatenpm" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+  network) case "$2" in inspect) exit 1 ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  (cd "$VPS_PROJ" && git init -q -b main . \
+    && git -c user.email=t@exemplo -c user.name=teste add -A \
+    && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+    && git tag v9.9.9) >/dev/null 2>&1
+
+  saida="$(rodar update.sh --skip-backup "REVERSE_PROXY='npm'
+PROXY_NETWORK_NAME='proxy_network'
+INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
+
+  if grep -q -E '^compose .* up -d$' "$VPS_LOG"; then
+    printf '  ✗ o update.sh subiu a stack mesmo com a rede do NPM ausente\n'; exit 1
+  fi
+  if ! printf '%s' "$saida" | grep -q 'PROXY_NETWORK_NAME'; then
+    printf '  ✗ a morte não ensina a saída (PROXY_NETWORK_NAME no .env)\n'
+    printf '     saída: %s\n' "$(printf '%s' "$saida" | tail -3)"; exit 1
+  fi
+  printf '  ✓ o update.sh para ANTES do "up -d" e ensina a saída\n'
+) || fail=1
+rm -rf "$TMP7"
+
+echo "integração: update.sh com proxy externo nunca recria o Caddy sozinho"
+# `up -d --force-recreate --no-deps caddy` NOMEIA o serviço — e nomear um
+# serviço ATIVA o profile dele no Compose mesmo com o override presente (é o
+# mesmo defeito que o docker-compose.traefik.yml já documenta). Com um segundo
+# proxy (Traefik OU NPM) já nas portas 80/443, isso sobe um Caddy que bate de
+# frente com ele. A checagem por CADA valor evita que só o Traefik continue
+# coberto e o NPM (o proxy novo) reproduza o defeito que motivou o guard.
+caddy_skip_e2e() {  # caddy_skip_e2e <descrição> <REVERSE_PROXY> <linha extra do .env> <deve tentar recriar: sim|nao>
+  local desc="$1" rp="$2" extra="$3" esperado="$4" dir tentou
+  dir="$(mktemp -d)"
+  (
+    montar_vps "$dir" "crmcaddyskip" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+    (cd "$VPS_PROJ" && git init -q -b main . \
+      && git -c user.email=t@exemplo -c user.name=teste add -A \
+      && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+      && git tag v9.9.9) >/dev/null 2>&1
+    rodar update.sh --skip-backup "REVERSE_PROXY='${rp}'
+${extra}
+INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'" >/dev/null
+    if grep -qF -- '--force-recreate --no-deps caddy' "$VPS_LOG"; then
+      tentou=sim
+    else
+      tentou=nao
+    fi
+    if [ "$tentou" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
+    else printf '  ✗ %s  (tentou recriar: %s, esperado: %s)\n' "$desc" "$tentou" "$esperado"; exit 1; fi
+  ) || fail=1
+  rm -rf "$dir"
+}
+caddy_skip_e2e "caddy (default): recria o próprio proxy"       caddy   ""                                          sim
+caddy_skip_e2e "traefik: nunca recria o Caddy"                  traefik "TRAEFIK_NETWORK='crmcaddyskip_proxy'"      nao
+caddy_skip_e2e "npm: nunca recria o Caddy"                      npm     "PROXY_NETWORK_NAME='proxy_network'"       nao
 
 echo "nome do projeto que o docker compose usa"
 # O compose faz TrimLeft("_-") no basename. Sem isso, uma pasta /root/_deskcomm
