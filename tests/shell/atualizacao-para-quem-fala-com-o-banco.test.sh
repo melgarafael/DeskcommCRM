@@ -159,6 +159,81 @@ restaurar_servicos >/dev/null 2>&1
 grep -q 'up -d app' "$diario" && ok "tudo certo: o CRM volta" \
   || nao "o CRM volta" "up -d app" "$(tr '\n' ';' < "$diario")"
 
+
+# ── O BOTÃO NÃO ACENDE ANTES DE A IMAGEM EXISTIR ─────────────────────────────
+#
+# MEDIDO em 2026-09-13, e quem viu foi o dono da instalação: a tela ofereceu a
+# "Nova versão · 1.17.16" enquanto a imagem dela ainda estava sendo construída.
+# O agente decidia olhando SÓ a etiqueta no Git — nunca perguntava se havia o
+# que baixar. A janela entre publicar a etiqueta e a imagem ficar pronta é de
+# uns seis minutos.
+#
+# Antes isto era um susto: a atualização avisava "a versão ainda está
+# publicando, rode de novo em alguns minutos" e o sistema seguia no ar com a
+# versão antiga, porque nada tinha sido parado.
+#
+# Depois da pausa dos serviços, deixou de ser susto. O app é PARADO antes do
+# banco, e a volta usa o endereço da imagem NOVA — gravado antes de tentar
+# baixá-la. Sem imagem, ele não volta. Um susto virou uma queda.
+diario_img="$tmp/imagens.txt"
+duble_registro() {  # duble_registro <tags que existem, separadas por espaço>
+  cat > "$tmp/bin/docker" <<DUBLE
+#!/usr/bin/env bash
+echo "\$*" >> "$diario_img"
+if [ "\$1" = "buildx" ] && [ "\$2" = "imagetools" ]; then
+  for t in $1; do case "\$4" in *:\$t) exit 0 ;; esac; done
+  exit 1
+fi
+if [ "\$1" = "ps" ]; then exit 0; fi
+exit 0
+DUBLE
+  chmod +x "$tmp/bin/docker"
+}
+
+echo "caso 9 — GUARDA DE VACUIDADE: a função existe"
+declare -F veredito_da_imagem_do_app >/dev/null 2>&1 \
+  && ok "veredito_da_imagem_do_app está declarada" \
+  || nao "veredito_da_imagem_do_app existe" "declarada em _common.sh" "ausente — os casos abaixo medem o nada"
+
+echo "caso 10 — imagem publicada: pode anunciar"
+duble_registro "1.17.16 1.17.15"
+v="$(veredito_da_imagem_do_app 1.17.16 1.17.15)"
+[ "$v" = "publicada" ] && ok "publicada" || nao "publicada" "publicada" "$v"
+
+echo "caso 11 — imagem AINDA NÃO existe: não anuncia"
+duble_registro "1.17.15"
+v="$(veredito_da_imagem_do_app 1.17.16 1.17.15)"
+[ "$v" = "ausente" ] && ok "ausente — a etiqueta saiu na frente da imagem" || nao "ausente" "ausente" "$v"
+
+echo "caso 12 — CONTROLE: registro fora do ar NÃO apaga o botão"
+# Este é o caso que impede o conserto de virar um defeito pior. Sem a segunda
+# sonda, uma VPS sem saída para o registro pararia de oferecer atualização PARA
+# SEMPRE, em silêncio — e ninguém liga o silêncio da tela a um problema de rede.
+# A sonda de controle é a versão INSTALADA: ela existe, com certeza, porque está
+# rodando. Se nem ela responde, o problema é a rede, não a imagem.
+duble_registro ""
+v="$(veredito_da_imagem_do_app 1.17.16 1.17.15)"
+[ "$v" = "indisponivel" ] && ok "indisponível — na dúvida, anuncia" || nao "indisponivel" "indisponivel" "$v"
+
+echo "caso 13 — instalação fora de release: sem controle possível, não silencia"
+# Quem segue a main não tem versão instalada para servir de sonda de controle.
+# Sem ela não dá para separar "imagem faltando" de "registro fora", e a resposta
+# certa é a que não tira nada de ninguém.
+duble_registro ""
+v="$(veredito_da_imagem_do_app 1.17.16 "")"
+[ "$v" = "indisponivel" ] && ok "sem sonda de controle: indisponível" || nao "sem controle" "indisponivel" "$v"
+
+echo "caso 14 — o agente CONSULTA o veredito antes de anunciar"
+AGENTE="$(cat "$RAIZ/hostgator-setup-kit/agent.sh")"
+case "$AGENTE" in
+  *veredito_da_imagem_do_app*) ok "agent.sh consulta o veredito" ;;
+  *) nao "agent.sh consulta o veredito" "chamada a veredito_da_imagem_do_app" "ausente" ;;
+esac
+case "$AGENTE" in
+  *'"$VEREDITO_IMAGEM" = "ausente"'*) ok "e só cala quando a imagem está AUSENTE" ;;
+  *) nao "só cala em ausente" 'teste contra "ausente"' "ausente" ;;
+esac
+
 if [ "$falhas" -eq 0 ]; then
   echo "TUDO VERDE"
   exit 0

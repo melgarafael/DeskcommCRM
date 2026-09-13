@@ -77,6 +77,52 @@ supabase_local_containers() {
 PARADOS="${PARADOS:-}"
 REGRAS_FALTANDO="${REGRAS_FALTANDO:-}"
 
+# ── A IMAGEM DAQUELA VERSÃO EXISTE MESMO? ────────────────────────────────────
+#
+# MEDIDO em 2026-09-13, e quem viu foi o dono da instalação: a tela ofereceu a
+# "Nova versão · 1.17.16" enquanto a imagem dela ainda estava sendo construída.
+# O agente decidia olhando SÓ a etiqueta no Git, e nunca perguntava se havia o
+# que baixar. Entre publicar a etiqueta e a imagem ficar pronta passam-se uns
+# seis minutos.
+#
+# Antes da pausa dos serviços isso era um susto: a atualização avisava "a versão
+# ainda está publicando, rode de novo em alguns minutos" e o sistema seguia no
+# ar com a versão antiga, porque nada tinha sido parado. Agora o app é PARADO
+# antes do banco e a volta usa o endereço da imagem NOVA — gravado antes de
+# tentar baixá-la. Sem imagem, ele não volta. O susto virou queda.
+#
+# ⚠️ SÓ A IMAGEM DO APP. O worker e o scheduler têm `build:` ao lado do `image:`
+# no compose, então o `up -d` os constrói localmente quando falta imagem — mais
+# lento, mesmo resultado. O app não tem essa rede de segurança, e essa
+# assimetria já está escrita no update.sh, onde as duas mensagens são
+# diferentes de propósito.
+#
+# Ecoa: publicada | ausente | indisponivel
+veredito_da_imagem_do_app() {  # veredito_da_imagem_do_app <versão alvo> <versão instalada>
+  local alvo="${1:-}" instalada="${2:-}"
+  [ -n "$alvo" ] || { printf 'indisponivel'; return 0; }
+  if docker buildx imagetools inspect "${IMG_APP}:${alvo}" >/dev/null 2>&1; then
+    printf 'publicada'; return 0
+  fi
+  # ⛔ A SONDA DE CONTROLE, e é ela que impede o conserto de virar defeito pior.
+  #
+  # Sem ela, uma VPS sem saída para o registro pararia de oferecer atualização
+  # PARA SEMPRE, em silêncio — e ninguém liga o silêncio de uma tela a um
+  # problema de rede. A versão INSTALADA é a sonda certa porque ela existe com
+  # certeza: está rodando aqui. Se nem ela responde, o que está fora é o
+  # registro, não a imagem.
+  #
+  # Instalação fora de release não tem versão instalada para sondar. Sem sonda
+  # não dá para separar as duas causas, e a resposta certa é a que não tira nada
+  # de ninguém: segue anunciando, como sempre foi.
+  [ -n "$instalada" ] || { printf 'indisponivel'; return 0; }
+  if docker buildx imagetools inspect "${IMG_APP}:${instalada}" >/dev/null 2>&1; then
+    printf 'ausente'
+  else
+    printf 'indisponivel'
+  fi
+}
+
 pausar_o_que_fala_com_o_banco() {
   PARADOS="$(supabase_local_containers)"
   c_ylw "Pausando o sistema para mexer no banco com segurança."
