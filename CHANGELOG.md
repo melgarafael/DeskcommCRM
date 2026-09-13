@@ -8,6 +8,16 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.19.3] — 2026-09-13
+
+### Corrigido
+
+- **Explorar as tabelas do banco externo volta a funcionar (chave primária vinha em formato errado)** Ao abrir uma tabela do banco externo cuja chave primária é uma coluna comum, a tela podia cair num erro em vez de mostrar os dados. A causa era de formato: o sistema lia a chave primária como um texto `{id}` em vez de uma lista de colunas, e a grade nova — que usa a chave para identificar cada linha — tropeçava nisso.
+
+  A leitura da chave virou uma lista de verdade (e a tela passou a tolerar o formato antigo, para não quebrar durante a atualização). O mesmo conserto melhora a descrição das tabelas que o agente de IA recebe.
+
+  Nada muda na forma de usar: abrir as tabelas do banco externo e ler os dados continua igual, agora sem o erro.
+
 ## [1.19.2] — 2026-09-13
 
 ### Corrigido
@@ -3443,7 +3453,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.2...HEAD
+[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.3...HEAD
+[1.19.3]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.2...v1.19.3
 [1.19.2]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.1...v1.19.2
 [1.19.1]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.18.0...v1.19.0
