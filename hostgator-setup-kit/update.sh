@@ -366,6 +366,21 @@ if [ -f supabase/baseline.sql ]; then
     exit 1
   else
     c_grn "✓ regras de isolamento conferidas ($(printf '%s\n' "$esperadas" | grep -c . ) declaradas, todas no lugar)."
+    # ── O BANCO RELIGA AQUI, e nao no fim do script ──────────────────────────
+    #
+    # MEDIDO na instalacao real em 2026-09-13: as pecas pararam as 03:10:18 e o
+    # script so terminou as 03:13:09. QUASE TRES MINUTOS sem o Supabase — e nao
+    # por falha: por DESENHO. A volta so acontecia no gatilho de saida, depois
+    # de baixar imagem, recriar conteiner e esperar o healthcheck do app.
+    #
+    # Nada disso precisa do Supabase parado. O que precisava era o DDL, e ele
+    # acabou na linha de cima — junto com a conferencia das regras, que e o
+    # unico motivo de esperar ate aqui em vez de religar antes.
+    #
+    # Fica no ramo do SUCESSO de proposito: com regra faltando o script sai no
+    # `exit 1` acima, e a volta das pecas vira responsabilidade do gatilho de
+    # saida — que religa o banco e deixa o CRM parado, como deve.
+    religar_o_supabase
   fi
 else
   c_ylw "⚠ supabase/baseline.sql não encontrado — pulei a parte do banco."

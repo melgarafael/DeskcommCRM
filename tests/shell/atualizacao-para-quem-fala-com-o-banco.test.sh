@@ -298,6 +298,49 @@ case "$UP" in
   *) nao "gatilho cobre sinais" "trap ... EXIT INT TERM HUP" "so EXIT" ;;
 esac
 
+
+echo "caso 18 — o banco RELIGA logo depois do banco, nao no fim do script"
+# MEDIDO na instalacao real, 2026-09-13: as pecas pararam as 03:10:18 e o script
+# so terminou as 03:13:09. Quase TRES MINUTOS sem o Supabase — nao por falha,
+# por DESENHO: a pausa acontecia na etapa do banco e a volta so no gatilho de
+# saida, depois de baixar imagem, recriar conteiner e esperar healthcheck.
+#
+# Esses tres minutos existem mesmo quando tudo da certo, e ninguem os mediu
+# porque o alvo era outro. A volta tem de acontecer assim que o banco termina;
+# o gatilho continua existindo, mas como rede de seguranca, nao como caminho.
+UP="$(cat "$RAIZ/hostgator-setup-kit/update.sh")"
+declare -F religar_o_supabase >/dev/null 2>&1   && ok "religar_o_supabase esta declarada"   || nao "religar_o_supabase existe" "declarada em _common.sh" "ausente"
+
+pos_religa="$(printf '%s' "$UP" | grep -n "religar_o_supabase" | head -1 | cut -d: -f1)"
+pos_app="$(printf '%s' "$UP" | grep -n "Baixando a versao nova do app\|Baixando a versão nova do app" | head -1 | cut -d: -f1)"
+if [ -n "$pos_religa" ] && [ -n "$pos_app" ] && [ "$pos_religa" -lt "$pos_app" ]; then
+  ok "religa ANTES de baixar a imagem nova"
+else
+  nao "religa antes da etapa do app" "religar_o_supabase antes da etapa 5" "religa=$pos_religa app=$pos_app"
+fi
+
+echo "caso 19 — CONTROLE: religar duas vezes nao reclama nem repete"
+# O gatilho de saida continua chamando a volta. Se ela nao fosse idempotente,
+# toda atualizacao bem-sucedida terminaria com um alarme falso.
+: > "$diario"
+cat > "$tmp/bin/docker" <<DUBLE
+#!/usr/bin/env bash
+echo "\$*" >> "$diario"
+if [ "\$1" = "ps" ]; then printf 'peca-boa
+'; fi
+exit 0
+DUBLE
+chmod +x "$tmp/bin/docker"
+PARADOS="peca-boa"; REGRAS_FALTANDO=""
+# ATENCAO: NADA de `$( )` aqui. Command substitution roda em SUBSHELL, e a
+# limpeza de `PARADOS` que a funcao faz nao voltaria para este shell — o teste
+# mediria o proprio artefato e acusaria "repetiu o start" num codigo correto.
+# Ja aconteceu ao escrever este caso.
+religar_o_supabase > "$tmp/religa1.txt" 2>&1
+religar_o_supabase > "$tmp/religa2.txt" 2>&1
+[ ! -s "$tmp/religa1.txt" ] && [ ! -s "$tmp/religa2.txt" ] && ok "duas chamadas, nenhum alarme"   || nao "idempotente e calada" "(vazio)" "$(cat "$tmp/religa1.txt" "$tmp/religa2.txt")"
+[ "$(grep -c "^start " "$diario")" -le 1 ] && ok "a segunda chamada nao repete o start"   || nao "nao repete o start" "no maximo 1" "$(grep -c "^start " "$diario")"
+
 if [ "$falhas" -eq 0 ]; then
   echo "TUDO VERDE"
   exit 0

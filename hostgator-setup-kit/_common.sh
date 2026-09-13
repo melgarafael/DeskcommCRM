@@ -133,7 +133,22 @@ pausar_o_que_fala_com_o_banco() {
   fi
 }
 
-restaurar_servicos() {
+# ── O BANCO RELIGA ASSIM QUE O BANCO TERMINA ─────────────────────────────────
+#
+# MEDIDO na instalacao real em 2026-09-13: as pecas pararam as 03:10:18 e o
+# script so terminou as 03:13:09. QUASE TRES MINUTOS sem o Supabase — e nao
+# por falha: por desenho. A pausa acontecia na etapa do banco e a volta so no
+# gatilho de saida, depois de baixar imagem, recriar conteiner e esperar o
+# healthcheck do app.
+#
+# Esses tres minutos existiam mesmo quando tudo dava certo, e ninguem os tinha
+# medido porque o alvo era outro. Religar aqui e o caminho; o gatilho de saida
+# continua existindo, mas como rede de seguranca.
+#
+# IDEMPOTENTE de proposito: o gatilho vai chamar de novo, e uma segunda
+# chamada que reclamasse faria TODA atualizacao bem-sucedida terminar com um
+# alarme falso.
+religar_o_supabase() {
   if [ -n "${PARADOS:-}" ]; then
     # ── A VOLTA DEIXA DE SER MUDA ────────────────────────────────────────────
     #
@@ -174,6 +189,10 @@ restaurar_servicos() {
     fi
     PARADOS=""
   fi
+}
+
+restaurar_servicos() {
+  religar_o_supabase
   # ⛔ O CRM NÃO VOLTA AO AR COM REGRA DE ISOLAMENTO FALTANDO.
   #
   # Um CRM fora do ar é um problema visível que alguém resolve em minutos. Um
