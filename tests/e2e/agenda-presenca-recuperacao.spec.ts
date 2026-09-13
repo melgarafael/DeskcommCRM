@@ -97,7 +97,7 @@ async function person(f: Fixture, name = "Cliente Presença") {
     status: "open",
     assigned_to_user_id: f.user,
   });
-  return { contact, conversation };
+  return { contact, conversation, name };
 }
 async function appointment(
   f: Fixture,
@@ -286,7 +286,13 @@ test("Inbox marca cliente/conversa; detalhe antigo confirma presença com evidê
   await page.getByRole("link", { name: "Marcar compromisso", exact: true }).click();
   const panel = page.getByTestId("painel-de-marcacao");
   await expect(panel).toBeVisible();
-  await expect(page.getByLabel("Quem será atendido")).toHaveValue(p.contact);
+  // ⛔ NÃO é mais `getByLabel("Quem será atendido").toHaveValue(<uuid>)`. A
+  // escolha do cliente virou UM campo só ("Cliente do compromisso"), e quando
+  // há alguém escolhido não existe campo nenhum: o painel mostra o NOME e a
+  // saída para desfazer. O que este teste prova continua o mesmo — a entrada
+  // pelo Inbox chega com o cliente daquela conversa já preso.
+  await expect(panel.getByText(p.name, { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Tirar o cliente" })).toBeVisible();
   await expect(page.getByLabel("Conversa vinculada (opcional)")).toHaveValue(p.conversation);
   // Fecha o painel para navegar a grade; reabre pela mesma entrada contextual.
   await page.keyboard.press("Escape");
