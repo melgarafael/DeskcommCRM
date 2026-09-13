@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,15 @@ import { CaretDown, CaretLeft, CaretRight, CaretUp, CircleNotch } from "@/lib/ui
 const TAMANHOS = [25, 50, 100, 200];
 const LIMITE_PADRAO = 50;
 
+/** Larguras de coluna em pixels — arrastáveis pelo cabeçalho. */
+const LARGURA_MINIMA = 80;
+const LARGURA_MAXIMA = 1200;
+const LARGURA_PADRAO = 180;
+/** Quanto o teclado move a alça de redimensionamento por seta (acessibilidade). */
+const PASSO_TECLADO = 24;
+
+type Larguras = Record<string, number>;
+
 interface Props {
   connectionId: string;
 }
@@ -37,6 +47,26 @@ function celula(valor: unknown): string {
   return String(valor);
 }
 
+/**
+ * Largura inicial de uma coluna a partir do que está na tela.
+ *
+ * Sem isso toda coluna nasceria estreita e o operador teria de arrastar cada
+ * uma antes de ler qualquer coisa. A amostra é curta de propósito: acompanhar
+ * o conteúdo conforme a paginação muda faria a grade "pular" sozinha enquanto
+ * o operador lê.
+ */
+function larguraSugerida(coluna: string, linhas: Record<string, unknown>[]): number {
+  let caracteres = coluna.length;
+  const amostra = Math.min(linhas.length, 30);
+  for (let i = 0; i < amostra; i += 1) {
+    const linha = linhas[i];
+    if (!linha) continue;
+    const texto = celula(linha[coluna]);
+    if (texto.length > caracteres) caracteres = texto.length;
+  }
+  return Math.min(LARGURA_MAXIMA, Math.max(LARGURA_PADRAO, caracteres * 8 + 40));
+}
+
 export function ExploradorDeDados({ connectionId }: Props) {
   const t = useT();
   const catalogo = useCatalogoExterno(connectionId);
@@ -45,6 +75,12 @@ export function ExploradorDeDados({ connectionId }: Props) {
   const [limite, setLimite] = useState(LIMITE_PADRAO);
   const [offset, setOffset] = useState(0);
   const [ordem, setOrdem] = useState<{ coluna: string; desc: boolean } | null>(null);
+  const [larguras, setLarguras] = useState<Larguras>({});
+
+  // O ref espelha `larguras` para que o fim do arraste (pointerup) persista o
+  // valor mais recente sem depender de um estado que ainda não re-renderizou.
+  const largurasRef = useRef<Larguras>({});
+  const chaveLarguras = selecionada ? chaveDeLarguras(selecionada) : null;
 
   const porSchema = useMemo(() => {
     const mapa = new Map<string, TabelaExterna[]>();
@@ -68,10 +104,26 @@ export function ExploradorDeDados({ connectionId }: Props) {
     { enabled: selecionada !== null },
   );
 
+  function chaveDeLarguras(tabela: TabelaExterna): string {
+    return `external-db:larguras:${connectionId}:${tabela.schema}.${tabela.nome}`;
+  }
+
   function selecionar(tabela: TabelaExterna) {
     setSelecionada(tabela);
     setOffset(0);
     setOrdem(null);
+    // Retoma as larguras salvas da tabela escolhida; sem entrada, nascem
+    // sugeridas pelo conteúdo. Feito aqui (e não num efeito) para não renderizar
+    // duas vezes ao trocar de tabela.
+    let salvas: Larguras = {};
+    try {
+      const bruto = window.localStorage.getItem(chaveDeLarguras(tabela));
+      if (bruto) salvas = JSON.parse(bruto) as Larguras;
+    } catch {
+      salvas = {};
+    }
+    largurasRef.current = salvas;
+    setLarguras(salvas);
   }
 
   function ordenarPor(coluna: string) {
@@ -83,6 +135,62 @@ export function ExploradorDeDados({ connectionId }: Props) {
 
   const linhas = dados.data?.linhas ?? [];
   const colunas = dados.data?.colunas ?? [];
+
+  function aplicarLarguras(proximas: Larguras) {
+    largurasRef.current = proximas;
+    setLarguras(proximas);
+  }
+
+  function persistirLarguras() {
+    if (!chaveLarguras) return;
+    try {
+      window.localStorage.setItem(chaveLarguras, JSON.stringify(largurasRef.current));
+    } catch {
+      // Sem persistência o ajuste continua valendo nesta sessão.
+    }
+  }
+
+  function larguraDe(coluna: string): number {
+    return larguras[coluna] ?? larguraSugerida(coluna, linhas);
+  }
+
+  function redimensionarPorTeclado(evento: ReactKeyboardEvent<HTMLElement>, coluna: string) {
+    const passo =
+      evento.key === "ArrowLeft" ? -PASSO_TECLADO : evento.key === "ArrowRight" ? PASSO_TECLADO : 0;
+    if (passo === 0) return;
+    evento.preventDefault();
+    const proxima = Math.min(
+      LARGURA_MAXIMA,
+      Math.max(LARGURA_MINIMA, larguraDe(coluna) + passo),
+    );
+    aplicarLarguras({ ...largurasRef.current, [coluna]: proxima });
+    persistirLarguras();
+  }
+
+  function iniciarRedimensionamento(evento: ReactPointerEvent<HTMLElement>, coluna: string) {
+    if (evento.button !== 0) return;
+    evento.preventDefault();
+    evento.stopPropagation();
+    const inicioX = evento.clientX;
+    const larguraInicial = larguraDe(coluna);
+    const alvo = evento.currentTarget;
+    alvo.setPointerCapture?.(evento.pointerId);
+
+    const aoMover = (movimento: PointerEvent) => {
+      const proxima = Math.min(
+        LARGURA_MAXIMA,
+        Math.max(LARGURA_MINIMA, larguraInicial + (movimento.clientX - inicioX)),
+      );
+      aplicarLarguras({ ...largurasRef.current, [coluna]: proxima });
+    };
+    const aoSoltar = () => {
+      window.removeEventListener("pointermove", aoMover);
+      window.removeEventListener("pointerup", aoSoltar);
+      persistirLarguras();
+    };
+    window.addEventListener("pointermove", aoMover);
+    window.addEventListener("pointerup", aoSoltar);
+  }
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
@@ -208,18 +316,27 @@ export function ExploradorDeDados({ connectionId }: Props) {
               )}
 
               {linhas.length > 0 && (
-                <Table>
+                <Table className="table-fixed">
+                  <colgroup>
+                    {colunas.map((coluna) => (
+                      <col key={coluna} style={{ width: `${larguraDe(coluna)}px` }} />
+                    ))}
+                  </colgroup>
                   <TableHeader>
                     <TableRow>
                       {colunas.map((coluna) => {
                         const ehPk = selecionada.chavePrimaria.includes(coluna);
                         const ordenadaAqui = ordem?.coluna === coluna;
                         return (
-                          <TableHead key={coluna} className="whitespace-nowrap">
+                          <TableHead
+                            key={coluna}
+                            className="relative whitespace-nowrap pr-4"
+                            style={{ width: `${larguraDe(coluna)}px` }}
+                          >
                             <button
                               type="button"
                               onClick={() => ordenarPor(coluna)}
-                              className="inline-flex items-center gap-1 hover:underline"
+                              className="inline-flex max-w-full items-center gap-1 hover:underline"
                               title={ehPk ? t("Chave primária") : undefined}
                             >
                               {ehPk && (
@@ -227,7 +344,7 @@ export function ExploradorDeDados({ connectionId }: Props) {
                                   PK
                                 </span>
                               )}
-                              {coluna}
+                              <span className="min-w-0 truncate">{coluna}</span>
                               {ordenadaAqui &&
                                 (ordem?.desc ? (
                                   <CaretDown size={12} aria-hidden />
@@ -235,6 +352,21 @@ export function ExploradorDeDados({ connectionId }: Props) {
                                   <CaretUp size={12} aria-hidden />
                                 ))}
                             </button>
+                            <span
+                              role="separator"
+                              aria-orientation="vertical"
+                              aria-label={t("Ajustar largura da coluna")}
+                              title={t("Arraste para ajustar a largura")}
+                              tabIndex={0}
+                              onPointerDown={(evento) => iniciarRedimensionamento(evento, coluna)}
+                              onKeyDown={(evento) => redimensionarPorTeclado(evento, coluna)}
+                              className="group absolute inset-y-0 right-0 flex w-2 cursor-col-resize touch-none select-none items-stretch justify-center focus-visible:outline-hidden"
+                            >
+                              <span
+                                aria-hidden
+                                className="w-px bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary"
+                              />
+                            </span>
                           </TableHead>
                         );
                       })}
@@ -244,7 +376,11 @@ export function ExploradorDeDados({ connectionId }: Props) {
                     {linhas.map((linha, i) => (
                       <TableRow key={i}>
                         {colunas.map((coluna) => (
-                          <TableCell key={coluna} className="max-w-[320px] truncate font-mono text-xs">
+                          <TableCell
+                            key={coluna}
+                            className="whitespace-pre-wrap break-words align-top font-mono text-xs"
+                            title={celula(linha[coluna])}
+                          >
                             {celula(linha[coluna])}
                           </TableCell>
                         ))}

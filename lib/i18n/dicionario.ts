@@ -8232,6 +8232,8 @@ export const DICIONARIO: Traducoes = {
   },
   "Nenhuma linha retornada.": { es: "No se devolvió ninguna fila." },
   "Chave primária": { es: "Clave primaria" },
+  "Ajustar largura da coluna": { es: "Ajustar ancho de la columna" },
+  "Arraste para ajustar a largura": { es: "Arrastra para ajustar el ancho" },
   "nada a mostrar": { es: "nada que mostrar" },
   "somente leitura": { es: "solo lectura" },
   "Esta conexão está desativada. Ative-a na lista para consultar os dados.": {

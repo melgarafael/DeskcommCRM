@@ -228,6 +228,17 @@ Sistema de tools = **catálogo MCP**. Caminho canônico:
 - [x] Rebrand do namespace das imagens para o fork (`chore/namespace-do-fork`, PR #2) e release **1.19.0** publicada (tag `v1.19.0`; imagens `ghcr.io/vgamkt/...` públicas)
 - [x] **Deploy em produção:** VPS com `app`/`worker`/`scheduler` em `ghcr.io/vgamkt/...:1.19.0`, healthy (2026-09-12)
 
+### Melhoria pós-entrega — leitura da grade (2026-09-13)
+
+O dono relatou que a grade do explorador (`app/app/integracao-dados/[id]/_components/ExploradorDeDados.tsx`) cortava valores longos com `max-w-[320px] truncate` e não permitia **alargar** a coluna. Correção de aparência, sem tocar no núcleo, na API nem no banco:
+
+- **Colunas redimensionáveis (arrastar a borda, como numa planilha):** tabela em `table-fixed` com `<colgroup>`; cada cabeçalho ganha uma alça (`role="separator"`) que se arrasta pelo ponteiro e responde às setas do teclado (24 px por toque), com limites de 80–1200 px. Sem botão de largura — o gesto é o controle.
+- **Largura inicial sugerida pelo conteúdo** (amostra das primeiras 30 linhas), para a grade nascer legível em vez de estreita.
+- **"Mostrar conteúdo completo":** interruptor que troca o truncamento por `whitespace-pre-wrap` + `break-words`, deixando o valor inteiro visível.
+- **Persistência:** larguras por `connectionId`/schema/tabela e a preferência de quebra no `localStorage` (preferência de quebra via `useSyncExternalStore`, sem divergência de hidratação).
+- **i18n:** 4 chaves novas em `lib/i18n/dicionario.ts`. **Sem migration, sem baseline, sem env var, sem API nova.**
+- **Verificação:** `tsc -p tsconfig.typecheck.json` e `eslint .` zerados (346 warnings pré-existentes, nenhum novo); `ExploradorDeDados.test.tsx` (4 testes) e os gates `i18n-espanhol-cobre-a-tela`, `tailwind-tokens` e `branding` verdes (via Docker `node:22-bookworm`). **Pendente:** commit/PR/CI, corte de release e deploy (`update.sh`) — a mudança está na árvore de trabalho, não commitada.
+
 ### Fora de escopo (backlog)
 
 - [ ] Sincronizar/importar tabelas externas para entidades do CRM (épico separado)
