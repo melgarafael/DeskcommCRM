@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { motivoDoMeet } from "@/lib/agenda/motivo-do-meet";
+import { motivoDoMeet, semSegredos } from "@/lib/agenda/motivo-do-meet";
 
 /**
  * "Enviar link ao cliente": 20 segundos parado e "Erro inesperado".
@@ -109,6 +109,36 @@ describe("o motivo da recusa chega inteiro à tela", () => {
   });
 });
 
+describe("o motivo vai para o log SEM segredo, mas vai", () => {
+  it("⛔ o link da reunião não sobrevive à redação", () => {
+    expect(semSegredos("falhou em https://meet.google.com/secret?token=private ao gravar")).toBe(
+      "falhou em [link] ao gravar",
+    );
+  });
+
+  it("⛔ e nenhum outro endereço também — o segredo pode estar na query", () => {
+    expect(semSegredos("POST https://api.exemplo.com/x?key=abc 500")).toBe("POST [link] 500");
+  });
+
+  it("o resto da frase SOBREVIVE — é ele que permite diagnosticar", () => {
+    // Esta é a metade que faltava. A versão anterior apagava a mensagem
+    // INTEIRA, e um erro real de produção (`sqlstate: undefined`, sem nome
+    // conhecido) ficou sem nenhuma pista: o servidor sabia o que tinha
+    // acontecido e não guardava nada além do código genérico.
+    expect(semSegredos("fetch failed: ECONNREFUSED")).toBe("fetch failed: ECONNREFUSED");
+  });
+
+  it("erro sem mensagem não vira a string 'undefined'", () => {
+    expect(semSegredos(undefined)).toBe(null);
+    expect(semSegredos("")).toBe(null);
+  });
+
+  it("CONTROLE: a redação não é vacuidade — texto sem link passa inteiro", () => {
+    const frase = "meet_conversation_stale (PL/pgSQL linha 28)";
+    expect(semSegredos(frase)).toBe(frase);
+  });
+});
+
 describe("a rota não volta a apagar o motivo ao registrar", () => {
   const ROTA = path.join(
     process.cwd(),
@@ -164,10 +194,13 @@ describe("a rota não volta a apagar o motivo ao registrar", () => {
     // fixo — que apagava o motivo de TODO erro — a tentação é gravar a mensagem
     // inteira "para não perder nada". O certo é gravar o `codigo` derivado, que
     // é identificador nosso e não carrega dado de ninguém.
-    expect(/erro:\s*error instanceof Error/.test(fonte), "a mensagem crua voltou ao log").toBe(
-      false,
-    );
-    expect(/error\.message/.test(fonte), "a mensagem crua voltou ao log").toBe(false);
+    // ⚠️ A regra mudou de "nao registre a mensagem" para "registre REDIGIDA".
+    // Apagar a mensagem inteira custou um diagnostico real: um erro de
+    // producao com `sqlstate: undefined` e nenhum nome conhecido nao deixou
+    // pista nenhuma. Sanitizar demais tambem e um defeito.
+    expect(fonte).toMatch(/mensagem:\s*semSegredos\(/);
+    expect(/mensagem:\s*error\.message/.test(fonte), "mensagem crua no log").toBe(false);
+    expect(/erro:\s*error instanceof Error/.test(fonte), "mensagem crua no log").toBe(false);
   });
 
   it("CONTROLE: esta cerca casa com a forma proibida em código de verdade", () => {

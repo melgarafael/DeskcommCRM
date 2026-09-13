@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { googleRpc } from "@/lib/agenda/google/sync-store";
 import { ok, fail } from "@/lib/api/wrappers";
 import { logger } from "@/lib/logger";
-import { motivoDoMeet } from "@/lib/agenda/motivo-do-meet";
+import { motivoDoMeet, semSegredos } from "@/lib/agenda/motivo-do-meet";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { audit } from "@/lib/audit";
 
@@ -84,7 +84,15 @@ export async function meetingAction(
       requestId,
       action,
       code: motivo.codigo,
-      sqlstate: error && typeof error === "object" && "code" in error ? String(error.code) : null,
+      sqlstate:
+        error && typeof error === "object" && "code" in error && error.code !== undefined
+          ? String(error.code)
+          : null,
+      // REDIGIDA, nao apagada. Apagar a mensagem inteira ja custou um
+      // diagnostico real: um erro de producao chegou aqui sem nome conhecido e
+      // sem SQLSTATE, e o registro nao guardou pista nenhuma. `semSegredos`
+      // tira os enderecos — onde o segredo mora — e deixa a frase.
+      mensagem: semSegredos(error instanceof Error ? error.message : null),
     });
     // ⛔ RECUSA DE REGRA NUNCA VAI COMO 5xx.
     //

@@ -39,6 +39,35 @@
  * O nome é o que a função escolheu dizer. É ele que carrega a informação.
  */
 
+/**
+ * A mensagem do erro, sem o que nao pode sair daqui.
+ *
+ * ## Por que REDIGIR e nao apagar
+ *
+ * A primeira versao deste modulo apagava a mensagem inteira do registro, e por
+ * um bom motivo: ela pode carregar o LINK DA REUNIAO, e
+ * `tests/unit/agenda-meet-routes.test.ts` injeta
+ * `https://meet.google.com/secret?token=private` exigindo que o registro nao
+ * contenha "secret".
+ *
+ * So que apagar tudo custou um diagnostico REAL: em 2026-09-13, numa instalacao
+ * de verdade, "Enviar link ao cliente" falhou tres vezes seguidas e o registro
+ * guardou apenas `code: "internal_error"` e `sqlstate: "undefined"` — nenhum
+ * nome conhecido, nenhum SQLSTATE, nenhuma pista. O servidor sabia o que tinha
+ * acontecido e nao guardou nada aproveitavel.
+ *
+ * Sanitizar de menos vaza; sanitizar de mais cega. A saida e tirar os ENDERECOS
+ * — que e onde o segredo mora — e deixar o resto da frase, que e onde mora o
+ * diagnostico.
+ *
+ * Tira QUALQUER endereco, nao so os do Meet: um segredo tanto pode estar no
+ * caminho quanto na query de um endereco qualquer.
+ */
+export function semSegredos(mensagem: string | undefined | null): string | null {
+  if (!mensagem) return null;
+  return mensagem.replace(/https?:\/\/\S+/g, "[link]").slice(0, 300);
+}
+
 /** Como a recusa deve chegar a quem clicou. */
 export interface MotivoDoMeet {
   /** Código da resposta da API — vira `error.code` no cliente. */
