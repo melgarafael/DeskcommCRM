@@ -242,6 +242,17 @@ O dono relatou que a grade do explorador (`app/app/integracao-dados/[id]/_compon
 - **Histórico:** a **1.19.1** publicou a primeira versão (largura sugerida pelo conteúdo + quebra de linha por padrão); o dono observou que a grade ficou alta demais e pediu o padrão compacto com ajuste também das linhas — corrigido na **1.19.2**.
 - **Verificação:** `tsc -p tsconfig.typecheck.json` e `eslint .` zerados (346 warnings pré-existentes, nenhum novo); `ExploradorDeDados.test.tsx` (5 testes) e os gates `i18n-espanhol-cobre-a-tela`, `tailwind-tokens` e `branding` verdes (via Docker `node:22-bookworm`).
 
+### Limites de leitura configuráveis (2026-09-13, 1.20.0)
+
+O dono observou que os limites de leitura do banco externo eram constantes no código (`LIMITE_MAX = 200`, filtros 20, resposta 30 KB) e pediu para configurá-los na interface — o processo dele pode precisar de mais linhas e mais filtros.
+
+- **Por conexão, com faixa validada:** novos campos `max_rows` (1–5000), `max_filters` (0–100) e `max_response_bytes` (4 KB–1 MB) em `external_db_connections`, com CHECK no banco, Zod nas rotas e campos na tela da conexão ("Limites de leitura"). Defaults iguais aos valores antigos.
+- **Onde valem:** `max_rows` na grade e nas tools; `max_filters` e `max_response_bytes` nas tools. O teto absoluto continua existindo (topo da faixa) para o admin não derrubar o processo/estourar o contexto.
+- **Tripla:** migration `0234`, apêndice idempotente no `baseline.sql` e linha no `MANIFEST.md`. `_safe` view recriada expondo os limites.
+- **Código:** `lib/external-db/limites.ts` (contrato), `leitura.ts` (teto por conexão via `opcoes.limiteMax`), `credenciais.ts`/`types.ts` (ConexaoExterna), `schemas.ts`, `lib/mcp/tools/dados-externos.ts` (recusa por teto de filtros, clamp de linhas, bytes da conexão) e as rotas HTTP.
+- **Verificação:** `tsc`/`eslint` zerados; testes de `lib/external-db` e `dados-externos` verdes; migration 0234 aplicada em pg15 descartável em install **e** update (idempotente). `test:db` completo e `e2e` ficam com o CI.
+- **Fragmento:** `.changes/limites-do-banco-externo-configuraveis.md` (`capacidade_nova`/`adicionado` → minor = 1.20.0).
+
 ### Fora de escopo (backlog)
 
 - [ ] Sincronizar/importar tabelas externas para entidades do CRM (épico separado)

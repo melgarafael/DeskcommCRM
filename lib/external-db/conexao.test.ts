@@ -14,6 +14,9 @@ function conexao(over: Partial<ConexaoExterna> = {}): ConexaoExterna {
     username: "u",
     password: "p",
     sslMode: "disable",
+    maxRows: 200,
+    maxFilters: 20,
+    maxResponseBytes: 30_000,
     versao: "2026-09-11T00:00:00.000Z",
     ...over,
   };

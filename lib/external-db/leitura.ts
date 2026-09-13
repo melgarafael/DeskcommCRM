@@ -6,16 +6,18 @@
  * concatenação. O filtro é um vocabulário FECHADO de operadores; não existe
  * caminho por onde texto do usuário vire SQL.
  *
- * O limite é teto rígido (`LIMITE_MAX`): sem ele, um `select *` numa tabela de
- * milhões de linhas derruba o processo do worker.
+ * O limite tem DOIS níveis: o `max_rows` configurado na conexão (o que a
+ * organização escolheu) e o teto absoluto `LIMITE_LINHAS.maximo`, que nem o
+ * admin ultrapassa. Sem teto nenhum, um `select *` numa tabela de milhões de
+ * linhas derruba o processo do worker.
  */
 import type pg from "pg";
 
 import { consultar } from "./conexao";
+import { LIMITE_LINHAS, LIMITE_PADRAO_DA_GRADE } from "./limites";
 import type { OperadorDeFiltro, PedidoDeLeitura } from "./types";
 
-export const LIMITE_MAX = 200;
-export const LIMITE_PADRAO = 50;
+export const LIMITE_PADRAO = LIMITE_PADRAO_DA_GRADE;
 
 /** Acima disso, um valor de célula é truncado antes de virar JSON. */
 const MAX_TEXTO = 20_000;
@@ -106,6 +108,7 @@ export interface ConsultaMontada {
 export function montarConsulta(
   pedido: PedidoDeLeitura,
   permitidas: ReadonlySet<string>,
+  opcoes: { limiteMax?: number } = {},
 ): ConsultaMontada {
   if (!pedido.schema || !pedido.tabela) {
     throw new LeituraInvalidaError("tabela_obrigatoria");
@@ -127,7 +130,14 @@ export function montarConsulta(
     ordem = ` order by ${quotarIdentificador(pedido.ordem.coluna)} ${pedido.ordem.desc ? "desc" : "asc"}`;
   }
 
-  const limite = Math.min(LIMITE_MAX, Math.max(1, Math.floor(pedido.limite) || LIMITE_PADRAO));
+  // O teto efetivo é o da conexão, nunca acima do absoluto; um `limiteMax`
+  // inválido (NaN/negativo) cai no absoluto em vez de abrir a porteira.
+  const tetoDaConexao = Math.floor(opcoes.limiteMax ?? LIMITE_LINHAS.maximo);
+  const teto = Math.min(
+    LIMITE_LINHAS.maximo,
+    Number.isFinite(tetoDaConexao) && tetoDaConexao > 0 ? tetoDaConexao : LIMITE_LINHAS.maximo,
+  );
+  const limite = Math.min(teto, Math.max(1, Math.floor(pedido.limite) || LIMITE_PADRAO));
   const offset = Math.max(0, Math.floor(pedido.offset) || 0);
   const projecao = colunas.length > 0 ? colunas.map(quotarIdentificador).join(", ") : "*";
   const onde = clausulas.length > 0 ? ` where ${clausulas.join(" and ")}` : "";
@@ -167,8 +177,9 @@ export async function lerTabela(
   pool: pg.Pool,
   pedido: PedidoDeLeitura,
   permitidas: ReadonlySet<string>,
+  opcoes: { limiteMax?: number } = {},
 ): Promise<ResultadoDeLeitura> {
-  const { text, values, limite, offset } = montarConsulta(pedido, permitidas);
+  const { text, values, limite, offset } = montarConsulta(pedido, permitidas, opcoes);
   const resultado = await consultar<Record<string, unknown>>(pool, text, values);
   return {
     colunas: resultado.fields.map((f) => f.name),

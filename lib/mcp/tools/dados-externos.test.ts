@@ -28,6 +28,9 @@ const CONEXAO: ConexaoExterna = {
   username: "leitor",
   password: "segredo",
   sslMode: "require",
+  maxRows: 200,
+  maxFilters: 20,
+  maxResponseBytes: 30_000,
   versao: "2026-09-11T00:00:00.000Z",
 };
 
@@ -181,5 +184,47 @@ describe("crm_query_external_data", () => {
     )) as Record<string, unknown>;
     expect(r.schema).toBe("public");
     expect(r.aviso).toBeTruthy();
+  });
+
+  it("usa o teto de linhas DA CONEXÃO, não o pedido pelo modelo", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({
+      ok: true,
+      conexao: { ...CONEXAO, maxRows: 150 },
+      pool: {} as never,
+    });
+    vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [], limite: 150, offset: 0 });
+
+    await crmQueryExternalData.handler(
+      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 5000 },
+      ctxFake(),
+    );
+
+    const chamada = vi.mocked(lerTabela).mock.calls[0];
+    expect((chamada?.[1] as { limite: number } | undefined)?.limite).toBe(150);
+    expect(chamada?.[3]).toEqual({ limiteMax: 150 });
+  });
+
+  it("recusa quando os filtros passam do teto DA CONEXÃO", async () => {
+    vi.mocked(abrirAcesso).mockResolvedValue({
+      ok: true,
+      conexao: { ...CONEXAO, maxFilters: 2 },
+      pool: {} as never,
+    });
+    const r = (await crmQueryExternalData.handler(
+      {
+        connection_id: "conn-1",
+        schema: "public",
+        tabela: "assinaturas",
+        filtros: [
+          { coluna: "id", operador: "eq", valor: 1 },
+          { coluna: "status", operador: "eq", valor: "ok" },
+          { coluna: "id", operador: "ne", valor: 2 },
+        ],
+        limite: 20,
+      },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect(r.erro).toBe("limite_de_filtros");
+    expect(lerTabela).not.toHaveBeenCalled();
   });
 });

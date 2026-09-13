@@ -27,6 +27,9 @@ const LINHA = {
   password_tag: "\\xcc",
   ssl_mode: "require",
   enabled: true,
+  max_rows: 800,
+  max_filters: 40,
+  max_response_bytes: 120000,
   updated_at: "2026-09-11T00:00:00.000Z",
 };
 
@@ -74,6 +77,9 @@ describe("carregarConexao", () => {
         username: "leitor",
         password: "senha-decifrada",
         sslMode: "require",
+        maxRows: 800,
+        maxFilters: 40,
+        maxResponseBytes: 120000,
         versao: "2026-09-11T00:00:00.000Z",
       },
     });

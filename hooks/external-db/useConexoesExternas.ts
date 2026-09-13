@@ -16,6 +16,9 @@ export interface ConexaoExternaRow {
   username: string;
   ssl_mode: string;
   enabled: boolean;
+  max_rows: number;
+  max_filters: number;
+  max_response_bytes: number;
   last_tested_at: string | null;
   last_test_ok: boolean | null;
   last_test_error: string | null;
@@ -59,6 +62,9 @@ export interface EntradaDeConexao {
   password: string;
   ssl_mode: string;
   enabled: boolean;
+  max_rows: number;
+  max_filters: number;
+  max_response_bytes: number;
 }
 
 export type PatchDeConexao = Partial<Omit<EntradaDeConexao, "password">> & {

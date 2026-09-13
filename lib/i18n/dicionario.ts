@@ -8236,6 +8236,13 @@ export const DICIONARIO: Traducoes = {
   "Arraste para ajustar a largura": { es: "Arrastra para ajustar el ancho" },
   "Ajustar altura da linha": { es: "Ajustar alto de la fila" },
   "Arraste para ajustar a altura": { es: "Arrastra para ajustar el alto" },
+  "Limites de leitura": { es: "Límites de lectura" },
+  "Quanto o assistente e a grade podem ler desta fonte. Aumente se o seu processo precisar.": {
+    es: "Cuánto pueden leer el asistente y la grilla de esta fuente. Auméntalo si tu proceso lo necesita.",
+  },
+  "Linhas por consulta": { es: "Filas por consulta" },
+  "Filtros por consulta": { es: "Filtros por consulta" },
+  "Resposta para a IA (KB)": { es: "Respuesta para la IA (KB)" },
   "nada a mostrar": { es: "nada que mostrar" },
   "somente leitura": { es: "solo lectura" },
   "Esta conexão está desativada. Ative-a na lista para consultar os dados.": {

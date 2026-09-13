@@ -27,6 +27,12 @@ export interface ConexaoExterna {
   username: string;
   password: string;
   sslMode: ModoTls;
+  /** Teto de linhas por consulta escolhido pela organização (`max_rows`). */
+  maxRows: number;
+  /** Teto de filtros por consulta (`max_filters`). */
+  maxFilters: number;
+  /** Teto de bytes da resposta devolvida ao modelo (`max_response_bytes`). */
+  maxResponseBytes: number;
   versao: string;
 }
 
