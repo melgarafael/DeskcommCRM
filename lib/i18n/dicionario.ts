@@ -8346,6 +8346,12 @@ export const DICIONARIO: Traducoes = {
   "O envio atingiu uma janela ou limite do canal. Aguarde a liberação antes de tentar novamente.": { es: "El envío alcanzó una ventana o un límite del canal. Espera a que se habilite antes de intentarlo de nuevo." },
   "Uma regra de envio impediu a mensagem. Confira o aviso na Central antes de tentar novamente.": { es: "Una regla de envío bloqueó el mensaje. Revisa el aviso en la Central antes de intentarlo de nuevo." },
   "Sua reunião está marcada para": { es: "Tu reunión está programada para" },
+  // A frase da CORRECAO. Ela vai para o CLIENTE, no idioma dele — entao a
+  // falta de espanhol aqui nao apareceria em nenhuma tela, so na mensagem de
+  // quem recebe.
+  "O horário da sua reunião mudou. Agora é": {
+    es: "El horario de tu reunión cambió. Ahora es",
+  },
   "Link do Google Meet:": { es: "Enlace de Google Meet:" },
 
 

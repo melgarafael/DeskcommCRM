@@ -15,9 +15,8 @@ import {
   MeetingDeliveryBlockedError,
 } from "@/lib/agenda/meet-delivery";
 import { meetVideoUrl } from "@/lib/agenda/google/meet";
-import { tagDeIdioma } from "@/lib/i18n/datas";
+import { textoDaEntrega, type MotivoDaEntrega } from "@/lib/agenda/texto-do-compromisso";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
-import { traduzir } from "@/lib/i18n/dicionario";
 
 export function createMeetDeliveryHandler(deps: {
   crmCfg: CrmEdgeConfig;
@@ -101,12 +100,16 @@ export function createMeetDeliveryHandler(deps: {
           meetingDelivery: context,
           channelSessionId: row.channel_session_id,
           crmDailyLimit: row.daily_message_limit,
-          body: meetingDeliveryBody(
-            row.starts_at,
-            row.time_zone,
+          body: textoDaEntrega({
+            // O motivo viaja no payload do job, posto por quem enfileirou. Sem
+            // ele o padrao e o primeiro envio — que e o comportamento de antes
+            // desta mudanca, e o certo para toda entrega ja na fila.
+            motivo: (job.payload.motivo as MotivoDaEntrega | undefined) ?? "primeiro_envio",
+            startsAt: row.starts_at,
+            timeZone: row.time_zone,
             url,
-            normalizarIdioma(row.contact_locale ?? row.organization_locale),
-          ),
+            idioma: normalizarIdioma(row.contact_locale ?? row.organization_locale),
+          }),
           optedOutThisTurn: false,
           now: new Date(),
           lgpd: deriveLgpdFromContact(row, false),
@@ -165,16 +168,19 @@ export function createMeetDeliveryHandler(deps: {
   };
 }
 
+/**
+ * ⚠️ MANTIDA, e agora delegando.
+ *
+ * Ela é exportada e há teste em cima dela. Reescrever o corpo aqui criaria DUAS
+ * réguas para o mesmo texto, e duas réguas divergem — foi o que aconteceu com a
+ * régua das regras de isolamento. Delegar com `primeiro_envio` garante que
+ * nenhum chamador existente mude de comportamento.
+ */
 export function meetingDeliveryBody(
   startsAt: string,
   timeZone: string,
   url: string,
   idioma: Idioma,
 ): string {
-  const when = new Intl.DateTimeFormat(tagDeIdioma(idioma), {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone,
-  }).format(new Date(startsAt));
-  return `${traduzir("Sua reunião está marcada para", idioma)} ${when} (${timeZone}). ${traduzir("Link do Google Meet:", idioma)} ${url}`;
+  return textoDaEntrega({ motivo: "primeiro_envio", startsAt, timeZone, url, idioma });
 }
