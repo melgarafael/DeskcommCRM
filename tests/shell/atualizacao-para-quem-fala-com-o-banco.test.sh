@@ -506,6 +506,25 @@ else
   nao "descida no update.sh" "manutencao_desce antes de 'dc up -d'" "desce=$q_desce up=$q_up"
 fi
 
+echo "caso 31 — ⛔ a pagina NAO responde pela API do agente"
+# MEDIDO na instalacao real: o agente reporta o proprio progresso em
+# `POST /api/v1/system/agent`, pelo MESMO endereco publico que o navegador usa.
+# Com o aviso de pe ele recebia a PAGINA INTEIRA de volta — 18 KB de HTML no
+# registro de erro dele — e ficava cego justamente durante a janela que precisa
+# narrar. Provado com nginx de verdade na VPS: navegador 503+pagina, API 503+JSON.
+CONF="$(cat "$KIT_DIR/manutencao/nginx.conf")"
+case "$CONF" in
+  *"location ^~ /api/"*) ok "a API tem rota propria" ;;
+  *) nao "rota propria para a API" "location ^~ /api/" "ausente" ;;
+esac
+# A ordem do `error_page` e o que separa o conserto do defeito: no `server` ele
+# valeria tambem para o 503 da API, e a API voltaria a receber HTML.
+if printf '%s' "$CONF" | grep -qE "^  location / \{" && printf '%s' "$CONF" | grep -qE "^    error_page 503"; then
+  ok "o error_page mora DENTRO do location /, nao no server"
+else
+  nao "error_page escopado" "error_page 503 indentado dentro de location /" "fora de escopo"
+fi
+
 if [ "$falhas" -eq 0 ]; then
   echo "TUDO VERDE"
   exit 0
