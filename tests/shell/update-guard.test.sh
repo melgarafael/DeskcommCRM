@@ -482,5 +482,53 @@ R="$( printf "APP_IMAGE=${NS}/deskcommcrm:1.3.0\n" > "$PIN_DIR/.env"
         ". '$KIT_DIR_TESTE/_common.sh'; completar_pin_ausente .env" 2>/dev/null || true )"
 check "imagem sem label de versão → não inventa pin" test -z "$R"
 
+
+echo "── 12. Quem instala a versão nova é a versão NOVA"
+#
+# MEDIDO NA INSTALAÇÃO REAL, 2026-09-13. A v1.17.15 trazia uma pausa dos
+# serviços antes de mexer no banco. Depois de atualizar, as três peças do
+# Supabase estavam de pé havia duas horas e meia: a pausa NÃO rodou.
+#
+# A causa: `source _common.sh` acontece na PRIMEIRA linha, e o `git checkout`
+# da versão nova só na etapa 3. Quem executou a atualização foi a versão
+# ANTERIOR, aplicando o banco da versão nova.
+#
+# Isso nunca foi um tropeço de uma entrega só: TODA correção do instalador
+# chegava um update atrasada — a versão que traz o conserto era instalada pela
+# versão que ainda tem o defeito.
+#
+# Há uma segunda aresta na mesma pedra: o `git checkout` troca o arquivo do
+# script ENQUANTO ele está sendo lido, e o interpretador acompanha o arquivo por
+# posição em bytes. Arquivo novo de tamanho diferente = retomada no meio de uma
+# linha. Sobreviver a isso é sorte, não desenho.
+cd "$PROJ" || exit 1
+
+# Duas versões do MESMO update.sh, distinguíveis por uma linha impressa na
+# etapa do banco — que é depois do ponto onde o re-exec tem de acontecer.
+marcar_versao() {  # marcar_versao <rótulo>
+  awk -v rot="$1" '
+    /^step "Atualizando o banco de dados"/ { print "echo \"VERSAO-QUE-RODOU: " rot "\"" }
+    { print }
+  ' "$REPO_ROOT/hostgator-setup-kit/update.sh" > "$PROJ/hostgator-setup-kit/update.sh"
+}
+
+marcar_versao velha
+git add -A >/dev/null; git commit --quiet -m "a versao instalada"
+INSTALADA="$(git rev-parse HEAD)"
+marcar_versao nova
+git add -A >/dev/null; git commit --quiet -m "a versao nova"; git tag v2.0.0
+# O disco volta a ser a versão VELHA: é esse o estado de quem vai atualizar.
+git checkout --quiet "$INSTALADA"
+
+run_update --to v2.0.0
+check "quem rodou a etapa do banco foi a versão NOVA" grep -q "VERSAO-QUE-RODOU: nova" "$OUTFILE"
+# CONTROLE — e este é o par que prova que o caso acima não passa por acidente:
+# sem o re-exec, o que aparece é "velha", porque foi ela que continuou rodando.
+check "a versão velha NÃO chega a rodar a etapa do banco" bash -c '! grep -q "VERSAO-QUE-RODOU: velha" "'"$OUTFILE"'"'
+# E não pode virar laço: o guarda de re-exec tem de impedir a segunda volta.
+check "roda a etapa do banco UMA vez só (sem laço)" test "$(grep -c 'VERSAO-QUE-RODOU:' "$OUTFILE")" -eq 1
+# O backup é caro e já foi feito na primeira volta.
+check "o backup não é refeito na segunda volta" test "$(grep -c 'Backup de segurança' "$OUTFILE")" -le 1
+
 if [ "$FAILS" -eq 0 ]; then echo "OK — todas as provas passaram."; else echo "FALHOU — $FAILS prova(s)."; fi
 exit $((FAILS > 0))

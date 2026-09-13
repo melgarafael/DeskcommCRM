@@ -122,7 +122,11 @@ if [ -z "$SKIP_BACKUP" ]; then
 fi
 # Avisa o agente do host (se for ele quem está dirigindo) — é o que faz a tela
 # de atualização avançar passo a passo enquanto o app ainda está de pé.
-[ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" backup
+# Na SEGUNDA volta (depois do re-exec) estes dois passos ja foram
+# reportados. Reportar de novo faria a tela de quem esta olhando andar
+# PARA TRAS por um instante, e voltar atras numa barra de progresso le-se
+# como "deu errado e recomecou".
+[ -z "${DESKCOMM_UPDATE_REEXEC:-}" ] && [ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" backup
 
 # ── 3. Código novo ───────────────────────────────────────────────────────────
 step "Baixando o código novo"
@@ -130,7 +134,42 @@ if ! git checkout --quiet "$TARGET_TAG" 2>&1; then
   die "Não consegui trocar para a versão $TARGET_TAG (parece haver mudanças locais que divergem).
      Rode 'git status' pra ver, ou peça ajuda. NÃO mexi no banco — está tudo como estava."
 fi
-[ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" codigo
+# Na SEGUNDA volta (depois do re-exec) estes dois passos ja foram
+# reportados. Reportar de novo faria a tela de quem esta olhando andar
+# PARA TRAS por um instante, e voltar atras numa barra de progresso le-se
+# como "deu errado e recomecou".
+[ -z "${DESKCOMM_UPDATE_REEXEC:-}" ] && [ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" codigo
+
+# ── DAQUI PRA FRENTE, QUEM MANDA E A VERSAO NOVA ─────────────────────────────
+#
+# MEDIDO na instalacao real em 2026-09-13, e e um defeito de anos, nao de uma
+# entrega: a v1.17.15 trouxe uma pausa dos servicos antes de mexer no banco, e
+# depois de atualizar as tres pecas do Supabase estavam de pe havia duas horas e
+# meia. A pausa nao rodou.
+#
+# Por que: `source _common.sh` acontece na PRIMEIRA linha deste arquivo, e o
+# `git checkout` da versao nova so aqui, na etapa 3. Quem executa a atualizacao
+# e a versao ANTERIOR — aplicando o banco da versao nova. Ou seja, TODA correcao
+# do instalador chegava um update atrasada: a versao que traz o conserto era
+# instalada pela versao que ainda tem o defeito.
+#
+# E ha uma segunda aresta na mesma pedra: o `git checkout` troca o arquivo deste
+# script ENQUANTO o interpretador o le, e ele acompanha o arquivo por posicao em
+# BYTES. Arquivo novo de tamanho diferente = retomada no meio de uma linha.
+# Sobreviver a isso e sorte, nao desenho. O `exec` fecha as duas de uma vez.
+#
+# As flags nao sao enfeite:
+#   --to      o alvo ja foi decidido; redecidir arriscaria escolher outro
+#   --force   depois do checkout, HEAD JA E a tag alvo, e sem isto a segunda
+#             volta diria "voce ja esta na versao mais recente" e sairia sem
+#             tocar no banco — exatamente o passo que precisa rodar
+#   --skip-backup  o backup ja foi feito na primeira volta, e refaze-lo dobraria
+#             o tempo da atualizacao sem proteger mais ninguem
+if [ -z "${DESKCOMM_UPDATE_REEXEC:-}" ]; then
+  export DESKCOMM_UPDATE_REEXEC=1
+  c_ylw "Seguindo com o instalador da propria versao $TARGET_TAG."
+  exec bash "$KIT_DIR/update.sh" --to "$TARGET_TAG" --force --skip-backup
+fi
 
 # ── 4. Banco: schema + correções de dados (schema ANTES do app) ──────────────
 # O baseline é idempotente e auto-curativo. Re-aplicar numa base que JÁ existe
