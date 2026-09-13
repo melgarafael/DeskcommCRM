@@ -23,7 +23,12 @@ interface LinhaCatalogo {
   tipo_dado: string;
   nulavel: string;
   posicao: number;
-  chave_primaria: string[] | null;
+  /**
+   * A PK chega como `text[]` (OID 1009, que o driver parseia) ou como o literal
+   * cru `"{id}"` quando o driver não conhece o OID do array de origem (`name[]`
+   * = 1003). O cast no SQL resolve, e `normalizarPk` blinda contra o literal.
+   */
+  chave_primaria: string[] | string | null;
   estimativa: string | number;
 }
 
@@ -45,9 +50,9 @@ const SQL_CATALOGO = `
     on n.nspname = c.table_schema
   left join pg_catalog.pg_class cl
     on cl.relname = c.table_name and cl.relnamespace = n.oid
-  left join (
-    select i.indrelid, array_agg(a.attname order by k.ord) as colunas
-    from pg_catalog.pg_index i
+    left join (
+      select i.indrelid, array_agg(a.attname order by k.ord)::text[] as colunas
+      from pg_catalog.pg_index i
     cross join lateral unnest(i.indkey) with ordinality as k(attnum, ord)
     join pg_catalog.pg_attribute a
       on a.attrelid = i.indrelid and a.attnum = k.attnum
@@ -64,6 +69,26 @@ function tipoDe(t: string): TabelaExterna["tipo"] {
   return "outro";
 }
 
+/**
+ * Garante que a PK seja SEMPRE `string[]`.
+ *
+ * O driver `pg` parseia `text[]`, mas não todo array do Postgres: quando a
+ * função devolvia `name[]`, o valor chegava como o literal cru (`"{id}"`) e o
+ * contrato `TabelaExterna.chavePrimaria: string[]` era violado em silêncio — a
+ * tela marcava "PK" por acidente (`.includes` funciona em string) e quebrava ao
+ * iterar. O cast no SQL já resolve na origem; isto é a rede.
+ */
+function normalizarPk(valor: string[] | string | null | undefined): string[] {
+  if (Array.isArray(valor)) return valor.map((v) => String(v));
+  if (typeof valor !== "string") return [];
+  const interno = valor.trim().replace(/^\{/, "").replace(/\}$/, "").trim();
+  if (!interno) return [];
+  return interno
+    .split(",")
+    .map((parte) => parte.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean);
+}
+
 function agrupar(rows: LinhaCatalogo[]): TabelaExterna[] {
   const mapa = new Map<string, TabelaExterna>();
   for (const r of rows) {
@@ -75,7 +100,7 @@ function agrupar(rows: LinhaCatalogo[]): TabelaExterna[] {
         nome: r.nome,
         tipo: tipoDe(r.tipo),
         colunas: [],
-        chavePrimaria: r.chave_primaria ?? [],
+        chavePrimaria: normalizarPk(r.chave_primaria),
         estimativaLinhas: Math.max(0, Math.round(Number(r.estimativa) || 0)),
       };
       mapa.set(chave, tabela);
