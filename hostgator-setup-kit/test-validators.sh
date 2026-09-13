@@ -1389,7 +1389,13 @@ montar_vps() {
   # ele no sandbox, aquele `bash` falhava, o `|| true` engolia, e todo cenário
   # media uma instalação em que o passo dos e-mails de acesso simplesmente não
   # aconteceu — o elo mais fácil de quebrar sem ninguém ver.
-  cp install.sh update.sh backup.sh _common.sh marca-emails.sh "$raiz/"
+  # `manutencao.sh` e a pasta `manutencao/` entram pela MESMA razao, e a lista
+  # acima nasceu curta duas vezes: o `update.sh` os carrega com `source` DURO, no
+  # topo, igual ao `_common.sh`. Sem eles aqui, o script morre na LINHA 21 — antes
+  # de qualquer mensagem — e todo cenario reporta "o update.sh nao chegou ao
+  # banco / ao fim / ao up -d", que le como defeito do produto e e cenario faltando.
+  cp install.sh update.sh backup.sh _common.sh marca-emails.sh manutencao.sh "$raiz/"
+  cp -R manutencao "$raiz/"
   : > "$VPS_PROJ/docker-compose.prod.yml"
   cat > "$raiz/bin/docker"
   # Só o v_supabase_url exige resposta online (000 reprova); os outros toleram.
