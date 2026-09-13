@@ -10,7 +10,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
-import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
 import { enviarTextoFixoPendente } from "../../lib/followup/enviar-texto-fixo";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -300,12 +299,23 @@ test("Inbox marca cliente/conversa; detalhe antigo confirma presença com evidê
   await expect(tirarOCliente).toBeVisible();
   await expect(tirarOCliente.locator("..")).toContainText(p.name);
   await expect(page.getByLabel("Conversa vinculada (opcional)")).toHaveValue(p.conversation);
-  // Fecha o painel para navegar a grade; reabre pela mesma entrada contextual.
-  await page.keyboard.press("Escape");
-  const days = await irParaASemanaSeguinte(page);
-  await page.getByRole("button", { name: /novo agendamento/i }).click();
+  // ⛔ O PAINEL NÃO PODE SER FECHADO AQUI, E A RAZÃO É UM CONSERTO DELIBERADO.
+  //
+  // Este trecho fazia `Escape` + "ir para a semana seguinte" na grade + "Novo
+  // agendamento" — fechava o painel só para navegar. Em 2026-09-12 fechar o
+  // painel passou a SOLTAR o cliente e a conversa, de propósito: medido numa
+  // instalação real, "Novo agendamento" abria com o contato herdado de uma
+  // abertura anterior feita a partir da conversa dele, e quem não reparasse
+  // marcava no nome de outra pessoa (`app/app/agenda/_client.tsx`, o bloco do
+  // `onOpenChange`).
+  //
+  // Com o conserto em vigor, o caminho antigo grava `contact_id: null` — medido
+  // no CI em 2026-09-13. Não é regressão: é o teste exercitando a herança que
+  // foi eliminada. O que ele quer provar (a entrada pelo Inbox amarra o
+  // compromisso ao cliente) continua valendo, e agora é provado sem fechar
+  // nada: o painel tem o seu próprio calendário.
   await page.getByRole("button", { name: /^Consulta de presença/ }).click();
-  await escolherDiaDesenhado(page, days);
+  await page.locator('[data-testid^="dia-"][data-disponivel="true"]').first().click();
   await page.locator('[data-testid^="horario-"]').first().click();
   const posted = page.waitForResponse(
     (r) => r.url().includes("/api/v1/agenda/agendamentos") && r.request().method() === "POST",
