@@ -144,6 +144,20 @@ it("⛔ CONTROLE: cancelar a confirmação não manda nada", async () => {
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(api.post).not.toHaveBeenCalled();
 });
+it("⛔ compromisso PRESENCIAL oferece mandar os dados, sem falar em link", () => {
+  // A secao inteira so existia para `google_meet`: num compromisso presencial
+  // nao havia botao NENHUM. E prometer "link" onde nao ha reuniao online e
+  // prometer o que nao existe.
+  show({ ...initial, location_kind: "in_person", state: "not_requested", delivery_state: "none" });
+  expect(screen.getByRole("button", { name: "Mandar ao cliente" })).toBeEnabled();
+  expect(screen.queryByText(/Link ainda não solicitado/i)).not.toBeInTheDocument();
+});
+it("⛔ CONTROLE: com Meet, o botão continua esperando o link ficar pronto", () => {
+  // O par que impede o afrouxamento de virar buraco na tela: onde o Meet e o
+  // local, oferecer envio antes do link e oferecer uma reuniao sem porta.
+  show({ ...initial, state: "pending", delivery_state: "none" });
+  expect(screen.getByRole("button", { name: "Enviar quando ficar pronto" })).toBeInTheDocument();
+});
 it("bloqueios explicam autonomia versus opt-out sem sugerir repetir a mesma ação", () => {
   const view = show({ ...initial, delivery_state: "blocked", delivery_error: "force_human" });
   expect(screen.getByText(/sem ativar a IA/)).toBeInTheDocument();

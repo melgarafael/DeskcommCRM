@@ -245,6 +245,20 @@ export const DICIONARIO: Traducoes = {
   "Quem será atendido": { es: "Quién será atendido" },
   "Compromisso pessoal, sem cliente": { es: "Cita personal, sin cliente" },
   "Enviar de novo": { es: "Enviar de nuevo" },
+  "Mandar ao cliente": { es: "Enviar al cliente" },
+  "Conversa que receberá os dados": { es: "Conversación que recibirá los datos" },
+  "O envio dos dados ainda não foi autorizado.": {
+    es: "El envío de los datos aún no fue autorizado.",
+  },
+  "Envio autorizado: aguardando a vez na fila.": {
+    es: "Envío autorizado: esperando su turno en la cola.",
+  },
+  "Dados aguardando envio nesta conversa.": {
+    es: "Datos esperando envío en esta conversación.",
+  },
+  "Dados enviados na conversa autorizada.": {
+    es: "Datos enviados en la conversación autorizada.",
+  },
   "Confirmar reenvio": { es: "Confirmar reenvío" },
   "Mandar de novo os dados desta reunião para o cliente?": {
     es: "¿Enviar de nuevo los datos de esta reunión al cliente?",

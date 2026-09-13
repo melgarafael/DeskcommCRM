@@ -19,6 +19,13 @@ export interface MeetingDetail {
   delivery_conversation_id?: string | null;
   can_manage: boolean;
   destinations: Array<{ id: string; label: string }>;
+  /**
+   * Onde o compromisso acontece. Decide a PROMESSA da seção: onde o local é o
+   * Meet, o que vai ao cliente é o LINK; onde não é, o que vai são os DADOS do
+   * compromisso. Prometer link num compromisso presencial é prometer o que não
+   * existe.
+   */
+  location_kind?: string;
 }
 export function MeetDoCompromisso({
   id,
@@ -60,6 +67,7 @@ export function MeetDoCompromisso({
       onSaved();
     },
   });
+  const ehMeetLabel = (meeting.location_kind ?? "google_meet") === "google_meet";
   const stateLabel: Record<string, string> = {
     not_requested: "Link ainda não solicitado",
     pending: "Criando link do Google Meet",
@@ -67,21 +75,37 @@ export function MeetDoCompromisso({
     failed: "Não foi possível confirmar o link",
     cancelled: "Solicitação de link cancelada",
   };
-  const deliveryLabel: Record<string, string> = {
-    none: "O envio do link ainda não foi autorizado.",
-    waiting_for_link: "Envio autorizado: aguardando o link ficar pronto.",
-    queued: "Link aguardando envio nesta conversa.",
-    sent: "Link enviado na conversa autorizada.",
-    blocked: "Entrega impedida. Confira o atendimento e o canal antes de autorizar novamente.",
-    stale: "O atendimento mudou. Autorize uma nova entrega na conversa desejada.",
-    failed: "O envio falhou. Confira o canal e tente novamente.",
-  };
+  const deliveryLabel: Record<string, string> = ehMeetLabel
+    ? {
+        none: "O envio do link ainda não foi autorizado.",
+        waiting_for_link: "Envio autorizado: aguardando o link ficar pronto.",
+        queued: "Link aguardando envio nesta conversa.",
+        sent: "Link enviado na conversa autorizada.",
+        blocked:
+          "Entrega impedida. Confira o atendimento e o canal antes de autorizar novamente.",
+        stale: "O atendimento mudou. Autorize uma nova entrega na conversa desejada.",
+        failed: "O envio falhou. Confira o canal e tente novamente.",
+      }
+    : {
+        none: "O envio dos dados ainda não foi autorizado.",
+        waiting_for_link: "Envio autorizado: aguardando a vez na fila.",
+        queued: "Dados aguardando envio nesta conversa.",
+        sent: "Dados enviados na conversa autorizada.",
+        blocked:
+          "Entrega impedida. Confira o atendimento e o canal antes de autorizar novamente.",
+        stale: "O atendimento mudou. Autorize uma nova entrega na conversa desejada.",
+        failed: "O envio falhou. Confira o canal e tente novamente.",
+      };
+  const ehMeet = ehMeetLabel;
+  const titulo = ehMeet ? "Google Meet" : "Mandar ao cliente";
   return (
-    <section className="mt-3 space-y-3 rounded-md border p-3" aria-label={t("Google Meet")}>
-      <h3 className="text-sm font-medium">Google Meet</h3>
-      <p role="status" className="text-sm">
-        {t(stateLabel[meeting.state] ?? "Link ainda não solicitado")}
-      </p>
+    <section className="mt-3 space-y-3 rounded-md border p-3" aria-label={t(titulo)}>
+      <h3 className="text-sm font-medium">{t(titulo)}</h3>
+      {ehMeet ? (
+        <p role="status" className="text-sm">
+          {t(stateLabel[meeting.state] ?? "Link ainda não solicitado")}
+        </p>
+      ) : null}
       {meeting.state === "ready" && meeting.url && (
         <div className="flex flex-wrap gap-2">
           <a
@@ -139,7 +163,7 @@ export function MeetDoCompromisso({
       {meeting.can_manage && meeting.state !== "cancelled" && (
         <div className="space-y-2">
           <label htmlFor={`meet-destination-${id}`} className="block text-sm">
-            {t("Conversa que receberá o link")}
+            {t(ehMeet ? "Conversa que receberá o link" : "Conversa que receberá os dados")}
           </label>
           <select
             id={`meet-destination-${id}`}
@@ -159,7 +183,9 @@ export function MeetDoCompromisso({
           </select>
           <Button
             size="sm"
-            disabled={!sendTo || action.isPending || meeting.state === "failed" || aguardando}
+            disabled={
+              !sendTo || action.isPending || (ehMeet && meeting.state === "failed") || aguardando
+            }
             onClick={() => (jaEnviado ? setConfirmando(true) : action.mutate("deliver"))}
           >
             {t(
@@ -167,9 +193,11 @@ export function MeetDoCompromisso({
                 ? "Envio já autorizado"
                 : jaEnviado
                   ? "Enviar de novo"
-                  : meeting.state === "ready"
-                    ? "Enviar link ao cliente"
-                    : "Enviar quando ficar pronto",
+                  : !ehMeet
+                    ? "Mandar ao cliente"
+                    : meeting.state === "ready"
+                      ? "Enviar link ao cliente"
+                      : "Enviar quando ficar pronto",
             )}
           </Button>
           {confirmando ? (

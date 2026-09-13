@@ -3,7 +3,7 @@ import pg from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { criarOrigemDeFollowup } from "./followup-service-origin";
-import { GOV_AGENT_A } from "./gov-helpers";
+import { seedGov, GOV_AGENT_A } from "./gov-helpers";
 
 /**
  * Remarcar depois de enviar deixava o cliente com o horário errado.
@@ -18,13 +18,16 @@ import { GOV_AGENT_A } from "./gov-helpers";
  * — nunca mensagem ao cliente. A pessoa aparecia no dia errado.
  */
 
-let pool: pg.Pool;
-beforeAll(() => {
-  pool = new pg.Pool({ connectionString: process.env.SUPABASE_DB_URL });
+// A conexão é a do Postgres efêmero que `scripts/test-db.sh` sobe, e não a do
+// `.env`: a primeira versão deste arquivo usou `SUPABASE_DB_URL` e os seis casos
+// morreram em ECONNREFUSED — que lê como "o conserto não funciona" e é só o
+// arreio errado. Mesma forma dos vizinhos em `tests/invariants/`.
+const pool = new pg.Pool({
+  connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
+  max: 5,
 });
-afterAll(async () => {
-  await pool.end();
-});
+beforeAll(() => seedGov());
+afterAll(() => pool.end());
 
 /** Compromisso com o link JÁ ENVIADO — que é o estado em que o defeito mora. */
 async function jaEnviado() {
