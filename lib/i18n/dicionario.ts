@@ -32,6 +32,7 @@
  * do que estava.
  */
 import type { Idioma } from "./idiomas";
+import chines from "./zh-CN.json";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
@@ -8353,7 +8354,74 @@ export const DICIONARIO: Traducoes = {
   },
   "Convite reenviado.": { es: "Invitación reenviada." },
   "Convite revogado.": { es: "Invitación revocada." },
+  "Tema: light. Cmd+Shift+L para alternar.": { es: "Tema: claro. Cmd+Shift+L para cambiar." },
+  "Tema: dark. Cmd+Shift+L para alternar.": { es: "Tema: oscuro. Cmd+Shift+L para cambiar." },
+  "Tema: system. Cmd+Shift+L para alternar.": { es: "Tema: sistema. Cmd+Shift+L para cambiar." },
+  // Textos dinâmicos do catálogo de navegação, verificados na interface local.
+  "As conversas de WhatsApp, com você e a IA atendendo lado a lado.": {},
+  "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.": {},
+  "Scripts salvos para responder mais rápido, seus ou da equipe.": {},
+  "Seus funis de venda — clique em um para abrir o quadro de clientes.": {},
+  "As pessoas do outro lado da conversa e seu histórico.": {},
+  "O catálogo da loja, com o preço que o atendente de IA responde.": {},
+  "O que se pode marcar, quanto dura, onde acontece e quem atende.": {},
+  "As colunas de cada funil, o vocabulário do negócio e os motivos de perda.": {},
+  "Quem atende por você: instruções, modelo, ferramentas e publicação.": {},
+  "Montar o agente": {},
+  "Como o agente retoma uma conversa que esfriou, para nenhuma morrer no silêncio.": {},
+  "Qual agente pega qual conversa, e quando o humano assume.": {},
+  "Credenciais": {},
+  "A chave do provedor de IA que os agentes usam para pensar.": {},
+  "Provedores": {},
+  "Qual inteligência atende cada parte do sistema — e o que acontece se ela falhar.": {},
+  "Conhecimento": {},
+  "Os materiais que o agente consulta antes de responder sobre o seu negócio.": {},
+  "Ensinar o agente": {},
+  "Memória": {},
+  "O que o agente já aprendeu sobre a sua operação e reaproveita.": {},
+  "Skills": {},
+  "As ações que o agente pode executar sozinho durante o atendimento.": {},
+  "Os atendimentos que o agente conduziu, do início ao desfecho.": {},
+  "Acompanhar o agente": {},
+  "Alertas": {},
+  "O que a IA encontrou e precisa de uma decisão sua.": {},
+  "Melhorias que a IA sugere para si mesma, esperando sua decisão.": {},
+  "O que a IA fez — e, quando falhou, o que aconteceu e o que fazer.": {},
+  "Uso e orçamento": {},
+  "Quanto a IA consumiu e qual é o teto de gasto do mês.": {},
+  "Seus números de WhatsApp: por QR ou canal oficial da Meta, com saúde, reconexão e templates.": {},
+  "Nuvemshop": {},
+  "Conecte a loja para trazer pedidos e clientes para dentro do CRM.": {},
+  "Avise outros sistemas quando algo acontecer aqui dentro.": {},
+  "Funil e performance por atendente nos últimos 30 dias.": {},
+  "Quanto custou cada resultado das campanhas que trazem gente para cá.": {},
+  "Relatório do que a equipe e os agentes fizeram no período: quanto, quem e de que tipo.": {},
+  "Se o agente está melhorando, onde ele erra e o que falta ensinar.": {},
+  "Quem fez o quê, quando — o histórico que não se apaga.": {},
+  "Devolver ao anúncio as vendas que ele trouxe, para ele aprender a procurar mais clientes parecidos.": {},
+  "Conectar a conta de anúncios para ler o desempenho das campanhas.": {},
+  "Billing": {},
+  "API Tokens": {},
+
+  // Rótulos e motivos visíveis da grade de agendamento.
+  "Semana": { es: "Semana" },
+  "este horário já passou": { es: "esta hora ya pasó" },
+  "já há um compromisso neste horário": { es: "ya hay una cita en este horario" },
+  "fora dos horários que você publicou": { es: "fuera de los horarios que publicaste" },
+  "Marcar às {hora} de {data}": { es: "Agendar a las {hora} del {data}" },
+  "{data} às {hora} — {motivo}": { es: "{data} a las {hora} — {motivo}" },
+  "A remarcação não foi aceita — o compromisso voltou para {data}.": { es: "No se aceptó el cambio de horario — la cita volvió al {data}." },
+  "Não dá para remarcar para esse horário — {motivo}.": { es: "No se puede reprogramar para ese horario — {motivo}." },
+  "o compromisso": { es: "la cita" },
+  "Entendi": { es: "Entendido" },
+  "e-mail do convidado inválido": { es: "correo del invitado no válido" },
+
 };
+
+// O catálogo chinês compartilha o registro consumido pelos leitores e guardas.
+for (const [texto, traducao] of Object.entries(chines)) {
+  if (DICIONARIO[texto]) DICIONARIO[texto]["zh-CN"] = traducao;
+}
 
 /**
  * Traduz, ou devolve o próprio texto.

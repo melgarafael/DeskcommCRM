@@ -1,4 +1,4 @@
-import { es, ptBR } from "date-fns/locale";
+import { es, ptBR, zhCN } from "date-fns/locale";
 import type { Locale } from "date-fns";
 
 import { IDIOMA_PADRAO, type Idioma } from "./idiomas";
@@ -34,6 +34,7 @@ import { IDIOMA_PADRAO, type Idioma } from "./idiomas";
 const LOCALE_DE_DATA: Record<Idioma, Locale> = {
   "pt-BR": ptBR,
   es,
+  "zh-CN": zhCN,
 };
 
 /** O `Locale` do date-fns para quem está lendo. */
@@ -56,6 +57,7 @@ export function localeDeData(idioma: Idioma): Locale {
 const TAG_BCP47: Record<Idioma, string> = {
   "pt-BR": "pt-BR",
   es: "es",
+  "zh-CN": "zh-CN",
 };
 
 export function tagDeIdioma(idioma: Idioma): string {

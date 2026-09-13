@@ -128,6 +128,7 @@ export function TenantForm({ initial }: Props) {
               <SelectContent>
                 <SelectItem value="pt-BR">Português (BR)</SelectItem>
                 <SelectItem value="es">Español</SelectItem>
+                <SelectItem value="zh-CN">简体中文</SelectItem>
               </SelectContent>
             </Select>
           </div>

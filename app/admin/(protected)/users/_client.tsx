@@ -113,7 +113,7 @@ export function UsersClient() {
             <SelectItem value="all">{t("Todos os roles")}</SelectItem>
             <SelectItem value="admin">{t("Admin")}</SelectItem>
             <SelectItem value="manager">{t("Manager")}</SelectItem>
-            <SelectItem value="agent">{t("Agente")}</SelectItem>
+            <SelectItem value="agent">{t("Atendente")}</SelectItem>
             <SelectItem value="viewer">{t("Viewer")}</SelectItem>
           </SelectContent>
         </Select>

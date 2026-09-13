@@ -38,6 +38,7 @@ const NOME_DO_IDIOMA: Record<Idioma, { curto: string; completo: string }> = {
   // lista que você não sabe ler.
   "pt-BR": { curto: "PT", completo: "Português (BR)" },
   es: { curto: "ES", completo: "Español" },
+  "zh-CN": { curto: "中", completo: "简体中文" },
 };
 
 export function SeletorDeIdioma() {

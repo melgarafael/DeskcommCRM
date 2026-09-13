@@ -226,6 +226,7 @@ function CamadaDeMarcacao({
   agendamentosDoDia: Agendamento[];
   interacao: InteracaoDaGrade;
 }) {
+  const t = useT();
   const localeDaData = useLocaleDeData();
   const chave = chaveDoDia(dia);
   const publicados = interacao.horariosPorDia[chave] ?? [];
@@ -244,7 +245,7 @@ function CamadaDeMarcacao({
         );
         const passado = fim.getTime() <= agora.getTime();
         const rotulo = format(inicio, "HH:mm");
-        const razao = razaoDoBloco({ motivo: interacao.motivo, ocupado, passado });
+        const razao = t(razaoDoBloco({ motivo: interacao.motivo, ocupado, passado }));
 
         return (
           <button
@@ -255,8 +256,13 @@ function CamadaDeMarcacao({
             disabled={livre === null}
             aria-label={
               livre
-                ? `Marcar às ${livre.rotulo} de ${format(dia, "d 'de' MMMM", { locale: localeDaData })}`
-                : `${format(dia, "d 'de' MMMM", { locale: localeDaData })} às ${rotulo} — ${razao}`
+                ? t("Marcar às {hora} de {data}")
+                    .replace("{hora}", livre.rotulo)
+                    .replace("{data}", format(dia, t("d 'de' MMMM"), { locale: localeDaData }))
+                : t("{data} às {hora} — {motivo}")
+                    .replace("{data}", format(dia, t("d 'de' MMMM"), { locale: localeDaData }))
+                    .replace("{hora}", rotulo)
+                    .replace("{motivo}", razao)
             }
             title={livre ? undefined : razao}
             onClick={livre ? () => interacao.onMarcarEm(livre.instante) : undefined}
@@ -491,6 +497,7 @@ function FantasmaDoArraste({
   proposta: PropostaDeRemarcacao;
   duracaoMin: number;
 }) {
+  const t = useT();
   const localeDaData = useLocaleDeData();
   const valido = proposta.instante !== null;
   return (
@@ -511,7 +518,7 @@ function FantasmaDoArraste({
       <span className="truncate text-[10px] font-semibold leading-4 text-text">
         {valido
           ? format(new Date(proposta.instante!), "HH:mm", { locale: localeDaData })
-          : proposta.razao}
+          : t(proposta.razao)}
       </span>
     </div>
   );

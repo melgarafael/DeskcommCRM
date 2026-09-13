@@ -25,10 +25,10 @@ interface Props {
   ownerNames?: Map<string, string | null>;
 }
 
-function formatBRL(cents: number | null, currency: string | null): string {
+function formatBRL(cents: number | null, currency: string | null, idioma: string): string {
   if (cents === null) return "—";
   try {
-    return new Intl.NumberFormat("pt-BR", {
+    return new Intl.NumberFormat(idioma, {
       style: "currency",
       currency: currency ?? "BRL",
       maximumFractionDigits: 0,
@@ -87,7 +87,7 @@ export function LeadDossier({
         {/* ① cabeçalho vivo */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border pb-3 text-xs">
           <span className="font-medium tabular-nums text-text">
-            {formatBRL(lead.value_cents, lead.currency)}
+            {formatBRL(lead.value_cents, lead.currency, tagDoIdioma)}
           </span>
           <span className="text-text-muted">{stageName}</span>
           <OwnerBadge

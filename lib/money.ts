@@ -56,8 +56,8 @@ export function parseReaisToCents(input: string): number | null {
 }
 
 /** Centavos → "R$ 249,90". Para eco na tela do que foi entendido. */
-export function formatCentsBRL(cents: number): string {
-  return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+export function formatCentsBRL(cents: number, idioma = "pt-BR"): string {
+  return (cents / 100).toLocaleString(idioma, { style: "currency", currency: "BRL" });
 }
 
 /**
