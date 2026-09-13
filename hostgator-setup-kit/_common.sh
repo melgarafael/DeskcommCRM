@@ -135,10 +135,43 @@ pausar_o_que_fala_com_o_banco() {
 
 restaurar_servicos() {
   if [ -n "${PARADOS:-}" ]; then
-    # As peças do Supabase voltam SEMPRE: elas não são o risco, e deixá-las
-    # paradas quebraria até o diagnóstico de quem for consertar as regras.
+    # ── A VOLTA DEIXA DE SER MUDA ────────────────────────────────────────────
+    #
+    # MEDIDO em 2026-09-13, numa atualização real: a pausa funcionou, a
+    # conferência rodou com tudo parado (92 de 92) e as três peças do Supabase
+    # NÃO VOLTARAM. Ficaram paradas até alguém perceber — e a atualização já
+    # tinha dito "concluída com sucesso".
+    #
+    # A causa daquela falha NÃO FOI DETERMINADA, e isso fica escrito como está:
+    # a cadeia inteira, reproduzida na mesma VPS com dublês, funciona; e a
+    # evidência se perdeu ao subir as peças, que era o certo a fazer com o
+    # sistema fora do ar. O que não pode se repetir é o SILÊNCIO — a versão
+    # anterior desta linha era `docker start ... >/dev/null 2>&1 || true`, que
+    # não deixa rastro nenhum quando falha.
+    local ainda_fora="" c
     # shellcheck disable=SC2086
     docker start $PARADOS >/dev/null 2>&1 || true
+    for c in $PARADOS; do
+      docker ps --format '{{.Names}}' 2>/dev/null | grep -qxF "$c" || ainda_fora="${ainda_fora}${ainda_fora:+ }${c}"
+    done
+    if [ -n "$ainda_fora" ]; then
+      # Uma segunda tentativa antes de gritar: subir contêiner logo depois de
+      # uma enxurrada de operações do Docker às vezes precisa de um instante.
+      # shellcheck disable=SC2086
+      docker start $ainda_fora >/dev/null 2>&1 || true
+      sleep 3
+      local resta="" d
+      for d in $ainda_fora; do
+        docker ps --format '{{.Names}}' 2>/dev/null | grep -qxF "$d" || resta="${resta}${resta:+ }${d}"
+      done
+      ainda_fora="$resta"
+    fi
+    if [ -n "$ainda_fora" ]; then
+      c_red "⛔ PEÇAS DO BANCO NÃO VOLTARAM depois da atualização:"
+      for c in $ainda_fora; do c_red "   • $c"; done
+      c_red "   Enquanto elas estiverem paradas, o CRM não consegue ler nem gravar."
+      c_ylw "   Para subir à mão:  docker start $ainda_fora"
+    fi
     PARADOS=""
   fi
   # ⛔ O CRM NÃO VOLTA AO AR COM REGRA DE ISOLAMENTO FALTANDO.

@@ -197,7 +197,10 @@ fi
 #
 # O `trap` é o que impede um erro no meio de deixar a instalação pela metade:
 # qualquer saída — sucesso, erro ou interrupção — devolve as peças do Supabase.
-trap restaurar_servicos EXIT
+# EXIT nao basta: interrupcao (Ctrl+C, cron matando a rodada, reinicio da
+# maquina) nao passa por ele em todos os casos — e o desfecho seria a
+# instalacao com as pecas do banco paradas, que foi o que se mediu.
+trap restaurar_servicos EXIT INT TERM HUP
 
 step "Atualizando o banco de dados"
 if [ -f supabase/baseline.sql ]; then

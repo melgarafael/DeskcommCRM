@@ -234,6 +234,70 @@ case "$AGENTE" in
   *) nao "só cala em ausente" 'teste contra "ausente"' "ausente" ;;
 esac
 
+
+# -- A VOLTA DEIXA DE SER MUDA -----------------------------------------------
+#
+# MEDIDO em 2026-09-13, numa atualizacao real: a pausa funcionou, a conferencia
+# rodou com tudo parado (92 de 92), e as tres pecas do Supabase NAO VOLTARAM.
+# Ficaram paradas ate alguem perceber — e a atualizacao tinha dito "concluida".
+#
+# A causa daquela falha nao foi determinada: a cadeia inteira, reproduzida na
+# mesma VPS com dubles, funciona. E a evidencia se perdeu ao subir as pecas, que
+# era o certo a fazer com o sistema fora do ar. O que NAO pode se repetir e o
+# silencio: `docker start ... >/dev/null 2>&1 || true` nao deixa rastro nenhum
+# quando falha.
+echo "caso 15 — a volta CONFERE se cada peca subiu"
+: > "$diario"
+cat > "$tmp/bin/docker" <<DUBLE
+#!/usr/bin/env bash
+echo "\$*" >> "$diario"
+# ATENCAO: heredoc NAO citado — crase aqui dentro vira execucao de comando.
+# Este comentario ja travou a suite por conter crases. Sem elas:
+# start nao faz nada, e ps devolve vazio, ou seja, a peca NAO voltou.
+exit 0
+DUBLE
+chmod +x "$tmp/bin/docker"
+PARADOS="peca-fantasma"; REGRAS_FALTANDO=""
+saida_volta="$(restaurar_servicos 2>&1)"
+case "$saida_volta" in
+  *peca-fantasma*) ok "grita nomeando quem nao voltou" ;;
+  *) nao "grita nomeando a peca" "menciona peca-fantasma" "$saida_volta" ;;
+esac
+case "$saida_volta" in
+  *NAO\ VOLTARAM*|*nao\ voltaram*|*NÃO\ VOLTARAM*) ok "e diz que elas nao voltaram" ;;
+  *) nao "diz que nao voltaram" "texto de alarme" "$saida_volta" ;;
+esac
+grep -qE "^start peca-fantasma$" "$diario" && grep -c "^start peca-fantasma$" "$diario" >/dev/null   && [ "$(grep -c "^start peca-fantasma$" "$diario")" -ge 2 ]   && ok "tenta de novo antes de desistir"   || nao "tenta de novo" "2 tentativas de start" "$(grep -c "^start peca-fantasma$" "$diario") tentativa(s)"
+
+echo "caso 16 — CONTROLE: peca que VOLTA nao gera alarme"
+# Sem este controle, uma implementacao que gritasse sempre passaria no caso 15 —
+# e alarme que toca a toa ensina quem opera a ignorar o alarme de verdade.
+: > "$diario"
+cat > "$tmp/bin/docker" <<DUBLE
+#!/usr/bin/env bash
+echo "\$*" >> "$diario"
+if [ "\$1" = "ps" ]; then printf 'peca-boa
+'; fi
+exit 0
+DUBLE
+chmod +x "$tmp/bin/docker"
+PARADOS="peca-boa"; REGRAS_FALTANDO=""
+saida_volta="$(restaurar_servicos 2>&1)"
+case "$saida_volta" in
+  *peca-boa*) nao "silencio quando tudo volta" "(sem alarme)" "$saida_volta" ;;
+  *) ok "silencio quando tudo volta" ;;
+esac
+
+echo "caso 17 — o gatilho cobre INTERRUPCAO, nao so saida normal"
+# Se o processo for interrompido (Ctrl+C, cron matando, reinicio da maquina), um
+# `trap ... EXIT` sozinho nao dispara em todos os casos — e a instalacao fica com
+# as pecas paradas, exatamente o desfecho medido.
+UP="$(cat "$RAIZ/hostgator-setup-kit/update.sh")"
+case "$UP" in
+  *"trap restaurar_servicos EXIT INT TERM HUP"*) ok "cobre EXIT, INT, TERM e HUP" ;;
+  *) nao "gatilho cobre sinais" "trap ... EXIT INT TERM HUP" "so EXIT" ;;
+esac
+
 if [ "$falhas" -eq 0 ]; then
   echo "TUDO VERDE"
   exit 0
