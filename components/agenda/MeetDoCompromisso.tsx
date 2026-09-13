@@ -36,16 +36,23 @@ export function MeetDoCompromisso({
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const sendTo = destination || meeting.destinations[0]?.id || "";
-  const alreadyAuthorized =
-    meeting.delivery_authorization_current === true &&
-    meeting.delivery_conversation_id === sendTo &&
-    ["waiting_for_link", "queued", "sent"].includes(meeting.delivery_state);
+  const mesmaConversa =
+    meeting.delivery_authorization_current === true && meeting.delivery_conversation_id === sendTo;
+  // "Já enviado" deixa de TRANCAR: vira o rótulo da ação de reenviar. Quem
+  // remarcou e não teve a correção automática entregue (o atendimento mudou, o
+  // canal caiu) precisava de um caminho manual, e não havia nenhum.
+  const jaEnviado = mesmaConversa && meeting.delivery_state === "sent";
+  // Aguardando continua trancando: repetir aqui empilharia pedido de uma
+  // entrega que já está a caminho.
+  const aguardando =
+    mesmaConversa && ["waiting_for_link", "queued"].includes(meeting.delivery_state);
+  const [confirmando, setConfirmando] = useState(false);
   const action = useMutation({
-    mutationFn: (kind: "retry" | "deliver") =>
+    mutationFn: (kind: "retry" | "deliver" | "resend") =>
       apiClient.post(`/api/v1/agenda/agendamentos/${id}/google/meet/${kind}`, {
         revision,
         request_id: meeting.request_id,
-        ...(kind === "deliver" ? { conversation_id: sendTo } : {}),
+        ...(kind === "retry" ? {} : { conversation_id: sendTo }),
       }),
     onSuccess: onSaved,
     onError: (e) => {
@@ -152,21 +159,47 @@ export function MeetDoCompromisso({
           </select>
           <Button
             size="sm"
-            disabled={
-              !sendTo || action.isPending || meeting.state === "failed" || alreadyAuthorized
-            }
-            onClick={() => action.mutate("deliver")}
+            disabled={!sendTo || action.isPending || meeting.state === "failed" || aguardando}
+            onClick={() => (jaEnviado ? setConfirmando(true) : action.mutate("deliver"))}
           >
             {t(
-              alreadyAuthorized
-                ? meeting.delivery_state === "sent"
-                  ? "Link já enviado"
-                  : "Envio já autorizado"
-                : meeting.state === "ready"
-                  ? "Enviar link ao cliente"
-                  : "Enviar quando ficar pronto",
+              aguardando
+                ? "Envio já autorizado"
+                : jaEnviado
+                  ? "Enviar de novo"
+                  : meeting.state === "ready"
+                    ? "Enviar link ao cliente"
+                    : "Enviar quando ficar pronto",
             )}
           </Button>
+          {confirmando ? (
+            /* A confirmação é o que substitui, do lado da tela, a proteção que o
+               banco dá ao `deliver`: lá o `return false` em estado `sent` impede
+               envio em dobro por clique nervoso, e o `resend` passa reto de
+               propósito. Sem este passo, o botão destravado seria um caminho
+               aberto para mandar duas vezes. */
+            <div
+              role="dialog"
+              aria-label={t("Confirmar reenvio")}
+              className="rounded-md border p-3 text-sm"
+            >
+              <p>{t("Mandar de novo os dados desta reunião para o cliente?")}</p>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setConfirmando(false);
+                    action.mutate("resend");
+                  }}
+                >
+                  {t("Mandar de novo")}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmando(false)}>
+                  {t("Cancelar")}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </section>

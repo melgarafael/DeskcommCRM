@@ -13,7 +13,7 @@ import { audit } from "@/lib/audit";
 export async function meetingAction(
   req: Request,
   context: { params: Promise<{ id: string }> },
-  action: "retry" | "deliver",
+  action: "retry" | "deliver" | "resend",
 ) {
   const denied = await requireSupportWrite();
   if (denied) return denied;
@@ -32,7 +32,7 @@ export async function meetingAction(
   if (
     !z.uuid().safeParse(id).success ||
     !parsed.success ||
-    (action === "deliver" && !parsed.data.conversation_id)
+    (action !== "retry" && !parsed.data.conversation_id)
   )
     return fail(
       "validation_failed",

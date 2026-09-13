@@ -244,6 +244,12 @@ export const DICIONARIO: Traducoes = {
   "Buscar cliente": { es: "Buscar cliente" },
   "Quem será atendido": { es: "Quién será atendido" },
   "Compromisso pessoal, sem cliente": { es: "Cita personal, sin cliente" },
+  "Enviar de novo": { es: "Enviar de nuevo" },
+  "Confirmar reenvio": { es: "Confirmar reenvío" },
+  "Mandar de novo os dados desta reunião para o cliente?": {
+    es: "¿Enviar de nuevo los datos de esta reunión al cliente?",
+  },
+  "Mandar de novo": { es: "Enviar de nuevo" },
   "Cliente do compromisso": { es: "Cliente de la cita" },
   "Tirar o cliente": { es: "Quitar el cliente" },
   "Digite para buscar um cliente": { es: "Escriba para buscar un cliente" },
