@@ -1,6 +1,6 @@
 ---
 impacto: capacidade_nova
-secao: melhorado
+secao: adicionado
 titulo: Marcar um compromisso ficou mais curto — um campo para o cliente, e-mail já preenchido e lugar para anotar
 ---
 
