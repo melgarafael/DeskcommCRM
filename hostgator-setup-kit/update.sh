@@ -14,6 +14,11 @@
 # um script do kit "não encontrado" no meio da atualização.
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$KIT_DIR/_common.sh"
+# O aviso que assume a porta enquanto o CRM esta parado. Fica em arquivo
+# proprio porque so a ATUALIZACAO para o CRM — install.sh e agent.sh sourceiam
+# `_common.sh` e nao tem o que anunciar.
+# shellcheck source=manutencao.sh
+source "$KIT_DIR/manutencao.sh"
 enter_project
 
 FORCE=""; SKIP_BACKUP=""; TARGET_TAG=""
@@ -204,6 +209,9 @@ trap restaurar_servicos EXIT INT TERM HUP
 
 step "Atualizando o banco de dados"
 if [ -f supabase/baseline.sql ]; then
+  # O aviso PRIMEIRO: entre pausar e anunciar, quem estivesse com a tela aberta
+  # veria o erro do navegador, que e o desfecho que esta onda existe para tirar.
+  manutencao_sobe
   pausar_o_que_fala_com_o_banco
   # Extensões que o schema exige (idempotente; iguais ao install.sh).
   docker run --rm postgres:17-alpine psql "$(url_do_schema)" -c \

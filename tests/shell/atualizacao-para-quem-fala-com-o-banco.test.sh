@@ -341,6 +341,146 @@ religar_o_supabase > "$tmp/religa2.txt" 2>&1
 [ ! -s "$tmp/religa1.txt" ] && [ ! -s "$tmp/religa2.txt" ] && ok "duas chamadas, nenhum alarme"   || nao "idempotente e calada" "(vazio)" "$(cat "$tmp/religa1.txt" "$tmp/religa2.txt")"
 [ "$(grep -c "^start " "$diario")" -le 1 ] && ok "a segunda chamada nao repete o start"   || nao "nao repete o start" "no maximo 1" "$(grep -c "^start " "$diario")"
 
+
+# -- O AVISO DE MANUTENCAO ---------------------------------------------------
+#
+# Ate aqui, quem estivesse com o CRM aberto durante a atualizacao via o erro de
+# conexao do proprio navegador — uma tela que nao diz de quem e o problema nem
+# quanto tempo dura. A pausa caiu de ~171s para 7s, o que encolheu a janela mas
+# nao mudou o que se ve dentro dela.
+#
+# ⚠️ Sao DUAS hospedagens com caminhos diferentes, e os casos cobrem as duas:
+# com proxy externo o roteamento vem de LABELS; com o Caddy do proprio kit a
+# regra mora num arquivo dentro do conteiner, e o aviso assume o apelido `app`
+# na rede interna.
+export KIT_DIR="$RAIZ/hostgator-setup-kit"
+# shellcheck disable=SC1090
+. "$KIT_DIR/manutencao.sh"
+set +e
+
+duble_diario() {
+  cat > "$tmp/bin/docker" <<DUBLE
+#!/usr/bin/env bash
+echo "\$*" >> "$diario"
+exit 0
+DUBLE
+  chmod +x "$tmp/bin/docker"
+}
+
+echo "caso 20 — GUARDA DE VACUIDADE: as duas funcoes existem"
+# Sem este caso os de baixo passam por acidente: "a saida nao contem tls=true" e
+# verdade quando nao ha saida nenhuma.
+if declare -F manutencao_sobe >/dev/null 2>&1 && declare -F manutencao_desce >/dev/null 2>&1; then
+  ok "manutencao_sobe e manutencao_desce estao declaradas"
+else
+  nao "as duas funcoes existem" "declaradas em manutencao.sh" "ausente — os casos abaixo medem o nada"
+fi
+
+echo "caso 21 — com proxy externo, o aviso sobe roteado pelo dominio REAL"
+: > "$diario"; duble_diario
+REVERSE_PROXY=traefik DOMAIN="crm.exemplo.com.br" TRAEFIK_NETWORK=traefik manutencao_sobe >/dev/null 2>&1
+linha="$(cat "$diario")"
+case "$linha" in
+  *"deskcomm-manutencao"*) ok "o aviso subiu" ;;
+  *) nao "o aviso sobe" "run ... deskcomm-manutencao" "$linha" ;;
+esac
+case "$linha" in
+  *"crm.exemplo.com.br"*) ok "com o dominio da instalacao na regra" ;;
+  *) nao "dominio na regra" "Host(crm.exemplo.com.br)" "$linha" ;;
+esac
+
+echo "caso 22 — ⛔ REGRESSAO: certificado do Let's Encrypt, nao o interno do proxy"
+# O plano desta onda escrevia `tls=true` sem resolvedor. O Traefik entao serve o
+# certificado interno dele, e quem abrisse o CRM durante a atualizacao veria um
+# aviso de SITE INSEGURO — pior que o erro de conexao que esta pagina veio tirar.
+case "$linha" in
+  *"tls.certresolver="*) ok "pede o certificado ao resolvedor de verdade" ;;
+  *) nao "tls.certresolver" "tls.certresolver=<nome>" "$linha" ;;
+esac
+case "$linha" in
+  *"tls=true"*) nao "sem tls=true pelado" "(ausente)" "$linha" ;;
+  *) ok "e nao usa o tls=true pelado" ;;
+esac
+
+echo "caso 23 — ⛔ REGRESSAO: a variavel do dominio e DOMAIN, nao APP_DOMAIN"
+# `APP_DOMAIN` nao existe em lugar nenhum do kit (medido: docker-compose.traefik.yml
+# usa `${DOMAIN}`). Sob `set -u` a atualizacao morreria nessa linha — com o CRM
+# JA PARADO, que e o pior momento possivel para o script morrer.
+#
+# ⚠️ A sonda le o CODIGO, nao o arquivo: as linhas de comentario sao removidas
+# antes. A primeira versao olhava o arquivo inteiro e ficou vermelha por causa
+# do comentario logo acima, que CITA `${APP_DOMAIN}` para explicar o erro. Guarda
+# que reprova a documentacao do proprio erro ensina a apagar a documentacao.
+codigo_manutencao="$(grep -v '^[[:space:]]*#' "$KIT_DIR/manutencao.sh")"
+case "$codigo_manutencao" in
+  *'${APP_DOMAIN'*) nao "nao usa APP_DOMAIN" "(ausente)" "manutencao.sh usa APP_DOMAIN no codigo" ;;
+  *) ok "usa a variavel que o compose realmente define" ;;
+esac
+case "$codigo_manutencao" in
+  *'${DOMAIN'*) ok "e a variavel usada e DOMAIN" ;;
+  *) nao "usa DOMAIN" 'leitura de ${DOMAIN}' "ausente — a rota nasceria sem host" ;;
+esac
+
+echo "caso 24 — com o Caddy do kit, o aviso atende onde o Caddy procura"
+: > "$diario"; duble_diario
+REVERSE_PROXY=caddy PROJECT_DIR="/root/DeskcommCRM" manutencao_sobe >/dev/null 2>&1
+linha_caddy="$(cat "$diario")"
+case "$linha_caddy" in
+  *"--network-alias app"*) ok "assume o apelido 'app' na rede interna" ;;
+  *) nao "apelido app" "--network-alias app" "$linha_caddy" ;;
+esac
+case "$linha_caddy" in
+  *"_internal"*) ok "na rede interna do projeto" ;;
+  *) nao "rede interna" "<projeto>_internal" "$linha_caddy" ;;
+esac
+
+echo "caso 25 — o aviso desce quando o CRM volta"
+: > "$diario"; duble_diario
+REGRAS_FALTANDO="" PARADOS="" restaurar_servicos >/dev/null 2>&1
+grep -q 'rm -f deskcomm-manutencao' "$diario" && ok "o aviso desceu" \
+  || nao "aviso desce" "rm -f deskcomm-manutencao" "$(tr '\n' ';' < "$diario")"
+
+echo "caso 26 — ⛔ CONTROLE: com regra faltando, o aviso FICA de pe"
+# O CRM nao volta ao ar com regra de isolamento faltando. Nesse caso a pagina e a
+# UNICA coisa que explica a quem tentar abrir por que o sistema nao responde.
+: > "$diario"; duble_diario
+REGRAS_FALTANDO="crm_leads_select|crm_leads" PARADOS="" restaurar_servicos >/dev/null 2>&1
+grep -q 'rm -f deskcomm-manutencao' "$diario" \
+  && nao "o aviso fica" "sem 'rm -f deskcomm-manutencao'" "$(tr '\n' ';' < "$diario")" \
+  || ok "o aviso fica de pe explicando por que o CRM nao voltou"
+
+echo "caso 27 — o aviso desce ANTES de o CRM subir, nunca depois"
+# Com o Caddy os dois disputam o apelido `app`: o Docker faz rodizio, e metade
+# das pessoas veria "estamos atualizando" com o CRM ja no ar.
+COMUM="$(cat "$RAIZ/hostgator-setup-kit/_common.sh")"
+p_desce="$(printf '%s' "$COMUM" | grep -n "manutencao_desce" | head -1 | cut -d: -f1)"
+p_up="$(printf '%s' "$COMUM" | grep -n "dc up -d app worker scheduler" | head -1 | cut -d: -f1)"
+if [ -n "$p_desce" ] && [ -n "$p_up" ] && [ "$p_desce" -lt "$p_up" ]; then
+  ok "desce antes do 'up -d app'"
+else
+  nao "ordem da descida" "manutencao_desce antes de 'dc up -d app'" "desce=$p_desce up=$p_up"
+fi
+
+echo "caso 28 — o aviso sobe ANTES de o CRM parar"
+# Entre parar e anunciar, quem estivesse com a tela aberta veria exatamente o
+# erro de navegador que esta onda existe para tirar.
+UP="$(cat "$RAIZ/hostgator-setup-kit/update.sh")"
+q_sobe="$(printf '%s' "$UP" | grep -n "manutencao_sobe" | head -1 | cut -d: -f1)"
+q_para="$(printf '%s' "$UP" | grep -n "pausar_o_que_fala_com_o_banco" | head -1 | cut -d: -f1)"
+if [ -n "$q_sobe" ] && [ -n "$q_para" ] && [ "$q_sobe" -lt "$q_para" ]; then
+  ok "sobe antes da pausa"
+else
+  nao "ordem da subida" "manutencao_sobe antes de pausar" "sobe=$q_sobe para=$q_para"
+fi
+
+echo "caso 29 — a pagina responde 503, e nao 200"
+# Robo de monitoramento que recebe 200 nao avisa ninguem, e um buscador
+# indexaria "estamos atualizando" como se fosse a tela inicial do CRM.
+case "$(cat "$KIT_DIR/manutencao/nginx.conf")" in
+  *"return 503"*) ok "diz 503 a quem pergunta por maquina" ;;
+  *) nao "503" "return 503" "ausente" ;;
+esac
+
 if [ "$falhas" -eq 0 ]; then
   echo "TUDO VERDE"
   exit 0

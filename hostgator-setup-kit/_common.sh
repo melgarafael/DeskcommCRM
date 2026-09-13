@@ -202,8 +202,20 @@ restaurar_servicos() {
   # atualização dizendo "concluída com sucesso".
   if [ -n "${REGRAS_FALTANDO:-}" ]; then
     c_red "   O CRM segue PARADO de propósito. Resolva as regras antes de subir."
+    # ⚠️ O aviso de manutenção NÃO desce aqui, de propósito. Com regra faltando o
+    # CRM não volta, e a página é a única coisa que explica isso a quem tentar
+    # abrir o sistema — melhor que um erro de conexão sem autor.
     return 0
   fi
+  # O aviso desce ANTES de o CRM subir, e não depois. Com o Caddy do próprio kit
+  # a página atende pelo apelido `app` na rede interna; com os dois de pé ao
+  # mesmo tempo o Docker faria rodízio, e metade das pessoas veria "estamos
+  # atualizando" com o CRM já no ar. A janela que isso abre dura o `docker rm`, e
+  # nela aparece o mesmo erro que aparecia o tempo todo antes desta página.
+  #
+  # `declare -F` porque quem carrega o aviso é só o update.sh: install.sh e
+  # agent.sh também sourceiam este arquivo e não têm o que derrubar.
+  declare -F manutencao_desce >/dev/null 2>&1 && manutencao_desce
   dc up -d app worker scheduler >/dev/null 2>&1 || true
 }
 

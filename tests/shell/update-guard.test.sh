@@ -141,7 +141,14 @@ export PATH="$WORK/bin:$PATH"
 PROJ="$WORK/deskcommcrm"
 mkdir -p "$PROJ/hostgator-setup-kit" "$PROJ/supabase"
 cp "$REPO_ROOT/hostgator-setup-kit/_common.sh" "$REPO_ROOT/hostgator-setup-kit/update.sh" \
-   "$REPO_ROOT/hostgator-setup-kit/agent.sh" "$PROJ/hostgator-setup-kit/"
+   "$REPO_ROOT/hostgator-setup-kit/agent.sh" "$REPO_ROOT/hostgator-setup-kit/manutencao.sh" \
+   "$PROJ/hostgator-setup-kit/"
+# O aviso de manutencao entra no fixture porque o `update.sh` o carrega com
+# `source` DURO, como faz com o `_common.sh`. Deixa-lo de fora nao da um vermelho
+# que fale de manutencao: da 22 casos vermelhos espalhados, todos dizendo "a
+# atualizacao nao explicou nada" — porque o script morre na linha 20, antes de
+# qualquer mensagem. Foi exatamente o que aconteceu ao escrever isto.
+cp -R "$REPO_ROOT/hostgator-setup-kit/manutencao" "$PROJ/hostgator-setup-kit/"
 # backup.sh de mentira: deixa um rastro. É o marco "o script já começou a
 # mexer" — a guarda de retrocesso só vale se abortar ANTES dele.
 BACKUP_MARK="$WORK/backup-rodou"
