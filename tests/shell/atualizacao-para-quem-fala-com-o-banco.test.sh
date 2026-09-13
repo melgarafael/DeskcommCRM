@@ -429,6 +429,17 @@ case "$linha_caddy" in
   *"--network-alias app"*) ok "assume o apelido 'app' na rede interna" ;;
   *) nao "apelido app" "--network-alias app" "$linha_caddy" ;;
 esac
+
+echo "caso 24b — ⛔ o apelido vale TAMBEM com proxy externo (o terceiro arranjo)"
+# MEDIDO na nossa VPS: o `.env` diz `REVERSE_PROXY=traefik` e NAO HA TRAEFIK. Quem
+# atende 80/443 e o nginx do HOST, com `proxy_pass 127.0.0.1:3000`, e ali mora uma
+# ponte `socat ... tcp-connect:app:3000`. Ninguem le rotulo. Sem o apelido nos dois
+# ramos, a pagina sobe certinha e ninguem a ve — foi o que aconteceu na v1.17.21,
+# 87 segundos de erro de navegador com o aviso de pe e correto.
+case "$linha" in
+  *"--network-alias app"*) ok "o apelido vem sempre, nao so no ramo do Caddy" ;;
+  *) nao "apelido no ramo do proxy externo" "--network-alias app" "$linha" ;;
+esac
 case "$linha_caddy" in
   *"_internal"*) ok "na rede interna do projeto" ;;
   *) nao "rede interna" "<projeto>_internal" "$linha_caddy" ;;
@@ -480,6 +491,20 @@ case "$(cat "$KIT_DIR/manutencao/nginx.conf")" in
   *"return 503"*) ok "diz 503 a quem pergunta por maquina" ;;
   *) nao "503" "return 503" "ausente" ;;
 esac
+
+echo "caso 30 — ⛔ o aviso desce no PROPRIO update.sh, antes do 'up -d' que traz o CRM"
+# MEDIDO na atualizacao real para a v1.17.21: pendurar a descida so no gatilho de
+# saida nao basta. O gatilho roda depois de mais quatro etapas, e o roteamento do
+# aviso tem prioridade ACIMA da regra do app — entao o CRM voltava ao ar e quem
+# abrisse continuava vendo "estamos atualizando" por minutos. Aviso que mente e
+# pior que aviso nenhum.
+q_desce="$(printf '%s' "$UP" | grep -n "^manutencao_desce$" | head -1 | cut -d: -f1)"
+q_up="$(printf '%s' "$UP" | grep -n "^dc up -d$" | head -1 | cut -d: -f1)"
+if [ -n "$q_desce" ] && [ -n "$q_up" ] && [ "$q_desce" -lt "$q_up" ]; then
+  ok "desce antes do 'dc up -d' do proprio script"
+else
+  nao "descida no update.sh" "manutencao_desce antes de 'dc up -d'" "desce=$q_desce up=$q_up"
+fi
 
 if [ "$falhas" -eq 0 ]; then
   echo "TUDO VERDE"

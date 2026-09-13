@@ -45,6 +45,25 @@
 #   - `tls=true` sem `certresolver` faz o Traefik servir o certificado interno
 #     dele. Quem abrisse o CRM durante a atualizacao veria um aviso de site
 #     inseguro, que e pior que o erro de conexao que ja via.
+# ## O TERCEIRO ARRANJO — medido na nossa VPS, depois de a pagina NAO aparecer
+#
+# A primeira versao disto cobria dois arranjos e falhou no unico que a gente tem.
+# A atualizacao para a v1.17.21 rodou, a pagina subiu, os rotulos estavam certos,
+# a rede estava certa — e quem abrisse o CRM viu o erro do navegador do mesmo
+# jeito, por 87 segundos. Medido com sonda de 3 em 3 segundos.
+#
+# A causa: NAO EXISTE TRAEFIK nesta VPS. O `.env` diz `REVERSE_PROXY=traefik`,
+# mas quem atende 80/443 e o nginx DO HOST
+# (/etc/nginx/sites-enabled/thoth-crm.conf), com `proxy_pass 127.0.0.1:3000`; e
+# quem atende ali e uma ponte `socat tcp-listen:3000,fork tcp-connect:app:3000`.
+# Ninguem le rotulo de conteiner. O `REVERSE_PROXY` do .env descreve com qual
+# compose subir, NAO quem roteia de fora — e eu tratei os dois como a mesma coisa.
+#
+# O conserto e o apelido, e ele serve aos TRES arranjos: quem roteia por rotulo
+# ignora o apelido; quem procura por NOME (o Caddy do kit, a ponte socat,
+# qualquer proxy_pass para um nome de conteiner) acha o aviso onde ja procurava.
+# E o `fork` do socat resolve o nome A CADA CONEXAO, entao a troca vale na hora.
+#
 set -euo pipefail
 
 NOME_DA_MANUTENCAO="deskcomm-manutencao"
@@ -54,8 +73,11 @@ manutencao_sobe() {
   [ -d "$html" ] || return 0
   docker rm -f "$NOME_DA_MANUTENCAO" >/dev/null 2>&1 || true
 
+  # ⚠️ O APELIDO `app` VEM SEMPRE, em qualquer arranjo — e foi uma medicao na VPS
+  # real que ensinou isso. Ver "O TERCEIRO ARRANJO", no cabecalho.
   local args=(
     -d --name "$NOME_DA_MANUTENCAO"
+    --network-alias app
     -v "$html/index.html:/usr/share/nginx/html/index.html:ro"
     -v "$html/nginx.conf:/etc/nginx/conf.d/default.conf:ro"
   )
@@ -91,7 +113,7 @@ manutencao_sobe() {
       --label "traefik.http.services.deskcomm-manutencao.loadbalancer.server.port=3000"
     )
   else
-    args+=(--network "$(nome_do_projeto_atual)_internal" --network-alias app)
+    args+=(--network "$(nome_do_projeto_atual)_internal")
   fi
 
   docker run "${args[@]}" nginx:alpine >/dev/null 2>&1 || true

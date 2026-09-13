@@ -490,6 +490,19 @@ fi
 # external, but could not be found" — e este script roda sozinho pelo agent.sh,
 # então ninguém está lendo a tela para decifrar isso. Mesma função do install.sh.
 garantir_rede_do_proxy
+# ⛔ O AVISO DESCE AQUI, e nao no gatilho de saida.
+#
+# MEDIDO na atualizacao real para a v1.17.21: o gatilho roda depois de mais
+# quatro etapas — baixar imagem, recriar, conferir saude, conferir automacoes. E
+# o roteamento do aviso tem prioridade 500, ACIMA da regra do app. Resultado: o
+# CRM voltava ao ar e quem abrisse continuava vendo "estamos atualizando" por
+# minutos, com o sistema ja funcionando. Aviso que mente e pior que aviso nenhum:
+# a pessoa vai embora achando que o sistema esta fora.
+#
+# `restaurar_servicos` segue chamando o mesmo `manutencao_desce` — ele e
+# `docker rm -f ... || true`, idempotente de proposito, e la ele cobre o caminho
+# de ERRO, onde este ponto aqui nunca chega a ser alcancado.
+manutencao_desce
 dc up -d
 
 # O Caddyfile entra no container por bind mount de UM ARQUIVO, e bind mount de
