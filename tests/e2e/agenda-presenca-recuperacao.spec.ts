@@ -291,8 +291,14 @@ test("Inbox marca cliente/conversa; detalhe antigo confirma presença com evidê
   // há alguém escolhido não existe campo nenhum: o painel mostra o NOME e a
   // saída para desfazer. O que este teste prova continua o mesmo — a entrada
   // pelo Inbox chega com o cliente daquela conversa já preso.
-  await expect(panel.getByText(p.name, { exact: true })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Tirar o cliente" })).toBeVisible();
+  //
+  // ⚠️ E procura FORA do `painel-de-marcacao`. O vínculo do cliente é IRMÃO do
+  // painel em `app/app/agenda/_client.tsx` (linhas 625 e 726), não filho dele —
+  // escopar no painel procura no lugar errado e falha com "element(s) not
+  // found" enquanto o cliente está na tela. Medido no CI em 2026-09-13.
+  const tirarOCliente = page.getByRole("button", { name: "Tirar o cliente" });
+  await expect(tirarOCliente).toBeVisible();
+  await expect(tirarOCliente.locator("..")).toContainText(p.name);
   await expect(page.getByLabel("Conversa vinculada (opcional)")).toHaveValue(p.conversation);
   // Fecha o painel para navegar a grade; reabre pela mesma entrada contextual.
   await page.keyboard.press("Escape");
