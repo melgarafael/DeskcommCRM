@@ -440,8 +440,15 @@ it("HTTP controlado: POST pending, polling GET, success/failure/unknown e convit
     expect(ready.meeting_delivery.state).toBe("none");
     expect(writes).toHaveLength(1);
     // Nova fixture de intenção existente: falha explícita não vira ready nem outro POST.
+    // ⚠️ `now() - 1 second`, a MESMA margem que `due()` usa, e nao `now()` pelado.
+    // Quem decide se a tentativa venceu e o Node (`Date.parse(...) <= Date.now()`,
+    // em sync-executor.ts:96), mas quem grava o horario e o Postgres, que roda
+    // noutro conteiner e noutro relogio — medido: host e container discordam na
+    // casa do segundo. Sem margem, a comparacao vira sorteio: esta linha ja
+    // deixou a suite vermelha uma vez com `meeting_last_error` nulo, que le como
+    // "o reconciliador parou de gravar o erro" e era so o relogio.
     await pool.query(
-      "update calendar_appointments set meeting_state='pending',meeting_next_attempt_at=now() where id=$1",
+      "update calendar_appointments set meeting_state='pending',meeting_next_attempt_at=now()-interval '1 second' where id=$1",
       [f.id],
     );
     remote = {
