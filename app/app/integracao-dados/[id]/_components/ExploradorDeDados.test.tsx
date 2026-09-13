@@ -1,12 +1,15 @@
 /**
- * A grade do banco externo precisa deixar LER o que está na célula.
+ * A grade do banco externo começa COMPACTA e uniforme, e cresce sob demanda.
  *
- * O defeito relatado pelo dono: colunas com largura fixa e `truncate` escondiam
- * valores longos (JSON, texto, observação) sem qualquer forma de alargar. Este
- * teste fixa o comportamento da correção: o valor sempre aparece inteiro (com
- * quebra de linha), a coluna se alarga arrastando a borda (aqui também pelo
- * teclado, que é o caminho determinístico) e a largura fica guardada por tabela
- * no `localStorage`.
+ * O dono reclamou das duas pontas: (1) o valor longo não dava para ler, e (2)
+ * quando as células passaram a quebrar linha, as linhas ficaram altas demais e a
+ * grade ficou ruim de visualizar. O comportamento fixado aqui é o do meio:
+ *
+ *  - a visão inicial é truncada, com todas as colunas do mesmo tamanho;
+ *  - arrastar a borda do cabeçalho alarga/estreita a coluna;
+ *  - arrastar a borda inferior da linha aumenta/diminui a altura da linha
+ *    (aí sim o conteúdo quebra e aparece por inteiro);
+ *  - os dois ajustes ficam guardados por tabela no `localStorage`.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -49,7 +52,8 @@ vi.mock("@/hooks/external-db/useDadosExternos", () => ({
 
 import { ExploradorDeDados } from "./ExploradorDeDados";
 
-const CHAVE_LARGURAS = "external-db:larguras:conn-1:public.pedidos";
+const CHAVE_LARGURAS = "external-db:conn-1:public.pedidos:larguras";
+const CHAVE_ALTURAS = "external-db:conn-1:public.pedidos:alturas";
 
 function larguraDaColuna(indice: number): number {
   const coluna = document.querySelectorAll("col")[indice];
@@ -57,9 +61,15 @@ function larguraDaColuna(indice: number): number {
   return Number.parseInt((coluna as HTMLElement).style.width, 10);
 }
 
-function alcaDaColuna(indice: number): HTMLElement {
-  const alca = screen.getAllByRole("separator")[indice];
+function alcaDeColuna(indice: number): HTMLElement {
+  const alca = screen.getAllByRole("separator", { name: "Ajustar largura da coluna" })[indice];
   if (!alca) throw new Error(`alça da coluna ${indice} não renderizou`);
+  return alca;
+}
+
+function alcaDaLinha(indice: number): HTMLElement {
+  const alca = screen.getAllByRole("separator", { name: "Ajustar altura da linha" })[indice];
+  if (!alca) throw new Error(`alça da linha ${indice} não renderizou`);
   return alca;
 }
 
@@ -76,42 +86,53 @@ beforeEach(() => {
   window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
 });
 
-describe("ExploradorDeDados — leitura do conteúdo", () => {
-  it("mostra os nomes das colunas e o conteúdo por extenso das células", async () => {
+describe("ExploradorDeDados — visão compacta e redimensionável", () => {
+  it("começa compacta: valor truncado numa linha, sem alongar a célula", async () => {
     await abrirGrade();
     expect(screen.getByText("descricao")).toBeInTheDocument();
-    expect(screen.getByText(DESCRICAO)).toBeInTheDocument();
+    const celulaLonga = screen.getByText(DESCRICAO);
+    expect(celulaLonga.className).toContain("truncate");
+    expect(celulaLonga.className).not.toContain("whitespace-pre-wrap");
   });
 
   it("alarga a coluna pela seta do teclado na alça de redimensionamento", async () => {
     await abrirGrade();
     const antes = larguraDaColuna(1);
-    alcaDaColuna(1).focus();
+    alcaDeColuna(1).focus();
     await userEvent.keyboard("{ArrowRight}");
     expect(larguraDaColuna(1)).toBe(antes + 24);
-  });
-
-  it("mostra o valor inteiro com quebra de linha, sem cortar com reticências", async () => {
-    await abrirGrade();
-    const celulaLonga = screen.getByText(DESCRICAO);
-    expect(celulaLonga.className).toContain("whitespace-pre-wrap");
-    expect(celulaLonga.className).not.toContain("truncate");
   });
 
   it("alarga a coluna arrastando a borda do cabeçalho, como numa planilha", async () => {
     await abrirGrade();
     const antes = larguraDaColuna(1);
-    fireEvent.pointerDown(alcaDaColuna(1), { button: 0, clientX: 200, pointerId: 1 });
+    fireEvent.pointerDown(alcaDeColuna(1), { button: 0, clientX: 200, pointerId: 1 });
     fireEvent.pointerMove(document, { clientX: 260 });
     fireEvent.pointerUp(document, { clientX: 260 });
     expect(larguraDaColuna(1)).toBe(antes + 60);
   });
 
-  it("guarda a largura arrastada por tabela no navegador", async () => {
+  it("aumenta a altura da linha arrastando a borda inferior e mostra o conteúdo quebrado", async () => {
     await abrirGrade();
-    fireEvent.pointerDown(alcaDaColuna(1), { button: 0, clientX: 200, pointerId: 1 });
-    fireEvent.pointerMove(document, { clientX: 220 });
-    fireEvent.pointerUp(document, { clientX: 220 });
+    fireEvent.pointerDown(alcaDaLinha(0), { button: 0, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(document, { clientY: 160 });
+    fireEvent.pointerUp(document, { clientY: 160 });
+
+    const celulaLonga = screen.getByText(DESCRICAO);
+    expect(celulaLonga.style.height).toBe("92px");
+    expect(celulaLonga.className).toContain("whitespace-pre-wrap");
+    expect(window.localStorage.getItem(CHAVE_ALTURAS)).toBeTruthy();
+  });
+
+  it("guarda os ajustes de largura e altura por tabela no navegador", async () => {
+    await abrirGrade();
+    alcaDeColuna(1).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    fireEvent.pointerDown(alcaDaLinha(0), { button: 0, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(document, { clientY: 120 });
+    fireEvent.pointerUp(document, { clientY: 120 });
+
     expect(window.localStorage.getItem(CHAVE_LARGURAS)).toBeTruthy();
+    expect(window.localStorage.getItem(CHAVE_ALTURAS)).toBeTruthy();
   });
 });
