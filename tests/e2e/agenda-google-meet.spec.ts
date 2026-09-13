@@ -451,7 +451,26 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
     expect(channel.bodies[0]!.text).toContain(link);
     const original = (await row(f, id)).meeting_delivery;
     await detail(page, id);
-    await expect(meet(page).getByRole("button", { name: "Link já enviado" })).toBeDisabled();
+    // ⛔ ESTA LINHA ERA `"Link já enviado"` + `toBeDisabled()` — e era o defeito
+    // que a Onda 4 conserta: o botão ficava preso PARA SEMPRE depois do primeiro
+    // envio, e quem precisava reenviar não tinha caminho nenhum.
+    //
+    // ⚠️ Ela sobreviveu a três versões publicadas, e não por acaso: o job `e2e`
+    // dispara em `main` e em PR, e a `vps/pljr-combinada` não é nenhum dos dois
+    // — ou seja, NUNCA rodou na linha que a VPS instala. Medido em 2026-09-13,
+    // no mesmo dia em que o gatilho da nossa linha foi ligado.
+    await expect(meet(page).getByRole("button", { name: "Enviar de novo" })).toBeEnabled();
+    // E o destravamento NÃO abre porta para envio em dobro: o clique pede
+    // confirmação. É o que substitui, na tela, o `return false` que o banco dá
+    // ao `deliver` em estado `sent` — e por isso a `resend` passa reto lá.
+    await meet(page).getByRole("button", { name: "Enviar de novo" }).click();
+    const confirmacao = page.getByRole("dialog", { name: "Confirmar reenvio" });
+    await expect(
+      confirmacao.getByText("Mandar de novo os dados desta reunião para o cliente?"),
+    ).toBeVisible();
+    await confirmacao.getByRole("button", { name: "Cancelar" }).click();
+    await expect(confirmacao).toHaveCount(0);
+    expect((await row(f, id)).meeting_delivery.state).toBe("sent");
     const after = (
       await db
         .from("conversations")
@@ -462,7 +481,7 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
     ).data;
     expect(after).toEqual(before);
     expect((await db.from("contacts").select("force_human,ai_authorized_at").eq("organization_id",f.org).eq("id",f.contact).single()).data).toEqual({force_human:true,ai_authorized_at:null});
-    await capture(page, info, "sent-desktop", "Link já enviado");
+    await capture(page, info, "sent-desktop", "Enviar de novo");
     const noOp = await page.request.post(`/api/v1/agenda/agendamentos/${id}/google/meet/deliver`, {
       data: sentRequest,
     });
@@ -522,7 +541,8 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
     ).toEqual(oldLedger);
     expect((await pool.query("select * from job_queue where organization_id=$1 and id=$2", [f.org, firstJob])).rows).toEqual(oldJob);
     await detail(page, id);
-    await expect(meet(page).getByRole("button", { name: "Link já enviado" })).toBeDisabled();
+    // Mesma troca da primeira ocorrência: o botão destrava em vez de morrer.
+    await expect(meet(page).getByRole("button", { name: "Enviar de novo" })).toBeEnabled();
     expect(google.requests.filter((r) => r.method === "POST")).toHaveLength(1);
   } finally {
     await page.close();
@@ -581,5 +601,107 @@ test("falha chega à Central, navegação conserva aviso e retry humano mantém 
   } finally {
     await page.close();
     await close(google.server);
+  }
+});
+
+test("⛔ ONDA 4: remarcar depois de enviado manda a CORREÇÃO sozinho, dizendo que mudou", async ({
+  page,
+}) => {
+  // O defeito que esta onda conserta, medido no código em 2026-09-12: o gatilho
+  // de remarcação não tocava em `meeting_delivery`; o de enfileirar só age em
+  // `waiting_for_link`; e a tela travava o botão em "Link já enviado". Resultado:
+  // remarcar depois de mandar os dados deixava o cliente com o horário ERRADO, e
+  // nada no sistema corrigia. A pessoa aparecia no dia errado.
+  //
+  // Nenhuma varredura cobria: `fn_appointment_confirmation_sweep` só age DEPOIS
+  // que o compromisso termina, e o que ela cria é aviso interno — nunca mensagem.
+  const f = await fixture(),
+    google = await googleReceiver(),
+    channel = await deliveryReceiver(),
+    pool = new pg.Pool({ connectionString: credentials.dbUrl, max: 5 });
+  try {
+    const id = await book(page, f);
+    expect(await google.run(f, id)).toBe("processed");
+    google.state("success");
+    await pollGoogle(f, id, google);
+    await detail(page, id);
+    await action(page, "Enviar link ao cliente", "deliver");
+    await deliver(f, id, pool);
+    expect(channel.bodies).toHaveLength(1);
+    const primeira = String(channel.bodies[0]!.text);
+    expect(primeira).toContain(link);
+
+    // ── REMARCAR, pelo mesmo caminho que a tela usa ────────────────────────
+    // Arrasta o compromisso INTEIRO: quem move o começo move o fim junto. Mexer
+    // só no `starts_at` bate em `calendar_appointments_periodo_valido` e o
+    // vermelho fala de "período inválido", não do gatilho — já custou uma rodada.
+    const antes = await row(f, id);
+    const novoInicio = new Date(Date.parse(antes.starts_at) + 24 * 3600_000).toISOString();
+    const novoFim = new Date(Date.parse(antes.ends_at) + 24 * 3600_000).toISOString();
+    const patch = await page.request.patch(`/api/v1/agenda/agendamentos/${id}`, {
+      data: { starts_at: novoInicio, ends_at: novoFim, revision: String(antes.revision) },
+    });
+    expect(patch.status(), await patch.text()).toBe(200);
+
+    // O gatilho reenfileira SOZINHO, e carrega o motivo — é ele que faz o texto
+    // dizer que MUDOU em vez de repetir "sua reunião está marcada para".
+    const remarcado = await row(f, id);
+    expect(Date.parse(remarcado.starts_at)).toBe(Date.parse(novoInicio));
+    expect(remarcado.meeting_delivery.motivo).toBe("remarcado");
+    expect(["waiting_for_link", "queued"]).toContain(remarcado.meeting_delivery.state);
+
+    // ── A CORREÇÃO CHEGA AO CLIENTE ───────────────────────────────────────
+    await deliver(f, id, pool);
+    expect(channel.bodies).toHaveLength(2);
+    const segunda = String(channel.bodies[1]!.text);
+    expect(segunda).not.toBe(primeira);
+    expect(segunda).toMatch(/mudou/i);
+
+    // ── E A TELA CONTA A MESMA HISTÓRIA ───────────────────────────────────
+    await detail(page, id);
+    await expect(meet(page).getByRole("button", { name: "Enviar de novo" })).toBeEnabled();
+  } finally {
+    await page.close();
+    await close(google.server);
+    await close(channel.server);
+    await pool.end();
+  }
+});
+
+test("⛔ ONDA 4 — CONTROLE: mexer só no TÍTULO não manda nada ao cliente", async ({ page }) => {
+  // A guarda que impede o conserto de virar defeito novo. Um gatilho que
+  // reagisse a QUALQUER `update` na linha faria uma correção de digitação no
+  // título mandar mensagem ao cliente — pior que o defeito original, porque
+  // acontece sozinho e sem ninguém pedir.
+  const f = await fixture(),
+    google = await googleReceiver(),
+    channel = await deliveryReceiver(),
+    pool = new pg.Pool({ connectionString: credentials.dbUrl, max: 5 });
+  try {
+    const id = await book(page, f);
+    expect(await google.run(f, id)).toBe("processed");
+    google.state("success");
+    await pollGoogle(f, id, google);
+    await detail(page, id);
+    await action(page, "Enviar link ao cliente", "deliver");
+    await deliver(f, id, pool);
+    expect(channel.bodies).toHaveLength(1);
+
+    const antes = await row(f, id);
+    const patch = await page.request.patch(`/api/v1/agenda/agendamentos/${id}`, {
+      data: { title: "Outro nome", revision: String(antes.revision) },
+    });
+    expect(patch.status(), await patch.text()).toBe(200);
+
+    const depois = await row(f, id);
+    expect(depois.title).toBe("Outro nome");
+    expect(depois.meeting_delivery.state).toBe("sent");
+    expect(depois.meeting_delivery.motivo).toBeUndefined();
+    expect(channel.bodies).toHaveLength(1);
+  } finally {
+    await page.close();
+    await close(google.server);
+    await close(channel.server);
+    await pool.end();
   }
 });
