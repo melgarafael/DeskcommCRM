@@ -2,6 +2,7 @@
 
 import { EntradaDaAgenda } from "@/components/agenda/EntradaDaAgenda";
 import { VinculoDaMarcacao } from "@/components/agenda/VinculoDaMarcacao";
+import { emailDoConvidadoAoTrocarDeCliente } from "@/lib/agenda/email-do-convidado";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import { useT } from "@/hooks/i18n/useT";
@@ -114,6 +115,10 @@ export function AgendaClient({
   // O CONVIDADO, opcional. Vazio mantém o comportamento de sempre: evento no
   // Google do atendente, sem `attendees` e sem convite saindo para ninguém.
   const [emailConvidado, setEmailConvidado] = React.useState("");
+  // Sem este marcador nao ha como distinguir "campo vazio porque ninguem
+  // mexeu" de "campo vazio porque alguem APAGOU de proposito" — e a segunda
+  // leitura e a que nao pode ser atropelada quando o cliente muda.
+  const [convidadoTocado, setConvidadoTocado] = React.useState(false);
   const emailConvidadoLimpo = emailConvidado.trim();
   // A MESMA pergunta que a rota faz, feita aqui só para não gastar um 422 com
   // uma letra faltando no domínio. A rota continua sendo a dona da recusa — esta
@@ -448,6 +453,10 @@ export function AgendaClient({
             // não usado reapareceria na PRÓXIMA marcação, que é de outro
             // cliente — convite para a pessoa errada, sem ninguém ter pedido.
             setEmailConvidado("");
+            // O marcador volta junto: reabrir o painel comeca limpo, pela
+            // mesma razao das linhas acima. Sem isto, um campo apagado numa
+            // marcacao deixaria a proxima sem preenchimento automatico.
+            setConvidadoTocado(false);
           }
         }}
       >
@@ -488,7 +497,7 @@ export function AgendaClient({
           <SheetHeader>
             <SheetTitle>{remarcandoId ? t("Remarcar agendamento") : t("Novo agendamento")}</SheetTitle>
           </SheetHeader>
-            {!remarcandoId?<VinculoDaMarcacao contactId={contactId} conversationId={conversationId} onChange={(contact,conversation)=>{setContactId(contact);setConversationId(conversation);}}/>:null}
+            {!remarcandoId?<VinculoDaMarcacao contactId={contactId} conversationId={conversationId} onChange={(contact,conversation,email)=>{setContactId(contact);setConversationId(conversation);setEmailConvidado(emailDoConvidadoAoTrocarDeCliente({atual:emailConvidado,tocado:convidadoTocado,emailDoCliente:email}));}}/>:null}
           {tiposIniciais.length > 1 && (
             <div className="mt-4" data-testid="tipos-de-agendamento">
               <p className="mb-2 text-xs font-medium text-text-muted">{t("Tipo de agendamento")}</p>
@@ -535,7 +544,10 @@ export function AgendaClient({
               inputMode="email"
               autoComplete="off"
               value={emailConvidado}
-              onChange={(e) => setEmailConvidado(e.target.value)}
+              onChange={(e) => {
+                setEmailConvidado(e.target.value);
+                setConvidadoTocado(true);
+              }}
               className={cn(
                 // `outline-hidden`, não `outline-none`: no Tailwind 4 os dois
                 // trocaram de significado, e o `outline-none` do v4 apaga o
