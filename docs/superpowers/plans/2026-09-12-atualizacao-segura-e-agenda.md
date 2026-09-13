@@ -638,7 +638,7 @@ está de pé — e essa é a ordem certa de correr risco.
   contêiner `nginx:alpine` chamado `deskcomm-manutencao`, com as mesmas labels
   de roteamento do `app` e prioridade maior.
 
-- [ ] **Passo 1: escrever os casos que falham**
+- [x] **Passo 1: escrever os casos que falham**
 
 ```bash
 echo "caso 9 — o aviso sobe ANTES de o CRM parar"
@@ -661,7 +661,7 @@ grep -q 'rm -f deskcomm-manutencao' "$diario" \
   || ok "o aviso fica de pé explicando por que o CRM nao voltou"
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 ```bash
 bash tests/shell/atualizacao-para-quem-fala-com-o-banco.test.sh
@@ -669,7 +669,7 @@ bash tests/shell/atualizacao-para-quem-fala-com-o-banco.test.sh
 
 Esperado: casos 9–11 vermelhos (`manutencao_sobe: command not found`).
 
-- [ ] **Passo 3: escrever a página**
+- [x] **Passo 3: escrever a página**
 
 Crie `hostgator-setup-kit/manutencao/index.html`:
 
@@ -714,7 +714,7 @@ de marca e imagem por revendedor; e esta página sobe **antes** de qualquer cois
 poder consultar o banco, que é onde a marca mora. Uma página neutra é a única
 que não mente sobre de quem é o sistema.
 
-- [ ] **Passo 4: escrever o script**
+- [x] **Passo 4: escrever o script**
 
 Crie `hostgator-setup-kit/manutencao.sh`:
 
@@ -761,7 +761,7 @@ manutencao_desce() {
 }
 ```
 
-- [ ] **Passo 5: pendurar no update.sh**
+- [x] **Passo 5: pendurar no update.sh**
 
 Em `hostgator-setup-kit/update.sh`, logo depois do `trap restaurar_servicos EXIT`
 da Task 2, acrescente o `source` e as duas chamadas:
@@ -779,13 +779,13 @@ acrescente `manutencao_desce`. E no bloco de pausa, **antes** do
 de propósito. Com regra faltando o CRM não volta, e o aviso é a única coisa que
 explica isso a quem tentar abrir o sistema.
 
-- [ ] **Passo 6: rodar e ver passar**
+- [x] **Passo 6: rodar e ver passar**
 
 ```bash
 bash tests/shell/atualizacao-para-quem-fala-com-o-banco.test.sh && pnpm test:shell
 ```
 
-- [ ] **Passo 7: fragmento e commit**
+- [x] **Passo 7: fragmento e commit**
 
 Crie `.changes/aviso-de-manutencao.md`:
 
@@ -806,9 +806,39 @@ git commit -m "feat(kit): quem esta com o CRM aberto ve um aviso de atualizacao,
 
 ---
 
+---
+
+#### ⚠️ Corrigido NA EXECUÇÃO — o que este plano dizia estava errado
+
+Medido no `docker-compose.traefik.yml` antes de escrever uma linha. Quatro
+desvios, os dois primeiros seriam queda:
+
+1. **`${APP_DOMAIN}` não existe.** A variável do domínio é `DOMAIN`. Sob
+   `set -u` a atualização morreria nessa linha — com o CRM **já parado**.
+2. **`tls=true` sem resolvedor** faz o Traefik servir o certificado interno
+   dele: quem abrisse o CRM veria "site inseguro", que é pior que o erro de
+   conexão que esta página veio tirar. O certo é `tls.certresolver`.
+3. **O caso do Caddy era vacuoso.** `--network bridge` não põe o aviso em rota
+   nenhuma: numa instalação com o Caddy do próprio kit, a página nunca seria
+   vista. O caminho real é o aviso assumir o apelido `app` na rede interna e
+   atender em **3000**, onde o `reverse_proxy app:3000` do Caddyfile já procura
+   — daí existir também `manutencao/nginx.conf`, que o plano não previa.
+4. **A ordem da descida estava invertida.** O plano punha `manutencao_desce`
+   *depois* do `dc up -d app`. Com o apelido, os dois de pé ao mesmo tempo fazem
+   o Docker dar rodízio: metade das pessoas veria "estamos atualizando" com o
+   CRM já no ar. Desce **antes**.
+
+Também mudou a numeração dos casos: o plano falava em "casos 9–11" e o arquivo
+já tinha 19 casos. Os novos são **20–29**, e dois deles (22 e 23) existem só
+para reprovar os desvios 1 e 2 se alguém os reescrever.
+
+---
+
 ### Fecho da Onda 2
 
-- [ ] Suíte inteira + `pnpm test:shell`
+- [x] Suíte inteira + `pnpm test:shell` — 10 casos novos verdes; o único vermelho
+      da suíte do kit é `.env continua 600`, que **já falhava no HEAD** antes
+      desta mudança (o Windows não tem a permissão), provado num worktree limpo
 - [ ] Publicar a tag; Paulo clica
 - [ ] **Provar na tela:** com o CRM aberto em outra aba durante a atualização,
       aparece o aviso; quando termina, a aba volta sozinha para a tela de antes
