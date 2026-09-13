@@ -244,6 +244,17 @@ export const DICIONARIO: Traducoes = {
   "Buscar cliente": { es: "Buscar cliente" },
   "Quem será atendido": { es: "Quién será atendido" },
   "Compromisso pessoal, sem cliente": { es: "Cita personal, sin cliente" },
+  "Cliente do compromisso": { es: "Cliente de la cita" },
+  "Tirar o cliente": { es: "Quitar el cliente" },
+  "Digite para buscar um cliente": { es: "Escriba para buscar un cliente" },
+  "Observação": { es: "Observación" },
+  "(fica só no CRM)": { es: "(solo queda en el CRM)" },
+  "O que lembrar para esta reunião, call ou visita": {
+    es: "Qué recordar para esta reunión, llamada o visita",
+  },
+  "Não vai no convite do Google nem para o cliente.": {
+    es: "No va en la invitación de Google ni para el cliente.",
+  },
   "Conversa vinculada (opcional)": { es: "Conversación vinculada (opcional)" },
   "Sem conversa vinculada": { es: "Sin conversación vinculada" },
   "Não foi possível carregar os vínculos. Tente novamente.": { es: "No se pudieron cargar los vínculos. Inténtelo de nuevo." },

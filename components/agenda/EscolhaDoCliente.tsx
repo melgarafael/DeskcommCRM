@@ -51,7 +51,7 @@ export function EscolhaDoCliente({
               painel é justamente o gesto que causava a herança de cliente. */}
           <button
             type="button"
-            className="rounded px-2 py-1 text-xs underline"
+            className="rounded-md px-2 py-1 text-xs underline"
             onClick={() => {
               onEscolhe("");
               onBusca("");
