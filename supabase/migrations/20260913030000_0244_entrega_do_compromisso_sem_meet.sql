@@ -87,13 +87,16 @@ begin
    meeting_state='pending',meeting_attempts=0,meeting_last_error=null,meeting_next_attempt_at=now(),google_next_attempt_at=now() where organization_id=p_org and id=p_id;
  elsif p_action in ('deliver','resend') then
   if a.contact_id is null then raise exception 'meet_conversation_unavailable' using errcode='42501';end if;
-  -- ONDE O LOCAL E O MEET, o link continua tendo de estar pronto: mandar uma
-  -- reuniao sem como entrar nela e pior que nao mandar. Onde o local e outro
-  -- (presencial, telefone), nao ha link para esperar — e era essa exigencia,
-  -- incondicional, que impedia o compromisso comum de chegar ao cliente.
-  if a.location_kind='google_meet' and (a.meeting_state<>'ready' or a.meeting_url is null) then
-   raise exception 'meet_stale' using errcode='40001';
-  end if;
+  -- ⚠️ AQUI NAO SE EXIGE LINK PRONTO, e isto e deliberado.
+  --
+  -- Autorizar o envio ANTES de o link existir e o proprio desenho: a tela
+  -- oferece "Enviar quando ficar pronto", a entrega fica em `waiting_for_link`,
+  -- e o gatilho a enfileira quando o link chega. Eu cheguei a pôr uma guarda de
+  -- `meeting_state='ready'` aqui ao afrouxar a exigencia para compromisso sem
+  -- Meet — e ela derrubou 10 casos do invariante do Meet, todos legitimos.
+  --
+  -- Quem garante que reuniao sem porta nao sai e o ENFILEIRADOR, que espera o
+  -- link ficar pronto onde o local e o Meet. O lugar certo da guarda e la.
   select channel_session_id into destination_channel from public.conversations where organization_id=p_org and id=p_conversation and contact_id=a.contact_id and not is_group and public.fn_can_view_conversation(organization_id,assigned_to_user_id) for update;
   if not found then raise exception 'meet_conversation_unavailable' using errcode='42501';end if;
   b:=public.fn_service_boundary(p_org,p_conversation)-'status'-'demanda_fechada_em'-'service_started_at';
@@ -136,7 +139,18 @@ begin
  -- deadlock (40P01) sob concorrência, e quem paga é o cliente com anonimização
  -- LGPD acontecendo enquanto um link de reunião é entregue.
  perform public.fn_service_lock(new.organization_id,new.contact_id);
- if new.meeting_state='cancelled' or new.meeting_delivery->>'state' in ('blocked','stale') then
+ -- ⚠️ `status` ENTRA AQUI, e a falta dele era um buraco real.
+ --
+ -- A guarda olhava so `meeting_state='cancelled'` — o estado do LINK. Num
+ -- compromisso presencial esse estado e `not_requested` para sempre, entao
+ -- um compromisso CANCELADO continuava sendo enfileirado e o cliente
+ -- receberia os dados de um compromisso que nao existe mais.
+ --
+ -- Enquanto so o Meet era entregavel, `meeting_state` bastava por acidente:
+ -- cancelar o compromisso cancelava o link junto. Ao abrir a entrega para
+ -- os demais locais, o acidente deixou de cobrir. Quem pegou foi o caso de
+ -- CONTROLE do invariante, nao o caso principal.
+ if new.status='cancelled' or new.meeting_state='cancelled' or new.meeting_delivery->>'state' in ('blocked','stale') then
   update public.job_queue set status='failed',locked_at=null,locked_by=null,payload='{}',last_error='meet_delivery_stale'
    where organization_id=new.organization_id and id=new.meeting_delivery_job_id and kind='transactional_delivery' and status in ('pending','running');
   return new;
