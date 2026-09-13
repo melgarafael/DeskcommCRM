@@ -8,6 +8,19 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.19.2] — 2026-09-13
+
+### Corrigido
+
+- **Grade do banco externo volta a abrir compacta e ganha ajuste de altura da linha** A grade do banco externo volta a abrir do jeito que era — todas as colunas com a mesma largura e cada linha com uma só linha de texto, cortada com reticências. Nada fica alongado na primeira olhada.
+
+  O ajuste continua na mão de quem lê, agora nas duas direções:
+
+  - **Alargar a coluna:** segure a borda do cabeçalho e arraste, como numa planilha.
+  - **Aumentar a linha:** segure a borda de baixo da linha e arraste para cima ou para baixo. Ao ficar mais alta, o conteúdo da célula quebra e aparece por inteiro, até o limite da altura escolhida.
+
+  Os dois ajustes ficam guardados por tabela no navegador: ao voltar nela, a grade reabre do jeito que ficou. As alças também respondem às setas do teclado. Nada muda no banco de origem — a leitura segue somente leitura.
+
 ## [1.19.1] — 2026-09-13
 
 ### Alterado
@@ -3430,7 +3443,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.1...HEAD
+[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.2...HEAD
+[1.19.2]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.1...v1.19.2
 [1.19.1]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.17.0...v1.18.0
