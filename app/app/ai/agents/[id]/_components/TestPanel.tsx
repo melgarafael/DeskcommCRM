@@ -171,9 +171,18 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           ...(contactPhone.trim() ? { phone: contactPhone.trim() } : {}),
         };
       }
+      // O dry-run roda o turno inteiro do agente (classificador, jailbreak,
+      // resposta, checkpoint) em cadeia — passa fácil dos 10s padrão do
+      // apiClient, principalmente em modelo gratuito/mais lento (medido:
+      // 75s só na chamada da resposta). `maxAttempts: 1` porque retry aqui é
+      // pior que o timeout que ele tenta consertar: a origem pode estar
+      // quase terminando, e repetir cria um SEGUNDO turno completo (e uma
+      // segunda cobrança de tokens) por baixo do painel, sem avisar quem
+      // clicou uma vez.
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        { timeoutMs: 120_000, maxAttempts: 1 },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });

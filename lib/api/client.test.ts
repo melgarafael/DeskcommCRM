@@ -123,6 +123,26 @@ describe("apiClient", () => {
     expect(e.message).not.toMatch(/aborted without reason/i);
     expect(e.message).toMatch(/\d+ms/);
   }, 10_000);
+
+  it("t9: maxAttempts: 1 não repete em timeout — a origem pode já estar quase terminando", async () => {
+    // Achado testando o dry-run do agente de IA: o turno inteiro passava dos
+    // 10s padrão, o cliente desistia e tentava de novo — e cada tentativa
+    // repetia a chamada de LLM inteira por baixo, gastando o dobro (ou o
+    // triplo) de tokens por um timeout só otimista demais. `maxAttempts: 1`
+    // existe para chamadas assim: não-idempotentes e caras o bastante pra que
+    // repetir seja pior que esperar.
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        }),
+    );
+
+    await expect(
+      apiClient.post("/x", {}, { timeoutMs: 5, maxAttempts: 1 }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  }, 10_000);
 });
 
 /**

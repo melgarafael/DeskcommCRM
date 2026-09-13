@@ -11,6 +11,17 @@ export type RequestOpts = {
   timeoutMs?: number;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /**
+   * Tentativas totais (1 = sem retry). Default `MAX_ATTEMPTS`.
+   *
+   * Existe porque o retry automático em timeout é o comportamento ERRADO para
+   * uma chamada não-idempotente e cara (ex.: dry-run de agente, que roda um
+   * turno inteiro de LLM): a origem pode já estar terminando quando o timeout
+   * dispara, e repetir cria uma segunda execução completa em vez de só uma
+   * resposta mais lenta — dobrando tempo, tokens e custo por um timeout que
+   * era só otimista demais.
+   */
+  maxAttempts?: number;
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -200,10 +211,11 @@ async function request<T>(
   const serializedBody =
     body === undefined || body === null ? undefined : JSON.stringify(body);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxAttempts = opts.maxAttempts ?? MAX_ATTEMPTS;
 
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const timeoutController = new AbortController();
     // Motivo explícito, não `abort()` puro: sem ele o navegador sintetiza um
     // `DOMException` cuja MENSAGEM é "signal is aborted without reason" — que
@@ -243,7 +255,7 @@ async function request<T>(
       }
 
       // Retry on 429/503
-      if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_ATTEMPTS) {
+      if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
         const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
         const delay = retryAfter !== null ? retryAfter * 1000 : backoffMs(attempt);
         await sleep(delay, opts.signal);
@@ -288,7 +300,7 @@ async function request<T>(
       }
       // Network error / timeout — retry
       lastError = err;
-      if (attempt < MAX_ATTEMPTS) {
+      if (attempt < maxAttempts) {
         await sleep(backoffMs(attempt), opts.signal);
         continue;
       }
