@@ -2,9 +2,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import { EscolhaDoCliente } from "@/components/agenda/EscolhaDoCliente";
 import { useT } from "@/hooks/i18n/useT";
 type Vinculos = {
-  contacts: Array<{ id: string; name: string }>;
+  contacts: Array<{ id: string; name: string; email?: string | null }>;
   conversations: Array<{ id: string; created_at: string; status: string }>;
 };
 export function VinculoDaMarcacao({
@@ -14,7 +15,8 @@ export function VinculoDaMarcacao({
 }: {
   contactId: string;
   conversationId: string;
-  onChange: (contact: string, conversation: string) => void;
+  /** O terceiro argumento e o e-mail do contato escolhido, quando ele tem um. */
+  onChange: (contact: string, conversation: string, email?: string | null) => void;
 }) {
   const t = useT();
   const [search, setSearch] = useState("");
@@ -29,32 +31,24 @@ export function VinculoDaMarcacao({
   });
   return (
     <div className="space-y-3 rounded-lg border p-3">
-      <label className="block">
-        {t("Buscar cliente")}
-        <input
-          className="mt-1 w-full rounded-md border bg-surface p-2"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            onChange("", "");
-          }}
-        />
-      </label>
-      <label className="block">
-        {t("Quem será atendido")}
-        <select
-          className="mt-1 w-full rounded-md border bg-surface p-2"
-          value={contactId}
-          onChange={(e) => onChange(e.target.value, "")}
-        >
-          <option value="">{t("Compromisso pessoal, sem cliente")}</option>
-          {query.data?.contacts.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {/* Um campo só. Eram dois — "Buscar cliente" e "Quem será atendido" —, e
+          quem opera relatou pela tela que o segundo parecia que ia abrir algo ao
+          digitar e o primeiro parecia não fazer nada. */}
+      <EscolhaDoCliente
+        contatos={query.data?.contacts ?? []}
+        valor={contactId}
+        busca={search}
+        onBusca={(q) => {
+          setSearch(q);
+          // Digitar solta a escolha anterior. Sem isto a lista filtraria por um
+          // nome enquanto o contato preso continuaria sendo outro — e o
+          // compromisso sairia no nome de quem ninguém escolheu.
+          onChange("", "", null);
+        }}
+        onEscolhe={(id) =>
+          onChange(id, "", query.data?.contacts.find((c) => c.id === id)?.email ?? null)
+        }
+      />
       {contactId ? (
         <label className="block">
           {t("Conversa vinculada (opcional)")}
