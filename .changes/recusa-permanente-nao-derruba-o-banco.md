@@ -10,4 +10,4 @@ A causa: quando o sistema recusava o envio por um motivo **definitivo** (o compr
 
 Medido com a mesma peça e versão da VPS: a mesma recusa anunciada como definitiva responde em 12 milésimos e roda **uma** vez; anunciada como passageira, nunca responde e roda **51.556** vezes.
 
-⚠️ O mesmo padrão existe em outros 80 pontos fora da agenda. Nenhum foi tocado nesta entrega.
+**O que ainda NÃO está consertado:** o mesmo padrão existe em outros 80 pontos do sistema, fora da agenda. Nenhum deles foi tocado nesta entrega, e um teste novo impede que apareçam outros — mas quem clicar num caminho desses ainda pode ver o mesmo travamento.
