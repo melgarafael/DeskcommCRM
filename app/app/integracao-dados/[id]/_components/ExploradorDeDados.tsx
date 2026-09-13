@@ -172,9 +172,20 @@ export function ExploradorDeDados({ connectionId }: Props) {
     return larguras[coluna] ?? LARGURA_PADRAO;
   }
 
+  /**
+   * PK como lista, sempre. A introspecção já garante `string[]`, mas o cliente
+   * não pode confiar no contrato de um dado externo — uma resposta antiga em
+   * cache ou um servidor em rollout pode trazer o literal `"{id}"`, e `.map`
+   * nele derrubava a tela inteira.
+   */
+  function colunasPk(): string[] {
+    const pk = selecionada?.chavePrimaria;
+    return Array.isArray(pk) ? pk : [];
+  }
+
   /** Chave estável da linha (pela PK quando existe; pelo índice quando não). */
   function chaveDaLinha(linha: Record<string, unknown>, indice: number): string {
-    const pk = selecionada?.chavePrimaria ?? [];
+    const pk = colunasPk();
     if (pk.length === 0) return `#${indice}`;
     return pk.map((coluna) => celula(linha[coluna])).join("|");
   }
@@ -402,7 +413,7 @@ export function ExploradorDeDados({ connectionId }: Props) {
                   <TableHeader>
                     <TableRow>
                       {colunas.map((coluna) => {
-                        const ehPk = selecionada.chavePrimaria.includes(coluna);
+                        const ehPk = colunasPk().includes(coluna);
                         const ordenadaAqui = ordem?.coluna === coluna;
                         return (
                           <TableHead

@@ -11,7 +11,7 @@ interface LinhaCatalogo {
   tipo_dado: string;
   nulavel: string;
   posicao: number;
-  chave_primaria: string[] | null;
+  chave_primaria: string[] | string | null;
   estimativa: number;
 }
 
@@ -37,13 +37,17 @@ const ROWS: LinhaCatalogo[] = [
   { schema: "public", nome: "pedidos", tipo: "BASE TABLE", coluna: "id", tipo_dado: "uuid", nulavel: "NO", posicao: 1, chave_primaria: ["id"], estimativa: 1234.5 },
   { schema: "public", nome: "pedidos", tipo: "BASE TABLE", coluna: "total", tipo_dado: "numeric", nulavel: "YES", posicao: 2, chave_primaria: ["id"], estimativa: 1234.5 },
   { schema: "vendas", nome: "resumo", tipo: "VIEW", coluna: "mes", tipo_dado: "text", nulavel: "YES", posicao: 1, chave_primaria: null, estimativa: -1 },
+  // O driver devolvia a PK como o literal cru `"{id}"` (array `name[]` que ele
+  // não parseia) — o contrato é `string[]` e a tela quebrava ao iterar.
+  { schema: "public", nome: "legado", tipo: "BASE TABLE", coluna: "id", tipo_dado: "uuid", nulavel: "NO", posicao: 1, chave_primaria: "{id}", estimativa: 5 },
+  { schema: "public", nome: "composta", tipo: "BASE TABLE", coluna: "org", tipo_dado: "uuid", nulavel: "NO", posicao: 1, chave_primaria: "{org,seq}", estimativa: 5 },
 ];
 
 describe("introspecção ao vivo", () => {
   it("agrupa colunas por tabela e mapeia o tipo", async () => {
     const { pool } = poolFalso(ROWS);
     const tabelas = await listarTabelas(pool);
-    expect(tabelas).toHaveLength(2);
+    expect(tabelas).toHaveLength(4);
 
     const pedidos = tabelas.find((t) => t.nome === "pedidos");
     expect(pedidos?.schema).toBe("public");
@@ -59,6 +63,13 @@ describe("introspecção ao vivo", () => {
     expect(resumo?.chavePrimaria).toEqual([]); // view não tem PK
     // `reltuples` de view é -1; nunca vira contagem negativa na tela.
     expect(resumo?.estimativaLinhas).toBe(0);
+  });
+
+  it("a PK é SEMPRE string[] — o literal `{...}` do driver também vira array", async () => {
+    const { pool } = poolFalso(ROWS);
+    const tabelas = await listarTabelas(pool);
+    expect(tabelas.find((t) => t.nome === "legado")?.chavePrimaria).toEqual(["id"]);
+    expect(tabelas.find((t) => t.nome === "composta")?.chavePrimaria).toEqual(["org", "seq"]);
   });
 
   it("descreverTabela devolve a tabela pedida e `null` quando não existe", async () => {

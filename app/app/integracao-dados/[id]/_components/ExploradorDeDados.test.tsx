@@ -15,18 +15,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { TABELA, DESCRICAO, LINHAS } = vi.hoisted(() => {
+const { TABELA, TABELA_PK_CRUA, DESCRICAO, LINHAS } = vi.hoisted(() => {
   const DESCRICAO = "descricao muito longa ".repeat(6).trim();
+  const base = {
+    schema: "public",
+    tipo: "tabela" as const,
+    colunas: [],
+    estimativaLinhas: 3,
+  };
   return {
     DESCRICAO,
-    TABELA: {
-      schema: "public",
-      nome: "pedidos",
-      tipo: "tabela" as const,
-      colunas: [],
-      chavePrimaria: ["id"],
-      estimativaLinhas: 3,
-    },
+    TABELA: { ...base, nome: "pedidos", chavePrimaria: ["id"] },
+    // Reproduz o defeito de produção: a introspecção devolvia a PK como o
+    // literal cru `"{id}"` (string), e o cliente quebrava ao iterar.
+    TABELA_PK_CRUA: { ...base, nome: "legado", chavePrimaria: "{id}" as unknown as string[] },
     LINHAS: [{ id: 1, descricao: DESCRICAO }],
   };
 });
@@ -35,7 +37,7 @@ vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 
 vi.mock("@/hooks/external-db/useCatalogoExterno", () => ({
   useCatalogoExterno: () => ({
-    data: [TABELA],
+    data: [TABELA, TABELA_PK_CRUA],
     isLoading: false,
     isError: false,
     isSuccess: true,
@@ -93,6 +95,12 @@ describe("ExploradorDeDados — visão compacta e redimensionável", () => {
     const celulaLonga = screen.getByText(DESCRICAO);
     expect(celulaLonga.className).toContain("truncate");
     expect(celulaLonga.className).not.toContain("whitespace-pre-wrap");
+  });
+
+  it("não quebra quando a PK chega crua (string) em vez de lista", async () => {
+    render(<ExploradorDeDados connectionId="conn-1" />);
+    await userEvent.click(screen.getByRole("button", { name: "legado" }));
+    expect(await screen.findByText(DESCRICAO)).toBeInTheDocument();
   });
 
   it("alarga a coluna pela seta do teclado na alça de redimensionamento", async () => {
