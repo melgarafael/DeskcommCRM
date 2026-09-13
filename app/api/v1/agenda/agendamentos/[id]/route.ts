@@ -22,7 +22,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   const { data, error } = await db
     .from("calendar_appointments")
     .select(
-      "id,title,location_kind,meeting_state,meeting_url,meeting_request_id,meeting_last_error,meeting_delivery,meeting_delivery_job_id,contact_id,conversation_id,starts_at,ends_at,time_zone,status,revision,revision_started_at,outcome_user_id,outcome_source_kind,outcome_message_id,outcome_recorded_at,confirmation_next_at,cancellation_reason,owner_user_id,google_domain_revision:revision::text,google_local_revision::text,google_synced_local_revision::text,google_etag,google_synced_at,google_sync_error,google_conflict",
+      "id,title,notes,location_kind,meeting_state,meeting_url,meeting_request_id,meeting_last_error,meeting_delivery,meeting_delivery_job_id,contact_id,conversation_id,starts_at,ends_at,time_zone,status,revision,revision_started_at,outcome_user_id,outcome_source_kind,outcome_message_id,outcome_recorded_at,confirmation_next_at,cancellation_reason,owner_user_id,google_domain_revision:revision::text,google_local_revision::text,google_synced_local_revision::text,google_etag,google_synced_at,google_sync_error,google_conflict",
     )
     .eq("organization_id", org)
     .eq("id", id)

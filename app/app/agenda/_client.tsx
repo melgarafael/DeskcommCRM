@@ -119,6 +119,11 @@ export function AgendaClient({
   // mexeu" de "campo vazio porque alguem APAGOU de proposito" — e a segunda
   // leitura e a que nao pode ser atropelada quando o cliente muda.
   const [convidadoTocado, setConvidadoTocado] = React.useState(false);
+  // UMA observacao por compromisso, escrita por quem esta marcando. Nao e
+  // historico de varias anotacoes de varias pessoas: decisao do dono do
+  // produto — "o agendamento e individual". A coluna `notes` ja existia e a
+  // API ja a aceitava; so a tela nao oferecia onde escrever.
+  const [observacao, setObservacao] = React.useState("");
   const emailConvidadoLimpo = emailConvidado.trim();
   // A MESMA pergunta que a rota faz, feita aqui só para não gastar um 422 com
   // uma letra faltando no domínio. A rota continua sendo a dona da recusa — esta
@@ -457,6 +462,9 @@ export function AgendaClient({
             // mesma razao das linhas acima. Sem isto, um campo apagado numa
             // marcacao deixaria a proxima sem preenchimento automatico.
             setConvidadoTocado(false);
+            // Uma observacao escrita e nao usada reapareceria na PROXIMA
+            // marcacao, que e de outro compromisso e talvez de outro cliente.
+            setObservacao("");
           }
         }}
       >
@@ -566,6 +574,29 @@ export function AgendaClient({
                 ? t("Endereço inválido — confira antes de marcar.")
                 : t("Preenchido, o Google envia o convite por e-mail para esta pessoa.")}
             </p>
+            <label
+              className="mt-3 block text-xs font-medium text-text-muted"
+              htmlFor="observacao-do-compromisso"
+            >
+              {t("Observação")}{" "}
+              <span className="font-normal">{t("(fica só no CRM)")}</span>
+            </label>
+            <textarea
+              id="observacao-do-compromisso"
+              data-testid="observacao-do-compromisso"
+              rows={3}
+              maxLength={2000}
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              placeholder={t("O que lembrar para esta reunião, call ou visita")}
+              className="mt-1 w-full rounded-md border border-border bg-surface p-2 text-sm outline-hidden focus:border-border-strong"
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              {/* Medido em lib/agenda/google/evento.ts: o que viaja para o
+                  convite do Google é `description`. `notes` NÃO viaja — então a
+                  promessa desta frase é a que o código já cumpre. */}
+              {t("Não vai no convite do Google nem para o cliente.")}
+            </p>
           </div>
           {tipo && (
             <div className="mt-4 lg:min-h-0 lg:flex-1">
@@ -632,11 +663,12 @@ export function AgendaClient({
                   const convidado = emailConvidadoLimpo || undefined;
                   if (remarcandoId) {
                     return remarcar
-                      .mutateAsync({ id: remarcandoId,revision:agendamentos.find(a=>a.id===remarcandoId)?.revision, starts_at: instante, guest_email: convidado })
+                      .mutateAsync({ id: remarcandoId,revision:agendamentos.find(a=>a.id===remarcandoId)?.revision, starts_at: instante, guest_email: convidado, notes: observacao || undefined })
                       .then((r) => {
                         setRemarcandoId(null);
                         setMarcando(false);
                         setEmailConvidado("");
+                        setObservacao("");
                         return r;
                       });
                   }
@@ -647,6 +679,7 @@ export function AgendaClient({
                       conversation_id:conversationId||undefined,
                       starts_at: instante,
                       guest_email: convidado,
+                      notes: observacao || undefined,
                     })
                     .then((r) => {
                       setEmailConvidado("");

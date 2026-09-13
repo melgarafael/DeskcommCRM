@@ -32,7 +32,7 @@ import { apiClient } from "@/lib/api/client";
 export function useRemarcarAgendamento() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (entrada: { id: string; revision?:number; starts_at: string; guest_email?: string }) =>
+    mutationFn: async (entrada: { id: string; revision?:number; starts_at: string; guest_email?: string; notes?: string }) =>
       apiClient.patch<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
     onSuccess: () => {
       toast.success("Agendamento remarcado.");
