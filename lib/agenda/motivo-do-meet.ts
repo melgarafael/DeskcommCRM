@@ -168,7 +168,15 @@ export function motivoDoMeet(erro: unknown): MotivoDoMeet {
   }
 
   const code = typeof e.code === "string" ? e.code : "";
-  if (code === "40001")
+  // ⚠️ `22023` entra AO LADO de `40001`, e não no lugar dele.
+  //
+  // A partir da migration 0246 as recusas permanentes da agenda passam a usar
+  // `22023`: `40001` promete "tente de novo" e o PostgREST acredita — MEDIDO com
+  // a versão v14.17, a mesma da VPS, uma chamada HTTP virou 51.556 execuções e
+  // nunca respondeu. Mas o baseline ainda tem 80 sítios em `40001` fora da
+  // agenda, e tirar este ramo faria todos eles caírem no erro genérico. Os dois
+  // significam a mesma coisa para quem está na tela: mudou, atualize.
+  if (code === "40001" || code === "22023")
     return {
       codigo: "conflict",
       status: 409,
