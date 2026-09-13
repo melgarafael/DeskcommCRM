@@ -94,6 +94,26 @@ describe("o motivo da recusa chega inteiro à tela", () => {
     }
   });
 
+  it("⛔ `meet_ocupado` — o atendimento está travado neste instante", () => {
+    // MEDIDO em producao, 2026-09-13, amostrando `pg_locks` durante o clique:
+    // varias conexoes do PostgREST disputam a MESMA trava por cliente, umas
+    // segurando e outras esperando. A trava e `pg_advisory_xact_lock`, que
+    // espera PARA SEMPRE — entao o pedido entra na fila, o porteiro desiste aos
+    // 10s com `upstream request timeout`, e o cliente repete, pondo mais um na
+    // fila. Tres tentativas, 30 segundos, e "Erro inesperado" no fim.
+    //
+    // O banco, chamado sem disputa, responde em 19 MILISSEGUNDOS.
+    const m = motivoDoMeet({ message: "meet_ocupado" });
+    expect(m.codigo).toBe("meet_ocupado");
+    expect(m.texto).toMatch(/atendid|instante|segundos/i);
+  });
+
+  it("⛔ e ele NAO repete — repetir e o que alimentava a fila", () => {
+    const m = motivoDoMeet({ message: "meet_ocupado" });
+    expect(m.status).toBe(409);
+    expect(m.naoRepetir).toBe(true);
+  });
+
   it("todo motivo conhecido tem frase própria — senão o conserto é aparência", () => {
     const nomes = [
       "meet_conversation_stale",
@@ -103,6 +123,7 @@ describe("o motivo da recusa chega inteiro à tela", () => {
       "meet_mfa_required",
       "meet_forbidden",
       "meet_action_invalid",
+      "meet_ocupado",
     ];
     const frases = nomes.map((n) => motivoDoMeet({ message: n }).texto);
     expect(new Set(frases).size).toBe(nomes.length);

@@ -99,6 +99,12 @@ const POR_NOME: Readonly<Record<string, Omit<MotivoDoMeet, "naoRepetir">>> = {
     texto:
       "O atendimento desta conversa mudou depois que o link foi criado. Escolha a conversa atual e autorize o envio de novo.",
   },
+  meet_ocupado: {
+    codigo: "meet_ocupado",
+    status: 409,
+    texto:
+      "Este cliente está sendo atendido neste instante. Espere alguns segundos e tente de novo.",
+  },
   meet_stale: {
     codigo: "meet_stale",
     status: 409,
