@@ -23992,8 +23992,6 @@ create trigger trg_org_voice_calls_set_updated_at
 
 notify pgrst, 'reload schema';
 
--- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
---
 -- ---- o envio do Meet nao espera para sempre pela trava (migration 0241) ----
 -- 0241 — o envio do link do Meet para de esperar para sempre pela trava
 --
@@ -24609,8 +24607,9 @@ end;$$;
 revoke all on function public.fn_meet_action(uuid,uuid,text,uuid,text,uuid) from public,anon;
 grant execute on function public.fn_meet_action(uuid,uuid,text,uuid,text,uuid) to authenticated;
 
+-- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
+--
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
-
 -- dele — quem o empurrar para o meio desarma a cura para tudo que vier depois.
 -- Vigiado por `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts`.
 --
