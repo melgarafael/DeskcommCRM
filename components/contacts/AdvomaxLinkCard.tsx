@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 
 type LinkRow = { id: string; pessoa_codigo: number; status: "pending" | "linked" | "conflict" | "unlinked" };
+type PessoaRow = { codigo: number; nome: string; tipoPessoa: string; email: string | null; telefone: string | null };
 type ProcessoRow = { codigo: number; pasta: string | null; numero: string | null; status: number; ultimaMovimentacao: string | null; tribunal: string | null };
 
 export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: string; canManage?: boolean }) {
@@ -17,6 +18,8 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   const [codigo, setCodigo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [sugestoes, setSugestoes] = useState<PessoaRow[]>([]);
   const [processos, setProcessos] = useState<ProcessoRow[]>([]);
 
   useEffect(() => {
@@ -39,6 +42,17 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
     return () => { ativo = false; };
   }, [contactId, link?.status]);
 
+  useEffect(() => {
+    if (!canManage || link?.status === "linked" || busca.trim().length < 2) return;
+    let ativo = true;
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/v1/advomax/pessoas?nome=${encodeURIComponent(busca.trim())}`).then((r) => r.ok ? r.json() : null).then((body) => {
+        if (ativo) setSugestoes(Array.isArray(body?.data) ? body.data as PessoaRow[] : []);
+      }).catch(() => undefined);
+    }, 250);
+    return () => { ativo = false; window.clearTimeout(timer); };
+  }, [busca, canManage, link?.status]);
+
   async function vincular() {
     const pessoa = Number(codigo);
     if (!Number.isInteger(pessoa) || pessoa <= 0) { setErro(t("Informe o código da Pessoa no Advomax.")); return; }
@@ -48,6 +62,7 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error?.message || t("Não foi possível criar o vínculo."));
       setLink(body.data as LinkRow);
+      setSugestoes([]);
     } catch (e) { setErro(e instanceof Error ? e.message : t("Não foi possível criar o vínculo.")); }
     finally { setSaving(false); }
   }
@@ -71,10 +86,14 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
       {link && <Badge variant={link.status === "linked" ? "success" : "warning"}>{link.status === "linked" ? t("Vinculado") : t("Aguardando confirmação")}</Badge>}
     </div>
     <div className="flex flex-col gap-2 sm:flex-row">
+      <Input value={busca} onChange={(e) => { setBusca(e.target.value); if (e.target.value.trim().length < 2) setSugestoes([]); }} placeholder={t("Buscar Pessoa ou cliente") } aria-label={t("Buscar Pessoa ou cliente") } disabled={!canManage || link?.status === "linked"} />
       <Input inputMode="numeric" value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder={t("Código da Pessoa") } aria-label={t("Código da Pessoa") } disabled={!canManage} />
       <Button onClick={vincular} disabled={!canManage || saving}>{saving ? t("Salvando…") : t("Vincular Pessoa")}</Button>
       {link?.status === "linked" && canManage && <Button variant="outline" onClick={desvincular} disabled={saving}>{t("Desvincular")}</Button>}
     </div>
+    {sugestoes.length > 0 && <div className="space-y-1 rounded border p-2 text-sm">{sugestoes.map((pessoa) => <button type="button" key={pessoa.codigo} className="block w-full rounded px-2 py-1.5 text-left hover:bg-muted" onClick={() => { setCodigo(String(pessoa.codigo)); setBusca(pessoa.nome); setSugestoes([]); }}>
+      <strong>{pessoa.nome}</strong><span className="ml-2 text-muted-foreground">#{pessoa.codigo}{pessoa.tipoPessoa && ` · ${pessoa.tipoPessoa}`}</span>
+    </button>)}</div>}
     {!canManage && <p className="text-xs text-muted-foreground">{t("Somente gerentes podem confirmar este vínculo.")}</p>}
     {erro && <p role="alert" className="text-sm text-error-fg">{erro}</p>}
     {link?.status === "linked" && <div className="border-t pt-3">
