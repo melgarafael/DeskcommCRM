@@ -24,20 +24,38 @@ export function sinceDoBucket(
   bucket: RiskBucket,
   lastActivityAt: Date,
   window: StageWindow,
+  /**
+   * O relógio da passada. OBRIGATÓRIO de propósito: opcional deixaria todo
+   * chamador antigo no comportamento defeituoso, em silêncio.
+   */
+  agora: Date,
 ): Date {
   const h = (horas: number): Date =>
     new Date(lastActivityAt.getTime() + horas * 3_600_000);
+  // ⛔ NUNCA NO FUTURO — e isto não escolhe um significado novo, escreve o que
+  // já é verdade.
+  //
+  // `classifyRisk` tem dois atalhos da agenda (`adiar` e `presenca_vencida`)
+  // que atribuem balde SEM limiar cruzado. Para esses, o instante do cruzamento
+  // ainda não chegou, e gravá-lo violava `check (since <= detected_at)` — o que
+  // derrubava o observador INTEIRO da organização, porque a gravação lançava
+  // dentro do laço.
+  //
+  // E o upsert só roda quando o balde MUDOU (`risk-worker.ts`, `if (de ===
+  // e.bucket) continue`). Uma travessia percebida agora começou, no mais
+  // tardar, agora.
+  const teto = (d: Date): Date => (d.getTime() > agora.getTime() ? agora : d);
   switch (bucket) {
     case "critico":
-      return h(window.criticalHours);
+      return teto(h(window.criticalHours));
     case "em_risco":
     // `em_voo` é "esfriou, mas a IA prometeu voltar": ele CRUZOU o limiar de
     // frio como qualquer outro, e o que muda é haver follow-up agendado — não
     // o instante da travessia.
     case "em_voo":
-      return h(window.coldHours);
+      return teto(h(window.coldHours));
     case "em_dia":
       // Ainda não cruzou nada. O estado começou na última interação.
-      return lastActivityAt;
+      return teto(lastActivityAt);
   }
 }

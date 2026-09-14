@@ -147,6 +147,33 @@ fi
 # afirmar que não há versão nova — nem sabemos se existe alguma publicada.
 [ -z "$LATEST_TAG" ] && [ "$FETCH_OK" = 0 ] && COMPARE_FAILED=true
 
+# ── A ETIQUETA PODE SAIR NA FRENTE DA IMAGEM ─────────────────────────────────
+#
+# MEDIDO em 2026-09-13: a tela ofereceu a "Nova versão · 1.17.16" enquanto a
+# imagem dela ainda estava sendo construída — porque este agente decidia olhando
+# SÓ a etiqueta no Git. São uns seis minutos entre uma coisa e outra.
+#
+# Antes da pausa dos serviços, clicar naquela janela era um susto: a atualização
+# avisava "a versão ainda está publicando" e o sistema seguia no ar com a versão
+# antiga. Agora o app é PARADO antes do banco e a volta usa o endereço da imagem
+# NOVA. Sem imagem, ele não volta.
+#
+# ⚠️ E aqui o silêncio é ESCOLHIDO, ao contrário de todo o resto deste arquivo.
+# Este bloco não acende `COMPARE_FAILED`: seria inventar um sinal falso, porque
+# a comparação funcionou — o que falta é a imagem, não a resposta. E não há
+# campo no batimento para "existe versão nova, mas ainda não dá para instalar".
+# Ficar calado por alguns minutos é a escolha certa aqui e só aqui, por três
+# razões: o estado é transitório, ele se cura sozinho na passada seguinte (5
+# min), e a alternativa é um botão que derruba o sistema.
+VEREDITO_IMAGEM=""
+if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
+  VEREDITO_IMAGEM="$(veredito_da_imagem_do_app "${LATEST_TAG#v}" "${CURRENT_TAG#v}")" || VEREDITO_IMAGEM=""
+  # Só `ausente` cala. `indisponivel` é "não consegui perguntar ao registro", e
+  # nesse caso anunciar é o que preserva o comportamento de sempre — uma VPS com
+  # saída de rede ruim não pode ficar sem atualização para sempre, em silêncio.
+  [ "$VEREDITO_IMAGEM" = "ausente" ] && LATEST_TAG=""
+fi
+
 CHANGELOG=""
 if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # Corta em 30000 bytes CRUS, não 60000: o teto do Zod (CHANGELOG_MAX_BYTES,

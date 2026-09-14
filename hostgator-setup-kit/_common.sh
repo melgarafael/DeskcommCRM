@@ -34,6 +34,191 @@ dc_files() {
   fi
 }
 
+# ── QUEM FALA COM O BANCO E PODE SER PARADO ──────────────────────────────────
+#
+# O `update.sh` aplica o `baseline.sql`, que APAGA e RECRIA cada regra de
+# isolamento — é o único jeito portável, porque o Postgres não tem
+# `create or replace policy`. Com tráfego vivo isso vira disputa de trava, e
+# quando o CRIAR trava o APAGAR já valeu: a regra some, o banco passa a negar a
+# leitura em silêncio, e a tela fica VAZIA sem um erro sequer.
+#
+# Medido numa instalação real, no mesmo dia e com o mesmo arquivo:
+#   tudo de pé ................................ 113 travamentos
+#   CRM parado ................................  60 travamentos
+#   CRM + rest + realtime + studio parados ....   0 travamentos
+#
+# ⚠️ O realtime NÃO se chama `supabase-realtime`. Na instalação real o nome é
+# `realtime-dev.supabase-realtime`, e um padrão ancorado em `^supabase-` deixa
+# de pé justamente quem mais reage a mudança de estrutura. O ponto é escapado
+# porque em expressão regular ele casaria com qualquer caractere.
+#
+# ⚠️ O banco e o auth ficam DE PÉ de propósito: é no banco que o DDL roda, e
+# derrubar o auth deslogaria quem está na tela sem necessidade.
+#
+# ⚠️ Nada de varredura larga. Uma VPS hospeda outros sistemas (medido numa real:
+# um CRM imobiliário e dois WordPress). A lista é explícita, e é só a nossa.
+#
+# Vazio quando o Supabase é HOSPEDADO — lá não há o que parar, e é por isso que
+# a conferência das regras, que não depende de parar nada, é a peça portável.
+supabase_local_containers() {
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -E \
+    '^(supabase-rest|supabase-studio|realtime-dev\.supabase-realtime)$' || true
+}
+
+# ── O CICLO: PAUSAR ANTES DO BANCO, VOLTAR DEPOIS DE CONFERIR ────────────────
+#
+# Estas duas vivem aqui, e não dentro do `update.sh`, por um motivo prático: é
+# aqui que dá para carregá-las num teste e provar o ciclo com um `docker` dublê,
+# sem parar nada de verdade. O `update.sh` fica com o que é dele — a ordem dos
+# passos e o `trap`.
+#
+# `PARADOS` guarda o que esta rodada derrubou, para saber o que levantar.
+# `REGRAS_FALTANDO` é preenchida pela conferência e decide se o CRM volta.
+PARADOS="${PARADOS:-}"
+REGRAS_FALTANDO="${REGRAS_FALTANDO:-}"
+
+# ── A IMAGEM DAQUELA VERSÃO EXISTE MESMO? ────────────────────────────────────
+#
+# MEDIDO em 2026-09-13, e quem viu foi o dono da instalação: a tela ofereceu a
+# "Nova versão · 1.17.16" enquanto a imagem dela ainda estava sendo construída.
+# O agente decidia olhando SÓ a etiqueta no Git, e nunca perguntava se havia o
+# que baixar. Entre publicar a etiqueta e a imagem ficar pronta passam-se uns
+# seis minutos.
+#
+# Antes da pausa dos serviços isso era um susto: a atualização avisava "a versão
+# ainda está publicando, rode de novo em alguns minutos" e o sistema seguia no
+# ar com a versão antiga, porque nada tinha sido parado. Agora o app é PARADO
+# antes do banco e a volta usa o endereço da imagem NOVA — gravado antes de
+# tentar baixá-la. Sem imagem, ele não volta. O susto virou queda.
+#
+# ⚠️ SÓ A IMAGEM DO APP. O worker e o scheduler têm `build:` ao lado do `image:`
+# no compose, então o `up -d` os constrói localmente quando falta imagem — mais
+# lento, mesmo resultado. O app não tem essa rede de segurança, e essa
+# assimetria já está escrita no update.sh, onde as duas mensagens são
+# diferentes de propósito.
+#
+# Ecoa: publicada | ausente | indisponivel
+veredito_da_imagem_do_app() {  # veredito_da_imagem_do_app <versão alvo> <versão instalada>
+  local alvo="${1:-}" instalada="${2:-}"
+  [ -n "$alvo" ] || { printf 'indisponivel'; return 0; }
+  if docker buildx imagetools inspect "${IMG_APP}:${alvo}" >/dev/null 2>&1; then
+    printf 'publicada'; return 0
+  fi
+  # ⛔ A SONDA DE CONTROLE, e é ela que impede o conserto de virar defeito pior.
+  #
+  # Sem ela, uma VPS sem saída para o registro pararia de oferecer atualização
+  # PARA SEMPRE, em silêncio — e ninguém liga o silêncio de uma tela a um
+  # problema de rede. A versão INSTALADA é a sonda certa porque ela existe com
+  # certeza: está rodando aqui. Se nem ela responde, o que está fora é o
+  # registro, não a imagem.
+  #
+  # Instalação fora de release não tem versão instalada para sondar. Sem sonda
+  # não dá para separar as duas causas, e a resposta certa é a que não tira nada
+  # de ninguém: segue anunciando, como sempre foi.
+  [ -n "$instalada" ] || { printf 'indisponivel'; return 0; }
+  if docker buildx imagetools inspect "${IMG_APP}:${instalada}" >/dev/null 2>&1; then
+    printf 'ausente'
+  else
+    printf 'indisponivel'
+  fi
+}
+
+pausar_o_que_fala_com_o_banco() {
+  PARADOS="$(supabase_local_containers)"
+  c_ylw "Pausando o sistema para mexer no banco com segurança."
+  dc stop app worker scheduler >/dev/null 2>&1 || true
+  if [ -n "$PARADOS" ]; then
+    # shellcheck disable=SC2086
+    docker stop $PARADOS >/dev/null 2>&1 || true
+  fi
+}
+
+# ── O BANCO RELIGA ASSIM QUE O BANCO TERMINA ─────────────────────────────────
+#
+# MEDIDO na instalacao real em 2026-09-13: as pecas pararam as 03:10:18 e o
+# script so terminou as 03:13:09. QUASE TRES MINUTOS sem o Supabase — e nao
+# por falha: por desenho. A pausa acontecia na etapa do banco e a volta so no
+# gatilho de saida, depois de baixar imagem, recriar conteiner e esperar o
+# healthcheck do app.
+#
+# Esses tres minutos existiam mesmo quando tudo dava certo, e ninguem os tinha
+# medido porque o alvo era outro. Religar aqui e o caminho; o gatilho de saida
+# continua existindo, mas como rede de seguranca.
+#
+# IDEMPOTENTE de proposito: o gatilho vai chamar de novo, e uma segunda
+# chamada que reclamasse faria TODA atualizacao bem-sucedida terminar com um
+# alarme falso.
+religar_o_supabase() {
+  if [ -n "${PARADOS:-}" ]; then
+    # ── A VOLTA DEIXA DE SER MUDA ────────────────────────────────────────────
+    #
+    # MEDIDO em 2026-09-13, numa atualização real: a pausa funcionou, a
+    # conferência rodou com tudo parado (92 de 92) e as três peças do Supabase
+    # NÃO VOLTARAM. Ficaram paradas até alguém perceber — e a atualização já
+    # tinha dito "concluída com sucesso".
+    #
+    # A causa daquela falha NÃO FOI DETERMINADA, e isso fica escrito como está:
+    # a cadeia inteira, reproduzida na mesma VPS com dublês, funciona; e a
+    # evidência se perdeu ao subir as peças, que era o certo a fazer com o
+    # sistema fora do ar. O que não pode se repetir é o SILÊNCIO — a versão
+    # anterior desta linha era `docker start ... >/dev/null 2>&1 || true`, que
+    # não deixa rastro nenhum quando falha.
+    local ainda_fora="" c
+    # shellcheck disable=SC2086
+    docker start $PARADOS >/dev/null 2>&1 || true
+    for c in $PARADOS; do
+      docker ps --format '{{.Names}}' 2>/dev/null | grep -qxF "$c" || ainda_fora="${ainda_fora}${ainda_fora:+ }${c}"
+    done
+    if [ -n "$ainda_fora" ]; then
+      # Uma segunda tentativa antes de gritar: subir contêiner logo depois de
+      # uma enxurrada de operações do Docker às vezes precisa de um instante.
+      # shellcheck disable=SC2086
+      docker start $ainda_fora >/dev/null 2>&1 || true
+      sleep 3
+      local resta="" d
+      for d in $ainda_fora; do
+        docker ps --format '{{.Names}}' 2>/dev/null | grep -qxF "$d" || resta="${resta}${resta:+ }${d}"
+      done
+      ainda_fora="$resta"
+    fi
+    if [ -n "$ainda_fora" ]; then
+      c_red "⛔ PEÇAS DO BANCO NÃO VOLTARAM depois da atualização:"
+      for c in $ainda_fora; do c_red "   • $c"; done
+      c_red "   Enquanto elas estiverem paradas, o CRM não consegue ler nem gravar."
+      c_ylw "   Para subir à mão:  docker start $ainda_fora"
+    fi
+    PARADOS=""
+  fi
+}
+
+restaurar_servicos() {
+  religar_o_supabase
+  # ⛔ O CRM NÃO VOLTA AO AR COM REGRA DE ISOLAMENTO FALTANDO.
+  #
+  # Um CRM fora do ar é um problema visível que alguém resolve em minutos. Um
+  # CRM no ar sem regra de isolamento mostra tela VAZIA para todo mundo, sem um
+  # erro sequer, e é indistinguível de "não há nada aqui" — foi exatamente isso
+  # que custou um dia inteiro nesta instalação, com o funil vazio e a
+  # atualização dizendo "concluída com sucesso".
+  if [ -n "${REGRAS_FALTANDO:-}" ]; then
+    c_red "   O CRM segue PARADO de propósito. Resolva as regras antes de subir."
+    # ⚠️ O aviso de manutenção NÃO desce aqui, de propósito. Com regra faltando o
+    # CRM não volta, e a página é a única coisa que explica isso a quem tentar
+    # abrir o sistema — melhor que um erro de conexão sem autor.
+    return 0
+  fi
+  # O aviso desce ANTES de o CRM subir, e não depois. Com o Caddy do próprio kit
+  # a página atende pelo apelido `app` na rede interna; com os dois de pé ao
+  # mesmo tempo o Docker faria rodízio, e metade das pessoas veria "estamos
+  # atualizando" com o CRM já no ar. A janela que isso abre dura o `docker rm`, e
+  # nela aparece o mesmo erro que aparecia o tempo todo antes desta página.
+  #
+  # `declare -F` porque quem carrega o aviso é só o update.sh: install.sh e
+  # agent.sh também sourceiam este arquivo e não têm o que derrubar.
+  declare -F manutencao_desce >/dev/null 2>&1 && manutencao_desce
+  dc up -d app worker scheduler >/dev/null 2>&1 || true
+}
+
 # ── A rede externa por onde o proxy de fora alcança o app ────────────────────
 # O nome que o docker compose dá ao projeto quando ninguém passa -p: basename do
 # diretório, minúsculo, só [a-z0-9_-] — E com os `_`/`-` do INÍCIO aparados

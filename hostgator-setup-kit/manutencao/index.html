@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atualizacao em andamento</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f7f7f8; color: #18181b; padding: 24px;
+      }
+      @media (prefers-color-scheme: dark) { body { background: #18181b; color: #f4f4f5; } }
+      main { max-width: 32rem; text-align: center; }
+      h1 { font-size: 1.375rem; margin: 0 0 0.75rem; }
+      p { margin: 0 0 0.5rem; }
+      .fraca { opacity: 0.7; font-size: 0.9375rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Estamos atualizando o sistema</h1>
+      <p>Leva alguns minutos. Nada do seu trabalho se perde.</p>
+      <p class="fraca">Esta pagina volta sozinha quando terminar.</p>
+    </main>
+    <script>
+      // Recarrega sozinha: quando o CRM voltar, o roteamento deixa de apontar
+      // para ca e a pessoa cai direto na tela dela, sem precisar saber de nada.
+      setTimeout(function () { location.reload(); }, 15000);
+    </script>
+  </body>
+</html>

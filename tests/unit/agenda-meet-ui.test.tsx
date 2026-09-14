@@ -84,8 +84,21 @@ it("sent só desabilita na fronteira atual; mesmo UUID reaberto aceita novo cliq
     delivery_state: "sent",
     delivery_conversation_id: "conversation",
   };
+  // ⚠️ ESTE CASO MUDOU DE LADO, e o motivo importa.
+  //
+  // Ele cobrava `"Link já enviado"` DESABILITADO. Medido pela tela: quem
+  // remarcava um compromisso já enviado ficava sem caminho nenhum para
+  // corrigir o cliente — o botão era a única porta e estava trancada.
+  //
+  // Agora "já enviado" é o RÓTULO da ação de reenviar, não uma tranca. O que
+  // impede envio em dobro passou a ser a confirmação (e, do lado do banco, o
+  // `deliver` segue devolvendo `false` em estado `sent`).
   const view = show({ ...sent, delivery_authorization_current: true });
-  expect(screen.getByRole("button", { name: "Link já enviado" })).toBeDisabled();
+  const reenviar = screen.getByRole("button", { name: "Enviar de novo" });
+  expect(reenviar).toBeEnabled();
+  fireEvent.click(reenviar);
+  expect(screen.getByRole("dialog")).toHaveTextContent(/Mandar de novo/i);
+  expect(api.post).not.toHaveBeenCalled();
   view.unmount();
   show({ ...sent, delivery_authorization_current: false });
   fireEvent.click(screen.getByRole("button", { name: "Enviar link ao cliente" }));
@@ -95,6 +108,55 @@ it("sent só desabilita na fronteira atual; mesmo UUID reaberto aceita novo cliq
       expect.objectContaining({ conversation_id: "conversation" }),
     ),
   );
+});
+it("⛔ confirmar o reenvio dispara `resend`, e não `deliver`", async () => {
+  // Rota separada de proposito: o `deliver` devolve `false` em estado `sent`, e
+  // esse `false` e a protecao contra clique duplo. Se a tela mandasse `deliver`
+  // aqui, o reenvio simplesmente nao aconteceria — e o botao novo seria enfeite.
+  show({
+    ...initial,
+    state: "ready",
+    delivery_state: "sent",
+    delivery_conversation_id: "conversation",
+    delivery_authorization_current: true,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Enviar de novo" }));
+  fireEvent.click(screen.getByRole("button", { name: "Mandar de novo" }));
+  await waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith(
+      expect.stringContaining("/resend"),
+      expect.objectContaining({ conversation_id: "conversation" }),
+    ),
+  );
+});
+it("⛔ CONTROLE: cancelar a confirmação não manda nada", async () => {
+  // Sem este par, uma tela que disparasse ao ABRIR a confirmacao passaria no
+  // caso acima — e mandaria mensagem a quem so quis olhar o que o botao faz.
+  show({
+    ...initial,
+    state: "ready",
+    delivery_state: "sent",
+    delivery_conversation_id: "conversation",
+    delivery_authorization_current: true,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Enviar de novo" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("⛔ compromisso PRESENCIAL oferece mandar os dados, sem falar em link", () => {
+  // A secao inteira so existia para `google_meet`: num compromisso presencial
+  // nao havia botao NENHUM. E prometer "link" onde nao ha reuniao online e
+  // prometer o que nao existe.
+  show({ ...initial, location_kind: "in_person", state: "not_requested", delivery_state: "none" });
+  expect(screen.getByRole("button", { name: "Mandar ao cliente" })).toBeEnabled();
+  expect(screen.queryByText(/Link ainda não solicitado/i)).not.toBeInTheDocument();
+});
+it("⛔ CONTROLE: com Meet, o botão continua esperando o link ficar pronto", () => {
+  // O par que impede o afrouxamento de virar buraco na tela: onde o Meet e o
+  // local, oferecer envio antes do link e oferecer uma reuniao sem porta.
+  show({ ...initial, state: "pending", delivery_state: "none" });
+  expect(screen.getByRole("button", { name: "Enviar quando ficar pronto" })).toBeInTheDocument();
 });
 it("bloqueios explicam autonomia versus opt-out sem sugerir repetir a mesma ação", () => {
   const view = show({ ...initial, delivery_state: "blocked", delivery_error: "force_human" });

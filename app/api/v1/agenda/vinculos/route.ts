@@ -14,7 +14,11 @@ export async function GET(req: Request) {
   const db = await createClient();
   let contacts = db
     .from("contacts")
-    .select("id,name")
+    // `email` entra aqui para o painel preencher o convidado sem redigitacao.
+    // E o mesmo contato que a pessoa acabou de escolher na mesma tela, e nao
+    // amplia alcance nenhum: a consulta ja roda sob RLS, com o
+    // `organization_id` de quem pediu.
+    .select("id,name,email")
     .eq("organization_id", auth.org.orgId)
     .eq("is_anonymized", false)
     .order("name")

@@ -169,7 +169,10 @@ async function coletaEClassifica(
       leadId: l.id,
       contactId: l.contact_id,
       bucket,
-      since: sinceDoBucket(bucket, lastActivityAt, window),
+      // O MESMO `now` que classificou. Um `new Date()` aqui seria um segundo
+      // relogio dentro da mesma passada, e a diferenca entre os dois e
+      // exatamente o tipo de deriva que ja violou a constraint antes.
+      since: sinceDoBucket(bucket, lastActivityAt, window, now),
       coldHours: window.coldHours,
     });
   }

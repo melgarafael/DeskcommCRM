@@ -14,6 +14,11 @@
 # um script do kit "não encontrado" no meio da atualização.
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$KIT_DIR/_common.sh"
+# O aviso que assume a porta enquanto o CRM esta parado. Fica em arquivo
+# proprio porque so a ATUALIZACAO para o CRM — install.sh e agent.sh sourceiam
+# `_common.sh` e nao tem o que anunciar.
+# shellcheck source=manutencao.sh
+source "$KIT_DIR/manutencao.sh"
 enter_project
 
 FORCE=""; SKIP_BACKUP=""; TARGET_TAG=""
@@ -122,7 +127,11 @@ if [ -z "$SKIP_BACKUP" ]; then
 fi
 # Avisa o agente do host (se for ele quem está dirigindo) — é o que faz a tela
 # de atualização avançar passo a passo enquanto o app ainda está de pé.
-[ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" backup
+# Na SEGUNDA volta (depois do re-exec) estes dois passos ja foram
+# reportados. Reportar de novo faria a tela de quem esta olhando andar
+# PARA TRAS por um instante, e voltar atras numa barra de progresso le-se
+# como "deu errado e recomecou".
+[ -z "${DESKCOMM_UPDATE_REEXEC:-}" ] && [ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" backup
 
 # ── 3. Código novo ───────────────────────────────────────────────────────────
 step "Baixando o código novo"
@@ -130,7 +139,42 @@ if ! git checkout --quiet "$TARGET_TAG" 2>&1; then
   die "Não consegui trocar para a versão $TARGET_TAG (parece haver mudanças locais que divergem).
      Rode 'git status' pra ver, ou peça ajuda. NÃO mexi no banco — está tudo como estava."
 fi
-[ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" codigo
+# Na SEGUNDA volta (depois do re-exec) estes dois passos ja foram
+# reportados. Reportar de novo faria a tela de quem esta olhando andar
+# PARA TRAS por um instante, e voltar atras numa barra de progresso le-se
+# como "deu errado e recomecou".
+[ -z "${DESKCOMM_UPDATE_REEXEC:-}" ] && [ -n "${DESKCOMM_AGENT_REPORT:-}" ] && eval "${DESKCOMM_AGENT_REPORT_CMD}" codigo
+
+# ── DAQUI PRA FRENTE, QUEM MANDA E A VERSAO NOVA ─────────────────────────────
+#
+# MEDIDO na instalacao real em 2026-09-13, e e um defeito de anos, nao de uma
+# entrega: a v1.17.15 trouxe uma pausa dos servicos antes de mexer no banco, e
+# depois de atualizar as tres pecas do Supabase estavam de pe havia duas horas e
+# meia. A pausa nao rodou.
+#
+# Por que: `source _common.sh` acontece na PRIMEIRA linha deste arquivo, e o
+# `git checkout` da versao nova so aqui, na etapa 3. Quem executa a atualizacao
+# e a versao ANTERIOR — aplicando o banco da versao nova. Ou seja, TODA correcao
+# do instalador chegava um update atrasada: a versao que traz o conserto era
+# instalada pela versao que ainda tem o defeito.
+#
+# E ha uma segunda aresta na mesma pedra: o `git checkout` troca o arquivo deste
+# script ENQUANTO o interpretador o le, e ele acompanha o arquivo por posicao em
+# BYTES. Arquivo novo de tamanho diferente = retomada no meio de uma linha.
+# Sobreviver a isso e sorte, nao desenho. O `exec` fecha as duas de uma vez.
+#
+# As flags nao sao enfeite:
+#   --to      o alvo ja foi decidido; redecidir arriscaria escolher outro
+#   --force   depois do checkout, HEAD JA E a tag alvo, e sem isto a segunda
+#             volta diria "voce ja esta na versao mais recente" e sairia sem
+#             tocar no banco — exatamente o passo que precisa rodar
+#   --skip-backup  o backup ja foi feito na primeira volta, e refaze-lo dobraria
+#             o tempo da atualizacao sem proteger mais ninguem
+if [ -z "${DESKCOMM_UPDATE_REEXEC:-}" ]; then
+  export DESKCOMM_UPDATE_REEXEC=1
+  c_ylw "Seguindo com o instalador da propria versao $TARGET_TAG."
+  exec bash "$KIT_DIR/update.sh" --to "$TARGET_TAG" --force --skip-backup
+fi
 
 # ── 4. Banco: schema + correções de dados (schema ANTES do app) ──────────────
 # O baseline é idempotente e auto-curativo. Re-aplicar numa base que JÁ existe
@@ -141,8 +185,34 @@ fi
 # pela string do app: numa instalação em Supabase próprio, com a role menor no
 # `.env` como recomendamos, este passo passava a falhar em silêncio a cada
 # atualização — e é o update.sh que entrega migration nova ao clone (issue #192).
+# ── NINGUÉM FALA COM O BANCO ENQUANTO ELE MUDA ───────────────────────────────
+#
+# Medido nesta instalação, no mesmo dia e com o mesmo arquivo:
+#   tudo de pé ................................ 113 travamentos
+#   CRM parado ................................  60 travamentos
+#   CRM + rest + realtime + studio parados ....   0 travamentos
+#
+# Travamento aqui não é lentidão: quando o `create policy` trava, o `drop` que
+# veio antes já valeu. A regra some, o banco nega a leitura em silêncio, e a
+# tela fica vazia — indistinguível de "não há nada aqui".
+#
+# Custa ~16s (medido: parar 10,3s, subir 6,0s) numa atualização cuja mediana
+# real é 308s e cuja variação natural entre duas rodadas foi de 785s. Fica
+# abaixo do ruído que já existe.
+#
+# O `trap` é o que impede um erro no meio de deixar a instalação pela metade:
+# qualquer saída — sucesso, erro ou interrupção — devolve as peças do Supabase.
+# EXIT nao basta: interrupcao (Ctrl+C, cron matando a rodada, reinicio da
+# maquina) nao passa por ele em todos os casos — e o desfecho seria a
+# instalacao com as pecas do banco paradas, que foi o que se mediu.
+trap restaurar_servicos EXIT INT TERM HUP
+
 step "Atualizando o banco de dados"
 if [ -f supabase/baseline.sql ]; then
+  # O aviso PRIMEIRO: entre pausar e anunciar, quem estivesse com a tela aberta
+  # veria o erro do navegador, que e o desfecho que esta onda existe para tirar.
+  manutencao_sobe
+  pausar_o_que_fala_com_o_banco
   # Extensões que o schema exige (idempotente; iguais ao install.sh).
   docker run --rm postgres:17-alpine psql "$(url_do_schema)" -c \
     "create extension if not exists vector with schema public; create extension if not exists citext with schema public; create extension if not exists pg_trgm with schema public;" \
@@ -166,6 +236,159 @@ if [ -f supabase/baseline.sql ]; then
     esac
   else
     c_grn "✓ banco atualizado (e conversas reorganizadas, se havia bagunça)."
+  fi
+
+  # ── O LOG DO BANCO FICA GUARDADO ──────────────────────────────────────────
+  #
+  # Ele era descartado: `raw` servia só para o filtro acima e morria com a
+  # função. O que o agente guarda em `system_update_runs.log_tail` é a CAUDA da
+  # atualização — Docker e reinício —, e o banco acontece antes disso.
+  #
+  # Medido em 2026-09-12, numa instalação real: duas regras de isolamento
+  # sumiram durante uma atualização, o funil ficou vazio para todo mundo, e não
+  # houve como saber por quê — a evidência tinha sido jogada fora. A única coisa
+  # que restou foi a hipótese.
+  printf '%s\n' "$raw" > "$PROJECT_DIR/.deskcomm-banco.log" 2>/dev/null || true
+
+  # ── E AS REGRAS DE ISOLAMENTO SÃO CONFERIDAS ──────────────────────────────
+  #
+  # ## Por que isto existe
+  #
+  # O baseline aplica cada regra como APAGAR e depois CRIAR — é o único jeito
+  # portável, porque o Postgres não tem `create or replace policy`. E esta
+  # atualização roda SEM parar em erro, de propósito, para um clone bagunçado
+  # conseguir se curar.
+  #
+  # As duas coisas juntas têm um desfecho ruim: se o "criar" falha, o "apagar"
+  # já valeu. A regra some, a atualização segue e reporta SUCESSO. Com a regra
+  # de leitura ausente e a segurança por linha ligada, o Postgres nega tudo —
+  # sem erro, sem aviso. A tela mostra uma lista vazia, que é indistinguível de
+  # "não há nada aqui".
+  #
+  # Medido: o dono de uma instalação descobriu horas depois, pelo funil vazio, e
+  # não pela atualização que tinha acabado de dizer "concluída com sucesso".
+  #
+  # ## A régua, e por que não é "toda regra que o arquivo cria"
+  #
+  # O baseline CRIA e depois APAGA a mesma regra de propósito em vários pontos —
+  # é assim que uma regra antiga vira três novas (`conversations_agent_write`
+  # virou insert/update/delete). Contar toda criação daria falso positivo em
+  # cima de decisão deliberada, e falso positivo derruba a confiança no aviso
+  # inteiro. Vale a ÚLTIMA operação de cada regra no arquivo: quem termina
+  # criada é esperada; quem termina apagada, não.
+  esperadas="$(awk '
+    match($0, /drop policy if exists "?[a-zA-Z0-9_]+"? on public\.[a-zA-Z0-9_]+/) {
+      linha = substr($0, RSTART, RLENGTH); acao = "drop"
+    }
+    match($0, /create policy "?[a-zA-Z0-9_]+"? on public\.[a-zA-Z0-9_]+/) {
+      linha = substr($0, RSTART, RLENGTH); acao = "create"
+    }
+    acao != "" {
+      gsub(/.*policy (if exists )?"?/, "", linha); gsub(/"? on public\./, "|", linha)
+      estado[linha] = acao; acao = ""
+    }
+    END { for (k in estado) if (estado[k] == "create") print k }
+  ' supabase/baseline.sql | sort -u)"
+
+  existentes="$(docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -t -A -F'|' -c \
+    "select p.polname, c.relname from pg_policy p join pg_class c on c.oid=p.polrelid
+       join pg_namespace n on n.oid=c.relnamespace where n.nspname='public';" 2>/dev/null | sort -u)"
+
+  faltando="$(comm -23 <(printf '%s\n' "$esperadas") <(printf '%s\n' "$existentes") || true)"
+
+  if [ -n "$faltando" ]; then
+    # ── RECRIAR AS QUE FALTAM, NUNCA REAPLICAR O ARQUIVO ─────────────────────
+    #
+    # ⚠️ Isto corrige o que este script fazia antes: reaplicar o baseline inteiro
+    # e conferir de novo. Aquilo era o que eu tinha feito no servidor, e a
+    # medição mostrou que NÃO FECHA — reaplicar não converge. A segunda passada
+    # devolveu `conversations_select` e levou embora `conversations_agent_insert`;
+    # a terceira trocou o conjunto outra vez. Cada passada sorteia, porque cada
+    # passada é a mesma corrida de APAGAR e CRIAR 92 vezes.
+    #
+    # Recriar só o que falta é um punhado de comandos rápidos, com muito menos
+    # superfície para travar. E roda com os serviços ainda PARADOS, que é a
+    # única janela sem disputa.
+    #
+    # E não é uma segunda cópia das 92 declarações: o comando sai do PRÓPRIO
+    # `baseline.sql`, recortado dele. Nada aqui sabe o que uma regra diz.
+    c_ylw "⚠ Faltaram regras de isolamento. Recriando exatamente as que faltam…"
+    faltam_arq="$PROJECT_DIR/.deskcomm-regras-faltando.txt"
+    printf '%s\n' "$faltando" > "$faltam_arq"
+
+    # A régua junta o comando INTEIRO — uma regra real ocupa várias linhas, e
+    # recortar só a primeira produziria SQL sem predicado e sem `;`, que falha
+    # deixando a impressão de que tentou. E vale a ÚLTIMA operação de cada
+    # regra: quem o arquivo cria e depois apaga de propósito não é recriada.
+    # /!\ O arquivo do que falta entra como PRIMEIRO ARQUIVO do awk, e nao por
+    # `-v`. MEDIDO: `awk -v var=valor` processa sequencias de escape no valor,
+    # entao um caminho do Windows (C:\Users\...) perde as barras e o awk le um
+    # arquivo que nao existe — devolvendo vazio, EM SILENCIO, como se nada
+    # faltasse. Numa VPS Linux nao doeria; o teste pegou antes de virar aposta.
+    recria="$(awk '
+      NR == FNR { sub(/[ \t\r]+$/, "", $0); if ($0 != "") quero[$0] = 1; next }
+      /create policy|drop policy if exists/ { buf = ""; coletando = 1 }
+      coletando { buf = buf $0 "\n" }
+      coletando && /;[ \t]*$/ {
+        coletando = 0
+        if (match(buf, /drop policy if exists "?[a-zA-Z0-9_]+"? on public\.[a-zA-Z0-9_]+/)) { k = substr(buf, RSTART, RLENGTH); acao = "drop" }
+        else if (match(buf, /create policy "?[a-zA-Z0-9_]+"? on public\.[a-zA-Z0-9_]+/)) { k = substr(buf, RSTART, RLENGTH); acao = "create" }
+        else next
+        gsub(/.*policy (if exists )?"?/, "", k); gsub(/"? on public\./, "|", k)
+        estado[k] = acao; if (acao == "create") texto[k] = buf
+      }
+      END { for (k in quero) if (estado[k] == "create") printf "%s", texto[k] }
+    ' "$faltam_arq" supabase/baseline.sql)"
+
+    if [ -n "$recria" ]; then
+      printf '%s\n' "$recria" | docker run --rm -i postgres:17-alpine \
+        psql "$(url_do_schema)" >> "$PROJECT_DIR/.deskcomm-banco.log" 2>&1 || true
+    fi
+    rm -f "$faltam_arq"
+
+    existentes="$(docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -t -A -F'|' -c \
+      "select p.polname, c.relname from pg_policy p join pg_class c on c.oid=p.polrelid
+         join pg_namespace n on n.oid=c.relnamespace where n.nspname='public';" 2>/dev/null | sort -u)"
+    faltando="$(comm -23 <(printf '%s\n' "$esperadas") <(printf '%s\n' "$existentes") || true)"
+  fi
+
+  if [ -n "$faltando" ]; then
+    c_red "⛔ REGRAS DE ISOLAMENTO AUSENTES — NÃO use o sistema até resolver."
+    c_red "   Sem elas o banco NEGA a leitura em silêncio: telas aparecem VAZIAS,"
+    c_red "   sem erro nenhum, e isso é indistinguível de 'não há dados'."
+    printf '%s\n' "$faltando" | sed 's/|/ na tabela /; s/^/   • /' | head -20
+    c_ylw "   O log do banco está em .deskcomm-banco.log — mande-o para o suporte."
+    c_ylw "   Para voltar ao estado anterior: bash restore.sh"
+    # ⛔ E A ATUALIZAÇÃO PARA AQUI.
+    #
+    # Antes ela seguia: imprimia este bloco vermelho e ia para o passo 5, que
+    # sobe o app com a imagem nova. O CRM voltava ao ar sem regra de isolamento,
+    # mostrando tela vazia para todo mundo — e o vermelho já tinha rolado para
+    # fora da tela. Foi assim que o dono da instalação descobriu pelo funil,
+    # horas depois, e não pela atualização.
+    #
+    # O `trap` (logo acima do passo do banco) devolve as peças do Supabase e
+    # deixa o CRM parado de propósito. Um CRM fora do ar é um problema visível
+    # que alguém resolve; um CRM no ar sem isolamento, não.
+    REGRAS_FALTANDO="$faltando"
+    exit 1
+  else
+    c_grn "✓ regras de isolamento conferidas ($(printf '%s\n' "$esperadas" | grep -c . ) declaradas, todas no lugar)."
+    # ── O BANCO RELIGA AQUI, e nao no fim do script ──────────────────────────
+    #
+    # MEDIDO na instalacao real em 2026-09-13: as pecas pararam as 03:10:18 e o
+    # script so terminou as 03:13:09. QUASE TRES MINUTOS sem o Supabase — e nao
+    # por falha: por DESENHO. A volta so acontecia no gatilho de saida, depois
+    # de baixar imagem, recriar conteiner e esperar o healthcheck do app.
+    #
+    # Nada disso precisa do Supabase parado. O que precisava era o DDL, e ele
+    # acabou na linha de cima — junto com a conferencia das regras, que e o
+    # unico motivo de esperar ate aqui em vez de religar antes.
+    #
+    # Fica no ramo do SUCESSO de proposito: com regra faltando o script sai no
+    # `exit 1` acima, e a volta das pecas vira responsabilidade do gatilho de
+    # saida — que religa o banco e deixa o CRM parado, como deve.
+    religar_o_supabase
   fi
 else
   c_ylw "⚠ supabase/baseline.sql não encontrado — pulei a parte do banco."
@@ -267,6 +490,19 @@ fi
 # external, but could not be found" — e este script roda sozinho pelo agent.sh,
 # então ninguém está lendo a tela para decifrar isso. Mesma função do install.sh.
 garantir_rede_do_proxy
+# ⛔ O AVISO DESCE AQUI, e nao no gatilho de saida.
+#
+# MEDIDO na atualizacao real para a v1.17.21: o gatilho roda depois de mais
+# quatro etapas — baixar imagem, recriar, conferir saude, conferir automacoes. E
+# o roteamento do aviso tem prioridade 500, ACIMA da regra do app. Resultado: o
+# CRM voltava ao ar e quem abrisse continuava vendo "estamos atualizando" por
+# minutos, com o sistema ja funcionando. Aviso que mente e pior que aviso nenhum:
+# a pessoa vai embora achando que o sistema esta fora.
+#
+# `restaurar_servicos` segue chamando o mesmo `manutencao_desce` — ele e
+# `docker rm -f ... || true`, idempotente de proposito, e la ele cobre o caminho
+# de ERRO, onde este ponto aqui nunca chega a ser alcancado.
+manutencao_desce
 dc up -d
 
 # O Caddyfile entra no container por bind mount de UM ARQUIVO, e bind mount de

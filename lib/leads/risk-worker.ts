@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { logger } from "@/lib/logger";
 
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
@@ -38,6 +39,12 @@ export interface ResultadoDaObservacao {
   falhasDeAtividade: number;
   /** Propostas de reativação criadas nesta passada. */
   propostas: number;
+  /**
+   * Gravacoes que falharam nesta passada. CONTADA, e nao engolida: sem este
+   * numero, trocar o `throw` por `continue` teria virado silencio — que e
+   * pior que o defeito que ele conserta.
+   */
+  falhasDeGravacao: number;
 }
 
 /**
@@ -96,6 +103,7 @@ export async function observaTravessias(
     silenciosas: 0,
     falhasDeAtividade: 0,
     propostas: 0,
+    falhasDeGravacao: 0,
   };
 
   for (const e of atuais) {
@@ -119,7 +127,26 @@ export async function observaTravessias(
       },
       { onConflict: "lead_id" },
     );
-    if (upErr) throw new Error(`observador de risco (gravação): ${upErr.message}`);
+    if (upErr) {
+      // ⛔ UMA LINHA RUIM CUSTA UMA LINHA.
+      //
+      // Antes este `throw` parava o laço, e o observador INTEIRO da organização
+      // morria na primeira travessia problemática — as demais nem chegavam a
+      // ser avaliadas. Medido em produção: um `since` no futuro derrubava a
+      // passada toda.
+      //
+      // ⛔ E NÃO É SILÊNCIO: a falha é CONTADA e registrada. Engolir seria
+      // trocar "para e grita" por "não faz e cala", que ninguém descobre — e é
+      // pior que o defeito original.
+      r.falhasDeGravacao += 1;
+      logger.error("risco.gravacao_falhou", {
+        organizationId,
+        leadId: e.leadId,
+        bucket: e.bucket,
+        motivo: upErr.message,
+      });
+      continue;
+    }
 
     if (!linha) {
       r.silenciosas += 1;

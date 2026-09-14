@@ -9,8 +9,8 @@ import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { escolherPrimeiroDiaCheio } from "./helpers/agenda-semana-integra";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
-import { escolherDiaDesenhado, irParaASemanaSeguinte } from "./helpers/agenda-semana-integra";
 import { enviarTextoFixoPendente } from "../../lib/followup/enviar-texto-fixo";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -97,7 +97,7 @@ async function person(f: Fixture, name = "Cliente Presença") {
     status: "open",
     assigned_to_user_id: f.user,
   });
-  return { contact, conversation };
+  return { contact, conversation, name };
 }
 async function appointment(
   f: Fixture,
@@ -286,14 +286,42 @@ test("Inbox marca cliente/conversa; detalhe antigo confirma presença com evidê
   await page.getByRole("link", { name: "Marcar compromisso", exact: true }).click();
   const panel = page.getByTestId("painel-de-marcacao");
   await expect(panel).toBeVisible();
-  await expect(page.getByLabel("Quem será atendido")).toHaveValue(p.contact);
+  // ⛔ NÃO é mais `getByLabel("Quem será atendido").toHaveValue(<uuid>)`. A
+  // escolha do cliente virou UM campo só ("Cliente do compromisso"), e quando
+  // há alguém escolhido não existe campo nenhum: o painel mostra o NOME e a
+  // saída para desfazer. O que este teste prova continua o mesmo — a entrada
+  // pelo Inbox chega com o cliente daquela conversa já preso.
+  //
+  // ⚠️ E procura FORA do `painel-de-marcacao`. O vínculo do cliente é IRMÃO do
+  // painel em `app/app/agenda/_client.tsx` (linhas 625 e 726), não filho dele —
+  // escopar no painel procura no lugar errado e falha com "element(s) not
+  // found" enquanto o cliente está na tela. Medido no CI em 2026-09-13.
+  const tirarOCliente = page.getByRole("button", { name: "Tirar o cliente" });
+  await expect(tirarOCliente).toBeVisible();
+  await expect(tirarOCliente.locator("..")).toContainText(p.name);
   await expect(page.getByLabel("Conversa vinculada (opcional)")).toHaveValue(p.conversation);
-  // Fecha o painel para navegar a grade; reabre pela mesma entrada contextual.
-  await page.keyboard.press("Escape");
-  const days = await irParaASemanaSeguinte(page);
-  await page.getByRole("button", { name: /novo agendamento/i }).click();
+  // ⛔ O PAINEL NÃO PODE SER FECHADO AQUI, E A RAZÃO É UM CONSERTO DELIBERADO.
+  //
+  // Este trecho fazia `Escape` + "ir para a semana seguinte" na grade + "Novo
+  // agendamento" — fechava o painel só para navegar. Em 2026-09-12 fechar o
+  // painel passou a SOLTAR o cliente e a conversa, de propósito: medido numa
+  // instalação real, "Novo agendamento" abria com o contato herdado de uma
+  // abertura anterior feita a partir da conversa dele, e quem não reparasse
+  // marcava no nome de outra pessoa (`app/app/agenda/_client.tsx`, o bloco do
+  // `onOpenChange`).
+  //
+  // Com o conserto em vigor, o caminho antigo grava `contact_id: null` — medido
+  // no CI em 2026-09-13. Não é regressão: é o teste exercitando a herança que
+  // foi eliminada. O que ele quer provar (a entrada pelo Inbox amarra o
+  // compromisso ao cliente) continua valendo, e agora é provado sem fechar
+  // nada: o painel tem o seu próprio calendário.
+  // O dia sai de `escolherPrimeiroDiaCheio`, e não de um `[data-disponivel]`
+  // colhido à mão: a cerca `agenda-spec-nao-escolhe-o-periodo-sozinha` cobra o
+  // helper porque hoje ENCOLHE — 16 vagas às 9h, 2 às 16h, zero das 17h em
+  // diante. Este caso precisa só do painel (a grade não entra na asserção), e é
+  // exatamente para isso que existe a variante "primeiro dia cheio".
   await page.getByRole("button", { name: /^Consulta de presença/ }).click();
-  await escolherDiaDesenhado(page, days);
+  await escolherPrimeiroDiaCheio(page);
   await page.locator('[data-testid^="horario-"]').first().click();
   const posted = page.waitForResponse(
     (r) => r.url().includes("/api/v1/agenda/agendamentos") && r.request().method() === "POST",

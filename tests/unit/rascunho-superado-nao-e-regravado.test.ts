@@ -51,7 +51,7 @@
  *     explicitamente, com `?? null`.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, sep } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -424,7 +424,12 @@ describe("nenhum chamador de produção decide a publicada pelo palpite", () => 
         p !== "lib/ai/agents/versoes-da-tela.ts" &&
         readFileSync(join(raiz, p), "utf8").includes("escolherVersoesDaTela("),
     )
-    .map((p) => relative(".", p));
+    // ⚠️ Nada de `relative()` aqui. `fontesDe` ja devolve caminho relativo
+    // com barra normal, e no Windows o `relative` do Node reescreve o separador:
+    // a varredura acha os dois arquivos certos e o controle positivo reprova
+    // assim mesmo, porque compara com barra. Lido como defeito do produto, e e
+    // so o separador de caminho da plataforma.
+    .map((p) => p.split(sep).join("/"));
 
   it("a sonda enxerga alguma coisa (controle positivo)", () => {
     // Sem isto, uma varredura que devolvesse zero arquivo — pasta renomeada,

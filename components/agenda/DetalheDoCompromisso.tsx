@@ -16,6 +16,7 @@ type Detalhe = {
   google_sync?: SyncDetail;
   id: string;
   title: string;
+  notes: string | null;
   starts_at: string;
   ends_at: string;
   time_zone: string;
@@ -140,6 +141,16 @@ export function DetalheDoCompromisso({
             <p data-testid="compromisso-horario">
               {formatoDeData.formatRange(new Date(a.starts_at), new Date(a.ends_at))}
             </p>
+            {a.notes ? (
+              /* Fica logo abaixo do horario porque e ai que quem vai atender
+                 olha antes da reuniao. `whitespace-pre-line` porque a pessoa
+                 escreve em linhas, e juntar tudo num paragrafo so apagaria a
+                 lista que ela fez. */
+              <div data-testid="compromisso-observacao" className="rounded-md border bg-surface p-3">
+                <p className="text-xs font-medium text-text-muted">{t("Observação")}</p>
+                <p className="mt-1 whitespace-pre-line text-sm">{a.notes}</p>
+              </div>
+            ) : null}
             <p>
               {t(
                 (
