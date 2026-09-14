@@ -2,6 +2,7 @@
 import { Draggable } from "@hello-pangea/dnd";
 import type { MouseEvent } from "react";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
@@ -45,11 +46,11 @@ interface KanbanCardProps {
   onOpen?: (leadId: string) => void;
 }
 
-function formatBRL(cents: number | null, currency: string | null): string | null {
+function formatBRL(cents: number | null, currency: string | null, idioma: string): string | null {
   if (cents == null) return null;
   const code = currency ?? "BRL";
   try {
-    return new Intl.NumberFormat("pt-BR", {
+    return new Intl.NumberFormat(idioma, {
       style: "currency",
       currency: code,
       maximumFractionDigits: 0,
@@ -82,7 +83,8 @@ export function KanbanCard({
   onOpen,
 }: KanbanCardProps) {
   const t = useT();
-  const value = formatBRL(card.valueCents, card.currency);
+  const tagDoIdioma = useTagDeIdioma();
+  const value = formatBRL(card.valueCents, card.currency, tagDoIdioma);
   const state = resolveCardState(card, t);
   const age = stageAgeLabel(card.hoursInStage, t);
 

@@ -3,6 +3,7 @@
 import { useWatch, type Control, type FieldValues, type Path } from "react-hook-form";
 
 import { parseReaisToCents, formatCentsBRL } from "@/lib/money";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 
 /**
  * Mostra, embaixo do campo, como o valor digitado foi entendido.
@@ -16,10 +17,11 @@ import { parseReaisToCents, formatCentsBRL } from "@/lib/money";
  * desiste de otimizar o formulário inteiro.
  */
 export function EcoDoValor<T extends FieldValues>({ control }: { control: Control<T> }) {
+  const idioma = useTagDeIdioma();
   const digitado = useWatch({ control, name: "valueReais" as Path<T> }) as unknown as
     | string
     | undefined;
   const centavos = parseReaisToCents(digitado ?? "");
   if (centavos === null) return null;
-  return <p className="text-xs text-muted-foreground">= {formatCentsBRL(centavos)}</p>;
+  return <p className="text-xs text-muted-foreground">= {formatCentsBRL(centavos, idioma)}</p>;
 }

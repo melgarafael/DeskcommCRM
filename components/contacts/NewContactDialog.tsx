@@ -85,7 +85,7 @@ export function NewContactDialog({ open, onOpenChange }: Props) {
             <Input id="name" {...form.register("name")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t("Email")}</Label>
             <Input id="email" type="email" {...form.register("email")} />
           </div>
           <div className="space-y-2">

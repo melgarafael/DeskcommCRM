@@ -2,6 +2,7 @@
 import { Droppable } from "@hello-pangea/dnd";
 import { useRef, type CSSProperties } from "react";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
@@ -35,9 +36,9 @@ interface StageColumnProps {
   onOpen?: (leadId: string) => void;
 }
 
-function formatBRL(cents: number): string {
+function formatBRL(cents: number, idioma: string): string {
   try {
-    return new Intl.NumberFormat("pt-BR", {
+    return new Intl.NumberFormat(idioma, {
       style: "currency",
       currency: "BRL",
       maximumFractionDigits: 0,
@@ -61,6 +62,7 @@ export function StageColumn({
   onOpen,
 }: StageColumnProps) {
   const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
 
   const idsVisiveis = leads.map((l) => l.id);
@@ -138,7 +140,7 @@ export function StageColumn({
 
       {totalCents > 0 && (
         <div className="border-b border-border px-3 py-1.5 text-[11px] tabular-nums text-text-muted">
-          {formatBRL(totalCents)}
+          {formatBRL(totalCents, tagDoIdioma)}
         </div>
       )}
 

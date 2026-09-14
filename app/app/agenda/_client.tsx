@@ -566,7 +566,7 @@ export function AgendaClient({
                   // <primeira pessoa>" enquanto oferecia a jornada de outra —
                   // e marcava na agenda da primeira, que não tinha jornada.
                   pessoas.find((p) => p.id === tipo.donoId) ??
-                  pessoas[0] ?? { id: "", nome: "Você", trilha: 1 }
+                  pessoas[0] ?? { id: "", nome: t("Você"), trilha: 1 }
                 }
                 tipo={tipo.nome}
                 duracaoMin={tipo.duracaoMin}
@@ -612,7 +612,7 @@ export function AgendaClient({
                   // o 422 voltasse, e desfazer aquilo é pior do que não deixar
                   // sair. O campo já está vermelho e explicado quando isto corta.
                   if (emailConvidadoInvalido) {
-                    return Promise.reject(new Error("e-mail do convidado inválido"));
+                    return Promise.reject(new Error(t("e-mail do convidado inválido")));
                   }
                   // `|| undefined` e não a string vazia: campo em branco tem de
                   // ficar FORA do corpo, senão o PATCH leria "" como "apague o
