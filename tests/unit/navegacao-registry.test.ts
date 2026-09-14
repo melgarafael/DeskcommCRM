@@ -111,11 +111,16 @@ describe("sidebarGroups", () => {
     //
     // A lista é EXATA de propósito. `toContain` deixaria um sexto item entrar
     // calado no sidebar e reabrir a mesma corrida por pixel.
+    //
+    // Comandas entrou como QUARTO, e a decisão é deliberada: é a tela de quem
+    // está no balcão com a cliente na frente, o uso mais diário do grupo. O que
+    // o hub absorve continua sendo o que se define uma vez (produtos, funis).
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
+      "/app/comandas",
     ]);
     expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub?.href).toBe("/app/crm");
   });
@@ -152,6 +157,7 @@ describe("hubSections", () => {
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
+      "/app/comandas",
       "/app/products",
       "/app/settings/tenant/pipelines",
     ]);
