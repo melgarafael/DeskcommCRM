@@ -142,6 +142,19 @@ export async function GET(request: NextRequest) {
     return redirectTo("/login/reset");
   }
 
+  // A handoff from Advomax already provisioned the CRM membership. Do not
+  // send this magic-link login through signup onboarding a second time.
+  if (type === "magiclink" && url.searchParams.get("next") === "/app") {
+    const { data: membership } = await supabase
+      .from("user_organizations")
+      .select("organization_id")
+      .eq("user_id", usuario.id)
+      .is("revoked_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (membership) return redirectTo("/app");
+  }
+
   // Foi convidado? Então NÃO ganha organização própria. Sem esta bifurcação,
   // quem clica no link do convite sem ter conta cria uma, cai aqui sem vínculo
   // nenhum, e `ensureTenantForUser` faz o que faria com qualquer visitante:
