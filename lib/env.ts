@@ -332,6 +332,7 @@ const schema = z.object({
   // Advomax bridge — opcional até o backend jurídico ser configurado.
   ADVOMAX_API_URL: z.string().optional().default(""),
   ADVOMAX_CRM_INTEGRATION_KEY: z.string().optional().default(""),
+  ADVOMAX_CRM_SERVICE_EMAIL: z.string().optional().default(""),
 
   // Marca da instalação (white-label) — ver lib/branding.ts.
   // Sem prefixo NEXT_PUBLIC_ de propósito: essas seriam queimadas no bundle

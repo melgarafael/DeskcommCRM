@@ -155,7 +155,14 @@ function filenameFor(type: string | null, mime: string | null): string {
 }
 
 async function marcarFalha(supabase: Awaited<ReturnType<typeof createClient>>, intake: unknown, requestId: string, motivo: string): Promise<Response> {
-  const row = intake as { id: string; organization_id: string };
-  await supabase.from("crm_document_intake" as never).update({ status: "failed", failure_reason: motivo } as never).eq("id", row.id).eq("organization_id", row.organization_id);
+  const row = intake as { id: string; organization_id: string; attempts?: number };
+  const attempts = (row.attempts ?? 0) + 1;
+  const terminal = attempts >= 5;
+  await supabase.from("crm_document_intake" as never).update({
+    status: terminal ? "failed" : "pending",
+    attempts,
+    next_attempt_at: new Date(Date.now() + Math.min(60, 2 ** attempts) * 60_000).toISOString(),
+    failure_reason: motivo,
+  } as never).eq("id", row.id).eq("organization_id", row.organization_id);
   return fail("bad_gateway", motivo, 502, { requestId });
 }

@@ -24005,16 +24005,23 @@ create table if not exists public.crm_document_intake (
   mime_type text not null default 'application/octet-stream',
   media_storage_path text not null,
   descricao text,
-  status text not null default 'pending' check (status in ('pending','uploaded','failed','ignored')),
+  status text not null default 'pending' check (status in ('pending','processing','uploaded','failed','ignored')),
   advomax_file_id bigint,
   requested_by uuid references auth.users(id) on delete set null,
   failure_reason text,
+  attempts integer not null default 0,
+  next_attempt_at timestamptz not null default now(),
+  claimed_at timestamptz,
+  claimed_by text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (organization_id, message_id)
 );
 create index if not exists idx_crm_document_intake_org_status
   on public.crm_document_intake (organization_id, status, created_at desc);
+create index if not exists idx_crm_document_intake_retry
+  on public.crm_document_intake (status, next_attempt_at)
+  where status in ('pending','processing');
 alter table public.crm_document_intake enable row level security;
 drop policy if exists crm_document_intake_select on public.crm_document_intake;
 create policy crm_document_intake_select on public.crm_document_intake

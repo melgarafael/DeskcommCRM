@@ -98,6 +98,7 @@ export const AUDIT_ACTIONS = [
   "conversation.released",
   "conversation.closed",
   "document_intake.created",
+  "document_intake.retrying",
   "document_intake.uploaded",
   "document_intake.failed",
   "contact.advomax_linked",
