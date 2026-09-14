@@ -21,8 +21,8 @@ describe("canal datafy — vocabulário e seam", () => {
     expect(caps.freeformOutsideWindow).toBe(false);
     expect(caps.banRisk).toBe(false);
     expect(caps.costPerMessage).toBe(true);
-    // Gestão de modelos ainda não exposta nesta primeira versão.
-    expect(caps.canManageTemplates).toBe(false);
+    // Modelos são os da Cloud API; o parceiro expõe o catálogo.
+    expect(caps.canManageTemplates).toBe(true);
   });
 
   it("o sessionRef vem da coluna própria do provider", () => {

@@ -59,7 +59,14 @@ const COR_DO_ESTADO: Record<string, string> = {
   DISABLED: "text-muted-foreground",
 };
 
-export function TemplatesParceiroClient() {
+/**
+ * Modelos do parceiro. `rota` permite reusar o MESMO componente para um segundo
+ * parceiro Graph-compatível sem duplicar a tela — o default é a rota do parceiro
+ * por credencial, e a aba nova passa a dela.
+ */
+export function TemplatesParceiroClient({
+  rota = "/api/v1/channels/partner/templates",
+}: { rota?: string } = {}) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const qc = useQueryClient();
@@ -82,19 +89,14 @@ export function TemplatesParceiroClient() {
   const nVariaveis = contarVariaveis(corpo);
 
   const lista = useQuery({
-    queryKey: ["partner-templates"],
+    queryKey: ["partner-templates", rota],
     queryFn: async () =>
-      apiClient.get<{ data: { templates: TemplateParceiro[] } }>(
-        "/api/v1/channels/partner/templates",
-      ),
+      apiClient.get<{ data: { templates: TemplateParceiro[] } }>(rota),
   });
 
   const acao = useMutation({
     mutationFn: async (corpoReq: Record<string, unknown>) =>
-      apiClient.post<{ data: { sincronizadas: number; total: number } }>(
-        "/api/v1/channels/partner/templates",
-        corpoReq,
-      ),
+      apiClient.post<{ data: { sincronizadas: number; total: number } }>(rota, corpoReq),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["partner-templates"] });
       // Invalida também o seletor do inbox: sem isto o operador sincroniza aqui,

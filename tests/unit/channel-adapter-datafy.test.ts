@@ -5,13 +5,18 @@ vi.mock("@/lib/channels/graph-parceiro/credentials", () => ({
   resolveGraphPartnerCreds: vi.fn(),
   graphPartnerGraphBase: () => "https://cloud.example.test/v1",
 }));
+vi.mock("@/lib/channels/meta/send-template-for-session", () => ({
+  sendTemplateForSession: vi.fn(),
+}));
 
 import { datafyAdapter } from "@/lib/channels/adapters/datafy";
 import { resolveGraphPartnerCreds } from "@/lib/channels/graph-parceiro/credentials";
+import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
 import type { OutboundEnvelope } from "@/lib/channels/types";
 
 const CREDS = {
   phoneNumberId: "106540352242922",
+  wabaId: "366634483210360",
   token: "sk_live_abc",
   rootUrl: "https://cloud.example.test",
   source: "session" as const,
@@ -70,6 +75,29 @@ describe("adapter datafy", () => {
       }),
     );
     await expect(datafyAdapter.send(envelope())).rejects.toThrow(/datafy_131047/);
+  });
+
+  it("sendTemplate usa o transporte do parceiro (host + token), não o da Meta", async () => {
+    vi.mocked(sendTemplateForSession).mockResolvedValue("wamid.T");
+
+    const r = await datafyAdapter.sendTemplate!({
+      organizationId: "org-1",
+      sessionRef: "106540352242922",
+      to: "5531999998888",
+      name: "pedido_confirmado",
+      language: "pt_BR",
+      values: { "1": "João" },
+    });
+
+    expect(r.externalId).toBe("wamid.T");
+    const chamada = vi.mocked(sendTemplateForSession).mock.calls[0];
+    expect(chamada?.[1].transport).toEqual({
+      phoneNumberId: "106540352242922",
+      token: "sk_live_abc",
+      graphBase: "https://cloud.example.test/v1",
+      errorPrefix: "datafy",
+    });
+    expect(chamada?.[1].organizationId).toBe("org-1");
   });
 
   it("checkHealth mapeia 401 para FAILED e rede para reachable=false", async () => {
