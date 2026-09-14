@@ -13,6 +13,7 @@ import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/Marca
 import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
+import { advomaxAppUrl } from "@/lib/advomax/navigation";
 
 const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 
@@ -310,6 +311,19 @@ export function SidebarContent({
             {!collapsed && <span className="truncate">{t(rodape.label)}</span>}
           </Link>
         )}
+        <a
+          href={advomaxAppUrl("/home")}
+          target="_blank"
+          rel="noreferrer"
+          title={collapsed ? t("Abrir Advomax Gestão") : undefined}
+          className={cn(
+            "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
+            collapsed && "justify-center px-2",
+          )}
+        >
+          <ArrowRight size={18} aria-hidden />
+          {!collapsed && <span className="truncate">{t("Abrir Advomax Gestão")}</span>}
+        </a>
         <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
         {showCollapseControl && (
           <button
