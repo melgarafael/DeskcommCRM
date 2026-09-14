@@ -296,3 +296,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260911120000` | `0236_opt_in_de_chamada_de_voz` | A chamada de voz nasce DESLIGADA por organização (`org_voice_calls`), com quem aceitou o risco e quando. Ausência de linha é "desligado" — aplicar não liga nada para ninguém. Leitura org-flat, escrita de admin no banco. Baseline INSTALL/UPDATE idempotente. |
 
 | `20260914090000` | `0239_crm_document_intake` | Fila durável para atribuir mídia recebida no WhatsApp a uma Pessoa do Advomax, com RLS por organização, deduplicação por mensagem e estado de upload. |
+| `20260914100000` | `0240_advomax_contact_links` | Vínculo explícito e único entre contato CRM e Pessoa Advomax, com estados de reconciliação e RLS por organização. |

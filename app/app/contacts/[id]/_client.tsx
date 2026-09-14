@@ -24,6 +24,7 @@ import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
+import { AdvomaxLinkCard } from "@/components/contacts/AdvomaxLinkCard";
 
 interface Props {
   contactId: string;
@@ -127,6 +128,10 @@ export function ContactDetailClient({ contactId }: Props) {
           podeDecidir={Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent)}
           aoDecidir={() => void q.refetch()}
         />
+      )}
+
+      {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
+        <AdvomaxLinkCard contactId={contactId} canManage={Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager)} />
       )}
 
       <Tabs defaultValue="overview">
