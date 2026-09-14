@@ -247,6 +247,26 @@ export const NAV_CATALOG = [
     // na navegação" — a porta existia, era outra.
   },
   {
+    // O catálogo financeiro: contas, formas de pagamento e plano de contas.
+    //
+    // Fica em "Sua empresa" pelo mesmo motivo dos tipos de agendamento — é onde
+    // o negócio se DESCREVE, não onde o dia acontece. E vem ANTES de qualquer
+    // tela de venda porque a forma de pagamento é quem decide em que conta a
+    // entrada cai quando uma comanda é fechada: sem esta camada, a comanda não
+    // tem onde depositar.
+    href: "/app/settings/tenant/financeiro",
+    label: "Financeiro",
+    description: "Contas, formas de pagamento e como cada lançamento é classificado.",
+    icon: "ChartBar",
+    group: "organizacao",
+    section: "Sua empresa",
+    // Leitura para a organização, escrita para manager+ (é a RLS que decide).
+    // `viewer` aqui e não `manager`: quem só olha precisa conferir para onde o
+    // dinheiro vai, e esconder a tela não esconde o dado — só torna a
+    // conferência impossível.
+    minRole: "viewer",
+  },
+  {
     // Estava enterrado em Configurações e ninguém sabia que existia — o achado
     // que originou esta reorganização. A URL não muda; só o lugar na navegação.
     //
