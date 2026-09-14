@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 
 type LinkRow = { id: string; pessoa_codigo: number; status: "pending" | "linked" | "conflict" | "unlinked" };
+type ProcessoRow = { codigo: number; pasta: string | null; numero: string | null; status: number; ultimaMovimentacao: string | null; tribunal: string | null };
 
 export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: string; canManage?: boolean }) {
   const t = useT();
@@ -16,6 +17,8 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   const [codigo, setCodigo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [processos, setProcessos] = useState<ProcessoRow[]>([]);
+  const [processosLoading, setProcessosLoading] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -27,6 +30,16 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
     }).catch(() => undefined);
     return () => { ativo = false; };
   }, [contactId]);
+
+  useEffect(() => {
+    if (link?.status !== "linked") return;
+    let ativo = true;
+    setProcessosLoading(true);
+    void fetch(`/api/v1/contacts/${contactId}/advomax-link/processos`).then((r) => r.ok ? r.json() : null).then((body) => {
+      if (ativo) setProcessos(Array.isArray(body?.data) ? body.data as ProcessoRow[] : []);
+    }).catch(() => undefined).finally(() => { if (ativo) setProcessosLoading(false); });
+    return () => { ativo = false; };
+  }, [contactId, link?.status]);
 
   async function vincular() {
     const pessoa = Number(codigo);
@@ -41,6 +54,19 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
     finally { setSaving(false); }
   }
 
+  async function desvincular() {
+    if (!canManage || !window.confirm(t("Desfazer o vínculo com o cadastro jurídico?"))) return;
+    setSaving(true); setErro(null);
+    try {
+      const response = await fetch(`/api/v1/contacts/${contactId}/advomax-link`, { method: "DELETE" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error?.message || t("Não foi possível desfazer o vínculo."));
+      setLink(body.data as LinkRow | null);
+      setProcessos([]);
+    } catch (e) { setErro(e instanceof Error ? e.message : t("Não foi possível desfazer o vínculo.")); }
+    finally { setSaving(false); }
+  }
+
   return <Card className="space-y-3 p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div><h2 className="font-semibold">{t("Cadastro jurídico")}</h2><p className="text-sm text-muted-foreground">{t("Vincule este contato a uma Pessoa do Advomax para compartilhar contexto e documentos.")}</p></div>
@@ -49,8 +75,18 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
     <div className="flex flex-col gap-2 sm:flex-row">
       <Input inputMode="numeric" value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder={t("Código da Pessoa") } aria-label={t("Código da Pessoa") } disabled={!canManage} />
       <Button onClick={vincular} disabled={!canManage || saving}>{saving ? t("Salvando…") : t("Vincular Pessoa")}</Button>
+      {link?.status === "linked" && canManage && <Button variant="outline" onClick={desvincular} disabled={saving}>{t("Desvincular")}</Button>}
     </div>
     {!canManage && <p className="text-xs text-muted-foreground">{t("Somente gerentes podem confirmar este vínculo.")}</p>}
     {erro && <p role="alert" className="text-sm text-error-fg">{erro}</p>}
+    {link?.status === "linked" && <div className="border-t pt-3">
+      <h3 className="text-sm font-semibold">{t("Processos vinculados")}</h3>
+      {processosLoading && <p className="mt-1 text-sm text-muted-foreground">{t("Consultando o Advomax…")}</p>}
+      {!processosLoading && processos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum processo ativo encontrado para esta Pessoa.")}</p>}
+      {processos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{processos.map((processo) => <li key={processo.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
+        <span><strong>{processo.pasta || processo.numero || `#${processo.codigo}`}</strong>{processo.tribunal && <span className="ml-2 text-muted-foreground">{processo.tribunal}</span>}</span>
+        <a className="text-primary underline-offset-2 hover:underline" href={`https://advomax.com.br/fichaProcesso/${processo.codigo}`} target="_blank" rel="noreferrer">{t("Abrir ficha")}</a>
+      </li>)}</ul>}
+    </div>}
   </Card>;
 }
