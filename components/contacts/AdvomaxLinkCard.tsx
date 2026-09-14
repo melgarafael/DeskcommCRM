@@ -30,6 +30,7 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   const [documentos, setDocumentos] = useState<DocumentoRow[]>([]);
   const [linkIndisponivel, setLinkIndisponivel] = useState(false);
   const [processosIndisponiveis, setProcessosIndisponiveis] = useState(false);
+  const [processoLinksIndisponiveis, setProcessoLinksIndisponiveis] = useState(false);
   const [documentosIndisponiveis, setDocumentosIndisponiveis] = useState(false);
   const [tentativa, setTentativa] = useState(0);
 
@@ -62,14 +63,15 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   }, [contactId, link?.status, tentativa]);
 
   useEffect(() => {
-    if (link?.status !== "linked") { setProcessoLinks([]); return; }
+    if (link?.status !== "linked") { setProcessoLinks([]); setProcessoLinksIndisponiveis(false); return; }
     let ativo = true;
+    setProcessoLinksIndisponiveis(false);
     void fetch(`/api/v1/contacts/${contactId}/advomax-link/processo-links`).then(async (r) => {
       if (!r.ok) throw new Error("vínculos indisponíveis");
       return r.json();
     }).then((body) => {
       if (ativo) setProcessoLinks(Array.isArray(body?.data) ? body.data as ProcessoLinkRow[] : []);
-    }).catch(() => { if (ativo) setProcessoLinks([]); });
+    }).catch(() => { if (ativo) setProcessoLinksIndisponiveis(true); });
     return () => { ativo = false; };
   }, [contactId, link?.status, tentativa]);
 
@@ -189,8 +191,9 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
           <Input inputMode="numeric" value={novoProcessoCodigo} onChange={(e) => setNovoProcessoCodigo(e.target.value)} placeholder={t("Código do processo")} aria-label={t("Código do processo")} />
           <Button variant="outline" onClick={vincularProcesso} disabled={salvandoProcesso}>{salvandoProcesso ? t("Salvando…") : t("Adicionar vínculo")}</Button>
         </div>}
-        {processoLinks.length === 0 && <p className="mt-2 text-sm text-muted-foreground">{t("Nenhum processo fixado neste contato.")}</p>}
-        {processoLinks.length > 0 && <ul className="mt-2 space-y-1 text-sm">{processoLinks.map((processo) => <li key={processo.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
+        {processoLinksIndisponiveis && <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span>{t("Os vínculos fixados estão temporariamente indisponíveis.")}</span><Button variant="outline" size="sm" onClick={() => setTentativa((value) => value + 1)}>{t("Tentar novamente")}</Button></div>}
+        {!processoLinksIndisponiveis && processoLinks.length === 0 && <p className="mt-2 text-sm text-muted-foreground">{t("Nenhum processo fixado neste contato.")}</p>}
+        {!processoLinksIndisponiveis && processoLinks.length > 0 && <ul className="mt-2 space-y-1 text-sm">{processoLinks.map((processo) => <li key={processo.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
           <strong>#{processo.processo_codigo}</strong>
           <span className="flex items-center gap-2"><a className="text-primary underline-offset-2 hover:underline" href={processo.advomax_url || advomaxProcessUrl(processo.processo_codigo)} target="_blank" rel="noreferrer">{t("Abrir ficha")}</a>{canManage && <Button variant="ghost" size="sm" onClick={() => void desvincularProcesso(processo.processo_codigo)} disabled={salvandoProcesso}>{t("Remover")}</Button>}</span>
         </li>)}</ul>}
