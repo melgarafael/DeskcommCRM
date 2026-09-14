@@ -298,5 +298,6 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260914090000` | `0239_crm_document_intake` | Fila durável para atribuir mídia recebida no WhatsApp a uma Pessoa do Advomax, com RLS por organização, deduplicação por mensagem e estado de upload. |
 | `20260914100000` | `0240_advomax_contact_links` | Vínculo explícito e único entre contato CRM e Pessoa Advomax, com estados de reconciliação e RLS por organização. |
 | `20260914110000` | `0241_crm_document_intake_retry` | Fila recuperável de arquivamento documental CRM, com claim e backoff. |
-| `20260914130000` | `0243_crm_document_intake_actor` | Persiste o e-mail do atendente que iniciou a atribuição para retries multi-escritório sem identidade técnica global. |
 | `20260914120000` | `0242_advomax_organization_mapping` | Mapeia uma organização CRM ao escritório Advomax para SSO e provisionamento. |
+| `20260914130000` | `0243_crm_document_intake_actor` | Persiste o e-mail do atendente que iniciou a atribuição para retries multi-escritório sem identidade técnica global. |
+| `20260914140000` | `0244_advomax_contact_process_links` | Referência única e tenant-safe entre Contato CRM e Processo Advomax; não replica dossiê jurídico. |
