@@ -3,13 +3,15 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { Archive, ArrowBendUpLeft, Check, Checks, Robot, WarningOctagon } from "@/lib/ui/icons";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
+import { DocumentIntakeDialog } from "@/components/inbox/DocumentIntakeDialog";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -55,12 +57,14 @@ export function MessageBubble({
   citada,
   viewerUserId,
 }: Props) {
+  const [intakeOpen, setIntakeOpen] = useState(false);
   const localeDaData = useLocaleDeData();
   const t = useT();
   const isOutbound = message.direction === "outbound";
   const time = format(new Date(message.sent_at), "HH:mm", { locale: localeDaData });
   const isFailed = message.status === "failed";
   const hasMedia = Boolean(message.media_url || message.media_storage_path);
+  const canArchiveDocument = ["document", "image"].includes(message.type);
   const isContact = message.type === "contact";
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
@@ -247,6 +251,16 @@ export function MessageBubble({
             <span title={t("O autor editou esta mensagem")}>{t("editada")}</span>
           )}
           <span>{time}</span>
+          {!isOutbound && canArchiveDocument && Boolean(message.media_storage_path) && !apagada && (
+            <button
+              type="button"
+              onClick={() => setIntakeOpen(true)}
+              aria-label={t("Arquivar documento no Advomax")}
+              className="rounded p-0.5 text-current/70 hover:bg-black/10 hover:text-current"
+            >
+              <Archive size={11} aria-hidden />
+            </button>
+          )}
           {showCitationButton && (
             <CitationButton citations={citations} messageId={message.id} />
           )}
@@ -295,6 +309,7 @@ export function MessageBubble({
           <ArrowBendUpLeft size={14} />
         </button>
       )}
+      <DocumentIntakeDialog messageId={message.id} open={intakeOpen} onOpenChange={setIntakeOpen} />
     </div>
   );
 }

@@ -329,6 +329,10 @@ const schema = z.object({
     .url()
     .default("http://localhost:3000"),
 
+  // Advomax bridge — opcional até o backend jurídico ser configurado.
+  ADVOMAX_API_URL: z.string().optional().default(""),
+  ADVOMAX_CRM_INTEGRATION_KEY: z.string().optional().default(""),
+
   // Marca da instalação (white-label) — ver lib/branding.ts.
   // Sem prefixo NEXT_PUBLIC_ de propósito: essas seriam queimadas no bundle
   // durante o build da imagem, e o self-hoster roda uma imagem pré-buildada.
