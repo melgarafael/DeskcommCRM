@@ -69,6 +69,26 @@ export const CHANNEL_CAPABILITIES: Record<ChannelProvider, ChannelCapabilities> 
     groups: "limited",
     costPerMessage: true,
   },
+  // Parceiro homologado pela Meta que espelha a Cloud API: a WABA é da Meta, a
+  // janela de 24h é da Meta e o custo é da Meta. O intermediário muda o
+  // TRANSPORTE (base URL, token), não o que o WhatsApp permite — então as
+  // capabilities são as do canal oficial.
+  //
+  // `canManageTemplates: false` é o recorte desta PRIMEIRA versão: o transporte
+  // funciona (enviar/receber/saúde), mas a gestão de modelos ainda não foi
+  // exposta para este canal, e declarar `true` mostraria uma tela que não salva.
+  // `requiresTemplates: true` continua porque a regra da Meta é real: fora da
+  // janela de 24h, só modelo aprovado passa.
+  datafy: {
+    freeformOutsideWindow: false,
+    requiresTemplates: true,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: 6000,
+    voiceNote: "opus-only",
+    groups: "limited",
+    costPerMessage: true,
+  },
 };
 
 /**
@@ -90,6 +110,7 @@ export const DEFAULT_CHANNEL_PROVIDER: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_WAHA: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
+export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 
 export function capabilitiesOf(provider: ChannelProvider): ChannelCapabilities {
   const caps = CHANNEL_CAPABILITIES[provider];

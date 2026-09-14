@@ -18,8 +18,12 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { verifyGraphPartnerSignature } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
+import { lerEnvelopeMeta } from "./meta/envelope";
+import { ingestMetaInbound } from "./meta/ingest";
+import { parseMetaWebhook } from "./meta/webhook";
 import {
   atualizarEspelhoDoTemplate,
   avisoDoEvento,
@@ -70,7 +74,7 @@ export type InboundWebhookOutcome =
  * trabalho — e respondido sem nomear provider do lado de fora.
  */
 export function acceptsInboundWebhook(provider: string): boolean {
-  return provider === CHANNEL_PROVIDER_ZERNIO;
+  return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_DATAFY;
 }
 
 export async function handleInboundWebhook(
@@ -82,6 +86,8 @@ export async function handleInboundWebhook(
   switch (provider) {
     case CHANNEL_PROVIDER_ZERNIO:
       return zernioInbound(admin, input);
+    case CHANNEL_PROVIDER_DATAFY:
+      return datafyInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -194,4 +200,78 @@ async function zernioInbound(
     payload,
   });
   return { ok: true, body: { ...r } };
+}
+
+/**
+ * Entrada do canal Datafy.
+ *
+ * O payload é IDÊNTICO ao da Meta (o Datafy espelha a Cloud API), então o parse
+ * reusa `lerEnvelopeMeta` + `parseMetaWebhook` — a parte específica do Datafy é
+ * só a assinatura, cujo esquema é outro (header `x-datafy-signature-256`, HMAC
+ * de `"{timestamp}.{corpo}"`).
+ *
+ * A assinatura do Datafy é OPCIONAL (só existe quando ativada no painel, com um
+ * secret `whsec_`). Nesta primeira versão a conexão coleta só o token, então o
+ * que fica guardado NÃO é um `whsec_` e a verificação é pulada — a proteção é a
+ * URL secreta do webhook (o `webhook_path_token`). Se um dia o `whsec_` for
+ * guardado, a verificação passa a valer sozinha (o `startsWith` abaixo).
+ */
+async function datafyInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+): Promise<InboundWebhookOutcome> {
+  const assinatura = input.headers.get("x-datafy-signature-256");
+  if (assinatura && input.secret?.startsWith("whsec_")) {
+    const timestamp = input.headers.get("x-datafy-timestamp");
+    if (
+      !timestamp ||
+      input.secret.length < MIN_SECRET_LEN ||
+      !verifyGraphPartnerSignature(input.rawBody, assinatura, timestamp, input.secret)
+    ) {
+      return { ok: false, code: "unauthorized", message: "bad_signature" };
+    }
+  }
+
+  const leitura = lerEnvelopeMeta(input.rawBody);
+  if (!leitura.ok) {
+    if (leitura.motivo === "json_invalido") {
+      return { ok: false, code: "invalid_json", message: "invalid_json" };
+    }
+    return {
+      ok: false,
+      code: "contrato_violado",
+      message: `payload fora do contrato do canal: ${leitura.campos.join(", ")}`,
+    };
+  }
+
+  const eventos = parseMetaWebhook(leitura.envelope);
+  const desfechos: string[] = [];
+  const agora = new Date().toISOString();
+
+  for (const e of eventos) {
+    if (e.kind === "inbound_message") {
+      const r = await ingestMetaInbound(admin, e, {
+        organizationId: input.session.organization_id,
+        // A sessão já veio do token do webhook: não há coluna de número oficial
+        // para reencontrá-la, e essa é justamente a diferença do Datafy.
+        channelSessionId: input.session.id,
+      });
+      desfechos.push(r.status);
+      continue;
+    }
+    if (e.kind === "message_status") {
+      await admin
+        .from("messages")
+        .update({ status: e.status === "failed" ? "failed" : "sent", updated_at: agora })
+        .eq("organization_id", input.session.organization_id)
+        .eq("external_id", e.externalId);
+      desfechos.push("status");
+      continue;
+    }
+    // `template_status`: o canal ainda não espelha modelos aqui (ver
+    // `canManageTemplates`). Ignorar é o desfecho certo — não há o que atualizar.
+    desfechos.push("ignorado");
+  }
+
+  return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
 }

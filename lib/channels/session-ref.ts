@@ -14,7 +14,8 @@
 export type ChannelSessionRef =
   | { provider: "waha"; waha_session_name: string }
   | { provider: "meta_cloud"; meta_phone_number_id: string }
-  | { provider: "zernio"; zernio_account_id: string };
+  | { provider: "zernio"; zernio_account_id: string }
+  | { provider: "datafy"; datafy_phone_number_id: string };
 
 /**
  * Colunas que um `select` do PostgREST precisa trazer para `resolveSessionRef`
@@ -22,12 +23,17 @@ export type ChannelSessionRef =
  * nomeia coluna de provider, e ela some da feature junto com a decisão.
  */
 export const CHANNEL_SESSION_REF_COLUMNS =
-  "provider, waha_session_name, meta_phone_number_id, zernio_account_id";
+  "provider, waha_session_name, meta_phone_number_id, zernio_account_id, datafy_phone_number_id";
 
 export function resolveSessionRef(session: ChannelSessionRef): string {
   switch (session.provider) {
     case "meta_cloud":
       return session.meta_phone_number_id;
+    case "datafy":
+      // O `phone_number_id` da WABA, como no canal oficial — mas resolvido pela
+      // coluna do Datafy, porque os dois provedores podem conviver na mesma
+      // instalação e endereçam servidores diferentes.
+      return session.datafy_phone_number_id;
     case "waha":
       return session.waha_session_name;
     // O `accountId` que o provider devolve ao conectar a WABA. NÃO é o

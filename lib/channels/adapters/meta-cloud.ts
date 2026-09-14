@@ -20,7 +20,7 @@
  *    o outro canal converte por nós, este não.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
-import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
+import { cloudContactPayload, cloudMediaPayload, toE164Digits } from "../cloud/payload";
 import { resolveMetaCreds } from "../meta/credentials";
 import type {
   ChannelAdapter,
@@ -29,11 +29,6 @@ import type {
   OutboundEnvelope,
   RecipientInput,
 } from "../types";
-
-/** Só dígitos. `+55 (31) 99896-6398` → `5531998966398`. */
-function toE164Digits(raw: string): string {
-  return raw.replace(/\D/g, "");
-}
 
 /**
  * Credencial do ambiente — o caminho de instalação de número único.
@@ -46,42 +41,6 @@ function toE164Digits(raw: string): string {
  */
 import { metaCredsFromEnv } from "../meta/credentials";
 export { metaCredsFromEnv as getMetaCreds };
-
-/** `kind: "contact"` → objeto `contacts` da Cloud API. */
-function contactPayload(env: OutboundEnvelope): Record<string, unknown> | null {
-  if (env.kind !== "contact" || !env.contact) return null;
-  return {
-    type: "contacts",
-    contacts: metaContactsPayload(env.contact.fullName, env.contact.phoneNumber),
-  };
-}
-
-/** `kind` do envelope → objeto de mídia da Cloud API. */
-function mediaPayload(env: OutboundEnvelope): Record<string, unknown> | null {
-  if (!env.media) return null;
-  const link = env.media.url;
-  const caption = env.media.caption ?? undefined;
-
-  switch (env.kind) {
-    case "image":
-      return { type: "image", image: { link, ...(caption ? { caption } : {}) } };
-    case "video":
-      return { type: "video", video: { link, ...(caption ? { caption } : {}) } };
-    case "audio":
-      // `voice: true` é o que faz virar BOLHA DE VOZ. Sem ele, anexo de música.
-      // Exige ogg/opus — a Meta não converte, diferente do outro canal.
-      return { type: "audio", audio: { link, voice: true } };
-    default:
-      return {
-        type: "document",
-        document: {
-          link,
-          ...(env.media.filename ? { filename: env.media.filename } : {}),
-          ...(caption ? { caption } : {}),
-        },
-      };
-  }
-}
 
 export const metaCloudAdapter: ChannelAdapter = {
   provider: "meta_cloud",
@@ -197,8 +156,8 @@ export const metaCloudAdapter: ChannelAdapter = {
     if (!creds) return { externalId: null };
 
     const corpo =
-      contactPayload(envelope) ??
-      mediaPayload(envelope) ??
+      cloudContactPayload(envelope) ??
+      cloudMediaPayload(envelope) ??
       { type: "text", text: { body: envelope.body ?? "" } };
 
     await envelope.beforeSend?.();

@@ -42,6 +42,11 @@ const FONTE: Record<ChannelProvider, FonteDeTemplates | null> = {
   waha: null,
   meta_cloud: "oficial",
   zernio: "parceiro",
+  // O canal exige modelo fora da janela de 24h, mas esta primeira versão ainda
+  // não expõe a gestão de modelos dele — ver `canManageTemplates` em
+  // `capabilities.ts`. `null` = a tela não oferece seletor para este canal, em
+  // vez de mandar o operador para uma lista que não existe.
+  datafy: null,
 };
 
 /** `null` quando este canal não trabalha com definições aprovadas. */
