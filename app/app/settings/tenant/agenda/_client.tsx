@@ -3,6 +3,7 @@ import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
 
 import { useT } from "@/hooks/i18n/useT";
+import { parseReaisToCents } from "@/lib/money";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -27,6 +28,7 @@ export interface TipoRow {
   is_active: boolean;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
+  default_price_cents: number | null;
 }
 
 /**
@@ -463,6 +465,15 @@ export function TiposDeAgendamentoClient({
                           String(dados.get("default_owner_user_id") ?? "") || null,
                         // Caixa desmarcada não aparece no `FormData` — daí a
                         // comparação, e não um `Boolean(...)` do valor ausente.
+                        // Vazio é uma ESCOLHA (voltar a digitar na hora), e
+                        // por isso vira `null` em vez de sumir do corpo: omitir
+                        // deixaria o preço antigo gravado e a tela mentindo.
+                        default_price_cents: (() => {
+                          const bruto = String(dados.get("default_price_cents") ?? "").trim();
+                          if (bruto === "") return null;
+                          const cents = parseReaisToCents(bruto);
+                          return cents === null ? null : cents;
+                        })(),
                         reminder_enabled: dados.get("reminder_enabled") === "on",
                         // O campo desabilitado também não aparece, e omitir é o
                         // certo: desligar o aviso não pode apagar a antecedência
@@ -517,7 +528,24 @@ export function TiposDeAgendamentoClient({
                     ))}
                   </select>
                 </label>
-                <LembreteDoCompromisso tipo={tipo} />
+                <label className="flex flex-col gap-1 text-xs text-text-muted">
+          {t("Preço padrão")}
+          <input
+            name="default_price_cents"
+            type="text"
+            inputMode="decimal"
+            placeholder={t("digite na hora")}
+            defaultValue={
+              tipo.default_price_cents === null ? "" : (tipo.default_price_cents / 100).toFixed(2)
+            }
+            data-testid={`editar-preco-${tipo.id}`}
+            className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text"
+          />
+          <span className="text-[11px] text-text-muted">
+            {t("Opcional. Vira o valor sugerido na comanda, e pode ser mudado lá.")}
+          </span>
+        </label>
+        <LembreteDoCompromisso tipo={tipo} />
                 <div className="flex justify-end sm:col-span-3">
                   <Button type="submit" size="sm" data-testid={`salvar-${tipo.id}`} disabled={salvando}>
                     {salvando ? t("Salvando…") : t("Salvar")}

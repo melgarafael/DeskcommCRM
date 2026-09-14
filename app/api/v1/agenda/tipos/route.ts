@@ -112,6 +112,15 @@ const camposDoTipo = {
    * o default da 0177 é 1440) segue valendo no banco e o cron a respeita: o que
    * ela perde é poder ser reenviada por esta rota sem entrar na faixa.
    */
+  /**
+   * O PREÇO PADRÃO do serviço, em centavos.
+   *
+   * Opcional e sem default: nem todo negócio tem preço fixo, e obrigar um número
+   * faria quem cobra por hora inventar um. Vazio significa "digite na hora".
+   *
+   * É semente do item da comanda, nunca o preço dele — o item congela o seu.
+   */
+  default_price_cents: z.number().int().min(0).max(100_000_000).nullish(),
   reminder_minutes_before: z
     .number()
     .int()
@@ -184,6 +193,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       // leitura não conta é o mesmo controle decorativo, do outro lado.
       reminder_enabled: t.lembreteLigado,
       reminder_minutes_before: t.lembreteAntecedenciaMin,
+      default_price_cents: t.precoPadraoCents,
     })),
     { requestId },
   );

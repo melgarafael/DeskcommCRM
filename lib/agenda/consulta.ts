@@ -637,6 +637,8 @@ export interface TipoDeAtendimento {
    */
   lembreteLigado: boolean;
   lembreteAntecedenciaMin: number;
+  /** Preço padrão em centavos, ou null quando o negócio digita na hora. */
+  precoPadraoCents: number | null;
 }
 
 export type ResultadoDosTipos =
@@ -666,7 +668,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_enabled, reminder_minutes_before",
+      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_enabled, reminder_minutes_before, default_price_cents",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -704,6 +706,10 @@ export async function listaTiposDeAtendimento(
       janelaDeAgendamentoDias: Number(t.booking_window_days),
       lembreteLigado: Boolean(t.reminder_enabled),
       lembreteAntecedenciaMin: Number(t.reminder_minutes_before),
+      precoPadraoCents:
+        t.default_price_cents === null || t.default_price_cents === undefined
+          ? null
+          : Number(t.default_price_cents),
     })),
   };
 }
