@@ -1,14 +1,16 @@
 # Stack local de dependências externas para o DeskcommCRM.
 #
 # Sobe apenas o WAHA (Plus / NOWEB) pra desenvolvimento. Postgres + Auth + Storage
-# vêm do Supabase Cloud (ou supabase local CLI separadamente, conforme o time preferir).
+# devem vir do Supabase self-hosted local (`supabase start`), separado deste compose.
+# Nunca aponte o `.env.local` de desenvolvimento para o projeto de produção.
 #
 # Uso:
-#   1. Copie .env.example -> .env.local e preencha WAHA_API_KEY (plaintext)
-#   2. Gere o hash: echo -n "$WAHA_API_KEY" | shasum -a 512 | awk '{print $1}'
-#   3. Cole esse hash em WAHA_API_KEY abaixo (NÃO o plaintext)
-#   4. docker compose up -d
-#   5. Acesse http://localhost:3030/dashboard/ (UI do WAHA Plus)
+#   1. Rode `supabase start` neste diretório e copie as chaves locais para `.env.local`.
+#   2. Copie .env.example -> .env.local e preencha WAHA_API_KEY (plaintext)
+#   3. Gere o hash: echo -n "$WAHA_API_KEY" | shasum -a 512 | awk '{print $1}'
+#   4. Cole esse hash em WAHA_API_KEY abaixo (NÃO o plaintext)
+#   5. docker compose up -d
+#   6. Acesse http://localhost:3030/dashboard/ (UI do WAHA Plus)
 #      (host port 3030 — :3000 fica reservado pra outros dev tools como Remotion)
 #
 # Em prod, WAHA roda em VPS dedicada (Hostgator) atrás de Nginx (proxy_buffering off
