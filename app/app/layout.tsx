@@ -20,6 +20,7 @@ import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
+import { verificarAcessoCrm } from "@/lib/advomax/licenca";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await loadAuthUser();
@@ -55,6 +56,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
   if (activeOrg) {
+    const acessoCrm = await verificarAcessoCrm(user.email, activeOrg.orgId);
+    if (acessoCrm.configured && !acessoCrm.enabled) redirect("/crm-acesso-negado");
     const admin = createAdminClient();
     const { data: orgRow } = await admin
       .from("organizations")
