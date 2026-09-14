@@ -2,9 +2,8 @@
  * Relógio local dos crons HTTP. Em prod o crontab da VPS chama as mesmas
  * rotas; o Next em `pnpm dev` não chama sozinho.
  *
- * Não mexe em produção: só faz POST em NEXT_PUBLIC_APP_URL (default
- * localhost:3000). O risco é o *banco*: se .env.local aponta para o mesmo
- * Supabase da VPS, este loop compete com o cron de lá.
+ * Não mexe em produção: só faz POST em NEXT_PUBLIC_APP_URL e Supabase de
+ * loopback; URLs remotas são rejeitadas antes do primeiro tick.
  *
  * Uso (app já no ar):
  *   pnpm dev:crons
@@ -14,7 +13,10 @@ const INTERVAL_MS = Number(process.env.DEV_CRON_INTERVAL_MS ?? "15000");
 const PATHS = [
   "/api/v1/cron/event-log-drain",
   "/api/v1/cron/followup-flow-worker",
+  "/api/v1/cron/crm-document-intake",
 ] as const;
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 function requiredEnv(name: string): string {
   const v = process.env[name]?.trim();
@@ -24,12 +26,18 @@ function requiredEnv(name: string): string {
   return v;
 }
 
-function supabaseHost(): string {
+function localUrl(raw: string, name: string): URL {
+  let url: URL;
   try {
-    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").host || "(sem URL)";
+    url = new URL(raw);
   } catch {
-    return "(URL inválida)";
+    throw new Error(`${name} inválida; use uma URL local em localhost, 127.0.0.1 ou ::1`);
   }
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (!LOOPBACK_HOSTS.has(host)) {
+    throw new Error(`${name} deve usar loopback durante desenvolvimento; recebido ${url.hostname}`);
+  }
+  return url;
 }
 
 async function tick(base: string, secret: string): Promise<void> {
@@ -45,14 +53,12 @@ async function tick(base: string, secret: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const base = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const base = localUrl(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000", "NEXT_PUBLIC_APP_URL").toString().replace(/\/$/, "");
+  const supabase = localUrl(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321", "NEXT_PUBLIC_SUPABASE_URL");
   const secret = process.env.INTERNAL_CRON_SECRET?.trim() || requiredEnv("INTERNAL_SECRET");
 
   console.info("[dev-crons] alvo HTTP", base);
-  console.info("[dev-crons] banco (Supabase)", supabaseHost());
-  console.info(
-    "[dev-crons] se esse host for o da VPS, pare — o drain local disputa event_log/job_queue com produção",
-  );
+  console.info("[dev-crons] banco (Supabase)", supabase.host);
   console.info(`[dev-crons] intervalo ${INTERVAL_MS}ms — Ctrl+C encerra`);
 
   await tick(base, secret);
