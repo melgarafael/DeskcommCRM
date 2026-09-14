@@ -8,6 +8,18 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.22.0] — 2026-09-14
+
+### Adicionado
+
+- **Gestão de modelos do parceiro Graph-compatível (Datafy) — criar, listar e apagar pela tela** A conexão por parceiro Graph-compatível ganhou a aba **Modelos**: agora dá para **listar, criar, editar e apagar** as definições aprovadas direto pela tela, sem sair do CRM.
+
+  É o que faltava para atender **fora da janela de 24 horas**: texto livre só passa dentro dela; fora, a Meta exige um modelo aprovado — e a partir de agora o parceiro tem esse caminho. O formulário é o mesmo do outro parceiro (cabeçalho, corpo, rodapé, botões, exemplos), e o que é criado entra na fila de revisão da plataforma.
+
+  - **Os modelos são os da API oficial** (o parceiro só dá outra porta): o que você cria aqui aparece no painel da plataforma e é o mesmo espelho local (`meta_templates`) que o agente usa para escolher o que enviar.
+  - **Sincroniza sozinho** depois de criar: a definição nasce em revisão e aparece pendente na lista, para você não criar a mesma duas vezes.
+  - **Envio pela janela certa:** o modelo enviado monta os parâmetros a partir do espelho e sai pelo host e token do parceiro — nunca pelo número da Meta.
+
 ## [1.21.0] — 2026-09-14
 
 ### Adicionado
@@ -3480,7 +3492,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.21.0...HEAD
+[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.22.0...HEAD
+[1.22.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.3...v1.20.0
 [1.19.3]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.2...v1.19.3
