@@ -41,19 +41,36 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!parsed.success) return fail("validation_failed", "Informe uma Pessoa válida.", 422, { requestId });
   const scoped = await contactScope(id, authz.org.orgId);
   if (scoped.error) return scoped.error;
+  let status: "pending" | "linked" = "pending";
+  let lastSyncedAt: string | null = null;
+  if (process.env.ADVOMAX_API_URL?.trim() && process.env.ADVOMAX_CRM_INTEGRATION_KEY?.trim()) {
+    const base = process.env.ADVOMAX_API_URL.replace(/\/$/, "");
+    const response = await fetch(`${base}/integracoes/crm/pessoas/${parsed.data.pessoa_codigo}/resumo`, {
+      headers: {
+        "X-CRM-Integration-Key": process.env.ADVOMAX_CRM_INTEGRATION_KEY,
+        "X-CRM-User-Email": authz.user.email,
+        "X-CRM-Organization-Id": authz.org.orgId,
+      },
+      signal: AbortSignal.timeout(15_000),
+    }).catch(() => null);
+    if (!response?.ok) return fail("bad_gateway", "Não foi possível confirmar a Pessoa no Advomax.", 502, { requestId });
+    status = "linked";
+    lastSyncedAt = new Date().toISOString();
+  }
   const { data, error } = await scoped.supabase.from("advomax_contact_links" as never).upsert({
     organization_id: authz.org.orgId,
     contact_id: id,
     pessoa_codigo: parsed.data.pessoa_codigo,
-    status: "pending",
+    status,
     authority_source: "advomax",
+    last_synced_at: lastSyncedAt,
     created_by: authz.user.id,
   } as never, { onConflict: "organization_id,contact_id" }).select("*").single();
   if (error) {
     if (error.code === "23505") return fail("conflict", "Esta Pessoa já está vinculada a outro contato deste escritório.", 409, { requestId });
     return fail("internal_error", "Não foi possível criar o vínculo.", 500, { requestId });
   }
-  await audit({ action: "contact.advomax_linked", actorUserId: authz.user.id, organizationId: authz.org.orgId, resourceType: "advomax_contact_link", resourceId: (data as { id: string }).id, requestId, metadata: { contact_id: id, pessoa_codigo: parsed.data.pessoa_codigo, status: "pending" } });
+  await audit({ action: "contact.advomax_linked", actorUserId: authz.user.id, organizationId: authz.org.orgId, resourceType: "advomax_contact_link", resourceId: (data as { id: string }).id, requestId, metadata: { contact_id: id, pessoa_codigo: parsed.data.pessoa_codigo, status } });
   return ok(data, { requestId });
 }
 
