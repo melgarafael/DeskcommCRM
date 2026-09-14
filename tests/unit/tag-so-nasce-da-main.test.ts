@@ -57,13 +57,18 @@ describe("nenhuma tag publica sem estar contida na main", () => {
 });
 
 describe("a tag nasce no CI, e nunca do GITHUB_TOKEN", () => {
-  it("o release usa o token do GitHub App para escrever", () => {
+  it("o release usa um token de escrita que DISPARA workflow — PAT, e nunca o GITHUB_TOKEN", () => {
     // Evento disparado com o GITHUB_TOKEN não cria novo workflow run (doc do
     // GitHub). Se a tag nascesse dele, `publish-image.yml` nunca rodaria: a tag
     // existiria, nenhum erro apareceria, e NENHUMA VPS receberia a atualização.
-    expect(release).toContain("actions/create-github-app-token");
-    expect(release).toContain("secrets.RELEASE_APP_ID");
-    expect(release).toContain("secrets.RELEASE_APP_PRIVATE_KEY");
+    //
+    // O repositório de origem escreve com um GitHub App
+    // (`actions/create-github-app-token` + RELEASE_APP_ID/RELEASE_APP_PRIVATE_KEY).
+    // Este fork não tem o App instalado, então a escrita sai por um PAT de dono
+    // do repo no secret `RELEASE_TOKEN` — mesmo invariante (empurrar com algo
+    // que dispara workflow), credencial diferente.
+    expect(release).toContain("secrets.RELEASE_TOKEN");
+    expect(release).not.toMatch(/token:\s*\$\{\{\s*github\.token\s*\}\}/);
   });
 
   it("nenhum job do release pede escopo de escrita ao GITHUB_TOKEN", () => {
