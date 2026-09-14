@@ -14,6 +14,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
+import { requeueDocumentIntake } from "@/lib/crm/document-intake";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (existing) {
     const { data: requeued, error: requeueError } = await supabase
       .from("crm_document_intake" as never)
-      .update({ pessoa_codigo: parsed.data.pessoa_codigo, descricao: parsed.data.descricao ?? null, status: "pending", failure_reason: null } as never)
+      .update(requeueDocumentIntake(parsed.data.pessoa_codigo, parsed.data.descricao) as never)
       .eq("id", (existing as { id: string }).id)
       .eq("organization_id", authz.org.orgId)
       .select("*")
