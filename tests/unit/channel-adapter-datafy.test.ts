@@ -73,14 +73,15 @@ describe("adapter datafy", () => {
   });
 
   it("checkHealth mapeia 401 para FAILED e rede para reachable=false", async () => {
+    const health = datafyAdapter.checkHealth!;
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 401 }));
-    expect(await datafyAdapter.checkHealth({ organizationId: "org-1", sessionRef: "1" })).toMatchObject({
+    expect(await health({ organizationId: "org-1", sessionRef: "1" })).toMatchObject({
       reachable: true,
       status: "FAILED",
     });
 
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("boom"));
-    expect(await datafyAdapter.checkHealth({ organizationId: "org-1", sessionRef: "1" })).toMatchObject({
+    expect(await health({ organizationId: "org-1", sessionRef: "1" })).toMatchObject({
       reachable: false,
       status: null,
     });
