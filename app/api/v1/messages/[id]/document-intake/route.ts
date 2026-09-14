@@ -77,6 +77,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     media_storage_path: message.media_storage_path,
     descricao: parsed.data.descricao ?? null,
     requested_by: authz.user.id,
+    requested_by_email: authz.user.email,
     status: "pending",
   };
 
@@ -93,7 +94,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (existing) {
     const { data: requeued, error: requeueError } = await supabase
       .from("crm_document_intake" as never)
-      .update(requeueDocumentIntake(parsed.data.pessoa_codigo, parsed.data.descricao) as never)
+      .update({
+        ...requeueDocumentIntake(parsed.data.pessoa_codigo, parsed.data.descricao),
+        requested_by_email: authz.user.email,
+      } as never)
       .eq("id", (existing as { id: string }).id)
       .eq("organization_id", authz.org.orgId)
       .select("*")

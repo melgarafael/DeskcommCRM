@@ -15,7 +15,7 @@ const MAX_ATTEMPTS = 5;
 type IntakeRow = {
   id: string; organization_id: string; message_id: string; pessoa_codigo: number;
   filename: string; mime_type: string; media_storage_path: string; descricao: string | null;
-  attempts: number; requested_by: string | null;
+  attempts: number; requested_by: string | null; requested_by_email: string | null;
 };
 
 export async function GET(req: NextRequest): Promise<Response> { return run(req); }
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest): Promise<Response> { return run(req
 async function run(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   if (!validCronSecret(req)) return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
-  if (!env.ADVOMAX_API_URL.trim() || !env.ADVOMAX_CRM_INTEGRATION_KEY.trim() || !env.ADVOMAX_CRM_SERVICE_EMAIL.trim()) {
+  if (!env.ADVOMAX_API_URL.trim() || !env.ADVOMAX_CRM_INTEGRATION_KEY.trim()) {
     return ok({ processed: 0, skipped: "bridge_not_configured" }, { requestId });
   }
   const rawLimit = Number.parseInt(req.nextUrl.searchParams.get("limit") ?? "", 10);
@@ -56,6 +56,9 @@ async function run(req: NextRequest): Promise<Response> {
 }
 
 async function enviar(row: IntakeRow, admin: ReturnType<typeof createAdminClient>, requestId: string): Promise<{ ok: true } | { ok: false; terminal: boolean }> {
+  if (!row.requested_by_email?.trim()) {
+    return registrarFalha(admin, row, requestId, "Identidade do atendente não disponível para este retry.");
+  }
   const { data: blob, error: downloadError } = await admin.storage.from("whatsapp-media").download(row.media_storage_path);
   if (downloadError || !blob) return registrarFalha(admin, row, requestId, "Mídia não disponível no Storage.");
   const form = new FormData();
@@ -66,7 +69,7 @@ async function enviar(row: IntakeRow, admin: ReturnType<typeof createAdminClient
     method: "POST",
     headers: {
       "X-CRM-Integration-Key": env.ADVOMAX_CRM_INTEGRATION_KEY,
-      "X-CRM-User-Email": env.ADVOMAX_CRM_SERVICE_EMAIL,
+      "X-CRM-User-Email": row.requested_by_email.trim(),
       "X-CRM-Organization-Id": row.organization_id,
       "X-CRM-Message-Id": row.message_id,
     },
