@@ -8,6 +8,20 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.20.0] — 2026-09-14
+
+### Adicionado
+
+- **Você passa a controlar os limites de leitura do banco conectado (linhas, filtros e tamanho)** Antes, quanto o sistema podia ler do banco externo era um número cravado no código: no máximo 200 linhas por consulta, 20 filtros e uma resposta enxuta para a IA. Quem tinha um processo que precisa varrer mais linhas ou combinar mais condições batia no mesmo teto de quem lê vinte e nada.
+
+  Agora quem administra a conexão define esses limites **na tela da conexão**, em "Limites de leitura":
+
+  - **Linhas por consulta** — de 1 a 5.000. Vale para a grade e para o agente.
+  - **Filtros por consulta** — de 0 a 100. Vale para as consultas do agente.
+  - **Resposta para a IA (KB)** — de 4 KB a 1 MB: o tamanho do dado que entra no contexto do modelo.
+
+  Os valores padrão continuam os de antes (200 linhas, 20 filtros, 30 KB), então nada muda para quem não mexer. Os campos ficam na mesma tela de cadastro da conexão (Organização › Fontes de dados › Dados externos), visíveis a todos e editáveis por administradores.
+
 ## [1.19.3] — 2026-09-13
 
 ### Corrigido
@@ -3453,7 +3467,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.3...HEAD
+[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.20.0...HEAD
+[1.20.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.3...v1.20.0
 [1.19.3]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.2...v1.19.3
 [1.19.2]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.1...v1.19.2
 [1.19.1]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.0...v1.19.1
