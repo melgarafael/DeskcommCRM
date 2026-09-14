@@ -8248,6 +8248,29 @@ export const DICIONARIO: Traducoes = {
   "Esta conexão está desativada. Ative-a na lista para consultar os dados.": {
     es: "Esta conexión está desactivada. Actívala en la lista para consultar los datos.",
   },
+
+  // ─── Canal parceiro Graph-compatível (conexão por token) ───
+  "Informe o token do provedor parceiro.": {
+    es: "Indica el token del proveedor socio.",
+  },
+  "Cole esta URL no painel do provedor": {
+    es: "Pega esta URL en el panel del proveedor",
+  },
+  "Na aba de Webhooks do número. Sem esse passo o canal envia, mas não recebe — as respostas do cliente não chegam e a janela de 24 horas nunca abre.": {
+    es: "En la pestaña de Webhooks del número. Sin este paso el canal envía, pero no recibe — las respuestas del cliente no llegan y la ventana de 24 horas nunca se abre.",
+  },
+  "A assinatura do webhook é opcional no provedor. Se você a ativar, guarde o segredo no servidor para passar a validar as entregas.": {
+    es: "La firma del webhook es opcional en el proveedor. Si la activas, guarda el secreto en el servidor para pasar a validar las entregas.",
+  },
+  "Conectar provedor parceiro": { es: "Conectar proveedor socio" },
+  "Trocar token": { es: "Cambiar token" },
+  "Cole o token do provedor (começa com sk_). O número e a conta são descobertos automaticamente. O token é validado antes de ser gravado — se não responder, nada é salvo.": {
+    es: "Pega el token del proveedor (empieza con sk_). El número y la cuenta se descubren automáticamente. El token se valida antes de guardarlo — si no responde, no se guarda nada.",
+  },
+  "Validando com o provedor…": { es: "Validando con el proveedor…" },
+  "Parceiro que usa a API oficial da Meta por trás. Você conecta só com o token, sem número de identificação.": {
+    es: "Socio que usa la API oficial de Meta por detrás. Conectas solo con el token, sin número de identificación.",
+  },
 };
 
 /**

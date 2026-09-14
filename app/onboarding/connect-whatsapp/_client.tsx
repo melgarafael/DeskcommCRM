@@ -7,8 +7,10 @@ import { useT } from "@/hooks/i18n/useT";
 
 import { Button } from "@/components/ui/button";
 import { skipWhatsapp, markWhatsappConfigured } from "@/app/actions/onboarding/skipWhatsapp";
+import { CanalGraphParceiroClient } from "@/components/connections/CanalGraphParceiroClient";
 import { CanalOficialClient } from "@/components/connections/CanalOficialClient";
 import { CanalParceiroClient } from "@/components/connections/CanalParceiroClient";
+import { ROTULO_PARCEIRO_GRAPH } from "@/lib/channels/rotulos";
 
 interface Props {
   wahaConfigured: boolean;
@@ -32,7 +34,7 @@ interface Props {
  * devolve o primeiro passo NÃO cumprido. O banco só é tocado quando o passo
  * termina de verdade: conectou, pulou, ou disse que já tinha conectado.
  */
-type Forma = "qr" | "oficial" | "parceiro";
+type Forma = "qr" | "oficial" | "parceiro" | "graph";
 
 type Status =
   | "INIT"
@@ -380,6 +382,15 @@ export function ConnectWhatsappClient({
               corpo={t("Uma empresa parceira cuida do seu WhatsApp e te deu uma chave de acesso.")}
               onEscolher={setForma}
             />
+            <Escolha
+              valor="graph"
+              atual={forma}
+              titulo={ROTULO_PARCEIRO_GRAPH}
+              corpo={t(
+                "Parceiro que usa a API oficial da Meta por trás. Você conecta só com o token, sem número de identificação.",
+              )}
+              onEscolher={setForma}
+            />
           </div>
         </fieldset>
         <Saidas status={status} sessionName={info.session ?? ""} />
@@ -387,7 +398,7 @@ export function ConnectWhatsappClient({
     );
   }
 
-  if (forma === "oficial" || forma === "parceiro") {
+  if (forma === "oficial" || forma === "parceiro" || forma === "graph") {
     return (
       <div className="space-y-4 rounded-lg border bg-background p-6">
         <VoltarParaEscolha onVoltar={() => setForma(null)} />
@@ -408,7 +419,13 @@ export function ConnectWhatsappClient({
         {/* Os mesmos componentes da tela de Conexões, inteiros. Reescrevê-los
             aqui criaria uma segunda cópia de um formulário que valida credencial
             contra o outro lado ANTES de gravar — e duas cópias divergem. */}
-        {forma === "oficial" ? <CanalOficialClient /> : <CanalParceiroClient />}
+        {forma === "oficial" ? (
+          <CanalOficialClient />
+        ) : forma === "parceiro" ? (
+          <CanalParceiroClient />
+        ) : (
+          <CanalGraphParceiroClient />
+        )}
 
         <Saidas status={status} sessionName={info.session ?? ""} />
       </div>
