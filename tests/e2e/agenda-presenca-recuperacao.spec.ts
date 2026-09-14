@@ -9,6 +9,7 @@ import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { escolherPrimeiroDiaCheio } from "./helpers/agenda-semana-integra";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { enviarTextoFixoPendente } from "../../lib/followup/enviar-texto-fixo";
 const credentials = credenciaisSupabaseDeTeste();
@@ -314,8 +315,13 @@ test("Inbox marca cliente/conversa; detalhe antigo confirma presença com evidê
   // foi eliminada. O que ele quer provar (a entrada pelo Inbox amarra o
   // compromisso ao cliente) continua valendo, e agora é provado sem fechar
   // nada: o painel tem o seu próprio calendário.
+  // O dia sai de `escolherPrimeiroDiaCheio`, e não de um `[data-disponivel]`
+  // colhido à mão: a cerca `agenda-spec-nao-escolhe-o-periodo-sozinha` cobra o
+  // helper porque hoje ENCOLHE — 16 vagas às 9h, 2 às 16h, zero das 17h em
+  // diante. Este caso precisa só do painel (a grade não entra na asserção), e é
+  // exatamente para isso que existe a variante "primeiro dia cheio".
   await page.getByRole("button", { name: /^Consulta de presença/ }).click();
-  await page.locator('[data-testid^="dia-"][data-disponivel="true"]').first().click();
+  await escolherPrimeiroDiaCheio(page);
   await page.locator('[data-testid^="horario-"]').first().click();
   const posted = page.waitForResponse(
     (r) => r.url().includes("/api/v1/agenda/agendamentos") && r.request().method() === "POST",
