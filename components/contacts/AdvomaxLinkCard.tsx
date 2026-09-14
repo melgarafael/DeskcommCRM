@@ -12,6 +12,7 @@ import { advomaxProcessUrl } from "@/lib/advomax/navigation";
 type LinkRow = { id: string; pessoa_codigo: number; status: "pending" | "linked" | "conflict" | "unlinked" };
 type PessoaRow = { codigo: number; nome: string; tipoPessoa: string; email: string | null; telefone: string | null };
 type ProcessoRow = { codigo: number; pasta: string | null; numero: string | null; status: number; ultimaMovimentacao: string | null; tribunal: string | null };
+type DocumentoRow = { codigo: number; nomeArquivo: string; descricao: string | null; data: string; tipo: string; origem: "whatsapp" | "advomax"; armazenadoNoDrive: boolean };
 
 export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: string; canManage?: boolean }) {
   const t = useT();
@@ -22,6 +23,7 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   const [busca, setBusca] = useState("");
   const [sugestoes, setSugestoes] = useState<PessoaRow[]>([]);
   const [processos, setProcessos] = useState<ProcessoRow[]>([]);
+  const [documentos, setDocumentos] = useState<DocumentoRow[]>([]);
 
   useEffect(() => {
     let ativo = true;
@@ -39,6 +41,15 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
     let ativo = true;
     void fetch(`/api/v1/contacts/${contactId}/advomax-link/processos`).then((r) => r.ok ? r.json() : null).then((body) => {
       if (ativo) setProcessos(Array.isArray(body?.data) ? body.data as ProcessoRow[] : []);
+    }).catch(() => undefined);
+    return () => { ativo = false; };
+  }, [contactId, link?.status]);
+
+  useEffect(() => {
+    if (link?.status !== "linked") return;
+    let ativo = true;
+    void fetch(`/api/v1/contacts/${contactId}/advomax-link/documentos`).then((r) => r.ok ? r.json() : null).then((body) => {
+      if (ativo) setDocumentos(Array.isArray(body?.data) ? body.data as DocumentoRow[] : []);
     }).catch(() => undefined);
     return () => { ativo = false; };
   }, [contactId, link?.status]);
@@ -103,6 +114,12 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
       {processos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{processos.map((processo) => <li key={processo.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
         <span><strong>{processo.pasta || processo.numero || `#${processo.codigo}`}</strong>{processo.tribunal && <span className="ml-2 text-muted-foreground">{processo.tribunal}</span>}</span>
         <a className="text-primary underline-offset-2 hover:underline" href={advomaxProcessUrl(processo.codigo)} target="_blank" rel="noreferrer">{t("Abrir ficha")}</a>
+      </li>)}</ul>}
+      <h3 className="mt-4 text-sm font-semibold">{t("Documentos da Pessoa")}</h3>
+      {documentos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum documento encontrado no Advomax.")}</p>}
+      {documentos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{documentos.slice(0, 8).map((documento) => <li key={documento.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
+        <span className="min-w-0"><strong className="block truncate">{documento.nomeArquivo}</strong><span className="text-xs text-muted-foreground">{documento.descricao || documento.data}{documento.origem === "whatsapp" ? ` · ${t("WhatsApp")}` : ""}</span></span>
+        <Badge variant={documento.armazenadoNoDrive ? "success" : "secondary"}>{documento.armazenadoNoDrive ? t("No Drive") : t("No Advomax")}</Badge>
       </li>)}</ul>}
     </div>}
   </Card>;
