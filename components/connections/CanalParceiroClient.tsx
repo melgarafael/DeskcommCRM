@@ -11,6 +11,7 @@ import { apiClient } from "@/lib/api/client";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { ParaIntegrar } from "./ParaIntegrar";
 
 /**
  * Conectar um número por um PROVEDOR PARCEIRO.
@@ -44,6 +45,8 @@ interface Estado {
   status: string | null;
   has_api_key: boolean;
   webhook_url: string | null;
+  /** Endpoint base do provedor — usado no painel "Para integrar". */
+  endpoint: string | null;
 }
 
 interface Conectado {
@@ -239,6 +242,35 @@ export function CanalParceiroClient() {
           <ParaColar rotulo={t("URL do webhook")} valor={estado.webhook_url} />
         </Card>
       )}
+
+      {conectado ? (
+        <ParaIntegrar
+          campos={[
+            { rotulo: t("Endpoint da API"), valor: estado?.endpoint ?? null },
+            { rotulo: t("Conta"), valor: estado?.account_id ?? null },
+          ]}
+          ajuda={
+            <div className="space-y-1.5">
+              <p>
+                {t(
+                  "A chave de API está no painel do provedor, na conta conectada — este CRM não a exibe de volta.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "O webhook de um número aponta para um só destino. Para os dois CRMs receberem ao mesmo tempo, um deles precisa reencaminhar as mensagens ao outro.",
+                )}
+              </p>
+            </div>
+          }
+          aviso={
+            <>
+              {t("Um número tem um único webhook.")}{" "}
+              {t("Para operar em dois CRMs ao mesmo tempo, configure o reencaminhamento de mensagens.")}
+            </>
+          }
+        />
+      ) : null}
     </div>
   );
 }

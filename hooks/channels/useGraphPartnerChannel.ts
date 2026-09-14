@@ -18,6 +18,8 @@ export interface GraphPartnerChannelState {
   hasToken: boolean;
   phoneNumberId: string | null;
   wabaId: string | null;
+  /** Base Graph-compatível do provedor — usada no painel "Para integrar". */
+  endpoint: string | null;
   displayName: string | null;
   phoneNumber: string | null;
   status: string | null;
