@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -8,12 +8,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
 
-export function DocumentIntakeDialog({ messageId, open, onOpenChange }: { messageId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function DocumentIntakeDialog({ messageId, contactId, open, onOpenChange }: { messageId: string; contactId?: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const t = useT();
   const [pessoaCodigo, setPessoaCodigo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [pessoaVinculada, setPessoaVinculada] = useState(false);
+
+  useEffect(() => {
+    if (!open || !contactId) return;
+    let ativo = true;
+    void fetch(`/api/v1/contacts/${contactId}/advomax-link`).then((r) => r.ok ? r.json() : null).then((body) => {
+      const link = body?.data as { pessoa_codigo?: number; status?: string } | null | undefined;
+      if (!ativo || link?.status !== "linked" || !Number.isInteger(link.pessoa_codigo)) return;
+      setPessoaCodigo(String(link.pessoa_codigo));
+      setPessoaVinculada(true);
+    }).catch(() => undefined);
+    return () => { ativo = false; };
+  }, [contactId, open]);
 
   async function salvar() {
     const codigo = Number(pessoaCodigo);
@@ -51,7 +64,8 @@ export function DocumentIntakeDialog({ messageId, open, onOpenChange }: { messag
         <div className="space-y-4 py-2">
           <div className="space-y-2">
             <Label htmlFor={`pessoa-codigo-${messageId}`}>{t("Código da Pessoa")}</Label>
-            <Input id={`pessoa-codigo-${messageId}`} inputMode="numeric" value={pessoaCodigo} onChange={(e) => setPessoaCodigo(e.target.value)} placeholder="Ex.: 1248" />
+            <Input id={`pessoa-codigo-${messageId}`} inputMode="numeric" value={pessoaCodigo} onChange={(e) => setPessoaCodigo(e.target.value)} placeholder="Ex.: 1248" readOnly={pessoaVinculada} />
+            {pessoaVinculada && <p className="text-xs text-muted-foreground">{t("Pessoa preenchida pelo vínculo jurídico deste contato.")}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor={`pessoa-descricao-${messageId}`}>{t("Descrição (opcional)")}</Label>

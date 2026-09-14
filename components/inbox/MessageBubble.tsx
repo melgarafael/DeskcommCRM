@@ -309,7 +309,7 @@ export function MessageBubble({
           <ArrowBendUpLeft size={14} />
         </button>
       )}
-      <DocumentIntakeDialog messageId={message.id} open={intakeOpen} onOpenChange={setIntakeOpen} />
+      <DocumentIntakeDialog messageId={message.id} contactId={message.contact_id} open={intakeOpen} onOpenChange={setIntakeOpen} />
     </div>
   );
 }
