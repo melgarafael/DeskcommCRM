@@ -13,6 +13,7 @@ export function DocumentIntakeDialog({ messageId, contactId, open, onOpenChange 
   const [pessoaCodigo, setPessoaCodigo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  const [confirmacao, setConfirmacao] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [pessoaVinculada, setPessoaVinculada] = useState(false);
 
@@ -27,6 +28,13 @@ export function DocumentIntakeDialog({ messageId, contactId, open, onOpenChange 
     }).catch(() => undefined);
     return () => { ativo = false; };
   }, [contactId, open]);
+
+  useEffect(() => {
+    if (open) {
+      setErro(null);
+      setConfirmacao(null);
+    }
+  }, [open]);
 
   async function salvar() {
     const codigo = Number(pessoaCodigo);
@@ -44,9 +52,10 @@ export function DocumentIntakeDialog({ messageId, contactId, open, onOpenChange 
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error?.message || t("Não foi possível arquivar o documento."));
-      onOpenChange(false);
-      setPessoaCodigo("");
-      setDescricao("");
+      const status = body?.data?.status;
+      setConfirmacao(status === "uploaded"
+        ? t("Documento arquivado na pasta da Pessoa e visível na ficha do Advomax.")
+        : t("Documento recebido e colocado na fila. O Advomax será atualizado automaticamente quando a ponte estiver disponível."));
     } catch (e) {
       setErro(e instanceof Error ? e.message : t("Não foi possível arquivar o documento."));
     } finally {
@@ -72,10 +81,11 @@ export function DocumentIntakeDialog({ messageId, contactId, open, onOpenChange 
             <Input id={`pessoa-descricao-${messageId}`} value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={t("Documento recebido pelo WhatsApp")} maxLength={1000} />
           </div>
           {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+          {confirmacao && <p role="status" className="text-sm text-emerald-700">{confirmacao}</p>}
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={salvando}>{t("Cancelar")}</Button>
-          <Button onClick={salvar} disabled={salvando}>{salvando ? t("Salvando…") : t("Arquivar documento")}</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={salvando}>{confirmacao ? t("Fechar") : t("Cancelar")}</Button>
+          {!confirmacao && <Button onClick={salvar} disabled={salvando}>{salvando ? t("Salvando…") : t("Arquivar documento")}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
