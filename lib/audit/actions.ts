@@ -436,6 +436,20 @@ export const AUDIT_ACTIONS = [
   // telefone de um cliente é efeito, e efeito audita — mas só a rodada que
   // enviou: a que varreu e não achou ninguém a avisar não é mutação.
   "agenda.lembrete_enviado",
+  // O catálogo financeiro. Audita porque define PARA ONDE o dinheiro vai: a
+  // forma de pagamento escolhe a conta em que a entrada cai, e mudar isso em
+  // silêncio faria um mês inteiro cair na conta errada sem ninguém saber quem
+  // mexeu.
+  "financeiro.catalogo_criado",
+  "financeiro.catalogo_alterado",
+  "financeiro.catalogo_inativado",
+  "comanda.aberta",
+  "comanda.alterada",
+  "comanda.cancelada",
+  "comanda.item_incluido",
+  "comanda.item_removido",
+  "comanda.finalizada",
+  "comanda.estornada",
   // A rodada de renovação — e ela só audita quando FEZ algo, como manda a regra
   // do cron desta base. Uma linha por rodada com efeito, carregando a contagem:
   // é o que permite responder "quantas agendas precisaram reconectar esta
