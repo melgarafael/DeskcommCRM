@@ -1,4 +1,13 @@
-const DEFAULT_ADVOMAX_URL = "https://advomax.com.br";
+const PUBLIC_ADVOMAX_URL = "https://advomax.com.br";
+const LOCAL_ADVOMAX_URL = "http://127.0.0.1:5173";
+
+function fallbackAdvomaxUrl(): string {
+  return process.env.NODE_ENV === "production" ? PUBLIC_ADVOMAX_URL : LOCAL_ADVOMAX_URL;
+}
+
+function hostLocal(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
 
 /**
  * Destinos externos do CRM passam por uma allowlist pequena. Isso evita que um
@@ -6,14 +15,16 @@ const DEFAULT_ADVOMAX_URL = "https://advomax.com.br";
  * aberto.
  */
 export function advomaxAppUrl(path: "/home" | "/pessoas" | "/clientes" | "/documentos" = "/home"): string {
-  const configured = process.env.NEXT_PUBLIC_ADVOMAX_APP_URL?.trim() || DEFAULT_ADVOMAX_URL;
+  const fallback = fallbackAdvomaxUrl();
+  const configured = process.env.NEXT_PUBLIC_ADVOMAX_APP_URL?.trim() || fallback;
   let base: URL;
   try {
     base = new URL(configured);
   } catch {
-    base = new URL(DEFAULT_ADVOMAX_URL);
+    base = new URL(fallback);
   }
-  if (base.protocol !== "http:" && base.protocol !== "https:") base = new URL(DEFAULT_ADVOMAX_URL);
+  if (base.protocol !== "http:" && base.protocol !== "https:") base = new URL(fallback);
+  if (process.env.NODE_ENV !== "production" && !hostLocal(base.hostname)) base = new URL(LOCAL_ADVOMAX_URL);
   return new URL(path, base).toString();
 }
 
