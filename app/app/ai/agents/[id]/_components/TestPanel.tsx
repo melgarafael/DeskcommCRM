@@ -171,9 +171,19 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           ...(contactPhone.trim() ? { phone: contactPhone.trim() } : {}),
         };
       }
+      // Este teste encadeia 5 chamadas de IA em sequência (classificador de
+      // estágio, detector de jailbreak, semântica de promessa, geração da
+      // resposta e checkpoint) — medido em produção passando de 60s no total.
+      // O timeout padrão do apiClient é 10s (lib/api/client.ts), pensado para
+      // rotas CRUD comuns; sem override aqui, a tela cancela a chamada sozinha
+      // bem antes do backend terminar, e o DOMException do abort não é
+      // ApiError — cai no catch genérico e mostra "Erro inesperado." para um
+      // teste que estava (ou ia) funcionar. Mesmo padrão de
+      // ConnectionsClient.tsx para outra operação igualmente longa.
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        { timeoutMs: 120_000 },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
