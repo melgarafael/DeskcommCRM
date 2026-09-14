@@ -9,6 +9,14 @@ import { describe, it, expect } from "vitest";
 import { isPublicPath } from "@/lib/auth/public-paths";
 
 describe("isPublicPath", () => {
+  it("libera somente a callback e o início exatos da ponte Advomax", () => {
+    expect(isPublicPath("/auth/advomax")).toBe(true);
+    expect(isPublicPath("/auth/advomax/start")).toBe(true);
+    expect(isPublicPath("/auth/advomax/")).toBe(false);
+    expect(isPublicPath("/auth/advomax/start/extra")).toBe(false);
+    expect(isPublicPath("/auth/advomax/qualquer")).toBe(false);
+  });
+
   it("libera o heartbeat do agente do host (bearer, sem cookie)", () => {
     expect(isPublicPath("/api/v1/system/agent")).toBe(true);
   });

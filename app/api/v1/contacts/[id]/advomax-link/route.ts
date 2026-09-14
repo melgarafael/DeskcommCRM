@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 interface RouteCtx { params: Promise<{ id: string }> }
@@ -43,11 +44,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (scoped.error) return scoped.error;
   let status: "pending" | "linked" = "pending";
   let lastSyncedAt: string | null = null;
-  if (process.env.ADVOMAX_API_URL?.trim() && process.env.ADVOMAX_CRM_INTEGRATION_KEY?.trim()) {
-    const base = process.env.ADVOMAX_API_URL.replace(/\/$/, "");
+  if (env.ADVOMAX_API_URL.trim() && env.ADVOMAX_CRM_INTEGRATION_KEY.trim()) {
+    const base = env.ADVOMAX_API_URL.replace(/\/$/, "");
     const response = await fetch(`${base}/integracoes/crm/pessoas/${parsed.data.pessoa_codigo}/resumo`, {
       headers: {
-        "X-CRM-Integration-Key": process.env.ADVOMAX_CRM_INTEGRATION_KEY,
+        "X-CRM-Integration-Key": env.ADVOMAX_CRM_INTEGRATION_KEY,
         "X-CRM-User-Email": authz.user.email,
         "X-CRM-Organization-Id": authz.org.orgId,
       },

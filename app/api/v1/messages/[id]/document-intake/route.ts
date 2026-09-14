@@ -47,6 +47,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!message) return fail("not_found", "Mensagem não encontrada.", 404, { requestId });
   if (!message.media_storage_path) return fail("validation_failed", "Esta mensagem ainda não tem mídia persistida.", 422, { requestId });
 
+  // O vínculo confirmado do contato é a fonte de verdade. Permitir que um
+  // atendente troque silenciosamente a Pessoa aqui arquivaria o documento na
+  // pasta jurídica errada; contato sem vínculo ainda pode ser atribuído
+  // manualmente, e o vínculo pode ser confirmado separadamente pelo gerente.
+  if (message.contact_id) {
+    const { data: link, error: linkError } = await supabase
+      .from("advomax_contact_links" as never)
+      .select("pessoa_codigo,status")
+      .eq("organization_id", authz.org.orgId)
+      .eq("contact_id", message.contact_id)
+      .maybeSingle();
+    if (linkError) return fail("internal_error", "Não foi possível validar o vínculo jurídico.", 500, { requestId });
+    const typedLink = link as { pessoa_codigo: number; status: string } | null;
+    if (typedLink?.status === "linked" && typedLink.pessoa_codigo !== parsed.data.pessoa_codigo) {
+      return fail("conflict", "O contato já está vinculado a outra Pessoa do Advomax.", 409, { requestId });
+    }
+  }
+
   const payload = {
     organization_id: authz.org.orgId,
     message_id: message.id,

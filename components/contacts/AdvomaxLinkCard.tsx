@@ -24,35 +24,51 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   const [sugestoes, setSugestoes] = useState<PessoaRow[]>([]);
   const [processos, setProcessos] = useState<ProcessoRow[]>([]);
   const [documentos, setDocumentos] = useState<DocumentoRow[]>([]);
+  const [linkIndisponivel, setLinkIndisponivel] = useState(false);
+  const [processosIndisponiveis, setProcessosIndisponiveis] = useState(false);
+  const [documentosIndisponiveis, setDocumentosIndisponiveis] = useState(false);
+  const [tentativa, setTentativa] = useState(0);
 
   useEffect(() => {
     let ativo = true;
-    void fetch(`/api/v1/contacts/${contactId}/advomax-link`).then((r) => r.ok ? r.json() : null).then((body) => {
+    setLinkIndisponivel(false);
+    void fetch(`/api/v1/contacts/${contactId}/advomax-link`).then(async (r) => {
+      if (!r.ok) throw new Error("link indisponível");
+      return r.json();
+    }).then((body) => {
       if (!ativo) return;
       const value = body?.data as LinkRow | null | undefined;
       setLink(value ?? null);
       if (value) setCodigo(String(value.pessoa_codigo));
-    }).catch(() => undefined);
+    }).catch(() => { if (ativo) setLinkIndisponivel(true); });
     return () => { ativo = false; };
-  }, [contactId]);
+  }, [contactId, tentativa]);
 
   useEffect(() => {
     if (link?.status !== "linked") return;
     let ativo = true;
-    void fetch(`/api/v1/contacts/${contactId}/advomax-link/processos`).then((r) => r.ok ? r.json() : null).then((body) => {
+    setProcessosIndisponiveis(false);
+    void fetch(`/api/v1/contacts/${contactId}/advomax-link/processos`).then(async (r) => {
+      if (!r.ok) throw new Error("processos indisponíveis");
+      return r.json();
+    }).then((body) => {
       if (ativo) setProcessos(Array.isArray(body?.data) ? body.data as ProcessoRow[] : []);
-    }).catch(() => undefined);
+    }).catch(() => { if (ativo) setProcessosIndisponiveis(true); });
     return () => { ativo = false; };
-  }, [contactId, link?.status]);
+  }, [contactId, link?.status, tentativa]);
 
   useEffect(() => {
     if (link?.status !== "linked") return;
     let ativo = true;
-    void fetch(`/api/v1/contacts/${contactId}/advomax-link/documentos`).then((r) => r.ok ? r.json() : null).then((body) => {
+    setDocumentosIndisponiveis(false);
+    void fetch(`/api/v1/contacts/${contactId}/advomax-link/documentos`).then(async (r) => {
+      if (!r.ok) throw new Error("documentos indisponíveis");
+      return r.json();
+    }).then((body) => {
       if (ativo) setDocumentos(Array.isArray(body?.data) ? body.data as DocumentoRow[] : []);
-    }).catch(() => undefined);
+    }).catch(() => { if (ativo) setDocumentosIndisponiveis(true); });
     return () => { ativo = false; };
-  }, [contactId, link?.status]);
+  }, [contactId, link?.status, tentativa]);
 
   useEffect(() => {
     if (!canManage || link?.status === "linked" || busca.trim().length < 2) return;
@@ -108,16 +124,22 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
     </button>)}</div>}
     {!canManage && <p className="text-xs text-muted-foreground">{t("Somente gerentes podem confirmar este vínculo.")}</p>}
     {erro && <p role="alert" className="text-sm text-error-fg">{erro}</p>}
+    {linkIndisponivel && <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <span>{t("Não foi possível carregar o vínculo com o Advomax.")}</span>
+      <Button variant="outline" size="sm" onClick={() => setTentativa((value) => value + 1)}>{t("Tentar novamente")}</Button>
+    </div>}
     {link?.status === "linked" && <div className="border-t pt-3">
       <h3 className="text-sm font-semibold">{t("Processos vinculados")}</h3>
-      {processos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum processo ativo encontrado para esta Pessoa.")}</p>}
-      {processos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{processos.map((processo) => <li key={processo.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
+      {processosIndisponiveis && <div role="alert" className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span>{t("Os processos estão temporariamente indisponíveis.")}</span><Button variant="outline" size="sm" onClick={() => setTentativa((value) => value + 1)}>{t("Tentar novamente")}</Button></div>}
+      {!processosIndisponiveis && processos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum processo ativo encontrado para esta Pessoa.")}</p>}
+      {!processosIndisponiveis && processos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{processos.map((processo) => <li key={processo.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
         <span><strong>{processo.pasta || processo.numero || `#${processo.codigo}`}</strong>{processo.tribunal && <span className="ml-2 text-muted-foreground">{processo.tribunal}</span>}</span>
         <a className="text-primary underline-offset-2 hover:underline" href={advomaxProcessUrl(processo.codigo)} target="_blank" rel="noreferrer">{t("Abrir ficha")}</a>
       </li>)}</ul>}
       <h3 className="mt-4 text-sm font-semibold">{t("Documentos da Pessoa")}</h3>
-      {documentos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum documento encontrado no Advomax.")}</p>}
-      {documentos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{documentos.slice(0, 8).map((documento) => <li key={documento.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
+      {documentosIndisponiveis && <div role="alert" className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span>{t("Os documentos estão temporariamente indisponíveis.")}</span><Button variant="outline" size="sm" onClick={() => setTentativa((value) => value + 1)}>{t("Tentar novamente")}</Button></div>}
+      {!documentosIndisponiveis && documentos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum documento encontrado no Advomax.")}</p>}
+      {!documentosIndisponiveis && documentos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{documentos.slice(0, 8).map((documento) => <li key={documento.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
         <span className="min-w-0"><strong className="block truncate">{documento.nomeArquivo}</strong><span className="text-xs text-muted-foreground">{documento.descricao || documento.data}{documento.origem === "whatsapp" ? ` · ${t("WhatsApp")}` : ""}</span></span>
         <Badge variant={documento.armazenadoNoDrive ? "success" : "secondary"}>{documento.armazenadoNoDrive ? t("No Drive") : t("No Advomax")}</Badge>
       </li>)}</ul>}

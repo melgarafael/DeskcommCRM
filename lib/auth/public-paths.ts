@@ -7,6 +7,8 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/login(\/.*)?$/,
   /^\/signup$/,
   /^\/auth\/confirm$/,
+  // A ponte valida código de uso único e cookie do navegador dentro do handler.
+  /^\/auth\/advomax(?:\/start)?$/,
   /^\/403$/,
   /^\/admin\/forbidden$/,
   /^\/404$/,

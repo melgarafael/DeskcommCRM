@@ -5,6 +5,7 @@ import { type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { fail, ok } from "@/lib/api/wrappers";
 import { createClient } from "@/lib/supabase/server";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 interface RouteCtx { params: Promise<{ id: string }> }
@@ -26,13 +27,13 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!typedLink || typedLink.status !== "linked") {
     return fail("conflict", "Vincule o cadastro jurídico antes de consultar documentos.", 409, { requestId });
   }
-  if (!process.env.ADVOMAX_API_URL?.trim() || !process.env.ADVOMAX_CRM_INTEGRATION_KEY?.trim()) {
+  if (!env.ADVOMAX_API_URL.trim() || !env.ADVOMAX_CRM_INTEGRATION_KEY.trim()) {
     return fail("integration_unavailable", "A integração com o Advomax não está configurada.", 503, { requestId });
   }
-  const base = process.env.ADVOMAX_API_URL.replace(/\/$/, "");
+  const base = env.ADVOMAX_API_URL.replace(/\/$/, "");
   const response = await fetch(`${base}/integracoes/crm/pessoas/${typedLink.pessoa_codigo}/documentos`, {
     headers: {
-      "X-CRM-Integration-Key": process.env.ADVOMAX_CRM_INTEGRATION_KEY,
+      "X-CRM-Integration-Key": env.ADVOMAX_CRM_INTEGRATION_KEY,
       "X-CRM-User-Email": authz.user.email,
       "X-CRM-Organization-Id": authz.org.orgId,
     },

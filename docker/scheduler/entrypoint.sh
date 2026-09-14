@@ -67,6 +67,7 @@ CRONS="
 */5 * * * *|25|api/v1/cron/attendant-heartbeat
 */5 * * * *|60|api/v1/cron/webhook-log-retention
 */5 * * * *|45|api/v1/cron/channel-health
+*/2 * * * *|120|api/v1/cron/crm-document-intake
 */10 * * * *|60|api/v1/cron/contact-avatars
 */10 * * * *|60|api/v1/cron/agenda-google-refresh
 */15 * * * *|90|api/v1/cron/agenda-google-sync
