@@ -36,7 +36,11 @@ async function run(req: NextRequest): Promise<Response> {
     .order("next_attempt_at", { ascending: true }).limit(limit);
   if (error) return fail("internal_error", "Não foi possível ler a fila de documentos.", 500, { requestId });
 
-  const stats = { claimed: 0, uploaded: 0, retried: 0, failed: 0 };
+  const staleAt = new Date(Date.now() - 15 * 60_000).toISOString();
+  const { data: recoveredRows } = await admin.from("crm_document_intake" as never)
+    .update({ status: "pending", next_attempt_at: now, claimed_at: null, claimed_by: null } as never)
+    .eq("status", "processing").lt("claimed_at", staleAt).select("id");
+  const stats = { recovered: recoveredRows?.length ?? 0, claimed: 0, uploaded: 0, retried: 0, failed: 0 };
   for (const candidate of (pending ?? []) as unknown as IntakeRow[]) {
     const { data: claimed } = await admin.from("crm_document_intake" as never).update({
       status: "processing", attempts: candidate.attempts + 1, claimed_at: now, claimed_by: `cron:${requestId}`,
