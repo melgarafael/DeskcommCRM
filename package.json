@@ -58,7 +58,7 @@
     "@radix-ui/react-switch": "^1.3.7",
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
-    "@react-pdf/renderer": "^4.9.0",
+    "@react-pdf/renderer": "4.6.1",
     "@sentry/nextjs": "^10",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.114.0",
@@ -124,7 +124,9 @@
   "packageManager": "pnpm@9.15.9",
   "pnpm": {
     "//overrides": "Pisos de versão para dependência TRANSITIVA com advisory. Não é atalho: `pnpm update <pkg>` só casa o padrão contra o package.json (hono/js-yaml/nanoid não estão lá, e não se movem), e `pnpm update` sem alvo reescreve 29 ranges diretas e arrasta 139 pacotes. Override é a única ferramenta que move transitiva sem arrastar o mundo. Os seletores com `@<major>` são LOAD-BEARING: o lock tem duas árvores de brace-expansion (1.x e 5.x) e duas de path-to-regexp (6.x e 8.x); sem o escopo, o override rebaixa a árvore nova para a antiga — em silêncio, com `pnpm audit` ainda verde.",
+    "//react-pdf": "O worker roda via tsx (Dockerfile.worker), e o tsx não resolve o export wildcard `./*` de `@react-pdf/hyphenate` (ERR_PACKAGE_PATH_NOT_EXPORTED). Como o handler de export LGPD importa `@react-pdf/renderer` estaticamente, esse erro derrubava o event-log drain do worker. textkit 6.4.1 não depende de hyphenate; 6.4.2+ e 7.x dependem. renderer fixado em 4.6.1 para não puxar layout 5/textkit 7. NÃO remover sem provar o drain de pé.",
     "overrides": {
+      "@react-pdf/textkit": "6.4.1",
       "postcss": "^8.5.26",
       "sharp": "^0.35.0",
       "hono": "^4.12.34",

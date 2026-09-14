@@ -8,6 +8,21 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.22.1] — 2026-09-14
+
+### Corrigido
+
+- **O worker volta a processar a fila de eventos na hora** Desde o bump de dependências de 29/08, o `event-log drain` do worker estava
+  desligado: o `@react-pdf/renderer` novo arrastou o `@react-pdf/hyphenate`, cujo
+  export wildcard o `tsx` — o runtime do worker — não resolve. Como o handler de
+  exportação LGPD importa o renderer estaticamente, o laço do drain não subia, e o
+  `event_log` voltava a depender só do cron de 1 minuto (a transcrição de áudio, de
+  novo, com mais de 100 s de atraso).
+
+  Nada muda para quem opera: a fila continuava sendo processada, só devagar. O que
+  volta é a velocidade — o worker volta a drenar a fila a cada poucos segundos,
+  como era antes do bump, sem nenhuma ação no servidor.
+
 ## [1.22.0] — 2026-09-14
 
 ### Adicionado
@@ -3492,7 +3507,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.22.0...HEAD
+[Não lançado]: https://github.com/vgamkt/DeskcommCRM/compare/v1.22.1...HEAD
+[1.22.1]: https://github.com/vgamkt/DeskcommCRM/compare/v1.22.0...v1.22.1
 [1.22.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/vgamkt/DeskcommCRM/compare/v1.19.3...v1.20.0
