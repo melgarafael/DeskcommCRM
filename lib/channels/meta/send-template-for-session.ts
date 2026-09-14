@@ -25,6 +25,21 @@ export interface SendTemplateForSessionInput {
   name: string;
   language: string;
   values: Record<string, string>;
+  /**
+   * Transporte explícito. Ausente = credencial do ambiente da Meta (instalação
+   * de número único). Presente = canal Graph-compatível (parceiro), com host e
+   * token próprios. Sem isto o modelo do parceiro sairia pelo número da Meta.
+   */
+  transport?: {
+    phoneNumberId: string;
+    token: string;
+    graphBase?: string;
+    graphVersion?: string;
+    /** Prefixo dos códigos de erro (`meta_`/`datafy_`). Default `meta`. */
+    errorPrefix?: string;
+  };
+  /** Conexão dona da definição — restringe o `meta_templates` a ela. */
+  channelSessionId?: string | null;
 }
 
 /**
@@ -43,21 +58,26 @@ export async function sendTemplateForSession(
     throw new Error("template_incompleto: nome e idioma são obrigatórios em type=template");
   }
 
-  const { data: linha, error } = await db
+  let consulta = db
     .from("meta_templates")
     .select("name, language, status, contract_hash, components")
     .eq("organization_id", input.organizationId)
     .eq("name", input.name)
-    .eq("language", input.language)
-    .maybeSingle();
+    .eq("language", input.language);
+  // Com sessão, restringe à conexão: dois números têm definições diferentes e
+  // conferir a do número errado aprovaria um envio que a plataforma recusa.
+  if (input.channelSessionId) consulta = consulta.eq("channel_session_id", input.channelSessionId);
+
+  const { data: linha, error } = await consulta.maybeSingle();
 
   if (error) throw new Error(`template_lookup_failed: ${error.message}`);
 
   await input.beforeSend?.();
   const resultado = await sendTemplate({
-    phoneNumberId: process.env.META_PHONE_NUMBER_ID ?? "",
-    token: process.env.META_SYSTEM_USER_TOKEN ?? "",
-    graphVersion: process.env.META_GRAPH_VERSION ?? "v22.0",
+    phoneNumberId: input.transport?.phoneNumberId ?? process.env.META_PHONE_NUMBER_ID ?? "",
+    token: input.transport?.token ?? process.env.META_SYSTEM_USER_TOKEN ?? "",
+    graphVersion: input.transport?.graphVersion ?? process.env.META_GRAPH_VERSION ?? "v22.0",
+    ...(input.transport?.graphBase ? { graphBase: input.transport.graphBase } : {}),
     to: input.to,
     binding: {
       name: input.name,
@@ -80,6 +100,7 @@ export async function sendTemplateForSession(
 
   if (resultado.sent) return resultado.externalId;
 
+  const prefixo = input.transport?.errorPrefix ?? "meta";
   switch (resultado.reason) {
     case "missing":
       throw new Error(`template_missing: ${input.name} (${input.language}) não está no espelho`);
@@ -90,6 +111,6 @@ export async function sendTemplateForSession(
     case "missing_values":
       throw new Error(`template_missing_values: ${resultado.missing.join(", ")}`);
     case "api_error":
-      throw new Error(`meta_${resultado.code ?? "erro"}: ${resultado.message}`);
+      throw new Error(`${prefixo}_${resultado.code ?? "erro"}: ${resultado.message}`);
   }
 }

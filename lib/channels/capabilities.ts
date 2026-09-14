@@ -74,15 +74,14 @@ export const CHANNEL_CAPABILITIES: Record<ChannelProvider, ChannelCapabilities> 
   // TRANSPORTE (base URL, token), não o que o WhatsApp permite — então as
   // capabilities são as do canal oficial.
   //
-  // `canManageTemplates: false` é o recorte desta PRIMEIRA versão: o transporte
-  // funciona (enviar/receber/saúde), mas a gestão de modelos ainda não foi
-  // exposta para este canal, e declarar `true` mostraria uma tela que não salva.
-  // `requiresTemplates: true` continua porque a regra da Meta é real: fora da
-  // janela de 24h, só modelo aprovado passa.
+  // `canManageTemplates: true`: os modelos são os da Cloud API e o parceiro
+  // expõe os mesmos endpoints de catálogo; a tela cria/edita/apaga por lá.
+  // `requiresTemplates: true` porque a regra da Meta é real: fora da janela de
+  // 24h, só modelo aprovado passa.
   datafy: {
     freeformOutsideWindow: false,
     requiresTemplates: true,
-    canManageTemplates: false,
+    canManageTemplates: true,
     banRisk: false,
     minIntervalMs: 6000,
     voiceNote: "opus-only",

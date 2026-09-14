@@ -23,6 +23,8 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
 
 export interface GraphPartnerCredentials {
   phoneNumberId: string;
+  /** A WABA (conta) do número — é o que endereça o catálogo de modelos. */
+  wabaId: string;
   token: string;
   /** Raiz do host (`https://cloud.datafyapi.com.br`). A Graph entra em `/v1`. */
   rootUrl: string;
@@ -58,7 +60,13 @@ export function graphPartnerCredsFromEnv(): GraphPartnerCredentials | null {
   const phoneNumberId = process.env.DATAFY_PHONE_NUMBER_ID;
   const token = process.env.DATAFY_API_KEY;
   if (!phoneNumberId || !token) return null;
-  return { phoneNumberId, token, rootUrl: graphPartnerRootUrl(), source: "env" };
+  return {
+    phoneNumberId,
+    wabaId: process.env.DATAFY_WABA_ID ?? "",
+    token,
+    rootUrl: graphPartnerRootUrl(),
+    source: "env",
+  };
 }
 
 /**
@@ -78,7 +86,7 @@ export async function graphPartnerCredsForPhoneNumberId(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("datafy_phone_number_id, datafy_token_encrypted")
+      .select("datafy_phone_number_id, datafy_waba_id, datafy_token_encrypted")
       .eq("organization_id", organizationId)
       .eq("datafy_phone_number_id", phoneNumberId);
   const { data, error } = await queryTolerantToMissingArchived(
@@ -99,6 +107,7 @@ export async function graphPartnerCredsForPhoneNumberId(
 
   return {
     phoneNumberId: data.datafy_phone_number_id as string,
+    wabaId: (data.datafy_waba_id as string | null) ?? "",
     token,
     rootUrl: graphPartnerRootUrl(),
     source: "session",

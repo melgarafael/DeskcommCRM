@@ -21,7 +21,7 @@
  */
 import type { ChannelProvider } from "./types";
 
-export type FonteDeTemplates = "oficial" | "parceiro";
+export type FonteDeTemplates = "oficial" | "parceiro" | "graph";
 
 /**
  * Qual rota serve as definições de cada canal.
@@ -42,11 +42,9 @@ const FONTE: Record<ChannelProvider, FonteDeTemplates | null> = {
   waha: null,
   meta_cloud: "oficial",
   zernio: "parceiro",
-  // O canal exige modelo fora da janela de 24h, mas esta primeira versão ainda
-  // não expõe a gestão de modelos dele — ver `canManageTemplates` em
-  // `capabilities.ts`. `null` = a tela não oferece seletor para este canal, em
-  // vez de mandar o operador para uma lista que não existe.
-  datafy: null,
+  // Parceiro Graph-compatível: os modelos são os da Cloud API, servidos por uma
+  // rota própria (host/token do parceiro).
+  datafy: "graph",
 };
 
 /** `null` quando este canal não trabalha com definições aprovadas. */
@@ -57,7 +55,7 @@ export function fonteDeTemplates(provider: string | null | undefined): FonteDeTe
 
 /** A rota que serve as definições desta fonte. */
 export function rotaDeTemplates(fonte: FonteDeTemplates): string {
-  return fonte === "parceiro"
-    ? "/api/v1/channels/partner/templates"
-    : "/api/v1/channels/templates";
+  if (fonte === "parceiro") return "/api/v1/channels/partner/templates";
+  if (fonte === "graph") return "/api/v1/channels/datafy/templates";
+  return "/api/v1/channels/templates";
 }

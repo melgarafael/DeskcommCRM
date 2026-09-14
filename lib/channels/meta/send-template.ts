@@ -28,6 +28,13 @@ export interface SendTemplateInput {
   phoneNumberId: string;
   token: string;
   graphVersion: string;
+  /**
+   * Base da API, quando o canal NÃO é a Meta direta. Um parceiro
+   * Graph-compatível usa a MESMA Cloud API com outro host/token; sem este campo
+   * o envio de modelo sairia pelo `graph.facebook.com` com o token errado.
+   * `undefined` = Meta direta (`https://graph.facebook.com/{graphVersion}`).
+   */
+  graphBase?: string;
   /** Destinatário em dígitos E.164, sem `+` — é o que a Graph API aceita. */
   to: string;
   binding: TemplateBinding;
@@ -90,7 +97,8 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
     };
   }
 
-  const url = `https://graph.facebook.com/${input.graphVersion}/${input.phoneNumberId}/messages`;
+  const base = input.graphBase ?? `https://graph.facebook.com/${input.graphVersion}`;
+  const url = `${base}/${input.phoneNumberId}/messages`;
   const res = await fetch(url, {
     method: "POST",
     headers: {

@@ -21,6 +21,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cloudContactPayload, cloudMediaPayload, toE164Digits } from "../cloud/payload";
 import { graphPartnerGraphBase, resolveGraphPartnerCreds } from "../graph-parceiro/credentials";
+import { graphPartnerTemplateOps } from "../graph-parceiro/templates";
+import { sendTemplateForSession } from "../meta/send-template-for-session";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -92,6 +94,41 @@ export const datafyAdapter: ChannelAdapter = {
     notConfigured: "datafy_not_configured",
     sendFailed: "datafy_error",
     unknownError: "datafy_unknown",
+  },
+
+  /** Gestão das definições aprovadas pela Graph do parceiro. */
+  templates: graphPartnerTemplateOps,
+
+  /**
+   * Envia uma DEFINIÇÃO aprovada — a saída do gate de janela de 24h.
+   *
+   * Reusa o mesmo caminho da Cloud API (`sendTemplateForSession`), parametrizado
+   * com o host e o token do parceiro: o modelo é montado a partir do espelho
+   * (`meta_templates`) e postado na Graph do parceiro.
+   */
+  async sendTemplate(input): Promise<{ externalId: string | null }> {
+    const admin = createAdminClient();
+    const creds = await resolveGraphPartnerCreds(admin, {
+      organizationId: input.organizationId,
+      phoneNumberId: input.sessionRef,
+    });
+    if (!creds) throw new Error("datafy_not_configured: sem token para esta conexão.");
+
+    const externalId = await sendTemplateForSession(admin, {
+      ...(input.beforeSend ? { beforeSend: input.beforeSend } : {}),
+      organizationId: input.organizationId,
+      to: input.to,
+      name: input.name,
+      language: input.language,
+      values: input.values,
+      transport: {
+        phoneNumberId: creds.phoneNumberId,
+        token: creds.token,
+        graphBase: graphPartnerGraphBase(),
+        errorPrefix: "datafy",
+      },
+    });
+    return { externalId };
   },
 
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
