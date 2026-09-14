@@ -81,12 +81,15 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     colunas,
     filtros: [],
     ...(query.order_by ? { ordem: { coluna: query.order_by, desc } } : {}),
-    limite: query.limit,
+    // O teto efetivo é o configurado na conexão, não o absoluto.
+    limite: Math.min(query.limit, acesso.conexao.maxRows),
     offset: query.offset,
   };
 
   try {
-    const resultado = await lerTabela(acesso.pool, pedido, permitidas);
+    const resultado = await lerTabela(acesso.pool, pedido, permitidas, {
+      limiteMax: acesso.conexao.maxRows,
+    });
 
     await audit({
       action: "external_db_connection.read",

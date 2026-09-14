@@ -23436,3 +23436,47 @@ comment on column public.external_db_connections.last_test_error is
   'Erro do último teste de conexão, truncado e sem segredo. Superfície de falha lida pela tela.';
 
 -- ---- fim banco de dados externo do agente (migration 0233) ----
+
+-- ---- limites configuráveis do banco externo (migration 0234) ----
+-- Os limites de leitura deixam de ser um teto único no código e passam a ser
+-- configuráveis por conexão (grade + agente), dentro de uma faixa com CHECK. Os
+-- defaults preservam o comportamento anterior. Idempotente.
+alter table public.external_db_connections
+  add column if not exists max_rows integer not null default 200,
+  add column if not exists max_filters integer not null default 20,
+  add column if not exists max_response_bytes integer not null default 30000;
+
+alter table public.external_db_connections
+  drop constraint if exists external_db_connections_max_rows_valido,
+  drop constraint if exists external_db_connections_max_filters_valido,
+  drop constraint if exists external_db_connections_max_response_bytes_valido;
+
+alter table public.external_db_connections
+  add constraint external_db_connections_max_rows_valido
+    check (max_rows between 1 and 5000),
+  add constraint external_db_connections_max_filters_valido
+    check (max_filters between 0 and 100),
+  add constraint external_db_connections_max_response_bytes_valido
+    check (max_response_bytes between 4096 and 1048576);
+
+comment on column public.external_db_connections.max_rows is
+  'Teto de linhas por consulta (grade e agente). Faixa 1..5000; default 200 = o antigo LIMITE_MAX.';
+comment on column public.external_db_connections.max_filters is
+  'Teto de filtros por consulta do agente. Faixa 0..100; default 20.';
+comment on column public.external_db_connections.max_response_bytes is
+  'Teto de bytes da resposta devolvida ao modelo. Faixa 4096..1048576; default 30000.';
+
+drop view if exists public.external_db_connections_safe;
+create view public.external_db_connections_safe
+  with (security_invoker = true)
+  as
+  select id, organization_id, label, host, port, database_name, username,
+         ssl_mode, enabled, max_rows, max_filters, max_response_bytes,
+         last_tested_at, last_test_ok, last_test_error,
+         created_by, created_at, updated_at
+  from public.external_db_connections;
+
+revoke all on public.external_db_connections_safe from anon;
+grant select on public.external_db_connections_safe to authenticated;
+
+-- ---- fim limites configuráveis do banco externo (migration 0234) ----

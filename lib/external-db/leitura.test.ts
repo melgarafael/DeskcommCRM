@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { LIMITE_MAX, LeituraInvalidaError, montarConsulta, quotarIdentificador } from "./leitura";
+import { LeituraInvalidaError, montarConsulta, quotarIdentificador } from "./leitura";
+import { LIMITE_LINHAS } from "./limites";
 import type { PedidoDeLeitura } from "./types";
 
 const COLS = new Set(["id", "nome", "criado_em", "valor"]);
@@ -122,11 +123,26 @@ describe("montarConsulta", () => {
     expect(r.text).toContain('"nome" is null');
   });
 
-  it("engessa o limite no teto e cai no padrão quando inválido", () => {
-    expect(montarConsulta(pedido({ limite: 999999 }), COLS).limite).toBe(LIMITE_MAX);
+  it("engessa o limite no teto absoluto e cai no padrão quando inválido", () => {
+    expect(montarConsulta(pedido({ limite: 999999 }), COLS).limite).toBe(LIMITE_LINHAS.maximo);
     expect(montarConsulta(pedido({ limite: 0 }), COLS).limite).toBe(50);
     expect(montarConsulta(pedido({ limite: Number.NaN }), COLS).limite).toBe(50);
     expect(montarConsulta(pedido({ offset: -5 }), COLS).offset).toBe(0);
+  });
+
+  it("respeita o teto da conexão quando informado (menor que o absoluto)", () => {
+    const r = montarConsulta(pedido({ limite: 400 }), COLS, { limiteMax: 120 });
+    expect(r.limite).toBe(120);
+    expect(r.text).toContain("limit 120");
+  });
+
+  it("um `limiteMax` inválido cai no teto absoluto, nunca em 'sem limite'", () => {
+    expect(montarConsulta(pedido({ limite: 999999 }), COLS, { limiteMax: 0 }).limite).toBe(
+      LIMITE_LINHAS.maximo,
+    );
+    expect(montarConsulta(pedido({ limite: 999999 }), COLS, { limiteMax: Number.NaN }).limite).toBe(
+      LIMITE_LINHAS.maximo,
+    );
   });
 
   it("recusa tabela sem nome", () => {

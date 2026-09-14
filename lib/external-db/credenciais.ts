@@ -14,7 +14,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { bufToBytea, byteaToBuffer, decryptKey, encryptKey } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 
+import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_RESPOSTA_BYTES } from "./limites";
 import type { ConexaoExterna, ModoTls } from "./types";
+
+/** Um valor de limite ausente/ inválido cai no padrão — nunca em "sem limite". */
+function limiteOuPadrao(valor: number | null, padrao: number): number {
+  return typeof valor === "number" && Number.isFinite(valor) && valor >= 0 ? valor : padrao;
+}
 
 /**
  * Cifra a senha para gravação. As três colunas seguem `ai_provider_credentials`
@@ -57,6 +63,9 @@ interface LinhaConexao {
   password_tag: unknown;
   ssl_mode: ModoTls;
   enabled: boolean;
+  max_rows: number | null;
+  max_filters: number | null;
+  max_response_bytes: number | null;
   updated_at: string;
 }
 
@@ -68,7 +77,7 @@ export async function carregarConexao(
   const { data, error } = await admin
     .from("external_db_connections")
     .select(
-      "id, organization_id, label, host, port, database_name, username, password_encrypted, password_iv, password_tag, ssl_mode, enabled, updated_at",
+      "id, organization_id, label, host, port, database_name, username, password_encrypted, password_iv, password_tag, ssl_mode, enabled, max_rows, max_filters, max_response_bytes, updated_at",
     )
     .eq("organization_id", organizationId)
     .eq("id", connectionId)
@@ -111,6 +120,9 @@ export async function carregarConexao(
       username: data.username,
       password,
       sslMode: data.ssl_mode,
+      maxRows: limiteOuPadrao(data.max_rows, LIMITE_LINHAS.padrao),
+      maxFilters: limiteOuPadrao(data.max_filters, LIMITE_FILTROS.padrao),
+      maxResponseBytes: limiteOuPadrao(data.max_response_bytes, LIMITE_RESPOSTA_BYTES.padrao),
       versao: data.updated_at,
     },
   };

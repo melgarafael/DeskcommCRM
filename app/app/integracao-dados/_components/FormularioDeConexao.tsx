@@ -32,6 +32,7 @@ import {
   type ConexaoExternaRow,
 } from "@/hooks/external-db/useConexoesExternas";
 import { useT } from "@/hooks/i18n/useT";
+import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_RESPOSTA_BYTES } from "@/lib/external-db/limites";
 
 const MODOS_TLS = [
   { valor: "require", rotulo: "Obrigatório (padrão)" },
@@ -41,6 +42,11 @@ const MODOS_TLS = [
   { valor: "disable", rotulo: "Sem TLS (rede local confiável)" },
 ] as const;
 
+/** O tamanho da resposta é gravado em bytes, mas a tela fala em KB. */
+const KB = 1024;
+const KB_MIN = Math.ceil(LIMITE_RESPOSTA_BYTES.minimo / KB);
+const KB_MAX = Math.floor(LIMITE_RESPOSTA_BYTES.maximo / KB);
+
 const schema = z.object({
   label: z.string().trim().min(1, "Obrigatório").max(80),
   host: z.string().trim().min(1, "Obrigatório").max(255),
@@ -48,6 +54,21 @@ const schema = z.object({
   database_name: z.string().trim().min(1, "Obrigatório").max(128),
   username: z.string().trim().min(1, "Obrigatório").max(128),
   password: z.string().max(2048),
+  max_rows: z.coerce
+    .number()
+    .int()
+    .min(LIMITE_LINHAS.minimo, "Fora do limite permitido")
+    .max(LIMITE_LINHAS.maximo, "Fora do limite permitido"),
+  max_filters: z.coerce
+    .number()
+    .int()
+    .min(LIMITE_FILTROS.minimo, "Fora do limite permitido")
+    .max(LIMITE_FILTROS.maximo, "Fora do limite permitido"),
+  max_response_kb: z.coerce
+    .number()
+    .int()
+    .min(KB_MIN, "Fora do limite permitido")
+    .max(KB_MAX, "Fora do limite permitido"),
 });
 
 interface Props {
@@ -78,6 +99,11 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
   const [password, setPassword] = useState("");
   const [sslMode, setSslMode] = useState<string>(conexao?.ssl_mode ?? "require");
   const [enabled, setEnabled] = useState(conexao?.enabled ?? true);
+  const [maxRows, setMaxRows] = useState(String(conexao?.max_rows ?? LIMITE_LINHAS.padrao));
+  const [maxFilters, setMaxFilters] = useState(String(conexao?.max_filters ?? LIMITE_FILTROS.padrao));
+  const [maxResponseKb, setMaxResponseKb] = useState(
+    String(Math.round((conexao?.max_response_bytes ?? LIMITE_RESPOSTA_BYTES.padrao) / KB)),
+  );
   const [salvando, setSalvando] = useState(false);
   const [erros, setErros] = useState<Record<string, string | undefined>>({});
 
@@ -85,7 +111,17 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
     evento.preventDefault();
     setErros({});
 
-    const parsed = schema.safeParse({ label, host, port, database_name: database, username, password });
+    const parsed = schema.safeParse({
+      label,
+      host,
+      port,
+      database_name: database,
+      username,
+      password,
+      max_rows: maxRows,
+      max_filters: maxFilters,
+      max_response_kb: maxResponseKb,
+    });
     if (!parsed.success) {
       const flat = parsed.error.flatten().fieldErrors;
       setErros({
@@ -95,6 +131,9 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
         database_name: flat.database_name?.[0],
         username: flat.username?.[0],
         password: flat.password?.[0],
+        max_rows: flat.max_rows?.[0],
+        max_filters: flat.max_filters?.[0],
+        max_response_kb: flat.max_response_kb?.[0],
       });
       return;
     }
@@ -117,6 +156,9 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
           username: parsed.data.username,
           ssl_mode: sslMode,
           enabled,
+          max_rows: parsed.data.max_rows,
+          max_filters: parsed.data.max_filters,
+          max_response_bytes: parsed.data.max_response_kb * KB,
           ...(parsed.data.password ? { password: parsed.data.password } : {}),
         });
         toast.success(t("Conexão atualizada."));
@@ -130,6 +172,9 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
           password: parsed.data.password,
           ssl_mode: sslMode,
           enabled,
+          max_rows: parsed.data.max_rows,
+          max_filters: parsed.data.max_filters,
+          max_response_bytes: parsed.data.max_response_kb * KB,
         });
         toast.success(t("Conexão criada. Use Testar para conferir o acesso."));
       }
@@ -253,6 +298,56 @@ export function FormularioDeConexao({ open, onOpenChange, conexao }: Props) {
             </div>
             <Switch id="ext-enabled" checked={enabled} onCheckedChange={setEnabled} />
           </div>
+
+          <fieldset className="space-y-3 rounded-md border p-3">
+            <legend className="px-1 text-sm font-medium">{t("Limites de leitura")}</legend>
+            <p className="text-xs text-muted-foreground">
+              {t("Quanto o assistente e a grade podem ler desta fonte. Aumente se o seu processo precisar.")}
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="ext-max-rows">{t("Linhas por consulta")}</Label>
+                <Input
+                  id="ext-max-rows"
+                  value={maxRows}
+                  onChange={(e) => setMaxRows(e.target.value)}
+                  inputMode="numeric"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {LIMITE_LINHAS.minimo}–{LIMITE_LINHAS.maximo}
+                </p>
+                {erros.max_rows && <p className="text-xs text-destructive">{erros.max_rows}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ext-max-filters">{t("Filtros por consulta")}</Label>
+                <Input
+                  id="ext-max-filters"
+                  value={maxFilters}
+                  onChange={(e) => setMaxFilters(e.target.value)}
+                  inputMode="numeric"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {LIMITE_FILTROS.minimo}–{LIMITE_FILTROS.maximo}
+                </p>
+                {erros.max_filters && <p className="text-xs text-destructive">{erros.max_filters}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ext-max-response">{t("Resposta para a IA (KB)")}</Label>
+                <Input
+                  id="ext-max-response"
+                  value={maxResponseKb}
+                  onChange={(e) => setMaxResponseKb(e.target.value)}
+                  inputMode="numeric"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {KB_MIN}–{KB_MAX}
+                </p>
+                {erros.max_response_kb && (
+                  <p className="text-xs text-destructive">{erros.max_response_kb}</p>
+                )}
+              </div>
+            </div>
+          </fieldset>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={salvando}>
