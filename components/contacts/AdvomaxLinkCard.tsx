@@ -18,7 +18,6 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   const [erro, setErro] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [processos, setProcessos] = useState<ProcessoRow[]>([]);
-  const [processosLoading, setProcessosLoading] = useState(false);
 
   useEffect(() => {
     let ativo = true;
@@ -34,10 +33,9 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   useEffect(() => {
     if (link?.status !== "linked") return;
     let ativo = true;
-    setProcessosLoading(true);
     void fetch(`/api/v1/contacts/${contactId}/advomax-link/processos`).then((r) => r.ok ? r.json() : null).then((body) => {
       if (ativo) setProcessos(Array.isArray(body?.data) ? body.data as ProcessoRow[] : []);
-    }).catch(() => undefined).finally(() => { if (ativo) setProcessosLoading(false); });
+    }).catch(() => undefined);
     return () => { ativo = false; };
   }, [contactId, link?.status]);
 
@@ -81,8 +79,7 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
     {erro && <p role="alert" className="text-sm text-error-fg">{erro}</p>}
     {link?.status === "linked" && <div className="border-t pt-3">
       <h3 className="text-sm font-semibold">{t("Processos vinculados")}</h3>
-      {processosLoading && <p className="mt-1 text-sm text-muted-foreground">{t("Consultando o Advomax…")}</p>}
-      {!processosLoading && processos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum processo ativo encontrado para esta Pessoa.")}</p>}
+      {processos.length === 0 && <p className="mt-1 text-sm text-muted-foreground">{t("Nenhum processo ativo encontrado para esta Pessoa.")}</p>}
       {processos.length > 0 && <ul className="mt-2 space-y-1 text-sm">{processos.map((processo) => <li key={processo.codigo} className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-1.5">
         <span><strong>{processo.pasta || processo.numero || `#${processo.codigo}`}</strong>{processo.tribunal && <span className="ml-2 text-muted-foreground">{processo.tribunal}</span>}</span>
         <a className="text-primary underline-offset-2 hover:underline" href={`https://advomax.com.br/fichaProcesso/${processo.codigo}`} target="_blank" rel="noreferrer">{t("Abrir ficha")}</a>
