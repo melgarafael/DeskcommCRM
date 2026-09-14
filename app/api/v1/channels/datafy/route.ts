@@ -21,6 +21,7 @@ import {
   findGraphPartnerSession,
   saveGraphPartnerSession,
 } from "@/lib/channels/graph-parceiro/session";
+import { graphPartnerGraphBase } from "@/lib/channels/graph-parceiro/credentials";
 import { validateGraphPartnerCredentials } from "@/lib/channels/graph-parceiro/validate-credentials";
 import { env } from "@/lib/env";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -61,6 +62,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     hasToken: Boolean(ativa?.hasToken),
     phoneNumberId: ativa?.phoneNumberId ?? null,
     wabaId: ativa?.wabaId ?? null,
+    /** Base Graph-compatível do provedor — para reaproveitar em outro sistema. */
+    endpoint: ativa ? graphPartnerGraphBase() : null,
     displayName: ativa?.displayName ?? null,
     phoneNumber: ativa?.phoneNumber ?? null,
     status: ativa?.status ?? null,

@@ -39,6 +39,15 @@ export const PARTNER_CHANNEL_PROVIDER: ChannelProvider = CHANNEL_PROVIDER_ZERNIO
  */
 export const PARTNER_CHANNEL_LABEL = "Zernio";
 
+/**
+ * Endpoint base do parceiro — o que a tela mostra para o operador reaproveitar
+ * em outro sistema. Não é segredo (endereço público do provedor); a credencial
+ * continua sem voltar nunca.
+ */
+export function partnerEndpoint(): string {
+  return zernioBaseUrl();
+}
+
 export interface PartnerCredentialsInput {
   accountId: string;
   apiKey: string;
