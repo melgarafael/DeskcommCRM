@@ -33,7 +33,15 @@ const nextConfig: NextConfig = {
    * sem exigir que alguém lembre de editar esta linha.
    */
   outputFileTracingIncludes: {
-    "/**": ["./node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**"],
+    "/**": [
+      "./node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**",
+      // Mesmo defeito do @swc/helpers acima: js-binding.js do @napi-rs/canvas
+      // resolve o binário nativo com `require()` computado em runtime
+      // (process.platform/isMusl()), então o tracer não o segue e o
+      // standalone sobe sem o binário — pdfjs-dist quebra no import com
+      // "DOMMatrix is not defined" (lib/ai/rag/extractors/pdf.ts).
+      "./node_modules/.pnpm/@napi-rs+canvas*/node_modules/@napi-rs/**",
+    ],
   },
   reactStrictMode: true,
   poweredByHeader: false,
