@@ -95,7 +95,6 @@ const EQUIPE = {
       is_available: true,
       capacity: 5,
       schedule: { timezone: "America/Sao_Paulo", windows: [] },
-      last_heartbeat_at: "2026-08-04T12:00:00Z",
       updated_at: "2026-08-04T12:00:00Z",
     },
   ],
@@ -120,13 +119,19 @@ describe("GET /api/v1/attendants/availability", () => {
 
     // O contrato de `AttendantAvailability` (hooks/team/useAttendants.ts). Um
     // campo a menos aqui é uma coluna vazia na tela, sem erro nenhum.
+    //
+    // ⚠️ `last_heartbeat_at` SAIU da lista. Ele era entregue à tela e não era
+    // lido por ninguém desde que o selo de Status passou a ser `estaDePlantao`
+    // — campo no fio sem leitor do outro lado. A COLUNA continua no banco,
+    // reservada para um emissor de presença de verdade, se alguém construir um;
+    // o que não existe mais é a escrita (que carimbava o clique, não uma
+    // batida) nem a entrega.
     expect(Object.keys(body.data[0] ?? {}).sort()).toEqual(
       [
         "capacity",
         "current_load",
         "email",
         "is_available",
-        "last_heartbeat_at",
         "name",
         "role",
         "schedule",
