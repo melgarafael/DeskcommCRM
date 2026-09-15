@@ -24,6 +24,30 @@ describe("evaluateConditions", () => {
     expect(evaluateConditions([{ field: "event.added_tags", op: "contains", value: "vip" }], ctx)).toBe(true));
   it("contains em string (case-insensitive)", () =>
     expect(evaluateConditions([{ field: "lead.custom_fields.utm_source", op: "contains", value: "INSTA" }], ctx)).toBe(true));
+
+  /**
+   * #956: em lista, `contains` exigia a tag IDÊNTICA, com caixa. Quem escreve a
+   * regra digita "Google"; a tag guardada é `google` (o editor de tags do
+   * contato no Inbox grava em minúsculas) ou `google ads`. O rótulo na tela é
+   * "contém" — e em texto ele já era "contém" sem caixa.
+   */
+  const comTags = (tags: string[]) => ({ event: { added_tags: tags } });
+  it("contém em lista: casa a tag de caixa diferente", () =>
+    expect(
+      evaluateConditions([{ field: "event.added_tags", op: "contains", value: "Google" }], comTags(["google"])),
+    ).toBe(true));
+  it("contém em lista: casa a tag que contém o texto", () =>
+    expect(
+      evaluateConditions([{ field: "event.added_tags", op: "contains", value: "Google" }], comTags(["Google Ads"])),
+    ).toBe(true));
+  it("contém em lista: casa com o texto no meio da tag", () =>
+    expect(
+      evaluateConditions([{ field: "event.added_tags", op: "contains", value: "google" }], comTags(["tráfego google"])),
+    ).toBe(true));
+  it("contém em lista: NÃO casa tag sem relação", () =>
+    expect(
+      evaluateConditions([{ field: "event.added_tags", op: "contains", value: "Google" }], comTags(["indicação", "vip"])),
+    ).toBe(false));
   it("E entre múltiplas: uma falsa derruba", () =>
     expect(
       evaluateConditions(
