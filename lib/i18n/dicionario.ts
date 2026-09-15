@@ -37,6 +37,11 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // vocabulario.ts (followups) — ESPERA_PELA_RESPOSTA.ajuda era string pronta
+  // em português; virou função composta com t() (ver lib/followup/vocabulario.ts).
+  "Se o contato não responder dentro desse tempo, o fluxo segue sozinho pelo caminho": {
+    es: "Si el contacto no responde dentro de ese tiempo, el flujo sigue solo por el camino",
+  },
   "Versão publicada": { es: "Versión publicada" },
   "Publicado em": { es: "Publicado el" },
   "Nenhum agente publicado": { es: "Ningún agente publicado" },
