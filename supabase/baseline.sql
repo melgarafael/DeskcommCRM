@@ -24069,8 +24069,13 @@ create table if not exists public.advomax_contact_links (
   unique (organization_id, contact_id),
   unique (organization_id, pessoa_codigo)
 );
+alter table public.advomax_contact_links
+  add column if not exists created_by_email text;
 create index if not exists idx_advomax_contact_links_org_status
   on public.advomax_contact_links (organization_id, status, updated_at desc);
+create index if not exists idx_advomax_contact_links_pending
+  on public.advomax_contact_links (updated_at asc)
+  where status = 'pending';
 alter table public.advomax_contact_links enable row level security;
 drop policy if exists advomax_contact_links_select on public.advomax_contact_links;
 create policy advomax_contact_links_select on public.advomax_contact_links

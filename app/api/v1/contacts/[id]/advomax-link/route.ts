@@ -66,6 +66,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     authority_source: "advomax",
     last_synced_at: lastSyncedAt,
     created_by: authz.user.id,
+    created_by_email: authz.user.email,
   } as never, { onConflict: "organization_id,contact_id" }).select("*").single();
   if (error) {
     if (error.code === "23505") return fail("conflict", "Esta Pessoa já está vinculada a outro contato deste escritório.", 409, { requestId });

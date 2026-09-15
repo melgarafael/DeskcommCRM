@@ -14,6 +14,7 @@ const PATHS = [
   "/api/v1/cron/event-log-drain",
   "/api/v1/cron/followup-flow-worker",
   "/api/v1/cron/crm-document-intake",
+  "/api/v1/cron/advomax-contact-links-reconcile",
 ] as const;
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);

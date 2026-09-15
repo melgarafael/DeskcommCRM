@@ -102,6 +102,7 @@ export const AUDIT_ACTIONS = [
   "document_intake.uploaded",
   "document_intake.failed",
   "contact.advomax_linked",
+  "contact.advomax_link_reconciled",
   "contact.advomax_unlinked",
   "contact.advomax_process_linked",
   "contact.advomax_process_unlinked",
