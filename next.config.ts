@@ -50,7 +50,15 @@ const nextConfig: NextConfig = {
       // não no import, no EMIT. Apontando para o conteúdo de cada pacote em
       // vez de para o diretório que os agrega, nenhum symlink é visitado.
       "./node_modules/.pnpm/@napi-rs+canvas@*/node_modules/@napi-rs/canvas/**",
+      // `*.node` sozinho deixa o pacote de plataforma sem `package.json` — sem
+      // ele, `require('@napi-rs/canvas-linux-x64-musl')` (o require INTERNO que
+      // js-binding.js faz para achar seu próprio binário) não sabe qual arquivo é
+      // o entrypoint e falha com "Cannot find native binding", mesmo com o
+      // `.node` fisicamente presente na imagem. Medido rodando o require exato
+      // que o pdfjs-dist faz dentro do container: só resolveu depois de incluir
+      // os dois.
       "./node_modules/.pnpm/@napi-rs+canvas-*/node_modules/@napi-rs/*/*.node",
+      "./node_modules/.pnpm/@napi-rs+canvas-*/node_modules/@napi-rs/*/package.json",
     ],
   },
   reactStrictMode: true,

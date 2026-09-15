@@ -77,6 +77,31 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
+
+# outputFileTracingIncludes (next.config.ts) copia o CONTEÚDO de @napi-rs/canvas
+# e os .node soltos das variantes de plataforma, mas não os SYMLINKS que o pnpm
+# cria ao lado deles — e é só por esses symlinks que um `require()` de
+# especificador nu (`@napi-rs/canvas`, e o `require('@napi-rs/canvas-linux-x64-*')`
+# que o próprio pacote faz por dentro para achar seu binário) resolve. Sem isto,
+# os arquivos existem na imagem mas ficam inalcançáveis — medido: mesmo com o
+# glob do 4e4f6612 aplicado, `require('@napi-rs/canvas')` a partir do chunk do
+# pdfjs-dist ainda lança MODULE_NOT_FOUND. Recriar os dois symlinks que faltam
+# resolve os dois `require` (o do chunk pdfjs e o interno do canvas por sua
+# variante de plataforma), sem depender do file tracer do Next.
+RUN set -e; \
+    CANVAS_DIR="$(find /app/node_modules/.pnpm -maxdepth 1 -iname '@napi-rs+canvas@*' -print -quit)"; \
+    if [ -n "$CANVAS_DIR" ]; then \
+      mkdir -p /app/node_modules/@napi-rs; \
+      ln -sf "$CANVAS_DIR/node_modules/@napi-rs/canvas" /app/node_modules/@napi-rs/canvas; \
+      for plat in linux-x64-musl linux-x64-gnu; do \
+        PLAT_DIR="$(find /app/node_modules/.pnpm -maxdepth 1 -iname "@napi-rs+canvas-$plat@*" -print -quit)"; \
+        if [ -n "$PLAT_DIR" ]; then \
+          ln -sf "$PLAT_DIR/node_modules/@napi-rs/canvas-$plat" "$CANVAS_DIR/node_modules/@napi-rs/canvas-$plat"; \
+        fi; \
+      done; \
+      chown -R nextjs:nodejs /app/node_modules/@napi-rs "$CANVAS_DIR/node_modules/@napi-rs"; \
+    fi
+
 USER nextjs
 EXPOSE 3000
 # server.js é o entrypoint gerado pelo output standalone.
