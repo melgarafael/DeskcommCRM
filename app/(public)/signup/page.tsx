@@ -6,7 +6,7 @@ import { branding } from "@/lib/branding";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { createClient } from "@/lib/supabase/server";
-import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const metadata = { title: "Criar conta" };
@@ -47,7 +47,7 @@ export default async function SignupPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const idioma = normalizarIdioma(
+  const idioma = await idiomaDoVisitante(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
   const t = (texto: string) => traduzir(texto, idioma);

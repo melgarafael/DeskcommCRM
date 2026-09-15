@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
  * apareça no seletor idioma que realmente muda a tela.
  */
 import { traduzir } from "@/lib/i18n/dicionario";
-import { IDIOMAS, IDIOMA_PADRAO, normalizarIdioma } from "@/lib/i18n/idiomas";
+import { IDIOMAS, IDIOMA_PADRAO, normalizarIdioma, parseAcceptLanguage } from "@/lib/i18n/idiomas";
 import { NAV_DESTINATIONS, NAV_GROUPS } from "@/lib/navigation/registry";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
 
@@ -66,6 +66,30 @@ describe("normalizar o idioma que veio do perfil", () => {
     expect(normalizarIdioma("klingon")).toBe(IDIOMA_PADRAO);
     expect(normalizarIdioma(null)).toBe(IDIOMA_PADRAO);
     expect(normalizarIdioma(undefined)).toBe(IDIOMA_PADRAO);
+  });
+});
+
+describe("Accept-Language de quem ainda não tem sessão", () => {
+  // As telas públicas (login, signup, convite, legal) não têm `user` pra
+  // consultar — sem isto, um visitante em espanhol via anônimo cai sempre em
+  // português, mesmo que o navegador dele diga `es` na frente da lista.
+  it("acha o primeiro idioma suportado na ORDEM de preferência, não no maior q", () => {
+    expect(parseAcceptLanguage("en;q=0.9,es;q=0.8")).toBe("es");
+  });
+
+  it("reconhece a família do idioma, não só a tag exata", () => {
+    expect(parseAcceptLanguage("es-MX,es;q=0.9,en;q=0.8")).toBe("es");
+    expect(parseAcceptLanguage("pt-PT,pt;q=0.9")).toBe("pt-BR");
+  });
+
+  it("sem nenhum idioma suportado na lista, devolve null (cai no padrão depois)", () => {
+    expect(parseAcceptLanguage("en-US,en;q=0.9,fr;q=0.8")).toBeNull();
+  });
+
+  it("cabeçalho ausente ou vazio devolve null", () => {
+    expect(parseAcceptLanguage(null)).toBeNull();
+    expect(parseAcceptLanguage(undefined)).toBeNull();
+    expect(parseAcceptLanguage("")).toBeNull();
   });
 });
 
