@@ -36,9 +36,14 @@ import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
 
-/** Sem o embed do funil o painel não consegue montar os campos customizados. */
+/**
+ * Sem o embed do funil o painel não consegue montar os campos customizados.
+ * Nome do funil e da etapa entram porque dois leads de mesmo título em funis
+ * diferentes ficavam idênticos na lista (#943). `!inner` para filtrar funil
+ * arquivado no banco, antes do `limit(3)` — `pipeline_id` é NOT NULL.
+ */
 const LEAD_COLS =
-  "id, title, status, value_cents, currency, updated_at, pipeline_id, custom_fields, crm_pipelines(settings)";
+  "id, title, status, value_cents, currency, updated_at, pipeline_id, custom_fields, crm_pipelines!inner(name, settings, is_archived), crm_stages(name)";
 const ORDER_COLS = "id, external_id, status, total_cents, currency, created_at";
 /** Acompanha o que a timeline mostra — `reason` e `actor_kind` inclusive. */
 /**
@@ -90,6 +95,8 @@ export async function GET(
       .from("crm_leads")
       .select(LEAD_COLS)
       .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
+      // Arquivar o funil não fecha os leads; sem isto eles seguiam aqui como abertos.
+      .eq("crm_pipelines.is_archived", false)
       .order("updated_at", { ascending: false })
       .limit(3),
     supabase
@@ -158,9 +165,17 @@ export async function GET(
 }
 
 function comCamposDoFunil(row: Record<string, unknown>) {
-  const { crm_pipelines, ...lead } = row;
+  const { crm_pipelines, crm_stages, ...lead } = row;
   return {
     ...lead,
     field_defs: camposDoFunil(settingsDoEmbed(crm_pipelines)),
+    funil_nome: nomeDoEmbed(crm_pipelines),
+    etapa_nome: nomeDoEmbed(crm_stages),
   };
+}
+
+function nomeDoEmbed(embed: unknown): string | null {
+  const alvo = Array.isArray(embed) ? embed[0] : embed;
+  const nome = (alvo as { name?: unknown } | null)?.name;
+  return typeof nome === "string" ? nome : null;
 }

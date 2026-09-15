@@ -42,6 +42,8 @@ interface LeadRow {
   pipeline_id: string;
   custom_fields: Record<string, unknown> | null;
   field_defs: CustomFieldDef[];
+  funil_nome: string | null;
+  etapa_nome: string | null;
 }
 
 interface OrderRow {
@@ -291,6 +293,14 @@ function SemLista({
  * Título, valor e tags já têm casa no dossiê. Quem atende descobre o dado
  * customizado (CPF, plano, endereço) aqui — e tinha de ir no Kanban gravar.
  */
+/** O banco guarda `open`/`won`/`lost`; a tela mostrava a palavra crua (#943). */
+const STATUS_DO_LEAD: Record<string, string> = { open: "Aberto", won: "Ganho", lost: "Perdido" };
+
+/** "Funil · Etapa" — sem isto dois leads de mesmo título ficam idênticos (#943). */
+function ondeEstaOLead(l: LeadRow): string {
+  return [l.funil_nome, l.etapa_nome].filter(Boolean).join(" · ");
+}
+
 function InboxLeadEditor({
   leads,
   selecionadoId,
@@ -302,7 +312,9 @@ function InboxLeadEditor({
   onSelecionar: (id: string) => void;
   onSalvo: () => void;
 }) {
+  const t = useT();
   const ativo = leads.find((l) => l.id === selecionadoId) ?? leads[0]!;
+  const status = (l: LeadRow) => t(STATUS_DO_LEAD[l.status] ?? l.status);
 
   return (
     <div className="mt-2 space-y-2">
@@ -323,8 +335,9 @@ function InboxLeadEditor({
                   )}
                 >
                   <div className="truncate font-medium">{l.title}</div>
+                  <div className="truncate text-muted-foreground">{ondeEstaOLead(l)}</div>
                   <div className="text-muted-foreground">
-                    {l.status} · {formatMoney(l.value_cents, l.currency)}
+                    {status(l)} · {formatMoney(l.value_cents, l.currency)}
                   </div>
                 </button>
               </li>
@@ -333,9 +346,10 @@ function InboxLeadEditor({
         </ul>
       )}
       {leads.length === 1 && (
-        <p className="text-xs text-muted-foreground">
-          {ativo.title} · {ativo.status}
-        </p>
+        <div data-testid="inbox-lead-unico" className="text-xs text-muted-foreground">
+          <p>{ativo.title} · {status(ativo)}</p>
+          <p className="truncate">{ondeEstaOLead(ativo)}</p>
+        </div>
       )}
       <CamposDoFunil
         key={ativo.id}
