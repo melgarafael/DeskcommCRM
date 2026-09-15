@@ -346,10 +346,15 @@ a migration `20260716120000_0030_config_rls_role_policies.sql` aplica
   ou reabrir é uma mutação separada, escopada à organização e auditada. A Central
   não inventa telas técnicas para toda referência nem amplia RBAC por causa de um
   menu oculto ou de uma preferência de interface.
-- **Fila com posição/espera** (G5-03): a visão Fila (`assigned_to=unassigned`)
-  ordena por `last_inbound_at` ASC (quem espera há mais tempo primeiro); posição =
-  índice na lista ordenada; "aguardando há X" derivado de `last_inbound_at`. A
-  contagem da fila casa com `counts.unassigned` (mesmo predicado: sem dono +
+- **Fila com posição/espera** (G5-03): a visão Fila (filtro `comando` com
+  `aguardando`) ordena pela MESMA regra das demais abas do inbox — `last_message_at`
+  DESC, nulls last, tiebreak `id` DESC (#639): a conversa que acabou de receber
+  mensagem está no topo, e o relógio que a linha mostra ("há X min") é o da lista,
+  monotônico de cima para baixo. "Aguardando há X" segue derivado de
+  `last_inbound_at`. A POSIÇÃO na fila de ESPERA (`queue_position` das tools MCP,
+  base de `avg_wait_seconds`) continua vindo de `getQueuePositions` — `last_inbound_at`
+  ASC, nulls last — e NÃO é o índice da lista exibida: são perguntas diferentes (#464).
+  A contagem da fila casa com `counts.unassigned` (mesmo predicado: sem dono +
   status `open`).
 
 > Origem das decisões deste documento (§3.5 defaults, §4 matriz, §5 roteamento):

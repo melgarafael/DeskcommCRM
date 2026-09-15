@@ -52,8 +52,12 @@ export function ConversationList({
   const canais = useChannelSessions().data ?? [];
   const maisDeUmCanal = canais.length > 1;
 
-  // Fila (G5-03): a lista já vem ordenada por tempo de espera (server), então a
-  // posição é o índice na lista visível. Só mostramos posição/espera nessa visão.
+  // Fila (G5-03): a lista vem ordenada por ATIVIDADE RECENTE (`last_message_at`
+  // DESC, igual às demais abas — #639), então o "1º, 2º…" é o índice na lista
+  // visível e NÃO a posição de espera do `getQueuePositions` (`last_inbound_at`
+  // ASC), que é o número das tools MCP. São perguntas diferentes: aqui "onde ela
+  // está na lista", lá "minha vez na fila". O "aguardando há X" continua saindo de
+  // `last_inbound_at`, linha a linha. Só mostramos posição/espera nessa visão.
   // A Fila deixou de mandar `assigned_to=unassigned` (agora pede `comando`), e
   // sem esta linha a numeração "1º, 2º…" e o tempo de espera sumiriam da única
   // visão em que servem para alguma coisa — sem erro nenhum, só sumiriam.

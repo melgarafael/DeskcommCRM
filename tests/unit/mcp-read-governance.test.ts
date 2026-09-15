@@ -48,7 +48,11 @@ const QUEUE_ROWS = [
   { id: CONV_MID, last_inbound_at: new Date(now - 10 * 60_000).toISOString() },
 ];
 
-/** Ordem canônica do inbox (G5-03): last_inbound_at ASC, id ASC. */
+/**
+ * Ordem canônica da fila de ESPERA (G5-03): last_inbound_at ASC, id ASC — a do
+ * `getQueuePositions`, que é o `queue_position` das tools MCP. A ordem de
+ * EXIBIÇÃO do inbox é outra (`last_message_at` DESC, #639).
+ */
 function inboxOrder(rows: Array<{ id: string; last_inbound_at: string }>): string[] {
   return [...rows]
     .sort(

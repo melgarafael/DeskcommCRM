@@ -61,11 +61,13 @@ export async function getQueueStatus(
 }
 
 /**
- * Mapa id→posição (1-based) da fila de atendimento, na MESMA fonte e ordenação
- * que o inbox vê (G5-03 / gov-5d): sem dono ∧ status='open', ordenado por
- * last_inbound_at ASC (nulls last), tiebreak id ASC. O número que a tool MCP
- * devolve é EXATAMENTE o índice desta lista — bate com a posição da fila do
- * atendente. Uma query só (a fila é limitada) — evita N+1 numa listagem.
+ * Mapa id→posição (1-based) da fila de ESPERA (G5-03 / gov-5d): sem dono ∧
+ * status='open', ordenado por last_inbound_at ASC (nulls last), tiebreak id ASC —
+ * quem espera há mais tempo é o 1º. Este é o número do `queue_position` das tools
+ * MCP e a base de `avg_wait_seconds`. NÃO é a ordem de exibição do inbox: a lista
+ * que o atendente vê é ordenada por atividade recente (`last_message_at` DESC) em
+ * todas as abas, Fila inclusive (#639). Uma query só (a fila é limitada) — evita
+ * N+1 numa listagem.
  */
 export async function getQueuePositions(
   supabase: SupabaseClient,

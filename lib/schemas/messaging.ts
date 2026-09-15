@@ -199,7 +199,7 @@ export const CONVERSATION_TERMINAL_STATUSES = ["closed", "archived"] as const;
  *
  *   `supabase/baseline.sql` (trg_conversation_routing_requested)  open+pending
  *   `lib/routing/queue.ts` getQueuePosition  (o nº que o CLIENTE ouve)  open+pending
- *   `lib/routing/queue.ts` getQueuePositions (o nº que a TELA mostra)   open
+ *   `lib/routing/queue.ts` getQueuePositions (o nº do `queue_position` das tools MCP — a tela mostra a ordem da lista, #639)   open
  *   `lib/routing/queue.ts` getQueueStatus    (o painel do gerente)      open
  *   `app/api/v1/conversations/counts`        (o badge da aba)           open
  *   `components/inbox/InboxLayout` tabToFilter (a aba Fila)             open

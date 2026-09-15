@@ -149,18 +149,32 @@ export async function listConversationsHandler(
   ctx: HandlerCtx,
   q: ListConversationsQuery,
 ): Promise<ListConversationsResult> {
-  // Fila (assigned_to=unassigned): ordena por TEMPO DE ESPERA — quem espera há
-  // mais tempo primeiro. `last_inbound_at` = última mensagem do cliente = "há
-  // quanto tempo aguarda resposta" (não `created_at`, que pode ser uma conversa
-  // antiga reaberta). Demais visões: por atividade recente (last_message_at desc).
+  // UMA ORDEM SÓ, EM TODAS AS ABAS: quem escreveu por último fica no topo —
+  // `last_message_at` DESC, nulls last, e `id` DESC como desempate.
+  //
+  // A aba Fila já teve guarda própria: ordenava por TEMPO DE ESPERA
+  // (`last_inbound_at` ASC, "quem espera há mais tempo primeiro"). Era essa ordem
+  // que fazia a lista PARECER ALEATÓRIA (#464): cada linha mostra o relógio de
+  // `last_message_at` ("há 5 min") e, numa lista ordenada por outra coluna, esses
+  // minutos não são monotônicos de cima para baixo — quem acabou de escrever
+  // aparecia embaixo de quem espera desde a manhã. A aba Todas sempre ordenou por
+  // atividade recente, e é daí que vem o "já quando entra no todas, ele classifica
+  // corretamente por horário" do relato.
+  //
+  // O tempo de espera não se perdeu: ele continua saindo de `last_inbound_at`,
+  // linha a linha, no "aguardando há X" — e a posição na FILA DE ESPERA continua
+  // sendo a de `getQueuePositions`, que é o `queue_position` das tools MCP e a
+  // base de `avg_wait_seconds`. O índice na lista visível e a posição na fila de
+  // espera são perguntas diferentes (spec 13 §5); o que não podia era a ordem de
+  // EXIBIÇÃO seguir uma coluna e a legenda de cada linha seguir outra.
+  //
   // A Fila deixou de se identificar por `assigned_to=unassigned` — ela agora pede
-  // `comando`. Sem esta linha o `isQueue` ficaria PARA SEMPRE falso na aba Fila e
-  // a ordenação por tempo de espera sumiria **sem nenhum sintoma na tela**: a
-  // lista continuaria populada, só que ordenada por atividade recente, e quem
-  // espera desde ontem afundaria embaixo de quem escreveu agora.
-  const isQueue = q.comando?.includes("aguardando") ?? q.assigned_to === "unassigned";
-  const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
-  const asc = isQueue;
+  // `comando`, e o filtro de membresia segue logo abaixo, no banco: a ORDEM mudou,
+  // quem aparece na aba não.
+  const sortCol = "last_message_at";
+  // `asc` é `false` desde então (atividade recente é sempre DESC). A variável fica
+  // porque o CURSOR depende do sentido: `op = asc ? "gt" : "lt"`.
+  const asc = false;
 
   let query = supabase
     .from("conversations")

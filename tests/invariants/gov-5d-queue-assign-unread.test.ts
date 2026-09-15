@@ -64,28 +64,34 @@ beforeAll(() => {
         ('${CONTACT_N(4)}', '${GOV_ORG}', 'Queue Order Contact New')
       on conflict do nothing;
 
-    -- Tempos de espera conhecidos: quanto MAIS antigo o last_inbound_at, mais cedo na fila.
+    -- Tempos de espera conhecidos: quanto MAIS antigo o last_inbound_at, mais cedo na
+    -- fila de ESPERA (getQueuePositions). last_message_at é de propósito NÃO
+    -- monotônico em relação a ele: a lista EXIBIDA não pode segui-lo (#639).
     insert into public.conversations
-      (id, organization_id, contact_id, channel_session_id, status, last_inbound_at)
+      (id, organization_id, contact_id, channel_session_id, status, last_inbound_at, last_message_at)
       values
-        ('${CONV_OLD}', '${GOV_ORG}', '${CONTACT_N(2)}', '${GOV_SESSION}', 'open', now() - interval '30 minutes'),
-        ('${CONV_MID}', '${GOV_ORG}', '${CONTACT_N(3)}', '${GOV_SESSION}', 'open', now() - interval '10 minutes'),
-        ('${CONV_NEW}', '${GOV_ORG}', '${CONTACT_N(4)}', '${GOV_SESSION}', 'open', now() - interval '2 minutes')
+        ('${CONV_OLD}', '${GOV_ORG}', '${CONTACT_N(2)}', '${GOV_SESSION}', 'open', now() - interval '30 minutes', now() - interval '10 minutes'),
+        ('${CONV_MID}', '${GOV_ORG}', '${CONTACT_N(3)}', '${GOV_SESSION}', 'open', now() - interval '10 minutes', now() - interval '2 minutes'),
+        ('${CONV_NEW}', '${GOV_ORG}', '${CONTACT_N(4)}', '${GOV_SESSION}', 'open', now() - interval '2 minutes', now() - interval '30 minutes')
       on conflict do nothing;
   `);
 });
 
 describe("G5-03 — coerência ordem↔posição (acceptance 1)", () => {
-  it("fila ordenada por last_inbound_at ASC, id ASC (a MESMA ordem que gera a posição) ⇒ mais antigo = posição 1", () => {
-    // Espelha o ORDER BY do handler (app/api/v1/conversations/_handler.ts): a
-    // posição exibida é o índice nesta lista, então provamos a lista em si.
+  it("fila EXIBIDA ordena por last_message_at DESC, id DESC (a MESMA ordem do handler) ⇒ mais nova no topo, NULL no fim", () => {
+    // Espelha o ORDER BY do handler (app/api/v1/conversations/_handler.ts): o
+    // índice nesta lista é a numeração que a tela mostra, então provamos a lista.
+    // A fixture põe last_message_at NÃO monotônico em relação ao tempo de espera
+    // (MID 2min, OLD 10min, NEW 30min) — uma ordem por `last_inbound_at` ASC
+    // devolveria OLD,MID,NEW e este teste reprova. CONV_STALE não tem
+    // `last_message_at`: nulls last ⇒ fim da lista, apesar do inbound mais novo.
     const ordered = sql(
-      `select string_agg(id::text, ',' order by last_inbound_at asc nulls last, id asc)
+      `select string_agg(id::text, ',' order by last_message_at desc nulls last, id desc)
          from public.conversations
         where organization_id = '${GOV_ORG}'
-          and id in ('${CONV_OLD}', '${CONV_MID}', '${CONV_NEW}');`,
+          and id in ('${CONV_OLD}', '${CONV_MID}', '${CONV_NEW}', '${CONV_STALE}');`,
     );
-    expect(ordered).toBe(`${CONV_OLD},${CONV_MID},${CONV_NEW}`);
+    expect(ordered).toBe(`${CONV_MID},${CONV_OLD},${CONV_NEW},${CONV_STALE}`);
   });
 });
 

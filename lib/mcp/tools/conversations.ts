@@ -50,7 +50,7 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
   name: "crm_list_conversations",
   description:
     "Lista conversas do CRM com filtros opcionais por contato e status. Retorna preview da ultima mensagem. " +
-    "Campos de governança por conversa: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome do atendente, sem email/telefone), tags[], e queue_position (posição 1-based na fila do inbox — só quando na fila, senão null).",
+    "Campos de governança por conversa: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome do atendente, sem email/telefone), tags[], e queue_position (posição 1-based na fila de ESPERA — `getQueuePositions`; a lista do inbox é ordenada por atividade, #639 — só quando na fila, senão null).",
   inputSchema: listInputShape,
   category: "read",
   requiresRole: "agent",
@@ -119,7 +119,7 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
   name: "crm_get_conversation",
   description:
     "Retorna detalhes de uma conversa pelo UUID. Inclui status, atribuicao, contato, ultima atividade. " +
-    "Governança: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome, sem email/telefone), tags[], e queue_position (1-based na fila do inbox — null quando não está na fila).",
+    "Governança: assignee_kind ('user'|'ai'|null), assigned_to_user_id + assigned_to_user_name (só o nome, sem email/telefone), tags[], e queue_position (1-based na fila de ESPERA — `getQueuePositions`; a lista do inbox é ordenada por atividade, #639 — null quando não está na fila).",
   inputSchema: getInputShape,
   category: "read",
   requiresRole: "agent",
