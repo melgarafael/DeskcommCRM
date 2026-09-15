@@ -499,7 +499,9 @@ Processo padrão (siga sempre):
 ## Skills relevantes a usar (Claude Code)
 
 **Guias embutidos neste repositório** (`.claude/skills/`, espelho gerado de `.agents/skills/` — a
-mesma tabela vale para Codex, Cursor, OpenCode e Antigravity; ver `AGENTS.md`):
+mesma tabela vale para Codex, Cursor, OpenCode e Antigravity; ver `AGENTS.md`). Para tê-los em
+qualquer pasta, `bash scripts/instalar-guias.sh`; editando um guia numa branch, rode com `--fonte .`
+naquele clone — no Claude Code a skill GLOBAL vence a do projeto com o mesmo nome:
 
 - `deskcomm-instalar` — instalar, atualizar ou consertar a instalação numa VPS
 - `deskcomm-cliente-novo` — configurar o CRM para um cliente ou nicho (agentes, roteadores, follow-ups, conhecimento)

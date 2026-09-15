@@ -1,6 +1,6 @@
 ---
 name: deskcomm-contribuir
-description: Guia de contribuição ao DeskcommCRM para quem vai mexer no código e abrir um pull request, sobretudo de um fork. Use SEMPRE que a pessoa disser que vai contribuir, corrigir um bug, implementar algo, abrir ou atualizar um PR, criar uma migration, resolver conflito com a main, ou perguntar "como eu testo isso", "minha branch está atrasada?", "por que o CI ficou vermelho", "o Vercel falhou" — e antes de qualquer commit em clone que não seja do mantenedor. É o espelho da triagem: mede ANTES do PR o que o mantenedor mede depois (branch atrasada, tripla de migration, marca do fork no diff, fragmento de release, teste que falta, prova em tela), arma os hooks de git e evita retrabalho e PR recusado.
+description: 'Guia de contribuição ao DeskcommCRM para quem vai mexer no código e abrir um pull request, sobretudo de um fork. Use SEMPRE que a pessoa disser que vai contribuir, corrigir um bug, implementar algo, abrir ou atualizar um PR, criar uma migration, resolver conflito com a main, ou perguntar "como eu testo isso", "minha branch está atrasada?", "por que o CI ficou vermelho", "o Vercel falhou" — e antes de qualquer commit em clone que não seja do mantenedor. É o espelho da triagem: mede ANTES do PR o que o mantenedor mede depois (branch atrasada, tripla de migration, marca do fork no diff, fragmento de release, teste que falta, prova em tela), arma os hooks de git e evita retrabalho e PR recusado.'
 metadata:
   publico: contribuidor externo, dev de agência, fork
   espelho-de: triagem/TRIAGEM.md

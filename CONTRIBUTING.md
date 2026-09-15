@@ -6,6 +6,9 @@
    Antigravity): o guia `deskcomm-contribuir` (`.agents/skills/deskcomm-contribuir/SKILL.md`) mede
    antes do PR o que a triagem mede depois — branch atrasada, tripla de migration, marca do fork no
    diff, fragmento de release — e arma os hooks de git com `bash .agents/skills/deskcomm-contribuir/scripts/armar-hooks.sh`.
+   Para ter os guias em qualquer pasta: `bash scripts/instalar-guias.sh`. Vai **editar** um guia?
+   Rode `bash scripts/instalar-guias.sh --fonte .` no seu clone — no Claude Code a skill global
+   vence a do projeto, e sem isso você testaria a versão da `main`, não a sua.
 1. Leia [`CLAUDE.md`](CLAUDE.md) — convenções não-negociáveis.
 2. Leia [`ARCHITECTURE.md`](ARCHITECTURE.md) — visão de 1 página.
 3. Identifique o epic de origem em [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md).

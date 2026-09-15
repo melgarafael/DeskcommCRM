@@ -128,20 +128,27 @@ escaneie o QR code com o WhatsApp do seu número.
 
 ### 🤖 Prefere que uma IA instale pra você?
 
-Jogue a pasta `hostgator-setup-kit/` no chat do **Claude Code** rodando dentro da VPS e diga
-*"instala o DeskcommCRM pra mim"*. Ele lê o [`CLAUDE.md`](hostgator-setup-kit/CLAUDE.md) do kit
-— que traz o passo a passo e as armadilhas já mapeadas — e conduz tudo em português.
+O repositório traz **guias do assistente** que carregam sozinhos no Claude Code, Codex, Cursor,
+OpenCode ou Antigravity: instalar, montar um cliente por nicho, analisar métricas, afinar o prompt
+do agente e contribuir. Para tê-los em **qualquer pasta** — inclusive antes de clonar, no seu
+computador —, rode uma vez:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/scripts/instalar-guias.sh | bash
+```
+
+Depois abra uma sessão nova do seu assistente e diga *"quero instalar o CRM na minha VPS"* — ou
+digite `/deskcomm-instalar`. Rodar o comando de novo atualiza os guias; `--remover` desfaz.
+
+Com o repositório já clonado, os guias vêm dentro dele (`.agents/skills/`) e nem isso é preciso.
+Também funciona o jeito antigo: jogar só a pasta `hostgator-setup-kit/` no chat do **Claude Code**
+dentro da VPS — ele lê o [`CLAUDE.md`](hostgator-setup-kit/CLAUDE.md) do kit e conduz tudo em português.
 
 ---
 
 ## 🔄 Atualizar
 
 Saiu versão nova? Há dois caminhos, e o primeiro **não exige terminal**.
-
-Com o repositório clonado, o **guia de instalação** já vem dentro — `.agents/skills/deskcomm-instalar/` —
-e carrega sozinho no Claude Code, Codex, Cursor, OpenCode ou Antigravity aberto na pasta. Diga só
-*"quero instalar o CRM na minha VPS"*. Há guias também para montar um cliente por nicho, analisar
-métricas, afinar o prompt do agente e contribuir (`AGENTS.md`, seção "Guias do assistente").
 
 ### Pela tela (recomendado)
 

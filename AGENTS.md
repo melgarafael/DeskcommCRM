@@ -447,7 +447,8 @@ regra de packaging acima se mudou o artefato que o self-hoster instala.
 O repositório embute guias em `.agents/skills/` — lidos por Codex, Cursor, OpenCode e
 Antigravity; o Claude Code lê o espelho em `.claude/skills/` (`pnpm skills:sync` regrava, e
 `tests/unit/skills-embutidas.test.ts` reprova divergência). Carregue o guia quando o pedido
-casar, mesmo que a pessoa não saiba que ele existe:
+casar, mesmo que a pessoa não saiba que ele existe. Fora de um clone (ou num clone antigo),
+`bash scripts/instalar-guias.sh` liga os guias nas pastas globais dos cinco CLIs:
 
 | situação | guia |
 |---|---|
