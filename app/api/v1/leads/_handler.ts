@@ -629,9 +629,12 @@ export async function moveLeadHandler(
     throw new ApiError(
       422,
       "pipeline_immutable_use_clone",
-      undefined,
+      { use: "/api/v1/leads/{id}/clone" },
       ctx.requestId,
-      traduzir("Move cross-pipeline não é permitido.", ctx.idioma ?? "pt-BR"),
+      traduzir(
+        "Move cross-pipeline não é permitido. Use POST /api/v1/leads/[id]/clone para levar o negócio a outro funil.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
 

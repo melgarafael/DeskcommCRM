@@ -26,6 +26,21 @@ export const moveLeadSchema = z.object({
 });
 export type MoveLeadInput = z.infer<typeof moveLeadSchema>;
 
+/**
+ * cloneLeadSchema → POST /api/v1/leads/[id]/clone (P-01).
+ *
+ * O caminho para OUTRO funil: `pipeline_id` é obrigatório, `stage_id` é opcional
+ * (sem ele a primeira etapa aberta do funil destino recebe o negócio) e
+ * `lost_reason` é o motivo do encerramento da ORIGEM — canônico ou estendido pelo
+ * funil (o trigger do banco é a fonte de verdade, como em `loseLeadSchema`).
+ */
+export const cloneLeadSchema = z.object({
+  pipeline_id: z.string().uuid(),
+  stage_id: z.string().uuid().optional(),
+  lost_reason: z.string().min(1).max(500).optional(),
+});
+export type CloneLeadInput = z.infer<typeof cloneLeadSchema>;
+
 export const winLeadSchema = z.object({}).passthrough();
 export type WinLeadInput = z.infer<typeof winLeadSchema>;
 

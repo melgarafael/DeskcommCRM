@@ -83,9 +83,9 @@ export async function POST(
   if (stage.pipeline_id !== lead.pipeline_id) {
     return fail(
       "pipeline_immutable_use_clone",
-      t("Move cross-pipeline não é permitido. Clone o lead para o pipeline alvo."),
+      t("Move cross-pipeline não é permitido. Use POST /api/v1/leads/[id]/clone para levar o negócio a outro funil."),
       422,
-      { requestId },
+      { requestId, details: { use: "/api/v1/leads/{id}/clone" } },
     );
   }
 

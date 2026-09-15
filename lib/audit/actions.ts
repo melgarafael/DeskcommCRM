@@ -553,6 +553,9 @@ export const AUDIT_ACTIONS = [
   // porque toda leitura de `admin/` é auditada neste repo — e porque aqui o
   // operador enxerga o agente publicado na organização de outra pessoa.
   "platform_admin.tenant_agents_viewed",
+  // Mover um card para OUTRO funil (issue #922) clona o negócio no destino e
+  // encerra o original: é a escrita que mexe em DOIS funis de uma vez.
+  "lead.moved_to_pipeline",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -264,7 +264,9 @@ owner: Rafael Melgaço
 ### P-01 — Lead vive em UM pipeline; mover entre pipelines não é suportado
 - **Origem**: Sub-PRD 02 §3.2
 - **Tipo**: Hard constraint
-- **Regra**: GIVEN lead criado; WHEN qualquer endpoint tenta mudar `pipeline_id` da linha; THEN retorna 422 `pipeline_immutable_use_clone`. Pra "mover", clona criando novo lead em pipeline destino e marca origem como `lost` com `lost_reason='moved_to_pipeline_X'`.
+- **Regra**: GIVEN lead criado; WHEN qualquer endpoint tenta mudar `pipeline_id` da linha; THEN retorna 422 `pipeline_immutable_use_clone`. Pra "mover" entre funis, o caminho é `POST /api/v1/leads/[id]/clone`: cria o negócio no funil destino (etapa aberta informada, ou a primeira) com os dados da origem e encerra a origem como `lost`.
+- **Motivo da perda da origem**: o fechamento passa pelo trigger `fn_validate_lost_reason_required` (baseline.sql), que recusa qualquer `lost_reason` fora do canônico (`CANONICAL_LOST_REASONS`) e de `crm_pipelines.settings.lost_reasons`. `moved_to_pipeline_X` NÃO é aceito — a origem fecharia com `lost_reason_invalid` e o negócio ficaria aberto nos dois funis. A troca usa o motivo informado pelo chamador (`lost_reason`, canônico ou estendido pelo funil) e, sem ele, `other`; o funil de destino vai em `crm_leads.source_metadata.movido_para` (`{lead_id, pipeline_id, stage_id}`), e a origem da cópia em `source_metadata.clonado_de` do clone.
+- **Estado de origem exigido**: só `status = 'open'` é clonado (422 `lead_not_open`); clonar um negócio `won` reescreveria a origem como `lost`, apagando o desfecho.
 - **Enforcement**: API (interceptor) + DB check constraint.
 - **Exceção**: Nenhuma. Decisão deliberada (mover entre pipelines é semanticamente diferente — clonar deixa explícito).
 
