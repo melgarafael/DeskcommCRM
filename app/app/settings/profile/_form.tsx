@@ -22,6 +22,7 @@ import {
 } from "@/lib/schemas/settings";
 
 const TIMEZONES = [
+  "Africa/Luanda",
   "America/Sao_Paulo",
   "America/Manaus",
   "America/Belem",
@@ -101,7 +102,7 @@ export function ProfileForm({
                 <SelectItem value={SEM_PREFERENCIA_DE_IDIOMA}>
                   {t("Seguir o idioma da empresa")}
                 </SelectItem>
-                <SelectItem value="pt-BR">Português (BR)</SelectItem>
+                <SelectItem value="pt-BR">{t("Português")}</SelectItem>
                 {/* Espanhol entrou quando passou a MUDAR alguma coisa. Enquanto
                     o campo era guardado e ninguém o lia, oferecer um idioma a
                     mais era prometer o que a tela não cumpre — e o operador

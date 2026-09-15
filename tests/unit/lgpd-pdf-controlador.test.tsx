@@ -92,7 +92,7 @@ describe("rodapé do relatório LGPD", () => {
       }),
     );
     const nomeDoControlador = texto
-      .slice("Controlador:".length, texto.indexOf("· Relatório LGPD"))
+      .slice("Controlador:".length, texto.indexOf("· Relatório de Proteção de Dados"))
       .trim();
 
     expect(nomeDoControlador).toBe("Bem Viver Serviços Médicos LTDA");

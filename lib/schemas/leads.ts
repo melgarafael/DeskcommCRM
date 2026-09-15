@@ -9,6 +9,8 @@
  */
 import { z } from "zod";
 
+import { MOEDA_PADRAO } from "@/lib/money";
+
 /**
  * Accept either ISO 8601 (e.g. "2026-04-29T03:15:54.000Z") or Postgres-style
  * timestamptz (e.g. "2026-04-29 03:15:54.123456+00") since Supabase returns
@@ -66,7 +68,7 @@ export const createLeadSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),
   value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
-  currency: z.string().length(3).default("BRL"),
+  currency: z.string().length(3).default(MOEDA_PADRAO),
   owner_user_id: z.string().uuid().nullable().optional(),
   /** Dono agente já na criação (0070) — mesma regra do update: os dois é 422. */
   owner_agent_id: z.string().uuid().nullable().optional(),

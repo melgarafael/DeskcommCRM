@@ -1,8 +1,16 @@
 /**
- * LGPD export PDF renderer (PT-BR).
+ * Export PDF renderer — relatório de proteção de dados (PT).
  *
- * Template para Art. 18, II — direito de acesso aos dados. Renderizado para
- * Buffer via @react-pdf/renderer e entregue ao titular via Resend.
+ * Instalação para Angola: cita a Lei n.º 22/11, de 17 de Junho (Lei da
+ * Proteção de Dados Pessoais), não a LGPD brasileira. Direito de acesso aos
+ * dados do titular. Renderizado para Buffer via @react-pdf/renderer e
+ * entregue ao titular via Resend.
+ *
+ * ⚠️ A citação aqui é do NOME e NÚMERO da lei, deliberadamente sem apontar um
+ * artigo específico — ao contrário do "Art. 18 II" que este arquivo citava da
+ * LGPD. Não há confirmação jurídica do artigo equivalente na lei angolana
+ * nesta sessão; um advogado habilitado em Angola deve revisar antes de este
+ * documento sair para um titular de verdade.
  *
  * ── ESTE DOCUMENTO NÃO LEVA MARCA. É decisão, não esquecimento ──────────────
  *
@@ -10,7 +18,7 @@
  * resolvido. Não imprime a marca do revendedor, não imprime a nossa, não leva
  * logo e não leva cor.
  *
- * O motivo: o relatório do Art. 18 II responde a um DIREITO LEGAL do titular.
+ * O motivo: o relatório responde a um DIREITO LEGAL do titular.
  * Nomear ali o revendedor — que é OPERADOR, não controlador — inverteria os
  * papéis num documento jurídico. Trocar `DeskcommCRM` por `Vendas Turbo CRM`
  * no rodapé não é "completar o white-label": é piorar o defeito, porque hoje o
@@ -35,6 +43,8 @@ import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-p
 import React from "react";
 
 import { env } from "@/lib/env";
+import { MOEDA_PADRAO } from "@/lib/money";
+import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
 import type { ExportPayload } from "./export-collector";
 
@@ -98,7 +108,10 @@ interface Props {
 function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
   try {
-    return new Date(s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    // ExportPayload não carrega o fuso da organização — usa o padrão da
+    // instalação. Plumbing do fuso real da org, se precisar, é mudança maior
+    // (tocaria export-collector.ts e a assinatura deste componente).
+    return new Date(s).toLocaleString("pt-BR", { timeZone: FUSO_PADRAO });
   } catch {
     return s;
   }
@@ -107,7 +120,7 @@ function fmtDate(s: string | null | undefined): string {
 function fmtMoney(cents: number | null | undefined, currency: string | null | undefined): string {
   if (cents == null) return "—";
   const v = cents / 100;
-  return `${currency ?? "BRL"} ${v.toFixed(2)}`;
+  return `${currency ?? MOEDA_PADRAO} ${v.toFixed(2)}`;
 }
 
 /**
@@ -131,9 +144,10 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Relatório LGPD — Solicitação de Acesso aos Dados</Text>
+          <Text style={styles.title}>Relatório de Proteção de Dados — Solicitação de Acesso aos Dados</Text>
           <Text style={styles.subtitle}>
-            Base legal: LGPD Art. 18, II (Lei nº 13.709/2018) · Solicitação #{shortId}
+            Base legal: Lei n.º 22/11, de 17 de Junho (Lei da Proteção de Dados Pessoais de Angola) ·
+            Solicitação #{shortId}
           </Text>
         </View>
 
@@ -187,7 +201,7 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
               <Text style={styles.value}>{data.contact.phone_number ?? "—"}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>CPF:</Text>
+              <Text style={styles.label}>NIF:</Text>
               <Text style={styles.value}>
                 {data.contact.cpf_present ? "Armazenado (criptografado)" : "—"}
               </Text>
@@ -373,8 +387,8 @@ export function LgpdExportPdf({ data, unsignedWarning }: Props): React.ReactElem
         {/* CONTROLADOR, nunca marca — ver o cabeçalho deste arquivo. */}
         <View style={styles.footer} fixed>
           <Text>
-            Controlador: {data.organization_legal_name || "—"} · Relatório LGPD Art. 18 II
-            (Lei nº 13.709/2018) · Encarregado (DPO): {encarregado(data)} · Validade do
+            Controlador: {data.organization_legal_name || "—"} · Relatório de Proteção de Dados
+            (Lei n.º 22/11, de 17 de Junho) · Encarregado (DPO): {encarregado(data)} · Validade do
             link de download conforme e-mail recebido
           </Text>
         </View>

@@ -23,6 +23,7 @@ interface Props {
 }
 
 const TIMEZONES = [
+  "Africa/Luanda",
   "America/Sao_Paulo",
   "America/Manaus",
   "America/Belem",
@@ -85,7 +86,7 @@ export function TenantForm({ initial }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cnpj">{t("CNPJ")}</Label>
+            <Label htmlFor="cnpj">{t("NIF")}</Label>
             <Input
               id="cnpj"
               value={form.cnpj ?? ""}
@@ -126,7 +127,7 @@ export function TenantForm({ initial }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="pt-BR">Português (BR)</SelectItem>
+                <SelectItem value="pt-BR">{t("Português")}</SelectItem>
                 <SelectItem value="es">Español</SelectItem>
               </SelectContent>
             </Select>

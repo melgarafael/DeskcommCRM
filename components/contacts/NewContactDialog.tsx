@@ -97,8 +97,8 @@ export function NewContactDialog({ open, onOpenChange }: Props) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cpf">{t("CPF (opcional)")}</Label>
-            <Input id="cpf" placeholder="00000000000" {...form.register("cpf")} />
+            <Label htmlFor="cpf">{t("NIF (opcional)")}</Label>
+            <Input id="cpf" placeholder="003862011LA042" {...form.register("cpf")} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="tagsRaw">{t("Tags (separadas por vírgula)")}</Label>

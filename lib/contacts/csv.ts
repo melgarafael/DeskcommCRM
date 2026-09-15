@@ -209,7 +209,7 @@ const HEADER_ALIASES: Record<string, readonly string[]> = {
   display_name: ["display_name", "apelido", "nome_de_exibicao"],
   email: ["email", "e_mail"],
   phone_number: ["phone_number", "telefone", "whatsapp", "celular", "fone"],
-  cpf: ["cpf"],
+  cpf: ["cpf", "nif"],
   birthdate: ["birthdate", "nascimento", "data_de_nascimento", "aniversario"],
   tags: ["tags", "etiquetas", "grupos"],
 };
@@ -354,7 +354,11 @@ export function mapLinha(
     return { contato: {}, motivo: "linha sem telefone nem e-mail" };
   }
 
-  const cpf = get("cpf").replace(/\D/g, "");
+  // NÃO tira letra: o NIF do BI angolano tem 2 letras de província no meio
+  // ("003862011LA042") — `replace(/\D/g, "")` (regra antiga, de CPF puramente
+  // numérico) destruiria exatamente essa parte e produziria um NIF inválido
+  // a partir de um valor correto. Só espaço e pontuação de separador saem.
+  const cpf = get("cpf").replace(/[.\-/\s]/g, "").toUpperCase();
   if (cpf !== "") contato.cpf = cpf;
 
   const birthdateRaw = get("birthdate");

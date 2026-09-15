@@ -14,8 +14,8 @@
  *      cifrão na frente. Não `MXN 249,90`, que era o que a tela mostrava antes
  *      desta feature (vírgula decimal brasileira com o código colado).
  *
- * Devolve a organização para BRL no final: outros specs que compartilham este
- * banco local presumem `'BRL'`.
+ * Devolve a organização para AOA no final: outros specs que compartilham este
+ * banco local presumem o padrão da instalação (`AOA`, migration 0219).
  *
  * Pré-requisito: `.e2e-creds.json` (gerado por scripts/seed-e2e-credentials.ts).
  */
@@ -50,7 +50,7 @@ test.describe("moeda da organização", () => {
     const moeda = page.locator("#currency");
     if (await moeda.isVisible().catch(() => false)) {
       await moeda.click();
-      await page.getByRole("option", { name: /^BRL/ }).click();
+      await page.getByRole("option", { name: /^AOA/ }).click();
       await page.getByRole("button", { name: /salvar/i }).click();
       await expect(page.getByText(/organiza..o atualizada/i)).toBeVisible({ timeout: 10_000 });
     }
@@ -62,8 +62,8 @@ test.describe("moeda da organização", () => {
 
     const moeda = page.locator("#currency");
     await expect(moeda).toBeVisible();
-    // Estado inicial: a única organização deste banco local nasce em BRL.
-    await expect(moeda).toContainText("BRL");
+    // Estado inicial: a única organização deste banco local nasce no padrão (AOA).
+    await expect(moeda).toContainText("AOA");
 
     await page.screenshot({ path: path.join(EVIDENCE, "moeda-01-antes.png") });
 

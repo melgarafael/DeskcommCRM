@@ -5,6 +5,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import type { Lead } from "@/lib/types/leads";
 import { resolveCardState, stageAgeLabel, type CardInput } from "@/lib/kanban/card-state";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { KanbanCardActions } from "./KanbanCardActions";
 import { NextActionSlot } from "./NextActionSlot";
 import { ReactivationSlot } from "./ReactivationSlot";
@@ -47,7 +48,7 @@ interface KanbanCardProps {
 
 function formatBRL(cents: number | null, currency: string | null): string | null {
   if (cents == null) return null;
-  const code = currency ?? "BRL";
+  const code = currency ?? MOEDA_PADRAO;
   try {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",

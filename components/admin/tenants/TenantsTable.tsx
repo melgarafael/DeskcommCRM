@@ -94,7 +94,7 @@ export function TenantsTableSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
-            {["Slug", t("Nome"), "CNPJ", t("Status"), t("Users"), t("Conversas"), t("Criado em"), ""].map(
+            {["Slug", t("Nome"), "NIF", t("Status"), t("Users"), t("Conversas"), t("Criado em"), ""].map(
               (h) => (
                 <TableHead key={h}>{h}</TableHead>
               ),
@@ -156,7 +156,7 @@ export function TenantsTable({
             <TableRow>
               <TableHead className="w-[140px]">Slug</TableHead>
               <TableHead>{t("Nome")}</TableHead>
-              <TableHead className="w-[130px]">CNPJ</TableHead>
+              <TableHead className="w-[130px]">NIF</TableHead>
               <TableHead className="w-[110px]">{t("Status")}</TableHead>
               <TableHead className="w-[70px] text-right">{t("Users")}</TableHead>
               <TableHead className="w-[90px] text-right">{t("Conversas")}</TableHead>

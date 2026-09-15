@@ -7,6 +7,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { ConversaNoDossie } from "./ConversaNoDossie";
 import { LeadFieldsForm } from "./LeadFieldsForm";
 import { ScoreSlot } from "./ScoreSlot";
@@ -30,11 +31,11 @@ function formatBRL(cents: number | null, currency: string | null): string {
   try {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
-      currency: currency ?? "BRL",
+      currency: currency ?? MOEDA_PADRAO,
       maximumFractionDigits: 0,
     }).format(cents / 100);
   } catch {
-    return `R$ ${(cents / 100).toFixed(0)}`;
+    return `${currency ?? MOEDA_PADRAO} ${(cents / 100).toFixed(0)}`;
   }
 }
 

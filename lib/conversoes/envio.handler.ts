@@ -44,6 +44,7 @@ import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/disp
 import { lerCredencial } from "@/lib/plataformas-de-anuncio/credenciais";
 import { transporteDe } from "@/lib/plataformas-de-anuncio/registry";
 import type { ConversaoOffline, NomeDoEvento } from "@/lib/plataformas-de-anuncio/types";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { lerAtribuicao } from "./leitura-da-atribuicao";
 import { jaFoiEnviada, registraEnvio } from "./registro-de-envio";
@@ -161,9 +162,9 @@ async function handle(row: EventRow): Promise<HandlerResult> {
     ocorridoEm: new Date(lead.closed_at ?? row.created_at ?? Date.now()),
     cliqueDeOrigem,
     telefone,
-    // A coluna tem `DEFAULT 'BRL'` e um CHECK de ISO-4217; o fallback só cobre a
-    // linha que teve a moeda apagada à mão.
-    moeda: lead.currency ?? "BRL",
+    // A coluna tem `DEFAULT` de moeda (migration 0219) e um CHECK de ISO-4217;
+    // o fallback só cobre a linha que teve a moeda apagada à mão.
+    moeda: lead.currency ?? MOEDA_PADRAO,
     valorCentavos: lead.value_cents,
   };
 

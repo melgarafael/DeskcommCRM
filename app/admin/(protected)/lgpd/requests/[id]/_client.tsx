@@ -264,7 +264,7 @@ export function LgpdRequestAdminDetail({ id }: Props) {
         >
           <Link href="/admin/lgpd">
             <CaretLeft size={14} aria-hidden />
-            {t("LGPD Cross-tenant")}
+            {t("Proteção de Dados Cross-tenant")}
           </Link>
         </Button>
       </div>

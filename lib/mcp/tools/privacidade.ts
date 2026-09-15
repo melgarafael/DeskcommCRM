@@ -11,8 +11,8 @@
  *
  * O que a IA GANHA lendo: parar de tratar como lead ativo alguém que pediu
  * exclusão, e saber que o silêncio daquele contato tem causa. Sem isso, o
- * follow-up insiste com quem pediu para sair — que é o oposto do que a LGPD
- * pede e o pior uso possível do mecanismo anti-morte.
+ * follow-up insiste com quem pediu para sair — que é o oposto do que a lei de
+ * proteção de dados pede e o pior uso possível do mecanismo anti-morte.
  */
 import { z } from "zod";
 
@@ -30,7 +30,7 @@ const inputShape = {
 export const crmListPrivacyRequests: McpToolDefinition<typeof inputShape> = {
   name: "crm_list_privacy_requests",
   description:
-    "Lista pedidos de privacidade (LGPD) da organização — exportação ou exclusão de dados — com " +
+    "Lista pedidos de privacidade (proteção de dados) da organização — exportação ou exclusão de dados — com " +
     "tipo, situação, quando chegou e o prazo. NÃO executa nada: é leitura. Use para não insistir " +
     "com quem pediu exclusão e para explicar o prazo a quem perguntar pelo próprio pedido.",
   inputSchema: inputShape,

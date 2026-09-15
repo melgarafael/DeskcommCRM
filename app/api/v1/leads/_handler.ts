@@ -14,6 +14,7 @@ import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitte
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { MOEDA_PADRAO } from "@/lib/money";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
 
@@ -282,7 +283,7 @@ export async function createLeadHandler(
       description: input.description ?? null,
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
-      currency: input.currency ?? "BRL",
+      currency: input.currency ?? MOEDA_PADRAO,
       ...ownerPatch,
       assigned_at:
         ownerPatch.owner_kind === null ? null : new Date().toISOString(),

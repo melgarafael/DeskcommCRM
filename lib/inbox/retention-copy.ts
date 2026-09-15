@@ -29,7 +29,7 @@ const TITLES: Record<RetentionKind, string> = {
 
 /**
  * Copy por código de veto. Códigos de proteção (pacing/spinning) tranquilizam:
- * foi proteção anti-bloqueio, não erro. Conformidade (stop/LGPD) é definitivo.
+ * foi proteção anti-bloqueio, não erro. Conformidade (stop/proteção de dados) é definitivo.
  * Qualidade (promise/disclosure) explica que o assistente corrige sozinho.
  */
 export function retentionCopy(
@@ -75,13 +75,13 @@ export function retentionCopy(
     case "lgpd_anonymized":
       return make(
         "compliance",
-        t("Este contato foi anonimizado (LGPD) — é proibido enviar qualquer mensagem a ele."),
+        t("Este contato foi anonimizado (proteção de dados) — é proibido enviar qualquer mensagem a ele."),
       );
     case "lgpd_missing_legal_basis":
       return make(
         "compliance",
         t(
-          "Não há base legal (LGPD) para o primeiro contato de prospecção com este lead. O time precisa regularizar o cadastro antes de abordar.",
+          "Não há base legal (proteção de dados) para o primeiro contato de prospecção com este lead. O time precisa regularizar o cadastro antes de abordar.",
         ),
       );
     case "promise_out_of_table":

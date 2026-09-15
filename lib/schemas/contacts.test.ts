@@ -4,7 +4,7 @@
  * Covers:
  *  - E.164 phone validator (accept/reject)
  *  - Email parsing
- *  - CPF check-digit (valid, invalid, repeated digits)
+ *  - NIF de forma (BI angolano e numérico puro — sem dígito verificador)
  *  - lgpdAnonymizeSchema requires justification ≥ 10 chars
  *  - contactListQuerySchema coerces `limit` and clamps boundaries
  */
@@ -13,36 +13,34 @@ import {
   contactCreateSchema,
   contactListQuerySchema,
   contactPatchSchema,
-  isValidCpf,
+  isValidNif,
   lgpdAnonymizeSchema,
 } from "./contacts";
 
-describe("isValidCpf", () => {
-  it("accepts a known-valid CPF", () => {
-    // Generated valid CPFs (algorithm verified).
-    expect(isValidCpf("52998224725")).toBe(true);
-    expect(isValidCpf("11144477735")).toBe(true);
+describe("isValidNif", () => {
+  it("accepts o formato BI (9 dígitos + 2 letras de província + 3 dígitos)", () => {
+    expect(isValidNif("003862011LA042")).toBe(true);
+    // letras minúsculas normalizam — o BI impresso não distingue caixa.
+    expect(isValidNif("003862011la042")).toBe(true);
   });
 
-  it("rejects repeated-digit CPFs", () => {
-    expect(isValidCpf("00000000000")).toBe(false);
-    expect(isValidCpf("11111111111")).toBe(false);
-    expect(isValidCpf("99999999999")).toBe(false);
+  it("accepts NIF puramente numérico (empresa ou estrangeiro sem BI)", () => {
+    expect(isValidNif("541712345")).toBe(true); // 9 dígitos
+    expect(isValidNif("5417123456")).toBe(true); // 10 dígitos
   });
 
-  it("rejects invalid check digits", () => {
-    expect(isValidCpf("52998224726")).toBe(false);
-    expect(isValidCpf("12345678900")).toBe(false);
+  it("rejects forma errada", () => {
+    expect(isValidNif("123")).toBe(false); // curto demais para as duas formas
+    expect(isValidNif("54171234567")).toBe(false); // 11 dígitos — nem BI nem numérico (era CPF)
+    expect(isValidNif("00386201LA0042")).toBe(false); // letras na posição errada
+    expect(isValidNif("abcdefghijk")).toBe(false);
+    expect(isValidNif("")).toBe(false);
   });
 
-  it("rejects wrong length / non-digits", () => {
-    expect(isValidCpf("123")).toBe(false);
-    expect(isValidCpf("abcdefghijk")).toBe(false);
-    expect(isValidCpf("")).toBe(false);
-  });
-
-  it("normalizes formatting (dots/dashes)", () => {
-    expect(isValidCpf("529.982.247-25")).toBe(true);
+  it("não valida dígito verificador — é checagem de FORMA, de propósito", () => {
+    // Não há algoritmo público de dígito verificador do NIF angolano documentado;
+    // qualquer string na forma certa passa. Ver o comentário de `isValidNif`.
+    expect(isValidNif("999999999AA999")).toBe(true);
   });
 });
 
@@ -67,13 +65,13 @@ describe("contactCreateSchema", () => {
     expect(r.success).toBe(false);
   });
 
-  it("rejects invalid CPF", () => {
-    const r = contactCreateSchema.safeParse({ cpf: "12345678900" });
+  it("rejects invalid NIF", () => {
+    const r = contactCreateSchema.safeParse({ cpf: "12345678900" }); // 11 dígitos: nem BI nem numérico
     expect(r.success).toBe(false);
   });
 
-  it("accepts valid CPF", () => {
-    const r = contactCreateSchema.safeParse({ cpf: "52998224725" });
+  it("accepts valid NIF", () => {
+    const r = contactCreateSchema.safeParse({ cpf: "003862011LA042" });
     expect(r.success).toBe(true);
   });
 

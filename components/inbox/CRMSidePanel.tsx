@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Tag, Receipt, Users, ArrowRight } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
@@ -192,7 +193,7 @@ function MarcarProximoPasso({ demandaId, onPronto }: { demandaId: string; onPron
 
 function formatMoney(cents: number | null, currency: string | null): string {
   if (cents == null) return "—";
-  const cur = currency ?? "BRL";
+  const cur = currency ?? MOEDA_PADRAO;
   try {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: cur }).format(
       cents / 100,

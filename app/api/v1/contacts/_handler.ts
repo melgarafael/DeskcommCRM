@@ -467,7 +467,7 @@ export async function patchContactHandler(
       "lgpd_anonymization_irreversible",
       undefined,
       ctx.requestId,
-      "Contato anonimizado — edição bloqueada (LGPD).",
+      "Contato anonimizado — edição bloqueada (proteção de dados).",
     );
   }
 

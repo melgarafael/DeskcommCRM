@@ -32,6 +32,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { lerPlanilhaDeLeads, type ErroDaLinha } from "@/lib/leads/planilha";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import { createClient } from "@/lib/supabase/server";
 
@@ -192,7 +193,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           description: linha.description,
           contact_id: contactId,
           value_cents: linha.value_cents,
-          currency: "BRL",
+          currency: MOEDA_PADRAO,
           tags: linha.tags,
           source: linha.source,
         },

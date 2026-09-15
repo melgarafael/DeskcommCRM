@@ -39,7 +39,7 @@ export default async function TermsPage() {
         <p>
           {t("O")} {op.sistema} {t("é um software de código aberto instalado e operado por")}{" "}
           <strong>{operador}</strong>
-          {op.cnpj ? ` (CNPJ ${op.cnpj})` : ""}, {t("daqui em diante")}{" "}
+          {op.cnpj ? ` (NIF ${op.cnpj})` : ""}, {t("daqui em diante")}{" "}
           <strong>{t("o operador")}</strong>.{" "}
           {t(
             "É o operador quem mantém este servidor, decide como o sistema é usado e responde pelos dados tratados aqui.",

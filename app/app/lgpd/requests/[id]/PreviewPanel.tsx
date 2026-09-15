@@ -99,7 +99,7 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
                   )}
                   {preview.contact.cpf_present && (
                     <p className="text-xs text-muted-foreground">
-                      CPF: {t("presente (valor ocultado)")}
+                      NIF: {t("presente (valor ocultado)")}
                     </p>
                   )}
                 </div>
@@ -152,7 +152,7 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
 
               <p className="text-center text-xs text-muted-foreground">
                 {t("Gerado em")} {new Date(preview.generated_at).toLocaleString(tagDoIdioma)} · PII{" "}
-                {t("mascarada")} · CPF {t("não exibido")}
+                {t("mascarada")} · NIF {t("não exibido")}
               </p>
             </div>
           )}

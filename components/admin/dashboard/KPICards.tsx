@@ -83,7 +83,7 @@ export function KPICards({ kpis }: KPICardsProps) {
         accent={kpis.waha_ban_alerts > 0}
       />
       <KPICard
-        label={t("LGPD em Risco")}
+        label={t("Proteção de Dados em Risco")}
         value={kpis.lgpd_at_risk}
         subtitle={t("requisições próximas do prazo")}
         Icon={Scales}

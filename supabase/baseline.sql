@@ -18371,3 +18371,29 @@ alter table public.agent_inbox_items
 update storage.buckets
 set allowed_mime_types = array['application/pdf', 'text/markdown', 'text/x-markdown', 'text/plain', 'text/csv']
 where id = 'ai-policy';
+
+-- ---- moeda padrão da instalação vira Kwanza (migration 0219) ----
+-- As quatro colunas de moeda nasceram com default 'BRL'. Só o DEFAULT muda —
+-- toda linha já gravada guarda a moeda com que nasceu, sem backfill. Os
+-- CHECKs são de FORMA (ISO-4217), não de vocabulário fechado: 'AOA' já passa.
+alter table public.organizations
+  alter column currency set default 'AOA';
+
+alter table public.catalog_products
+  alter column moeda set default 'AOA';
+
+alter table public.crm_leads
+  alter column currency set default 'AOA';
+
+alter table public.orders
+  alter column currency set default 'AOA';
+
+-- ---- fuso horário padrão da instalação vira Africa/Luanda (migration 0220) ----
+-- As duas colunas são `CREATE TABLE IF NOT EXISTS` acima — mudar o DEFAULT
+-- ali dentro só alcança instalação nova. Este ALTER é o que faz quem já
+-- instalou (esta própria VPS, inclusive) herdar o novo padrão.
+alter table public.organizations
+  alter column timezone set default 'Africa/Luanda';
+
+alter table public.calendar_appointments
+  alter column time_zone set default 'Africa/Luanda';

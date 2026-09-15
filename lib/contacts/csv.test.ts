@@ -154,6 +154,21 @@ describe("mapLinha", () => {
     expect(motivo).toBeNull();
     expect(contato.email).toBeUndefined();
   });
+
+  it("NIF do BI mantém as letras de província (não é só dígito, ao contrário do CPF)", () => {
+    const idxComNif = mapHeader(["Nome", "Telefone", "Email", "NIF"]).indices;
+    const { contato } = mapLinha(
+      ["Ana", "+5511999998888", "ana@exemplo.com", "003862011LA042"],
+      idxComNif,
+    );
+    expect(contato.cpf).toBe("003862011LA042");
+  });
+
+  it("aceita cabeçalho 'nif' como apelido, e normaliza separador sem remover letra", () => {
+    const idxComNif = mapHeader(["Nome", "Telefone", "nif"]).indices;
+    const { contato } = mapLinha(["Ana", "+5511999998888", "003.862.011-la-042"], idxComNif);
+    expect(contato.cpf).toBe("003862011LA042");
+  });
 });
 
 describe("limites declarados", () => {

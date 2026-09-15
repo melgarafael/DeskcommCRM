@@ -36,7 +36,7 @@ import { Check } from "@/lib/ui/icons";
 const NOME_DO_IDIOMA: Record<Idioma, { curto: string; completo: string }> = {
   // Cada língua no nome dela própria: é assim que se reconhece a sua numa
   // lista que você não sabe ler.
-  "pt-BR": { curto: "PT", completo: "Português (BR)" },
+  "pt-BR": { curto: "PT", completo: "Português" },
   es: { curto: "ES", completo: "Español" },
 };
 

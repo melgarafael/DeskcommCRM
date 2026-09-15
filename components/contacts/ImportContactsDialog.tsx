@@ -68,7 +68,7 @@ export function ImportContactsDialog({ open, onOpenChange }: Props) {
           <DialogTitle>{t("Importar contatos de planilha")}</DialogTitle>
           <DialogDescription>
             {t(
-              "Envie um arquivo .csv com cabeçalho — colunas reconhecidas: nome, telefone, email, cpf, nascimento, tags. Excel: use “Salvar como” → “CSV UTF-8”. Máximo de 500 linhas por arquivo.",
+              "Envie um arquivo .csv com cabeçalho — colunas reconhecidas: nome, telefone, email, nif, nascimento, tags. Excel: use “Salvar como” → “CSV UTF-8”. Máximo de 500 linhas por arquivo.",
             )}
           </DialogDescription>
         </DialogHeader>

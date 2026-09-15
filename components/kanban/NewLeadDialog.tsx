@@ -26,7 +26,7 @@ import {
 import { useCreateLead } from "@/hooks/kanban/useCreateLead";
 import type { Stage } from "@/lib/kanban/types";
 import { createLeadSchema, type CreateLeadInput } from "@/lib/schemas/leads";
-import { parseReaisToCents } from "@/lib/money";
+import { parseReaisToCents, MOEDA_PADRAO } from "@/lib/money";
 import { EcoDoValor } from "./EcoDoValor";
 
 interface FormShape {
@@ -104,7 +104,7 @@ export function NewLeadDialog({
       pipeline_id: pipelineId,
       stage_id: values.stage_id,
       title: values.title.trim(),
-      currency: "BRL",
+      currency: MOEDA_PADRAO,
       source: "manual",
       tags,
     };

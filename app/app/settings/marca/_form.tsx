@@ -432,18 +432,18 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente }
             Este item dizia "os e-mails, o PDF de LGPD e o autenticador também
             usam o nome do sistema", e a Fase 4 tornou as duas primeiras partes
             falsas: `marcaDaSaida(organizationId)` resolve a organização
-            primeiro, e o relatório de LGPD passou a nomear o CONTROLADOR
-            (razão social) de propósito — nomear a marca ali inverteria os
-            papéis num documento com peso legal.
+            primeiro, e o relatório de proteção de dados passou a nomear o
+            CONTROLADOR (razão social) de propósito — nomear a marca ali
+            inverteria os papéis num documento com peso legal.
           */}
           <li>
             {t(
-              "Os e-mails que este sistema envia (convite de time, pedidos de LGPD) já saem com o nome da sua empresa.",
+              "Os e-mails que este sistema envia (convite de time, pedidos de proteção de dados) já saem com o nome da sua empresa.",
             )}
           </li>
           <li>
             {t(
-              'O relatório de LGPD entregue ao cliente traz a RAZÃO SOCIAL da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo "Razão social" em Configurações → Organização.',
+              'O relatório de proteção de dados entregue ao cliente traz a RAZÃO SOCIAL da sua empresa, e não o nome aqui de cima — é ela que responde legalmente pelos dados. Confira o campo "Razão social" em Configurações → Organização.',
             )}
           </li>
           <li>

@@ -7,6 +7,7 @@ import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { buildCardInput } from "@/lib/kanban/card-state";
 import { intervaloDaColuna } from "@/lib/kanban/selecao";
+import { formatCents, MOEDA_PADRAO } from "@/lib/money";
 import { KanbanCard, type GestoDeSelecao } from "./KanbanCard";
 
 interface StageColumnProps {
@@ -35,18 +36,6 @@ interface StageColumnProps {
   onOpen?: (leadId: string) => void;
 }
 
-function formatBRL(cents: number): string {
-  try {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-      maximumFractionDigits: 0,
-    }).format(cents / 100);
-  } catch {
-    return `R$ ${(cents / 100).toFixed(0)}`;
-  }
-}
-
 export function StageColumn({
   stage,
   leads,
@@ -62,6 +51,12 @@ export function StageColumn({
 }: StageColumnProps) {
   const t = useT();
   const totalCents = leads.reduce((sum, l) => sum + (l.value_cents ?? 0), 0);
+  // Soma cega a moedas diferentes numa mesma coluna já era uma limitação
+  // pré-existente (nada agrupa por moeda); aqui só troca o rótulo fixo "BRL"
+  // pela moeda do primeiro lead com valor, que é o caso comum de um board
+  // de moeda única — sem isso, todo total aparecia em R$ mesmo numa
+  // instalação cuja moeda padrão é outra.
+  const moedaDoTotal = leads.find((l) => l.value_cents != null)?.currency ?? MOEDA_PADRAO;
 
   const idsVisiveis = leads.map((l) => l.id);
   const selecionadosAqui = idsVisiveis.filter((id) => selectedLeadIds?.has(id)).length;
@@ -138,7 +133,7 @@ export function StageColumn({
 
       {totalCents > 0 && (
         <div className="border-b border-border px-3 py-1.5 text-[11px] tabular-nums text-text-muted">
-          {formatBRL(totalCents)}
+          {formatCents(totalCents, moedaDoTotal)}
         </div>
       )}
 

@@ -32,7 +32,7 @@ import {
   mapLinha,
   parseCsv,
 } from "@/lib/contacts/csv";
-import { contactCreateSchema, isValidCpf } from "@/lib/schemas";
+import { contactCreateSchema, isValidNif } from "@/lib/schemas";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { createClient } from "@/lib/supabase/server";
 
@@ -134,8 +134,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       errors.push({ linha, motivo });
       continue;
     }
-    if (contato.cpf && !isValidCpf(contato.cpf)) {
-      errors.push({ linha, motivo: `CPF inválido: "${contato.cpf}"` });
+    if (contato.cpf && !isValidNif(contato.cpf)) {
+      errors.push({ linha, motivo: `NIF inválido: "${contato.cpf}"` });
       continue;
     }
     const chave = contato.phone_number ?? `email:${(contato.email as string).toLowerCase()}`;

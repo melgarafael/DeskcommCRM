@@ -10,7 +10,13 @@
 import { z } from "zod";
 
 const PHONE_REGEX = /^\+\d{8,15}$/;
-const CPF_DIGITS = /^\d{11}$/;
+/**
+ * Formas reais do NIF angolano: BI (9 dígitos + 2 letras de província + 3
+ * dígitos, ex. "003862011LA042") para pessoa singular nacional, ou só
+ * numérico (9-10 dígitos) para empresa e estrangeiro sem BI.
+ */
+const NIF_BI = /^\d{9}[A-Z]{2}\d{3}$/;
+const NIF_NUMERICO = /^\d{9,10}$/;
 
 /**
  * Teto de 32 KB no jsonb inteiro. O CHECK do banco só garante que é OBJETO —
@@ -27,22 +33,19 @@ const customFieldsSchema = z
   });
 
 /**
- * CPF check-digit validator (algoritmo oficial Receita Federal).
- * Rejeita repetidos (00000000000, 11111111111, ...) e dígitos verificadores inválidos.
+ * NIF angolano — validador de FORMA, não de dígito verificador.
+ *
+ * Era um checksum brasileiro (CPF, algoritmo Receita Federal, mod-11). O NIF
+ * de Angola não tem um dígito verificador público documentado do mesmo jeito
+ * — inventar um aqui seria pior que não ter nenhum: rejeitaria NIF real ou
+ * aceitaria número errado com falsa confiança de que foi conferido. A defesa
+ * possível é de FORMATO: aceita o padrão do BI (pessoa singular nacional —
+ * 9 dígitos + 2 letras de província + 3 dígitos, ex. "003862011LA042") ou
+ * puramente numérico de 9-10 dígitos (empresa ou estrangeiro sem BI).
  */
-export function isValidCpf(raw: string): boolean {
-  const s = raw.replace(/\D/g, "");
-  if (!CPF_DIGITS.test(s) || /^(\d)\1{10}$/.test(s)) return false;
-  let sum = 0;
-  for (let i = 0; i < 9; i++) sum += parseInt(s[i]!, 10) * (10 - i);
-  let d1 = (sum * 10) % 11;
-  if (d1 === 10) d1 = 0;
-  if (d1 !== parseInt(s[9]!, 10)) return false;
-  sum = 0;
-  for (let i = 0; i < 10; i++) sum += parseInt(s[i]!, 10) * (11 - i);
-  let d2 = (sum * 10) % 11;
-  if (d2 === 10) d2 = 0;
-  return d2 === parseInt(s[10]!, 10);
+export function isValidNif(raw: string): boolean {
+  const s = raw.trim().toUpperCase();
+  return NIF_BI.test(s) || NIF_NUMERICO.test(s);
 }
 
 export const contactCreateSchema = z.object({
@@ -53,7 +56,7 @@ export const contactCreateSchema = z.object({
     .string()
     .regex(PHONE_REGEX, "Telefone deve estar em formato E.164 (+5511999998888)")
     .optional(),
-  cpf: z.string().refine(isValidCpf, "CPF inválido").optional(),
+  cpf: z.string().refine(isValidNif, "NIF inválido").optional(),
   birthdate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

@@ -46,7 +46,7 @@ export default async function PrivacyPage() {
         <h2 className="text-base font-semibold">{t("1. Quem é o controlador")}</h2>
         <p>
           {t("O controlador dos dados tratados aqui é")} <strong>{operador}</strong>
-          {op.cnpj ? ` (CNPJ ${op.cnpj})` : ""} —{" "}
+          {op.cnpj ? ` (NIF ${op.cnpj})` : ""} —{" "}
           {t(
             "quem instalou e opera este sistema. Os autores do software não têm acesso a este servidor nem aos dados guardados nele, e não são controladores nem operadores desses dados.",
           )}
@@ -110,7 +110,7 @@ export default async function PrivacyPage() {
         <h2 className="text-base font-semibold">{t("6. Seus direitos")}</h2>
         <p>
           {t(
-            "A LGPD garante a você confirmar se há tratamento, acessar seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram compartilhados e revogar consentimento.",
+            "A Lei de Proteção de Dados Pessoais de Angola (Lei n.º 22/11, de 17 de Junho) garante a você confirmar se há tratamento, acessar seus dados, corrigir dados incompletos ou desatualizados, pedir anonimização ou eliminação, saber com quem foram compartilhados e revogar consentimento.",
           )}
         </p>
         <p>

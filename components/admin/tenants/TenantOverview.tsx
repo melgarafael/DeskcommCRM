@@ -118,7 +118,7 @@ export function TenantOverview({ organization, counts, integrations }: TenantOve
         <div>
           <InfoRow label={t("Plano")} value={<Badge variant="neutral" className="capitalize">{plan}</Badge>} />
           <InfoRow label={t("Razão social")} value={organization.legal_name} />
-          <InfoRow label="CNPJ" value={organization.cnpj} />
+          <InfoRow label="NIF" value={organization.cnpj} />
           <InfoRow label={t("Onboarding concluído")} value={formatDate(organization.onboarded_at, tagDoIdioma)} />
           <InfoRow label={t("Criado em")} value={formatDate(organization.created_at, tagDoIdioma)} />
           {organization.suspended_at && (
@@ -171,14 +171,14 @@ export function TenantOverview({ organization, counts, integrations }: TenantOve
           </h2>
           <div>
             <InfoRow
-              label={t("Solicitações LGPD pendentes")}
+              label={t("Solicitações de proteção de dados pendentes")}
               value={
                 <span className="flex items-center gap-1.5">
                   <span className={counts.lgpd_requests_pending > 0 ? "text-amber-600 font-semibold" : ""}>
                     {counts.lgpd_requests_pending}
                   </span>
                   {counts.lgpd_requests_pending > 0 && (
-                    <Warning size={14} weight="fill" className="text-amber-500" aria-label={t("Pendências LGPD")} />
+                    <Warning size={14} weight="fill" className="text-amber-500" aria-label={t("Pendências de proteção de dados")} />
                   )}
                 </span>
               }

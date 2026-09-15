@@ -213,10 +213,10 @@ export function NewTenantForm() {
 
             {/* cnpj */}
             <div className="space-y-1.5">
-              <Label htmlFor="cnpj">CNPJ</Label>
+              <Label htmlFor="cnpj">NIF</Label>
               <Input
                 id="cnpj"
-                placeholder="00.000.000/0000-00"
+                placeholder="000000000"
                 {...register("cnpj")}
                 onChange={(e) => handleCnpjChange(e.target.value)}
                 inputMode="numeric"

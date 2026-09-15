@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -113,7 +114,7 @@ describe("POST /api/v1/products — a moeda vem da organização", () => {
 
   /**
    * A leitura da organização pode falhar (linha some, RLS nega). `moedaDaOrganizacao()`
-   * escreve `MOEDA_PADRAO` ('BRL') EXPLÍCITO no insert — não é o `default` da
+   * escreve `MOEDA_PADRAO` EXPLÍCITO no insert — não é o `default` da
    * coluna que decide, porque a rota manda um valor no corpo do insert de
    * qualquer forma. O nome deste teste dizia o contrário antes da revisão: o
    * `default` da coluna nunca chega a ser exercitado por este caminho.
@@ -125,7 +126,7 @@ describe("POST /api/v1/products — a moeda vem da organização", () => {
     const resposta = await POST(pedido({ ...PRODUTO, moeda: "USD" }));
 
     expect(resposta.status).toBe(201);
-    expect(inserido).toMatchObject({ moeda: "BRL" });
+    expect(inserido).toMatchObject({ moeda: MOEDA_PADRAO });
     expect(orgIdLido).toBe(ORG_ID);
   });
 });
