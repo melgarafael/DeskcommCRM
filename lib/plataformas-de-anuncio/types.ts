@@ -236,6 +236,11 @@ export interface LinhaDeCampanha {
   alcance: number | null;
   cpm: number | null;
   ctr: number | null;
+  /**
+   * Percentual já calculado (visualizações da página ÷ cliques no link × 100).
+   * Nulo em campanha sem clique no link ou cujo objetivo não leva a uma página.
+   */
+  connectRate: number | null;
   frequencia: number | null;
   cpc: number | null;
   /** Percentual já calculado (reproduções ÷ impressões × 100). Nulo em campanha sem vídeo. */

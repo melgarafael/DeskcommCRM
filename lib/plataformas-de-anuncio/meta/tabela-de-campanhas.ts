@@ -24,7 +24,7 @@
  * linhas reais, e o `?? 0` que "resolve" mente: "CTR 0,00%" afirma que houve
  * medição e deu zero. Aqui a ausência vira `null` e a tela mostra "—".
  */
-import type { CampanhaCrua, LinhaDeInsightCrua, MetricaIndicada, AcaoDeVideo } from "./insights";
+import type { CampanhaCrua, LinhaDeInsightCrua, MetricaIndicada, AcaoDaPlataforma } from "./insights";
 import type { LinhaDeCampanha, ResultadoDaCampanha } from "../types";
 
 /**
@@ -114,7 +114,7 @@ export function valorIndicado(metrica: MetricaIndicada[] | undefined): {
  * Lista vazia devolve `null`, não `0` — campanha sem vídeo não teve zero
  * reproduções, ela não tem a métrica.
  */
-export function somaDeAcoes(acoes: AcaoDeVideo[] | undefined): number | null {
+export function somaDeAcoes(acoes: AcaoDaPlataforma[] | undefined): number | null {
   if (!acoes || acoes.length === 0) return null;
   let total = 0;
   let houve = false;
@@ -149,6 +149,65 @@ export function calcularHookRate(
 ): number | null {
   if (reproducoes === null || impressoes === null || impressoes === 0) return null;
   return (reproducoes / impressoes) * 100;
+}
+
+/**
+ * Os `action_type` que contam como visualização da página, em ordem de preferência.
+ *
+ * A lista de `actions` chega heterogênea (`link_click`, `post_engagement`,
+ * `video_view`, conversas…) e a plataforma pode rotular a MESMA visualização de
+ * página com dois nomes: `landing_page_view` e, em contas que medem conversão
+ * omnicanal, `omni_landing_page_view`. Procurar os dois, nesta ordem, evita uma
+ * coluna inteira de "—" por causa do nome de um campo.
+ *
+ * ⚠️ A variante `omni_` NÃO foi confirmada numa conta real nesta sessão (não
+ * houve token sondável). Se a plataforma nunca mandar esse rótulo, a linha é
+ * inofensiva; se mandar, é ela que salva a coluna. Se algum dia o Gerenciador
+ * discordar do número, olhe AQUI primeiro.
+ */
+const TIPOS_DE_VISUALIZACAO_DA_PAGINA = [
+  "landing_page_view",
+  "omni_landing_page_view",
+] as const;
+
+/**
+ * O valor de UMA ação pelo `action_type`, ou `null`.
+ *
+ * Não é `somaDeAcoes`: aqui a lista é heterogênea, e somar misturaria cliques
+ * com conversas e reproduções. O que se quer é o número de UM tipo, e `null`
+ * quando esse tipo não veio — que é diferente de ter vindo zero.
+ */
+export function valorDaAcao(
+  acoes: AcaoDaPlataforma[] | undefined,
+  tipos: readonly string[] = TIPOS_DE_VISUALIZACAO_DA_PAGINA,
+): number | null {
+  if (!acoes || acoes.length === 0) return null;
+  for (const tipo of tipos) {
+    const n = numeroOuNulo(acoes.find((acao) => acao.action_type === tipo)?.value);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+/**
+ * Connect rate = visualizações da página ÷ cliques no link × 100.
+ *
+ * É a conta do Gerenciador de Anúncios, com os dois números do mercado. Por
+ * isso a coluna NÃO leva o numerador escrito no rótulo, como o Hook Rate leva:
+ * lá o numerador diverge do de mercado e precisa avisar; aqui não diverge.
+ *
+ * Denominador zero devolve `null` ("—"), nunca `Infinity`: campanha com
+ * visualização de página e sem clique registrado é dado inconsistente, e "∞%"
+ * na tela seria pior que a ausência.
+ */
+export function calcularConnectRate(
+  visualizacoesDaPagina: number | null,
+  cliquesNoLink: number | null,
+): number | null {
+  if (visualizacoesDaPagina === null || cliquesNoLink === null || cliquesNoLink === 0) {
+    return null;
+  }
+  return (visualizacoesDaPagina / cliquesNoLink) * 100;
 }
 
 /**
@@ -223,6 +282,13 @@ export function montarTabelaDeCampanhas(
 
     const impressoes = numeroOuNulo(insight.impressions);
     const reproducoes = somaDeAcoes(insight.video_play_actions);
+    // Os dois números do Connect rate vêm do MESMO payload de insights — ver
+    // CAMPOS_DE_INSIGHTS: `actions` rotula a visualização da página e
+    // `inline_link_clicks` conta os cliques no link.
+    const connectRate = calcularConnectRate(
+      valorDaAcao(insight.actions),
+      numeroOuNulo(insight.inline_link_clicks),
+    );
 
     linhas.push({
       campanhaId: id,
@@ -239,6 +305,7 @@ export function montarTabelaDeCampanhas(
       alcance: numeroOuNulo(insight.reach),
       cpm: numeroOuNulo(insight.cpm),
       ctr: numeroOuNulo(insight.ctr),
+      connectRate,
       frequencia: numeroOuNulo(insight.frequency),
       cpc: numeroOuNulo(insight.cpc),
       hookRate: calcularHookRate(reproducoes, impressoes),
@@ -260,6 +327,7 @@ export function montarTabelaDeCampanhas(
       alcance: null,
       cpm: null,
       ctr: null,
+      connectRate: null,
       frequencia: null,
       cpc: null,
       hookRate: null,

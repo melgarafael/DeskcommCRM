@@ -13,7 +13,7 @@ import { rotuloDoIndicador } from "@/lib/plataformas-de-anuncio/meta/tabela-de-c
 import type { LinhaDeCampanha } from "@/lib/plataformas-de-anuncio/types";
 
 /**
- * As 14 colunas.
+ * As 15 colunas.
  *
  * ─── A regra que atravessa o arquivo inteiro: ausência vira "—" ─────────────
  *
@@ -140,7 +140,7 @@ export function TabelaDeCampanhas({ linhas, moeda }: Props) {
   return (
     /*
       O scroll horizontal mora AQUI, num contêiner próprio — nunca no `<body>`.
-      São 14 colunas; em telas estreitas a tabela rola dentro do próprio quadro e
+      São 15 colunas; em telas estreitas a tabela rola dentro do próprio quadro e
       a página segue parada, que é o combinado do produto para conteúdo largo.
     */
     <div className="overflow-x-auto rounded-md border">
@@ -157,6 +157,25 @@ export function TabelaDeCampanhas({ linhas, moeda }: Props) {
             <TableHead className="text-right">{t("Alcance")}</TableHead>
             <TableHead className="text-right">{t("CPM")}</TableHead>
             <TableHead className="text-right">{t("CTR")}</TableHead>
+            {/*
+              Coluna nova, logo depois do CTR — e a ÚNICA das duas derivadas que
+              fica sem o numerador escrito no rótulo. Não é inconsistência: o
+              Hook Rate precisa avisar que o numerador dele diverge do de
+              mercado (3s → total de reproduções); aqui numerador e denominador
+              são exatamente os do Gerenciador de Anúncios, então a fórmula só
+              precisa estar a um hover de distância e o rótulo curto mantém a
+              coluna da largura das vizinhas.
+
+              Fica visível mesmo quando nenhuma linha tem valor (conta só com
+              campanha de mensagem): coluna que aparece e some conforme o
+              período faz a tabela pular, e "—" já diz o que precisa dizer.
+            */}
+            <TableHead
+              className="text-right"
+              title={t("Visualizações da página ÷ cliques no link")}
+            >
+              {t("Connect rate")}
+            </TableHead>
             <TableHead className="text-right">{t("Frequência")}</TableHead>
             <TableHead className="text-right">{t("CPC")}</TableHead>
             {/*
@@ -214,6 +233,9 @@ export function TabelaDeCampanhas({ linhas, moeda }: Props) {
                 <TableCell className="text-right">{dinheiro(linha.cpm)}</TableCell>
                 <TableCell className="text-right">
                   <Percentual valor={linha.ctr} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Percentual valor={linha.connectRate} />
                 </TableCell>
                 <TableCell className="text-right">
                   <Numero valor={linha.frequencia} casas={2} />

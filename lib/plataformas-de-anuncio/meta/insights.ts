@@ -94,6 +94,18 @@ const CAMPOS_DE_INSIGHTS = [
   "cost_per_result",
   "video_play_actions",
   "video_thruplay_watched_actions",
+  /*
+    Connect rate (issue #920). Zero chamada nova por causa disto: a tela já faz
+    DUAS por atualização (campanhas + insights) e continua fazendo duas — o que
+    muda são dois nomes a mais nos `fields` da MESMA query.
+
+    `actions` traz `landing_page_view` (o numerador) e `inline_link_clicks` traz
+    a contagem de cliques no link (o denominador). O denominador NÃO existia no
+    payload: `ctr` e `cpc` são razões, e `cpc` conta cliques TOTAIS — contagem
+    de cliques não estava em lugar nenhum dos campos acima.
+  */
+  "actions",
+  "inline_link_clicks",
 ].join(",");
 
 const CAMPOS_DE_CAMPANHA = ["id", "name", "status", "effective_status", "objective"].join(",");
@@ -109,11 +121,14 @@ export interface MetricaIndicada {
   values?: { value?: string }[];
 }
 
-/** Métrica que vem como lista por action_type (`video_play_actions`). */
-export interface AcaoDeVideo {
+/** Métrica que vem como lista por action_type (`video_play_actions`, `actions`). */
+export interface AcaoDaPlataforma {
   action_type?: string;
   value?: string;
 }
+
+/** Nome antigo, de quando só as métricas de vídeo usavam esta forma. */
+export type AcaoDeVideo = AcaoDaPlataforma;
 
 export interface LinhaDeInsightCrua {
   campaign_id?: string;
@@ -127,8 +142,12 @@ export interface LinhaDeInsightCrua {
   cpc?: string;
   results?: MetricaIndicada[];
   cost_per_result?: MetricaIndicada[];
-  video_play_actions?: AcaoDeVideo[];
-  video_thruplay_watched_actions?: AcaoDeVideo[];
+  video_play_actions?: AcaoDaPlataforma[];
+  video_thruplay_watched_actions?: AcaoDaPlataforma[];
+  /** Lista de ações por `action_type` — é de onde sai `landing_page_view`. */
+  actions?: AcaoDaPlataforma[];
+  /** Cliques no link, como string. Ausente quando a campanha não recebeu clique. */
+  inline_link_clicks?: string;
 }
 
 export interface CampanhaCrua {

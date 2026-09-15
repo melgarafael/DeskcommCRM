@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { CampanhaCrua, LinhaDeInsightCrua } from "@/lib/plataformas-de-anuncio/meta/insights";
 import type { LinhaDeCampanha } from "@/lib/plataformas-de-anuncio/types";
 import {
+  calcularConnectRate,
   calcularHookRate,
   custoPorResultado,
   montarTabelaDeCampanhas,
   numeroOuNulo,
   rotuloDoIndicador,
   somaDeAcoes,
+  valorDaAcao,
   valorIndicado,
 } from "@/lib/plataformas-de-anuncio/meta/tabela-de-campanhas";
 
@@ -294,5 +296,103 @@ describe("rótulo do indicador", () => {
 
   it("indicador ausente é nulo, não string vazia", () => {
     expect(rotuloDoIndicador(null)).toBeNull();
+  });
+});
+
+// ─── Connect rate (issue #920) ───────────────────────────────────────────────
+//
+// ⚠️ Estes fixtures NÃO vieram de sondagem, ao contrário dos de cima: na sessão
+// que escreveu esta coluna não havia token para bater na Graph API, e `actions`
+// e `inline_link_clicks` são campos NOVOS no pedido — a conta sondada em
+// 2026-09-02 nunca os devolveu. Os números são plausíveis (301 visualizações
+// sobre 430 cliques no link = 70,0%) e o que estes casos provam é a CONTA, o
+// recorte do numerador dentro de uma lista heterogênea, e o tratamento da
+// ausência. Quando a primeira leitura real chegar, é aqui que ela vira fixture.
+
+/** Só o que o Connect rate precisa, em cima da campanha que veiculou. */
+const COM_CONNECT_RATE: LinhaDeInsightCrua = {
+  ...CADASTRO_AGENDA_CHEIA,
+  actions: [
+    { action_type: "link_click", value: "430" },
+    { action_type: "landing_page_view", value: "301" },
+    { action_type: "onsite_conversion.messaging_conversation_started_7d", value: "13" },
+  ],
+  inline_link_clicks: "430",
+};
+
+/** A primeira linha é sempre a de insights — a ordem é insights primeiro. */
+function linhaDoInsight(insight: LinhaDeInsightCrua): LinhaDeCampanha {
+  return primeira(montarTabelaDeCampanhas(CAMPANHAS, [insight]));
+}
+
+describe("Connect rate — visualizações da página ÷ cliques no link", () => {
+  it("calcula o percentual como o Gerenciador de Anúncios", () => {
+    expect(calcularConnectRate(301, 430)).toBeCloseTo(70, 5);
+  });
+
+  it("tira o numerador das `actions` e o denominador do `inline_link_clicks`", () => {
+    expect(linhaDoInsight(COM_CONNECT_RATE).connectRate).toBeCloseTo(70, 5);
+  });
+
+  it("pega UMA ação pelo tipo, em vez de somar a lista inteira", () => {
+    // Somar `actions` daria 744 (cliques + visualizações + conversas) e um
+    // "Connect rate" de 173% — número absurdo com aparência de dado.
+    expect(valorDaAcao(COM_CONNECT_RATE.actions)).toBe(301);
+    expect(somaDeAcoes(COM_CONNECT_RATE.actions)).toBe(744);
+  });
+
+  it("`actions` sem `landing_page_view` fica nulo, não zero", () => {
+    const semVisualizacao: LinhaDeInsightCrua = {
+      ...COM_CONNECT_RATE,
+      actions: [{ action_type: "link_click", value: "430" }],
+    };
+    expect(linhaDoInsight(semVisualizacao).connectRate).toBeNull();
+  });
+
+  it("sem `inline_link_clicks` fica nulo — campanha sem clique não tem taxa", () => {
+    const semCliques: LinhaDeInsightCrua = {
+      ...COM_CONNECT_RATE,
+      inline_link_clicks: undefined,
+    };
+    expect(linhaDoInsight(semCliques).connectRate).toBeNull();
+  });
+
+  it("nem `actions` nem cliques em campanha que não veiculou", () => {
+    // SEM_VEICULACAO é o caso comum — 4 das 7 campanhas reais voltaram assim.
+    expect(linhaDoInsight(SEM_VEICULACAO).connectRate).toBeNull();
+  });
+
+  it("cliques zerados devolvem nulo, nunca Infinity", () => {
+    expect(calcularConnectRate(301, 0)).toBeNull();
+    expect(calcularConnectRate(0, 0)).toBeNull();
+    const zerado: LinhaDeInsightCrua = { ...COM_CONNECT_RATE, inline_link_clicks: "0" };
+    expect(linhaDoInsight(zerado).connectRate).toBeNull();
+  });
+
+  it("visualização zerada com cliques medidos dá 0, e não nulo", () => {
+    // Aqui HOUVE medição e ela deu zero — a regra do arquivo: zero medido é
+    // diferente de ausente.
+    expect(calcularConnectRate(0, 430)).toBe(0);
+  });
+
+  it("aceita a variante omnicanal `omni_landing_page_view`", () => {
+    expect(valorDaAcao([{ action_type: "omni_landing_page_view", value: "301" }])).toBe(301);
+  });
+
+  it("prefere `landing_page_view` quando as duas variantes vierem", () => {
+    expect(
+      valorDaAcao([
+        { action_type: "omni_landing_page_view", value: "300" },
+        { action_type: "landing_page_view", value: "301" },
+      ]),
+    ).toBe(301);
+  });
+
+  it("campanha que só existe no cadastro (sem insights) fica nula", () => {
+    // A homônima ATIVA não apareceu nos insights do período.
+    const linhas = montarTabelaDeCampanhas(CAMPANHAS, [COM_CONNECT_RATE]);
+    const semInsight = linhas.find((linha) => linha.campanhaId === "120254899459370350");
+    if (!semInsight) throw new Error("esperava a campanha que só existe no cadastro");
+    expect(semInsight.connectRate).toBeNull();
   });
 });
