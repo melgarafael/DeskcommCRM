@@ -39,6 +39,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
+import { graphVersion } from "@/lib/graph-version";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 export interface MetaCredentials {
@@ -57,11 +58,6 @@ export interface MetaCredsLookup {
   organizationId: string;
   /** `channel_sessions.meta_phone_number_id` — o `sessionRef` deste canal. */
   phoneNumberId: string;
-}
-
-/** Versão da Graph API. Explícita de propósito: bump é decisão, não deriva. */
-function graphVersion(): string {
-  return process.env.META_GRAPH_VERSION ?? "v22.0";
 }
 
 /**

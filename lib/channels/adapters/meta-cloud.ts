@@ -19,6 +19,7 @@
  *    da bolha de voz. E a Meta **não converte** — quem manda mp3 com `voice:true` erra;
  *    o outro canal converte por nós, este não.
  */
+import { graphVersion } from "@/lib/graph-version";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
 import { resolveMetaCreds } from "../meta/credentials";
@@ -147,7 +148,7 @@ export const metaCloudAdapter: ChannelAdapter = {
     });
     if (!creds) return { reachable: false, status: null, detail: "sem_credencial_para_a_sessao" };
 
-    const version = process.env.META_GRAPH_VERSION ?? "v22.0";
+    const version = graphVersion();
     try {
       const res = await fetch(
         `https://graph.facebook.com/${version}/${input.sessionRef}?fields=display_phone_number,quality_rating`,

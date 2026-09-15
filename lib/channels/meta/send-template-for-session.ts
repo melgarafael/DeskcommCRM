@@ -15,6 +15,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { graphVersion } from "@/lib/graph-version";
 import { sendTemplate } from "./send-template";
 
 export interface SendTemplateForSessionInput {
@@ -75,7 +76,7 @@ export async function sendTemplateForSession(
   const resultado = await sendTemplate({
     phoneNumberId: process.env.META_PHONE_NUMBER_ID ?? "",
     token: process.env.META_SYSTEM_USER_TOKEN ?? "",
-    graphVersion: process.env.META_GRAPH_VERSION ?? "v22.0",
+    graphVersion: graphVersion(),
     to: input.to,
     binding: {
       name: input.name,

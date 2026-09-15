@@ -5,6 +5,7 @@
  *   pnpm exec tsx --env-file=.env.local scripts/spike-sync-templates.ts
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { graphVersion } from "@/lib/graph-version";
 import { syncTemplates } from "@/lib/channels/meta/template-sync";
 
 async function main() {
@@ -24,7 +25,7 @@ async function main() {
     organizationId: sessao.organization_id,
     wabaId: sessao.meta_waba_id,
     token: process.env.META_SYSTEM_USER_TOKEN ?? "",
-    graphVersion: process.env.META_GRAPH_VERSION ?? "v22.0",
+    graphVersion: graphVersion(),
   });
 
   console.info("sync:", JSON.stringify(counts));

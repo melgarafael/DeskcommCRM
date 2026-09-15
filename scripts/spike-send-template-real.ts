@@ -7,6 +7,7 @@
  *   pnpm exec tsx --env-file=.env.local scripts/spike-send-template-real.ts
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { graphVersion } from "@/lib/graph-version";
 import { sendTemplate } from "@/lib/channels/meta/send-template";
 
 const TEMPLATE = "deskcomm_prova_webhook_0088";
@@ -31,7 +32,7 @@ async function main() {
   const resultado = await sendTemplate({
     phoneNumberId: process.env.META_PHONE_NUMBER_ID ?? "",
     token: process.env.META_SYSTEM_USER_TOKEN ?? "",
-    graphVersion: process.env.META_GRAPH_VERSION ?? "v22.0",
+    graphVersion: graphVersion(),
     to: DESTINO,
     binding: {
       name: linha.name,
