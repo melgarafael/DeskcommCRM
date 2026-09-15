@@ -6025,6 +6025,11 @@ export const DICIONARIO: Traducoes = {
   "Esta ação remove o que está selecionado. Não pode ser desfeita.": {
     es: "Esta acción elimina lo que está seleccionado. No se puede deshacer.",
   },
+  // Excluir UM card pelo menu do card: diz o que vai junto (o histórico de
+  // atividades, por cascade) e o que fica. "card" pelo mesmo motivo acima.
+  "O card sai do funil com o histórico de atividades. O contato e as conversas continuam. Esta ação não pode ser desfeita.": {
+    es: "La tarjeta sale del embudo con el historial de actividades. El contacto y las conversaciones se mantienen. Esta acción no se puede deshacer.",
+  },
   "Selecionar": { es: "Seleccionar" },
   "Selecionar todos em": { es: "Seleccionar todos en" },
   "Desmarcar todos em": { es: "Desmarcar todos en" },
