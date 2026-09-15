@@ -44,6 +44,7 @@ import {
 } from "@/lib/messaging/contact-card";
 import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 
@@ -450,7 +451,7 @@ export async function sendMessageHandler(
           traduzir("Contato sem telefone para envio como cartão.", ctx.idioma ?? "pt-BR"),
         );
       }
-      const displayName = row.display_name ?? row.name ?? row.phone_number;
+      const displayName = nomeDoContato(row) ?? row.phone_number;
       outboundBody = displayName;
       outboundMetadata = {
         ...outboundMetadata,

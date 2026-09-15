@@ -17,6 +17,7 @@ import type { Role } from "@/lib/auth/types";
  * de fonte confiável pelo chamador (JWT ou contexto do agente), nunca do body.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
 
 import {
   classifyRisk,
@@ -198,7 +199,7 @@ export async function carregaRadarDeRisco(
       }
     }
     for (const p of contacts.data ?? []) {
-      nameByContact.set(p.id, p.display_name ?? p.name ?? null);
+      nameByContact.set(p.id, nomeDoContato(p));
     }
   }
 
@@ -257,7 +258,7 @@ export async function carregaRadarDeRisco(
   // paridade sem necessidade; acrescentar não arrisca nada.
   const { data: semPasso, error: demandaError } = await admin
     .from("demandas")
-    .select("id, lead_id, contact_id, aberta_em, origem, contacts(display_name)")
+    .select("id, lead_id, contact_id, aberta_em, origem, contacts(name, display_name)")
     .eq("organization_id", organizationId)
     .is("fechada_em", null)
     .is("proximo_passo", null)
@@ -293,12 +294,12 @@ export async function carregaRadarDeRisco(
 
   const semProximoPasso: DemandaSemProximoPasso[] = demandasVisiveis.map((d) => {
     // O join do PostgREST vem como ARRAY mesmo em relação um-para-um.
-    const rel = d.contacts as unknown as { display_name: string | null }[] | { display_name: string | null } | null;
+    const rel = d.contacts as unknown as ContatoNomeavel[] | ContatoNomeavel | null;
     const contato = Array.isArray(rel) ? (rel[0] ?? null) : rel;
     return {
       id: d.id as string,
       contact_id: d.contact_id as string,
-      contact_name: contato?.display_name ?? null,
+      contact_name: nomeDoContato(contato),
       aberta_em: d.aberta_em as string,
       horas_aberta: Math.floor(
         (now.getTime() - new Date(d.aberta_em as string).getTime()) / 3_600_000,

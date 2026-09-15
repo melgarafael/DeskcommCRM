@@ -4,7 +4,7 @@ import * as path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
+import { ehIdentificadorTecnico, nomeDoContato, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
 
 /**
  * COMO SE CHAMA ESTA PESSOA NA TELA.
@@ -45,9 +45,17 @@ describe("ehIdentificadorTecnico", () => {
 
 describe("rotuloDoContato", () => {
   it("prefere o nome que uma pessoa escolheu", () => {
-    expect(rotuloDoContato({ display_name: "Kaio Gomes", name: "Kaio G", phone_number: "+5531988887777" })).toBe(
+    // `name` é o que "Editar contato" grava e o que a proposta de dado aprovada
+    // escreve; `display_name` é o nome do perfil do WhatsApp, gravado pela
+    // ingestão, e nenhuma tela o edita. Esta asserção esperava o contrário, e o
+    // nome digitado pelo operador nunca aparecia (issue #906).
+    expect(rotuloDoContato({ display_name: "🌸 Kaio", name: "Kaio Gomes", phone_number: "+5531988887777" })).toBe(
       "Kaio Gomes",
     );
+  });
+
+  it("sem nome escolhido, usa o que o canal informou", () => {
+    expect(rotuloDoContato({ display_name: "🌸 Kaio", name: null, phone_number: "+5531988887777" })).toBe("🌸 Kaio");
   });
 
   it("pula o display_name TÉCNICO e usa o que vier depois", () => {
@@ -85,6 +93,24 @@ describe("rotuloDoContato", () => {
     expect(rotuloDoContato({ display_name: "Contato 543134@lid", name: null, phone_number: null })).toBe(
       SEM_NOME,
     );
+  });
+});
+
+describe("nomeDoContato — o nome de gente, sem telefone nem literal", () => {
+  // Para quem FALA com a pessoa (prompt do agente, lembrete ao cliente): cair no
+  // telefone ali seria chamar o cliente de "+5531…". Cada chamador põe o próprio
+  // fallback.
+  it("prefere o nome escolhido ao do canal", () => {
+    expect(nomeDoContato({ display_name: "🌸 Kaio", name: "Kaio Gomes" })).toBe("Kaio Gomes");
+  });
+
+  it("nome escolhido técnico cai para o do canal", () => {
+    expect(nomeDoContato({ display_name: "Kaio", name: "Contato 543134@lid" })).toBe("Kaio");
+  });
+
+  it("sem nome de gente devolve null, nunca o telefone", () => {
+    expect(nomeDoContato({ display_name: null, name: " ", phone_number: "+5531988887777" })).toBeNull();
+    expect(nomeDoContato(null)).toBeNull();
   });
 });
 

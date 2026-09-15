@@ -71,6 +71,7 @@ import { env } from "@/lib/env";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -333,7 +334,7 @@ async function handle(req: NextRequest): Promise<Response> {
       .maybeSingle();
 
     let corpo = montarLembrete({
-      nomeDoContato: contato.display_name ?? contato.name ?? null,
+      nomeDoContato: nomeDoContato(contato),
       titulo: linha.title,
       quando: new Date(linha.starts_at),
       timezone: organizacao?.timezone ?? "America/Sao_Paulo",

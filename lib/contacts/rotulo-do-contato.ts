@@ -59,8 +59,25 @@ export function ehIdentificadorTecnico(valor: string): boolean {
 }
 
 /**
- * O rótulo. Primeiro o que uma pessoa escolheu, depois o que o canal informou,
- * depois o número — e só então a admissão de que não se sabe o nome.
+ * O nome de gente: primeiro o que uma pessoa escolheu (`name` — "Editar
+ * contato", proposta de dado aprovada), depois o que o canal informou
+ * (`display_name` — o perfil do WhatsApp, gravado pela ingestão). `null` quando
+ * não há nome apresentável; quem chama decide o fallback. Quem FALA com a
+ * pessoa (prompt, lembrete) não pode cair no telefone, por isso esta metade
+ * existe separada do rótulo.
+ */
+export function nomeDoContato(c: ContatoNomeavel | null | undefined): string | null {
+  if (!c) return null;
+  for (const bruto of [c.name, c.display_name]) {
+    const v = (bruto ?? "").trim();
+    if (v !== "" && !ehIdentificadorTecnico(v)) return v;
+  }
+  return null;
+}
+
+/**
+ * O rótulo. O nome de gente (`nomeDoContato`), depois o número — e só então a
+ * admissão de que não se sabe o nome.
  *
  * Celular BR aparece COM o nono dígito: `+553284793302` e `+5532984793302` são
  * a mesma pessoa, e o 9 é o que o atendente espera copiar.
@@ -71,11 +88,8 @@ export function rotuloDoContato(
 ): string {
   if (!c) return t(SEM_NOME);
 
-  const candidatos = [c.display_name, c.name];
-  for (const bruto of candidatos) {
-    const v = (bruto ?? "").trim();
-    if (v !== "" && !ehIdentificadorTecnico(v)) return v;
-  }
+  const nome = nomeDoContato(c);
+  if (nome) return nome;
 
   const tel = (c.phone_number ?? "").trim();
   if (tel !== "") return phoneForDisplay(tel);

@@ -99,6 +99,7 @@ export interface BotContext {
   };
   contact: {
     id: string;
+    name: string | null;
     display_name: string | null;
     locale: string | null;
   };

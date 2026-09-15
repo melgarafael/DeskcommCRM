@@ -15,6 +15,7 @@ import type { Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/legal-basis';
 import { isoLocalComOffset } from '@/lib/tempo/agora';
+import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
 
 /**
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
@@ -277,7 +278,7 @@ export async function getLeadContext(
       lead_id: input.leadId,
       contact_id: input.leadId,
       contact: {
-        name: contact.display_name ?? contact.name,
+        name: nomeDoContato(contact),
         phone: contact.phone_number,
         email: contact.email,
         tags: contact.tags ?? [],
