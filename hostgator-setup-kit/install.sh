@@ -1587,6 +1587,11 @@ esac
   envq SUPABASE_DB_URL "$SUPABASE_DB_URL"
   envq NEXT_PUBLIC_APP_URL "$NEXT_PUBLIC_APP_URL"
   envq NEXT_PUBLIC_ADMIN_URL "$NEXT_PUBLIC_ADMIN_URL"
+  # Ponte opcional Advomax ↔ CRM. O instalador não força um escritório a
+  # contratar os dois produtos; quando estas variáveis já vierem no ambiente,
+  # elas sobrevivem à reconstrução do .env junto com as demais configurações.
+  envq ADVOMAX_API_URL "${ADVOMAX_API_URL:-}"
+  envq ADVOMAX_CRM_INTEGRATION_KEY "${ADVOMAX_CRM_INTEGRATION_KEY:-}"
   printf '# Marca da instalação (white-label). Preencha APP_LOGO_URL com a URL de uma\n'
   printf '# imagem pública para trocar o texto por logo na sidebar. Ver lib/branding.ts.\n'
   printf '# APP_ACCENT_HEX é a SEMENTE da cor: o banco (platform_branding) manda depois\n'
