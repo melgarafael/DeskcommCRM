@@ -1729,7 +1729,7 @@ CREATE TABLE IF NOT EXISTS "public"."organizations" (
     "display_name" "text" NOT NULL,
     "cnpj" "text",
     "status" "text" DEFAULT 'active'::"text" NOT NULL,
-    "timezone" "text" DEFAULT 'America/Sao_Paulo'::"text" NOT NULL,
+    "timezone" "text" DEFAULT 'Africa/Luanda'::"text" NOT NULL,
     "locale" "text" DEFAULT 'pt-BR'::"text" NOT NULL,
     "rate_limit_rps" integer DEFAULT 100 NOT NULL,
     "ai_budget_cents" bigint,
@@ -15186,7 +15186,7 @@ create table if not exists public.calendar_appointments (
   -- combinado; o instante UTC sozinho não sabe dizer isso depois de uma virada
   -- de horário de verão. Sem CHECK: a validação de fuso é do Intl, e o repo já
   -- tem o lugar dela — `fusoValido` em lib/tempo/fusos.ts, aplicado no Zod.
-  time_zone text not null default 'America/Sao_Paulo',
+  time_zone text not null default 'Africa/Luanda',
 
   status text not null default 'confirmed',
 
@@ -18359,3 +18359,15 @@ notify pgrst, 'reload schema';
 -- em produção (engolido, fire-and-forget), e o aviso ficava aberto pra sempre.
 alter table public.agent_inbox_items
   add column if not exists resolved_at timestamptz;
+
+-- ---- CSV como material de conhecimento (migration 0218) ----
+-- O bucket `ai-policy` (acima, migration 0014) tinha `allowed_mime_types`
+-- fechado em PDF/Markdown/texto. O acervo de IA passou a aceitar CSV
+-- (lib/ai/rag/extractors/csv.ts) — sem esta linha o Storage recusa o upload
+-- ANTES de qualquer código da aplicação rodar, com erro sem relação nenhuma
+-- com "extensão não suportada". `update`, não `insert ... on conflict`: o
+-- bucket já existe em todo clone; é a MIME list que precisa alcançar quem
+-- instalou antes desta mudança.
+update storage.buckets
+set allowed_mime_types = array['application/pdf', 'text/markdown', 'text/x-markdown', 'text/plain', 'text/csv']
+where id = 'ai-policy';

@@ -108,9 +108,20 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const ext = resolverExtensao(file.name, file.type);
   if (!ext) {
+    const extBruta = file.name.split(".").pop()?.toLowerCase() ?? "";
+    // Mesma instrução de `extrairTextoDoArquivo` — Excel tem caminho de saída
+    // próprio (exportar como CSV), a genérica não ensina isso.
+    if (extBruta === "xlsx" || extBruta === "xls") {
+      return fail(
+        "unsupported_media_type",
+        'Não leio Excel diretamente — no Excel use "Salvar como" → "CSV UTF-8 (delimitado por vírgulas)" e envie o CSV.',
+        415,
+        { requestId },
+      );
+    }
     return fail(
       "unsupported_media_type",
-      "Não sei ler esse tipo de arquivo. Envie PDF, Markdown (.md) ou texto (.txt).",
+      "Não sei ler esse tipo de arquivo. Envie PDF, Markdown (.md), CSV (.csv) ou texto (.txt).",
       415,
       { requestId },
     );
@@ -132,6 +143,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     pdf: "application/pdf",
     md: "text/markdown",
     txt: "text/plain",
+    csv: "text/csv",
   } as const;
 
   const { error: uploadErr } = await admin.storage

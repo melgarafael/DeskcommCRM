@@ -21,12 +21,19 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractMarkdownText } from "@/lib/ai/rag/extractors/markdown";
 import { extractPdfText, PdfExtractError } from "@/lib/ai/rag/extractors/pdf";
+import { extractCsvText, CsvExtractError } from "@/lib/ai/rag/extractors/csv";
 
 /** Bucket privado onde os arquivos de conhecimento vivem (nome histórico). */
 export const BUCKET_DE_CONHECIMENTO = "ai-policy";
 
-/** Extensões que o produto sabe ler hoje. */
-export const EXTENSOES_ACEITAS = ["pdf", "md", "txt"] as const;
+/**
+ * Extensões que o produto sabe ler hoje.
+ *
+ * `xlsx`/`xls` NÃO entram de propósito — mesma decisão de `lib/contacts/csv.ts`:
+ * todo Excel exporta CSV, e a mensagem de recusa em `extrairTextoDoArquivo`
+ * ensina esse caminho em vez de carregar SheetJS/exceljs para o produto inteiro.
+ */
+export const EXTENSOES_ACEITAS = ["pdf", "md", "txt", "csv"] as const;
 export type ExtensaoAceita = (typeof EXTENSOES_ACEITAS)[number];
 
 /**
@@ -50,6 +57,7 @@ export function resolverExtensao(
   if (mimeType === "application/pdf") return "pdf";
   if (mimeType === "text/markdown" || mimeType === "text/x-markdown") return "md";
   if (mimeType === "text/plain") return "txt";
+  if (mimeType === "text/csv") return "csv";
   return null;
 }
 
@@ -66,9 +74,18 @@ export async function extrairTextoDoArquivo(
 ): Promise<{ texto: string; extensao: ExtensaoAceita }> {
   const extensao = resolverExtensao(extensaoDeclarada ?? blobPath);
   if (!extensao) {
+    const extBruta = (extensaoDeclarada ?? blobPath.split(".").pop() ?? "?").toLowerCase();
+    // Excel (.xlsx/.xls) tem instrução própria — a genérica ("envie PDF...") não
+    // ensina o caminho de saída, que é exportar como CSV (mesma decisão de
+    // `lib/contacts/csv.ts`, nunca carregar SheetJS/exceljs pra ler o binário).
+    if (extBruta === "xlsx" || extBruta === "xls") {
+      throw new ErroDeExtracao(
+        "não leio Excel diretamente — no Excel use \"Salvar como\" → \"CSV UTF-8 " +
+          '(delimitado por vírgulas)" e envie o CSV.',
+      );
+    }
     throw new ErroDeExtracao(
-      `não sei ler arquivos "${extensaoDeclarada ?? blobPath.split(".").pop() ?? "?"}" — ` +
-        `envie PDF, Markdown ou texto`,
+      `não sei ler arquivos "${extBruta}" — envie PDF, Markdown, CSV ou texto`,
     );
   }
 
@@ -96,6 +113,17 @@ export async function extrairTextoDoArquivo(
       }
       throw new ErroDeExtracao(
         `falhou ao ler o PDF: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  } else if (extensao === "csv") {
+    try {
+      texto = extractCsvText(buffer);
+    } catch (err) {
+      if (err instanceof CsvExtractError) {
+        throw new ErroDeExtracao(err.message);
+      }
+      throw new ErroDeExtracao(
+        `falhou ao ler o CSV: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   } else {

@@ -65,7 +65,7 @@ export const TIPOS_DE_FONTE = [
     id: "documento",
     rotulo: "Documento",
     oQueE:
-      "Um texto do seu negócio — política de troca, tabela de preços, manual, contrato. Envie o arquivo (PDF, Markdown ou texto) ou cole o conteúdo.",
+      "Um texto do seu negócio — política de troca, tabela de preços, manual, contrato. Envie o arquivo (PDF, Markdown, CSV ou texto) ou cole o conteúdo.",
     comoSePreenche: "arquivo_ou_texto",
   },
   {

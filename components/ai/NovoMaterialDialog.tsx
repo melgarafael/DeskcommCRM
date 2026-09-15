@@ -207,13 +207,13 @@ export function NovoMaterialDialog({ aberto, onFechar, onCriado, podeIndexar }: 
                 data-testid="material-arquivo"
                 ref={inputArquivo}
                 type="file"
-                accept=".pdf,.md,.txt"
+                accept=".pdf,.md,.txt,.csv"
                 onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
                 disabled={enviando}
               />
               <p className="text-xs text-text-muted">
                 {t(
-                  "PDF, Markdown ou texto, até 20 MB. Um PDF só de imagens escaneadas não tem letra nenhuma para ler — envie uma versão com texto selecionável.",
+                  "PDF, Markdown, CSV ou texto, até 20 MB. Um PDF só de imagens escaneadas não tem letra nenhuma para ler — envie uma versão com texto selecionável. Planilha Excel? Salve como CSV primeiro.",
                 )}
               </p>
             </div>
