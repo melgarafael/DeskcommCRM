@@ -8,6 +8,11 @@
  *  2. a resposta da RENOVAÇÃO não repete o `refresh_token` — quem substitui o
  *     objeto inteiro apaga o que acabou de renovar;
  *  3. `expires_in` é relativo; persistido cru, dá um token que nunca vence.
+ *
+ * E uma quarta, que não mata conexão nenhuma: tranca quem tem a agenda num
+ * e-mail diferente do login do CRM. Sem `select_account`, o `login_hint` deixa
+ * de sugerir e passa a impor — o Google autoriza a conta que já estava logada
+ * no navegador, sem mostrar o seletor (issue #929).
  */
 import { describe, expect, it } from "vitest";
 
@@ -42,7 +47,21 @@ describe("montarUrlDeConsentimento", () => {
     // segunda conexão, e a integração morre uma hora depois.
     const url = new URL(montarUrlDeConsentimento(APP, { state: "abc" }));
     expect(url.searchParams.get("access_type")).toBe("offline");
-    expect(url.searchParams.get("prompt")).toBe("consent");
+    // `prompt` é um CONJUNTO para o Google, não um valor: pinar a lista inteira
+    // impede que tirar um dos dois passe despercebido (ver o cabeçalho).
+    expect(url.searchParams.get("prompt")?.split(" ").sort()).toEqual(["consent", "select_account"]);
+  });
+
+  it("deixa escolher OUTRA conta — a agenda pode estar num e-mail diferente do login do CRM", () => {
+    // Issue #929: quem entra no CRM com um e-mail e tem a agenda em outro chega
+    // na tela do Google e autoriza, sem seletor, a conta que já estava logada no
+    // navegador — e a agenda errada volta para o CRM.
+    const url = new URL(montarUrlDeConsentimento(APP, { state: "abc", contaSugerida: "ana@clinica.com.br" }));
+    const pedidos = url.searchParams.get("prompt")?.split(" ") ?? [];
+
+    expect(pedidos).toContain("select_account");
+    // E a sugestão continua de pé: o seletor abre na conta certa para quem só tem uma.
+    expect(url.searchParams.get("login_hint")).toBe("ana@clinica.com.br");
   });
 
   it("pede exatamente os dois escopos, e nenhum de perfil", () => {
