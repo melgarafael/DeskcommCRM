@@ -228,6 +228,28 @@ describe("KnowledgeSourceCard — só oferece controle onde existe ação", () =
     });
   }
 
+  it('"documento" NÃO oferece editar conteúdo — não há pergunta/resposta para editar', () => {
+    // `documento` é `arquivo_ou_texto`: aceita texto colado, mas o que ele
+    // guarda é texto CORRIDO. A pergunta certa não é "aceita colar?", e sim
+    // "guarda pergunta e resposta?". Antes, o botão aparecia aqui e abria o
+    // editor de FAQ VAZIO — um controle que promete conteúdo que o material
+    // não tem, e o pior desfecho de um botão chamado "editar".
+    render(
+      <KnowledgeSourceCard
+        source={material({ source_type: "documento", name: "Política de troca" })}
+        usadoPor={[]}
+        onReindex={() => {}}
+        onArquivar={() => {}}
+        onMudou={() => {}}
+      />,
+    );
+    // O cartão existe e continua com as outras ações: a ausência do botão tem
+    // de vir do TIPO, não de o cartão não ter renderizado.
+    expect(screen.getByTestId("material-ks-1")).toBeInTheDocument();
+    expect(screen.getByTestId("material-arquivar-ks-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("material-editar-ks-1")).toBeNull();
+  });
+
   it("material sem trecho nenhum não oferece 'ver o que ele aprendeu'", () => {
     render(
       <KnowledgeSourceCard
