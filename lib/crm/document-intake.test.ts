@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { requeueDocumentIntake } from './document-intake'
+import { advomaxFileCode, requeueDocumentIntake } from './document-intake'
 
 describe('requeue de documentos do WhatsApp', () => {
   it('zera tentativas e libera a linha para o cron imediatamente', () => {
@@ -15,5 +15,12 @@ describe('requeue de documentos do WhatsApp', () => {
       claimed_at: null,
       claimed_by: null,
     })
+  })
+
+  it('aceita somente recibo com código inteiro positivo', () => {
+    expect(advomaxFileCode({ codigo: 123 })).toBe(123)
+    expect(advomaxFileCode({ codigo: 0 })).toBeNull()
+    expect(advomaxFileCode({ codigo: '123' })).toBeNull()
+    expect(advomaxFileCode(null)).toBeNull()
   })
 })

@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
+import { advomaxFileCode } from "@/lib/crm/document-intake";
 
 export const dynamic = "force-dynamic";
 const DEFAULT_LIMIT = 20;
@@ -77,9 +78,13 @@ async function enviar(row: IntakeRow, admin: ReturnType<typeof createAdminClient
     signal: AbortSignal.timeout(60_000),
   }).catch(() => null);
   if (!response?.ok) return registrarFalha(admin, row, requestId, "Advomax não confirmou o arquivamento.");
-  const body = await response.json().catch(() => ({})) as { codigo?: number };
+  const body = await response.json().catch(() => ({}));
+  const codigo = advomaxFileCode(body);
+  if (codigo === null) {
+    return registrarFalha(admin, row, requestId, "Advomax devolveu um recibo de arquivo inválido.");
+  }
   const { error } = await admin.from("crm_document_intake" as never).update({
-    status: "uploaded", advomax_file_id: body.codigo ?? null, failure_reason: null, claimed_at: null, claimed_by: null,
+    status: "uploaded", advomax_file_id: codigo, failure_reason: null, claimed_at: null, claimed_by: null,
   } as never).eq("id", row.id).eq("status", "processing");
   if (error) return registrarFalha(admin, row, requestId, "Documento arquivado, mas o recibo não foi atualizado.");
   await audit({ action: "document_intake.uploaded", actorUserId: row.requested_by, organizationId: row.organization_id, resourceType: "crm_document_intake", resourceId: row.id, requestId, metadata: { worker: true } });

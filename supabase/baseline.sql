@@ -24017,6 +24017,10 @@ create table if not exists public.crm_document_intake (
   updated_at timestamptz not null default now(),
   unique (organization_id, message_id)
 );
+-- 0243 — preserva a identidade Advomax que iniciou a atribuição também em
+-- instalações frescas que aplicam somente este baseline.
+alter table public.crm_document_intake
+  add column if not exists requested_by_email text;
 create index if not exists idx_crm_document_intake_org_status
   on public.crm_document_intake (organization_id, status, created_at desc);
 create index if not exists idx_crm_document_intake_retry

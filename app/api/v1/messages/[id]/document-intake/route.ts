@@ -14,7 +14,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
-import { requeueDocumentIntake } from "@/lib/crm/document-intake";
+import { advomaxFileCode, requeueDocumentIntake } from "@/lib/crm/document-intake";
 
 export const dynamic = "force-dynamic";
 
@@ -156,10 +156,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (!response || !response.ok) {
       return marcarFalha(supabase, intake, requestId, "Advomax não confirmou o arquivamento.");
     }
-    const advomax = await response.json().catch(() => ({})) as { codigo?: number };
+    const advomax = await response.json().catch(() => ({}));
+    const codigo = advomaxFileCode(advomax);
+    if (codigo === null) {
+      return marcarFalha(supabase, intake, requestId, "Advomax devolveu um recibo de arquivo inválido.");
+    }
     const { data: atualizado, error: updateError } = await supabase
       .from("crm_document_intake" as never)
-      .update({ status: "uploaded", advomax_file_id: advomax.codigo ?? null, failure_reason: null } as never)
+      .update({ status: "uploaded", advomax_file_id: codigo, failure_reason: null } as never)
       .eq("id", (intake as { id: string }).id)
       .eq("organization_id", authz.org.orgId)
       .select("*")
