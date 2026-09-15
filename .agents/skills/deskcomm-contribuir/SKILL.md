@@ -146,6 +146,15 @@ de release é automático e uma seção à mão já quase publicou uma versão p
 `exige_acao` só se o operador precisa fazer algo na VPS (variável nova obrigatória, por exemplo) —
 e aí o instalador precisa perguntar por ela.
 
+O texto do fragmento vira a nota pública da versão: a LP publica o `CHANGELOG.md` em
+[deskcomm.com.br/changelog](https://www.deskcomm.com.br/changelog), nos três idiomas. Escreva
+para quem nunca viu o código.
+
+**Mexeu num guia** (`.agents/skills/deskcomm-*`: nome, o que ele faz, como chamar)? Rode
+`pnpm skills:sync` e avise no PR que a página de guias da LP
+([deskcomm.com.br/guias](https://www.deskcomm.com.br/guias), arquivo `conteudo/guias.ts` do
+repositório `deskcomm-site`) precisa acompanhar — senão ela passa a ensinar um guia que não existe.
+
 ## Passo 8 — o PR
 
 - **Título** no imperativo, do ponto de vista de quem usa (`fix(agenda): a consulta remarcada não

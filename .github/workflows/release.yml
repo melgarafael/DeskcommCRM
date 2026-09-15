@@ -353,3 +353,61 @@ jobs:
             exit 1
           fi
           echo "stable e ${VERSAO} são o mesmo manifesto nas três imagens"
+
+      # ─── A VERSÃO CHEGOU À VITRINE? ───────────────────────────────────────
+      #
+      # Lei em docs/doctrine/versionamento.md, seção "A vitrine". A página de
+      # changelog da LP (deskcomm-site) lê o CHANGELOG.md da `main` e revalida a
+      # cada 10 min; somando o cache de 5 min do raw.githubusercontent.com, a
+      # versão aparece em até ~15 min. Ninguém escreve release no site — por isso
+      # o que se confere aqui é a CONSEQUÊNCIA, nos três idiomas, e não um passo
+      # de "atualizar a LP" que poderia rodar verde sem mudar nada.
+      #
+      # Cada sonda também é o que DISPARA a regeneração: numa página vencida, o
+      # primeiro acesso recebe a versão velha e agenda a nova. Por isso a sonda
+      # repete em vez de esperar parada.
+      #
+      # Só no repositório oficial: um fork herda este workflow, e a LP dele não é
+      # a nossa. A release em si já saiu quando este passo roda — vermelho aqui
+      # quer dizer "a vitrine não mostra", não "a versão não existe".
+      - name: A versão aparece na página de changelog da LP?
+        if: steps.pendente.outputs.cortar == 'sim' && github.repository == 'melgarafael/DeskcommCRM'
+        timeout-minutes: 40
+        env:
+          VERSAO: ${{ steps.pendente.outputs.versao }}
+          LP: https://www.deskcomm.com.br
+        run: |
+          set -euo pipefail
+          paginas="/changelog /en/changelog /es/changelog"
+          faltando="$paginas"
+          for tentativa in $(seq 1 35); do
+            faltando=""
+            for p in $paginas; do
+              # O link para a página da versão, e não o número solto: "1.2.1"
+              # aparece dentro de "1.2.10"; o href fecha a aspa.
+              html=$(curl -fsSL --max-time 30 "${LP}${p}" 2>/dev/null || true)
+              if printf '%s' "$html" | grep -qF "href=\"${p}/${VERSAO}\""; then
+                echo "  ${p}: v${VERSAO} listada"
+              else
+                faltando="${faltando} ${p}"
+              fi
+            done
+            [ -z "$faltando" ] && break
+            echo "tentativa ${tentativa}: ainda falta em${faltando}"
+            sleep 60
+          done
+          if [ -n "$faltando" ]; then
+            echo "::error::v${VERSAO} saiu (tag, release e imagens conferidas), mas a LP não a lista em:${faltando}"
+            echo "::error::Confira se ${LP}/changelog responde e se o CHANGELOG.md da main tem a seção '## [${VERSAO}] — AAAA-MM-DD'."
+            echo "::error::Se o formato do cabeçalho mudou, o leitor da LP (lib/changelog.ts em deskcomm-site) precisa mudar junto."
+            exit 1
+          fi
+          # A página da própria versão é gerada no primeiro acesso: confirma que ela abre.
+          for p in $paginas; do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "${LP}${p}/${VERSAO}")
+            if [ "$codigo" != "200" ]; then
+              echo "::error::${LP}${p}/${VERSAO} respondeu ${codigo}."
+              exit 1
+            fi
+          done
+          echo "a LP mostra v${VERSAO} em pt-BR, en e es"

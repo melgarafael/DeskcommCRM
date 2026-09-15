@@ -1166,6 +1166,7 @@ E confira o desfecho, porque "a tag saiu" não é "a versão chegou":
 ```bash
 git ls-remote --tags origin 'refs/tags/vX.Y.Z'          # a tag existe
 gh release list --limit 1                                # a release é a Latest
+curl -s https://www.deskcomm.com.br/changelog | grep -c 'href="/changelog/X.Y.Z"'   # a vitrine lista (≥1)
 # e as três imagens no digest da versão, contra `stable` — receita em
 # docs/runbooks/ativar-packaging.md
 ```
