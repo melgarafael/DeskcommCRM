@@ -59,7 +59,7 @@ const envSchema = z.object({
   // transação de claim inteira — 5 statements, ~17/s para sempre numa instalação
   // que não atende ninguém (issue #258: 8,09 GB/mês de egress medidos contra uma
   // cota de 5 GB do plano free do Supabase). O 2000 mantém o SIGNIFICADO da chave
-  // para quem já a configurou, cabe 4× dentro do INBOUND_DEBOUNCE_MS (8000) e fica
+  // para quem já a configurou, cabe dentro do INBOUND_DEBOUNCE_MS padrão e fica
   // abaixo do idleTimeoutMillis do pool (10s), acima do qual cada rodada reconecta.
   QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   // Ritmo do "havia trabalho e eu não peguei" — cap QUEUE_MAX_CONCURRENCY cheio ou
@@ -111,7 +111,7 @@ const envSchema = z.object({
   // Drain do event_log (mesmo banco pós-fusão) — lote, ritmo e backoff ocioso.
   CRM_DRAIN_BATCH_SIZE: z.coerce.number().int().positive().default(20),
   CRM_DRAIN_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
-  CRM_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
+  CRM_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   // Evento 'processing' órfão (crash do worker) volta a 'pending' após isto.
   CRM_EVENT_REAP_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
   // Drain dos HANDLERS do event_log (mídia, branding, follow-up…), à parte do
@@ -122,9 +122,9 @@ const envSchema = z.object({
   EVENT_LOG_DRAIN_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   EVENT_LOG_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
   EVENT_LOG_DRAIN_BATCH_SIZE: z.coerce.number().int().positive().default(50),
-  // Coalescência de rajada inbound: mensagens do MESMO contato dentro desta
-  // janela viram UM job (responder em rajada é gatilho de ban). 0 = sem debounce.
-  INBOUND_DEBOUNCE_MS: z.coerce.number().int().min(0).default(8_000),
+  // Coalescência por conversa: renova a espera de um job ainda pending a cada
+  // evento elegível. Espera silêncio na rajada; 0 preserva o modo sem debounce.
+  INBOUND_DEBOUNCE_MS: z.coerce.number().int().min(0).default(4_000),
   // Circuito de saúde do número — ritmo do ticker (block/response rate por número).
   NUMBER_HEALTH_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
   // Cron persistente por contato — knobs, nunca constantes.

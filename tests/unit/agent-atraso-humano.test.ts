@@ -55,6 +55,32 @@ describe("calcularAtrasoHumano", () => {
 });
 
 describe("esperarComoHumano", () => {
+  it("processamento longo já paga o alvo: não acrescenta sleep nem presença", async () => {
+    const sleep = vi.fn();
+    const sinalizarDigitando = vi.fn();
+    expect(await esperarComoHumano({
+      texto: "Uma resposta ao cliente", processamentoMs: 29_800,
+      sleep, sinalizarDigitando, log: logDeTeste(),
+    })).toBe(0);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(sinalizarDigitando).not.toHaveBeenCalled();
+  });
+
+  it("processamento rápido paga apenas o restante do alvo", async () => {
+    const sleep = vi.fn();
+    expect(await esperarComoHumano({
+      texto: "Oi!", processamentoMs: 500, sleep, log: logDeTeste(),
+    })).toBe(700);
+    expect(sleep).toHaveBeenCalledWith(700);
+  });
+
+  it.each([-100, NaN, Infinity])("tempo inválido %s não encurta o alvo", async (processamentoMs) => {
+    const sleep = vi.fn();
+    expect(await esperarComoHumano({
+      texto: "Oi!", processamentoMs, sleep, log: logDeTeste(),
+    })).toBe(1200);
+  });
+
   it("sinaliza 'digitando' ANTES de esperar — a ordem é o produto", async () => {
     const ordem: string[] = [];
     const sinalizarDigitando = vi.fn(async () => {
