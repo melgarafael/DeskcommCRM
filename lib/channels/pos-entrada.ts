@@ -40,6 +40,7 @@
  */
 import { audit } from "@/lib/audit";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
+import { estamparOrigemDaPagina, extrairOrigemDaPagina } from "@/lib/leads/origem-do-site";
 import { logger } from "@/lib/logger";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
@@ -116,6 +117,7 @@ export async function aplicarEfeitosPosEntrada(
   entrada: EntradaDeMensagem,
 ): Promise<void> {
   await aplicarOptOut(admin, entrada);
+  await guardarOrigemDaPagina(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
   // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)
@@ -311,6 +313,46 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
       message_id: entrada.messageId,
       origem: entrada.origem,
       detail: error.message.slice(0, 160),
+    });
+  }
+}
+
+/**
+ * 4 · A origem de site/landing page veio junto com o texto? (#924)
+ *
+ * Roda ANTES de `abrirDemanda`: o card COPIA a origem do contato quando nasce
+ * (ver `ROTULO_DE_ANUNCIO` em `lib/leads/nascimento-do-lead.ts`). Estampar
+ * depois deixaria o card com a origem de sempre e o dado só no contato — que e
+ * exatamente onde ninguem olha.
+ *
+ * Falha aqui e LOG, nunca excecao: a mensagem do cliente JA esta gravada, e
+ * devolver erro ao provider faria ele reenviar a mensagem. Trocar um rotulo de
+ * origem faltando por uma tempestade de reentregas e um pessimo negocio.
+ */
+async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  const achada = extrairOrigemDaPagina(entrada.texto);
+  // O caso comum: quase nenhuma mensagem traz codigo de pagina.
+  if (!achada) return;
+
+  const origem = { ...achada, capturadaEm: new Date().toISOString() };
+
+  try {
+    const gravou = await estamparOrigemDaPagina(admin, entrada.contactId, origem);
+    if (!gravou) {
+      logger.warn("pos-entrada: origem da pagina NAO gravada (a mensagem entra assim mesmo)", {
+        contactId: entrada.contactId,
+        utm_source: origem.utm.utm_source ?? null,
+      });
+      return;
+    }
+    logger.info("pos-entrada: origem da pagina gravada", {
+      contactId: entrada.contactId,
+      utm: Object.keys(origem.utm),
+    });
+  } catch (erro) {
+    logger.error("pos-entrada: origem da pagina falhou (a mensagem entra assim mesmo)", {
+      contactId: entrada.contactId,
+      error: erro instanceof Error ? erro.message.slice(0, 160) : String(erro).slice(0, 160),
     });
   }
 }
