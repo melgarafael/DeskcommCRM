@@ -30,6 +30,8 @@ export interface ContactSnapshot {
   source_metadata: Record<string, unknown> | null;
   created_at: string;
   last_activity_at: string | null;
+  /** Primeiro atendimento marcado. Sobrevive à anonimização: é registro de operação. */
+  first_service_at: string | null;
 }
 
 export interface ConsentRow {
@@ -351,7 +353,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, email, phone_number, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at",
+        "id, name, display_name, email, phone_number, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -379,6 +381,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         source_metadata: (data.source_metadata as Record<string, unknown> | null) ?? null,
         created_at: data.created_at,
         last_activity_at: data.last_activity_at ?? null,
+        first_service_at: data.first_service_at ?? null,
       };
     }
   }

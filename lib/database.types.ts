@@ -3198,6 +3198,7 @@ export type Database = {
           email: string | null
           email_normalized: string | null
           force_human: boolean
+          first_service_at: string | null
           id: string
           is_anonymized: boolean
           is_blocked: boolean
@@ -3235,6 +3236,7 @@ export type Database = {
           email?: string | null
           email_normalized?: string | null
           force_human?: boolean
+          first_service_at?: string | null
           id?: string
           is_anonymized?: boolean
           is_blocked?: boolean
@@ -3272,6 +3274,7 @@ export type Database = {
           email?: string | null
           email_normalized?: string | null
           force_human?: boolean
+          first_service_at?: string | null
           id?: string
           is_anonymized?: boolean
           is_blocked?: boolean
@@ -3991,6 +3994,7 @@ export type Database = {
           id: string
           is_archived: boolean
           is_default: boolean
+          is_client_pipeline: boolean
           name: string
           organization_id: string
           position: number
@@ -4005,6 +4009,7 @@ export type Database = {
           id?: string
           is_archived?: boolean
           is_default?: boolean
+          is_client_pipeline?: boolean
           name: string
           organization_id: string
           position?: number
@@ -4019,6 +4024,7 @@ export type Database = {
           id?: string
           is_archived?: boolean
           is_default?: boolean
+          is_client_pipeline?: boolean
           name?: string
           organization_id?: string
           position?: number

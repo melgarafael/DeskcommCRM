@@ -39,6 +39,7 @@
     { "id": "traces", "lane": "agente", "col": 0, "type": "database", "label": "before_send_traces", "sublabel": "os portões — e os vetos" },
     { "id": "ritual", "lane": "agente", "col": 1, "type": "service", "label": "inbound-turn (ritual)", "sublabel": "abre lendo checkpoint + lead_state" },
     { "id": "espelho", "lane": "agente", "col": 5, "type": "service", "label": "mirrorLeadStageToCrm", "sublabel": "propõe quando há conflito" },
+    { "id": "promocaocliente", "lane": "negocio", "col": 2, "type": "trigger", "label": "trg_agendamento_marca_cliente", "sublabel": "agendamento → first_service_at + tag" },
 
     { "id": "eventlog", "lane": "fila", "col": 2, "type": "database", "label": "event_log", "sublabel": "marca d'água: só evento novo" },
     { "id": "workerscore", "lane": "fila", "col": 2, "type": "service", "label": "worker do score", "sublabel": "fórmula determinística, nunca modelo" },
@@ -91,7 +92,9 @@
     { "id": "e41", "from": "atividades", "to": "chat", "label": "âncora {conversation_id, message_id}" },
     { "id": "e42", "from": "dossie", "to": "chat", "label": "clique leva ao momento" },
     { "id": "e43", "from": "dossie", "to": "atividades", "label": "editar campo deixa rastro humano" },
-    { "id": "e44", "from": "filtro", "to": "card", "label": "applyFilters decide o que aparece" }
+    { "id": "e44", "from": "filtro", "to": "card", "label": "applyFilters decide o que aparece" },
+    { "id": "e45", "from": "promocaocliente", "to": "leads", "label": "define o funil onde o lead nasce" },
+    { "id": "e46", "from": "promocaocliente", "to": "resolver", "label": "cliente reconhecido na próxima mensagem" }
   ],
   "cards": [
     {

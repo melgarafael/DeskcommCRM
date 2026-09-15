@@ -6002,6 +6002,11 @@ export const DICIONARIO: Traducoes = {
   "Novo nome de": { es: "Nuevo nombre de" },
   "Padrão": { es: "Predeterminado" },
   "Tornar padrão": { es: "Hacer predeterminado" },
+  "Clientes": { es: "Clientes" },
+  "Funil de clientes": { es: "Embudo de clientes" },
+  "Deixar de ser funil de clientes": { es: "Dejar de ser embudo de clientes" },
+  "Quem já tem atendimento marcado entra pelo funil de clientes. Sem um funil marcado, entra pelo padrão.": { es: "Quien ya tiene una cita agendada entra por el embudo de clientes. Sin un embudo marcado, entra por el predeterminado." },
+  "Cliente desde": { es: "Cliente desde" },
   "Ele sai desta lista e para de receber negócio novo. O histórico continua guardado, e nada é apagado.": {
     es: "Sale de esta lista y deja de recibir negocio nuevo. El historial se conserva, y nada se borra.",
   },

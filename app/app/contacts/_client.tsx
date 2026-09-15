@@ -18,6 +18,7 @@ import { useContactList } from "@/hooks/contacts/useContactList";
 import { ContactsTable } from "@/components/contacts/ContactsTable";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
 import { ImportContactsDialog } from "@/components/contacts/ImportContactsDialog";
+import { TAG_DE_CLIENTE } from "@/lib/contacts/cliente";
 import { MergeDialog } from "@/components/contacts/MergeDialog";
 import { EmptyContacts } from "@/components/empty";
 import type { ContactOrderBy } from "@/lib/schemas/contacts";
@@ -64,6 +65,12 @@ export function ContactsListClient() {
   const tagOptions = useMemo(() => {
     const set = new Set<string>();
     for (const c of allContacts) for (const tag of c.tags) set.add(tag);
+    // `cliente` SEMPRE na lista, mesmo que nenhum contato da página carregada a
+    // tenha. As demais opções saem do que já foi paginado — o que basta para
+    // etiqueta que a equipe criou e usa em bloco, e falha justamente para esta,
+    // que o sistema escreve sozinho e cujo primeiro uso é "filtrar quem já é
+    // cliente" numa base grande, onde a primeira página pode não ter nenhum.
+    set.add(TAG_DE_CLIENTE);
     return Array.from(set).sort();
   }, [allContacts]);
 

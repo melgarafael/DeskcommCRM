@@ -27,6 +27,12 @@ export interface Contact {
   updated_at: string;
   last_activity_at: string | null;
   /**
+   * Primeiro atendimento marcado. Não nulo = é cliente, e é ESTE campo que a
+   * tela e o roteamento de funil consultam — a tag `cliente` é etiqueta de
+   * trabalho, removível à mão. Derivado por trigger; não entra no PATCH.
+   */
+  first_service_at: string | null;
+  /**
    * Derivado (não é coluna): a conversa mais recente deste contato — atalho para o inbox.
    * Ausente é normal: contato criado à mão pode nunca ter conversado.
    */

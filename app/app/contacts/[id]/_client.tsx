@@ -177,6 +177,23 @@ export function ContactDetailClient({ contactId }: Props) {
                   {format(new Date(contact.created_at), "dd/MM/yyyy", { locale: localeDaData })}
                 </dd>
               </div>
+              {/*
+                Escondido quando nulo, em vez de mostrar "—": aqui a ausência não
+                é dado faltando, é "ainda não é cliente". Um travessão nesta
+                linha leria como falha de cadastro.
+              */}
+              {contact.first_service_at && (
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">
+                    {t("Cliente desde")}
+                  </dt>
+                  <dd className="mt-1">
+                    {format(new Date(contact.first_service_at), "dd/MM/yyyy", {
+                      locale: localeDaData,
+                    })}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">Tags</dt>
                 <dd className="mt-1 flex flex-wrap gap-1">

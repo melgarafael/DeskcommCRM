@@ -222,6 +222,14 @@ export function ContactsTable({ contacts, orderBy, orderDir, onSort }: Props) {
               <div className="flex flex-wrap gap-1">
                 {c.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
                 {c.is_blocked && <Badge variant="warning">{t("Bloqueado")}</Badge>}
+                {/*
+                  Lê a COLUNA, nunca a tag: a tag `cliente` é removível à mão e
+                  pelo PATCH (que substitui `tags` por inteiro), e um selo que
+                  some porque alguém editou etiquetas mentiria sobre um fato.
+                  Convive com Bloqueado e Anonimizado — quem foi atendido
+                  continua tendo sido.
+                */}
+                {c.first_service_at && <Badge variant="secondary">{t("Cliente")}</Badge>}
                 {!c.is_anonymized && !c.is_blocked && (
                   <Badge variant="success">{t("Ativo")}</Badge>
                 )}

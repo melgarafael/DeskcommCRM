@@ -57,6 +57,9 @@ const CONTATO = {
   created_at: "2026-09-14T10:00:00.000Z",
   updated_at: "2026-09-14T10:00:00.000Z",
   last_activity_at: null,
+  // Contato recém-criado pela tela ainda não é cliente: quem carimba é o
+  // agendamento (migration 0255), e este caso é o do cadastro manual.
+  first_service_at: null,
 } satisfies Contact;
 
 /** O corpo que a rota devolve, tipado pelo retorno dela. */

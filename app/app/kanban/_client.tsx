@@ -21,6 +21,7 @@ export interface FunilDaLista {
   description: string | null;
   position: number;
   is_default: boolean;
+  is_client_pipeline?: boolean;
 }
 
 /**
@@ -292,6 +293,11 @@ export function FunisClient({
                             {t("Padrão")}
                           </Badge>
                         )}
+                        {funil.is_client_pipeline && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {t("Clientes")}
+                          </Badge>
+                        )}
                       </span>
                       {funil.description && (
                         <span className="text-xs text-muted-foreground">{funil.description}</span>
@@ -324,6 +330,26 @@ export function FunisClient({
                         <Check size={16} className="mr-1" aria-hidden /> {t("Tornar padrão")}
                       </Button>
                     )}
+                    {/*
+                      Ligar e desligar no MESMO lugar, ao contrário de "Tornar
+                      padrão", que só liga: toda organização precisa de um funil
+                      padrão, nenhuma precisa de um funil de clientes. Quem
+                      experimentou tem de conseguir desfazer sem pedir ajuda.
+                    */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        aplicar(funil.id, { is_client_pipeline: !funil.is_client_pipeline })
+                      }
+                      disabled={ocupado}
+                      data-testid={`clientes-${funil.id}`}
+                    >
+                      <Check size={16} className="mr-1" aria-hidden />{" "}
+                      {funil.is_client_pipeline
+                        ? t("Deixar de ser funil de clientes")
+                        : t("Funil de clientes")}
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -395,6 +421,19 @@ export function FunisClient({
           );
         })}
       </ul>
+
+      {/*
+        SEMPRE visível, e não só quando não há funil de clientes marcado: a regra
+        de roteamento é invisível por natureza — ninguém descobre, olhando o
+        quadro, por que um card nasceu num funil e não no outro. Dizer o que
+        acontece nos DOIS estados é o caminho visível de falha do invariante 6,
+        e custa uma linha de texto em vez de uma consulta.
+      */}
+      <p className="mt-4 text-xs text-muted-foreground">
+        {t(
+          "Quem já tem atendimento marcado entra pelo funil de clientes. Sem um funil marcado, entra pelo padrão.",
+        )}
+      </p>
     </div>
   );
 }

@@ -34,6 +34,8 @@ export interface PatchDeFunil {
   name?: string;
   description?: string | null;
   is_default?: boolean;
+  /** Onde nasce o lead de quem já é cliente. `false` desliga, e é aceito. */
+  is_client_pipeline?: boolean;
   depois_de?: string | null;
 }
 
@@ -45,6 +47,7 @@ export interface FunilDaResposta {
   description: string | null;
   position: number;
   is_default: boolean;
+  is_client_pipeline: boolean;
 }
 
 type Resposta = { data: { pipelines: FunilDaResposta[] } };
