@@ -37,6 +37,61 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // vocabulario.ts (followups) — MatchReplyForm.tsx não traduzia, ClassifyForm.tsx sim.
+  "Se a informação já existir": { es: "Si la información ya existe" },
+  "Perguntar de novo e substituir": { es: "Preguntar de nuevo y reemplazar" },
+  "Confirmar com o usuário": { es: "Confirmar con el usuario" },
+  "A captação ou a ficha podem já ter o nome (ou o campo). Escolha se o fluxo pula, pergunta de novo ou pede confirmação.": {
+    es: "La captación o la ficha pueden ya tener el nombre (o el campo). Elige si el flujo lo salta, pregunta de nuevo o pide confirmación.",
+  },
+  // chaveDaIa.ts (onboarding/setup-ai) — erros do cadastro da chave de IA.
+  // "Sua sessão expirou. Entre de novo." já existe (politicaDeMfa.ts), reaproveitada aqui.
+  "Só um administrador pode cadastrar a chave da inteligência artificial.": {
+    es: "Solo un administrador puede registrar la clave de la inteligencia artificial.",
+  },
+  "Escolha qual inteligência artificial você contratou.": {
+    es: "Elige qué inteligencia artificial contrataste.",
+  },
+  "Essa chave parece incompleta. Cole a chave inteira, do começo ao fim.": {
+    es: "Esa clave parece incompleta. Pega la clave entera, de principio a fin.",
+  },
+  "Já existe uma chave cadastrada com esse nome. Veja em IA › Credenciais.": {
+    es: "Ya existe una clave registrada con ese nombre. Revisa en IA › Credenciales.",
+  },
+  "Não consegui guardar a chave agora. Tente de novo.": {
+    es: "No pude guardar la clave ahora. Intenta de nuevo.",
+  },
+  // AgentForm.tsx — prompt padrão de um agente novo (vira o system_prompt de
+  // verdade se ninguém editar, por isso instrui a IA a responder em espanhol).
+  "Você é um atendente. Responda de forma educada e clara, em pt-BR.": {
+    es: "Eres un agente de atención al cliente. Responde de forma educada y clara, en español.",
+  },
+  // PACOTES (lib/mcp/tools/pacotes.ts) — rótulo/explicação dos pacotes de
+  // capacidade na tela de criar/editar agente (ToolPicker.tsx).
+  "Atender e responder": { es: "Atender y responder" },
+  "O agente lê a conversa, entende o histórico e responde ao cliente sem pedir que ele repita o que já disse.": {
+    es: "El agente lee la conversación, entiende el historial y responde al cliente sin pedirle que repita lo que ya dijo.",
+  },
+  "Vender e mover o funil": { es: "Vender y mover el embudo" },
+  "O agente registra a oportunidade, atualiza o negócio e move o cliente de etapa conforme a conversa avança.": {
+    es: "El agente registra la oportunidad, actualiza el negocio y mueve al cliente de etapa a medida que avanza la conversación.",
+  },
+  "Não perder o cliente": { es: "No perder al cliente" },
+  "O agente agenda retornos e acompanha quem esfriou, para que nenhum interessado morra por falta de resposta.": {
+    es: "El agente agenda seguimientos y da seguimiento a quien se enfrió, para que ningún interesado se pierda por falta de respuesta.",
+  },
+  "Passar para um humano": { es: "Pasar a un humano" },
+  "O agente reconhece quando não é o caso dele resolver, chama uma pessoa e entrega o resumo do que já aconteceu.": {
+    es: "El agente reconoce cuándo no le corresponde resolverlo, llama a una persona y entrega el resumen de lo que ya pasó.",
+  },
+  "Organizar a operação": { es: "Organizar la operación" },
+  "O agente mantém a casa em ordem: marcadores, etapas do funil, avisos automáticos e distribuição de trabalho.": {
+    es: "El agente mantiene todo en orden: etiquetas, etapas del embudo, avisos automáticos y distribución del trabajo.",
+  },
+  "Aprender e evoluir": { es: "Aprender y evolucionar" },
+  "O agente consulta o que a empresa já sabe, aprende com os atendimentos e sugere melhorias para você aprovar.": {
+    es: "El agente consulta lo que la empresa ya sabe, aprende de las atenciones y sugiere mejoras para que las apruebes.",
+  },
   "Versão publicada": { es: "Versión publicada" },
   "Publicado em": { es: "Publicado el" },
   "Nenhum agente publicado": { es: "Ningún agente publicado" },
