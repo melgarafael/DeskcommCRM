@@ -105,13 +105,30 @@ export async function carregaRadarDeRisco(
   const now = opts.now ?? new Date();
   const nowIso = now.toISOString();
 
-  const { data: leads, error: leadsErr } = await admin
+  // Funil ARQUIVADO não é trabalho ativo. Arquivar só marca
+  // `crm_pipelines.is_archived`: os leads seguem `open`, e sem este corte o
+  // radar (e a IA, que lê esta mesma função) cobrava negócio de um funil que a
+  // organização tirou de uso (issue #940). O corte vai na consulta, antes do
+  // `SCAN_CAP`, para lead arquivado não ocupar a vaga de um ativo.
+  const { data: arquivados, error: arquivadosErr } = await admin
+    .from("crm_pipelines")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("is_archived", true);
+  if (arquivadosErr) throw new Error(`radar_pipelines_failed: ${arquivadosErr.message}`);
+  const funisArquivados = (arquivados ?? []).map((p) => p.id as string);
+
+  let consultaDeLeads = admin
     .from("crm_leads")
     .select(
       "id, title, contact_id, owner_user_id, owner_kind, owner_agent_id, stage_id, last_activity_at, created_at, pipeline_id",
     )
     .eq("organization_id", organizationId)
-    .eq("status", "open")
+    .eq("status", "open");
+  if (funisArquivados.length > 0) {
+    consultaDeLeads = consultaDeLeads.not("pipeline_id", "in", `(${funisArquivados.join(",")})`);
+  }
+  const { data: leads, error: leadsErr } = await consultaDeLeads
     .order("last_activity_at", { ascending: true, nullsFirst: true })
     .limit(SCAN_CAP);
   if (leadsErr) throw new Error(`radar_query_failed: ${leadsErr.message}`);
@@ -265,6 +282,22 @@ export async function carregaRadarDeRisco(
     .limit(SCAN_CAP);
   if (demandaError) throw new Error(`radar_demandas_failed: ${demandaError.message}`);
   let demandasVisiveis = semPasso ?? [];
+  // Mesmo corte dos leads: demanda presa a lead de funil arquivado sai.
+  // Demanda sem lead não tem funil e fica.
+  if (funisArquivados.length > 0) {
+    const idsDeLead = [...new Set(demandasVisiveis.flatMap((d) => (d.lead_id ? [d.lead_id as string] : [])))];
+    if (idsDeLead.length > 0) {
+      const { data: deArquivado, error: deArquivadoErr } = await admin
+        .from("crm_leads")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .in("id", idsDeLead)
+        .in("pipeline_id", funisArquivados);
+      if (deArquivadoErr) throw new Error(`radar_demandas_funil_failed: ${deArquivadoErr.message}`);
+      const fora = new Set((deArquivado ?? []).map((l) => l.id as string));
+      demandasVisiveis = demandasVisiveis.filter((d) => !d.lead_id || !fora.has(d.lead_id as string));
+    }
+  }
   if (opts.humanRole === "agent" && demandasVisiveis.length) {
     // Demandas são org-flat. A visibilidade dos candidatos vem das relações sob
     // RLS, em lote separado do pool de leads frios (que não define autorização).
