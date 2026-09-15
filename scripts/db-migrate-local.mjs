@@ -19,12 +19,18 @@ const projectId = readFileSync(resolve(root, "supabase/config.toml"), "utf8")
 if (!projectId) throw new Error("project_id ausente em supabase/config.toml");
 
 const run = (command, args) => {
-  const result = spawnSync(command, args, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
+  const result = spawnSync(command, args, {
+    cwd: root,
+    stdio: "inherit",
+    shell: process.platform === "win32" && command.endsWith(".cmd"),
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 };
 
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+// 2.117 usa uma imagem Realtime que cai com SIGSEGV no Docker Desktop/WSL2;
+// atualizar o pin depois que a imagem voltar a passar nesse ambiente.
 run(npx, ["--yes", "supabase@2.50.5", "start", "-x", "studio,edge-runtime,logflare,vector,imgproxy,supavisor"]);
 if (process.argv.includes("--reset")) {
   run(npx, ["--yes", "supabase@2.50.5", "db", "reset", "--no-seed"]);
