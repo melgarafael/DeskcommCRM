@@ -67,7 +67,9 @@ describe("GET /api/v1/agenda/google/connect", () => {
     const destino = new URL(res.headers.get("location") ?? "");
     expect(destino.origin + destino.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     expect(destino.searchParams.get("access_type")).toBe("offline");
-    expect(destino.searchParams.get("prompt")).toBe("consent");
+    expect(destino.searchParams.get("prompt")?.split(" ")).toEqual(
+      expect.arrayContaining(["consent", "select_account"]),
+    );
     expect(destino.searchParams.get("state")).toBeTruthy();
     // Sugerir a conta evita autorizar com a conta pessoal que já estava logada
     // no navegador e ver a agenda errada aparecer no CRM.

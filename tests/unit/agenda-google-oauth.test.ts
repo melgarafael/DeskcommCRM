@@ -42,7 +42,18 @@ describe("montarUrlDeConsentimento", () => {
     // segunda conexão, e a integração morre uma hora depois.
     const url = new URL(montarUrlDeConsentimento(APP, { state: "abc" }));
     expect(url.searchParams.get("access_type")).toBe("offline");
-    expect(url.searchParams.get("prompt")).toBe("consent");
+    expect(url.searchParams.get("prompt")?.split(" ")).toContain("consent");
+  });
+
+  it("sempre mostra o seletor de contas: a conta do login é sugestão, não imposição", () => {
+    // Só `consent` + `login_hint` fazia o Google pular o seletor quando a conta
+    // do login estava no navegador: quem entra no CRM com um e-mail e tem a
+    // agenda em outro não conseguia escolher a outra conta.
+    const url = new URL(montarUrlDeConsentimento(APP, { state: "abc", contaSugerida: "ana@clinica.com.br" }));
+    const prompt = url.searchParams.get("prompt")?.split(" ") ?? [];
+    expect(prompt).toContain("select_account");
+    expect(prompt).toContain("consent");
+    expect(url.searchParams.get("login_hint")).toBe("ana@clinica.com.br");
   });
 
   it("pede exatamente os dois escopos, e nenhum de perfil", () => {

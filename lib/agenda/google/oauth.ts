@@ -89,14 +89,19 @@ export function montarUrlDeConsentimento(
     scope: ESCOPOS_OBRIGATORIOS.join(" "),
     // Sem `offline` não vem refresh_token nenhum; sem `consent` ele some na
     // segunda vez. Os dois juntos, sempre — ver o cabeçalho.
+    // `select_account`: o seletor de contas aparece sempre. Só com `consent` +
+    // `login_hint`, o Google pulava o seletor quando a conta do login estava no
+    // navegador, e quem tem a agenda num e-mail diferente do login do CRM não
+    // conseguia escolher a outra conta.
     access_type: "offline",
-    prompt: "consent",
+    prompt: "consent select_account",
     state: opcoes.state,
   });
 
   // Cada atendente conecta a agenda DELE. Sugerir a conta evita o erro mais
   // comum do fluxo: autorizar com a conta pessoal que já estava logada no
-  // navegador e ver a agenda errada aparecer no CRM.
+  // navegador e ver a agenda errada aparecer no CRM. É sugestão: com
+  // `select_account` acima, ela vem pré-selecionada e dá para trocar.
   const conta = opcoes.contaSugerida?.trim();
   if (conta) parametros.set("login_hint", conta);
 
