@@ -36,7 +36,7 @@ SUPABASE="supabase"
 command -v supabase >/dev/null 2>&1 || SUPABASE="npx supabase"
 
 if ! $SUPABASE status >/dev/null 2>&1; then
-  echo "==> O Supabase local não está de pé. Rode 'npx supabase start' antes." >&2
+  echo "==> O Supabase local não está de pé. Rode 'pnpm db:migrate' antes." >&2
   exit 1
 fi
 

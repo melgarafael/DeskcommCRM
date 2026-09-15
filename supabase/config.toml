@@ -16,6 +16,14 @@ port = 54322
 shadow_port = 54320
 major_version = 15
 
+# O histórico inicial contém stubs do antigo projeto remoto. Instalações novas
+# usam o baseline idempotente, que é a fonte completa do schema self-hosted.
+[db.migrations]
+enabled = false
+
+[db.seed]
+enabled = false
+
 [db.pooler]
 enabled = false
 port = 54329

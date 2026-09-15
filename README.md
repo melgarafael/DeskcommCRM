@@ -288,20 +288,9 @@ cp .env.example .env.local  # guia completo em docs/SETUP.md
 
 docker compose up -d        # WAHA local (opcional em dev sem WhatsApp)
 
-# Schema: aplique o baseline, NÃO as migrations.
-# As migrations 0001-0009 e 0013 são stubs `SELECT 1;` — a cadeia não sobe do zero.
-# O schema real vive no baseline.sql, o mesmo que o install.sh aplica na VPS.
-# `supabase db push` "passa" e deixa o banco vazio.
-supabase link --project-ref <seu-ref>
-
-# Num projeto Supabase NOVO, habilite antes as extensões que o schema usa —
-# sem elas o baseline para em `type public.vector does not exist`.
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c \
-  'create extension if not exists vector with schema public;
-   create extension if not exists citext with schema public;
-   create extension if not exists pg_trgm with schema public;'
-
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/baseline.sql
+# Sobe o Supabase em loopback e aplica o baseline idempotente.
+# O comando recusa URLs externas para proteger ambientes reais.
+pnpm db:migrate
 
 pnpm dev
 ```
