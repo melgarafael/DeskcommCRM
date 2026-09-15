@@ -40,7 +40,17 @@ const nextConfig: NextConfig = {
       // (process.platform/isMusl()), então o tracer não o segue e o
       // standalone sobe sem o binário — pdfjs-dist quebra no import com
       // "DOMMatrix is not defined" (lib/ai/rag/extractors/pdf.ts).
-      "./node_modules/.pnpm/@napi-rs+canvas*/node_modules/@napi-rs/**",
+      //
+      // São DOIS padrões, e o motivo de não ser um `@napi-rs/**` só está
+      // medido: dentro de `@napi-rs/` o pnpm põe, ao lado do pacote real, um
+      // SYMLINK por plataforma (`canvas-linux-x64-gnu` ->
+      // `../../../@napi-rs+canvas-linux-x64-gnu@…`). O glob casa o symlink, o
+      // Turbopack tenta lê-lo como arquivo para calcular o hash do
+      // `.nft.json`, e o build morre com `Is a directory (os error 21)` —
+      // não no import, no EMIT. Apontando para o conteúdo de cada pacote em
+      // vez de para o diretório que os agrega, nenhum symlink é visitado.
+      "./node_modules/.pnpm/@napi-rs+canvas@*/node_modules/@napi-rs/canvas/**",
+      "./node_modules/.pnpm/@napi-rs+canvas-*/node_modules/@napi-rs/*/*.node",
     ],
   },
   reactStrictMode: true,
