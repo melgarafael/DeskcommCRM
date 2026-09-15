@@ -21154,8 +21154,22 @@ returns boolean language sql stable security definer set search_path=public as $
 $$;
 revoke all on function public.fn_google_counts_for_conflicts(uuid,uuid,text) from public,anon;
 grant execute on function public.fn_google_counts_for_conflicts(uuid,uuid,text) to authenticated,service_role;
-create or replace view public.calendar_selected_external_events with (security_invoker=true) as
- select e.* from public.calendar_external_events e where e.status<>'cancelled'
+-- A view é recriada, não substituída no lugar: `create or replace view` não
+-- renomeia nem remove coluna (aqui, tirar o `title` é o conserto da 0260 — o
+-- membro lê a ocupação do colega, não o texto do compromisso pessoal dele). E o
+-- corpo deste arquivo é REAPLICADO a cada update (`test:db`, job `invariants`),
+-- então `drop` + `create` é a única forma que sobrevive à segunda passada —
+-- `create or replace` sobre a view já recriada sem o `title` responde
+-- `cannot change name of view column "starts_at" to "title"` e derruba o run.
+-- Lista EXPLÍCITA de propósito: `e.*` é como a próxima coluna do espelho nasceria
+-- exposta a quem só precisa saber se o horário está ocupado.
+drop view if exists public.calendar_selected_external_events;
+
+create view public.calendar_selected_external_events with (security_invoker=true) as
+ select e.id,e.organization_id,e.connection_id,e.external_calendar_id,e.external_event_id,
+  e.starts_at,e.ends_at,e.is_all_day,e.status,e.transparency,e.external_updated_at,
+  e.created_at,e.updated_at,e.ical_uid,e.seen_generation,e.recurring_event_id,e.original_start_time
+ from public.calendar_external_events e where e.status<>'cancelled'
  and public.fn_google_counts_for_conflicts(e.organization_id,e.connection_id,e.external_calendar_id);
 revoke all on public.calendar_selected_external_events from public,anon;
 grant select on public.calendar_selected_external_events to authenticated,service_role;
@@ -24797,6 +24811,84 @@ begin
     drop index if exists public.calendar_connections_org_pessoa_idx;
   end if;
 end $$;
+
+
+-- ---- PRIVACIDADE: o título do evento pessoal do Google sai do alcance do membro (migration 0260) ----
+--
+-- ## O que estava aberto, e foi medido
+--
+-- `public.calendar_external_events` é o espelho da agenda PESSOAL de quem atende.
+-- O papel `authenticated` tinha SELECT de TABELA nesta tabela e a view
+-- `calendar_selected_external_events` era `select e.*` — com `title` dentro. Num
+-- banco instalado do zero (`baseline.sql` da v1.26.0), qualquer membro da
+-- organização, inclusive Somente leitura, lia o compromisso particular do colega:
+--
+--   select title from calendar_external_events …   → "Terapia sigilosa"
+--
+-- tanto direto na tabela quanto pela view, e
+-- `has_column_privilege('authenticated','calendar_external_events','title','SELECT')`
+-- respondia `true`.
+--
+-- ## Por que o conserto é no PRIVILÉGIO, e não na policy
+--
+-- A policy de leitura é da ORGANIZAÇÃO de propósito: a grade da equipe mostra a
+-- ocupação do colega. Restringir a policy ao dono da conexão apagaria a ocupação
+-- de todo mundo — consertaria a privacidade quebrando a agenda. O que o CRM usa de
+-- um evento de colega é ocupado/livre (`starts_at`, `ends_at`, `transparency`,
+-- `status`); o título não tem consumidor nenhum, e há gate disso em
+-- `tests/unit/ocupacao-do-google-nao-expoe-titulo.test.ts`.
+--
+-- Então o SELECT de `authenticated` sai da TABELA e volta COLUNA A COLUNA, sem
+-- `title`. Revogar coluna sem revogar a tabela não faz nada: privilégio de tabela
+-- cobre todas as colunas.
+--
+-- ## A view precisa ser recriada, não substituída no lugar
+--
+-- `calendar_selected_external_events` era `select e.*`. Com `security_invoker`, o
+-- Postgres confere privilégio de coluna EM NOME DO INVOCADOR para toda coluna
+-- referenciada na definição — inclusive as de um `e.*` que já foi expandido quando
+-- a view nasceu. Deixá-la assim faria TODA leitura de ocupação por membro falhar
+-- com `permission denied` no `title`. E não dá para `create or replace view`
+-- tirando coluna do meio (o Postgres recusa: "cannot drop columns from view") — por
+-- isso `drop` + `create` aqui, com lista explícita. A lista explícita é o conserto
+-- de fundo: `e.*` era a forma de a próxima coluna nascer exposta.
+--
+-- ## O que este bloco NÃO faz, de propósito
+--
+-- * Não apaga os títulos já gravados. O título continua sendo gravado pelo espelho
+--   e existe para o dono da agenda (export de LGPD, relatório do titular); o que se
+--   fecha é a LEITURA por outro membro. Apagar dado histórico é decisão do dono, e
+--   sai em migration própria — não de carona num conserto de permissão.
+-- * Não toca em `service_role` nem no dono do banco: o espelho (`fn_google_*`) e o
+--   worker seguem lendo e escrevendo o título como antes.
+-- * Não concede nada a `anon`, que continua sem SELECT desde a 0108.
+
+revoke select on public.calendar_external_events from authenticated;
+
+grant select (
+  id, organization_id, connection_id, external_calendar_id, external_event_id,
+  starts_at, ends_at, is_all_day, status, transparency, external_updated_at,
+  created_at, updated_at, ical_uid, seen_generation, recurring_event_id,
+  original_start_time
+) on public.calendar_external_events to authenticated;
+
+drop view if exists public.calendar_selected_external_events;
+
+create view public.calendar_selected_external_events
+with (security_invoker = true) as
+select
+  e.id, e.organization_id, e.connection_id, e.external_calendar_id,
+  e.external_event_id, e.starts_at, e.ends_at, e.is_all_day, e.status,
+  e.transparency, e.external_updated_at, e.created_at, e.updated_at,
+  e.ical_uid, e.seen_generation, e.recurring_event_id, e.original_start_time
+from public.calendar_external_events e
+where e.status <> 'cancelled'
+  and public.fn_google_counts_for_conflicts(e.organization_id, e.connection_id, e.external_calendar_id);
+
+revoke all on public.calendar_selected_external_events from public, anon;
+grant select on public.calendar_selected_external_events to authenticated, service_role;
+
+notify pgrst, 'reload schema';
 
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
