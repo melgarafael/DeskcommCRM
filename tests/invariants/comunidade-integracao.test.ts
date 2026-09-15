@@ -8,6 +8,7 @@ const pool = new pg.Pool({
   connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT}/postgres`,
   max: 6,
 });
+
 beforeAll(() => seedGov());
 afterAll(() => pool.end());
 async function draft(f: Awaited<ReturnType<typeof replyFixture>>) {
@@ -153,4 +154,69 @@ it("mutex e cascata0229 alcançam drafts0227 e preservam contato vizinho", async
       randomUUID(),
     ]),
   ).rejects.toThrow("reply_context_unavailable");
+});
+
+it("LGPD invalida o vínculo Advomax e remove a identidade do atendente", async () => {
+  const f = await replyFixture(pool);
+  const message = (
+    await pool.query(
+      `insert into messages
+         (organization_id, conversation_id, channel_session_id, contact_id, type, direction, body, media_storage_path)
+       select organization_id, id, channel_session_id, contact_id, 'document', 'inbound', 'documento sintético', null
+         from conversations
+        where organization_id=$1 and id=$2
+       returning id`,
+      [f.org, f.conversation],
+    )
+  ).rows[0].id;
+
+  await pool.query(
+    `insert into advomax_contact_links
+       (organization_id, contact_id, pessoa_codigo, status, created_by_email)
+     values ($1,$2,$3,'pending',$4)`,
+    [f.org, f.contact, "900000000000", "atendente.sintetico@local.test"],
+  );
+  await pool.query(
+    `insert into crm_document_intake
+       (organization_id, message_id, conversation_id, contact_id, pessoa_codigo, filename, mime_type, media_storage_path, descricao, requested_by_email)
+     values ($1,$2,$3,$4,$5,'documento.pdf','application/pdf','/local/sintetico.pdf','Recebido no WhatsApp',$6)`,
+    [
+      f.org,
+      message,
+      f.conversation,
+      f.contact,
+      "900000000000",
+      "atendente.sintetico@local.test",
+    ],
+  );
+
+  await pool.query("select fn_lgpd_cascade_redact_contact($1,$2,$3)", [
+    f.org,
+    f.contact,
+    randomUUID(),
+  ]);
+
+  expect(
+    (
+      await pool.query(
+        "select status,created_by_email from advomax_contact_links where organization_id=$1 and contact_id=$2",
+        [f.org, f.contact],
+      )
+    ).rows[0],
+  ).toEqual({ status: "unlinked", created_by_email: null });
+  expect(
+    (
+      await pool.query(
+        "select contact_id,pessoa_codigo,filename,media_storage_path,status,requested_by_email from crm_document_intake where organization_id=$1 and message_id=$2",
+        [f.org, message],
+      )
+    ).rows[0],
+  ).toEqual({
+    contact_id: null,
+    pessoa_codigo: null,
+    filename: "[arquivo anonimizado]",
+    media_storage_path: "",
+    status: "ignored",
+    requested_by_email: null,
+  });
 });

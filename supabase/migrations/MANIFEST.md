@@ -302,3 +302,4 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260914130000` | `0243_crm_document_intake_actor` | Persiste o e-mail do atendente que iniciou a atribuição para retries multi-escritório sem identidade técnica global. |
 | `20260914140000` | `0244_advomax_contact_process_links` | Referência única e tenant-safe entre Contato CRM e Processo Advomax; não replica dossiê jurídico. |
 | `20260915100000` | `0245_advomax_contact_link_reconciliation` | Persiste a identidade do criador e um índice parcial para confirmar vínculos `pending` sem atravessar escritórios. |
+| `20260915110000` | `0246_advomax_contact_links_lgpd` | A anonimização LGPD invalida o vínculo Advomax e remove o e-mail do atendente antes da auditoria. |

@@ -23730,6 +23730,36 @@ begin
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('voice_calls', v_count);
 
+  -- 7c. documentos recebidos — interromper retries e remover referências ao titular.
+  update crm_document_intake set
+    contact_id = null,
+    pessoa_codigo = null,
+    filename = '[arquivo anonimizado]',
+    descricao = null,
+    media_storage_path = '',
+    status = 'ignored',
+    advomax_file_id = null,
+    requested_by = null,
+    requested_by_email = null,
+    failure_reason = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('crm_document_intake', v_count);
+
+  -- 7d. vínculo com o Advomax — remover o ator e invalidar a fila do contato
+  -- anonimizado. O código externo fica sem utilidade quando o titular foi
+  -- redigido; manter o e-mail permitiria reidentificação e retries indevidos.
+  update advomax_contact_links set
+    status = 'unlinked',
+    created_by_email = null,
+    updated_at = now()
+  where organization_id = p_organization_id
+    and contact_id = p_contact_id;
+  get diagnostics v_count = row_count;
+  v_counts := v_counts || jsonb_build_object('advomax_contact_links', v_count);
+
   -- 8. dense audit row
   insert into api_audit_log (organization_id, action, actor_user_id, resource_type, resource_id, metadata, bypassed_rls)
   values (
