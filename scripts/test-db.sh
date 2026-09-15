@@ -12,6 +12,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASELINE="$ROOT/supabase/baseline.sql"
+
+# No WSL, o contexto `desktop-linux` usa um endpoint npipe que o binário Linux
+# não entende. O docker.exe do Desktop é compatível e mantém o mesmo daemon
+# usado pelo restante do desenvolvimento local.
+if [ -n "${WSL_INTEROP:-}" ] && command -v docker.exe >/dev/null 2>&1; then
+  docker() { docker.exe "$@"; }
+fi
+
 # A PORTA: quem PEDE escolhe; quem não pede deixa o Docker escolher.
 #
 # Antes era 54329 fixo, e duas sessões rodando `test:db` ao mesmo tempo colidiam:
@@ -124,7 +132,15 @@ docker run -d --rm --name "$CONTAINER" \
 # por acidente — a env do shell de quem chamou é herdada. Com a porta escolhida
 # aqui dentro, sem o export os 49 iriam bater na 54329, que é de outra pessoa ou
 # de ninguém.
-PORT="$(docker port "$CONTAINER" 5432/tcp | head -1 | sed 's/.*://')"
+PORT=""
+for _ in $(seq 1 30); do
+  # A rede pode aparecer alguns instantes depois do container (principalmente
+  # no Docker Desktop/WSL). Repetir aqui evita um falso vermelho antes de
+  # qualquer SQL ser executado.
+  PORT="$(docker port "$CONTAINER" 5432/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
+  [ -n "$PORT" ] && break
+  sleep 1
+done
 [ -n "$PORT" ] || { echo "FATAL: não consegui ler a porta publicada do container" >&2; exit 1; }
 export TEST_DB_PORT="$PORT"
 echo "    ✓ publicado em 127.0.0.1:$PORT"
@@ -369,8 +385,20 @@ echo "==> invariantes: vitest (tests/invariants) — banco novo por ARQUIVO, ord
 # `--sequence.shuffle.files`: com o isolamento por arquivo a ordem deixa de ser
 # variável escondida, e sortear é o que impede a próxima colisão de fixture de
 # ficar dormente até alguém renomear um arquivo.
-TEST_DB_CONTAINER="$CONTAINER" TEST_DB_TEMPLATE="$TEMPLATE" TEST_DB_PORT="$PORT" \
+export TEST_DB_CONTAINER="$CONTAINER" TEST_DB_TEMPLATE="$TEMPLATE" TEST_DB_PORT="$PORT"
+if command -v node >/dev/null 2>&1 && command -v vitest >/dev/null 2>&1; then
   vitest run --config vitest.db.config.ts --sequence.shuffle.files=true "$@"
+elif command -v node.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+  # O Node do Windows não entra no PATH do WSL; passar o caminho convertido
+  # mantém a mesma suíte quando `pnpm test:db` é chamado no Windows. A flag
+  # `/w` também encaminha as variáveis do WSL para o processo Win32.
+  export WSLENV="${WSLENV:+$WSLENV:}TEST_DB_CONTAINER/w:TEST_DB_TEMPLATE/w:TEST_DB_PORT/w"
+  node.exe "$(wslpath -w "$ROOT/node_modules/vitest/vitest.mjs")" run \
+    --config vitest.db.config.ts --sequence.shuffle.files=true "$@"
+else
+  echo "FATAL: vitest/node não encontrado para executar invariantes" >&2
+  exit 1
+fi
 
 # A RECUSA. Vem depois do vitest e ANTES da palavra "verde", porque o que se
 # recusa aqui é o próprio resultado — inclusive um resultado que passou.

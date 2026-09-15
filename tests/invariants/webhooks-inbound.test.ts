@@ -220,9 +220,15 @@ function fakeAdminClient(): SupabaseClient {
           try {
             const ct = String((params as { ciphertext: string }).ciphertext);
             const out = sql(
-              `select public.fn_decrypt_oauth(${sqlString(ct)}::bytea);`,
+              // A custom GUC is session-scoped in the local Postgres image;
+              // set it on every fake RPC call instead of requiring ALTER
+              // DATABASE (which the container's postgres role forbids).
+              `select set_config('app.nuvemshop_oauth_key', 'test-guc-key-0123456789abcdef0123456789abcdef', false);\n` +
+                `select public.fn_decrypt_oauth(${sqlString(ct)}::bytea);`,
             ).trim();
-            return { data: out || null, error: null };
+            // `sql()` returns the set_config result followed by the decrypt
+            // result; the route needs only the latter.
+            return { data: out.split("\n").at(-1) || null, error: null };
           } catch (err) {
             return { data: null, error: { message: (err as Error).message } };
           }
@@ -351,13 +357,8 @@ beforeAll(() => {
       (id, organization_id, name, path_token, default_pipeline_id, default_stage_id, is_active)
       values ('${WHIN_SOURCE_INACTIVE}', '${GOV_ORG}', 'Inactive source', '${TOKEN_INACTIVE}', '${GOV_PIPELINE}', '${GOV_STAGE}', false)
       on conflict do nothing;
-    -- migration 0039: secret é cifrado at-rest. Configura a GUC da chave no
-    -- database efêmero (sessões novas herdam — o fake rpc de decrypt precisa)
-    -- e cifra o fixture na MESMA sessão via set_config.
-    do $guc$ begin
-      execute format('alter database %I set app.nuvemshop_oauth_key = %L',
-                     current_database(), 'test-guc-key-0123456789abcdef0123456789abcdef');
-    end $guc$;
+    -- migration 0039: secret é cifrado at-rest. A chave é definida na sessão
+    -- que cifra; o fake RPC acima a define novamente ao decifrar.
     select set_config('app.nuvemshop_oauth_key', 'test-guc-key-0123456789abcdef0123456789abcdef', false);
     insert into public.webhook_sources
       (id, organization_id, name, path_token, default_pipeline_id, default_stage_id, secret_encrypted)

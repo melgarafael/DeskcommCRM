@@ -125,6 +125,47 @@ beforeAll(() => {
             values (v_org, v_conv, v_sess, v_contact, 'text', 'inbound', 'rls invariant probe');
         end if;
 
+        -- 0239/0240/0244: CRM ↔ Advomax bridge rows. They carry the tenant
+        -- boundary itself, so the isolation probe must cover them too.
+        if not exists (select 1 from public.crm_document_intake where organization_id = v_org) then
+          insert into public.crm_document_intake
+            (organization_id, message_id, conversation_id, contact_id, pessoa_codigo,
+             filename, media_storage_path, requested_by)
+            values (
+              v_org,
+              (select id from public.messages where organization_id = v_org limit 1),
+              v_conv,
+              v_contact,
+              case when v_org = '${ORG_A}'::uuid then 700001 else 700002 end,
+              'rls-invariant.pdf',
+              'crm-document-intake/' || v_org::text || '/rls-invariant.pdf',
+              case when v_org = '${ORG_A}'::uuid then '${USER_A}'::uuid else '${USER_B}'::uuid end
+            );
+        end if;
+
+        if not exists (select 1 from public.advomax_contact_links where organization_id = v_org) then
+          insert into public.advomax_contact_links
+            (organization_id, contact_id, pessoa_codigo, status, created_by)
+            values (
+              v_org,
+              v_contact,
+              case when v_org = '${ORG_A}'::uuid then 700001 else 700002 end,
+              'linked',
+              case when v_org = '${ORG_A}'::uuid then '${USER_A}'::uuid else '${USER_B}'::uuid end
+            );
+        end if;
+
+        if not exists (select 1 from public.advomax_contact_process_links where organization_id = v_org) then
+          insert into public.advomax_contact_process_links
+            (organization_id, contact_id, processo_codigo, created_by)
+            values (
+              v_org,
+              v_contact,
+              case when v_org = '${ORG_A}'::uuid then 800001 else 800002 end,
+              case when v_org = '${ORG_A}'::uuid then '${USER_A}'::uuid else '${USER_B}'::uuid end
+            );
+        end if;
+
         -- 0227: sugestões contêm texto privado da conversa. Os dois tenants
         -- recebem uma linha real, com todos os FKs e a fronteira canônica.
         -- A prova abaixo usa JWT authenticated; não é só inspeção de policy.
@@ -303,6 +344,10 @@ export const TABLES = [
   // lia e escrevia. É o modo de falha que o aviso acima descreve, encontrado vivo.
   "org_guardrail_layers",
   "push_subscriptions",
+  // 0239/0240/0244 — ponte CRM ↔ Advomax: documento recebido, Pessoa e processo.
+  "crm_document_intake",
+  "advomax_contact_links",
+  "advomax_contact_process_links",
   // migration 0204 — o catálogo de produtos da loja. A leitura é org-scoped sem
   // gate de papel (o `agent` semeado aqui precisa ler para atender), e a ESCRITA
   // exige `manager` — esse segundo eixo é medido em
