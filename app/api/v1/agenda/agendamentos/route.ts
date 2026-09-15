@@ -17,6 +17,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
+import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { fail, ok } from "@/lib/api/wrappers";
 import { logger } from "@/lib/logger";
 
@@ -221,36 +222,32 @@ export async function GET(req: NextRequest): Promise<Response> {
   // agendamento ela fica errada. São consequências de tamanhos diferentes.
   const externos: AgendamentoDaResposta[] = [];
   if (parsed.data.de && parsed.data.ate) {
-    const { data: ocupacao, error: erroOcupacao } = await supabase
-      .from("calendar_selected_external_events")
-      .select("id, starts_at, ends_at, calendar_connections!inner(user_id)")
-      .eq("organization_id", activeOrg.orgId)
-      .gte("starts_at", parsed.data.de)
-      .lt("starts_at", parsed.data.ate)
-      // `transparent` no Google é "livre": existe e não ocupa. Mesmo filtro que
-      // a semente do servidor já aplicava — a regra é uma só.
-      .neq("transparency", "transparent")
-      .neq("status", "cancelled")
-      .order("starts_at");
+    // Leitura ÚNICA da ocupação da tela (`lib/agenda/ocupacao-externa`): a
+    // semente do servidor faz a MESMA pergunta e recebe a MESMA resposta. A
+    // regra — recorte por INTERSEÇÃO de intervalos, como no motor de
+    // disponibilidade — mora num lugar só (#525).
+    const { blocos, erro } = await lerOcupacaoExterna(supabase, {
+      organizationId: activeOrg.orgId,
+      de: parsed.data.de,
+      ate: parsed.data.ate,
+    });
 
-    if (erroOcupacao) {
+    if (erro) {
       logger.warn("[agenda.agendamentos] ocupação do Google não veio", {
-        erro: erroOcupacao.message,
+        erro,
         requestId,
       });
     }
-    for (const e of ocupacao ?? []) {
-      const conexao = e.calendar_connections as { user_id: string } | { user_id: string }[] | null;
-      const dono = Array.isArray(conexao) ? conexao[0]?.user_id : conexao?.user_id;
+    for (const e of blocos) {
       externos.push({
         id: e.id,
         // Rótulo, NUNCA o título do evento: a tabela guarda o `title` e esta
         // resposta não o lê. Despejar o conteúdo da agenda pessoal na tela de
         // trabalho é o que a consulta da semente também recusa.
         titulo: "Ocupado",
-        donoId: dono ?? null,
-        iniciaEm: e.starts_at,
-        terminaEm: e.ends_at,
+        donoId: e.donoId,
+        iniciaEm: e.iniciaEm,
+        terminaEm: e.terminaEm,
         situacao: "confirmed",
         // Os três abaixo existem para satisfazer o contrato da lista, e são
         // vazios porque ocupação do Google não tem nenhum deles: o fuso vive na

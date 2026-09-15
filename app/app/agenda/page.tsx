@@ -2,6 +2,7 @@ import { addDays, startOfWeek } from "date-fns";
 import { redirect } from "next/navigation";
 
 import { enderecoDeRetorno, faltaParaConectarOGoogle, googleEstaConfigurado } from "@/lib/agenda/google/config";
+import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -157,18 +158,15 @@ export default async function AgendaPage() {
    * O dono vem por `connection_id → calendar_connections.user_id`, porque esta
    * tabela não tem `user_id` — é a mesma junção que `ocupados.ts` já faz.
    */
-  const { data: externos } = await supabase
-    .from("calendar_selected_external_events")
-    .select("id, starts_at, ends_at, status, transparency, calendar_connections!inner(user_id)")
-    .eq("organization_id", activeOrg.orgId)
-    .gte("starts_at", inicio.toISOString())
-    .lt("starts_at", fim.toISOString())
-    // `transparent` no Google é "livre": o evento existe e não ocupa. Trazê-lo
-    // como bloco diria que o horário está tomado quando a própria pessoa marcou
-    // que não está.
-    .neq("transparency", "transparent")
-    .neq("status", "cancelled")
-    .order("starts_at");
+  // Leitura ÚNICA da ocupação da tela (`lib/agenda/ocupacao-externa`) — a mesma
+  // que a rota faz. O recorte é INTERSEÇÃO de intervalos, como no motor de
+  // disponibilidade: o compromisso que atravessa a virada do dia aparece no dia
+  // em que ele OCUPA, não só no dia em que ele começa (#525).
+  const { blocos: externos } = await lerOcupacaoExterna(supabase, {
+    organizationId: activeOrg.orgId,
+    de: inicio.toISOString(),
+    ate: fim.toISOString(),
+  });
 
   // QUAL conta está conectada — o prop existia no cartão e NUNCA era passado,
   // então o ramo "Agenda conectada" era código morto e o botão "Conectar Google"
@@ -257,15 +255,13 @@ export default async function AgendaPage() {
          * `quemSeraAtendido` fica ausente de propósito: o tipo já documenta essa
          * ausência como o caso do Google.
          */
-        (externos ?? []).map((e) => {
-          const conexao = e.calendar_connections as { user_id: string } | { user_id: string }[] | null;
-          const dono = Array.isArray(conexao) ? conexao[0]?.user_id : conexao?.user_id;
+        externos.map((e) => {
           return {
             id: e.id,
             titulo: "Ocupado",
-            responsavelId: dono ?? "",
-            comeca: e.starts_at,
-            termina: e.ends_at,
+            responsavelId: e.donoId ?? "",
+            comeca: e.iniciaEm,
+            termina: e.terminaEm,
             origem: "google_sync" as const,
             situacao: "confirmed" as const,
           };
