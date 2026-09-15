@@ -8659,6 +8659,43 @@ export const DICIONARIO: Traducoes = {
   "Erro ao reativar tenant": { es: "Error al reactivar el tenant" },
   "Incidente resolvido com sucesso": { es: "Incidente resuelto con éxito" },
   "Erro ao resolver incidente": { es: "Error al resolver el incidente" },
+
+  // ═══ Tags: a tela do vocabulário de etiquetas, da fatia S4 da #852 ═══
+  //
+  // A tela nasceu com dez chamadas `t()` e o espanhol ficou para trás: a lista
+  // inteira caía no português em plena tela traduzida (o conferidor de chaves
+  // só enxerga o que já está escrito, e a tela é nova). Vocabulário herdado do
+  // resto do dicionário — `funil` é `embudo`, `Inbox` continua `Inbox`.
+  "As etiquetas que os agentes, o Inbox e o funil usam nesta organização. Renomear ou juntar corrige também as regras de agente que escrevem a etiqueta, na mesma operação.": {
+    es: "Las etiquetas que usan los agentes, el Inbox y el embudo en esta organización. Renombrar o unir corrige también las reglas de agente que escriben la etiqueta, en la misma operación.",
+  },
+  "Não foi possível carregar as etiquetas agora. Recarregue a página.": {
+    es: "No se pudieron cargar las etiquetas ahora. Recarga la página.",
+  },
+  "Nenhuma etiqueta nesta organização ainda. Elas aparecem aqui conforme os agentes, o Inbox e o funil usarem.": {
+    es: "Aún no hay ninguna etiqueta en esta organización. Aparecen aquí a medida que los agentes, el Inbox y el embudo las usen.",
+  },
+  "Etiquetas da organização e onde são usadas": {
+    es: "Etiquetas de la organización y dónde se usan",
+  },
+  "Regras de agente": {
+    es: "Reglas de agente",
+  },
+  "em uso, fora do vocabulário": {
+    es: "en uso, fuera del vocabulario",
+  },
+  "Etiqueta de destino": {
+    es: "Etiqueta de destino",
+  },
+  "Escolha a etiqueta que fica": {
+    es: "Elige la etiqueta que queda",
+  },
+  "Novo nome": {
+    es: "Nombre nuevo",
+  },
+  "Aplicando...": {
+    es: "Aplicando...",
+  },
 };
 
 /**

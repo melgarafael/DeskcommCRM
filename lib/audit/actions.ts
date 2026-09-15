@@ -553,6 +553,12 @@ export const AUDIT_ACTIONS = [
   // porque toda leitura de `admin/` é auditada neste repo — e porque aqui o
   // operador enxerga o agente publicado na organização de outra pessoa.
   "platform_admin.tenant_agents_viewed",
+  // A etiqueta da ORGANIZAÇÃO renomeada, juntada ou excluída na tela de Tags
+  // (issue #852, fatia S4). É um código só porque a linha já carrega
+  // `metadata.acao` (renomear/juntar/excluir) e o alcance da operação (contatos,
+  // leads, conversas, regras). Três códigos para a mesma decisão deixariam o
+  // filtro do painel com três opções onde houve UMA escolha do operador.
+  "tag_vocabulary.changed",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

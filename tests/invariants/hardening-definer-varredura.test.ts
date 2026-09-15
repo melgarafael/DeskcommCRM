@@ -164,6 +164,21 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "declarado pela migration 0034 e não há call site de RPC para removê-lo " +
       "com segurança sem medir o disparo de cada trigger.",
   },
+  {
+    fn: "fn_vocabulario_de_tags_operar(uuid,text,text,text)",
+    razao:
+      "POST app/api/v1/tags/vocabulario/route.ts chama com createClient da " +
+      "sessão (a tela de Tags é manager+, com suporte de escrita e MFA). A " +
+      "função exige fn_role_at_least(p_org,'manager') ANTES de qualquer escrita, " +
+      "recusa ação fora do vocabulário e roda os três arrays, as sementes da " +
+      "organização e as ações add_tag de automation_rules numa transação só — é " +
+      "essa atomicidade que impede o rename de deixar a regra do agente " +
+      "apontando para o nome velho. " +
+      "tests/invariants/tags-vocabulario.test.ts prova duas orgs com a MESMA " +
+      "etiqueta (a de fora não é tocada), viewer recusado, anon sem EXECUTE, " +
+      "junção 'vip'+'VIP' sem duplicata e exclusão que informa — sem apagar — a " +
+      "regra do agente.",
+  },
 ];
 
 interface Definer {
