@@ -37,6 +37,8 @@ interface BulkActionBarProps {
    * trocando só as palavras. Sem isto a barra dizia "lead" para todo mundo.
    */
   vocabulary?: PipelineVocabulary | null;
+  /** Tags dos leads do quadro — sem isto o menu só oferecia "nova tag" (#852). */
+  tagsExistentes?: string[];
   onClear: () => void;
 }
 
@@ -45,6 +47,7 @@ export function BulkActionBar({
   stages,
   pipelineId,
   vocabulary,
+  tagsExistentes = [],
   onClear,
 }: BulkActionBarProps) {
   const t = useT();
@@ -120,8 +123,8 @@ export function BulkActionBar({
     );
   };
 
-  const runTagAdd = () => {
-    const tag = tagInput.trim();
+  const runTagAdd = (escolhida?: string) => {
+    const tag = (escolhida ?? tagInput).trim();
     if (!tag) return;
     bulk.mutate(
       { action: "tag", lead_ids: selectedIds, params: { add: [tag] } },
@@ -225,10 +228,18 @@ export function BulkActionBar({
                   }
                 }}
               />
-              <Button size="sm" onClick={runTagAdd} disabled={!tagInput.trim()}>
+              <Button size="sm" onClick={() => runTagAdd()} disabled={!tagInput.trim()}>
                 {t("Adicionar")}
               </Button>
             </div>
+            {tagsExistentes
+              .filter((tag) => tag.toLowerCase().includes(tagInput.trim().toLowerCase()))
+              .slice(0, 10)
+              .map((tag) => (
+                <DropdownMenuItem key={tag} onClick={() => runTagAdd(tag)}>
+                  {tag}
+                </DropdownMenuItem>
+              ))}
           </DropdownMenuContent>
         </DropdownMenu>
 

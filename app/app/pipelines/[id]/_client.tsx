@@ -53,6 +53,8 @@ export function PipelinePageClient({
   const [newOpen, setNewOpen] = useState(false);
 
   const filteredLeads = data ? applyFilters(data.leads, filters) : [];
+  // Mesma conta do FilterBar: a tag em lote grava em `lead.tags` (#852).
+  const tagsDoQuadro = [...new Set((data?.leads ?? []).flatMap((l) => l.tags))].sort();
 
   return (
     <div
@@ -122,6 +124,7 @@ export function PipelinePageClient({
         stages={data?.stages ?? []}
         pipelineId={pipelineId}
         vocabulary={data?.pipeline.vocabulary ?? null}
+        tagsExistentes={tagsDoQuadro}
         onClear={() => setSelectedIds([])}
       />
     </div>
