@@ -148,4 +148,16 @@ describe("painel do inbox — campos do lead", () => {
   });
 });
 
+describe("painel do inbox — o botão diz o que faz (issue #908)", () => {
+  // "Lead" era lido como "ver o lead deste contato", mas abre o diálogo que
+  // CRIA um novo; o lead existente se edita em "Leads recentes", logo abaixo.
+  it("o botão que abre o Novo Lead se chama 'Novo lead'", async () => {
+    get.mockResolvedValue({ data: RESPOSTA });
+    renderPainel();
+
+    expect(await screen.findByRole("button", { name: "Novo lead" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Lead" })).toBeNull();
+  });
+});
+
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => ({ user: { support: null } }) }));
