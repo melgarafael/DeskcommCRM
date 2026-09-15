@@ -67,17 +67,20 @@ async function run(req: NextRequest): Promise<Response> {
       .eq("id", row.id).eq("organization_id", row.organization_id).eq("status", "pending")
       .select("id").maybeSingle();
     if (updateError) { stats.failed++; continue; }
-    if (!updated) { stats.unchanged++; continue; }
-    stats.linked++;
-    await audit({
-      action: "contact.advomax_link_reconciled",
-      actorUserId: row.created_by,
-      organizationId: row.organization_id,
-      resourceType: "advomax_contact_link",
-      resourceId: row.id,
-      requestId,
-      metadata: { pessoa_codigo: row.pessoa_codigo },
-    });
+    if (!updated) {
+      stats.unchanged++;
+    } else {
+      stats.linked++;
+      await audit({
+        action: "contact.advomax_link_reconciled",
+        actorUserId: row.created_by,
+        organizationId: row.organization_id,
+        resourceType: "advomax_contact_link",
+        resourceId: row.id,
+        requestId,
+        metadata: { pessoa_codigo: row.pessoa_codigo },
+      });
+    }
   }
   return ok(stats, { requestId });
 }
