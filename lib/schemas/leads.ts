@@ -23,6 +23,15 @@ export const moveLeadSchema = z.object({
   stage_id: z.string().uuid(),
   position_in_stage: z.number().finite(),
   expected_updated_at: flexibleTimestamp,
+  /**
+   * O motivo da perda, quando a etapa de destino é de perda (issue #917). É o
+   * caminho do ARRASTO: a decisão de exigir/gravar mora em
+   * `lib/leads/motivo-da-perda.ts` — aqui só se aceita o campo, e um motivo em
+   * branco é tratado lá como ausente (uma recusa de negócio, uma só, para os três
+   * caminhos; string vazia morrendo no Zod daria uma mensagem de validação
+   * diferente da que o /lose devolve para o mesmo caso).
+   */
+  lost_reason: z.string().max(500).optional(),
 });
 export type MoveLeadInput = z.infer<typeof moveLeadSchema>;
 
@@ -119,6 +128,13 @@ export const bulkLeadActionSchema = z.discriminatedUnion("action", [
     // e é melhor que ele suma do que ficar aceito e ignorado.
     params: z.object({
       stage_id: z.string().uuid(),
+      /**
+       * O motivo da perda, quando a etapa de destino é de perda (issue #917):
+       * o lote fecha N negócios de uma vez, então UM motivo vale para todos os
+       * cards que ainda não têm um. A decisão (e a recusa de negócio) mora em
+       * `lib/leads/motivo-da-perda.ts`.
+       */
+      lost_reason: z.string().max(500).optional(),
     }),
   }),
   z.object({

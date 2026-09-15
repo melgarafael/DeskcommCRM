@@ -9,8 +9,9 @@
  * no primeiro ajuste.
  *
  * Cada não-movimento vira o rótulo que diz a verdade sobre ele (ver MIRROR_WARN_ONLY):
- * configuração e conflito com humano são estado normal; banco fora e escrita
- * falha são incidente e abrem item de inbox no caller.
+ * configuração e conflito com humano são estado normal (warn-only); perda sem
+ * motivo é estado normal MAS precisa de item de inbox (falta ação do humano); e
+ * banco fora / escrita falha são incidente — os dois últimos abrem item no caller.
  */
 import { sincronizaEstagioDoAgente } from '@/lib/leads/agent-stage-sync';
 import type { Queryable } from '../../queue/queue';
@@ -29,6 +30,17 @@ export type MirrorReason =
    * uma proteção num fato compreensível.
    */
   | 'fora_do_escopo'
+  /**
+   * A etapa de destino é de PERDA e o motivo da perda é do humano (issue #917).
+   *
+   * ⚠️ FORA de MIRROR_WARN_ONLY, e por uma razão diferente da de
+   * `fora_do_escopo`: não é estado que se resolve sozinho com paciência — o
+   * negócio que o agente quis fechar como perdido CONTINUA aberto, e o dono
+   * precisa saber que a IA parou ali e por quê. Warn silencioso deixaria o card
+   * parado num funil que parece só atrasado. O item de inbox é o ensinamento:
+   * mova o card e informe o motivo (o banco recusa motivo que o agente invente).
+   */
+  | 'perda_sem_motivo'
   | 'crm_error'
   | 'crm_unavailable';
 
@@ -85,6 +97,10 @@ export async function mirrorLeadStageToCrm(
       fora_do_escopo: {
         reason: 'fora_do_escopo',
         detail: 'este assistente não cuida do funil onde o negócio está',
+      },
+      perda_sem_motivo: {
+        reason: 'perda_sem_motivo',
+        detail: 'a etapa de destino fecha o negócio como perdido, e perder exige um motivo que o assistente não pode escolher',
       },
       ambiguo: {
         reason: 'not_configured',

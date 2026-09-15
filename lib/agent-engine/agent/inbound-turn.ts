@@ -2953,7 +2953,10 @@ async function executarTurnoDoAgente(
             // Espelho no CRM. Falha NUNCA reverte o harness (fonte da verdade do
             // funil) nem falha o job: humano resolve via inbox_items. Os motivos
             // de MIRROR_WARN_ONLY (tenant sem mapa; humano moveu o card antes) são
-            // só warn — estado legítimo do produto não é incidente.
+            // só warn — estado legítimo do produto não é incidente. Os outros dois
+            // merecem aviso PRÓPRIO, cada um no seu: `fora_do_escopo` (nada quebrou,
+            // o dono decide se libera o funil) e `perda_sem_motivo` (#917 — o card
+            // não anda porque a perda exige um motivo que só o humano pode dar).
             const mirror = await mirrorLeadStageToCrm(pool, deps.crmCfg, {
               tenantId,
               leadId,
@@ -2981,6 +2984,33 @@ async function executarTurnoDoAgente(
                     `mas ele não cuida do funil onde o negócio está (${mirror.detail}). ` +
                     `Ninguém mexeu no card. Se ele deveria cuidar desse funil, marque isso na ` +
                     `configuração do assistente; se não, não há nada a fazer.`,
+                  refKind: 'lead',
+                  refId: leadId,
+                });
+              } else if (mirror.reason === 'perda_sem_motivo') {
+                // ── A ETAPA DE PERDA EXIGE MOTIVO (issue #917) ──────────────────
+                // O assistente avançou o funil dele para uma etapa que, no funil
+                // do cliente, fecha o negócio como PERDIDO — e perder exige um
+                // motivo, que é a causa que quem está no negócio reconhece.
+                //
+                // ⚠️ O motivo NÃO é escrito pela IA, e não é falha de coragem: o
+                // banco recusa motivo fora do vocabulário do funil (22023), então
+                // um motivo escolhido aqui seria recusado — ou, pior, passaria
+                // colado num dos canônicos e gravaria no funil do cliente uma
+                // causa que ninguém afirmou. O card NÃO se move, nada quebrou, e o
+                // que falta é uma AÇÃO DO HUMANO — nem warn silencioso (o card
+                // ficaria parado sem ninguém saber por quê) nem o aviso de falha
+                // (mandaria o dono procurar um defeito que não existe).
+                await insertInboxItem(pool, tenantId, {
+                  kind: 'other',
+                  title: 'O assistente quis marcar um negócio como perdido — e isso exige um motivo',
+                  body:
+                    `O assistente concluiu que este negócio deveria ir para "${update.transition.to}", ` +
+                    `que no seu funil é uma etapa de perda. Perder um negócio exige um motivo, e o ` +
+                    `motivo é a razão que quem está no negócio reconhece — o assistente não inventa ` +
+                    `uma. Ninguém mexeu no card: ele continua onde estava. Se o negócio realmente se ` +
+                    `perdeu, mova o card para "${update.transition.to}" no board e informe o motivo; ` +
+                    `se não, não há nada a fazer.`,
                   refKind: 'lead',
                   refId: leadId,
                 });

@@ -8027,6 +8027,9 @@ export const DICIONARIO: Traducoes = {
   "Esta sugestão já foi": { es: "Esta sugerencia ya fue" },
   "decidida": { es: "decidida" },
   "Informe o motivo da perda.": { es: "Indica el motivo de la pérdida." },
+  "Esse motivo de perda não está na lista deste funil — escolha um dos motivos configurados.": {
+    es: "Ese motivo de pérdida no está en la lista de este embudo — elige uno de los motivos configurados.",
+  },
   "Pipeline não tem stage de fechamento como ganho.": {
     es: "El pipeline no tiene stage de cierre como ganado.",
   },

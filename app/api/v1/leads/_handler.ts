@@ -17,6 +17,10 @@ import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitte
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { camposAlterados } from "@/lib/leads/campos-alterados";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import {
+  decideMotivoDaPerda,
+  recusaDeMotivoDaPerdaPeloBanco,
+} from "@/lib/leads/motivo-da-perda";
 import type { CreateLeadInput, UpdateLeadInput } from "@/lib/schemas";
 import { ehCorrecaoDeMovimentoDaIa } from "@/lib/leads/correcao-humana";
 
@@ -581,6 +585,18 @@ export interface MoveLeadAdminInput {
   /** Optional fractional position. If omitted, append at end (max + 1000). */
   position_in_stage?: number;
   reason?: string;
+  /**
+   * O motivo da perda, quando a etapa de destino é de perda (issue #917).
+   *
+   * ⚠️ NÃO é o mesmo `reason` de cima, e por isso são dois campos: `reason` é a
+   * nota humana que entra na timeline ("cliente achou caro"), texto livre; este é
+   * o `crm_leads.lost_reason`, que o banco confere contra o vocabulário do funil
+   * (canônico + `settings.lost_reasons` do pipeline). Um valor de texto livre aqui
+   * não é recusado por esta função — é recusado pelo trigger, e a rota devolve a
+   * recusa de negócio (`recusaDeMotivoDaPerdaPeloBanco`). Quem decide se há de
+   * exigir ou não é `lib/leads/motivo-da-perda.ts`, o mesmo dos outros caminhos.
+   */
+  lost_reason?: string | null;
 }
 
 export async function moveLeadHandler(
@@ -610,7 +626,7 @@ export async function moveLeadHandler(
 
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
-    .select("id, pipeline_id, organization_id, name")
+    .select("id, pipeline_id, organization_id, name, is_lost")
     .eq("id", input.to_stage_id)
     .maybeSingle();
   if (stageErr) {
@@ -647,6 +663,21 @@ export async function moveLeadHandler(
     position = maxRow?.position_in_stage ? Number(maxRow.position_in_stage) + 1000 : 1000;
   }
 
+  // ── O MOTIVO DA PERDA (issue #917) ──────────────────────────────────────────
+  //
+  // Este handler é o escritor de etapa de TODOS os clientes que não são o board
+  // (MCP `crm_move_lead_stage`, ações de automação), e a regra é a mesma do
+  // arrasto: etapa de perda exige motivo, e o motivo sai na mesma escrita.
+  const veredito = decideMotivoDaPerda({
+    etapaDeDestino: stage,
+    motivo: input.lost_reason,
+    motivoAtual: (lead as { lost_reason?: string | null }).lost_reason ?? null,
+    idioma: ctx.idioma,
+  });
+  if (!veredito.ok) {
+    throw new ApiError(422, veredito.codigo, undefined, ctx.requestId, veredito.mensagem);
+  }
+
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
   const { data: updated, error: updErr } = await supabase
@@ -655,6 +686,7 @@ export async function moveLeadHandler(
       stage_id: input.to_stage_id,
       position_in_stage: position,
       updated_at: nowIso,
+      ...veredito.patch,
     })
     .eq("id", leadId)
     .eq("updated_at", lead.updated_at)
@@ -662,6 +694,12 @@ export async function moveLeadHandler(
     .maybeSingle();
 
   if (updErr) {
+    // Rede de segurança (#917) — mesma da rota de arrasto: recusa do banco por
+    // motivo da perda vira recusa de negócio, nunca 500.
+    const recusa = recusaDeMotivoDaPerdaPeloBanco(updErr, ctx.idioma);
+    if (recusa) {
+      throw new ApiError(422, recusa.codigo, undefined, ctx.requestId, recusa.mensagem);
+    }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
   if (!updated) {

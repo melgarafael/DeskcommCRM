@@ -19,6 +19,10 @@ import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { bulkLeadActionSchema, validateRequest } from "@/lib/schemas";
+import {
+  decideMotivoDaPerda,
+  recusaDeMotivoDaPerdaPeloBanco,
+} from "@/lib/leads/motivo-da-perda";
 import { createClient } from "@/lib/supabase/server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -115,9 +119,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   // orgs veria leads de ambas — o filtro explícito garante que o bulk só toca a
   // org ativa (mesmo padrão do gate de owner acima).
   const organizationId = authz.org.orgId;
+  // `lost_reason` entra no select por causa da decisão de perda (issue #917): o
+  // motivo que o negócio JÁ tem é metade da pergunta "esta escrita o deixa perdido
+  // sem motivo?" — e perguntar card a card depois custaria N consultas.
   const { data: scoped } = await supabase
     .from("crm_leads")
-    .select("id, organization_id, tags, stage_id, pipeline_id, contact_id")
+    .select("id, organization_id, tags, stage_id, pipeline_id, contact_id, lost_reason")
     .eq("organization_id", organizationId)
     .in("id", input.lead_ids);
 
@@ -138,6 +145,47 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   switch (input.action) {
     case "move": {
+      // ── O MOTIVO DA PERDA (issue #917) ──────────────────────────────────────
+      //
+      // O lote fecha N negócios de uma vez e a função do banco é uma transação só
+      // ("move todos ou não move nenhum"): UM card que ficaria perdido sem motivo
+      // derruba o lote inteiro com 23514, e o operador recebia 500 sem saber qual
+      // card ofendeu. A decisão é a mesma das outras rotas de movimento — e a
+      // resposta também: recusa de negócio, nomeando os cards, ANTES de o banco
+      // tentar. Card que já tem motivo passa: trocar de "Perdido" para outra
+      // etapa de perda não é uma perda nova.
+      const { data: etapaDeDestino, error: etapaErr } = await supabase
+        .from("crm_stages")
+        .select("id, name, is_lost")
+        .eq("id", input.params.stage_id)
+        .maybeSingle();
+      if (etapaErr) return fail("internal_error", etapaErr.message, 500, { requestId });
+      if (!etapaDeDestino) {
+        return fail("not_found", t("Stage não encontrado."), 404, { requestId });
+      }
+
+      const motivoDoLote = input.params.lost_reason ?? null;
+      let recusaDoMotivo: { codigo: string; mensagem: string } | null = null;
+      const leadsSemMotivo: string[] = [];
+      for (const linha of visible) {
+        const veredito = decideMotivoDaPerda({
+          etapaDeDestino,
+          motivo: motivoDoLote,
+          motivoAtual: linha.lost_reason ?? null,
+          idioma: user.idioma,
+        });
+        if (!veredito.ok) {
+          recusaDoMotivo ??= { codigo: veredito.codigo, mensagem: veredito.mensagem };
+          leadsSemMotivo.push(linha.id);
+        }
+      }
+      if (recusaDoMotivo) {
+        return fail(recusaDoMotivo.codigo, recusaDoMotivo.mensagem, 422, {
+          requestId,
+          details: { lead_ids: leadsSemMotivo },
+        });
+      }
+
       // Migration 0209: quem posiciona é o banco. Escrever aqui um
       // `position_in_stage` escalar para N linhas dava a TODOS os cards do lote
       // o mesmo número, e `midpoint(prev, next)` devolve NaN quando os vizinhos
@@ -149,12 +197,27 @@ export async function POST(req: NextRequest): Promise<Response> {
       // cliente SEM o genérico `Database` — sem a anotação, `data` chega como
       // `any` e a checagem some justamente no lugar que passou a depender de
       // três campos vindos do banco.
+      //
+      // `p_lost_reason` (migration 0263) é o outro lado da decisão acima: o
+      // motivo tem de entrar na MESMA escrita que muda a etapa, e quem escreve a
+      // etapa do lote é esta função. String vazia é `null` — quem não trouxe
+      // motivo não sobrescreve o que o card já tem.
       const { data, error } = await supabase.rpc("fn_mover_leads_em_lote", {
         p_organization_id: organizationId,
         p_lead_ids: visibleIds,
         p_stage_id: input.params.stage_id,
+        p_lost_reason: (motivoDoLote ?? "").trim() || null,
       });
-      if (error) return fail("internal_error", error.message, 500, { requestId });
+      if (error) {
+        // Rede de segurança (#917): a recusa do banco por motivo da perda (o
+        // motivo veio, mas não é do vocabulário deste funil) vira recusa de
+        // negócio. Qualquer outro erro continua 500 com o texto do Postgres.
+        const recusaDoBanco = recusaDeMotivoDaPerdaPeloBanco(error, user.idioma);
+        if (recusaDoBanco) {
+          return fail(recusaDoBanco.codigo, recusaDoBanco.mensagem, 422, { requestId });
+        }
+        return fail("internal_error", error.message, 500, { requestId });
+      }
       const movidosNoBanco = (data ?? []) as LeadMovidoEmLote[];
       updatedCount = movidosNoBanco.length;
 
