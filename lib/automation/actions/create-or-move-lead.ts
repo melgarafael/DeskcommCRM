@@ -42,9 +42,21 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         return { type: "create_or_move_lead", status: "failed", error: "cross_pipeline_move_not_allowed" };
       }
       await moveLeadHandler(ctx.admin, handlerCtx, lead.id, { to_stage_id: stageId });
+      publicaNoContexto(ctx, lead.id, pipelineId, contactId);
       return { type: "create_or_move_lead", status: "success", detail: { moved: lead.id } };
     }
     if (contact) {
+      // Gatilho de CONTATO não traz lead no contexto (`lib/automation/engine.ts`),
+      // e sem isto a ação chamada de "criar/mover" só sabia criar: o contato
+      // ganhava um negócio novo a cada vez que a regra rodava (#958). O negócio
+      // procurado é o ABERTO no funil de destino — negócio de outro funil segue
+      // fora, pela mesma regra que recusa mover entre funis.
+      const existente = await negocioAbertoDoContato(ctx, contact.id, pipelineId);
+      if (existente) {
+        await moveLeadHandler(ctx.admin, handlerCtx, existente, { to_stage_id: stageId });
+        publicaNoContexto(ctx, existente, pipelineId, contact.id);
+        return { type: "create_or_move_lead", status: "success", detail: { moved: existente } };
+      }
       const created = await createLeadHandler(ctx.admin, handlerCtx, {
         pipeline_id: pipelineId,
         stage_id: stageId,
@@ -52,6 +64,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         contact_id: contact.id,
         source: "automation",
       } as Parameters<typeof createLeadHandler>[2]);
+      publicaNoContexto(ctx, String(created.id), pipelineId, contact.id);
       return { type: "create_or_move_lead", status: "success", detail: { created: String(created.id) } };
     }
     return { type: "create_or_move_lead", status: "skipped", detail: { reason: "no_lead_or_contact" } };
@@ -62,6 +75,44 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * O negócio ABERTO do contato neste funil, se houver um.
+ *
+ * Só o funil de destino: o contato pode ter negócio em outro funil, e mover
+ * entre funis é recusado logo acima. Falha de leitura devolve `null` — a ação
+ * então cria, que é o comportamento de antes deste conserto.
+ */
+async function negocioAbertoDoContato(
+  ctx: ActionCtx,
+  contactId: string,
+  pipelineId: string,
+): Promise<string | null> {
+  const { data } = await ctx.admin
+    .from("crm_leads")
+    .select("id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("contact_id", contactId)
+    .eq("pipeline_id", pipelineId)
+    .eq("status", "open")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as { id?: string } | null)?.id ?? null;
+}
+
+/**
+ * As ações seguintes da MESMA regra passam a enxergar o lead.
+ *
+ * `assign_owner` lê `ctx.context.lead` e, num gatilho de contato, devolvia
+ * `skipped: missing_input` mesmo depois de esta ação ter criado o negócio —
+ * a execução inteira aparecia como "Parcial" na aba Atividade (#958). As
+ * condições da regra já foram avaliadas quando isto roda (`engine.ts` filtra
+ * `applicable` antes do laço), então escrever aqui não muda o que casou.
+ */
+function publicaNoContexto(ctx: ActionCtx, leadId: string, pipelineId: string, contactId?: string): void {
+  ctx.context.lead = { id: leadId, pipeline_id: pipelineId, contact_id: contactId ?? null };
 }
 
 registerAction({ type: "create_or_move_lead", execute });

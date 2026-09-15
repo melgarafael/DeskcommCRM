@@ -134,6 +134,82 @@ describe("create_or_move_lead — pontuação/classificação nunca bloqueia a C
   });
 });
 
+/**
+ * #958 — gatilho de tag no CONTATO. Medido numa instalação real: a regra rodava
+ * 9 vezes em 9 horas, sempre "Parcial" com `missing_input`, e o contato ficava
+ * com leads repetidos.
+ *
+ * O contexto de evento de contato não tem `lead` (`lib/automation/engine.ts`).
+ * Daí os dois sintomas medidos aqui:
+ *   1. a ação só sabia CRIAR — o negócio que o contato já tinha no funil de
+ *      destino era ignorado, e nascia outro;
+ *   2. a ação seguinte da mesma regra (`assign_owner`) continuava sem lead e
+ *      devolvia `skipped: missing_input`.
+ */
+describe("create_or_move_lead — gatilho de contato (#958)", () => {
+  function ctxDoContato(db: ReturnType<typeof makeDb>): ActionCtx {
+    return {
+      admin: db.client as unknown as ActionCtx["admin"],
+      organizationId: ORG_ID,
+      ruleId: "rule-1",
+      ruleName: "Google Meu Negócio",
+      event: {} as ActionCtx["event"],
+      requestId: "req-1",
+      context: { contact: { id: "contato-1", name: "Fulano" } },
+    };
+  }
+
+  it("contato que já tem negócio aberto no funil de destino: MOVE, não duplica", async () => {
+    const db = makeDb({
+      pipelines: [funilRow({ id: PIPE, name: "Funil" })],
+      stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
+      leads: [negocio("lead-1", "novo", { contact_id: "contato-1", status: "open" } as Partial<
+        Parameters<typeof negocio>[2]
+      >)],
+    });
+
+    const resultado = await getAction("create_or_move_lead")!.execute(ctxDoContato(db), {
+      pipeline_id: PIPE,
+      stage_id: "triagem",
+    });
+
+    expect(resultado).toEqual({ type: "create_or_move_lead", status: "success", detail: { moved: "lead-1" } });
+    expect(db.tabelas.crm_leads).toHaveLength(1);
+    expect(db.tabelas.crm_leads[0]?.stage_id).toBe("triagem");
+  });
+
+  it("contato SEM negócio no funil de destino: cria, como antes", async () => {
+    const db = makeDb({
+      pipelines: [funilRow({ id: PIPE, name: "Funil" })],
+      stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
+      leads: [],
+    });
+
+    const resultado = await getAction("create_or_move_lead")!.execute(ctxDoContato(db), {
+      pipeline_id: PIPE,
+      stage_id: "novo",
+    });
+
+    expect(resultado.status).toBe("success");
+    expect(db.tabelas.crm_leads).toHaveLength(1);
+  });
+
+  it("o lead fica no contexto para a ação seguinte da regra — fim do missing_input", async () => {
+    const db = makeDb({
+      pipelines: [funilRow({ id: PIPE, name: "Funil" })],
+      stages: [ETAPA_ORIGEM, ETAPA_DESTINO],
+      leads: [],
+    });
+    const ctx = ctxDoContato(db);
+
+    await getAction("create_or_move_lead")!.execute(ctx, { pipeline_id: PIPE, stage_id: "novo" });
+
+    const noContexto = ctx.context.lead as { id: string; pipeline_id: string } | undefined;
+    expect(noContexto?.id).toBe(db.tabelas.crm_leads[0]?.id);
+    expect(noContexto?.pipeline_id).toBe(PIPE);
+  });
+});
+
 describe("create_or_move_lead — não lê nenhuma chave classificacao_inicial_* do código-fonte", () => {
   it("o arquivo da ação não menciona 'classificacao' em lugar nenhum", async () => {
     // Prova estrutural complementar à prova por comportamento acima: se algum
