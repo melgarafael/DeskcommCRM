@@ -32,7 +32,8 @@ import type { EnrollmentEventRef, EnrollmentRow } from "@/lib/followup/node-hand
  * re-drain; (2) inbound em waiting_reply sem cancel_on_reply acorda (marker +
  * next_eval_at=now) e o PRÓPRIO tick do engine classifica em vez de rotear
  * no_reply (a corrida classify-lento documentada no HANDOFF); (3) inbound com
- * cancel_on_reply=true cancela (replied); (4) handoff aberto aplica a política
+ * cancel_on_reply=true cancela (replied), inclusive quando a inscrição está em
+ * espera fixa active; (4) handoff aberto aplica a política
  * do pointer (pause/cancel/allow); (5) O CENTERPIECE anti-Tomik: pausa por
  * handoff → fecha → retoma pra active com next_eval_at setado, nunca preso.
  */
@@ -643,6 +644,28 @@ describe("applyReactivityEvent — inbound wake (waiting_reply, sem cancel_on_re
     const after = await getEnrollment(enrollmentId);
     expect(after.status).toBe("cancelled");
     expect(after.outcome).toBe("replied");
+  });
+
+  it("cancel_on_reply=true também cancela uma espera fixa active", async () => {
+    const org = nextOrgId();
+    await seedOrg(org);
+    const contactId = await seedContact(org);
+    const { pointerId, versionId } = await seedFlow(org, SIMPLE_GRAPH, {
+      triggerConfig: { kind: "stage_change", params: { stage_id: nextOrgId() }, cancel_on_reply: true },
+    });
+    const enrollmentId = await seedEnrollment({ org, pointerId, versionId, contactId, currentNodeId: "w1", status: "active" });
+
+    const row = eventRow({ organization_id: org, event_type: "message.received", payload: { contact_id: contactId } });
+    const summary = await applyReactivityEvent(reactivityDb(), () => new Date(), row);
+    expect(summary).toEqual({ matched: true, reacted: 1 });
+
+    const after = await getEnrollment(enrollmentId);
+    expect(after.status).toBe("cancelled");
+    expect(after.outcome).toBe("replied");
+    expect(after.next_eval_at).toBeNull();
+
+    const events = await getEvents(enrollmentId);
+    expect(events.map((e) => e.event_type)).toEqual(["reactivity_replied"]);
   });
 
   it("cancel_on_reply ausente (schema antigo) — comportamento inalterado: acorda, não cancela", async () => {
