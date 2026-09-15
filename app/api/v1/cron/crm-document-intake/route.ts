@@ -83,22 +83,26 @@ async function enviar(row: IntakeRow, admin: ReturnType<typeof createAdminClient
   if (codigo === null) {
     return registrarFalha(admin, row, requestId, "Advomax devolveu um recibo de arquivo inválido.");
   }
-  const { error } = await admin.from("crm_document_intake" as never).update({
+  const { data: updated, error } = await admin.from("crm_document_intake" as never).update({
     status: "uploaded", advomax_file_id: codigo, failure_reason: null, claimed_at: null, claimed_by: null,
-  } as never).eq("id", row.id).eq("status", "processing");
-  if (error) return registrarFalha(admin, row, requestId, "Documento arquivado, mas o recibo não foi atualizado.");
-  await audit({ action: "document_intake.uploaded", actorUserId: row.requested_by, organizationId: row.organization_id, resourceType: "crm_document_intake", resourceId: row.id, requestId, metadata: { worker: true } });
+  } as never).eq("id", row.id).eq("status", "processing").select("id").maybeSingle();
+  if (error || !updated) return registrarFalha(admin, row, requestId, "Documento arquivado, mas o recibo não foi atualizado.");
+  if (updated) {
+    await audit({ action: "document_intake.uploaded", actorUserId: row.requested_by, organizationId: row.organization_id, resourceType: "crm_document_intake", resourceId: row.id, requestId, metadata: { worker: true } });
+  }
   return { ok: true };
 }
 
 async function registrarFalha(admin: ReturnType<typeof createAdminClient>, row: IntakeRow, requestId: string, motivo: string): Promise<{ ok: false; terminal: boolean }> {
   const terminal = row.attempts >= MAX_ATTEMPTS;
-  await admin.from("crm_document_intake" as never).update({
+  const { error: updateError } = await admin.from("crm_document_intake" as never).update({
     status: terminal ? "failed" : "pending",
     next_attempt_at: new Date(Date.now() + Math.min(60, 2 ** row.attempts) * 60_000).toISOString(),
     failure_reason: motivo, claimed_at: null, claimed_by: null,
   } as never).eq("id", row.id).eq("status", "processing");
-  await audit({ action: terminal ? "document_intake.failed" : "document_intake.retrying", actorUserId: row.requested_by, organizationId: row.organization_id, resourceType: "crm_document_intake", resourceId: row.id, requestId, metadata: { worker: true, retry: !terminal, reason: motivo } });
+  if (!updateError || terminal) {
+    await audit({ action: terminal ? "document_intake.failed" : "document_intake.retrying", actorUserId: row.requested_by, organizationId: row.organization_id, resourceType: "crm_document_intake", resourceId: row.id, requestId, metadata: { worker: true, retry: !terminal, reason: motivo } });
+  }
   return { ok: false, terminal };
 }
 
