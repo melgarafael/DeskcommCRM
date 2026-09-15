@@ -39,6 +39,39 @@ export function bareWaMessageId(id: string): string {
 }
 
 /**
+ * As formas que o ECO de uma mensagem que nós mandamos pode ter gravado em
+ * `messages.external_id` — para achar e apagar a linha que o webhook criou antes
+ * de o envio conhecer o próprio id.
+ *
+ * Os engines gravam lados opostos:
+ *   NOWEB — o envio devolve o id cru (`3EB0…`) e o webhook grava o composto
+ *           `true_<chatId>_3EB0…`
+ *   WEBJS — os dois lados usam o `_serialized` completo
+ *
+ * Reduzir ao bare cobre o segundo caso; para o primeiro é preciso CONSTRUIR o
+ * composto a partir do destinatário, porque sem ele a lista nunca contém a forma
+ * que o webhook realmente gravou. `true_` porque o eco de um envio nosso é sempre
+ * `fromMe`.
+ *
+ * Mora aqui, e não no adaptador, porque tem DOIS usuários que precisam da mesma
+ * resposta: o envio normal (`wahaAdapter.echoExternalIds`, chamado por
+ * `app/api/v1/messages/_handler.ts`) e o reenvio do watchdog
+ * (`lib/agent-engine/edge/crm/session-reconciler.ts`), que roda noutro processo,
+ * com `pg` cru e sem o seam de canal. Duas cópias desta regra divergem, e a
+ * divergência não quebra nada à vista: ela só faz o eco sumir por um caminho e
+ * ficar pelo outro — que é como a mensagem duplicada "voltava".
+ *
+ * ⚠️ LIMITE CONHECIDO, o mesmo nos dois caminhos: se o engine ecoar com um chat
+ * diferente do que usamos para enviar (`@lid` de um lado, `@c.us` do outro), o
+ * composto construído não casa e a duplicata fica. O conserto de raiz é canonizar
+ * o id nas duas pontas — desenho na issue #196 do DeskcommCRM.
+ */
+export function wahaEchoExternalIds(externalId: string, recipient: string): string[] {
+  const bare = bareWaMessageId(externalId);
+  return [...new Set([externalId, bare, `true_${recipient}_${bare}`])];
+}
+
+/**
  * Extrai o chatId do id composto do WAHA (`{fromMe}_{chatId}_{bareId}`).
  *
  * Existe porque o NOWEB **não manda `to`** no payload de mensagem `fromMe=true`
