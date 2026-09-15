@@ -124,15 +124,6 @@ export async function POST(
     );
   }
 
-  // Re-SELECT so trigger-driven status/closed_at changes are reflected.
-  const { data: fresh } = await supabase
-    .from("crm_leads")
-    .select("*")
-    .eq("id", leadId)
-    .maybeSingle();
-
-  const finalLead = fresh ?? lead;
-
   // Wave 3 (CORE 2): esta é a rota que o BOARD usa — arrastar o card passa por
   // aqui, não pelo moveLeadHandler. O emissor é o mesmo dos outros escritores
   // (lib/leads/activity-emitter), para os quatro caminhos escreverem a mesma
@@ -170,6 +161,19 @@ export async function POST(
       requestId,
     });
   }
+
+  // Re-SELECT so trigger-driven status/closed_at changes are reflected — e
+  // DEPOIS da atividade: gravá-la dispara `trg_update_last_activity_at`, que
+  // escreve no lead e troca o `updated_at` de novo. Relido antes, a resposta
+  // levava um `updated_at` já vencido e o próximo arrastar do mesmo card caía
+  // na OCC com 409 "modificado por outro usuário" (issue #916).
+  const { data: fresh } = await supabase
+    .from("crm_leads")
+    .select("*")
+    .eq("id", leadId)
+    .maybeSingle();
+
+  const finalLead = fresh ?? lead;
 
   // Emit domain event (fire-and-forget; trigger NEVER does HTTP — workers do).
   await supabase
