@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   useConnectOfficialChannel,
   useOfficialChannel,
+  useRegistrarWebhookOficial,
 } from "@/hooks/channels/useOfficialChannel";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
@@ -56,6 +57,7 @@ export function CanalOficialClient() {
   const t = useT();
   const { data, isPending } = useOfficialChannel();
   const conectar = useConnectOfficialChannel();
+  const registrarWebhook = useRegistrarWebhookOficial();
   const [form, setForm] = useState({ phone_number_id: "", waba_id: "", token: "" });
 
   const estado = data?.data;
@@ -99,14 +101,55 @@ export function CanalOficialClient() {
       {estado?.webhook ? (
         <Card className="flex flex-col gap-3 p-4">
           <div>
-            <h2 className="font-medium">{t("Cole isto no painel da Meta")}</h2>
+            <h2 className="font-medium">
+              {estado.webhookRegistro?.registrado
+                ? t("Webhook registrado pela instalação")
+                : t("Cole isto no painel da Meta")}
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t("Em")} <strong>WhatsApp → {t("Configuração")}</strong>
-              {t(", na seção de Webhook. Sem esse passo o canal envia, mas")}{" "}
-              <strong>{t("não recebe")}</strong>
-              {t(" — as respostas do cliente não chegam e a janela de 24 horas nunca abre.")}
+              {estado.webhookRegistro?.registrado ? (
+                t(
+                  "O CRM apontou o webhook deste número para cá — não é preciso colar nada no painel da Meta. Os valores abaixo ficam para conferência.",
+                )
+              ) : (
+                <>
+                  {t("Em")} <strong>WhatsApp → {t("Configuração")}</strong>
+                  {t(", na seção de Webhook. Sem esse passo o canal envia, mas")}{" "}
+                  <strong>{t("não recebe")}</strong>
+                  {t(" — as respostas do cliente não chegam e a janela de 24 horas nunca abre.")}
+                </>
+              )}
             </p>
           </div>
+
+          {/*
+            O aviso só aparece quando o CRM TENTOU registrar e não conseguiu. Nulo
+            (banco sem a migration 0256) cai no passo manual acima, que continua
+            verdadeiro — a tela nunca diz "registrado" sem ter registrado.
+          */}
+          {estado.webhookRegistro && !estado.webhookRegistro.registrado ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+              <Badge
+                variant="outline"
+                className="border-amber-500/60 font-normal text-amber-700 dark:text-amber-400"
+              >
+                {t("Webhook pendente")}
+              </Badge>
+              <span className="text-sm">
+                {estado.webhookRegistro.erro ?? t("o registro ainda não foi feito")}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => registrarWebhook.mutate()}
+                disabled={registrarWebhook.isPending}
+              >
+                {registrarWebhook.isPending ? t("Tentando…") : t("Tentar de novo")}
+              </Button>
+            </div>
+          ) : null}
+
           <ParaColar rotulo={t("URL de callback")} valor={estado.webhook.callbackUrl} />
           <ParaColar rotulo={t("Token de verificação")} valor={estado.webhook.verifyToken} />
           <div className="flex flex-col gap-1">

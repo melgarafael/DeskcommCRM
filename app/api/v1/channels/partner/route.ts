@@ -29,9 +29,9 @@ import {
   savePartnerSession,
   validatePartnerCredentials,
 } from "@/lib/channels/connect";
-import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -45,26 +45,14 @@ const conectarSchema = z.object({
 /**
  * Endereço público desta instalação — é o que o operador cola no provedor.
  *
- * `env.*` e NÃO `process.env.NEXT_PUBLIC_APP_URL` direto: variáveis
- * `NEXT_PUBLIC_` são substituídas no BUILD, e a imagem genérica do self-host é
- * construída com `https://placeholder.invalid` (Dockerfile). Lendo direto do
- * `process.env`, a tela mostrava essa URL — e quem a colasse no provedor
- * apontaria o webhook para o nada, sem nenhum erro em lugar nenhum. `env.*`
- * parseia em runtime, então a imagem serve qualquer domínio.
- *
- * O host da requisição é o fallback: numa instalação que esqueceu a variável,
- * o endereço por onde a tela está sendo servida é a melhor pista que existe —
- * e melhor que um placeholder que não resolve.
+ * A base sai de `lib/webhooks/url-publica` desde a fatia F1 da #850: a mesma
+ * pergunta ("qual é o endereço público desta instalação?") era respondida em três
+ * rotas, e a resposta divergente entre elas é um webhook que a tela promete num
+ * endereço e o produto atende em outro. O porquê do `env.*` no lugar do
+ * `process.env.NEXT_PUBLIC_APP_URL` direto está documentado lá.
  */
 function urlDoWebhook(req: NextRequest, token: string): string {
-  const configurada = env.NEXT_PUBLIC_APP_URL;
-  const usavel = configurada && !configurada.includes("placeholder.invalid") ? configurada : null;
-  const base = (
-    usavel ??
-    req.headers.get("origin") ??
-    `${req.nextUrl.protocol}//${req.nextUrl.host}`
-  ).replace(/\/+$/, "");
-  return `${base}/api/v1/webhooks/channel/${token}`;
+  return `${basePublicaDaInstalacao(req)}/api/v1/webhooks/channel/${token}`;
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
