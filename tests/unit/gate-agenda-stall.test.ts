@@ -188,7 +188,15 @@ describe("fiação do gate — a EXECUÇÃO da ferramenta de agenda arma o sinal
     expect(i).toBeGreaterThan(-1);
     expect(j).toBeGreaterThan(i);
     const corpo = FONTE_INBOUND.slice(i, j);
-    expect(corpo).toMatch(/agentConfig\.toolIds\.includes\('crm_book_appointment'\)/);
+    // Desde a #831 o `send_message` não compara com uma ferramenta só: ele pergunta
+    // às duas funções de fiação, e `temFerramentaDeMarcacao` cobre também a que
+    // consulta e marca numa chamada só (`crm_find_and_book_appointment`).
+    expect(corpo).toMatch(
+      /active:\s*agentConfig !== null && temFerramentaDeAgenda\(agentConfig\.toolIds\)/,
+    );
+    expect(corpo).toMatch(
+      /podeMarcar:\s*agentConfig !== null && temFerramentaDeMarcacao\(agentConfig\.toolIds\)/,
+    );
     expect(corpo).toMatch(/toolCalledThisTurn:\s*agendaToolCalledThisTurn/);
   });
 
@@ -197,6 +205,7 @@ describe("fiação do gate — a EXECUÇÃO da ferramenta de agenda arma o sinal
     expect(FONTE_INBOUND).toContain("'crm_find_free_slots'");
     expect(FONTE_INBOUND).toContain("'crm_book_appointment'");
     expect(FONTE_INBOUND).toContain("'crm_reschedule_appointment'");
+    expect(FONTE_INBOUND).toContain("'crm_find_and_book_appointment'");
     expect(FONTE_INBOUND).toMatch(/agendaToolCalledThisTurn = true/);
   });
 });

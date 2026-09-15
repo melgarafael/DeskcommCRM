@@ -824,6 +824,13 @@ const AGENDA_SYSTEM_BLOCK =
   'Se o lead escolheu um horário que VOCÊ já ofereceu nesta conversa com `crm_find_free_slots`, ele já ' +
   'foi checado: preserve o `inicio` que a ferramenta devolveu e chame `crm_book_appointment` diretamente. ' +
   'NÃO consulte de novo montando datas/horas em UTC; só consulte outra vez se a reserva recusar o horário.\n' +
+  // Issue #831: consultar e encerrar o turno é o meio-caminho que deixa o lead sem
+  // agendamento. Quando a ferramenta conjunta existe, ela é o caminho PREFERIDO —
+  // confirmar o horário e gravar deixa de ser decisão de duas etapas do modelo.
+  'Se você tem `crm_find_and_book_appointment` e o lead já disse DIA e HORA, use essa ferramenta: ela ' +
+  'confere a disponibilidade e grava o compromisso na MESMA chamada. Ela é o caminho preferido nesse caso ' +
+  '— não chame só `crm_find_free_slots` e pare por aí, deixando o lead sem horário marcado. Se o horário ' +
+  'pedido não estiver livre, ela devolve os horários do dia; ofereça um deles ao lead.\n' +
   'Checar e marcar horário usando crm_find_free_slots/crm_book_appointment está SEMPRE dentro da sua ' +
   'autonomia quando essas ferramentas estão disponíveis para você — mesmo que as instruções da empresa ' +
   'peçam para encaminhar decisões fora da sua autonomia a um gerente/responsável nomeado (ex.: "fale com o ' +
@@ -875,7 +882,31 @@ const AGENDA_TOOL_NAMES = new Set([
   'crm_find_free_slots',
   'crm_book_appointment',
   'crm_reschedule_appointment',
+  // Issue #831: a ferramenta que consulta E marca numa chamada só. Ela EXECUTA
+  // marcação, então precisa armar o mesmo gate: sem isto, o turno em que a IA
+  // marcou passaria sem o `agendaStallGate` — o gate que existe justamente para
+  // detectar "falou de agenda e nada foi gravado".
+  'crm_find_and_book_appointment',
 ]);
+
+/**
+ * O agente consegue GRAVAR um horário sozinho (marcar ou remarcar)?
+ *
+ * Três ferramentas gravam agenda: `crm_book_appointment`,
+ * `crm_reschedule_appointment` e, desde a issue #831, a que consulta e marca numa
+ * chamada só (`crm_find_and_book_appointment`). A regra mora aqui, e não em cada
+ * ponto de uso, porque as duas condições — o bloco residente de ensino e o
+ * `podeMarcar` do gate — precisam ser a MESMA: divergindo, o bloco diria "você
+ * NÃO tem ferramenta para marcar" a um agente que tem, ou o gate cobraria marcação
+ * de quem só pode consultar.
+ */
+export function temFerramentaDeMarcacao(toolIds: readonly string[]): boolean {
+  return (
+    toolIds.includes('crm_book_appointment') ||
+    toolIds.includes('crm_reschedule_appointment') ||
+    toolIds.includes('crm_find_and_book_appointment')
+  );
+}
 
 /**
  * O agente tem alguma ferramenta de agenda? É o que ARMA o `agendaStallGate`.
@@ -1951,7 +1982,7 @@ async function executarTurnoDoAgente(
   // não depende de nenhuma feature — todo agente publicado o recebe.
   const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK];
   if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
-  if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
+  if (agentConfig !== null && temFerramentaDeMarcacao(agentConfig.toolIds)) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
   } else if (agentConfig !== null && agentConfig.toolIds.includes('crm_find_free_slots')) {
     // Só consulta: o bloco de cima nomeia uma ferramenta que ele não tem.
@@ -2703,7 +2734,7 @@ async function executarTurnoDoAgente(
             // ferramenta de agenda nenhuma segue desarmado — vetá-lo não teria cura.
             agenda: {
               active: agentConfig !== null && temFerramentaDeAgenda(agentConfig.toolIds),
-              podeMarcar: agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment'),
+              podeMarcar: agentConfig !== null && temFerramentaDeMarcacao(agentConfig.toolIds),
               toolCalledThisTurn: agendaToolCalledThisTurn,
             },
             ...(deps.knobs.disclosureMode !== undefined

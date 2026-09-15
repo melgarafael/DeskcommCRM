@@ -196,6 +196,18 @@ export const TOOLS_AGENDAMENTO = declararTools([
     pacotes: ["vender"],
   },
   {
+    name: "crm_find_and_book_appointment",
+    category: "write",
+    rotulo: "Ver se o horário está livre e já marcar",
+    explicacao:
+      "Confere o horário que o cliente pediu e, se estiver livre, já reserva na mesma conversa — em vez de só consultar e depender de uma segunda decisão para marcar.",
+    oQueToca: "Agenda da equipe",
+    // `atencao`, igual a `crm_book_appointment`: o que ela faz a mais é a
+    // consulta, e o efeito que persiste é o mesmo marcar — que se desfaz.
+    risco: "atencao",
+    pacotes: ["vender"],
+  },
+  {
     name: "crm_book_appointment",
     category: "write",
     rotulo: "Marcar consulta ou sessão",

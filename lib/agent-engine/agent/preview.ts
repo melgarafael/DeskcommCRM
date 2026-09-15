@@ -5,7 +5,7 @@ import type { ToolSet } from '../edge/llm/run-model-call';
 import type { LeadContext, LeadContextResult } from '../edge/crm/get-lead-context';
 import type { PublishedAgentConfig } from './agent-config';
 import type { LeadCheckpointRow } from './inbound-turn';
-import { temFerramentaDeAgenda } from './inbound-turn';
+import { temFerramentaDeAgenda, temFerramentaDeMarcacao } from './inbound-turn';
 import {
   evaluateBeforeSend,
   type GateContext,
@@ -123,7 +123,7 @@ export async function previewGateContext(
     // quem afina o prompt testar contra outro sistema.
     agenda: {
       active: temFerramentaDeAgenda(p.agent.toolIds),
-      podeMarcar: p.agent.toolIds.includes('crm_book_appointment'),
+      podeMarcar: temFerramentaDeMarcacao(p.agent.toolIds),
       toolCalledThisTurn: false,
     },
     internalVocabularyEnforced: true,

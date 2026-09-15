@@ -101,6 +101,9 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // diferente de remarcar e cancelar, que operam por `appointment_id` e continuam
   // `sem_funil` declarado enquanto não houver resolvedor por agendamento.
   crm_book_appointment: "funil_vem_do_contato",
+  // Consulta E marca numa chamada só (issue #831): o `contact_id` é OBRIGATÓRIO
+  // como no marcar puro (DECISÃO 27), então o alvo resolve de verdade.
+  crm_find_and_book_appointment: "funil_vem_do_contato",
   crm_reschedule_appointment: "sem_funil",
   crm_cancel_appointment: "sem_funil",
   // Mesmo argumento das duas acima, e pela mesma razão: operam por
