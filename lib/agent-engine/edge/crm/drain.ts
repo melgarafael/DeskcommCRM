@@ -16,7 +16,7 @@ import { z } from 'zod';
 import type pg from 'pg';
 
 import type { Logger } from '../../obs/logger';
-import { enqueueJob } from '../../queue/queue';
+import { enfileirarComDebounce } from './debounce';
 import { TIPOS_DERIVAVEIS, DERIVACAO_TERMINADA } from '@/lib/messaging/media/derivable';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -91,6 +91,7 @@ export async function drainTick(pool: pg.Pool, knobs: DrainKnobs, log: Logger): 
   for (const event of events) {
     try {
       const desfecho = await processEvent(pool, event, knobs, log);
+      if (desfecho === 'concluido') continue;
       if (desfecho === 'adiar') {
         // Adiar NÃO é falha: volta a pending com uma espera curta e não gasta
         // o orçamento de tentativas (que existe para erro de verdade).
@@ -141,7 +142,7 @@ const ESPERA_DERIVACAO_MS = 4_000;
  */
 const TETO_ESPERA_DERIVACAO_MS = 120_000;
 
-type DesfechoEvento = 'processado' | 'adiar';
+type DesfechoEvento = 'processado' | 'adiar' | 'concluido';
 
 async function processEvent(
   pool: pg.Pool,
@@ -373,27 +374,8 @@ async function processEvent(
     });
   }
 
-  // Coalescência: já existe job PENDING futuro deste contato → esta mensagem
-  // entra de carona (o turno lê o histórico completo). Evento vira done.
-  if (knobs.debounceMs > 0) {
-    const { rows: pendingRows } = await pool.query<{ id: string }>(
-      `select id from job_queue
-       where organization_id = $1 and contact_id = $2
-         and kind = 'inbound_turn' and status = 'pending' and run_after > now()
-       limit 1`,
-      [event.organization_id, p.contact_id],
-    );
-    if (pendingRows[0]) {
-      log.info('drain: rajada coalescida em job pendente', {
-        event_id: event.id,
-        job_id: pendingRows[0].id,
-      });
-      return 'processado';
-    }
-  }
-
-  const runAfter = knobs.debounceMs > 0 ? new Date(Date.now() + knobs.debounceMs) : undefined;
-  const { job, deduped } = await enqueueJob(pool, event.organization_id, {
+  // Renova a janela no job pendente; produtores concorrentes não criam dois jobs.
+  const { job, deduped } = await enfileirarComDebounce(pool, event.organization_id, {
     kind: 'inbound_turn',
     leadId: p.contact_id,
     sourceEventId: event.id,
@@ -404,10 +386,9 @@ async function processEvent(
       inbound_message_id: p.inbound_message_id,
       crm_event_id: event.id,
     },
-    ...(runAfter !== undefined ? { runAfter } : {}),
-  });
+  }, knobs.debounceMs);
   log.info('drain: job de turno enfileirado', { event_id: event.id, job_id: job.id, deduped });
-  return 'processado';
+  return knobs.debounceMs > 0 ? 'concluido' : 'processado';
 }
 
 /** Loop do drain — polling com backoff adaptativo (ocioso = tick mais lento). */
@@ -426,17 +407,18 @@ export async function runDrainLoop(
         error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
       });
     }
-    const waitMs = drained > 0 ? knobs.intervalMs : knobs.idleIntervalMs;
+    if (signal.aborted) break;
+    // Lote cheio indica possível backlog: escoar antes de pagar outro intervalo.
+    const waitMs = drained >= knobs.batchSize ? 0 :
+      drained > 0 ? knobs.intervalMs : knobs.idleIntervalMs;
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, waitMs);
-      signal.addEventListener(
-        'abort',
-        () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        { once: true },
-      );
+      const finish = (): void => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, waitMs);
+      signal.addEventListener('abort', finish, { once: true });
     });
   }
 }
