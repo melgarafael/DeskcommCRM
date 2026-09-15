@@ -106,10 +106,13 @@ export async function extrairTextoDoArquivo(
       texto = await extractPdfText(buffer);
     } catch (err) {
       if (err instanceof PdfExtractError) {
-        throw new ErroDeExtracao(
-          "não consegui extrair texto deste PDF. Se ele for só imagens escaneadas, " +
-            "não há letra nenhuma para ler — envie uma versão com texto selecionável.",
-        );
+        // Repassa a mensagem tal como `extractPdfText` a formulou — ela já
+        // distingue "PDF sem texto" (provável imagem escaneada) de "binário
+        // @napi-rs/canvas ausente" (defeito de infraestrutura, não do
+        // arquivo). Sobrescrever aqui com uma frase única fazia todo PDF
+        // legível parecer "provavelmente escaneado" quando a causa real era
+        // outra — inclusive um PDF com texto selecionável.
+        throw new ErroDeExtracao(err.message);
       }
       throw new ErroDeExtracao(
         `falhou ao ler o PDF: ${err instanceof Error ? err.message : String(err)}`,

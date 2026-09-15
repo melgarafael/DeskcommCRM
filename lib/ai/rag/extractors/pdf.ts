@@ -69,7 +69,10 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
 
     const combined = pageTexts.join("\n\n").trim();
     if (combined.length === 0) {
-      throw new PdfExtractError("pdfjs-dist extracted no text (possibly image-only PDF)");
+      throw new PdfExtractError(
+        "não consegui extrair texto deste PDF. Se ele for só imagens escaneadas, " +
+          "não há letra nenhuma para ler — envie uma versão com texto selecionável.",
+      );
     }
     return combined;
   } catch (err) {
@@ -93,6 +96,9 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
       );
     }
 
-    throw new PdfExtractError("pdfjs-dist failed to extract text from the PDF", err);
+    throw new PdfExtractError(
+      `falhou ao ler o PDF: ${err instanceof Error ? err.message : String(err)}`,
+      err,
+    );
   }
 }
