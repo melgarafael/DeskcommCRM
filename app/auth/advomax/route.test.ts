@@ -104,7 +104,7 @@ describe("entrada Advomax no CRM", () => {
   });
   it("preserva organização se a resposta de provisionamento se perde", async () => {
     const s = setup();
-    s.results.organizations.unshift({ data: { id: orgId }, error: null });
+    s.results.organizations!.unshift({ data: { id: orgId }, error: null });
     s.fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ...handoff, crmOrganizationId: null })))
       .mockRejectedValueOnce(new Error("timeout after commit"));
     expect(location(await GET(request()))).toContain("error=sso_provisionamento");
