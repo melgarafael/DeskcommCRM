@@ -95,6 +95,17 @@ describe("o aviso de boot lê a mesma régua que a execução", () => {
       "o boot avisa que a IA está muda numa instalação só-OpenRouter, em que ela não está",
     ).toContain("OPENROUTER_API_KEY");
   });
+
+  it("o aviso não afirma que o agente vai pular toda resposta", () => {
+    const fonte = readFileSync("lib/env.ts", "utf8");
+    const aviso = fonte.slice(
+      fonte.indexOf("if (!env.AI_GATEWAY_API_KEY && !env.ANTHROPIC_API_KEY"),
+      fonte.indexOf("if (!env.OPENAI_API_KEY)"),
+    );
+    expect(aviso).not.toMatch(/pular toda resposta/);
+    expect(aviso).not.toMatch(/ai_gateway_key_missing/);
+    expect(aviso).toContain("IA › Credenciais");
+  });
 });
 
 describe("o worker de mídia obedece ao painel", () => {

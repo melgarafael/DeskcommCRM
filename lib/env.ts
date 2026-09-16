@@ -424,8 +424,11 @@ if (env.NODE_ENV === "production") {
 // instalador pedia; o menu novo o tornou falso.
 if (!env.AI_GATEWAY_API_KEY && !env.ANTHROPIC_API_KEY && !env.OPENROUTER_API_KEY) {
   console.warn(
-    "[env] Nenhuma chave de IA configurada (AI_GATEWAY_API_KEY, ANTHROPIC_API_KEY ou OPENROUTER_API_KEY) — " +
-      "o agente vai pular toda resposta com reason='ai_gateway_key_missing'.",
+    "[env] AI_GATEWAY_API_KEY, ANTHROPIC_API_KEY e OPENROUTER_API_KEY ausentes neste processo — " +
+      "elas são o ÚLTIMO degrau da escada de chave da IA (o worker também procura a credencial " +
+      "cadastrada em IA › Credenciais). Se alguma organização já cadastrou a chave pela tela, " +
+      "o agente segue respondendo por ela; se não cadastrou nenhuma, as respostas ficam paradas " +
+      "até que alguém cadastre — pela tela ou aqui.",
   );
 }
 // Este aviso ANUNCIAVA UM DESFECHO que o boot não tem como saber, e a correção
