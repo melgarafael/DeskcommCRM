@@ -51,7 +51,10 @@ services:
       retries: 5
       start_period: 40s
     logging: *default-logging
-    networks: [internal]
+    # `allma_ro`: cabo dedicado SOMENTE para a leitura do banco externo. Só o
+    # `app` entra nele; é `internal` (sem rota para a internet) e só alcança o
+    # `allma-db`. Ver /root/arquivos/RELIGAR-CONEXAO-BANCO-EXTERNO-ALLMA.md.
+    networks: [internal, allma_ro]
 
 
   # Worker 24/7 do agent-engine (fusão Vendaval) — cérebro do agente SDR.
@@ -99,8 +102,12 @@ services:
     environment:
       # dentro da rede do compose, o WAHA é o serviço 'waha' na porta interna 3000
       WAHA_API_BASE_URL: http://waha:3000
+    # `allma_ro`: o worker é quem executa as ferramentas do agente (banco externo
+    # `allma-db`); sem esta rede ele não resolve o host e a leitura do catálogo
+    # falha no atendimento ao vivo (erro dns_falhou → "não consegui acessar").
     networks:
       - internal
+      - allma_ro
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8787/healthz"]
       interval: 30s
@@ -252,3 +259,12 @@ volumes:
 networks:
   internal:
     driver: bridge
+  # Rede dedicada da leitura do banco externo. `external: true` porque é criada
+  # fora do Compose (uma única vez, de propósito): assim um `down` de qualquer
+  # stack NÃO a apaga. É `internal` para não ter rota para a internet.
+  #   docker network create --internal deskcommcrm_allma_ro
+  # No Allma, o `allma-db` entra via: docker network connect deskcommcrm_allma_ro allma-db
+  # Doc de recuperação: /root/arquivos/RELIGAR-CONEXAO-BANCO-EXTERNO-ALLMA.md
+  allma_ro:
+    external: true
+    name: deskcommcrm_allma_ro
