@@ -10,7 +10,7 @@
  * `navegacao-registry.test.ts`; aqui é a superfície.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
 import { Sidebar } from "@/components/shell/Sidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
@@ -32,6 +32,9 @@ vi.mock("@/components/connections/ConnectionHealthDot", () => ({
 }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({
   toggleSidebar: vi.fn(),
+}));
+vi.mock("@/lib/branding/contexto", () => ({
+  useMarcaDaInstalacao: () => ({ name: "Advomax CRM", logoUrl: "/advomax-logo.svg" }),
 }));
 // Busca a versão via react-query; sem QueryClientProvider ele lança, e o
 // rodapé de versão não é o que estes testes examinam.
@@ -143,15 +146,12 @@ describe("Sidebar agrupado", () => {
     expect(screen.getByRole("link", { name: /Inbox/ })).toBeTruthy();
   });
 
-  it("recolhe e abre imediatamente ao clicar no controle", () => {
+  it("mostra o símbolo compacto do Advomax quando a barra está recolhida", () => {
     comoPapel("admin");
-    render(<Sidebar collapsed={false} />);
-    fireEvent.click(screen.getByRole("button", { name: "Recolher sidebar" }));
-    expect(screen.getByRole("button", { name: "Expandir sidebar" })).toBeTruthy();
+    render(<Sidebar collapsed />);
+    expect(screen.getByRole("img", { name: "Advomax" })).toBeTruthy();
     expect(screen.queryAllByRole("heading")).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Expandir sidebar" }));
-    expect(screen.getByRole("button", { name: "Recolher sidebar" })).toBeTruthy();
-    expect(screen.getAllByRole("heading").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /sidebar/i })).toBeNull();
   });
 
   it("marca a rota atual com aria-current", () => {

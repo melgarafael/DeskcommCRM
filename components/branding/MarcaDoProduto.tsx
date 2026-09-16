@@ -62,6 +62,18 @@ export function SimboloDoProduto({ nome, className, decorativo = false }: Props)
   );
 }
 
+/** O mesmo símbolo compacto usado na barra lateral do Advomax Gestão. */
+export function SimboloAdvomax({ className }: { readonly className?: string }) {
+  return (
+    <svg viewBox="0 0 270 230" role="img" aria-label="Advomax" className={cn("text-[#071b33]", className)}>
+      <g fill="none" stroke="currentColor" strokeWidth="9" strokeLinecap="square" strokeLinejoin="miter">
+        <path d="M18 210 112 22l96 188" />
+        <path d="m77 95 108 75 70-106v146" />
+      </g>
+    </svg>
+  );
+}
+
 /** Símbolo + nome — para a barra aberta e a fachada de entrada. */
 export function LogotipoDoProduto({ nome, className, decorativo = false }: Props) {
   return (

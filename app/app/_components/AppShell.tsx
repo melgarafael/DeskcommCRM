@@ -1,10 +1,11 @@
 "use client";
-import type { ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
+import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 
 interface AppShellProps {
   sidebarCollapsed: boolean;
@@ -12,13 +13,25 @@ interface AppShellProps {
 }
 
 export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
+  const [collapsed, setCollapsed] = useState(sidebarCollapsed);
+  const [togglePending, startTransition] = useTransition();
+  function onToggleSidebar() {
+    setCollapsed((value) => !value);
+    startTransition(async () => {
+      try {
+        await toggleSidebar(collapsed);
+      } catch {
+        setCollapsed(collapsed);
+      }
+    });
+  }
   useInboundMessageAlerts();
   useCrmAlerts();
   useNotifyOpenFromServiceWorker();
   return (
     <div className="flex min-h-screen w-full bg-background text-foreground">
       <div className="hidden md:block">
-        <Sidebar collapsed={sidebarCollapsed} />
+        <Sidebar collapsed={collapsed} />
       </div>
       {/*
         `min-w-0` é o que permite a coluna de conteúdo ENCOLHER. Um flex item
@@ -40,7 +53,7 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
         cima da lista.
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <TopBar />
+        <TopBar sidebarCollapsed={collapsed} onToggleSidebar={onToggleSidebar} togglePending={togglePending} />
         <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
       </div>
     </div>

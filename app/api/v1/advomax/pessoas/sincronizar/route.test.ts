@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { prepararClientesAdvomax } from "./route";
+import { lotesDeTelefones, prepararClientesAdvomax } from "./route";
 
 describe("prepararClientesAdvomax", () => {
   it("traz apenas clientes com telefone e normaliza o número para o CRM", () => {
@@ -13,4 +13,10 @@ describe("prepararClientesAdvomax", () => {
       { codigo: 1, nome: "Cliente local", telefone: "+5585987654321", cliente: true },
     ]);
   });
+});
+
+it("limita cada consulta de telefone para não exceder a URL do Supabase", () => {
+  const telefones = Array.from({ length: 121 }, (_, i) => `+550000000${i}`);
+  expect(lotesDeTelefones(telefones).map((lote) => lote.length)).toEqual([60, 60, 1]);
+  expect(lotesDeTelefones(telefones).flat()).toEqual(telefones);
 });

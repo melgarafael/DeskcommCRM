@@ -30,6 +30,15 @@ export function prepararClientesAdvomax(pessoas: PessoaAdvomax[]) {
 }
 
 const PAGE_SIZE = 200;
+const PHONE_LOOKUP_BATCH_SIZE = 60;
+
+export function lotesDeTelefones(telefones: string[]): string[][] {
+  const lotes: string[][] = [];
+  for (let i = 0; i < telefones.length; i += PHONE_LOOKUP_BATCH_SIZE) {
+    lotes.push(telefones.slice(i, i + PHONE_LOOKUP_BATCH_SIZE));
+  }
+  return lotes;
+}
 
 async function pessoasDoAdvomax(email: string, organizationId: string, offset: number): Promise<PessoaAdvomax[] | null> {
   const base = process.env.ADVOMAX_API_URL?.replace(/\/$/, "");
@@ -73,15 +82,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   const codigos = candidatos.map((p) => p.codigo);
   const variantes = [...new Set(candidatos.flatMap((p) => phoneLookupVariants(p.telefone)))];
 
-  const [{ data: links, error: linksError }, { data: contatos, error: contactsError }] = await Promise.all([
+  const linksPromise =
     codigos.length
       ? admin.from("advomax_contact_links").select("pessoa_codigo,contact_id").eq("organization_id", authz.org.orgId).in("pessoa_codigo", codigos)
-      : Promise.resolve({ data: [], error: null }),
-    variantes.length
-      ? admin.from("contacts").select("id,phone_number").eq("organization_id", authz.org.orgId).is("is_merged_into", null).in("phone_number", variantes)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
+      : Promise.resolve({ data: [], error: null });
+  // PostgREST rejeita URLs longas; uma página pode gerar centenas de variantes.
+  const contatosResultados = await Promise.all(lotesDeTelefones(variantes).map((lote) =>
+    admin.from("contacts").select("id,phone_number")
+      .eq("organization_id", authz.org.orgId).is("is_merged_into", null).in("phone_number", lote)
+  ));
+  const { data: links, error: linksError } = await linksPromise;
+  const contactsError = contatosResultados.find((resultado) => resultado.error)?.error;
   if (linksError || contactsError) return fail("internal_error", "Não foi possível conferir os contatos existentes.", 500, { requestId });
+  const contatos = contatosResultados.flatMap((resultado) => resultado.data ?? []);
 
   const ligados = new Set((links ?? []).map((row) => Number(row.pessoa_codigo)));
   const porTelefone = new Map<string, string>();

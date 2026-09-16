@@ -2,14 +2,13 @@
 import Link from "next/link";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { ArrowRight, CaretDoubleLeft, CaretDoubleRight, CaretDown, Gear } from "@/lib/ui/icons";
+import { useEffect, useState } from "react";
+import { ArrowRight, CaretDown, Gear } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
-import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
 import { VersionFooter } from "@/components/shell/VersionFooter";
-import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
+import { LogotipoDoProduto, SimboloAdvomax, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
 import { ADVOMAX_LOGO_URL, marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
@@ -19,9 +18,7 @@ const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 
 interface SidebarContentProps {
   collapsed: boolean;
-  showCollapseControl?: boolean;
   onNavigate?: () => void;
-  onToggleSidebar?: () => void;
 }
 
 /**
@@ -34,15 +31,12 @@ interface SidebarContentProps {
  */
 export function SidebarContent({
   collapsed,
-  showCollapseControl = true,
   onNavigate,
-  onToggleSidebar,
 }: SidebarContentProps) {
   // A barra lateral aparece em TODA tela — traduzi-la aqui é o que faz a
   // escolha de idioma virar algo visível no primeiro clique.
   const t = useT();
   const pathname = usePathname();
-  const [isPending, startTransition] = useTransition();
   const { user, activeOrg } = useAuth();
   const todos = sidebarGroups(
     user.is_platform_admin && !user.support,
@@ -114,6 +108,7 @@ export function SidebarContent({
    * descer para ele — que é o contrário do que a precedência por campo promete.
    */
   const logo = activeOrg?.marca?.logoUrl || brand.logoUrl;
+  const logoAdvomax = logo === ADVOMAX_LOGO_URL || logo?.endsWith(ADVOMAX_LOGO_URL);
   // Só quando NINGUÉM — nem a instalação, nem a organização — pôs marca própria:
   // é a condição de `lib/branding.ts`, avaliada sobre o que a barra vai mostrar.
   const marcaDoProduto = marcaEhADoProduto({ name: nome, logoUrl: logo ?? null });
@@ -126,7 +121,9 @@ export function SidebarContent({
           collapsed ? "justify-center" : "justify-start",
         )}
       >
-        {logo && !collapsed ? (
+        {collapsed && logoAdvomax ? (
+          <SimboloAdvomax className="h-8 w-8" />
+        ) : logo ? (
           // <img> em vez de next/image de propósito: a URL vem de quem hospeda
           // (banco ou .env), e next/image exige allowlist de domínios fechada em
           // build — a imagem pré-buildada rejeitaria o domínio do self-hoster.
@@ -136,10 +133,7 @@ export function SidebarContent({
           <img
             src={logo}
             alt={nome}
-            className={cn(
-              "max-h-[26px] w-auto max-w-44 object-contain",
-              logo === ADVOMAX_LOGO_URL && "advomax-product-logo",
-            )}
+            className={cn(collapsed ? "max-h-8 max-w-8" : "max-h-[26px] max-w-44", "w-auto object-contain", logo === ADVOMAX_LOGO_URL && "advomax-product-logo")}
           />
         ) : marcaDoProduto ? (
           // O desenho do produto, inline (ver `components/branding/MarcaDoProduto.tsx`):
@@ -152,7 +146,7 @@ export function SidebarContent({
         ) : (
           <span className={cn("font-semibold tracking-tight", collapsed && "sr-only")}>{nome}</span>
         )}
-        {collapsed && !marcaDoProduto && (
+        {collapsed && !logo && !marcaDoProduto && (
           <span aria-hidden className="text-lg font-bold text-primary">
             {/* Spread e não `[0]`: nome começando com emoji ou acento composto
                 quebraria no meio do code point. Mesma regra de `resolveBranding`
@@ -334,37 +328,12 @@ export function SidebarContent({
           {!collapsed && <span className="truncate">{t("Abrir Advomax Gestão")}</span>}
         </a>
         <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
-        {showCollapseControl && (
-          <button
-            type="button"
-            onClick={() => {
-              onToggleSidebar?.();
-              startTransition(() => toggleSidebar(collapsed));
-            }}
-            disabled={isPending}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-              collapsed && "justify-center px-2",
-            )}
-            aria-label={collapsed ? t("Expandir sidebar") : t("Recolher sidebar")}
-          >
-            {collapsed ? (
-              <CaretDoubleRight size={14} aria-hidden />
-            ) : (
-              <CaretDoubleLeft size={14} aria-hidden />
-            )}
-            {!collapsed && <span>{t("Recolher")}</span>}
-          </button>
-        )}
       </div>
     </>
   );
 }
 
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
-  const [visualCollapsed, setVisualCollapsed] = useState(collapsed);
-  useEffect(() => setVisualCollapsed(collapsed), [collapsed]);
-
   return (
     <aside
       className={cn(
@@ -388,13 +357,10 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         // `shrink-0` porque item de flex encolhe por padrão, e uma barra de 60
         // espremida para caber é o mesmo defeito por outro caminho.
         "sticky top-0 z-30 flex h-screen shrink-0 flex-col border-r border-border bg-white shadow-[8px_0_32px_rgba(7,27,51,0.04)] transition-[width] duration-200",
-        visualCollapsed ? "w-20" : "w-[280px]",
+        collapsed ? "w-20" : "w-[280px]",
       )}
     >
-      <SidebarContent
-        collapsed={visualCollapsed}
-        onToggleSidebar={() => setVisualCollapsed((value) => !value)}
-      />
+      <SidebarContent collapsed={collapsed} />
     </aside>
   );
 }
