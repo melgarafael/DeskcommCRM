@@ -21771,10 +21771,16 @@ create table if not exists public.ai_reply_drafts(
  service_boundary jsonb not null,context_revision bigint not null,operation_revision bigint not null,
  generation_token uuid not null default gen_random_uuid(),revision bigint not null default 1,status text not null default 'generating' check(status in('generating','pending','approved','sending','sent','dismissed','stale','failed')),
  original_body text,edited_body text,approved_body text,proposals jsonb not null default '[]',trace jsonb not null default '[]',feedback jsonb,
- approved_by uuid references auth.users(id),approved_at timestamptz,approved_support_session_id uuid references public.platform_support_sessions(id),send_job_id uuid unique references public.job_queue(id),message_id uuid references public.messages(id),
+ approved_by uuid references auth.users(id),approved_at timestamptz,approved_support_session_id uuid references public.platform_support_sessions(id),send_job_id uuid unique references public.job_queue(id),message_id uuid references public.messages(id) on delete set null,
  error_code text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),
  unique(organization_id,conversation_id,agent_id,context_revision,operation_revision)
 );
+-- 0264: clones that already have the table from 0227 keep the old NO ACTION
+-- FK. create table if not exists does not rewrite it.
+alter table public.ai_reply_drafts drop constraint if exists ai_reply_drafts_message_id_fkey;
+alter table public.ai_reply_drafts
+  add constraint ai_reply_drafts_message_id_fkey
+  foreign key (message_id) references public.messages(id) on delete set null;
 alter table public.ai_reply_drafts enable row level security;
 revoke all on public.ai_reply_drafts from anon,authenticated;
 grant select on public.ai_reply_drafts to authenticated;
