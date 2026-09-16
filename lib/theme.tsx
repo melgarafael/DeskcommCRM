@@ -127,7 +127,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     getSistemaSnapshotDoServidor,
   );
 
-  const resolvedTheme: ResolvedTheme = theme === "system" ? systemTheme : theme;
+  // O Advomax Gestão é uma aplicação clara. "system" mantém esse padrão de
+  // produto em vez de transformar o CRM em outro sistema quando o Windows está
+  // no modo escuro. Quem quiser o tema escuro ainda pode escolhê-lo diretamente.
+  const resolvedTheme: ResolvedTheme = theme === "system" ? "light" : theme;
 
   // Aplica no DOM sempre que o tema efetivo muda. Isto não é "ler estado
   // externo" (o que o external store acima já cobre) — é o único jeito de
@@ -144,7 +147,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const toggle = React.useCallback(() => {
     const atual = getTemaSnapshot();
-    const resolvidoAtual = atual === "system" ? getSistemaSnapshot() : atual;
+    const resolvidoAtual = atual === "system" ? "light" : atual;
     gravarTema(resolvidoAtual === "dark" ? "light" : "dark");
   }, []);
 

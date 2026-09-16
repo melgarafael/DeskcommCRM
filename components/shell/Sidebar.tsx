@@ -120,7 +120,7 @@ export function SidebarContent({
     <>
       <div
         className={cn(
-          "flex h-14 items-center border-b px-4",
+          "flex h-[76px] items-center border-b border-border bg-white px-5",
           collapsed ? "justify-center" : "justify-start",
         )}
       >
@@ -135,7 +135,7 @@ export function SidebarContent({
             src={logo}
             alt={nome}
             className={cn(
-              "h-7 w-auto max-w-[10rem] object-contain",
+              "h-8 w-auto max-w-[11.5rem] object-contain",
               logo === ADVOMAX_LOGO_URL && "advomax-product-logo",
             )}
           />
@@ -205,7 +205,7 @@ export function SidebarContent({
         o PR: cada linha custa 32px (28px de altura + 4px de `space-y-1`), e
         trocar N destinos do menu por um único link de hub devolve (N-1)×32px.
       */}
-      <nav className="flex-1 space-y-2 overflow-y-auto p-2" aria-label={t("Navegação principal")}>
+      <nav className="flex-1 space-y-2 overflow-y-auto bg-white p-3" aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
           // Recolhido o sidebar inteiro (rail de 64px), o grupo sempre mostra
@@ -255,10 +255,10 @@ export function SidebarContent({
                           aria-current={isActive ? "page" : undefined}
                           onClick={onNavigate}
                           className={cn(
-                            "relative flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+                            "relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                             isActive
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                              ? "bg-[#071b33] font-semibold text-white shadow-sm"
+                              : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
                             collapsed && "justify-center px-2",
                           )}
                         >
@@ -281,10 +281,10 @@ export function SidebarContent({
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
-                          "flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+                          "flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                           pathname === group.hub.href
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                            ? "bg-[#071b33] font-semibold text-white shadow-sm"
+                            : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
                           collapsed && "justify-center px-2",
                         )}
                       >
@@ -299,7 +299,7 @@ export function SidebarContent({
           );
         })}
       </nav>
-      <div className="border-t p-2">
+      <div className="border-t border-border bg-white p-3">
         {rodape && (
           <Link
             href={rodape.href}
@@ -379,8 +379,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         //
         // `shrink-0` porque item de flex encolhe por padrão, e uma barra de 60
         // espremida para caber é o mesmo defeito por outro caminho.
-        "sticky top-0 z-30 flex h-screen shrink-0 flex-col border-r bg-card transition-[width] duration-200",
-        collapsed ? "w-16" : "w-60",
+        "sticky top-0 z-30 flex h-screen shrink-0 flex-col border-r border-border bg-white shadow-[4px_0_18px_rgba(7,27,51,0.04)] transition-[width] duration-200",
+        collapsed ? "w-16" : "w-[21.5rem]",
       )}
     >
       <SidebarContent collapsed={collapsed} />

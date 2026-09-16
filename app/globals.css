@@ -25,26 +25,26 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DeskcommCRM — Design System tokens (Sage palette · density Aerada)
-   Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)
+   Advomax CRM — Design System tokens
+   Continuidade visual do Advomax Gestão: superfícies frias claras e azul-marinho.
    Light + dark drawn separately (NOT inverted).
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
   /* Surfaces (light) */
-  --color-bg: #faf9f6;
+  --color-bg: #f4f7fb;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
+  --color-surface-elevated: #f7f9fc;
+  --color-overlay: rgba(7, 27, 51, 0.42);
 
   /* Text (light) */
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
+  --color-text: #071b33;
+  --color-text-muted: #52657a;
+  --color-text-subtle: #748399;
 
   /* Borders (light) */
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-border: #dfe5ec;
+  --color-border-strong: #cbd5e1;
 
   /* Accent — Sage (11 stops) */
   --color-accent-50:  #f3f6f1;
@@ -63,18 +63,18 @@
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
 
-  /* Neutrals — greige (11 stops, light) */
-  --color-neutral-50:  #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  /* Neutrals — azulados como no Advomax Gestão */
+  --color-neutral-50:  #f7f9fc;
+  --color-neutral-100: #eef3f8;
+  --color-neutral-200: #dfe5ec;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #748399;
+  --color-neutral-600: #52657a;
+  --color-neutral-700: #334a62;
+  --color-neutral-800: #17304e;
+  --color-neutral-900: #071b33;
+  --color-neutral-950: #041426;
 
   /* States (light) */
   --color-success: #5a8a5f;
@@ -115,11 +115,11 @@
   --radius-full: 9999px;
 
   /* Shadows — desaturated, neutral-based */
-  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
-  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
-  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
-  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  --shadow-xs: 0 1px 2px rgba(7, 27, 51, 0.04);
+  --shadow-sm: 0 3px 10px rgba(7, 27, 51, 0.06);
+  --shadow-md: 0 8px 24px rgba(7, 27, 51, 0.08);
+  --shadow-lg: 0 16px 38px rgba(7, 27, 51, 0.11);
+  --shadow-xl: 0 24px 52px rgba(7, 27, 51, 0.15);
 
   /* Density — Aerada */
   --density-row: 56px;
@@ -130,7 +130,7 @@
   /* Motion */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
@@ -257,30 +257,30 @@
    (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
    ───────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --color-bg: #faf9f6;
+  --color-bg: #f4f7fb;
   --color-surface: #ffffff;
-  --color-surface-elevated: #f5f3ee;
-  --color-overlay: rgba(28, 26, 22, 0.42);
-  --color-text: #1c1a16;
-  --color-text-muted: #5d594f;
-  --color-text-subtle: #7d786c;
-  --color-border: #e7e3da;
-  --color-border-strong: #d2cdbf;
+  --color-surface-elevated: #f7f9fc;
+  --color-overlay: rgba(7, 27, 51, 0.42);
+  --color-text: #071b33;
+  --color-text-muted: #52657a;
+  --color-text-subtle: #748399;
+  --color-border: #dfe5ec;
+  --color-border-strong: #cbd5e1;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
   --color-accent-hover: var(--color-accent-700);
-  --color-neutral-50: #faf9f6;
-  --color-neutral-100: #f3f1ec;
-  --color-neutral-200: #e7e3da;
-  --color-neutral-300: #d2cdbf;
-  --color-neutral-400: #a9a395;
-  --color-neutral-500: #7d786c;
-  --color-neutral-600: #5d594f;
-  --color-neutral-700: #46433b;
-  --color-neutral-800: #2e2c26;
-  --color-neutral-900: #1c1a16;
-  --color-neutral-950: #0e0d0a;
+  --color-neutral-50: #f7f9fc;
+  --color-neutral-100: #eef3f8;
+  --color-neutral-200: #dfe5ec;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #748399;
+  --color-neutral-600: #52657a;
+  --color-neutral-700: #334a62;
+  --color-neutral-800: #17304e;
+  --color-neutral-900: #071b33;
+  --color-neutral-950: #041426;
   --color-success: #5a8a5f;
   --color-success-bg: rgba(90, 138, 95, 0.12);
   --color-success-fg: #41673f;
@@ -293,11 +293,11 @@
   --color-info: #4a7a93;
   --color-info-bg: rgba(74, 122, 147, 0.12);
   --color-info-fg: #355d72;
-  --shadow-xs: 0 1px 2px 0 rgba(20, 18, 14, 0.04);
-  --shadow-sm: 0 1px 2px 0 rgba(20, 18, 14, 0.05), 0 1px 1px 0 rgba(20, 18, 14, 0.03);
-  --shadow-md: 0 4px 12px -2px rgba(20, 18, 14, 0.06), 0 2px 4px -1px rgba(20, 18, 14, 0.04);
-  --shadow-lg: 0 12px 32px -6px rgba(20, 18, 14, 0.10), 0 4px 12px -2px rgba(20, 18, 14, 0.06);
-  --shadow-xl: 0 24px 48px -12px rgba(20, 18, 14, 0.16), 0 8px 16px -4px rgba(20, 18, 14, 0.08);
+  --shadow-xs: 0 1px 2px rgba(7, 27, 51, 0.04);
+  --shadow-sm: 0 3px 10px rgba(7, 27, 51, 0.06);
+  --shadow-md: 0 8px 24px rgba(7, 27, 51, 0.08);
+  --shadow-lg: 0 16px 38px rgba(7, 27, 51, 0.11);
+  --shadow-xl: 0 24px 52px rgba(7, 27, 51, 0.15);
   --background: var(--color-bg);
   --foreground: var(--color-text);
   --card: var(--color-surface);
