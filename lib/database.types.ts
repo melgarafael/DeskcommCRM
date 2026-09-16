@@ -3173,6 +3173,9 @@ export type Database = {
       }
       contacts: {
         Row: {
+          advomax_match_checked_at: string | null
+          advomax_match_count: number
+          advomax_match_status: string | null
           ai_authorized_at: string | null
           ai_authorized_reason: string | null
           anonymized_at: string | null
@@ -3210,6 +3213,9 @@ export type Database = {
           wa_lid: string | null
         }
         Insert: {
+          advomax_match_checked_at?: string | null
+          advomax_match_count?: number
+          advomax_match_status?: string | null
           ai_authorized_at?: string | null
           ai_authorized_reason?: string | null
           anonymized_at?: string | null
@@ -3247,6 +3253,9 @@ export type Database = {
           wa_lid?: string | null
         }
         Update: {
+          advomax_match_checked_at?: string | null
+          advomax_match_count?: number
+          advomax_match_status?: string | null
           ai_authorized_at?: string | null
           ai_authorized_reason?: string | null
           anonymized_at?: string | null
@@ -8800,4 +8809,3 @@ export const Constants = {
     },
   },
 } as const
-

@@ -64,7 +64,7 @@ const conversation = {
   assignee_kind: "ai",
   snooze_until: null,
   tags: [],
-  contacts: { id: "ct-1", display_name: "Fulana", name: null, phone_number: "5511999" },
+  contacts: { id: "ct-1", display_name: "Fulana", name: null, phone_number: "5511999", advomax_match_status: "client", advomax_match_count: 1 },
 } as unknown as React.ComponentProps<typeof ConversationHeader>["conversation"];
 
 function renderHeader() {
@@ -77,6 +77,11 @@ function renderHeader() {
 }
 
 describe("header do inbox — não trava a largura da tela", () => {
+  it("mostra quando o telefone pertence a um cliente Advomax", () => {
+    renderHeader();
+    expect(screen.getByText("Cliente Advomax")).toBeTruthy();
+  });
+
   it("a barra de ações NÃO é shrink-0 — era isso que impunha o piso de 707px", () => {
     const { container } = renderHeader();
     const header = container.firstElementChild as HTMLElement;

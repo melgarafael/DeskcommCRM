@@ -46,6 +46,7 @@ import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
+import { identificarContatoNoAdvomax } from "@/lib/advomax/contact-match";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -116,6 +117,7 @@ export async function aplicarEfeitosPosEntrada(
   entrada: EntradaDeMensagem,
 ): Promise<void> {
   await aplicarOptOut(admin, entrada);
+  await identificarContatoNoAdvomax(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
   // A resposta do lead avança o follow-up AQUI. O despacho do agente (LLM)

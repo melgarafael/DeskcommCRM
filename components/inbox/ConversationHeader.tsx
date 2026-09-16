@@ -51,6 +51,13 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "Arquivada",
 };
 
+const ADVOMAX_MATCH_LABEL = {
+  client: "Cliente Advomax",
+  person: "Pessoa no Advomax",
+  ambiguous: "Confirmar cadastro",
+  not_found: "Novo contato",
+} as const;
+
 export function ConversationHeader({ conversation }: Props) {
   const t = useT();
   const { user } = useAuth();
@@ -148,6 +155,15 @@ export function ConversationHeader({ conversation }: Props) {
           <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
             {t(STATUS_LABEL[status] ?? status)}
           </Badge>
+          {c?.advomax_match_status && (
+            <Badge
+              variant={c.advomax_match_status === "client" ? "success" : c.advomax_match_status === "ambiguous" ? "warning" : "outline"}
+              className="h-4 px-1.5 text-[10px]"
+              title={c.advomax_match_status === "ambiguous" ? t(`${c.advomax_match_count ?? 0} cadastros usam este telefone`) : undefined}
+            >
+              {t(ADVOMAX_MATCH_LABEL[c.advomax_match_status])}
+            </Badge>
+          )}
           {/* Ao lado do estado, não escondido num painel: a pergunta "dá para
               escrever agora?" se faz ANTES de digitar, não depois de receber um
               `failed` com um código de cinco dígitos. */}

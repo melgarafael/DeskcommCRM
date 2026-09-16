@@ -88,7 +88,7 @@ const SELECT_COLS = `
   snooze_until, created_at, updated_at,
   bot_silenced_until, last_handoff_at,
   comando_da_conversa,
-  contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked, avatar_storage_path, force_human),
+  contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked, avatar_storage_path, force_human, advomax_match_status, advomax_match_count),
   channel_sessions:channel_session_id (phone_number, display_name, provider)
 `;
 

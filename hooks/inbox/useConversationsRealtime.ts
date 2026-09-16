@@ -27,6 +27,9 @@ export interface ContactSummary {
    * atendimento aparece. Opcional: conversas em cache de antes do campo existir.
    */
   force_human?: boolean | null;
+  /** Resultado da busca automática pelo telefone dentro do escritório Advomax. */
+  advomax_match_status?: "client" | "person" | "ambiguous" | "not_found" | null;
+  advomax_match_count?: number;
 }
 
 /**
