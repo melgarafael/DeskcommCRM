@@ -251,7 +251,7 @@ export function SidebarContent({
                           aria-current={isActive ? "page" : undefined}
                           onClick={onNavigate}
                           className={cn(
-                            "relative mx-[10px] flex min-h-11 items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
+                            "relative mx-[10px] flex min-h-11 w-[calc(100%-20px)] items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
                             isActive
                               ? "bg-[#071b33] font-semibold text-white shadow-sm"
                               : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
@@ -277,7 +277,7 @@ export function SidebarContent({
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
-                          "mx-[10px] flex min-h-11 items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
+                          "mx-[10px] flex min-h-11 w-[calc(100%-20px)] items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
                           pathname === group.hub.href
                             ? "bg-[#071b33] font-semibold text-white shadow-sm"
                             : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
@@ -303,7 +303,7 @@ export function SidebarContent({
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
-              "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              "mb-1 flex w-full items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
