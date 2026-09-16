@@ -189,9 +189,11 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
     // esconderia a tabela real. Só aplicamos o schema quando NÃO há nome de
     // tabela (listagem geral) e ele casa com o que existe.
     if (input.tabela) {
+      // Sem match, o resultado é VAZIO (tabela_nao_encontrada) — não o catálogo
+      // inteiro. O objetivo da tolerância é o schema inventado, não engolir um
+      // nome de tabela errado.
       const alvo = input.tabela.toLowerCase();
-      const porNome = tabelas.filter((t) => t.nome.toLowerCase().includes(alvo));
-      if (porNome.length > 0) tabelas = porNome;
+      tabelas = tabelas.filter((t) => t.nome.toLowerCase().includes(alvo));
     } else if (input.schema) {
       tabelas = tabelas.filter((t) => t.schema === input.schema);
     }
@@ -348,7 +350,7 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     }
 
     const pedido: PedidoDeLeitura = {
-      schema,
+      schema: schema!,
       tabela: input.tabela,
       colunas: input.colunas ?? [],
       filtros: filtros.map((f) => ({

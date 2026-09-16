@@ -14,7 +14,7 @@ describe("mensagem atual do cliente", () => {
   it("fica depois da memória anterior e vence um resumo contaminado", () => {
     const contexto: LeadContext = {
       lead_id: "11111111-1111-4111-8111-111111111111",
-      contact: { name: "Cristiano", phone: null, email: null, tags: [], is_blocked: false },
+      contact: { name: "Cristiano", phone: null, email: null, tags: [], is_blocked: false, custom_fields: {} },
       conversation_id: "22222222-2222-4222-8222-222222222222",
       last_human_decision: null,
       messages: [
@@ -54,7 +54,7 @@ describe("mensagem atual do cliente", () => {
   it("prefere a mensagem apontada pelo job a outra inbound no histórico", () => {
     const contexto: LeadContext = {
       lead_id: "11111111-1111-4111-8111-111111111111",
-      contact: { name: "Cristiano", phone: null, email: null, tags: [], is_blocked: false },
+      contact: { name: "Cristiano", phone: null, email: null, tags: [], is_blocked: false, custom_fields: {} },
       conversation_id: "22222222-2222-4222-8222-222222222222",
       last_human_decision: null,
       messages: [

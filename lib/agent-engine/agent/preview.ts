@@ -240,6 +240,7 @@ export function scenarioContext(
         email: null,
         tags: [],
         is_blocked: false,
+        custom_fields: {},
       },
       conversation_id: null,
       last_human_decision: null,

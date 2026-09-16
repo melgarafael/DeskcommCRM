@@ -65,7 +65,7 @@ function contextResult(overrides: Partial<LeadContextResult & { ok: true }> = {}
     },
     context: {
       lead_id: input.leadId,
-      contact: { name: "Rafael", phone: "+551199", email: null, tags: [], is_blocked: false },
+      contact: { name: "Rafael", phone: "+551199", email: null, tags: [], is_blocked: false, custom_fields: {} },
       conversation_id: input.conversationId,
       last_human_decision: null,
       messages: [
@@ -123,7 +123,7 @@ describe("generateDraftReply", () => {
       contextResult({
         context: {
           lead_id: input.leadId,
-          contact: { name: "Rafael", phone: null, email: null, tags: [], is_blocked: true },
+          contact: { name: "Rafael", phone: null, email: null, tags: [], is_blocked: true, custom_fields: {} },
           conversation_id: input.conversationId,
           last_human_decision: null,
           messages: [],
@@ -171,7 +171,7 @@ describe("generateDraftReply", () => {
       contextResult({
         context: {
           lead_id: input.leadId,
-          contact: { name: "Rafael", phone: null, email: null, tags: [], is_blocked: false },
+          contact: { name: "Rafael", phone: null, email: null, tags: [], is_blocked: false, custom_fields: {} },
           conversation_id: input.conversationId,
           last_human_decision: null,
           messages: [],

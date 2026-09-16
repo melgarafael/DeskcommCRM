@@ -4,7 +4,7 @@ import { __test_fitToBudget } from "@/lib/agent-engine/edge/crm/get-lead-context
 
 // fitToBudget é interno; exportar como __test_fitToBudget (ver Step 3).
 describe("fitToBudget — mídia no contexto", () => {
-  const base = { lead_id: "l1", contact: { name: "x", phone: null, email: null, tags: [], is_blocked: false }, conversation_id: "c1", last_human_decision: null };
+  const base = { lead_id: "l1", contact: { name: "x", phone: null, email: null, tags: [], is_blocked: false, custom_fields: {} }, conversation_id: "c1", last_human_decision: null };
 
   it("mídia com derivado: conteúdo presente + enquadrado (agente não nega a mídia)", () => {
     const ctx = __test_fitToBudget(base, [
