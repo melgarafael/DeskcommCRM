@@ -124,6 +124,8 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   ai_classify: "Interpretação da resposta",
   match_reply: "Resposta (texto)",
   repeat: "Repetição",
+  collect: "Pergunta",
+  skill: "Skill",
   action: "Mensagem",
   end: "Fim",
 };
@@ -172,6 +174,13 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         ...base,
         resumo: `repete até ${node.config.max_count} voltas conforme a resposta`,
       };
+    case "collect":
+      return {
+        ...base,
+        resumo: `pergunta "${node.config.label}" (campo ${node.config.key})`,
+      };
+    case "skill":
+      return { ...base, resumo: `puxa a skill ${node.config.skill_name}` };
     case "action":
       return {
         ...base,

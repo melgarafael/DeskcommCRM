@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag } from "@/lib/ui/icons";
+import { Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
 import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 
@@ -89,6 +89,24 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
     defaultLabel: "Repetir pela resposta",
     defaultConfig: () => ({ max_count: 12 }),
   },
+  collect: {
+    type: "collect",
+    paletteLabel: "Pergunta",
+    icon: Question,
+    chipClassName: "bg-info-bg text-info-fg",
+    borderClassName: "border-l-info",
+    defaultLabel: "Nova pergunta",
+    defaultConfig: () => ({ key: "novo_campo", label: "Nova pergunta", type: "text", required: true }),
+  },
+  skill: {
+    type: "skill",
+    paletteLabel: "Skill",
+    icon: PuzzlePiece,
+    chipClassName: "bg-accent-soft text-accent",
+    borderClassName: "border-l-accent-500",
+    defaultLabel: "Puxar skill",
+    defaultConfig: () => ({ skill_name: "nome-da-skill" }),
+  },
   action: {
     type: "action",
     paletteLabel: "Ação",
@@ -158,6 +176,14 @@ export function describeNodeConfig(
     case "repeat": {
       const c = config as ConfigOf<"repeat">;
       return `${t("até")} ${c.max_count} ${t("voltas")}`;
+    }
+    case "collect": {
+      const c = config as ConfigOf<"collect">;
+      return `${c.label} · ${c.required ? t("obrigatória") : t("opcional")}`;
+    }
+    case "skill": {
+      const c = config as ConfigOf<"skill">;
+      return c.skill_name;
     }
     case "action": {
       const c = config as ConfigOf<"action">;

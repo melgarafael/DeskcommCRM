@@ -7,6 +7,8 @@ import {
   matchReplyConfigSchema,
   actionConfigSchema,
   conditionConfigSchema,
+  collectConfigSchema,
+  skillConfigSchema,
   endConfigSchema,
   flowNodeSchema,
   flowEdgeSchema,
@@ -35,6 +37,8 @@ describe('graph-schema', () => {
         'ai_classify',
         'match_reply',
         'repeat',
+        'collect',
+        'skill',
         'action',
         'end',
       ]);
@@ -478,6 +482,71 @@ describe('graph-schema', () => {
         extra_key: 'should reject',
       });
       expect(result.success).toBe(false);
+    });
+
+    describe('ao_finalizar (ação ao concluir o fluxo de atendimento)', () => {
+      it('é opcional — grafos antigos continuam válidos', () => {
+        const result = endConfigSchema.safeParse({ outcome: 'converted' });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.ao_finalizar).toBeUndefined();
+      });
+
+      it('aceita skill com nome', () => {
+        const result = endConfigSchema.safeParse({
+          outcome: 'converted',
+          ao_finalizar: { tipo: 'skill', skill_name: 'fechamento-pagamento' },
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it('aceita ia com orientação', () => {
+        const result = endConfigSchema.safeParse({
+          outcome: 'exhausted',
+          ao_finalizar: { tipo: 'ia', prompt: 'retome o assunto da troca' },
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it('recusa skill sem nome', () => {
+        const result = endConfigSchema.safeParse({
+          outcome: 'converted',
+          ao_finalizar: { tipo: 'skill' },
+        });
+        expect(result.success).toBe(false);
+      });
+    });
+  });
+
+  describe('collectConfigSchema (pergunta do fluxo de atendimento)', () => {
+    it('aceita uma pergunta mínima e aplica os defaults', () => {
+      const result = collectConfigSchema.safeParse({ key: 'cidade', label: 'Cidade' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.type).toBe('text');
+        expect(result.data.required).toBe(true);
+      }
+    });
+
+    it('recusa chave com maiúscula (o CHECK do banco é minúsculo)', () => {
+      const result = collectConfigSchema.safeParse({ key: 'Cidade', label: 'Cidade' });
+      expect(result.success).toBe(false);
+    });
+
+    it('tipo select exige opções', () => {
+      expect(collectConfigSchema.safeParse({ key: 'cor', label: 'Cor', type: 'select' }).success).toBe(false);
+      expect(
+        collectConfigSchema.safeParse({ key: 'cor', label: 'Cor', type: 'select', options: ['Azul'] }).success,
+      ).toBe(true);
+    });
+  });
+
+  describe('skillConfigSchema', () => {
+    it('aceita o nome de uma skill', () => {
+      expect(skillConfigSchema.safeParse({ skill_name: 'catalogo-apresentacao' }).success).toBe(true);
+    });
+
+    it('recusa nome vazio', () => {
+      expect(skillConfigSchema.safeParse({ skill_name: '' }).success).toBe(false);
     });
   });
 
