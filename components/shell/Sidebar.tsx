@@ -201,7 +201,7 @@ export function SidebarContent({
         o PR: cada linha custa 32px (28px de altura + 4px de `space-y-1`), e
         trocar N destinos do menu por um único link de hub devolve (N-1)×32px.
       */}
-      <nav className="flex-1 space-y-2 overflow-y-auto bg-white p-3" aria-label={t("Navegação principal")}>
+      <nav className={cn("flex-1 space-y-2 overflow-y-auto bg-white", collapsed ? "p-1" : "p-3")} aria-label={t("Navegação principal")}>
         {grupos.map(({ group, items }) => {
           const tituloId = `nav-grupo-${group.id}`;
           // Recolhido o sidebar inteiro (rail de 64px), o grupo sempre mostra
