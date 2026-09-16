@@ -455,6 +455,16 @@ const AGENDA_STALL_PATTERN =
   /\b(vou|estou|iremos|vamos)\b[^.!?\n]{0,10}\b(verificando|verificar|confirmando|confirmar|consultando|consultar)\b[^.!?\n]{0,80}\b(hor[aá]rios?|agenda|disponibilidade|agendamento|marca[çc][aã]o|encaixe|vagas?)\b/i;
 
 /**
+ * A janela de 10 chars entre "vou" e o verbo de checagem não alcança a
+ * construção medida "vou chamar a responsável pra ver os horários": o
+ * verbo útil é "ver", e ele vem depois da pessoa. Sem isto o gate passa
+ * e o modelo encerra o turno sem crm_find_free_slots. Continua exigindo
+ * substantivo de agenda. `\bver\b` não casa "verificar".
+ */
+const AGENDA_STALL_VER_PATTERN =
+  /\b(vou|estou|iremos|vamos)\b[^.!?\n]{0,80}\bver\b[^.!?\n]{0,40}\b(hor[aá]rios?|agenda|disponibilidade|agendamento|marca[çc][aã]o|encaixe|vagas?)\b/i;
+
+/**
  * Padrão irmão do `AGENDA_STALL_PATTERN`, mas para a outra metade do mesmo defeito: não
  * uma PROMESSA de checar ("vou verificar"), e sim uma AFIRMAÇÃO de fato já consumado
  * ("está confirmado/agendado/marcado/certinho") — o texto exato do incidente original
@@ -510,7 +520,8 @@ export const agendaStallGate: Gate = {
     if (ctx.agenda === undefined || !ctx.agenda.active) return { pass: true };
     if (ctx.agenda.toolCalledThisTurn) return { pass: true };
     const bodySemAcento = semAcento(ctx.body);
-    const stall = AGENDA_STALL_PATTERN.test(bodySemAcento);
+    const stall =
+      AGENDA_STALL_PATTERN.test(bodySemAcento) || AGENDA_STALL_VER_PATTERN.test(bodySemAcento);
     const confirmedSemChecar = AGENDA_CONFIRMED_PATTERN.test(bodySemAcento);
     if (!stall && !confirmedSemChecar) return { pass: true };
     return {

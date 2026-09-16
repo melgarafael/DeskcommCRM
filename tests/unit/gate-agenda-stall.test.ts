@@ -110,6 +110,31 @@ describe("agendaStallGate — veta a promessa vazia, nunca a checagem de verdade
     expect(v.pass).toBe(true);
   });
 
+  const FRASE_CHAMAR_VER =
+    "Vou chamar a responsável pra ver os horários.";
+
+  it("veta 'vou chamar a responsável pra ver os horários' sem ferramenta (#970)", () => {
+    const v = agendaStallGate.evaluate(
+      baseCtx({
+        agenda: { active: true, podeMarcar: true, toolCalledThisTurn: false },
+        body: FRASE_CHAMAR_VER,
+      }),
+    );
+    expect(v.pass).toBe(false);
+    if (v.pass) throw new Error("inalcançável");
+    expect(v.code).toBe("agenda_stall_sem_ferramenta");
+  });
+
+  it("a mesma frase passa depois de crm_find_free_slots neste turno", () => {
+    const v = agendaStallGate.evaluate(
+      baseCtx({
+        agenda: { active: true, podeMarcar: true, toolCalledThisTurn: true },
+        body: FRASE_CHAMAR_VER,
+      }),
+    );
+    expect(v.pass).toBe(true);
+  });
+
   // Frase EXATA do incidente original (2026-08-29, tenant YADEA) que deu origem a este
   // gate — uma afirmação de FATO CONSUMADO, não uma promessa de checar. O
   // AGENDA_STALL_PATTERN sozinho não cobre ("vou/estou" + verbo de checagem não aparece
