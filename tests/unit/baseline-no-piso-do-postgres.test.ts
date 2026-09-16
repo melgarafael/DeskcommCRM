@@ -178,11 +178,6 @@ describe("o baseline fica no piso de Postgres que dizemos suportar", () => {
     // divergir, contribuidor roda `supabase start` e pega um servidor que não
     // corresponde ao que o CI testa — foi exatamente o achado M1 de
     // docs/testing/user-journey-map.md.
-    //
-    // E o e2e FICA no piso de propósito (issue #454): é o job mais caro do CI, e
-    // rodá-lo nas duas majors dobraria o custo do que a matriz do `invariants`
-    // (`test:db` em pg15 E pg17) já cobre — a major dói no DDL do baseline, que
-    // é justamente o que a matriz mede duas vezes.
     const toml = readFileSync(path.join(RAIZ, "supabase/config.toml"), "utf8");
     expect(toml).toMatch(/^\s*major_version\s*=\s*15\s*$/m);
   });
@@ -190,54 +185,7 @@ describe("o baseline fica no piso de Postgres que dizemos suportar", () => {
   it("o gate de banco roda no piso, não acima dele", () => {
     // Testar em pg17 um produto que dizemos instalar em pg15 é medir a
     // instalação mais rica que temos à mão, não a mais pobre que prometemos.
-    //
-    // A partir da #454 a major é PARÂMETRO (`TEST_DB_IMAGE`): a matriz do job
-    // `invariants` roda pg15 e pg17, e é assim que a segunda major passa a ser
-    // coberta. O que este teste guarda agora é o DEFAULT — quem digita
-    // `pnpm test:db` sem pedir nada continua medindo o piso. Default trocado
-    // para pg17, ou a forma `${VAR:-default}` perdida (o que desligaria a
-    // parametrização sem quebrar nada visível), fica vermelho aqui.
     const script = readFileSync(path.join(RAIZ, "scripts/test-db.sh"), "utf8");
-    expect(script).toMatch(
-      /^IMAGE="\$\{TEST_DB_IMAGE:-pgvector\/pgvector:pg15\}"$/m,
-    );
-
-    // O outro script de banco do repo sobe container pela mesma porta: default
-    // diferente do piso criaria a mesma divergência por outro caminho.
-    const comDados = readFileSync(
-      path.join(RAIZ, "scripts/test-update-com-dados.sh"),
-      "utf8",
-    );
-    expect(comDados).toMatch(
-      /^IMAGE="\$\{TEST_DB_IMAGE:-pgvector\/pgvector:pg15\}"$/m,
-    );
-  });
-
-  it("o CI cobre as DUAS majors, e não só o piso", () => {
-    // A #422 baixou o CI inteiro para pg15 e nada ficou no pg17: o piso é a
-    // régua da instalação, não a única major que existe (issue #454). Este teste
-    // é a catraca dessa cobertura — sem ele, apagar a matriz deixa o produto
-    // medindo uma major só, com o CI verde e ninguém avisando.
-    const ci = readFileSync(path.join(RAIZ, ".github/workflows/ci.yml"), "utf8");
-
-    // 1. A matriz existe e declara as duas.
-    expect(ci).toMatch(/^\s*pg:\s*\[\s*"15"\s*,\s*"17"\s*\]\s*$/m);
-
-    // 2. A major da matriz CHEGA nos scripts. Sem esta linha as duas pernas
-    //    sobem pg15 e a cobertura vira verde medindo a mesma coisa duas vezes.
-    expect(ci).toMatch(
-      /TEST_DB_IMAGE:\s*pgvector\/pgvector:pg\$\{\{\s*matrix\.pg\s*\}\}/,
-    );
-
-    // 3. O script que re-aplica o baseline sobre banco COM DADOS é invocado por
-    //    um job — ele existia desde 2026-08-27 e nenhum workflow o chamava.
-    expect(ci).toMatch(/run:\s*pnpm test:db:update\b/);
-
-    // 4. O check obrigatório `invariants` sobrevive à matriz. A branch
-    //    protection da `main` exige esse nome exato, e job de matrix se chama
-    //    `invariants-majors (15)`: sem a fachada, nenhum PR mergearia.
-    expect(ci).toMatch(
-      /^\s{2}invariants:\n\s+if: always\(\)\n\s+needs: \[invariants-majors\]/m,
-    );
+    expect(script).toMatch(/^IMAGE="pgvector\/pgvector:pg15"$/m);
   });
 });

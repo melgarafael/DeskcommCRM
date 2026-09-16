@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { branding } from "@/lib/branding";
 import { createClient } from "@/lib/supabase/server";
-import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
+import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 /**
@@ -20,7 +20,7 @@ export default async function LegalLayout({ children }: { children: React.ReactN
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const idioma = await idiomaDoVisitante(
+  const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
 

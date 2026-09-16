@@ -16,10 +16,6 @@
 #      e --desarmar limpa.
 #   5. pre-voo.sh acusa CHANGELOG à mão, migration sem tripla e branch atrasada,
 #      e sai com 0 (é medição, não veredito).
-#   6. sessao.sh lembra o contribuidor e cala para o mantenedor.
-#   7. O bloco do Passo 0 do SKILL.md — extraído do guia e EXECUTADO, em bash e zsh —
-#      sempre dá uma resposta ou um erro que se explica: também numa subpasta do clone,
-#      num clone sem o script e fora de qualquer clone, com e sem a instalação global.
 set -uo pipefail
 
 SKILL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.agents/skills/deskcomm-contribuir" && pwd)"
@@ -151,48 +147,6 @@ git -C "$clone" config user.email "rafael@maudibrasil.com.br"
 saida="$(cd "$clone" && bash .agents/skills/deskcomm-contribuir/scripts/hooks/sessao.sh)"; code=$?
 assert_exit "$code" 0 "mantenedor: sai com 0"
 if [ -z "$saida" ]; then ok "mantenedor: silêncio total"; else falha "mantenedor: silêncio total" "saída: $saida"; fi
-
-echo "7. Passo 0 do SKILL.md (o bloco que o guia manda colar)"
-# O bloco é LIDO do guia, não copiado para cá: o que está sob prova é o que a pessoa cola. Ele
-# já foi um laço que, sem o script ao alcance, não imprimia nada — e o gate do guia ("se a
-# resposta começar com...") ficava sem resposta para ler.
-bloco="$TMP/passo0.sh"
-awk '/^## Passo 0/ { p = 1 } p && /^```bash$/ { dentro = 1; next } dentro && /^```$/ { exit } dentro { print }' "$SKILL/SKILL.md" > "$bloco"
-if grep -q 'quem-sou.sh' "$bloco"; then ok "o bloco foi extraído do SKILL.md (guarda de vacuidade)"; else falha "o bloco foi extraído do SKILL.md (guarda de vacuidade)" "nada casou entre '## Passo 0' e o primeiro bloco bash"; fi
-sem_guias="$TMP/home-sem-guias"; mkdir -p "$sem_guias"
-com_guias="$TMP/home-com-guias"; mkdir -p "$com_guias/.claude/skills"; cp -R "$SKILL" "$com_guias/.claude/skills/"
-clone7="$TMP/c7"; clonar "$clone7" "alguem@fork.dev"; mkdir -p "$clone7/app/api"
-antigo="$TMP/c7-antigo"; git init -q "$antigo"; mkdir -p "$antigo/app"   # fork de antes do script
-fora="$TMP/fora-de-clone"; mkdir -p "$fora"
-passo0() {  # passo0 <shell> <home> <pasta> → $out, $err, $code
-  out="$(cd "$3" && HOME="$2" "$1" "$bloco" 2>"$TMP/passo0.err")"; code=$?
-  err="$(cat "$TMP/passo0.err")"
-}
-# zsh é o shell padrão do macOS, onde a pessoa cola; -f para não ler o .zshrc de quem roda o teste.
-printf '#!/bin/sh\nexec zsh -f "$@"\n' > "$TMP/zsh-sem-rc"; chmod +x "$TMP/zsh-sem-rc"
-for sh in bash zsh; do
-  if ! command -v "$sh" >/dev/null 2>&1; then echo "  ($sh ausente nesta máquina: o bloco NÃO foi medido nele)"; continue; fi
-  cmd="$sh"; [ "$sh" = bash ] || cmd="$TMP/zsh-sem-rc"
-  passo0 "$cmd" "$sem_guias" "$clone7"
-  assert_contains "$out" "^contribuidor — e-mail do git: alguem@fork.dev" "($sh) raiz do clone, sem instalação global: responde pelo script do clone"
-  passo0 "$cmd" "$sem_guias" "$clone7/app/api"
-  assert_contains "$out" "^contribuidor — e-mail do git: alguem@fork.dev" "($sh) subpasta do clone, sem instalação global: responde igual à raiz"
-  git -C "$clone7" config user.email "rafael@maudibrasil.com.br"
-  passo0 "$cmd" "$sem_guias" "$clone7/app/api"
-  assert_contains "$out" "^mantenedor" "($sh) subpasta do clone do mantenedor: responde mantenedor (o guia não o trata como contribuidor)"
-  git -C "$clone7" config user.email "alguem@fork.dev"
-  passo0 "$cmd" "$sem_guias" "$antigo/app"
-  if [ "$code" != 0 ] && [ -z "$out" ]; then ok "($sh) clone sem o script, sem instalação global: sai com erro e sem resposta inventada"; else falha "($sh) clone sem o script, sem instalação global: sai com erro e sem resposta inventada" "code=$code out=$out"; fi
-  assert_contains "$err" "^NÃO MEDIDO — não achei o quem-sou.sh no clone .*c7-antigo" "($sh) e o erro diz o que não achou e onde procurou"
-  assert_contains "$err" "comando de uma linha do README (https://github.com/melgarafael/DeskcommCRM#readme) e rode de novo" "($sh) e diz como sair dali"
-  passo0 "$cmd" "$sem_guias" "$fora"
-  if [ "$code" != 0 ] && [ -z "$out" ]; then ok "($sh) fora de clone, sem instalação global: sai com erro e sem resposta inventada"; else falha "($sh) fora de clone, sem instalação global: sai com erro e sem resposta inventada" "code=$code out=$out"; fi
-  assert_contains "$err" "^NÃO MEDIDO — não achei o quem-sou.sh nem nas pastas globais" "($sh) e o erro não finge que havia clone"
-  passo0 "$cmd" "$com_guias" "$fora"
-  if [ "$code" = 0 ] && [ "$out" = "contribuidor — fora de um clone git" ]; then ok "($sh) fora de clone, com instalação global: a resposta que o guia promete"; else falha "($sh) fora de clone, com instalação global: a resposta que o guia promete" "code=$code out=$out err=$err"; fi
-  passo0 "$cmd" "$com_guias" "$antigo/app"
-  assert_contains "$out" "^contribuidor — e-mail do git: " "($sh) clone sem o script, com instalação global: mede o clone pelo script global"
-done
 
 echo
 if [ "$falhas" = 0 ]; then echo "deskcomm-contribuir: $casos casos, todos verdes"; exit 0

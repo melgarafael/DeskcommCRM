@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { MfaForm } from "@/components/auth/MfaForm";
-import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
+import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const metadata = { title: "Verificação em duas etapas" };
@@ -23,7 +23,7 @@ export default async function MfaChallengePage({
   const hasVerified = !!factorsData?.totp?.some((f) => f.status === "verified");
   if (!hasVerified) redirect("/app");
 
-  const idioma = await idiomaDoVisitante(
+  const idioma = normalizarIdioma(
     (user.user_metadata?.locale as string | undefined) ?? null,
   );
   const t = (texto: string) => traduzir(texto, idioma);

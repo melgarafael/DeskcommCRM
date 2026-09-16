@@ -86,7 +86,7 @@ import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
 import { runCronLoop } from "@/lib/agent-engine/cron/scheduler";
 import { createPool } from "@/lib/agent-engine/db/pool";
 import { runDrainLoop } from "@/lib/agent-engine/edge/crm/drain";
-import { runEventLogDrainLoop, prontidaoDoLacoDeEventLog } from "@/lib/event-log/drain-loop";
+import { runEventLogDrainLoop } from "@/lib/event-log/drain-loop";
 import { crmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/crm/mcp-client";
 import { enforceHolds, sessionHealthMetrics } from "@/lib/agent-engine/edge/crm/session-watchdog";
 import { runVoiceCallsBridgeLoop } from "@/lib/wacalls/events-bridge";
@@ -220,31 +220,10 @@ export function createHealthzServer(
         if (row.status in queue) queue[row.status as keyof typeof queue] = row.n;
       }
       const sessions = await sessionHealthMetrics(pool);
-      // O laço do event_log é informação de saúde de PRIMEIRA classe (#604): na
-      // #648 este mesmo handler respondia 200 com o laço parado havia dez dias.
-      // `event_log_drain` vai nos DOIS ramos, 200 e 503, de propósito — a
-      // prontidão do laço não depende do banco estar de pé, e é ela que o gate
-      // de publicação exige antes de publicar.
-      respond(res, 200, {
-        status: "ok",
-        db: "ok",
-        queue,
-        sessions,
-        event_log_drain: prontidaoDoLacoDeEventLog(),
-        uptime_s,
-      });
+      respond(res, 200, { status: "ok", db: "ok", queue, sessions, uptime_s });
     } catch (err) {
       log.error("healthz: banco indisponível", { error: errMsg(err) });
-      respond(res, 503, {
-        status: "degraded",
-        db: "error",
-        queue: null,
-        sessions: null,
-        // Mesmo com o banco fora, a prontidão do laço aparece: é ela que o gate
-        // de publicação (#604) lê antes de deixar as imagens irem para o canal.
-        event_log_drain: prontidaoDoLacoDeEventLog(),
-        uptime_s,
-      });
+      respond(res, 503, { status: "degraded", db: "error", queue: null, sessions: null, uptime_s });
     }
   };
   return http.createServer((req, res) => void handle(req, res));

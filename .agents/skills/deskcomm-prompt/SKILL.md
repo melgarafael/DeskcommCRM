@@ -1,6 +1,6 @@
 ---
 name: deskcomm-prompt
-description: 'Guia para afinar o prompt de um agente de IA do DeskcommCRM que não está performando — como um engenheiro de prompt sênior de atendimento e vendas, com dados da operação, não achismo. Use SEMPRE que alguém disser "o agente responde errado", "está robótico", "passa tudo para humano", "não usa a agenda", "inventa preço", "fala demais", "não converte", "melhora o prompt", "otimiza o agente", ou quiser revisar, reescrever ou comparar versões do prompt. Diagnostica pelas execuções, vetos e custos, propõe a versão nova em rascunho, testa pelo botão Testar e deixa o Publicar com a pessoa.'
+description: Guia para afinar o prompt de um agente de IA do DeskcommCRM que não está performando — como um engenheiro de prompt sênior de atendimento e vendas, com dados da operação, não achismo. Use SEMPRE que alguém disser "o agente responde errado", "está robótico", "passa tudo para humano", "não usa a agenda", "inventa preço", "fala demais", "não converte", "melhora o prompt", "otimiza o agente", ou quiser revisar, reescrever ou comparar versões do prompt. Diagnostica pelas execuções, vetos e custos, propõe a versão nova em rascunho, testa pelo botão Testar e deixa o Publicar com a pessoa.
 metadata:
   publico: dono do negócio, agência, implantador
   regra: o prompt do agente é UMA camada; o motor injeta o resto e barra na saída

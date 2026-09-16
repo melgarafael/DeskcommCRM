@@ -58,7 +58,7 @@ export interface EventLogDrainKnobs {
 
 // Assinatura escrita à mão em vez de `typeof import(...)`: a regra
 // `consistent-type-imports` proíbe a anotação `import()`. A atribuição em
-// `carregarDepsDoLaco` é o que mantém as duas honestas — divergiu, o typecheck acusa.
+// `carregarDeps` é o que mantém as duas honestas — divergiu, o typecheck acusa.
 type DrainFn = (admin: SupabaseClient, opts?: { limit?: number }) => Promise<DrainSummary>;
 
 interface Deps {
@@ -67,81 +67,21 @@ interface Deps {
 }
 
 /**
- * A marca que o gate de publicação procura no log do worker.
- *
- * Existe porque `/healthz` de pé NÃO prova laço carregado: na #648 o `import`
- * de `@react-pdf/hyphenate` estourava só sob `tsx`, `carregarDeps()` engolia o
- * erro num `log.warn` e o worker seguiu saudável por dez dias com o event_log
- * parado (issue #604).
- *
- * O texto é CONTRATO entre três lugares: este arquivo,
- * `scripts/sonda-do-laco-de-event-log.ts` e o job do
- * `.github/workflows/publish-image.yml`. O teste
- * `tests/unit/gate-de-publicacao-do-laco-de-event-log.test.ts` compara os dois
- * últimos com este literal — mudar a marca sem mudar quem a procura deixa o
- * CI vermelho, em vez de deixar o gate cego em silêncio.
- */
-export const MARCA_LACO_CARREGADO = 'event-log drain: laço carregado';
-
-/** Estado do laço para quem pergunta de fora — hoje, o `/healthz` do worker. */
-export interface ProntidaoDoLacoDeEventLog {
-  /** `true` só depois de a cadeia inteira (drain + handlers + admin) montar. */
-  carregado: boolean;
-  /** Motivo curto quando `carregado: false`; `null` quando carregou. */
-  motivo: string | null;
-}
-
-const AINDA_NAO_TENTOU = 'o laço ainda não tentou carregar';
-
-let prontidao: ProntidaoDoLacoDeEventLog = {
-  carregado: false,
-  motivo: AINDA_NAO_TENTOU,
-};
-
-/**
- * Cópia do estado. Nunca lança: o `/healthz` não pode ser o motivo de o worker
- * cair — quem está degradado não ganha o direito de derrubar o resto.
- */
-export function prontidaoDoLacoDeEventLog(): ProntidaoDoLacoDeEventLog {
-  return { carregado: prontidao.carregado, motivo: prontidao.motivo };
-}
-
-/** Só para teste: volta ao estado de quem ainda não tentou carregar. */
-export function _reiniciarProntidaoDoLaco(): void {
-  prontidao = { carregado: false, motivo: AINDA_NAO_TENTOU };
-}
-
-/**
  * Carrega a cadeia do drain sem deixar que ela derrube o worker.
  *
  * `null` = o laço não roda (e o porquê já foi para o log). Nunca lança.
- *
- * É exportada de propósito: o gate de publicação roda ESTA função, dentro da
- * imagem, antes de publicar (`scripts/sonda-do-laco-de-event-log.ts`). Era
- * exatamente o caminho de boot que ficou quebrado dez dias com o teste verde —
- * um gate que exercitasse uma cópia da cadeia poderia ficar verde enquanto a
- * produção quebrava.
  */
-export async function carregarDepsDoLaco(log: Logger): Promise<Deps | null> {
+async function carregarDeps(log: Logger): Promise<Deps | null> {
   try {
     const { drainEventLog } = await import('@/lib/event-log/drain');
     const { ensureHandlersRegistered } = await import('@/lib/event-log/register-handlers');
     const { createAdminClient } = await import('@/lib/supabase/admin');
     ensureHandlersRegistered();
-    const deps: Deps = { drainEventLog, admin: createAdminClient() };
-    prontidao = { carregado: true, motivo: null };
-    log.info(MARCA_LACO_CARREGADO, { carregado: true });
-    return deps;
+    return { drainEventLog, admin: createAdminClient() };
   } catch (err) {
-    const motivo = (err instanceof Error ? err.message : String(err)).slice(0, 300);
-    prontidao = { carregado: false, motivo };
-    // `error`, e não o `warn` de antes: laço que não carrega é INCIDENTE, não
-    // aviso. Com `warn` o defeito da #648 era indistinguível de ruído por dez
-    // dias; agora ele é o que o gate procura no log e o que o `/healthz`
-    // publica em `event_log_drain`.
-    log.error(
+    log.warn(
       'event-log drain OFF — não consegui montar o admin client; os handlers seguem só pelo cron event-log-drain',
-      { error: motivo },
+      { error: (err instanceof Error ? err.message : String(err)).slice(0, 300) },
     );
     return null;
   }
@@ -180,7 +120,7 @@ export async function runEventLogDrainLoop(
   log: Logger,
   signal: AbortSignal,
 ): Promise<void> {
-  const deps = await carregarDepsDoLaco(log);
+  const deps = await carregarDeps(log);
   if (!deps) return;
 
   while (!signal.aborted) {

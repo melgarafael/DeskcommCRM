@@ -96,7 +96,7 @@ describe("o canal `stable` move em bloco", () => {
     ).toEqual([]);
   });
 
-  it("o job de promoção espera o build, o boot do app E as imagens de fundo — nem uma a menos", () => {
+  it("o job de promoção espera as três imagens E o boot do app — nem uma a menos", () => {
     const needs = /needs:\s*\[([^\]]*)\]/.exec(corpo(publish, "promover-stable"))?.[1];
     expect(needs, "o job de promoção não declara `needs`").toBeDefined();
     // Conjunto exato, não `toContain`: exigir a presença de um deixaria remover
@@ -104,10 +104,6 @@ describe("o canal `stable` move em bloco", () => {
     expect(needs?.split(",").map((s) => s.trim()).sort()).toEqual([
       "build-and-push",
       "imagem-do-app-sobe",
-      // As imagens de fundo entram na #604: `deskcomm-worker` e
-      // `deskcomm-scheduler` construíam e publicavam sem que nenhum job as
-      // executasse — e o canal `stable` andava sobre um laço morto.
-      "imagens-de-fundo-sobem",
     ]);
   });
 

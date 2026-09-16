@@ -123,12 +123,6 @@ export interface InboundMessageEvent {
     /** Nota de voz de verdade (não anexo de áudio). */
     voice: boolean;
   } | null;
-  /**
-   * `messages[].referral` cru — vem na mensagem que o app do cliente manda ao
-   * clicar num anúncio "Clique para o WhatsApp". Repassado sem interpretar: a
-   * leitura é de `extrairAtribuicaoMeta`. Opcional porque só a ingestão o lê.
-   */
-  referral?: unknown;
 }
 
 /** Status de entrega de uma mensagem que ENVIAMOS (sent/delivered/read/failed). */
@@ -239,7 +233,6 @@ export function parseMetaWebhook(envelope: MetaWebhookEnvelope): MetaWebhookEven
                     voice: corpoMidia.voice === true,
                   }
                 : null,
-            referral: raw.referral ?? null,
           });
         }
         continue;

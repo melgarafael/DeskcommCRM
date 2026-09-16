@@ -152,7 +152,7 @@ export function InteligenciaDele({ inicial }: { inicial: EstadoDaChave }) {
               fd.set("api_key", apiKey);
               const r = await salvarChaveDaIa(fd);
               setSalvando(false);
-              if (!r.ok) return toast.error(t(r.erro));
+              if (!r.ok) return toast.error(r.erro);
               // A chave sai da memória da tela no mesmo instante em que é aceita.
               setApiKey("");
               setChave({

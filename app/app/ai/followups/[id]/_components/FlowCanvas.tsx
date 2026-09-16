@@ -30,7 +30,6 @@ import {
   type RFNodeData,
 } from "@/lib/followup/graph-mappers";
 import { conditionLabel } from "@/lib/followup/edge-condition-options";
-import { nextSequenceId } from "@/lib/followup/next-sequence-id";
 import {
   branchIdForCondition,
   conditionForBranch,
@@ -93,11 +92,8 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(initial.edges);
   const [savedGraph, setSavedGraph] = useState<FlowGraph>(initialData.draft_graph ?? EMPTY_GRAPH);
-  // Continue after the largest persisted suffix. Starting again at 1 makes a
-  // newly-created node/edge reuse an existing React Flow key and visually
-  // replace a connection in older drafts.
-  const nextId = useRef(nextSequenceId(initial.nodes.map((node) => node.id)));
-  const nextEdgeId = useRef(nextSequenceId(initial.edges.map((edge) => edge.id)));
+  const nextId = useRef(1);
+  const nextEdgeId = useRef(1);
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);

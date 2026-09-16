@@ -14,7 +14,7 @@ import { verifyInviteToken } from "@/lib/auth/invite-token";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 import { AcceptInviteForm } from "./AcceptInviteForm";
-import { idiomaDoVisitante } from "@/lib/i18n/idiomaAnonimo";
+import { normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -30,13 +30,12 @@ export default async function AcceptInvitePage({ params }: PageProps) {
   // então resolve o idioma direto, como `admin/forbidden/page.tsx`. Buscado
   // ANTES do teto de tentativas e da validação do token porque toda ramificação
   // abaixo (inclusive as de erro) precisa do mesmo idioma — quem ainda não tem
-  // conta cai no ramo sem `user` e usa o `Accept-Language` do navegador antes
-  // do padrão (`idiomaDoVisitante`).
+  // conta cai no ramo sem `user` e cai no idioma padrão.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const idioma = await idiomaDoVisitante(
+  const idioma = normalizarIdioma(
     (user?.user_metadata?.locale as string | undefined) ?? null,
   );
   const t = (texto: string) => traduzir(texto, idioma);

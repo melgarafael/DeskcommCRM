@@ -130,28 +130,7 @@ export function ConversationListItem({
   const overflow = tags.length - visibleTags.length;
   const preview = conversation.last_message_preview?.trim() || t("Sem mensagens");
   const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
-  const naFila = queuePosition !== undefined;
-  /**
-   * A HORA DO CANTO RESPONDE À MESMA PERGUNTA QUE ORDENA A LISTA.
-   *
-   * Na Fila a lista sai por TEMPO DE ESPERA (`ORDEM_DA_ESPERA`: `last_inbound_at`
-   * crescente), mas a hora do canto era sempre a da última mensagem de QUALQUER
-   * lado. Bastava o atendente responder para o número daquela linha pular para
-   * agora sem que a linha saísse do lugar: lida de cima para baixo, a coluna de
-   * horas saía fora de ordem (#464 — "a lista parece aleatória") embaixo de uma
-   * lista que estava certa.
-   *
-   * Fora da Fila a ordem é por atividade recente, e aí a última mensagem de
-   * qualquer lado É a resposta certa — a régua do relógio segue a régua da lista.
-   *
-   * A origem é a MESMA da pílula "Aguardando há…" (`waitingLabel`), inclusive no
-   * fallback: duas respostas para o mesmo "desde quando?" na mesma linha, a 40px
-   * de distância, seriam a próxima divergência.
-   */
-  const horaDaOrdem = naFila
-    ? conversation.last_inbound_at ?? conversation.created_at
-    : conversation.last_message_at;
-  const time = relativeTime(horaDaOrdem, localeDaData);
+  const time = relativeTime(conversation.last_message_at, localeDaData);
   const unread = conversation.unread_count_for_assignee ?? 0;
 
 
@@ -231,7 +210,7 @@ export function ConversationListItem({
       </div>
 
       <div className="min-w-0 flex-1">
-        {naFila && (
+        {queuePosition !== undefined && (
           <div className="mb-1 flex items-center gap-1.5">
             <span
               className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-medium tabular-nums text-accent"
@@ -254,15 +233,7 @@ export function ConversationListItem({
           >
             {displayName}
           </span>
-          <span
-            className="shrink-0 text-[11px] tabular-nums text-text-subtle"
-            // O mesmo lugar da tela mostra duas coisas diferentes conforme a aba:
-            // na Fila é "desde quando o cliente escreveu", nas outras é "há quanto
-            // tempo a conversa mexeu". O rótulo existe só onde a leitura muda.
-            title={naFila ? t("Última mensagem do cliente") : undefined}
-          >
-            {time}
-          </span>
+          <span className="shrink-0 text-[11px] tabular-nums text-text-subtle">{time}</span>
         </div>
 
         <div className="mt-0.5 flex items-center justify-between gap-2">

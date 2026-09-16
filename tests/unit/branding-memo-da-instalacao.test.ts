@@ -55,13 +55,6 @@ const banco = vi.hoisted(() => ({
    * lost-update observável sem `sleep` e sem depender de timing.
    */
   portao: null as { liberar: () => void; esperar: Promise<void> } | null,
-  /**
-   * O banco que NÃO FALOU. `null` = leitura normal (todos os casos que já
-   * existiam aqui). Com um código armado, `maybeSingle` devolve `error` e
-   * `lerLinha` passa a responder "erro" — é a terceira saída da leitura, e é
-   * ela que o caso da falha pós-escrita mede.
-   */
-  erro: null as { code: string; message: string } | null,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -79,7 +72,6 @@ vi.mock("@/lib/supabase/admin", () => ({
             // controle o pegou).
             const capturada = banco.linha;
             if (banco.portao) await banco.portao.esperar;
-            if (banco.erro) return { data: null, error: banco.erro };
             return { data: capturada, error: null };
           },
         }),
@@ -247,72 +239,5 @@ describe("uma escrita DURANTE a leitura não pode ser desfeita pela leitura", ()
       expect(banco.leituras, "a segunda leitura tem de vir do memo").toBe(depoisDaPrimeira);
       expect(depoisDaPrimeira, "a primeira tem de ter ido ao banco").toBeGreaterThan(primeira);
     })();
-  });
-});
-
-/**
- * ═══ A JANELA QUE A GERAÇÃO NÃO COBRE: a leitura que FALHOU depois da escrita ═══
- *
- * A guarda de geração compara o número antes e depois do `await`. Ela fecha a
- * leitura que volta velha porque começou ANTES da invalidação. Ela NÃO fecha — e
- * por construção não pode fechar — a leitura que FALHA DEPOIS dela: ali a
- * geração não mudou na segunda conferência, a guarda passa, e `null` entra no
- * memo com TTL novo.
- *
- * O sintoma é o mesmo do bloco anterior, por outra porta. `null` significa "o
- * banco não falou" — contrato declarado de `marcaDaInstalacao` —, o resolvedor
- * cai na camada do `.env` e a barra lateral passa a desenhar a marca do PRODUTO:
- * `aside img` não existe, e por até 30s, atrás do MESMO toast verde de "Logo
- * atualizado.".
- *
- * É a única ordem que `invalidarMarcaDaInstalacao()` não alcança, e é a que a
- * issue #895 mede: POST 200 às 10:44:02.163Z, e 15s depois a barra lateral ainda
- * sem logo.
- */
-describe("a leitura que FALHOU depois da escrita não vira fato memoizado", () => {
-  beforeEach(async () => {
-    banco.linha = COM_LOGO;
-    banco.leituras = 0;
-    banco.portao = null;
-    banco.erro = null;
-    (await instancia()).invalidarMarcaDaInstalacao();
-  });
-
-  it("o render seguinte PERGUNTA ao banco de novo, e enxerga o logo subido", async () => {
-    const tela = await instancia();
-    const rota = await instancia();
-
-    // 1. O upload terminou: 200 e invalidação, na ordem real da rota
-    //    (`gravarCaminho` grava e SÓ DEPOIS invalida).
-    rota.invalidarMarcaDaInstalacao();
-
-    // 2. E é DEPOIS dela que a leitura do render falha — um pooler sem
-    //    resposta, no exato instante em que a tela vai desenhar a barra.
-    banco.erro = { code: "503", message: "pooler sem resposta" };
-    expect(await tela.marcaDaInstalacao(), "na falha vale o `.env` deste render").toBeNull();
-    expect(banco.leituras, "controle: a leitura falhando foi ao banco uma vez").toBe(1);
-
-    // 3. O banco volta. A leitura seguinte TEM de ir ao banco: se a falha tiver
-    //    sido memoizada, ela devolve `null` do memo e a barra lateral continua
-    //    desenhando a marca do produto por um TTL inteiro. É esta asserção que
-    //    fica vermelha sem o conserto.
-    banco.erro = null;
-    const linha = await tela.marcaDaInstalacao();
-    expect(
-      banco.leituras,
-      "a falha não pode ser servida do memo como se fosse leitura",
-    ).toBe(2);
-    expect(linha?.logo_path, "o logo recém-subido tem de aparecer no render seguinte").toBe(
-      CAMINHO_SUBIDO,
-    );
-  });
-
-  it("CONTROLE: leitura bem-sucedida continua sendo memoizada", async () => {
-    // Sem este caso, o conserto passaria verde com o memo simplesmente DESLIGADO
-    // — e aí toda tela pagaria uma consulta por render sem ninguém notar.
-    const tela = await instancia();
-    expect((await tela.marcaDaInstalacao())?.logo_path).toBe(CAMINHO_SUBIDO);
-    await tela.marcaDaInstalacao();
-    expect(banco.leituras, "uma ida ao banco por TTL continua sendo o contrato").toBe(1);
   });
 });

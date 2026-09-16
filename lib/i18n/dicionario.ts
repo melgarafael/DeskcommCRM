@@ -37,66 +37,6 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
-  // vocabulario.ts (followups) — MatchReplyForm.tsx não traduzia, ClassifyForm.tsx sim.
-  "Se a informação já existir": { es: "Si la información ya existe" },
-  "Perguntar de novo e substituir": { es: "Preguntar de nuevo y reemplazar" },
-  "Confirmar com o usuário": { es: "Confirmar con el usuario" },
-  "A captação ou a ficha podem já ter o nome (ou o campo). Escolha se o fluxo pula, pergunta de novo ou pede confirmação.": {
-    es: "La captación o la ficha pueden ya tener el nombre (o el campo). Elige si el flujo lo salta, pregunta de nuevo o pide confirmación.",
-  },
-  // chaveDaIa.ts (onboarding/setup-ai) — erros do cadastro da chave de IA.
-  // "Sua sessão expirou. Entre de novo." já existe (politicaDeMfa.ts), reaproveitada aqui.
-  "Só um administrador pode cadastrar a chave da inteligência artificial.": {
-    es: "Solo un administrador puede registrar la clave de la inteligencia artificial.",
-  },
-  "Escolha qual inteligência artificial você contratou.": {
-    es: "Elige qué inteligencia artificial contrataste.",
-  },
-  "Essa chave parece incompleta. Cole a chave inteira, do começo ao fim.": {
-    es: "Esa clave parece incompleta. Pega la clave entera, de principio a fin.",
-  },
-  "Já existe uma chave cadastrada com esse nome. Veja em IA › Credenciais.": {
-    es: "Ya existe una clave registrada con ese nombre. Revisa en IA › Credenciales.",
-  },
-  "Não consegui guardar a chave agora. Tente de novo.": {
-    es: "No pude guardar la clave ahora. Intenta de nuevo.",
-  },
-  // AgentForm.tsx — prompt padrão de um agente novo (vira o system_prompt de
-  // verdade se ninguém editar, por isso instrui a IA a responder em espanhol).
-  "Você é um atendente. Responda de forma educada e clara, em pt-BR.": {
-    es: "Eres un agente de atención al cliente. Responde de forma educada y clara, en español.",
-  },
-  // PACOTES (lib/mcp/tools/pacotes.ts) — rótulo/explicação dos pacotes de
-  // capacidade na tela de criar/editar agente (ToolPicker.tsx).
-  "Atender e responder": { es: "Atender y responder" },
-  "O agente lê a conversa, entende o histórico e responde ao cliente sem pedir que ele repita o que já disse.": {
-    es: "El agente lee la conversación, entiende el historial y responde al cliente sin pedirle que repita lo que ya dijo.",
-  },
-  "Vender e mover o funil": { es: "Vender y mover el embudo" },
-  "O agente registra a oportunidade, atualiza o negócio e move o cliente de etapa conforme a conversa avança.": {
-    es: "El agente registra la oportunidad, actualiza el negocio y mueve al cliente de etapa a medida que avanza la conversación.",
-  },
-  "Não perder o cliente": { es: "No perder al cliente" },
-  "O agente agenda retornos e acompanha quem esfriou, para que nenhum interessado morra por falta de resposta.": {
-    es: "El agente agenda seguimientos y da seguimiento a quien se enfrió, para que ningún interesado se pierda por falta de respuesta.",
-  },
-  "Passar para um humano": { es: "Pasar a un humano" },
-  "O agente reconhece quando não é o caso dele resolver, chama uma pessoa e entrega o resumo do que já aconteceu.": {
-    es: "El agente reconoce cuándo no le corresponde resolverlo, llama a una persona y entrega el resumen de lo que ya pasó.",
-  },
-  "Organizar a operação": { es: "Organizar la operación" },
-  "O agente mantém a casa em ordem: marcadores, etapas do funil, avisos automáticos e distribuição de trabalho.": {
-    es: "El agente mantiene todo en orden: etiquetas, etapas del embudo, avisos automáticos y distribución del trabajo.",
-  },
-  "Aprender e evoluir": { es: "Aprender y evolucionar" },
-  "O agente consulta o que a empresa já sabe, aprende com os atendimentos e sugere melhorias para você aprovar.": {
-    es: "El agente consulta lo que la empresa ya sabe, aprende de las atenciones y sugiere mejoras para que las apruebes.",
-  },
-  // vocabulario.ts (followups) — ESPERA_PELA_RESPOSTA.ajuda era string pronta
-  // em português; virou função composta com t() (ver lib/followup/vocabulario.ts).
-  "Se o contato não responder dentro desse tempo, o fluxo segue sozinho pelo caminho": {
-    es: "Si el contacto no responde dentro de ese tiempo, el flujo sigue solo por el camino",
-  },
   "Versão publicada": { es: "Versión publicada" },
   "Publicado em": { es: "Publicado el" },
   "Nenhum agente publicado": { es: "Ningún agente publicado" },
@@ -483,10 +423,6 @@ export const DICIONARIO: Traducoes = {
   Minhas: { es: "Mías" },
   Todas: { es: "Todas" },
   Fechadas: { es: "Cerradas" },
-  // O estado `archived` é terminal como `closed`, mas conta outra coisa: é a
-  // pasta do histórico. Sem entrada própria, a aba "Arquivadas" apareceria
-  // traduzida como "Cerradas" para um operador hispanofalante.
-  Arquivadas: { es: "Archivadas" },
   IA: { es: "IA" },
   "Sem mensagens": { es: "Sin mensajes" },
   "Nenhuma conversa": { es: "Ninguna conversación" },
@@ -951,7 +887,6 @@ export const DICIONARIO: Traducoes = {
   // ─── Agentes de IA: seletor de modelo, capacidades, credencial, handoff ───
   Modelo: { es: "Modelo" },
   "Selecione um modelo": { es: "Selecciona un modelo" },
-  "Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
   "Nenhum modelo disponível": { es: "Ningún modelo disponible" },
   "Nenhuma capacidade disponível ainda para esta jornada.": {
     es: "Todavía no hay capacidades disponibles para esta jornada.",
@@ -1509,7 +1444,6 @@ export const DICIONARIO: Traducoes = {
   "é pelo menos": { es: "es al menos" },
   "é no máximo": { es: "es como máximo" },
   "tem a etiqueta": { es: "tiene la etiqueta" },
-  "tem a tag": { es: "tiene la etiqueta" },
   "não tem a etiqueta": { es: "no tiene la etiqueta" },
   "é exatamente": { es: "es exactamente" },
   "não é": { es: "no es" },
@@ -4023,12 +3957,6 @@ export const DICIONARIO: Traducoes = {
   "Não consegui iniciar a atualização. Tente de novo em instantes.": {
     es: "No pude iniciar la actualización. Intenta de nuevo en instantes.",
   },
-  // ── Os três estados do plantão do atendente. "Fora do horário" é estado
-  //    PRÓPRIO de propósito: confundi-lo com "Desligado" faz o operador ir
-  //    procurar defeito onde só existe uma jornada que terminou.
-  "De plantão": { es: "De guardia" },
-  "Fora do horário": { es: "Fuera del horario" },
-  "Desligado": { es: "Apagado" },
   "Atualizando para a versão": { es: "Actualizando a la versión" },
   // ── A espera antes de o servidor pegar o pedido, e o fim reconhecido na hora.
   //    Os dois estados que a tela ganhou quando parou de fingir que a conversa
@@ -4592,7 +4520,6 @@ export const DICIONARIO: Traducoes = {
   "Entrou por": { es: "Entró por" },
   "Posição": { es: "Posición" },
   "na fila": { es: "en la cola" },
-  "Última mensagem do cliente": { es: "Último mensaje del cliente" },
   Arquivada: { es: "Archivada" },
   "Aguardando o cliente": { es: "Esperando al cliente" },
 
@@ -4650,11 +4577,6 @@ export const DICIONARIO: Traducoes = {
   },
   "Pausando...": { es: "Pausando..." },
   "Fechar esta conversa?": { es: "¿Cerrar esta conversación?" },
-  "Arquivar esta conversa?": { es: "¿Archivar esta conversación?" },
-  "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta. Arquivar?": {
-    es: "Archivar cierra esta atención y guarda la conversación en el historial. Si el cliente vuelve a escribir, la conversación regresa. ¿Archivar?",
-  },
-  "Arquivando...": { es: "Archivando..." },
   Automático: { es: "Automático" },
   Alguém: { es: "Alguien" },
   "Nota interna · só o time vê": { es: "Nota interna · solo la ve el equipo" },
@@ -5673,14 +5595,6 @@ export const DICIONARIO: Traducoes = {
   },
   "CPF (opcional)": { es: "CPF (opcional)" },
   "Criar contato": { es: "Crear contacto" },
-  "Trocar contato": { es: "Cambiar contacto" },
-  "Sem contato, este lead não recebe WhatsApp nem entra nas automações.": {
-    es: "Sin contacto, este lead no recibe WhatsApp ni entra en las automatizaciones.",
-  },
-  "Procure pelo nome ou telefone": { es: "Busque por nombre o teléfono" },
-  "Nenhum contato com esse nome ou telefone.": {
-    es: "Ningún contacto con ese nombre o teléfono.",
-  },
   "Contato criado": { es: "Contacto creado" },
   "Não foi possível carregar as sugestões agora.": { es: "No se pudieron cargar las sugerencias ahora." },
   "Não foi possível registrar a decisão.": { es: "No se pudo registrar la decisión." },
@@ -5695,8 +5609,6 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma atividade registrada ainda.": { es: "Ninguna actividad registrada todavía." },
   "Todas as origens": { es: "Todos los orígenes" },
   "Importado (CSV)": { es: "Importado (CSV)" },
-  "Anúncio da Meta": { es: "Anuncio de Meta" },
-  "Anúncio do Google": { es: "Anuncio de Google" },
 
   // ─── Settings: painel de atualização — histórico multi-versão (merge upstream) ───
   "Da versão": { es: "De la versión" },
@@ -8775,10 +8687,6 @@ export const DICIONARIO: Traducoes = {
   "Erro ao reativar tenant": { es: "Error al reactivar el tenant" },
   "Incidente resolvido com sucesso": { es: "Incidente resuelto con éxito" },
   "Erro ao resolver incidente": { es: "Error al resolver el incidente" },
-  "arquivado no acervo": { es: "archivado en el acervo" },
-  "Um material marcado aqui foi arquivado no acervo — o agente não lê mais ele.": { es: "Un material marcado aquí fue archivado en el acervo — el agente ya no lo lee." },
-  "Materiais marcados aqui foram arquivados no acervo — o agente não lê mais eles.": { es: "Materiales marcados aquí fueron archivados en el acervo — el agente ya no los lee." },
-  "Desmarque para voltar a salvar.": { es: "Desmárcalo para volver a guardar." },
 };
 
 /**

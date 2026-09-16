@@ -165,11 +165,8 @@ export function UpdatePanel() {
   // sabe de onde saiu e para onde tentou ir.
   const alvo = semV(data.run?.to_version);
   const anterior = semV(data.run?.from_version);
-  // Falha já superada por um deploy posterior não é mais o estado do servidor:
-  // mostrar o aviso dela (sem botão) travaria a próxima atualização pela tela.
-  const falhaVigente = !data.run?.superseded;
 
-  if (falhaVigente && data.run?.status === "failed_rolled_back") {
+  if (data.run?.status === "failed_rolled_back") {
     return (
       <Layout titulo={`${t("A atualização para a versão")} ${alvo} ${t("não deu certo")}`}>
         <p className="text-sm">
@@ -194,7 +191,7 @@ export function UpdatePanel() {
     );
   }
 
-  if (falhaVigente && data.run?.status === "failed") {
+  if (data.run?.status === "failed") {
     // Já houve aqui um texto próprio para "o host recusou antes de começar",
     // detectado por `last_step` nulo. Era sinal errado: `run_progress` não tem
     // retry e engole falha (o `run_result` insiste por ~2 min), então uma

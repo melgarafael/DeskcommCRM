@@ -184,9 +184,8 @@ const DEFAULT_TRIGGER: TriggerValue = {
 function buildState(args: {
   agent?: AgentRow;
   version: AgentVersionRow | null;
-  t: (texto: string) => string;
 }): FormState {
-  const { agent, version, t } = args;
+  const { agent, version } = args;
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
@@ -197,12 +196,9 @@ function buildState(args: {
     // reabrir o agente mostraria o campo em branco e pediria para escolher de novo.
     credential_id: version ? (version.credential_id ?? CHAVE_DA_INSTALACAO) : "",
     channel_session_id: version?.channel_session_id ?? "",
-    // O DEFAULT vira o prompt real do agente se ninguém editar — por isso é
-    // traduzido de verdade (não só a interface): em espanhol ele instrui a IA
-    // a responder em espanhol, não em pt-BR.
     system_prompt:
       version?.system_prompt ??
-      t("Você é um atendente. Responda de forma educada e clara, em pt-BR."),
+      "Você é um atendente. Responda de forma educada e clara, em pt-BR.",
     tool_ids: version?.tool_ids ?? [],
     trigger_config: (version?.trigger_config as unknown as TriggerValue) ?? DEFAULT_TRIGGER,
     max_steps: version?.max_steps ?? 10,
@@ -300,10 +296,10 @@ export function AgentForm(props: Props) {
       // O fallback existe para chamadores que ainda não a passam; sem ele, um
       // agente pausado abriria no texto padrão e o prompt "sumiria".
       const ref = props.base ?? props.draft ?? props.published;
-      return buildState({ agent: props.agent, version: ref, t });
+      return buildState({ agent: props.agent, version: ref });
     }
-    return buildState({ version: null, t });
-  }, [isEdit, props, t]);
+    return buildState({ version: null });
+  }, [isEdit, props]);
 
   const [form, setForm] = React.useState<FormState>(baseline);
   const [saving, setSaving] = React.useState(false);

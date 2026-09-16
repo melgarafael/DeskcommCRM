@@ -65,45 +65,9 @@ function lerSkill(nome: string) {
   const fim = linhas.indexOf("---", 1);
   expect(fim, `${nome}: frontmatter sem '---' de fechamento`).toBeGreaterThan(0);
   const cabecalho = linhas.slice(1, fim);
-  const campo = (chave: string) => desaspar(
-    cabecalho.find((l) => l.startsWith(`${chave}:`))?.slice(chave.length + 1).trim() ?? "",
-  );
-  return { name: campo("name"), description: campo("description"), cabecalho, corpo: linhas.slice(fim + 1) };
-}
-
-/** `'texto'` → `texto` (e `''` interno → `'`), `"texto"` → `texto`; valor sem aspas volta igual. */
-function desaspar(valor: string): string {
-  if (valor.length >= 2 && valor.startsWith("'") && valor.endsWith("'")) return valor.slice(1, -1).replaceAll("''", "'");
-  if (valor.length >= 2 && valor.startsWith('"') && valor.endsWith('"')) return valor.slice(1, -1);
-  return valor;
-}
-
-/**
- * O que um parser YAML ESTRITO recusa num valor de cabeçalho — a regra que
- * derrubou duas skills sem ninguém ver.
- *
- * Medido em 2026-09-15: `deskcomm-contribuir` ("…da triagem: mede…") e
- * `sistema-vivo` ("…métrica. Fonte: docs/…") traziam `: ` dentro da
- * descrição sem aspas — "mapping values are not allowed in this context" no
- * YAML.safe_load. O Claude Code tolera e lista a skill; um parser estrito (os
- * outros CLIs) a descarta em silêncio. O repo não tem parser YAML como
- * dependência, então a guarda checa as regras de ESCALAR SIMPLES que importam
- * aqui, e aceita valor entre aspas simples (sem `'` solto dentro) ou duplas.
- */
-function problemaDeYaml(linha: string): string | null {
-  const m = /^(\s*)([A-Za-z0-9_-]+):(?: (.*))?$/.exec(linha);
-  if (!m) return linha.trim() === "" ? null : `linha que não é "chave: valor": ${linha}`;
-  const valor = (m[3] ?? "").trim();
-  if (valor === "") return null; // chave de mapa aninhado (ex.: `metadata:`)
-  if (valor.startsWith("'")) {
-    const miolo = valor.slice(1, -1);
-    return valor.endsWith("'") && !/(^|[^'])'([^']|$)/.test(miolo) ? null : `aspas simples desbalanceadas em ${m[2]}`;
-  }
-  if (valor.startsWith('"')) return valor.endsWith('"') ? null : `aspas duplas desbalanceadas em ${m[2]}`;
-  if (/^[&*!|>%@`{\[]/.test(valor)) return `${m[2]} começa com caractere reservado do YAML — use aspas`;
-  if (/: /.test(valor) || valor.endsWith(":")) return `${m[2]} tem ": " sem aspas — um parser estrito recusa; use aspas simples`;
-  if (/ #/.test(valor)) return `${m[2]} tem " #" sem aspas — o resto vira comentário; use aspas`;
-  return null;
+  const campo = (chave: string) =>
+    cabecalho.find((l) => l.startsWith(`${chave}:`))?.slice(chave.length + 1).trim() ?? "";
+  return { name: campo("name"), description: campo("description"), corpo: linhas.slice(fim + 1) };
 }
 
 function rastreado(caminho: string): boolean {
@@ -121,12 +85,6 @@ describe("skills embutidas — cabeçalho no padrão que os cinco CLIs aceitam",
     expect(name).toBe(nome);
     expect(name).toMatch(NOME_VALIDO);
     expect(name.length).toBeLessThanOrEqual(NOME_MAX);
-  });
-
-  it.each(SKILLS)("%s: o cabeçalho é YAML que um parser estrito aceita", (nome) => {
-    const { cabecalho } = lerSkill(nome);
-    const problemas = cabecalho.map(problemaDeYaml).filter((p): p is string => p !== null);
-    expect(problemas, `${nome}: cabeçalho que um CLI estrito descarta`).toEqual([]);
   });
 
   it.each(SKILLS)("%s: description numa linha, de 1 a 1024 caracteres", (nome) => {

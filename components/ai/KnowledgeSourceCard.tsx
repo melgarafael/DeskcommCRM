@@ -12,17 +12,9 @@ import { useT } from "@/hooks/i18n/useT";
  * sobre uma API que já existia e nunca foi ligada à tela.
  *
  * Agora cada cartão é um material de verdade, com as ações que ele aceita: ver
- * o que o agente aprendeu, editar (quando o tipo do material guarda pergunta e
- * resposta), preparar de novo, e arquivar. O que o cartão NÃO oferece é o que
- * aquele tipo de material não aceita — controle que não controla nada gasta a
- * confiança de quem clicou.
- *
- * A ação nasce do TIPO, não do que ele aceita de entrada. `documento` aceita
- * texto colado (é `arquivo_ou_texto`) mas o conteúdo dele é texto corrido: não
- * existe pergunta/resposta para editar ali, e a pergunta certa é
- * `ePerguntaEResposta(tipo)`. Com `aceitaTextoColado` o cartão oferecia
- * "Editar conteúdo" para quem cadastrou um documento e abria o editor de FAQ
- * vazio — um controle que promete conteúdo que aquele material não tem.
+ * o que o agente aprendeu, editar (quando é texto colado), preparar de novo, e
+ * arquivar. O que o cartão NÃO oferece é o que aquele tipo de material não
+ * aceita — controle que não controla nada gasta a confiança de quem clicou.
  */
 import { useState } from "react";
 import {
@@ -43,7 +35,7 @@ import { EditarFaqDialog } from "@/components/ai/EditarFaqDialog";
 import {
   TIPO_DE_FONTE_POR_ID,
   canonizarTipoDeFonte,
-  ePerguntaEResposta,
+  aceitaTextoColado,
 } from "@/lib/ai/rag/tipos-de-fonte";
 import type { SourceRow } from "@/hooks/ai/useKnowledgeSources";
 
@@ -192,9 +184,7 @@ export function KnowledgeSourceCard({
           </>
         ) : null}
 
-        {/* A ação nasce do TIPO: só quem guarda pergunta/resposta tem o que
-            editar no editor de FAQ. Um documento (texto corrido) não tem. */}
-        {ePerguntaEResposta(tipo) && !arquivado ? (
+        {aceitaTextoColado(tipo) && !arquivado ? (
           <>
             <Button
               variant="ghost"

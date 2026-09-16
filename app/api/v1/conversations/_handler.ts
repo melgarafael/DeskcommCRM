@@ -17,7 +17,6 @@ import type {
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
 import { normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
-import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
 
 /**
  * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
@@ -159,21 +158,15 @@ export async function listConversationsHandler(
   // a ordenação por tempo de espera sumiria **sem nenhum sintoma na tela**: a
   // lista continuaria populada, só que ordenada por atividade recente, e quem
   // espera desde ontem afundaria embaixo de quem escreveu agora.
-  const isQueue = ehAFila(q);
-  // A régua da Fila não se escreve aqui: vem de `ORDEM_DA_ESPERA`, a mesma que
-  // numera a posição da linha na tela e o número que o cliente ouve. Enquanto
-  // cada lugar tinha a sua cópia, trocar uma só fazia a lista ordenar por uma
-  // pergunta e a posição responder outra — sem sintoma nenhum, porque as duas
-  // telas continuam populadas e plausíveis.
-  const sortCol = isQueue ? ORDEM_DA_ESPERA.coluna : "last_message_at";
-  const ordem = isQueue ? ORDEM_DA_ESPERA.opcoes : ({ ascending: false, nullsFirst: false } as const);
+  const isQueue = q.comando?.includes("aguardando") ?? q.assigned_to === "unassigned";
+  const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
   const asc = isQueue;
 
   let query = supabase
     .from("conversations")
     .select(SELECT_COLS)
     .eq("organization_id", ctx.organization_id)
-    .order(sortCol, ordem)
+    .order(sortCol, { ascending: asc, nullsFirst: false })
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
 
@@ -498,9 +491,7 @@ export async function patchConversationHandler(
         ? "conversation.claimed"
         : input.status === "closed"
           ? "conversation.closed"
-          : input.status === "archived"
-            ? "conversation.archived"
-            : "conversation.released";
+          : "conversation.released";
     await audit({
       action,
       actorUserId: a.actorUserId,

@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -64,40 +63,31 @@ export function ModelPicker({ provider, value, onChange, disabled, id, placehold
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>{t("Modelo")}</Label>
-      {models.length === 0 && !query.isLoading ? (
-        <Input
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value, { contextWindow: null })}
-          placeholder={t("Digite o identificador do modelo")}
-          disabled={disabled}
-        />
-      ) : (
-        <Select
-          value={value || undefined}
-          onValueChange={(v) => {
-            const m = models.find((m) => m.model_id === v);
-            onChange(v, { contextWindow: m?.context_window ?? null });
-          }}
-          disabled={disabled || query.isLoading}
-        >
-          <SelectTrigger id={id}>
-            <SelectValue
-              placeholder={
-                query.isLoading ? t("Carregando…") : (placeholder ?? t("Selecione um modelo"))
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {models.map((m) => (
-              <SelectItem key={m.model_id} value={m.model_id}>
-                {m.display_name}
-                {m.is_default_for_provider ? ` · ${t("default")}` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+      <Select
+        value={value || undefined}
+        onValueChange={(v) => {
+          const m = models.find((m) => m.model_id === v);
+          onChange(v, { contextWindow: m?.context_window ?? null });
+        }}
+        disabled={disabled || query.isLoading}
+      >
+        <SelectTrigger id={id}>
+          <SelectValue placeholder={query.isLoading ? t("Carregando…") : (placeholder ?? t("Selecione um modelo"))} />
+        </SelectTrigger>
+        <SelectContent>
+          {models.map((m) => (
+            <SelectItem key={m.model_id} value={m.model_id}>
+              {m.display_name}
+              {m.is_default_for_provider ? ` · ${t("default")}` : ""}
+            </SelectItem>
+          ))}
+          {models.length === 0 && !query.isLoading ? (
+            <SelectItem value="__none__" disabled>
+              {t("Nenhum modelo disponível")}
+            </SelectItem>
+          ) : null}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

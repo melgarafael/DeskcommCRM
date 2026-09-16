@@ -15,7 +15,7 @@ Todos vivem em `hostgator-setup-kit/` e rodam **de dentro da VPS**, a partir da 
 | `reset-mfa.sh <email>` | "perdi o celular do autenticador" | apaga os fatores de verificação em duas etapas do usuário | no próximo login a pessoa entra só com a senha (a verificação é opcional; o comentário do script ainda diz "forçado para admin" — regra antiga) |
 | `marca-emails.sh` | "os e-mails estão em inglês", "o link de recuperar senha vem quebrado" | sobe os e-mails de acesso (criar conta, recuperar senha) com a marca e configura Site URL / Redirect URLs | precisa de `export SUPABASE_ACCESS_TOKEN=sbp_...` no ambiente; sem token instrui e sai com 0. `--render-em /tmp/x` só renderiza |
 | `supabase-provision.sh "Nome" [região]` | "cria o banco pra mim" | cria o projeto Supabase pela Management API, espera ficar saudável, descobre o pooler testando conexão | imprime as 4 linhas `CHAVE='valor'` para o `.env`; o instalador chama sozinho quando há token e credenciais vazias |
-| `comecar.sh` | "ainda não tenho servidor", "que plano contrato?" | roda **no computador da pessoa**: nomeia o plano, abre o link de parceria, devolve o comando de instalação. Roda de qualquer pasta, sem clone: `curl -fsSL https://raw.githubusercontent.com/melgarafael/DeskcommCRM/main/hostgator-setup-kit/comecar.sh \| bash` | não instala nada |
+| `comecar.sh` | "ainda não tenho servidor", "que plano contrato?" | roda **no computador da pessoa**: nomeia o plano, abre o link de parceria, devolve o comando de instalação | não instala nada |
 | `agent.sh` | (ninguém chama à mão) | o agente de atualização pela tela; roda por cron a cada 5 minutos | erros ficam em `.update-agent.log` na pasta do clone |
 
 ## Compose: os dois arquivos quando há proxy da hospedagem

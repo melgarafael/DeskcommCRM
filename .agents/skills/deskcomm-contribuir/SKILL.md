@@ -1,6 +1,6 @@
 ---
 name: deskcomm-contribuir
-description: 'Guia de contribuição ao DeskcommCRM para quem vai mexer no código e abrir um pull request, sobretudo de um fork. Use SEMPRE que a pessoa disser que vai contribuir, corrigir um bug, implementar algo, abrir ou atualizar um PR, criar uma migration, resolver conflito com a main, ou perguntar "como eu testo isso", "minha branch está atrasada?", "por que o CI ficou vermelho", "o Vercel falhou" — e antes de qualquer commit em clone que não seja do mantenedor. É o espelho da triagem: mede ANTES do PR o que o mantenedor mede depois (branch atrasada, tripla de migration, marca do fork no diff, fragmento de release, teste que falta, prova em tela), arma os hooks de git e evita retrabalho e PR recusado.'
+description: Guia de contribuição ao DeskcommCRM para quem vai mexer no código e abrir um pull request, sobretudo de um fork. Use SEMPRE que a pessoa disser que vai contribuir, corrigir um bug, implementar algo, abrir ou atualizar um PR, criar uma migration, resolver conflito com a main, ou perguntar "como eu testo isso", "minha branch está atrasada?", "por que o CI ficou vermelho", "o Vercel falhou" — e antes de qualquer commit em clone que não seja do mantenedor. É o espelho da triagem: mede ANTES do PR o que o mantenedor mede depois (branch atrasada, tripla de migration, marca do fork no diff, fragmento de release, teste que falta, prova em tela), arma os hooks de git e evita retrabalho e PR recusado.
 metadata:
   publico: contribuidor externo, dev de agência, fork
   espelho-de: triagem/TRIAGEM.md
@@ -28,40 +28,14 @@ fork: zero. O que trava é retrabalho — e retrabalho se evita medindo.
 
 ## Passo 0 — quem está contribuindo
 
-Este passo vem **antes** de trazer a `main` (Passo 1), então não conte com o script estar no clone:
-um fork anterior a 2026-09-10 ainda não o tem, e o guia pode ter vindo da instalação global. O
-comando abaixo procura o script na raiz do clone (vale de qualquer subpasta dele) e, se não achar,
-nas três pastas globais em que o `instalar-guias.sh` põe os guias. Cole como está, de onde você
-estiver:
-
 ```bash
-r="$(git rev-parse --show-toplevel 2>/dev/null)"; s=""
-for g in ${r:+"$r/.agents/skills"} ~/.claude/skills ~/.agents/skills ~/.gemini/config/skills; do
-  [ -f "$g/deskcomm-contribuir/scripts/quem-sou.sh" ] && { s="$g/deskcomm-contribuir/scripts/quem-sou.sh"; break; }
-done
-if [ -n "$s" ]; then bash "$s"; else
-  echo "NÃO MEDIDO — não achei o quem-sou.sh ${r:+no clone $r }nem nas pastas globais dos guias." >&2
-  echo "Instale os guias pelo comando de uma linha do README (https://github.com/melgarafael/DeskcommCRM#readme) e rode de novo." >&2
-  false
-fi
+bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh
 ```
 
-A resposta vem da pasta **onde você rodou**, não de onde o script mora: fora de um clone ela é
-`contribuidor — fora de um clone git`, e se afina sozinha assim que o terminal estiver dentro do
-clone.
-
-A resposta decide o resto do guia, e são três:
-
-- Começa com `mantenedor`: este guia fica quieto — o mantenedor tem o próprio ritual (triagem,
-  gov-loop) e hooks próprios em `loop/hooks`. Só siga se a pessoa pedir por nome.
-- Começa com `contribuidor`: siga. O script diz **por quê** (e-mail do git no `.mailmap`, conta do
-  `gh`, o `origin` ser fork).
-- Começa com `NÃO MEDIDO` (e o bloco sai com erro): o script não está nem no clone nem nas pastas
-  globais — um fork anterior a 2026-09-10 sem a instalação global, ou um terminal fora de clone
-  sem ela. Ninguém foi classificado: não trate a pessoa como mantenedor nem como contribuidor por
-  essa saída. Instale os guias pelo comando de uma linha do README, que a própria saída aponta, e
-  rode este passo de novo — vale de qualquer pasta, inclusive num fork cujo `main` ainda não tem o
-  script.
+Se a resposta começar com `mantenedor`, este guia fica quieto — o mantenedor tem o próprio ritual
+(triagem, gov-loop) e hooks próprios em `loop/hooks`. Só siga se a pessoa pedir por nome. Se
+começar com `contribuidor`, siga. O script diz **por quê** (e-mail do git no `.mailmap`, conta do
+`gh`, o `origin` ser fork).
 
 ## Passo 1 — a âncora: `origin/main`, nunca o disco
 

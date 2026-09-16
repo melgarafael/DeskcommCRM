@@ -281,7 +281,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                   checked={estado === "ligado"}
                   onCheckedChange={(v) => alternarPacote(pacote.id, v)}
                   disabled={disabled || vazio}
-                  aria-label={t(pacote.rotulo)}
+                  aria-label={pacote.rotulo}
                 />
                 <div className="flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -289,7 +289,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                       htmlFor={`pacote-${pacote.id}`}
                       className="cursor-pointer text-sm font-medium"
                     >
-                      {t(pacote.rotulo)}
+                      {pacote.rotulo}
                     </label>
                     {estado === "parcial" ? (
                       <Badge variant="outline" className="text-[11px]">
@@ -297,7 +297,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                       </Badge>
                     ) : null}
                   </div>
-                  <p className="text-xs text-muted-foreground">{t(pacote.explicacao)}</p>
+                  <p className="text-xs text-muted-foreground">{pacote.explicacao}</p>
                   <p className="text-xs text-muted-foreground" data-testid={`contagem-${pacote.id}`}>
                     {textoDaContagem(total, ligadas, t)}
                   </p>

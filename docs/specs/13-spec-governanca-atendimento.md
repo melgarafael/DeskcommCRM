@@ -348,11 +348,7 @@ a migration `20260716120000_0030_config_rls_role_policies.sql` aplica
   menu oculto ou de uma preferência de interface.
 - **Fila com posição/espera** (G5-03): a visão Fila (`assigned_to=unassigned`)
   ordena por `last_inbound_at` ASC (quem espera há mais tempo primeiro); posição =
-  índice na lista ordenada; "aguardando há X" derivado de `last_inbound_at`. **A
-  hora no canto da linha, na Fila, é a MESMA** (`last_inbound_at`): a coluna de
-  horas tem de ler na ordem da lista, e `last_message_at` anda quando o atendente
-  responde — faria os números saírem fora de ordem numa lista que está certa (é
-  o relato da #464). Nas demais visões vale a régua delas, a atividade recente. A
+  índice na lista ordenada; "aguardando há X" derivado de `last_inbound_at`. A
   contagem da fila casa com `counts.unassigned` (mesmo predicado: sem dono +
   status `open`).
 

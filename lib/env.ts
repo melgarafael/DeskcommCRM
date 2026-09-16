@@ -189,15 +189,6 @@ const schema = z.object({
   VERCEL_AI_GATEWAY_URL: z.string().optional().default(""),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
-  // Transcrição de áudio num serviço COMPATÍVEL com o da OpenAI (Groq, um
-  // Whisper próprio): a chave vale só para `/audio/transcriptions` — a conversa
-  // com o cliente e a leitura de imagem continuam no provedor do ponto.
-  // Vazio é ausente, como no resto do arquivo: sem `TRANSCRIPTION_API_KEY` a
-  // transcrição usa a `OPENAI_API_KEY` acima, que é o comportamento de sempre.
-  // Quem lê é o worker de derivação de mídia (`workers/media-derive-worker.ts`).
-  TRANSCRIPTION_API_KEY: z.string().optional().default(""),
-  TRANSCRIPTION_BASE_URL: z.string().optional().default(""),
-  TRANSCRIPTION_MODEL: z.string().optional().default(""),
 
   // Fusão (Fase 4): DONO ÚNICO dos eventos ai_agent.dispatch_requested.
   // 'engine' (default) = o worker agent-engine é o único consumidor (o cron

@@ -106,7 +106,7 @@ export function ClassifyForm({
             commit({ classesText, graceMin: v, target, hint });
           }}
         />
-        <p className="text-xs text-text-muted">{ESPERA_PELA_RESPOSTA.ajuda(t)}</p>
+        <p className="text-xs text-text-muted">{ESPERA_PELA_RESPOSTA.ajuda}</p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="classify-target">{t("O que a IA vai ler")}</Label>

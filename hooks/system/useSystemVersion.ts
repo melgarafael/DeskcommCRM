@@ -39,11 +39,6 @@ export interface SystemVersion {
     to_version: string;
     /** Últimas linhas da saída do update.sh — o diagnóstico da falha. */
     log_tail: string;
-    /**
-     * A falha deste run já foi superada por um deploy posterior (o host reporta
-     * uma versão que o run não descreve). A tela deixa de mostrar o aviso dela.
-     */
-    superseded?: boolean;
   } | null;
 }
 

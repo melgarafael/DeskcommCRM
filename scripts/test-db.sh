@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # gov-loop G1-02 — baseline install+update gate + RLS isolation invariants.
 #
-# Sobe um Postgres efêmero (`pgvector/pgvector`, na major do PISO por padrão —
-# quem quiser outra passa `TEST_DB_IMAGE`, e é assim que a matriz do job
-# `invariants` roda pg15 e pg17), aplica supabase/baseline.sql
+# Sobe um Postgres efêmero (pgvector/pgvector:pg17), aplica supabase/baseline.sql
 # em modo install e depois em modo update — as DUAS passadas com ON_ERROR_STOP=1,
 # que é o que torna a segunda uma prova de idempotência e não só um "terminou"
 # (issue #184) — e roda a suíte vitest de invariantes (tests/invariants/**)
@@ -38,21 +36,14 @@ PUBLICACAO="127.0.0.1::5432"
 DONO_WORKTREE="$ROOT"
 DONO_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo desconhecida)"
 CONTAINER="deskcomm-test-db-$$"
-# A MAJOR da imagem: quem PEDE escolhe, quem não pede fica no PISO — mesma
-# forma da PORTA acima, e pelo mesmo motivo (mecanismo, não disciplina de quem
-# chama). A matriz do job `invariants` (ci.yml) passa `TEST_DB_IMAGE` para
-# cobrir pg15 E pg17; a máquina de quem só digita `pnpm test:db` continua
-# medindo a versão mais pobre que dizemos suportar.
-#
 # pg15 e não pg17: o piso real do baseline é pg15 (`security_invoker` em view,
 # baseline.sql:1215). O 17 vinha de 9 `GRANT … MAINTAIN` que o `pg_dump` de um
 # projeto Supabase pg17 emitiu sozinho ao serializar o ACL das tabelas
 # append-only — ninguém os escreveu, e nenhum código do projeto usa o
 # privilégio. Testar no piso é o que faz este gate cobrir a instalação mais
 # pobre que dizemos suportar, em vez da mais rica que temos à mão.
-# Quem guarda o PADRÃO (pg15 no default, mesmo com a variável no lugar) é
-# tests/unit/baseline-no-piso-do-postgres.test.ts.
-IMAGE="${TEST_DB_IMAGE:-pgvector/pgvector:pg15}"
+# Quem guarda o piso é tests/unit/baseline-no-piso-do-postgres.test.ts.
+IMAGE="pgvector/pgvector:pg15"
 # O baseline é aplicado UMA vez, num banco-MOLDE. Cada ARQUIVO de tests/invariants
 # recebe uma cópia nova dele — `create database postgres template $TEMPLATE`, ~0,2s
 # medidos — feita pelo setupFile declarado em vitest.db.config.ts.
@@ -96,8 +87,7 @@ cleanup() {
   echo "==> teardown: removendo container $CONTAINER"
   # `-v` REMOVE OS VOLUMES ANÔNIMOS, e sem ele cada rodada vazava ~68 MB.
   #
-  # A imagem `pgvector/pgvector` — em qualquer das tags que este harness usa,
-  # pg15 ou pg17 — declara `VOLUME /var/lib/postgresql/data` no
+  # `pgvector/pgvector:pg17` declara `VOLUME /var/lib/postgresql/data` no
   # Dockerfile (`docker image inspect … .Config.Volumes`), então todo container
   # criado sem `-v` explícito ganha um volume ANÔNIMO. O `--rm` do `docker run`
   # cuidaria disso ao término normal, mas quem chega primeiro é este trap, e

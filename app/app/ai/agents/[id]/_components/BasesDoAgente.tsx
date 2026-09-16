@@ -22,15 +22,6 @@ import { useT } from "@/hooks/i18n/useT";
  *  3. **Mostra o material que ainda não foi preparado.** Marcar um material que
  *     não virou trecho nenhum é uma promessa que não se cumpre — ele aparece na
  *     lista e o agente não acha nada nele.
- *  4. **Devolve à tela o material ARQUIVADO que ficou marcado (issue #774).**
- *     O vínculo material-agente não pode travar o ARQUIVAMENTO: quem arquiva está
- *     certo, e é a tela do agente que precisa se adaptar. Antes, o acervo chegava
- *     já filtrado por `is_active` e o id marcado não tinha caixinha nenhuma para
- *     desmarcar — o dono ficava com o salvar recusando ("um dos materiais marcados
- *     não existe mais, ou foi arquivado") e sem caminho de volta pela tela.
- *     Arquivado E marcado agora APARECE, com selo e com o desmarcar a um clique;
- *     arquivado e NÃO marcado continua fora, e não conta como material do
- *     assistente em nenhum aviso.
  */
 import * as React from "react";
 import Link from "next/link";
@@ -44,14 +35,6 @@ export interface MaterialDoAcervo {
   source_type: string;
   chunks_count: number;
   last_index_status: string | null;
-  /**
-   * `false` = arquivado no acervo.
-   *
-   * Opcional de propósito: a página só carrega a coluna de quem está marcado e
-   * ficou fora da lista viva. AUSENTE quer dizer material vivo, nunca arquivado —
-   * o contrário esconderia material de quem não manda a coluna.
-   */
-  is_active?: boolean;
 }
 
 interface Props {
@@ -72,23 +55,10 @@ export function BasesDoAgente({ materiais, value, onChange, disabled = false }: 
     onChange([...proximo]);
   }
 
-  // Arquivado só entra na lista quando está MARCADO — é o que devolve ao dono a
-  // caixinha para desmarcar. Arquivado e não marcado fica fora: ele não é mais
-  // material deste assistente e não pode reaparecer como se fosse.
-  const visiveis = materiais.filter((m) => m.is_active !== false || marcados.has(m.id));
-  // O acervo VIVO é a régua dos avisos e da contagem: um arquivado não pode
-  // virar "material que este assistente deixou de ler" nem entrar no "ainda não
-  // foi preparado" — foi arquivado de propósito, e cobrar preparo dele seria
-  // pedir que o dono consertasse uma decisão dele mesmo.
-  const ativos = materiais.filter((m) => m.is_active !== false);
-  const arquivadosMarcados = visiveis.filter((m) => m.is_active === false);
-  const semPreparo = ativos.filter((m) => marcados.has(m.id) && (m.chunks_count ?? 0) === 0);
-  const acervoTodoDeFora = ativos.length > 0 && value.length === 0;
-
-  function desmarcarArquivados(): void {
-    const arquivados = new Set(arquivadosMarcados.map((m) => m.id));
-    onChange(value.filter((id) => !arquivados.has(id)));
-  }
+  const semPreparo = materiais.filter(
+    (m) => marcados.has(m.id) && (m.chunks_count ?? 0) === 0,
+  );
+  const acervoTodoDeFora = materiais.length > 0 && value.length === 0;
 
   return (
     <Card className="space-y-3 p-4">
@@ -101,7 +71,7 @@ export function BasesDoAgente({ materiais, value, onChange, disabled = false }: 
         </p>
       </div>
 
-      {visiveis.length === 0 ? (
+      {materiais.length === 0 ? (
         <p className="text-xs text-muted-foreground" data-testid="agente-sem-acervo">
           {t("Você ainda não cadastrou nenhum material.")}{" "}
           <Link
@@ -114,7 +84,7 @@ export function BasesDoAgente({ materiais, value, onChange, disabled = false }: 
         </p>
       ) : (
         <div className="space-y-2" data-testid="agente-bases">
-          {visiveis.map((m) => (
+          {materiais.map((m) => (
             <div key={m.id} className="flex items-center gap-2">
               {/* `input` nativo, como o ToolPicker e o FunisDoAgente ao lado: o
                   repo não tem componente de checkbox, e introduzir um só para
@@ -141,21 +111,13 @@ export function BasesDoAgente({ materiais, value, onChange, disabled = false }: 
                     ? `${m.chunks_count} ${m.chunks_count === 1 ? t("trecho") : t("trechos")}`
                     : t("ainda não preparado")}
                 </span>
-                {m.is_active === false ? (
-                  <span
-                    data-testid={`base-${m.id}-arquivado`}
-                    className="ml-2 text-xs font-medium text-warning-fg"
-                  >
-                    {t("arquivado no acervo")}
-                  </span>
-                ) : null}
               </Label>
             </div>
           ))}
         </div>
       )}
 
-      {value.length === 0 && visiveis.length > 0 ? (
+      {value.length === 0 && materiais.length > 0 ? (
         <p data-testid="agente-sem-base-marcada" className="text-xs text-muted-foreground">
           {t(
             "Sem nenhum material marcado, ele conversa normalmente — mas responde só com o que o modelo já sabe, e a ferramenta de busca nem entra na conversa dele.",
@@ -165,29 +127,11 @@ export function BasesDoAgente({ materiais, value, onChange, disabled = false }: 
 
       {acervoTodoDeFora ? (
         <p data-testid="agente-acervo-de-fora" className="text-xs text-warning-fg">
-          {t("Você tem")} {ativos.length} {ativos.length === 1 ? t("material") : t("materiais")}{" "}
+          {t("Você tem")} {materiais.length}{" "}
+          {materiais.length === 1 ? t("material") : t("materiais")}{" "}
           {t(
             "no acervo e este assistente não lê nenhum. Ele vai responder de improviso sobre assuntos que já estão escritos.",
           )}
-        </p>
-      ) : null}
-
-      {arquivadosMarcados.length > 0 ? (
-        <p data-testid="agente-base-arquivada-marcada" className="text-xs text-warning-fg">
-          {arquivadosMarcados.length === 1
-            ? t("Um material marcado aqui foi arquivado no acervo — o agente não lê mais ele.")
-            : t(
-                "Materiais marcados aqui foram arquivados no acervo — o agente não lê mais eles.",
-              )}{" "}
-          <button
-            type="button"
-            data-testid="agente-base-arquivada-desmarcar"
-            className="font-medium text-foreground underline underline-offset-4"
-            onClick={desmarcarArquivados}
-            disabled={disabled}
-          >
-            {t("Desmarque para voltar a salvar.")}
-          </button>
         </p>
       ) : null}
 

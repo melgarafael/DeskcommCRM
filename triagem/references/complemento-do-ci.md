@@ -15,15 +15,6 @@ workflow real.
 
 ## 1. Tripla de migration — a violação nº 1, e 100% invisível no CI
 
-> **A unicidade do `NNNN`/timestamp SAIU desta linha** (issue #285, 2026-09-16). O job `verify`
-> roda `pnpm checar:colisao-de-migration` e reprova a migration que o PR acrescenta com número ou
-> timestamp já usados na `origin/main`, nomeando o número **e** os dois arquivos (o da base e o do
-> PR). Os limites são os do hook, declarados no cabeçalho do script: renome que só troca o slug
-> passa, e a medição é a do merge (`HEAD` = merge ref no `pull_request`).
->
-> O que **continua pendente** aqui é a outra metade da tripla — o apêndice no `baseline.sql` e a
-> linha no `MANIFEST.md` —, que nenhum job confere.
-
 **Gatilho:** o diff adiciona `supabase/migrations/*.sql`.
 
 **Checagem:** o mesmo commit precisa trazer as três coisas — o arquivo da migration, um apêndice
@@ -35,9 +26,7 @@ bash loop/hooks/check-migration-triple.sh    # se disponível na árvore
 ```
 
 **Por que o CI não pega:** o guard é um hook de git ativado por `core.hooksPath=loop/hooks`, que é
-**configuração local, não versionada**. Um fork nunca o executa, e nenhum job do `ci.yml` confere o
-apêndice no `baseline.sql` nem a linha no `MANIFEST.md` — a **colisão de número**, que era o outro
-item desta linha, virou gate em 2026-09-16 (issue #285, acima).
+**configuração local, não versionada**. Um fork nunca o executa e nenhum job do `ci.yml` o invoca.
 
 **Por que importa mais do que parece:** o kit self-host aplica **só o `baseline.sql`**, tanto no
 `install.sh` quanto no `update.sh`. Migration que não chega ao baseline **não chega em quem instalou
@@ -205,10 +194,9 @@ Para não gastar passe à toa:
 
 | item | gate que já cobre |
 |---|---|
-| migration nova com `NNNN`/timestamp já tomados na `origin/main` | passo `Colisão de número de migration` do job `verify` (`pnpm checar:colisao-de-migration`, issue #285) |
 | DoD 14, "tela nova tem porta" | `pnpm test:unit` → `navegacao-completude.test.ts` |
 | provider nomeado fora de `lib/channels/` | `pnpm lint:channels` |
-| baseline aplica fresh **e** idempotente | `pnpm test:db` (job `invariants-majors`, sob a fachada `invariants`) |
+| baseline aplica fresh **e** idempotente | `pnpm test:db` (job `invariants`) |
 | isolamento RLS nas 10 tabelas listadas | `pnpm test:db` |
 | tipos, lint, unit, shell, build | job `verify` + `build-and-size` |
 | a imagem Docker do self-host constrói | job `build-and-push` (PR #233) — **ainda não obrigatório** |

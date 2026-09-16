@@ -30,14 +30,6 @@ const SOURCE_OPTIONS = [
   { value: "whatsapp", label: "WhatsApp" },
   { value: "nuvemshop", label: "Nuvemshop" },
   { value: "import_csv", label: "Importado (CSV)" },
-  // Os dois valores que a atribuição de anúncio grava em `contacts.source`
-  // (`PlataformaDeAnuncio` em lib/leads/atribuicao-de-anuncio.ts). Sem eles, o
-  // contato que veio de um clique em anúncio existe no banco e não é
-  // alcançável por nenhum filtro desta tela. O handler aceita qualquer valor
-  // (`_handler.ts:167` faz `eq("source", q.source)`), então a lista é a única
-  // porta — e ela estava incompleta desde que a atribuição passou a existir.
-  { value: "meta_ads", label: "Anúncio da Meta" },
-  { value: "google_ads", label: "Anúncio do Google" },
 ];
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;

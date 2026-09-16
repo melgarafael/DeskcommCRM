@@ -393,17 +393,10 @@ const MINIMO_MINUTOS_DE_ESPERA = 15;
  */
 export const ESPERA_PELA_RESPOSTA = {
   rotulo: "Esperar a resposta por (minutos)",
-  /**
-   * Função, não string: o texto cita o rótulo da aresta (`conditionLabel`,
-   * também traduzível) e o mínimo em minutos, então só pode ser composto no
-   * idioma de quem olha — não pré-computado em português uma vez só. `t`
-   * default identidade preserva quem chama sem tradução (ex.: os testes deste
-   * arquivo, que conferem o texto em português).
-   */
-  ajuda: (t: (texto: string) => string = (s) => s) =>
-    `${t("Se o contato não responder dentro desse tempo, o fluxo segue sozinho pelo caminho")} ` +
-    `“${t(conditionLabel({ type: "class_match", value: "no_reply" }))}”. ` +
-    `${t("Mínimo de")} ${MINIMO_MINUTOS_DE_ESPERA} ${t("minutos.")}`,
+  ajuda:
+    `Se o contato não responder dentro desse tempo, o fluxo segue sozinho pelo caminho ` +
+    `“${conditionLabel({ type: "class_match", value: "no_reply" })}”. ` +
+    `Mínimo de ${MINIMO_MINUTOS_DE_ESPERA} minutos.`,
   minimoMinutos: MINIMO_MINUTOS_DE_ESPERA,
 } as const;
 

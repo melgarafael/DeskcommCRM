@@ -17,8 +17,6 @@ export interface ConversationCounts {
   all: number;
   /** Opcional pelo mesmo motivo dos de cima: cache gravado antes deste deploy não tem. */
   closed?: number;
-  /** A aba "Arquivadas" (#923). Opcional pelo mesmo motivo: cache antigo não tem. */
-  archived?: number;
 }
 
 /** Os filtros auxiliares ligados na barra, que a contagem tem de aplicar junto. */

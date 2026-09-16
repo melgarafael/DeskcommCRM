@@ -21,7 +21,6 @@ import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { enumsDoFollowup } from "@/tests/support/enums-do-grafo";
-import { traduzir } from "@/lib/i18n/dicionario";
 
 import { triggerConfigSchema } from "./api-schemas";
 import { conditionLabel } from "./edge-condition-options";
@@ -367,7 +366,7 @@ describe("a tradução não é o valor cru disfarçado", () => {
     const tudo = [
       ...rotulosPorValor.map(([, r]) => r),
       ESPERA_PELA_RESPOSTA.rotulo,
-      ESPERA_PELA_RESPOSTA.ajuda(),
+      ESPERA_PELA_RESPOSTA.ajuda,
       ...(CAMPOS_NO_SCHEMA as CampoDaCondicao[]).flatMap((campo) =>
         (OPERADORES_NO_SCHEMA as OperadorDaCondicao[]).flatMap((op) => {
           const c = comparador(campo, op);
@@ -463,20 +462,8 @@ describe("o antigo 'Grace' virou uma pergunta com consequência", () => {
 
   it("a ajuda nomeia o caminho que o fluxo pega, com o texto que a aresta mostra", () => {
     const rotuloDaAresta = conditionLabel({ type: "class_match", value: "no_reply" });
-    expect(ESPERA_PELA_RESPOSTA.ajuda()).toContain(rotuloDaAresta);
-    expect(ESPERA_PELA_RESPOSTA.ajuda()).toContain(String(ESPERA_PELA_RESPOSTA.minimoMinutos));
-  });
-
-  it("em espanhol, a ajuda traduz o texto fixo E o rótulo da aresta interpolado", () => {
-    // `ajuda` compõe fragmentos com `t()` em vez de ser uma string pronta —
-    // sem isto, a versão em espanhol mostraria a frase inteira em português
-    // (o padrão de degradação) mesmo com o rótulo da aresta traduzido, ou
-    // vice-versa: os dois lados precisam passar pelo MESMO `t`.
-    const t = (texto: string) => traduzir(texto, "es");
-    const emEspanhol = ESPERA_PELA_RESPOSTA.ajuda(t);
-    expect(emEspanhol).toContain("Sin respuesta");
-    expect(emEspanhol).toContain(String(ESPERA_PELA_RESPOSTA.minimoMinutos));
-    expect(emEspanhol).not.toMatch(/responder|caminho|segue/i);
+    expect(ESPERA_PELA_RESPOSTA.ajuda).toContain(rotuloDaAresta);
+    expect(ESPERA_PELA_RESPOSTA.ajuda).toContain(String(ESPERA_PELA_RESPOSTA.minimoMinutos));
   });
 });
 

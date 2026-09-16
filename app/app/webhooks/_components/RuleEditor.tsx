@@ -50,18 +50,11 @@ interface CuratedField {
   label: string;
   op: Op;
   kind?: "stage";
-  /**
-   * O campo guarda uma LISTA (tags). Em lista, `contains` é pertinência — a tag
-   * inteira, sem diferenciar caixa (decisão do dono, #956) —, e chamar isso de
-   * "contém" na tela promete o que o motor não faz: quem lê "contém Google"
-   * espera pegar `Google Ads`. O rótulo vira "tem a tag" só nesses campos.
-   */
-  lista?: true;
 }
 
 const LEAD_FIELDS: CuratedField[] = [
   { value: "lead.title", label: "Nome do lead", op: "eq" },
-  { value: "lead.tags", label: "Tags do lead", op: "contains", lista: true },
+  { value: "lead.tags", label: "Tags do lead", op: "contains" },
   // utm_* entram pelo webhook em source_metadata (decisão da rota inbound),
   // não em custom_fields — o path aqui tem que apontar pra onde o dado mora.
   { value: "lead.source_metadata.utm_source", label: "Origem (utm_source)", op: "eq" },
@@ -74,17 +67,16 @@ const STAGE_FIELD: CuratedField = {
 };
 const MESSAGE_FIELDS: CuratedField[] = [
   { value: "event.body_preview", label: "Texto da mensagem", op: "contains" },
-  { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
+  { value: "contact.tags", label: "Tags do contato", op: "contains" },
 ];
 const CONTACT_FIELDS: CuratedField[] = [
-  { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
+  { value: "contact.tags", label: "Tags do contato", op: "contains" },
   { value: "contact.name", label: "Nome do contato", op: "contains" },
 ];
 const TAG_ADDED_FIELD: CuratedField = {
   value: "event.added_tags",
   label: "Tag adicionada",
   op: "contains",
-  lista: true,
 };
 
 /**
@@ -95,7 +87,7 @@ const TAG_ADDED_FIELD: CuratedField = {
  */
 const AGENDAMENTO_FIELDS: CuratedField[] = [
   { value: "event.event_type_name", label: "Tipo de atendimento", op: "contains" },
-  { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
+  { value: "contact.tags", label: "Tags do contato", op: "contains" },
 ];
 
 // ponytail: etapa de destino usa o funil default (cobre o caso comum de 1
@@ -314,11 +306,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                       <SelectContent>
                         {(Object.keys(OP_LABELS) as Op[]).map((op) => (
                           <SelectItem key={op} value={op}>
-                            {/* Em campo de lista, `contains` é pertinência: o
-                                rótulo diz o que o motor faz. No modo avançado
-                                (path digitado à mão) não há campo curado, então
-                                o rótulo genérico continua. */}
-                            {t(curated?.lista && op === "contains" ? "tem a tag" : OP_LABELS[op])}
+                            {t(OP_LABELS[op])}
                           </SelectItem>
                         ))}
                       </SelectContent>

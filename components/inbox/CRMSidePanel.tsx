@@ -575,7 +575,7 @@ export function CRMSidePanel({ conversation }: Props) {
               aria-pressed={tagEditorOpen}
               onClick={() => setTagEditorOpen((v) => !v)}
             >
-              <Tag size={12} className="mr-1" weight="regular" aria-hidden /> {t("Tags do contato")}
+              <Tag size={12} className="mr-1" weight="regular" aria-hidden /> {t("Tag")}
             </Button>
             <Button
               size="sm"

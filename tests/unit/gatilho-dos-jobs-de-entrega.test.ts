@@ -115,19 +115,6 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
       "Sem `tag`, um dispatch numa branch moveria o canal. Sem o `v`, uma tag de teste o move.",
   },
 
-  // As imagens de FUNDO (#604): `deskcomm-worker` e `deskcomm-scheduler`
-  // construíam, publicavam e recebiam tag sem que job nenhum as executasse. Na
-  // #648 o resultado foi dez dias de `event_log` parado com o `/healthz` verde.
-  // Desligá-lo devolve exatamente esse buraco: a imagem publica, o canal anda,
-  // e nada prova que o laço do event_log chegou a carregar.
-  "publish-image.yml::imagens-de-fundo-sobem": {
-    condicao: null,
-    efeito:
-      "Este job prova que o worker BOOTA com o laço do event_log carregado e que o " +
-      "scheduler tem o evento no crontab. Desligá-lo (`skipped`) faz a tag existir com " +
-      "imagens de fundo que ninguém executou — o defeito da #648, de volta e em silêncio.",
-  },
-
   "publish-image.yml::imagens-ok": {
     condicao: "always()",
     efeito:
@@ -144,34 +131,11 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
     condicao: null,
     efeito: "Este é o check obrigatório `verify` (typecheck + lint + test:unit).",
   },
-  // A matriz das duas majors roda no job `invariants-majors`; quem a branch
-  // protection exige continua sendo ESTE nome — a lista dos cinco checks
-  // (`verify, build-and-size, invariants, e2e, imagens-ok`) está na triagem do
-  // CI. Um job de matriz se chamaria `invariants-majors (15)`: a proteção
-  // passaria a esperar para sempre um check que nenhum run produz e NENHUM PR
-  // mergearia. Por isso o agregado existe — e por isso ele precisa de `always()`.
   "ci.yml::invariants": {
-    condicao: "always()",
-    efeito:
-      "Este é o check obrigatório `invariants` — o agregado que LÊ o resultado de " +
-      "`invariants-majors` e reprova qualquer desfecho que não seja `success`. Precisa de " +
-      "`always()` para poder ler `skipped` (perna pulada não mediu nada, e `skipped` conta como " +
-      "check satisfeito); desligá-lo (`always() && false`) o torna `skipped` ele mesmo, e o PR " +
-      "entra sem que nenhuma major do `baseline.sql` tenha sido medida.",
-  },
-  // `fail-fast: false` é parte da declaração, não estilo: com o padrão (`true`), a
-  // primeira major que reprovasse CANCELARIA a outra, e o relatório diria
-  // `cancelled` em vez de medir as duas — cobertura declarada que o CI cancela é
-  // o modo de falha que a #454 fecha.
-  "ci.yml::invariants-majors": {
     condicao: null,
     efeito:
-      "São as duas majors que este repo diz suportar: pg15 é o PISO real do `baseline.sql` " +
-      "(`security_invoker` em view) e onde quem digita `pnpm test:db` na própria máquina cai por " +
-      "padrão; pg17 é de onde o `pg_dump` do baseline saiu e o que o Supabase entrega a projeto " +
-      "novo. Cada perna roda `test:db` E `test:db:update`: o segundo era um script que nenhum " +
-      "workflow chamava desde 2026-08-27, e `test:db` sozinho mede um banco VAZIO — constraint " +
-      "que só quebra com linha existente passava verde.",
+      "Este é o check obrigatório `invariants` (`pnpm test:db`) — o único que exercita o " +
+      "`baseline.sql` que o self-hoster aplica, e o isolamento RLS entre organizações.",
   },
   "e2e.yml::e2e-parte": {
     condicao: null,

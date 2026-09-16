@@ -350,29 +350,16 @@ export async function marcaDaInstalacao(): Promise<LinhaDaMarca | null> {
   // O `Date.now()` do TTL também passa a ser lido DEPOIS da ida ao banco: antes
   // ele era capturado antes, e a espera do banco descontava do próprio TTL.
   const geracao = globalThis.__geracaoDaMarcaDaInstalacao ?? 0;
-  const lido = await lerOuSemear();
-  // ⚠️ `"erro"` fica FORA do memo, e é a razão de `lerOuSemear` ter três saídas.
-  //
-  // A guarda de geração acima cobre a leitura que volta com a linha PRÉ-ESCRITA
-  // quando a escrita já invalidou. Ela NÃO cobre — e não pode cobrir — a leitura
-  // que FALHOU depois da invalidação: ali a geração não mudou, a guarda passa, e
-  // `null` entra no memo com TTL novo. O efeito é o mesmo sintoma, por outra
-  // porta: `null` = "o banco não falou" → o resolvedor cai na camada do `.env` →
-  // a barra lateral desenha a marca do PRODUTO e `aside img` não existe — por
-  // até TTL_MS inteiros, ATRÁS DO MESMO TOAST VERDE de "Logo atualizado.".
-  //
-  // O contrato do arquivo sempre foi "na FALHA vale o `.env` EM RUNTIME", e o
-  // TTL sempre foi justificado por edição direta no banco — nunca por falha de
-  // transporte. Promover uma falha a fato é um terceiro estado que não existia.
-  if (lido !== "erro" && (globalThis.__geracaoDaMarcaDaInstalacao ?? 0) === geracao) {
-    guardarMemo({ linha: lido, expiraEm: Date.now() + TTL_MS });
+  const linha = await lerOuSemear();
+  if ((globalThis.__geracaoDaMarcaDaInstalacao ?? 0) === geracao) {
+    guardarMemo({ linha, expiraEm: Date.now() + TTL_MS });
   }
-  return lido === "erro" ? null : lido;
+  return linha;
 }
 
-async function lerOuSemear(): Promise<LinhaDaMarca | null | "erro"> {
+async function lerOuSemear(): Promise<LinhaDaMarca | null> {
   const atual = await lerLinha();
-  if (atual === "erro") return "erro";
+  if (atual === "erro") return null;
 
   // `env` e não `process.env` cru: é a mesma fonte que `app/layout.tsx` passa
   // para `camadaDoAmbiente`, já validada por Zod. Duas leituras do ambiente com
