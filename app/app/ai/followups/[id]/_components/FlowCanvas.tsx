@@ -142,6 +142,26 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     [setEdges],
   );
 
+  // Excluir nó: remove o nó E as arestas ligadas a ele (deixar aresta órfã
+  // apontando para um id que sumiu quebraria o desenho e o round-trip). Fecha o
+  // painel de configuração junto — o alvo dele deixou de existir.
+  const deleteNode = useCallback(
+    (id: string) => {
+      setNodes((nds) => nds.filter((n) => n.id !== id));
+      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+      setSelectedNodeId(null);
+    },
+    [setNodes, setEdges],
+  );
+
+  const deleteEdge = useCallback(
+    (id: string) => {
+      setEdges((eds) => eds.filter((e) => e.id !== id));
+      setSelectedEdgeId(null);
+    },
+    [setEdges],
+  );
+
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
   const selectedEdgeSource = selectedEdge ? (nodes.find((n) => n.id === selectedEdge.source) ?? null) : null;
@@ -337,6 +357,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
                 node={selectedNode}
                 onChange={(patch) => updateNodeData(selectedNode.id, patch)}
                 ramosLigados={ramosLigadosDoSelecionado}
+                onDelete={() => deleteNode(selectedNode.id)}
               />
             </div>
           </aside>
@@ -365,6 +386,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
                 targetNode={selectedEdgeTarget ? toFlowNode(selectedEdgeTarget) : undefined}
                 condition={selectedEdge.data?.condition ?? { type: "always" }}
                 onChange={(condition) => updateEdgeCondition(selectedEdge.id, condition)}
+                onDelete={() => deleteEdge(selectedEdge.id)}
               />
             </div>
           </aside>
