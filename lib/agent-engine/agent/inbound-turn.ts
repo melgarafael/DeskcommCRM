@@ -171,6 +171,14 @@ import {
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { gravarDadosDeterministicos } from './dados-do-lead';
+import {
+  campoPorChave,
+  carregarEstadoDeAtendimento,
+  concluirEnrollmentDeAtendimento,
+  registrarDadoDoFluxo,
+  renderBlocoDeAtendimento,
+  situacaoDoChecklist,
+} from '@/lib/followup/atendimento';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -192,6 +200,16 @@ export const AGENT_TOOL_DEFS = {
       'Use sempre que a conversa tocar o assunto de uma skill listada no bloco de procedimentos do sistema.',
     inputSchema: z.object({
       name: z.string().min(1).describe('nome exato da skill, como aparece no bloco de procedimentos'),
+    }),
+  },
+  flow_collect: {
+    description:
+      'Registra a resposta do cliente a uma pergunta do FLUXO DE ATENDIMENTO ativo. ' +
+      'Use assim que ele informar o dado de um campo pendente listado no bloco do fluxo —, ' +
+      'para o dado ficar guardado e não ser perguntado de novo. Não invente valor.',
+    inputSchema: z.object({
+      campo: z.string().min(1).max(60).describe('a chave do campo, como aparece no bloco do fluxo'),
+      valor: z.string().min(1).max(500).describe('o que o cliente informou, sem inventar'),
     }),
   },
   save_client_data: {
@@ -1921,6 +1939,14 @@ async function executarTurnoDoAgente(
   // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
   const skills = await loadSkills(pool, tenantId);
   const skillIndex = renderSkillIndex(skills);
+  // Fluxo de atendimento ATIVO do contato (surface=atendimento): guia as
+  // perguntas do turno e some quando o cliente completa. Sem enrollment ativo é
+  // null e nada muda. `valoresDoFluxo` é mutável: várias coletas no MESMO turno
+  // precisam enxergar o que as anteriores gravaram.
+  const atendimento = preview
+    ? null
+    : await carregarEstadoDeAtendimento(pool, { organizationId: tenantId, contactId: leadId });
+  const valoresDoFluxo = atendimento === null ? null : new Set(Object.keys(atendimento.valores));
   // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
   // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
   // encaixa playbook + memória + índice de skills no prefixo cacheável.
@@ -2320,7 +2346,14 @@ async function executarTurnoDoAgente(
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
   const skillSignal = latestInboundSignal(effectiveContext.messages);
   const skillMatch = matchSkills(skills, skillSignal);
-  const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
+  // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
+  // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
+  // por keyword vence, e a mesma skill não entra duas vezes.
+  const skillsDoFluxo = (atendimento?.situacao.skills ?? [])
+    .map((nome) => skills.find((s) => s.name === nome))
+    .filter((s): s is (typeof skills)[number] => s !== undefined)
+    .filter((s) => !skillMatch.matched.some((m) => m.name === s.name));
+  const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoFluxo]);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
     await recordSkillMissCandidates(
       deps.knobs.goldenCandidatesDir,
@@ -2397,6 +2430,77 @@ async function executarTurnoDoAgente(
           };
         }
         return { ok: true, name: skill.name, description: skill.description, body: skill.body };
+      },
+    }),
+    flow_collect: tool({
+      ...AGENT_TOOL_DEFS.flow_collect,
+      execute: async ({ campo, valor }) => {
+        if (atendimento === null || valoresDoFluxo === null) {
+          return { ok: false, error: { code: 'sem_fluxo', message: 'Não há fluxo de atendimento ativo.' } };
+        }
+        const campoNode = campoPorChave(atendimento.checklist, campo);
+        if (campoNode === null) {
+          return {
+            ok: false,
+            error: {
+              code: 'campo_desconhecido',
+              message: `O campo "${campo}" não pertence ao fluxo ativo.`,
+              campos: atendimento.situacao.pendentes.map((n) => n.config.key),
+            },
+          };
+        }
+        try {
+          await registrarDadoDoFluxo(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            flowPointerId: atendimento.enrollment.pointer_id,
+            enrollmentId: atendimento.enrollment.id,
+            fieldKey: campoNode.config.key,
+            value: valor,
+            source: 'agent',
+          });
+        } catch {
+          return { ok: false, error: { code: 'gravar_falhou', message: 'Não consegui registrar agora.' } };
+        }
+        valoresDoFluxo.add(campoNode.config.key);
+        const situacao = situacaoDoChecklist(atendimento.checklist, valoresDoFluxo);
+        if (!situacao.completo) {
+          return {
+            ok: true,
+            gravou: campoNode.config.key,
+            pendentes: situacao.pendentes.map((n) => n.config.key),
+          };
+        }
+        try {
+          await concluirEnrollmentDeAtendimento(pool, {
+            organizationId: tenantId,
+            enrollmentId: atendimento.enrollment.id,
+            outcome: atendimento.checklist.fim.config.outcome,
+          });
+        } catch {
+          // best-effort: a conclusão se repete no próximo turno se falhar aqui.
+        }
+        const fim = atendimento.checklist.fim.config.ao_finalizar;
+        if (fim?.tipo === 'skill') {
+          const skill = skills.find((s) => s.name === fim.skill_name);
+          return {
+            ok: true,
+            completo: true,
+            acao: 'skill',
+            ...(skill ? { skill: { name: skill.name, body: skill.body } } : {}),
+            mensagem: `Fluxo concluído. Puxe agora a skill ${fim.skill_name}.`,
+          };
+        }
+        if (fim?.tipo === 'ia') {
+          return {
+            ok: true,
+            completo: true,
+            acao: 'ia',
+            ...(fim.prompt ? { orientacao: fim.prompt } : {}),
+            mensagem: 'Fluxo concluído — siga o atendimento normalmente.',
+          };
+        }
+        return { ok: true, completo: true, acao: 'nada', mensagem: 'Fluxo concluído.' };
       },
     }),
     save_client_data: tool({
@@ -3647,6 +3751,7 @@ async function executarTurnoDoAgente(
     const openingSuffixes = [
       agoraBlock,
       matchedSkillsBlock,
+      atendimento ? renderBlocoDeAtendimento(atendimento) : '',
       stageHintBlock,
       splitHint,
       caseAwaitingLeadBlock,
