@@ -6,6 +6,7 @@ import {
   ReactFlowProvider,
   Background,
   Controls,
+  ConnectionLineType,
   addEdge,
   useNodesState,
   useEdgesState,
@@ -17,6 +18,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { estimateNodeSize, layoutFlowGraph, LAYOUT_NODE_WIDTH } from "@/lib/followup/auto-layout";
+import { semAresta, semArestasDoNo, semNo } from "@/lib/followup/excluir-do-grafo";
 import {
   toReactFlow,
   fromReactFlow,
@@ -98,7 +101,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [settings, setSettings] = useState<FlowGraph["settings"]>(initialData.draft_graph?.settings);
   const nextId = useRef(1);
   const nextEdgeId = useRef(1);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -148,26 +151,6 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     [setEdges],
   );
 
-  // Excluir nó: remove o nó E as arestas ligadas a ele (deixar aresta órfã
-  // apontando para um id que sumiu quebraria o desenho e o round-trip). Fecha o
-  // painel de configuração junto — o alvo dele deixou de existir.
-  const deleteNode = useCallback(
-    (id: string) => {
-      setNodes((nds) => nds.filter((n) => n.id !== id));
-      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
-      setSelectedNodeId(null);
-    },
-    [setNodes, setEdges],
-  );
-
-  const deleteEdge = useCallback(
-    (id: string) => {
-      setEdges((eds) => eds.filter((e) => e.id !== id));
-      setSelectedEdgeId(null);
-    },
-    [setEdges],
-  );
-
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
   const selectedEdgeSource = selectedEdge ? (nodes.find((n) => n.id === selectedEdge.source) ?? null) : null;
@@ -190,6 +173,7 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           : undefined;
         return {
           ...e,
+          type: "smoothstep" as const,
           label: branch ? t(rotuloDoRamo(branch)) : t(conditionLabel(condition)),
           selected: e.id === selectedEdgeId,
         };
@@ -256,6 +240,50 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
     [nodes.length, addNodeAt],
   );
 
+  const deleteNode = useCallback(
+    (id: string) => {
+      setNodes((nds) => semNo(nds, id));
+      setEdges((eds) => semArestasDoNo(eds, id));
+      setSelectedNodeId((cur) => (cur === id ? null : cur));
+    },
+    [setNodes, setEdges],
+  );
+
+  const deleteEdge = useCallback(
+    (id: string) => {
+      setEdges((eds) => semAresta(eds, id));
+      setSelectedEdgeId((cur) => (cur === id ? null : cur));
+    },
+    [setEdges],
+  );
+
+  const onDeleteSelection = useCallback(() => {
+    if (selectedNodeId) deleteNode(selectedNodeId);
+    else if (selectedEdgeId) deleteEdge(selectedEdgeId);
+  }, [selectedNodeId, selectedEdgeId, deleteNode, deleteEdge]);
+
+  const onAutoFit = useCallback(() => {
+    if (nodes.length === 0) return;
+    const sizes = new Map<string, { width: number; height: number }>();
+    for (const n of nodes) {
+      sizes.set(n.id, {
+        width: n.measured?.width ?? LAYOUT_NODE_WIDTH,
+        height: n.measured?.height ?? estimateNodeSize(toFlowNode(n)).height,
+      });
+    }
+    const laid = layoutFlowGraph(liveGraph, sizes);
+    const pos = new Map(laid.nodes.map((n) => [n.id, n.position]));
+    setNodes((nds) =>
+      nds.map((n) => {
+        const p = pos.get(n.id);
+        return p ? { ...n, position: p } : n;
+      }),
+    );
+    window.setTimeout(() => {
+      void fitView({ padding: 0.2, duration: 200 });
+    }, 0);
+  }, [nodes, liveGraph, setNodes, fitView]);
+
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -280,9 +308,13 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
           flow={flow}
           graph={liveGraph}
           dirty={dirty}
+          selection={selectedNode ? "node" : selectedEdge ? "edge" : null}
+          onDeleteSelection={onDeleteSelection}
           onSaved={setSavedGraph}
           onPublishErrors={markNodeErrors}
           onPublishSuccess={clearNodeErrors}
+          onAutoFit={onAutoFit}
+          canAutoFit={nodes.length > 0}
         />
       )}
       <div className="flex flex-1 overflow-hidden">
@@ -313,6 +345,8 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
+            defaultEdgeOptions={{ type: "smoothstep" }}
+            connectionLineType={ConnectionLineType.SmoothStep}
             fitView
           >
             <Background />
@@ -362,8 +396,8 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
                 key={selectedNode.id}
                 node={selectedNode}
                 onChange={(patch) => updateNodeData(selectedNode.id, patch)}
-                ramosLigados={ramosLigadosDoSelecionado}
                 onDelete={() => deleteNode(selectedNode.id)}
+                ramosLigados={ramosLigadosDoSelecionado}
                 settings={settings}
                 onSettingsChange={setSettings}
               />

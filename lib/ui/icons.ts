@@ -56,6 +56,7 @@ export {
   X,
   Plus,
   Trash,
+  TreeStructure,
   PencilSimple,
   MagnifyingGlass,
   Pause,

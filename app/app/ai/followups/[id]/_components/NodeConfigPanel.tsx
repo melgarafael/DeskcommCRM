@@ -5,9 +5,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash } from "@/lib/ui/icons";
 import type { FlowGraph, FlowNode } from "@/lib/followup/graph-schema";
 import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
+import { Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 
 import { ActionForm } from "./forms/ActionForm";
@@ -25,10 +25,9 @@ import { NODE_VISUALS } from "./nodes/nodeVisuals";
 interface Props {
   node: RFNode;
   onChange: (patch: Partial<RFNodeData>) => void;
+  onDelete: () => void;
   /** Ramos deste nó que já têm aresta — quem sabe isso é o canvas, que é dono do grafo. */
   ramosLigados?: string[];
-  /** Exclui o nó (e as arestas ligadas a ele). Ausente = sem botão. */
-  onDelete?: () => void;
   /** Configurações do FLUXO (nível do grafo). Mostradas no nó de início. */
   settings?: FlowGraph["settings"];
   onSettingsChange?: (settings: FlowGraph["settings"]) => void;
@@ -43,7 +42,14 @@ interface Props {
  * quando o candidato passa no schema — senão mostra erro inline e o canvas
  * mantém a última config válida (nunca um valor pela metade rio acima).
  */
-export function NodeConfigPanel({ node, onChange, ramosLigados, onDelete, settings, onSettingsChange }: Props) {
+export function NodeConfigPanel({
+  node,
+  onChange,
+  onDelete,
+  ramosLigados,
+  settings,
+  onSettingsChange,
+}: Props) {
   const t = useT();
   const type = node.type as FlowNode["type"];
   const visual = NODE_VISUALS[type];
@@ -64,27 +70,12 @@ export function NodeConfigPanel({ node, onChange, ramosLigados, onDelete, settin
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto" data-testid="node-config-panel">
       <div className="space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <h2 className="flex items-center gap-2 text-base font-semibold text-text">
-            <span className={`flex h-6 w-6 items-center justify-center rounded-full ${visual.chipClassName}`}>
-              <Icon size={14} aria-hidden />
-            </span>
-            {t(visual.paletteLabel)}
-          </h2>
-          {onDelete && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onDelete}
-              aria-label={t("Excluir nó")}
-              title={t("Excluir nó")}
-              className="shrink-0 text-destructive"
-            >
-              <Trash size={16} aria-hidden />
-            </Button>
-          )}
-        </div>
+        <h2 className="flex items-center gap-2 text-base font-semibold text-text">
+          <span className={`flex h-6 w-6 items-center justify-center rounded-full ${visual.chipClassName}`}>
+            <Icon size={14} aria-hidden />
+          </span>
+          {t(visual.paletteLabel)}
+        </h2>
         <p className="text-sm text-text-muted">
           {t("Alterações aplicam no rascunho ao digitar — salve na barra de publicação.")}
         </p>
@@ -180,6 +171,20 @@ export function NodeConfigPanel({ node, onChange, ramosLigados, onDelete, settin
         {type === "end" && (
           <EndForm config={node.data.config as ConfigOf<"end">} onChange={(config) => onChange({ config })} />
         )}
+      </div>
+
+      <div className="mt-auto border-t border-border pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full text-destructive"
+          data-testid="delete-node"
+          onClick={onDelete}
+        >
+          <Trash size={14} aria-hidden className="mr-1" />
+          {t("Excluir nó")}
+        </Button>
       </div>
     </div>
   );

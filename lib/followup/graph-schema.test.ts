@@ -551,8 +551,41 @@ describe('graph-schema', () => {
     });
   });
 
-  describe('flowGraphSchema.settings (configurações do fluxo)', () => {
-    const grafoMinimo = (settings?: unknown) => ({
+  describe('flowGraphSchema integridade (superRefine do original)', () => {
+    const no = (id: string, type: 'trigger' | 'end') => ({
+      id,
+      type,
+      label: id,
+      position: { x: 0, y: 0 },
+      config: type === 'end' ? { outcome: 'converted' } : {},
+    });
+
+    it('recusa aresta apontando para nó inexistente', () => {
+      const r = flowGraphSchema.safeParse({
+        nodes: [no('t', 'trigger'), no('e', 'end')],
+        edges: [{ id: 'a', source: 't', target: 'fantasma', condition: { type: 'always' } }],
+      });
+      expect(r.success).toBe(false);
+    });
+
+    it('recusa id de nó repetido', () => {
+      const r = flowGraphSchema.safeParse({
+        nodes: [no('t', 'trigger'), no('t', 'end')],
+        edges: [],
+      });
+      expect(r.success).toBe(false);
+    });
+
+    it('aceita um grafo íntegro', () => {
+      const r = flowGraphSchema.safeParse({
+        nodes: [no('t', 'trigger'), no('e', 'end')],
+        edges: [{ id: 'a', source: 't', target: 'e', condition: { type: 'always' } }],
+      });
+      expect(r.success).toBe(true);
+    });
+  });
+
+  describe('flowGraphSchema.settings (configurações do fluxo)', () => {    const grafoMinimo = (settings?: unknown) => ({
       nodes: [
         { id: 't', type: 'trigger', label: 'Início', position: { x: 0, y: 0 }, config: {} },
         { id: 'e', type: 'end', label: 'Fim', position: { x: 0, y: 0 }, config: { outcome: 'converted' } },
