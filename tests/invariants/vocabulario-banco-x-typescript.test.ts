@@ -261,6 +261,15 @@ const PARES: Array<{
     arquivo: "lib/tarefas/tipos.ts",
     simbolo: "SITUACOES_DA_TAREFA",
   },
+  {
+    tabela: "contact_flow_data",
+    coluna: "source",
+    // lib/followup/contact-flow-data.ts → CONTACT_FLOW_DATA_SOURCES (tupla `as const`).
+    // Nasce com a migration 0236 (fluxos de atendimento): distingue o que o
+    // cliente informou, o que a IA interpretou e o que o extrator capturou.
+    arquivo: "lib/followup/contact-flow-data.ts",
+    simbolo: "CONTACT_FLOW_DATA_SOURCES",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

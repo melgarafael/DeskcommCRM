@@ -14857,12 +14857,15 @@ alter table public.followup_flow_pointers
 alter table public.followup_flow_pointers
   drop constraint if exists followup_flow_pointers_surface_check;
 
+-- Bloco ÚNICO da constraint (regra de baseline-constraint-reconstruida): o valor
+-- 'atendimento' (migration 0236) entra AQUI, não num apêndice próprio.
 alter table public.followup_flow_pointers
   add constraint followup_flow_pointers_surface_check
-  check (surface in ('followup', 'crm_automation'));
+  check (surface in ('followup', 'crm_automation', 'atendimento'));
 
 comment on column public.followup_flow_pointers.surface is
-  'Onde o fluxo aparece: followup = /app/ai/followups; crm_automation = CRM Automação. '
+  'Onde o fluxo aparece: followup = /app/ai/followups; crm_automation = CRM Automação; '
+  'atendimento = fluxo de perguntas em tempo real. '
   'Vocabulário cobrado por tests/invariants/vocabulario-banco-x-typescript.test.ts.';
 
 -- ---- inscrição Web Push (migrations 0197 e 0199) ----
@@ -23520,3 +23523,61 @@ create unique index if not exists channel_sessions_datafy_phone_number_id_ativo_
   where archived_at is null and datafy_phone_number_id is not null;
 
 -- ---- fim canal de WhatsApp Datafy (migration 0235) ----
+
+-- ---- fluxos de atendimento (migration 0236) ----
+-- Chão de dados da superfície `atendimento`: as respostas coletadas por um fluxo
+-- durante a conversa, por contato+fluxo+campo. O valor novo do CHECK de
+-- `followup_flow_pointers.surface` ('atendimento') NÃO é reconstruído aqui — ele
+-- mora no bloco único da migration 0196 acima (regra do
+-- baseline-constraint-reconstruida). Este bloco cuida só da tabela nova.
+create table if not exists public.contact_flow_data (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  flow_pointer_id uuid not null references public.followup_flow_pointers(id) on delete cascade,
+  enrollment_id uuid references public.followup_enrollments(id) on delete set null,
+  field_key text not null,
+  value text,
+  value_json jsonb,
+  source text not null default 'client',
+  collected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint contact_flow_data_unico
+    unique (organization_id, contact_id, flow_pointer_id, field_key),
+  constraint contact_flow_data_field_key_valido
+    check (field_key ~ '^[a-z][a-z0-9_]{0,59}$'),
+  constraint contact_flow_data_source_conhecido
+    check (source in ('client', 'agent', 'deterministic'))
+);
+
+comment on table public.contact_flow_data is
+  'Respostas coletadas por um fluxo de atendimento (surface=atendimento), por contato+fluxo+campo. '
+  'Fonte do bloco PENDENTES do agente: campo sem linha aqui é pergunta em aberto. '
+  'Origem do valor em `source`; par de vocabulário em lib/followup/contact-flow-data.ts.';
+comment on column public.contact_flow_data.enrollment_id is
+  'Corrida corrente do fluxo para este contato. ON DELETE SET NULL: limpar a execução não apaga o dado já coletado do cliente.';
+comment on column public.contact_flow_data.value_json is
+  'Valor normalizado (number/date/bool/seleção). `value` guarda o texto cru informado.';
+
+create index if not exists contact_flow_data_contato_idx
+  on public.contact_flow_data (organization_id, contact_id, flow_pointer_id);
+
+create index if not exists contact_flow_data_enrollment_idx
+  on public.contact_flow_data (organization_id, enrollment_id);
+
+alter table public.contact_flow_data enable row level security;
+
+drop policy if exists tenant_isolation_contact_flow_data_all on public.contact_flow_data;
+create policy tenant_isolation_contact_flow_data_all on public.contact_flow_data
+  for all
+  using (organization_id in (select * from public.fn_user_org_ids()))
+  with check (organization_id in (select * from public.fn_user_org_ids()));
+
+revoke all on public.contact_flow_data from anon;
+
+drop trigger if exists trg_contact_flow_data_updated_at on public.contact_flow_data;
+create trigger trg_contact_flow_data_updated_at
+  before update on public.contact_flow_data
+  for each row execute function public.fn_set_updated_at();
+
+-- ---- fim fluxos de atendimento (migration 0236) ----

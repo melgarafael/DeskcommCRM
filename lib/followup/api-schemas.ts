@@ -7,8 +7,12 @@
 import { z } from "zod";
 import { flowGraphSchema } from "./graph-schema";
 
-/** Vocabulário da coluna `surface` (0167). A UI não recorta mais por ela. */
-export const FOLLOWUP_FLOW_SURFACES = ["followup", "crm_automation"] as const;
+/**
+ * Vocabulário da coluna `surface` (0167 + 0236). A UI não recorta mais por ela
+ * aqui, mas o CHECK do banco espelha esta tupla — par em
+ * `tests/invariants/vocabulario-banco-x-typescript.test.ts`.
+ */
+export const FOLLOWUP_FLOW_SURFACES = ["followup", "crm_automation", "atendimento"] as const;
 export type FollowupFlowSurface = (typeof FOLLOWUP_FLOW_SURFACES)[number];
 
 export const createFollowupFlowSchema = z.strictObject({
