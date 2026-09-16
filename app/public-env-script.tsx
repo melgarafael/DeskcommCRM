@@ -71,6 +71,7 @@ export async function PublicEnvScript({
     // `""`), então o navegador não precisa aprender um segundo jeito de dizer
     // "não tem logo".
     APP_LOGO_URL: marca.logoUrl ?? "",
+    ADVOMAX_DEPLOYMENT_MODE: env.ADVOMAX_DEPLOYMENT_MODE ? "true" : "false",
   })
     // Evita quebrar o </script> se algum valor contiver a sequência.
     .replace(/</g, "\\u003c");

@@ -28,9 +28,7 @@ const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
  * pra permitir setup parcial (ex: dev sem WAHA quando trabalhando só na UI).
  */
 const required = (name: string) =>
-  isProd
-    ? z.string().min(1, `${name} é obrigatória em produção`)
-    : z.string().default("");
+  isProd ? z.string().min(1, `${name} é obrigatória em produção`) : z.string().default("");
 
 const requiredAlways = (name: string) => z.string().min(1, `${name} é obrigatória`);
 
@@ -320,16 +318,15 @@ const schema = z.object({
     .transform((v) => v === "true"),
 
   // App URLs
-  NEXT_PUBLIC_APP_URL: z
-    .string()
-    .url()
-    .default("http://localhost:3000"),
-  NEXT_PUBLIC_ADMIN_URL: z
-    .string()
-    .url()
-    .default("http://localhost:3000"),
+  NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  NEXT_PUBLIC_ADMIN_URL: z.string().url().default("http://localhost:3000"),
 
   // Advomax bridge — opcional até o backend jurídico ser configurado.
+  ADVOMAX_DEPLOYMENT_MODE: z
+    .enum(["true", "false"])
+    .optional()
+    .default("false")
+    .transform((v) => v === "true"),
   ADVOMAX_API_URL: z.string().optional().default(""),
   ADVOMAX_CRM_INTEGRATION_KEY: z.string().optional().default(""),
 
@@ -384,7 +381,46 @@ if (!parsed.success) {
   );
 }
 
-export const env = parsed.data;
+export function detectarModoComercialAdvomax(flag: boolean, appUrl: string): boolean {
+  return flag || new URL(appUrl).hostname === "crm.advomax.com.br";
+}
+
+// O domínio canônico identifica a distribuição comercial mesmo quando uma
+// instalação manual esquece a flag. Isso impede que crm.advomax.com.br caia
+// silenciosamente no modo standalone e libere acesso sem entitlement.
+export const env = {
+  ...parsed.data,
+  ADVOMAX_DEPLOYMENT_MODE: detectarModoComercialAdvomax(
+    parsed.data.ADVOMAX_DEPLOYMENT_MODE,
+    parsed.data.NEXT_PUBLIC_APP_URL,
+  ),
+};
+
+export function validarModoComercialAdvomax(
+  config: Pick<
+    typeof env,
+    | "ADVOMAX_DEPLOYMENT_MODE"
+    | "NEXT_PUBLIC_APP_URL"
+    | "ADVOMAX_API_URL"
+    | "ADVOMAX_CRM_INTEGRATION_KEY"
+  >,
+): void {
+  if (!config.ADVOMAX_DEPLOYMENT_MODE) return;
+  const host = new URL(config.NEXT_PUBLIC_APP_URL).hostname;
+  if (host !== "crm.advomax.com.br") {
+    throw new Error("ADVOMAX_DEPLOYMENT_MODE exige NEXT_PUBLIC_APP_URL em crm.advomax.com.br.");
+  }
+  if (!config.ADVOMAX_API_URL.trim() || !config.ADVOMAX_CRM_INTEGRATION_KEY.trim()) {
+    throw new Error("ADVOMAX_DEPLOYMENT_MODE exige ADVOMAX_API_URL e ADVOMAX_CRM_INTEGRATION_KEY.");
+  }
+}
+
+// A distribuição open-source continua sem ponte jurídica. A instalação
+// comercial tem um domínio próprio e não pode subir sem a integração que dá
+// sentido a esse modo: melhor recusar no boot do que atender parcialmente.
+if (env.ADVOMAX_DEPLOYMENT_MODE && !isBuildPhase) {
+  validarModoComercialAdvomax(env);
+}
 
 // Soft warning for env-gated AI keys (worker degrades gracefully but operators
 // should know when the bot is silent for config reasons).

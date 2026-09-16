@@ -25,15 +25,9 @@
  * concluir que o produto está quebrado.
  */
 
-import { resolveBranding, type Branding } from "@/lib/branding";
+import { defaultsDaMarcaAdvomax, resolveBranding, type Branding } from "@/lib/branding";
 
-import {
-  derivarMarca,
-  type CodigoDeMotivo,
-  type Marca,
-  type Regua,
-  type Tema,
-} from "./contraste";
+import { derivarMarca, type CodigoDeMotivo, type Marca, type Regua, type Tema } from "./contraste";
 import { logoDaCamada } from "./logo";
 import { normalizarHex } from "./rampa";
 import {
@@ -197,11 +191,7 @@ function resolverCor(
   regua: Regua,
 ): { cor: CorResolvida | null; motivos: MotivoDaMarca[] } {
   const motivos: MotivoDaMarca[] = [];
-  const anotar = (
-    codigo: CodigoDaResolucao,
-    detalhe: string,
-    alvo: string | null = null,
-  ) => {
+  const anotar = (codigo: CodigoDaResolucao, detalhe: string, alvo: string | null = null) => {
     motivos.push({ codigo, origem, tema: null, alvo, detalhe });
   };
 
@@ -222,9 +212,7 @@ function resolverCor(
     // inclusive campo AUSENTE ou de tipo errado no mesmo caminho, é forma do
     // envelope. Sem o `code`, um envelope sem `semente_hex` seria reportado como
     // cor mal digitada, e o operador iria procurar o erro no lugar errado.
-    const noHex = lido.error.issues.some(
-      (i) => i.path[0] === "semente_hex" && i.code === "custom",
-    );
+    const noHex = lido.error.issues.some((i) => i.path[0] === "semente_hex" && i.code === "custom");
     if (noHex) {
       anotar("semente_invalida", "semente_hex não é um hex de cor (#rgb ou #rrggbb)");
     } else {
@@ -295,10 +283,7 @@ function resolverCor(
     // Não é `catch` que silencia: o motivo sai com a mensagem real (sem o hex).
     // Existe porque a alternativa é a exceção subir até o layout e derrubar o
     // produto inteiro por causa de uma cor.
-    anotar(
-      "derivacao_falhou",
-      semIdentidade(erro instanceof Error ? erro.message : String(erro)),
-    );
+    anotar("derivacao_falhou", semIdentidade(erro instanceof Error ? erro.message : String(erro)));
     return { cor: { semente, papel, derivada: null }, motivos };
   }
 }
@@ -313,10 +298,7 @@ function resolverCor(
  * anotada e a busca continua descendo. Numa instalação de revendedor, uma
  * organização que grava lixo tem de cair na marca do revendedor, não na nossa.
  */
-export function resolverMarca(
-  camadas: readonly CamadaDeMarca[],
-  regua: Regua,
-): MarcaResolvida {
+export function resolverMarca(camadas: readonly CamadaDeMarca[], regua: Regua): MarcaResolvida {
   const nome = primeiroDefinido(camadas, (c) => c.nome);
   const logo = primeiroDefinido(camadas, (c) => c.logoUrl);
   const base = resolveBranding(nome?.valor, logo?.valor);
@@ -426,17 +408,25 @@ export function camadaDoAmbiente(fonte: {
   APP_NAME?: string;
   APP_LOGO_URL?: string;
   APP_ACCENT_HEX?: string;
+  ADVOMAX_DEPLOYMENT_MODE?: boolean;
 }): CamadaDeMarca {
-  const hex = (fonte.APP_ACCENT_HEX ?? "").trim();
+  const modoComercial = fonte.ADVOMAX_DEPLOYMENT_MODE === true;
+  const padrao = defaultsDaMarcaAdvomax(modoComercial);
+  const hex = (fonte.APP_ACCENT_HEX ?? "").trim() || (modoComercial ? "#9D5E35" : "");
   // Chave declarada e vazia (`APP_ACCENT_HEX=`) é o estado que o `install.sh`
   // deixa quando o operador não responde — o mesmo caso que `resolveBranding`
   // trata para o nome. Não é cor ausente com defeito, é instalação de fábrica:
   // a camada simplesmente não fala sobre cor.
-  if (hex.length === 0) return { origem: "env", nome: fonte.APP_NAME, logoUrl: fonte.APP_LOGO_URL };
+  if (hex.length === 0)
+    return {
+      origem: "env",
+      nome: fonte.APP_NAME || padrao.name,
+      logoUrl: fonte.APP_LOGO_URL || padrao.logoUrl,
+    };
   return {
     origem: "env",
-    nome: fonte.APP_NAME,
-    logoUrl: fonte.APP_LOGO_URL,
+    nome: fonte.APP_NAME || padrao.name,
+    logoUrl: fonte.APP_LOGO_URL || padrao.logoUrl,
     cor: envelopeDeSemente(hex),
   };
 }

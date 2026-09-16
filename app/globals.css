@@ -216,6 +216,13 @@
   --agenda-pessoa-8: #cc77b1;   /* framboesa */
 }
 
+/* O SVG oficial usa azul-marinho fixo; no tema escuro ele precisa de uma
+   versão clara. A classe só é aplicada ao asset embutido do Advomax, nunca ao
+   logo white-label enviado pelo operador. */
+[data-theme="dark"] .advomax-product-logo {
+  filter: brightness(0) invert(1);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    Espelho do tema claro para SUBÁRVORE.
 

@@ -17,6 +17,14 @@
  */
 
 export const DEFAULT_APP_NAME = "DeskcommCRM";
+export const ADVOMAX_APP_NAME = "Advomax CRM";
+export const ADVOMAX_LOGO_URL = "/advomax-logo.svg";
+
+export function defaultsDaMarcaAdvomax(modoComercial: boolean): Pick<Branding, "name" | "logoUrl"> {
+  return modoComercial
+    ? { name: ADVOMAX_APP_NAME, logoUrl: ADVOMAX_LOGO_URL }
+    : { name: DEFAULT_APP_NAME, logoUrl: null };
+}
 
 export type Branding = {
   /** Nome exibido na interface e nos títulos de página. */
@@ -97,9 +105,20 @@ export function marcaEhADoProduto(marca: Pick<Branding, "name" | "logoUrl">): bo
 }
 
 export function branding(): Branding {
+  const modoComercial =
+    typeof window !== "undefined"
+      ? window.__PUBLIC_ENV__?.ADVOMAX_DEPLOYMENT_MODE === "true"
+      : process.env.ADVOMAX_DEPLOYMENT_MODE === "true";
+  const padrao = defaultsDaMarcaAdvomax(modoComercial);
   if (typeof window !== "undefined") {
     const runtime = window.__PUBLIC_ENV__;
-    return resolveBranding(runtime?.APP_NAME, runtime?.APP_LOGO_URL);
+    return resolveBranding(
+      runtime?.APP_NAME || padrao.name,
+      runtime?.APP_LOGO_URL || padrao.logoUrl,
+    );
   }
-  return resolveBranding(process.env.APP_NAME, process.env.APP_LOGO_URL);
+  return resolveBranding(
+    process.env.APP_NAME || padrao.name,
+    process.env.APP_LOGO_URL || padrao.logoUrl,
+  );
 }

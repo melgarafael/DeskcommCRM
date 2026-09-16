@@ -1294,6 +1294,18 @@ while [ "$i" -lt "${#FIELDS[@]}" ]; do
   fi
 done
 
+# O domínio comercial é uma distribuição fechada: fixa a identidade aprovada e
+# recusa a instalação sem a ponte jurídica. Fora dele, a instalação permanece
+# white-label/open-source e estas chaves continuam opcionais.
+if [ "$DOMAIN" = "crm.advomax.com.br" ]; then
+  ADVOMAX_DEPLOYMENT_MODE=true
+  APP_NAME="Advomax CRM"
+  APP_LOGO_URL="/advomax-logo.svg"
+  APP_ACCENT_HEX="#9D5E35"
+  [ -n "${ADVOMAX_API_URL:-}" ] || die "crm.advomax.com.br exige ADVOMAX_API_URL."
+  [ -n "${ADVOMAX_CRM_INTEGRATION_KEY:-}" ] || die "crm.advomax.com.br exige ADVOMAX_CRM_INTEGRATION_KEY."
+fi
+
 # ── Conferência: a última chance de corrigir sem desfazer nada ──────────────
 # Numa 2ª execução todos os campos já vêm do .env — então esta tela é também
 # o caminho para consertar um valor digitado errado antes, que antes ficava
@@ -1590,8 +1602,10 @@ esac
   # Ponte opcional Advomax ↔ CRM. O instalador não força um escritório a
   # contratar os dois produtos; quando estas variáveis já vierem no ambiente,
   # elas sobrevivem à reconstrução do .env junto com as demais configurações.
+  envq ADVOMAX_DEPLOYMENT_MODE "${ADVOMAX_DEPLOYMENT_MODE:-false}"
   envq ADVOMAX_API_URL "${ADVOMAX_API_URL:-}"
   envq ADVOMAX_CRM_INTEGRATION_KEY "${ADVOMAX_CRM_INTEGRATION_KEY:-}"
+  envq STORAGE_BACKUP_DIR "${STORAGE_BACKUP_DIR:-}"
   printf '# Marca da instalação (white-label). Preencha APP_LOGO_URL com a URL de uma\n'
   printf '# imagem pública para trocar o texto por logo na sidebar. Ver lib/branding.ts.\n'
   printf '# APP_ACCENT_HEX é a SEMENTE da cor: o banco (platform_branding) manda depois\n'

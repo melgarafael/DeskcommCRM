@@ -21,6 +21,7 @@ interface PublicEnv {
    */
   APP_NAME?: string;
   APP_LOGO_URL?: string;
+  ADVOMAX_DEPLOYMENT_MODE?: string;
 }
 
 interface Window {

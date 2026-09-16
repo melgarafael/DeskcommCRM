@@ -3,8 +3,8 @@
 Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois caminhos:
 
 > **Ainda nem tem servidor?** Comece por `comecar.sh` — ele roda **no seu computador**, antes
-> de existir VPS, e responde a pergunta que trava todo mundo no início: *o que eu preciso
-> contratar?* Ele nomeia o plano (VPS Turing, 2 vCPU / 4 GB — o Cartesius não dá conta do
+> de existir VPS, e responde a pergunta que trava todo mundo no início: _o que eu preciso
+> contratar?_ Ele nomeia o plano (VPS Turing, 2 vCPU / 4 GB — o Cartesius não dá conta do
 > WhatsApp), abre a página se você quiser, e devolve o comando exato do seu caso. Depois que
 > a VPS existir, o caminho é o `install.sh` daqui de baixo.
 >
@@ -25,7 +25,7 @@ Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois
 2. Clone o repositório (`git clone --depth 1 https://github.com/melgarafael/DeskcommCRM.git deskcommcrm`)
    e abra a pasta no **Claude Code, Codex, Cursor, OpenCode ou Antigravity** dentro do VPS —
    ou jogue só esta pasta no chat: o `CLAUDE.md` daqui manda clonar e abre o guia.
-3. Diga: *"instala o DeskcommCRM pra mim"*. O guia `deskcomm-instalar` conduz tudo —
+3. Diga: _"instala o DeskcommCRM pra mim"_. O guia `deskcomm-instalar` conduz tudo —
    cria o banco, gera as senhas, sobe o CRM e te ajuda a conectar o WhatsApp.
 
 ## ⚙️ Caminho manual: um comando
@@ -51,7 +51,7 @@ O instalador pergunta o que precisa (domínio, chaves do Supabase, provedor de I
 ## Criar o Supabase automaticamente (opcional)
 
 Criar o projeto no navegador e copiar as 4 credenciais é o passo mais demorado da
-instalação — e o mais fácil de errar (copiar a *Direct connection*, que é IPv6-only e
+instalação — e o mais fácil de errar (copiar a _Direct connection_, que é IPv6-only e
 não conecta de um VPS IPv4, é a armadilha mais comum). Dá para pular tudo isso:
 
 ```bash
@@ -80,14 +80,14 @@ Owner/Admin. Não dá para hospedar vários clientes numa conta só.
 
 ## O que você precisa antes
 
-| Item | Onde conseguir |
-|---|---|
-| VPS (Docker) | HostGator — VPS com Docker (n8n/OpenClaw/GatorClaw). Outras hospedagens com Docker também servem — se a sua já tiver proxy próprio nas portas 80/443, [veja aqui](#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy) |
-| Domínio | Registro de domínio (aponte um A-record pro IP do VPS) |
-| Banco de dados | Conta grátis no [supabase.com](https://supabase.com) (3 chaves + connection string) |
-| IA | Chave da [Anthropic](https://console.anthropic.com) — opcional: dá para instalar sem ela e cadastrar depois pela tela (IA › Credenciais) |
-| WhatsApp | Seu número — conectado por QR code no onboarding |
-| Token do Supabase (opcional) | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) — com ele o instalador configura sozinho os links dos e-mails de acesso. **Ele não fica salvo:** é usado uma vez e some com o processo |
+| Item                         | Onde conseguir                                                                                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| VPS (Docker)                 | HostGator — VPS com Docker (n8n/OpenClaw/GatorClaw). Outras hospedagens com Docker também servem — se a sua já tiver proxy próprio nas portas 80/443, [veja aqui](#vps-que-já-vem-com-proxy-próprio-hostinger-coolify-dokploy) |
+| Domínio                      | Registro de domínio (aponte um A-record pro IP do VPS)                                                                                                                                                                         |
+| Banco de dados               | Conta grátis no [supabase.com](https://supabase.com) (3 chaves + connection string)                                                                                                                                            |
+| IA                           | Chave da [Anthropic](https://console.anthropic.com) — opcional: dá para instalar sem ela e cadastrar depois pela tela (IA › Credenciais)                                                                                       |
+| WhatsApp                     | Seu número — conectado por QR code no onboarding                                                                                                                                                                               |
+| Token do Supabase (opcional) | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) — com ele o instalador configura sozinho os links dos e-mails de acesso. **Ele não fica salvo:** é usado uma vez e some com o processo  |
 
 > **Sem esse token, um passo fica manual — e ele importa.** Os e-mails de
 > "esqueci minha senha", de confirmação de cadastro e de aceite de convite saem
@@ -137,15 +137,44 @@ declare `REVERSE_PROXY=traefik` no `.env` — aí a escolha é sua e ele segue s
 
 ## Scripts do kit
 
-| Script | Função |
-|---|---|
-| `install.sh` | Instala tudo (idempotente) |
-| `update.sh` | Atualiza pra versão nova |
-| `backup.sh` | Backup do banco + sessões WhatsApp |
-| `restore.sh` | Restaura um backup |
-| `reset-password.sh` | Redefine senha de um usuário |
-| `reset-mfa.sh` | Remove o MFA de um usuário travado |
-| `healthcheck.sh` | Diagnóstico dos serviços |
+| Script              | Função                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| `install.sh`        | Instala tudo (idempotente)                                                                    |
+| `update.sh`         | Atualiza pra versão nova                                                                      |
+| `backup.sh`         | Backup com checksum do banco (public + auth/storage quando acessíveis) e volumes persistentes |
+| `restore.sh`        | Confere checksum e restaura banco + volumes                                                   |
+| `reset-password.sh` | Redefine senha de um usuário                                                                  |
+| `reset-mfa.sh`      | Remove o MFA de um usuário travado                                                            |
+| `healthcheck.sh`    | Diagnóstico dos serviços                                                                      |
+
+## Instalação comercial Advomax
+
+`crm.advomax.com.br` ativa o modo comercial automaticamente. Ele grava a marca Advomax CRM
+(`public/advomax-logo.svg`, azul `#071b33`, acento `#9D5E35`) e exige `ADVOMAX_API_URL` e
+`ADVOMAX_CRM_INTEGRATION_KEY` no ambiente antes de subir. Outros domínios seguem como
+instalação open-source/white-label, sem exigir essa integração.
+
+## Backup e ensaio de restauração
+
+`backup.sh` cria um diretório atômico com `database.sql.gz`, snapshots de todos os volumes do
+compose (incluindo sessões e mídia do WhatsApp) e `SHA256SUMS`. Em Supabase self-hosted ou com
+role que permita, inclui `auth`, `public` e `storage`; em Supabase gerenciado sem esse acesso,
+registra somente `public`. Objetos Storage em filesystem externo entram ao definir
+`STORAGE_BACKUP_DIR=/caminho/dos-objetos` para uma exportação local, atualizada pelo
+procedimento nativo de S3/MinIO/Supabase. No modo comercial Advomax, `auth`, `storage` e
+`STORAGE_BACKUP_DIR` são pré-requisitos: sem eles o backup falha, em vez de declarar uma cópia
+incompleta como válida. O `manifest.env` lista os schemas, volumes e objetos que a cópia contém.
+
+```bash
+bash backup.sh
+bash backup.sh --verify backups/backup-AAAA-MM-DD-HHMMSS
+# em um ambiente de ensaio com banco/volumes próprios:
+RESTORE_CONFIRM=RESTAURAR bash restore.sh backups/backup-AAAA-MM-DD-HHMMSS
+```
+
+O ensaio restaura sobrescrevendo o destino; nunca use o banco ou os volumes de produção como
+destino. Para Storage remoto S3/MinIO/Supabase gerenciado, use a exportação nativa do provedor:
+ele não é um volume Docker deste projeto.
 
 ## Automações e webhooks
 

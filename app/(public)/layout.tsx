@@ -1,5 +1,5 @@
 import { LogotipoDoProduto } from "@/components/branding/MarcaDoProduto";
-import { marcaEhADoProduto } from "@/lib/branding";
+import { ADVOMAX_LOGO_URL, marcaEhADoProduto } from "@/lib/branding";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { createClient } from "@/lib/supabase/server";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
@@ -76,7 +76,7 @@ export default async function PublicLayout({ children }: { children: React.React
                 data-testid="logo-da-fachada"
                 src={marca.logoUrl}
                 alt={marca.nome}
-                className="h-10 w-auto max-w-[12rem] object-contain"
+                className={`h-10 w-auto max-w-[12rem] object-contain ${marca.logoUrl === ADVOMAX_LOGO_URL ? "advomax-product-logo" : ""}`}
               />
             </div>
           ) : marcaEhADoProduto({ name: marca.nome, logoUrl: null }) ? (

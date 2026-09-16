@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 240" role="img" aria-labelledby="title">
+  <title id="title">Advomax</title>
+  <g fill="none" stroke="#071B33" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M28 202 116 28l90 174"/>
+    <path d="m83 96 101 70 74-100v136"/>
+    <g transform="translate(365 22)">
+      <path d="m0 160 42-112 44 112"/>
+      <path d="M140 48v112h34c38 0 58-22 58-56s-20-56-58-56z"/>
+      <path d="m280 48 44 112 44-112"/>
+      <ellipse cx="452" cy="104" rx="58" ry="58"/>
+      <path d="M570 160V48l48 112 48-112v112"/>
+      <path d="m720 160 42-112 44 112"/>
+      <path d="m860 48 86 112m0-112-86 112"/>
+    </g>
+  </g>
+</svg>

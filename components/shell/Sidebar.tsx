@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ConnectionHealthDot } from "@/components/connections/ConnectionHealthDot";
 import { VersionFooter } from "@/components/shell/VersionFooter";
 import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
-import { marcaEhADoProduto } from "@/lib/branding";
+import { ADVOMAX_LOGO_URL, marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
 import { advomaxAppUrl } from "@/lib/advomax/navigation";
@@ -131,7 +131,14 @@ export function SidebarContent({
           // Altura fixa e largura livre porque a arte enviada tem proporção
           // desconhecida; forçar as duas distorceria o logo de quem configurou.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt={nome} className="h-7 w-auto max-w-[10rem] object-contain" />
+          <img
+            src={logo}
+            alt={nome}
+            className={cn(
+              "h-7 w-auto max-w-[10rem] object-contain",
+              logo === ADVOMAX_LOGO_URL && "advomax-product-logo",
+            )}
+          />
         ) : marcaDoProduto ? (
           // O desenho do produto, inline (ver `components/branding/MarcaDoProduto.tsx`):
           // logotipo com a barra aberta, só o símbolo com ela recolhida.
