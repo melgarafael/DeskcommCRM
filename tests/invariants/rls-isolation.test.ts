@@ -102,6 +102,7 @@ beforeAll(() => {
       v_agent uuid;
       v_version uuid;
       v_boundary jsonb;
+      v_msg uuid;
     begin
       foreach v_org in array array['${ORG_A}'::uuid, '${ORG_B}'::uuid] loop
         select id into v_sess from public.channel_sessions where organization_id = v_org limit 1;
@@ -254,6 +255,17 @@ beforeAll(() => {
             values (v_org, false);
         end if;
 
+        -- instagram_pending_posts (0268): o rascunho de post do Instagram,
+        -- preso a uma mensagem de origem. Reusa a v_msg gravada acima (o
+        -- bloco de messages não capturava o id porque nada mais precisava
+        -- dele até aqui).
+        if not exists (select 1 from public.instagram_pending_posts where organization_id = v_org) then
+          select id into v_msg from public.messages where organization_id = v_org limit 1;
+          insert into public.instagram_pending_posts
+            (organization_id, contact_id, source_message_id, destino, caption)
+            values (v_org, v_contact, v_msg, 'feed', 'RLS invariant caption');
+        end if;
+
         if not exists (select 1 from public.push_subscriptions where organization_id = v_org) then
           insert into public.push_subscriptions
             (organization_id, user_id, endpoint, p256dh, auth)
@@ -327,6 +339,14 @@ export const TABLES = [
   // aceitou o risco do segundo aparelho vinculado: vazar entre organizacoes
   // diria a uma empresa quem, na outra, ligou a feature e quando.
   "org_voice_calls",
+  // instagram_pending_posts (0268, RBAC fechado na 0264): a leitura é
+  // org-scoped SEM gate de papel — quem administra a organização precisa ver
+  // o que está prestes a ser publicado, e o usuário semeado aqui (`agent`)
+  // já basta para o controle positivo. A ESCRITA exige `manager` desde a
+  // 0264, e esse segundo eixo é medido em
+  // `tests/invariants/rbac-config-ia-canais.test.ts`, não aqui — mesma
+  // separação que `catalog_products`/`crm_tasks` já usam duas entradas acima.
+  "instagram_pending_posts",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

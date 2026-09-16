@@ -7776,6 +7776,24 @@ export const DICIONARIO: Traducoes = {
   "Preencha o identificador e o token para poder salvar.":
     { es: "Completa el identificador y el token para poder guardar." },
 
+  // ─── Configurações → Conversões: card do Google Ads (migration 0263) ───
+  "Google Ads": { es: "Google Ads" },
+  "Autorize o acesso à conta de anúncios do Google. Depois de autorizar, você informa aqui qual conta e qual ação de conversão recebem as vendas.":
+    { es: "Autoriza el acceso a la cuenta publicitaria de Google. Después de autorizar, indicas aquí qué cuenta y qué acción de conversión reciben las ventas." },
+  "Conectar com Google": { es: "Conectar con Google" },
+  "Conta de anúncios (Customer ID)": { es: "Cuenta publicitaria (Customer ID)" },
+  "10 dígitos. Com ou sem hífen — tanto faz, a gente limpa.":
+    { es: "10 dígitos. Con o sin guion — da igual, nosotros lo limpiamos." },
+  "Conta de gerente (opcional)": { es: "Cuenta de gerente (opcional)" },
+  "Preencha só se você acessa a conta acima através de uma conta MCC/gerente.":
+    { es: "Completa solo si accedes a la cuenta de arriba a través de una cuenta MCC/gerente." },
+  "Ação de conversão": { es: "Acción de conversión" },
+  "O ID da ação de conversão dentro da conta acima, que vai receber os envios de venda.":
+    { es: "El ID de la acción de conversión dentro de la cuenta de arriba, que va a recibir los envíos de venta." },
+  "Enviar vendas para o Google Ads": { es: "Enviar ventas a Google Ads" },
+  "Google Ads autorizado. Agora informe a conta e a ação de conversão abaixo.":
+    { es: "Google Ads autorizado. Ahora indica la cuenta y la acción de conversión abajo." },
+
   // Convidado do compromisso (agenda)
   "E-mail do convidado": { es: "Correo del invitado" },
   "opcional": { es: "opcional" },

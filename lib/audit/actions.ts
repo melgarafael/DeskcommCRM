@@ -452,6 +452,23 @@ export const AUDIT_ACTIONS = [
   "agenda.google.conexao_falhou",
   "agenda.google.conexao_concluida",
   "agenda.google.conexao_desconectada",
+
+  // ── Instagram: publicar em nome do lead ──────────────────────────────────
+  // Mesmo critério do bloco do Google acima: desistir na tela de consentimento
+  // não audita (é o lead mudando de ideia, não falha); `conexao_falhou` carrega
+  // o motivo em `metadata.reason` (state inválido, conta pessoal, conta já
+  // conectada a outro contato, etc.) — aparecem iguais para o lead, só a
+  // trilha distingue.
+  "instagram.app_configured",
+  "instagram.connect_iniciado",
+  "instagram.connect_falhou",
+  "instagram.connect_concluido",
+  // O agente prepara (rascunho, sem efeito) e só publica num turno posterior,
+  // depois que o lead confirmou — nunca a mesma chamada. `post_falhou` cobre
+  // qualquer etapa da publicação (container, processamento, media_publish).
+  "instagram.post_preparado",
+  "instagram.post_publicado",
+  "instagram.post_falhou",
   // Tipos de agendamento: mudar duração, categoria ou responsável muda o que a
   // IA oferece ao cliente, então é mutação de configuração e audita.
   "agenda.tipo_criado",

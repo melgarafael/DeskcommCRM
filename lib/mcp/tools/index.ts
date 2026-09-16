@@ -85,6 +85,11 @@ import {
   crmCloseDemand,
   crmProposeReactivation,
 } from "./retencao";
+import {
+  crmInstagramConectar,
+  crmInstagramPrepararPost,
+  crmInstagramConfirmarPost,
+} from "./instagram";
 
 // Cast via `unknown` porque McpToolDefinition<TInput> nao e covariante
 // em TInput (handler usa TInput em posicao contravariante). Coletar
@@ -158,6 +163,10 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmResumeAiAttendance,
   // handoff (special)
   crmRequestHumanHandoff,
+  // divulgar
+  crmInstagramConectar,
+  crmInstagramPrepararPost,
+  crmInstagramConfirmarPost,
 ] as unknown as ReadonlyArray<McpToolDefinition>;
 
 // Sanity: catalogo estatico (importavel por client) deve cobrir 1:1 os handlers.

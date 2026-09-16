@@ -134,6 +134,13 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_create_webhook_source: "sem_funil",
   crm_set_webhook_source_active: "sem_funil",
   crm_set_automation_rule_active: "sem_funil",
+  // Publicação no Instagram do contato: operam por `contact_id`, nunca por
+  // `lead_id`/`pipeline_id` — não tocam crm_leads em caso nenhum. Mesmo
+  // raciocínio de `crm_reschedule_appointment`/`crm_cancel_appointment`
+  // acima: classificar como `funil_vem_do_lead` seria teatro, porque o
+  // argumento que o gate procuraria nunca chega.
+  crm_instagram_preparar_post: "sem_funil",
+  crm_instagram_confirmar_post: "sem_funil",
 };
 
 /**

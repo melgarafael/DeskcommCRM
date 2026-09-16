@@ -25951,6 +25951,150 @@ grant execute on function public.fn_mesclar_contatos(uuid, uuid, uuid[]) to auth
 
 notify pgrst, 'reload schema';
 
+-- ---- Meta App por organização, pra publicar no Instagram (migration 0266) ----
+-- Idempotente e auto-curativo, como o kit exige: `update.sh` re-aplica este
+-- arquivo inteiro num banco existente e sem `ON_ERROR_STOP`.
+
+create table if not exists public.instagram_apps (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+
+  app_id text not null,
+  app_secret_encrypted bytea,
+
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by uuid,
+
+  constraint instagram_apps_unique_org unique (organization_id)
+);
+
+alter table public.instagram_apps enable row level security;
+revoke all on public.instagram_apps from anon, authenticated;
+grant select, insert, update, delete on public.instagram_apps to service_role;
+
+drop trigger if exists trg_instagram_apps_updated_at on public.instagram_apps;
+create trigger trg_instagram_apps_updated_at
+  before update on public.instagram_apps
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.instagram_apps is
+  'Meta App usado para publicar conteúdo no Instagram em nome dos leads. Server-side only: RLS ligada sem policies e grants revogados de anon/authenticated — o App Secret nunca volta ao browser.';
+comment on column public.instagram_apps.app_secret_encrypted is
+  'Cifrado por fn_encrypt_oauth (pgp_sym/aes256), a mesma cifra de ad_platform_connections e calendar_connections. Nunca gravar em claro: sem a chave mestra o save recusa.';
+
+-- ---- A conta do Instagram de cada lead, conectada (migration 0267) ----
+-- Idempotente e auto-curativo, como o kit exige: `update.sh` re-aplica este
+-- arquivo inteiro num banco existente e sem `ON_ERROR_STOP`.
+
+create table if not exists public.instagram_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+
+  ig_user_id text not null,
+  ig_username text,
+  ig_account_type text,
+
+  access_token_encrypted bytea not null,
+  token_expires_at timestamptz,
+
+  connected_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint instagram_connections_unique_contact unique (organization_id, contact_id)
+);
+
+create unique index if not exists instagram_connections_ig_user_ativo_unique
+  on public.instagram_connections (organization_id, ig_user_id)
+  where revoked_at is null;
+
+alter table public.instagram_connections enable row level security;
+revoke all on public.instagram_connections from anon, authenticated;
+grant select, insert, update, delete on public.instagram_connections to service_role;
+
+drop trigger if exists trg_instagram_connections_updated_at on public.instagram_connections;
+create trigger trg_instagram_connections_updated_at
+  before update on public.instagram_connections
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.instagram_connections is
+  'Conta Instagram Professional de um lead, conectada via OAuth para publicar em nome dele (feed/reels/stories). Server-side only: RLS ligada sem policies e grants revogados de anon/authenticated.';
+comment on column public.instagram_connections.access_token_encrypted is
+  'Cifrado por fn_encrypt_oauth (pgp_sym/aes256), a mesma cifra de instagram_apps e ad_platform_connections. Nunca gravar em claro: sem a chave mestra o save recusa.';
+
+-- ---- O rascunho de post do Instagram, esperando confirmação (migration 0268) ----
+-- Idempotente e auto-curativo, como o kit exige: `update.sh` re-aplica este
+-- arquivo inteiro num banco existente e sem `ON_ERROR_STOP`.
+
+create table if not exists public.instagram_pending_posts (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  conversation_id uuid references public.conversations(id) on delete set null,
+  source_message_id uuid not null references public.messages(id) on delete cascade,
+
+  destino text not null check (destino in ('feed', 'reels')),
+  caption text not null,
+  hashtags text[] not null default '{}',
+
+  status text not null default 'pending' check (status in ('pending', 'published', 'cancelled', 'expired', 'failed')),
+  ig_media_id text,
+  ig_permalink text,
+  error_message text,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  published_at timestamptz
+);
+
+create index if not exists instagram_pending_posts_org_contact_idx
+  on public.instagram_pending_posts (organization_id, contact_id, status);
+
+alter table public.instagram_pending_posts enable row level security;
+
+drop policy if exists tenant_isolation_instagram_pending_posts_select on public.instagram_pending_posts;
+create policy tenant_isolation_instagram_pending_posts_select on public.instagram_pending_posts
+  for select
+  using (organization_id in (select * from public.fn_user_org_ids()));
+
+drop policy if exists tenant_isolation_instagram_pending_posts_modify on public.instagram_pending_posts;
+create policy tenant_isolation_instagram_pending_posts_modify on public.instagram_pending_posts
+  for all
+  using (organization_id in (select * from public.fn_user_org_ids()))
+  with check (organization_id in (select * from public.fn_user_org_ids()));
+
+drop trigger if exists trg_instagram_pending_posts_updated_at on public.instagram_pending_posts;
+create trigger trg_instagram_pending_posts_updated_at
+  before update on public.instagram_pending_posts
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.instagram_pending_posts is
+  'Rascunho de post do Instagram esperando confirmação do lead antes de publicar (crm_instagram_preparar_post / crm_instagram_confirmar_post).';
+
+-- ---- Stories entra como terceiro destino do post preparado (migration 0269) ----
+-- Idempotente e auto-curativo, como o kit exige: `update.sh` re-aplica este
+-- arquivo inteiro num banco existente e sem `ON_ERROR_STOP`.
+
+alter table public.instagram_pending_posts
+  drop constraint if exists instagram_pending_posts_destino_check;
+
+alter table public.instagram_pending_posts
+  add constraint instagram_pending_posts_destino_check
+  check (destino in ('feed', 'reels', 'stories'));
+
+-- ---- Lista de teste de quem pode publicar no Instagram (migration 0270) ----
+-- Idempotente e auto-curativo, como o kit exige: `update.sh` re-aplica este
+-- arquivo inteiro num banco existente e sem `ON_ERROR_STOP`.
+
+alter table public.instagram_apps
+  add column if not exists allowed_phone_numbers text[];
+
+comment on column public.instagram_apps.allowed_phone_numbers is
+  'Lista de teste de quem pode usar crm_instagram_* (conectar/preparar/confirmar). NULL = sem restrição (padrão). Comparação por lib/channels/phone-variants.ts (cobre o nono dígito do Brasil).';
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -26118,3 +26262,107 @@ drop trigger if exists trg_platform_meta_app_updated_at on public.platform_meta_
 create trigger trg_platform_meta_app_updated_at
   before update on public.platform_meta_app
   for each row execute function public.fn_set_updated_at();
+
+-- ---- Google Ads: landing page de captura de gclid (migration 0263) ----
+-- `lib/plataformas-de-anuncio/registry.ts` (0213) já declarava por que `google_ads`
+-- não tem transporte de conversão: sem extrator de gclid não há o que reportar.
+-- Faltava a LANDING PAGE que captura o clique e o carrega para dentro da
+-- conversa do WhatsApp (o Google Ads, ao contrário da Meta, não tem um
+-- "Clique para o WhatsApp" nativo). Duas tabelas: para onde a landing
+-- redireciona, e o par token-curto↔gclid criado no clique e consultado quando
+-- a mensagem chega. Mesmo desenho server-side-only de `ad_platform_connections`
+-- (0213): RLS ligada sem policies, grants de anon/authenticated revogados.
+-- Renumerada de 0252 para 0263 ao atualizar a branch com a main: os números
+-- 0252-0254 já estavam ocupados por outras três migrations mergeadas antes desta.
+
+create table if not exists public.google_ads_landing_pages (
+  organization_id uuid primary key references public.organizations(id) on delete cascade,
+  whatsapp_e164 text not null,
+  message_template text not null default 'Olá! Vim pelo anúncio e quero saber mais. [ref:{token}]',
+  enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by uuid,
+  constraint google_ads_landing_pages_template_tem_placeholder
+    check (message_template like '%{token}%')
+);
+
+comment on table public.google_ads_landing_pages is
+  'Configuração da landing page de captura de gclid, por organização: para qual WhatsApp e com qual texto pré-preenchido ela redireciona. Server-side only.';
+comment on column public.google_ads_landing_pages.message_template is
+  'Precisa conter o literal {token}: é onde o código do clique é injetado antes do redirect para o wa.me.';
+
+alter table public.google_ads_landing_pages enable row level security;
+revoke all on public.google_ads_landing_pages from anon, authenticated;
+grant select, insert, update, delete on public.google_ads_landing_pages to service_role;
+
+drop trigger if exists trg_google_ads_landing_pages_updated_at on public.google_ads_landing_pages;
+create trigger trg_google_ads_landing_pages_updated_at
+  before update on public.google_ads_landing_pages
+  for each row execute function public.fn_set_updated_at();
+
+create table if not exists public.google_ads_click_refs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  token text not null,
+  gclid text not null,
+  query_raw jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  matched_at timestamptz,
+  contact_id uuid references public.contacts(id) on delete set null
+);
+
+create unique index if not exists google_ads_click_refs_org_token_uk
+  on public.google_ads_click_refs (organization_id, token);
+
+comment on table public.google_ads_click_refs is
+  'Par token curto ↔ gclid, criado quando a landing page recebe um clique de anúncio e consultado quando a mensagem do WhatsApp chega com o token no texto. Server-side only.';
+comment on column public.google_ads_click_refs.token is
+  'Código opaco no texto pré-preenchido do wa.me — não o gclid cru, que fica só nesta linha.';
+comment on column public.google_ads_click_refs.matched_at is
+  'Carimbado no match com a mensagem recebida. Um clique só casa uma vez: a UPDATE que o faz é condicional a matched_at is null.';
+
+alter table public.google_ads_click_refs enable row level security;
+revoke all on public.google_ads_click_refs from anon, authenticated;
+grant select, insert, update, delete on public.google_ads_click_refs to service_role;
+
+-- ---- instagram_pending_posts: escrita ganha gate de papel (migration 0264) ----
+-- Forward-fix da 0241 (issue #150): a policy de escrita isolava por tenant sem
+-- isolar por papel — qualquer `viewer` autenticado podia criar/editar/apagar um
+-- rascunho de post do Instagram pelo PostgREST direto. Leitura continua sem
+-- gate: quem administra a organização precisa VER o que está prestes a sair.
+-- Renumerada de 0253 para 0264 ao atualizar a branch com a main (colisão de número).
+
+drop policy if exists tenant_isolation_instagram_pending_posts_modify on public.instagram_pending_posts;
+create policy tenant_isolation_instagram_pending_posts_modify on public.instagram_pending_posts
+  for all
+  using (
+    organization_id in (select * from public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'manager')
+  )
+  with check (
+    organization_id in (select * from public.fn_user_org_ids())
+    and public.fn_role_at_least(organization_id, 'manager')
+  );
+
+-- ---- Google Ads: credencial de conversão (migration 0265) ----
+-- Refresh token OAuth (não access token longo-vivo) + os três identificadores
+-- que dizem para onde reportar dentro da conta. Mesmo desenho server-side-only
+-- de ad_platform_connections (0213); ver o cabeçalho da migration 0265 para o
+-- racional completo. Renumerada de 0254 para 0265 ao atualizar a branch com a
+-- main (colisão de número).
+
+alter table public.ad_platform_connections
+  add column if not exists google_refresh_token_encrypted bytea,
+  add column if not exists google_customer_id text,
+  add column if not exists google_login_customer_id text,
+  add column if not exists google_conversion_action_id text;
+
+comment on column public.ad_platform_connections.google_refresh_token_encrypted is
+  'Refresh token OAuth do Google Ads, cifrado por fn_encrypt_oauth. Só platform=google_ads usa esta coluna — o access token derivado dele expira em ~1h e nunca é persistido.';
+comment on column public.ad_platform_connections.google_customer_id is
+  'A conta de anúncios do Google Ads (10 dígitos, sem hífen) para onde a organização reporta conversões.';
+comment on column public.ad_platform_connections.google_login_customer_id is
+  'A conta de GERENTE (MCC) através da qual google_customer_id é acessada, quando aplicável. NULL = acesso direto, sem MCC.';
+comment on column public.ad_platform_connections.google_conversion_action_id is
+  'Qual ação de conversão, dentro de google_customer_id, recebe os envios de venda. Formato: só o id numérico, o resource name completo é montado no transporte.';

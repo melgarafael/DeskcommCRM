@@ -102,20 +102,33 @@ export type ResultadoDeEnvio =
   | { tipo: "transitorio"; detalhe: string; tentarEmMs?: number }
   | { tipo: "permanente"; detalhe: string };
 
-/** As credenciais que o transporte precisa, já decifradas. */
+/**
+ * As credenciais que o transporte precisa, já decifradas.
+ *
+ * `datasetId`/`accessToken`/`testEventCode` são o formato que a Meta usa
+ * (token longo-vivo, direto). O Google Ads não cabe nesse molde — o access
+ * token dele expira em ~1h e é derivado na hora, a partir de um refresh
+ * token, pelo PRÓPRIO transporte (`google/conversions.ts`), não por
+ * `credenciais.ts`, que é agnóstico e não sabe fazer essa troca. `google`
+ * carrega o que falta: o refresh token decifrado e os três identificadores
+ * de para onde reportar (migration 0263). `undefined` para quem não é Google.
+ */
 export interface CredencialDeConversao {
   datasetId: string;
   accessToken: string;
   /** Preenchido = envio marcado como teste, não conta para otimização. */
   testEventCode: string | null;
+  google?: {
+    /** Decifrado; NUNCA o access token — esse é derivado a cada envio. */
+    refreshToken: string;
+    customerId: string;
+    /** `null` = acesso direto, sem conta de gerente (MCC). */
+    loginCustomerId: string | null;
+    conversionActionId: string;
+  };
 }
 
-/**
- * O contrato que todo transporte de conversão cumpre.
- *
- * `google_ads` não implementa nenhum hoje — e a ausência é DECLARADA no
- * registry, não deduzida do silêncio (invariante 4).
- */
+/** O contrato que todo transporte de conversão cumpre. */
 export interface TransporteDeConversao {
   plataforma: PlataformaDeAnuncio;
   enviar(

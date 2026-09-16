@@ -219,6 +219,40 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "da organização viraram venda, e quem o lê é o servidor com o admin client " +
       "filtrando organization_id à mão (a tela `/app/settings/conversoes`).",
   },
+  {
+    tabela: "google_ads_landing_pages",
+    razao:
+      "tests/invariants/google-ads-captura-e-server-side.test.ts — mesmo desenho " +
+      "deny-all de ad_platform_connections (0213): RLS ligada, zero policies, " +
+      "grants revogados de anon/authenticated, organization_id NOT NULL com FK " +
+      "em cascata. Guarda para qual WhatsApp e com qual texto a landing page " +
+      "de captura de gclid redireciona.",
+  },
+  {
+    tabela: "google_ads_click_refs",
+    razao:
+      "tests/invariants/google-ads-captura-e-server-side.test.ts — mesmo " +
+      "`describe.each` da linha acima. Guarda o `gclid` de cada clique de " +
+      "anúncio e o token que o liga à mensagem do WhatsApp.",
+  },
+  // As duas entradas abaixo são do recurso de Instagram (migrations 0266/0267),
+  // não do eixo de Google Ads deste PR — encontradas pela MESMA varredura ao
+  // rodar contra esta branch, e corrigidas de passagem porque o gate bloqueava
+  // as duas mudanças juntas. O schema já nascia deny-all; só faltava a prova.
+  {
+    tabela: "instagram_apps",
+    razao:
+      "tests/invariants/instagram-credenciais-e-server-side.test.ts — mesmo " +
+      "desenho deny-all de ad_platform_connections. Guarda o App Secret que " +
+      "assina toda chamada feita em nome de qualquer lead conectado.",
+  },
+  {
+    tabela: "instagram_connections",
+    razao:
+      "tests/invariants/instagram-credenciais-e-server-side.test.ts — mesmo " +
+      "`describe.each` da linha acima. Guarda o token OAuth que publica de " +
+      "fato na conta Instagram de cada lead.",
+  },
 ];
 
 /**

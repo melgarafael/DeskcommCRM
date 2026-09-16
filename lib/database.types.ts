@@ -359,6 +359,10 @@ export type Database = {
           created_at: string
           dataset_id: string | null
           enabled: boolean
+          google_conversion_action_id: string | null
+          google_customer_id: string | null
+          google_login_customer_id: string | null
+          google_refresh_token_encrypted: string | null
           id: string
           organization_id: string
           platform: string
@@ -371,6 +375,10 @@ export type Database = {
           created_at?: string
           dataset_id?: string | null
           enabled?: boolean
+          google_conversion_action_id?: string | null
+          google_customer_id?: string | null
+          google_login_customer_id?: string | null
+          google_refresh_token_encrypted?: string | null
           id?: string
           organization_id: string
           platform: string
@@ -383,6 +391,10 @@ export type Database = {
           created_at?: string
           dataset_id?: string | null
           enabled?: boolean
+          google_conversion_action_id?: string | null
+          google_customer_id?: string | null
+          google_login_customer_id?: string | null
+          google_refresh_token_encrypted?: string | null
           id?: string
           organization_id?: string
           platform?: string

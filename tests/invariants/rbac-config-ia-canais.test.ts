@@ -2,6 +2,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   GOV_ADMIN,
+  GOV_CONTACT_1,
+  GOV_CONV_UNASSIGNED,
   GOV_MANAGER,
   GOV_ORG,
   GOV_SESSION,
@@ -28,6 +30,9 @@ import {
 
 const AGENTE_CONFIG = "eeeeeeee-1111-4000-8000-000000000001";
 const CRED_CONFIG = "eeeeeeee-2222-4000-8000-000000000001";
+/** 0264: rascunho de post do Instagram, para o par viewer-barrado/manager-passa. */
+const IG_MSG = "eeeeeeee-3333-4000-8000-000000000001";
+const IG_POST = "eeeeeeee-4444-4000-8000-000000000001";
 
 function seedConfig(): void {
   sql(`
@@ -38,6 +43,20 @@ function seedConfig(): void {
       (id, organization_id, provider, label, api_key_encrypted, api_key_iv, api_key_tag, api_key_last4)
       values ('${CRED_CONFIG}', '${GOV_ORG}', 'anthropic', 'Chave principal',
               '\\x01'::bytea, '\\x02'::bytea, '\\x03'::bytea, '9999')
+      on conflict do nothing;
+    insert into public.messages
+      (id, organization_id, conversation_id, channel_session_id, contact_id, type, direction, body)
+      values ('${IG_MSG}', '${GOV_ORG}', '${GOV_CONV_UNASSIGNED}', '${GOV_SESSION}', '${GOV_CONTACT_1}',
+              'text', 'inbound', 'RBAC invariant probe')
+      -- Alvo EXPLÍCITO (id): sem ele o Postgres considera TODAS as unique
+      -- constraints da tabela como árbitro possível, inclusive a de
+      -- organization_id+external_id, que é DEFERRABLE — e o Postgres recusa
+      -- a query inteira (ON CONFLICT does not support deferrable unique
+      -- constraints as arbiters), não só ignora a deferrable.
+      on conflict (id) do nothing;
+    insert into public.instagram_pending_posts
+      (id, organization_id, contact_id, source_message_id, destino, caption)
+      values ('${IG_POST}', '${GOV_ORG}', '${GOV_CONTACT_1}', '${IG_MSG}', 'feed', 'RASCUNHO ORIGINAL')
       on conflict do nothing;
   `);
 }
@@ -118,6 +137,35 @@ describe("0150 — escrita de config de IA/canais exige admin", () => {
       countAs(
         GOV_VIEWER,
         `select count(*) from public.channel_sessions where id = '${GOV_SESSION}';`,
+      ),
+    ).toBe(1);
+  });
+
+  // 0264 — forward-fix da 0268: instagram_pending_posts nasceu com policy de
+  // escrita só-tenancy, sem gate de papel. Mesmo par negativo/positivo acima.
+  it("viewer NÃO edita o rascunho de post do Instagram", () => {
+    expect(
+      writeCountAs(
+        GOV_VIEWER,
+        `update public.instagram_pending_posts set caption = 'SEQUESTRADO' where id = '${IG_POST}'`,
+      ),
+    ).toBe(0);
+  });
+
+  it("CONTROLE POSITIVO: manager edita o rascunho", () => {
+    expect(
+      writeCountAs(
+        GOV_MANAGER,
+        `update public.instagram_pending_posts set caption = 'REVISADO PELO MANAGER' where id = '${IG_POST}'`,
+      ),
+    ).toBe(1);
+  });
+
+  it("CONTROLE POSITIVO: viewer continua LENDO o rascunho (precisa ver o que vai publicar)", () => {
+    expect(
+      countAs(
+        GOV_VIEWER,
+        `select count(*) from public.instagram_pending_posts where id = '${IG_POST}';`,
       ),
     ).toBe(1);
   });
@@ -207,6 +255,8 @@ describe("0150 — a dívida de RBAC não cresce", () => {
       // formato: um `viewer` DELETAVA `ai_chunks` da própria organização
       // falando direto com o PostgREST, com o JWT dele.
       "ai_knowledge_sources", "ai_knowledge_versions", "ai_chunks", "ai_faq_items",
+      // 0264 — forward-fix da 0268, achada por esta própria varredura.
+      "instagram_pending_posts",
     ];
     const semRole = sql(`
       select coalesce(string_agg(distinct tablename, ','), '') from pg_policies

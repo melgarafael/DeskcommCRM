@@ -15,6 +15,13 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/health$/,
   /^\/api\/v1\/webhooks\//,
   /^\/api\/v1\/cron\//,
+  // Landing page de captura de clique do Google Ads (migration 0261). Quem
+  // chega aqui é o NAVEGADOR de quem clicou no anúncio — nunca tem, e não
+  // pode ter, cookie de sessão nossa. Sem esta linha o proxy devolve 401
+  // antes de a rota existir, e todo clique pago vira um erro em vez de um
+  // redirect pro WhatsApp. Âncorado num segmento só (`[^/]+$`): um sub-path
+  // futuro sob `/google/` não nasce público de carona.
+  /^\/api\/v1\/anuncios\/google\/[^/]+$/,
   // Heartbeat do agente do host (bearer INTERNAL_SECRET/INTERNAL_CRON_SECRET,
   // checado dentro da própria rota) — sem cookie de sessão, igual /cron/.
   /^\/api\/v1\/system\/agent$/,
@@ -36,7 +43,18 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Ancorados com `$` de propósito — `/^\/api\/v1\/agenda\/google\// deixaria
   // qualquer sub-path futuro nascer público de carona.
   /^\/api\/v1\/agenda\/google\/callback$/,
+  // Volta do consentimento do Google Ads. Mesma natureza das duas linhas
+  // acima: a identidade vem do `state` assinado
+  // (`lib/plataformas-de-anuncio/google/estado.ts`), não da sessão — quem
+  // volta do Google não tem, e não pode ter, o cookie.
+  /^\/api\/v1\/plataformas-de-anuncio\/google\/callback$/,
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
+  // Conexão do LEAD com o Instagram dele — quem chega aqui não é usuário
+  // logado do CRM, é o lead clicando num link mandado pelo WhatsApp. A
+  // identidade vem do `state` assinado (`lib/instagram/estado.ts`), não da
+  // sessão. Mesma natureza das duas linhas acima.
+  /^\/api\/v1\/instagram\/oauth\/start$/,
+  /^\/api\/v1\/instagram\/oauth\/callback$/,
   /^\/api\/internal\//,
   /^\/api\/mcp(\/.*)?$/,
   // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a

@@ -28,7 +28,8 @@ export type ToolBundle =
   | "reter"
   | "escalar"
   | "organizar"
-  | "evoluir";
+  | "evoluir"
+  | "divulgar";
 
 export interface PacoteMeta {
   id: ToolBundle;
@@ -81,6 +82,13 @@ export const PACOTES: ReadonlyArray<PacoteMeta> = [
     explicacao:
       "O agente consulta o que a empresa já sabe, aprende com os atendimentos e sugere melhorias para você aprovar.",
     ordem: 6,
+  },
+  {
+    id: "divulgar",
+    rotulo: "Publicar nas redes do cliente",
+    explicacao:
+      "O agente recebe foto ou vídeo do cliente, sugere legenda e hashtags, e publica no Instagram dele (feed, reels ou stories) depois que ele confirmar.",
+    ordem: 7,
   },
 ] as const;
 

@@ -21,6 +21,7 @@ import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
+import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
@@ -586,6 +587,11 @@ async function handleInbound(
   // contato já tem atribuição, o UPDATE casa zero linhas.
   const atribuicao = extrairAtribuicaoWaha(p._data?.message);
   if (atribuicao) await estamparAtribuicaoDoContato(admin, contactId, atribuicao);
+
+  // Irmão do bloco acima, para o Google: o token vem no PRÓPRIO texto da
+  // mensagem (não há payload de ad-reply equivalente para essa plataforma) —
+  // ver o cabeçalho de `atribuicao-de-anuncio-google.ts`. Best-effort.
+  await extrairEEstamparAtribuicaoGoogle(admin, session.organization_id, contactId, texto);
 
   const conversationId = await upsertConversation(admin, session.organization_id, contactId, session.id);
   if (!conversationId) return;

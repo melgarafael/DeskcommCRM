@@ -48,7 +48,9 @@ export async function lerCredencial(
 ): Promise<LeituraDeCredencial> {
   const { data, error } = await admin
     .from("ad_platform_connections")
-    .select("dataset_id, access_token_encrypted, test_event_code, enabled")
+    .select(
+      "dataset_id, access_token_encrypted, test_event_code, enabled, google_refresh_token_encrypted, google_customer_id, google_login_customer_id, google_conversion_action_id",
+    )
     .eq("organization_id", organizationId)
     .eq("platform", plataforma)
     .maybeSingle();
@@ -69,9 +71,50 @@ export async function lerCredencial(
     access_token_encrypted: string | null;
     test_event_code: string | null;
     enabled: boolean;
+    google_refresh_token_encrypted: string | null;
+    google_customer_id: string | null;
+    google_login_customer_id: string | null;
+    google_conversion_action_id: string | null;
   };
 
   if (!linha.enabled) return { ok: false, motivo: "conexao_desabilitada" };
+
+  // O que conta como "completo" varia por plataforma: a Meta guarda token
+  // direto em `dataset_id`/`access_token_encrypted`; o Google guarda refresh
+  // token + os três identificadores nas colunas `google_*` (migration 0263).
+  // Um `if` por linha, não um schema comum, porque forçar as duas formas no
+  // mesmo par de colunas é o que produziria a "correção" errada no dia em que
+  // uma terceira plataforma chegasse com uma forma diferente das duas.
+  if (plataforma === "google_ads") {
+    if (
+      !linha.google_refresh_token_encrypted ||
+      !linha.google_customer_id ||
+      !linha.google_conversion_action_id
+    ) {
+      return { ok: false, motivo: "credencial_incompleta" };
+    }
+    const refreshToken = await decryptWebhookSecret(admin, linha.google_refresh_token_encrypted);
+    if (!refreshToken) return { ok: false, motivo: "cifra_indisponivel" };
+
+    return {
+      ok: true,
+      credencial: {
+        datasetId: linha.google_customer_id,
+        // Vazio de propósito: o access token do Google expira em ~1h e é
+        // derivado a cada envio pelo PRÓPRIO transporte, a partir do refresh
+        // token em `google` — ver o cabeçalho de `CredencialDeConversao`.
+        accessToken: "",
+        testEventCode: linha.test_event_code,
+        google: {
+          refreshToken,
+          customerId: linha.google_customer_id,
+          loginCustomerId: linha.google_login_customer_id,
+          conversionActionId: linha.google_conversion_action_id,
+        },
+      },
+    };
+  }
+
   if (!linha.dataset_id || !linha.access_token_encrypted) {
     return { ok: false, motivo: "credencial_incompleta" };
   }

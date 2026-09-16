@@ -5,14 +5,19 @@
  * pelo SLUG DA PLATAFORMA que já está gravado na atribuição do contato, e recebe
  * um transporte ou um "não existe". Ela nunca importa `./meta/conversions`.
  *
- * ─── A ausência do Google é DECLARADA, não deduzida do silêncio ─────────────
+ * ─── O Google Ads agora tem transporte (migration 0263) ─────────────────────
  *
- * `google_ads` aparece no vocabulário desde a 0164 e não tem transporte aqui —
- * e a razão é anterior a este módulo: não existe extrator de `gclid`. O caminho
- * do Google depende de uma landing page que capture o clique e embuta um código
- * de rastreio na mensagem pré-preenchida, e essa LP não existe. Sem clique
- * capturado não há o que reportar, então implementar o transporte primeiro seria
- * construir a segunda metade de uma ponte que não tem a primeira.
+ * `google_ads` ficou sem transporte desde a 0164 porque faltava a metade que
+ * captura o clique — sem `gclid` não havia o que reportar. A migration 0261
+ * fechou isso (landing page + extrator, `lib/plataformas-de-anuncio/google/atribuicao.ts`)
+ * e a 0263 fecha a outra ponta: a credencial (refresh token OAuth + os três
+ * identificadores de para onde reportar). `transporteGoogle` (`./google/conversions.ts`)
+ * é a segunda metade da ponte.
+ *
+ * A entrada `null` continua existindo como MECANISMO, não como estado atual:
+ * é o que deixa uma plataforma nova entrar no vocabulário (`PlataformaDeAnuncio`)
+ * ANTES de ter transporte, sem que a busca vire `undefined` — ver o invariante 4
+ * da doutrina de restrição de canal logo abaixo.
  *
  * Ficar de fora do mapa faria a busca devolver `undefined` e o chamador tratar
  * como bug. Estar no mapa como `null` faz o chamador registrar
@@ -20,11 +25,12 @@
  * de restrição de canal: restrição não aplicável é REGISTRADA, não omitida.
  */
 import { transporteMeta } from "./meta/conversions";
+import { transporteGoogle } from "./google/conversions";
 import type { PlataformaDeAnuncio, TransporteDeConversao } from "./types";
 
 const TRANSPORTES: Record<PlataformaDeAnuncio, TransporteDeConversao | null> = {
   meta_ads: transporteMeta,
-  google_ads: null,
+  google_ads: transporteGoogle,
 };
 
 /** O transporte da plataforma, ou `null` quando ela é conhecida e não tem um. */
