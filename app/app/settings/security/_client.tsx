@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/auth/politicaDeMfa";
 import { PainelDeChamadaDeVoz } from "@/components/voice/PainelDeChamadaDeVoz";
 import { useT } from "@/hooks/i18n/useT";
+import { useConfirm } from "@/components/ui/confirm-provider";
 
 export function SecurityClient({
   mfaEnrolled,
@@ -29,17 +30,18 @@ export function SecurityClient({
   empresaExige: boolean;
 }) {
   const t = useT();
+  const confirm = useConfirm();
   const [codes, setCodes] = useState<string[] | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isSigningOut, startSignOut] = useTransition();
   const [ativando, setAtivando] = useState(false);
   const [mexendo, startMexer] = useTransition();
 
-  function handleRegenerate() {
+  async function handleRegenerate() {
     if (
-      !confirm(
+      !(await confirm(
         t("Gerar novos códigos invalida TODOS os atuais. Tem certeza?"),
-      )
+      ))
     ) {
       return;
     }
@@ -54,11 +56,11 @@ export function SecurityClient({
     });
   }
 
-  function handleSignOutAll() {
+  async function handleSignOutAll() {
     if (
-      !confirm(
+      !(await confirm(
         t("Sair de TODOS os dispositivos? Você precisará fazer login de novo."),
-      )
+      ))
     )
       return;
     startSignOut(async () => {
@@ -107,8 +109,8 @@ export function SecurityClient({
                 variant="outline"
                 size="sm"
                 disabled={mexendo}
-                onClick={() => {
-                  if (!confirm(t("Desligar a verificação em duas etapas desta conta?")))
+                onClick={async () => {
+                  if (!(await confirm(t("Desligar a verificação em duas etapas desta conta?"))))
                     return;
                   startMexer(async () => {
                     const r = await desativarMfaDaConta();

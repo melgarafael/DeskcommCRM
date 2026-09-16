@@ -19,7 +19,7 @@ export function SearchTrigger() {
       <Button
         variant="outline"
         size="sm"
-        className="gap-2 text-muted-foreground"
+        className="h-9 w-[min(300px,42vw)] justify-start gap-2 bg-[#f7f9fc] text-muted-foreground"
         onClick={() => setOpen(true)}
       >
         <MagnifyingGlass size={14} aria-hidden />

@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { advomaxProcessUrl } from "@/lib/advomax/navigation";
+import { useConfirm } from "@/components/ui/confirm-provider";
 
 type LinkRow = { id: string; pessoa_codigo: number; status: "pending" | "linked" | "conflict" | "unlinked" };
 type PessoaRow = { codigo: number; nome: string; tipoPessoa: string; email: string | null; telefone: string | null };
@@ -17,6 +18,7 @@ type DocumentoRow = { codigo: number; nomeArquivo: string; descricao: string | n
 
 export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: string; canManage?: boolean }) {
   const t = useT();
+  const confirm = useConfirm();
   const [link, setLink] = useState<LinkRow | null>(null);
   const [codigo, setCodigo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
@@ -114,7 +116,7 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   }
 
   async function desvincular() {
-    if (!canManage || !window.confirm(t("Desfazer o vínculo com o cadastro jurídico?"))) return;
+    if (!canManage || !(await confirm(t("Desfazer o vínculo com o cadastro jurídico?")))) return;
     setSaving(true); setErro(null);
     try {
       const response = await fetch(`/api/v1/contacts/${contactId}/advomax-link`, { method: "DELETE" });
@@ -143,7 +145,7 @@ export function AdvomaxLinkCard({ contactId, canManage = false }: { contactId: s
   }
 
   async function desvincularProcesso(processoCodigo: number) {
-    if (!canManage || !window.confirm(t("Remover este processo dos vínculos do CRM?"))) return;
+    if (!canManage || !(await confirm(t("Remover este processo dos vínculos do CRM?")))) return;
     setSalvandoProcesso(true); setErro(null);
     try {
       const response = await fetch(`/api/v1/contacts/${contactId}/advomax-link/processo-links/${processoCodigo}`, { method: "DELETE" });

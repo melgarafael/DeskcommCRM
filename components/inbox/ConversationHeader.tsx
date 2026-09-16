@@ -20,6 +20,7 @@ import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { useConfirm } from "@/components/ui/confirm-provider";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -71,6 +72,7 @@ export function ConversationHeader({ conversation }: Props) {
   // atendendo em instalação que nunca configurou agente nenhum.
   const automaticoDaOrg = useAutomaticoAtivo();
   const [reassignOpen, setReassignOpen] = useState(false);
+  const confirm = useConfirm();
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
@@ -312,9 +314,11 @@ export function ConversationHeader({ conversation }: Props) {
             variant="outline"
             disabled={close.isPending}
             onClick={() => {
-              if (confirm(t("Fechar esta conversa?"))) {
+              void confirm(t("Fechar esta conversa?")).then((ok) => {
+                if (ok) {
                 close.mutate({ conversation_id: conversation.id, expected_revision: conversation.service_revision });
-              }
+                }
+              });
             }}
           >
             {t("Fechar")}

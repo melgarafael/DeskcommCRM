@@ -29,10 +29,8 @@ export function TopBar({ sidebarCollapsed, onToggleSidebar, togglePending }: {
               : "M115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 000 13.8z"} />
           </svg>
         </button>
-        <TenantSwitcher />
-      </div>
-      <div className="flex min-w-0 flex-1 justify-center md:max-w-md">
         <SearchTrigger />
+        <TenantSwitcher />
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <AlertsBell />

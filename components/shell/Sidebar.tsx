@@ -118,11 +118,11 @@ export function SidebarContent({
       <div
         className={cn(
           "flex h-16 items-center border-b border-border bg-white px-5",
-          collapsed ? "justify-center" : "justify-start",
+          "justify-center",
         )}
       >
         {collapsed && logoAdvomax ? (
-          <SimboloAdvomax className="h-8 w-8" />
+          <SimboloAdvomax className="h-[34px] w-[34px]" />
         ) : logo ? (
           // <img> em vez de next/image de propósito: a URL vem de quem hospeda
           // (banco ou .env), e next/image exige allowlist de domínios fechada em
@@ -133,7 +133,7 @@ export function SidebarContent({
           <img
             src={logo}
             alt={nome}
-            className={cn(collapsed ? "max-h-8 max-w-8" : "max-h-[26px] max-w-44", "w-auto object-contain", logo === ADVOMAX_LOGO_URL && "advomax-product-logo")}
+            className={cn(collapsed ? "max-h-[34px] max-w-[34px]" : "max-h-[26px] max-w-44", "w-auto object-contain", logo === ADVOMAX_LOGO_URL && "advomax-product-logo")}
           />
         ) : marcaDoProduto ? (
           // O desenho do produto, inline (ver `components/branding/MarcaDoProduto.tsx`):
@@ -258,7 +258,7 @@ export function SidebarContent({
                             collapsed && "justify-center px-2",
                           )}
                         >
-                          <Icon size={18} weight={isActive ? "fill" : "regular"} aria-hidden />
+                          <Icon size={collapsed ? 22 : 18} weight={isActive ? "fill" : "regular"} aria-hidden />
                           {!collapsed && <span className="truncate">{t(item.label)}</span>}
                           {item.healthDot && (
                             <ConnectionHealthDot
@@ -284,7 +284,7 @@ export function SidebarContent({
                           collapsed && "justify-center px-2",
                         )}
                       >
-                        <ArrowRight size={18} aria-hidden />
+                        <ArrowRight size={collapsed ? 22 : 18} aria-hidden />
                         {!collapsed && <span className="truncate">{t(group.hub.label)}</span>}
                       </Link>
                     </li>
@@ -310,7 +310,7 @@ export function SidebarContent({
               collapsed && "justify-center px-2",
             )}
           >
-            <Gear size={18} aria-hidden />
+            <Gear size={collapsed ? 22 : 18} aria-hidden />
             {!collapsed && <span className="truncate">{t(rodape.label)}</span>}
           </Link>
         )}
@@ -324,7 +324,7 @@ export function SidebarContent({
             collapsed && "justify-center px-2",
           )}
         >
-          <ArrowRight size={18} aria-hidden />
+          <ArrowRight size={collapsed ? 22 : 18} aria-hidden />
           {!collapsed && <span className="truncate">{t("Abrir Advomax Gestão")}</span>}
         </a>
         <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
