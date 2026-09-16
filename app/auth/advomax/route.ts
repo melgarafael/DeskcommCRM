@@ -109,9 +109,21 @@ export async function GET(request: NextRequest): Promise<Response> {
       }
     }
     if (!organizationId) return fail("sso_organizacao");
-    const org = await admin.from("organizations").select("id,status,advomax_empresa_codigo,created_by").eq("id", organizationId).maybeSingle();
+    const org = await admin.from("organizations").select("id,status,advomax_empresa_codigo,created_by,onboarded_at").eq("id", organizationId).maybeSingle();
     if (org.error || !org.data || org.data.status !== "active" ||
       org.data.advomax_empresa_codigo !== handoff.empresaCodigo) return fail("sso_organizacao");
+
+    // O escritório e seus usuários já nascem no Advomax. O wizard do CRM
+    // configuraria uma segunda vez itens que não são pré-requisito da sessão.
+    // Gravar o marco aqui também corrige organizações Advomax criadas antes
+    // deste fluxo, sem alterar o onboarding de tenants independentes.
+    if (!org.data.onboarded_at) {
+      const { error: onboardingError } = await admin.from("organizations")
+        .update({ onboarded_at: new Date().toISOString() })
+        .eq("id", organizationId)
+        .is("onboarded_at", null);
+      if (onboardingError) return fail("sso_organizacao");
+    }
 
     if (!handoff.crmOrganizationId) {
       const mapped = await fetch(`${base}/integracoes/crm/provisionar`, {

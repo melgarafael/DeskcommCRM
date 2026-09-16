@@ -28,18 +28,20 @@ function request(cookie: string | null = state) {
 }
 function setup() {
   const results: Record<string, Array<{ data: unknown; error: unknown }>> = {
-    organizations: [{ data: { id: orgId, status: "active", advomax_empresa_codigo: 34, created_by: userId }, error: null }],
+    organizations: [{ data: { id: orgId, status: "active", advomax_empresa_codigo: 34, created_by: userId, onboarded_at: null }, error: null }],
     user_organizations: [{ data: { id: "membership", revoked_at: null, accepted_at: "2026-09-14" }, error: null }],
   };
   const insert = vi.fn(() => { throw new Error("Unexpected insert"); });
   const remove = vi.fn(() => { throw new Error("Unexpected delete"); });
+  const update = vi.fn();
   const from = vi.fn((table: string) => {
     const query = { select: vi.fn(() => query), eq: vi.fn(() => query),
       maybeSingle: vi.fn(async () => {
         const result = results[table]?.shift();
         if (!result) throw new Error(`Missing test result for ${table}`);
         return result;
-      }), insert, delete: remove };
+      }), insert, update, is: vi.fn(async () => ({ error: null })), delete: remove };
+    update.mockImplementation(() => query);
     return query;
   });
   const admin = { from, auth: { admin: {
@@ -57,7 +59,7 @@ function setup() {
   vi.mocked(createClient).mockResolvedValue(session as unknown as Awaited<ReturnType<typeof createClient>>);
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
-  return { admin, session, fetchMock, results, insert, remove };
+  return { admin, session, fetchMock, results, insert, update, remove };
 }
 const location = (response: Response) => response.headers.get("location");
 beforeEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); });
@@ -77,6 +79,13 @@ describe("entrada Advomax no CRM", () => {
     expect(mocks.setCookie).toHaveBeenCalledWith("active_org", orgId, expect.objectContaining({ httpOnly: true, sameSite: "strict", path: "/" }));
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(s.update).toHaveBeenCalledWith(expect.objectContaining({ onboarded_at: expect.any(String) }));
+  });
+  it("preserva o marco de onboarding já concluído", async () => {
+    const s = setup();
+    s.results.organizations = [{ data: { id: orgId, status: "active", advomax_empresa_codigo: 34, created_by: userId, onboarded_at: "2026-09-14T00:00:00.000Z" }, error: null }];
+    expect(location(await GET(request()))).toBe("http://localhost:3000/app");
+    expect(s.update).not.toHaveBeenCalled();
   });
   it.each([
     { revoked_at: "2026-09-14", accepted_at: "2026-09-13" },
