@@ -120,7 +120,7 @@ export function SidebarContent({
     <>
       <div
         className={cn(
-          "flex h-[76px] items-center border-b border-border bg-white px-5",
+          "flex h-16 items-center border-b border-border bg-white px-5",
           collapsed ? "justify-center" : "justify-start",
         )}
       >
@@ -135,7 +135,7 @@ export function SidebarContent({
             src={logo}
             alt={nome}
             className={cn(
-              "h-8 w-auto max-w-[11.5rem] object-contain",
+              "max-h-[26px] w-auto max-w-44 object-contain",
               logo === ADVOMAX_LOGO_URL && "advomax-product-logo",
             )}
           />
@@ -255,7 +255,7 @@ export function SidebarContent({
                           aria-current={isActive ? "page" : undefined}
                           onClick={onNavigate}
                           className={cn(
-                            "relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                            "relative mx-[10px] flex min-h-11 items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
                             isActive
                               ? "bg-[#071b33] font-semibold text-white shadow-sm"
                               : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
@@ -281,7 +281,7 @@ export function SidebarContent({
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
-                          "flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                          "mx-[10px] flex min-h-11 items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
                           pathname === group.hub.href
                             ? "bg-[#071b33] font-semibold text-white shadow-sm"
                             : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
@@ -379,8 +379,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         //
         // `shrink-0` porque item de flex encolhe por padrão, e uma barra de 60
         // espremida para caber é o mesmo defeito por outro caminho.
-        "sticky top-0 z-30 flex h-screen shrink-0 flex-col border-r border-border bg-white shadow-[4px_0_18px_rgba(7,27,51,0.04)] transition-[width] duration-200",
-        collapsed ? "w-16" : "w-[21.5rem]",
+        "sticky top-0 z-30 flex h-screen shrink-0 flex-col border-r border-border bg-white shadow-[8px_0_32px_rgba(7,27,51,0.04)] transition-[width] duration-200",
+        collapsed ? "w-20" : "w-[280px]",
       )}
     >
       <SidebarContent collapsed={collapsed} />

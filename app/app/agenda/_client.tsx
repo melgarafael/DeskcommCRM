@@ -71,6 +71,7 @@ export function AgendaClient({
   enderecoDeRetorno,
   faltaNoGoogle,
   linkDeConfiguracaoDoGoogle,
+  agendaAdvomaxUrl,
   tiposIniciais,
   agendamentosIniciais,
 }: {
@@ -81,6 +82,7 @@ export function AgendaClient({
   faltaNoGoogle: string[];
   /** Preenchido só para quem administra a instalação — ver `page.tsx`. */
   linkDeConfiguracaoDoGoogle?: string;
+  agendaAdvomaxUrl?: string;
   /** Tipos ativos, resolvidos no servidor: não há rota que os liste ainda. */
   tiposIniciais: Array<{
     id: string;
@@ -301,6 +303,7 @@ export function AgendaClient({
         linkDeConfiguracao={linkDeConfiguracaoDoGoogle}
         contaConectada={contaConectada}
         enderecoDeRetorno={enderecoDeRetorno}
+        agendaAdvomaxUrl={agendaAdvomaxUrl}
       />
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">

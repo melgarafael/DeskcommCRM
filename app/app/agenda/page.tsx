@@ -5,6 +5,8 @@ import { enderecoDeRetorno, faltaParaConectarOGoogle, googleEstaConfigurado } fr
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import { advomaxAppUrl } from "@/lib/advomax/navigation";
+import { env } from "@/lib/env";
 
 import type { Agendamento as AgendamentoDaTela } from "@/components/agenda/tipos";
 
@@ -205,6 +207,7 @@ export default async function AgendaPage() {
       // `/admin` e faz `notFound()` para o resto — oferecer o link a quem não
       // pode entrar seria trocar um beco por outro.
       linkDeConfiguracaoDoGoogle={(user.is_platform_admin && !user.support) ? "/admin/google" : undefined}
+      agendaAdvomaxUrl={env.ADVOMAX_DEPLOYMENT_MODE ? advomaxAppUrl("/agenda") : undefined}
       tiposIniciais={(tipos ?? []).map((t) => ({
         id: t.id,
         nome: t.name,

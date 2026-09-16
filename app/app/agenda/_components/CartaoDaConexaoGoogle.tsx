@@ -31,6 +31,7 @@ export function CartaoDaConexaoGoogle({
   contaConectada,
   enderecoDeRetorno,
   linkDeConfiguracao,
+  agendaAdvomaxUrl,
 }: {
   configurado: boolean;
   /**
@@ -39,6 +40,7 @@ export function CartaoDaConexaoGoogle({
    * resto, nomear a tela seria oferecer uma porta que dá em `notFound()`.
    */
   linkDeConfiguracao?: string;
+  agendaAdvomaxUrl?: string;
   /** O que falta, PELO NOME — para a tela dizer em vez de só esconder o botão. */
   falta: string[];
   contaConectada?: string | null;
@@ -50,6 +52,21 @@ export function CartaoDaConexaoGoogle({
   const [desconectando, setDesconectando] = React.useState(false);
 
   if (!configurado) {
+    if (agendaAdvomaxUrl) {
+      return (
+        <div data-testid="agenda-advomax" className="flex flex-col gap-3 rounded-[10px] border border-border bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-text">{t("Conecte a agenda pelo Advomax")}</p>
+            <p className="mt-1 text-xs leading-4 text-text-muted">
+              {t("Gere no Advomax o link privado para acompanhar seus compromissos no Google Agenda, Apple Calendar ou Outlook.")}
+            </p>
+          </div>
+          <a href={agendaAdvomaxUrl} className="shrink-0 rounded-[10px] bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-strong">
+            {t("Abrir agenda do Advomax")}
+          </a>
+        </div>
+      );
+    }
     return (
       <div
         data-testid="google-nao-configurado"

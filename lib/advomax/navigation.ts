@@ -14,7 +14,7 @@ function hostLocal(hostname: string): boolean {
  * código vindo de uma mensagem, query string ou integração vire redirecionamento
  * aberto.
  */
-export function advomaxAppUrl(path: "/home" | "/pessoas" | "/clientes" | "/documentos" = "/home"): string {
+export function advomaxAppUrl(path: "/home" | "/agenda" | "/pessoas" | "/clientes" | "/documentos" = "/home"): string {
   const fallback = fallbackAdvomaxUrl();
   const configured = process.env.NEXT_PUBLIC_ADVOMAX_APP_URL?.trim() || fallback;
   let base: URL;

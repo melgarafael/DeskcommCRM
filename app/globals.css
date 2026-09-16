@@ -32,18 +32,18 @@
 
 :root {
   /* Surfaces (light) */
-  --color-bg: #f4f7fb;
+  --color-bg: #f7f9fc;
   --color-surface: #ffffff;
   --color-surface-elevated: #f7f9fc;
   --color-overlay: rgba(7, 27, 51, 0.42);
 
   /* Text (light) */
-  --color-text: #071b33;
-  --color-text-muted: #52657a;
-  --color-text-subtle: #748399;
+  --color-text: #334155;
+  --color-text-muted: #6b7788;
+  --color-text-subtle: #94a3b8;
 
   /* Borders (light) */
-  --color-border: #dfe5ec;
+  --color-border: #e2e7ed;
   --color-border-strong: #cbd5e1;
 
   /* Accent — Sage (11 stops) */
@@ -257,14 +257,14 @@
    (lib/branding/css.ts), que só ganha consumidor com a tela de marca.
    ───────────────────────────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --color-bg: #f4f7fb;
+  --color-bg: #f7f9fc;
   --color-surface: #ffffff;
   --color-surface-elevated: #f7f9fc;
   --color-overlay: rgba(7, 27, 51, 0.42);
-  --color-text: #071b33;
-  --color-text-muted: #52657a;
-  --color-text-subtle: #748399;
-  --color-border: #dfe5ec;
+  --color-text: #334155;
+  --color-text-muted: #6b7788;
+  --color-text-subtle: #94a3b8;
+  --color-border: #e2e7ed;
   --color-border-strong: #cbd5e1;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
@@ -539,7 +539,7 @@
   --color-card-foreground: var(--color-text);
 
   /* Tipografia */
-  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, monospace;
@@ -705,7 +705,7 @@
     overflow-x: clip;
     background-color: var(--color-bg);
     color: var(--color-text);
-    font-family: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
+    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
       "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
     -webkit-font-smoothing: antialiased;
