@@ -185,6 +185,11 @@ describe("editor do agente sem número conectado", () => {
   it("NÃO deixa publicar sem número, e a dica diz que o rascunho está salvo", () => {
     const { botaoPublicar } = abrirEditor();
     expect(botaoPublicar()).toBeDisabled();
+    expect(
+      screen.getByRole("status"),
+      "o motivo tem que aparecer na tela, não só no title do hover",
+    ).toHaveTextContent(/número de WhatsApp/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/rascunho está salvo/i);
     const dica = botaoPublicar().closest("span")?.getAttribute("title") ?? "";
     expect(dica).toMatch(/número de WhatsApp/i);
     expect(dica, "a dica não diz que o trabalho está guardado").toMatch(/rascunho está salvo/i);

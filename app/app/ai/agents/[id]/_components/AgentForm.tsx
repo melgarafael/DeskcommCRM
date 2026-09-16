@@ -596,19 +596,26 @@ export function AgentForm(props: Props) {
             {saving ? t("Salvando…") : isEdit ? t("Salvar rascunho") : t("Criar agente")}
           </Button>
           {isEdit ? (
-            <span title={publishBlockReason ?? undefined}>
-              <Button
-                variant="default"
-                onClick={() => setConfirmOpen(true)}
-                disabled={disabled || publishBlockReason !== null}
-              >
-                {publishing
-                  ? t("Publicando…")
-                  : props.draft
-                    ? `${t("Publicar v")}${props.draft.version_number}`
-                    : t("Publicar")}
-              </Button>
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              <span title={publishBlockReason ?? undefined}>
+                <Button
+                  variant="default"
+                  onClick={() => setConfirmOpen(true)}
+                  disabled={disabled || publishBlockReason !== null}
+                >
+                  {publishing
+                    ? t("Publicando…")
+                    : props.draft
+                      ? `${t("Publicar v")}${props.draft.version_number}`
+                      : t("Publicar")}
+                </Button>
+              </span>
+              {publishBlockReason ? (
+                <p className="max-w-xs text-right text-xs text-destructive" role="status">
+                  {publishBlockReason}
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
