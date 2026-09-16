@@ -175,6 +175,7 @@ import {
   campoPorChave,
   carregarEstadoDeAtendimento,
   concluirEnrollmentDeAtendimento,
+  escolherFluxoPeloGatilho,
   iniciarFluxoDeAtendimento,
   listarFluxosDeAtendimentoAtivos,
   registrarDadoDoFluxo,
@@ -1987,6 +1988,39 @@ async function executarTurnoDoAgente(
   let atendimento = preview
     ? null
     : await carregarEstadoDeAtendimento(pool, { organizationId: tenantId, contactId: leadId });
+  // FASE 2 — ENTRADA POR GATILHO (motor): sem fluxo ativo, o MOTOR decide começar
+  // pelo assunto da mensagem — não depende do modelo chamar flow_start. Só no
+  // inbound e quando a mensagem casa as palavras-gatilho de um fluxo ativo.
+  if (
+    !preview &&
+    atendimento === null &&
+    liveJob().kind === 'inbound_turn' &&
+    input.inboundMessageId !== undefined
+  ) {
+    try {
+      const texto = await loadInboundBodyForJob(pool, {
+        tenantId,
+        conversationId: input.conversationId,
+        inboundMessageId: input.inboundMessageId,
+      });
+      const alvo = await escolherFluxoPeloGatilho(pool, { organizationId: tenantId, texto });
+      if (alvo !== null) {
+        await iniciarFluxoDeAtendimento(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+          flowPointerId: alvo.id,
+        }).catch(() => {});
+        atendimento = await carregarEstadoDeAtendimento(pool, {
+          organizationId: tenantId,
+          contactId: leadId,
+        });
+      }
+    } catch (err) {
+      runLog.warn('não consegui avaliar o gatilho do fluxo de atendimento', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  }
   let finalizacaoDoFluxo: EndFinish | undefined;
   if (atendimento !== null) {
     try {

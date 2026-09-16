@@ -101,26 +101,51 @@ export function NodeConfigPanel({
               )}
             </p>
             {onSettingsChange && (
-              <div className="space-y-2 border-t border-border pt-3">
-                <Label htmlFor="flow-max-tentativas">{t("Máximo de tentativas por pergunta")}</Label>
-                <Input
-                  id="flow-max-tentativas"
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={settings?.max_tentativas_pergunta ?? 3}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (Number.isFinite(n) && n >= 1 && n <= 10) {
-                      onSettingsChange({ max_tentativas_pergunta: Math.round(n) });
-                    }
-                  }}
-                />
-                <p className="text-xs text-text-muted">
-                  {t(
-                    "Depois de tantas vezes sem resposta, a pergunta é encerrada como não respondida e deixa de ser feita.",
-                  )}
-                </p>
+              <div className="space-y-3 border-t border-border pt-3">
+                <div className="space-y-2">
+                  <Label htmlFor="flow-max-tentativas">{t("Máximo de tentativas por pergunta")}</Label>
+                  <Input
+                    id="flow-max-tentativas"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={settings?.max_tentativas_pergunta ?? 3}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 1 && n <= 10) {
+                        onSettingsChange({
+                          max_tentativas_pergunta: Math.round(n),
+                          ...(settings?.gatilhos ? { gatilhos: settings.gatilhos } : {}),
+                        });
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-text-muted">
+                    {t(
+                      "Depois de tantas vezes sem resposta, a pergunta é encerrada como não respondida e deixa de ser feita.",
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="flow-gatilhos">{t("Palavras-gatilho (separe por vírgula)")}</Label>
+                  <Input
+                    id="flow-gatilhos"
+                    value={(settings?.gatilhos ?? []).join(", ")}
+                    onChange={(e) => {
+                      const lista = e.target.value
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter((s) => s.length > 0);
+                      onSettingsChange({
+                        max_tentativas_pergunta: settings?.max_tentativas_pergunta ?? 3,
+                        ...(lista.length > 0 ? { gatilhos: lista } : {}),
+                      });
+                    }}
+                  />
+                  <p className="text-xs text-text-muted">
+                    {t("Quando a mensagem do cliente contiver uma delas, o fluxo começa sozinho.")}
+                  </p>
+                </div>
               </div>
             )}
           </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FlowEdge, FlowGraph, FlowNode } from "./graph-schema";
-import { mapearChecklist, situacaoDoChecklist, type ChecklistDeAtendimento } from "./atendimento";
+import { mapearChecklist, melhorFluxoPorGatilho, situacaoDoChecklist, type ChecklistDeAtendimento } from "./atendimento";
 
 function no(node: Partial<FlowNode> & Pick<FlowNode, "id" | "type" | "config">): FlowNode {
   return { label: node.id, position: { x: 0, y: 0 }, ...node } as FlowNode;
@@ -68,6 +68,30 @@ describe("mapearChecklist", () => {
   it("recusa quando não chega ao Fim", () => {
     const r = mapearChecklist(grafo([trigger("t"), collect("c1", "cidade")], [aresta("t", "c1")]));
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("melhorFluxoPorGatilho (entrada pelo motor)", () => {
+  const fluxos = [
+    { id: "q", nome: "Qualificação", gatilhos: ["quero uma moto", "interesse", "comprar"] },
+    { id: "f", nome: "Financiamento", gatilhos: ["financiar", "parcela", "cpf"] },
+    { id: "t", nome: "Troca", gatilhos: ["troca", "dar minha moto na troca"] },
+  ];
+
+  it("escolhe pelo maior número de gatilhos presentes", () => {
+    expect(melhorFluxoPorGatilho(fluxos, "quero financiar, qual a parcela?")?.id).toBe("f");
+  });
+
+  it("ignora acento e caixa", () => {
+    expect(melhorFluxoPorGatilho(fluxos, "QUERO DAR MINHA MOTO NA TROCA")?.id).toBe("t");
+  });
+
+  it("sem match devolve null", () => {
+    expect(melhorFluxoPorGatilho(fluxos, "bom dia, tudo bem?")).toBeNull();
+  });
+
+  it("mais gatilhos na mesma mensagem vencem", () => {
+    expect(melhorFluxoPorGatilho(fluxos, "tenho interesse, quero comprar")?.id).toBe("q");
   });
 });
 

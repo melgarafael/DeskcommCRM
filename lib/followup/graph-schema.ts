@@ -514,6 +514,12 @@ export const flowSettingsSchema = z.strictObject({
    * conclusão). Default 3.
    */
   max_tentativas_pergunta: z.number().int().min(1).max(10).default(3),
+  /**
+   * Palavras/expressões que LIGAM este fluxo: quando a mensagem do cliente
+   * contém uma delas, o MOTOR inicia o fluxo (entrada por gatilho, sem depender
+   * do modelo). Vazio/ausente = o fluxo só começa por `flow_start` ou roteador.
+   */
+  gatilhos: z.array(z.string().min(1).max(60)).max(30).optional(),
 });
 export type FlowSettings = z.infer<typeof flowSettingsSchema>;
 

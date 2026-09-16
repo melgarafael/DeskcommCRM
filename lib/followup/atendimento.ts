@@ -152,15 +152,55 @@ export function situacaoDoChecklist(
     completo: obrigatoriosPendentes.length === 0,
   };
 }
-
 /** O nó `collect` de uma chave, ou `null` se a chave não pertence ao fluxo. */
-export function campoPorChave(  checklist: ChecklistDeAtendimento,
+export function campoPorChave(
+  checklist: ChecklistDeAtendimento,
   key: string,
 ): Extract<FlowNode, { type: "collect" }> | null {
   for (const passo of checklist.passos) {
     if (passo.kind === "collect" && passo.node.config.key === key) return passo.node;
   }
   return null;
+}
+
+function normalizarTexto(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+export interface FluxoComGatilhos {
+  id: string;
+  nome: string;
+  gatilhos: string[];
+}
+
+/**
+ * Qual fluxo LIGA por palavra-gatilho (entrada pelo motor, sem modelo). Ganha o
+ * que tiver MAIS gatilhos presentes na mensagem; empate/zero ⇒ `null`.
+ * Puro, para testar sem banco.
+ */
+export function melhorFluxoPorGatilho(
+  fluxos: readonly FluxoComGatilhos[],
+  texto: string,
+): FluxoComGatilhos | null {
+  const alvo = normalizarTexto(texto);
+  if (alvo === "") return null;
+  let melhor: FluxoComGatilhos | null = null;
+  let melhorHits = 0;
+  for (const f of fluxos) {
+    const hits = f.gatilhos.filter((g) => {
+      const ng = normalizarTexto(g);
+      return ng !== "" && alvo.includes(ng);
+    }).length;
+    if (hits > melhorHits) {
+      melhor = f;
+      melhorHits = hits;
+    }
+  }
+  return melhor;
 }
 
 /**
@@ -470,6 +510,35 @@ export async function concluirEnrollmentDeAtendimento(
       where organization_id = $1 and id = $2 and status in ('active', 'waiting_reply')`,
     [args.organizationId, args.enrollmentId, args.outcome],
   );
+}
+
+/**
+ * ENTRADA POR GATILHO (motor): entre os fluxos ativos, qual LIGA pela mensagem
+ * do cliente (palavra-gatilho). Independe do modelo e do roteador.
+ */
+export async function escolherFluxoPeloGatilho(
+  db: pg.Pool,
+  args: { organizationId: string; texto: string | null },
+): Promise<{ id: string; nome: string } | null> {
+  if (!args.texto) return null;
+  const { rows } = await db.query<{ id: string; nome: string; graph: unknown }>(
+    `select p.id, p.name as nome, v.graph
+       from followup_flow_pointers p
+       join followup_flow_versions v on v.id = p.active_version_id
+      where p.organization_id = $1
+        and p.surface = 'atendimento'
+        and p.status = 'active'`,
+    [args.organizationId],
+  );
+  const fluxos: FluxoComGatilhos[] = [];
+  for (const row of rows) {
+    const parsed = flowGraphSchema.safeParse(row.graph);
+    if (!parsed.success) continue;
+    const gatilhos = parsed.data.settings?.gatilhos ?? [];
+    if (gatilhos.length > 0) fluxos.push({ id: row.id, nome: row.nome, gatilhos });
+  }
+  const melhor = melhorFluxoPorGatilho(fluxos, args.texto);
+  return melhor === null ? null : { id: melhor.id, nome: melhor.nome };
 }
 
 /**
