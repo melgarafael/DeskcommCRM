@@ -381,6 +381,7 @@ jobs:
         central-de-avisos-capacidades.spec.ts
         escalacao-ciclo.spec.ts
         followup-builder.spec.ts
+        fluxo-de-atendimento.spec.ts
         followup-queue.spec.ts
         distribuicao-atendimento.spec.ts
         followup-journey.spec.ts

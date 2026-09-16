@@ -432,9 +432,11 @@ export async function concluirEnrollmentDeAtendimento(
  * criado, ou `null` quando não é para começar (pointer inativo, sem versão, grafo
  * inválido, ou já existir um enrollment vivo — o índice "1 vivo por contato").
  *
- * `next_eval_at` fica NULL de propósito: o motor de RELÓGIO do follow-up só pega
- * enrollments com `next_eval_at <= now()`, então um fluxo de atendimento nunca é
- * consumido pelo tick.
+ * `next_eval_at` fica num FUTURO distante de propósito: o CHECK
+ * `followup_enrollments_relogio_coerente` exige `next_eval_at` quando o status é
+ * `active`, e o motor de RELÓGIO do follow-up só reivindica `next_eval_at <= now()`
+ * — então um fluxo de atendimento nunca é consumido pelo tick. (NULL violaria o
+ * CHECK; um futuro distante satisfaz os dois.)
  */
 export async function iniciarFluxoDeAtendimento(
   db: pg.Pool,
@@ -469,7 +471,7 @@ export async function iniciarFluxoDeAtendimento(
     const { rows: created } = await db.query<{ id: string }>(
       `insert into followup_enrollments
           (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at)
-       values ($1, $2, $3, $4, $5, 'active', null)
+       values ($1, $2, $3, $4, $5, 'active', '2999-12-31T00:00:00Z')
        returning id`,
       [args.organizationId, args.flowPointerId, row.active_version_id, args.contactId, inicio],
     );
