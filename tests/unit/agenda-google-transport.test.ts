@@ -85,7 +85,7 @@ describe("receiver HTTP real: protocolos Google", () => {
     };
     await expect(
       api().write("destination", "event /exact", "POST", {}, null),
-    ).rejects.toMatchObject({ status: 409 });
+    ).rejects.toMatchObject({ status: 409, message: "Google HTTP 409" });
     expect(requests).toHaveLength(1);
   });
   it("412 não sobrescreve a versão nova", async () => {
@@ -171,6 +171,25 @@ describe("receiver HTTP real: protocolos Google", () => {
     expect(canWriteCalendar(list[0]!.accessRole)).toBe(false);
     expect(canReadCalendar("freeBusyReader")).toBe(false);
     expect(canWriteCalendar("future-role")).toBe(false);
+  });
+  it("400 traz o error.message do Google, sem o corpo inteiro", async () => {
+    respond = (_q, r) => {
+      r.statusCode = 400;
+      r.setHeader("content-type", "application/json");
+      r.end(
+        JSON.stringify({
+          error: {
+            code: 400,
+            message: "The specified time range is empty.",
+            errors: [{ domain: "calendar", reason: "timeRangeEmpty" }],
+          },
+        }),
+      );
+    };
+    await expect(api().write("destination", "event /exact", "POST", {}, null)).rejects.toMatchObject({
+      status: 400,
+      message: "Google HTTP 400: The specified time range is empty.",
+    });
   });
 });
 

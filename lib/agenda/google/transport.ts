@@ -10,12 +10,27 @@ export class GoogleHttpError extends Error {
   constructor(
     readonly status: number,
     readonly retryAfter: number | null = null,
+    motivo: string | null = null,
   ) {
+    const recorte =
+      motivo && motivo.trim() ? motivo.trim().replace(/\s+/g, " ").slice(0, 180) : null;
     super(
       status === 412
         ? "O evento mudou no Google. Releia antes de publicar."
-        : `Google HTTP ${status}`,
+        : recorte
+          ? `Google HTTP ${status}: ${recorte}`
+          : `Google HTTP ${status}`,
     );
+  }
+}
+/** Lê só `error.message` do JSON do Google. Não guarda o corpo. */
+async function motivoDoGoogle(r: Response): Promise<string | null> {
+  try {
+    const body = (await r.json()) as { error?: { message?: unknown } };
+    const msg = body?.error?.message;
+    return typeof msg === "string" && msg.trim() ? msg : null;
+  } catch {
+    return null;
   }
 }
 const eventSchema = z
@@ -43,6 +58,7 @@ export function googleTransport(accessToken: string, transport: GoogleFetch = fe
       throw new GoogleHttpError(
         r.status,
         r.headers.has("retry-after") ? Number(r.headers.get("retry-after")) : null,
+        await motivoDoGoogle(r),
       );
     return r.status === 204 ? null : r.json();
   }
