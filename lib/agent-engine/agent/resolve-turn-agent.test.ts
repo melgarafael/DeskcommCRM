@@ -112,6 +112,36 @@ describe('resolveTurnAgent', () => {
     expect(out.confidence).toBe(0.9);
   });
 
+  it('2b. membro com fluxo de atendimento → classified e flowPointerId', async () => {
+    const r = router({
+      sticky: false,
+      members: [
+        { agentId: 'agent-vendas', intentName: 'vendas', intentDescription: 'quer comprar', examples: [], flowPointerId: 'flow-troca' },
+        members[1]!,
+      ],
+    });
+    const loadActiveRouter = vi.fn().mockResolvedValue(r);
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    const loadPublishedAgentConfigById = idAwareLoader();
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'quero dar minha moto na troca', stickyAgentId: null, stickyIntent: null },
+      makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfigById }));
+    expect(out.outcome).toBe('classified');
+    expect(out.config?.agentId).toBe('agent-vendas');
+    expect(out.flowPointerId).toBe('flow-troca');
+  });
+
+  it('2c. membro sem fluxo → flowPointerId null', async () => {
+    const r = router({ sticky: false });
+    const loadActiveRouter = vi.fn().mockResolvedValue(r);
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    const loadPublishedAgentConfigById = idAwareLoader();
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'quanto custa?', stickyAgentId: null, stickyIntent: null },
+      makeDeps({ loadActiveRouter, classifyIntent, loadPublishedAgentConfigById }));
+    expect(out.flowPointerId).toBeNull();
+  });
+
   it('3. sticky + mesma intenção → sticky, NÃO troca de agente', async () => {
     const r = router();
     const loadActiveRouter = vi.fn().mockResolvedValue(r);

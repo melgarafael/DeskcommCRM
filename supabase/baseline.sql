@@ -23581,3 +23581,19 @@ create trigger trg_contact_flow_data_updated_at
   for each row execute function public.fn_set_updated_at();
 
 -- ---- fim fluxos de atendimento (migration 0236) ----
+
+-- ---- roteador aponta fluxo de atendimento (migration 0237) ----
+-- O membro do roteador continua roteando para o agente; `flow_pointer_id` faz
+-- um fluxo de atendimento começar junto quando a intenção casa.
+alter table public.ai_router_members
+  add column if not exists flow_pointer_id uuid
+    references public.followup_flow_pointers(id) on delete set null;
+
+comment on column public.ai_router_members.flow_pointer_id is
+  'Fluxo de atendimento (surface=atendimento) que começa quando esta intenção casa. NULL = só roteia agente.';
+
+create index if not exists idx_ai_router_members_flow
+  on public.ai_router_members (flow_pointer_id)
+  where flow_pointer_id is not null;
+
+-- ---- fim roteador aponta fluxo (migration 0237) ----

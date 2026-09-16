@@ -175,6 +175,7 @@ import {
   campoPorChave,
   carregarEstadoDeAtendimento,
   concluirEnrollmentDeAtendimento,
+  iniciarFluxoDeAtendimento,
   registrarDadoDoFluxo,
   renderBlocoDeAtendimento,
   situacaoDoChecklist,
@@ -1781,7 +1782,7 @@ async function executarTurnoDoAgente(
   }
 
   const routed = preview
-    ? { config: preview.agent, routerId: null, intentName: null, confidence: null, outcome: 'preview' }
+    ? { config: preview.agent, routerId: null, intentName: null, confidence: null, outcome: 'preview', flowPointerId: null }
     : input.resolvedAgent ?? await resolveConversationTurn(pool, deps.llmCfg, {
         tenantId, leadId, jobId: liveJob().id,
         channelSessionId: input.channelSessionId,
@@ -1789,6 +1790,23 @@ async function executarTurnoDoAgente(
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog });
   const agentConfig = routed.config;
+  // Fase 4: o roteador casou uma intenção ligada a um fluxo de atendimento —
+  // começa o fluxo para o contato. O estado do fluxo é carregado logo abaixo
+  // (depois das skills), então ele já guia ESTE turno.
+  if (!preview && routed.flowPointerId) {
+    try {
+      await iniciarFluxoDeAtendimento(pool, {
+        organizationId: tenantId,
+        contactId: leadId,
+        flowPointerId: routed.flowPointerId,
+      });
+    } catch (err) {
+      runLog.warn('não consegui iniciar o fluxo de atendimento do roteador', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+        flow_pointer_id: routed.flowPointerId,
+      });
+    }
+  }
   if (!preview && agentConfig?.operationMode === 'assisted' && job?.kind === 'inbound_turn') {
     const { generateReplyDraft } = await import('./reply-drafts');
     await generateReplyDraft(pool, deps, {

@@ -301,3 +301,62 @@ export async function concluirEnrollmentDeAtendimento(
     [args.organizationId, args.enrollmentId, args.outcome],
   );
 }
+
+/**
+ * Começa um fluxo de atendimento para o contato (chamado quando o roteador casa
+ * a intenção com um fluxo). Devolve o id do enrollment criado, ou `null` quando
+ * não é para começar: pointer inexistente/inativo, sem versão publicada, grafo
+ * inválido, ou já existir um enrollment vivo para o contato.
+ *
+ * `next_eval_at` fica NULL de propósito: o motor de RELÓGIO do follow-up só pega
+ * enrollments com `next_eval_at <= now()`, então um fluxo de ATENDIMENTO nunca é
+ * consumido pelo tick — quem o conduz é o turno.
+ *
+ * Best-effort contra a corrida do índice "1 enrollment vivo por contato": se a
+ * inserção colidir (23505), devolve `null` em vez de estourar o turno.
+ */
+export async function iniciarFluxoDeAtendimento(
+  db: pg.Pool,
+  args: { organizationId: string; contactId: string; flowPointerId: string },
+): Promise<string | null> {
+  const { rows } = await db.query<{
+    active_version_id: string | null;
+    graph: unknown;
+  }>(
+    `select p.active_version_id, v.graph
+       from followup_flow_pointers p
+       join followup_flow_versions v on v.id = p.active_version_id
+      where p.organization_id = $1
+        and p.id = $2
+        and p.status = 'active'
+        and p.surface = 'atendimento'`,
+    [args.organizationId, args.flowPointerId],
+  );
+  const row = rows[0];
+  if (!row || row.active_version_id === null) return null;
+
+  const parsed = flowGraphSchema.safeParse(row.graph);
+  if (!parsed.success) return null;
+  const checklist = mapearChecklist(parsed.data);
+  if (!checklist.ok) return null;
+
+  const gatilho = parsed.data.nodes.find((n) => n.type === "trigger");
+  const inicio = gatilho?.id ?? checklist.checklist.passos[0]?.node.id;
+  if (inicio === undefined) return null;
+
+  try {
+    const { rows: created } = await db.query<{ id: string }>(
+      `insert into followup_enrollments
+          (organization_id, pointer_id, version_id, contact_id, current_node_id, status, next_eval_at)
+       values ($1, $2, $3, $4, $5, 'active', null)
+       returning id`,
+      [args.organizationId, args.flowPointerId, row.active_version_id, args.contactId, inicio],
+    );
+    return created[0]?.id ?? null;
+  } catch (err) {
+    // 23505 = índice "um enrollment vivo por contato" — o contato já está em
+    // outro fluxo (ou neste). Não é erro do turno.
+    if ((err as { code?: string }).code === "23505") return null;
+    throw err;
+  }
+}
