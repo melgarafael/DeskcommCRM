@@ -149,8 +149,7 @@ export function situacaoDoChecklist(
 }
 
 /** O nó `collect` de uma chave, ou `null` se a chave não pertence ao fluxo. */
-export function campoPorChave(
-  checklist: ChecklistDeAtendimento,
+export function campoPorChave(  checklist: ChecklistDeAtendimento,
   key: string,
 ): Extract<FlowNode, { type: "collect" }> | null {
   for (const passo of checklist.passos) {
@@ -425,6 +424,27 @@ export async function concluirEnrollmentDeAtendimento(
       where organization_id = $1 and id = $2 and status in ('active', 'waiting_reply')`,
     [args.organizationId, args.enrollmentId, args.outcome],
   );
+}
+
+/**
+ * Fluxos de atendimento ATIVOS da organização (com versão publicada). É o que a
+ * ferramenta `flow_start` oferece ao agente — o prompt/skill decide QUAL iniciar.
+ */
+export async function listarFluxosDeAtendimentoAtivos(
+  db: pg.Pool,
+  organizationId: string,
+): Promise<Array<{ id: string; nome: string }>> {
+  const { rows } = await db.query<{ id: string; nome: string }>(
+    `select id, name as nome
+       from followup_flow_pointers
+      where organization_id = $1
+        and surface = 'atendimento'
+        and status = 'active'
+        and active_version_id is not null
+      order by name`,
+    [organizationId],
+  );
+  return rows;
 }
 
 /**

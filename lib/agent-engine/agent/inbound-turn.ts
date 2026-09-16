@@ -176,6 +176,7 @@ import {
   carregarEstadoDeAtendimento,
   concluirEnrollmentDeAtendimento,
   iniciarFluxoDeAtendimento,
+  listarFluxosDeAtendimentoAtivos,
   registrarDadoDoFluxo,
   registrarTentativaDoTurno,
   renderBlocoDeAtendimento,
@@ -218,6 +219,20 @@ export const AGENT_TOOL_DEFS = {
         .max(500)
         .describe('valor NORMALIZADO (ex.: true/false, número, AAAA-MM-DD, uma das opções)'),
       bruto: z.string().min(1).max(500).optional().describe('o texto cru que o cliente escreveu (opcional)'),
+    }),
+  },
+  flow_start: {
+    description:
+      'Inicia um FLUXO DE ATENDIMENTO para este cliente — o roteiro de perguntas cadastrado (ex.: "Qualificação", ' +
+      '"Financiamento", "Troca"). Use quando o assunto do cliente pedir esse roteiro; depois de iniciar, siga as ' +
+      'perguntas que vierem no bloco do fluxo, uma por vez. Não use se já houver um fluxo ativo.',
+    inputSchema: z.object({
+      fluxo: z
+        .string()
+        .min(1)
+        .max(80)
+        .optional()
+        .describe('nome do fluxo; se houver só um ativo, pode omitir'),
     }),
   },
   save_client_data: {
@@ -2560,6 +2575,77 @@ async function executarTurnoDoAgente(
           };
         }
         return { ok: true, completo: true, acao: 'nada', mensagem: 'Fluxo concluído.' };
+      },
+    }),
+    flow_start: tool({
+      ...AGENT_TOOL_DEFS.flow_start,
+      execute: async ({ fluxo }) => {
+        if (preview) {
+          return { ok: false, error: { code: 'previa', message: 'Prévia não inicia fluxo.' } };
+        }
+        // Já existe um fluxo ativo neste contato: devolve o que falta, não inicia outro.
+        if (fluxoAtendimento !== null) {
+          return {
+            ok: true,
+            ja_ativo: true,
+            fluxo: fluxoAtendimento.nomeDoFluxo,
+            pendentes: fluxoAtendimento.situacao.pendentes.map((n) => n.config.key),
+          };
+        }
+        const ativos = await listarFluxosDeAtendimentoAtivos(pool, tenantId);
+        let alvo: { id: string; nome: string } | null = null;
+        if (fluxo) {
+          alvo = ativos.find((f) => f.nome.toLowerCase() === fluxo.trim().toLowerCase()) ?? null;
+          if (alvo === null) {
+            return {
+              ok: false,
+              error: {
+                code: 'fluxo_nao_encontrado',
+                message: `Não existe fluxo de atendimento ativo "${fluxo}".`,
+                fluxos: ativos.map((f) => f.nome),
+              },
+            };
+          }
+        } else if (ativos.length === 1) {
+          alvo = ativos[0]!;
+        } else {
+          return {
+            ok: false,
+            error: {
+              code: 'fluxo_ambiguo',
+              message: 'Há mais de um fluxo de atendimento ativo; diga qual.',
+              fluxos: ativos.map((f) => f.nome),
+            },
+          };
+        }
+        let enrollmentId: string | null;
+        try {
+          enrollmentId = await iniciarFluxoDeAtendimento(pool, {
+            organizationId: tenantId,
+            contactId: leadId,
+            flowPointerId: alvo.id,
+          });
+        } catch {
+          return { ok: false, error: { code: 'iniciar_falhou', message: 'Não consegui iniciar o fluxo agora.' } };
+        }
+        if (enrollmentId === null) {
+          return {
+            ok: false,
+            error: { code: 'nao_iniciou', message: 'O cliente já está em outro fluxo ativo (ou o fluxo não pôde começar).' },
+          };
+        }
+        const estado = await carregarEstadoDeAtendimento(pool, { organizationId: tenantId, contactId: leadId });
+        return {
+          ok: true,
+          fluxo: alvo.nome,
+          pendentes: (estado?.situacao.pendentes ?? []).map((n) => ({
+            campo: n.config.key,
+            pergunta: n.config.question ?? n.config.label,
+            obrigatoria: n.config.required,
+          })),
+          instrucao:
+            'O fluxo começou. Faça no máximo UMA pergunta agora e registre a resposta com flow_collect quando o cliente responder.',
+        };
       },
     }),
     save_client_data: tool({
