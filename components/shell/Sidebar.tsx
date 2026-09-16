@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { type ReactElement, useEffect, useState } from "react";
 import { ArrowRight, CaretDown, Gear } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -13,6 +13,7 @@ import { ADVOMAX_LOGO_URL, marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { GRUPO_NO_RODAPE, sidebarGroups } from "@/lib/navigation/registry";
 import { advomaxAppUrl } from "@/lib/advomax/navigation";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const CHAVE_GRUPOS_FECHADOS = "sidebar-grupos-fechados";
 
@@ -78,6 +79,18 @@ export function SidebarContent({
     });
   }
 
+  function hoverLabel(label: string, link: ReactElement) {
+    if (!collapsed) return link;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right" sideOffset={10} className="bg-[#071b33] text-xs font-medium text-white">
+          {t(label)}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
   const brand = useMarcaDaInstalacao();
   /**
    * O CONSUMIDOR do nome por organização.
@@ -114,7 +127,8 @@ export function SidebarContent({
   const marcaDoProduto = marcaEhADoProduto({ name: nome, logoUrl: logo ?? null });
 
   return (
-    <>
+    <TooltipProvider delayDuration={180}>
+      <>
       <div
         className={cn(
           "flex h-16 items-center border-b border-border bg-white px-5",
@@ -243,37 +257,40 @@ export function SidebarContent({
                   {items.map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
                     const Icon = item.icon;
+                    const link = (
+                      <Link
+                        href={item.href}
+                        aria-label={collapsed ? t(item.label) : undefined}
+                        aria-current={isActive ? "page" : undefined}
+                        onClick={onNavigate}
+                        className={cn(
+                          "relative mx-[10px] flex min-h-11 w-[calc(100%-20px)] items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
+                          isActive
+                            ? "bg-[#071b33] font-semibold text-white shadow-sm"
+                            : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
+                          collapsed && "justify-center px-2",
+                        )}
+                      >
+                        <Icon size={collapsed ? 22 : 18} weight={isActive ? "fill" : "regular"} aria-hidden />
+                        {!collapsed && <span className="truncate">{t(item.label)}</span>}
+                        {item.healthDot && (
+                          <ConnectionHealthDot
+                            className={cn(collapsed ? "absolute top-1.5 right-1.5" : "ml-auto")}
+                          />
+                        )}
+                      </Link>
+                    );
                     return (
                       <li key={item.href}>
-                        <Link
-                          href={item.href}
-                          title={collapsed ? t(item.label) : undefined}
-                          aria-current={isActive ? "page" : undefined}
-                          onClick={onNavigate}
-                          className={cn(
-                            "relative mx-[10px] flex min-h-11 w-[calc(100%-20px)] items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors",
-                            isActive
-                              ? "bg-[#071b33] font-semibold text-white shadow-sm"
-                              : "text-[#17304e] hover:bg-[#eef3f8] hover:text-[#071b33]",
-                            collapsed && "justify-center px-2",
-                          )}
-                        >
-                          <Icon size={collapsed ? 22 : 18} weight={isActive ? "fill" : "regular"} aria-hidden />
-                          {!collapsed && <span className="truncate">{t(item.label)}</span>}
-                          {item.healthDot && (
-                            <ConnectionHealthDot
-                              className={cn(collapsed ? "absolute top-1.5 right-1.5" : "ml-auto")}
-                            />
-                          )}
-                        </Link>
+                        {hoverLabel(item.label, link)}
                       </li>
                     );
                   })}
                   {group.hub && (
                     <li>
-                      <Link
+                      {hoverLabel(group.hub.label, <Link
                         href={group.hub.href}
-                        title={collapsed ? t(group.hub.label) : undefined}
+                        aria-label={collapsed ? t(group.hub.label) : undefined}
                         aria-current={pathname === group.hub.href ? "page" : undefined}
                         onClick={onNavigate}
                         className={cn(
@@ -286,7 +303,7 @@ export function SidebarContent({
                       >
                         <ArrowRight size={collapsed ? 22 : 18} aria-hidden />
                         {!collapsed && <span className="truncate">{t(group.hub.label)}</span>}
-                      </Link>
+                      </Link>)}
                     </li>
                   )}
                 </ul>
@@ -296,10 +313,9 @@ export function SidebarContent({
         })}
       </nav>
       <div className="border-t border-border bg-white p-3">
-        {rodape && (
-          <Link
+        {rodape && hoverLabel(rodape.label, <Link
             href={rodape.href}
-            title={collapsed ? t(rodape.label) : undefined}
+            aria-label={collapsed ? t(rodape.label) : undefined}
             aria-current={pathname.startsWith(rodape.href) ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
@@ -312,13 +328,12 @@ export function SidebarContent({
           >
             <Gear size={collapsed ? 22 : 18} aria-hidden />
             {!collapsed && <span className="truncate">{t(rodape.label)}</span>}
-          </Link>
-        )}
-        <a
+          </Link>)}
+        {hoverLabel("Abrir Advomax Gestão", <a
           href={advomaxAppUrl("/home")}
           target="_blank"
           rel="noreferrer"
-          title={collapsed ? t("Abrir Advomax Gestão") : undefined}
+          aria-label={collapsed ? t("Abrir Advomax Gestão") : undefined}
           className={cn(
             "mb-1 flex items-center gap-3 rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground",
             collapsed && "justify-center px-2",
@@ -326,10 +341,11 @@ export function SidebarContent({
         >
           <ArrowRight size={collapsed ? 22 : 18} aria-hidden />
           {!collapsed && <span className="truncate">{t("Abrir Advomax Gestão")}</span>}
-        </a>
+        </a>)}
         <VersionFooter collapsed={collapsed} onNavigate={onNavigate} />
       </div>
-    </>
+      </>
+    </TooltipProvider>
   );
 }
 
