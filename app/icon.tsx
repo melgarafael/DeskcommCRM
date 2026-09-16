@@ -78,6 +78,37 @@ export const contentType = "image/png";
 export default async function Icon() {
   const marca = await marcaDaSaida(null);
 
+  if (marca.nome.toLocaleLowerCase("pt-BR").startsWith("advomax")) {
+    return new ImageResponse(
+      (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#f8fafc",
+          }}
+        >
+          <svg viewBox="0 0 270 230" width="52" height="52">
+            <g
+              fill="none"
+              stroke="#071B33"
+              strokeWidth="12"
+              strokeLinecap="square"
+              strokeLinejoin="miter"
+            >
+              <path d="M18 210 112 22l96 188" />
+              <path d="m77 95 108 75 70-106v146" />
+            </g>
+          </svg>
+        </div>
+      ),
+      { ...size, headers: CACHE },
+    );
+  }
+
   if (marcaEhADoProduto({ name: marca.nome, logoUrl: marca.logoUrl })) {
     // 78% da aresta: o D ocupa ~75% do próprio viewBox, então sobra o mesmo
     // respiro que a letra tem no ramo de baixo.
