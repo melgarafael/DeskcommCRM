@@ -88,6 +88,17 @@ export default async function LoginPage({
           )}
         </div>
       )}
+      <Link
+        href="/auth/advomax/start"
+        className="flex h-10 w-full items-center justify-center rounded-md border border-primary bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        {t("Entrar com Advomax")}
+      </Link>
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <span className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">{t("ou use seu acesso do CRM")}</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
       <LoginForm next={next} />
       <div className="space-y-2 text-center text-sm">
         <p>
