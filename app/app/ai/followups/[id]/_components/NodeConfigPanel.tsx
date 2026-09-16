@@ -10,10 +10,12 @@ import { useT } from "@/hooks/i18n/useT";
 
 import { ActionForm } from "./forms/ActionForm";
 import { ClassifyForm } from "./forms/ClassifyForm";
+import { CollectForm } from "./forms/CollectForm";
 import { ConditionForm } from "./forms/ConditionForm";
 import { EndForm } from "./forms/EndForm";
 import { MatchReplyForm } from "./forms/MatchReplyForm";
 import { RepeatForm } from "./forms/RepeatForm";
+import { SkillForm } from "./forms/SkillForm";
 import { WaitForm } from "./forms/WaitForm";
 import type { ConfigOf } from "./forms/shared";
 import { NODE_VISUALS } from "./nodes/nodeVisuals";
@@ -110,6 +112,18 @@ export function NodeConfigPanel({ node, onChange, ramosLigados }: Props) {
         {type === "repeat" && (
           <RepeatForm
             config={node.data.config as ConfigOf<"repeat">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "collect" && (
+          <CollectForm
+            config={node.data.config as ConfigOf<"collect">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "skill" && (
+          <SkillForm
+            config={node.data.config as ConfigOf<"skill">}
             onChange={(config) => onChange({ config })}
           />
         )}
