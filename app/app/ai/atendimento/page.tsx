@@ -6,6 +6,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import { FlowsList } from "../followups/_components/FlowsList";
+import { ComoUsar } from "./_components/ComoUsar";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,7 @@ export default async function AtendimentoFlowsPage() {
           </p>
         </div>
       </header>
+      <ComoUsar />
       <FlowsList initialData={flows} canWrite={canWrite} surface="atendimento" />
     </div>
   );

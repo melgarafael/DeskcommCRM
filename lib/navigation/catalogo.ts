@@ -297,9 +297,9 @@ export const NAV_CATALOG = [
   },
   {
     href: "/app/ai/atendimento",
-    label: "Atendimento",
-    description: "Fluxos de perguntas que a IA conduz durante a conversa, com os dados guardados por cliente.",
-    icon: "FlowArrow",
+    label: "Fluxos de atendimento",
+    description: "Perguntas que a IA conduz durante a conversa, com os dados guardados por cliente.",
+    icon: "ListChecks",
     group: "ia",
     section: "Montar o agente",
     minRole: "manager",

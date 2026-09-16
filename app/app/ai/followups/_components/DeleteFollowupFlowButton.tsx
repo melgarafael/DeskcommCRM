@@ -24,6 +24,8 @@ type Props = {
   flowName: string;
   /** Depois de apagar o fluxo aberto no editor, volta pra lista. */
   redirectToList?: boolean;
+  /** Lista para onde voltar após excluir (a da superfície atual). */
+  listHref?: string;
   variant?: "outline" | "ghost";
   size?: "sm" | "default";
 };
@@ -32,6 +34,7 @@ export function DeleteFollowupFlowButton({
   flowId,
   flowName,
   redirectToList = false,
+  listHref = "/app/ai/followups",
   variant = "outline",
   size = "sm",
 }: Props) {
@@ -77,7 +80,7 @@ export function DeleteFollowupFlowButton({
                 del.mutate(flowId, {
                   onSuccess: () => {
                     setOpen(false);
-                    if (redirectToList) router.push("/app/ai/followups");
+                    if (redirectToList) router.push(listHref);
                   },
                 });
               }}

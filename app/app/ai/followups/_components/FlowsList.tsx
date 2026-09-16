@@ -38,6 +38,9 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
   const deAtendimento = surface === "atendimento";
 
   const flows = data ?? [];
+  // Cada superfície tem a SUA rota de editor: abrir um fluxo de atendimento não
+  // pode jogar o usuário na lista de Follow-ups.
+  const baseHref = deAtendimento ? "/app/ai/atendimento" : "/app/ai/followups";
 
   const newFlowButton = (
     <Button onClick={() => setDialogOpen(true)} className="w-full sm:w-auto">
@@ -80,7 +83,7 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
         {flows.map((flow) => (
           <li key={flow.id}>
             <Card className="flex h-full flex-col gap-3 p-4 transition-colors hover:border-accent-400">
-              <Link href={`/app/ai/followups/${flow.id}`} className="flex flex-1 flex-col gap-3">
+              <Link href={`${baseHref}/${flow.id}`} className="flex flex-1 flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="min-w-0 flex-1 truncate font-medium" title={flow.name}>
                     {flow.name}
@@ -103,7 +106,7 @@ export function FlowsList({ initialData, canWrite, surface }: Props) {
               </Link>
               {canWrite && (
                 <div className="flex justify-end border-t border-border pt-2">
-                  <DeleteFollowupFlowButton flowId={flow.id} flowName={flow.name} />
+                  <DeleteFollowupFlowButton flowId={flow.id} flowName={flow.name} listHref={baseHref} />
                 </div>
               )}
             </Card>
