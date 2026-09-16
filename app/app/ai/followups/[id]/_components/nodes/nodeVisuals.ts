@@ -96,7 +96,7 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
     chipClassName: "bg-info-bg text-info-fg",
     borderClassName: "border-l-info",
     defaultLabel: "Nova pergunta",
-    defaultConfig: () => ({ key: "novo_campo", label: "Nova pergunta", type: "text", required: true }),
+    defaultConfig: () => ({ key: "novo_campo", label: "Nova pergunta", type: "text", required: true, permite_correcao: true }),
   },
   skill: {
     type: "skill",

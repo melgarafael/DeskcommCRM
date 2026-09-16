@@ -524,6 +524,7 @@ describe('graph-schema', () => {
       if (result.success) {
         expect(result.data.type).toBe('text');
         expect(result.data.required).toBe(true);
+        expect(result.data.permite_correcao).toBe(true);
       }
     });
 
@@ -547,6 +548,34 @@ describe('graph-schema', () => {
 
     it('recusa nome vazio', () => {
       expect(skillConfigSchema.safeParse({ skill_name: '' }).success).toBe(false);
+    });
+  });
+
+  describe('flowGraphSchema.settings (configurações do fluxo)', () => {
+    const grafoMinimo = (settings?: unknown) => ({
+      nodes: [
+        { id: 't', type: 'trigger', label: 'Início', position: { x: 0, y: 0 }, config: {} },
+        { id: 'e', type: 'end', label: 'Fim', position: { x: 0, y: 0 }, config: { outcome: 'converted' } },
+      ],
+      edges: [],
+      ...(settings === undefined ? {} : { settings }),
+    });
+
+    it('é opcional — grafo antigo continua válido', () => {
+      const r = flowGraphSchema.safeParse(grafoMinimo());
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.settings).toBeUndefined();
+    });
+
+    it('aplica o default de tentativas', () => {
+      const r = flowGraphSchema.safeParse(grafoMinimo({}));
+      expect(r.success).toBe(true);
+      if (r.success) expect(r.data.settings?.max_tentativas_pergunta).toBe(3);
+    });
+
+    it('recusa tentativas fora da faixa', () => {
+      expect(flowGraphSchema.safeParse(grafoMinimo({ max_tentativas_pergunta: 0 })).success).toBe(false);
+      expect(flowGraphSchema.safeParse(grafoMinimo({ max_tentativas_pergunta: 11 })).success).toBe(false);
     });
   });
 

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Trash } from "@/lib/ui/icons";
-import type { FlowNode } from "@/lib/followup/graph-schema";
+import type { FlowGraph, FlowNode } from "@/lib/followup/graph-schema";
 import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -29,6 +29,9 @@ interface Props {
   ramosLigados?: string[];
   /** Exclui o nó (e as arestas ligadas a ele). Ausente = sem botão. */
   onDelete?: () => void;
+  /** Configurações do FLUXO (nível do grafo). Mostradas no nó de início. */
+  settings?: FlowGraph["settings"];
+  onSettingsChange?: (settings: FlowGraph["settings"]) => void;
 }
 
 /**
@@ -40,7 +43,7 @@ interface Props {
  * quando o candidato passa no schema — senão mostra erro inline e o canvas
  * mantém a última config válida (nunca um valor pela metade rio acima).
  */
-export function NodeConfigPanel({ node, onChange, ramosLigados, onDelete }: Props) {
+export function NodeConfigPanel({ node, onChange, ramosLigados, onDelete, settings, onSettingsChange }: Props) {
   const t = useT();
   const type = node.type as FlowNode["type"];
   const visual = NODE_VISUALS[type];
@@ -100,11 +103,36 @@ export function NodeConfigPanel({ node, onChange, ramosLigados, onDelete }: Prop
 
       <div className="space-y-4 border-t border-border pt-4">
         {type === "trigger" && (
-          <p className="text-sm text-text-muted">
-            {t(
-              "Início do fluxo — sem configuração adicional. O disparo (manual, mudança de etapa, silêncio ou fim de conversa) é definido nas configurações do fluxo.",
+          <div className="space-y-3">
+            <p className="text-sm text-text-muted">
+              {t(
+                "Início do fluxo — sem configuração adicional. O disparo (manual, mudança de etapa, silêncio ou fim de conversa) é definido nas configurações do fluxo.",
+              )}
+            </p>
+            {onSettingsChange && (
+              <div className="space-y-2 border-t border-border pt-3">
+                <Label htmlFor="flow-max-tentativas">{t("Máximo de tentativas por pergunta")}</Label>
+                <Input
+                  id="flow-max-tentativas"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={settings?.max_tentativas_pergunta ?? 3}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n >= 1 && n <= 10) {
+                      onSettingsChange({ max_tentativas_pergunta: Math.round(n) });
+                    }
+                  }}
+                />
+                <p className="text-xs text-text-muted">
+                  {t(
+                    "Depois de tantas vezes sem resposta, a pergunta é encerrada como não respondida e deixa de ser feita.",
+                  )}
+                </p>
+              </div>
             )}
-          </p>
+          </div>
         )}
         {type === "wait" && (
           <WaitForm config={node.data.config as ConfigOf<"wait">} onChange={(config) => onChange({ config })} />

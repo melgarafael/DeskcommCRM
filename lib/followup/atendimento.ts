@@ -1,27 +1,31 @@
 /**
  * Fluxo de ATENDIMENTO (surface `atendimento`) — checklist linear em tempo real.
  *
- * Diferente do follow-up (retomada, conduzida pelo RELÓGIO), este fluxo é
+ * Diferente do follow-up (retomada, conduzido pelo RELÓGIO), este fluxo é
  * conduzido pelo TURNO: a cada mensagem o executor olha o grafo pinado, calcula
  * quais perguntas (`collect`) ainda faltam e injeta isso no contexto do agente.
- * Quando os obrigatórios estão preenchidos, o fluxo conclui e as perguntas
- * param.
+ * Quando os obrigatórios estão preenchidos — ou esgotaram as tentativas — o fluxo
+ * conclui e as perguntas param.
+ *
+ * Regras que o dono pediu e que moram aqui:
+ *  - o dado guardado é o NORMALIZADO (o agente interpreta e grava o sentido);
+ *  - o cliente pode dar vários dados de uma vez (o agente preenche o que couber,
+ *    mesmo antes de a pergunta ter sido feita);
+ *  - o cliente pode CORRIGIR um dado, quando o campo permite;
+ *  - uma pergunta não respondida é repetida até `max_tentativas_pergunta`; depois
+ *    disso é encerrada como não respondida e não bloqueia a conclusão.
  *
  * ## Por que "checklist linear" nesta versão
  *
- * O grafo completo tem condições, classificação por IA, esperas e laços — tudo
- * isso é do motor de follow-up. Para o atendimento, a peça que resolve o
- * problema do dono ("perguntas em ordem; para quando completar") é a SEQUÊNCIA
- * de perguntas. Esta versão suporta `trigger → collect/skill → end` por arestas
- * `always`, e REPORTA erro claro quando o grafo ramifica — em vez de executar
- * pela metade. Condições no atendimento entram quando houver caso real.
- *
- * O módulo é separado em puro (grafo × valores → situação) e acesso a banco, para
- * a decisão ser testável sem Postgres.
+ * O grafo completo tem condições, classificação por IA, esperas e laços — isso é
+ * do motor de follow-up. Para o atendimento, a peça que resolve o problema é a
+ * SEQUÊNCIA de perguntas. Esta versão suporta `trigger → collect/skill → end` por
+ * arestas `always`, e REPORTA erro claro quando o grafo ramifica.
  */
 import type pg from "pg";
 
 import { flowGraphSchema, type FlowGraph, type FlowNode } from "./graph-schema";
+import type { EndFinish } from "./graph-schema";
 
 export type PassoDeAtendimento =
   | { kind: "collect"; node: Extract<FlowNode, { type: "collect" }> }
@@ -37,11 +41,12 @@ export type ResultadoDoChecklist =
   | { ok: false; erro: string };
 
 const MAX_PASSOS = 100;
+const MAX_TENTATIVAS_PADRAO = 3;
 
 /**
  * Lê a sequência de perguntas/skills do grafo, do gatilho até o Fim, seguindo
  * arestas `always`. Recusa ramificação e nós fora do vocabulário do atendimento
- * com motivo escrito (o publish também valida; aqui é a defesa em runtime).
+ * com motivo escrito.
  */
 export function mapearChecklist(graph: FlowGraph): ResultadoDoChecklist {
   const gatilhos = graph.nodes.filter((n) => n.type === "trigger");
@@ -80,9 +85,7 @@ export function mapearChecklist(graph: FlowGraph): ResultadoDoChecklist {
     }
 
     const arestas = saidas.get(atual.id) ?? [];
-    if (arestas.length === 0) {
-      return { ok: false, erro: `o nó "${atual.label}" não tem saída` };
-    }
+    if (arestas.length === 0) return { ok: false, erro: `o nó "${atual.label}" não tem saída` };
     if (arestas.length > 1) {
       return { ok: false, erro: "ramificação não é suportada no fluxo de atendimento nesta versão" };
     }
@@ -97,22 +100,28 @@ export function mapearChecklist(graph: FlowGraph): ResultadoDoChecklist {
 }
 
 export interface SituacaoDoChecklist {
-  /** Perguntas sem valor (inclui as opcionais) — o que ainda dá para perguntar. */
+  /** Perguntas sem valor e ainda com tentativas disponíveis — o que perguntar. */
   pendentes: Array<Extract<FlowNode, { type: "collect" }>>;
-  /** Só as obrigatórias sem valor — o que impede a conclusão. */
+  /** Só as obrigatórias nessa condição — o que impede a conclusão. */
   obrigatoriosPendentes: Array<Extract<FlowNode, { type: "collect" }>>;
+  /** Perguntas encerradas por não resposta (atingiram o teto de tentativas). */
+  esgotadas: Array<Extract<FlowNode, { type: "collect" }>>;
   /** Nomes das skills que o fluxo puxa em paralelo. */
   skills: string[];
-  /** true = não falta nenhum obrigatório; o fluxo pode concluir. */
+  /** true = não falta nenhum obrigatório (preenchido ou esgotado). */
   completo: boolean;
 }
 
 export function situacaoDoChecklist(
   checklist: ChecklistDeAtendimento,
   valores: ReadonlySet<string>,
+  opts: { tentativas?: Record<string, number>; maxTentativas?: number } = {},
 ): SituacaoDoChecklist {
+  const tentativas = opts.tentativas ?? {};
+  const maxTentativas = opts.maxTentativas ?? MAX_TENTATIVAS_PADRAO;
   const pendentes: SituacaoDoChecklist["pendentes"] = [];
   const obrigatoriosPendentes: SituacaoDoChecklist["obrigatoriosPendentes"] = [];
+  const esgotadas: SituacaoDoChecklist["esgotadas"] = [];
   const skills: string[] = [];
 
   for (const passo of checklist.passos) {
@@ -120,12 +129,23 @@ export function situacaoDoChecklist(
       skills.push(passo.node.config.skill_name);
       continue;
     }
-    if (valores.has(passo.node.config.key)) continue;
+    const key = passo.node.config.key;
+    if (valores.has(key)) continue;
+    if ((tentativas[key] ?? 0) >= maxTentativas) {
+      esgotadas.push(passo.node);
+      continue;
+    }
     pendentes.push(passo.node);
     if (passo.node.config.required) obrigatoriosPendentes.push(passo.node);
   }
 
-  return { pendentes, obrigatoriosPendentes, skills, completo: obrigatoriosPendentes.length === 0 };
+  return {
+    pendentes,
+    obrigatoriosPendentes,
+    esgotadas,
+    skills,
+    completo: obrigatoriosPendentes.length === 0,
+  };
 }
 
 /** O nó `collect` de uma chave, ou `null` se a chave não pertence ao fluxo. */
@@ -140,20 +160,42 @@ export function campoPorChave(
 }
 
 /**
- * Bloco injetado no contexto do turno para o agente saber o que perguntar.
- * Substitui (para o atendimento) o antigo bloco PENDENTES fixo: as perguntas
- * agora vêm do fluxo cadastrado, e somem quando o cliente completa.
+ * Bloco injetado no contexto do turno. Só existe quando o fluxo foi ACIONADO
+ * (enrollment ativo) — sem fluxo, nada disto é enviado à IA.
  */
-export function renderBlocoDeAtendimento(estado: EstadoDeAtendimento): string {
+export function renderBlocoDeAtendimento(
+  estado: EstadoDeAtendimento,
+  finalizacao?: EndFinish,
+): string {
+  if (estado.situacao.pendentes.length === 0) {
+    const nota =
+      finalizacao?.tipo === "skill"
+        ? `O fluxo foi concluído. Puxe agora a skill ${finalizacao.skill_name}.`
+        : finalizacao?.tipo === "ia"
+          ? "O fluxo foi concluído — siga o atendimento normalmente."
+          : "O fluxo foi concluído — siga o atendimento normalmente.";
+    return `## Fluxo de atendimento — ${estado.nomeDoFluxo}\n${nota}`;
+  }
+
   const linhas = estado.situacao.pendentes.map((n) => {
-    const obrig = n.config.required ? "obrigatória" : "opcional";
-    const sugerida = n.config.question ? ` Pergunta sugerida: "${n.config.question}".` : "";
-    return `- ${n.config.label} (campo: ${n.config.key}, ${obrig}).${sugerida}`;
+    const cfg = n.config;
+    const obrig = cfg.required ? "obrigatória" : "opcional";
+    const opcoes =
+      cfg.type === "select" && (cfg.options?.length ?? 0) > 0
+        ? ` Opções: ${cfg.options!.join(", ")}.`
+        : "";
+    const sugerida = cfg.question ? ` Pergunta sugerida: "${cfg.question}".` : "";
+    const corrige = cfg.permite_correcao ? "" : " Não aceite correção depois de preenchida.";
+    return `- ${cfg.label} (campo: ${cfg.key}, tipo ${cfg.type}, ${obrig}).${opcoes}${sugerida}${corrige}`;
   });
+
   return [
     `## Fluxo de atendimento ativo — ${estado.nomeDoFluxo}`,
-    "Atenda o cliente PRIMEIRO. Encaixe no máximo UMA pergunta por resposta, quando houver abertura natural; não pare o assunto para preencher formulário.",
-    "Assim que o cliente informar um dado pendente, chame flow_collect(campo, valor). Não pergunte de novo o que já foi preenchido.",
+    "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO; encaixe no máximo UMA pergunta por resposta, quando houver abertura.",
+    "Se o cliente já informar um dado pendente — mesmo sem você ter perguntado —, registre com flow_collect: não pergunte o que ele já disse.",
+    "Guarde o valor NORMALIZADO (o sentido do que ele disse), em `valor`: sim/não vira true/false; número só com dígitos; data em AAAA-MM-DD; escolha vira uma das opções; texto livre é o sentido resumido. Mande o texto cru do cliente em `bruto`.",
+    "Se o cliente corrigir um dado já preenchido, chame flow_collect de novo com o novo valor (quando o campo permitir correção).",
+    `Pergunta sem resposta pode ser repetida no máximo ${estado.maxTentativas} vez(es); depois disso, pare de perguntá-la.`,
     "Perguntas pendentes:",
     ...linhas,
   ].join("\n");
@@ -177,16 +219,16 @@ export interface EstadoDeAtendimento {
   nomeDoFluxo: string;
   checklist: ChecklistDeAtendimento;
   valores: Record<string, string>;
+  tentativas: Record<string, number>;
+  maxTentativas: number;
   situacao: SituacaoDoChecklist;
 }
 
 /**
- * Fluxo de atendimento ATIVO de um contato: o enrollment mais recente, ligado a
- * um pointer `surface='atendimento'`. Devolve o grafo pinado, os valores já
- * coletados e a situação (pendentes/skills). `null` quando não há fluxo.
- *
- * Grafo inválido (checklist irrecuperável) devolve `null` em vez de lançar: o
- * atendimento não pode cair por causa de um rascunho malformado.
+ * Fluxo de atendimento ATIVO de um contato: o enrollment mais recente ligado a um
+ * pointer `surface='atendimento'`. Os valores são lidos por CONTATO+FLUXO (não por
+ * enrollment): o que o cliente já respondeu uma vez não é perguntado de novo numa
+ * nova execução. `null` quando não há fluxo ou o grafo é irrecuperável.
  */
 export async function carregarEstadoDeAtendimento(
   db: pg.Pool,
@@ -223,15 +265,19 @@ export async function carregarEstadoDeAtendimento(
   const checklist = mapearChecklist(parsed.data);
   if (!checklist.ok) return null;
 
-  const valoresRows = await db.query<{ field_key: string; value: string | null }>(
-    `select field_key, value from contact_flow_data
-      where organization_id = $1 and enrollment_id = $2`,
-    [args.organizationId, row.id],
+  const dados = await db.query<{ field_key: string; value: string | null; attempts: number }>(
+    `select field_key, value, attempts from contact_flow_data
+      where organization_id = $1 and contact_id = $2 and flow_pointer_id = $3`,
+    [args.organizationId, args.contactId, row.pointer_id],
   );
   const valores: Record<string, string> = {};
-  for (const v of valoresRows.rows) {
+  const tentativas: Record<string, number> = {};
+  for (const v of dados.rows) {
     if (v.value !== null) valores[v.field_key] = v.value;
+    tentativas[v.field_key] = v.attempts;
   }
+  const maxTentativas =
+    parsed.data.settings?.max_tentativas_pergunta ?? MAX_TENTATIVAS_PADRAO;
 
   return {
     enrollment: {
@@ -245,13 +291,18 @@ export async function carregarEstadoDeAtendimento(
     nomeDoFluxo: row.nome,
     checklist: checklist.checklist,
     valores,
-    situacao: situacaoDoChecklist(checklist.checklist, new Set(Object.keys(valores))),
+    tentativas,
+    maxTentativas,
+    situacao: situacaoDoChecklist(checklist.checklist, new Set(Object.keys(valores)), {
+      tentativas,
+      maxTentativas,
+    }),
   };
 }
 
 /**
- * Grava uma resposta do fluxo (upsert por org+contato+fluxo+campo). O enrollment
- * é atualizado para o corrente — se a execução antiga foi limpa, o dado fica.
+ * Grava uma resposta (upsert por org+contato+fluxo+campo). `value` guarda o texto
+ * CRU e `valueJson` o NORMALIZADO — é o normalizado que o sistema usa.
  */
 export async function registrarDadoDoFluxo(
   db: pg.Pool,
@@ -262,15 +313,17 @@ export async function registrarDadoDoFluxo(
     enrollmentId: string;
     fieldKey: string;
     value: string;
+    valueJson?: unknown;
     source: "client" | "agent" | "deterministic";
   },
 ): Promise<void> {
   await db.query(
     `insert into contact_flow_data
-        (organization_id, contact_id, flow_pointer_id, enrollment_id, field_key, value, source)
-     values ($1, $2, $3, $4, $5, $6, $7)
+        (organization_id, contact_id, flow_pointer_id, enrollment_id, field_key, value, value_json, source)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
      on conflict (organization_id, contact_id, flow_pointer_id, field_key)
      do update set value = excluded.value,
+                   value_json = excluded.value_json,
                    source = excluded.source,
                    enrollment_id = excluded.enrollment_id,
                    updated_at = now()`,
@@ -281,9 +334,81 @@ export async function registrarDadoDoFluxo(
       args.enrollmentId,
       args.fieldKey,
       args.value,
+      args.valueJson ?? null,
       args.source,
     ],
   );
+}
+
+/** Soma 1 tentativa na pergunta (ela vai ser feita neste turno). */
+export async function incrementarTentativa(
+  db: pg.Pool,
+  args: {
+    organizationId: string;
+    contactId: string;
+    flowPointerId: string;
+    enrollmentId: string;
+    fieldKey: string;
+  },
+): Promise<void> {
+  await db.query(
+    `insert into contact_flow_data
+        (organization_id, contact_id, flow_pointer_id, enrollment_id, field_key, attempts)
+     values ($1, $2, $3, $4, $5, 1)
+     on conflict (organization_id, contact_id, flow_pointer_id, field_key)
+     do update set attempts = contact_flow_data.attempts + 1,
+                   enrollment_id = excluded.enrollment_id,
+                   updated_at = now()`,
+    [
+      args.organizationId,
+      args.contactId,
+      args.flowPointerId,
+      args.enrollmentId,
+      args.fieldKey,
+    ],
+  );
+}
+
+/**
+ * Marca o turno: incrementa a tentativa da PRÓXIMA pergunta pendente e, se com
+ * isso ela esgotou (ou se não havia pendente), recalcula a situação. Devolve o
+ * estado atualizado e se o fluxo CONCLUIU por esgotamento (sem novo valor).
+ */
+export async function registrarTentativaDoTurno(
+  db: pg.Pool,
+  args: { organizationId: string; estado: EstadoDeAtendimento },
+): Promise<{ estado: EstadoDeAtendimento; concluiu: boolean }> {
+  const { estado } = args;
+  const primeira = estado.situacao.pendentes[0];
+  if (!primeira) return { estado, concluiu: estado.situacao.completo };
+
+  await incrementarTentativa(db, {
+    organizationId: args.organizationId,
+    contactId: estado.enrollment.contact_id,
+    flowPointerId: estado.enrollment.pointer_id,
+    enrollmentId: estado.enrollment.id,
+    fieldKey: primeira.config.key,
+  });
+
+  const tentativas = {
+    ...estado.tentativas,
+    [primeira.config.key]: (estado.tentativas[primeira.config.key] ?? 0) + 1,
+  };
+  const situacao = situacaoDoChecklist(estado.checklist, new Set(Object.keys(estado.valores)), {
+    tentativas,
+    maxTentativas: estado.maxTentativas,
+  });
+  const atualizado = { ...estado, tentativas, situacao };
+
+  if (situacao.completo) {
+    await concluirEnrollmentDeAtendimento(db, {
+      organizationId: args.organizationId,
+      enrollmentId: estado.enrollment.id,
+      outcome: estado.checklist.fim.config.outcome,
+    });
+    return { estado: atualizado, concluiu: true };
+  }
+  return { estado: atualizado, concluiu: false };
 }
 
 /** Marca o enrollment de atendimento como concluído (as perguntas param). */
@@ -303,17 +428,13 @@ export async function concluirEnrollmentDeAtendimento(
 }
 
 /**
- * Começa um fluxo de atendimento para o contato (chamado quando o roteador casa
- * a intenção com um fluxo). Devolve o id do enrollment criado, ou `null` quando
- * não é para começar: pointer inexistente/inativo, sem versão publicada, grafo
- * inválido, ou já existir um enrollment vivo para o contato.
+ * Começa um fluxo de atendimento para o contato. Devolve o id do enrollment
+ * criado, ou `null` quando não é para começar (pointer inativo, sem versão, grafo
+ * inválido, ou já existir um enrollment vivo — o índice "1 vivo por contato").
  *
  * `next_eval_at` fica NULL de propósito: o motor de RELÓGIO do follow-up só pega
- * enrollments com `next_eval_at <= now()`, então um fluxo de ATENDIMENTO nunca é
- * consumido pelo tick — quem o conduz é o turno.
- *
- * Best-effort contra a corrida do índice "1 enrollment vivo por contato": se a
- * inserção colidir (23505), devolve `null` em vez de estourar o turno.
+ * enrollments com `next_eval_at <= now()`, então um fluxo de atendimento nunca é
+ * consumido pelo tick.
  */
 export async function iniciarFluxoDeAtendimento(
   db: pg.Pool,

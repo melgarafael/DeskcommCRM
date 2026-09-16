@@ -93,6 +93,9 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(initial.edges);
   const [savedGraph, setSavedGraph] = useState<FlowGraph>(initialData.draft_graph ?? EMPTY_GRAPH);
+  // Configurações do FLUXO (nível do grafo) — hoje só o teto de tentativas por
+  // pergunta. Fica fora dos nós: vale para o fluxo todo.
+  const [settings, setSettings] = useState<FlowGraph["settings"]>(initialData.draft_graph?.settings);
   const nextId = useRef(1);
   const nextEdgeId = useRef(1);
   const { screenToFlowPosition } = useReactFlow();
@@ -100,7 +103,10 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const liveGraph = useMemo(() => fromReactFlow(nodes, edges), [nodes, edges]);
+  const liveGraph = useMemo(() => {
+    const base = fromReactFlow(nodes, edges);
+    return settings ? { ...base, settings } : base;
+  }, [nodes, edges, settings]);
   const dirty = useMemo(() => !graphsEqual(liveGraph, savedGraph), [liveGraph, savedGraph]);
 
   const markNodeErrors = useCallback(
@@ -358,6 +364,8 @@ function FlowCanvasInner({ flowId, initialData }: Props) {
                 onChange={(patch) => updateNodeData(selectedNode.id, patch)}
                 ramosLigados={ramosLigadosDoSelecionado}
                 onDelete={() => deleteNode(selectedNode.id)}
+                settings={settings}
+                onSettingsChange={setSettings}
               />
             </div>
           </aside>

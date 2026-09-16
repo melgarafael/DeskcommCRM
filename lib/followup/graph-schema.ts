@@ -303,6 +303,12 @@ export const collectConfigSchema = z
     label: z.string().min(1).max(80),
     type: contactFlowFieldTypeSchema.default('text'),
     required: z.boolean().default(true),
+    /**
+     * Permite o cliente CORRIGIR o dado a qualquer momento: com `true` (padrão),
+     * uma nova informação sobrescreve a anterior. Com `false`, o primeiro valor
+     * fica travado.
+     */
+    permite_correcao: z.boolean().default(true),
     options: z.array(z.string().min(1).max(80)).max(20).optional(),
     /** Texto sugerido da pergunta; o agente pode reescrever (checklist guiado pela IA). */
     question: z.string().max(400).optional(),
@@ -498,12 +504,27 @@ export type FlowEdge = z.infer<typeof flowEdgeSchema>;
 export type FlowEdgeCondition = FlowEdge['condition'];
 
 /**
+ * Configurações do fluxo (nível do grafo, não de um nó). Opcional: um grafo
+ * antigo sem `settings` continua válido e cai nos defaults.
+ */
+export const flowSettingsSchema = z.strictObject({
+  /**
+   * Quantas vezes uma pergunta pode ser feita SEM resposta antes de ser
+   * encerrada como não respondida (deixa de ser feita e não bloqueia a
+   * conclusão). Default 3.
+   */
+  max_tentativas_pergunta: z.number().int().min(1).max(10).default(3),
+});
+export type FlowSettings = z.infer<typeof flowSettingsSchema>;
+
+/**
  * Complete flow graph schema.
  * Contains nodes and edges defining the flow automation.
  */
 export const flowGraphSchema = z.strictObject({
   nodes: z.array(flowNodeSchema).min(2).max(60),
   edges: z.array(flowEdgeSchema).max(120),
+  settings: flowSettingsSchema.optional(),
 });
 
 export type FlowGraph = z.infer<typeof flowGraphSchema>;

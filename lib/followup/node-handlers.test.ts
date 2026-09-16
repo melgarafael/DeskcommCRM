@@ -212,7 +212,7 @@ describe("processNode — collect/skill (passagem no relógio)", () => {
       type: "collect",
       label: "Cidade",
       position: { x: 0, y: 0 },
-      config: { key: "cidade", label: "Cidade", type: "text", required: true },
+      config: { key: "cidade", label: "Cidade", type: "text", required: true, permite_correcao: true },
     };
     const edges = [edge({ source: "c1", target: "n2", condition: { type: "always" } })];
     const r = processNode({ node, edges, enrollment: enrollment(), lead: lead(), clock });
@@ -238,7 +238,7 @@ describe("processNode — collect/skill (passagem no relógio)", () => {
       type: "collect",
       label: "Cidade",
       position: { x: 0, y: 0 },
-      config: { key: "cidade", label: "Cidade", type: "text", required: true },
+      config: { key: "cidade", label: "Cidade", type: "text", required: true, permite_correcao: true },
     };
     const r = processNode({ node, edges: [], enrollment: enrollment(), lead: lead(), clock });
     expect(r).toMatchObject({ kind: "fail" });

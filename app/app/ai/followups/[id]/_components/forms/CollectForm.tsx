@@ -41,6 +41,7 @@ export function CollectForm({
   const [key, setKey] = useState(config.key);
   const [type, setType] = useState<ContactFlowFieldType>(config.type);
   const [required, setRequired] = useState(config.required);
+  const [permiteCorrecao, setPermiteCorrecao] = useState(config.permite_correcao);
   const [question, setQuestion] = useState(config.question ?? "");
   const [options, setOptions] = useState((config.options ?? []).join(", "));
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export function CollectForm({
     key: string;
     type: ContactFlowFieldType;
     required: boolean;
+    permiteCorrecao: boolean;
     question: string;
     options: string;
   }) => {
@@ -62,6 +64,7 @@ export function CollectForm({
       key: next.key,
       type: next.type,
       required: next.required,
+      permite_correcao: next.permiteCorrecao,
       ...(next.question.trim() ? { question: next.question } : {}),
       ...(next.type === "select" ? { options: listaDeOpcoes } : {}),
     };
@@ -74,7 +77,7 @@ export function CollectForm({
     onChange(parsed.data);
   };
 
-  const state = { label, key, type, required, question, options };
+  const state = { label, key, type, required, permiteCorrecao, question, options };
 
   return (
     <div className="space-y-3">
@@ -152,6 +155,23 @@ export function CollectForm({
           onCheckedChange={(v) => {
             setRequired(v);
             commit({ ...state, required: v });
+          }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <Label htmlFor="collect-correcao">{t("Permitir correção")}</Label>
+          <p className="text-xs text-text-muted">
+            {t("Se o cliente mudar de ideia, a nova informação substitui a anterior.")}
+          </p>
+        </div>
+        <Switch
+          id="collect-correcao"
+          checked={permiteCorrecao}
+          onCheckedChange={(v) => {
+            setPermiteCorrecao(v);
+            commit({ ...state, permiteCorrecao: v });
           }}
         />
       </div>

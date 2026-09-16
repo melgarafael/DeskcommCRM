@@ -23597,3 +23597,15 @@ create index if not exists idx_ai_router_members_flow
   where flow_pointer_id is not null;
 
 -- ---- fim roteador aponta fluxo (migration 0237) ----
+
+-- ---- tentativas por pergunta (migration 0238) ----
+alter table public.contact_flow_data
+  add column if not exists attempts smallint not null default 0;
+
+comment on column public.contact_flow_data.attempts is
+  'Quantas vezes a pergunta foi feita sem resposta. Ao atingir max_tentativas_pergunta (settings do grafo), a pergunta é encerrada como não respondida e deixa de ser feita.';
+
+comment on column public.contact_flow_data.value is
+  'Valor CRU informado pelo cliente (como ele escreveu). O normalizado fica em value_json e é o que o sistema usa.';
+
+-- ---- fim tentativas por pergunta (migration 0238) ----

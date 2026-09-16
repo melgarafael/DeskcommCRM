@@ -177,9 +177,11 @@ import {
   concluirEnrollmentDeAtendimento,
   iniciarFluxoDeAtendimento,
   registrarDadoDoFluxo,
+  registrarTentativaDoTurno,
   renderBlocoDeAtendimento,
   situacaoDoChecklist,
 } from '@/lib/followup/atendimento';
+import type { EndFinish } from '@/lib/followup/graph-schema';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -205,12 +207,17 @@ export const AGENT_TOOL_DEFS = {
   },
   flow_collect: {
     description:
-      'Registra a resposta do cliente a uma pergunta do FLUXO DE ATENDIMENTO ativo. ' +
-      'Use assim que ele informar o dado de um campo pendente listado no bloco do fluxo —, ' +
-      'para o dado ficar guardado e não ser perguntado de novo. Não invente valor.',
+      'Registra a resposta do cliente a um campo do FLUXO DE ATENDIMENTO ativo. Use assim que ele informar o dado — ' +
+      'mesmo que você ainda não tenha perguntado — para ficar guardado e não ser perguntado de novo. ' +
+      'Passe em `valor` o dado NORMALIZADO (o sentido) e em `bruto` o texto cru do cliente. Não invente valor.',
     inputSchema: z.object({
       campo: z.string().min(1).max(60).describe('a chave do campo, como aparece no bloco do fluxo'),
-      valor: z.string().min(1).max(500).describe('o que o cliente informou, sem inventar'),
+      valor: z
+        .string()
+        .min(1)
+        .max(500)
+        .describe('valor NORMALIZADO (ex.: true/false, número, AAAA-MM-DD, uma das opções)'),
+      bruto: z.string().min(1).max(500).optional().describe('o texto cru que o cliente escreveu (opcional)'),
     }),
   },
   save_client_data: {
@@ -1959,12 +1966,26 @@ async function executarTurnoDoAgente(
   const skillIndex = renderSkillIndex(skills);
   // Fluxo de atendimento ATIVO do contato (surface=atendimento): guia as
   // perguntas do turno e some quando o cliente completa. Sem enrollment ativo é
-  // null e nada muda. `valoresDoFluxo` é mutável: várias coletas no MESMO turno
-  // precisam enxergar o que as anteriores gravaram.
-  const atendimento = preview
+  // null e nada muda. A tentativa do turno é registrada aqui — é o que faz a
+  // pergunta parar de ser feita depois de N tentativas sem resposta.
+  let atendimento = preview
     ? null
     : await carregarEstadoDeAtendimento(pool, { organizationId: tenantId, contactId: leadId });
-  const valoresDoFluxo = atendimento === null ? null : new Set(Object.keys(atendimento.valores));
+  let finalizacaoDoFluxo: EndFinish | undefined;
+  if (atendimento !== null) {
+    try {
+      const r = await registrarTentativaDoTurno(pool, { organizationId: tenantId, estado: atendimento });
+      atendimento = r.estado;
+      if (r.concluiu) finalizacaoDoFluxo = atendimento.checklist.fim.config.ao_finalizar;
+    } catch (err) {
+      runLog.warn('não consegui registrar a tentativa do fluxo de atendimento', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  }
+  const fluxoAtendimento = atendimento;
+  const valoresDoFluxo =
+    fluxoAtendimento === null ? null : new Set(Object.keys(fluxoAtendimento.valores));
   // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
   // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
   // encaixa playbook + memória + índice de skills no prefixo cacheável.
@@ -2366,8 +2387,13 @@ async function executarTurnoDoAgente(
   const skillMatch = matchSkills(skills, skillSignal);
   // Skills do fluxo de atendimento entram em PARALELO ao match por keyword: um
   // nó `skill` do fluxo diz "puxe isto neste trecho". Dedup por nome — o match
-  // por keyword vence, e a mesma skill não entra duas vezes.
-  const skillsDoFluxo = (atendimento?.situacao.skills ?? [])
+  // por keyword vence, e a mesma skill não entra duas vezes. A skill da
+  // FINALIZAÇÃO também entra (o fluxo concluiu e ela deve valer neste turno).
+  const nomesDeSkillDoFluxo = [
+    ...(fluxoAtendimento?.situacao.skills ?? []),
+    ...(finalizacaoDoFluxo?.tipo === 'skill' ? [finalizacaoDoFluxo.skill_name] : []),
+  ];
+  const skillsDoFluxo = nomesDeSkillDoFluxo
     .map((nome) => skills.find((s) => s.name === nome))
     .filter((s): s is (typeof skills)[number] => s !== undefined)
     .filter((s) => !skillMatch.matched.some((m) => m.name === s.name));
@@ -2452,18 +2478,28 @@ async function executarTurnoDoAgente(
     }),
     flow_collect: tool({
       ...AGENT_TOOL_DEFS.flow_collect,
-      execute: async ({ campo, valor }) => {
-        if (atendimento === null || valoresDoFluxo === null) {
+      execute: async ({ campo, valor, bruto }) => {
+        if (fluxoAtendimento === null || valoresDoFluxo === null) {
           return { ok: false, error: { code: 'sem_fluxo', message: 'Não há fluxo de atendimento ativo.' } };
         }
-        const campoNode = campoPorChave(atendimento.checklist, campo);
+        const campoNode = campoPorChave(fluxoAtendimento.checklist, campo);
         if (campoNode === null) {
           return {
             ok: false,
             error: {
               code: 'campo_desconhecido',
               message: `O campo "${campo}" não pertence ao fluxo ativo.`,
-              campos: atendimento.situacao.pendentes.map((n) => n.config.key),
+              campos: fluxoAtendimento.situacao.pendentes.map((n) => n.config.key),
+            },
+          };
+        }
+        // Correção: só sobrescreve o que já existe quando o campo permite.
+        if (valoresDoFluxo.has(campoNode.config.key) && !campoNode.config.permite_correcao) {
+          return {
+            ok: false,
+            error: {
+              code: 'correcao_nao_permitida',
+              message: `O campo "${campoNode.config.key}" já foi preenchido e não permite correção.`,
             },
           };
         }
@@ -2471,17 +2507,22 @@ async function executarTurnoDoAgente(
           await registrarDadoDoFluxo(pool, {
             organizationId: tenantId,
             contactId: leadId,
-            flowPointerId: atendimento.enrollment.pointer_id,
-            enrollmentId: atendimento.enrollment.id,
+            flowPointerId: fluxoAtendimento.enrollment.pointer_id,
+            enrollmentId: fluxoAtendimento.enrollment.id,
             fieldKey: campoNode.config.key,
-            value: valor,
+            // `value` = texto cru do cliente; `value_json` = o NORMALIZADO (o que o sistema usa).
+            value: bruto ?? valor,
+            valueJson: { normalizado: valor, tipo: campoNode.config.type },
             source: 'agent',
           });
         } catch {
           return { ok: false, error: { code: 'gravar_falhou', message: 'Não consegui registrar agora.' } };
         }
         valoresDoFluxo.add(campoNode.config.key);
-        const situacao = situacaoDoChecklist(atendimento.checklist, valoresDoFluxo);
+        const situacao = situacaoDoChecklist(fluxoAtendimento.checklist, valoresDoFluxo, {
+          tentativas: fluxoAtendimento.tentativas,
+          maxTentativas: fluxoAtendimento.maxTentativas,
+        });
         if (!situacao.completo) {
           return {
             ok: true,
@@ -2492,13 +2533,13 @@ async function executarTurnoDoAgente(
         try {
           await concluirEnrollmentDeAtendimento(pool, {
             organizationId: tenantId,
-            enrollmentId: atendimento.enrollment.id,
-            outcome: atendimento.checklist.fim.config.outcome,
+            enrollmentId: fluxoAtendimento.enrollment.id,
+            outcome: fluxoAtendimento.checklist.fim.config.outcome,
           });
         } catch {
           // best-effort: a conclusão se repete no próximo turno se falhar aqui.
         }
-        const fim = atendimento.checklist.fim.config.ao_finalizar;
+        const fim = fluxoAtendimento.checklist.fim.config.ao_finalizar;
         if (fim?.tipo === 'skill') {
           const skill = skills.find((s) => s.name === fim.skill_name);
           return {
@@ -3769,7 +3810,7 @@ async function executarTurnoDoAgente(
     const openingSuffixes = [
       agoraBlock,
       matchedSkillsBlock,
-      atendimento ? renderBlocoDeAtendimento(atendimento) : '',
+      fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
       stageHintBlock,
       splitHint,
       caseAwaitingLeadBlock,

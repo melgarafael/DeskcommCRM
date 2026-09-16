@@ -16,7 +16,7 @@ function grafo(nodes: FlowNode[], edges: FlowEdge[]): FlowGraph {
 }
 
 const collect = (id: string, key: string, required = true) =>
-  no({ id, type: "collect", config: { key, label: key, type: "text", required } });
+  no({ id, type: "collect", config: { key, label: key, type: "text", required, permite_correcao: true } });
 const skill = (id: string, nome: string) => no({ id, type: "skill", config: { skill_name: nome } });
 const trigger = (id: string) => no({ id, type: "trigger", config: {} });
 const end = (id: string) => no({ id, type: "end", config: { outcome: "converted" } });
@@ -100,5 +100,25 @@ describe("situacaoDoChecklist", () => {
     const s = situacaoDoChecklist(checklist, new Set(["cidade", "cnh", "obs"]));
     expect(s.pendentes).toHaveLength(0);
     expect(s.completo).toBe(true);
+  });
+
+  it("pergunta sem resposta que atingiu o teto vira esgotada e não bloqueia", () => {
+    const s = situacaoDoChecklist(checklist, new Set(), {
+      tentativas: { cidade: 3, cnh: 3 },
+      maxTentativas: 3,
+    });
+    expect(s.pendentes.map((n) => n.config.key)).toEqual(["obs"]);
+    expect(s.esgotadas.map((n) => n.config.key)).toEqual(["cidade", "cnh"]);
+    expect(s.completo).toBe(true);
+  });
+
+  it("abaixo do teto continua pendente", () => {
+    const s = situacaoDoChecklist(checklist, new Set(), {
+      tentativas: { cidade: 2 },
+      maxTentativas: 3,
+    });
+    expect(s.pendentes.map((n) => n.config.key)).toEqual(["cidade", "cnh", "obs"]);
+    expect(s.esgotadas).toHaveLength(0);
+    expect(s.completo).toBe(false);
   });
 });
