@@ -18,6 +18,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const nome = req.nextUrl.searchParams.get("nome")?.trim();
   if (nome) params.set("nome", nome.slice(0, 80));
   if (req.nextUrl.searchParams.get("somenteClientes") === "true") params.set("somenteClientes", "true");
+  const offset = Number.parseInt(req.nextUrl.searchParams.get("offset") ?? "0", 10);
+  const limite = Number.parseInt(req.nextUrl.searchParams.get("limite") ?? "200", 10);
+  params.set("offset", String(Number.isSafeInteger(offset) && offset >= 0 ? offset : 0));
+  params.set("limite", String(Number.isSafeInteger(limite) ? Math.min(200, Math.max(1, limite)) : 200));
   const base = process.env.ADVOMAX_API_URL.replace(/\/$/, "");
   const response = await fetch(`${base}/integracoes/crm/pessoas?${params.toString()}`, {
     headers: {

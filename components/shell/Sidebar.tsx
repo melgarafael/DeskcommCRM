@@ -21,6 +21,7 @@ interface SidebarContentProps {
   collapsed: boolean;
   showCollapseControl?: boolean;
   onNavigate?: () => void;
+  onToggleSidebar?: () => void;
 }
 
 /**
@@ -35,6 +36,7 @@ export function SidebarContent({
   collapsed,
   showCollapseControl = true,
   onNavigate,
+  onToggleSidebar,
 }: SidebarContentProps) {
   // A barra lateral aparece em TODA tela — traduzi-la aqui é o que faz a
   // escolha de idioma virar algo visível no primeiro clique.
@@ -335,7 +337,10 @@ export function SidebarContent({
         {showCollapseControl && (
           <button
             type="button"
-            onClick={() => startTransition(() => toggleSidebar(collapsed))}
+            onClick={() => {
+              onToggleSidebar?.();
+              startTransition(() => toggleSidebar(collapsed));
+            }}
             disabled={isPending}
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -357,6 +362,9 @@ export function SidebarContent({
 }
 
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
+  const [visualCollapsed, setVisualCollapsed] = useState(collapsed);
+  useEffect(() => setVisualCollapsed(collapsed), [collapsed]);
+
   return (
     <aside
       className={cn(
@@ -380,10 +388,13 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         // `shrink-0` porque item de flex encolhe por padrão, e uma barra de 60
         // espremida para caber é o mesmo defeito por outro caminho.
         "sticky top-0 z-30 flex h-screen shrink-0 flex-col border-r border-border bg-white shadow-[8px_0_32px_rgba(7,27,51,0.04)] transition-[width] duration-200",
-        collapsed ? "w-20" : "w-[280px]",
+        visualCollapsed ? "w-20" : "w-[280px]",
       )}
     >
-      <SidebarContent collapsed={collapsed} />
+      <SidebarContent
+        collapsed={visualCollapsed}
+        onToggleSidebar={() => setVisualCollapsed((value) => !value)}
+      />
     </aside>
   );
 }

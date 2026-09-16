@@ -28,11 +28,12 @@ const SOURCE_OPTIONS = [
   { value: "whatsapp", label: "WhatsApp" },
   { value: "nuvemshop", label: "Nuvemshop" },
   { value: "import_csv", label: "Importado (CSV)" },
+  { value: "advomax", label: "Advomax" },
 ];
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
-export function ContactsListClient() {
+export function ContactsListClient({ sincronizarAdvomax = false }: { sincronizarAdvomax?: boolean }) {
   const t = useT();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -44,6 +45,7 @@ export function ContactsListClient() {
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [duplicadosOpen, setDuplicadosOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput), 250);
@@ -55,6 +57,37 @@ export function ContactsListClient() {
     [search, tag, source, orderBy, orderDir, limit],
   );
   const q = useContactList(filters);
+
+  useEffect(() => {
+    if (!sincronizarAdvomax) return;
+    const controller = new AbortController();
+    void (async () => {
+      let offset = 0;
+      let total = 0;
+      try {
+        for (;;) {
+          const response = await fetch(`/api/v1/advomax/pessoas/sincronizar?offset=${offset}`, {
+            method: "POST",
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error("Falha ao sincronizar clientes do Advomax.");
+          const body = await response.json() as { data: { encontrados: number; has_more: boolean; next_offset: number } };
+          total += body.data.encontrados;
+          if (!body.data.has_more) break;
+          offset = body.data.next_offset;
+        }
+        if (!controller.signal.aborted) {
+          setSyncStatus(`${total} cliente(s) do Advomax conferidos`);
+          await q.refetch();
+        }
+      } catch {
+        if (!controller.signal.aborted) setSyncStatus("Não foi possível atualizar a lista do Advomax. Tente recarregar.");
+      }
+    })();
+    return () => controller.abort();
+    // Uma sincronização ao abrir a tela; filtros e paginação não repetem escrita.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sincronizarAdvomax]);
 
   const allContacts = useMemo(
     () => q.data?.pages.flatMap((p) => p.data) ?? [],
@@ -114,6 +147,10 @@ export function ContactsListClient() {
           </Button>
         </div>
       </header>
+
+      {sincronizarAdvomax && syncStatus && (
+        <p role="status" className="text-xs text-muted-foreground">{syncStatus}</p>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
         <div className="relative w-full sm:w-72">

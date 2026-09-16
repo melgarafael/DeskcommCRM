@@ -10,7 +10,7 @@
  * `navegacao-registry.test.ts`; aqui é a superfície.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import { Sidebar } from "@/components/shell/Sidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
@@ -141,6 +141,17 @@ describe("Sidebar agrupado", () => {
     render(<Sidebar collapsed />);
     expect(screen.queryAllByRole("heading")).toHaveLength(0);
     expect(screen.getByRole("link", { name: /Inbox/ })).toBeTruthy();
+  });
+
+  it("recolhe e abre imediatamente ao clicar no controle", () => {
+    comoPapel("admin");
+    render(<Sidebar collapsed={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Recolher sidebar" }));
+    expect(screen.getByRole("button", { name: "Expandir sidebar" })).toBeTruthy();
+    expect(screen.queryAllByRole("heading")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Expandir sidebar" }));
+    expect(screen.getByRole("button", { name: "Recolher sidebar" })).toBeTruthy();
+    expect(screen.getAllByRole("heading").length).toBeGreaterThan(0);
   });
 
   it("marca a rota atual com aria-current", () => {
