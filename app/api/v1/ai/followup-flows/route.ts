@@ -11,25 +11,32 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
-import { createFollowupFlowSchema } from "@/lib/followup/api-schemas";
+import { createFollowupFlowSchema, FOLLOWUP_FLOW_SURFACES } from "@/lib/followup/api-schemas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
 const LIST_COLUMNS = "id, name, status, active_version_id, handoff_policy, updated_at";
 
-export async function GET(_req?: NextRequest): Promise<Response> {
+export async function GET(req?: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "followup_flows" });
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
 
+  // Recorte por superfície: /app/ai/atendimento pede `?surface=atendimento`.
+  // Valor desconhecido é IGNORADO (lista tudo) em vez de virar 422 — um filtro
+  // de tela errado não deve derrubar a listagem.
+  const pedida = req?.nextUrl.searchParams.get("surface") ?? null;
+  const surface = pedida === null ? null : FOLLOWUP_FLOW_SURFACES.find((s) => s === pedida) ?? null;
+
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("followup_flow_pointers")
     .select(LIST_COLUMNS)
-    .eq("organization_id", activeOrg.orgId)
-    .order("updated_at", { ascending: false });
+    .eq("organization_id", activeOrg.orgId);
+  if (surface !== null) query = query.eq("surface", surface);
+  const { data, error } = await query.order("updated_at", { ascending: false });
   if (error) return fail("internal_error", error.message, 500, { requestId });
   return ok(data ?? [], { requestId });
 }
@@ -62,7 +69,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = await createClient();
   const { data: created, error: insErr } = await supabase
     .from("followup_flow_pointers")
-    .insert({ organization_id: activeOrg.orgId, name: parsed.data.name })
+    .insert({
+      organization_id: activeOrg.orgId,
+      name: parsed.data.name,
+      ...(parsed.data.surface ? { surface: parsed.data.surface } : {}),
+    })
     .select("*")
     .single();
 

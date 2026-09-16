@@ -17,6 +17,9 @@ export type FollowupFlowSurface = (typeof FOLLOWUP_FLOW_SURFACES)[number];
 
 export const createFollowupFlowSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
+  // Superfície do fluxo (default do banco = 'followup'). A tela de Atendimento
+  // cria com 'atendimento'; a de Follow-ups, sem o campo.
+  surface: z.enum(FOLLOWUP_FLOW_SURFACES).optional(),
 });
 
 // `cancel_on_reply` (Task 5.2 — reatividade): se true, um enrollment `waiting_reply`
