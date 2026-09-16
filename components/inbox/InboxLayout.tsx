@@ -351,13 +351,13 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   // foi medido aqui e não mudou um pixel, então não entrou.
   //
   // Duas faixas em vez de uma: compacta onde aperta, generosa onde há espaço.
-  // Em 1280 isso dá 424px de conversa em vez de 372 — 54px de folga sobre o
-  // piso do composer (370px), em vez dos 2px que a versão de uma faixa só
-  // deixava. Margem de 2px não é margem, é sorte.
+  // Em 1280 a conversa fica em torno de 408px e as duas laterais ganham 16px
+  // no total — uma redução pequena, suficiente para filtros e contexto sem
+  // apertar o composer.
   return (
     <OpenConversationProvider conversationId={selectedId}>
     <div
-      className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[272px_1fr_296px] 2xl:grid-cols-[300px_1fr_320px]"
+      className="grid h-[calc(100dvh-3.5rem-2*var(--space-6))] w-full grid-cols-1 md:grid-cols-[300px_1fr] xl:grid-cols-[280px_1fr_304px] 2xl:grid-cols-[312px_1fr_336px]"
       /*
        * O ESTADO DO TEMPO REAL, LEGÍVEL DE FORA — mesmo par que o dossiê do lead
        * já publica (`LeadDossier`), e pela mesma razão: quando a entrega morre,
