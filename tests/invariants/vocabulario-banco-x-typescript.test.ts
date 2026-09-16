@@ -270,6 +270,14 @@ const PARES: Array<{
     arquivo: "lib/followup/contact-flow-data.ts",
     simbolo: "CONTACT_FLOW_DATA_SOURCES",
   },
+  {
+    tabela: "contact_flow_events",
+    coluna: "kind",
+    // lib/followup/contact-flow-data.ts → CONTACT_FLOW_EVENT_KINDS (tupla `as const`).
+    // Migration 0239: o significado do turno do fluxo (respondeu/desviou/…).
+    arquivo: "lib/followup/contact-flow-data.ts",
+    simbolo: "CONTACT_FLOW_EVENT_KINDS",
+  },
 ];
 
 /** Tira um nível de parênteses externos, se ele envolver a expressão inteira. */

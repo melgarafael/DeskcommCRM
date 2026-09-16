@@ -178,6 +178,7 @@ import {
   iniciarFluxoDeAtendimento,
   listarFluxosDeAtendimentoAtivos,
   registrarDadoDoFluxo,
+  registrarEventoDoFluxo,
   registrarTentativaDoTurno,
   renderBlocoDeAtendimento,
   situacaoDoChecklist,
@@ -2534,6 +2535,16 @@ async function executarTurnoDoAgente(
           return { ok: false, error: { code: 'gravar_falhou', message: 'Não consegui registrar agora.' } };
         }
         valoresDoFluxo.add(campoNode.config.key);
+        void registrarEventoDoFluxo(pool, {
+          organizationId: tenantId,
+          enrollmentId: fluxoAtendimento.enrollment.id,
+          flowPointerId: fluxoAtendimento.enrollment.pointer_id,
+          contactId: leadId,
+          kind: 'resposta',
+          messageId: input.inboundMessageId ?? null,
+          fieldKey: campoNode.config.key,
+          payload: { normalizado: valor, tipo: campoNode.config.type },
+        }).catch(() => {});
         const situacao = situacaoDoChecklist(fluxoAtendimento.checklist, valoresDoFluxo, {
           tentativas: fluxoAtendimento.tentativas,
           maxTentativas: fluxoAtendimento.maxTentativas,
@@ -2554,6 +2565,13 @@ async function executarTurnoDoAgente(
         } catch {
           // best-effort: a conclusão se repete no próximo turno se falhar aqui.
         }
+        void registrarEventoDoFluxo(pool, {
+          organizationId: tenantId,
+          enrollmentId: fluxoAtendimento.enrollment.id,
+          flowPointerId: fluxoAtendimento.enrollment.pointer_id,
+          contactId: leadId,
+          kind: 'concluido',
+        }).catch(() => {});
         const fim = fluxoAtendimento.checklist.fim.config.ao_finalizar;
         if (fim?.tipo === 'skill') {
           const skill = skills.find((s) => s.name === fim.skill_name);

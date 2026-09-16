@@ -24,8 +24,13 @@
  */
 import type pg from "pg";
 
-import { flowGraphSchema, type FlowGraph, type FlowNode } from "./graph-schema";
-import type { EndFinish } from "./graph-schema";
+import {
+  flowGraphSchema,
+  type EndFinish,
+  type FlowGraph,
+  type FlowNode,
+} from "./graph-schema";
+import type { ContactFlowEventKind } from "./contact-flow-data";
 
 export type PassoDeAtendimento =
   | { kind: "collect"; node: Extract<FlowNode, { type: "collect" }> }
@@ -339,8 +344,41 @@ export async function registrarDadoDoFluxo(
   );
 }
 
-/** Soma 1 tentativa na pergunta (ela vai ser feita neste turno). */
-export async function incrementarTentativa(
+/**
+ * Registra um evento na trilha da execução (`contact_flow_events`). Best-effort:
+ * falha de telemetria NUNCA derruba o turno — quem chama envolve em try/catch.
+ */
+export async function registrarEventoDoFluxo(
+  db: pg.Pool,
+  args: {
+    organizationId: string;
+    enrollmentId: string;
+    flowPointerId: string;
+    contactId: string;
+    kind: ContactFlowEventKind;
+    messageId?: string | null;
+    fieldKey?: string | null;
+    payload?: unknown;
+  },
+): Promise<void> {
+  await db.query(
+    `insert into contact_flow_events
+        (organization_id, enrollment_id, flow_pointer_id, contact_id, kind, message_id, field_key, payload)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      args.organizationId,
+      args.enrollmentId,
+      args.flowPointerId,
+      args.contactId,
+      args.kind,
+      args.messageId ?? null,
+      args.fieldKey ?? null,
+      args.payload ?? {},
+    ],
+  );
+}
+
+/** Soma 1 tentativa na pergunta (ela vai ser feita neste turno). */export async function incrementarTentativa(
   db: pg.Pool,
   args: {
     organizationId: string;
@@ -405,6 +443,14 @@ export async function registrarTentativaDoTurno(
       enrollmentId: estado.enrollment.id,
       outcome: estado.checklist.fim.config.outcome,
     });
+    await registrarEventoDoFluxo(db, {
+      organizationId: args.organizationId,
+      enrollmentId: estado.enrollment.id,
+      flowPointerId: estado.enrollment.pointer_id,
+      contactId: estado.enrollment.contact_id,
+      kind: 'esgotado',
+      payload: { esgotadas: situacao.esgotadas.map((n) => n.config.key) },
+    }).catch(() => {});
     return { estado: atualizado, concluiu: true };
   }
   return { estado: atualizado, concluiu: false };
@@ -495,7 +541,17 @@ export async function iniciarFluxoDeAtendimento(
        returning id`,
       [args.organizationId, args.flowPointerId, row.active_version_id, args.contactId, inicio],
     );
-    return created[0]?.id ?? null;
+    const enrollmentId = created[0]?.id ?? null;
+    if (enrollmentId !== null) {
+      await registrarEventoDoFluxo(db, {
+        organizationId: args.organizationId,
+        enrollmentId,
+        flowPointerId: args.flowPointerId,
+        contactId: args.contactId,
+        kind: 'iniciado',
+      }).catch(() => {});
+    }
+    return enrollmentId;
   } catch (err) {
     // 23505 = índice "um enrollment vivo por contato" — o contato já está em
     // outro fluxo (ou neste). Não é erro do turno.

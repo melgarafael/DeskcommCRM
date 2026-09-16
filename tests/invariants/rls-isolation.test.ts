@@ -327,6 +327,30 @@ beforeAll(() => {
               'client'
             );
         end if;
+
+        -- contact_flow_events (migration 0239): a trilha do turno do fluxo.
+        if not exists (select 1 from public.contact_flow_events where organization_id = v_org) then
+          insert into public.contact_flow_events
+            (organization_id, enrollment_id, flow_pointer_id, contact_id, kind, field_key)
+            values (
+              v_org,
+              (
+                select id from public.followup_enrollments
+                 where organization_id = v_org
+                   and pointer_id = (
+                     select id from public.followup_flow_pointers
+                      where organization_id = v_org and name = 'RLS Invariant Atendimento'
+                   )
+              ),
+              (
+                select id from public.followup_flow_pointers
+                 where organization_id = v_org and name = 'RLS Invariant Atendimento'
+              ),
+              v_contact,
+              'iniciado',
+              null
+            );
+        end if;
       end loop;
     end
     $seed$;
@@ -384,6 +408,8 @@ export const TABLES = [
   // para todo objeto do apêndice); a única cerca entre o tenant A e a resposta
   // do cliente do tenant B é a policy.
   "contact_flow_data",
+  // 0239 — trilha do que aconteceu em cada turno do fluxo (respondeu/desviou/…).
+  "contact_flow_events",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

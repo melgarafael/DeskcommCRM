@@ -299,3 +299,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260916170000` | `0237_roteador_aponta_fluxo` | Membro do roteador de intenção pode apontar um fluxo de atendimento (`ai_router_members.flow_pointer_id`, FK para `followup_flow_pointers` com `ON DELETE SET NULL`): quando a intenção casa, o fluxo começa junto e suas perguntas guiam o turno. Aditiva; sem constraint/função nova. Baseline idempotente. |
 
 | `20260916180000` | `0238_tentativas_por_pergunta` | `contact_flow_data.attempts`: quantas vezes a pergunta foi feita sem resposta. Ao atingir `settings.max_tentativas_pergunta` do grafo, a pergunta é encerrada como não respondida e deixa de ser feita (não bloqueia a conclusão). Aditiva. Baseline idempotente. |
+
+| `20260916210000` | `0239_fluxo_eventos_e_sintese` | `contact_flow_events` (trilha append-only por execução: iniciado/resposta/fora_do_fluxo/pergunta_feita/concluido/esgotado/encadeou, RLS por organização) e `followup_enrollments.completion_note` (síntese do fluxo). Base da estrutura robusta (motor) do fluxo de atendimento. Baseline idempotente. |

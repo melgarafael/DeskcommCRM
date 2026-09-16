@@ -11,3 +11,19 @@
 /** Procedência de um valor coletado. Espelha o CHECK de `contact_flow_data.source`. */
 export const CONTACT_FLOW_DATA_SOURCES = ["client", "agent", "deterministic"] as const;
 export type ContactFlowDataSource = (typeof CONTACT_FLOW_DATA_SOURCES)[number];
+
+/**
+ * O que aconteceu num turno do fluxo (`contact_flow_events.kind`). Espelha o
+ * CHECK de `contact_flow_events_kind_conhecido` — par cobrado por
+ * `tests/invariants/vocabulario-banco-x-typescript.test.ts`.
+ */
+export const CONTACT_FLOW_EVENT_KINDS = [
+  "iniciado",
+  "resposta",
+  "fora_do_fluxo",
+  "pergunta_feita",
+  "concluido",
+  "esgotado",
+  "encadeou",
+] as const;
+export type ContactFlowEventKind = (typeof CONTACT_FLOW_EVENT_KINDS)[number];
