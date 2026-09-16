@@ -272,6 +272,19 @@ describe("os pisos do TypeScript e os do SQL são os mesmos números", () => {
       `greatest(coalesce(p_retencao_dias, ${RETENCAO_ESPELHO_AGENDA_DIAS_PADRAO}), ${RETENCAO_ESPELHO_AGENDA_DIAS_PISO})`,
     );
   });
+
+  it("a poda de nonces usa os mesmos nomes de argumento que o cron envia", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const sql = readFileSync(join(__dirname, "..", "..", "supabase", "baseline.sql"), "utf8");
+    const marca = "create or replace function public.fn_expurgar_nonces_de_oauth(";
+    const inicio = sql.indexOf(marca);
+    expect(inicio, "não achei fn_expurgar_nonces_de_oauth no baseline").toBeGreaterThan(-1);
+    const bloco = sql.slice(inicio, inicio + 900);
+    expect(bloco).toContain("p_retencao_dias");
+    expect(bloco).toContain("p_limite");
+    expect(bloco).not.toMatch(/fn_expurgar_nonces_de_oauth\(p_dias /);
+  });
 });
 
 describe("o handler HTTP — a falha entra na trilha, o vazio não", () => {

@@ -8101,7 +8101,7 @@ export type Database = {
         Returns: number
       }
       fn_expurgar_nonces_de_oauth: {
-        Args: { p_dias: number; p_lote?: number }
+        Args: { p_limite?: number; p_retencao_dias?: number }
         Returns: number
       }
       fn_gasto_de_ia_do_mes: { Args: { p_org: string }; Returns: number }

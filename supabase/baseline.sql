@@ -16054,8 +16054,13 @@ create policy calendar_oauth_nonces_ninguem_le
   using (false);
 
 -- A quarta poda do `data-retention`. Assinatura idêntica às três irmãs
--- (`p_dias`, `p_lote`) para o mesmo laço de lotes servir sem caso especial.
-create or replace function public.fn_expurgar_nonces_de_oauth(p_dias int, p_lote int default 500)
+-- (`p_retencao_dias`, `p_limite`) para o mesmo laço de lotes servir sem
+-- caso especial. A 0190 nasceu com `(p_dias, p_lote)` e o cron nunca
+-- encaixou — a 0263 troca os nomes.
+create or replace function public.fn_expurgar_nonces_de_oauth(
+  p_retencao_dias int,
+  p_limite int default 500
+)
 returns int
 language plpgsql
 security definer
@@ -16063,19 +16068,17 @@ set search_path to 'public', 'pg_temp'
 as $$
 declare
   v_removidas int;
+  v_dias int := greatest(coalesce(p_retencao_dias, 1), 1);
+  v_limite int := greatest(coalesce(p_limite, 500), 1);
 begin
   -- Piso no CORPO, como as irmãs: um chamador que passe 0 não apaga nonce que
   -- ainda protege. O prazo do state é de 10 minutos, então um dia já é folga
   -- de duas ordens de grandeza.
-  if p_dias is null or p_dias < 1 then
-    p_dias := 1;
-  end if;
-
   with alvo as (
     select nonce
       from public.calendar_oauth_nonces
-     where expira_em < now() - make_interval(days => p_dias)
-     limit greatest(p_lote, 1)
+     where expira_em < now() - make_interval(days => v_dias)
+     limit v_limite
   )
   delete from public.calendar_oauth_nonces n
    using alvo
