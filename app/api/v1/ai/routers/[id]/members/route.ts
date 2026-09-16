@@ -25,6 +25,9 @@ const memberInputSchema = z.object({
   intent_name: z.string().min(1).max(120),
   intent_description: z.string().min(1).max(2000),
   examples: z.array(z.string()).default([]),
+  // Fluxo de atendimento que começa quando a intenção casa (migration 0237).
+  // Opcional: membros sem fluxo continuam roteando só o agente.
+  flow_pointer_id: z.string().uuid().nullable().optional(),
 });
 
 const membersPutSchema = z.object({
@@ -97,6 +100,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       intent_description: m.intent_description,
       examples: m.examples,
       position,
+      flow_pointer_id: m.flow_pointer_id ?? null,
     }));
 
     const { error: insErr } = await admin.from("ai_router_members").insert(rows);

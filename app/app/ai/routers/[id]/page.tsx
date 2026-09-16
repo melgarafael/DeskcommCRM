@@ -11,7 +11,7 @@ import { RouterEditorClient } from "./_client";
 export const dynamic = "force-dynamic";
 
 const ROUTER_DETAIL_COLUMNS = "id, name, channel_session_id, is_active, config, fallback_agent_id";
-const MEMBER_COLUMNS = "id, agent_id, intent_name, intent_description, examples, position";
+const MEMBER_COLUMNS = "id, agent_id, intent_name, intent_description, examples, position, flow_pointer_id";
 
 export default async function RouterEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
