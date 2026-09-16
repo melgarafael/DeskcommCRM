@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { lotesDeTelefones, prepararClientesAdvomax } from "./route";
+import { emailValidoOuNull, lotesDeTelefones, prepararClientesAdvomax } from "./route";
 
 describe("prepararClientesAdvomax", () => {
   it("traz apenas clientes com telefone e normaliza o número para o CRM", () => {
@@ -19,4 +19,10 @@ it("limita cada consulta de telefone para não exceder a URL do Supabase", () =>
   const telefones = Array.from({ length: 121 }, (_, i) => `+550000000${i}`);
   expect(lotesDeTelefones(telefones).map((lote) => lote.length)).toEqual([60, 60, 1]);
   expect(lotesDeTelefones(telefones).flat()).toEqual(telefones);
+});
+
+it("não deixa email legado inválido impedir a importação do cliente", () => {
+  expect(emailValidoOuNull("cliente@exemplo.com")).toBe("cliente@exemplo.com");
+  expect(emailValidoOuNull("sem-email")).toBeNull();
+  expect(emailValidoOuNull(null)).toBeNull();
 });

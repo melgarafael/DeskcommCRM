@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -31,6 +32,12 @@ export function prepararClientesAdvomax(pessoas: PessoaAdvomax[]) {
 
 const PAGE_SIZE = 200;
 const PHONE_LOOKUP_BATCH_SIZE = 60;
+const emailSchema = z.string().trim().email().max(254);
+
+export function emailValidoOuNull(email: string | null | undefined): string | null {
+  const resultado = emailSchema.safeParse(email);
+  return resultado.success ? resultado.data : null;
+}
 
 export function lotesDeTelefones(telefones: string[]): string[][] {
   const lotes: string[][] = [];
@@ -114,7 +121,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         created_by_user_id: authz.user.id,
         name: pessoa.nome,
         display_name: pessoa.nome,
-        email: pessoa.email?.trim() || null,
+        email: emailValidoOuNull(pessoa.email),
         phone_number: pessoa.telefone,
         source: "advomax",
         source_metadata: { advomax_pessoa_codigo: pessoa.codigo },
