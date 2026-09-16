@@ -73,10 +73,18 @@ function clausulaDeFiltro(
       return `${colunaQuotada} < ${placeholder(valor)}`;
     case "lte":
       return `${colunaQuotada} <= ${placeholder(valor)}`;
-    case "contem":
-      return `cast(${colunaQuotada} as text) ilike ${placeholder(`%${escaparLike(String(valor))}%`)} escape '\\'`;
-    case "comeca_com":
-      return `cast(${colunaQuotada} as text) ilike ${placeholder(`${escaparLike(String(valor))}%`)} escape '\\'`;
+    case "contem": {
+      // C-008: match TOLERANTE A ESPAÇOS. O modelo manda "cb250"/"CB250" e a base
+      // tem "CB 250 F Twister" — o ILIKE simples devolvia ZERO linhas e a IA
+      // concluía "não temos" (e "sem foto") mesmo existindo. Comparamos ignorando
+      // espaços e caixa nos DOIS lados.
+      const alvo = escaparLike(String(valor).toLowerCase().replace(/\s+/g, ""));
+      return `replace(lower(cast(${colunaQuotada} as text)), ' ', '') like ${placeholder(`%${alvo}%`)} escape '\\'`;
+    }
+    case "comeca_com": {
+      const alvo = escaparLike(String(valor).toLowerCase().replace(/\s+/g, ""));
+      return `replace(lower(cast(${colunaQuotada} as text)), ' ', '') like ${placeholder(`${alvo}%`)} escape '\\'`;
+    }
     case "in": {
       if (!Array.isArray(valor)) throw new LeituraInvalidaError("in_exige_array");
       if (valor.length === 0) return "false";

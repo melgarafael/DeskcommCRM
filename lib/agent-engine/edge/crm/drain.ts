@@ -384,7 +384,19 @@ async function processEvent(
       [event.organization_id, p.contact_id],
     );
     if (pendingRows[0]) {
-      log.info('drain: rajada coalescida em job pendente', {
+      // C-014 — VERDADEIRO debounce: cada mensagem nova EMPURRA a janela para
+      // frente (com teto de 60s desde a criação do job), para o turno só começar
+      // quando o cliente PARAR de digitar. Antes a janela era fixa desde a 1ª
+      // mensagem: quem digitava devagar gerava DOIS turnos (respostas duplicadas)
+      // e gastava tokens duas vezes.
+      await pool.query(
+        `update job_queue
+            set run_after = least(now() + ($3::int * interval '1 millisecond'),
+                                  created_at + interval '60 seconds')
+          where id = $1 and organization_id = $2 and status = 'pending'`,
+        [pendingRows[0].id, event.organization_id, knobs.debounceMs],
+      );
+      log.info('drain: rajada coalescida (janela estendida)', {
         event_id: event.id,
         job_id: pendingRows[0].id,
       });

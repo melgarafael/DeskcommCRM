@@ -93,6 +93,11 @@ export interface LeadContext {
     tags: string[];
     /** contacts.is_blocked lido NESTE turno (fonte da verdade do gate 1). */
     is_blocked: boolean;
+    /**
+     * Valores de campos personalizados do contato (cidade, cnh, cpf…) — usados
+     * para o agente saber o que JÁ sabe e o que ainda falta perguntar.
+     */
+    custom_fields: Record<string, unknown>;
   };
   conversation_id: string | null;
   previous_service?: { label: string; outcomes: string[] };
@@ -135,6 +140,7 @@ interface ContactRow {
   source: string | null;
   consent: Record<string, unknown> | null;
   is_anonymized: boolean;
+  custom_fields: Record<string, unknown> | null;
 }
 
 interface DecisionRow {
@@ -182,7 +188,7 @@ export async function getLeadContext(
   knobs: LeadContextKnobs,
 ): Promise<LeadContextResult> {
   const { rows: contactRows } = await db.query<ContactRow>(
-    `select name, display_name, email, phone_number, tags, is_blocked, source, consent, is_anonymized
+    `select name, display_name, email, phone_number, tags, is_blocked, source, consent, is_anonymized, custom_fields
      from contacts where organization_id = $1 and id = $2`,
     [input.tenantId, input.leadId],
   );
@@ -282,6 +288,7 @@ export async function getLeadContext(
         email: contact.email,
         tags: contact.tags ?? [],
         is_blocked: contact.is_blocked,
+        custom_fields: contact.custom_fields ?? {},
       },
       conversation_id: conversationId,
       last_human_decision: lastHumanDecision,

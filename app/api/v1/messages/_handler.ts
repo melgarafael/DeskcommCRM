@@ -724,16 +724,33 @@ export async function sendMessageHandler(
               language: input.template_language ?? "",
               values: input.template_values ?? {},
             });
-      } else if (input.media_storage_path) {
-        // Storage-first: signed URL curta só pro canal baixar (nunca base64).
-        const admin = createAdminClient();
-        const { data: signed, error: signErr } = await admin.storage
-          .from("whatsapp-media")
-          .createSignedUrl(input.media_storage_path, 600);
-        if (signErr || !signed?.signedUrl) {
-          throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
+      } else if (input.media_storage_path || input.media_url) {
+        // C-009: mídia por ARQUIVO (signed URL curta) OU por URL EXTERNA.
+        // Antes este ramo só existia para `media_storage_path`; uma `media_url`
+        // vinda de fora (ex.: a foto da moto no banco do catálogo) era gravada na
+        // linha mas IGNORADA no envio — o canal recebia texto puro no lugar da
+        // imagem.
+        let mediaUrl: string;
+        let filename: string | undefined;
+        if (input.media_storage_path) {
+          const admin = createAdminClient();
+          const { data: signed, error: signErr } = await admin.storage
+            .from("whatsapp-media")
+            .createSignedUrl(input.media_storage_path, 600);
+          if (signErr || !signed?.signedUrl) {
+            throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
+          }
+          mediaUrl = signed.signedUrl;
+          filename = input.media_storage_path.split("/").pop() ?? undefined;
+        } else {
+          mediaUrl = input.media_url!;
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        const mimePadrao =
+          input.type === "image"
+            ? "image/jpeg"
+            : input.type === "video"
+              ? "video/mp4"
+              : "application/octet-stream";
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -743,8 +760,8 @@ export async function sendMessageHandler(
           providerConversationId: c.provider_conversation_id,
           kind: input.type,
           media: {
-            url: signed.signedUrl,
-            mime: input.media_mime ?? "application/octet-stream",
+            url: mediaUrl,
+            mime: input.media_mime ?? mimePadrao,
             filename,
             caption: input.body ?? null,
           },

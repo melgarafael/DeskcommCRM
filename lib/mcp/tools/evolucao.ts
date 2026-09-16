@@ -199,8 +199,7 @@ const gravarMemoriaInputShape = {
 export const crmSaveOrgMemory: McpToolDefinition<typeof gravarMemoriaInputShape> = {
   name: "crm_save_org_memory",
   description:
-    "Registra um aprendizado que vale para toda a operação, não para um cliente só. Nasce com " +
-    "origem 'agent' para o humano distinguir o que a IA anotou do que ele mesmo escreveu.",
+    "Registra um aprendizado que vale para toda a operação, não para um cliente só.",
   inputSchema: gravarMemoriaInputShape,
   category: "write",
   // `ai_operator`: a rota equivalente (`ai/memory/entries` POST) exige `manager`
@@ -215,7 +214,9 @@ export const crmSaveOrgMemory: McpToolDefinition<typeof gravarMemoriaInputShape>
         organization_id: ctx.organizationId,
         title: input.titulo,
         body: input.corpo,
-        source: "agent",
+        // O CHECK de `org_memory_entries.source` só aceita 'manual'/'flywheel';
+        // gravar 'agent' violava a constraint e o tool falhava sempre.
+        source: "manual",
         status: "active",
       })
       .select("id, title, status, created_at")

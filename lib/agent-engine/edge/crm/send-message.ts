@@ -63,6 +63,11 @@ export interface SendMessageInput {
    * colidirem no ledger e o segundo virar `already_sent` sem ter saído.
    */
   template?: { name: string; language: string; values: Record<string, string> };
+  /**
+   * Presente = envio de MÍDIA (imagem) com o `body` como legenda (C-007).
+   * O transporte (`sendMessageHandler`) já aceita `type:"image"` + `media_url`.
+   */
+  media?: { type: 'image'; url: string; mime?: string };
 }
 
 /** Fallback do ator ai_agent quando não há agente publicado (cfg.agentActorId). */
@@ -145,14 +150,20 @@ export async function sendTurnMessage(
         },
         {
           conversation_id: input.conversationId,
-          ...(input.template
+          ...(input.media
             ? {
-                type: 'template' as const,
-                template_name: input.template.name,
-                template_language: input.template.language,
-                template_values: input.template.values,
+                type: input.media.type,
+                media_url: input.media.url,
+                ...(input.media.mime ? { media_mime: input.media.mime } : {}),
               }
-            : { type: 'text' as const }),
+            : input.template
+              ? {
+                  type: 'template' as const,
+                  template_name: input.template.name,
+                  template_language: input.template.language,
+                  template_values: input.template.values,
+                }
+              : { type: 'text' as const }),
           body: input.body,
           metadata: { idempotency_key: idempotencyKey },
         },

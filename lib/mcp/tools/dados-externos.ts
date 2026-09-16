@@ -87,8 +87,11 @@ type Resolucao =
  * uma resposta confiante sobre o cliente errado.
  */
 async function resolverConexao(ctx: McpContext, connectionId?: string): Promise<Resolucao> {
-  if (connectionId) return { ok: true, id: connectionId };
-
+  // A conexão é resolvida SEMPRE pela lista de conexões ativas (fonte confiável),
+  // nunca pelo id que o modelo mandou. Com UMA ativa, um `connection_id` errado
+  // (o modelo costuma inventar) é simplesmente ignorado — era ele que derrubava a
+  // leitura e fazia o atendente cair no "vou verificar". Com várias, o id precisa
+  // existir de verdade; ausente/errado = pedir escolha.
   const { data } = await ctx.supabase
     .from("external_db_connections_safe")
     .select("id, label")
@@ -109,6 +112,9 @@ async function resolverConexao(ctx: McpContext, connectionId?: string): Promise<
     };
   }
   if (conexoes.length === 1) return { ok: true, id: conexoes[0]!.id };
+  if (connectionId && conexoes.some((c) => c.id === connectionId)) {
+    return { ok: true, id: connectionId };
+  }
 
   return {
     ok: false,
@@ -178,10 +184,16 @@ export const crmDescribeExternalData: McpToolDefinition<typeof descreverInputSha
       return { erro: "falha_na_leitura", mensagem: "não foi possível ler o catálogo do banco externo." };
     }
 
-    if (input.schema) tabelas = tabelas.filter((t) => t.schema === input.schema);
+    // O nome da tabela manda: o modelo costuma mandar um `schema` inventado
+    // ("catalogo", "dbo"); filtrar por schema primeiro zeraria o resultado e
+    // esconderia a tabela real. Só aplicamos o schema quando NÃO há nome de
+    // tabela (listagem geral) e ele casa com o que existe.
     if (input.tabela) {
       const alvo = input.tabela.toLowerCase();
-      tabelas = tabelas.filter((t) => t.nome.toLowerCase().includes(alvo));
+      const porNome = tabelas.filter((t) => t.nome.toLowerCase().includes(alvo));
+      if (porNome.length > 0) tabelas = porNome;
+    } else if (input.schema) {
+      tabelas = tabelas.filter((t) => t.schema === input.schema);
     }
 
     if (tabelas.length === 0) {
@@ -272,7 +284,16 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     const acesso = await abrirAcesso(ctx.supabase, ctx.organizationId, resolucao.id);
     if (!acesso.ok) return { erro: "acesso_negado", mensagem: mensagemDeAcesso(acesso.motivo) };
 
-    const filtros = input.filtros ?? [];
+    // C-005/C-010: o modelo manda filtro SEM valor ("modelo eq", "preco lte").
+    // Sem corte, o pedido vira inválido e a leitura inteira falha. Com o corte,
+    // NÃO devolvemos uma amostra arbitrária (era isso que fazia a IA dizer "não
+    // temos" com a moto existindo): quando algum filtro é descartado, ampliamos
+    // o limite para o modelo ver o catálogo e escolher o que corresponde.
+    const filtrosBrutos = input.filtros ?? [];
+    const filtros = filtrosBrutos.filter(
+      (f) => f.operador === "nulo" || f.operador === "nao_nulo" || f.valor !== undefined,
+    );
+    const filtrosDescartados = filtrosBrutos.length - filtros.length;
     if (filtros.length > acesso.conexao.maxFilters) {
       return {
         erro: "limite_de_filtros",
@@ -283,7 +304,21 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     }
 
     let schema = input.schema;
-    if (!schema) {
+    let permitidas: Set<string> | null = null;
+
+    // 1) Com schema informado, tenta direto. 2) Sem schema OU schema errado/
+    //    inventado → resolve pelo CATÁLOGO real. O modelo manda schema inventado
+    //    ("catalogo", "dbo", o nome da tabela); sem esta etapa a leitura morria e
+    //    o atendente dizia "não consigo acessar o catálogo" em vez de ofertar.
+    if (schema) {
+      try {
+        permitidas = await colunasDaTabela(acesso.pool, schema, input.tabela);
+      } catch {
+        permitidas = null;
+      }
+    }
+
+    if (!permitidas) {
       let catalogo: TabelaExterna[];
       try {
         catalogo = await listarTabelas(acesso.pool);
@@ -295,22 +330,16 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       if (candidatas.length === 0) {
         return { erro: "tabela_nao_encontrada", mensagem: "não encontrei essa tabela." };
       }
-      if (candidatas.length > 1) {
-        return {
-          erro: "tabela_ambigua",
-          mensagem: "essa tabela existe em mais de um agrupamento; informe o schema.",
-          schemas: candidatas.map((c) => c.schema),
-        };
+      // prefere `public` quando o mesmo nome existir em mais de um agrupamento
+      const escolhida = candidatas.find((c) => c.schema === "public") ?? candidatas[0]!;
+      schema = escolhida.schema;
+      try {
+        permitidas = await colunasDaTabela(acesso.pool, schema, input.tabela);
+      } catch {
+        return { erro: "falha_na_leitura", mensagem: "não foi possível conferir a tabela." };
       }
-      schema = candidatas[0]!.schema;
     }
 
-    let permitidas: Set<string> | null;
-    try {
-      permitidas = await colunasDaTabela(acesso.pool, schema, input.tabela);
-    } catch {
-      return { erro: "falha_na_leitura", mensagem: "não foi possível conferir a tabela." };
-    }
     if (!permitidas) {
       return {
         erro: "tabela_nao_encontrada",
@@ -328,8 +357,10 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
         ...(f.valor !== undefined ? { valor: f.valor } : {}),
       })),
       ...(input.ordem ? { ordem: { coluna: input.ordem.coluna, desc: input.ordem.desc ?? false } } : {}),
-      // O teto é o da conexão, não o que o modelo pediu.
-      limite: Math.min(input.limite, acesso.conexao.maxRows),
+      // O teto é o da conexão, não o que o modelo pediu. Com filtro descartado,
+      // amplia (até 100) para o modelo encontrar o que procura em vez de receber
+      // uma amostra arbitrária.
+      limite: Math.min(filtrosDescartados > 0 ? 100 : input.limite, acesso.conexao.maxRows),
       offset: 0,
     };
 
@@ -347,6 +378,27 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
         };
       }
       return { erro: "falha_na_leitura", mensagem: "não foi possível consultar o banco externo agora." };
+    }
+
+    // C-013: o filtro TINHA valor mas não casou nada (ex.: o cliente digitou
+    // "cb25p"). Em vez de devolver vazio — e a IA concluir "não temos" — reexecuta
+    // SEM filtro e devolve o catálogo, para ela OFERECER as opções mais próximas.
+    let fallbackSemFiltro = false;
+    if (resultado.linhas.length === 0 && pedido.filtros.length > 0) {
+      try {
+        const semFiltro = await lerTabela(
+          acesso.pool,
+          { ...pedido, filtros: [], limite: Math.min(100, acesso.conexao.maxRows) },
+          permitidas,
+          { limiteMax: acesso.conexao.maxRows },
+        );
+        if (semFiltro.linhas.length > 0) {
+          resultado = semFiltro;
+          fallbackSemFiltro = true;
+        }
+      } catch {
+        // mantém o resultado vazio
+      }
     }
 
     // Orçamento de bytes: o teto é o configurado na conexão (o modelo não
@@ -374,6 +426,18 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       linhas_devolvidas: linhas.length,
       limite_aplicado: resultado.limite,
       ...(truncadoPorBytes ? { truncado: true } : {}),
+      ...(filtrosDescartados > 0
+        ? {
+            filtro_ignorado:
+              'um ou mais filtros vieram SEM "valor" e foram ignorados; o catálogo (até 100 linhas) está abaixo — escolha na resposta o que corresponde ao que o cliente pediu.',
+          }
+        : {}),
+      ...(fallbackSemFiltro
+        ? {
+            filtro_sem_resultado:
+              'nenhum registro casou o filtro; o catálogo (até 100 linhas) está abaixo — ofereça as opções mais próximas do que o cliente pediu (ele pode ter errado a digitação).',
+          }
+        : {}),
       aviso: AVISO_DADOS_NAO_CONFIAVEIS,
     };
   },

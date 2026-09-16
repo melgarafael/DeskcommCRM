@@ -170,6 +170,7 @@ import {
 } from '../guardrails/jailbreak/classifier';
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { fusoDaOrganizacao } from './fuso-da-org';
+import { gravarDadosDeterministicos } from './dados-do-lead';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -185,11 +186,46 @@ export const AGENT_TOOL_DEFS = {
       'Relê o contexto curado do lead nesta organização: dados do contato e as últimas mensagens da conversa.',
     inputSchema: z.object({}),
   },
+  read_skill: {
+    description:
+      'Carrega o procedimento completo de uma skill instalada, pelo nome (ex.: "catalogo-apresentacao"). ' +
+      'Use sempre que a conversa tocar o assunto de uma skill listada no bloco de procedimentos do sistema.',
+    inputSchema: z.object({
+      name: z.string().min(1).describe('nome exato da skill, como aparece no bloco de procedimentos'),
+    }),
+  },
+  save_client_data: {
+    description:
+      'Registra no contato os dados que o CLIENTE informou (nome, cidade, cnh, cpf, data_nascimento). ' +
+      'Use assim que ele informar um desses dados, para não perguntar de novo. NUNCA grave o que ele não disse.',
+    inputSchema: z.object({
+      nome: z.string().min(1).max(120).optional(),
+      cidade: z.string().min(1).max(120).optional(),
+      cnh: z.boolean().optional(),
+      cpf: z.string().min(1).max(20).optional(),
+      data_nascimento: z.string().min(1).max(20).optional(),
+    }),
+  },
   send_message: {
     description:
-      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado.',
+      'Envia mensagem(ns) de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. ' +
+      'Para FOTO(S), preencha media_urls com uma ou mais URLs e use body como LEGENDA — a legenda vai SÓ na primeira foto; as demais saem sem legenda.',
     inputSchema: z.object({
-      body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
+      body: z
+        .string()
+        .min(1)
+        .describe('texto da mensagem (ou a legenda da 1ª foto), em pt-br, pronto para envio'),
+      media_urls: z
+        .array(z.string().min(1))
+        .max(10)
+        .optional()
+        .describe(
+          'URLs das imagens a enviar EM SEQUÊNCIA (ex.: as 5 fotos de uma moto). A legenda (body) vai só na 1ª.',
+        ),
+      media_url: z
+        .string()
+        .optional()
+        .describe('URL de UMA imagem (compatibilidade). Prefira media_urls para várias.'),
     }),
   },
   update_lead_state: {
@@ -1146,6 +1182,37 @@ export function ritualBlocks(
     '## Estado do funil',
     stateBlock,
     '',
+    // DADOS ESSENCIAIS DO CLIENTE + o que ainda falta perguntar (C-012). Sem este
+    // bloco, o agente não sabe que já tem/não tem nome/cidade/CNH e simplesmente
+    // não pergunta. Ele é o "estado de qualificação" por contato.
+    ...(() => {
+      const cf = (context.contact.custom_fields ?? {}) as Record<string, unknown>;
+      const str = (v: unknown): string | null =>
+        typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+      const nome = context.contact.name ?? str(cf.nome);
+      const cidade = str(cf.cidade);
+      const cnhBruto = cf.cnh;
+      const cnh =
+        typeof cnhBruto === 'boolean'
+          ? cnhBruto
+            ? 'sim'
+            : 'não'
+          : str(cnhBruto);
+      const pendentes: string[] = [];
+      if (!nome) pendentes.push('nome');
+      if (!cidade) pendentes.push('cidade');
+      if (cnh === null) pendentes.push('CNH');
+      return [
+        '## Dados essenciais do cliente',
+        `Nome: ${nome ?? 'não informado'}`,
+        `Cidade: ${cidade ?? 'não informado'}`,
+        `CNH: ${cnh ?? 'não informado'}`,
+        pendentes.length > 0
+          ? `PENDENTES: ${pendentes.join(', ')} — colete NO MÁXIMO UMA quando houver abertura natural, sem deslocar o assunto do cliente; atenda/responda o cliente primeiro. NÃO pergunte financiamento, CPF, data de nascimento nem CNH antes de o cliente demonstrar interesse em uma moto. Pare quando não houver mais pendentes.`
+          : 'PENDENTES: nenhum (dados essenciais completos) — não pergunte esses dados.',
+        '',
+      ];
+    })(),
     // Índice da memória durável do lead (F3-05): headlines + id, orçamento fixo. O
     // corpo vem sob demanda (get_lead_note). Injetado AQUI, no SUFIXO — depois do
     // prefixo cacheável (F2-17), como o bloco temporal da F3-03.
@@ -2314,6 +2381,54 @@ async function executarTurnoDoAgente(
   const mcpToolIdsDoTurno: string[] = [];
 
   const rawTools: ToolSet = {
+    read_skill: tool({
+      ...AGENT_TOOL_DEFS.read_skill,
+      execute: async ({ name }) => {
+        const skill = skills.find((s) => s.name === name);
+        if (!skill) {
+          return {
+            ok: false,
+            error: {
+              code: 'skill_nao_encontrada',
+              message: `Não existe skill "${name}". Disponíveis: ${skills
+                .map((s) => s.name)
+                .join(', ')}.`,
+            },
+          };
+        }
+        return { ok: true, name: skill.name, description: skill.description, body: skill.body };
+      },
+    }),
+    save_client_data: tool({
+      ...AGENT_TOOL_DEFS.save_client_data,
+      execute: async (dados) => {
+        const campos: Record<string, unknown> = {};
+        if (dados.cidade !== undefined) campos.cidade = dados.cidade;
+        if (dados.cnh !== undefined) campos.cnh = dados.cnh;
+        if (dados.cpf !== undefined) campos.cpf = dados.cpf;
+        if (dados.data_nascimento !== undefined) campos.data_nascimento = dados.data_nascimento;
+        if (dados.nome !== undefined) campos.nome = dados.nome;
+        if (Object.keys(campos).length === 0) {
+          return { ok: false, error: { code: 'nada_a_gravar', message: 'Nenhum dado informado.' } };
+        }
+        try {
+          if (dados.nome !== undefined) {
+            await pool.query(
+              `update contacts set name = $3 where organization_id = $1 and id = $2`,
+              [tenantId, leadId, dados.nome],
+            );
+          }
+          await pool.query(
+            `update contacts set custom_fields = coalesce(custom_fields, '{}'::jsonb) || $3::jsonb
+              where organization_id = $1 and id = $2`,
+            [tenantId, leadId, JSON.stringify(campos)],
+          );
+        } catch {
+          return { ok: false, error: { code: 'gravar_falhou', message: 'Não consegui registrar agora.' } };
+        }
+        return { ok: true, gravou: Object.keys(campos) };
+      },
+    }),
     get_lead_context: tool({
       ...AGENT_TOOL_DEFS.get_lead_context,
       execute: async (): Promise<
@@ -2520,7 +2635,17 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body }) => {
+      execute: async ({ body, media_url, media_urls }) => {
+        // C-007/C-015: aceita UMA (media_url) ou VÁRIAS (media_urls) imagens; cada
+        // valor pode trazer várias URLs separadas por "|". Dedup + só http(s).
+        const fotos = [
+          ...new Set(
+            [...(media_urls ?? []), ...(media_url ? [media_url] : [])]
+              .flatMap((u) => String(u).split('|'))
+              .map((s) => s.trim())
+              .filter((s) => /^https?:\/\//i.test(s)),
+          ),
+        ];
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -2577,6 +2702,28 @@ async function executarTurnoDoAgente(
             agentConfig?.casesEnabled === true
               ? await hasOpenCaseForContact(pool, tenantId, input.conversationId)
               : false;
+          // C-015: envia as fotos EM SEQUÊNCIA — só a 1ª leva a legenda; as demais
+          // sem legenda. Feito AQUI (sem rodada do modelo por foto) para ser rápido.
+          const dormir =
+            deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+          const enviarFotos = async (legenda: string): Promise<ChannelSendResult> => {
+            let ultimo: ChannelSendResult | undefined;
+            for (let i = 0; i < fotos.length; i++) {
+              ultimo = await liveChannel().send({
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                jobClaim: claimOfJob(liveJob()),
+                agentOperation,
+                seq: (seq += 1),
+                conversationId: input.conversationId,
+                body: i === 0 ? legenda : '',
+                media: { type: 'image', url: fotos[i]! },
+              });
+              if (i < fotos.length - 1) await dormir(700);
+            }
+            return ultimo!;
+          };
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -2630,8 +2777,14 @@ async function executarTurnoDoAgente(
               : {}),
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
+            //
+            // C-007 (mídia): quando há `media_url`, envia UMA mensagem de imagem com o
+            // `finalBody` como legenda — NÃO passa por `sendInBubbles` (quebrar uma
+            // imagem em bolhas não faz sentido). Sem mídia, o caminho é o de sempre.
             send: (finalBody: string) =>
-              sendInBubbles(finalBody, {
+              fotos.length > 0
+                ? enviarFotos(finalBody)
+                : sendInBubbles(finalBody, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
@@ -3656,6 +3809,15 @@ async function executarTurnoDoAgente(
     // faria a seguir.
     const checkpointAnterior = await latestCheckpoint(pool, tenantId, leadId);
     await insertCheckpoint(pool, { tenantId, leadId, jobId: liveJob().id, content });
+
+    // C-003: captura DETERMINÍSTICA de CPF/CNH/data de nascimento da fala do cliente.
+    // Não depende do modelo; best-effort (falha aqui NUNCA derruba o turno que já
+    // respondeu ao cliente).
+    void gravarDadosDeterministicos(pool, {
+      tenantId,
+      contatoId: leadId,
+      texto: currentInboundText,
+    }).catch(() => {});
 
     // ── O TURNO DO OPERADOR (spec 16 §3.2) ─────────────────────────────────────
     //

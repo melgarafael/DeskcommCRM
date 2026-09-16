@@ -40,6 +40,15 @@ export interface ChannelSendInput {
     /** Valor por slot, chaveado por `slotKey` — a mesma chave da tela. */
     values: Record<string, string>;
   };
+  /**
+   * Presente = envio de MÍDIA (imagem) com o `body` como legenda (C-007).
+   * Opcional: um adapter que não suporte mídia envia apenas a legenda.
+   */
+  media?: {
+    type: 'image';
+    url: string;
+    mime?: string;
+  };
 }
 
 /**
