@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { connectWahaChannel, ChannelConnectionError } from "@/lib/channels/connect-waha";
+import { proxyErrorMessage } from "@/lib/channels/session-proxy";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -108,12 +109,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const result = await connectWahaChannel(await createClient(), createAdminClient(), waha, {
       organizationId: activeOrg.orgId, idempotencyKey: req.headers.get("Idempotency-Key") ?? "",
-      userId: user.id, requestId, displayName: parsed.data.display_name,
+      userId: user.id, requestId, displayName: parsed.data.display_name, proxy_country: parsed.data.proxy_country, proxy_id: parsed.data.proxy_id,
     });
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {
     if (error instanceof ChannelConnectionError) return fail(error.code,
-      error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.") : t("Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número."),
+      error.code.startsWith("proxy_") ? t(proxyErrorMessage(error.code)) : error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.") : t("Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número."),
       error.status, { requestId, details: error.technical });
     return fail("internal_error", t("Não foi possível concluir a conexão. Tente novamente."), 500, { requestId });
   }

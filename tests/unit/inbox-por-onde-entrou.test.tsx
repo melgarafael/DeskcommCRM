@@ -32,8 +32,10 @@ const base = {
   contacts: { id: "ct1", display_name: "Cliente", name: null, phone_number: "+595999", tags: [], is_blocked: false, is_anonymized: false },
 } as unknown as ConversationWithContact;
 
-const comCanal = (canal: { phone_number: string | null; display_name: string | null } | null) =>
-  ({ ...base, channel_sessions: canal }) as ConversationWithContact;
+const comCanal = (
+  canal: { phone_number: string | null; display_name: string | null } | null,
+  channel: "whatsapp" | "instagram" | "messenger" = "whatsapp",
+) => ({ ...base, channel, channel_sessions: canal }) as ConversationWithContact;
 
 const pintar = (conv: ConversationWithContact, mostrarCanal: boolean) =>
   render(
@@ -44,6 +46,20 @@ const pintar = (conv: ConversationWithContact, mostrarCanal: boolean) =>
       mostrarCanal={mostrarCanal}
     />,
   );
+
+function luminancia(hex: string): number {
+  const canais = [1, 3, 5].map((inicio) => Number.parseInt(hex.slice(inicio, inicio + 2), 16));
+  const linear = canais.map((canal) => {
+    const srgb = canal / 255;
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!;
+}
+
+function contraste(a: string, b: string): number {
+  const [maisClara, maisEscura] = [luminancia(a), luminancia(b)].sort((x, y) => y - x);
+  return (maisClara! + 0.05) / (maisEscura! + 0.05);
+}
 
 describe("mostra o número da empresa quando há mais de um canal", () => {
   it("pinta o número por onde a conversa entrou", () => {
@@ -69,6 +85,30 @@ describe("mostra o número da empresa quando há mais de um canal", () => {
     pintar(comCanal({ phone_number: "+19392301037", display_name: null }), true);
     expect(screen.getByTitle("Entrou por +19392301037")).toBeInTheDocument();
     expect(screen.queryByTitle("Entrou por +595999")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["whatsapp", "Canal WhatsApp", "whatsapp"],
+    ["instagram", "Perfil Instagram", "instagram"],
+    ["messenger", "Página Facebook", "facebook"],
+  ] as const)("identifica %s por cor e por SVG", (channel, nome, identidadeVisual) => {
+    pintar(comCanal({ phone_number: null, display_name: nome }, channel), true);
+
+    const selo = screen.getByTitle(`Entrou por ${nome}`);
+    expect(selo).toHaveAttribute("data-channel", identidadeVisual);
+    expect(selo.querySelector("svg")).not.toBeNull();
+    expect(selo).toHaveClass(`channel-${identidadeVisual}`);
+  });
+
+  it.each([
+    ["WhatsApp", "#075e54", "#e9f9ef"],
+    ["Facebook", "#0b4fa8", "#e8f1fe"],
+    ["Instagram", "#6d1b7b", "#f7eafb"],
+  ] as const)("mantém contraste AA no selo claro de %s", (nome, frente, fundo) => {
+    const css = readFileSync("app/globals.css", "utf8").toLowerCase();
+    expect(css).toContain(frente);
+    expect(css).toContain(fundo);
+    expect(contraste(frente, fundo), `${nome} precisa alcançar 4.5:1`).toBeGreaterThanOrEqual(4.5);
   });
 });
 

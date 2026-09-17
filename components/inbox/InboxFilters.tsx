@@ -216,12 +216,12 @@ export function InboxFilters({ value, onChange }: Props) {
               <TabsTrigger
                 key={tab}
                 value={tab}
-                className="-mb-px shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
+                className="-mb-px flex-1 shrink-0 flex-col gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
               >
-                {t(meta.label)}
-                {typeof count === "number" && count > 0 && (
-                  <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
-                )}
+                <span>{t(meta.label)}</span>
+                <span className="min-h-4 text-center text-[11px] leading-4 tabular-nums text-text-subtle">
+                  {typeof count === "number" && count > 0 ? count : null}
+                </span>
               </TabsTrigger>
             );
           })}

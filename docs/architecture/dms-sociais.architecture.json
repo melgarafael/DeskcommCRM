@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "DMs sociais com continuidade humana e IA",
+    "subtitle": "Sócios AI Hub / Instagram Direct e Facebook Messenger",
+    "output": "dms-sociais.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "operacao",
+      "label": "Operação"
+    },
+    {
+      "id": "crm",
+      "label": "CRM"
+    },
+    {
+      "id": "persistencia",
+      "label": "Persistência"
+    },
+    {
+      "id": "externo",
+      "label": "Provedor"
+    }
+  ],
+  "mainPath": ["tela", "api", "hub", "hook", "db", "worker", "inbox"],
+  "nodes": [
+    {
+      "id": "tela",
+      "lane": "operacao",
+      "col": 1,
+      "type": "frontend",
+      "label": "Conexões / CanaisSociaisClient"
+    },
+    {
+      "id": "api",
+      "lane": "crm",
+      "col": 2,
+      "type": "route",
+      "label": "API administrativa / auditoria"
+    },
+    {
+      "id": "hub",
+      "lane": "externo",
+      "col": 3,
+      "type": "service",
+      "label": "HUB / subconta / Meta"
+    },
+    {
+      "id": "hook",
+      "lane": "crm",
+      "col": 4,
+      "type": "route",
+      "label": "Webhook / HMAC e conta"
+    },
+    {
+      "id": "db",
+      "lane": "persistencia",
+      "col": 5,
+      "type": "database",
+      "label": "RPC / mensagem + evento transacionais"
+    },
+    {
+      "id": "worker",
+      "lane": "crm",
+      "col": 6,
+      "type": "service",
+      "label": "Drain / pós-entrada / lead / agente"
+    },
+    {
+      "id": "inbox",
+      "lane": "operacao",
+      "col": 7,
+      "type": "frontend",
+      "label": "Inbox / assumir ↔ devolver"
+    },
+    {
+      "id": "send",
+      "lane": "crm",
+      "col": 8,
+      "type": "service",
+      "label": "Handler / autoridade / janela / adapter"
+    },
+    {
+      "id": "receipt",
+      "lane": "crm",
+      "col": 9,
+      "type": "service",
+      "label": "Recibo monotônico / erro da mensagem"
+    },
+    {
+      "id": "central",
+      "lane": "operacao",
+      "col": 5,
+      "type": "frontend",
+      "label": "Central / saúde e recuperação"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "tela",
+      "to": "api",
+      "label": "admin configura"
+    },
+    {
+      "id": "e2",
+      "from": "api",
+      "to": "hub",
+      "label": "Bearer cifrado / conta exclusiva"
+    },
+    {
+      "id": "e3",
+      "from": "hub",
+      "to": "hook",
+      "label": "eventos assinados"
+    },
+    {
+      "id": "e4",
+      "from": "hook",
+      "to": "db",
+      "label": "org da assinatura / deduplicação"
+    },
+    {
+      "id": "e5",
+      "from": "db",
+      "to": "worker",
+      "label": "evento só com referências"
+    },
+    {
+      "id": "e6",
+      "from": "db",
+      "to": "inbox",
+      "label": "Realtime existente"
+    },
+    {
+      "id": "e7",
+      "from": "worker",
+      "to": "send",
+      "label": "IA publicada e elegível"
+    },
+    {
+      "id": "e8",
+      "from": "inbox",
+      "to": "send",
+      "label": "humano responde / controla autoridade"
+    },
+    {
+      "id": "e9",
+      "from": "send",
+      "to": "hub",
+      "label": "intenção idempotente / aceite pendente"
+    },
+    {
+      "id": "e10",
+      "from": "hub",
+      "to": "receipt",
+      "label": "status de entrega"
+    },
+    {
+      "id": "e11",
+      "from": "receipt",
+      "to": "inbox",
+      "label": "confirmação ou erro visível"
+    },
+    {
+      "id": "e12",
+      "from": "hook",
+      "to": "central",
+      "label": "episódio de conexão"
+    },
+    {
+      "id": "e13",
+      "from": "central",
+      "to": "tela",
+      "label": "reconectar / atualizar"
+    },
+    {
+      "id": "e14",
+      "from": "tela",
+      "to": "hook",
+      "label": "recuperação autenticada de DMs"
+    }
+  ]
+}

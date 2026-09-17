@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { sendWithLedger } from "@/lib/agent-engine/edge/crm/send-ledger";
 type Store=Parameters<typeof sendWithLedger>[0];
 const intent={tenantId:'org',leadId:'contact',jobId:'job',seq:1,body:'Retomar consulta'};
-function store(status='requested',message:{id:string;status:string}|null=null):Store{
+function store(status='requested',message:{id:string;status:string;external_id?:string|null}|null=null):Store{
  return {create:vi.fn(async()=>{throw {code:'23505'};}),find:vi.fn(async()=>({id:'ledger-original',status:status as 'requested',crm_message_id:message?.id??null})),rotate:vi.fn(async()=> 'new-ledger'),message:vi.fn(async()=>message),update:vi.fn(async()=>{})};
 }
 it('executor novo reconhece aceito sem chamar transporte novamente',async()=>{
@@ -29,4 +29,11 @@ it('mensagem failed/queued nunca confirma sent',async()=>{
   const db=store();const send=vi.fn(async()=>({id:'message',status}));
   expect((await sendWithLedger(db,intent,send)).kind).toBe(status);expect(db.update).not.toHaveBeenCalledWith('org','ledger-original','accepted',expect.anything(),expect.anything());
  }
+});
+
+it('aceite assíncrono reconcilia recibo sem reenviar enquanto aguarda entrega',async()=>{
+ const db=store('requested',{id:'message',status:'sending',external_id:'provider-receipt'}),send=vi.fn();
+ expect((await sendWithLedger(db,intent,send)).kind).toBe('sent');
+ expect(send).not.toHaveBeenCalled();
+ expect(db.update).toHaveBeenCalledWith('org','ledger-original','accepted','message',null);
 });

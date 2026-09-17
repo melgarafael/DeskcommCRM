@@ -141,7 +141,7 @@ async function criarRouter(
 }
 
 /** Drena o evento do cenário e responde: nasceu job? */
-async function drenaEGeraJob(c: Cenario): Promise<boolean> {
+async function drenaEGeraJob(c: Cenario, debounceMs = 0): Promise<boolean> {
   const { rows } = await pool.query<{ id: string }>(
     `insert into event_log (organization_id, event_type, entity_kind, entity_id, payload, status)
      values ($1::uuid, 'ai_agent.dispatch_requested', 'message', $2::uuid,
@@ -154,7 +154,7 @@ async function drenaEGeraJob(c: Cenario): Promise<boolean> {
   );
   const eventId = rows[0]!.id;
 
-  await drainTick(pool, DRAIN_KNOBS, log);
+  await drainTick(pool, { ...DRAIN_KNOBS, debounceMs }, log);
 
   const { rows: jobs } = await pool.query<{ n: number }>(
     "select count(*)::int as n from job_queue where source_event_id = $1",
@@ -182,6 +182,28 @@ afterAll(async () => {
 });
 
 describe("portão de capacidade do drain — mede quem EXECUTA", () => {
+  it.each([
+    { nome: "rajada inicial", attempts: 0, mesmaConversa: true, criaJob: false },
+    { nome: "retry após fechamento falho", attempts: 1, mesmaConversa: true, criaJob: true },
+    { nome: "outro canal do mesmo contato", attempts: 0, mesmaConversa: false, criaJob: true },
+  ])("coalescência: $nome", async ({ nome, attempts, mesmaConversa, criaJob }) => {
+    await pool.query('delete from job_queue where organization_id = $1', [ORG]);
+    const c = await montarCenario(nome);
+    await criarAgente(c.session, { publicado: true, nome });
+    const anterior = mesmaConversa ? c : await montarCenario(`${nome}-anterior`);
+    await pool.query(
+      `insert into job_queue (organization_id, contact_id, kind, status, attempts, run_after, payload)
+       values ($1, $2, 'inbound_turn', 'pending', $3, now() + interval '1 minute',
+               jsonb_build_object('conversation_id', $4::text))`,
+      [ORG, CONTACT, attempts, anterior.conv],
+    );
+    expect(await drenaEGeraJob(c, 8000)).toBe(criaJob);
+    const { rows } = await pool.query(
+      'select count(*)::int as n from job_queue where organization_id = $1', [ORG],
+    );
+    expect(rows[0].n).toBe(criaJob ? 2 : 1);
+  });
+
   it("agente publicado para a sessão: o turno é enfileirado", async () => {
     const c = await montarCenario("publicado");
     await criarAgente(c.session, { publicado: true, nome: "publicado" });

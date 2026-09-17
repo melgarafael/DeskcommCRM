@@ -137,6 +137,11 @@ const schema = z.object({
   SUPABASE_DB_ADMIN_URL: z.string().optional().default(""),
 
   // WAHA
+  WAHA_EXTERNAL: z.enum(["true", "false"]).optional().default("false"),
+  WAHA_ENGINE: z.enum(["NOWEB", "WEBJS", "GOWS"]).optional().default("NOWEB"),
+  WEBSHARE_API_KEY: z.string().optional().default(""),
+  WEBSHARE_PROXY_IDS: z.string().optional().default(""),
+  WHATSAPP_PROXY_REQUIRED: z.enum(["true", "false"]).optional().default("false"),
   WAHA_API_BASE_URL: required("WAHA_API_BASE_URL"),
   WAHA_API_KEY: required("WAHA_API_KEY"),
   WAHA_WEBHOOK_BASE_URL: required("WAHA_WEBHOOK_BASE_URL"),

@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Consulta de proximidade entre cidades",
+    "subtitle": "Base do cliente e geografia pública sem inferência de rotas",
+    "output": "consulta-cidades.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Operação"
+    },
+    {
+      "id": "motor",
+      "label": "Agente"
+    },
+    {
+      "id": "dados",
+      "label": "Fontes"
+    }
+  ],
+  "mainPath": [
+    "base",
+    "geo",
+    "resposta"
+  ],
+  "nodes": [
+    {
+      "id": "config",
+      "lane": "ui",
+      "col": 1,
+      "type": "service",
+      "label": "Capacidade na tela Agentes"
+    },
+    {
+      "id": "base",
+      "lane": "dados",
+      "col": 2,
+      "type": "service",
+      "label": "Cidades com lojas na base do cliente"
+    },
+    {
+      "id": "geo",
+      "lane": "motor",
+      "col": 3,
+      "type": "service",
+      "label": "Consulta municipal e Haversine"
+    },
+    {
+      "id": "resposta",
+      "lane": "ui",
+      "col": 4,
+      "type": "service",
+      "label": "Resposta e próximo passo na conversa"
+    },
+    {
+      "id": "audit",
+      "lane": "dados",
+      "col": 5,
+      "type": "service",
+      "label": "Execuções e auditoria MCP"
+    }
+  ],
+  "edges": [
+    {
+      "id": "0",
+      "from": "config",
+      "to": "geo",
+      "label": "habilita tool_ids"
+    },
+    {
+      "id": "1",
+      "from": "base",
+      "to": "geo",
+      "label": "destinos confirmados"
+    },
+    {
+      "id": "2",
+      "from": "geo",
+      "to": "resposta",
+      "label": "ranking ou pedido de confirmação"
+    },
+    {
+      "id": "3",
+      "from": "geo",
+      "to": "audit",
+      "label": "ponte canônica"
+    },
+    {
+      "id": "4",
+      "from": "audit",
+      "to": "config",
+      "label": "revisão pelo operador"
+    },
+    {
+      "id": "5",
+      "from": "resposta",
+      "to": "base",
+      "label": "corrigir dados das lojas quando necessário"
+    }
+  ]
+}

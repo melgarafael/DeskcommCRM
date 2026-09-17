@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
+import { prepareManagedSession, type ProxyChoice } from "./managed-session";
+import { SessionProxyError } from "./session-proxy";
 
 const channelSchema = z.object({
   id: z.string().uuid(), organization_id: z.string().uuid(), waha_session_name: z.string(),
@@ -17,8 +19,8 @@ const receiptSchema = z.object({
 export class ChannelConnectionError extends Error {
   constructor(public readonly code: string, public readonly status: number, public readonly technical?: Record<string, unknown>) { super(code); }
 }
-type Transport = Pick<WahaClient, "createSession" | "startExistingSession" | "stopSession">;
-export interface ConnectChannelInput {
+type Transport = Pick<WahaClient, "createSession" | "startExistingSession" | "stopSession" | "getProxyOccupancy">;
+export interface ConnectChannelInput extends ProxyChoice {
   organizationId: string; idempotencyKey: string; userId: string; requestId: string;
   displayName?: string; onboarding?: boolean; restart?: boolean;
 }
@@ -29,7 +31,8 @@ export interface ConnectChannelInput {
  */
 export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: SupabaseClient, waha: Transport, input: ConnectChannelInput): Promise<{ channel: z.infer<typeof channelSchema>; replay: boolean }> {
   if (!z.string().uuid().safeParse(input.idempotencyKey).success) throw new ChannelConnectionError("idempotency_key_required", 422);
-  const hash = createHash("sha256").update(JSON.stringify({ display_name: input.displayName ?? null, onboarding: input.onboarding ?? false, restart: input.restart ?? false })).digest("hex");
+  const hash = createHash("sha256").update(JSON.stringify({ display_name: input.displayName ?? null, onboarding: input.onboarding ?? false, restart: input.restart ?? false,
+    ...(input.proxy_country ? { proxy_country: input.proxy_country, proxy_id: input.proxy_id ?? null } : {}) })).digest("hex");
   const { data, error } = await authDb.rpc("fn_reserve_channel_connection", {
     p_org: input.organizationId, p_key: input.idempotencyKey, p_hash: hash,
     p_display_name: input.displayName ?? null, p_onboarding: input.onboarding ?? false,
@@ -53,8 +56,9 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
     return result.data;
   }
   try {
+    const managed = await prepareManagedSession(serviceDb, waha, input.organizationId, channel.id, input, input.userId);
     if (input.restart) await waha.stopSession(channel.waha_session_name);
-    const creation = await waha.createSession(channel.waha_session_name);
+    const creation = managed ? await waha.createSession(channel.waha_session_name, managed) : await waha.createSession(channel.waha_session_name);
     created = creation.created;
     if (created) await finish("remote_created");
     const remote = await waha.startExistingSession(channel.waha_session_name);
@@ -70,7 +74,7 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
       requestId: input.requestId, metadata: { provider: "waha", origin: input.onboarding ? "onboarding" : "connections" } });
     return { channel: persisted, replay: false };
   } catch (cause) {
-    const code = "connection_repair_required";
+    const code = cause instanceof SessionProxyError ? cause.code : "connection_repair_required";
     await finish("FAILED", code);
     throw new ChannelConnectionError(code, 502, cause instanceof WahaSessionError
       ? { operation: cause.operation, http_status: cause.httpStatus } : undefined);

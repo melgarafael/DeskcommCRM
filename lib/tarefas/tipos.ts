@@ -39,6 +39,7 @@ export interface Tarefa {
   status: SituacaoDaTarefa;
   lead_id: string | null;
   contact_id: string | null;
+  conversation_id?: string | null;
   assigned_to: string | null;
   created_by: string | null;
   created_at: string;

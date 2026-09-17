@@ -24,6 +24,27 @@
    coisas que no v3 ele não vencia. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Identidade dos canais no inbox. `light-dark()` acompanha inclusive uma
+   subárvore `data-theme="light"` dentro da página escura; o texto e o SVG
+   continuam sendo a segunda pista para quem não distingue as cores. */
+.channel-whatsapp {
+  border-color: light-dark(#8ee0ac, rgba(37, 211, 102, 0.42));
+  background-color: light-dark(#e9f9ef, rgba(37, 211, 102, 0.14));
+  color: light-dark(#075e54, #7ce8a4);
+}
+
+.channel-facebook {
+  border-color: light-dark(#9bc2f8, rgba(24, 119, 242, 0.48));
+  background-color: light-dark(#e8f1fe, rgba(24, 119, 242, 0.16));
+  color: light-dark(#0b4fa8, #8bbcfb);
+}
+
+.channel-instagram {
+  border-color: light-dark(#d9a7e2, rgba(211, 0, 197, 0.46));
+  background-color: light-dark(#f7eafb, rgba(211, 0, 197, 0.14));
+  color: light-dark(#6d1b7b, #eca4e8);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    DeskcommCRM — Design System tokens (Sage palette · density Aerada)
    Source of truth: /app/design/lib/tokens.ts (PALETTES.sage)

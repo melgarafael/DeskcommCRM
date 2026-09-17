@@ -122,6 +122,7 @@ export async function previewGateContext(
   };
 }
 const SCENARIO_READS = new Set([
+  'crm_compare_city_distances',
   'crm_list_pipelines',
   'crm_list_stages',
   'crm_list_appointment_types',

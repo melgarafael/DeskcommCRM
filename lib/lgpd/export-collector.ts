@@ -211,6 +211,7 @@ export interface VoiceCallRow {
 }
 
 export interface ExportPayload {
+  imported_records?: Array<{ id: string; source_table: string; source_id: string; source_data: Json; occurred_at: string | null }>;
   request_id: string;
   organization_id: string;
   /**
@@ -783,7 +784,27 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  const imported_records: NonNullable<ExportPayload["imported_records"]> = [];
+  if (contactId) {
+    const pageSize = 100;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: edges, error: edgeError } = await admin
+        .from("data_import_record_contacts").select("record_id")
+        .eq("organization_id", organizationId).eq("contact_id", contactId)
+        .order("record_id").range(offset, offset + pageSize - 1);
+      if (edgeError) throw new Error("imported_history_export_failed");
+      if (!edges?.length) break;
+      const { data: records, error: recordError } = await admin
+        .from("data_import_records").select("id,source_table,source_id,source_data,occurred_at")
+        .eq("organization_id", organizationId).in("id", edges.map(edge => edge.record_id));
+      if (recordError || records?.length !== edges.length) throw new Error("imported_history_export_failed");
+      imported_records.push(...records);
+      if (edges.length < pageSize) break;
+    }
+  }
+
   return {
+    imported_records,
     request_id: requestId,
     organization_id: organizationId,
     organization_legal_name: controlador.legal_name,

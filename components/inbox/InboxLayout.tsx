@@ -1,4 +1,5 @@
 "use client";
+import { canalSomenteHistorico } from "@/lib/channels/capabilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -305,10 +306,12 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
     janela.tipo === "fechada"
       ? janela.fechadaHaMs === null
         ? t("O cliente ainda não escreveu — a janela de 24h nunca abriu. Só um modelo aprovado sai daqui.")
-        : `${t("A janela de 24h fechou há")} ${formatarDecorrido(janela.fechadaHaMs)}. ${t("Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.")}`
+        : `${t("A janela de 24h fechou há")} ${formatarDecorrido(janela.fechadaHaMs)}. ${t("Texto livre é recusado pela plataforma. Confira abaixo as opções deste canal.")}`
       : null;
 
-  const blockedReason = selectedConversation?.contacts?.is_blocked
+  const blockedReason = canalSomenteHistorico(selectedConversation?.channel_sessions?.provider)
+    ? t("Canal histórico — disponível apenas para consulta.")
+    : selectedConversation?.contacts?.is_blocked
     ? t("Contato bloqueado — envio de mensagens desabilitado.")
     : selectedConversation?.contacts?.is_anonymized
       ? t("Contato anonimizado — não é possível enviar mensagens.")

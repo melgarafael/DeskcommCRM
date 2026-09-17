@@ -83,6 +83,8 @@ vi.mock("@/lib/supabase/admin", () => ({
     },
   }),
 }));
+const socialSend = vi.hoisted(() => vi.fn(async () => ({ message_id: "accepted-social", status: "queued" })));
+vi.mock("@/lib/channels/social/service", () => ({ channelCredentials: async () => ({ status: "WORKING", client: { send: socialSend } }) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
 
 type Row = Record<string, unknown>;
@@ -176,11 +178,12 @@ function makeSupabase(linhaCompleta: Row) {
         return {
           select: (cols: string) => {
             estado.selects.push(cols);
-            return {
-              eq: () => ({
-                maybeSingle: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
-              }),
+            const query: Record<string, unknown> = {
+              maybeSingle: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
+              single: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
             };
+            query.eq = () => query;
+            return query;
           },
           update: () => ({ eq: async () => ({ error: null }) }),
         };
@@ -491,4 +494,20 @@ describe("nenhum desfecho diz `sent` sem nada ter saído", () => {
     expect((msg.metadata as Record<string, unknown>).queued_reason).toBe("zernio_not_configured");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+});
+
+describe("aceite assíncrono pelo handler compartilhado", () => {
+ it("preserva sending e usa a identidade social selecionada, mesmo sem telefone", async () => {
+  socialSend.mockClear();
+  const fixture = conversaCompleta({ provider: "socios_hub" });
+  fixture.provider_recipient_id = "00012345678901234567";
+  fixture.last_inbound_at = new Date().toISOString();
+  fixture.contacts = { phone_number: null, wa_identity: null, wa_lid: null, is_blocked: false };
+  fixture.channel_sessions = { provider: "socios_hub", social_channel_id: "page-a", status: "WORKING", archived_at: null };
+  const { supabase } = makeSupabase(fixture);
+  const msg = await sendMessageHandler(supabase, ctx, texto());
+  expect(msg.status).toBe("sending");
+  expect(msg.external_id).toBe("socios_hub:accepted-social");
+  expect(socialSend).toHaveBeenCalledWith("page-a", fixture.provider_recipient_id, expect.objectContaining({ type: "text" }), msg.id);
+ });
 });

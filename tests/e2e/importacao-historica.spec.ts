@@ -1,0 +1,64 @@
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { test, expect } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
+
+test.use({ locale: "pt-BR" });
+test("histórico permite consulta, mantém anexos e bloqueia novo envio", async ({ page, request }, testInfo) => {
+  test.setTimeout(150_000);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  if (!["localhost", "127.0.0.1"].includes(new URL(url).hostname)) throw new Error("Somente banco local");
+  const db = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const suffix = randomUUID().slice(0, 8), slug = `history-${suffix}`;
+  const email = `${slug}@example.test`, password = `E2e-${randomUUID()}!`;
+  execFileSync("pnpm", ["exec", "tsx", "scripts/bootstrap-owner.ts"], {
+    env: { ...process.env, OWNER_EMAIL: email, OWNER_PASSWORD: password, OWNER_ORG_NAME: slug }, stdio: "pipe",
+  });
+  const org = (await db.from("organizations").select("id").eq("slug", slug).single()).data!.id;
+  expect((await db.from("organizations").update({ onboarded_at: new Date().toISOString() }).eq("id", org)).error).toBeNull();
+  const batch = randomUUID(), contact = randomUUID(), session = randomUUID(), conv = randomUUID(), message = randomUUID(), record = randomUUID();
+  const objectPath = `${org}/${contact}/imports/${batch}/test.txt`;
+  await db.storage.createBucket("whatsapp-media", { public: false });
+  expect((await db.storage.from("whatsapp-media").upload(objectPath, Buffer.from("Arquivo de teste preservado"), { contentType: "text/plain" })).error).toBeNull();
+  const container = process.env.E2E_SUPABASE_DB_CONTAINER ?? "supabase_db_deskcomm-crm";
+  if (!/^supabase_db_[a-zA-Z0-9_-]+$/.test(container)) throw new Error("Contêiner de teste inválido");
+  execFileSync("docker", ["exec", "-i", container, "psql", "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1"], { stdio: ["pipe", "pipe", "pipe"], input: `
+    begin;
+    insert into data_import_batches(id,organization_id,source,source_workspace_id,source_cutoff,manifest) values('${batch}','${org}','Teste','teste',now(),'{"tables":{"crm_files":{"count":1}}}');
+    set local crm.historical_import_batch='${batch}';
+    insert into contacts(id,organization_id,name,force_human) values('${contact}','${org}','Cliente do histórico',true);
+    insert into channel_sessions(id,organization_id,provider,status,display_name,webhook_secret_encrypted) values('${session}','${org}','historical','STOPPED','Canal histórico de teste','\\x');
+    insert into conversations(id,organization_id,contact_id,channel_session_id,channel,status,bot_silenced_until,last_message_at,last_message_preview) values('${conv}','${org}','${contact}','${session}','instagram','open','infinity',now(),'Mensagem preservada');
+    insert into messages(id,organization_id,contact_id,conversation_id,channel_session_id,type,direction,status,body) values('${message}','${org}','${contact}','${conv}','${session}','text','outbound','unknown','Mensagem preservada');
+    insert into message_attachments(organization_id,message_id,position,file_name,availability) values('${org}','${message}',0,'Não recuperado.pdf','unavailable');
+    insert into message_attachments(organization_id,message_id,position,file_name,storage_path,availability) values('${org}','${message}',1,'Recuperado.txt','${objectPath}','available');
+    insert into data_import_records(id,organization_id,batch_id,source_table,source_id,source_data,contact_id,file_name,storage_path,file_availability) values('${record}','${org}','${batch}','crm_files','arquivo-teste','{"title":"Arquivo preservado"}','${contact}','Recuperado.txt','${objectPath}','available');
+    insert into crm_tasks(organization_id,title,contact_id,conversation_id) values('${org}','Revisar histórico','${contact}','${conv}');
+    update data_import_batches set status='review' where id='${batch}';
+    commit;` });
+  await page.goto("/login");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill(password);
+  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.waitForURL(/\/app/);
+  await page.goto(`/app/inbox?id=${conv}`);
+  await expect(page.getByText("Mensagem preservada", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("Canal histórico — disponível apenas para consulta.")).toBeVisible();
+  await expect(page.getByLabel("Status de envio não informado na origem.")).toBeVisible();
+  await expect(page.getByText(/Não recuperado.pdf/)).toBeVisible();
+  await expect(page.getByRole("link", { name: /Recuperado.txt/ })).toBeVisible();
+  const blockedSend = await page.request.post("/api/v1/messages", { data: { conversation_id: conv, type: "text", body: "Envio que deve ser bloqueado" } });
+  expect(blockedSend.status()).toBe(409);
+  expect((await db.from("messages").select("id").eq("organization_id", org).eq("conversation_id", conv)).data).toHaveLength(1);
+  await page.screenshot({ path: testInfo.outputPath("inbox-historico.png"), fullPage: true });
+  await page.goto("/app/imports?table=crm_files");
+  await expect(page.getByRole("heading", { name: "Histórico importado" })).toBeVisible();
+  await expect(page.locator("p:visible").filter({ hasText: /^Arquivo preservado$/ })).toHaveCount(1);
+  const download = await page.request.get(`/api/v1/imports/${record}/file`);
+  expect(download.ok()).toBe(true);
+  expect(await download.text()).toBe("Arquivo de teste preservado");
+  expect((await request.get(`/api/v1/imports/${record}/file`, { maxRedirects: 0 })).status()).not.toBe(200);
+  await page.screenshot({ path: testInfo.outputPath("arquivo-historico.png"), fullPage: true });
+  await page.goto("/app/tasks");
+  await expect(page.locator("a:visible").filter({ hasText: /^Abrir conversa$/ }).first()).toHaveAttribute("href", `/app/inbox?id=${conv}`);
+});

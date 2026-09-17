@@ -54,6 +54,14 @@ export interface Conversation {
 }
 
 export interface Message {
+  attachments?: Array<{
+    id: string;
+    position: number;
+    file_name: string | null;
+    mime_type: string | null;
+    size_bytes: number | null;
+    availability: "available" | "unavailable";
+  }>;
   id: string;
   organization_id: string;
   conversation_id: string;
@@ -102,6 +110,7 @@ export interface Note {
   created_by_user_id: string | null;
   created_by_name: string | null;
   created_at: string;
+  visibility_scope?: "workspace_internal" | "managers_only";
 }
 
 /**

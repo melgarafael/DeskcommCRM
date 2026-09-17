@@ -103,6 +103,8 @@ export interface EntradaDeMensagem {
    * lendo o `event_log` meses depois, se saiba por onde a mensagem entrou.
    */
   origem: string;
+  /** Consumidor durável: falha volta à fila antes de prosseguir ao próximo efeito. */
+  retryOnFailure?: boolean;
 }
 
 /**
@@ -185,6 +187,7 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
       campanha: casada.id,
     });
   } catch (err) {
+    if (entrada.retryOnFailure) throw new Error("inbound_campaign_failed");
     logger.warn("pos-entrada: avaliação de campanha falhou (o despacho segue)", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
@@ -215,12 +218,14 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
       // Falhar em silêncio aqui é o pior desfecho possível do arquivo inteiro:
       // o cliente pediu para sair, o sistema não gravou, e a campanha segue
       // escrevendo. Por isso é `error` e não `warn`.
+      if (entrada.retryOnFailure) throw new Error("inbound_opt_out_failed");
       logger.error("pos-entrada: opt-out NAO gravado — o contato segue recebendo", {
         organization_id: entrada.organizationId,
         contact_id: entrada.contactId,
         origem: entrada.origem,
         detail: error.message.slice(0, 160),
       });
+      if (entrada.retryOnFailure) throw new Error("inbound_opt_out_failed");
       return;
     }
 
@@ -232,6 +237,7 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
       metadata: { reason: "stop_keyword", contact_id: entrada.contactId, origem: entrada.origem },
     });
   } catch (err) {
+    if (entrada.retryOnFailure) throw new Error("inbound_opt_out_failed");
     logger.error("pos-entrada: opt-out NAO gravado — o contato segue recebendo", {
       organization_id: entrada.organizationId,
       contact_id: entrada.contactId,
@@ -266,6 +272,7 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
       ...(nascimento.criado ? { lead_id: nascimento.leadId } : { motivo: nascimento.motivo }),
     });
   } catch (err) {
+    if (entrada.retryOnFailure) throw new Error("inbound_lead_failed");
     logger.error("pos-entrada: nascimento do lead falhou (a mensagem entra assim mesmo)", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
@@ -290,22 +297,26 @@ async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<v
 async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
   if (!entrada.messageId) return;
 
-  const { error } = await admin.rpc("emit_event" as never, {
-    p_event_type: "ai_agent.dispatch_requested",
-    p_entity_kind: "message",
-    p_entity_id: entrada.messageId,
-    p_payload: {
-      organization_id: entrada.organizationId,
-      conversation_id: entrada.conversationId,
-      contact_id: entrada.contactId,
-      channel_session_id: entrada.channelSessionId,
-      inbound_message_id: entrada.messageId,
-    },
-    p_metadata: { source: entrada.origem, request_id: entrada.requestId },
-    p_organization_id: entrada.organizationId,
-  } as never);
+  const { error } = await admin.rpc(
+    "emit_event" as never,
+    {
+      p_event_type: "ai_agent.dispatch_requested",
+      p_entity_kind: "message",
+      p_entity_id: entrada.messageId,
+      p_payload: {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        contact_id: entrada.contactId,
+        channel_session_id: entrada.channelSessionId,
+        inbound_message_id: entrada.messageId,
+      },
+      p_metadata: { source: entrada.origem, request_id: entrada.requestId },
+      p_organization_id: entrada.organizationId,
+    } as never,
+  );
 
   if (error) {
+    if (entrada.retryOnFailure) throw new Error("inbound_dispatch_failed");
     logger.warn("pos-entrada: emit ai_agent.dispatch_requested falhou", {
       organization_id: entrada.organizationId,
       message_id: entrada.messageId,

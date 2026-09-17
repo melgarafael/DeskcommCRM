@@ -16,6 +16,7 @@ ser fonte sem ninguém decidir isso.
 
 | arquivo | escopo |
 |---|---|
+| `dms-sociais.architecture.json` | Instagram/Messenger via HUB: autorização, HMAC, entrada transacional, atendimento humano/IA, recibos e saúde |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |
 | `agenda-google-sync.architecture.json` | fontes/destino por dono, tupla estável, três vias, claim/CAS e cobertura de calendário; presença e LGPD integradas |
 | `encerramento-atendimento.architecture.json` | conversa/demanda independentes, mutex no inbound, origem imutável dos jobs, memória vigente e guardas antes dos efeitos |
@@ -93,3 +94,7 @@ superfície do CRM atravessa essa aresta, e precisa responder três perguntas
 
 As três vezes o custo foi o mesmo: descobrir a aresta **durante** a
 implementação, com a peça já meio pronta.
+
+- [Importação histórica](importacao-historica.architecture.json): lote, consulta restrita e privacidade.
+
+- [Proxy por conexão](proxy-por-conexao.architecture.json): seleção administrativa → reserva → transporte → eventos e Inbox.

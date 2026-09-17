@@ -127,7 +127,7 @@ export function JanelaFechadaAviso({
     <div className="border-t border-amber-300 bg-amber-50/60 px-4 py-3 dark:border-amber-800/60 dark:bg-amber-950/30">
       <p className="mb-2 text-xs text-amber-900 dark:text-amber-200">{motivo}</p>
 
-      {aprovados.length === 0 ? (
+      {fonte === null ? <p className="text-xs">{t("Aguarde uma nova mensagem do cliente para responder. Este canal não oferece modelos fora da janela.")}</p> : aprovados.length === 0 ? (
         // Sem modelo aprovado não há saída por aqui, e dizer isso é melhor que
         // um seletor vazio que se lê como "ainda não carregou".
         <p className="text-xs text-amber-900/80 dark:text-amber-200/80">

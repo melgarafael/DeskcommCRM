@@ -143,3 +143,9 @@ backups/
 # commit posterior de remoção não tira o blob.
 .qa-backups/
 *.dump
+
+# Instância local isolada para validação do CRM
+/.local-validation/
+
+# Credenciais locais de infraestrutura
+/credenciais/

@@ -1,3 +1,4 @@
+import { preserveStageDuringHandoff } from './handoff-stage-policy';
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
@@ -197,7 +198,7 @@ export const AGENT_TOOL_DEFS = {
       'Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → ' +
       'negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification ' +
       '(budget/authority/need/timeline), next_action e reason (evidência curta do avanço). ' +
-      'Nunca invente avanço sem evidência na conversa.',
+      'Nunca invente avanço sem evidência na conversa. Pedir humano ou recusar perguntas não é perda: preserve a etapa comercial ao transferir atendimento.',
     // Schema LARGO só para o SDK (o modelo vê os campos); a validação REAL é a
     // whitelist .strict() dentro de applyLeadStateUpdate — campo extra/forjado
     // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
@@ -3376,7 +3377,9 @@ async function executarTurnoDoAgente(
             () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
           )
         : rawTools;
-    const tools = wrapToolsWithBreaker(previewTools, {
+    const tools = wrapToolsWithBreaker(preserveStageDuringHandoff(previewTools,
+      inboundsPendentes.some((texto) => detectHumanHandoffRequest(texto) ||
+        (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)))), {
       thresholds: deps.knobs.breaker,
       readOnlyTools: READ_ONLY_TOOLS,
       log: runLog, // os warns dos gates do breaker saem carimbados com o run

@@ -31,6 +31,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Admin only. organization_id vem da sessão — nunca do path/body.
  */
+import { prepareManagedSession } from "@/lib/channels/managed-session";
+import { SessionProxyError, proxyErrorMessage } from "@/lib/channels/session-proxy";
+import { createChannelSchema } from "@/lib/schemas/channels";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
@@ -43,12 +46,12 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createClient } from "@/lib/supabase/server";
-import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
+import { getWahaClient } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-const reconnectSchema = z.object({ force: z.boolean().optional() });
+const reconnectSchema = createChannelSchema.extend({ force: z.boolean().optional() });
 
 export async function POST(
   req: NextRequest,
@@ -67,7 +70,8 @@ export async function POST(
     rawBody = {};
   }
   const parsedBody = reconnectSchema.safeParse(rawBody ?? {});
-  const force = parsedBody.success ? (parsedBody.data.force ?? false) : false;
+  if (!parsedBody.success) return fail("validation_failed", "Dados inválidos.", 422, { requestId });
+  const force = parsedBody.data.force ?? false;
 
   const authz = await requireRole("admin", {
     requestId,
@@ -135,11 +139,12 @@ export async function POST(
 
   try {
     await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id);
+    const managed = await prepareManagedSession(createAdminClient(), waha, activeOrg.orgId, id, parsedBody.data, user.id);
     await waha.stopSession(nomeSessao);
     // Só no modo forçado: descartar a credencial é irreversível — obriga a
     // reescanear o QR mesmo que ela ainda estivesse boa.
     if (force) await waha.logoutSession(nomeSessao);
-    const remote = (await waha.startSession(nomeSessao)) as { status?: string };
+    const remote = (await (managed ? waha.startSession(nomeSessao, managed) : waha.startSession(nomeSessao))) as { status?: string };
     const nextStatus = remote.status ?? "STARTING";
     const patch = { status: nextStatus, status_reason: null, last_status_change_at: new Date().toISOString(), consecutive_health_fails: 0 };
     const { error: syncError } = await supabase.from("channel_sessions").update(patch).eq("organization_id", activeOrg.orgId).eq("id", id);
@@ -159,8 +164,9 @@ export async function POST(
     return ok({ id, status: nextStatus, force }, { requestId });
   } catch (err) {
     if (err instanceof ChannelConnectionError) return fail(err.code, "Uma conexão está em andamento. Aguarde e tente novamente.", err.status, { requestId });
+    if (err instanceof SessionProxyError) return fail(err.code, t(proxyErrorMessage(err.code)), 409, { requestId });
     await supabase.from("channel_sessions").update({ status: "FAILED", status_reason: "connection_repair_required", last_status_change_at: new Date().toISOString() })
       .eq("organization_id", activeOrg.orgId).eq("id", id);
-    return fail("waha_error", wahaFriendlyError(err), 502, { requestId });
+    return fail("waha_error", "Não foi possível reconectar. Confira o serviço e tente novamente.", 502, { requestId });
   }
 }

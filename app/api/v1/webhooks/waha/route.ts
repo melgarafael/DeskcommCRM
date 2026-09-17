@@ -106,7 +106,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // Autenticação fail-closed — regras e o porquê em lib/waha/webhook-auth.ts.
-  const sigHeader = req.headers.get("x-webhook-hmac") ?? req.headers.get("X-Webhook-Hmac");
+  const sigHeader = req.headers.get("x-webhook-hmac-sha512") ?? req.headers.get("x-webhook-hmac");
   let sessionSecret: string | null = null;
   try {
     const dec = await admin.rpc("fn_decrypt_oauth", {

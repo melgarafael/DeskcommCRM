@@ -1990,3 +1990,32 @@ Produto `7f1d0f3e`, integrado à main `ca895850`: as dez specs de organizações
 Evidência local preservada em `.superpowers/evidence/comunidade-360/final-qa-targeted-r4/` e log `.superpowers/sdd/comunidade-360/final-qa-targeted-r4.log`. A rodada inclui atualização concorrente da interface sem perder formulário, sugestão obsoleta sem confirmação antiga de sucesso e encerramento de suporte com retorno ao contexto original.
 
 Validação integral do mesmo produto: 733 arquivos unitários / 7.911 casos aprovados + 1 falha esperada; 184 arquivos de banco / 1.466 casos aprovados + 1 falha esperada e 1 ignorado, com INSTALL e UPDATE; tipos, lint (0 erros, 344 avisos) e build aprovados. `lint:channels`, validadores shell e conferência de release também passaram. Os checks remotos continuam sendo condição do merge pelo revisor da PR #613.
+
+
+## DMs sociais — validação local e homologação externa
+
+`tests/e2e/social-dms.spec.ts` cobre cadastro isolado da fixture, HMAC inválido/valido, reentrega sem duplicata, DM no Inbox, bloquear/liberar IA por canal, assumir/devolver conversa e janela fechada. O banco real e o Auth são locais; não há envio externo. `tests/invariants/social-dms.test.ts` mede fila transacional e isolamento cross-tenant. O transporte é medido contra dublês do contrato público em `lib/channels/social/`.
+
+Autorização Meta e entrega real de DM permanecem como homologação externa: exigem chave de subconta, contas do solicitante e HTTPS público. Não são declaradas cobertas pelo E2E local. Operação e limites em `docs/specs/dms-sociais-hub.md`.
+
+## Importação histórica
+
+`tests/e2e/importacao-historica.spec.ts` verifica inbox sem envio, status desconhecido, anexos recuperados/indisponíveis, arquivo autenticado e tarefa ligada à conversa. `tests/invariants/importacao-historica.test.ts` verifica lote SQL privilegiado, RLS de gestor e redação na anonimização. A execução de migração real é documentada separadamente em `docs/migrations/warm-florida/EXECUCAO.md`; teste sintético não prova carga em produção.
+
+- Proxy por conexão: `tests/e2e/proxy-por-conexao.spec.ts` (opt-in WAHA/Webshare reais, Auth e DB locais): seleção US → reserva → QR real → remoção da sessão de homologação; não envia mensagens nem pareia aparelho.
+
+### Regressão: identidade WhatsApp GOWS (2026-09-16)
+
+Entrada direta com `from=@lid` e número em `_data.Info.SenderAlt` deve reencontrar o contato cadastrado por telefone, aplicando a normalização BR. `Info.PushName` preenche nome quando disponível. Não usar identidade do operador em `fromMe`, grupos ou remetente incoerente. Cobertura: `lib/waha/ingest-gows.test.ts`, `tests/unit/telefone-alternativo-do-payload.test.ts`; invariantes `telefone-do-lid` e `telefone-do-lid-colisao`. A reconciliação de históricos anteriores é uma operação separada, auditada e com backup. A validação visual da instalação é registrada privadamente em `Unitintas/correcao-whatsapp-gows.md`.
+
+### Pedido humano não encerra oportunidade (2026-09-16)
+
+Proteção compartilhada no turno real e preview: pedido humano detectado ou passagem concluída impede `update_lead_state` com etapa; atualização de contexto sem etapa continua disponível. Testes em `lib/agent-engine/agent/handoff-stage-policy.test.ts` incluem ordem anterior/posterior à passagem, etapas terminais, passagem falha e desistência sem pedido humano. A regra determinística de passagem real preexistente continua ativa. Classificador não deve confundir recusa de questionário/opt-out com desistência comercial.
+
+### Atendimento automático — mensagem durante retry (2026-09-16)
+
+- Confirmado: um erro no JSON do checkpoint após envio devolvia o job a `pending`; o drain absorvia a próxima inbound nesse retry. O ledger do job anterior suprimia a nova resposta.
+- Correção: coalescência somente com `attempts = 0` e mesma `conversation_id`, preservando isolamento por organização e contato.
+- Regressão em Postgres: `portao-de-capacidade-mede-quem-executa.test.ts` cobre agrupamento inicial, retry e outro canal; 10 casos verdes. Contraprova sem os dois predicados: os dois novos casos de proteção falham.
+- Unidade: 16 testes de drain verdes; typecheck e lint dos arquivos alterados verdes. Sem alteração de schema.
+- Continuidade: evento inbound alimenta job próprio, envio mantém ledger idempotente e resposta aparece no inbox. Configuração de debounce existente, sem novo knob. Erro de checkpoint continua sujeito ao retry; ele deixa de consumir a próxima mensagem.

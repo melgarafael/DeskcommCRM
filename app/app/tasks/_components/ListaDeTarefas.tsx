@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
@@ -107,6 +108,7 @@ function Linha({
         ) : null}
 
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+          {tarefa.conversation_id && <Link href={`/app/inbox?id=${tarefa.conversation_id}`} className="text-primary underline">{t("Abrir conversa")}</Link>}
           <span
             className={cn(
               "rounded-full px-2 py-0.5 font-medium",

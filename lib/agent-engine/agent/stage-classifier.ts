@@ -54,7 +54,8 @@ export const STAGE_CLASSIFIER_INSTRUCTION =
   '- qualified: orçamento, autoridade de decisão, necessidade e prazo (BANT) já confirmados — pronto para proposta.\n' +
   '- negotiating: há proposta/preço/condições na mesa e o lead está discutindo valor, desconto, parcelamento.\n' +
   '- won: o lead fechou/aceitou explicitamente (vai assinar, pagar, emitir nota).\n' +
-  '- lost: o lead recusou, desistiu ou pediu para parar de ser contatado.\n' +
+  '- lost: houve desistência explícita da COMPRA ou recusa explícita da proposta comercial.\n' +
+  'Pedir uma pessoa, preferir vendedor, recusar questionário ou pedir para parar mensagens não comprova desistência da compra. Preserve o estágio atual nesses casos.\n' +
   'Responda SOMENTE com uma palavra — o nome exato do estágio, em inglês. Sem explicação, sem pontuação.';
 
 function buildClassifierMessage(context: LeadContext, currentStage: LeadStage): string {

@@ -46,6 +46,14 @@ async function execute(t: ReturnType<typeof applyPreviewPolicy>, name: string, a
   return t[name]!.execute!(args, { toolCallId: 'test', messages: [], context: undefined });
 }
 describe('preview policy shares gates and contains side effects', () => {
+  it('executa consulta geográfica real no sandbox sem contato', async () => {
+    const read = vi.fn(async () => ({ status: 'ok' }));
+    const p = preview();
+    const tools = applyPreviewPolicy({ crm_compare_city_distances: definition(read) }, p, gate(), () => []);
+    expect(await execute(tools, 'crm_compare_city_distances')).toEqual({ status: 'ok' });
+    expect(read).toHaveBeenCalledOnce();
+    expect(p.result.proposals).toHaveLength(0);
+  });
   it('registers text and mutation proposals without calling either operational executor', async () => {
     const send = vi.fn(),
       write = vi.fn(),

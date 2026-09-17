@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { Message } from "@/lib/types/messaging";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
+import { AdditionalAttachments } from "@/components/inbox/media/AdditionalAttachments";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
 import {
   extractCitations,
@@ -36,6 +37,9 @@ interface Props {
 }
 
 function AckIndicator({ status, t }: { status: string; t: (texto: string) => string }) {
+  if (status === "unknown") {
+    return <span className="text-current/70" title={t("Status de envio não informado na origem.")} aria-label={t("Status de envio não informado na origem.")}>?</span>;
+  }
   if (status === "read") {
     return <Checks size={12} weight="bold" className="text-blue-400" aria-label={t("Lida")} />;
   }
@@ -230,6 +234,7 @@ export function MessageBubble({
             {message.body && !isContact && (
               <p className="whitespace-pre-wrap break-words leading-snug">{message.body}</p>
             )}
+            <AdditionalAttachments message={message} />
           </>
         )}
 

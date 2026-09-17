@@ -293,4 +293,25 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260908140000` | `0235_voz_isolamento_lgpd_e_dono` | **Forward-fix da 0233 em seis blocos, todos idempotentes.** (1) A policy `tenant_isolation_voice_calls_all` nasceu sem o `for all` explícito e sem `revoke all ... from anon`: o comportamento casava com o nome por default do Postgres, não por declaração — recriada na forma que 0067/0050/0068/0085 fixaram. (2) `voice_calls` guarda `peer_phone`, telefone de gente, e estava FORA de `fn_lgpd_cascade_redact_contact`: depois de anonimizar um contato o número real sobrevivia ligado ao `contact_id`, um caminho de reidentificação — mesmo argumento que a foto de perfil já tinha em `lib/lgpd/redact-cascade.ts`. Entra como passo 7b, preservando direção, status, motivo e tempos (o registro de "houve uma chamada de 12 minutos" não identifica ninguém e sustenta métrica e fatura). (3) Coluna nova `owner_user_id` — quem esteve NA LINHA —, com índice parcial `(organization_id, owner_user_id, answered_at) where answered_at is not null`: sem ela qualquer colega da organização desligava a ligação de qualquer outro e a linha do tempo dizia "Sistema". (4) `fn_update_last_activity_at` ganha `'voice_call'` na lista positiva da 0079, e **só** ele: `voice_call_missed` fica de fora de propósito, porque telefone que tocou sem resposta é constatação de silêncio, não quebra dele. (5) `fn_attendant_metrics` ganha a CTE `voice_agg` e os campos `calls_answered`/`call_seconds`: quem passa o dia ao telefone tinha produtividade zero. (6) A FK `voice_calls.channel_session_id` vira `on delete restrict` — apagar o canal deixa de apagar o histórico de ligações em cascata silenciosa e passa a exigir arquivamento, a mesma garantia que `conversations`/`messages` já davam. |
 | `20260909190000` | `0232_nome_de_sessao_waha_cabe_no_teto_do_waha` | `fn_reserve_channel_connection` gerava `waha_session_name` de 69 chars (`org_<32>_<32>`); o WAHA latest-2026.7.2 valida `name` com @MaxLength(54) e todo `POST /api/sessions` de canal novo tomava 400 (`waha_create_400`). Prefixo da org encurta para 8 (`org_<8>_<32>` = 45), alinhado com a busca de canal de onboarding no mesmo corpo. Repara canais WAHA nunca pareados com nome fora do teto. Forward-fix da 0230. |
 | `20260911160000` | `0238_convites_de_time_persistidos` | `team_invites`: o convite pendente passa a existir no banco (antes era só token stateless + linha no aceite). Habilita a lista de convites na tela de Equipe, o aviso de e-mail não despachado e a REVOGAÇÃO de convite (o id da linha = invite_id do token; o aceite recusa convite revogado). Status é derivado. RLS `team_invites_select` (manager+) / `team_invites_write` (admin). Baseline idempotente com dedup antes do índice único. |
+| `20260912190000` | `0239_dms_sociais` | Instagram Direct e Messenger via subconta por organização; credencial cifrada, identidade opaca por canal e ingestão transacional. |
 | `20260911120000` | `0236_opt_in_de_chamada_de_voz` | A chamada de voz nasce DESLIGADA por organização (`org_voice_calls`), com quem aceitou o risco e quando. Ausência de linha é "desligado" — aplicar não liga nada para ninguém. Leitura org-flat, escrita de admin no banco. Baseline INSTALL/UPDATE idempotente. |
+
+| `20260912200000` | `0240_dms_continuidade` | Fila durável de entrada social, FK composta e recibo assíncrono |
+
+| `20260912210000` | `0241_dms_identidade_lgpd` | Rede obrigatória e remoção da identidade social na anonimização do contato |
+
+| 2026-09-14 | `0242_importacao_historica` | Importação histórica, arquivo restrito, notas de gestores e anexos múltiplos |
+
+| 2026-09-14 | `0243_importacao_vinculos_privacidade` | Vínculos tenant-aware e privacidade dos registros importados |
+
+| 2026-09-14 | `0244_importacao_agenda_arquivos` | Agenda histórica, vínculo de tarefas e arquivos privados com redação LGPD. |
+
+| 2026-09-14 | `0245_comando_consulta_contato` | Evita leituras redundantes do contato no comando do Inbox, mantendo regra canônica e RLS invoker. |
+
+| 2026-09-14 | `0246_proxies_por_conexao` | Reserva exclusiva de proxy no CRM, vínculo por canal e engine GOWS explícito. |
+
+| 2026-09-14 | `0247_disponibilidade_pool_proxy` | Disponibilidade global de IDs de proxy sem expor organizações; leitura exclusiva service_role. |
+
+| `20260914200000` | `0248_permissoes_cifra_oauth` | Permite aos donos das RPCs de cifra executar o helper privado após restore com proprietários distintos. Mantém a chave inacessível diretamente aos papéis anon, authenticated e service_role. |
+
+| `20260914220000` | `0249_visibilidade_conversa_sem_replanejamento` | Evita resolução repetida do contexto de suporte e do papel por conversa, preservando RLS, revogação e modos de visibilidade. |

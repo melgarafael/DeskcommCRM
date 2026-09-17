@@ -1,0 +1,1950 @@
+{
+  "workspace_id": "68e16519-dac1-4e28-8762-615528a71180",
+  "started_at": "2026-09-14T00:24:37.052Z",
+  "cutoff": "2026-09-14T00:20:20.555Z",
+  "consistent_snapshot": false,
+  "production_import_allowed": false,
+  "contains_binary_media": false,
+  "purpose": "isolated-rehearsal",
+  "tables": {
+    "appointment_event_history": {
+      "count": 44,
+      "sha256": "79d58256ce17e01159b82bdbab392fd1a6cccdb546dc7d52c108209a11127cd2",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "appointment_id",
+        "event_type",
+        "actor_type",
+        "actor_id",
+        "metadata",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "appointment_no_show_predictions": {
+      "count": 30,
+      "sha256": "50ccad91a80c1d52ab73b1701c40cb42d41fbd4f7e4361a364dc7817b29b404d",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "appointment_id",
+        "contact_id",
+        "conversation_id",
+        "deal_id",
+        "prediction_score",
+        "prediction_level",
+        "confidence",
+        "reasons",
+        "recommended_actions",
+        "model_version",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "appointment_types": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "description",
+        "duration_minutes",
+        "location_type",
+        "assigned_role",
+        "assigned_team",
+        "buffer_before_minutes",
+        "buffer_after_minutes",
+        "max_daily_bookings",
+        "requires_confirmation",
+        "auto_stage_change",
+        "is_active",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "appointments": {
+      "count": 30,
+      "sha256": "1435e59e0bbc36f0218e750a9c4d353e2fa99a09969016dbf53776bcef356817",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "conversation_id",
+        "deal_id",
+        "owner_id",
+        "assigned_user_id",
+        "title",
+        "description",
+        "appointment_type_id",
+        "scheduled_start",
+        "scheduled_end",
+        "status",
+        "location_type",
+        "location_data",
+        "meeting_link",
+        "created_at",
+        "updated_at",
+        "confirmation_status",
+        "confirmed_at",
+        "confirmation_source"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "billing_audit_log": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "action",
+        "details",
+        "ip_address",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "calendar_blocks": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "start_time",
+        "end_time",
+        "reason",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "channel_routing_rules": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "channel_id",
+        "routing_type",
+        "target_member_id",
+        "target_team_id",
+        "is_active",
+        "last_assigned_index",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "companies": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "domain",
+        "industry",
+        "size",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "contact_identities": {
+      "count": 2476,
+      "sha256": "c5eb0055b5e2642674ecfe073325e620c69887bfeebf5b21fd80c84f67210bb7",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "type",
+        "external_id",
+        "value",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "normalized_value",
+        "is_primary",
+        "provider"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "contacts": {
+      "count": 3113,
+      "sha256": "591f19b0010826e94388acb653b3050e1a3d0412cfd71de082ab812280683cfd",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "email",
+        "phone",
+        "company_id",
+        "avatar_url",
+        "created_at",
+        "updated_at",
+        "preferred_language",
+        "source",
+        "metadata",
+        "merged_into_id",
+        "deleted_at",
+        "phone_e164",
+        "phone_match_key",
+        "email_norm"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_alerts": {
+      "count": 106,
+      "sha256": "7b68280ac6c13cedba2d9e9d01427e734a1ad9429fe01a609eaefbe153c2e368",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "contact_id",
+        "deal_id",
+        "alert_type",
+        "severity",
+        "title",
+        "description",
+        "is_resolved",
+        "created_at",
+        "resolved_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_analyses": {
+      "count": 53,
+      "sha256": "476b46c3141d032dbdf7125bf0b489cc375b578402d301d5d9f260e503ecb404",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "last_message_id",
+        "customer_messages_count",
+        "summary",
+        "suggested_replies",
+        "next_action",
+        "signals",
+        "created_at",
+        "analysis_trigger",
+        "customer_intent",
+        "intent_confidence",
+        "suggested_tags",
+        "followup_recommended",
+        "followup_delay_minutes",
+        "lead_score",
+        "qualification_reason",
+        "qualification_factors",
+        "suggested_deal_action",
+        "suggested_deal_stage",
+        "deal_creation_recommended",
+        "memory_candidates",
+        "enrichment_candidates",
+        "alert_candidates",
+        "objection_candidates",
+        "matched_playbook_id",
+        "sentiment",
+        "sentiment_score",
+        "sentiment_reason",
+        "conversation_summary",
+        "coaching_suggestions",
+        "conversation_quality_score",
+        "quality_feedback"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_briefings": {
+      "count": 2,
+      "sha256": "f266fda090669a780364b17d20c9df7f20fe4962f5080c071e8c353e2eead204",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "generated_at",
+        "period_label",
+        "markdown",
+        "highlights",
+        "data_snapshot",
+        "generated_by",
+        "model_used",
+        "tokens_in",
+        "tokens_out",
+        "created_by"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_ai_chat_messages": {
+      "count": 25,
+      "sha256": "59774e8f94c9f7908676e8ba5a0d2ff39fdc53bf9b9da74837440e99795de5ba",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "thread_id",
+        "workspace_id",
+        "user_id",
+        "role",
+        "content",
+        "tool_name",
+        "tool_input",
+        "tool_output",
+        "tool_use_id",
+        "model",
+        "tokens_in",
+        "tokens_out",
+        "stop_reason",
+        "latency_ms",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_chat_threads": {
+      "count": 2,
+      "sha256": "e3340c7e02ca9b6c857ca3e5bfcb89c9ff4d0bbb8356f9a6cbd3a3ac683297da",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "title",
+        "created_at",
+        "last_message_at",
+        "archived"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_chat_usage": {
+      "count": 1,
+      "sha256": "29b6206663187a405b40adca8dec562435c5b3088005a4291995f5e1368b199f",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "month_key",
+        "messages_count",
+        "tokens_in_total",
+        "tokens_out_total",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_ai_knowledge_base": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "content",
+        "content_type",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_memory": {
+      "count": 148,
+      "sha256": "5bdde0cabe49e409a0ac5e9710832437b753ad0ed5838438015b6b88ca445f40",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "memory_type",
+        "content",
+        "source_analysis_id",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_playbooks": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "trigger_signals",
+        "recommended_actions",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_ai_suggestion_events": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "analysis_id",
+        "agent_id",
+        "suggestion_text",
+        "event_type",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_automation_rules": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "is_enabled",
+        "trigger_type",
+        "conditions",
+        "actions",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_automation_runs": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "rule_id",
+        "conversation_id",
+        "contact_id",
+        "deal_id",
+        "status",
+        "result",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_channel_events": {
+      "count": 49762,
+      "sha256": "6577f9080bef0d566b6d43d26a3a75b647cf067b59e1a4e837f61e2761d4069a",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "channel_id",
+        "event_type",
+        "status",
+        "conversation_id",
+        "message_id",
+        "payload",
+        "error_message",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_channels": {
+      "count": 6,
+      "sha256": "72d44ae1107713ec2a40cccb3088a27e862a181b9cada48b04f6337d1eb59418",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "channel_type",
+        "provider",
+        "status",
+        "config",
+        "external_identifier",
+        "is_default",
+        "created_at",
+        "updated_at",
+        "phone_number",
+        "color"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_contact_consents": {
+      "count": 83,
+      "sha256": "36155379c1ab2e96ed6540072257caa74275e19953c28220896f53270479e24d",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "contact_id",
+        "workspace_id",
+        "basis",
+        "captured_at",
+        "source",
+        "proof_url",
+        "revoked_at",
+        "expires_at",
+        "created_by",
+        "metadata"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_contact_enrichment": {
+      "count": 2,
+      "sha256": "73a49948b2b6887cb8d17d4206f66216d2a3a828c01a6c56a6174d7ff220ae7e",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "field_name",
+        "field_value",
+        "source",
+        "confidence",
+        "is_applied",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_contact_import_jobs": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "created_by",
+        "source_type",
+        "file_name",
+        "status",
+        "total_rows",
+        "imported_rows",
+        "skipped_rows",
+        "failed_rows",
+        "mapping",
+        "errors",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_contact_merge_logs": {
+      "count": 23,
+      "sha256": "3aa638a9ac0966c77d5a4ced3925b93e8ca299ee8d03c37057fe39625aaeb035",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "primary_contact_id",
+        "merged_contact_id",
+        "merged_by",
+        "merge_summary",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_contact_products": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "contact_id",
+        "product_id",
+        "workspace_id",
+        "interest_level",
+        "linked_by",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_conversation_assignment_history": {
+      "count": 1436,
+      "sha256": "f4de99e9ea031f6641d0c5f8c353754dac13d010b09e871b0b47c9cd42a92cc0",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "from_user_id",
+        "to_user_id",
+        "changed_by",
+        "change_type",
+        "note",
+        "created_at",
+        "to_team_id"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_conversation_participants": {
+      "count": 136,
+      "sha256": "2ea99a3b22d07c907da9b62c471723e431669192711a8708056b543cb6bc7822",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "user_id",
+        "role_in_conversation",
+        "created_by",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_conversation_status_log": {
+      "count": 2454,
+      "sha256": "59a6fa0ab0c3a097ddad9154a1ef41a7fed6ca7fd008444a2ddb6a861a3c7b9b",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "conversation_id",
+        "workspace_id",
+        "changed_by",
+        "old_status",
+        "new_status",
+        "source",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_conversations": {
+      "count": 3254,
+      "sha256": "ccca5df4f2447fbf618e97f0c913e7db4a1260d18d533c8dbe687288814406d7",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "channel",
+        "status",
+        "assigned_agent_id",
+        "subject",
+        "created_at",
+        "updated_at",
+        "last_customer_message_at",
+        "last_agent_message_at",
+        "next_followup_at",
+        "lead_temperature",
+        "customer_language",
+        "customer_language_confidence",
+        "translation_enabled",
+        "channel_id",
+        "external_thread_id",
+        "merged_from_conversation_id",
+        "assigned_team_id",
+        "jid_aliases",
+        "ai_enabled"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_deal_ai_insights": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "latest_analysis_id",
+        "key_signals",
+        "risks",
+        "opportunities",
+        "recommended_action",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_deal_forecasts": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "forecast_probability",
+        "forecast_value",
+        "inputs",
+        "calculated_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_deal_risk_signals": {
+      "count": 3,
+      "sha256": "07977aff54db6899deff5be52dcdaa4d6eef77f5b363c76dce2f0248ce03168d",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "conversation_id",
+        "risk_type",
+        "risk_level",
+        "reason",
+        "detected_by",
+        "created_at",
+        "resolved_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_deal_stage_history": {
+      "count": 98,
+      "sha256": "18e77a86d8595c4f663c7d97e317649002b6cb36436783ddb79ac2ac205bea72",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "pipeline_id",
+        "from_stage_id",
+        "to_stage_id",
+        "changed_by",
+        "entered_at",
+        "exited_at",
+        "duration_seconds",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_duplicate_suggestions": {
+      "count": 31,
+      "sha256": "830af6e2da466b0603cc1b5033b17cda4e22ae372ef12dd463bd79085c0214c7",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_a_id",
+        "contact_b_id",
+        "match_type",
+        "confidence_score",
+        "status",
+        "detected_at",
+        "resolved_at",
+        "resolved_by"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_files": {
+      "count": 1084,
+      "sha256": "4f6ad20ab41f488fac3fa12268f905987c8a7949d380ac7ef87e459325e450c0",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "uploaded_by",
+        "file_name",
+        "file_type",
+        "file_size",
+        "storage_path",
+        "file_url",
+        "contact_id",
+        "conversation_id",
+        "deal_id",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_message_translations": {
+      "count": 19,
+      "sha256": "fe53c0eba785c10018692de61d09280ee15c039591b69c302e9b88b7928c978a",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "message_id",
+        "source_language",
+        "target_language",
+        "translation_type",
+        "translated_text",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_messages": {
+      "count": 60444,
+      "sha256": "41badd395397193538c653b7f2a8a4dfbaf11903fb5841754d545e4df61cc6d7",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "direction",
+        "content",
+        "attachments",
+        "channel",
+        "external_message_id",
+        "delivery_status",
+        "sender_id",
+        "created_at",
+        "updated_at",
+        "channel_id",
+        "sender_external_id",
+        "raw_payload",
+        "transcription",
+        "client_temp_id",
+        "error_message"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_notes": {
+      "count": 108,
+      "sha256": "2a0493699f176825fb4da4550bb64167fda44037a7f627df853c2bfb31494ca1",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "content",
+        "contact_id",
+        "deal_id",
+        "conversation_id",
+        "author_id",
+        "created_at",
+        "updated_at",
+        "note_type",
+        "visibility_scope"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_objection_events": {
+      "count": 41,
+      "sha256": "b0432efe1205a156285df84e9c78952ffdfe6235565e97be6fb7740535d7d427",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "objection_type",
+        "detected_at",
+        "confidence",
+        "analysis_id"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_pipeline_handoff_rules": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "source_pipeline_id",
+        "source_stage_semantic_type",
+        "target_pipeline_id",
+        "target_default_stage_id",
+        "action_type",
+        "default_owner_role",
+        "is_active",
+        "created_at",
+        "notify_parent_on_close",
+        "notify_parent_statuses"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_pipeline_permissions": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "pipeline_id",
+        "role",
+        "team_id",
+        "user_id",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_pipeline_stage_webhooks": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "pipeline_id",
+        "stage_id",
+        "name",
+        "url",
+        "method",
+        "headers",
+        "payload_template",
+        "trigger_on",
+        "include_deal_data",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_pipeline_webhook_logs": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "webhook_id",
+        "deal_id",
+        "status_code",
+        "response_body",
+        "error_message",
+        "executed_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_process_handoffs": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "conversation_id",
+        "from_deal_id",
+        "to_deal_id",
+        "from_pipeline_id",
+        "to_pipeline_id",
+        "triggered_by",
+        "trigger_type",
+        "note",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_product_catalog_config": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "catalog_label",
+        "fields",
+        "currency",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_products": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "description",
+        "sku",
+        "price",
+        "currency",
+        "category",
+        "brand",
+        "model",
+        "year",
+        "mileage",
+        "body_type",
+        "color",
+        "status",
+        "metadata",
+        "listing_url",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_revenue_forecasts": {
+      "count": 5,
+      "sha256": "75ad7247b501033d472c327f522d40156cc4f00d0cb8a5093caed5ac9dbe04cc",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "forecast_probability",
+        "forecast_value",
+        "calculated_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "crm_saved_replies": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "category",
+        "language",
+        "content",
+        "is_active",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_tags": {
+      "count": 7,
+      "sha256": "63e7414d5e130281da612e50d7bb01bd84595ddf2c692124386fe01a9a4b639e",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "color",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_tasks": {
+      "count": 1607,
+      "sha256": "702bf95dac0eb2031fe316161264d556c08698d14afc529d5bc8897385540c4b",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "description",
+        "status",
+        "due_at",
+        "assignee_id",
+        "contact_id",
+        "deal_id",
+        "conversation_id",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "deals": {
+      "count": 5,
+      "sha256": "4bf6248ccad4c40d18eb4527c9a0931cacb059acc9ac21254880c5c21fcc560f",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "value",
+        "stage_id",
+        "contact_id",
+        "company_id",
+        "created_at",
+        "updated_at",
+        "owner_id",
+        "conversation_id",
+        "parent_deal_id",
+        "origin_deal_id",
+        "origin_type",
+        "linked_process_type",
+        "health_score",
+        "health_status",
+        "health_updated_at",
+        "cancelled_at",
+        "cancelled_by",
+        "cancel_reason"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "followup_job_workspace_runs": {
+      "count": 4449,
+      "sha256": "afe0ef54e50ca7744b62cfadd603a4ae3608e470eb1badf1e7dc6a0d188fda6d",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "ran_at",
+        "workspace_id",
+        "tasks_created"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "internal_conversations": {
+      "count": 1,
+      "sha256": "cdc1f7f56c3ed880ff96bcca734513c868b972bac904a2d526cc281438c8a5c6",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "type",
+        "title",
+        "avatar_url",
+        "created_by",
+        "created_at",
+        "updated_at",
+        "last_message_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "internal_messages": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "sender_id",
+        "type",
+        "text_content",
+        "created_at",
+        "deleted_at",
+        "reply_to_message_id",
+        "forwarded_from_message_id",
+        "forwarded_from_conversation_id",
+        "edited_at",
+        "original_text_backup",
+        "deleted_by",
+        "text_search"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "knowledge_embeddings": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "content",
+        "embedding",
+        "metadata",
+        "source_type",
+        "source_id",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "mcp_agent_tokens": {
+      "count": 1,
+      "sha256": "c4c6e2f11a24647fe1e9f4402932e995f0759bdce950f0bea85bd644d16bbbd1",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "token_hash",
+        "workspace_id",
+        "agent_name",
+        "created_at",
+        "last_used_at",
+        "revoked_at",
+        "created_by"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "mcp_audit_log": {
+      "count": 6,
+      "sha256": "c5cbda02a2abb04972efe0188bad174bc0389fb95ddaca1ee4d3b1ed20614aaa",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "token_id",
+        "tool_name",
+        "workspace_id",
+        "success",
+        "error_message",
+        "duration_ms",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "pipeline_stages": {
+      "count": 6,
+      "sha256": "eaff96e7cd626c6f90b7ff084a8dc8c31c51100a3f63b6542935663668e4b262",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "pipeline_id",
+        "name",
+        "position",
+        "created_at",
+        "updated_at",
+        "stage_semantic_type",
+        "is_closed_stage",
+        "stage_color",
+        "probability",
+        "is_default_start_stage"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "pipelines": {
+      "count": 1,
+      "sha256": "80a765f7c8fa20e980fd54886711c64f51c3d3e62a1bafd7ef17af7c6d92c134",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "created_at",
+        "updated_at",
+        "description",
+        "pipeline_type",
+        "is_active",
+        "created_by"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "platform_notifications": {
+      "count": 5,
+      "sha256": "2c606653abd740c28ac105af0cc0c9ed18e6cc628e69002435143b26753d5ba4",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "type",
+        "title",
+        "body",
+        "read_at",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "reseller_clients": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "reseller_id",
+        "workspace_id",
+        "source",
+        "status",
+        "churned_at",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "reseller_commissions": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "reseller_id",
+        "workspace_id",
+        "payout_id",
+        "period_start",
+        "period_end",
+        "workspace_mrr",
+        "commission_pct",
+        "commission_amount",
+        "currency",
+        "status",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "user_availability": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "day_of_week",
+        "start_time",
+        "end_time",
+        "timezone",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "webhook_tokens": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "source",
+        "token_hash",
+        "label",
+        "created_by",
+        "created_at",
+        "last_used_at",
+        "revoked_at",
+        "field_mapping",
+        "pipeline_id"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "whatsapp_session_status_log": {
+      "count": 3249,
+      "sha256": "654c59af6b4a3c81a7bb50208575d75725010f9074fa4092cb75dd7a914085de",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "session_id",
+        "workspace_id",
+        "session_name",
+        "previous_status",
+        "new_status",
+        "waha_status",
+        "source",
+        "error_message",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "whatsapp_sessions": {
+      "count": 4,
+      "sha256": "100f30d82348acace18fd4cd0546425f35af6f2278b87882ff881442ff8b1799",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "channel_id",
+        "session_name",
+        "status",
+        "phone_number",
+        "phone_name",
+        "qr_code",
+        "qr_expires_at",
+        "connected_at",
+        "disconnected_at",
+        "last_seen_at",
+        "error_message",
+        "webhook_configured",
+        "proxy_server",
+        "proxy_username",
+        "proxy_password",
+        "proxy_country",
+        "created_at",
+        "updated_at",
+        "history_synced_at",
+        "history_sync_started_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_access_audit_logs": {
+      "count": 5,
+      "sha256": "424bbd11a99fdabb749e6b79166a07860f8a1b6051e3b0f5e95b527ccbb5a72b",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "actor_user_id",
+        "target_user_id",
+        "action_type",
+        "old_value",
+        "new_value",
+        "metadata",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_hub_configs": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "workspace_id",
+        "subaccount_id",
+        "subaccount_slug",
+        "webhook_sub_id",
+        "secret_ciphertext",
+        "secret_iv",
+        "secret_auth_tag",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_invitations": {
+      "count": 2,
+      "sha256": "157f9940c53ac9f253f010c34da639c6f16856db41b5b2a0b2f9223b0bda5fb0",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "email",
+        "team_id",
+        "invited_by",
+        "invitation_code",
+        "status",
+        "expires_at",
+        "created_at",
+        "role_id"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_member_channel_restrictions": {
+      "count": 1,
+      "sha256": "468c4592bfce030a0ebe239b42abfcf1ae0be5aa635e8e582b540fd01979bb67",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "member_id",
+        "channel_id",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_members": {
+      "count": 9,
+      "sha256": "2a7cef5e337bd6adc41dfc42f0bf6add6d19d5701729d6e903ea29bfce3e4ebd",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "user_id",
+        "workspace_id",
+        "created_at",
+        "updated_at",
+        "status",
+        "invited_by",
+        "joined_at",
+        "role_id"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_role_permissions": {
+      "count": 66,
+      "sha256": "b0cb1d78e2a1dca0eaf3d2e599b837b9e9c69c71f0487c39f324d11ce4b5c707",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "module_key",
+        "can_view",
+        "can_create",
+        "can_edit",
+        "can_delete",
+        "can_manage",
+        "created_at",
+        "updated_at",
+        "role_id"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_roles": {
+      "count": 3,
+      "sha256": "ad4c387680e9bb7e5bbf982760af7aeb79bba6c1676d068b2888947548baf59b",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "slug",
+        "is_system",
+        "is_default",
+        "position",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_stripe_configs": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "workspace_id",
+        "key_ciphertext",
+        "key_iv",
+        "key_auth_tag",
+        "key_last4",
+        "key_mode",
+        "last_sync_at",
+        "last_sync_count",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_subscriptions": {
+      "count": 1,
+      "sha256": "beaf2904613a375ff1920ae330d92522626acd716473be70d6c22c01a8adebfa",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "plan_id",
+        "billing_interval",
+        "stripe_customer_id",
+        "stripe_subscription_id",
+        "stripe_seat_item_id",
+        "stripe_channel_item_id",
+        "status",
+        "trial_ends_at",
+        "current_period_start",
+        "current_period_end",
+        "seat_quantity",
+        "extra_channel_quantity",
+        "pending_plan_id",
+        "pending_change_at",
+        "canceled_at",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "billing_waived",
+        "billing_waived_at",
+        "billing_waived_by",
+        "billing_waived_reason"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_team_members": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "team_id",
+        "user_id",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_teams": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "created_at",
+        "description",
+        "created_by",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspace_user_permissions": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "workspace_id",
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "module_key",
+        "can_view",
+        "can_create",
+        "can_edit",
+        "can_delete",
+        "can_manage",
+        "created_at",
+        "updated_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "workspaces": {
+      "count": 1,
+      "sha256": "a2ea368649490f0350f482671132368d6041cdab1a327c1d2755ed231781eb87",
+      "scope_column": "id",
+      "columns": [
+        "id",
+        "name",
+        "slug",
+        "settings",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "identity_org_id",
+        "engage_ai_enabled"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "profiles": {
+      "count": 9,
+      "sha256": "aad639e4473ee4858d3bf39123f4f45bd02a628d76b6737d94f7848c73635325",
+      "scope_column": "id",
+      "columns": [
+        "id",
+        "full_name",
+        "avatar_url",
+        "email",
+        "created_at",
+        "updated_at",
+        "native_language",
+        "timezone",
+        "job_title",
+        "phone",
+        "email_verified_at",
+        "country",
+        "currency",
+        "date_format"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_conversation_tags": {
+      "count": 27,
+      "sha256": "54fb66fb416c7fbfcbab98bc365afca62e6acbacc901c103d47bfa338458e559",
+      "scope_column": "conversation_id",
+      "columns": [
+        "id",
+        "conversation_id",
+        "tag_id",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_deal_conversations": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "deal_id",
+      "columns": [
+        "id",
+        "deal_id",
+        "conversation_id",
+        "attribution_type",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_deal_products": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "deal_id",
+      "columns": [
+        "id",
+        "deal_id",
+        "product_id",
+        "linked_by",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_product_images": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "product_id",
+      "columns": [
+        "id",
+        "product_id",
+        "url",
+        "sort_order",
+        "is_primary",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "crm_contact_import_rows": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "import_job_id",
+      "columns": [
+        "id",
+        "import_job_id",
+        "raw_data",
+        "normalized_data",
+        "status",
+        "error_message",
+        "created_contact_id",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "appointment_reminders": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "appointment_id",
+      "columns": [
+        "id",
+        "appointment_id",
+        "channel",
+        "send_before_minutes",
+        "sent_at",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "internal_conversation_participants": {
+      "count": 2,
+      "sha256": "d7d15728902f1992a6eb429e479976a746e19d764a4cda988bd789453e430e74",
+      "scope_column": "conversation_id",
+      "columns": [
+        "id",
+        "conversation_id",
+        "user_id",
+        "role",
+        "joined_at",
+        "last_read_message_id",
+        "last_read_at",
+        "muted_until"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "internal_conversation_pins": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "conversation_id",
+      "columns": [
+        "id",
+        "conversation_id",
+        "message_id",
+        "pinned_by",
+        "pinned_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "internal_message_attachments": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "message_id",
+      "columns": [
+        "id",
+        "message_id",
+        "file_key",
+        "file_name",
+        "file_url",
+        "mime_type",
+        "size_bytes",
+        "duration_seconds",
+        "width",
+        "height"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "internal_message_mentions": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "message_id",
+      "columns": [
+        "id",
+        "message_id",
+        "mentioned_user_id"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "internal_message_reactions": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "message_id",
+      "columns": [
+        "id",
+        "message_id",
+        "user_id",
+        "emoji",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "internal_message_edit_log": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "message_id",
+      "columns": [
+        "id",
+        "message_id",
+        "previous_content",
+        "edited_by",
+        "edited_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "internal_message_delete_log": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope_column": "message_id",
+      "columns": [
+        "id",
+        "message_id",
+        "previous_content",
+        "deleted_by",
+        "deleted_at"
+      ],
+      "created_at_cutoff_applied": false
+    },
+    "admin_audit_log": {
+      "count": 1,
+      "sha256": "b7a879dfa6c607ea4d42e5a8a602baeb2863e95e6581001575d59b67646270d1",
+      "scope_column": "target_workspace_id",
+      "columns": [
+        "id",
+        "admin_user_id",
+        "action",
+        "target_workspace_id",
+        "details",
+        "ip_address",
+        "created_at"
+      ],
+      "created_at_cutoff_applied": true
+    },
+    "plans": {
+      "count": 1,
+      "sha256": "4b8fb221cf1a1fa8474b117d0ad77854caa3f533c069a1970a73ab11e9b00396",
+      "scope_column": "id",
+      "columns": [
+        "id",
+        "name",
+        "display_name",
+        "sort_order",
+        "price_per_seat_monthly",
+        "price_per_extra_channel_monthly",
+        "included_channels",
+        "annual_discount_pct",
+        "trial_days",
+        "stripe_price_seat_monthly_id",
+        "stripe_price_seat_yearly_id",
+        "stripe_price_channel_monthly_id",
+        "stripe_price_channel_yearly_id",
+        "features",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "ai_chat_enabled",
+        "ai_chat_monthly_limit",
+        "currency",
+        "base_price_monthly"
+      ],
+      "created_at_cutoff_applied": true
+    }
+  },
+  "omitted_credentials": {
+    "crm_channel_events": {
+      "payload.payload._data.Message.messageContextInfo.messageSecret": 25779,
+      "payload.payload._data.RawMessage.messageContextInfo.messageSecret": 25779,
+      "payload.payload._data.RawMessage.ephemeralMessage.message.messageContextInfo.messageSecret": 158,
+      "payload.payload._data.Message.secretEncryptedMessage": 1,
+      "payload.payload._data.RawMessage.secretEncryptedMessage": 1,
+      "payload.payload._data.SourceWebMsg.message.messageContextInfo.messageSecret": 407,
+      "payload.payload._data.SourceWebMsg.messageSecret": 407,
+      "payload.payload._data.RawMessage.deviceSentMessage.message.messageContextInfo.messageSecret": 82,
+      "payload.payload._data.RawMessage.documentWithCaptionMessage.message.messageContextInfo.messageSecret": 4
+    },
+    "crm_channels": {
+      "config.app_secret": 2,
+      "config.access_token": 1,
+      "config.verify_token": 2,
+      "config.page_access_token": 2,
+      "config.api_key": 2,
+      "config.webhook_token": 4
+    },
+    "crm_files": {
+      "file_url.url_query": 1083
+    },
+    "crm_messages": {
+      "attachments[].url.url_query": 8136,
+      "raw_payload.payload._data.Message.messageContextInfo.messageSecret": 5818,
+      "raw_payload.payload._data.RawMessage.messageContextInfo.messageSecret": 5818,
+      "raw_payload.payload._data.RawMessage.deviceSentMessage.message.messageContextInfo.messageSecret": 375,
+      "raw_payload.entry[].messaging[].message.reply_to.story.url.url_query": 457,
+      "raw_payload.entry[].messaging[].message.attachments[].payload.url.url_query": 471,
+      "raw_payload.payload._data.SourceWebMsg.message.messageContextInfo.messageSecret": 3,
+      "raw_payload.payload._data.SourceWebMsg.messageSecret": 3,
+      "raw_payload._data.Message.messageContextInfo.messageSecret": 18,
+      "raw_payload._data.RawMessage.messageContextInfo.messageSecret": 18,
+      "raw_payload._data.SourceWebMsg.message.messageContextInfo.messageSecret": 15,
+      "raw_payload._data.SourceWebMsg.messageSecret": 15,
+      "content.url_credentials": 2,
+      "raw_payload._data.RawMessage.deviceSentMessage.message.messageContextInfo.messageSecret": 2,
+      "raw_payload.payload._data.Message.orderMessage.token": 1,
+      "raw_payload.payload._data.RawMessage.orderMessage.token": 1
+    },
+    "mcp_agent_tokens": {
+      "token_hash": 1
+    },
+    "whatsapp_sessions": {
+      "proxy_password": 4
+    }
+  },
+  "excluded_global_tables": [
+    {
+      "table": "platform_admins",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "role_templates",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "whitelabel_domain_requests",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "followup_job_runs",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "reseller_price_overrides",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "platform_resellers",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "admin_announcements",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "reseller_payouts",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "wallet_consents",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "admin_mrr_snapshots",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "reseller_applications",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "password_reset_tokens",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "stripe_webhook_events",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "reseller_audit_log",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "identity_user_links",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "llm_provider_configs",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "email_verification_codes",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    },
+    {
+      "table": "followup_job_locks",
+      "reason": "Tabela global, credencial ou operação de plataforma sem propriedade comprovada do workspace; não extraída."
+    }
+  ],
+  "comparison": {
+    "same_cutoff": true,
+    "differences": [
+      {
+        "table": "crm_conversations",
+        "before": 3254,
+        "after": 3254
+      }
+    ],
+    "equal": false,
+    "meaning": "Duas leituras equivalentes não provam snapshot transacional nem substituem delta final."
+  },
+  "completed_at": "2026-09-14T00:28:17.481Z"
+}

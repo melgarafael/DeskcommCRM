@@ -3,6 +3,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { CanaisSociaisClient } from "./CanaisSociaisClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
 import { CanalVozClient } from "./CanalVozClient";
@@ -46,7 +47,7 @@ export function ConexoesShell({
   const params = useSearchParams();
   const abaParam = params.get("aba");
   const aba =
-    abaParam === "oficial"
+    abaParam === "sociais" ? "sociais" : abaParam === "oficial"
       ? "oficial"
       : abaParam === "parceiro"
         ? "parceiro"
@@ -85,9 +86,11 @@ export function ConexoesShell({
             porque no dia em que houver um segundo parceiro esta aba não muda.
             Aqui fica o CONCEITO; lá dentro o cartão diz de quem se trata. */}
         <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
+        <TabsTrigger value="sociais">{t("Instagram e Facebook")}</TabsTrigger>
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
       </TabsList>
 
+      <TabsContent value="sociais" className="mt-0"><CanaisSociaisClient /></TabsContent>
       <TabsContent value="numeros" className="mt-0">
         <ConnectionsClient wahaConfigured={wahaConfigured} />
       </TabsContent>

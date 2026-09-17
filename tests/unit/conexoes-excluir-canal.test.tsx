@@ -24,7 +24,8 @@ const deleteMock = vi.fn();
 const postMock = vi.fn();
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
-    get: (...a: unknown[]) => getMock(...a),
+    get: (...a: unknown[]) => a[0] === "/api/v1/channel-sessions/proxies"
+      ? Promise.resolve({ data: { enabled: false, required: false, proxies: [], bindings: [] } }) : getMock(...a),
     post: (...a: unknown[]) => postMock(...a),
     delete: (...a: unknown[]) => deleteMock(...a),
   },
@@ -309,6 +310,7 @@ describe("copiar detalhes de conexão no self-host HTTP", () => {
     vi.stubGlobal("navigator", {});
     document.execCommand = vi.fn().mockReturnValue(copied);
     render(wrap(<ConnectionsClient wahaConfigured />));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Conectar novo WhatsApp" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Conectar novo WhatsApp" }));
     const details = await screen.findByText(/request-owned/);
     fireEvent.click(screen.getByText("Detalhes para suporte"));

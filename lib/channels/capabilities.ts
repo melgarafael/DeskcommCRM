@@ -18,6 +18,7 @@ export type { ChannelProvider, ChannelCapabilities, ProviderDeMensagem };
  * `capabilitiesOf` segue falhando fechado para quem não está aqui.
  */
 export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilities> = {
+  socios_hub: { freeformOutsideWindow: false, requiresTemplates: false, canManageTemplates: false, banRisk: false, minIntervalMs: null, voiceNote: "opus-only", groups: "none", costPerMessage: false },
   // Auto-restrição: falo quando quiser, mas o WhatsApp me bane se eu abusar.
   waha: {
     freeformOutsideWindow: true,
@@ -116,6 +117,7 @@ export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
  * precisa ser DECIDIDO aqui, não esquecido.
  */
 export const PROVIDERS_DE_MENSAGEM = [
+  "socios_hub",
   "waha",
   "meta_cloud",
   "zernio",
@@ -153,7 +155,12 @@ export function transportaMensagem(provider: string | null | undefined): boolean
  * hora de escolher por onde mandar recado, o desconhecido é tão inútil quanto a
  * voz. Aqui a pergunta é outra.
  */
-export const PROVIDERS_SEM_MENSAGEM = ["wacalls"] as const;
+export const PROVIDERS_SEM_MENSAGEM = ["wacalls", "historical"] as const;
+
+/** Histórico preservado sem uma conexão ativa ou credencial de transporte. */
+export function canalSomenteHistorico(provider: string | null | undefined): boolean {
+  return provider === "historical";
+}
 
 /**
  * Erro de COMPILAÇÃO enquanto sobrar provider fora das duas listas. Provider

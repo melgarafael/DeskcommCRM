@@ -140,6 +140,9 @@ export {
   CalendarX,
   CalendarCheck,
   GoogleLogo,
+  InstagramLogo,
+  MessengerLogo,
+  WhatsappLogo,
   MapPin,
   ArrowsOutSimple,
 } from "@phosphor-icons/react/dist/ssr";

@@ -610,7 +610,7 @@ export const messagingWindowGate: Gate = {
 
     // Template é a saída legítima fora da janela — é o que a `reason` do veto
     // manda usar. Vetá-lo aqui fecharia a única porta que este gate abre.
-    if (ctx.messagingWindow?.isTemplate === true) return { pass: true };
+    if (ctx.messagingWindow?.isTemplate === true && caps.requiresTemplates) return { pass: true };
 
     if (isWindowOpen(ctx.now, ctx.messagingWindow?.lastInboundAt ?? null)) return { pass: true };
 
@@ -619,7 +619,7 @@ export const messagingWindowGate: Gate = {
       code: 'messaging_window_closed',
       reason:
         'a janela de 24 horas com este contato fechou; o canal vai recusar texto livre. ' +
-        'Use um template aprovado (ferramenta send_template) ou encerre o turno sem enviar.',
+        (caps.requiresTemplates ? 'Use um template aprovado (ferramenta send_template) ou encerre o turno sem enviar.' : 'Aguarde uma nova mensagem do cliente; este canal não aceita templates.'),
     };
   },
 };

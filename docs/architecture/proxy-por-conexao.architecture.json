@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Proxy por conexão",
+    "subtitle": "Transporte externo sem credenciais no navegador",
+    "output": "proxy-por-conexao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "operacao",
+      "label": "operacao"
+    },
+    {
+      "id": "crm",
+      "label": "crm"
+    },
+    {
+      "id": "externo",
+      "label": "externo"
+    },
+    {
+      "id": "persistencia",
+      "label": "persistencia"
+    }
+  ],
+  "mainPath": [
+    "ui",
+    "api",
+    "binding",
+    "transport",
+    "hook",
+    "inbox"
+  ],
+  "nodes": [
+    {
+      "id": "ui",
+      "lane": "operacao",
+      "col": 1,
+      "type": "frontend",
+      "label": "Conexões / ProxyPicker / onboarding"
+    },
+    {
+      "id": "api",
+      "lane": "crm",
+      "col": 2,
+      "type": "route",
+      "label": "API administrativa / reserva idempotente"
+    },
+    {
+      "id": "pool",
+      "lane": "externo",
+      "col": 3,
+      "type": "service",
+      "label": "Webshare / credenciais somente no backend"
+    },
+    {
+      "id": "binding",
+      "lane": "persistencia",
+      "col": 4,
+      "type": "database",
+      "label": "channel_proxy_bindings / RLS / exclusividade"
+    },
+    {
+      "id": "transport",
+      "lane": "externo",
+      "col": 5,
+      "type": "service",
+      "label": "Sessão WAHA / proxy / identidade / webhook"
+    },
+    {
+      "id": "hook",
+      "lane": "crm",
+      "col": 6,
+      "type": "route",
+      "label": "Token de canal + HMAC / eventos"
+    },
+    {
+      "id": "inbox",
+      "lane": "operacao",
+      "col": 7,
+      "type": "frontend",
+      "label": "Inbox / IA e humano / estado do canal"
+    },
+    {
+      "id": "audit",
+      "lane": "persistencia",
+      "col": 8,
+      "type": "database",
+      "label": "Auditoria da seleção e reconexão"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "ui",
+      "to": "api",
+      "label": "seleção explícita"
+    },
+    {
+      "id": "e1",
+      "from": "pool",
+      "to": "api",
+      "label": "proxies válidos"
+    },
+    {
+      "id": "e2",
+      "from": "transport",
+      "to": "api",
+      "label": "ocupação remota"
+    },
+    {
+      "id": "e3",
+      "from": "api",
+      "to": "binding",
+      "label": "reserva atômica"
+    },
+    {
+      "id": "e4",
+      "from": "binding",
+      "to": "api",
+      "label": "reuso em reconexão"
+    },
+    {
+      "id": "e5",
+      "from": "api",
+      "to": "transport",
+      "label": "cria parada, confirma e inicia"
+    },
+    {
+      "id": "e6",
+      "from": "transport",
+      "to": "hook",
+      "label": "eventos assinados"
+    },
+    {
+      "id": "e7",
+      "from": "hook",
+      "to": "inbox",
+      "label": "recepção e estado"
+    },
+    {
+      "id": "e8",
+      "from": "inbox",
+      "to": "transport",
+      "label": "envio pelo dispatcher existente"
+    },
+    {
+      "id": "e9",
+      "from": "api",
+      "to": "audit",
+      "label": "channel.proxy_selected"
+    },
+    {
+      "id": "e10",
+      "from": "audit",
+      "to": "ui",
+      "label": "atividades administrativas"
+    },
+    {
+      "id": "e11",
+      "from": "transport",
+      "to": "ui",
+      "label": "falha e nova tentativa"
+    }
+  ]
+}

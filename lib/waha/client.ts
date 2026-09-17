@@ -6,6 +6,7 @@
  * Auth: o contêiner recebe SHA512 hex; X-Api-Key recebe a chave plaintext.
  */
 import { z } from "zod";
+import type { ManagedSessionConfig } from "@/lib/channels/managed-session";
 import { describeWahaServer, type WahaServerCapabilities } from "@/lib/channels/waha-server";
 
 import { logger } from "@/lib/logger";
@@ -124,6 +125,9 @@ export const TETO_DE_MIDIA_MS = 30_000;
 export interface WahaClientOpts {
   /** Sobrescreve o teto padrão. Existe para o teste; produção usa o default. */
   tetoMs?: number;
+  engine?: "NOWEB" | "WEBJS" | "GOWS";
+  managed?: boolean;
+  proxyRequired?: boolean;
 }
 
 const sessionSnapshotSchema = z.object({
@@ -163,8 +167,16 @@ function knownSessionConflict(body: unknown, status: number, operation: SessionO
   return false;
 }
 
+/** O servidor pode acrescentar defaults aos objetos, sem mudar o contrato solicitado. */
+function containsConfiguration(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected)) return Array.isArray(actual) && actual.length === expected.length && expected.every((v, i) => containsConfiguration(actual[i], v));
+  if (expected && typeof expected === "object") return Boolean(actual && typeof actual === "object" && Object.entries(expected).every(([k, v]) => containsConfiguration((actual as Record<string, unknown>)[k], v)));
+  return actual === expected;
+}
+
 export class WahaClient {
   private readonly tetoMs: number;
+  private readonly options: WahaClientOpts;
 
   constructor(
     private readonly baseUrl: string,
@@ -172,6 +184,7 @@ export class WahaClient {
     opts: WahaClientOpts = {},
   ) {
     this.tetoMs = opts.tetoMs ?? TETO_PADRAO_MS;
+    this.options = opts;
   }
 
   /**
@@ -229,9 +242,9 @@ export class WahaClient {
     if (!session.config) return false;
     const engine = typeof session.engine === "string" ? session.engine : session.engine?.engine;
     const actualEngine = engine ?? (await this.getServerVersion()).engine;
-    // O contrato de criação atual é NOWEB. Engine desconhecido não é licença:
-    // a operação já foi tentada, mas não podemos confirmar uma sessão incompatível.
-    if (actualEngine !== "NOWEB") return false;
+    // Confirma a engine configurada nesta instalação (NOWEB por padrão).
+    // Engine desconhecida não autoriza continuar com uma sessão incompatível.
+    if (actualEngine !== (this.options.engine ?? "NOWEB")) return false;
     const ignore = session.config.ignore;
     if (ignore === undefined) return true; // sessão legada; convergência preserva webhooks
     if (!ignore || typeof ignore !== "object" || Array.isArray(ignore)) return false;
@@ -240,25 +253,63 @@ export class WahaClient {
   }
 
   /** Porta granular para a futura reserva: created nunca significa ownership. */
-  async createSession(name: string): Promise<{ created: boolean; session: WahaSessionSnapshot }> {
+  async createSession(name: string, managed?: ManagedSessionConfig): Promise<{ created: boolean; session: WahaSessionSnapshot }> {
+    // Rotinas automáticas só podem retomar uma sessão gerenciada já existente.
+    // Nunca recriam sem proxy/webhook uma sessão perdida no servidor externo.
+    if (this.options.managed && !managed) {
+      const existing = await this.getVerifiedSession(name);
+      const metadata = existing?.config?.metadata as Record<string, unknown> | undefined;
+      if (!existing || !metadata?.crm_channel_id || (this.options.proxyRequired && !existing.config?.proxy)
+        || !(await this.compatibleSession(existing))) throw new WahaSessionError("create", 409);
+      return { created: false, session: existing };
+    }
     const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions`, {
       method: "POST",
       headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ name, start: false, config: { ignore: CONVERSAS_IGNORADAS } }),
+      body: JSON.stringify({ name, start: false, config: { ...managed, ignore: CONVERSAS_IGNORADAS } }),
     });
     if (!res.ok && !knownSessionConflict(await res.json().catch(() => null), res.status, "create", name)) {
       throw new WahaSessionError("create", res.status);
     }
     // 404 não é conflito de create, mesmo que use envelope reconhecido.
     if (!res.ok && res.status !== 422) throw new WahaSessionError("create", res.status);
-    const session = await this.sessionAfter(name, "create", res.status);
+    let session = await this.sessionAfter(name, "create", res.status);
     if (!session || !(await this.compatibleSession(session))) throw new WahaSessionError("create", res.status);
+    if (managed) {
+      const metadata = session.config?.metadata as Record<string, unknown> | undefined;
+      if (metadata?.crm_channel_id !== managed.metadata.crm_channel_id || metadata?.crm_organization_id !== managed.metadata.crm_organization_id) {
+        throw new WahaSessionError("create", 409);
+      }
+      const matches = (snapshot: WahaSessionSnapshot) => containsConfiguration(snapshot.config, managed);
+      if (!matches(session)) {
+        if (!["STOPPED", "FAILED"].includes(session.status)) throw new WahaSessionError("create", 409);
+        const updated = await this.fetchComTeto(`${this.baseUrl}/api/sessions/${encodeURIComponent(name)}`, {
+          method: "PUT", headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ name, config: { ...session.config, ...managed, ignore: CONVERSAS_IGNORADAS } }),
+        });
+        if (!updated.ok) throw new WahaSessionError("create", updated.status);
+        session = await this.sessionAfter(name, "create", updated.status);
+        if (!session || !matches(session)) throw new WahaSessionError("create", 502);
+      }
+    }
     return { created: res.ok, session };
   }
 
+  /** Só devolve endereços em uso, sem credenciais nem configurações alheias. */
+  async getProxyOccupancy(excludeSession?: string): Promise<string[]> {
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/sessions?all=true`, { headers: { "X-Api-Key": this.apiKey } });
+    if (!res.ok) throw new WahaSessionError("create", res.status);
+    const sessions = z.array(sessionSnapshotSchema).safeParse(await res.json().catch(() => null));
+    if (!sessions.success) throw new WahaSessionError("create", 502);
+    return sessions.data.filter(s => s.name !== excludeSession).flatMap(s => {
+      const proxy = s.config?.proxy as { server?: unknown } | undefined;
+      return typeof proxy?.server === "string" ? [proxy.server.replace(/^.*@/, "").replace(/^https?:\/\//, "")] : [];
+    });
+  }
+
   /** Compatível com os callers: cria se necessário e inicia, confirmando GET. */
-  async startSession(name: string): Promise<{ qr?: string; status: string }> {
-    const creation = await this.createSession(name);
+  async startSession(name: string, managed?: ManagedSessionConfig): Promise<{ qr?: string; status: string }> {
+    const creation = await this.createSession(name, managed);
     const ignore = creation.session.config?.ignore;
     const filtersCurrent = ignore && typeof ignore === "object" && Object.entries(CONVERSAS_IGNORADAS)
       .every(([key, value]) => (ignore as Record<string, unknown>)[key] === value);
@@ -301,7 +352,7 @@ export class WahaClient {
     // me preenchido não provam descarte de credenciais. STARTING sem me é a
     // retomada do transporte após logout, não promessa de canal conectado.
     // https://waha.devlike.pro/docs/how-to/sessions/#logout-session
-    if (operation === "logout" && ["STOPPED", "STARTING", "SCAN_QR_CODE"].includes(session.status) && session.me === null) return;
+    if (operation === "logout" && ["STOPPED", "STARTING", "SCAN_QR_CODE"].includes(session.status) && (session.me === null || (this.options.engine === "GOWS" && session.status === "STOPPED" && session.me === undefined))) return;
     throw new WahaSessionError(operation, res.status);
   }
 
@@ -657,5 +708,9 @@ export function getWahaClient(): WahaClient | null {
   const url = process.env.WAHA_API_BASE_URL;
   const key = process.env.WAHA_API_KEY;
   if (!url || !key || key === "dev_plaintext_change_me") return null;
-  return new WahaClient(url, key);
+  return new WahaClient(url, key, {
+    engine: z.enum(["NOWEB", "WEBJS", "GOWS"]).parse(process.env.WAHA_ENGINE ?? "NOWEB"),
+    managed: process.env.WAHA_EXTERNAL === "true" || Boolean(process.env.WEBSHARE_API_KEY) || process.env.WHATSAPP_PROXY_REQUIRED === "true",
+    proxyRequired: process.env.WHATSAPP_PROXY_REQUIRED === "true",
+  });
 }

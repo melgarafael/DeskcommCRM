@@ -5,9 +5,10 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import type { Locale } from "date-fns";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { Phone, Robot } from "@/lib/ui/icons";
+import { Robot } from "@/lib/ui/icons";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { ChannelBadge } from "@/components/channels/ChannelBadge";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { comandoDaConversa } from "@/lib/inbox/comando-da-conversa";
 import { cn } from "@/lib/utils";
@@ -172,11 +173,13 @@ export function ConversationListItem({
     <button
       type="button"
       data-conversation-id={conversation.id}
+      // A seleção tem superfície branca: seus textos e selos usam os tokens claros.
+      data-theme={isSelected ? "light" : undefined}
       onClick={() => onSelect(conversation.id)}
       className={cn(
         "group relative flex w-full items-start gap-3 border-b border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-elevated",
         "focus-visible:outline-hidden focus-visible:bg-surface-elevated",
-        isSelected && "bg-accent-50 hover:bg-accent-50",
+        isSelected && "bg-surface hover:bg-surface focus-visible:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
       )}
       aria-current={isSelected ? "true" : undefined}
     >
@@ -269,14 +272,11 @@ export function ConversationListItem({
               <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
             )}
             {mostrarCanal && rotuloCanal && (
-              <Badge
-                variant="outline"
-                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-text-muted"
+              <ChannelBadge
+                channel={conversation.channel}
+                label={rotuloCanal}
                 title={`${t("Entrou por")} ${rotuloCanal}`}
-              >
-                <Phone size={9} weight="regular" aria-hidden />
-                {rotuloCanal}
-              </Badge>
+              />
             )}
             {c?.is_blocked && (
               <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">

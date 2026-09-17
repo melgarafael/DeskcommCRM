@@ -176,6 +176,11 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
       { n: 6, status: "closed", dono: null, sil: null, fh: false, ib: false },
       { n: 7, status: "pending", dono: null, sil: null, fh: false, ib: false },
       { n: 8, status: "resolved", dono: null, sil: null, fh: false, ib: false },
+      // A otimização do wrapper não pode inverter a precedência das travas.
+      { n: 9, status: "archived", dono: null, sil: "infinity", fh: true, ib: true },
+      { n: 10, status: "closed", dono: DONO, sil: null, fh: true, ib: true },
+      { n: 11, status: "open", dono: null, sil: "infinity", fh: true, ib: true },
+      { n: 12, status: "open", dono: null, sil: "2000-01-01T00:00:00Z", fh: true, ib: false },
     ];
 
     sql(`

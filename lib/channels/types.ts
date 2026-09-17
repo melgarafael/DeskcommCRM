@@ -9,7 +9,7 @@ import type { OutboundMedia } from "@/lib/waha/media-send";
 
 export type { OutboundMedia };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "wacalls";
+export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "wacalls" | "socios_hub" | "historical";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
@@ -26,7 +26,7 @@ export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "wacalls";
  * banco já aceitava `'wacalls'` enquanto este union não — e uma organização que
  * pareasse voz derrubava `getAdapter` com `unknown_channel_provider`.
  */
-export type ProviderDeMensagem = Exclude<ChannelProvider, "wacalls">;
+export type ProviderDeMensagem = Exclude<ChannelProvider, "wacalls" | "historical">;
 
 export interface ChannelCapabilities {
   /** Pode enviar texto livre a qualquer momento? false = exige template fora da janela. */
@@ -67,6 +67,7 @@ export type OutboundKind = SendMessageInput["type"];
 
 /** O que o CRM sabe sobre o destinatário. Quem traduz para o endereço do canal é o adapter. */
 export interface RecipientInput {
+  providerRecipientId?: string | null;
   isGroup: boolean;
   groupChatId: string | null;
   phoneNumber: string | null | undefined;
@@ -112,6 +113,7 @@ export interface ChannelTenantScope {
 }
 
 export interface OutboundEnvelope extends ChannelTenantScope {
+  idempotencyKey?: string;
   /** Callback interno: revalida a origem depois do preparo assíncrono e antes do transporte. */
   beforeSend?: () => Promise<void>;
   /** Identificador da sessão/número no provider (WAHA: nome da sessão). */
@@ -167,6 +169,8 @@ export interface OutboundEnvelope extends ChannelTenantScope {
  * evitar — quem quiser saber o que o canal permite pergunta a `capabilitiesOf`.
  */
 export interface ChannelAdapter {
+  /** Aceite assíncrono: só o recibo confirma o envio. */
+  acceptedStatus?: "sending";
   provider: ChannelProvider;
   /** null = não há endereço possível para este contato neste canal. */
   resolveRecipient(input: RecipientInput): string | null;

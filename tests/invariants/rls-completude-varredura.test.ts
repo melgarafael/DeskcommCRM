@@ -75,6 +75,13 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "channel_proxy_bindings", razao: "tests/invariants/channel-proxy-bindings.test.ts — concorrência, SELECT cross-org e RPC negado a authenticated" },
+  { tabela: "data_import_batches", razao: "tests/invariants/importacao-historica.test.ts — gestor local consulta; agente e gestor de outro tenant não leem" },
+  { tabela: "data_import_records", razao: "tests/invariants/importacao-historica.test.ts — JWT de gestor local, agente e tenant vizinho; anonimização real" },
+  { tabela: "data_import_record_contacts", razao: "tests/invariants/importacao-historica.test.ts — leitura com três JWTs e organizações distintas" },
+  { tabela: "message_attachments", razao: "tests/invariants/importacao-historica.test.ts — membros locais consultam, tenant vizinho não; anonimização remove vínculo" },
+  { tabela: "social_connections", razao: "tests/invariants/social-dms.test.ts — SELECT anon/authenticated negado, RPC cercada por org e FK composta cross-tenant" },
+  { tabela: "social_webhook_receipts", razao: "tests/invariants/social-dms.test.ts — SELECT anon/authenticated negado em SQL real, sem exposição de recibos pela REST" },
   { tabela: "channel_routing_policies", razao: "tests/invariants/channel-routing.test.ts — dois tenants reais, leitura positiva local e negativa cruzada por JWT; FK composta rejeita canal de outra org" },
   { tabela: "channel_routing_responsibles", razao: "tests/invariants/channel-routing.test.ts — JWT do tenant B não lê responsáveis de A; revogação remove vínculo e claim revalida membro ativo" },
   { tabela: "channel_connection_requests", razao: "tests/invariants/channel-routing.test.ts — recibo privado sem SELECT authenticated; reserva admin com MFA e finalização service-only cercada por org e lease" },

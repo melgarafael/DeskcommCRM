@@ -1,3 +1,4 @@
+import { socialInboundHandler } from "@/lib/channels/social/inbound-worker";
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 /**
  * Centralised handler registration for the event_log dispatcher.
@@ -39,6 +40,7 @@ export function ensureHandlersRegistered(): void {
   registerHandler(followupGatilhoEtapaHandler);
   registerHandler(followupGatilhoCasoHandler);
   registerHandler(followupGatilhoPresencaHandler);
+  registerHandler(socialInboundHandler);
   registerHandler(mediaPersistHandler);
   registerHandler(mediaDeriveHandler);
   registerHandler(webPushInboundHandler);

@@ -12,7 +12,7 @@ function fixture() {
     finishes.push(args);
     return { data: { ...channel, status: args.p_status }, error: null };
   }) } as unknown as SupabaseClient;
-  const transport = { getVerifiedSession: vi.fn(async () => null), createSession: vi.fn(async () => ({ created: true, session: { name: "owned", status: "STOPPED" } })),
+  const transport = { getProxyOccupancy: vi.fn(async () => [] as string[]), getVerifiedSession: vi.fn(async () => null), createSession: vi.fn(async () => ({ created: true, session: { name: "owned", status: "STOPPED" } })),
     startExistingSession: vi.fn(async () => ({ name: "owned", status: "SCAN_QR_CODE" })),
     deleteSession: vi.fn(async () => {}), stopSession: vi.fn(async () => {}) };
   return { db, transport, finishes, input: { organizationId: org, idempotencyKey: key, userId: key, requestId: key } };

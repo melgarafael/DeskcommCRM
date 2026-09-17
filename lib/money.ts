@@ -126,7 +126,7 @@ export function formatCentsUSD(cents: number): string {
  *
  *   components/kanban/KanbanCard.tsx:34      formatBRL(cents, currency)
  *   components/kanban/LeadDossier.tsx:28     formatBRL(cents, currency)
- *   components/kanban/StageColumn.tsx:31     formatBRL(cents)          (só BRL)
+ *   components/kanban/StageColumn.tsx:31     formatTotal(cents, currency) (totais separados por moeda)
  *   components/inbox/CRMSidePanel.tsx:193    formatMoney(cents, currency)
  *   lib/lgpd/pdf-renderer.tsx:107            fmtMoney(cents, currency) (pior:
  *                                            `${currency} ${v.toFixed(2)}`, sem

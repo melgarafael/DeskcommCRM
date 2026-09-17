@@ -58,7 +58,7 @@ export function authenticateWahaWebhook(input: WahaWebhookAuthInput): WahaWebhoo
         ? envSecret
         : null;
 
-  const required = env.WAHA_WEBHOOK_REQUIRE_SIGNATURE === "true";
+  const required = env.WAHA_WEBHOOK_REQUIRE_SIGNATURE === "true" || env.WAHA_EXTERNAL === "true";
 
   if (signatureHeader) {
     // Assinou: tem que conferir. Sem segredo para conferir, não há como

@@ -345,7 +345,9 @@ export async function DELETE(
     }
     try {
       await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id);
-      await waha.logoutSession(session.waha_session_name as string);
+      // DELETE já para, desloga e remove a configuração no contrato externo.
+      // Logout isolado reinicia GOWS, podendo falhar antes da exclusão.
+      if (process.env.WAHA_EXTERNAL !== "true") await waha.logoutSession(session.waha_session_name as string);
       await waha.deleteSession(session.waha_session_name as string);
     } catch (err) {
       if (err instanceof ChannelConnectionError) return fail(err.code, "Uma conexão está em andamento. Aguarde e tente novamente.", err.status, { requestId });
@@ -375,6 +377,14 @@ export async function DELETE(
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
     if (delErr) return fail("internal_error", delErr.message, 500, { requestId });
+  }
+
+  // O transporte já confirmou a exclusão; só agora o proxy pode ser reutilizado.
+  if (arquivar && session.provider === CHANNEL_PROVIDER_WAHA &&
+      (process.env.WAHA_EXTERNAL === "true" || process.env.WEBSHARE_API_KEY || process.env.WHATSAPP_PROXY_REQUIRED === "true")) {
+    const { error: bindingError } = await createAdminClient().from("channel_proxy_bindings").delete()
+      .eq("organization_id", activeOrg.orgId).eq("channel_session_id", id);
+    if (bindingError) return fail("internal_error", "Canal desconectado, mas o proxy continua reservado. Tente excluir novamente.", 500, { requestId });
   }
 
   void audit({

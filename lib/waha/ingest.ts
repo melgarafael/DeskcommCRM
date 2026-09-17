@@ -344,7 +344,7 @@ export function resolveMessageType(p: WahaPayload): string {
 }
 
 function notifyNameOf(p: WahaPayload): string | null {
-  return p._data?.notifyName ?? p._data?.pushName ?? null;
+  return p._data?.notifyName ?? p._data?.pushName ?? infoDeEntradaDireta(p)?.PushName ?? null;
 }
 
 /** Corpo textual: WAHA nem sempre preenche `body` em cartões de contato NOWEB. */
@@ -377,8 +377,17 @@ function bodyOf(p: WahaPayload): string | null {
  * telefone é incômodo, contato com telefone ERRADO manda mensagem para
  * estranho.
  */
+function infoDeEntradaDireta(p: WahaPayload) {
+  const info = p._data?.Info;
+  // Só vinculamos a identidade alternativa ao remetente comprovado deste
+  // chat direto. Saídas/grupos não podem batizar o cliente com dados da loja.
+  if (!info || p.fromMe !== false || info.IsFromMe !== false || info.IsGroup !== false ||
+      !p.from?.endsWith("@lid") || info.Chat !== p.from || info.Sender !== p.from) return null;
+  return info;
+}
+
 export function telefoneAlternativoDe(p: WahaPayload): string | null {
-  const bruto = p._data?.key?.remoteJidAlt ?? p._data?.key?.participantAlt ?? null;
+  const bruto = p._data?.key?.remoteJidAlt ?? p._data?.key?.participantAlt ?? infoDeEntradaDireta(p)?.SenderAlt ?? null;
   if (!bruto) return null;
   // ⚠️ `endsWith`/`indexOf` e NÃO regex — este valor vem de FORA (é campo de
   // webhook) e a versão com `/@(s\.whatsapp\.net|c\.us)$/` foi apontada pelo
@@ -397,7 +406,8 @@ export function telefoneAlternativoDe(p: WahaPayload): string | null {
   const semSufixo = bruto.slice(0, bruto.indexOf("@"));
   let digitos = "";
   for (const ch of semSufixo) {
-    if (ch >= "0" && ch <= "9") digitos += ch;
+    if (ch < "0" || ch > "9") return null;
+    digitos += ch;
   }
   // Faixa E.164: 8 a 15 dígitos. Fora disso não é número discável, e o CHECK
   // `contacts_phone_e164_format` recusaria — falhar aqui é melhor que abortar a

@@ -373,15 +373,18 @@ async function processEvent(
     });
   }
 
-  // Coalescência: já existe job PENDING futuro deste contato → esta mensagem
-  // entra de carona (o turno lê o histórico completo). Evento vira done.
+  // Só agrupa antes da PRIMEIRA execução e na mesma conversa. Um retry também
+  // fica pending no futuro, mas já pode ter enviado: seu ledger (job, seq)
+  // bloquearia a resposta à mensagem nova como duplicata do envio anterior.
   if (knobs.debounceMs > 0) {
     const { rows: pendingRows } = await pool.query<{ id: string }>(
       `select id from job_queue
        where organization_id = $1 and contact_id = $2
          and kind = 'inbound_turn' and status = 'pending' and run_after > now()
+         and attempts = 0
+         and payload->>'conversation_id' = $3
        limit 1`,
-      [event.organization_id, p.contact_id],
+      [event.organization_id, p.contact_id, p.conversation_id],
     );
     if (pendingRows[0]) {
       log.info('drain: rajada coalescida em job pendente', {

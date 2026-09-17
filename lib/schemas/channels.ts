@@ -7,6 +7,8 @@ import { z } from "zod";
  */
 export const createChannelSchema = z.object({
   display_name: z.string().trim().min(1).max(80).optional(),
+  proxy_country: z.string().regex(/^[A-Z]{2}$/).optional(),
+  proxy_id: z.string().min(1).max(100).optional(),
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;

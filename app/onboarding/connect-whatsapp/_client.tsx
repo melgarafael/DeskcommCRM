@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { ProxyPicker, type ProxyOptions } from "@/components/connections/ProxyPicker";
 import { randomId } from "@/lib/random-id";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
@@ -11,6 +12,7 @@ import { CanalOficialClient } from "@/components/connections/CanalOficialClient"
 import { CanalParceiroClient } from "@/components/connections/CanalParceiroClient";
 
 interface Props {
+  proxySelectionEnabled?: boolean;
   wahaConfigured: boolean;
   sessionName: string;
   /**
@@ -217,6 +219,7 @@ function Saidas({ status, sessionName }: { status: Status; sessionName: string }
 
 export function ConnectWhatsappClient({
   wahaConfigured,
+  proxySelectionEnabled = false,
   sessionName,
   oficialPodeReceber,
 }: Props) {
@@ -230,6 +233,22 @@ export function ConnectWhatsappClient({
   const [qrFailed, setQrFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const [proxyOptions, setProxyOptions] = useState<ProxyOptions | null>(null);
+  const [proxyError, setProxyError] = useState(false);
+  const [proxyCountry, setProxyCountry] = useState("");
+  const [proxyConfirmed, setProxyConfirmed] = useState(false);
+  const proxyReady = !proxySelectionEnabled || proxyConfirmed;
+  async function refreshProxies() {
+    try {
+      const response = await fetch("/api/v1/channel-sessions/proxies");
+      if (!response.ok) throw new Error("proxy_unavailable");
+      const json = await response.json() as { data: ProxyOptions };
+      setProxyError(false);
+      setProxyOptions(json.data);
+    } catch { setProxyError(true); }
+  }
+  useEffect(() => { if (proxySelectionEnabled && forma === "qr") void refreshProxies(); }, [proxySelectionEnabled, forma]);
+
   const status = info.status;
 
   // 1) Sobe a sessão QUANDO A PESSOA ESCOLHE o código — não ao montar a tela.
@@ -240,13 +259,13 @@ export function ConnectWhatsappClient({
   // sido perguntado. Quem tem conta oficial já entrava pelo caminho errado
   // antes de clicar em coisa alguma, e descobria depois, em outra tela.
   useEffect(() => {
-    if (forma !== "qr") return;
+    if (forma !== "qr" || !proxyReady) return;
     if (!wahaConfigured) return;
     let cancelled = false;
     (async () => {
       setBusy(true);
       try {
-        const res = await fetch("/api/v1/onboarding/whatsapp/session", { method: "POST", headers: { "Idempotency-Key": createKey.current ??= randomId() } });
+        const res = await fetch("/api/v1/onboarding/whatsapp/session", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createKey.current ??= randomId() }, body: JSON.stringify(proxySelectionEnabled ? { proxy_country: proxyCountry } : {}) });
         const json = (await res.json()) as { data?: SessionInfo; error?: { message?: string } };
         if (cancelled) return;
         if (json.data) {
@@ -272,7 +291,7 @@ export function ConnectWhatsappClient({
     return () => {
       cancelled = true;
     };
-  }, [forma, wahaConfigured, sessionName, t]);
+  }, [forma, wahaConfigured, sessionName, t, proxyReady, proxySelectionEnabled, proxyCountry]);
 
   // 2) Poll status every 3 seconds until WORKING/FAILED.
   //
@@ -280,7 +299,7 @@ export function ConnectWhatsappClient({
   // batendo de 3 em 3 segundos numa sessão que nunca subiu — e a tela do lado
   // trocaria de estado sozinha por trás do formulário que a pessoa preenche.
   useEffect(() => {
-    if (forma !== "qr") return;
+    if (forma !== "qr" || !proxyReady) return;
     if (!wahaConfigured) return;
     if (status === "WORKING" || status === "FAILED") return;
     const id = setInterval(async () => {
@@ -310,7 +329,7 @@ export function ConnectWhatsappClient({
       }
     }, 3000);
     return () => clearInterval(id);
-  }, [forma, wahaConfigured, status, sessionName, t]);
+  }, [forma, wahaConfigured, status, sessionName, t, proxyReady]);
 
   // 3) When status → WORKING, auto-advance.
   useEffect(() => {
@@ -331,7 +350,7 @@ export function ConnectWhatsappClient({
   async function restartSession() {
     setBusy(true);
     try {
-      const res = await fetch("/api/v1/onboarding/whatsapp/session?restart=1", { method: "POST", headers: { "Idempotency-Key": restartKey.current ??= randomId() } });
+      const res = await fetch("/api/v1/onboarding/whatsapp/session?restart=1", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": restartKey.current ??= randomId() }, body: JSON.stringify(proxySelectionEnabled ? { proxy_country: proxyCountry } : {}) });
       const json = (await res.json()) as { data?: SessionInfo };
       if (json.data) { setInfo(json.data); restartKey.current = null; }
       else toast.error(t("Não consegui gerar outro código. Tente de novo em alguns segundos."));
@@ -429,7 +448,15 @@ export function ConnectWhatsappClient({
         </div>
       )}
 
-      {wahaConfigured && (
+      {wahaConfigured && !proxyReady && <div className="space-y-3">
+        {proxyError ? <div role="alert"><p>{t("Não foi possível conferir os proxies. A conexão permanece bloqueada até a verificação.")}</p>
+          <Button onClick={() => void refreshProxies()}>{t("Tentar novamente")}</Button></div>
+          : proxyOptions ? <><ProxyPicker options={proxyOptions} country={proxyCountry}
+            onChange={(country) => { setProxyCountry(country); }} />
+            <Button disabled={!proxyCountry} onClick={() => setProxyConfirmed(true)}>{t("Gerar QR Code")}</Button></>
+            : <p role="status">{t("Carregando...")}</p>}
+      </div>}
+      {wahaConfigured && proxyReady && (
         <div className="rounded-md border bg-muted/40 p-4">
           {/*
             O que estava aqui: "Sessão: org_f3d61bc0" e "Status: INIT".

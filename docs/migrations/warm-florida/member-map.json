@@ -1,0 +1,87 @@
+{
+  "workspace_id": "68e16519-dac1-4e28-8762-615528a71180",
+  "activation_allowed": false,
+  "members": [
+    {
+      "source_user_id": "56edacfd-2515-4af2-bdef-ffaba25eef9c",
+      "source_role": "atendente",
+      "source_status": "active",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "87f9af23-83d6-4f3a-a84f-aedcbbcb84fa",
+      "source_role": "atendente",
+      "source_status": "suspended",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "6c1df83f-ab88-4e19-ab3c-dd51e5945b4b",
+      "source_role": "admin",
+      "source_status": "active",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "0359dc51-c040-4701-a20f-a43bbb1009fe",
+      "source_role": "atendente",
+      "source_status": "active",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "fd64e422-dc9f-4fd8-8f1e-f758b81eef32",
+      "source_role": "admin",
+      "source_status": "active",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "511a3bf6-0d17-4210-b2e7-541062606841",
+      "source_role": "admin",
+      "source_status": "active",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "3e7c2143-342a-40c1-9ba6-cd4c3ed71250",
+      "source_role": "admin",
+      "source_status": "active",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "31a80b64-6fd9-4ec7-b937-40a8bc051063",
+      "source_role": "atendente",
+      "source_status": "inactive",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    },
+    {
+      "source_user_id": "9d659c8c-c386-4df8-acef-5503da5f31b2",
+      "source_role": "atendente",
+      "source_status": "inactive",
+      "is_destination_owner": false,
+      "target_role": null,
+      "review_required": true,
+      "activate": false
+    }
+  ]
+}

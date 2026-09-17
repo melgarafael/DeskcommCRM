@@ -105,7 +105,7 @@ export function useConversationsRealtime(
   const query = useInfiniteQuery({
     queryKey,
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam, signal }) => {
       const qs = new URLSearchParams();
       // Lista vira `open,pending`; valor único continua saindo como antes.
       if (filters.status) {
@@ -127,7 +127,9 @@ export function useConversationsRealtime(
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", "50");
       try {
-        return await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`);
+        return await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`, {
+          signal,
+        });
       } catch (err) {
         showApiError(err);
         throw err;

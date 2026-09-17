@@ -10,6 +10,7 @@ import {
   LIMIAR_URGENTE_MS,
 } from "@/lib/channels/janela";
 import { cn } from "@/lib/utils";
+import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 
 /**
  * Quanto tempo resta para escrever livremente nesta conversa.
@@ -51,6 +52,7 @@ export function JanelaSelo({
     return () => clearInterval(t);
   }, []);
 
+  const templates = fonteDeTemplates(provider) !== null;
   const estado = estadoDaJanela(provider, lastInboundAt, agora);
   if (estado.tipo === "sem_restricao") return null;
 
@@ -65,12 +67,16 @@ export function JanelaSelo({
     return (
       <Badge
         variant="outline"
-        className="h-4 border-amber-400 px-1.5 text-[10px] text-amber-700 dark:border-amber-700 dark:text-amber-300"
-        title={t(
-          "Passaram 24h desde a última mensagem do cliente. Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.",
-        )}
+        className="h-auto min-h-4 border-amber-400 px-1.5 text-[10px] whitespace-normal text-amber-700 dark:border-amber-700 dark:text-amber-300"
+        title={
+          templates
+            ? t(
+                "Passaram 24h desde a última mensagem do cliente. Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.",
+              )
+            : t("Aguarde uma nova mensagem do cliente para responder.")
+        }
       >
-        {quanto} · {t("só modelo")}
+        {quanto} · {templates ? t("só modelo") : t("aguarde o cliente")}
       </Badge>
     );
   }
@@ -83,7 +89,11 @@ export function JanelaSelo({
         "h-4 px-1.5 text-[10px]",
         urgente && "border-amber-400 text-amber-700 dark:border-amber-700 dark:text-amber-300",
       )}
-      title={t("Tempo restante para escrever texto livre. Depois disso, só modelo aprovado.")}
+      title={
+        templates
+          ? t("Tempo restante para escrever texto livre. Depois disso, só modelo aprovado.")
+          : t("Tempo restante para responder. Depois disso, aguarde uma nova mensagem do cliente.")
+      }
     >
       {t("Janela")} {formatarRestante(estado.restanteMs)}
     </Badge>

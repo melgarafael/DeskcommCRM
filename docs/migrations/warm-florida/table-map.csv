@@ -1,0 +1,118 @@
+origem,quantidade,destino_proposto,estado
+appointment_event_history,44,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+appointment_no_show_predictions,30,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+appointment_types,0,calendar_event_types,MAPEAR_E_VALIDAR
+appointments,30,calendar_appointments,MAPEAR_E_VALIDAR
+billing_audit_log,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+calendar_blocks,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+channel_routing_rules,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+companies,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+contact_identities,2476,contacts.source_metadata + identidade social na conversa; adaptador a implementar,MAPEAR_E_VALIDAR
+contacts,3113,contacts,MAPEAR_E_VALIDAR
+crm_ai_alerts,106,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_ai_analyses,53,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_ai_briefings,2,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_ai_chat_messages,25,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_ai_chat_threads,2,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_ai_chat_usage,1,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_ai_knowledge_base,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_ai_memory,148,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_ai_playbooks,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_ai_suggestion_events,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_automation_rules,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_automation_runs,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_channel_events,49749,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_channels,6,"channel_sessions somente histórico, STOPPED",MAPEAR_E_VALIDAR
+crm_contact_consents,83,consentimentos com evidência e revogação,MAPEAR_E_VALIDAR
+crm_contact_enrichment,2,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_contact_import_jobs,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_contact_merge_logs,23,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_contact_products,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_conversation_assignment_history,1436,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_conversation_participants,136,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_conversation_status_log,2454,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_conversations,3254,conversations,MAPEAR_E_VALIDAR
+crm_deal_ai_insights,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_deal_forecasts,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_deal_risk_signals,3,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_deal_stage_history,98,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_duplicate_suggestions,31,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_files,1084,Storage privado + vínculos,MAPEAR_E_VALIDAR
+crm_message_translations,19,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_messages,60444,messages,MAPEAR_E_VALIDAR
+crm_notes,108,notas/timeline com ACL equivalente,MAPEAR_E_VALIDAR
+crm_objection_events,41,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_pipeline_handoff_rules,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_pipeline_permissions,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_pipeline_stage_webhooks,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_pipeline_webhook_logs,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_process_handoffs,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_product_catalog_config,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_products,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_revenue_forecasts,5,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+crm_saved_replies,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+crm_tags,7,tags nos contatos/conversas,MAPEAR_E_VALIDAR
+crm_tasks,1606,crm_tasks,MAPEAR_E_VALIDAR
+deals,5,crm_leads + crm_lead_links,MAPEAR_E_VALIDAR
+followup_job_workspace_runs,4446,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+internal_conversations,1,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+internal_messages,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+knowledge_embeddings,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+mcp_agent_tokens,1,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+mcp_audit_log,6,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+pipeline_stages,6,crm_stages,MAPEAR_E_VALIDAR
+pipelines,1,crm_pipelines,MAPEAR_E_VALIDAR
+platform_notifications,5,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+reseller_clients,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+reseller_commissions,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+user_availability,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+webhook_tokens,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+whatsapp_session_status_log,3249,Arquivo histórico segregado com adaptador de consulta a definir,SEM_ADAPTADOR_CONFIRMADO
+whatsapp_sessions,4,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+workspace_access_audit_logs,5,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+workspace_hub_configs,0,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+workspace_invitations,2,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+workspace_member_channel_restrictions,1,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+workspace_members,9,mapeamento de identidade; sem ativação,MAPEAR_E_VALIDAR
+workspace_role_permissions,66,matriz de permissões revisada,MAPEAR_E_VALIDAR
+workspace_roles,3,matriz de papéis revisada,MAPEAR_E_VALIDAR
+workspace_stripe_configs,0,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+workspace_subscriptions,1,Revisar campos; segredos/sessões não são credenciais reutilizáveis,REVISAO_OPERACIONAL
+workspace_team_members,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+workspace_teams,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+workspace_user_permissions,0,Arquivo histórico segregado com adaptador de consulta a definir,VAZIA_NESTE_LEVANTAMENTO
+workspaces,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+platform_admins,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+internal_message_delete_log,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+role_templates,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+internal_message_attachments,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+internal_conversation_pins,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+appointment_reminders,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+whitelabel_domain_requests,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+profiles,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+internal_message_edit_log,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+followup_job_runs,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+reseller_price_overrides,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+platform_resellers,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+crm_contact_import_rows,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+internal_message_mentions,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+admin_announcements,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+reseller_payouts,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+wallet_consents,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+admin_mrr_snapshots,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+reseller_applications,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+internal_message_reactions,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+crm_conversation_tags,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+password_reset_tokens,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+crm_product_images,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+crm_deal_products,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+stripe_webhook_events,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+crm_deal_conversations,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+plans,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+reseller_audit_log,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+identity_user_links,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+llm_provider_configs,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+admin_audit_log,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+email_verification_codes,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+internal_conversation_participants,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR
+followup_job_locks,NAO_MEDIDA,Derivar escopo pelos pais autorizados; nunca exportar a tabela global,ESCOPO_A_VALIDAR

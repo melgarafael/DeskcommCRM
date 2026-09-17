@@ -275,6 +275,8 @@ jobs:
       # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
       INTERNAL_AGENT_RUN_STUB: "true"
       SPECS_PARTE_1: >-
+        importacao-historica.spec.ts
+        social-dms.spec.ts
         pre-go-live-whatsapp.spec.ts
         smoke.spec.ts auth.spec.ts error-pages.spec.ts
         icone-da-marca.spec.ts
@@ -600,7 +602,9 @@ jobs:
         central-avisos-resolver-em-lote.spec.ts
         voz-desligada-por-padrao.spec.ts
 
+      # proxy-por-conexao exige WAHA e pool Webshare reais (opt-in, sem pareamento).
       FORA_DO_CI: >-
+        proxy-por-conexao.spec.ts
         vps-fresh-onboarding.spec.ts
         inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts

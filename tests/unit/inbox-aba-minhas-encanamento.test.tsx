@@ -17,8 +17,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 // Tipado com a URL: o teste lê o 1º argumento, e `(...a: unknown[])` o esconde.
-const getSpy = vi.fn(async (_url: string) => ({ data: [], meta: { has_more: false, cursor: null } }));
-vi.mock("@/lib/api/client", () => ({ apiClient: { get: (url: string) => getSpy(url) } }));
+const getSpy = vi.fn(async (_url: string, _opts?: { signal?: AbortSignal }) => ({
+  data: [],
+  meta: { has_more: false, cursor: null },
+}));
+vi.mock("@/lib/api/client", () => ({
+  apiClient: {
+    get: (url: string, opts?: { signal?: AbortSignal }) => getSpy(url, opts),
+  },
+}));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
 vi.mock("@/lib/supabase/browser", () => ({
   prepareRealtimeAuthentication: vi.fn().mockResolvedValue(undefined),
@@ -53,6 +60,35 @@ describe("elo do meio 1 — o hook serializa", () => {
 
   it("NÃO manda nada quando a aba não pede", async () => {
     expect(await urlPedida({ assigned_to: "me" })).not.toContain("exclude_finished");
+  });
+
+  it("cancela a leitura obsoleta quando uma nova invalidação chega", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function wrapperDaInvalidacao({ children }: { children: React.ReactNode }) {
+      return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+    }
+    renderHook(() => useConversationsRealtime({}, "org-1"), {
+      wrapper: wrapperDaInvalidacao,
+    });
+    await waitFor(() =>
+      expect(
+        qc.getQueryCache().find({ queryKey: ["conversations"], exact: false })?.state.status,
+      ).toBe("success"),
+    );
+
+    // A primeira invalidação fica em voo; a segunda precisa substituí-la sem
+    // deixar o navegador carregar as duas em paralelo.
+    getSpy.mockImplementationOnce(() => new Promise(() => {}));
+    void qc.invalidateQueries({ queryKey: ["conversations"] });
+    await waitFor(() => expect(getSpy).toHaveBeenCalledTimes(2));
+
+    const signal = getSpy.mock.calls[1]?.[1]?.signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+
+    void qc.invalidateQueries({ queryKey: ["conversations"] });
+    await waitFor(() => expect(signal?.aborted).toBe(true));
+    await waitFor(() => expect(getSpy).toHaveBeenCalledTimes(3));
   });
 });
 

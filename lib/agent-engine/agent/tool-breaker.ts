@@ -58,6 +58,7 @@ export interface ToolBreakerOptions {
  * update_lead_state são MUTANTES e ficam fora por construção, não por heurística.
  */
 export const READ_ONLY_TOOLS = [
+  'crm_compare_city_distances',
   'get_lead_context',
   'get_lead_note',
   'search_knowledge',

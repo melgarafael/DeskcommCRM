@@ -19,6 +19,7 @@ import {
 } from "@/hooks/channels/useChannelSessions";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
+import { ProxyPicker, type ProxyOptions } from "./ProxyPicker";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,10 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const createKey = useRef<string | null>(null);
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
   const routing = useQuery({ queryKey: ["channel-routing-settings"], queryFn: () => apiClient.get<{ data: ChannelRoutingSettings }>("/api/v1/settings/routing/channels") });
+  const proxyOptions = useQuery({ queryKey: ["connection-proxies"], queryFn: () => apiClient.get<{ data: ProxyOptions }>("/api/v1/channel-sessions/proxies", { timeoutMs: 45_000 }), staleTime: 30_000 });
+  const [proxyDialog, setProxyDialog] = useState(false);
+  const [proxyTarget, setProxyTarget] = useState<ChannelSession | null>(null);
+  const [proxyCountry, setProxyCountry] = useState("");
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
@@ -162,11 +167,13 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     try {
       const res = await apiClient.post<{ data: ChannelSession }>(
         "/api/v1/channel-sessions",
-        {},
+        proxyOptions.data?.data.enabled ? { proxy_country: proxyCountry } : {},
         { idempotencyKey: createKey.current ??= randomId(), timeoutMs: 120_000 },
       );
       invalidate();
       createKey.current = null;
+      setProxyDialog(false);
+      void proxyOptions.refetch();
       setQr({ sessionId: res.data.id, title: t("Conectar novo WhatsApp") });
     } catch (err) {
       toast.error(errMsg(err, "Não foi possível iniciar a conexão.", t));
@@ -175,7 +182,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     } finally {
       setCreating(false);
     }
-  }, [invalidate, t]);
+  }, [invalidate, t, proxyOptions, proxyCountry]);
 
   // Reconexão suave: a maioria das quedas é passageira (rede, container
   // reiniciado) e a credencial pareada continua boa, então o número volta sem
@@ -183,10 +190,12 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   // reescaneamento e por isso não é oferecido aqui — ele mora em `forcePair`, na
   // tela do QR, que só aparece depois que o modo suave falhou.
   const handleReconnect = useCallback(
-    async (c: ChannelSession) => {
+    async (c: ChannelSession, selection?: { proxy_country: string }) => {
       setBusyId(c.id);
       try {
-        await apiClient.post(`/api/v1/channel-sessions/${c.id}/reconnect`, {});
+        await apiClient.post(`/api/v1/channel-sessions/${c.id}/reconnect`, selection ?? {}, { timeoutMs: 120_000 });
+        setProxyDialog(false);
+        void qc.invalidateQueries({ queryKey: ["connection-proxies"] });
         invalidate();
         setQr({ sessionId: c.id, title: `${t("Reconectar")} ${channelLabel(c, t)}` });
       } catch (err) {
@@ -195,7 +204,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
         setBusyId(null);
       }
     },
-    [invalidate, t],
+    [invalidate, t, qc],
   );
 
   const forcePair = useCallback(
@@ -245,7 +254,10 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               {t("Atualizar saúde")}
             </Button>
           )}
-          <Button size="sm" disabled={creating || !wahaConfigured} onClick={handleConnectNew}>
+          <Button size="sm" disabled={creating || !wahaConfigured || proxyOptions.isPending || proxyOptions.isError} onClick={() => {
+            if (proxyOptions.data?.data.enabled) { setProxyTarget(null); setProxyCountry(""); createKey.current = null; setProxyDialog(true); }
+            else void handleConnectNew();
+          }}>
             {creating ? (
               <CircleNotch size={14} className="animate-spin" aria-hidden />
             ) : (
@@ -259,6 +271,22 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       <p className="text-sm text-muted-foreground">
         {t("Novos canais começam em modo de teste, sem respostas automáticas até você autorizar números ou liberar o público.")}
       </p>
+      {proxyOptions.isError && <div role="alert" className="rounded-md border p-3 text-sm text-error-fg">
+        <p>{t("Não foi possível conferir os proxies. A conexão permanece bloqueada até a verificação.")}</p>
+        <Button variant="outline" size="sm" onClick={() => void proxyOptions.refetch()}>{t("Tentar novamente")}</Button>
+      </div>}
+      <Dialog open={proxyDialog} onOpenChange={setProxyDialog}>
+        <DialogContent><DialogHeader><DialogTitle>{t("Proxy da conexão")}</DialogTitle>
+          <DialogDescription>{t("O proxy será mantido nas próximas reconexões.")}</DialogDescription></DialogHeader>
+          {proxyOptions.data && <ProxyPicker options={proxyOptions.data.data} country={proxyCountry}
+            currentId={proxyOptions.data.data.bindings.find(b => b.channel_session_id === proxyTarget?.id)?.proxy_id}
+            onChange={(country) => { setProxyCountry(country); createKey.current = null; }} />}
+          <Button disabled={!proxyCountry || creating || Boolean(busyId)} onClick={() => proxyTarget
+            ? void handleReconnect(proxyTarget, { proxy_country: proxyCountry }) : void handleConnectNew()}>
+            {t(proxyTarget ? "Aplicar proxy e reconectar" : "Gerar QR Code")}
+          </Button>
+        </DialogContent>
+      </Dialog>
       {connectionDetail && <details className="rounded-md border p-3 text-sm"><summary>{t("Detalhes para suporte")}</summary><pre className="mt-2 whitespace-pre-wrap break-words">{connectionDetail}</pre><Button variant="outline" size="sm" onClick={async () => {
         if (await copyToClipboard(connectionDetail)) toast.success(t("Copiado!"));
         else toast.error(t("Não foi possível copiar. Selecione e copie manualmente."));
@@ -354,6 +382,11 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     ? `${t("Verificado")} ${new Date(c.last_health_check_at).toLocaleString(tagDoIdioma)}`
                     : t("Ainda não verificado")}
                 </p>
+                {proxyOptions.data?.data.bindings?.filter(b => b.channel_session_id === c.id).map(b =>
+                  <p key={b.proxy_id} className="text-xs text-muted-foreground">{t("Proxy da conexão")}: {b.country_code}</p>)}
+                {vivaNoTransporte && proxyOptions.data?.data.enabled && ["STOPPED", "FAILED"].includes(c.status) &&
+                  <Button variant="outline" size="sm" onClick={() => { const binding = proxyOptions.data?.data.bindings.find(b => b.channel_session_id === c.id);
+                    setProxyTarget(c); setProxyCountry(binding?.country_code ?? ""); setProxyDialog(true); }}>{t("Configurar proxy")}</Button>}
                 <ChannelAiAccess channelId={c.id} />
                 <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
                 <div className="mt-auto flex flex-wrap gap-2">

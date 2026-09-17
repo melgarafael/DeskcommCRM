@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Importação histórica com consulta e privacidade",
+    "subtitle": "Extração escopada, unificação explícita e ensaio antes da produção",
+    "output": "importacao-historica.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "operador",
+      "label": "Operador"
+    },
+    {
+      "id": "crm",
+      "label": "CRM"
+    },
+    {
+      "id": "dados",
+      "label": "Persistência"
+    }
+  ],
+  "mainPath": [
+    "origem",
+    "revisao",
+    "ensaio",
+    "banco",
+    "tela"
+  ],
+  "nodes": [
+    {
+      "id": "origem",
+      "lane": "dados",
+      "col": 1,
+      "type": "database",
+      "label": "Arquivo escopado + manifesto e binários SHA256"
+    },
+    {
+      "id": "revisao",
+      "lane": "operador",
+      "col": 2,
+      "type": "frontend",
+      "label": "Decisões explícitas de unificação e moeda"
+    },
+    {
+      "id": "ensaio",
+      "lane": "crm",
+      "col": 3,
+      "type": "service",
+      "label": "Conversão determinística + rollback de ensaio"
+    },
+    {
+      "id": "banco",
+      "lane": "dados",
+      "col": 4,
+      "type": "database",
+      "label": "Lote SQL privilegiado / FKs e RLS preservadas"
+    },
+    {
+      "id": "tela",
+      "lane": "operador",
+      "col": 5,
+      "type": "frontend",
+      "label": "Inbox, tarefas, agenda e arquivo de gestores"
+    },
+    {
+      "id": "arquivo",
+      "lane": "crm",
+      "col": 5,
+      "type": "route",
+      "label": "Arquivo autenticado / URL assinada curta"
+    },
+    {
+      "id": "lgpd",
+      "lane": "dados",
+      "col": 6,
+      "type": "service",
+      "label": "Anonimização → redação e fila de remoção"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "origem",
+      "to": "revisao",
+      "label": "IDs de origem preservados"
+    },
+    {
+      "id": "e2",
+      "from": "revisao",
+      "to": "ensaio",
+      "label": "Sem dedução por nome/telefone"
+    },
+    {
+      "id": "e3",
+      "from": "ensaio",
+      "to": "banco",
+      "label": "Sem entrada nova / sem usuários ativados"
+    },
+    {
+      "id": "e4",
+      "from": "banco",
+      "to": "tela",
+      "label": "Canal histórico sem envio; status desconhecido explícito"
+    },
+    {
+      "id": "e5",
+      "from": "tela",
+      "to": "arquivo",
+      "label": "Gestor + organização ativa"
+    },
+    {
+      "id": "e6",
+      "from": "banco",
+      "to": "lgpd",
+      "label": "Arestas de todos os contatos identificados"
+    }
+  ]
+}

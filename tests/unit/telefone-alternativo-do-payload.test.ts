@@ -98,6 +98,29 @@ describe("telefoneAlternativoDe", () => {
   });
 });
 
+// Estrutura do webhook GOWS observado; identificadores sintéticos.
+const GOWS: WahaPayload = {
+  from: "70000000000001@lid", fromMe: false,
+  _data: { Info: { Chat: "70000000000001@lid", Sender: "70000000000001@lid",
+    SenderAlt: "551198765432@s.whatsapp.net", IsFromMe: false, IsGroup: false,
+    PushName: "Cliente de teste" } },
+};
+describe("identidade GOWS", () => {
+  it("recupera o telefone do remetente de entrada", () => {
+    expect(telefoneAlternativoDe(GOWS)).toBe("+551198765432");
+  });
+  it.each([
+    { IsFromMe: true }, { IsGroup: true }, { Sender: "70000000000002@lid" },
+    { Chat: "70000000000002@lid" }, { SenderAlt: "70000000000001@lid" },
+    { SenderAlt: "55abc1198765432@s.whatsapp.net" },
+  ])("não associa identidade incoerente: %j", (change) => {
+    expect(telefoneAlternativoDe({ ...GOWS, _data: { Info: { ...GOWS._data!.Info!, ...change } } })).toBeNull();
+  });
+  it("saída não usa o telefone do operador como destinatário", () => {
+    expect(telefoneAlternativoDe({ ...GOWS, fromMe: true })).toBeNull();
+  });
+});
+
 describe("resolveWahaChatId — o canal de uma conversa viva não muda", () => {
   it("contato @lid QUE GANHOU TELEFONE continua recebendo por @lid", () => {
     // Este é o caso que a 0122 cria e que ninguém tinha antes: até ela, contato

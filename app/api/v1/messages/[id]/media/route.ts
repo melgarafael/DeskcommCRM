@@ -8,6 +8,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import { logger } from "@/lib/logger";
 
 import { fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -31,9 +33,13 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: messageId } = await ctx.params;
+  const attachmentId = req.nextUrl.searchParams.get("attachment_id");
+  if (attachmentId && !z.string().uuid().safeParse(attachmentId).success) {
+    return fail("validation_failed", "Anexo inválido.", 422, { requestId });
+  }
   const supabase = await createClient();
 
   const {
@@ -61,7 +67,27 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (error) {
     return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   }
-  if (!msg || (!msg.media_storage_path && !msg.media_url)) {
+  if (!msg) {
+    return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
+  }
+
+  if (attachmentId) {
+    const { data: attachment, error: attachmentError } = await supabase
+      .from("message_attachments")
+      .select("storage_path, availability")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("message_id", messageId)
+      .eq("id", attachmentId)
+      .maybeSingle();
+    if (attachmentError) return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
+    if (!attachment || attachment.availability !== "available" || !attachment.storage_path?.startsWith(activeOrg.orgId + "/")) {
+      return fail("not_found", t("Anexo indisponível na origem."), 404, { requestId });
+    }
+    msg.media_storage_path = attachment.storage_path;
+    msg.media_url = null;
+  }
+
+  if (!msg.media_storage_path && !msg.media_url) {
     return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
   }
 
@@ -76,7 +102,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       return response;
     }
     if (signErr) {
-      console.error("[messages.media] createSignedUrl failed", signErr.message);
+      logger.warn("message_media_sign_failed", { request_id: requestId });
     }
   }
 

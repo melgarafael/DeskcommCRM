@@ -84,6 +84,12 @@ export const wahaPayloadSchema = z.looseObject({
   editedMessageId: texto,
   revokedMessageId: texto,
   _data: z.looseObject({
+    // GOWS: estrutura observada em message.any; nunca confundir SenderAlt
+    // (quem enviou) com o destinatário de uma mensagem fromMe.
+    Info: z.looseObject({
+      Chat: texto, Sender: texto, SenderAlt: texto, PushName: texto,
+      IsFromMe: booleano, IsGroup: booleano,
+    }).nullish(),
     notifyName: texto,
     pushName: texto,
     /**

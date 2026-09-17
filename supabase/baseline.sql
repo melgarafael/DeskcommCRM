@@ -9386,26 +9386,6 @@ alter table public.channel_sessions
   add column if not exists wacalls_jid text,
   add column if not exists wacalls_paired_at timestamptz;
 
-alter table public.channel_sessions
-  drop constraint if exists channel_sessions_provider_check;
-
-alter table public.channel_sessions
-  add constraint channel_sessions_provider_check
-  -- 'wacalls' (migration 0233, chamada de voz) somado aqui — UM bloco só por
-  -- constraint, doutrina de baseline (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text]));
-
-alter table public.channel_sessions
-  drop constraint if exists channel_sessions_provider_ref_check;
-
-alter table public.channel_sessions
-  add constraint channel_sessions_provider_ref_check check (
-    (provider = 'waha'       and waha_session_name    is not null) or
-    (provider = 'meta_cloud' and meta_phone_number_id is not null) or
-    (provider = 'zernio'     and zernio_account_id    is not null) or
-    (provider = 'wacalls'    and wacalls_session_id    is not null)
-  );
-
 comment on column public.channel_sessions.zernio_account_id is
   'Identificador da conta conectada NO INTERMEDIÁRIO (accountId), não o phone_number_id da Meta. É o que endereça envio e webhook. Espelhado em lib/channels/session-ref.ts.';
 
@@ -23284,7 +23264,7 @@ grant execute on function public.fn_reserve_channel_connection(uuid,uuid,text,te
 update public.channel_sessions
    set waha_session_name = 'org_'||left(replace(organization_id::text,'-',''),8)||'_'||replace(gen_random_uuid()::text,'-',''),
        updated_at = now()
- where provider = 'waha' and waha_session_name is not null
+ where provider='waha' and waha_session_name is not null
    and length(waha_session_name) > 54 and phone_number is null and status <> 'WORKING';
 -- ---- Convites de time persistidos (migration 0238) ----
 --
@@ -23992,6 +23972,538 @@ create trigger trg_org_voice_calls_set_updated_at
 
 notify pgrst, 'reload schema';
 
+-- DMs sociais: credencial de subconta por organização; identidade opaca por canal.
+create table if not exists public.social_connections (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ account_id text not null unique,
+ credential jsonb not null,
+ webhook_token uuid not null default gen_random_uuid() unique,
+ webhook_id text,
+ webhook_secret jsonb,
+ webhook_url text,
+ last_event_at timestamptz,
+ created_at timestamptz not null default now(),
+ unique(organization_id)
+);
+alter table public.social_connections enable row level security;
+drop policy if exists tenant_isolation_social_connections_all on public.social_connections;
+create policy tenant_isolation_social_connections_all on public.social_connections
+ using(organization_id in(select public.fn_user_org_ids()))
+ with check(organization_id in(select public.fn_user_org_ids()));
+-- Segredos não são consultáveis pela REST autenticada; a rota administrativa projeta só estado.
+revoke all on public.social_connections from public, anon, authenticated;
+grant all on public.social_connections to service_role;
+
+alter table public.channel_sessions add column if not exists social_channel_id text;
+alter table public.channel_sessions add column if not exists social_connection_id uuid references public.social_connections(id) on delete restrict;
+alter table public.channel_sessions add column if not exists social_network text;
+alter table public.channel_sessions drop constraint if exists channel_sessions_provider_check;
+alter table public.channel_sessions add constraint channel_sessions_provider_check check(provider in('waha','meta_cloud','zernio','wacalls','socios_hub','historical'));
+alter table public.channel_sessions drop constraint if exists channel_sessions_provider_ref_check;
+alter table public.channel_sessions add constraint channel_sessions_provider_ref_check check(
+ (provider='waha' and waha_session_name is not null) or
+ (provider = 'meta_cloud' and meta_phone_number_id is not null) or
+ (provider = 'zernio' and zernio_account_id is not null) or
+ (provider = 'wacalls' and wacalls_session_id is not null) or
+ (provider='socios_hub' and social_channel_id is not null and social_connection_id is not null and social_network in('instagram','messenger')) or
+ (provider = 'historical' and status='STOPPED')
+);
+create unique index if not exists channel_sessions_social_unique on public.channel_sessions(social_channel_id) where provider='socios_hub';
+alter table public.conversations add column if not exists provider_recipient_id text;
+alter table public.conversations drop constraint if exists conversations_channel_check;
+alter table public.conversations add constraint conversations_channel_check check(channel in('whatsapp','instagram','messenger'));
+
+-- Um recibo por evento: só confirma ao HUB quando o processamento terminou.
+create table if not exists public.social_webhook_receipts (
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ event_id text not null,
+ completed_at timestamptz not null default now(),
+ primary key(organization_id,event_id)
+);
+alter table public.social_webhook_receipts enable row level security;
+drop policy if exists tenant_isolation_social_webhook_receipts_all on public.social_webhook_receipts;
+create policy tenant_isolation_social_webhook_receipts_all on public.social_webhook_receipts
+ using(organization_id in(select public.fn_user_org_ids()))
+ with check(organization_id in(select public.fn_user_org_ids()));
+revoke all on public.social_webhook_receipts from public, anon, authenticated;
+grant all on public.social_webhook_receipts to service_role;
+
+-- Toda âncora vem da sessão autenticada pela assinatura. Serializa a thread,
+-- sem inventar telefone e sem misturar identificadores de páginas diferentes.
+create or replace function public.fn_ingest_social_dm(p_org uuid,p_session uuid,p_message jsonb)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare s public.channel_sessions; c public.conversations; cid uuid; mid uuid; stamp timestamptz; existing_message uuid;
+begin
+ select * into s from public.channel_sessions where id=p_session and organization_id=p_org and provider='socios_hub' and archived_at is null;
+ if s.id is null or s.social_channel_id<>p_message->>'channel_id' or s.social_network<>p_message->>'channel' then raise exception 'social_channel_mismatch'; end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_session::text||':'||(p_message->>'conversation_id'),0));
+ select * into c from public.conversations where organization_id=p_org and channel_session_id=p_session and provider_conversation_id=p_message->>'conversation_id';
+ if c.id is null then
+   insert into public.contacts(organization_id,name,display_name,source) values(p_org,p_message->>'name',p_message->>'name',s.social_network) returning id into cid;
+   insert into public.conversations(organization_id,contact_id,channel_session_id,channel,provider_conversation_id,provider_recipient_id)
+   values(p_org,cid,p_session,s.social_network,p_message->>'conversation_id',p_message->>'recipient_id') returning * into c;
+ elsif c.provider_recipient_id is distinct from p_message->>'recipient_id' then raise exception 'social_identity_mismatch';
+ end if;
+ select id into existing_message from public.messages where organization_id=p_org and external_id=p_message->>'external_id';
+ if existing_message is not null then return jsonb_build_object('message_id',existing_message,'conversation_id',c.id,'contact_id',c.contact_id,'duplicate',true); end if;
+ stamp:=least(to_timestamp((p_message->>'timestamp')::double precision/1000),now());
+ insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,external_id,type,direction,status,body,media_url,sent_at)
+ values(p_org,c.id,p_session,c.contact_id,p_message->>'external_id',p_message->>'type','inbound','received',p_message->>'body',p_message->>'media_url',stamp) returning id into mid;
+ update public.conversations set last_inbound_at=greatest(last_inbound_at,stamp),last_message_at=greatest(last_message_at,stamp),
+ last_message_preview=case when last_message_at is null or last_message_at<=stamp then left(p_message->>'body',160) else last_message_preview end
+ where id=c.id and organization_id=p_org;
+ return jsonb_build_object('message_id',mid,'conversation_id',c.id,'contact_id',c.contact_id,'duplicate',false);
+end; $$;
+revoke execute on function public.fn_ingest_social_dm(uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_ingest_social_dm(uuid,uuid,jsonb) to service_role;
+
+-- ---- DMs: continuidade durável (0240) ----
+-- Continuidade durável das DMs e vínculos entre organizações cercados no banco.
+alter table public.social_connections add column if not exists webhook_setup_token uuid;
+alter table public.social_connections add column if not exists webhook_setup_until timestamptz;
+alter table public.social_connections add column if not exists last_test_at timestamptz;
+
+create unique index if not exists social_connections_id_org_unique on public.social_connections(id,organization_id);
+alter table public.channel_sessions drop constraint if exists channel_sessions_social_tenant_fk;
+alter table public.channel_sessions add constraint channel_sessions_social_tenant_fk foreign key(social_connection_id,organization_id) references public.social_connections(id,organization_id);
+drop policy if exists tenant_isolation_social_connections_all on public.social_connections;
+create policy tenant_isolation_social_connections_all on public.social_connections
+ using(organization_id in(select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'admin'))
+ with check(organization_id in(select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'admin'));
+drop policy if exists tenant_isolation_social_webhook_receipts_all on public.social_webhook_receipts;
+create policy tenant_isolation_social_webhook_receipts_all on public.social_webhook_receipts
+ using(organization_id in(select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'admin'))
+ with check(organization_id in(select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'admin'));
+create or replace function public.fn_ingest_social_dm(p_org uuid,p_session uuid,p_message jsonb)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare s public.channel_sessions; c public.conversations; cid uuid; mid uuid; stamp timestamptz; existing_message uuid;
+begin
+ select * into s from public.channel_sessions where id=p_session and organization_id=p_org and provider='socios_hub' and archived_at is null;
+ if s.id is null or s.social_channel_id<>p_message->>'channel_id' or s.social_network<>p_message->>'channel' then raise exception 'social_channel_mismatch'; end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_session::text||':'||(p_message->>'conversation_id'),0));
+ select * into c from public.conversations where organization_id=p_org and channel_session_id=p_session and provider_conversation_id=p_message->>'conversation_id';
+ if c.id is null then
+   insert into public.contacts(organization_id,name,display_name,source) values(p_org,p_message->>'name',p_message->>'name',s.social_network) returning id into cid;
+   insert into public.conversations(organization_id,contact_id,channel_session_id,channel,provider_conversation_id,provider_recipient_id)
+   values(p_org,cid,p_session,s.social_network,p_message->>'conversation_id',p_message->>'recipient_id') returning * into c;
+ elsif c.provider_recipient_id is distinct from p_message->>'recipient_id' then raise exception 'social_identity_mismatch';
+ end if;
+ select id into existing_message from public.messages where organization_id=p_org and external_id=p_message->>'external_id';
+ if existing_message is not null and not exists(select 1 from public.messages where id=existing_message and conversation_id=c.id and organization_id=p_org) then raise exception 'social_identity_mismatch'; end if;
+ if existing_message is not null then return jsonb_build_object('message_id',existing_message,'conversation_id',c.id,'contact_id',c.contact_id,'duplicate',true); end if;
+ stamp:=least(to_timestamp((p_message->>'timestamp')::double precision/1000),now());
+ insert into public.messages(organization_id,conversation_id,channel_session_id,contact_id,external_id,type,direction,status,body,media_url,sent_at)
+ values(p_org,c.id,p_session,c.contact_id,p_message->>'external_id',p_message->>'type','inbound','received',p_message->>'body',p_message->>'media_url',stamp) returning id into mid;
+ update public.conversations set last_inbound_at=greatest(last_inbound_at,stamp),last_message_at=greatest(last_message_at,stamp),
+ last_message_preview=case when last_message_at is null or last_message_at<=stamp then left(p_message->>'body',160) else last_message_preview end
+ where id=c.id and organization_id=p_org;
+ perform public.emit_event('social.dm_received','message',mid,jsonb_build_object('message_id',mid),'{}'::jsonb,p_org);
+ if p_message->>'media_url' is not null then
+ perform public.emit_event('media.persist_requested','message',mid,jsonb_build_object('message_id',mid,'conversation_id',c.id),'{}'::jsonb,p_org);
+ end if;
+ return jsonb_build_object('message_id',mid,'conversation_id',c.id,'contact_id',c.contact_id,'duplicate',false);
+end; $$;
+revoke execute on function public.fn_ingest_social_dm(uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_ingest_social_dm(uuid,uuid,jsonb) to service_role;
+
+create or replace function public.fn_reply_record_receipt(p_org uuid,p_job uuid,p_worker text,p_acquired_at timestamptz,p_message uuid,p_external text,p_echo_ids text[] default '{}')
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare contact uuid;d public.ai_reply_drafts;m public.messages;
+begin
+ select contact_id into contact from public.job_queue where organization_id=p_org and id=p_job;
+ if contact is null then return null;end if;
+ perform public.fn_service_lock(p_org,contact);
+ perform 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized for share;
+ if not found then return null;end if;
+ select * into d from public.ai_reply_drafts where organization_id=p_org and send_job_id=p_job;
+ if not found then return null;end if;
+ perform 1 from public.conversations where organization_id=p_org and id=d.conversation_id and contact_id=contact for no key update;
+ if not found then return null;end if;
+ perform 1 from public.job_queue where organization_id=p_org and id=p_job for update;
+ perform 1 from public.ai_reply_drafts where organization_id=p_org and id=d.id for update;
+ if public.fn_reply_receipt_policy(p_org,p_job,p_worker,p_acquired_at)->>'current'<>'true' then return null;end if;
+ select * into m from public.messages where organization_id=p_org and id=p_message and conversation_id=d.conversation_id and contact_id=d.contact_id and channel_session_id=d.channel_session_id and direction='outbound' and type='text' and body=d.approved_body and exists(select 1 from public.send_ledger l where l.organization_id=p_org and l.job_id=p_job and l.seq=1 and l.id::text=messages.metadata->>'idempotency_key') for update;
+ if not found then return null;end if;
+ delete from public.messages where organization_id=p_org and conversation_id=d.conversation_id and sent_via='external_device' and external_id=any(p_echo_ids) and id<>p_message;
+ update public.messages set status=case when status in('delivered','read','failed') then status when exists(select 1 from public.channel_sessions s where s.id=m.channel_session_id and s.organization_id=p_org and s.provider='socios_hub') then 'sending' else 'sent' end,external_id=p_external,ack=0 where organization_id=p_org and id=p_message returning * into m;
+ update public.send_ledger set status='accepted',crm_message_id=p_message,updated_at=now(),last_error=null where organization_id=p_org and job_id=p_job and seq=1 and id::text=m.metadata->>'idempotency_key';
+ update public.conversations set last_outbound_at=now(),last_message_at=now(),last_message_preview=left(d.approved_body,280),unread_count_for_assignee=0 where organization_id=p_org and id=d.conversation_id;
+ update public.contacts set last_activity_at=now() where organization_id=p_org and id=contact;
+ return to_jsonb(m);
+end;$$;
+revoke all on function public.fn_reply_record_receipt(uuid,uuid,text,timestamptz,uuid,text,text[]) from public,anon,authenticated;
+grant execute on function public.fn_reply_record_receipt(uuid,uuid,text,timestamptz,uuid,text,text[]) to service_role;
+
+-- ---- DMs: identidade e LGPD (0241) ----
+-- A rede social não pode ser NULL: CHECK aceita UNKNOWN, por isso IN não basta.
+alter table public.channel_sessions drop constraint if exists channel_sessions_social_network_required;
+alter table public.channel_sessions add constraint channel_sessions_social_network_required
+ check(provider <> 'socios_hub' or social_network is not null);
+
+-- Identidade social participa da mesma transação de anonimização do contato.
+-- Não se altera a função canônica de LGPD: o trigger cobre também seus chamadores.
+create or replace function public.fn_redact_social_identity() returns trigger
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+ update public.messages set external_id=null
+ where organization_id=new.organization_id and conversation_id in(
+   select id from public.conversations where organization_id=new.organization_id
+    and contact_id=new.id and channel in('instagram','messenger')
+ );
+ update public.conversations set provider_recipient_id=null,provider_conversation_id=null
+ where organization_id=new.organization_id and contact_id=new.id
+   and channel in('instagram','messenger');
+ return new;
+end; $$;
+revoke execute on function public.fn_redact_social_identity() from public,anon,authenticated;
+grant execute on function public.fn_redact_social_identity() to service_role;
+drop trigger if exists trg_redact_social_identity on public.contacts;
+create trigger trg_redact_social_identity after update of is_anonymized on public.contacts
+ for each row when(new.is_anonymized and not old.is_anonymized)
+ execute function public.fn_redact_social_identity();
+
+-- 0242: importação histórica sem replay; arquivo com ACL e anexos.
+-- Histórico importado é dado, não entrada nova de cliente. O lote só pode ser
+-- aberto pelo operador SQL; um JWT/RPC não ganha permissão para silenciar eventos.
+create table if not exists public.data_import_batches (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id),
+ source text not null,
+ source_workspace_id text not null,
+ source_cutoff timestamptz not null,
+ status text not null default 'loading' check(status in('loading','review','completed','failed')),
+ manifest jsonb not null default '{}'::jsonb,
+ created_at timestamptz not null default now(),
+ completed_at timestamptz,
+ unique(organization_id,id)
+);
+alter table public.data_import_batches enable row level security;
+drop policy if exists tenant_isolation_data_import_batches_all on public.data_import_batches;
+create policy tenant_isolation_data_import_batches_all on public.data_import_batches
+ for select to authenticated using(organization_id in(select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+revoke all on public.data_import_batches from public,anon,authenticated,service_role;
+grant select on public.data_import_batches to authenticated,service_role;
+
+create table if not exists public.data_import_records (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id),
+ batch_id uuid not null,
+ source_table text not null,
+ source_id text not null,
+ source_data jsonb not null,
+ target_table text,
+ target_id uuid,
+ contact_id uuid references public.contacts(id),
+ conversation_id uuid references public.conversations(id),
+ occurred_at timestamptz,
+ unique(organization_id,batch_id,source_table,source_id),
+ foreign key(organization_id,batch_id) references public.data_import_batches(organization_id,id)
+);
+create index if not exists data_import_records_lookup on public.data_import_records(organization_id,batch_id,source_table,source_id);
+create index if not exists data_import_records_contact on public.data_import_records(organization_id,contact_id,occurred_at desc);
+alter table public.data_import_records enable row level security;
+drop policy if exists tenant_isolation_data_import_records_all on public.data_import_records;
+create policy tenant_isolation_data_import_records_all on public.data_import_records
+ for select to authenticated using(organization_id in(select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+revoke all on public.data_import_records from public,anon,authenticated,service_role;
+grant select on public.data_import_records to authenticated,service_role;
+
+create or replace function public.fn_historical_import_allowed(p_org uuid) returns boolean
+language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_batch text:=current_setting('crm.historical_import_batch',true);
+begin
+ if not exists(select 1 from pg_catalog.pg_roles where rolname=session_user and rolsuper)
+  or v_batch is null or v_batch !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false; end if;
+ return exists(select 1 from public.data_import_batches where id=v_batch::uuid and organization_id=p_org and status='loading');
+end; $$;
+revoke execute on function public.fn_historical_import_allowed(uuid) from public,anon;
+grant execute on function public.fn_historical_import_allowed(uuid) to authenticated,service_role;
+
+-- Preserva implementações atuais dos triggers e todas as FKs/RLS. O guard fica
+-- no corpo, escopado ao lote/org e à conexão SQL privilegiada; nunca desliga triggers.
+do $migration$
+declare v_name text; v_oid oid; v_definition text; v_new text;
+begin
+ foreach v_name in array array[
+  'fn_emit_message_event','fn_demanda_abre_no_inbound','fn_message_service_lock',
+  'fn_reply_inbound_revision','fn_emit_conversation_routing',
+  'fn_appointment_stamp','fn_carimbar_ida_ao_google','fn_google_projection_stamp',
+  'fn_meet_delivery_enqueue','fn_meet_stamp','fn_stamp_stage_changed_at'
+ ] loop
+  v_oid:=to_regprocedure('public.'||v_name||'()');
+  if v_oid is null then raise exception 'historical_import_trigger_missing: %',v_name; end if;
+  v_definition:=pg_get_functiondef(v_oid);
+  if position('fn_historical_import_allowed' in v_definition)=0 then
+   v_new:=regexp_replace(v_definition,'(^|\n)([ \t]*begin)\M',E'\\1\\2\n if public.fn_historical_import_allowed(new.organization_id) then return new; end if;', 'i');
+   if v_new=v_definition then raise exception 'historical_import_guard_missing: %',v_name; end if;
+   execute v_new;
+  end if;
+ end loop;
+end; $migration$;
+
+-- Não representa 300 mensagens outbound legadas como enviadas ou como fila nova.
+alter table public.messages drop constraint if exists messages_status_check;
+alter table public.messages add constraint messages_status_check check(status in('queued','received','sending','sent','delivered','read','failed','unknown'));
+
+-- Canal histórico não é uma conexão de um provedor ativo e nunca recebe segredo.
+-- Vocabulário consolidado no bloco único de channel_sessions_provider_check.
+-- Vocabulário consolidado no bloco único de channel_sessions_provider_ref_check.
+
+alter table public.conversation_notes add column if not exists visibility_scope text not null default 'workspace_internal';
+alter table public.conversation_notes drop constraint if exists conversation_notes_visibility_scope_check;
+alter table public.conversation_notes add constraint conversation_notes_visibility_scope_check check(visibility_scope in('workspace_internal','managers_only'));
+drop policy if exists conversation_notes_visibility on public.conversation_notes;
+create policy conversation_notes_visibility on public.conversation_notes as restrictive for all to authenticated
+ using(visibility_scope='workspace_internal' or public.fn_role_at_least(organization_id,'manager'))
+ with check(visibility_scope='workspace_internal' or public.fn_role_at_least(organization_id,'manager'));
+
+-- Um anexo adicional não vira uma mensagem fictícia. Aresta explícita e Storage privado.
+create unique index if not exists messages_org_id_unique on public.messages(organization_id,id);
+create table if not exists public.message_attachments (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id),
+ message_id uuid not null,
+ position integer not null check(position>=0),
+ file_name text,
+ mime_type text,
+ size_bytes bigint check(size_bytes>=0),
+ storage_path text,
+ availability text not null check(availability in('available','unavailable')),
+ created_at timestamptz not null default now(),
+ unique(organization_id,message_id,position),
+ foreign key(organization_id,message_id) references public.messages(organization_id,id) on delete cascade,
+ check((availability='available' and storage_path is not null) or (availability='unavailable' and storage_path is null))
+);
+alter table public.message_attachments enable row level security;
+drop policy if exists tenant_isolation_message_attachments_all on public.message_attachments;
+create policy tenant_isolation_message_attachments_all on public.message_attachments
+ for select to authenticated using(organization_id in(select public.fn_user_org_ids()));
+revoke all on public.message_attachments from public,anon,authenticated,service_role;
+grant select on public.message_attachments to authenticated;
+grant select,insert,update,delete on public.message_attachments to service_role;
+
+-- Anonimização é também sobre os anexos importados: referências somem junto do histórico.
+create or replace function public.fn_redact_imported_history() returns trigger
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+ insert into public.storage_redaction_queue(organization_id,bucket,object_path)
+ select new.organization_id,'whatsapp-media',a.storage_path
+ from public.message_attachments a join public.messages m on m.id=a.message_id and m.organization_id=a.organization_id
+ where a.organization_id=new.organization_id and m.contact_id=new.id and a.storage_path is not null
+ on conflict(bucket,object_path) do nothing;
+ delete from public.message_attachments a using public.messages m
+ where a.organization_id=new.organization_id and m.organization_id=new.organization_id
+ and a.message_id=m.id and m.contact_id=new.id;
+ update public.data_import_records set source_data='{"redacted":true}'::jsonb
+ where organization_id=new.organization_id and contact_id=new.id;
+ return new;
+end; $$;
+revoke execute on function public.fn_redact_imported_history() from public,anon,authenticated;
+grant execute on function public.fn_redact_imported_history() to service_role;
+drop trigger if exists trg_redact_imported_history on public.contacts;
+create trigger trg_redact_imported_history after update of is_anonymized on public.contacts
+ for each row when(new.is_anonymized and not old.is_anonymized) execute function public.fn_redact_imported_history();
+
+
+-- 0243: vínculos de arquivo e privacidade na importação.
+-- A simulação de papel numa conexão SQL privilegiada também deve falhar fechada.
+create or replace function public.fn_historical_import_allowed(p_org uuid) returns boolean
+language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_batch text:=current_setting('crm.historical_import_batch',true);
+begin
+ if current_setting('role',true) is distinct from 'none'
+  or not exists(select 1 from pg_catalog.pg_roles where rolname=session_user and rolsuper)
+  or v_batch is null or v_batch !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return false; end if;
+ return exists(select 1 from public.data_import_batches where id=v_batch::uuid and organization_id=p_org and status='loading');
+end; $$;
+revoke execute on function public.fn_historical_import_allowed(uuid) from public,anon;
+grant execute on function public.fn_historical_import_allowed(uuid) to authenticated,service_role;
+
+create unique index if not exists contacts_import_org_id_unique on public.contacts(organization_id,id);
+create unique index if not exists conversations_import_org_id_unique on public.conversations(organization_id,id);
+create unique index if not exists data_import_records_org_id_unique on public.data_import_records(organization_id,id);
+alter table public.data_import_records drop constraint if exists data_import_records_contact_tenant_fk;
+alter table public.data_import_records add constraint data_import_records_contact_tenant_fk
+ foreign key(organization_id,contact_id) references public.contacts(organization_id,id);
+alter table public.data_import_records drop constraint if exists data_import_records_conversation_tenant_fk;
+alter table public.data_import_records add constraint data_import_records_conversation_tenant_fk
+ foreign key(organization_id,conversation_id) references public.conversations(organization_id,id);
+
+-- Um evento pode conter mais de um contato. Arestas explícitas para consulta e LGPD.
+create table if not exists public.data_import_record_contacts (
+ organization_id uuid not null references public.organizations(id),
+ record_id uuid not null,
+ contact_id uuid not null,
+ primary key(organization_id,record_id,contact_id),
+ foreign key(organization_id,record_id) references public.data_import_records(organization_id,id) on delete cascade,
+ foreign key(organization_id,contact_id) references public.contacts(organization_id,id)
+);
+create index if not exists data_import_record_contacts_lookup on public.data_import_record_contacts(organization_id,contact_id);
+alter table public.data_import_record_contacts enable row level security;
+drop policy if exists tenant_isolation_data_import_record_contacts_all on public.data_import_record_contacts;
+create policy tenant_isolation_data_import_record_contacts_all on public.data_import_record_contacts
+ for select to authenticated using(organization_id in(select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+revoke all on public.data_import_record_contacts from public,anon,authenticated,service_role;
+grant select on public.data_import_record_contacts to authenticated,service_role;
+
+create or replace function public.fn_redact_imported_history() returns trigger
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+ insert into public.storage_redaction_queue(organization_id,bucket,object_path)
+ select new.organization_id,'whatsapp-media',a.storage_path
+ from public.message_attachments a join public.messages m on m.id=a.message_id and m.organization_id=a.organization_id
+ where a.organization_id=new.organization_id and m.contact_id=new.id and a.storage_path is not null
+ on conflict(bucket,object_path) do nothing;
+ delete from public.message_attachments a using public.messages m
+ where a.organization_id=new.organization_id and m.organization_id=new.organization_id
+ and a.message_id=m.id and m.contact_id=new.id;
+ update public.data_import_records r set source_data='{"redacted":true}'::jsonb
+ where r.organization_id=new.organization_id and (r.contact_id=new.id or exists(
+  select 1 from public.data_import_record_contacts c where c.organization_id=new.organization_id and c.record_id=r.id and c.contact_id=new.id
+ ));
+ return new;
+end; $$;
+revoke execute on function public.fn_redact_imported_history() from public,anon,authenticated;
+grant execute on function public.fn_redact_imported_history() to service_role;
+
+-- 0244: importação de agenda, arquivos e vínculo de tarefas
+-- A origem do vínculo continua explícita nas telas operacionais e no arquivo.
+alter table public.crm_tasks add column if not exists conversation_id uuid;
+alter table public.crm_tasks drop constraint if exists crm_tasks_conversation_tenant_fk;
+alter table public.crm_tasks add constraint crm_tasks_conversation_tenant_fk
+ foreign key(organization_id,conversation_id) references public.conversations(organization_id,id);
+alter table public.calendar_appointments drop constraint if exists calendar_appointments_source_check;
+alter table public.calendar_appointments add constraint calendar_appointments_source_check
+ check(source in('ui','mcp','google_sync','public_page','import'));
+
+alter table public.data_import_records
+ add column if not exists storage_path text,
+ add column if not exists file_name text,
+ add column if not exists file_availability text;
+alter table public.data_import_records drop constraint if exists data_import_records_file_check;
+alter table public.data_import_records add constraint data_import_records_file_check check(
+ (file_availability is null and storage_path is null) or
+ (file_availability='available' and storage_path is not null and storage_path like organization_id::text||'/%') or
+ (file_availability='unavailable' and storage_path is null)
+);
+
+create or replace function public.fn_redact_imported_history() returns trigger
+language plpgsql security definer set search_path=public,pg_temp as $$
+begin
+ insert into public.storage_redaction_queue(organization_id,bucket,object_path)
+ select new.organization_id,'whatsapp-media',a.storage_path
+ from public.message_attachments a join public.messages m on m.id=a.message_id and m.organization_id=a.organization_id
+ where a.organization_id=new.organization_id and m.contact_id=new.id and a.storage_path is not null
+ on conflict(bucket,object_path) do nothing;
+ delete from public.message_attachments a using public.messages m
+ where a.organization_id=new.organization_id and m.organization_id=new.organization_id and a.message_id=m.id and m.contact_id=new.id;
+ insert into public.storage_redaction_queue(organization_id,bucket,object_path)
+ select new.organization_id,'whatsapp-media',r.storage_path from public.data_import_records r
+ where r.organization_id=new.organization_id and r.storage_path is not null and (r.contact_id=new.id or exists(
+  select 1 from public.data_import_record_contacts c where c.organization_id=new.organization_id and c.record_id=r.id and c.contact_id=new.id
+ )) on conflict(bucket,object_path) do nothing;
+ update public.data_import_records r set source_data='{"redacted":true}'::jsonb,storage_path=null,file_name=null,file_availability=null
+ where r.organization_id=new.organization_id and (r.contact_id=new.id or exists(
+  select 1 from public.data_import_record_contacts c where c.organization_id=new.organization_id and c.record_id=r.id and c.contact_id=new.id
+ ));
+ return new;
+end; $$;
+revoke execute on function public.fn_redact_imported_history() from public,anon,authenticated;
+grant execute on function public.fn_redact_imported_history() to service_role;
+
+-- ---- Consulta do comando sem leituras redundantes (0245) ----
+-- A lista/contagem do Inbox excedia 8 s após importar 3.239 conversas.
+-- Mantém a regra canônica e RLS invoker. Evita resolver duas vezes o contato,
+-- e não o consulta quando dono, encerramento ou silêncio já decidem o comando.
+create or replace function public.comando_da_conversa(c public.conversations)
+returns text
+language plpgsql
+stable
+security invoker
+set search_path = public
+as $comando$
+declare
+  v_force_human boolean;
+  v_is_blocked boolean;
+begin
+  if c.assigned_to_user_id is not null
+    or c.status in ('closed', 'archived', 'resolved')
+    or c.bot_silenced_until > now() then
+    return public.fn_comando_da_conversa(
+      c.status, c.assigned_to_user_id, c.bot_silenced_until, false, false, now()
+    );
+  end if;
+
+  select ct.force_human, ct.is_blocked into v_force_human, v_is_blocked
+    from public.contacts ct where ct.id = c.contact_id;
+  return public.fn_comando_da_conversa(
+    c.status, c.assigned_to_user_id, c.bot_silenced_until,
+    coalesce(v_force_human, false), coalesce(v_is_blocked, false), now()
+  );
+end;
+$comando$;
+
+revoke execute on function public.comando_da_conversa(public.conversations) from public, anon;
+grant execute on function public.comando_da_conversa(public.conversations) to authenticated, service_role;
+
+-- ---- Proxies por conexão (0246) ----
+-- Guarda apenas o vínculo; credenciais são obtidas da Webshare no servidor.
+alter table public.channel_sessions drop constraint if exists channel_sessions_engine_check;
+alter table public.channel_sessions add constraint channel_sessions_engine_check check (engine in ('NOWEB','WEBJS','GOWS'));
+create unique index if not exists channel_sessions_proxy_org_id_unique on public.channel_sessions(organization_id,id);
+create table if not exists public.channel_proxy_bindings (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  channel_session_id uuid primary key,
+  proxy_id text not null unique check(length(proxy_id) between 1 and 100),
+  country_code text not null check(country_code ~ '^[A-Z]{2}$'),
+  transport_origin text not null,
+  updated_at timestamptz not null default now(),
+  foreign key(organization_id,channel_session_id) references public.channel_sessions(organization_id,id) on delete cascade
+);
+alter table public.channel_proxy_bindings enable row level security;
+revoke all on public.channel_proxy_bindings from anon,authenticated;
+grant select on public.channel_proxy_bindings to authenticated;
+grant all on public.channel_proxy_bindings to service_role;
+drop policy if exists tenant_isolation_channel_proxy_bindings_all on public.channel_proxy_bindings;
+create policy tenant_isolation_channel_proxy_bindings_all on public.channel_proxy_bindings
+ for select to authenticated using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'admin'));
+
+create or replace function public.fn_bind_channel_proxy(p_org uuid,p_channel uuid,p_proxy text,p_country text,p_origin text,p_previous text default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.channel_sessions; b public.channel_proxy_bindings;
+begin
+ perform pg_advisory_xact_lock(hashtextextended(p_channel::text,246));
+ select * into c from public.channel_sessions where organization_id=p_org and id=p_channel and provider='waha' and archived_at is null for update;
+ if not found then raise exception 'proxy_channel_not_found' using errcode='P0002'; end if;
+ select * into b from public.channel_proxy_bindings where organization_id=p_org and channel_session_id=p_channel for update;
+ if found then
+  if b.transport_origin<>p_origin then raise exception 'proxy_transport_changed' using errcode='22023'; end if;
+  if b.proxy_id=p_proxy and b.country_code=p_country then return to_jsonb(b); end if;
+  if b.proxy_id is distinct from p_previous then raise exception 'proxy_binding_changed' using errcode='40001'; end if;
+  if c.status not in ('STOPPED','FAILED') then raise exception 'proxy_change_requires_stop' using errcode='22023'; end if;
+ elsif p_previous is not null then raise exception 'proxy_binding_changed' using errcode='40001';
+ end if;
+ insert into public.channel_proxy_bindings(organization_id,channel_session_id,proxy_id,country_code,transport_origin)
+ values(p_org,p_channel,p_proxy,p_country,p_origin)
+ on conflict(channel_session_id) do update set proxy_id=excluded.proxy_id,country_code=excluded.country_code,updated_at=now()
+ returning * into b;
+ return to_jsonb(b);
+exception when unique_violation then raise exception 'proxy_in_use' using errcode='23505';
+end;$$;
+revoke execute on function public.fn_bind_channel_proxy(uuid,uuid,text,text,text,text) from public,anon,authenticated;
+grant execute on function public.fn_bind_channel_proxy(uuid,uuid,text,text,text,text) to service_role;
+
+-- ---- Disponibilidade global do pool (migration 0247) ----
+-- Pool da instalação: revela somente se IDs já conhecidos estão reservados.
+-- Nenhuma identidade de organização/canal atravessa esta consulta global.
+create or replace function public.fn_reserved_channel_proxies(p_ids text[])
+returns setof text language sql stable security definer set search_path=public as $$
+ select proxy_id from public.channel_proxy_bindings where proxy_id=any(p_ids);
+$$;
+revoke execute on function public.fn_reserved_channel_proxies(text[]) from public,anon,authenticated;
+grant execute on function public.fn_reserved_channel_proxies(text[]) to service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES
@@ -24066,3 +24578,81 @@ grant execute on function public.fn_decrypt_oauth(bytea) to service_role;
 grant execute on function public.fn_encrypt_oauth(text) to service_role;
 grant execute on function public.fn_lgpd_cascade_redact_contact(uuid, uuid, uuid) to service_role;
 grant execute on function public.fn_update_budget_consumption() to service_role;
+-- ---- DMs sociais (migration 0239) ----
+
+-- ---- 0248: permissões da cifra após restore com donos distintos ----
+-- Restore self-host pode deixar as RPCs com dono postgres e o helper privado
+-- com dono supabase_admin. SECURITY DEFINER troca a identidade: o dono da RPC
+-- precisa executar o helper, mesmo quando o chamador é service_role.
+-- A chave continua inacessível diretamente aos papéis da API.
+revoke all on function private.fn_oauth_key() from public, anon, authenticated, service_role;
+do $migration$
+declare v_owner text;
+begin
+ for v_owner in
+  select distinct pg_get_userbyid(p.proowner) from pg_proc p
+  where p.oid in ('public.fn_encrypt_oauth(text)'::regprocedure,'public.fn_decrypt_oauth(bytea)'::regprocedure)
+ loop
+  if v_owner in ('anon','authenticated','service_role') then
+   raise exception 'oauth_cipher_owner_must_be_database_operator';
+  end if;
+  execute format('grant usage on schema private to %I',v_owner);
+  execute format('grant execute on function private.fn_oauth_key() to %I',v_owner);
+ end loop;
+end;
+$migration$;
+
+-- ---- Visibilidade sem replanejamento (migration 0249) ----
+-- O Inbox de atendentes excedia 8 s com 3.242 conversas. O helper SQL
+-- replanejava a expressão de autorização e resolvia o papel duas vezes por linha.
+-- PL/pgSQL mantém planos das consultas internas e resolve o papel uma vez.
+-- Preserva plataforma, suporte temporário, revogação e os três modos de leitura.
+create or replace function public.fn_can_view_conversation(
+  p_org uuid, p_assigned_to_user_id uuid
+) returns boolean
+language plpgsql stable security definer
+set search_path = public
+as $visibility$
+declare
+  v_role text;
+  v_mode text;
+begin
+  if public.fn_is_platform_admin() then return true; end if;
+  v_role := public.fn_user_role_in_org(p_org);
+  if v_role is null then return false; end if;
+  if v_role in ('viewer','manager','admin') then return true; end if;
+  if p_assigned_to_user_id = auth.uid() then return true; end if;
+  select o.settings->>'visibility_mode' into v_mode
+    from public.organizations o where o.id = p_org;
+  case coalesce(v_mode, 'own_and_unassigned')
+    when 'all' then return true;
+    when 'own_and_unassigned' then return p_assigned_to_user_id is null;
+    else return false;
+  end case;
+end;
+$visibility$;
+revoke execute on function public.fn_can_view_conversation(uuid,uuid) from public,anon;
+grant execute on function public.fn_can_view_conversation(uuid,uuid) to authenticated,service_role;
+
+-- O contexto de suporte tem consulta composta. Materializá-lo em uma variável
+-- evita que o inlining SQL repita essa resolução a cada referência ao JSON.
+create or replace function public.fn_user_role_in_org(p_org uuid)
+returns text language plpgsql stable security definer set search_path = public
+as $role$
+declare
+  v_support jsonb;
+  v_role text;
+begin
+  v_support := public.fn_support_context();
+  if v_support->>'status' = 'active'
+    and (v_support->>'organization_id')::uuid = p_org then
+    return case when v_support->>'access_mode' = 'full' then 'admin' else 'viewer' end;
+  end if;
+  select m.role into v_role from public.user_organizations m
+    where m.user_id = auth.uid() and m.organization_id = p_org
+      and m.revoked_at is null limit 1;
+  return v_role;
+end;
+$role$;
+revoke execute on function public.fn_user_role_in_org(uuid) from public,anon;
+grant execute on function public.fn_user_role_in_org(uuid) to authenticated,service_role;

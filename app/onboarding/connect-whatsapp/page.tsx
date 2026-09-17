@@ -1,6 +1,7 @@
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
 import { metaPodeReceber } from "@/lib/channels/meta/webhook";
+import { proxyEnabled, proxyRequired } from "@/lib/channels/session-proxy";
 import { getWahaClient } from "@/lib/waha/client";
 import { ConnectWhatsappClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -36,6 +37,7 @@ export default async function ConnectWhatsappPage() {
         {traduzir("Novos canais começam em modo de teste. Após concluir a configuração, abra Conexões para autorizar seus números de teste ou liberar o público.", idioma)}
       </p>
       <ConnectWhatsappClient
+        proxySelectionEnabled={proxyEnabled() || proxyRequired()}
         wahaConfigured={wahaConfigured}
         sessionName={`org_${activeOrg.orgId.slice(0, 8)}`}
         oficialPodeReceber={oficialPodeReceber}

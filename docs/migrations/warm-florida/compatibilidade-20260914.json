@@ -1,0 +1,284 @@
+{
+  "measured_at": "2026-09-14T00:40:14.223Z",
+  "cutoff": "2026-09-14T00:20:20.555Z",
+  "counts": {
+    "appointment_event_history": 44,
+    "appointment_no_show_predictions": 30,
+    "appointment_types": 0,
+    "appointments": 30,
+    "billing_audit_log": 0,
+    "calendar_blocks": 0,
+    "channel_routing_rules": 0,
+    "companies": 0,
+    "contact_identities": 2476,
+    "contacts": 3113,
+    "crm_ai_alerts": 106,
+    "crm_ai_analyses": 53,
+    "crm_ai_briefings": 2,
+    "crm_ai_chat_messages": 25,
+    "crm_ai_chat_threads": 2,
+    "crm_ai_chat_usage": 1,
+    "crm_ai_knowledge_base": 0,
+    "crm_ai_memory": 148,
+    "crm_ai_playbooks": 0,
+    "crm_ai_suggestion_events": 0,
+    "crm_automation_rules": 0,
+    "crm_automation_runs": 0,
+    "crm_channel_events": 49762,
+    "crm_channels": 6,
+    "crm_contact_consents": 83,
+    "crm_contact_enrichment": 2,
+    "crm_contact_import_jobs": 0,
+    "crm_contact_merge_logs": 23,
+    "crm_contact_products": 0,
+    "crm_conversation_assignment_history": 1436,
+    "crm_conversation_participants": 136,
+    "crm_conversation_status_log": 2454,
+    "crm_conversations": 3254,
+    "crm_deal_ai_insights": 0,
+    "crm_deal_forecasts": 0,
+    "crm_deal_risk_signals": 3,
+    "crm_deal_stage_history": 98,
+    "crm_duplicate_suggestions": 31,
+    "crm_files": 1084,
+    "crm_message_translations": 19,
+    "crm_messages": 60444,
+    "crm_notes": 108,
+    "crm_objection_events": 41,
+    "crm_pipeline_handoff_rules": 0,
+    "crm_pipeline_permissions": 0,
+    "crm_pipeline_stage_webhooks": 0,
+    "crm_pipeline_webhook_logs": 0,
+    "crm_process_handoffs": 0,
+    "crm_product_catalog_config": 0,
+    "crm_products": 0,
+    "crm_revenue_forecasts": 5,
+    "crm_saved_replies": 0,
+    "crm_tags": 7,
+    "crm_tasks": 1607,
+    "deals": 5,
+    "followup_job_workspace_runs": 4449,
+    "internal_conversations": 1,
+    "internal_messages": 0,
+    "knowledge_embeddings": 0,
+    "mcp_agent_tokens": 1,
+    "mcp_audit_log": 6,
+    "pipeline_stages": 6,
+    "pipelines": 1,
+    "platform_notifications": 5,
+    "reseller_clients": 0,
+    "reseller_commissions": 0,
+    "user_availability": 0,
+    "webhook_tokens": 0,
+    "whatsapp_session_status_log": 3249,
+    "whatsapp_sessions": 4,
+    "workspace_access_audit_logs": 5,
+    "workspace_hub_configs": 0,
+    "workspace_invitations": 2,
+    "workspace_member_channel_restrictions": 1,
+    "workspace_members": 9,
+    "workspace_role_permissions": 66,
+    "workspace_roles": 3,
+    "workspace_stripe_configs": 0,
+    "workspace_subscriptions": 1,
+    "workspace_team_members": 0,
+    "workspace_teams": 0,
+    "workspace_user_permissions": 0,
+    "workspaces": 1,
+    "profiles": 9,
+    "crm_conversation_tags": 27,
+    "crm_deal_conversations": 0,
+    "crm_deal_products": 0,
+    "crm_product_images": 0,
+    "crm_contact_import_rows": 0,
+    "appointment_reminders": 0,
+    "internal_conversation_participants": 2,
+    "internal_conversation_pins": 0,
+    "internal_message_attachments": 0,
+    "internal_message_mentions": 0,
+    "internal_message_reactions": 0,
+    "internal_message_edit_log": 0,
+    "internal_message_delete_log": 0,
+    "admin_audit_log": 1,
+    "plans": 1
+  },
+  "contacts": {
+    "invalid_phone": 1,
+    "invalid_email": 0,
+    "active_phone_duplicates": [
+      [
+        "96ae75ce-4dc1-4f5b-9e09-004dc0f748c9",
+        "b8b9072c-c388-484e-b159-631317168909"
+      ]
+    ],
+    "deleted": 23,
+    "merged": 23
+  },
+  "conversations": {
+    "statuses": {
+      "open": 932,
+      "closed": 936,
+      "resolved": 1220,
+      "pending": 166
+    },
+    "duplicate_contact_channel_groups": [
+      [
+        "170fbf1d-c7b3-4d3f-a8f2-5c536deb7b3f",
+        "7c44e4ba-c75f-4cd5-b878-ed7ee8ab5490"
+      ],
+      [
+        "1aaf3013-09d9-430e-89c1-92db06087e5b",
+        "c78dc71a-5fd4-4f6f-a97a-a666cf54e3f8"
+      ],
+      [
+        "1c57f08f-88d5-428b-970f-b78675cd8de1",
+        "65210a3f-0c97-459b-a9bf-8041bb22115a"
+      ],
+      [
+        "24e2c208-5820-47a9-bd02-37d782b6b560",
+        "6e815630-4350-4117-8927-7903a88dd79e"
+      ],
+      [
+        "2945e10a-0fd9-4b60-b2ec-ffded94b0651",
+        "b979adfe-828e-4d3f-b85c-68d0c25c7573"
+      ],
+      [
+        "2d8428c4-1805-4e38-b793-28cfc933cf5b",
+        "c16dd399-5ca1-4b58-bbb9-0a613ee2ed6a"
+      ],
+      [
+        "4dc9356f-2ae4-422e-986e-f65233af251a",
+        "ce313bc9-c51f-4d77-9716-8124c254e32b"
+      ],
+      [
+        "655acbe2-af30-4f1c-988f-5a0a509755f5",
+        "eec294f8-c3a0-4a48-9a44-4545caddfe13"
+      ],
+      [
+        "799cd6e7-fe96-435b-a2a2-6ff9b3316629",
+        "89ef0455-f0a3-475c-9985-5e3c0fdfc65e"
+      ],
+      [
+        "7e358af2-092e-4155-90de-cc127d4191b8",
+        "8db869c9-9eec-4fec-9d4f-6e1e500d602b"
+      ],
+      [
+        "95f16cd8-47f4-4684-b7b1-b10c0da0b3f0",
+        "ae1f325f-2504-4e0f-9d2c-59be93410033"
+      ],
+      [
+        "d02c3bdc-2772-4fe4-b4ff-e9d063857f7f",
+        "fceeb56a-2509-45aa-b2a5-fbdb0e651728"
+      ],
+      [
+        "f33f0ee5-e378-418c-8587-de1436a4ea7b",
+        "f3621503-821a-470c-a592-234800059b70"
+      ]
+    ],
+    "without_channel": [
+      {
+        "id": "99fc2b48-a3fc-410a-b474-243ba8a1a6c7",
+        "channel": "instagram",
+        "message_count": 1,
+        "message_channel_ids": [
+          null
+        ]
+      }
+    ]
+  },
+  "messages": {
+    "statuses": {
+      "null": 27645,
+      "sent": 16099,
+      "read": 13446,
+      "delivered": 3034,
+      "failed": 220
+    },
+    "duplicate_external_ids": [],
+    "outbound_unknown": 300,
+    "inbound_unknown": 27345
+  },
+  "media": {
+    "attachment_records": 8710,
+    "attachment_shapes": {
+      "filename,type,url": 4425,
+      "type,url": 2227,
+      "name,type,url": 2055,
+      "filename,note,size,type,url": 3
+    },
+    "url_hosts": {
+      "vfmkwbrwnubbuffqlhal.supabase.co": 9214,
+      "lookaside.fbsbx.com": 576,
+      "vidafit-capa.vercel.app": 1,
+      "waha.metamorph-ai.com": 1
+    },
+    "url_fields": {
+      "url": 8707,
+      "name": 1,
+      "crm_files.file_url": 1084
+    },
+    "mime_types": {
+      "audio/opus": 1373,
+      "image/jpeg": 2593,
+      "image/png": 1339,
+      "audio/x-wav": 343,
+      "audio/ogg": 407,
+      "application/pdf": 403,
+      "video/mp4": 1286,
+      "audio/mp4": 394,
+      "audio/ogg; codecs=opus": 377,
+      "application/octet-stream": 24,
+      "audio/mpeg": 29,
+      "image/webp": 98,
+      "audio/webm": 25,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 8,
+      "text/vcard": 5,
+      "application/vnd.apple.keynote": 1,
+      "video/webm": 4,
+      "application/zip": 1
+    },
+    "file_records": 1084
+  },
+  "tasks": {
+    "without_contact_or_deal": 0,
+    "with_conversation": 1607
+  },
+  "notes": {
+    "visibility": {
+      "workspace_internal": 105,
+      "managers_only": 3
+    },
+    "without_conversation": 0,
+    "without_contact": 0
+  },
+  "appointments": {
+    "statuses": {
+      "scheduled": 16,
+      "cancelled": 3,
+      "completed": 10,
+      "confirmed": 1
+    },
+    "location_types": {
+      "in_person": 27,
+      "phone": 3
+    },
+    "invalid_period": 0
+  },
+  "deals": {
+    "count": 5,
+    "currency": "USD",
+    "total_value_cents": 1300000
+  },
+  "identities": {
+    "types": {
+      "whatsapp": 1717,
+      "instagram": 753,
+      "email": 6
+    },
+    "providers": {
+      "meta": 148,
+      "null": 1476,
+      "waha": 852
+    }
+  }
+}

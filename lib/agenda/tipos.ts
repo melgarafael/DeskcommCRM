@@ -159,7 +159,7 @@ export const ROTULO_DO_AUTOR: Record<AutorDoAgendamento, string> = {
 };
 
 /** Por qual porta o agendamento entrou. */
-export const ORIGENS_DO_AGENDAMENTO = ["ui", "mcp", "google_sync", "public_page"] as const;
+export const ORIGENS_DO_AGENDAMENTO = ["ui", "mcp", "google_sync", "public_page", "import"] as const;
 export type OrigemDoAgendamento = (typeof ORIGENS_DO_AGENDAMENTO)[number];
 
 /**

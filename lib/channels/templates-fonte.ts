@@ -40,6 +40,7 @@ export type FonteDeTemplates = "oficial" | "parceiro";
 const FONTE: Record<ProviderDeMensagem, FonteDeTemplates | null> = {
   // Manda texto livre a qualquer hora: não há definição a listar, e um seletor
   // ali ofereceria solução para um problema que este canal não tem.
+  socios_hub: null,
   waha: null,
   meta_cloud: "oficial",
   zernio: "parceiro",

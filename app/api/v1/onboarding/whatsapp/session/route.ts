@@ -1,3 +1,5 @@
+import { createChannelSchema } from "@/lib/schemas/channels";
+import { proxyErrorMessage } from "@/lib/channels/session-proxy";
 import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
@@ -34,15 +36,17 @@ export async function POST(req: Request): Promise<Response> {
   if (!auth.ok) return auth.response;
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
   const waha = getWahaClient(); if (!waha) return fail("waha_not_configured", "O serviço de conexão está indisponível. Tente novamente.", 503, { requestId });
+  const parsed = createChannelSchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) return fail("validation_failed", "Dados inválidos.", 422, { requestId });
   try {
     const result = await connectWahaChannel(await createClient(), createAdminClient(), waha, {
       organizationId: auth.org.orgId, idempotencyKey: req.headers.get("Idempotency-Key") ?? "",
-      userId: auth.user.id, requestId, onboarding: true, restart: new URL(req.url).searchParams.get("restart") === "1",
+      userId: auth.user.id, requestId, onboarding: true, proxy_country: parsed.data.proxy_country, proxy_id: parsed.data.proxy_id, restart: new URL(req.url).searchParams.get("restart") === "1",
     });
     return ok({ status: result.channel.status, session: result.channel.waha_session_name, channel_session_id: result.channel.id }, { requestId });
   } catch (error) {
     if (error instanceof ChannelConnectionError) return fail(error.code,
-      error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente." : "Não foi possível concluir a conexão. Tente novamente ou repare o número em Conexões.",
+      error.code.startsWith("proxy_") ? proxyErrorMessage(error.code) : error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente." : "Não foi possível concluir a conexão. Tente novamente ou repare o número em Conexões.",
       error.status, { requestId, details: error.technical });
     return fail("internal_error", "Não foi possível concluir a conexão. Tente novamente.", 500, { requestId });
   }

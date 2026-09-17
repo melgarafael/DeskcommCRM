@@ -27,7 +27,7 @@ import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/t
 export const dynamic = "force-dynamic";
 
 const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, assigned_to, created_by, created_at, updated_at";
+  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, conversation_id, assigned_to, created_by, created_at, updated_at";
 
 const edicaoSchema = z
   .object({

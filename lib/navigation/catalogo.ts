@@ -538,6 +538,15 @@ export const NAV_CATALOG = [
     section: "O histórico que se consulta",
     minRole: "manager",
   },
+  {
+    href: "/app/imports",
+    label: "Histórico importado",
+    description: "Registros preservados da origem e vínculos com os cadastros do CRM.",
+    icon: "ClockCounterClockwise",
+    group: "analise",
+    section: "O histórico que se consulta",
+    minRole: "manager",
+  },
 
   // ---- Organização — conta, empresa, acesso ----
   {

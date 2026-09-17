@@ -25,7 +25,7 @@ export function NoteCard({ note, onDelete }: Props) {
             <NoteIcon size={12} weight="fill" aria-hidden />
             <span>{note.created_by_name ?? t("Alguém")}</span>
             <span aria-hidden>·</span>
-            <span>{t("Nota interna · só o time vê")}</span>
+            <span>{t(note.visibility_scope === "managers_only" ? "Nota restrita a gestores" : "Nota interna · só o time vê")}</span>
           </div>
           {onDelete && (
             <button

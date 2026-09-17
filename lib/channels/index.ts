@@ -1,3 +1,4 @@
+import { socialAdapter } from "./adapters/social";
 /**
  * A porta de entrada do seam. Feature nenhuma importa `lib/waha/*` direto —
  * pede o adapter do provider da conversa e o descritor de capabilities.
@@ -12,6 +13,7 @@ import type { ChannelAdapter, ChannelProvider, ProviderDeMensagem } from "./type
  * destinatário nem envia envelope — ver `ProviderDeMensagem` em `./types`.
  */
 const ADAPTERS: Record<ProviderDeMensagem, ChannelAdapter | null> = {
+  socios_hub: socialAdapter,
   waha: wahaAdapter,
   meta_cloud: metaCloudAdapter,
   zernio: zernioAdapter,

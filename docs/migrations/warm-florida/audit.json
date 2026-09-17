@@ -1,0 +1,2016 @@
+{
+  "measured_at": "2026-09-13T23:57:34.889Z",
+  "workspace_id": "68e16519-dac1-4e28-8762-615528a71180",
+  "consistent_snapshot": false,
+  "inventory": {
+    "crm_deal_forecasts": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "forecast_probability",
+        "forecast_value",
+        "inputs",
+        "calculated_at"
+      ]
+    },
+    "crm_ai_suggestion_events": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "analysis_id",
+        "agent_id",
+        "suggestion_text",
+        "event_type",
+        "created_at"
+      ]
+    },
+    "whatsapp_session_status_log": {
+      "count": 3249,
+      "columns": [
+        "id",
+        "session_id",
+        "workspace_id",
+        "session_name",
+        "previous_status",
+        "new_status",
+        "waha_status",
+        "source",
+        "error_message",
+        "created_at"
+      ]
+    },
+    "crm_notes": {
+      "count": 108,
+      "columns": [
+        "id",
+        "workspace_id",
+        "content",
+        "contact_id",
+        "deal_id",
+        "conversation_id",
+        "author_id",
+        "created_at",
+        "updated_at",
+        "note_type",
+        "visibility_scope"
+      ]
+    },
+    "crm_files": {
+      "count": 1084,
+      "columns": [
+        "id",
+        "workspace_id",
+        "uploaded_by",
+        "file_name",
+        "file_type",
+        "file_size",
+        "storage_path",
+        "file_url",
+        "contact_id",
+        "conversation_id",
+        "deal_id",
+        "created_at"
+      ]
+    },
+    "contacts": {
+      "count": 3113,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "email",
+        "phone",
+        "company_id",
+        "avatar_url",
+        "created_at",
+        "updated_at",
+        "preferred_language",
+        "source",
+        "metadata",
+        "merged_into_id",
+        "deleted_at",
+        "phone_e164",
+        "phone_match_key",
+        "email_norm"
+      ]
+    },
+    "crm_conversation_participants": {
+      "count": 136,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "user_id",
+        "role_in_conversation",
+        "created_by",
+        "created_at"
+      ]
+    },
+    "appointment_no_show_predictions": {
+      "count": 30,
+      "columns": [
+        "id",
+        "workspace_id",
+        "appointment_id",
+        "contact_id",
+        "conversation_id",
+        "deal_id",
+        "prediction_score",
+        "prediction_level",
+        "confidence",
+        "reasons",
+        "recommended_actions",
+        "model_version",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_pipeline_handoff_rules": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "source_pipeline_id",
+        "source_stage_semantic_type",
+        "target_pipeline_id",
+        "target_default_stage_id",
+        "action_type",
+        "default_owner_role",
+        "is_active",
+        "created_at",
+        "notify_parent_on_close",
+        "notify_parent_statuses"
+      ]
+    },
+    "appointment_event_history": {
+      "count": 44,
+      "columns": [
+        "id",
+        "workspace_id",
+        "appointment_id",
+        "event_type",
+        "actor_type",
+        "actor_id",
+        "metadata",
+        "created_at"
+      ]
+    },
+    "workspace_invitations": {
+      "count": 2,
+      "columns": [
+        "id",
+        "workspace_id",
+        "email",
+        "team_id",
+        "invited_by",
+        "invitation_code",
+        "status",
+        "expires_at",
+        "created_at",
+        "role_id"
+      ]
+    },
+    "workspace_members": {
+      "count": 9,
+      "columns": [
+        "id",
+        "user_id",
+        "workspace_id",
+        "created_at",
+        "updated_at",
+        "status",
+        "invited_by",
+        "joined_at",
+        "role_id"
+      ]
+    },
+    "knowledge_embeddings": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "content",
+        "embedding",
+        "metadata",
+        "source_type",
+        "source_id",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_deal_stage_history": {
+      "count": 98,
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "pipeline_id",
+        "from_stage_id",
+        "to_stage_id",
+        "changed_by",
+        "entered_at",
+        "exited_at",
+        "duration_seconds",
+        "created_at"
+      ]
+    },
+    "billing_audit_log": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "action",
+        "details",
+        "ip_address",
+        "created_at"
+      ]
+    },
+    "pipeline_stages": {
+      "count": 6,
+      "columns": [
+        "id",
+        "workspace_id",
+        "pipeline_id",
+        "name",
+        "position",
+        "created_at",
+        "updated_at",
+        "stage_semantic_type",
+        "is_closed_stage",
+        "stage_color",
+        "probability",
+        "is_default_start_stage"
+      ]
+    },
+    "workspace_role_permissions": {
+      "count": 66,
+      "columns": [
+        "id",
+        "workspace_id",
+        "module_key",
+        "can_view",
+        "can_create",
+        "can_edit",
+        "can_delete",
+        "can_manage",
+        "created_at",
+        "updated_at",
+        "role_id"
+      ]
+    },
+    "crm_automation_rules": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "is_enabled",
+        "trigger_type",
+        "conditions",
+        "actions",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_conversations": {
+      "count": 3254,
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "channel",
+        "status",
+        "assigned_agent_id",
+        "subject",
+        "created_at",
+        "updated_at",
+        "last_customer_message_at",
+        "last_agent_message_at",
+        "next_followup_at",
+        "lead_temperature",
+        "customer_language",
+        "customer_language_confidence",
+        "translation_enabled",
+        "channel_id",
+        "external_thread_id",
+        "merged_from_conversation_id",
+        "assigned_team_id",
+        "jid_aliases",
+        "ai_enabled"
+      ]
+    },
+    "crm_deal_ai_insights": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "latest_analysis_id",
+        "key_signals",
+        "risks",
+        "opportunities",
+        "recommended_action",
+        "updated_at"
+      ]
+    },
+    "crm_tags": {
+      "count": 7,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "color",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "contact_identities": {
+      "count": 2476,
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "type",
+        "external_id",
+        "value",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "normalized_value",
+        "is_primary",
+        "provider"
+      ]
+    },
+    "workspace_access_audit_logs": {
+      "count": 5,
+      "columns": [
+        "id",
+        "workspace_id",
+        "actor_user_id",
+        "target_user_id",
+        "action_type",
+        "old_value",
+        "new_value",
+        "metadata",
+        "created_at"
+      ]
+    },
+    "workspace_roles": {
+      "count": 3,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "slug",
+        "is_system",
+        "is_default",
+        "position",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_contact_enrichment": {
+      "count": 2,
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "field_name",
+        "field_value",
+        "source",
+        "confidence",
+        "is_applied",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_contact_consents": {
+      "count": 83,
+      "columns": [
+        "id",
+        "contact_id",
+        "workspace_id",
+        "basis",
+        "captured_at",
+        "source",
+        "proof_url",
+        "revoked_at",
+        "expires_at",
+        "created_by",
+        "metadata"
+      ]
+    },
+    "internal_messages": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "sender_id",
+        "type",
+        "text_content",
+        "created_at",
+        "deleted_at",
+        "reply_to_message_id",
+        "forwarded_from_message_id",
+        "forwarded_from_conversation_id",
+        "edited_at",
+        "original_text_backup",
+        "deleted_by",
+        "text_search"
+      ]
+    },
+    "companies": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "domain",
+        "industry",
+        "size",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_ai_memory": {
+      "count": 148,
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "memory_type",
+        "content",
+        "source_analysis_id",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "pipelines": {
+      "count": 1,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "created_at",
+        "updated_at",
+        "description",
+        "pipeline_type",
+        "is_active",
+        "created_by"
+      ]
+    },
+    "crm_channels": {
+      "count": 6,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "channel_type",
+        "provider",
+        "status",
+        "config",
+        "external_identifier",
+        "is_default",
+        "created_at",
+        "updated_at",
+        "phone_number",
+        "color"
+      ]
+    },
+    "crm_pipeline_stage_webhooks": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "pipeline_id",
+        "stage_id",
+        "name",
+        "url",
+        "method",
+        "headers",
+        "payload_template",
+        "trigger_on",
+        "include_deal_data",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_deal_risk_signals": {
+      "count": 3,
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "conversation_id",
+        "risk_type",
+        "risk_level",
+        "reason",
+        "detected_by",
+        "created_at",
+        "resolved_at"
+      ]
+    },
+    "crm_contact_products": {
+      "count": 0,
+      "columns": [
+        "id",
+        "contact_id",
+        "product_id",
+        "workspace_id",
+        "interest_level",
+        "linked_by",
+        "created_at"
+      ]
+    },
+    "appointments": {
+      "count": 30,
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "conversation_id",
+        "deal_id",
+        "owner_id",
+        "assigned_user_id",
+        "title",
+        "description",
+        "appointment_type_id",
+        "scheduled_start",
+        "scheduled_end",
+        "status",
+        "location_type",
+        "location_data",
+        "meeting_link",
+        "created_at",
+        "updated_at",
+        "confirmation_status",
+        "confirmed_at",
+        "confirmation_source"
+      ]
+    },
+    "crm_objection_events": {
+      "count": 41,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "objection_type",
+        "detected_at",
+        "confidence",
+        "analysis_id"
+      ]
+    },
+    "internal_conversations": {
+      "count": 1,
+      "columns": [
+        "id",
+        "workspace_id",
+        "type",
+        "title",
+        "avatar_url",
+        "created_by",
+        "created_at",
+        "updated_at",
+        "last_message_at"
+      ]
+    },
+    "reseller_clients": {
+      "count": 0,
+      "columns": [
+        "id",
+        "reseller_id",
+        "workspace_id",
+        "source",
+        "status",
+        "churned_at",
+        "created_at"
+      ]
+    },
+    "crm_ai_analyses": {
+      "count": 53,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "last_message_id",
+        "customer_messages_count",
+        "summary",
+        "suggested_replies",
+        "next_action",
+        "signals",
+        "created_at",
+        "analysis_trigger",
+        "customer_intent",
+        "intent_confidence",
+        "suggested_tags",
+        "followup_recommended",
+        "followup_delay_minutes",
+        "lead_score",
+        "qualification_reason",
+        "qualification_factors",
+        "suggested_deal_action",
+        "suggested_deal_stage",
+        "deal_creation_recommended",
+        "memory_candidates",
+        "enrichment_candidates",
+        "alert_candidates",
+        "objection_candidates",
+        "matched_playbook_id",
+        "sentiment",
+        "sentiment_score",
+        "sentiment_reason",
+        "conversation_summary",
+        "coaching_suggestions",
+        "conversation_quality_score",
+        "quality_feedback"
+      ]
+    },
+    "crm_pipeline_webhook_logs": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "webhook_id",
+        "deal_id",
+        "status_code",
+        "response_body",
+        "error_message",
+        "executed_at"
+      ]
+    },
+    "crm_pipeline_permissions": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "pipeline_id",
+        "role",
+        "team_id",
+        "user_id",
+        "created_at"
+      ]
+    },
+    "workspace_hub_configs": {
+      "count": 0,
+      "columns": [
+        "workspace_id",
+        "subaccount_id",
+        "subaccount_slug",
+        "webhook_sub_id",
+        "secret_ciphertext",
+        "secret_iv",
+        "secret_auth_tag",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "appointment_types": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "description",
+        "duration_minutes",
+        "location_type",
+        "assigned_role",
+        "assigned_team",
+        "buffer_before_minutes",
+        "buffer_after_minutes",
+        "max_daily_bookings",
+        "requires_confirmation",
+        "auto_stage_change",
+        "is_active",
+        "created_at"
+      ]
+    },
+    "crm_ai_chat_threads": {
+      "count": 2,
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "title",
+        "created_at",
+        "last_message_at",
+        "archived"
+      ]
+    },
+    "followup_job_workspace_runs": {
+      "count": 4446,
+      "columns": [
+        "id",
+        "ran_at",
+        "workspace_id",
+        "tasks_created"
+      ]
+    },
+    "crm_products": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "description",
+        "sku",
+        "price",
+        "currency",
+        "category",
+        "brand",
+        "model",
+        "year",
+        "mileage",
+        "body_type",
+        "color",
+        "status",
+        "metadata",
+        "listing_url",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_ai_briefings": {
+      "count": 2,
+      "columns": [
+        "id",
+        "workspace_id",
+        "generated_at",
+        "period_label",
+        "markdown",
+        "highlights",
+        "data_snapshot",
+        "generated_by",
+        "model_used",
+        "tokens_in",
+        "tokens_out",
+        "created_by"
+      ]
+    },
+    "crm_ai_playbooks": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "trigger_signals",
+        "recommended_actions",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "whatsapp_sessions": {
+      "count": 4,
+      "columns": [
+        "id",
+        "workspace_id",
+        "channel_id",
+        "session_name",
+        "status",
+        "phone_number",
+        "phone_name",
+        "qr_code",
+        "qr_expires_at",
+        "connected_at",
+        "disconnected_at",
+        "last_seen_at",
+        "error_message",
+        "webhook_configured",
+        "proxy_server",
+        "proxy_username",
+        "proxy_password",
+        "proxy_country",
+        "created_at",
+        "updated_at",
+        "history_synced_at",
+        "history_sync_started_at"
+      ]
+    },
+    "crm_ai_chat_messages": {
+      "count": 25,
+      "columns": [
+        "id",
+        "thread_id",
+        "workspace_id",
+        "user_id",
+        "role",
+        "content",
+        "tool_name",
+        "tool_input",
+        "tool_output",
+        "tool_use_id",
+        "model",
+        "tokens_in",
+        "tokens_out",
+        "stop_reason",
+        "latency_ms",
+        "created_at"
+      ]
+    },
+    "crm_ai_chat_usage": {
+      "count": 1,
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "month_key",
+        "messages_count",
+        "tokens_in_total",
+        "tokens_out_total",
+        "updated_at"
+      ]
+    },
+    "crm_revenue_forecasts": {
+      "count": 5,
+      "columns": [
+        "id",
+        "workspace_id",
+        "deal_id",
+        "forecast_probability",
+        "forecast_value",
+        "calculated_at"
+      ]
+    },
+    "deals": {
+      "count": 5,
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "value",
+        "stage_id",
+        "contact_id",
+        "company_id",
+        "created_at",
+        "updated_at",
+        "owner_id",
+        "conversation_id",
+        "parent_deal_id",
+        "origin_deal_id",
+        "origin_type",
+        "linked_process_type",
+        "health_score",
+        "health_status",
+        "health_updated_at",
+        "cancelled_at",
+        "cancelled_by",
+        "cancel_reason"
+      ]
+    },
+    "crm_automation_runs": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "rule_id",
+        "conversation_id",
+        "contact_id",
+        "deal_id",
+        "status",
+        "result",
+        "created_at"
+      ]
+    },
+    "webhook_tokens": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "source",
+        "token_hash",
+        "label",
+        "created_by",
+        "created_at",
+        "last_used_at",
+        "revoked_at",
+        "field_mapping",
+        "pipeline_id"
+      ]
+    },
+    "user_availability": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "day_of_week",
+        "start_time",
+        "end_time",
+        "timezone",
+        "created_at"
+      ]
+    },
+    "crm_tasks": {
+      "count": 1606,
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "description",
+        "status",
+        "due_at",
+        "assignee_id",
+        "contact_id",
+        "deal_id",
+        "conversation_id",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_contact_merge_logs": {
+      "count": 23,
+      "columns": [
+        "id",
+        "workspace_id",
+        "primary_contact_id",
+        "merged_contact_id",
+        "merged_by",
+        "merge_summary",
+        "created_at"
+      ]
+    },
+    "workspace_subscriptions": {
+      "count": 1,
+      "columns": [
+        "id",
+        "workspace_id",
+        "plan_id",
+        "billing_interval",
+        "stripe_customer_id",
+        "stripe_subscription_id",
+        "stripe_seat_item_id",
+        "stripe_channel_item_id",
+        "status",
+        "trial_ends_at",
+        "current_period_start",
+        "current_period_end",
+        "seat_quantity",
+        "extra_channel_quantity",
+        "pending_plan_id",
+        "pending_change_at",
+        "canceled_at",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "billing_waived",
+        "billing_waived_at",
+        "billing_waived_by",
+        "billing_waived_reason"
+      ]
+    },
+    "workspace_stripe_configs": {
+      "count": 0,
+      "columns": [
+        "workspace_id",
+        "key_ciphertext",
+        "key_iv",
+        "key_auth_tag",
+        "key_last4",
+        "key_mode",
+        "last_sync_at",
+        "last_sync_count",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_product_catalog_config": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "catalog_label",
+        "fields",
+        "currency",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "reseller_commissions": {
+      "count": 0,
+      "columns": [
+        "id",
+        "reseller_id",
+        "workspace_id",
+        "payout_id",
+        "period_start",
+        "period_end",
+        "workspace_mrr",
+        "commission_pct",
+        "commission_amount",
+        "currency",
+        "status",
+        "created_at"
+      ]
+    },
+    "crm_ai_alerts": {
+      "count": 106,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "contact_id",
+        "deal_id",
+        "alert_type",
+        "severity",
+        "title",
+        "description",
+        "is_resolved",
+        "created_at",
+        "resolved_at"
+      ]
+    },
+    "crm_channel_events": {
+      "count": 49749,
+      "columns": [
+        "id",
+        "workspace_id",
+        "channel_id",
+        "event_type",
+        "status",
+        "conversation_id",
+        "message_id",
+        "payload",
+        "error_message",
+        "created_at"
+      ]
+    },
+    "crm_ai_knowledge_base": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "content",
+        "content_type",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_contact_import_jobs": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "created_by",
+        "source_type",
+        "file_name",
+        "status",
+        "total_rows",
+        "imported_rows",
+        "skipped_rows",
+        "failed_rows",
+        "mapping",
+        "errors",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_message_translations": {
+      "count": 19,
+      "columns": [
+        "id",
+        "workspace_id",
+        "message_id",
+        "source_language",
+        "target_language",
+        "translation_type",
+        "translated_text",
+        "created_at"
+      ]
+    },
+    "crm_messages": {
+      "count": 60444,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "direction",
+        "content",
+        "attachments",
+        "channel",
+        "external_message_id",
+        "delivery_status",
+        "sender_id",
+        "created_at",
+        "updated_at",
+        "channel_id",
+        "sender_external_id",
+        "raw_payload",
+        "transcription",
+        "client_temp_id",
+        "error_message"
+      ]
+    },
+    "crm_process_handoffs": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_id",
+        "conversation_id",
+        "from_deal_id",
+        "to_deal_id",
+        "from_pipeline_id",
+        "to_pipeline_id",
+        "triggered_by",
+        "trigger_type",
+        "note",
+        "created_at"
+      ]
+    },
+    "workspace_user_permissions": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "module_key",
+        "can_view",
+        "can_create",
+        "can_edit",
+        "can_delete",
+        "can_manage",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "mcp_audit_log": {
+      "count": 6,
+      "columns": [
+        "id",
+        "token_id",
+        "tool_name",
+        "workspace_id",
+        "success",
+        "error_message",
+        "duration_ms",
+        "created_at"
+      ]
+    },
+    "mcp_agent_tokens": {
+      "count": 1,
+      "columns": [
+        "id",
+        "token_hash",
+        "workspace_id",
+        "agent_name",
+        "created_at",
+        "last_used_at",
+        "revoked_at",
+        "created_by"
+      ]
+    },
+    "workspace_member_channel_restrictions": {
+      "count": 1,
+      "columns": [
+        "id",
+        "workspace_id",
+        "member_id",
+        "channel_id",
+        "created_at"
+      ]
+    },
+    "workspace_teams": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "name",
+        "created_at",
+        "description",
+        "created_by",
+        "updated_at"
+      ]
+    },
+    "channel_routing_rules": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "channel_id",
+        "routing_type",
+        "target_member_id",
+        "target_team_id",
+        "is_active",
+        "last_assigned_index",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "crm_conversation_status_log": {
+      "count": 2454,
+      "columns": [
+        "id",
+        "conversation_id",
+        "workspace_id",
+        "changed_by",
+        "old_status",
+        "new_status",
+        "source",
+        "created_at"
+      ]
+    },
+    "calendar_blocks": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "start_time",
+        "end_time",
+        "reason",
+        "created_at"
+      ]
+    },
+    "crm_conversation_assignment_history": {
+      "count": 1436,
+      "columns": [
+        "id",
+        "workspace_id",
+        "conversation_id",
+        "from_user_id",
+        "to_user_id",
+        "changed_by",
+        "change_type",
+        "note",
+        "created_at",
+        "to_team_id"
+      ]
+    },
+    "crm_saved_replies": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "title",
+        "category",
+        "language",
+        "content",
+        "is_active",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "platform_notifications": {
+      "count": 5,
+      "columns": [
+        "id",
+        "workspace_id",
+        "user_id",
+        "type",
+        "title",
+        "body",
+        "read_at",
+        "created_at"
+      ]
+    },
+    "workspace_team_members": {
+      "count": 0,
+      "columns": [
+        "id",
+        "workspace_id",
+        "team_id",
+        "user_id",
+        "created_at"
+      ]
+    },
+    "crm_duplicate_suggestions": {
+      "count": 31,
+      "columns": [
+        "id",
+        "workspace_id",
+        "contact_a_id",
+        "contact_b_id",
+        "match_type",
+        "confidence_score",
+        "status",
+        "detected_at",
+        "resolved_at",
+        "resolved_by"
+      ]
+    }
+  },
+  "unscoped": [
+    {
+      "name": "workspaces",
+      "columns": [
+        "id",
+        "name",
+        "slug",
+        "settings",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "identity_org_id",
+        "engage_ai_enabled"
+      ]
+    },
+    {
+      "name": "platform_admins",
+      "columns": [
+        "user_id",
+        "created_at"
+      ]
+    },
+    {
+      "name": "internal_message_delete_log",
+      "columns": [
+        "id",
+        "message_id",
+        "previous_content",
+        "deleted_by",
+        "deleted_at"
+      ]
+    },
+    {
+      "name": "role_templates",
+      "columns": [
+        "id",
+        "template_group",
+        "role_name",
+        "permissions",
+        "position"
+      ]
+    },
+    {
+      "name": "internal_message_attachments",
+      "columns": [
+        "id",
+        "message_id",
+        "file_key",
+        "file_name",
+        "file_url",
+        "mime_type",
+        "size_bytes",
+        "duration_seconds",
+        "width",
+        "height"
+      ]
+    },
+    {
+      "name": "internal_conversation_pins",
+      "columns": [
+        "id",
+        "conversation_id",
+        "message_id",
+        "pinned_by",
+        "pinned_at"
+      ]
+    },
+    {
+      "name": "appointment_reminders",
+      "columns": [
+        "id",
+        "appointment_id",
+        "channel",
+        "send_before_minutes",
+        "sent_at",
+        "created_at"
+      ]
+    },
+    {
+      "name": "whitelabel_domain_requests",
+      "columns": [
+        "id",
+        "reseller_id",
+        "domain",
+        "status",
+        "cname_target",
+        "check_count",
+        "last_check_at",
+        "verified_at",
+        "created_at"
+      ]
+    },
+    {
+      "name": "profiles",
+      "columns": [
+        "id",
+        "full_name",
+        "avatar_url",
+        "email",
+        "created_at",
+        "updated_at",
+        "native_language",
+        "timezone",
+        "job_title",
+        "phone",
+        "email_verified_at",
+        "country",
+        "currency",
+        "date_format"
+      ]
+    },
+    {
+      "name": "internal_message_edit_log",
+      "columns": [
+        "id",
+        "message_id",
+        "previous_content",
+        "edited_by",
+        "edited_at"
+      ]
+    },
+    {
+      "name": "followup_job_runs",
+      "columns": [
+        "id",
+        "ran_at",
+        "tasks_created"
+      ]
+    },
+    {
+      "name": "reseller_price_overrides",
+      "columns": [
+        "id",
+        "reseller_id",
+        "plan_id",
+        "price_per_seat_monthly",
+        "price_per_extra_channel_monthly",
+        "annual_discount_pct",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "currency"
+      ]
+    },
+    {
+      "name": "platform_resellers",
+      "columns": [
+        "user_id",
+        "created_at",
+        "referral_code",
+        "commission_pct",
+        "status",
+        "company_name",
+        "contact_email",
+        "contact_phone",
+        "tax_id",
+        "tier",
+        "notes",
+        "whitelabel_enabled",
+        "whitelabel_fee",
+        "whitelabel_activated_at",
+        "brand_name",
+        "brand_logo_url",
+        "brand_primary_color",
+        "brand_favicon_url",
+        "custom_domain",
+        "subdomain",
+        "domain_verified",
+        "domain_verified_at"
+      ]
+    },
+    {
+      "name": "crm_contact_import_rows",
+      "columns": [
+        "id",
+        "import_job_id",
+        "raw_data",
+        "normalized_data",
+        "status",
+        "error_message",
+        "created_contact_id",
+        "created_at"
+      ]
+    },
+    {
+      "name": "internal_message_mentions",
+      "columns": [
+        "id",
+        "message_id",
+        "mentioned_user_id"
+      ]
+    },
+    {
+      "name": "admin_announcements",
+      "columns": [
+        "id",
+        "title",
+        "body",
+        "type",
+        "target_filter",
+        "active",
+        "starts_at",
+        "ends_at",
+        "email_sent",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    {
+      "name": "reseller_payouts",
+      "columns": [
+        "id",
+        "reseller_id",
+        "amount",
+        "currency",
+        "status",
+        "reference",
+        "paid_at",
+        "paid_by",
+        "notes",
+        "created_at"
+      ]
+    },
+    {
+      "name": "wallet_consents",
+      "columns": [
+        "id",
+        "reseller_id",
+        "accepted_at",
+        "ip",
+        "user_agent",
+        "consent_version",
+        "consent_text"
+      ]
+    },
+    {
+      "name": "admin_mrr_snapshots",
+      "columns": [
+        "id",
+        "snapshot_date",
+        "total_mrr",
+        "mrr_starter",
+        "mrr_pro",
+        "mrr_enterprise",
+        "total_workspaces",
+        "total_trialing",
+        "total_canceled",
+        "total_seats",
+        "total_channels",
+        "created_at"
+      ]
+    },
+    {
+      "name": "reseller_applications",
+      "columns": [
+        "id",
+        "user_id",
+        "company_name",
+        "contact_email",
+        "contact_phone",
+        "message",
+        "status",
+        "reviewed_by",
+        "reviewed_at",
+        "rejection_reason",
+        "created_at"
+      ]
+    },
+    {
+      "name": "internal_message_reactions",
+      "columns": [
+        "id",
+        "message_id",
+        "user_id",
+        "emoji",
+        "created_at"
+      ]
+    },
+    {
+      "name": "crm_conversation_tags",
+      "columns": [
+        "id",
+        "conversation_id",
+        "tag_id",
+        "created_at"
+      ]
+    },
+    {
+      "name": "password_reset_tokens",
+      "columns": [
+        "id",
+        "user_id",
+        "email",
+        "token_hash",
+        "salt",
+        "expires_at",
+        "used_at",
+        "created_at"
+      ]
+    },
+    {
+      "name": "crm_product_images",
+      "columns": [
+        "id",
+        "product_id",
+        "url",
+        "sort_order",
+        "is_primary",
+        "created_at"
+      ]
+    },
+    {
+      "name": "crm_deal_products",
+      "columns": [
+        "id",
+        "deal_id",
+        "product_id",
+        "linked_by",
+        "created_at"
+      ]
+    },
+    {
+      "name": "stripe_webhook_events",
+      "columns": [
+        "event_id",
+        "event_type",
+        "processed_at"
+      ]
+    },
+    {
+      "name": "crm_deal_conversations",
+      "columns": [
+        "id",
+        "deal_id",
+        "conversation_id",
+        "attribution_type",
+        "created_at"
+      ]
+    },
+    {
+      "name": "plans",
+      "columns": [
+        "id",
+        "name",
+        "display_name",
+        "sort_order",
+        "price_per_seat_monthly",
+        "price_per_extra_channel_monthly",
+        "included_channels",
+        "annual_discount_pct",
+        "trial_days",
+        "stripe_price_seat_monthly_id",
+        "stripe_price_seat_yearly_id",
+        "stripe_price_channel_monthly_id",
+        "stripe_price_channel_yearly_id",
+        "features",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "ai_chat_enabled",
+        "ai_chat_monthly_limit",
+        "currency",
+        "base_price_monthly"
+      ]
+    },
+    {
+      "name": "reseller_audit_log",
+      "columns": [
+        "id",
+        "reseller_id",
+        "action",
+        "details",
+        "performed_by",
+        "created_at"
+      ]
+    },
+    {
+      "name": "identity_user_links",
+      "columns": [
+        "identity_user_id",
+        "user_id",
+        "created_at"
+      ]
+    },
+    {
+      "name": "llm_provider_configs",
+      "columns": [
+        "id",
+        "ai_function",
+        "role",
+        "provider",
+        "model",
+        "api_key",
+        "endpoint_url",
+        "is_enabled",
+        "updated_at",
+        "updated_by"
+      ]
+    },
+    {
+      "name": "admin_audit_log",
+      "columns": [
+        "id",
+        "admin_user_id",
+        "action",
+        "target_workspace_id",
+        "details",
+        "ip_address",
+        "created_at"
+      ]
+    },
+    {
+      "name": "email_verification_codes",
+      "columns": [
+        "id",
+        "user_id",
+        "email",
+        "code_hash",
+        "salt",
+        "attempts",
+        "max_attempts",
+        "expires_at",
+        "verified_at",
+        "created_at"
+      ]
+    },
+    {
+      "name": "internal_conversation_participants",
+      "columns": [
+        "id",
+        "conversation_id",
+        "user_id",
+        "role",
+        "joined_at",
+        "last_read_message_id",
+        "last_read_at",
+        "muted_until"
+      ]
+    },
+    {
+      "name": "followup_job_locks",
+      "columns": [
+        "lock_key",
+        "locked_at"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "table": "contacts",
+      "field": "merged_into_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 3090
+    },
+    {
+      "table": "crm_conversations",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_conversations",
+      "field": "channel_id",
+      "target": "crm_channels",
+      "missing": 0,
+      "nulls": 1
+    },
+    {
+      "table": "crm_conversations",
+      "field": "assigned_agent_id",
+      "target": "members",
+      "missing": 0,
+      "nulls": 1857
+    },
+    {
+      "table": "crm_messages",
+      "field": "conversation_id",
+      "target": "crm_conversations",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_messages",
+      "field": "channel_id",
+      "target": "crm_channels",
+      "missing": 0,
+      "nulls": 9
+    },
+    {
+      "table": "deals",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "deals",
+      "field": "stage_id",
+      "target": "pipeline_stages",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "deals",
+      "field": "conversation_id",
+      "target": "crm_conversations",
+      "missing": 0,
+      "nulls": 1
+    },
+    {
+      "table": "deals",
+      "field": "owner_id",
+      "target": "members",
+      "missing": 0,
+      "nulls": 5
+    },
+    {
+      "table": "pipeline_stages",
+      "field": "pipeline_id",
+      "target": "pipelines",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_tasks",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_tasks",
+      "field": "deal_id",
+      "target": "deals",
+      "missing": 0,
+      "nulls": 1606
+    },
+    {
+      "table": "crm_tasks",
+      "field": "conversation_id",
+      "target": "crm_conversations",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_tasks",
+      "field": "assignee_id",
+      "target": "members",
+      "missing": 0,
+      "nulls": 1579
+    },
+    {
+      "table": "crm_notes",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_notes",
+      "field": "deal_id",
+      "target": "deals",
+      "missing": 0,
+      "nulls": 108
+    },
+    {
+      "table": "crm_notes",
+      "field": "conversation_id",
+      "target": "crm_conversations",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_notes",
+      "field": "author_id",
+      "target": "members",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_files",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_files",
+      "field": "deal_id",
+      "target": "deals",
+      "missing": 0,
+      "nulls": 1084
+    },
+    {
+      "table": "crm_files",
+      "field": "conversation_id",
+      "target": "crm_conversations",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "appointments",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "appointments",
+      "field": "deal_id",
+      "target": "deals",
+      "missing": 0,
+      "nulls": 30
+    },
+    {
+      "table": "appointments",
+      "field": "conversation_id",
+      "target": "crm_conversations",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "appointments",
+      "field": "assigned_user_id",
+      "target": "members",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "crm_contact_consents",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    },
+    {
+      "table": "contact_identities",
+      "field": "contact_id",
+      "target": "contacts",
+      "missing": 0,
+      "nulls": 0
+    }
+  ],
+  "distributions": {
+    "crm_conversations.channel": {
+      "instagram": 754,
+      "whatsapp": 2500
+    },
+    "crm_conversations.status": {
+      "open": 932,
+      "closed": 936,
+      "resolved": 1220,
+      "pending": 166
+    },
+    "crm_messages.direction": {
+      "inbound": 30290,
+      "outbound": 30154
+    },
+    "crm_messages.delivery_status": {
+      "null": 27645,
+      "sent": 16099,
+      "read": 13446,
+      "delivered": 3034,
+      "failed": 220
+    },
+    "crm_channels.channel_type": {
+      "whatsapp": 5,
+      "instagram": 1
+    },
+    "crm_channels.provider": {
+      "meta": 2,
+      "waha": 4
+    },
+    "crm_tasks.status": {
+      "done": 319,
+      "open": 1287
+    },
+    "crm_notes.visibility_scope": {
+      "workspace_internal": 105,
+      "managers_only": 3
+    },
+    "crm_notes.note_type": {
+      "internal_note": 105,
+      "manager_note": 3
+    },
+    "pipeline_stages.stage_semantic_type": {
+      "open": 6
+    },
+    "crm_contact_consents.basis": {
+      "art7_v_contract": 83
+    },
+    "appointments.status": {
+      "scheduled": 16,
+      "cancelled": 3,
+      "completed": 10,
+      "confirmed": 1
+    }
+  },
+  "contacts": {
+    "merged": 23,
+    "deleted": 23,
+    "duplicate_phone_groups": 1,
+    "duplicate_email_groups": 0
+  },
+  "attachments": {
+    "messages_with_attachments": 8491,
+    "unexpected_shapes": 0,
+    "file_records": 1084,
+    "total_file_bytes": 1238966803
+  }
+}
