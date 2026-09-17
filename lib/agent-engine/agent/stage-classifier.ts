@@ -28,7 +28,7 @@ import type pg from 'pg';
 
 import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
-import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
+import { runModelCall, type LlmEdgeConfig, type OnLlmUsage } from '../edge/llm/run-model-call';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
 import type { LeadContext } from '../edge/crm/get-lead-context';
 import { LEAD_STAGES, type LeadStage } from './lead-state';
@@ -99,7 +99,7 @@ export async function classifyStage(
     model?: string;
     llmOverride?: LlmResolveOverride;
   },
-  deps: { registry?: ProviderRegistry; log: Logger },
+  deps: { registry?: ProviderRegistry; log: Logger; onUsage?: OnLlmUsage },
 ): Promise<LeadStage | null> {
   const call = await runModelCall(
     db,
@@ -115,7 +115,7 @@ export async function classifyStage(
         { role: 'user', content: buildClassifierMessage(args.context, args.currentStage) },
       ],
     },
-    { registry: deps.registry, log: deps.log },
+    deps,
   );
   const suggestion = parseStageSuggestion(call.result.text);
   if (suggestion === null) {

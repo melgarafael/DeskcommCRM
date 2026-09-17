@@ -25,6 +25,17 @@ describe('loadPublishedAgentConfig — campos de RAG', () => {
     expect(cfg?.ragSimilarityThreshold).toBe(0.8);
   });
 
+  it('followupEnabled só é true quando a versão ligou followup.enabled — não pelo knob de env', async () => {
+    const off = await loadPublishedAgentConfig(poolWith(baseRow), 'org1', 'cs1');
+    expect(off?.followupEnabled).toBe(false);
+    const on = await loadPublishedAgentConfig(
+      poolWith({ ...baseRow, followup: { enabled: true, flow_pointer_ids: [] } }),
+      'org1',
+      'cs1',
+    );
+    expect(on?.followupEnabled).toBe(true);
+  });
+
   // 0.40 e não 0.72: o limiar foi CALIBRADO com medição na migration 0097
   // (pergunta literal 0.849, paráfrase 0.49–0.65, irrelevante 0.27). O banco
   // moveu o default e ESTE fallback ficou para trás — e é ele que vale, porque

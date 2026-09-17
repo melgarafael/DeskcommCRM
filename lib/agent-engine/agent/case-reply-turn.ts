@@ -113,9 +113,12 @@ export function buildCaseReplyOpeningMessage(
   context: LeadContext,
   notesIndexBlock: string,
   projeta = false,
+  oferecidas?: readonly string[],
 ): string {
   const caseIdShort = caseId.slice(0, 8);
   const note = body?.trim() ?? '';
+  const oferece = (nome: string): boolean =>
+    oferecidas === undefined || oferecidas.includes(nome);
   const instructionBlock =
     action === 'resolved'
       ? `O responsável concluiu o caso #${caseIdShort} com a nota: "${note}". Repasse essa conclusão ao lead de forma natural e encerre o assunto.`
@@ -130,9 +133,20 @@ export function buildCaseReplyOpeningMessage(
     ...ritualBlocks(previous, leadState, context, notesIndexBlock, projeta),
     '',
     'Repasse ao lead usando a tool send_message — NUNCA escreva a resposta como texto direto',
-    '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
-    'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
-    'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+    '(texto fora de tool é descartado pelo runtime).' +
+      (oferece('get_lead_context')
+        ? ' Use get_lead_context se precisar reler o contexto.'
+        : ''),
+    ...(oferece('update_lead_state')
+      ? [
+          'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
+        ]
+      : []),
+    ...(oferece('save_lead_note')
+      ? [
+          'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+        ]
+      : []),
   ].join('\n');
 }
 
@@ -169,8 +183,8 @@ export function createCaseReplyTurnHandler(deps: InboundTurnDeps) {
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: caseConversation.channelSessionId,
       conversationId: caseConversation.conversationId,
-      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) =>
-        buildCaseReplyOpeningMessage(action, payload.case_id, payload.body, previous, leadState, context, notesIndexBlock, projeta),
+      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta, oferecidas }) =>
+        buildCaseReplyOpeningMessage(action, payload.case_id, payload.body, previous, leadState, context, notesIndexBlock, projeta, oferecidas),
     });
   };
 }

@@ -28,7 +28,7 @@ import type pg from 'pg';
 import type { Logger } from '../obs/logger';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import type { LlmResolveOverride } from '../edge/llm/credentials';
-import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
+import { runModelCall, type LlmEdgeConfig, type OnLlmUsage } from '../edge/llm/run-model-call';
 import {
   countPayloadTokens,
   type LeadContext,
@@ -161,6 +161,7 @@ async function runFlush(
     registry?: ProviderRegistry;
     log: Logger;
     noteSink?: (note: { headline: string; body: string }) => void;
+    onUsage?: OnLlmUsage;
   },
 ): Promise<void> {
   const call = await runModelCall(
@@ -180,7 +181,7 @@ async function runFlush(
         },
       ],
     },
-    { registry: deps.registry, log: deps.log },
+    { registry: deps.registry, log: deps.log, onUsage: deps.onUsage },
   );
 
   let notes: z.infer<typeof flushOutputSchema>['notes'];
@@ -239,6 +240,7 @@ export async function maybeCompact(
     registry?: ProviderRegistry;
     log: Logger;
     noteSink?: (note: { headline: string; body: string }) => void;
+    onUsage?: OnLlmUsage;
   },
 ): Promise<CompactionOutput | null> {
   if (args.context.messages.length < args.knobs.triggerMessages) {
@@ -284,7 +286,7 @@ export async function maybeCompact(
         },
       ],
     },
-    { registry: deps.registry, log: deps.log },
+    { registry: deps.registry, log: deps.log, onUsage: deps.onUsage },
   );
 
   try {

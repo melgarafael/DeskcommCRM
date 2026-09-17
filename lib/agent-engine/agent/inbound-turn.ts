@@ -1,7 +1,6 @@
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
-import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
-import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
+import { applyPreviewPolicy, previewGateContext, somarUsoNoPreview, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -59,6 +58,7 @@ import {
   tool,
   type LlmEdgeConfig,
   type ModelMessage,
+  type RunModelCallDeps,
   type ToolSet,
 } from '../edge/llm/run-model-call';
 import type { ProviderRegistry } from '../edge/llm/providers';
@@ -124,6 +124,19 @@ import {
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword } from './agent-config';
+import { AGENT_TOOL_DEFS } from './agent-tool-defs';
+import { NATIVAS_CONDICIONAIS, nativasDoTurno } from './nativas-do-turno';
+import {
+  observarGenerateText,
+} from './uso-do-run';
+import {
+  maxEnviosDoTurno,
+  pararAposRespostaTerminal,
+} from './parada-apos-resposta';
+import {
+  deveGerarCheckpointDoFechamento,
+  omitirCheckpointDoEnsaio,
+} from './fechamento-do-ensaio';
 import { msAteAJanelaAbrir } from './janela-de-atendimento';
 import { janelaDeEnvioAberta, proximaAberturaDaJanela } from '../pacing/engine';
 import { loadChannelKnobs } from '../pacing/store';
@@ -180,256 +193,8 @@ import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
-/**
- * Superfície ESTÁTICA das tools do agente (description + inputSchema) — parte do
- * prefixo estável de cache (F2-17). Única fonte: o handler monta as tools reais
- * daqui (+ execute do closure) e `scripts/ops-count-prefix.ts` mede o prefixo
- * real sem precisar de um run. Nada volátil entra aqui, por construção.
- */
-export const AGENT_TOOL_DEFS = {
-  get_lead_context: {
-    description:
-      'Relê o contexto curado do lead nesta organização: dados do contato e as últimas mensagens da conversa.',
-    inputSchema: z.object({}),
-  },
-  send_message: {
-    description:
-      'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado.',
-    inputSchema: z.object({
-      body: z.string().min(1).describe('corpo da mensagem, em pt-br, pronto para envio'),
-    }),
-  },
-  update_lead_state: {
-    description:
-      'Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → ' +
-      'negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification ' +
-      '(budget/authority/need/timeline), next_action e reason (evidência curta do avanço). ' +
-      'Nunca invente avanço sem evidência na conversa.',
-    // Schema LARGO só para o SDK (o modelo vê os campos); a validação REAL é a
-    // whitelist .strict() dentro de applyLeadStateUpdate — campo extra/forjado
-    // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z
-      .object({
-        stage: z.string().optional().describe('novo estágio do funil (só o próximo válido)'),
-        qualification: z
-          .object({})
-          .passthrough()
-          .optional()
-          .describe('qualificação: budget, authority, need, timeline'),
-        next_action: z
-          .string()
-          .nullable()
-          .optional()
-          .describe('próxima ação concreta combinada com o lead'),
-        reason: z.string().optional().describe('evidência curta do avanço (vai ao audit do CRM)'),
-      })
-      .passthrough(),
-  },
-  schedule_followup: {
-    description:
-      'Agenda o SEU próprio retorno a este lead num momento futuro (follow-up). Use sempre que ' +
-      'prometer voltar a falar depois (ex.: "te retorno amanhã de manhã", "confirmo na segunda"). ' +
-      'Um agendamento por promessa; o sistema fará o follow-up sozinho no horário combinado — ' +
-      'depois de agendar, encerre o turno.',
-    // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
-    // .strict() + guard de prototype pollution dentro de applyScheduleFollowup — campo
-    // extra/forjado e data inválida viram erro de ENSINO ao modelo, nunca exceção do SDK.
-    inputSchema: z
-      .object({
-        reason: z.string().describe('por que agendar o retorno'),
-        promised_at: z
-          .string()
-          .describe('data/hora ISO 8601 do retorno (no futuro), ex.: "2026-07-15T14:00:00Z"'),
-        promise: z.string().describe('o que você prometeu ao lead'),
-        context_snapshot: z
-          .string()
-          .nullable()
-          .optional()
-          .describe('contexto curto para o seu run futuro'),
-      })
-      .passthrough(),
-  },
-  save_lead_note: {
-    description:
-      'Salva uma nota DURÁVEL na memória deste lead (persiste entre conversas). Use para fatos que ' +
-      'você vai querer lembrar depois: preferências, contexto pessoal, restrições, o que já foi ' +
-      'oferecido. A headline (linha curta) entra sempre no índice de memória do lead; o corpo completo ' +
-      'fica guardado e você o relê sob demanda com get_lead_note. Para CONSOLIDAR notas antigas, ' +
-      'liste os ids delas em "supersedes" (você os vê no índice) — elas são removidas ao salvar a nova.',
-    // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
-    // .strict() + guard de prototype pollution dentro de applySaveLeadNote — campo
-    // extra/forjado vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z
-      .object({
-        headline: z.string().describe('linha curta do índice (sempre visível no prompt)'),
-        body: z.string().describe('corpo completo da nota (lido sob demanda por get_lead_note)'),
-        supersedes: z
-          .array(z.string())
-          .optional()
-          .describe('ids de notas que esta substitui/consolida (vistos no índice de memória)'),
-      })
-      .passthrough(),
-  },
-  get_lead_note: {
-    description:
-      'Lê o CORPO completo de UMA nota da memória deste lead pelo id (o id aparece no índice de memória, ' +
-      'entre colchetes). Use quando a headline no índice não bastar e você precisar do detalhe.',
-    inputSchema: z
-      .object({
-        note_id: z.string().describe('id da nota (como aparece no índice, entre colchetes)'),
-      })
-      .passthrough(),
-  },
-  search_knowledge: {
-    description:
-      'Busca na BASE DE CONHECIMENTO da organização (FAQ, políticas, catálogo) os trechos mais ' +
-      'relevantes para uma pergunta. Use ANTES de responder qualquer dúvida factual sobre produto, ' +
-      'preço, prazo, política ou funcionamento — responda com base nos trechos retornados e não ' +
-      'invente o que não encontrar. Sem resultados = diga que vai confirmar, nunca chute.',
-    inputSchema: z
-      .object({
-        query: z.string().min(2).describe('a pergunta ou termos a buscar, em pt-br'),
-      })
-      .passthrough(),
-  },
-  request_human_handoff: {
-    description:
-      'Passa a conversa para um ATENDENTE HUMANO imediatamente. Use quando o lead pedir para falar com ' +
-      'uma pessoa, quando a situação exigir alguém humano (reclamação séria, questão jurídica/financeira ' +
-      'sensível) ou quando você atingir o limite do que pode resolver. ' +
-      'AVISE O LEAD ANTES: mande uma mensagem dizendo que você vai chamar alguém da equipe e SÓ ENTÃO ' +
-      'chame esta ferramenta — depois dela você não consegue mais falar com ele. Se você não avisar, ' +
-      'o sistema manda um aviso padrão no seu lugar. Acionada a ferramenta, encerre o turno. ' +
-      'NUNCA diga ao lead que "já chamei alguém" ou "já passei para a equipe" sem ter chamado esta ' +
-      'ferramenta NO MESMO turno — a frase no passado não substitui a ação, e ninguém é avisado de verdade. ' +
-      'Preencha por_que, o_que_tentei e cliente_quer — quem assumir só vê o que você escrever aqui.',
-    // Schema LARGO para o SDK (o modelo vê o campo); a validação REAL é a whitelist .strict()
-    // + guard de prototype pollution dentro de applyRequestHumanHandoff — campo extra/forjado
-    // vira erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    //
-    // ⚠️ ESPELHO: as chaves aqui e as de `requestHumanHandoffInputSchema`
-    // (`human-handoff.ts`) são o MESMO conjunto, e
-    // `tests/unit/passagem-tool-schema-espelhado.test.ts` as compara. Campo só
-    // deste lado = o modelo preenche e a whitelist recusa, virando erro de
-    // ensino a cada chamada; campo só do outro = o modelo nunca sabe que existe.
-    //
-    // Os `.describe()` são o ÚNICO lugar onde o modelo aprende o que escrever, e
-    // é por isso que eles trazem exemplo em vez de definição.
-    inputSchema: z
-      .object({
-        por_que: z
-          .string()
-          .optional()
-          .describe(
-            'em uma frase, por que você não consegue resolver e está passando para uma pessoa',
-          ),
-        o_que_tentei: z
-          .array(
-            z.object({
-              o_que: z
-                .string()
-                .describe('o que você tentou (ex.: "busquei na base a política de desconto")'),
-              desfecho: z.string().optional().describe('no que deu (ex.: "a política só vai até 10%")'),
-            }),
-          )
-          .optional()
-          .describe('o que você já tentou, na ordem — evita que a pessoa refaça o mesmo caminho'),
-        cliente_quer: z
-          .string()
-          .optional()
-          .describe('o que a pessoa está pedindo, nas palavras dela'),
-        reason: z.string().optional().describe('sinônimo antigo de por_que (ainda aceito)'),
-      })
-      .passthrough(),
-  },
-  read_skill_reference: {
-    description:
-      'Lê o conteúdo de UMA reference (arquivo de apoio) do pacote de uma skill situacional que já ' +
-      'CASOU neste turno. Use quando o corpo da skill ativa mencionar uma reference e você precisar do ' +
-      'detalhe completo dela. Só funciona para skills ativas AGORA — pedir skill não ativa ou caminho ' +
-      'fora do manifesto dela volta erro.',
-    inputSchema: z
-      .object({
-        skill_name: z
-          .string()
-          .min(1)
-          .describe('nome da skill ativa neste turno (como aparece no bloco de skills)'),
-        ref_path: z.string().min(1).describe('caminho da reference dentro do pacote da skill'),
-      })
-      .passthrough(),
-  },
-  open_human_case: {
-    description:
-      'Abra um caso para um humano de retaguarda quando você NÃO conseguir resolver o pedido do lead ' +
-      'sozinho (liberar acesso, corrigir algo num sistema, uma decisão que exige uma pessoa). Você CONTINUA ' +
-      'conversando com o lead normalmente — não silencia. Use SEMPRE que for prometer ao lead que alguém vai ' +
-      'verificar/resolver: prometer sem abrir o caso é proibido. Isso vale mesmo quando você nomeia a ' +
-      'pessoa ("vou confirmar com o Fulano", "já registrei com a equipe") — nomear alguém não abre o caso; ' +
-      'só esta ferramenta abre. Chame-a NO MESMO turno em que fizer a promessa, nunca depois.',
-    // Schema LARGO para o SDK (o modelo vê os campos); a validação REAL é a whitelist
-    // .strict() openHumanCaseInputSchema (human-cases.ts) — campo extra/forjado vira
-    // erro de ENSINO ao modelo, nunca exceção do SDK nem strip silencioso.
-    inputSchema: z
-      .object({
-        title: z.string().describe('título curto, ex.: "Liberar acesso ao painel"'),
-        summary: z.string().describe('o que o lead precisa, em pt-br'),
-        blocker: z.string().describe('por que você não consegue resolver sozinho'),
-        // O assunto serve para quem TRIA a fila separar antes de ler. O detalhe
-        // continua no título e no resumo — este campo não os substitui, e por
-        // isso a lista é curta: muitas opções produzem classificação
-        // inconsistente, e aí o filtro atrapalha em vez de ajudar.
-        kind: z
-          .enum(Object.keys(TIPOS_DE_CASO) as [string, ...string[]])
-          .describe(
-            'do que o caso trata, para a equipe triar: ' +
-              Object.entries(TIPOS_DE_CASO_PARA_A_IA)
-                .map(([k, o]) => `${k} (${o})`)
-                .join('; ') +
-              '. Na dúvida entre dois, escolha o que descreve o PEDIDO, não o obstáculo.',
-          ),
-      })
-      .passthrough(),
-  },
-  provide_case_update: {
-    description:
-      'Quando um caso está esperando informação do cliente e você já colheu essa informação na conversa, ' +
-      'use esta tool para devolver a informação ao humano responsável. Não invente — só o que o lead disse.',
-    // Schema LARGO para o SDK; a validação REAL é a whitelist .strict()
-    // provideCaseUpdateInputSchema (human-cases.ts).
-    inputSchema: z
-      .object({
-        case_id: z.string().describe('id do caso aberto'),
-        info: z.string().describe('a informação colhida do lead'),
-      })
-      .passthrough(),
-  },
-  send_template: {
-    description:
-      'Envia um TEMPLATE aprovado do WhatsApp. Use SOMENTE quando o send_message for recusado ' +
-      'porque a janela de 24 horas com o contato fechou — a mensagem de erro diz quando é o caso. ' +
-      'Você precisa do nome exato do template, do idioma e de um valor para CADA parâmetro. ' +
-      'Se faltar valor, a resposta diz quais e você pode chamar de novo; qualquer outro erro ' +
-      'significa que um humano precisa agir — encerre o turno sem insistir.',
-    inputSchema: z
-      .object({
-        template_name: z.string().min(1).describe('nome exato do template, como aprovado na Meta'),
-        language: z.string().min(2).describe('código do idioma, ex.: pt_BR'),
-        values: z
-          .record(z.string(), z.string())
-          .describe(
-            'valor de cada parâmetro, na chave que a tela de templates mostra (ex.: "1", "2")',
-          ),
-      })
-      .passthrough(),
-  },
-} as const;
+export { AGENT_TOOL_DEFS };
 
-/**
- * Quantos vetos de `internal_vocabulary_leak` o turno tolera antes de o fail-safe soltar
- * o envio (ver o bloco em `send_message.execute`). Mesmo degrau do fail-safe de casos
- * humanos — 1ª vez ensina, a 2ª decide — porque a assimetria é a mesma: uma reescrita
- * que o modelo não fez não vale um cliente sem resposta.
- */
 export const MAX_VETOS_DE_VOCABULARIO_INTERNO = 2;
 
 /**
@@ -1506,8 +1271,15 @@ export function buildOpeningMessage(
   compromissosBlock = '',
   /** Mensagem canônica do job inbound; vence uma leitura concorrente do histórico. */
   currentInboundText?: string,
+  /**
+   * Ferramentas realmente montadas neste turno. `undefined` = comportamento
+   * antigo (cita update/notes/get_lead_context), para testes de entrega.
+   */
+  oferecidas?: readonly string[],
 ): string {
   const entregue = (nome: string): boolean => entregues.includes(nome);
+  const oferece = (nome: string): boolean =>
+    oferecidas === undefined || oferecidas.includes(nome);
   const mensagemAtual =
     currentInboundText === undefined
       ? [...context.messages].reverse().find((m) => m.direction === 'inbound')
@@ -1533,20 +1305,20 @@ export function buildOpeningMessage(
     ...mensagemAtualBlock,
     '',
     'Responda ao lead usando a tool send_message — NUNCA escreva a resposta como texto direto',
-    '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
-    // Quando o avanço do funil vira trabalho do Operador, o Conversador não
-    // precisa saber que existe um funil. É a diferença entre "não fale disso" e
-    // "não há disso no seu contexto" — a segunda não depende de obediência.
-    ...(entregue('update_lead_state')
-      ? []
-      : [
+    '(texto fora de tool é descartado pelo runtime).' +
+      (oferece('get_lead_context')
+        ? ' Use get_lead_context se precisar reler o contexto.'
+        : ''),
+    ...(oferece('update_lead_state') && !entregue('update_lead_state')
+      ? [
           'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
-        ]),
-    ...(entregue('save_lead_note')
-      ? []
-      : [
+        ]
+      : []),
+    ...(oferece('save_lead_note') && !entregue('save_lead_note')
+      ? [
           'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
-        ]),
+        ]
+      : []),
   ].join('\n');
 }
 
@@ -1661,6 +1433,8 @@ export interface AgentTurnInput {
     projeta?: boolean;
     /** ferramentas que saíram para o Operador — o prompt não pode citá-las. */
     entregues?: readonly string[];
+    /** ferramentas realmente montadas neste turno — o prompt não cita o que não existe. */
+    oferecidas?: readonly string[];
   }) => string;
 }
 
@@ -2007,6 +1781,11 @@ async function executarTurnoDoAgente(
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog });
   const agentConfig = routed.config;
+  const llmDeps: RunModelCallDeps & { log: Logger } = {
+    ...(deps.registry !== undefined ? { registry: deps.registry } : {}),
+    log: runLog,
+    ...(preview ? { onUsage: (chamada) => somarUsoNoPreview(preview, chamada) } : {}),
+  };
   if (!preview && agentConfig?.operationMode === 'assisted' && job?.kind === 'inbound_turn') {
     const { generateReplyDraft } = await import('./reply-drafts');
     await generateReplyDraft(pool, deps, {
@@ -2368,6 +2147,7 @@ async function executarTurnoDoAgente(
   // summary DURÁVEL segue vindo do checkpoint de fechamento; aqui ele só alimenta o prompt.
   let effectivePrevious = previous;
   let effectiveContext = openingContext.context;
+  let compactacaoRodou = false;
   if (deps.knobs.compaction !== undefined) {
     const compacted = await maybeCompact(
       pool,
@@ -2376,16 +2156,11 @@ async function executarTurnoDoAgente(
       {
         context: openingContext.context,
         previousSummary: previous?.rolling_summary ?? '',
-        // A compactação é o QUARTO call site da mesma regra, e o #151 só cobriu
-        // três: ela também pedia o modelo do agente ao provider default da org.
-        // Mesmo 404, mesma morte de turno — só que num caminho que roda quando a
-        // conversa já é longa, ou seja, mais tarde e com menos gente olhando.
         knobs: { ...deps.knobs.compaction, ...argsAux(deps.knobs.compaction.model) },
         notesIndexMaxTokens: deps.knobs.notesIndexMaxTokens,
       },
       {
-        registry: deps.registry,
-        log: runLog,
+        ...llmDeps,
         ...(preview
           ? {
               noteSink: (note: { headline: string; body: string }) => {
@@ -2396,6 +2171,7 @@ async function executarTurnoDoAgente(
       },
     );
     if (compacted !== null) {
+      compactacaoRodou = true;
       // Só o rolling_summary é sobrescrito (o resumo compactado carrega compromissos/
       // objeções/estágio/dados pessoais planificados). O `previous` sintético do 1º
       // turno com histórico importado é local — nunca persistido; o fechamento grava o
@@ -2497,7 +2273,7 @@ async function executarTurnoDoAgente(
             candidate,
             ...argsAux(deps.knobs.promiseSemantic?.model),
           },
-          { ...(deps.registry !== undefined ? { registry: deps.registry } : {}), log: runLog },
+          { ...llmDeps },
         )
     : undefined;
   let outOfTablePromiseAttempted = false;
@@ -3691,6 +3467,24 @@ async function executarTurnoDoAgente(
       });
     }
 
+    const nativas = nativasDoTurno({
+      contextoJaNaAbertura: effectiveContext.messages.length > 0,
+      compactacaoRodou,
+      followupHabilitadoNoAgente: agentConfig?.followupEnabled === true,
+      janelaDeFollowupConfigurada: deps.knobs.followup !== undefined,
+      handoffHabilitado: agentConfig === null || agentConfig.handoffToolEnabled,
+      funilGravavel: agentConfig === null || agentConfig.pipelineIds.length > 0,
+      notasUtilizaveis: preview?.kind !== 'sandbox' || compactacaoRodou,
+      conhecimentoDisponivel:
+        (agentConfig?.knowledgeSourceIds.length ?? 0) > 0 ||
+        agentConfig?.activeKbVersionId != null,
+      casosHabilitados: agentConfig?.casesEnabled === true,
+    });
+    const nativasSet = new Set(nativas);
+    for (const nome of NATIVAS_CONDICIONAIS) {
+      if (!nativasSet.has(nome)) delete rawTools[nome];
+    }
+
     // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
     // entre runs por construção (mesma garantia de isolamento do resto do run).
     if (preview && rawTools.get_lead_note)
@@ -3729,6 +3523,12 @@ async function executarTurnoDoAgente(
       readOnlyTools: READ_ONLY_TOOLS,
       log: runLog, // os warns dos gates do breaker saem carimbados com o run
     });
+    if (preview) {
+      preview.result.tools_offered = Object.keys(tools).sort();
+      runLog.info('nativas do turno', {
+        tools_offered: preview.result.tools_offered,
+      });
+    }
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
     // agnóstico) e sugere o estágio; a sugestão entra como HINT no SUFIXO por-lead — o modelo
@@ -3762,7 +3562,7 @@ async function executarTurnoDoAgente(
               currentStage,
               ...argsAux(deps.knobs.stageClassifier.model),
             },
-            { registry: deps.registry, log: runLog },
+            { ...llmDeps },
           )
         : Promise.resolve(null),
       // F4-04: classifier ADVISÓRIO anti-jailbreak sobre a mensagem INBOUND do lead (o
@@ -3780,7 +3580,7 @@ async function executarTurnoDoAgente(
               // que é a convenção já usada pelo stageClassifier.
               ...argsAux(deps.knobs.jailbreak?.model),
             },
-            { registry: deps.registry, log: runLog },
+            { ...llmDeps },
           )
         : Promise.resolve(null),
     ]);
@@ -3817,6 +3617,7 @@ async function executarTurnoDoAgente(
       notesIndexBlock,
       projeta: projetaContexto,
       entregues,
+      oferecidas: Object.keys(tools),
       compromissosBlock,
       ...(currentInboundText !== null ? { currentInboundText } : {}),
     });
@@ -3912,6 +3713,12 @@ async function executarTurnoDoAgente(
         messages: openingMessages,
         tools,
         maxSteps,
+        pararQuando: pararAposRespostaTerminal({
+          maxEnviosAutorizados: maxEnviosDoTurno({
+            splitMessages: agentConfig?.splitMessages ?? false,
+            maxSendsPerTurn,
+          }),
+        }),
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
@@ -3922,8 +3729,19 @@ async function executarTurnoDoAgente(
             }
           : {}),
       },
-      { registry: deps.registry, log: runLog },
+      { ...llmDeps },
     );
+    if (preview) {
+      const obs = observarGenerateText(turn.result, turn.steps);
+      preview.result.steps_count = obs.steps_count;
+      preview.result.tools_called = obs.tools_called;
+      preview.result.steps = obs.steps;
+      runLog.info('passos do generateText', {
+        steps_count: obs.steps_count,
+        tools_called: obs.tools_called,
+        finish_reasons: obs.steps.map((s) => s.finish_reason),
+      });
+    }
 
     // F4-04: correlação dos dois sinais do MESMO turno — jailbreak ALTO + tentativa de
     // promessa fora de tabela (F4-01). Ambos estão determinados aqui (o jailbreak rodou na
@@ -3972,6 +3790,15 @@ async function executarTurnoDoAgente(
     // turno. Aqui o lead já recebeu resposta, mas a conversa ficaria sem
     // checkpoint e sem dono, e o próximo inbound cairia no mesmo bloqueio, agora
     // sem nada tendo mudado no meio.
+    //
+    // Ensaio isolado (aba Teste): não há turno seguinte. O JSON iria só para
+    // `preview.result.checkpoint`, que a tela não mostra e o próximo clique não
+    // relê — `insertCheckpoint` já era pulado. Não simulamos um checkpoint falso.
+    if (!deveGerarCheckpointDoFechamento(preview)) {
+      if (preview) omitirCheckpointDoEnsaio(preview.result);
+      return;
+    }
+
     const closing = await runModelCall(
       pool,
       deps.llmCfg,
@@ -3998,8 +3825,9 @@ async function executarTurnoDoAgente(
           { role: 'user', content: CHECKPOINT_INSTRUCTION },
         ],
       },
-      { registry: deps.registry, log: runLog },
+      { ...llmDeps },
     );
+
     const content = parseCheckpointText(
       closing.result.text.replace(
         /https:\/\/meet\.google\.com\/[a-zA-Z0-9-]+/g,
@@ -4327,6 +4155,7 @@ export async function runAgentPreview(
         notesIndexBlock,
         projeta,
         entregues,
+        oferecidas,
         compromissosBlock,
       }) =>
         buildOpeningMessage(
@@ -4337,6 +4166,8 @@ export async function runAgentPreview(
           projeta,
           entregues,
           compromissosBlock,
+          undefined,
+          oferecidas,
         ),
     },
     preview,
@@ -4432,6 +4263,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         notesIndexBlock,
         projeta,
         entregues,
+        oferecidas,
         compromissosBlock,
         currentInboundText,
       }) =>
@@ -4444,6 +4276,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           entregues,
           compromissosBlock,
           currentInboundText,
+          oferecidas,
         ),
     });
   };

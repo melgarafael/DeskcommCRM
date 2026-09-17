@@ -70,6 +70,14 @@ const USO = {
   outputTokens: { total: 1, text: 1, reasoning: 0 },
 };
 
+/**
+ * Prefixo estável de `CHECKPOINT_INSTRUCTION` (inbound-turn). O fechamento é
+ * OUTRA `generateText` (`purpose=checkpoint`), sem tools. Depois da parada
+ * semântica, essa chamada chega com `chamadas === 1` — o contador antigo
+ * devolvia mais um `send_message` e o parse do JSON quebrava.
+ */
+const MARCA_DO_CHECKPOINT = "Feche o turno AGORA";
+
 /** Modelo fake que chama `send_message` `n` vezes seguidas e só então encerra com o
  * checkpoint. `rotulo` PRECISA ser único por teste: os 3 casos compartilham a mesma
  * conversa/sessão, e o gate `spinning` (mass_identical) veta corpo REPETIDO entre
@@ -84,6 +92,14 @@ function modeloQueInsisteEmMandar(n: number, rotulo: string) {
       for (const parte of msg.content as Array<Record<string, unknown>>) {
         if (parte.type === "tool-result") resultadosVistos.push(parte.output ?? parte);
       }
+    }
+    if (JSON.stringify(opts.prompt ?? "").includes(MARCA_DO_CHECKPOINT)) {
+      return {
+        content: [{ type: "text" as const, text: CHECKPOINT }],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage: USO,
+        warnings: [],
+      };
     }
     if (chamadas < n) {
       chamadas += 1;
@@ -229,37 +245,24 @@ beforeEach(() => {
 });
 
 describe("turno completo — send_message chamado repetidamente pelo modelo", () => {
-  it("o modelo insiste 5x e só as 2 primeiras (o teto) saem pro canal", async () => {
+  it("sem várias mensagens curtas, a primeira send_message autorizada encerra o loop", async () => {
     const erro = await rodaTurno(montaHandler(modeloQueInsisteEmMandar(5, "caso-a"), 2));
     expect(erro).toBeNull();
-
-    // O teto é o que decide QUANTAS mensagens físicas chegam ao lead — não o modelo.
-    expect(enviados).toHaveLength(2);
-    expect(enviados.map((e) => e.body)).toEqual([
-      "pergunta de qualificação número 1 (caso-a)",
-      "pergunta de qualificação número 2 (caso-a)",
-    ]);
-
-    // E o modelo RECEBEU o motivo do bloqueio — sem isto, "bloqueou" não distingue de
-    // "engoliu em silêncio", que é o mesmo defeito medido em produção com outra cara.
-    const vistos = JSON.stringify(resultadosVistos);
-    expect(vistos).toMatch(/max_sends_per_turn/);
-    expect(vistos).toMatch(/encerre o turno/);
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0]?.body).toMatch(/caso-a/);
+    expect(JSON.stringify(resultadosVistos)).not.toMatch(/max_sends_per_turn/);
   });
 
-  it("sem o knob explícito, o teto padrão (DEFAULT_MAX_SENDS_PER_TURN) ainda protege", async () => {
-    const { DEFAULT_MAX_SENDS_PER_TURN } = await import("@/lib/agent-engine/agent/inbound-turn");
-    const erro = await rodaTurno(
-      montaHandler(modeloQueInsisteEmMandar(DEFAULT_MAX_SENDS_PER_TURN + 3, "caso-b")),
-    );
+  it("sem o knob explícito, o teto de um envio (split desligado) ainda protege", async () => {
+    const erro = await rodaTurno(montaHandler(modeloQueInsisteEmMandar(5, "caso-b")));
     expect(erro).toBeNull();
-    expect(enviados).toHaveLength(DEFAULT_MAX_SENDS_PER_TURN);
+    expect(enviados).toHaveLength(1);
   });
 
-  it("dentro do teto, nada é bloqueado — a rede não aperta quem manda pouco", async () => {
-    const erro = await rodaTurno(montaHandler(modeloQueInsisteEmMandar(2, "caso-c"), 3));
+  it("uma única mensagem dentro do teto não é bloqueada", async () => {
+    const erro = await rodaTurno(montaHandler(modeloQueInsisteEmMandar(1, "caso-c"), 3));
     expect(erro).toBeNull();
-    expect(enviados).toHaveLength(2);
+    expect(enviados).toHaveLength(1);
     expect(JSON.stringify(resultadosVistos)).not.toMatch(/max_sends_per_turn/);
   });
 });

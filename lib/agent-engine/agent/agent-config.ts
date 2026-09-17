@@ -16,6 +16,7 @@
 import type pg from 'pg';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
+import { followupHabilitadoNaVersao } from './nativas-do-turno';
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -79,6 +80,11 @@ export interface PublishedAgentConfig {
    */
   pipelineIds: string[];
   /**
+   * `ai_agent_versions.followup.enabled`. Default do banco é false.
+   * A janela de env (`turnKnobsFromEnv.followup`) NÃO liga esta capacidade.
+   */
+  followupEnabled: boolean;
+  /**
    * Horário de funcionamento declarado na tela (`trigger_config.filters.business_hours`).
    * `null` = atende a qualquer hora. Quem obedece é o turno inbound, adiando o
    * job para a abertura — ver `janela-de-atendimento.ts` para o defeito que isto
@@ -118,6 +124,7 @@ interface Row {
   operator_tool_ids: string[] | null;
   pipeline_ids: string[] | null;
   knowledge_source_ids: string[] | null;
+  followup: unknown;
   trigger_config: unknown;
   version_created_by: string | null;
   agent_created_by: string | null;
@@ -147,6 +154,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.operator_tool_ids,
             v.pipeline_ids,
             v.knowledge_source_ids,
+            v.followup,
             v.trigger_config,
             v.created_by as version_created_by,
             a.created_by as agent_created_by`;
@@ -212,6 +220,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? []` = NENHUM funil. O clone que ainda não aplicou a 0125 nasce
     // fechado — a direção segura é agir de menos (mesma decisão da linha acima).
     pipelineIds: r.pipeline_ids ?? [],
+    followupEnabled: followupHabilitadoNaVersao(r.followup),
     // Leitura DEFENSIVA e que falha ABERTA: jsonb livre com shape estranho vira
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),

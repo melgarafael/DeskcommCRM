@@ -192,7 +192,10 @@ function buildFollowupOpeningMessage(
   context: LeadContext,
   notesIndexBlock: string,
   projeta = false,
+  oferecidas?: readonly string[],
 ): string {
+  const oferece = (nome: string): boolean =>
+    oferecidas === undefined || oferecidas.includes(nome);
   return [
     'Follow-up agendado: você havia combinado retornar a este lead — NÃO houve nova mensagem dele desde então.',
     '',
@@ -202,9 +205,20 @@ function buildFollowupOpeningMessage(
     ...ritualBlocks(previous, leadState, context, notesIndexBlock, projeta),
     '',
     'Retome a conversa com naturalidade usando a tool send_message — NUNCA escreva a resposta como texto direto',
-    '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
-    'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
-    'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+    '(texto fora de tool é descartado pelo runtime).' +
+      (oferece('get_lead_context')
+        ? ' Use get_lead_context se precisar reler o contexto.'
+        : ''),
+    ...(oferece('update_lead_state')
+      ? [
+          'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
+        ]
+      : []),
+    ...(oferece('save_lead_note')
+      ? [
+          'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+        ]
+      : []),
   ].join('\n');
 }
 
@@ -362,7 +376,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
-      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) => {
+      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta, oferecidas }) => {
         const temporalBlock = buildTemporalBlock({
           now: clock(),
           reason: payload.reason,
@@ -370,7 +384,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
           promisedAt: payload.promised_at,
           lastInbound: lastInboundOf(context),
         });
-        return buildFollowupOpeningMessage(temporalBlock, previous, leadState, context, notesIndexBlock, projeta);
+        return buildFollowupOpeningMessage(temporalBlock, previous, leadState, context, notesIndexBlock, projeta, oferecidas);
       },
     });
   };
@@ -457,9 +471,9 @@ async function runFlowDrivenTurn(
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
-      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) => {
+      buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta, oferecidas }) => {
         const temporalBlock = buildTemporalBlock({ now: clock(), lastInbound: lastInboundOf(context) });
-        const opening = buildFollowupOpeningMessage(temporalBlock, previous, leadState, context, notesIndexBlock, projeta);
+        const opening = buildFollowupOpeningMessage(temporalBlock, previous, leadState, context, notesIndexBlock, projeta, oferecidas);
         if (!input.promptHint) return opening;
         return `${opening}\n\n## Orientação do passo do fluxo\n${input.promptHint}`;
       },

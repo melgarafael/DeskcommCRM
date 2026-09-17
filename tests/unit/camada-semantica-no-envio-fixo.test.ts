@@ -51,7 +51,10 @@ const runBeforeSend = vi.fn(async (_args: Record<string, unknown>) => ({
   outcome: { kind: "sent" },
   trace: [],
 }));
-vi.mock("@/lib/agent-engine/guardrails/before-send", () => ({ runBeforeSend }));
+vi.mock("@/lib/agent-engine/guardrails/before-send", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, runBeforeSend };
+});
 
 vi.mock("@/lib/agent-engine/agent/human-handoff", () => ({
   isLeadInHandoff: vi.fn(async () => false),

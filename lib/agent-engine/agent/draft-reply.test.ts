@@ -51,6 +51,7 @@ const AGENT: PublishedAgentConfig = {
   operatorEnabled: false,
   operatorModel: null,
   operatorToolIds: [], pipelineIds: [],
+  followupEnabled: false,
   agentCreatedBy: null,
 };
 

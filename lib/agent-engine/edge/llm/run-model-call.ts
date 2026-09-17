@@ -16,7 +16,7 @@ import { guardServiceTools } from "@/lib/atendimento/fronteira-server";
  * cacheWriteTokens}. Validado no ai@7 via scripts/smoke-llm.sh (modelo real) —
  * upgrade de major re-valida esses paths pelo mesmo gate (regra dura 16).
  */
-import { generateText, stepCountIs, type ModelMessage, type ToolSet } from 'ai';
+import { generateText, stepCountIs, type ModelMessage, type StopCondition, type ToolSet } from 'ai';
 import type pg from 'pg';
 import { z } from 'zod';
 
@@ -213,11 +213,26 @@ export interface RunModelCallInput {
    */
   maxSteps?: number;
   /**
+   * Condição extra de `stopWhen` (AI SDK 7). Array: qualquer uma para o loop.
+   * Classificadores não passam — o default `isStepCount(1)` permanece.
+   */
+  pararQuando?: StopCondition<ToolSet>;
+  /**
    * Override de provider/credencial vindo da versão PUBLICADA do agente (Fase
    * 2B) — resolvido no seam, nunca no call site. Sem ele, config da org.
    */
   llmOverride?: import('./credentials').LlmResolveOverride;
 }
+
+export interface LlmUsageChamada {
+  purpose: string;
+  callId: string | null;
+  usage: { inputTokens: number; outputTokens: number };
+  costCents: number | null;
+  latencyMs: number;
+}
+
+export type OnLlmUsage = (chamada: LlmUsageChamada) => void;
 
 export interface RunModelCallDeps {
   registry?: ProviderRegistry;
@@ -228,6 +243,8 @@ export interface RunModelCallDeps {
    * surpresa em produção.
    */
   agora?: Date;
+  /** Ensaio: soma tokens/custo de cada purpose sem segunda leitura de `llm_calls`. */
+  onUsage?: OnLlmUsage;
 }
 
 /**
@@ -645,6 +662,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof generateText>>;
+  const stopWhen = [
+    ...(input.maxSteps === undefined ? [] : [stepCountIs(input.maxSteps)]),
+    ...(input.pararQuando === undefined ? [] : [input.pararQuando]),
+  ];
   try {
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
     // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
@@ -656,7 +677,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       system: prefix.system,
       messages: input.messages,
       tools: guardServiceTools(prefix.tools),
-      stopWhen: input.maxSteps === undefined ? undefined : stepCountIs(input.maxSteps),
+      // Sem teto e sem parada extra (classificadores), o default do SDK
+      // (`isStepCount(1)`) permanece. Array vazio não é o mesmo que omitir.
+      ...(stopWhen.length > 0 ? { stopWhen } : {}),
       temperature,
       topP,
       topK,
@@ -736,6 +759,14 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     ],
   );
 
+  deps.onUsage?.({
+    purpose,
+    callId: rows[0]?.id ?? null,
+    usage,
+    costCents: cost,
+    latencyMs,
+  });
+
   // Só métricas — nunca conteúdo de mensagem (PII) nem chave.
   deps.log?.info('llm: chamada concluída', {
     organization_id: input.tenantId,
@@ -760,6 +791,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
 
   return {
     result,
+    /** Cópia explícita: se um adapter futuro projetar só texto/usage, os passos não somem. */
+    steps: result.steps,
     callId: rows[0]?.id ?? null,
     provider: config.provider,
     model,
