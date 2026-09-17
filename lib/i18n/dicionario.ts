@@ -5538,6 +5538,7 @@ export const DICIONARIO: Traducoes = {
   "Contato anonimizado (LGPD)": { es: "Contacto anonimizado (LGPD)" },
   "edição bloqueada.": { es: "edición bloqueada." },
   "Visão geral": { es: "Visión general" },
+  "Nome do WhatsApp": { es: "Nombre de WhatsApp" },
   "Última atividade": { es: "Última actividad" },
   "Direito ao esquecimento (LGPD)": { es: "Derecho al olvido (LGPD)" },
   "A anonimização é irreversível. Use somente após confirmação formal do titular ou ordem judicial.": {
