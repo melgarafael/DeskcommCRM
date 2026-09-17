@@ -1,6 +1,8 @@
 "use client";
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
+import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
+import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
 
 import { useT } from "@/hooks/i18n/useT";
 
@@ -27,6 +29,7 @@ export interface TipoRow {
   is_active: boolean;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
+  reminder_extra_offsets_minutes: number[] | null;
 }
 
 /**
@@ -130,8 +133,47 @@ function LembreteDoCompromisso({ tipo }: { tipo: TipoRow }) {
           className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text disabled:opacity-50"
         />
       </label>
+      <label className="flex flex-col gap-1 text-xs text-text-muted">
+        {t("E de novo, quantos minutos antes")}
+        <input
+          name="reminder_extra_offsets_minutes"
+          type="text"
+          inputMode="numeric"
+          disabled={!ligado}
+          placeholder="180"
+          defaultValue={(tipo.reminder_extra_offsets_minutes ?? []).join(", ")}
+          data-testid={`editar-lembrete-extras-${tipo.id}`}
+          className="rounded-md border border-border bg-surface-elevated p-2 text-sm text-text disabled:opacity-50"
+        />
+        <span className="text-[11px] text-text-muted">
+          {t("Opcional. Até 3, separados por vírgula. Ex.: 180 avisa de novo 3 horas antes.")}
+        </span>
+      </label>
     </>
   );
+}
+
+/**
+ * "180, 60" → `[180, 60]`.
+ *
+ * Campo de texto porque a tela precisa alcançar os três degraus que a rota
+ * aceita, e três caixas numéricas para um recurso opcional é mais formulário do
+ * que o recurso merece.
+ *
+ * O que NÃO é número some em silêncio de propósito: a recusa com nome é da
+ * rota, que fala sobre faixa e quantidade. Aqui a limpeza é só de pontuação —
+ * vírgula sobrando, espaço, ponto-e-vírgula de quem copiou de outro lugar.
+ */
+export function lerDegrausExtras(bruto: string | null): number[] {
+  if (!bruto) return [];
+  return [
+    ...new Set(
+      bruto
+        .split(/[,;]/)
+        .map((p) => Number(p.trim()))
+        .filter((n) => Number.isInteger(n) && n > 0),
+    ),
+  ].sort((a, b) => b - a);
 }
 
 export function TiposDeAgendamentoClient({
@@ -140,12 +182,17 @@ export function TiposDeAgendamentoClient({
   podeEditar,
   usuarioAtualId,
   podeConfigurarGoogle,
+  clientePelaAgendaLigado,
+  podeLigarClientePelaAgenda,
 }: {
   tiposIniciais: TipoRow[];
   pessoas: Array<{ id: string; papel: string; nome: string }>;
   podeEditar: boolean;
   usuarioAtualId: string;
   podeConfigurarGoogle: boolean;
+  /** `organizations.settings.crm.cliente_pela_agenda`, lido pela página. */
+  clientePelaAgendaLigado: boolean;
+  podeLigarClientePelaAgenda: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -195,6 +242,11 @@ export function TiposDeAgendamentoClient({
     <div className="flex min-h-0 flex-1 flex-col gap-4" data-testid="tipos-de-agendamento-config">
       {podeConfigurarGoogle && <AgendasConectadas />}
       <PrazosDePresenca podeEditar={podeEditar}/>
+      <ClientePelaAgenda
+        ligadoInicial={clientePelaAgendaLigado}
+        podeLigar={podeLigarClientePelaAgenda}
+      />
+      <DiasBloqueados podeEditar={podeEditar}/>
       {podeEditar ? (
         <div>
           {criando ? (
@@ -375,7 +427,11 @@ export function TiposDeAgendamentoClient({
                   data-testid={`lembrete-ligado-${tipo.id}`}
                   className="text-xs tabular-nums text-text-muted"
                 >
-                  {t("avisa o cliente")} {tipo.reminder_minutes_before} min {t("antes")}
+                  {t("avisa o cliente")}{" "}
+                  {[tipo.reminder_minutes_before, ...(tipo.reminder_extra_offsets_minutes ?? [])]
+                    .sort((a, b) => b - a)
+                    .join(", ")}{" "}
+                  min {t("antes")}
                 </span>
               ) : null}
               {!tipo.is_active ? <span className="text-xs text-text-subtle">{t("desativado")}</span> : null}
@@ -412,7 +468,15 @@ export function TiposDeAgendamentoClient({
                       disabled={salvando}
                       onClick={() =>
                         void comErro(
-                          () => apiClient.patch("/api/v1/agenda/tipos", { id: tipo.id, is_active: true } as never),
+                          // Rota PRÓPRIA, e o `as never` que estava aqui saiu.
+                          //
+                          // Este botão nunca funcionou: mandava `is_active` num
+                          // PATCH cujo schema é `criarSchema.partial()`, onde
+                          // esse campo não existe. Zod descarta chave
+                          // desconhecida em silêncio, o corpo chegava vazio e a
+                          // resposta era 422 "Nenhum campo para alterar.". O
+                          // cast era o que impedia o typecheck de acusar.
+                          () => apiClient.post("/api/v1/agenda/tipos/reativar", { id: tipo.id }),
                           "Tipo reativado.",
                         )
                       }
@@ -459,6 +523,16 @@ export function TiposDeAgendamentoClient({
                         // O campo desabilitado também não aparece, e omitir é o
                         // certo: desligar o aviso não pode apagar a antecedência
                         // que alguém escolheu (ver `LembreteDoCompromisso`).
+                        // Mesmo desenho do campo de minutos: com o aviso
+                        // desligado o campo não entra no `FormData` e a lista
+                        // guardada fica intacta para quando alguém religar.
+                        ...(dados.get("reminder_enabled") === "on"
+                          ? {
+                              reminder_extra_offsets_minutes: lerDegrausExtras(
+                                String(dados.get("reminder_extra_offsets_minutes") ?? ""),
+                              ),
+                            }
+                          : {}),
                         ...(dados.get("reminder_minutes_before")
                           ? {
                               reminder_minutes_before: Number(

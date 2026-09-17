@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { sourceReader } from './archive.mjs';
 import { SOURCE_HOST, SOURCE_WORKSPACE } from './core.mjs';
+import { graphVersion } from '../../../lib/graph-version.ts';
 const dir=process.argv[2];if(!dir?.startsWith('/'))throw new Error('Diretório absoluto obrigatório');
 process.umask(0o077);
 const manifest=JSON.parse(await readFile(resolve(dir,'media-manifest.json'),'utf8'));
@@ -48,7 +49,7 @@ async function worker(){while(current<failed.length){const reference=failed[curr
    if(token&&mediaId&&/^\d+$/.test(String(mediaId))){
     try{
      // Mesma operação GET/versionamento já usada pelo proxy de mídia da origem.
-     const r=await fetch(`https://graph.facebook.com/v21.0/${mediaId}`,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(30000)});
+     const r=await fetch(`https://graph.facebook.com/${graphVersion()}/${mediaId}`,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(30000)});
      if(r.ok){const body=await r.json();result=body.url?await save(body.url,{Authorization:`Bearer ${token}`},reference):{recovery_error:'graph_missing_url'};}
      else{result={recovery_error:`graph_http_${r.status}`};await r.body?.cancel();}
     }catch{result={recovery_error:'graph_network_failure'};}

@@ -20,7 +20,7 @@ Falha de canal alimenta a Central de avisos pelo monitor existente, com resoluç
 
 ## Operação e validação
 
-A instalação aplica as migrations 0239, 0240 e 0241, ou o apêndice do baseline, antes de servir a versão nova. O processamento usa o worker/cron já distribuído no produto. Desenvolvimento: app e `scripts/dev-crons.ts` precisam estar ativos. O endereço `NEXT_PUBLIC_APP_URL` precisa ser HTTPS público para receber do HUB; localhost permite validar a interface e eventos de teste locais.
+A instalação aplica as migrations 0275, 0276 e 0277, ou o apêndice do baseline, antes de servir a versão nova. O processamento usa o worker/cron já distribuído no produto. Desenvolvimento: app e `scripts/dev-crons.ts` precisam estar ativos. O endereço `NEXT_PUBLIC_APP_URL` precisa ser HTTPS público para receber do HUB; localhost permite validar a interface e eventos de teste locais.
 
 Provas automatizadas: `lib/channels/social/*.test.ts`, `tests/invariants/social-dms.test.ts`, `tests/unit/followup-send-ledger.test.ts` e `tests/e2e/social-dms.spec.ts`. A suíte E2E usa organização e credenciais fictícias, assinatura real, banco/Auth reais e não envia mensagens externas.
 

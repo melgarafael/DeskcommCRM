@@ -29,6 +29,12 @@ export interface FunilEditavel {
   slug: string;
   position: number;
   is_default: boolean;
+  /**
+   * Onde nasce o lead de quem já é cliente (migration 0262). Opcional porque um
+   * chamador que só troca nome ou posição não precisa carregá-la, e porque a
+   * coluna é nova: um objeto montado antes dela continua compilando.
+   */
+  is_client_pipeline?: boolean;
   is_archived: boolean;
   /** Opcional porque NENHUMA regra daqui a usa — ela só existe para a tela. */
   description?: string | null;
@@ -189,30 +195,51 @@ export function podeExcluirDeVez(
   return { ok: true };
 }
 
+/** As marcas exclusivas que um funil pode carregar — uma por organização, cada uma. */
+export type MarcaExclusiva = "is_default" | "is_client_pipeline";
+
 export interface UpdateDePadrao {
   pipelineId: string;
-  patch: { is_default: boolean };
+  patch: Partial<Record<MarcaExclusiva, boolean>>;
 }
 
 /**
- * A troca de funil padrão traduzida nos UPDATEs, NA ORDEM EM QUE PRECISAM SAIR.
+ * A troca de uma marca exclusiva de funil traduzida nos UPDATEs, NA ORDEM EM QUE
+ * PRECISAM SAIR.
  *
- * ⚠️ A LIBERAÇÃO DO ANTERIOR VEM PRIMEIRO, e não é estética:
- * `uniq_crm_pipelines_org_default` é imediato (não deferível), então marcar o novo
- * antes de liberar o antigo é um `23505` cru na cara de quem só queria trocar o
- * padrão. Mesmo desenho de `updatesDeMarcacao` para etapas.
+ * ⚠️ A LIBERAÇÃO DO ANTERIOR VEM PRIMEIRO, e não é estética: os dois índices
+ * (`uniq_crm_pipelines_org_default` e `uniq_crm_pipelines_org_client`) são
+ * imediatos (não deferíveis), então marcar o novo antes de liberar o antigo é um
+ * `23505` cru na cara de quem só queria trocar. Mesmo desenho de
+ * `updatesDeMarcacao` para etapas.
+ *
+ * ⚠️ O ANTERIOR É PROCURADO ENTRE TODOS OS FUNIS, ARQUIVADOS INCLUSIVE — e este
+ * parágrafo corrige uma afirmação que estava aqui e era falsa. O comentário
+ * anterior dizia que o índice de padrão é parcial em `is_archived`; medido em
+ * `supabase/baseline.sql`, ele é `where (is_default = true)` e mais nada. Quem
+ * pulava o arquivado deixava o banco com dois marcados para liberar um só, e o
+ * 23505 aparecia justamente na organização que arquivou o funil antigo em vez de
+ * trocar o padrão antes — o caminho mais comum de quem reorganiza o CRM.
  */
-export function updatesDePadrao(funis: FunilEditavel[], novoId: string): UpdateDePadrao[] {
+export function updatesDeMarcaExclusiva(
+  funis: FunilEditavel[],
+  novoId: string,
+  marca: MarcaExclusiva,
+): UpdateDePadrao[] {
   const novo = funis.find((f) => f.id === novoId);
-  if (!novo || novo.is_default) return [];
+  if (!novo || novo[marca]) return [];
 
   const updates: UpdateDePadrao[] = [];
-  // Arquivado não disputa: o índice único de padrão é parcial (`where is_archived = false`).
-  const anterior = ativos(funis).find((f) => f.id !== novoId && f.is_default);
-  if (anterior) updates.push({ pipelineId: anterior.id, patch: { is_default: false } });
+  const anterior = funis.find((f) => f.id !== novoId && f[marca]);
+  if (anterior) updates.push({ pipelineId: anterior.id, patch: { [marca]: false } });
 
-  updates.push({ pipelineId: novoId, patch: { is_default: true } });
+  updates.push({ pipelineId: novoId, patch: { [marca]: true } });
   return updates;
+}
+
+/** O nome que o resto do código já importa. Um caso de `updatesDeMarcaExclusiva`. */
+export function updatesDePadrao(funis: FunilEditavel[], novoId: string): UpdateDePadrao[] {
+  return updatesDeMarcaExclusiva(funis, novoId, "is_default");
 }
 
 /** Uma regra de automação como ela sai do banco — `actions` é jsonb cru. */

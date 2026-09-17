@@ -34,9 +34,18 @@ describe("eixo 4 — roteamento/fila", () => {
     expect(tableExists("attendant_availability")).toBe(true);
   });
 
-  // Shape que a elegibilidade (§5: disponível ∧ horário ∧ capacidade) e o
-  // heartbeat AT-08 consomem: is_available, capacity, schedule tz-aware,
-  // last_heartbeat_at + índice parcial de varredura de online.
+  // Shape que a elegibilidade consome (§5: disponível ∧ horário ∧ capacidade):
+  // is_available, capacity, schedule tz-aware + índice parcial de online.
+  //
+  // ⚠️ `last_heartbeat_at` segue na lista, e hoje NINGUÉM a escreve nem a lê.
+  // O auto-offline por presença (AT-08) saiu: não havia emissor de sinal de
+  // vida em lugar nenhum do produto, e a varredura derrubava todo atendente
+  // ~15 min depois de ele se declarar de plantão. A coluna ficou de propósito —
+  // é o lugar certo se alguém construir o emissor que faltava, e agora ela está
+  // limpa, sem carimbos de clique se fingindo de batida.
+  //
+  // Esta asserção continua porque a coluna é RESERVA declarada: se alguém a
+  // remover, que seja com a decisão na mão e não por parecer sobra.
   it("attendant_availability tem as colunas de elegibilidade/heartbeat (spec 13 §3.4)", () => {
     expect(columnExists("attendant_availability", "is_available")).toBe(true);
     expect(columnExists("attendant_availability", "capacity")).toBe(true);

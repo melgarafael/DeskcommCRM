@@ -37,12 +37,15 @@ function makeSupabase(conversation: Record<string, unknown>) {
   const client = {
     from(table: string) {
       if (table === "conversations") {
+        // Encadeável SEM LIMITE: a consulta da conversa filtra por id E por
+        // `organization_id` — este handler também roda com o client de service
+        // role, que bypassa RLS, e lá o filtro é a única proteção.
+        const cadeiaConv: Record<string, unknown> = {
+          eq: () => cadeiaConv,
+          maybeSingle: async () => ({ data: conversation, error: null }),
+        };
         return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({ data: conversation, error: null }),
-            }),
-          }),
+          select: () => cadeiaConv,
           update: (patch: Record<string, unknown>) => {
             conversationPatch = patch;
             return { eq: async () => ({ error: null }) };

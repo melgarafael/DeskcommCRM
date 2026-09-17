@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import { requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 import { ActivityReportClient } from "./_components/ActivityReportClient";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Atividades" };
 
 export default async function ActivitiesReportPage() {
   const user = await requireAuth();

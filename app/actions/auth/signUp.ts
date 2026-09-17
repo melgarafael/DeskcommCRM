@@ -10,6 +10,7 @@ import {
   type SignupComConviteInput,
 } from "@/lib/auth/schemas";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { audit, hashEmail } from "@/lib/audit";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { env } from "@/lib/env";
@@ -37,11 +38,23 @@ export type SignUpResult =
   | {
       ok: false;
       /**
+       * `somente_convite`: a instalação está em modo `so_convite` e esta
+       * tentativa não trouxe convite válido. É recusa de POLÍTICA, não de
+       * dado — por isso não vira `validation_error`: a pessoa não tem o que
+       * corrigir no formulário.
+       *
        * `conta_ja_existe`: só acontece COM convite na mão. Sem convite a
        * resposta continua indistinguível de sucesso — ver o parágrafo de
-       * anti-enumeração abaixo.
+       * anti-enumeração abaixo. Os dois convivem sem se confundir: a recusa por
+       * política é decidida ANTES de tocar no GoTrue, então numa instalação
+       * fechada quem chega sem convite nunca chega a saber se o e-mail existe.
        */
-      error: "validation_error" | "rate_limited" | "signup_failed" | "conta_ja_existe";
+      error:
+        | "validation_error"
+        | "rate_limited"
+        | "signup_failed"
+        | "somente_convite"
+        | "conta_ja_existe";
       details?: Record<string, unknown>;
     };
 
@@ -102,6 +115,22 @@ export async function signUp(
       return { ok: false, error: "validation_error", details: { invite: ["email_divergente"] } };
     }
     convite = inviteToken;
+  }
+
+  // ── A AUTORIDADE da política de cadastro ──────────────────────────────────
+  // A tela também recusa, mas a tela é adulterável: esta action é chamável
+  // direto, e sem esta guarda o modo `so_convite` seria decoração. A ordem
+  // importa — só se pergunta a política DEPOIS de o convite ter sido validado
+  // acima, senão um convite legítimo seria barrado.
+  if (convite === null && (await modoDeCadastro()) === "so_convite") {
+    await audit({
+      action: "auth.signup_failed",
+      metadata: { email_hash: hashEmail(parsed.data.email), reason: "somente_convite" },
+      requestId,
+      ip,
+      userAgent,
+    });
+    return { ok: false, error: "somente_convite" };
   }
 
   const supabase = await createClient();

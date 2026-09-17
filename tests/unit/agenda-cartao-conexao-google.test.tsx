@@ -49,6 +49,24 @@ describe("cartão da conexão do Google", () => {
     expect(screen.queryByTestId("google-conectado")).toBeNull();
   });
 
+  it("...e esse botão aponta para a rota de ida — o fio que nenhum teste segurava", () => {
+    // REDE DE REGRESSÃO, não motor de conserto: este caso JÁ passava antes da
+    // mudança, e está escrito aqui por isso.
+    //
+    // Um caso Playwright que clicasse o botão e conferisse `accounts.google.com`
+    // + `prompt=consent select_account` + `login_hint` repetiria o que já está
+    // medido: esse destino é asseverado — sobre o header `Location` de
+    // verdade — em tests/unit/agenda-google-connect-route.test.ts:67-80. O
+    // único elo da corrente que ninguém segurava era este: que o botão da tela
+    // aponta para a rota que produz aquele destino. É um `<a href>`, então um
+    // caso de unidade o prende inteiro, roda no CI e não depende de credencial
+    // do Google — que a spec e2e não tem, e sem a qual ela pularia.
+    render(<CartaoDaConexaoGoogle configurado falta={[]} contaConectada={null} />);
+    expect(screen.getByTestId("conectar-google").getAttribute("href")).toBe(
+      "/api/v1/agenda/google/connect",
+    );
+  });
+
   it("sem credenciais: diz o ENDEREÇO DE RETORNO a registrar, e dá para copiar", () => {
     // ⚠️ ESTE CASO NASCEU DE UM TROPEÇO REAL. Recebi uma credencial do Google
     // criada no console com `http://localhost:3012` registrado — e o produto

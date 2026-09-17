@@ -18,6 +18,10 @@ export type AgentInboxSeverity = "info" | "warn" | "critical";
  * de quê.
  */
 export const KIND_LABEL = {
+  // Diz que ALGUÉM ESPERA, não que um registro envelheceu. "Caso parado há
+  // 24h" descreve a tabela; do lado de lá existe uma pessoa que pediu algo e
+  // não teve resposta, e é isso que faz quem lê a Central abrir o item.
+  case_stale: "Um atendimento espera decisão da equipe",
   appointment_outcome_required:"Confirme a presença no compromisso",
   appointment_recovery_review:"A recuperação precisa de uma decisão da equipe",
   routing_unassigned: "Conversa aguardando responsável",

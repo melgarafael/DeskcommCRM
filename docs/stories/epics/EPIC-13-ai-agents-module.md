@@ -71,6 +71,8 @@ specs:
 > - `getSession()` no backend — sempre `getUser()`
 > - Tool MCP que faz query SQL custom — sempre via handler core extraído (`_handler.ts`)
 
+> **Registro de 2026-05-05.** Escrito quando o alvo de deploy era a Vercel; hoje o CRM é self-host em VPS (ver [`docs/runbooks/deploy.md`](../../runbooks/deploy.md)). O corpo não foi reescrito — mas `vercel.json` não existe neste repositório, e os crons são agendados pelo serviço `scheduler` do `docker-compose.prod.yml`.
+
 ## 1. Objetivo
 
 Entregar o **módulo de agentes configuráveis de IA** do DeskcommCRM: cada tenant configura N agentes com prompt + provider/model + chave BYO + tools MCP + sessão WhatsApp + gatilhos + prioridade. Um webhook WAHA inbound dispara o dispatcher que seleciona o agente top-priority cujo gatilho match, executa o `ToolLoopAgent` (Vercel AI SDK v6) contra MCP server interno (que expõe os endpoints REST existentes do CRM), e devolve a resposta via `WAHA sendText` na mesma sessão. UI permite Save/Publish com versionamento atômico, test mode com trace, log de execuções em realtime.
@@ -935,7 +937,7 @@ exposes:
 
 #### Definition of Done
 - [ ] Todos os ACs passam
-- [ ] Cron registrado em `vercel.json`
+- ~~Cron registrado em `vercel.json`~~ — **superada**: `vercel.json` não existe neste repositório; o agendamento é do serviço `scheduler` do `docker-compose.prod.yml`
 - [ ] Sentry monitora `ai_dispatcher.no_match` se ratio > 30% (alarme info)
 - [ ] Commit `feat(EPIC-13): agent-dispatcher worker [wave 7]`
 
@@ -1075,7 +1077,7 @@ exposes:
 
 #### Definition of Done
 - [ ] Todos os ACs passam
-- [ ] `vercel.json` configura `maxDuration: 300` para `/api/internal/agents/run`
+- ~~`vercel.json` configura `maxDuration: 300` para `/api/internal/agents/run`~~ — **superada**: `vercel.json` não existe neste repositório, e a rota roda dentro do contêiner `app` do compose, não numa função serverless com teto de duração
 - [ ] Sentry breadcrumbs estruturados (sem args completos das tools — só nome+latency+error)
 - [ ] Smoke test no CI: run real com fake provider mock → 0 plaintext leaks
 - [ ] Commit `feat(EPIC-13): agent runtime ToolLoopAgent [wave 8]`

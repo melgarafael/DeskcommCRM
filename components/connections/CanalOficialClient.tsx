@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -16,7 +17,16 @@ import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 
 /** Campo somente-leitura com botão de copiar — o que o operador cola na Meta. */
-function ParaColar({ rotulo, valor }: { rotulo: string; valor: string | null }) {
+function ParaColar({
+  rotulo,
+  valor,
+  semValor,
+}: {
+  rotulo: string;
+  valor: string | null;
+  /** O que dizer quando não há valor para mostrar — que nem sempre é "falta configurar". */
+  semValor?: React.ReactNode;
+}) {
   const t = useT();
   if (!valor) {
     return (
@@ -24,9 +34,7 @@ function ParaColar({ rotulo, valor }: { rotulo: string; valor: string | null }) 
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {rotulo}
         </span>
-        <span className="text-sm text-destructive">
-          {t("não configurado nesta instalação — defina no servidor antes de continuar")}
-        </span>
+        {semValor}
       </div>
     );
   }
@@ -108,7 +116,37 @@ export function CanalOficialClient() {
             </p>
           </div>
           <ParaColar rotulo={t("URL de callback")} valor={estado.webhook.callbackUrl} />
-          <ParaColar rotulo={t("Token de verificação")} valor={estado.webhook.verifyToken} />
+          <ParaColar
+            rotulo={t("Token de verificação")}
+            valor={estado.webhook.verifyToken}
+            semValor={
+              // Desde a 0257 o token vive na tela de administração da instalação
+              // e é mostrado UMA vez, quando é gerado. Mandar "definir no
+              // servidor" quem já cadastrou tudo por lá seria mandá-lo editar um
+              // arquivo que ele não precisa abrir — e o valor do arquivo nem é
+              // mais o que a Meta precisa receber.
+              <span className="flex flex-col items-start gap-1">
+                {estado.webhook.verifyTokenOrigem === "instalacao" ? (
+                  <span className="text-sm text-muted-foreground" data-testid="token-na-instalacao">
+                    {t("Já cadastrado na administração da instalação. Ele aparece uma vez só, quando é gerado — se não foi guardado, quem administra a instalação gera outro em Admin › API Oficial (Meta).")}
+                  </span>
+                ) : (
+                  <span className="text-sm text-destructive" data-testid="token-nao-configurado">
+                    {t("Ainda não configurado. Quem administra a instalação cadastra em Admin › API Oficial (Meta), e o token aparece lá pronto para copiar.")}
+                  </span>
+                )}
+                {estado.webhook.configurarEm ? (
+                  <Link
+                    href={estado.webhook.configurarEm}
+                    data-testid="abrir-app-da-meta"
+                    className="text-sm font-medium underline underline-offset-2"
+                  >
+                    {t("Abrir API Oficial (Meta) na administração")}
+                  </Link>
+                ) : null}
+              </span>
+            }
+          />
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {t("Campos a assinar")}

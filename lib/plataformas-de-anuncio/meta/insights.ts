@@ -45,6 +45,7 @@
  * `limite_de_chamadas` e ganha mensagem própria na tela, em vez de virar "erro
  * ao carregar" — o operador precisa saber que a espera resolve.
  */
+import { VERSAO_PADRAO_DA_GRAPH } from "@/lib/graph-version";
 import { logger } from "@/lib/logger";
 import type {
   ContaDeAnuncio,
@@ -55,10 +56,11 @@ import type {
 /**
  * A MESMA versão que `conversions.ts` fixa, e pelo mesmo motivo: a instalação
  * não deve conviver com duas versões da mesma plataforma. Subir de versão é uma
- * mudança deliberada, feita nos dois arquivos, depois de reconferir os campos —
- * a lição do achado 2 acima é justamente que campo válido some entre versões.
+ * mudança deliberada, feita num arquivo só (`lib/graph-version.ts`), depois de
+ * reconferir os campos — a lição do achado 2 acima é justamente que campo
+ * válido some entre versões.
  */
-const VERSAO_DA_API = "v22.0";
+const VERSAO_DA_API = VERSAO_PADRAO_DA_GRAPH;
 
 const TEMPO_LIMITE_MS = 20_000;
 

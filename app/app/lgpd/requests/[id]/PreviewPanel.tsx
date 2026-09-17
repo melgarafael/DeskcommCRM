@@ -4,6 +4,7 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 
 import { useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { Eye, ChartBar, Warning } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,7 +91,8 @@ export function PreviewPanel({ requestId }: PreviewPanelProps) {
               {/* Contact card */}
               {preview.contact && (
                 <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                  <p className="font-medium">{preview.contact.name ?? preview.contact.display_name ?? "—"}</p>
+                  {/* O telefone aparece logo abaixo, por isso aqui é o NOME e só ele. */}
+                  <p className="font-medium">{nomeDoContato(preview.contact) ?? "—"}</p>
                   {preview.contact.email && (
                     <p className="text-muted-foreground">{preview.contact.email}</p>
                   )}

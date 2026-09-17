@@ -1,8 +1,10 @@
+import type { Metadata } from "next";
 import { NavHub } from "@/components/shell/NavHub";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Análise" };
 
 /**
  * Hub da Análise.

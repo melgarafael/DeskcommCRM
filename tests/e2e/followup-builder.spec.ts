@@ -578,6 +578,15 @@ test.describe("followup flow builder — canvas visual (Task 6.2)", () => {
     await page.locator('[data-testid^="node-card-end-"]').click();
     await expect(page.getByTestId("delete-selection")).toHaveText("Excluir nó");
     await page.getByTestId("delete-selection").click();
+    // O #749 pôs uma confirmação entre o clique e o apagamento, e ela é o
+    // comportamento certo: apagar nó é destrutivo e não dá para desfazer. A
+    // spec passa a fazer o que a pessoa faz — confirma.
+    await expect(page.getByRole("alertdialog")).toBeVisible();
+    await expect(page.getByRole("alertdialog")).toContainText("Excluir este nó?");
+    // O nó SEGUE na tela enquanto a pergunta está aberta: é isto que separa
+    // "pediu confirmação" de "apagou e mostrou um aviso depois".
+    await expect(page.locator('[data-testid^="node-card-end-"]')).toHaveCount(1);
+    await page.getByRole("button", { name: "Excluir", exact: true }).click();
     await expect(page.locator('[data-testid^="node-card-end-"]')).toHaveCount(0);
 
     await page.getByTestId("palette-add-trigger").click();

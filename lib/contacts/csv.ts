@@ -75,7 +75,33 @@ import { normalizePhoneBR } from "@/lib/webhooks/inbound";
  */
 const MAX_BYTES_POR_SUBSTITUICAO = 100;
 
-export function decodificarCsv(bytes: ArrayBuffer | Uint8Array): { texto: string } | { erro: string } {
+/** Ou o texto saiu legível, ou o arquivo não é texto. Não existe terceiro estado. */
+export type BytesDecodificados = { texto: string } | { binario: true };
+
+/**
+ * A decisão de codificação deste repo, sobre os BYTES — uma só, para todo
+ * arquivo que chega de fora.
+ *
+ * Quem chama: `decodificarCsv` (as três rotas de importação de planilha, #483)
+ * e o extrator de Markdown do acervo de conhecimento
+ * (`lib/ai/rag/extractors/markdown.ts`, #531). O segundo fazia
+ * `buffer.toString("utf8")` e o `.txt` que o Bloco de Notas salva em cp1252 —
+ * padrão de quem monta base de conhecimento no Windows — entrava com mojibake
+ * na base que o agente lê para o cliente. Duas regras de charset aqui seriam
+ * duas respostas para a mesma pergunta, e a que ninguém lembrar de atualizar é
+ * a que envelhece.
+ *
+ * Devolve `{ binario: true }` — o `.xlsx` renomeado, o UTF-16 com acento — em
+ * vez de texto de aparência plausível: quem traduz isso na frase da tela é o
+ * chamador, que sabe o que a pessoa pediu.
+ *
+ * ⚠️ O que isto NÃO alcança, e vale para os dois chamadores: UTF-16 só de ASCII
+ * (sem acento, com um NUL entre cada letra) é UTF-8 VÁLIDO, não produz U+FFFD
+ * nenhum e passa como texto — a recusa só pega o UTF-16 que tem byte alto. O
+ * mojibake da ORIGEM ("AÃ§Ã£o" já gravado por quem gerou o arquivo) também
+ * passa, porque também é UTF-8 válido. São outros defeitos, com outra prova.
+ */
+export function decodificarBytesDeTexto(bytes: ArrayBuffer | Uint8Array): BytesDecodificados {
   const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 
   const utf8 = new TextDecoder("utf-8").decode(buf);
@@ -90,13 +116,26 @@ export function decodificarCsv(bytes: ArrayBuffer | Uint8Array): { texto: string
 
   const latin = new TextDecoder("windows-1252").decode(buf);
   // eslint-disable-next-line no-control-regex -- é exatamente o que se procura
-  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(latin)) {
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(latin)) return { binario: true };
+  return { texto: semBom(latin) };
+}
+
+/**
+ * O mesmo, com a frase da tela de importação de planilha.
+ *
+ * A decisão não mora aqui: este é o CSV sobre a regra acima — a leitura que as
+ * rotas de contatos, leads e produtos chamam. Ele continua sendo o nome público
+ * que o #483 deixou; a regra é que passou a ter nome de gente.
+ */
+export function decodificarCsv(bytes: ArrayBuffer | Uint8Array): { texto: string } | { erro: string } {
+  const decodificado = decodificarBytesDeTexto(bytes);
+  if ("binario" in decodificado) {
     return {
       erro:
         "Este arquivo não parece ser um CSV de texto. No Excel use “Salvar como” → “CSV UTF-8 (delimitado por vírgulas)”.",
     };
   }
-  return { texto: semBom(latin) };
+  return decodificado;
 }
 
 /** O BOM vira caractere invisível no primeiro cabeçalho e cria coluna fantasma. */

@@ -3,9 +3,12 @@ import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
 import type { Role } from "@/lib/auth/types";
+import { localize, type ExtensionManifest } from "@/lib/extensions/manifest";
+import type { ExtensionGuideView } from "@/lib/extensions/view";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { hubSections, type NavGroupId } from "@/lib/navigation/registry";
+import { BookOpen, Lightbulb, ListChecks, Warning } from "@/lib/ui/icons";
 
 interface NavHubProps {
   interfaceSettings?: InterfaceSettings;
@@ -14,6 +17,8 @@ interface NavHubProps {
   role: Role | null;
   title: string;
   subtitle: string;
+  extensionGuides?: ExtensionGuideView[];
+  extensionsUnavailable?: boolean;
   /**
    * Idioma da interface. `traduzir` é pura — roda em Server Component sem
    * provider. O default mantém os demais hubs (ex.: /app/ai) como estão até
@@ -22,6 +27,12 @@ interface NavHubProps {
    */
   locale?: Idioma;
 }
+
+const EXTENSION_ICONS: Record<ExtensionManifest["display"]["icon"], typeof ListChecks> = {
+  ListChecks,
+  BookOpen,
+  Lightbulb,
+};
 
 /**
  * Vitrine de um grupo do registro de navegação.
@@ -57,6 +68,8 @@ export function NavHub({
   subtitle,
   interfaceSettings,
   locale = IDIOMA_PADRAO,
+  extensionGuides = [],
+  extensionsUnavailable = false,
 }: NavHubProps) {
   const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings);
 
@@ -104,6 +117,106 @@ export function NavHub({
           </div>
         </section>
       ))}
+
+      {group === "crm" && (extensionGuides.length > 0 || extensionsUnavailable) ? (
+        <section aria-labelledby="hub-crm-orientacoes-instaladas" className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2
+                id="hub-crm-orientacoes-instaladas"
+                className="text-xs font-medium tracking-wider text-muted-foreground uppercase"
+              >
+                {traduzir("Orientações instaladas", locale)}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {traduzir(
+                  "Guias adicionados depois da instalação, sem acesso aos dados do CRM.",
+                  locale,
+                )}
+              </p>
+            </div>
+            <Link
+              href="/app/extensions"
+              className="text-xs font-medium text-accent underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-hidden"
+            >
+              {traduzir("Gerenciar extensões", locale)}
+            </Link>
+          </div>
+
+          {extensionsUnavailable ? (
+            <Card className="flex gap-3 border-warning/40 bg-warning-bg p-4">
+              <Warning
+                size={20}
+                weight="duotone"
+                aria-hidden
+                className="mt-0.5 shrink-0 text-warning-fg"
+              />
+              <div>
+                <h3 className="text-sm font-semibold">
+                  {traduzir("Não foi possível conferir as orientações instaladas", locale)}
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {traduzir(
+                    "Abra Extensões para tentar novamente e ver o estado registrado no servidor.",
+                    locale,
+                  )}
+                </p>
+              </div>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {extensionGuides.flatMap((guide) =>
+                guide.manifest.contributions.crm_cards.map((contribution) => {
+                  const Icon = EXTENSION_ICONS[contribution.icon];
+                  const compact = guide.configuration.density === "compact";
+                  return (
+                    <Link
+                      key={`${guide.installation_id}:${contribution.id}`}
+                      href={`/app/extensions/${encodeURIComponent(guide.installation_id)}?card=${encodeURIComponent(contribution.id)}`}
+                      data-testid={`extension-contribution-${guide.installation_id}-${contribution.id}`}
+                      className="block rounded-lg focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:outline-hidden"
+                    >
+                      <Card
+                        className={`flex h-full gap-3 transition-colors hover:border-border-strong ${compact ? "p-3" : "p-4"}`}
+                      >
+                        <Icon
+                          size={20}
+                          weight="duotone"
+                          aria-hidden
+                          className="mt-0.5 shrink-0 text-accent"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                            {localize(guide.manifest.display.title, locale).text}
+                          </p>
+                          <h3 className="mt-0.5 text-sm font-semibold">
+                            {localize(contribution.title, locale).text}
+                          </h3>
+                          {guide.configuration.show_description ? (
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                              {localize(contribution.description, locale).text}
+                            </p>
+                          ) : null}
+                          {localize(contribution.title, locale).fallback ||
+                          (guide.configuration.show_description &&
+                            localize(contribution.description, locale).fallback) ? (
+                            <p className="mt-1 text-[11px] text-warning-fg">
+                              {traduzir("Texto disponível em português.", locale)}
+                            </p>
+                          ) : null}
+                          <p className="mt-2 text-[11px] text-text-subtle">
+                            {traduzir("Abre Tarefas; não lê seus dados.", locale)}
+                          </p>
+                        </div>
+                      </Card>
+                    </Link>
+                  );
+                }),
+              )}
+            </div>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

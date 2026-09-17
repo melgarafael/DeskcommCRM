@@ -55,8 +55,30 @@ vi.mock("@/lib/api/client", () => ({
     patch: (...args: unknown[]) => patch(...args),
   },
 }));
+/**
+ * Com `data: null` o `NewLeadDialog` nunca entra na árvore (o painel só o monta
+ * sob `contactId && defaultPipeline.data`), e o caso do rótulo só via a string.
+ * Com o funil padrão de verdade o clique abre o diálogo, e o teste passa a
+ * guardar a IDENTIDADE do botão — trocar o rótulo com o do editor de tags
+ * deixa de ser invisível.
+ */
+const ETAPA = {
+  id: "s-1", organization_id: "org-1", pipeline_id: "p-1", name: "Novo", slug: "novo",
+  position: 1000, color: null, is_won: false, is_lost: false, is_archived: false,
+  expected_duration_hours: null,
+};
 vi.mock("@/hooks/pipelines/useDefaultPipeline", () => ({
-  useDefaultPipeline: () => ({ data: null, isError: false }),
+  useDefaultPipeline: () => ({
+    data: {
+      pipeline: {
+        id: "p-1", organization_id: "org-1", name: "Funil", slug: "funil", description: null,
+        is_default: true, is_archived: false, position: 1000, vocabulary: {}, settings: {},
+      },
+      stages: [ETAPA],
+    },
+    isError: false,
+    isLoading: false,
+  }),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/hooks/inbox/useConversationTags", () => ({
@@ -145,6 +167,23 @@ describe("painel do inbox — campos do lead", () => {
     const secao = await screen.findByTestId("inbox-campos-lead");
     await waitFor(() => expect(secao.textContent).toMatch(/não consegui ler/i));
     expect(secao.textContent).not.toMatch(/sem leads/i);
+  });
+});
+
+describe("painel do inbox — o botão diz o que faz (issue #908)", () => {
+  // "Lead" era lido como "ver o lead deste contato", mas abre o diálogo que
+  // CRIA um novo; o lead existente se edita em "Leads recentes", logo abaixo.
+  it("o botão que abre o Novo Lead se chama 'Novo Lead' — e abre o Novo Lead", async () => {
+    get.mockResolvedValue({ data: RESPOSTA });
+    renderPainel();
+
+    const botao = await screen.findByRole("button", { name: "Novo Lead" });
+    expect(screen.queryByRole("button", { name: "Lead" })).toBeNull();
+
+    // O rótulo sozinho não diz de QUEM ele é: sem o clique, trocá-lo com o do
+    // editor de tags mantinha o caso verde.
+    await userEvent.click(botao);
+    expect(await screen.findByRole("dialog", { name: "Novo Lead" })).toBeTruthy();
   });
 });
 

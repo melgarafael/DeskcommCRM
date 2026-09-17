@@ -100,11 +100,14 @@ function tabelasComDadoDePessoa(): string[] {
 }
 
 /**
- * Tabelas tocadas pela cascata e pelo redator0227 instalado em contacts.
+ * Tabelas tocadas pela cascata e pelos redatores instalados em contacts.
  * A cobertura do trigger vem do corpo REAL no banco, nunca de uma isenção da tabela.
  * Prova de efeito: autonomia-authority.test.ts, "redação limpa todos os corpos...".
  * A integração da RPC canônica e o controle de vizinho vivem em
  * comunidade-integracao.test.ts, "mutex e cascata0229 alcançam drafts0227...".
+ * A importação histórica tem redator próprio porque também enfileira a remoção
+ * dos arquivos importados. Ele só conta como cobertura quando o trigger exato
+ * está ativo em `contacts.is_anonymized`; nome de função solto não ganha isenção.
  * Outros triggers legados permanecem sujeitos ao censo e à catraca existentes.
  */
 function tabelasNaCascata(): string[] {
@@ -123,6 +126,21 @@ function tabelasNaCascata(): string[] {
              where t.tgfoid = p.oid
                and t.tgrelid = 'public.contacts'::regclass
                and t.tgname = 'trg_reply_redact'
+               and not t.tgisinternal
+               and t.tgenabled in ('O', 'A')
+               and t.tgtype = 17 -- AFTER UPDATE FOR EACH ROW
+               and (select attnum from pg_attribute
+                     where attrelid = t.tgrelid and attname = 'is_anonymized') = any(t.tgattr)
+          )
+        )
+        or (
+          p.pronamespace = 'public'::regnamespace
+          and p.proname = 'fn_redact_imported_history'
+          and exists (
+            select 1 from pg_trigger t
+             where t.tgfoid = p.oid
+               and t.tgrelid = 'public.contacts'::regclass
+               and t.tgname = 'trg_redact_imported_history'
                and not t.tgisinternal
                and t.tgenabled in ('O', 'A')
                and t.tgtype = 17 -- AFTER UPDATE FOR EACH ROW

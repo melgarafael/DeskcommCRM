@@ -27,9 +27,18 @@ Fonte de verdade: `channel_sessions.metadata`.
 continua usando `contacts.ai_authorized_at` e seu prazo.
 
 A RPC `fn_configurar_pre_go_live_canal` grava somente as três chaves em um
-UPDATE atômico, filtrado por organização/canal não arquivado. Não substitui as
+UPDATE atômico, filtrado por organização/canal não arquivado. `ai_gate_mode`
+recebe o MODO REAL da chamada (`open`/`pre_go_live`, o mesmo vocabulário do
+PATCH): abrir ao público volta a gravar `open`, e o marcador de teste existe
+somente enquanto o canal está em teste. Não substitui as
 demais chaves de metadata e não modifica contatos ou histórico. EXECUTE somente
 para service_role; a API resolve tenant/papel da sessão, nunca do body.
+
+O allowlist POR ORIGEM continua por script
+(`scripts/ativar-gate-elegibilidade-ia.ts`), que grava `ai_gate` e `ai_gate_mode`
+na MESMA instrução: o alvo vale nos dois campos, então ligar o gate por origem
+não devolve o canal ao modo de teste com a lista antiga. O preflight do script
+promete o veredito que `gate.ts` executa.
 
 `gate.ts` é a decisão compartilhada pelos adaptadores pg/Supabase, drain,
 turnos, runtime legado, handoff e follow-up. A automação `send_ai_message`
@@ -55,7 +64,8 @@ Uma requisição já entregue ao provedor não pode ser recolhida por este modo.
 
 - `pre-go-live.test.ts`, `gate.test.ts`, `consulta-supabase.test.ts`, `drain.test.ts`: elegibilidade e compatibilidade.
 - `ai-access/route.test.ts`: RBAC, tenant, validação, falhas e auditoria sem números.
-- `tests/invariants/pre-go-live-canal.test.ts`: banco real do baseline, privilégios, isolamento, remoção, primeira conversa e atualização sem perda de metadata.
+- `tests/invariants/pre-go-live-canal.test.ts`: banco real do baseline, privilégios, isolamento, remoção, primeira conversa e atualização sem perda de metadata. Abrir ao público devolve `ai_gate_mode="open"`.
+- `gate-volta-a-autorizacao-por-origem.test.ts`: a ORDEM tela nova → abrir ao público → gate por origem, com o motor concordando com o preflight do script (issue #602).
 - `tests/e2e/pre-go-live-whatsapp.spec.ts`: bootstrap/auth/DB reais e interface, inclusive recarga e viewport móvel.
 - `messages-handler-desfechos.test.ts`: bloqueio no sink e envio humano preservado.
 - `tests/invariants/agent-watchdog.test.ts`: reenvio com banco e receiver HTTP reais; remoção de número bloqueia mensagem pendente antes de alcançar o transporte.

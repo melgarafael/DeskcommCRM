@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -5,6 +6,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { WebhooksClient } from "./_components/WebhooksClient";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Webhooks" };
 
 export default async function WebhooksPage() {
   const user = await requireAuth();

@@ -241,7 +241,7 @@ describe("presença e recuperação transacionais", () => {
         r.enrollment_id,
         e.revision,
       ]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "P0001", message: "followup_stale" });
   });
   it("histórico e saída não cancelam; entrada certificada antes do consumer impede início", async () => {
     await stopFlows();
@@ -470,7 +470,7 @@ describe("presença e recuperação transacionais", () => {
         { status: "active", steps_taken: 2 },
         { node_id: "end", event_type: "node_advanced", payload: {}, idempotency_key: "end:1" },
       ]),
-    ).rejects.toMatchObject({ code: "40001" });
+    ).rejects.toMatchObject({ code: "P0001", message: "followup_stale" });
     expect(
       (
         await pool.query(

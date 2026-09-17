@@ -389,12 +389,42 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     .eq("provider", corpo.provider)
     .eq("model_id", corpo.default_model)
     .maybeSingle();
+
+  // MAS A CONFERÊNCIA SÓ VALE SE HOUVER CATÁLOGO PARA CONFERIR. `ai_models` é
+  // populada pela sincronização do catálogo; numa instalação recém-feita, ou
+  // numa que não roda scheduler, ela está VAZIA para o provedor escolhido — e o
+  // `404` abaixo recusava todo modelo, inclusive o certo, digitado de dentro da
+  // tela, que é o único caminho que sobra quando o combo está vazio. Era a
+  // segunda porta do mesmo defeito que o `PUT` já tinha resolvido: lá o
+  // `validar-binding.ts` aceita modelo fora do catálogo e devolve
+  // `conhecido: false` como aviso (é o que o `CartaoDoPonto` mostra).
+  //
+  // Então a pergunta muda de "conheço ESTE modelo?" para "conheço algum modelo
+  // deste provedor?": com catálogo presente o `404` continua e segue pegando o
+  // erro de digitação; sem catálogo nenhum, não há o que conferir — a escrita
+  // passa e sai com aviso. Recusar aqui seria inventar uma verificação que esta
+  // instalação não tem como fazer, e travar a tela que existe justamente para
+  // configurar isso.
+  let avisos: string[] = [];
   if (!modelo) {
-    return fail(
-      "modelo_desconhecido",
-      t(`"${corpo.default_model}" não está no catálogo de ${corpo.provider}`),
-      404,
-    );
+    const { data: algumDoProvedor } = await db
+      .from("ai_models")
+      .select("model_id")
+      .eq("provider", corpo.provider)
+      .limit(1)
+      .maybeSingle();
+    if (algumDoProvedor) {
+      return fail(
+        "modelo_desconhecido",
+        t(`"${corpo.default_model}" não está no catálogo de ${corpo.provider}`),
+        404,
+      );
+    }
+    avisos = [
+      t(
+        `o catálogo de ${corpo.provider} ainda não foi sincronizado nesta instalação, então não deu para conferir "${corpo.default_model}" — se o identificador estiver errado, todo ponto que herda o padrão vai falhar.`,
+      ),
+    ];
   }
 
   // ⚠️ CLIENTE ADMIN, E NÃO É ATALHO: a RLS de `organizations` só deixa
@@ -455,5 +485,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     metadata: { provider: corpo.provider, default_model: corpo.default_model },
   });
 
-  return ok({ padrao: { provider: corpo.provider, defaultModel: corpo.default_model } });
+  return ok({
+    padrao: { provider: corpo.provider, defaultModel: corpo.default_model },
+    avisos,
+  });
 }

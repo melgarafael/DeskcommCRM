@@ -1,0 +1,98 @@
+{
+  "dark": {
+    "temaReal": "dark",
+    "temImgEnviada": false,
+    "temMarcaDoProduto": true,
+    "medida": {
+      "cadeia": [
+        {
+          "tag": "svg",
+          "classe": "",
+          "fundo": "rgba(0, 0, 0, 0)",
+          "padding": "0px 0px 0px 0px"
+        },
+        {
+          "tag": "div",
+          "classe": "flex justify-center",
+          "fundo": "rgba(0, 0, 0, 0)",
+          "padding": "0px 0px 0px 0px"
+        },
+        {
+          "tag": "div",
+          "classe": "w-full max-w-sm space-y-6",
+          "fundo": "rgba(0, 0, 0, 0)",
+          "padding": "0px 0px 0px 0px"
+        },
+        {
+          "tag": "div",
+          "classe": "flex min-h-screen items-center justify-center bg-background p-6",
+          "fundo": "rgb(22, 21, 16)",
+          "padding": "24px 24px 24px 24px"
+        }
+      ],
+      "caixa": {
+        "x": 556.734375,
+        "y": 237,
+        "largura": 166.515625,
+        "altura": 48
+      }
+    },
+    "cartao": {
+      "x": 448,
+      "y": 391,
+      "largura": 384,
+      "altura": 200
+    }
+  },
+  "light": {
+    "temaReal": "light",
+    "temImgEnviada": false,
+    "temMarcaDoProduto": true,
+    "medida": {
+      "cadeia": [
+        {
+          "tag": "svg",
+          "classe": "",
+          "fundo": "rgba(0, 0, 0, 0)",
+          "padding": "0px 0px 0px 0px"
+        },
+        {
+          "tag": "div",
+          "classe": "flex justify-center",
+          "fundo": "rgba(0, 0, 0, 0)",
+          "padding": "0px 0px 0px 0px"
+        },
+        {
+          "tag": "div",
+          "classe": "w-full max-w-sm space-y-6",
+          "fundo": "rgba(0, 0, 0, 0)",
+          "padding": "0px 0px 0px 0px"
+        },
+        {
+          "tag": "div",
+          "classe": "flex min-h-screen items-center justify-center bg-background p-6",
+          "fundo": "rgb(250, 249, 246)",
+          "padding": "24px 24px 24px 24px"
+        }
+      ],
+      "caixa": {
+        "x": 556.734375,
+        "y": 237,
+        "largura": 166.515625,
+        "altura": 48
+      }
+    },
+    "cartao": {
+      "x": 448,
+      "y": 391,
+      "largura": 384,
+      "altura": 200
+    }
+  },
+  "deslocamentoDoCartao": {
+    "dx": 0,
+    "dy": 0,
+    "dLargura": 0,
+    "dAltura": 0
+  }
+}

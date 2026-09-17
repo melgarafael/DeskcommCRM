@@ -5,6 +5,7 @@ import { useCallback, useEffect } from "react";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { getOpenConversationId } from "@/hooks/notifications/OpenConversationContext";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { avatarUrlServivel } from "@/lib/notifications/avatar_url";
 import { entregarAviso } from "@/lib/notifications/deliver";
 import { shouldNotifyInbound } from "@/lib/notifications/policy";
@@ -45,7 +46,7 @@ async function contactNotifyBits(contactId: string): Promise<{ title: string; ic
     .eq("id", contactId)
     .maybeSingle();
   const row = data as { display_name?: string | null; name?: string | null } | null;
-  const title = (row?.display_name || row?.name || "Nova mensagem").trim() || "Nova mensagem";
+  const title = nomeDoContato(row) ?? "Nova mensagem";
   let icon: string | undefined;
   try {
     const r = await fetch(`/api/v1/contacts/${contactId}/avatar`, {

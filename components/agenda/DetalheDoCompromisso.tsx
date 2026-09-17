@@ -126,8 +126,22 @@ export function DetalheDoCompromisso({
         <SheetHeader>
           <SheetTitle>{a?.title ?? t("Compromisso")}</SheetTitle>
         </SheetHeader>
-        {a?.google_sync && <SincronizacaoDoCompromisso key={a.id} id={a.id} sync={a.google_sync} onSaved={() => void query.refetch()} />}
-        {a?.meeting && <MeetDoCompromisso id={a.id} revision={a.google_sync?.revision ?? String(a.revision)} meeting={a.meeting} onSaved={() => void query.refetch()} />}
+        {a?.google_sync && (
+          <SincronizacaoDoCompromisso
+            key={a.id}
+            id={a.id}
+            sync={a.google_sync}
+            onSaved={() => void query.refetch()}
+          />
+        )}
+        {a?.meeting && (
+          <MeetDoCompromisso
+            id={a.id}
+            revision={a.google_sync?.revision ?? String(a.revision)}
+            meeting={a.meeting}
+            onSaved={() => void query.refetch()}
+          />
+        )}
         {query.isPending ? (
           <p>{t("Carregando…")}</p>
         ) : query.isError ? (
@@ -272,6 +286,23 @@ export function DetalheDoCompromisso({
                     </Button>
                   ))}
                 </div>
+                {/*
+                  O SIM que faltava. `pending` é pré-reserva: o horário já está
+                  segurado, e só vira compromisso quando alguém aprova. A rota
+                  aceita `confirmed` desde sempre, a IA escreve por
+                  `crm_confirm_appointment` — e a tela, não. Sem este botão, num
+                  negócio com `requires_confirmation` o pedido ou é confirmado
+                  pelo cliente via IA, ou expira em `agenda-expira-pendentes`.
+                */}
+                {a.status === "pending" ? (
+                  <Button
+                    data-testid="confirmar-compromisso"
+                    disabled={mutation.isPending || staleDraft}
+                    onClick={() => decide({ status: "confirmed" })}
+                  >
+                    {t("Confirmar horário")}
+                  </Button>
+                ) : null}
                 {["pending", "confirmed"].includes(a.status) ? (
                   <Button
                     variant="outline"

@@ -37,6 +37,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { arquivosDeCodigo, caminhoRelativo } from "./helpers/varrer-codigo";
+import { nomesDoClienteAdmin, raizDaCadeia } from "./helpers/cliente-admin";
 
 const RAIZES = ["app", "lib", "workers"] as const;
 const MUTACOES = new Set(["update", "insert", "upsert", "delete"]);
@@ -61,53 +62,11 @@ interface Achado {
   metodo: string;
 }
 
-/** O identificador-raiz de uma cadeia `x.from(...).update(...)`. */
-function raizDaCadeia(no: ts.Expression): string | null {
-  let atual: ts.Node = no;
-  while (true) {
-    if (ts.isIdentifier(atual)) return atual.text;
-    if (ts.isCallExpression(atual)) {
-      atual = atual.expression;
-      continue;
-    }
-    if (ts.isPropertyAccessExpression(atual)) {
-      atual = atual.expression;
-      continue;
-    }
-    if (ts.isAwaitExpression(atual) || ts.isParenthesizedExpression(atual)) {
-      atual = atual.expression;
-      continue;
-    }
-    return null;
-  }
-}
-
-/**
- * Os nomes que, NAQUELE arquivo, foram declarados a partir de
- * `createAdminClient()`. Resolver o identificador é o ponto: procurar a string
- * "createAdminClient" no arquivo inteiro daria verde para um handler que tem o
- * cliente admin numa função e o de sessão na outra — que é exatamente a forma
- * do PR #671.
+/*
+ * O RESOLVEDOR vive em `./helpers/cliente-admin`: `admin-client-exige-filtro-de-tenant.test.ts`
+ * faz a pergunta irmã (esta cadeia FILTRA o tenant?) e precisa do mesmo
+ * identificador-raiz. Duas cópias envelheceriam em ritmos diferentes.
  */
-function nomesDoClienteAdmin(fonte: ts.SourceFile): Set<string> {
-  const nomes = new Set<string>();
-  const visitar = (no: ts.Node): void => {
-    if (ts.isVariableDeclaration(no) && no.initializer && ts.isIdentifier(no.name)) {
-      let init: ts.Node = no.initializer;
-      if (ts.isAwaitExpression(init)) init = init.expression;
-      if (
-        ts.isCallExpression(init) &&
-        ts.isIdentifier(init.expression) &&
-        init.expression.text === "createAdminClient"
-      ) {
-        nomes.add(no.name.text);
-      }
-    }
-    ts.forEachChild(no, visitar);
-  };
-  visitar(fonte);
-  return nomes;
-}
 
 function escritasEmOrganizations(caminho: string): Achado[] {
   const texto = readFileSync(caminho, "utf8");

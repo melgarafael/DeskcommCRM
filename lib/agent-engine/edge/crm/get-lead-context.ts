@@ -15,6 +15,7 @@ import type { Queryable } from '../../queue/queue';
 import type { CrmEdgeConfig } from './mcp-client';
 import { deriveLgpdFromContact, type LgpdInput } from '../../guardrails/lgpd/legal-basis';
 import { isoLocalComOffset } from '@/lib/tempo/agora';
+import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
 
 /**
  * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
@@ -277,7 +278,7 @@ export async function getLeadContext(
       lead_id: input.leadId,
       contact_id: input.leadId,
       contact: {
-        name: contact.display_name ?? contact.name,
+        name: nomeDoContato(contact),
         phone: contact.phone_number,
         email: contact.email,
         tags: contact.tags ?? [],
@@ -291,6 +292,45 @@ export async function getLeadContext(
     input.fuso,
   );
   return { ok: true, context, tokenCount: countPayloadTokens(JSON.stringify(context)), lgpd };
+}
+
+/** As colunas do CRM de que o corpo de UMA mensagem depende. */
+export interface CorpoDaMensagemRow {
+  type: string;
+  body: string | null;
+  media_url: string | null;
+  media_storage_path: string | null;
+  media_derived_text: string | null;
+}
+
+/**
+ * O corpo de UMA mensagem como o prompt o lê — UMA composição, DOIS leitores.
+ *
+ * O histórico (`fitToBudget`, logo abaixo) sempre compôs o corpo da linha. A
+ * linha canônica do job (`inbound-turn.ts:loadInboundBodyForJob`) lia a coluna
+ * `body` CRUA — as duas leem a MESMA linha por caminhos diferentes, e a
+ * divergência não é teórica: áudio e foto chegam sem legenda, isto é, com `body`
+ * NULL (o ingest do transporte devolve cedo quando a mensagem não tem texto,
+ * nem URL de mídia, nem mídia), e o conteúdo é o derivado (transcrição/visão,
+ * gravado DEPOIS pelo
+ * `media-derive-worker` — a corrida) ou o marcador `[tipo]`. Lido cru, um áudio
+ * transcrito valia `''` enquanto o texto do cliente estava no histórico logo
+ * abaixo: a abertura anunciava "não há texto utilizável" sobre uma mensagem que
+ * TEM texto, e a barreira do falso-vazio desarmava, porque
+ * `claimsCurrentInboundIsEmpty` não arma sobre `''`. (issue #617)
+ *
+ * `@internal` só na intenção de não espalhar a receita: quem lê uma linha de
+ * `messages` para o prompt passa por aqui, senão a composição volta a divergir.
+ */
+export function corpoDaMensagem(m: CorpoDaMensagemRow): string {
+  const hasMedia = Boolean(m.media_storage_path || m.media_url);
+  const derived = m.media_derived_text;
+  // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
+  // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
+  // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
+  return derived
+    ? frameMediaBody(m.type, m.body, derived)
+    : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
 }
 
 /**
@@ -307,13 +347,10 @@ function fitToBudget(
 ): LeadContext {
   let messages: LeadContextMessage[] = history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
-    const derived = m.media_derived_text;
-    // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
-    // vem ENQUADRADO (frameMediaBody) — sem isso o agente caía no reflexo
-    // "não consigo ver mídia" mesmo tendo o conteúdo. Sem derivado, marcador [tipo].
-    const body = derived
-      ? frameMediaBody(m.type, m.body, derived)
-      : (m.body ?? (hasMedia ? `[${m.type}]` : ''));
+    // A composição do corpo é UMA só, exportada logo acima: a linha canônica do
+    // job passa pela mesma função. Duas receitas para a mesma linha foi o defeito
+    // da #617 — o histórico mostrava o texto do áudio e a abertura dizia vazio.
+    const body = corpoDaMensagem(m);
     return {
       direction: m.direction,
       body,

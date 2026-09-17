@@ -16,7 +16,7 @@ it("cifra com donos distintos sem expor o helper aos papéis da API", async () =
     await c.query("savepoint missing_permission; set local role service_role");
     await expect(c.query("select public.fn_encrypt_oauth('probe')")).rejects.toThrow(/permission denied for function fn_oauth_key/);
     await c.query("rollback to missing_permission; reset role");
-    const fix = readFileSync("supabase/migrations/20260914200000_0248_permissoes_cifra_oauth.sql", "utf8");
+    const fix = readFileSync("supabase/migrations/20260917173000_0284_permissoes_cifra_oauth.sql", "utf8");
     await c.query(fix);
     await c.query(fix);
     for (const role of ["anon", "authenticated", "service_role"]) {

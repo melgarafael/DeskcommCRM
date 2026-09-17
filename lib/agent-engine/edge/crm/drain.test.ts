@@ -86,11 +86,76 @@ it('derivação travada além do teto: segue SEM o texto em vez de deixar o clie
   expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
 });
 
+/**
+ * Catraca do teto (issue #543): 90s é o valor que o #530 teve de abandonar.
+ *
+ * O PR #530 subiu o teto de 45s para 120s, mas os dois casos que exercitam o
+ * teto usavam 1s (adia) e 150s (segue) — NENHUM caía entre 45s e 120s, a única
+ * janela onde o comportamento mudou. Medido na triagem do #530: reverter o teto
+ * para 45_000 mantendo todo o resto dava 0 vermelhos, a suíte inteira verde.
+ *
+ * 90s cai dentro da janela: com o teto em 120s o turno é adiado; revertido para
+ * 45s, ele segue — e este caso fica vermelho. Junto com o caso de 150s, o teto
+ * fica preso em (90s, 150s]: abaixo dele o cliente volta a receber "não consegui
+ * ouvir seu áudio" com a transcrição chegando segundos depois (o defeito do
+ * Alfran), acima dele o cliente espera minutos.
+ */
+it('áudio esperando 90s (janela 45s–120s do #530): turno segue ADIADO, não despachado sem o texto', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '90000'; // 90s — dentro do teto de 120s e fora do antigo de 45s
+  await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, calls), knobs, log);
+  expect(calls.some((s) => s.includes('media_derived_status'))).toBe(true);
+  // Nada de job: a resposta não sai antes de o texto derivado existir.
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  // Adiar não é falha: volta a 'pending' com espera curta, sem gastar tentativa.
+  expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
+  expect(calls.some((s) => s.includes("status = 'done'"))).toBe(false);
+});
+
 it('mensagem de texto não espera nada', async () => {
   const calls: string[] = [];
   process.env.__ESPERA__ = '0';
   await drainTick(poolFalso({ type: 'text', media_derived_status: null }, calls), knobs, log);
   expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
+});
+
+/**
+ * Coalescência não pode considerar job em HOLD (`held_run_after` no payload).
+ *
+ * `run_after > now()` sozinho casa com um job em hold — `enforceHolds`
+ * (session-watchdog.ts) usa `run_after = 'infinity'` como marcador, e
+ * 'infinity' É maior que `now()`. Um hold por sessão MORTA (WhatsApp
+ * reconectado, sessão antiga arquivada) nunca libera — a condição de release
+ * exige a MESMA sessão antiga voltar a 'WORKING'. Sem esta exclusão, toda
+ * mensagem nova do mesmo contato — inclusive numa sessão NOVA — coalescia
+ * nesse job morto para sempre: o evento saía "done", sem erro, e nenhum
+ * turno rodava. Medido em produção (2026-09-14): 6 mensagens em 7h, zero
+ * resposta.
+ */
+it('coalescência exclui job em hold (held_run_after) — sessão morta não sequestra mensagem nova', async () => {
+  process.env.__ESPERA__ = '0';
+  const debounceKnobs = { ...knobs, debounceMs: 500 };
+  const calls: string[] = [];
+  const query = vi.fn().mockImplementation((sql: string) => {
+    calls.push(sql);
+    if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(0)] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes('media_derived_status')) return { rows: [{ type: 'text', media_derived_status: null }] };
+    // A coalescência real (com o predicado corrigido) não encontra nada — o
+    // único job pendente do contato está em hold e a query já o exclui.
+    if (sql.includes('select id from job_queue')) return { rows: [] };
+    if (sql.includes('insert into job_queue')) return { rows: [{ id: 'job-novo' }] };
+    return { rows: [] };
+  });
+  await drainTick({ query } as unknown as pg.Pool, debounceKnobs, log);
+
+  const coalescencia = calls.find((s) => s.includes('select id from job_queue'));
+  expect(coalescencia, 'a query de coalescência deveria ter rodado').toBeTruthy();
+  expect(coalescencia).toContain('held_run_after');
+  // Sem o job em hold como falso-positivo, o turno segue e enfileira um job novo.
+  expect(calls.some((s) => s.includes('insert into job_queue'))).toBe(true);
 });
 
 

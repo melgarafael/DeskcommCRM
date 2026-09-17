@@ -56,7 +56,12 @@ function scopesRole(scopes: string[]): Role {
   return "agent";
 }
 
-function deriveActor(scopes: string[], tokenId: string): Actor {
+/**
+ * Exportada para teste: é a função que decide se quem chamou é uma pessoa, um
+ * agente ou uma integração — e essa decisão vira coluna com FK e vira gate de
+ * canal. Uma regressão aqui não aparece como erro de tipo em lugar nenhum.
+ */
+export function deriveActor(scopes: string[], tokenId: string): Actor {
   const isAiAgent = scopes.includes("actor:ai_agent");
   const role = scopesRole(scopes);
   if (isAiAgent) {
@@ -64,7 +69,11 @@ function deriveActor(scopes: string[], tokenId: string): Actor {
     const runId = runScope ? runScope.slice("agent_run:".length) : tokenId;
     return { type: "ai_agent", id: runId, role, api_token_id: tokenId };
   }
-  return { type: "user", id: tokenId, role };
+  // NÃO é `"user"`: um token de servidor é uma integração, e `actor.id` aqui é o
+  // id do TOKEN, não de alguém em `auth.users`. Ver o comentário da variante
+  // `api_token` em `lib/api/handlers/types.ts` — disfarçá-lo de pessoa quebrava
+  // toda FK de `…_by_user_id` e furava o gate de `pre_go_live`.
+  return { type: "api_token", id: tokenId, role };
 }
 
 export function extractBearer(authHeader: string | null): string | null {

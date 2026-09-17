@@ -34,6 +34,10 @@ describe("pré-go-live no banco que o self-host instala", () => {
     await configurar("open", [telefone]);
     expect((await decidir())?.permite).toBe(true);
     const { rows } = await pool.query("select metadata from channel_sessions where id=$1", [canal]);
+    // O modo REAL, não o literal 'pre_go_live' (issue #602): abrir ao público
+    // tira o canal do pré-go-live. O marcador que ficava para trás devolvia o
+    // canal ao modo de teste na ativação seguinte do allowlist por origem.
+    expect(rows[0].metadata.ai_gate_mode).toBe("open");
     expect(rows[0].metadata).toMatchObject({ transport: { keep: true }, ai_gate: "open", ai_test_phone_numbers: [telefone] });
   });
   it("não altera canal de outra organização", async () => {

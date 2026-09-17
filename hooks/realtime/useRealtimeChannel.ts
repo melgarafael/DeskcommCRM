@@ -141,7 +141,17 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
       if (retomada) clearTimeout(retomada);
       retomada = setTimeout(() => {
         if (cancelado) return;
-        if (active) supabase.removeChannel(active);
+        // `active` é SOLTO antes de remover, e a ordem é o conserto. Num canal
+        // que ainda não entrou, `removeChannel` chama o callback do `subscribe`
+        // com CLOSED ANTES de retornar (medido no realtime-js 2.112.3 instalado:
+        // `joining | cb:CLOSED | depois-da-chamada`). Com `active` ainda
+        // apontando o canal velho, esse CLOSED passava pela guarda
+        // `active !== novo` e armava OUTRA retomada — um timer órfão que, 2^n s
+        // depois, derrubava o canal que já tinha voltado saudável, numa janela
+        // em que eventos se perdem e nenhum "reassinado" é emitido.
+        const velho = active;
+        active = null;
+        if (velho) supabase.removeChannel(velho);
         montar();
       }, espera);
     };

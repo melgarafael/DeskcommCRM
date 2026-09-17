@@ -14,6 +14,7 @@
  * se recusa a produzir payload incompleto, então a única forma de reproduzir o erro
  * é contornando-o — que é exatamente a demonstração desejada.
  */
+import { graphVersion } from "@/lib/graph-version";
 import { buildComponents, missingSlots } from "@/lib/channels/meta/build-components";
 import { deriveTemplateContract, describeAddress } from "@/lib/channels/meta/template-contract";
 
@@ -26,7 +27,7 @@ function env(name: string): string {
   return v;
 }
 
-const VERSION = process.env.META_GRAPH_VERSION ?? "v22.0";
+const VERSION = graphVersion();
 const BASE = `https://graph.facebook.com/${VERSION}`;
 const TOKEN = env("META_SYSTEM_USER_TOKEN");
 

@@ -12,6 +12,7 @@ import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { resolveOrgLlmConfig, type LlmEdgeConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { createDefaultRegistry } from "@/lib/agent-engine/edge/llm/providers";
 import { createPool } from "@/lib/agent-engine/db/pool";
+import { env } from "@/lib/env";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import { TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
@@ -19,6 +20,9 @@ import { deriveVideoText } from "@/lib/messaging/media/video-derive";
 import { apiTranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
+import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
+import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
 
 export const MEDIA_DERIVE_CONSUMER_KEY = "media_derive_v1";
 const DRAIN_MAX_ATTEMPTS = 5; // espelho de lib/event-log/drain.ts
@@ -77,6 +81,13 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     if (!flag) return { consumer_key, status: "skipped", detail: "video_frames_disabled" };
   }
 
+  /** O que o operador chama de "isto" — o aviso não pode falar em `msg.type`. */
+  const rotuloDoTipo =
+    ({ image: "imagem", audio: "áudio", document: "documento", video: "vídeo" } as Record<
+      string,
+      string
+    >)[msg.type] ?? "mídia";
+
   const markFailed = async () => {
     await admin.from("messages").update({ media_derived_status: "failed" })
       .eq("id", msg.id).eq("organization_id", msg.organization_id);
@@ -112,6 +123,18 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     // `lib/ai/gateway-binding.ts` declara ter vindo matar — três pontos foram
     // fechados e este ficou igual.
     const bindingDaVisao = await lerBindingDoPonto(admin, row.organization_id, "visao_de_imagem");
+    // A `base_url` do binding de visão, para descer até o factory do provedor.
+    //
+    // ⚠️ O ponto `visao_de_imagem` aceita um endpoint próprio (é o que o painel
+    // de Provedores oferece), e o TURNO DO AGENTE já o honra: `run-model-call`
+    // chama `factory(config.apiKey, model, decisao.baseUrl ?? undefined)`. Aqui
+    // a chamada era `factory(llm.apiKey, llm.defaultModel ?? "")`, sem o
+    // terceiro argumento — então quem apontava o binding para um gateway
+    // compatível via o factory cair no OPENROUTER_ENDPOINT e a derivação falhar
+    // (ou pior: ir para a internet com a chave do operador), enquanto o mesmo
+    // binding funcionava no chat. Um caminho só: a base_url lida aqui é a mesma
+    // que o turno usa.
+    let baseUrlDaVisao: string | null = null;
     if (bindingDaVisao) {
       try {
         const comBinding = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
@@ -119,6 +142,9 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
           credentialId: bindingDaVisao.credential_id,
         });
         llm = { ...comBinding, defaultModel: bindingDaVisao.model_id };
+        // Só vale se a credencial do binding resolveu: no catch abaixo o worker
+        // volta para o padrão da org, e aí o endpoint do padrão é o correto.
+        baseUrlDaVisao = bindingDaVisao.base_url;
       } catch (err) {
         // Binding apontando para provedor sem chave não pode derrubar a
         // derivação inteira: cai no padrão da organização e AVISA, que é o
@@ -152,7 +178,28 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       }
     }
 
-    const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, admin);
+    // ─── A chave de QUEM vai para o endereço de QUEM ────────────────────────
+    //
+    // `resolveOrgLlmConfig` cai na chave da INSTALAÇÃO (`.env`) quando a
+    // organização não tem credencial própria ativa e validada — é o último
+    // degrau da escada em `credentials.ts`. O endereço, por outro lado, é
+    // escolhido por quem administra a ORGANIZAÇÃO, no painel de Provedores.
+    // Juntando os dois, a chave que paga a conta de todas as empresas da
+    // instalação sai para um endereço que uma delas escolheu. `motivoDaRecusaDeDestino`
+    // não tem nada a dizer sobre isso: ele recusa destino INTERNO, e este caso é
+    // um destino externo perfeitamente público.
+    //
+    // Enquanto o dono do produto não decide a regra (documento de decisão 22),
+    // a triagem escolhe o desfecho conservador: com endereço da organização e
+    // chave da instalação, a leitura é RECUSADA com aviso na Central, em vez de
+    // a chave sair. Quem cadastra a credencial da própria empresa segue
+    // funcionando — que é o caminho que o produto já oferece na mesma tela.
+    const chaveEhDaInstalacao = [llmCfg.anthropicApiKey, llmCfg.openaiApiKey, llmCfg.openrouterApiKey]
+      .some((k) => typeof k === "string" && k !== "" && k === llm.apiKey);
+
+    // O 5º argumento é a `base_url` do binding: o factory precisa dela para não
+    // cair no endpoint padrão do provedor (ver o comentário lá em cima).
+    const deps = buildDeriveDeps(llm, openaiKey, row.organization_id, admin, baseUrlDaVisao, chaveEhDaInstalacao);
 
     const text = await deriveMediaText(msg.type, buffer, msg.media_mime ?? "application/octet-stream", deps);
     await admin.from("messages")
@@ -164,6 +211,45 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     if (row.attempts >= DRAIN_MAX_ATTEMPTS - 1) {
       logger.error("[media-derive] failed permanently", { message_id: msg.id, detail });
       await markFailed();
+      // ─── E AVISA. Desistir calado era o desfecho mais comum ────────────────
+      //
+      // As recusas que este worker já sabia explicar — modelo sem visão,
+      // provedor indisponível, falta de chave da OpenAI para transcrever —
+      // abrem `midia_nao_lida` lá embaixo, e por isso pareciam cobrir o
+      // assunto. Não cobriam: o que estoura como EXCEÇÃO (credencial recusada,
+      // modelo que a conta não pode usar, tempo esgotado, e também o download
+      // do Storage que falhou) cai aqui, marcava `failed` e não dizia nada.
+      //
+      // Medido numa VPS em produção (org real, 14/09): quatro imagens JPEG com
+      // `media_derived_status='failed'`, os quatro eventos mortos em
+      // `event_log` com "The model `claude-sonnet-5` does not exist or you do
+      // not have access to it" — e a Central com ZERO avisos de mídia.
+      //
+      // O QUE A CENTRAL MOSTRA NESTA TENTATIVA: dois avisos, não um. Este
+      // handler devolve `error` na tentativa em que `drainEventLog` desiste
+      // (`row.attempts + 1 >= 5`, o mesmo limiar de `DRAIN_MAX_ATTEMPTS`), e o
+      // dreno abre `event_dead` para o evento morto. Cada um só abre se não
+      // houver outro da mesma família aberto na organização — então, numa pane,
+      // são no máximo um de cada. O `event_dead` diz que um processamento
+      // parou; este diz o que fazer (a orientação da política aponta
+      // Provedores de IA).
+      //
+      // ⚠️ Aqui o agente NÃO recebeu o marcador de "não consegui interpretar":
+      // a exceção não grava `media_derived_text`, e o turno já seguiu sem o
+      // texto no teto de espera do dreno do agent-engine. Por isso a
+      // consequência é outra que a das recusas, e vai explícita.
+      //
+      // O `detail` entra porque é a frase do PROVEDOR, e é ela que distingue
+      // "chave errada" de "modelo que sua conta não assina" — duas ações
+      // diferentes para quem opera. Mas entra no FIM, como detalhe técnico:
+      // é inglês de API, e quem lê a Central não programa.
+      await avisarMidiaNaoLida(
+        msg.organization_id,
+        rotuloDoTipo,
+        "a leitura deu erro em todas as tentativas, ao abrir o arquivo ou ao chamar o provedor de IA",
+        "O conteúdo do arquivo não chegou ao agente.",
+        detail.slice(0, 200),
+      );
     }
     return { consumer_key, status: "error", detail };
   }
@@ -179,10 +265,15 @@ async function lerBindingDoPonto(
   admin: ReturnType<typeof createAdminClient>,
   organizationId: string,
   purpose: string,
-): Promise<{ provider: string; model_id: string; credential_id: string | null } | null> {
+): Promise<{
+  provider: string;
+  model_id: string;
+  credential_id: string | null;
+  base_url: string | null;
+} | null> {
   const { data, error } = await admin
     .from("ai_purpose_bindings")
-    .select("provider, model_id, credential_id")
+    .select("provider, model_id, credential_id, base_url")
     .eq("organization_id", organizationId)
     .eq("purpose", purpose)
     .eq("is_enabled", true)
@@ -195,7 +286,14 @@ async function lerBindingDoPonto(
     });
     return null;
   }
-  return (data as { provider: string; model_id: string; credential_id: string | null } | null) ?? null;
+  return (
+    (data as {
+      provider: string;
+      model_id: string;
+      credential_id: string | null;
+      base_url: string | null;
+    } | null) ?? null
+  );
 }
 
 function buildDeriveDeps(
@@ -203,6 +301,10 @@ function buildDeriveDeps(
   openaiKey: string | null,
   orgId: string,
   admin: ReturnType<typeof createAdminClient>,
+  // Endpoint próprio do binding de visão, quando houver. `null` = usa o padrão
+  // do provedor, que é o comportamento do turno do agente sem `baseUrl`.
+  baseUrlDaVisao: string | null = null,
+  chaveEhDaInstalacao = false,
 ): DeriveDeps {
   const registry = createDefaultRegistry();
   // Thunk, não consulta: nada vai ao banco até a visão ser de fato perguntada,
@@ -262,13 +364,43 @@ function buildDeriveDeps(
       await avisarMidiaNaoLida(orgId, "imagem", motivo);
       return MARCADOR_NAO_LIDA;
     }
+    // O endereço é escolhido por quem administra a instalação (o campo de
+    // endereço do binding) e a chamada leva a chave do provedor no cabeçalho:
+    // sem esta recusa, um destino interno — o metadata da nuvem, o Postgres do
+    // compose — recebe credencial da instalação e ainda pode devolver resposta
+    // forjada ao agente. Mesma recusa das saídas de webhook, e antes de a
+    // chave sair daqui.
+    // Endereço escolhido pela organização + chave da instalação: a recusa vem
+    // ANTES da checagem de destino, porque aqui nem o endereço mais público do
+    // mundo torna a saída aceitável — o que está errado é de quem é a chave.
+    if (baseUrlDaVisao && chaveEhDaInstalacao) {
+      await avisarMidiaNaoLida(
+        orgId,
+        "imagem",
+        "o endereço de IA configurado para esta empresa só é usado com a credencial dela: cadastre a chave da empresa em Agente de IA e Provedores, ou tire o endereço próprio para voltar ao provedor padrão da instalação",
+      );
+      return MARCADOR_NAO_LIDA;
+    }
+    if (baseUrlDaVisao) {
+      const recusa = await motivoDaRecusaDeDestino(baseUrlDaVisao);
+      if (recusa) {
+        await avisarMidiaNaoLida(
+          orgId,
+          "imagem",
+          "o endereço configurado para a visão não foi aceito como destino, então não enviei a imagem nem a chave para lá — confira o endereço do provedor em Agente de IA e Provedores",
+          undefined,
+          recusa,
+        );
+        return MARCADOR_NAO_LIDA;
+      }
+    }
     const factory = registry[llm.provider];
     if (!factory) {
       await avisarMidiaNaoLida(orgId, "imagem", `o provedor ${llm.provider} não está disponível nesta instalação`);
       return MARCADOR_NAO_LIDA;
     }
     const res = await generateText({
-      model: factory(llm.apiKey, llm.defaultModel ?? ""),
+      model: factory(llm.apiKey, llm.defaultModel ?? "", baseUrlDaVisao ?? undefined),
       messages: [
         {
           role: "user",
@@ -285,18 +417,65 @@ function buildDeriveDeps(
   // Sem chave OpenAI não há como transcrever: devolver string vazia é honesto
   // (o derivado fica vazio e o marcador "[áudio]" continua valendo) e evita o
   // loop de 401 que retentava a cada drain.
-  const transcriber: DeriveDeps["transcriber"] = openaiKey
+  const semTranscricao: DeriveDeps["transcriber"] = {
+    transcribe: async () => {
+      // Mesma razão da visão: devolver "" fazia o agente responder ao áudio
+      // como se ele não existisse. O aviso é o que dá ao operador a chance
+      // de cadastrar a chave — sem ele, o sintoma é indistinguível de "o
+      // agente é ruim".
+      await avisarMidiaNaoLida(orgId, "áudio", "falta uma chave da OpenAI para transcrever");
+      return MARCADOR_NAO_LIDA;
+    },
+  };
+  // Serviço de transcrição: a chave da OpenAI continua sendo o padrão, porque é
+  // o que toda instalação já tem. Mas o ponto "Ouvir o áudio" promete aceitar
+  // outro serviço compatível — o provedor por trás já aceita `baseUrl` e
+  // `model`, e o worker nunca os passava: quem tinha Groq/Whisper próprio
+  // continuava batendo em api.openai.com com `whisper-1`. Sem
+  // `TRANSCRIPTION_API_KEY` o comportamento é exatamente o de antes.
+  const transcricaoPadrao: DeriveDeps["transcriber"] = openaiKey
     ? apiTranscriptionProvider({ apiKey: openaiKey })
-    : {
-        transcribe: async () => {
-          // Mesma razão da visão: devolver "" fazia o agente responder ao áudio
-          // como se ele não existisse. O aviso é o que dá ao operador a chance
-          // de cadastrar a chave — sem ele, o sintoma é indistinguível de "o
-          // agente é ruim".
-          await avisarMidiaNaoLida(orgId, "áudio", "falta uma chave da OpenAI para transcrever");
-          return MARCADOR_NAO_LIDA;
-        },
-      };
+    : semTranscricao;
+  // O endereço do serviço de transcrição vem do .env da instalação e a chamada
+  // leva a chave no cabeçalho: mesma recusa do endereço da visão, e antes de a
+  // chave sair daqui.
+  const transcriberDeServico = (
+    servico: NonNullable<DeriveDeps["transcriber"]>,
+  ): DeriveDeps["transcriber"] => ({
+    transcribe: async (audio, mime) => {
+      const enderecoDoServico = env.TRANSCRIPTION_BASE_URL;
+      const recusa = enderecoDoServico
+        ? await motivoDaRecusaDeDestino(enderecoDoServico)
+        : null;
+      if (recusa) {
+        await avisarMidiaNaoLida(
+          orgId,
+          "áudio",
+          "o endereço configurado para a transcrição não foi aceito como destino, então não enviei o áudio nem a chave para lá — confira TRANSCRIPTION_BASE_URL",
+          undefined,
+          recusa,
+        );
+        return MARCADOR_NAO_LIDA;
+      }
+      return servico.transcribe(audio, mime);
+    },
+  });
+  // As três chaves da transcrição vêm do `env` — a MESMA régua do app
+  // (`lib/env.ts`), não do `process.env` cru: o schema é quem dá o default e
+  // quem recusa valor malformado, e uma leitura paralela aqui divergiria no dia
+  // em que a régua mudasse — sem ninguém ver, porque este arquivo roda no
+  // worker, não no Next. Não é dependência nova: o worker já carrega o módulo
+  // por `lib/supabase/admin`.
+  const chaveDeTranscricao = env.TRANSCRIPTION_API_KEY;
+  const transcriber: DeriveDeps["transcriber"] = chaveDeTranscricao
+    ? transcriberDeServico(
+        apiTranscriptionProvider({
+          apiKey: chaveDeTranscricao,
+          baseUrl: env.TRANSCRIPTION_BASE_URL || undefined,
+          model: env.TRANSCRIPTION_MODEL || undefined,
+        }),
+      )
+    : transcricaoPadrao;
   return {
     transcriber,
     describeImage,
@@ -327,10 +506,56 @@ export const MARCADOR_NAO_LIDA = "[o cliente enviou uma mídia que não consegui
  *
  * Fire-and-forget: falhar ao avisar não pode derrubar a derivação da mídia.
  */
+/**
+ * O título e o corpo do aviso `midia_nao_lida`. Primeiro o que houve e o que
+ * fazer, em português; a frase crua do provedor, quando existe, no fim e
+ * rotulada (`DETALHE_TECNICO`) — mesma regra do aviso de evento morto.
+ */
+export function textoDoAvisoDeMidiaNaoLida(aviso: {
+  tipo: string;
+  motivo: string;
+  consequencia: string;
+  detalheTecnico?: string;
+}): { title: string; body: string } {
+  return {
+    title: `O agente não conseguiu ler ${aviso.tipo} que o cliente enviou`,
+    body:
+      `Motivo: ${aviso.motivo}. ${aviso.consequencia} ` +
+      `Para resolver, ajuste o modelo desse ponto em Agente de IA → Provedores, ou cadastre a chave necessária em Credenciais.` +
+      (aviso.detalheTecnico ? ` ${DETALHE_TECNICO} ${aviso.detalheTecnico}` : ""),
+  };
+}
+
+/**
+ * O motivo pelo qual um endereço configurado pela instalação não pode receber
+ * a mídia — e a credencial da instalação que a acompanha —, ou null quando
+ * pode.
+ *
+ * São os MESMOS dois guardas que as saídas de webhook já aplicam, na mesma
+ * ordem: o textual julga de graça o que dá para julgar sem rede, e o de DNS
+ * paga a resolução para julgar o IP por trás do nome.
+ */
+async function motivoDaRecusaDeDestino(endereco: string): Promise<string | null> {
+  try {
+    assertSafeOutboundUrl(endereco);
+    await assertDestinoResolvidoSeguro(new URL(endereco).hostname);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 async function avisarMidiaNaoLida(
   organizationId: string,
   tipo: string,
   motivo: string,
+  /**
+   * O que aconteceu com o atendimento. O padrão vale para as recusas, que
+   * entregam o marcador ao agente; a falha permanente não entrega nada.
+   */
+  consequencia = "Enquanto isso, o agente responde avisando que não conseguiu abrir o arquivo.",
+  /** A frase crua do provedor ou do armazenamento, quando houver — vai no fim, rotulada. */
+  detalheTecnico?: string,
 ): Promise<void> {
   try {
     const admin = createAdminClient();
@@ -352,10 +577,7 @@ async function avisarMidiaNaoLida(
       organization_id: organizationId,
       kind: "midia_nao_lida",
       severity: "warn",
-      title: `O agente não conseguiu ler ${tipo} que o cliente enviou`,
-      body:
-        `Motivo: ${motivo}. Enquanto isso, o agente responde avisando que não conseguiu abrir o arquivo. ` +
-        `Para resolver, ajuste o modelo desse ponto em Agente de IA → Provedores, ou cadastre a chave necessária em Credenciais.`,
+      ...textoDoAvisoDeMidiaNaoLida({ tipo, motivo, consequencia, detalheTecnico }),
     });
     // E o retorno é CONFERIDO. O supabase-js devolve `{ error }` em vez de
     // lançar, então o `catch` abaixo era inalcançável para erro de banco: a

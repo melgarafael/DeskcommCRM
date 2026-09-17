@@ -33,8 +33,10 @@ const SUBPASTAS = new Set(
 
 /** Tudo que o git ENTREGA — não o que o disco tem. */
 function versionados(padrao: string): string[] {
-  return execFileSync("git", ["ls-files", padrao], { cwd: RAIZ, encoding: "utf8" })
-    .split("\n")
+  // NUL conserva nomes reais com acentos, espaços ou quebra de linha. Sem -z,
+  // core.quotepath pode devolver aspas/escapes que não são caminhos do disco.
+  return execFileSync("git", ["ls-files", "-z", "--", padrao], { cwd: RAIZ, encoding: "utf8" })
+    .split("\0")
     .filter(Boolean);
 }
 

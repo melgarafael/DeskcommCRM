@@ -42,6 +42,8 @@ interface LeadRow {
   pipeline_id: string;
   custom_fields: Record<string, unknown> | null;
   field_defs: CustomFieldDef[];
+  funil_nome: string | null;
+  etapa_nome: string | null;
 }
 
 interface OrderRow {
@@ -291,6 +293,47 @@ function SemLista({
  * Título, valor e tags já têm casa no dossiê. Quem atende descobre o dado
  * customizado (CPF, plano, endereço) aqui — e tinha de ir no Kanban gravar.
  */
+/**
+ * O banco guarda `open`/`won`/`lost`; a tela mostrava a palavra crua (#943).
+ *
+ * ⚠️ NÃO troque "Ganho"/"Perdido" por `crm_pipelines.vocabulary` sem antes
+ * mudar o que essa coluna guarda. O DEFAULT dela é o de e-commerce (`won:
+ * Pago`, `lost: Cancelado`, supabase/baseline.sql) e nenhum caminho normal a
+ * reescreve: o onboarding troca só as ETAPAS pelo quadro do ramo
+ * (`fn_aplicar_quadro_do_onboarding` atualiza nome e slug do funil), e
+ * `POST /api/v1/pipelines` não a preenche — quem escreve é só a tela Etapas do
+ * funil, à mão. Lida daqui, ela faria uma clínica recém-instalada ver "Pago"
+ * ao lado de "Consulta marcada". Guardado em
+ * tests/unit/inbox-leads-recentes-com-funil.test.tsx.
+ */
+const STATUS_DO_LEAD: Record<string, string> = { open: "Aberto", won: "Ganho", lost: "Perdido" };
+
+/** "Funil · Etapa" — sem isto dois leads de mesmo título ficam idênticos (#943). */
+function ondeEstaOLead(l: LeadRow): string {
+  return [l.funil_nome, l.etapa_nome].filter(Boolean).join(" · ");
+}
+
+/**
+ * `line-clamp-2`, não `truncate` — e a diferença não depende de medir pixel.
+ *
+ * `truncate` corta numa linha só, e corte de texto some pela DIREITA: a metade
+ * perdida é sempre a ETAPA, que é justamente a que diz onde o negócio está.
+ * "Funil de Vendas Consultivas B2B · Proposta enviada" nesta coluna de 296px
+ * viraria "Funil de Vendas Consul…" — o operador lê o funil, que ele já sabia,
+ * e perde a etapa, que é o dado novo. A medida por ferramenta diria a partir de
+ * QUE largura isso acontece; não muda QUAL metade morre, que é o defeito.
+ *
+ * Duas linhas dobram o orçamento sem mexer no texto (mesmo uso que
+ * `Composer.tsx:259` e `MessageBubble.tsx:193` já fazem), e o `title` devolve a
+ * frase inteira no hover para o resto — com o nome do funil cortado não há
+ * outro lugar na tela onde lê-lo.
+ *
+ * ⚠️ NÃO medido: a largura em que a segunda linha também estoura, e o
+ * comportamento em tela de celular (onde não há hover). Fica para quem rodar a
+ * spec de tela com `getBoundingClientRect`.
+ */
+const CLASSES_DE_ONDE_ESTA = "line-clamp-2 text-muted-foreground";
+
 function InboxLeadEditor({
   leads,
   selecionadoId,
@@ -302,7 +345,9 @@ function InboxLeadEditor({
   onSelecionar: (id: string) => void;
   onSalvo: () => void;
 }) {
+  const t = useT();
   const ativo = leads.find((l) => l.id === selecionadoId) ?? leads[0]!;
+  const status = (l: LeadRow) => t(STATUS_DO_LEAD[l.status] ?? l.status);
 
   return (
     <div className="mt-2 space-y-2">
@@ -323,8 +368,11 @@ function InboxLeadEditor({
                   )}
                 >
                   <div className="truncate font-medium">{l.title}</div>
+                  <div className={CLASSES_DE_ONDE_ESTA} title={ondeEstaOLead(l)}>
+                    {ondeEstaOLead(l)}
+                  </div>
                   <div className="text-muted-foreground">
-                    {l.status} · {formatMoney(l.value_cents, l.currency)}
+                    {status(l)} · {formatMoney(l.value_cents, l.currency)}
                   </div>
                 </button>
               </li>
@@ -333,9 +381,12 @@ function InboxLeadEditor({
         </ul>
       )}
       {leads.length === 1 && (
-        <p className="text-xs text-muted-foreground">
-          {ativo.title} · {ativo.status}
-        </p>
+        <div data-testid="inbox-lead-unico" className="text-xs text-muted-foreground">
+          <p>{ativo.title} · {status(ativo)}</p>
+          <p className={CLASSES_DE_ONDE_ESTA} title={ondeEstaOLead(ativo)}>
+            {ondeEstaOLead(ativo)}
+          </p>
+        </div>
       )}
       <CamposDoFunil
         key={ativo.id}
@@ -575,7 +626,7 @@ export function CRMSidePanel({ conversation }: Props) {
               aria-pressed={tagEditorOpen}
               onClick={() => setTagEditorOpen((v) => !v)}
             >
-              <Tag size={12} className="mr-1" weight="regular" aria-hidden /> {t("Tag")}
+              <Tag size={12} className="mr-1" weight="regular" aria-hidden /> {t("Tags do contato")}
             </Button>
             <Button
               size="sm"
@@ -585,7 +636,7 @@ export function CRMSidePanel({ conversation }: Props) {
               onClick={() => setLeadDialogOpen(true)}
             >
               <Users size={12} className="mr-1" weight="regular" aria-hidden />
-              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Lead")}
+              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo Lead")}
             </Button>
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
@@ -596,7 +647,7 @@ export function CRMSidePanel({ conversation }: Props) {
               </Button>
             )}
           </div>
-          {tagEditorOpen && contactId && <ContactTagsEditor contactId={contactId} tags={tags} />}
+          {tagEditorOpen && contactId && <ContactTagsEditor contactId={contactId} orgId={conversation.organization_id} tags={tags} />}
         </Card>
       </section>
 
@@ -693,7 +744,7 @@ export function CRMSidePanel({ conversation }: Props) {
         <p className="mt-1 text-xs text-muted-foreground">{t("Fatos duráveis registrados nas notas. Pendências pertencem à demanda vigente.")}</p>
         {!sectionsLoading && fatos.map((f) => <details key={f.id} className="mt-2 text-xs"><summary>{f.headline}</summary><p className="mt-1 whitespace-pre-wrap">{f.body}</p></details>)}
         {!sectionsLoading && fatos.length === 0 && <p className="mt-2 text-xs text-muted-foreground">{t("Nenhum fato durável registrado.")}</p>}
-        {!sectionsLoading && historico.length > 0 && <div className="mt-3 text-xs"><h4>{t("Histórico encerrado — sem tarefas pendentes")}</h4>{historico.map((h) => <p key={h.id}>{t(DESFECHO_LEGIVEL[h.desfecho] ?? h.desfecho)}</p>)}</div>}
+        {!sectionsLoading && historico.length > 0 && <div className="mt-3 text-xs"><h4>{t("Histórico encerrado — sem tarefas pendentes")}</h4>{historico.map((h) => <p key={h.id}>{t(DESFECHO_LEGIVEL[h.desfecho] ?? h.desfecho)}{h.fechada_em ? ` · ${shortDate(h.fechada_em, localeDaData)}` : ""}</p>)}</div>}
       </section>
       <Separator />
 

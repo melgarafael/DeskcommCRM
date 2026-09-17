@@ -15,6 +15,7 @@ import {
 } from "@/app/api/v1/contacts/_handler";
 import type { McpToolDefinition } from "../types";
 import { CAMPOS_PROPONIVEIS, proporDadoDoContato } from "@/lib/contacts/proposta-de-dado";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { audit } from "@/lib/audit";
 
 const searchInputShape = {
@@ -48,7 +49,7 @@ export const crmSearchContacts: McpToolDefinition<typeof searchInputShape> = {
     return {
       contacts: result.contacts.map((c) => ({
         id: c.id,
-        name: c.display_name ?? c.name,
+        name: nomeDoContato(c),
         phone: c.phone_number,
         email: c.email,
         tags: c.tags ?? [],

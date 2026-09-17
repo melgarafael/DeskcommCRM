@@ -10,6 +10,10 @@
 > nunca a olho. COMMITAR este arquivo a cada atualização — mudança só no
 > working tree se perde quando um subagent limpa a árvore (já aconteceu 1x).
 
+> **Sobre o diário abaixo:** as menções à Vercel são registro do dia em que cada
+> entrada foi escrita. O CRM é self-host em VPS, e o deploy que vale está em
+> [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md).
+
 ## Contexto fixo
 
 - **Feature:** sistema de follow-up inteligente — grafo versionado + enrollment + relógio único; builder visual React Flow; fila UI; seletor no agente.

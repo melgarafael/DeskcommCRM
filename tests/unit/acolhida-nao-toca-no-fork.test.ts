@@ -239,9 +239,17 @@ describe("acolhida: um workflow privilegiado que não toca no código do fork", 
     // O molde é `triagem/references/resposta-ao-contribuidor.md`, seção "Acolhida".
     // A acolhida é segura de ser automática porque não fala do mérito; se alguém
     // esvaziar o texto, ela deixa de fazer o trabalho pelo qual existe.
-    expect(textoDosRuns, "o Vercel vermelho não é culpa de quem abriu o PR").toMatch(
-      /Vercel[\s\S]*gate de merge/,
-    );
+    //
+    // A primeira asserção cobra o PONTEIRO, nunca a lista: a mensagem manda olhar os
+    // checks `Required` do próprio PR porque quem mexe na branch protection não passa
+    // por aqui. Uma lista de nomes escrita nesta mensagem envelheceria sozinha, no PR
+    // de um estranho e sem nenhum gate para avisar — foi o que aconteceu com o bullet
+    // que esta asserção substituiu, sobre um check que este repositório deixou de
+    // receber.
+    expect(
+      textoDosRuns,
+      "a mensagem diz onde olhar o CI: os checks `Required` do próprio PR",
+    ).toMatch(/trava o merge[\s\S]*?Required/);
     expect(textoDosRuns, "os workflows podem estar parados esperando liberação").toMatch(
       /esperando[\s\S]*?libera/,
     );

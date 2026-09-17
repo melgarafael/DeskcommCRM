@@ -92,3 +92,55 @@ export function rollbackFoiSuperado(
   const descritasPeloRun = [run?.to_version, run?.from_version].filter(Boolean);
   return !descritasPeloRun.includes(versaoReportadaPeloHost);
 }
+
+/**
+ * O run terminou BEM e o host ainda não teve chance de contar?
+ *
+ * ## O silêncio de até 5 minutos depois de dar certo
+ *
+ * `run_result` com `status: "success"` escreve só em `system_update_runs` — ele
+ * **não toca** `system_version.current_version`. Quem escreve essa coluna é o
+ * heartbeat do `agent.sh`, e ele roda de 5 em 5 minutos — o cabeçalho do
+ * próprio `agent.sh` diz "a cada 5 minutos", e a linha de cron que o instalador
+ * escreve está em `hostgator-setup-kit/test-validators.sh`.
+ *
+ * Então, na janela entre o fim da atualização e a batida seguinte,
+ * `current_version` ainda nomeia a versão ANTIGA — e `update_available`
+ * (`latest !== current`) continua verdadeiro. A tela volta do reinício
+ * oferecendo o botão "Atualizar agora" para a versão que **acabou de ser
+ * instalada**. Quem clicou faz tudo de novo, ou conclui que não funcionou.
+ *
+ * ## Por que assumir o `to_version` é seguro aqui
+ *
+ * `success` é o agente do host dizendo que o `update.sh` foi até o fim — a
+ * troca de imagem incluída. Diferente do caso de rollback (onde o host reporta
+ * a versão que QUEBROU e o run precisa contradizê-lo), aqui os dois concordam;
+ * o host só ainda não falou.
+ *
+ * E é auto-corrigível por construção: assim que a batida chega,
+ * `system_version.updated_at` passa a ser posterior ao `finished_at` e esta
+ * função devolve `false` — o host volta a mandar, sem exceção nenhuma. É o
+ * mesmo desempate temporal de `rollbackFoiSuperado`, na direção contrária.
+ *
+ * Sem `finished_at` (run antigo, agente velho) devolve `false`: sem a data não
+ * há como saber se o host já falou depois, e o degrau conservador é o de antes.
+ * Sem `versionUpdatedAt` devolve `true` — o host nunca reportou coisa alguma, e
+ * o run é a única notícia que existe.
+ */
+export function sucessoJaInstalado(
+  versionUpdatedAt: string | null | undefined,
+  runFinishedAt: string | null | undefined,
+  run?: { status?: string | null; to_version?: string | null } | null,
+): boolean {
+  if (run?.status !== "success" || !run.to_version) return false;
+  if (!runFinishedAt) return false;
+  const terminou = Date.parse(runFinishedAt);
+  if (Number.isNaN(terminou)) return false;
+  if (!versionUpdatedAt) return true;
+  const gravado = Date.parse(versionUpdatedAt);
+  if (Number.isNaN(gravado)) return true;
+  // Empate conta como "o host ainda não falou": a escrita do `run_result` e a
+  // do heartbeat são de relógios diferentes, e na janela de um segundo o degrau
+  // seguro é o que NÃO volta a oferecer a versão já instalada.
+  return gravado <= terminou;
+}

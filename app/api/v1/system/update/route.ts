@@ -100,6 +100,15 @@ export async function POST(_req: NextRequest): Promise<Response> {
     .single();
 
   if (error) {
+    // A preparação de extensão e a atualização dividem a mesma cerca no
+    // banco (migration 0271). A recusa tem uma saída pela gestão, não é uma pane.
+    if (error.code === "P0001" && error.message === "extension_preparation_in_progress") {
+      return fail(
+        "state_conflict",
+        "Há uma extensão em preparação. Abra Extensões: em Atividade recente, quem pediu pode retomar o pedido, e qualquer responsável pela instalação pode cancelá-lo antes de atualizar o sistema.",
+        409,
+      );
+    }
     // O índice único parcial `uniq_system_update_runs_dispatched` (migration
     // 0090) é a garantia de banco contra dois cliques quase simultâneos: o
     // check acima (`running`) é só otimização, não exclusão mútua — sob

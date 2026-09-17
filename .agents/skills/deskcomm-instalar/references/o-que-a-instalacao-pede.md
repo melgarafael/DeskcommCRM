@@ -21,7 +21,6 @@ a do provedor escolhido. No modo `--yes`, sem escolha, o padrão é Anthropic.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key (Settings › API) | lê o papel dentro da chave e testa |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key — **secreta** | idem, contra a admin API |
 | `SUPABASE_DB_URL` | connection string **Session pooler, modo URI** (Settings › Database) — secreta | recusa `[YOUR-PASSWORD]`, recusa host `db.<ref>.supabase.co` (Direct, só IPv6), confere que é o mesmo projeto da URL, e **abre uma conexão de verdade** |
-| chave do provedor de IA | `ANTHROPIC_API_KEY` (`sk-ant-`), `OPENROUTER_API_KEY` (`sk-or-`) ou `OPENAI_API_KEY` (`sk-`) | prefixo + chamada real ao provedor (uma chave sem crédito passa; "recusada" é 401) |
 | `OWNER_EMAIL` | e-mail do primeiro admin (o dono) | formato |
 | `OWNER_PASSWORD` | senha do dono — secreta | mínimo 8 caracteres |
 
@@ -33,6 +32,7 @@ projeto** e preenche as quatro sozinho (`hostgator-setup-kit/supabase-provision.
 | campo | se pular |
 |---|---|
 | `SUPABASE_ACCESS_TOKEN` (token pessoal, **não fica salvo**) | projeto criado à mão (4 cópias); os e-mails de acesso saem no modelo em inglês do Supabase e o **Site URL fica `localhost:3000`** — "esqueci minha senha", confirmação de cadastro e aceite de convite chegam com link quebrado até alguém configurar Authentication › URL Configuration (`Site URL = https://DOMÍNIO`, `Redirect = https://DOMÍNIO/auth/confirm`). O instalador imprime essa pendência no fim; `hostgator-setup-kit/marca-emails.sh` resolve depois, com o token |
+| **chave do provedor escolhido** (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` ou `OPENAI_API_KEY`) | o agente **não responde** até alguém cadastrar a chave em **IA › Credenciais** — cifrada no banco, sem mexer no `.env` e sem reiniciar. A tela final da instalação lembra o caminho. Quem digita uma chave tem ela validada na hora (prefixo + chamada real ao provedor: uma chave sem crédito passa; "recusada" é 401) |
 | `OPENAI_API_KEY` extra (quando a IA não é OpenAI) | o agente **não ouve áudio** nem indexa/consulta a base de conhecimento até alguém cadastrar a chave da OpenAI em IA › Credenciais (não precisa mexer no `.env`) |
 | `APP_NAME` (padrão `DeskcommCRM`) | é a **semente** do nome; depois muda em Configurações › Marca |
 | `APP_LOCALE` (1 = Português, 2 = Español) | grava o idioma da organização |

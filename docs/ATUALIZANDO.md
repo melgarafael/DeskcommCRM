@@ -32,9 +32,21 @@ recente**, é porque não havia nada novo pra baixar; está tudo certo.
 - **Um monte de linhas com "already exists" / "multiple primary keys"** durante a parte
   do banco: **é esperado e inofensivo** — são coisas que já existiam. O comando filtra
   esse ruído e, se estiver tudo certo, mostra **`✓ banco atualizado`**.
-- Se aparecer **`⚠ avisos que não são os esperados`**, aí sim vale prestar atenção: o app
-  provavelmente ainda funciona, mas guarde a mensagem. Em último caso, dá pra voltar ao
-  estado anterior com o backup: `bash hostgator-setup-kit/restore.sh`.
+- Se o banco estiver ocupado com o CRM atendendo, o comando **aplica de novo sozinho** (até
+  3 passadas) e mostra na tela o que precisou refazer. Isso é normal, e vale a partir da
+  atualização seguinte à que instalar esta correção (quem executa a atualização é o
+  instalador que já está no servidor).
+- Se aparecer **`⚠ Apareceram avisos no banco que NÃO são os esperados`**, aí sim vale prestar
+  atenção: o app provavelmente ainda funciona, mas guarde a mensagem. Quando o banco **NÃO
+  termina limpo**, o **fim** da saída diz o que fazer, e a resposta depende da causa:
+  - **banco ocupado ou fora de alcance:** repita a atualização num horário de pouco movimento,
+    com o comando que a própria tela mostra
+    (`bash hostgator-setup-kit/update.sh --to <versão> --force`);
+  - **permissão** (`must be owner`, `permission denied`): repetir não resolve — a conexão do
+    `.env` não é a dona do banco. Declare `SUPABASE_DB_ADMIN_URL` e repita;
+  - **qualquer outra coisa:** guarde a mensagem e peça ajuda.
+  Só em último caso volte ao estado anterior com o backup: `bash hostgator-setup-kit/restore.sh`
+  (ele desfaz também o que o CRM gravou depois dele).
 
 ## Dicas
 

@@ -15,11 +15,22 @@
  * e um app serve N WABAs de N organizações. O token amarra o payload a UMA org
  * antes de qualquer escrita — sem ele, quem conhecesse o App Secret escreveria em
  * qualquer tenant.
+ *
+ * ─── De onde vêm as duas credenciais (issue #850, migration 0257) ─────────────
+ *
+ * Do BANCO (`platform_meta_app`), não do ambiente: as duas são da INSTALAÇÃO
+ * inteira, não da organização — é isto que faz o 2º número conectar sem ninguém
+ * voltar na VPS para editar `.env` e reiniciar. O `.env` continua sendo o PISO
+ * (rollback, e clone que ainda não aplicou a migration) e as duas fontes NÃO se
+ * misturam: segredo de um lado com verify token do outro é um app que não existe,
+ * e a falha é um 401 calado que ninguém liga a configuração. A precedência, o TTL
+ * e esse motivo estão escritos em `lib/channels/meta/app.ts`.
  */
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
+import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
 import { ingestMetaInbound } from "@/lib/channels/meta/ingest";
@@ -39,10 +50,12 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse
   const session = await metaSessionByWebhookToken(token);
   if (!session) return new NextResponse("not found", { status: 404 });
 
-  const challenge = verificationChallenge(
-    req.nextUrl.searchParams,
-    process.env.META_WEBHOOK_VERIFY_TOKEN ?? "",
-  );
+  // Do BANCO (platform_meta_app, migration 0257), com o `.env` como piso: é a
+  // credencial da INSTALAÇÃO inteira, não da organização — e um clone que ainda
+  // não aplicou a migration continua verificado pelo ambiente. Não lança nunca;
+  // a precedência e o porquê estão em `lib/channels/meta/app.ts`.
+  const { verifyToken } = await appDaMeta();
+  const challenge = verificationChallenge(req.nextUrl.searchParams, verifyToken ?? "");
   if (challenge === null) return new NextResponse("forbidden", { status: 403 });
 
   // Texto puro, sem wrapper — ver o cabeçalho.
@@ -60,8 +73,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   if (!session) return fail("not_found", "unknown webhook token", 404, { requestId });
 
   const rawBody = await req.text();
-  const appSecret = process.env.META_APP_SECRET ?? "";
-  if (!verifyMetaSignature(rawBody, req.headers.get("x-hub-signature-256"), appSecret)) {
+  // Do mesmo lugar que o handshake: BANCO primeiro, `.env` como piso (0257). Sem
+  // segredo nenhum configurado a verificação devolve `false` e a entrega morre em
+  // 401 — que é o desfecho de hoje, e não um 500.
+  const { appSecret } = await appDaMeta();
+  if (!verifyMetaSignature(rawBody, req.headers.get("x-hub-signature-256"), appSecret ?? "")) {
     return fail("unauthorized", "invalid_signature", 401, { requestId });
   }
 

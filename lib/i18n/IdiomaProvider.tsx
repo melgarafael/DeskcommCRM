@@ -78,6 +78,7 @@ export function IdiomaProvider({
   // atrás exatamente no clique em que a pessoa quer ver o efeito.
   useEffect(() => {
     idiomaFora = idioma;
+    document.documentElement.lang = idioma;
     return () => {
       idiomaFora = IDIOMA_PADRAO;
     };

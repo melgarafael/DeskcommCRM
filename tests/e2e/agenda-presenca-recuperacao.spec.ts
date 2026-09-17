@@ -464,6 +464,41 @@ test.describe("datas do compromisso seguem idioma e fuso próprios", () => {
   });
 });
 
+test("ir para a Agenda pelo menu apaga o cliente da conversa — \"Novo agendamento\" não herda", async ({
+  page,
+}) => {
+  // ⛔ O DEFEITO RELATADO (instalação real, 2026-09-12): "Novo agendamento"
+  // abria com um contato JÁ selecionado, herdado de uma abertura anterior
+  // feita a partir da conversa dele. Quem não reparasse marcaria o compromisso
+  // no nome de outra pessoa — o campo parece preenchido de propósito.
+  //
+  // ⚠️ O gesto tem de ser a NAVEGAÇÃO PELO MENU, não `page.goto`: recarregar a
+  // página remonta o componente e zeraria o estado por acidente, verdejando o
+  // teste com o defeito de pé. `/app/agenda?contato=…` e `/app/agenda` são a
+  // MESMA rota do App Router — só a query muda, e é por isso que o cliente
+  // sobrevivia.
+  //
+  // O irmão desta prova é o caso acima ("Inbox marca cliente/conversa"), que
+  // exige o contrário: fechar o painel para navegar a grade NÃO pode perder o
+  // cliente que a conversa deu. Os dois juntos são a regra inteira.
+  const f = await fixture(),
+    p = await person(f, "Cliente que não pode vazar");
+  await inbound(f, p, "Preciso marcar uma consulta");
+  await login(page, f.email);
+  await page.goto(`/app/inbox/${p.conversation}`);
+  await page.getByRole("link", { name: "Marcar compromisso", exact: true }).click();
+  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible();
+  await expect(page.getByLabel("Quem será atendido")).toHaveValue(p.contact);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("painel-de-marcacao")).toBeHidden();
+
+  await page.getByRole("link", { name: "Agenda", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/app\/agenda$/);
+  await page.getByRole("button", { name: /novo agendamento/i }).click();
+  await expect(page.getByTestId("painel-de-marcacao")).toBeVisible();
+  await expect(page.getByLabel("Quem será atendido")).toHaveValue("");
+});
+
 test("gestão configura prazos e gatilho; falta inicia uma vez e resposta interrompe", async ({
   page,
 }) => {
@@ -477,10 +512,30 @@ test("gestão configura prazos e gatilho; falta inicia uma vez e resposta interr
   await page.getByLabel("Proteger de cobranças por silêncio após o fim (minutos)").fill("120");
   await page.getByRole("button", { name: "Salvar prazos" }).click();
   await expect(page.getByText("Prazos salvos.")).toBeVisible();
-  expect(
-    (await db.from("organizations").select("settings").eq("id", f.org).single()).data?.settings
-      .agenda,
-  ).toEqual({ confirmation_delay_minutes: 15, unknown_protection_minutes: 120 });
+  // `toEqual` de propósito, e não `toMatchObject`: o que esta linha vigia é que
+  // a tela de prazos escreve EXATAMENTE as chaves que escreveu, sem carregar
+  // lixo junto. Afrouxar para "contém" deixaria passar um campo escrito por
+  // engano.
+  //
+  // A terceira chave entrou pela migration 0249 (#789) e é **opcional** por
+  // decisão escrita: organização já instalada tem `settings.agenda` com duas
+  // chaves, e exigir três quebraria o PATCH vindo de uma aba aberta antes da
+  // atualização. Ausente significa "use o default" (1440), resolvido no
+  // `agendaSettingsSchema`. Por isso ela entra aqui com o valor que a tela
+  // gravou, não como chave obrigatória do schema.
+  const agenda = (await db.from("organizations").select("settings").eq("id", f.org).single()).data
+    ?.settings.agenda;
+  expect(agenda).toEqual({
+    confirmation_delay_minutes: 15,
+    unknown_protection_minutes: 120,
+    pending_expires_after_minutes: agenda?.pending_expires_after_minutes,
+  });
+  // E o valor do terceiro prazo é o DEFAULT, não um resto de outra escrita: a
+  // tela não tem campo para ele, e quem o grava é o `.default(1440)` do
+  // `agendaSettingsWriteSchema` (`lib/schemas/settings.ts:244`) ao fazer parse do
+  // que a tela enviou. Fixar o número aqui é o que separa "a chave apareceu" de
+  // "a chave apareceu com o valor certo".
+  expect(agenda?.pending_expires_after_minutes).toBe(1440);
   await page.goto(`/app/ai/followups/${pointer}`);
   await page.getByTestId("trigger-config-button").click();
   await page.getByLabel("Tipo de gatilho").click();

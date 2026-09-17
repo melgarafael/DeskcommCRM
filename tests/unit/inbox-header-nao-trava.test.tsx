@@ -38,6 +38,11 @@ vi.mock("@/hooks/inbox/useClaimConversation", () => ({
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useReopenConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  // O header passou a importar `useArchiveConversation` do MESMO módulo (issue
+  // #923). Um dublê fechado que não acompanha a nova exportação não falha com
+  // "faltou mock": falha com "useArchiveConversation is not a function", que
+  // não fala nada do que este arquivo vigia.
+  useArchiveConversation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
   useReleaseConversation: () => ({ mutate: vi.fn(), isPending: false }),

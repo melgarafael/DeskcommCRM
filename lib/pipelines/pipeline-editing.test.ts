@@ -3,6 +3,7 @@ import {
   ETAPAS_INICIAIS,
   podeExcluirDeVez,
   regrasQueApontamPara,
+  updatesDeMarcaExclusiva,
   updatesDePadrao,
   validarArquivamento,
   validarNomeDeFunil,
@@ -139,18 +140,64 @@ describe('updatesDePadrao', () => {
     expect(updatesDePadrao(semPadrao, 'f2')).toEqual([{ pipelineId: 'f2', patch: { is_default: true } }]);
   });
 
-  it('ignora funil arquivado como padrão anterior — o índice único é parcial', () => {
+  it('libera o padrão anterior mesmo ARQUIVADO — o índice não recorta arquivado', () => {
+    // ⚠️ ESTE TESTE AFIRMAVA O CONTRÁRIO, e o que ele congelava era um bug.
+    // Dizia "o índice único é parcial (where is_archived = false)"; medido em
+    // supabase/baseline.sql, `uniq_crm_pipelines_org_default` é
+    // `where (is_default = true)` e mais nada. Pular o arquivado mandava UM
+    // update onde precisava de dois, e o 23505 caía justamente na organização
+    // que arquivou o funil antigo em vez de trocar o padrão antes — o caminho
+    // mais comum de quem reorganiza o CRM.
     const arquivadoEraPadrao = [
       { id: 'fz', name: 'Velho', slug: 'velho', position: 500, is_default: true, is_archived: true },
       { ...funis[1]!, is_default: false },
     ];
     expect(updatesDePadrao(arquivadoEraPadrao, 'f2')).toEqual([
+      { pipelineId: 'fz', patch: { is_default: false } },
       { pipelineId: 'f2', patch: { is_default: true } },
     ]);
   });
 
   it('não emite nada para funil que não está na lista', () => {
     expect(updatesDePadrao(funis, 'inexistente')).toEqual([]);
+  });
+});
+
+describe('updatesDeMarcaExclusiva — funil de clientes', () => {
+  // A marca de clientes tem o MESMO índice imediato que a de padrão
+  // (`uniq_crm_pipelines_org_client`), então tem a mesma ordem obrigatória.
+  // O teste existe porque as duas marcas são o mesmo mecanismo com nomes
+  // diferentes, e o dia em que uma divergir da outra é o dia em que a tela
+  // passa a se comportar de dois jeitos no mesmo gesto.
+  const comClientes: FunilEditavel[] = [
+    { ...funis[0]!, is_client_pipeline: false },
+    { ...funis[1]!, is_client_pipeline: true },
+    { ...funis[2]!, is_client_pipeline: false },
+  ];
+
+  it('libera o anterior ANTES de marcar o novo', () => {
+    expect(updatesDeMarcaExclusiva(comClientes, 'f3', 'is_client_pipeline')).toEqual([
+      { pipelineId: 'f2', patch: { is_client_pipeline: false } },
+      { pipelineId: 'f3', patch: { is_client_pipeline: true } },
+    ]);
+  });
+
+  it('não emite nada quando o funil já é o de clientes', () => {
+    expect(updatesDeMarcaExclusiva(comClientes, 'f2', 'is_client_pipeline')).toEqual([]);
+  });
+
+  it('nenhum anterior (o estado de toda instalação nova) — só marca o novo', () => {
+    expect(updatesDeMarcaExclusiva(funis, 'f2', 'is_client_pipeline')).toEqual([
+      { pipelineId: 'f2', patch: { is_client_pipeline: true } },
+    ]);
+  });
+
+  it('o mesmo funil pode ser padrão E de clientes — nada impede', () => {
+    // A organização que tem UM funil só é o caso comum de instalação nova.
+    // Proibir aqui quebraria justamente ela.
+    expect(updatesDeMarcaExclusiva(funis, 'f1', 'is_client_pipeline')).toEqual([
+      { pipelineId: 'f1', patch: { is_client_pipeline: true } },
+    ]);
   });
 });
 

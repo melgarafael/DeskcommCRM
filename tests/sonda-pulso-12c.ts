@@ -10,8 +10,8 @@
  *     exercitado, e o verde seria sobre um caso que não ocorreu. A segunda
  *     escrita é o carimbo de `last_activity_at` da atividade `stage_changed`
  *     (Wave 3), que chega ~112ms depois e era exatamente quem fazia a aba
- *     piscar. Detectada comparando o `updated_at` que a rota devolveu com o
- *     que ficou no banco.
+ *     piscar. Detectada comparando o `updated_at` que ficou no lead com o
+ *     `created_at` da atividade: a segunda escrita é a única posterior a ela.
  *
  * O alvo é escolhido DENTRO do pipeline do CRM Vivo e fora do último estágio:
  * `position` empata entre pipelines, então "o primeiro estágio" global é
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   // o erro não diz nada sobre o pulso. Sem `order`, o `.limit(1)` era loteria.
   const { data: candidatos } = await admin
     .from("crm_leads")
-    .select("id, title, stage_id")
+    .select("id, title, stage_id, updated_at")
     .eq("pipeline_id", pipelineId)
     .in("stage_id", stages.slice(0, -1).map((s) => s.id));
   const posicaoDoEstagio = new Map(stages.map((s) => [s.id, s.position]));
@@ -122,8 +122,39 @@ async function main(): Promise<void> {
     .select("stage_id, updated_at")
     .eq("id", lead.id)
     .maybeSingle();
+
+  // A SEGUNDA escrita é o carimbo de `last_activity_at` que o INSERT da
+  // atividade `stage_changed` dispara (`trg_update_last_activity_at` → UPDATE no
+  // lead → `trg_crm_leads_updated_at`). Ela acontece DEPOIS da atividade; a
+  // primeira (o UPDATE do próprio move) acontece ANTES. Então quem separa uma
+  // escrita de duas é o `updated_at` do lead contra o `created_at` da atividade.
+  //
+  // ⚠️ Esta sonda comparava o `updated_at` que a ROTA devolveu com o que ficou no
+  // banco. Isso deixou de medir qualquer coisa quando o #919 passou a reler o
+  // lead DEPOIS de gravar a atividade: os dois valores passaram a ser o mesmo
+  // por construção, e a sonda diria "só uma escrita" — INCONCLUSIVO — num
+  // arrasto que continua produzindo duas. Comparar contra o que o CLIENTE mandou
+  // também não serve: uma escrita só já muda o `updated_at`, então a pergunta
+  // "mudou em relação ao enviado?" responde SIM com uma escrita e com duas.
+  //
+  // O corte é o `updated_at` de ANTES do arrasto, e não o relógio deste
+  // processo: os dois relógios divergem, e a atividade é carimbada pelo
+  // Postgres.
+  const { data: atividade } = await admin
+    .from("crm_lead_activities")
+    .select("created_at")
+    .eq("lead_id", lead.id)
+    .eq("type", "stage_changed")
+    .gt("created_at", lead.updated_at)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   const mudou = depois?.stage_id !== lead.stage_id;
-  const duasEscritas = !!updatedAtDaRota && depois?.updated_at !== updatedAtDaRota;
+  const duasEscritas =
+    !!depois?.updated_at &&
+    !!atividade?.created_at &&
+    Date.parse(depois.updated_at) > Date.parse(atividade.created_at);
   const pulsos = await page.evaluate(
     () => (window as unknown as { __pulsos: number }).__pulsos,
   );
@@ -131,7 +162,7 @@ async function main(): Promise<void> {
   console.info(`1. card mudou de coluna:            ${mudou ? "SIM" : "NÃO"}`);
   console.info(`2. pulsos na própria aba:           ${pulsos}`);
   console.info(
-    `3. a ação produziu 2 escritas:      ${duasEscritas ? "SIM" : "NÃO"} (rota ${updatedAtDaRota} / banco ${depois?.updated_at})`,
+    `3. a ação produziu 2 escritas:      ${duasEscritas ? "SIM" : "NÃO"} (banco ${depois?.updated_at} / atividade ${atividade?.created_at ?? "nenhuma"} / rota ${updatedAtDaRota})`,
   );
 
   if (!mudou) {

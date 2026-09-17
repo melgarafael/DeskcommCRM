@@ -81,6 +81,7 @@ function tipo(over: Partial<TipoDeAtendimento> = {}): TipoDeAtendimento {
     // Como o banco devolve: o lembrete nasce desligado (migration 0194).
     lembreteLigado: false,
     lembreteAntecedenciaMin: 1440,
+    lembreteDegrausExtras: [],
     ...over,
   };
 }

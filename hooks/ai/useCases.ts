@@ -1,6 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
+import type { ChamadoDaLista } from "@/lib/escalacao/chamados";
 
 /** Espelha o CHECK de agent_cases.status (migration 0066, spec 15 §7). */
 export type CaseStatus = "awaiting_human" | "awaiting_lead" | "resolved" | "escalated" | "cancelled";
@@ -24,16 +25,26 @@ export type CaseActorKind = "agent" | "human" | "system" | "lead";
 /** A ação que o humano toma ao responder um caso — POST .../reply. */
 export type CaseHumanAction = "resolved" | "need_lead_info" | "escalate";
 
-export interface CaseListItem {
-  id: string;
-  title: string;
-  summary: string;
-  blocker: string;
+/**
+ * O item da lista — DERIVADO do que a rota devolve, não redigitado ao lado dela.
+ *
+ * ⚠️ ESTA HERANÇA É A LIGAÇÃO DE COMPILAÇÃO QUE FALTAVA. `GET /api/v1/ai/cases`
+ * devolve `listarChamados(...)`, cujo tipo é `ChamadoDaLista`; o cliente
+ * declarava a mesma forma à mão, e as duas cópias divergiram em silêncio — um
+ * campo novo entrou na consulta PostgREST e na interface daqui, e não entrou na
+ * projeção `achatarContato`, que é quem monta o objeto de fato. Resultado: a
+ * tela lia `undefined` e mostrava o rótulo genérico para todo caso, com
+ * typecheck, lint e suíte verdes.
+ *
+ * Herdando, um campo que a rota não promete não existe aqui, e quem o ler para
+ * de compilar em vez de ler `undefined` em produção.
+ *
+ * `status` é reapertado para a união: o servidor tipa `string` (ele espelha a
+ * coluna), a tela precisa da união para indexar `STATUS_LABEL`. Estreitar é
+ * permitido; alargar não seria.
+ */
+export interface CaseListItem extends ChamadoDaLista {
   status: CaseStatus;
-  opened_at: string;
-  conversation_id: string;
-  contact_name: string | null;
-  contact_phone: string | null;
 }
 
 export interface CaseListData {

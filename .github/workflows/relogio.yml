@@ -1,9 +1,9 @@
 # O RELÓGIO DE QUEM NÃO TEM AGENDADOR.
 #
-# Existe para instalação sem cron de verdade — o caso comum é o plano gratuito
-# da Vercel, onde o `vercel.json` só permite cron DIÁRIO. Sem alguém batendo,
-# follow-up agendado e `event_log` ficam parados até uma pessoa abrir o sistema,
-# e um lead que responde de madrugada espera até de manhã.
+# Existe para instalação sem agendador próprio — hospedagem que não oferece cron
+# de minuto, ou instalação em que o serviço `scheduler` do compose não está de
+# pé. Sem alguém batendo, follow-up agendado e `event_log` ficam parados até uma
+# pessoa abrir o sistema, e um lead que responde de madrugada espera até de manhã.
 #
 # ⚠️ NASCE DESLIGADO, e isto não é cautela decorativa: este arquivo vai para a
 # `main` de um produto self-host, e o fork de cada pessoa herda o agendamento.

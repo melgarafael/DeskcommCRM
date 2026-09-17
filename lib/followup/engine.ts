@@ -2,7 +2,7 @@ import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
-import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { isFollowupCasRecusado, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 /**
  * Follow-up flow engine — worker tick (Task 4.1). Orchestrates DB access
@@ -816,14 +816,14 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       const revision=revisions.get(id);if(revision===undefined) throw new StaleServiceBoundaryError();
       const {data,error}=await admin.rpc("fn_followup_apply_step",{p_org:orgId,p_id:id,p_revision:revision,p_patch:patch,p_event:event});
       if(error?.code==="23505") return;
-      if(error?.code==="40001") throw new StaleServiceBoundaryError();
+      if(isFollowupCasRecusado(error)) throw new StaleServiceBoundaryError();
       if(error) throw error;revisions.set(id,Number(data));
     },
     async updateEnrollment(id, orgId, patch) {
       const revision=revisions.get(id);
       if(revision===undefined) throw new StaleServiceBoundaryError();
       const {data,error}=await admin.rpc("fn_followup_patch",{p_org:orgId,p_id:id,p_revision:revision,p_patch:patch});
-      if(error?.code==="40001") throw new StaleServiceBoundaryError();
+      if(isFollowupCasRecusado(error)) throw new StaleServiceBoundaryError();
       if(error) throw new Error(error.message);
       revisions.set(id,Number(data));
     },
@@ -850,6 +850,50 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (error) throw new Error(error.message);
     },
     async abrirAvisoRecuperacaoEsgotada(item) {
+      // ── A GUARDA DE ANONIMIZAÇÃO DESTA PORTA (issue #701) ──
+      //
+      // Esta é a QUARTA porta para `appointment_recovery_review`, e era a única
+      // sem guarda: as outras três moram em SQL — `fn_meet_redact_contact`
+      // resolve os avisos abertos, `fn_appointment_recover` recusa contato
+      // anonimizado, e há um bloco de cura no histórico — e quem escreve este
+      // `kind` pelo TypeScript não as encontra.
+      //
+      // Sem guarda, a régua de um contato anonimizado chega ao fim e abre um
+      // aviso apontando para o compromisso que a anonimização tinha desligado:
+      // o aviso ressuscitando o vínculo que a LGPD mandou cortar.
+      //
+      // A checagem vem ANTES do insert porque o PostgREST não expressa
+      // `insert ... select` — é por isso que o adaptador pg de `turn-bridge.ts`
+      // guarda dentro da escrita, e este não pode. O que sustenta esta versão é
+      // a CASCATA: desde esta issue ela cancela `followup_enrollments` do mesmo
+      // contato, então uma régua viva aqui é uma régua que existia ANTES da
+      // redação (a corrida de um turno já reivindicado é o que a guarda cobre).
+      //
+      // Ler em duas consultas simples, e não com `contacts!inner(is_anonymized)`
+      // num join embutido, pelo mesmo motivo declarado em `lib/lgpd/cascata.ts`:
+      // o join embutido depende do nome da FK e nenhum teste local o exercita.
+      const { data: compromisso, error: compromissoErr } = await admin
+        .from("calendar_appointments")
+        .select("contact_id")
+        .eq("organization_id", item.organization_id)
+        .eq("id", item.appointment_id)
+        .maybeSingle();
+      if (compromissoErr) throw new Error(compromissoErr.message);
+
+      const contatoId = (compromisso as { contact_id: string | null } | null)?.contact_id ?? null;
+      if (contatoId) {
+        const { data: contato, error: contatoErr } = await admin
+          .from("contacts")
+          .select("is_anonymized")
+          .eq("organization_id", item.organization_id)
+          .eq("id", contatoId)
+          .maybeSingle();
+        // Leitura que falha não vira aviso: a dúvida não pode ser respondida com
+        // uma escrita que ressuscita vínculo cortado.
+        if (contatoErr) throw new Error(contatoErr.message);
+        if ((contato as { is_anonymized: boolean | null } | null)?.is_anonymized === true) return;
+      }
+
       const { error } = await admin.from("agent_inbox_items").insert({
         organization_id: item.organization_id,
         // Reusa o kind da 0224 (mesma família: "a recuperação desta falta

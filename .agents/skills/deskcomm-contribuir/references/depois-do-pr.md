@@ -2,8 +2,6 @@
 
 ## O que vai parecer erro e não é
 
-- **`Vercel` vermelho** — "Authorization required to deploy". A `main` faz deploy de produção e a
-  Vercel recusa construir PR de fork. **Não entra no gate de merge.** Ignore.
 - **Workflows parados "esperando aprovação"** — política do GitHub no primeiro PR de quem nunca
   contribuiu. Um mantenedor libera; do segundo PR em diante roda sozinho. Se demorar mais que um
   dia útil, comente no PR.
@@ -32,7 +30,10 @@ Atenção: `conclusion` vem **vazio** (não `null`) enquanto o run não termina 
 3. Não é seu? `Test timed out` em dezenas de arquivos = saturação; `address already in use` /
    `failed to start containers` = runner. Diga isso no PR com o trecho do log; não "conserte" o
    que não quebrou.
-4. Empurre o conserto na mesma branch — o PR atualiza sozinho. Não abra outro.
+4. Traga a branch antes (`git pull --no-rebase`): com "Allow edits by maintainers" ligado, a triagem
+   pode ter empurrado nela um conserto ou o merge da `main`. Depois empurre o conserto na mesma
+   branch — o PR atualiza sozinho. Não abra outro, e nunca use `--force`: ele apagaria o que foi
+   empurrado do lado de cá.
 
 ## O que acontece do lado de cá
 
@@ -43,5 +44,17 @@ faltar, resolve conflito preservando os seus commits, e responde com um veredito
 que **não** mediu. O merge e o corte da versão são do mantenedor; a versão só chega em quem instalou
 quando a tag sai — merge na `main` não é entrega.
 
-Crédito: os seus commits ficam com o seu nome. Se o PR foi reconstruído do lado de cá (acontece
-quando o conflito é grande), o commit final cita você como coautor.
+Onde o conserto do lado de cá entra: se o PR permite edição por mantenedores, ajustes e a `main`
+trazida para dentro podem ir na **sua** branch — sempre commit novo ou merge da `main`, nunca
+`--force` nem rebase, com aviso no PR antes. Vai numa branch nossa quando o PR não permite edição,
+ou quando o trabalho precisa separar escopo: tirar uma parte para outro PR, reimplementar, extrair.
+
+Crédito: os seus commits ficam com o seu nome. Quando o seu trabalho precisa ser levado de outro
+jeito — uma parte tirada para outro PR, reimplementado, ou reconstruído porque o PR trazia algo que
+não pode entrar —, o commit que leva o seu trabalho sai com **você como autor** (`--author`, com o
+nome e o e-mail que você usa nos seus próprios commits), inclusive quando ele junta o seu trabalho
+com um ajuste nosso.
+
+Se só parte do PR entrou, ele fica aberto enquanto o que sobrou tiver destino, escrito no próprio
+PR (uma decisão pendente, um acompanhamento, uma resposta sua, ou o destino de virar extensão). Se o resto foi descartado, o PR
+fecha dizendo o que entrou, com o link, e por que o resto não entra.

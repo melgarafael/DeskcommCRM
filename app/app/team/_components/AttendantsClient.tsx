@@ -11,7 +11,7 @@ import {
   useUpdateRouting,
   type AttendantAvailability,
 } from "@/hooks/team/useAttendants";
-import { isHeartbeatStale } from "@/lib/routing/eligibility";
+import { estaDePlantao } from "@/lib/routing/eligibility";
 import {
   ROUTING_MODES,
   type RoutingConfig,
@@ -90,14 +90,38 @@ function summarizeSchedule(windows: ScheduleWindow[], t: (texto: string) => stri
   return windows.map((w) => `${t(DOW_LABELS[w.dow] ?? "")} ${w.start}–${w.end}`).join(", ");
 }
 
+/**
+ * O selo diz DE PLANTÃO AGORA — não "o navegador está aberto".
+ *
+ * Ele lia `is_available && !isHeartbeatStale(...)`, e as duas metades mentiam:
+ * o sinal de vida nunca era emitido por ninguém, então o selo virava "Offline"
+ * ~15 min depois de qualquer clique e ficava assim para sempre; e a jornada
+ * publicada, que é o que de fato decide, não entrava na conta.
+ *
+ * Agora é `estaDePlantao` — a MESMA conta do roteador, sem a capacidade. A tela
+ * e o motor passam a dizer a mesma coisa sobre a mesma pessoa.
+ *
+ * "Fora do horário" ganha selo próprio porque é um terceiro estado, e confundi-lo
+ * com "desligado" é o que fazia o operador ir procurar defeito: quem está com a
+ * chave ligada às 22h não desligou nada — a jornada dele acabou, e volta amanhã.
+ */
 function StatusBadge({ attendant, now }: { attendant: Attendant; now: Date }) {
+  const t = useT();
   const a = attendant.availability;
-  const online = !!a?.is_available && !isHeartbeatStale(a.last_heartbeat_at, now);
-  return online ? (
-    <Badge variant="default">Online</Badge>
-  ) : (
+  const ligado = !!a?.is_available;
+  if (estaDePlantao({ isAvailable: ligado, schedule: a?.schedule }, now)) {
+    return <Badge variant="default">{t("De plantão")}</Badge>;
+  }
+  if (ligado) {
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        {t("Fora do horário")}
+      </Badge>
+    );
+  }
+  return (
     <Badge variant="outline" className="text-muted-foreground">
-      Offline
+      {t("Desligado")}
     </Badge>
   );
 }

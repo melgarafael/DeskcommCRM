@@ -59,8 +59,48 @@ export function ehIdentificadorTecnico(valor: string): boolean {
 }
 
 /**
- * O rótulo. Primeiro o que uma pessoa escolheu, depois o que o canal informou,
- * depois o número — e só então a admissão de que não se sabe o nome.
+ * O nome de gente: primeiro o que uma pessoa escolheu (`name` — "Editar
+ * contato", proposta de dado aprovada), depois o que o canal informou
+ * (`display_name` — o perfil do WhatsApp, gravado pela ingestão). `null` quando
+ * não há nome apresentável; quem chama decide o fallback. Quem FALA com a
+ * pessoa (prompt, lembrete) não pode cair no telefone, por isso esta metade
+ * existe separada do rótulo.
+ *
+ * ─── POR QUE `name` VEM PRIMEIRO, e o que teria de mudar para inverter ──────
+ *
+ * A revisão da issue #906 deixou a pergunta aberta: "e se `display_name` for o
+ * nome escolhido?". Ele não é, e quem responde é onde cada coluna é ESCRITA.
+ *
+ *  - `name` é a coluna editável pela pessoa: "Novo contato" e "Editar contato"
+ *    gravam nela, o CSV a preenche pela coluna `nome`, e é ela que
+ *    `lib/contacts/proposta-de-dado.ts` escreve quando um humano APROVA uma
+ *    proposta (`CAMPOS_PROPONIVEIS = ["email", "name", "phone_number"]` —
+ *    `display_name` não está na lista).
+ *  - `display_name` é escrito pela INGESTÃO (`fn_upsert_wa_contact`, a partir do
+ *    `pushName` do aparelho). Nenhum formulário do produto o edita: a única
+ *    aparição dele nas telas de contato é um `<dd>` de exibição em
+ *    `app/app/contacts/[id]/_client.tsx` e um cabeçalho de ordenação.
+ *
+ * ⚠️ UMA RESSALVA, porque "nenhuma tela escreve `display_name`" seria FALSO: o
+ * import de CSV escreve, pela coluna `apelido`/`nome_de_exibicao`
+ * (lib/contacts/csv.ts). Isso não muda a ordem — reforça: quem digitou um
+ * APELIDO numa planilha não pediu que ele vencesse o nome do cadastro.
+ *
+ * Inverter a ordem aqui, portanto, não é trocar uma linha: pediria antes dar
+ * editor a `display_name`, e aí a ficha teria dois campos chamados "nome".
+ */
+export function nomeDoContato(c: ContatoNomeavel | null | undefined): string | null {
+  if (!c) return null;
+  for (const bruto of [c.name, c.display_name]) {
+    const v = (bruto ?? "").trim();
+    if (v !== "" && !ehIdentificadorTecnico(v)) return v;
+  }
+  return null;
+}
+
+/**
+ * O rótulo. O nome de gente (`nomeDoContato`), depois o número — e só então a
+ * admissão de que não se sabe o nome.
  *
  * Celular BR aparece COM o nono dígito: `+553284793302` e `+5532984793302` são
  * a mesma pessoa, e o 9 é o que o atendente espera copiar.
@@ -71,11 +111,8 @@ export function rotuloDoContato(
 ): string {
   if (!c) return t(SEM_NOME);
 
-  const candidatos = [c.display_name, c.name];
-  for (const bruto of candidatos) {
-    const v = (bruto ?? "").trim();
-    if (v !== "" && !ehIdentificadorTecnico(v)) return v;
-  }
+  const nome = nomeDoContato(c);
+  if (nome) return nome;
 
   const tel = (c.phone_number ?? "").trim();
   if (tel !== "") return phoneForDisplay(tel);

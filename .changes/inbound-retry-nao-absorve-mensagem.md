@@ -1,1 +1,6 @@
+---
+impacto: nada_mudou
+secao: corrigido
+titulo: Novas mensagens não somem durante uma nova tentativa
+---
 Correção no atendimento automático: novas mensagens não são mais agrupadas em uma tentativa de atendimento já iniciada. Isso impedia respostas quando a gravação de memória falhava após um envio. O agrupamento inicial também fica restrito à mesma conversa.

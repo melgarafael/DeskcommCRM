@@ -49,6 +49,20 @@ export const PUBLIC_PATHS: RegExp[] = [
   // `GET` da listagem, não `/api/v1/contacts/[id]` nem `/import`, que ainda
   // não têm suporte a Bearer.
   /^\/api\/v1\/contacts$/,
+  // ENVIO SERVER-TO-SERVER. Mesma dualidade de `/api/v1/contacts` acima, com
+  // `mcp:write` em vez de `mcp:read`: sessão de navegador OU Bearer `dsk_…`,
+  // resolvidos por `lib/api/auth-dual.ts` DENTRO de cada rota, com a org saindo
+  // da linha do token e nunca do corpo. Existem porque quem envia por aqui não
+  // tem navegador: o gateway do CRM em absorção e integrações de servidor.
+  //
+  // Ancoradas com `$` de propósito. `/^\/api\/v1\/messages/` sem âncora daria
+  // carona a `/api/v1/messages/[id]`, que NÃO tem suporte a Bearer.
+  /^\/api\/v1\/messages$/,
+  /^\/api\/v1\/conversations\/open-with-contact$/,
+  // Upload outbound: primeiro passo do envio de MÍDIA por token. Sem ele, o
+  // cartão de fidelidade (a única das automações que não é texto) não teria
+  // como sair depois do corte de gateway.
+  /^\/api\/v1\/conversations\/[^/]+\/media$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

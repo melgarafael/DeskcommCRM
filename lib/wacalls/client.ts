@@ -78,17 +78,16 @@ export class WacallsClient {
     return (await res.json()) as T;
   }
 
-  /** POST /api/sessions — cria a conta (não pareia ainda). */
+  /**
+   * POST /api/sessions — cria a conta E JÁ INICIA O PAREAMENTO.
+   *
+   * `Manager.Create` chama `startPairing` por dentro: o QR começa a sair na
+   * `/api/events` antes de esta resposta chegar. Não existe mais um método para
+   * `POST /api/sessions/{sid}/pair`, e a ausência é deliberada — ver o
+   * cabeçalho de `wacallsSemConexao`.
+   */
   async createSession(name: string): Promise<{ id: string }> {
     return this.req("/api/sessions", { method: "POST", body: JSON.stringify({ name }) });
-  }
-
-  /**
-   * POST /api/sessions/{sid}/pair — inicia o pareamento (QR).
-   * Não devolve QR síncrono: chega por SSE (`session-qr`). 204 no sucesso.
-   */
-  async pairSession(sessionId: string): Promise<void> {
-    await this.req(`/api/sessions/${encodeURIComponent(sessionId)}/pair`, { method: "POST" });
   }
 
   /** GET /api/sessions — lista todas as contas conhecidas pelo processo. */
@@ -216,8 +215,44 @@ export function getWacallsClient(): WacallsClient | null {
   return new WacallsClient(url, token);
 }
 
+/**
+ * "websocket not connected" DE DENTRO DO WHATSMEOW — o que é, e o que não é.
+ *
+ * Medido em produção (2026-09-15, VPS hg): 60 s depois de o worker registrar
+ * "sessão pareada", `POST /sessions/{sid}/calls` respondeu
+ * `500 {"error":"usync devices: failed to send usync query: websocket not
+ * connected"}` — e seguiu respondendo isso por duas horas, com o contêiner
+ * mantendo uma conexão TCP ESTABELECIDA com a Meta o tempo todo. Não era
+ * queda de rede: eram DOIS clientes whatsmeow dentro de uma sessão só.
+ *
+ * A causa está no upstream (`internal/app/session/session.go`): `newSession`
+ * amarra o subsistema de chamadas ao cliente inicial
+ * (`s.calls = call.NewClient(wa.NewSocket(client), …)`), e `replaceClient` —
+ * o que `POST /api/sessions/{sid}/pair` executa — desconecta esse cliente,
+ * pendura um novo em `s.client` e NÃO refaz `s.calls`. Quem pareia pelo QR é
+ * o cliente novo (estado `open`, socket de pé); quem disca é o velho, morto.
+ * Só um restart do processo reconstrói a sessão com um cliente único.
+ *
+ * A rota de pareamento chamava `createSession` e `/pair` em sequência desde a
+ * primeira versão da feature (2026-09-08). Por isso este repositório NUNCA
+ * chama `/pair`: `POST /api/sessions` já inicia
+ * o pareamento por dentro, e um novo pareamento passa por apagar e criar a
+ * sessão (`app/api/v1/voice/sessions/pair/route.ts`). Com isso fora do caminho,
+ * o que resta deste texto é queda de rede de verdade — passageira, porque o
+ * whatsmeow reconecta sozinho, pela leitura do código; NÃO foi medida — e para
+ * ela a rota devolve 503 com `Retry-After`, que `lib/api/client.ts` já sabe
+ * repetir.
+ */
+export function wacallsSemConexao(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("websocket not connected");
+}
+
 export function wacallsFriendlyError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
+  if (wacallsSemConexao(err)) {
+    return "O número de voz está sem conexão com o WhatsApp neste momento. Aguarde alguns segundos e tente de novo; se continuar, desconecte o número e pareie de novo em Configurações › Canais.";
+  }
   if (msg.includes("wacalls_401") || msg.includes("wacalls_403")) {
     return "O serviço de chamada de voz recusou a credencial deste servidor. Confira WACALLS_API_TOKEN.";
   }
@@ -227,7 +262,9 @@ export function wacallsFriendlyError(err: unknown): string {
   if (msg.includes("not paired")) {
     return "O número de chamada de voz ainda não foi pareado. Configure em Configurações › Canais.";
   }
-  if (msg.includes("no such session")) {
+  // O upstream escreve `no session <id>` (`Manager.Get` falhando); a versão
+  // anterior só procurava "no such session", que ele nunca emite.
+  if (msg.includes("no such session") || /\bno session\b/.test(msg)) {
     return "Sessão de chamada de voz não encontrada.";
   }
   return "Não foi possível completar a chamada. Tente novamente em instantes.";

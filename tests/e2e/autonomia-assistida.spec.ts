@@ -321,7 +321,22 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
       chatId: "15551234567@c.us",
       text: "Maria, confirmei as informações e posso ajudar por aqui.",
     });
-    await expect(panel(page).getByText("Resposta aprovada enviada", { exact: true })).toBeVisible();
+    // ⛔ NÃO espere "Resposta aprovada enviada": esse rótulo é INALCANÇÁVEL.
+    //
+    // `sugestaoParaMostrar` trata `sent` como SEM_NADA_A_OFERECER de propósito
+    // (`lib/agent-engine/agent/sugestao-de-resposta.ts`): o texto enviado já está
+    // na conversa logo acima, e repeti-lo numa caixa desabilitada diria duas
+    // vezes a mesma coisa. Foi decidido nesta branch, em 927f5aad — e o teste
+    // continuou cobrando o estado anterior, reprovando em SEIS rodadas de CI
+    // seguidas sempre nesta linha, com a mensagem já entregue ao receiver.
+    //
+    // Não é tempo: subir o teto para 15s não mudou nada, porque o elemento não
+    // existe em instante nenhum.
+    //
+    // O que a tela faz agora é o que se prova aqui: a sugestão SAI e o painel
+    // volta ao neutro — título genérico, e nada a aprovar.
+    await expect(panel(page).getByText("Assistência do agente", { exact: true })).toBeVisible();
+    await expect(panel(page).getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
     await inbound(f, "Obrigada, pode continuar");
     const second = await generate(page);
     await panel(page)
@@ -355,9 +370,15 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
     const third = await generate(page);
     expect(third).not.toBe(second);
     await inbound(f, "O assunto mudou");
-    await expect(
-      panel(page).getByText("Sugestão obsoleta: a conversa mudou", { exact: true }),
-    ).toBeVisible();
+    // ⛔ E "Sugestão obsoleta: a conversa mudou" é inalcançável pela MESMA razão
+    // do bloco acima: `stale` também está em SEM_NADA_A_OFERECER. Quando a
+    // conversa muda, a sugestão deixa de servir e SAI da tela — o painel volta
+    // ao neutro em vez de anunciar que ficou obsoleta.
+    //
+    // Os três rótulos de `statuses` cobertos por esse conjunto (`sent`, `stale`,
+    // `dismissed`) são hoje código inalcançável no componente. Está anotado; o
+    // teste não é o lugar de decidir se eles voltam a aparecer.
+    await expect(panel(page).getByText("Assistência do agente", { exact: true })).toBeVisible();
     await expect(panel(page).getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
     await expect(panel(page).getByText("Resposta aprovada. Acompanhe o envio aqui.", { exact: true })).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });

@@ -252,6 +252,7 @@ export type Database = {
           created_at: string
           followup_attempts: number
           id: string
+          kind: string
           lead_id: string | null
           opened_at: string
           organization_id: string
@@ -270,6 +271,7 @@ export type Database = {
           created_at?: string
           followup_attempts?: number
           id?: string
+          kind?: string
           lead_id?: string | null
           opened_at?: string
           organization_id: string
@@ -288,6 +290,7 @@ export type Database = {
           created_at?: string
           followup_attempts?: number
           id?: string
+          kind?: string
           lead_id?: string | null
           opened_at?: string
           organization_id?: string
@@ -523,7 +526,7 @@ export type Database = {
         Row: {
           agent_id: string
           cases_enabled: boolean
-          channel_session_id: string
+          channel_session_id: string | null
           cost_budget_cents: number
           created_at: string
           created_by: string | null
@@ -560,7 +563,7 @@ export type Database = {
         Insert: {
           agent_id: string
           cases_enabled?: boolean
-          channel_session_id: string
+          channel_session_id?: string | null
           cost_budget_cents?: number
           created_at?: string
           created_by?: string | null
@@ -597,7 +600,7 @@ export type Database = {
         Update: {
           agent_id?: string
           cases_enabled?: boolean
-          channel_session_id?: string
+          channel_session_id?: string | null
           cost_budget_cents?: number
           created_at?: string
           created_by?: string | null
@@ -2219,6 +2222,7 @@ export type Database = {
           outcome_user_id: string | null
           owner_user_id: string | null
           reminder_sent_at: string | null
+          reminder_sent_offsets_minutes: number[]
           rescheduled_from_id: string | null
           revision: number
           revision_started_at: string
@@ -2283,6 +2287,7 @@ export type Database = {
           outcome_user_id?: string | null
           owner_user_id?: string | null
           reminder_sent_at?: string | null
+          reminder_sent_offsets_minutes?: number[]
           rescheduled_from_id?: string | null
           revision?: number
           revision_started_at?: string
@@ -2347,6 +2352,7 @@ export type Database = {
           outcome_user_id?: string | null
           owner_user_id?: string | null
           reminder_sent_at?: string | null
+          reminder_sent_offsets_minutes?: number[]
           rescheduled_from_id?: string | null
           revision?: number
           revision_started_at?: string
@@ -2657,6 +2663,7 @@ export type Database = {
           organization_id: string
           position: number
           reminder_enabled: boolean
+          reminder_extra_offsets_minutes: number[]
           reminder_minutes_before: number
           reminder_template_name: string | null
           requires_confirmation: boolean
@@ -2682,6 +2689,7 @@ export type Database = {
           organization_id: string
           position?: number
           reminder_enabled?: boolean
+          reminder_extra_offsets_minutes?: number[]
           reminder_minutes_before?: number
           reminder_template_name?: string | null
           requires_confirmation?: boolean
@@ -2707,6 +2715,7 @@ export type Database = {
           organization_id?: string
           position?: number
           reminder_enabled?: boolean
+          reminder_extra_offsets_minutes?: number[]
           reminder_minutes_before?: number
           reminder_template_name?: string | null
           requires_confirmation?: boolean
@@ -3488,8 +3497,11 @@ export type Database = {
           avatar_storage_path: string | null
           avatar_updated_at: string | null
           birthdate: string | null
+          birthday_md: number | null
           blocked_at: string | null
           blocked_reason: string | null
+          client_recognized_at: string | null
+          client_tag_by_system: string | null
           consent: Json
           cpf_encrypted: string | null
           cpf_hash: string | null
@@ -3499,6 +3511,7 @@ export type Database = {
           display_name: string | null
           email: string | null
           email_normalized: string | null
+          first_service_at: string | null
           force_human: boolean
           id: string
           is_anonymized: boolean
@@ -3525,8 +3538,11 @@ export type Database = {
           avatar_storage_path?: string | null
           avatar_updated_at?: string | null
           birthdate?: string | null
+          birthday_md?: number | null
           blocked_at?: string | null
           blocked_reason?: string | null
+          client_recognized_at?: string | null
+          client_tag_by_system?: string | null
           consent?: Json
           cpf_encrypted?: string | null
           cpf_hash?: string | null
@@ -3536,6 +3552,7 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           email_normalized?: string | null
+          first_service_at?: string | null
           force_human?: boolean
           id?: string
           is_anonymized?: boolean
@@ -3562,8 +3579,11 @@ export type Database = {
           avatar_storage_path?: string | null
           avatar_updated_at?: string | null
           birthdate?: string | null
+          birthday_md?: number | null
           blocked_at?: string | null
           blocked_reason?: string | null
+          client_recognized_at?: string | null
+          client_tag_by_system?: string | null
           consent?: Json
           cpf_encrypted?: string | null
           cpf_hash?: string | null
@@ -3573,6 +3593,7 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           email_normalized?: string | null
+          first_service_at?: string | null
           force_human?: boolean
           id?: string
           is_anonymized?: boolean
@@ -4298,6 +4319,7 @@ export type Database = {
           description: string | null
           id: string
           is_archived: boolean
+          is_client_pipeline: boolean
           is_default: boolean
           name: string
           organization_id: string
@@ -4312,6 +4334,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_archived?: boolean
+          is_client_pipeline?: boolean
           is_default?: boolean
           name: string
           organization_id: string
@@ -4326,6 +4349,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_archived?: boolean
+          is_client_pipeline?: boolean
           is_default?: boolean
           name?: string
           organization_id?: string
@@ -5060,6 +5084,218 @@ export type Database = {
           },
           {
             foreignKeyName: "event_service_origins_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      extension_artifacts: {
+        Row: {
+          byte_length: number
+          created_at: string
+          document: string
+          id: string
+          manifest: Json
+          sha256: string
+        }
+        Insert: {
+          byte_length: number
+          created_at?: string
+          document: string
+          id?: string
+          manifest: Json
+          sha256: string
+        }
+        Update: {
+          byte_length?: number
+          created_at?: string
+          document?: string
+          id?: string
+          manifest?: Json
+          sha256?: string
+        }
+        Relationships: []
+      }
+      extension_catalogs: {
+        Row: {
+          admitted_at: string
+          admitted_by: string | null
+          digest: string
+          id: string
+          origin: string
+          revision: number
+          snapshot: Json
+        }
+        Insert: {
+          admitted_at?: string
+          admitted_by?: string | null
+          digest: string
+          id?: string
+          origin: string
+          revision: number
+          snapshot: Json
+        }
+        Update: {
+          admitted_at?: string
+          admitted_by?: string | null
+          digest?: string
+          id?: string
+          origin?: string
+          revision?: number
+          snapshot?: Json
+        }
+        Relationships: []
+      }
+      extension_installations: {
+        Row: {
+          artifact_id: string
+          catalog_id: string
+          id: string
+          installed_at: string
+          installed_by: string | null
+          name: string
+          previous_artifact_id: string | null
+          publisher: string
+          removed_at: string | null
+          removed_by: string | null
+          revision: number
+          version: string
+        }
+        Insert: {
+          artifact_id: string
+          catalog_id: string
+          id?: string
+          installed_at?: string
+          installed_by?: string | null
+          name: string
+          previous_artifact_id?: string | null
+          publisher: string
+          removed_at?: string | null
+          removed_by?: string | null
+          revision?: number
+          version: string
+        }
+        Update: {
+          artifact_id?: string
+          catalog_id?: string
+          id?: string
+          installed_at?: string
+          installed_by?: string | null
+          name?: string
+          previous_artifact_id?: string | null
+          publisher?: string
+          removed_at?: string | null
+          removed_by?: string | null
+          revision?: number
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "extension_installations_artifact_id_fkey"
+            columns: ["artifact_id"]
+            isOneToOne: false
+            referencedRelation: "extension_artifacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "extension_installations_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "extension_catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "extension_installations_previous_artifact_id_fkey"
+            columns: ["previous_artifact_id"]
+            isOneToOne: false
+            referencedRelation: "extension_artifacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      extension_operations: {
+        Row: {
+          actor_id: string | null
+          admission_digest: string | null
+          admission_revision: number | null
+          catalog_id: string | null
+          created_at: string
+          entry: Json | null
+          error_code: string | null
+          id: string
+          installation_id: string | null
+          kind: string
+          name: string | null
+          organization_id: string | null
+          publisher: string | null
+          request: Json
+          request_fingerprint: string
+          result: Json | null
+          status: string
+          updated_at: string
+          version: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          admission_digest?: string | null
+          admission_revision?: number | null
+          catalog_id?: string | null
+          created_at?: string
+          entry?: Json | null
+          error_code?: string | null
+          id: string
+          installation_id?: string | null
+          kind: string
+          name?: string | null
+          organization_id?: string | null
+          publisher?: string | null
+          request: Json
+          request_fingerprint: string
+          result?: Json | null
+          status: string
+          updated_at?: string
+          version?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          admission_digest?: string | null
+          admission_revision?: number | null
+          catalog_id?: string | null
+          created_at?: string
+          entry?: Json | null
+          error_code?: string | null
+          id?: string
+          installation_id?: string | null
+          kind?: string
+          name?: string | null
+          organization_id?: string | null
+          publisher?: string | null
+          request?: Json
+          request_fingerprint?: string
+          result?: Json | null
+          status?: string
+          updated_at?: string
+          version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "extension_operations_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "extension_catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "extension_operations_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "extension_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "extension_operations_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -6900,6 +7136,54 @@ export type Database = {
           },
         ]
       }
+      organization_extensions: {
+        Row: {
+          configuration: Json
+          deactivated_by_removal_at: string | null
+          enabled: boolean
+          installation_id: string
+          organization_id: string
+          revision: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          configuration: Json
+          deactivated_by_removal_at?: string | null
+          enabled: boolean
+          installation_id: string
+          organization_id: string
+          revision: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          configuration?: Json
+          deactivated_by_removal_at?: string | null
+          enabled?: boolean
+          installation_id?: string
+          organization_id?: string
+          revision?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_extensions_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "extension_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_extensions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           ai_budget_cents: number | null
@@ -7156,6 +7440,54 @@ export type Database = {
           client_id?: string | null
           client_secret_encrypted?: string | null
           id?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      platform_meta_app: {
+        Row: {
+          app_secret_encrypted: string | null
+          id: number
+          updated_at: string
+          updated_by: string | null
+          verify_token_created_at: string | null
+          verify_token_encrypted: string | null
+        }
+        Insert: {
+          app_secret_encrypted?: string | null
+          id?: number
+          updated_at?: string
+          updated_by?: string | null
+          verify_token_created_at?: string | null
+          verify_token_encrypted?: string | null
+        }
+        Update: {
+          app_secret_encrypted?: string | null
+          id?: number
+          updated_at?: string
+          updated_by?: string | null
+          verify_token_created_at?: string | null
+          verify_token_encrypted?: string | null
+        }
+        Relationships: []
+      }
+      platform_settings: {
+        Row: {
+          id: number
+          signup_mode: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          id?: number
+          signup_mode?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          id?: number
+          signup_mode?: string
           updated_at?: string
           updated_by?: string | null
         }
@@ -8066,6 +8398,7 @@ export type Database = {
           invited_at: string | null
           invited_by: string | null
           organization_id: string
+          provisional_until_handover: boolean
           revoked_at: string | null
           role: string
           updated_at: string
@@ -8080,6 +8413,7 @@ export type Database = {
           invited_at?: string | null
           invited_by?: string | null
           organization_id: string
+          provisional_until_handover?: boolean
           revoked_at?: string | null
           role: string
           updated_at?: string
@@ -8094,6 +8428,7 @@ export type Database = {
           invited_at?: string | null
           invited_by?: string | null
           organization_id?: string
+          provisional_until_handover?: boolean
           revoked_at?: string | null
           role?: string
           updated_at?: string
@@ -8573,9 +8908,20 @@ export type Database = {
           google_sync_error: string | null
           google_synced_at: string | null
           google_synced_local_revision: number | null
+          guest_email: string | null
           id: string | null
           location_details: string | null
           location_kind: string | null
+          meeting_attempts: number | null
+          meeting_delivery: Json | null
+          meeting_delivery_job_id: string | null
+          meeting_last_error: string | null
+          meeting_next_attempt_at: string | null
+          meeting_ready_at: string | null
+          meeting_received_at: string | null
+          meeting_request_id: string | null
+          meeting_requested_at: string | null
+          meeting_state: string | null
           meeting_url: string | null
           needs_google_push: boolean | null
           notes: string | null
@@ -8586,6 +8932,7 @@ export type Database = {
           outcome_user_id: string | null
           owner_user_id: string | null
           reminder_sent_at: string | null
+          reminder_sent_offsets_minutes: number[] | null
           rescheduled_from_id: string | null
           revision: number | null
           revision_started_at: string | null
@@ -8626,9 +8973,20 @@ export type Database = {
           google_sync_error?: string | null
           google_synced_at?: string | null
           google_synced_local_revision?: number | null
+          guest_email?: string | null
           id?: string | null
           location_details?: string | null
           location_kind?: string | null
+          meeting_attempts?: number | null
+          meeting_delivery?: Json | null
+          meeting_delivery_job_id?: string | null
+          meeting_last_error?: string | null
+          meeting_next_attempt_at?: string | null
+          meeting_ready_at?: string | null
+          meeting_received_at?: string | null
+          meeting_request_id?: string | null
+          meeting_requested_at?: string | null
+          meeting_state?: string | null
           meeting_url?: string | null
           needs_google_push?: boolean | null
           notes?: string | null
@@ -8639,6 +8997,7 @@ export type Database = {
           outcome_user_id?: string | null
           owner_user_id?: string | null
           reminder_sent_at?: string | null
+          reminder_sent_offsets_minutes?: number[] | null
           rescheduled_from_id?: string | null
           revision?: number | null
           revision_started_at?: string | null
@@ -8679,9 +9038,20 @@ export type Database = {
           google_sync_error?: string | null
           google_synced_at?: string | null
           google_synced_local_revision?: number | null
+          guest_email?: string | null
           id?: string | null
           location_details?: string | null
           location_kind?: string | null
+          meeting_attempts?: number | null
+          meeting_delivery?: Json | null
+          meeting_delivery_job_id?: string | null
+          meeting_last_error?: string | null
+          meeting_next_attempt_at?: string | null
+          meeting_ready_at?: string | null
+          meeting_received_at?: string | null
+          meeting_request_id?: string | null
+          meeting_requested_at?: string | null
+          meeting_state?: string | null
           meeting_url?: string | null
           needs_google_push?: boolean | null
           notes?: string | null
@@ -8692,6 +9062,7 @@ export type Database = {
           outcome_user_id?: string | null
           owner_user_id?: string | null
           reminder_sent_at?: string | null
+          reminder_sent_offsets_minutes?: number[] | null
           rescheduled_from_id?: string | null
           revision?: number | null
           revision_started_at?: string | null
@@ -8739,6 +9110,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "calendar_appointments_meeting_delivery_job_id_fkey"
+            columns: ["meeting_delivery_job_id"]
+            isOneToOne: false
+            referencedRelation: "job_queue"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "calendar_appointments_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -8769,82 +9147,8 @@ export type Database = {
         ]
       }
       calendar_selected_external_events: {
-        Row: {
-          connection_id: string | null
-          created_at: string | null
-          ends_at: string | null
-          external_calendar_id: string | null
-          external_event_id: string | null
-          external_updated_at: string | null
-          ical_uid: string | null
-          id: string | null
-          is_all_day: boolean | null
-          organization_id: string | null
-          original_start_time: Json | null
-          recurring_event_id: string | null
-          seen_generation: string | null
-          starts_at: string | null
-          status: string | null
-          title: string | null
-          transparency: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          connection_id?: string | null
-          created_at?: string | null
-          ends_at?: string | null
-          external_calendar_id?: string | null
-          external_event_id?: string | null
-          external_updated_at?: string | null
-          ical_uid?: string | null
-          id?: string | null
-          is_all_day?: boolean | null
-          organization_id?: string | null
-          original_start_time?: Json | null
-          recurring_event_id?: string | null
-          seen_generation?: string | null
-          starts_at?: string | null
-          status?: string | null
-          title?: string | null
-          transparency?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          connection_id?: string | null
-          created_at?: string | null
-          ends_at?: string | null
-          external_calendar_id?: string | null
-          external_event_id?: string | null
-          external_updated_at?: string | null
-          ical_uid?: string | null
-          id?: string | null
-          is_all_day?: boolean | null
-          organization_id?: string | null
-          original_start_time?: Json | null
-          recurring_event_id?: string | null
-          seen_generation?: string | null
-          starts_at?: string | null
-          status?: string | null
-          title?: string | null
-          transparency?: string | null
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "calendar_external_events_connection_id_fkey"
-            columns: ["connection_id"]
-            isOneToOne: false
-            referencedRelation: "calendar_connections"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "calendar_external_events_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
+        Row: Omit<Database["public"]["Tables"]["calendar_external_events"]["Row"], "starts_at" | "ends_at" | "title"> & { starts_at: string; ends_at: string }
+        Relationships: Database["public"]["Tables"]["calendar_external_events"]["Relationships"]
       }
     }
     Functions: {
@@ -8901,9 +9205,26 @@ export type Database = {
         }
         Returns: Json
       }
+      fn_agenda_conexoes_google_do_dono: {
+        Args: { p_org: string; p_owner: string }
+        Returns: {
+          last_sync_at: string
+          status: string
+        }[]
+      }
       fn_agenda_minutes: {
         Args: { p_default: number; p_key: string; p_settings: Json }
         Returns: number
+      }
+      fn_agenda_ocupacao_google_do_dono: {
+        Args: { p_ate: string; p_de: string; p_org: string; p_owner: string }
+        Returns: {
+          connection_status: string
+          ends_at: string
+          starts_at: string
+          status: string
+          transparency: string
+        }[]
       }
       fn_agenda_settings: {
         Args: { p_config: Json; p_org: string }
@@ -8940,6 +9261,7 @@ export type Database = {
         }
         Returns: Json
       }
+      fn_aplicar_travas_de_suporte: { Args: never; Returns: undefined }
       fn_appointment_change: {
         Args: { p_id: string; p_org: string; p_patch: Json; p_revision: number }
         Returns: Json
@@ -9157,6 +9479,10 @@ export type Database = {
         Returns: Json
       }
       fn_decrypt_oauth: { Args: { ciphertext: string }; Returns: string }
+      fn_definir_cliente_pela_agenda: {
+        Args: { p_ligado: boolean; p_org: string }
+        Returns: Json
+      }
       fn_definir_logo_da_organizacao: {
         Args: { p_actor: string; p_org: string; p_path: string }
         Returns: number
@@ -9164,6 +9490,10 @@ export type Database = {
       fn_definir_marca_da_organizacao: {
         Args: { p_actor: string; p_marca: Json; p_org: string }
         Returns: number
+      }
+      fn_degraus_de_lembrete_validos: {
+        Args: { p_degraus: number[] }
+        Returns: boolean
       }
       fn_demanda_encerrar: {
         Args: {
@@ -9211,6 +9541,10 @@ export type Database = {
         Args: { p_contact: string; p_metadata: Json; p_platform: string }
         Returns: undefined
       }
+      fn_event_log_e_registro: {
+        Args: { p_event_type: string }
+        Returns: boolean
+      }
       fn_expurgar_auditoria_vencida: {
         Args: { p_limite?: number; p_retencao_dias?: number }
         Returns: number
@@ -9222,6 +9556,90 @@ export type Database = {
       fn_expurgar_nonces_de_oauth: {
         Args: { p_dias: number; p_lote?: number }
         Returns: number
+      }
+      fn_extensions_admit_catalog: {
+        Args: {
+          p_actor: string
+          p_digest: string
+          p_operation: string
+          p_snapshot: Json
+        }
+        Returns: Json
+      }
+      fn_extensions_assert_actor: {
+        Args: { p_actor: string; p_organization?: string }
+        Returns: undefined
+      }
+      fn_extensions_cancel_install: {
+        Args: { p_actor: string; p_operation: string }
+        Returns: Json
+      }
+      fn_extensions_configure: {
+        Args: {
+          p_actor: string
+          p_configuration: Json
+          p_enabled: boolean
+          p_expected_revision: number
+          p_installation: string
+          p_operation: string
+          p_organization: string
+        }
+        Returns: Json
+      }
+      fn_extensions_core_update_in_progress: { Args: never; Returns: boolean }
+      fn_extensions_fail_install: {
+        Args: { p_actor: string; p_error_code: string; p_operation: string }
+        Returns: Json
+      }
+      fn_extensions_fingerprint: { Args: { p_request: Json }; Returns: string }
+      fn_extensions_finish_install: {
+        Args: {
+          p_actor: string
+          p_byte_length: number
+          p_document: string
+          p_manifest: Json
+          p_operation: string
+          p_sha256: string
+        }
+        Returns: Json
+      }
+      fn_extensions_installation_counts: {
+        Args: { p_actor: string }
+        Returns: {
+          active_organizations: number
+          awaiting_reactivation: number
+          installation_id: string
+        }[]
+      }
+      fn_extensions_prepare_install: {
+        Args: {
+          p_actor: string
+          p_catalog: string
+          p_expected_installation_revision: number
+          p_name: string
+          p_operation: string
+          p_publisher: string
+          p_version: string
+        }
+        Returns: Json
+      }
+      fn_extensions_remove_installation: {
+        Args: {
+          p_actor: string
+          p_expected_installation_revision: number
+          p_installation: string
+          p_operation: string
+        }
+        Returns: Json
+      }
+      fn_extensions_revert_install: {
+        Args: {
+          p_actor: string
+          p_expected_installation_revision: number
+          p_installation: string
+          p_operation: string
+        }
+        Returns: Json
       }
       fn_finish_channel_connection: {
         Args: {
@@ -9431,6 +9849,7 @@ export type Database = {
       fn_mover_leads_em_lote: {
         Args: {
           p_lead_ids: string[]
+          p_lost_reason?: string
           p_organization_id: string
           p_stage_id: string
         }
@@ -9440,6 +9859,20 @@ export type Database = {
           pipeline_id: string
         }[]
       }
+      fn_nascer_lead_da_conversa: {
+        Args: {
+          p_contact: string
+          p_org: string
+          p_pipeline: string
+          p_source: string
+          p_source_metadata?: Json
+          p_stage: string
+          p_tags?: string[]
+          p_title: string
+        }
+        Returns: string
+      }
+      fn_pgrst_recusar_replay_do_gateway: { Args: never; Returns: undefined }
       fn_podar_fila_de_jobs: {
         Args: { p_limite?: number; p_retencao_dias?: number }
         Returns: number
@@ -9490,6 +9923,10 @@ export type Database = {
           p_org: string
           p_pointer: string
         }
+        Returns: string
+      }
+      fn_recalcular_cliente_do_contato: {
+        Args: { p_contact: string; p_emitir: boolean; p_org: string }
         Returns: string
       }
       fn_reply_action: {
@@ -9734,6 +10171,10 @@ export type Database = {
         }
         Returns: Json
       }
+      fn_situacao_conta_como_atendimento: {
+        Args: { p_status: string }
+        Returns: boolean
+      }
       fn_start_support: {
         Args: {
           p_actor: string
@@ -9755,6 +10196,21 @@ export type Database = {
         Returns: boolean
       }
       fn_support_write_allowed: { Args: { p_org: string }; Returns: boolean }
+      fn_tags_de_conversa_em_uso: {
+        Args: { p_org: string }
+        Returns: {
+          tag: string
+        }[]
+      }
+      fn_tags_normalizar: {
+        Args: {
+          p_de: string
+          p_para: string
+          p_remover: boolean
+          p_tags: string[]
+        }
+        Returns: string[]
+      }
       fn_upsert_wa_contact: {
         Args: {
           p_chat_id: string
@@ -9773,6 +10229,28 @@ export type Database = {
       fn_user_org_ids: { Args: never; Returns: string[] }
       fn_user_role_in: { Args: { p_org: string }; Returns: number }
       fn_user_role_in_org: { Args: { p_org: string }; Returns: string }
+      fn_vocabulario_de_tags: {
+        Args: { p_org: string }
+        Returns: {
+          cor: string
+          descricao: string
+          em_regras: number
+          no_vocabulario: boolean
+          tag: string
+          uso_em_contatos: number
+          uso_em_conversas: number
+          uso_em_leads: number
+        }[]
+      }
+      fn_vocabulario_de_tags_operar: {
+        Args: {
+          p_acao: string
+          p_destino: string
+          p_org: string
+          p_tag: string
+        }
+        Returns: Json
+      }
       fn_wake_channel_routing: {
         Args: { p_channel?: string; p_org: string }
         Returns: undefined
@@ -9809,418 +10287,61 @@ export type Database = {
       buckets: {
         Row: {
           allowed_mime_types: string[] | null
-          avif_autodetection: boolean | null
-          created_at: string | null
+          created_at: string
           file_size_limit: number | null
           id: string
           name: string
-          owner: string | null
-          owner_id: string | null
-          public: boolean | null
-          type: Database["storage"]["Enums"]["buckettype"]
-          updated_at: string | null
-          versioning_status: string
+          public: boolean
         }
         Insert: {
           allowed_mime_types?: string[] | null
-          avif_autodetection?: boolean | null
-          created_at?: string | null
+          created_at?: string
           file_size_limit?: number | null
           id: string
           name: string
-          owner?: string | null
-          owner_id?: string | null
-          public?: boolean | null
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string | null
-          versioning_status?: string
+          public?: boolean
         }
         Update: {
           allowed_mime_types?: string[] | null
-          avif_autodetection?: boolean | null
-          created_at?: string | null
+          created_at?: string
           file_size_limit?: number | null
           id?: string
           name?: string
-          owner?: string | null
-          owner_id?: string | null
-          public?: boolean | null
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string | null
-          versioning_status?: string
-        }
-        Relationships: []
-      }
-      buckets_analytics: {
-        Row: {
-          created_at: string
-          deleted_at: string | null
-          format: string
-          id: string
-          name: string
-          type: Database["storage"]["Enums"]["buckettype"]
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          deleted_at?: string | null
-          format?: string
-          id?: string
-          name: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          deleted_at?: string | null
-          format?: string
-          id?: string
-          name?: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      buckets_vectors: {
-        Row: {
-          created_at: string
-          id: string
-          type: Database["storage"]["Enums"]["buckettype"]
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          type?: Database["storage"]["Enums"]["buckettype"]
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      iceberg_namespaces: {
-        Row: {
-          bucket_name: string
-          catalog_id: string
-          created_at: string
-          id: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }
-        Insert: {
-          bucket_name: string
-          catalog_id: string
-          created_at?: string
-          id?: string
-          metadata?: Json
-          name: string
-          updated_at?: string
-        }
-        Update: {
-          bucket_name?: string
-          catalog_id?: string
-          created_at?: string
-          id?: string
-          metadata?: Json
-          name?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "iceberg_namespaces_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "buckets_analytics"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      iceberg_tables: {
-        Row: {
-          bucket_name: string
-          catalog_id: string
-          created_at: string
-          id: string
-          location: string
-          name: string
-          namespace_id: string
-          remote_table_id: string | null
-          shard_id: string | null
-          shard_key: string | null
-          updated_at: string
-        }
-        Insert: {
-          bucket_name: string
-          catalog_id: string
-          created_at?: string
-          id?: string
-          location: string
-          name: string
-          namespace_id: string
-          remote_table_id?: string | null
-          shard_id?: string | null
-          shard_key?: string | null
-          updated_at?: string
-        }
-        Update: {
-          bucket_name?: string
-          catalog_id?: string
-          created_at?: string
-          id?: string
-          location?: string
-          name?: string
-          namespace_id?: string
-          remote_table_id?: string | null
-          shard_id?: string | null
-          shard_key?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "iceberg_tables_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "buckets_analytics"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "iceberg_tables_namespace_id_fkey"
-            columns: ["namespace_id"]
-            isOneToOne: false
-            referencedRelation: "iceberg_namespaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      migrations: {
-        Row: {
-          executed_at: string | null
-          hash: string
-          id: number
-          name: string
-        }
-        Insert: {
-          executed_at?: string | null
-          hash: string
-          id: number
-          name: string
-        }
-        Update: {
-          executed_at?: string | null
-          hash?: string
-          id?: number
-          name?: string
+          public?: boolean
         }
         Relationships: []
       }
       objects: {
         Row: {
-          archived_at: string | null
           bucket_id: string | null
-          created_at: string | null
+          created_at: string
           id: string
-          is_delete_marker: boolean
-          is_versioned: boolean
-          last_accessed_at: string | null
           metadata: Json | null
           name: string | null
           owner: string | null
-          owner_id: string | null
-          path_tokens: string[] | null
-          updated_at: string | null
-          user_metadata: Json | null
-          version: string | null
         }
         Insert: {
-          archived_at?: string | null
           bucket_id?: string | null
-          created_at?: string | null
+          created_at?: string
           id?: string
-          is_delete_marker?: boolean
-          is_versioned?: boolean
-          last_accessed_at?: string | null
           metadata?: Json | null
           name?: string | null
           owner?: string | null
-          owner_id?: string | null
-          path_tokens?: string[] | null
-          updated_at?: string | null
-          user_metadata?: Json | null
-          version?: string | null
         }
         Update: {
-          archived_at?: string | null
           bucket_id?: string | null
-          created_at?: string | null
+          created_at?: string
           id?: string
-          is_delete_marker?: boolean
-          is_versioned?: boolean
-          last_accessed_at?: string | null
           metadata?: Json | null
           name?: string | null
           owner?: string | null
-          owner_id?: string | null
-          path_tokens?: string[] | null
-          updated_at?: string | null
-          user_metadata?: Json | null
-          version?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "objects_bucketId_fkey"
+            foreignKeyName: "objects_bucket_id_fkey"
             columns: ["bucket_id"]
             isOneToOne: false
             referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      s3_multipart_uploads: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          id: string
-          in_progress_size: number
-          key: string
-          metadata: Json | null
-          owner_id: string | null
-          upload_signature: string
-          user_metadata: Json | null
-          version: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          id: string
-          in_progress_size?: number
-          key: string
-          metadata?: Json | null
-          owner_id?: string | null
-          upload_signature: string
-          user_metadata?: Json | null
-          version: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          id?: string
-          in_progress_size?: number
-          key?: string
-          metadata?: Json | null
-          owner_id?: string | null
-          upload_signature?: string
-          user_metadata?: Json | null
-          version?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "s3_multipart_uploads_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      s3_multipart_uploads_parts: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          etag: string
-          id: string
-          key: string
-          owner_id: string | null
-          part_number: number
-          size: number
-          upload_id: string
-          version: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          etag: string
-          id?: string
-          key: string
-          owner_id?: string | null
-          part_number: number
-          size?: number
-          upload_id: string
-          version: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          etag?: string
-          id?: string
-          key?: string
-          owner_id?: string | null
-          part_number?: number
-          size?: number
-          upload_id?: string
-          version?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "s3_multipart_uploads_parts_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "s3_multipart_uploads_parts_upload_id_fkey"
-            columns: ["upload_id"]
-            isOneToOne: false
-            referencedRelation: "s3_multipart_uploads"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      vector_indexes: {
-        Row: {
-          bucket_id: string
-          created_at: string
-          data_type: string
-          dimension: number
-          distance_metric: string
-          id: string
-          metadata_configuration: Json | null
-          name: string
-          updated_at: string
-        }
-        Insert: {
-          bucket_id: string
-          created_at?: string
-          data_type: string
-          dimension: number
-          distance_metric: string
-          id?: string
-          metadata_configuration?: Json | null
-          name: string
-          updated_at?: string
-        }
-        Update: {
-          bucket_id?: string
-          created_at?: string
-          data_type?: string
-          dimension?: number
-          distance_metric?: string
-          id?: string
-          metadata_configuration?: Json | null
-          name?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "vector_indexes_bucket_id_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets_vectors"
             referencedColumns: ["id"]
           },
         ]
@@ -10230,132 +10351,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      allow_any_operation: {
-        Args: { expected_operations: string[] }
-        Returns: boolean
-      }
-      allow_only_operation: {
-        Args: { expected_operation: string }
-        Returns: boolean
-      }
-      can_insert_object: {
-        Args: { bucketid: string; metadata: Json; name: string; owner: string }
-        Returns: undefined
-      }
-      extension: { Args: { name: string }; Returns: string }
-      filename: { Args: { name: string }; Returns: string }
-      foldername: { Args: { name: string }; Returns: string[] }
-      get_common_prefix: {
-        Args: { p_delimiter: string; p_key: string; p_prefix: string }
-        Returns: string
-      }
-      get_size_by_bucket: {
-        Args: never
-        Returns: {
-          bucket_id: string
-          size: number
-        }[]
-      }
-      list_multipart_uploads_with_delimiter: {
-        Args: {
-          bucket_id: string
-          delimiter_param: string
-          max_keys?: number
-          next_key_token?: string
-          next_upload_token?: string
-          prefix_param: string
-        }
-        Returns: {
-          created_at: string
-          id: string
-          key: string
-        }[]
-      }
-      list_objects_with_delimiter: {
-        Args: {
-          _bucket_id: string
-          delimiter_param: string
-          max_keys?: number
-          next_token?: string
-          prefix_param: string
-          sort_order?: string
-          start_after?: string
-        }
-        Returns: {
-          created_at: string
-          id: string
-          last_accessed_at: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }[]
-      }
-      operation: { Args: never; Returns: string }
-      search: {
-        Args: {
-          bucketname: string
-          levels?: number
-          limits?: number
-          offsets?: number
-          prefix: string
-          search?: string
-          sortcolumn?: string
-          sortorder?: string
-        }
-        Returns: {
-          created_at: string
-          id: string
-          last_accessed_at: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }[]
-      }
-      search_by_timestamp: {
-        Args: {
-          p_bucket_id: string
-          p_level: number
-          p_limit: number
-          p_prefix: string
-          p_sort_column: string
-          p_sort_column_after: string
-          p_sort_order: string
-          p_start_after: string
-        }
-        Returns: {
-          created_at: string
-          id: string
-          key: string
-          last_accessed_at: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }[]
-      }
-      search_v2: {
-        Args: {
-          bucket_name: string
-          levels?: number
-          limits?: number
-          prefix: string
-          sort_column?: string
-          sort_column_after?: string
-          sort_order?: string
-          start_after?: string
-        }
-        Returns: {
-          created_at: string
-          id: string
-          key: string
-          last_accessed_at: string
-          metadata: Json
-          name: string
-          updated_at: string
-        }[]
-      }
+      [_ in never]: never
     }
     Enums: {
-      buckettype: "STANDARD" | "ANALYTICS" | "VECTOR"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -10481,16 +10480,10 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
   storage: {
-    Enums: {
-      buckettype: ["STANDARD", "ANALYTICS", "VECTOR"],
-    },
+    Enums: {},
   },
 } as const
-

@@ -32,7 +32,7 @@
     { "id": "fnpoda", "lane": "banco", "col": 1, "type": "database", "label": "fn_podar_fila_de_jobs (definer)", "sublabel": "terminais done/failed/dead · piso 7d no corpo · anti-join ANTES do limit" },
     { "id": "fnexpurgo", "lane": "banco", "col": 2, "type": "database", "label": "fn_expurgar_auditoria_vencida (definer)", "sublabel": "sem seletor de linha · piso 90d no corpo · revogada de anon/authenticated" },
     { "id": "fila", "lane": "banco", "col": 3, "type": "database", "label": "job_queue", "sublabel": "pending/running NUNCA saem — têm trabalho dentro" },
-    { "id": "auditlog", "lane": "banco", "col": 4, "type": "database", "label": "api_audit_log", "sublabel": "append-only no SCHEMA: ninguém tem GRANT de DELETE, nem service_role" },
+    { "id": "auditlog", "lane": "banco", "col": 4, "type": "database", "label": "api_audit_log", "sublabel": "append-only no SCHEMA: anon, authenticated e service_role sem UPDATE/DELETE/TRUNCATE (0258)" },
     { "id": "cascata", "lane": "banco", "col": 5, "type": "database", "label": "send_ledger / before_send_traces", "sublabel": "on delete cascade — parte do conserto, e os consumidores falham FECHADO" },
     { "id": "avisos", "lane": "banco", "col": 6, "type": "database", "label": "agent_inbox_items (job_dead, status='open')", "sublabel": "o aviso aberto É o dono: o job que ele aponta não é podado" },
 

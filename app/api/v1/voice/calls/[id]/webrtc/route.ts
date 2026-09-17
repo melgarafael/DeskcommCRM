@@ -16,7 +16,16 @@ import { podeEncerrar, resolveVoiceCall } from "@/lib/wacalls/calls";
 
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({ sdpOffer: z.string().min(1) });
+/**
+ * `aba` é um identificador aleatório por aba do navegador (`sessionStorage`),
+ * sem dado pessoal. Vai para o audit para responder, no banco, "quantas abas
+ * abriram áudio nesta ligação?" — a pergunta que o incidente de 2026-09-15 não
+ * conseguia responder sem o console de quem ligou.
+ */
+const bodySchema = z.object({
+  sdpOffer: z.string().min(1),
+  aba: z.string().uuid().optional(),
+});
 
 export async function POST(
   req: Request,
@@ -70,7 +79,7 @@ export async function POST(
       resourceType: "voice_call",
       resourceId: id,
       requestId,
-      metadata: { contact_id: call.contactId },
+      metadata: { contact_id: call.contactId, aba: parsed.data.aba ?? null },
     });
     return ok({ sdpAnswer }, { requestId });
   } catch (err) {

@@ -42,6 +42,8 @@ owner: Rafael Melgaço
 
 > **Para o epic-executor**: leia este arquivo inteiro antes de qualquer wave. As stories estão em ordem de dependência. Cada story = 1 wave. Não pular ordem mesmo que pareça independente — `Deps:` é lei. Este epic constrói a camada **cross-tenant** sob o sub-domínio `admin.deskcomm.com`. Toda query depende de `fn_is_platform_admin()` retornando `true` pra bypassar RLS, conforme Spec 01 §3.4 e §3.6 (T-04). Nada aqui pode vazar pra `/app` regular.
 
+> **Registro de 2026-04-28.** Escrito quando o alvo de deploy era a Vercel; hoje o CRM é self-host em VPS (ver [`docs/runbooks/deploy.md`](../../runbooks/deploy.md)). O corpo não foi reescrito — onde ele conta com recursos da plataforma (multi-domain, password protection), é registro daquele alvo, não caminho disponível.
+
 ## 1. Objetivo
 
 Entregar o Super-Admin Platform completo: 14 rotas cross-tenant em `admin.deskcomm.com` que permitem ao operador BPO P2 (Spec 01 §3.4) triagem, observabilidade, impersonate, suspensão de tenants, audit cross-tenant, gestão de LGPD/incidents/usage cross-tenant e visibilidade read-only dos `platform_admins`. Inclui inbox unificada cross-tenant via `fn_is_platform_admin()` bypass de RLS e 3 canais realtime dedicados (`admin-inbox-{platform_admin_id}`, `tenant-health-{tenant_id}`, `alerts-platform`).

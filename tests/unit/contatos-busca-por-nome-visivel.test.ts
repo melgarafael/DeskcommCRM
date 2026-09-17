@@ -8,10 +8,17 @@
  * ali, e o motivo era uma coluna faltando no `OR` da busca.
  *
  * Contato que entra pelo WhatsApp nasce só com `display_name` (o pushName do
- * aparelho); `name` fica nulo até alguém editar à mão. A UI inteira prefere
- * `display_name` (ver `resolveContactName`). A busca olhava só `name`, `email` e
- * `phone_number` — ou seja, ignorava justamente o nome que a pessoa lê na tela e
- * digita no campo de busca.
+ * aparelho); `name` fica nulo até alguém editar à mão. A busca olhava só `name`,
+ * `email` e `phone_number` — ou seja, ignorava justamente o nome que a pessoa lê
+ * na tela e digita no campo de busca.
+ *
+ * ⚠️ O QUE ESTE ARQUIVO NÃO AFIRMA. Esta linha já dizia "a UI inteira prefere
+ * `display_name` (ver `resolveContactName`)", e a afirmação envelheceu inteira
+ * na issue #906, que inverteu a precedência: quem decide o nome exibido é
+ * `nomeDoContato` (lib/contacts/rotulo-do-contato.ts), e a ordem em vigor se lê
+ * ali, não aqui. O que justifica `display_name` no OR não é a ordem — é o DADO:
+ * ela é a única coluna preenchida em 15 dos 33 contatos desta instalação, e essa
+ * razão continua verdadeira com a ordem invertida.
  *
  * O teste é sobre o FILTRO montado, não sobre o resultado do banco: é a decisão
  * que estava errada, e é ela que precisa ficar vigiada.

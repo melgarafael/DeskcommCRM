@@ -123,6 +123,153 @@ describe("apiClient", () => {
     expect(e.message).not.toMatch(/aborted without reason/i);
     expect(e.message).toMatch(/\d+ms/);
   }, 10_000);
+
+  /**
+   * Timeout numa ESCRITA não é "não aconteceu" — é "não sei".
+   *
+   * O servidor não cancela o trabalho quando o cliente desiste: ele termina e
+   * devolve para ninguém. Retentar executa a escrita de novo.
+   *
+   * Medido (issue #783): "Testar agente" leva ~14,5s de modelo contra um
+   * timeout padrão de 10s. Um clique virava até TRÊS execuções completas do
+   * LLM, as três pagas, nenhuma devolvida à tela.
+   */
+  function abortaSempre() {
+    return (_url: string, init: { signal: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+      });
+  }
+
+  it("t9: POST que estoura o tempo NÃO é repetido — a escrita pode ter acontecido", async () => {
+    fetchMock.mockImplementation(abortaSempre());
+
+    await apiClient.post("/x", { a: 1 }, { timeoutMs: 5 }).catch(() => undefined);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("t9b: PATCH e DELETE seguem a mesma regra", async () => {
+    for (const chamar of [
+      () => apiClient.patch("/x", { a: 1 }, { timeoutMs: 5 }),
+      // `delete(path, body?, opts?)` — o `body` opcional entrou no meio quando a
+      // rota de cancelar agendamento passou a exigir motivo. Escrito como
+      // `delete("/x", { timeoutMs: 5 })`, este objeto virava CORPO e o `opts`
+      // ficava vazio: o caso rodava com o prazo padrão e passava porque o
+      // padrão de então (10s) cabia no `testTimeout` de 15s — media a contagem
+      // de tentativas, nunca o prazo que dizia estar medindo.
+      () => apiClient.delete("/x", undefined, { timeoutMs: 5 }),
+    ]) {
+      fetchMock.mockClear();
+      fetchMock.mockImplementation(abortaSempre());
+      await chamar().catch(() => undefined);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("t10: GET que estoura o tempo CONTINUA sendo repetido — ler de novo é barato e seguro", async () => {
+    fetchMock.mockImplementation(abortaSempre());
+
+    await apiClient.get("/x", { timeoutMs: 5 }).catch(() => undefined);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("t11: 429 num POST segue retentando — ali o servidor DISSE que não processou", async () => {
+    // A regra nova é sobre incerteza, não sobre método: um 429 é resposta, e
+    // resposta não deixa dúvida sobre o que aconteceu.
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(429, { error: {} }, { "Retry-After": "0" }))
+      .mockResolvedValueOnce(jsonResponse(200, { data: { ok: true } }));
+
+    await apiClient.post("/x", { a: 1 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("t11b: 503 com Retry-After num POST também repete, esperando o que o servidor pediu", async () => {
+    // Contrato do discador: `POST /api/v1/voice/calls` responde 503
+    // `wacalls_not_connected` + `Retry-After` quando o WaCalls diz "websocket
+    // not connected" (o erro nasce ANTES de qualquer <call> sair, então repetir
+    // é seguro). O comportamento do cliente já existia; este caso o PRENDE,
+    // para a rota não depender de um retry que alguém poderia tirar.
+    //
+    // `Retry-After: "1"`, e não "0": `parseRetryAfterSeconds` descarta zero e
+    // cai no backoff, e o caminho que honra o valor do servidor ficaria sem
+    // medida.
+    vi.useFakeTimers();
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(
+          503,
+          { error: { code: "wacalls_not_connected", message: "sem conexão" } },
+          { "Retry-After": "1" },
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse(201, { data: { id: "c1" } }));
+
+    const pendente = apiClient.post<{ data: { id: string } }>("/api/v1/voice/calls", {
+      contactId: "x",
+    });
+
+    await vi.advanceTimersByTimeAsync(900);
+    expect(fetchMock, "repetiu antes do Retry-After").toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pendente).toEqual({ data: { id: "c1" } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * O ORÇAMENTO DE ESPERA DA ESCRITA (o vermelho de `followup-dossie:190`).
+   *
+   * Enquanto o método mutante era retentado, uma escrita tinha 10s + backoff +
+   * 10s + backoff + 10s ≈ 30,6s de parede. Parar de repetir era certo; o que
+   * passou despercebido é que a repetição também era o PRAZO — e ele caiu para
+   * 10s em toda mutação do produto de uma vez só.
+   *
+   * Medido no trace do CI (run 34876435491): `POST …/pause` cortado em
+   * 9999,558ms com `net::ERR_ABORTED` e UMA tentativa, num job onde os testes
+   * vizinhos correram mais rápido que na `main`. Quem desistiu foi o navegador.
+   *
+   * Estes dois casos prendem os dois prazos, que são diferentes de propósito:
+   * escrever espera 30s (desistir não cancela nada no servidor — só perde a
+   * resposta), ler desiste em 10s (a tela não fica presa, e a leitura é
+   * repetida, então o orçamento dela não mudou).
+   */
+  it("t12: escrita só desiste depois de 30s — aos 10s ela ainda está de pé", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(abortaSempre());
+
+    const desfecho = vi.fn();
+    void apiClient.post("/x", { a: 1 }).then(desfecho, desfecho);
+
+    // 10s é o prazo da LEITURA. Se ele estiver valendo aqui, a escrita já
+    // morreu neste ponto — que é exatamente o defeito.
+    await vi.advanceTimersByTimeAsync(10_500);
+    expect(desfecho).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(desfecho).toHaveBeenCalled();
+    // E continua sem repetir: o prazo mudou, a regra do #787 não.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("t13: leitura continua desistindo aos 10s — ela é repetida, prender a tela não paga", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(abortaSempre());
+
+    const desfecho = vi.fn();
+    void apiClient.get("/x").then(desfecho, desfecho);
+
+    // Aos 10,5s a primeira já estourou e a segunda tentativa começou.
+    await vi.advanceTimersByTimeAsync(10_500);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(desfecho).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });
 
 /**

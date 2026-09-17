@@ -1,6 +1,6 @@
 # Supabase CLI config — DeskcommCRM
 # Docs: https://supabase.com/docs/guides/cli/config
-# Este arquivo é versionado. Segredos vivem em .env.local / Vercel.
+# Este arquivo é versionado. Segredos vivem em .env.local (dev) ou no .env da instalação.
 
 project_id = "deskcomm-crm"
 
@@ -14,6 +14,18 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
+
+# pg15 = o PISO que prometemos suportar, e é o servidor que o contribuidor pega
+# ao rodar `supabase start` — o mesmo que o job `invariants` do CI mede por
+# padrão (`scripts/test-db.sh`, via `TEST_DB_IMAGE`). Ficou em 17 por um tempo,
+# empurrado pelos 9 `GRANT … MAINTAIN` que o `pg_dump` do baseline emitiu
+# sozinho; a #422 tirou os tokens e o piso voltou. Quem guarda esta linha é
+# tests/unit/baseline-no-piso-do-postgres.test.ts.
+#
+# O e2e (e este arquivo) FICAM no piso de propósito (issue #454): é o job mais
+# caro do CI, e rodá-lo nas duas majors dobraria o custo do que a matriz do
+# `invariants` já cobre em pg15 E pg17. A major dói no DDL do `baseline.sql`,
+# que é o que aquela matriz mede duas vezes.
 major_version = 15
 
 [db.pooler]

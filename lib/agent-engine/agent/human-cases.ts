@@ -1,4 +1,5 @@
 import { currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
+import { TIPOS_DE_CASO, type TipoDeCaso } from "@/lib/ai/case-copy";
 /**
  * Casos humanos (spec 15) — o loop assíncrono IA↔humano quando o agente esbarra
  * num bloqueio que só um humano resolve (aprovar desconto, confirmar política,
@@ -58,11 +59,25 @@ export type CaseEventKind =
   | 'cancelled'
   | 'agent_noted';
 
+/**
+ * A tupla que o `z.enum` exige, derivada de `TIPOS_DE_CASO` — a fonte única do
+ * vocabulário. Escrever a lista de novo aqui criaria a segunda cópia, e é assim
+ * que o seletor da tela e o que a IA pode escolher divergem.
+ */
+const TIPOS_DE_CASO_KEYS = Object.keys(TIPOS_DE_CASO) as [TipoDeCaso, ...TipoDeCaso[]];
+
 /** Whitelist EXATA do payload de open_human_case — mesmo padrão .strict() da F2-10/F3-02. */
 export const openHumanCaseInputSchema = z.strictObject({
   title: z.string().min(1).max(200),
   summary: z.string().min(1).max(4_000),
   blocker: z.string().min(1).max(1_000),
+  /**
+   * Do que o caso trata. OPCIONAL e com default: um modelo antigo, um clone com
+   * prompt diferente ou o fail-safe do guardrail continuam abrindo caso sem ele,
+   * e o caso cai em `outro` em vez de ser recusado. Classificação é conveniência
+   * de triagem — nunca pode ser motivo para o pedido do cliente não chegar.
+   */
+  kind: z.enum(TIPOS_DE_CASO_KEYS).optional(),
 });
 export type OpenHumanCaseInput = z.infer<typeof openHumanCaseInputSchema>;
 
@@ -156,6 +171,7 @@ export async function openCase(
     blocker: string;
     contextSnapshot?: Record<string, unknown>;
     source?: 'agent' | 'guardrail_autofallback';
+    kind?: string;
   },
 ): Promise<OpenCaseResult> {
   await guardServiceEffect();
@@ -165,8 +181,8 @@ export async function openCase(
   const { rows } = await db.query<{ case_id: string }>(
     `with new_case as (
        insert into agent_cases
-         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source)
-       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8
+         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source, kind)
+       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $11
         where not exists (
           select 1 from agent_cases
            where organization_id = $1 and conversation_id = $2
@@ -189,6 +205,9 @@ export async function openCase(
       source,
       OPEN_STATUSES,
       actorKind,
+      // O default mora aqui e no banco: se um caminho novo esquecer de passar, a
+      // linha nasce classificada como 'outro' em vez de nula.
+      input.kind ?? 'outro',
     ],
   );
 

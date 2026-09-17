@@ -406,3 +406,65 @@ describe("a etapa de entrada nunca é uma etapa de fechamento", () => {
     expect(rows[0]!.is_lost).toBe(false);
   });
 });
+
+describe("três mensagens seguidas NÃO viram três negócios", () => {
+  /**
+   * O defeito que este caso guarda foi medido em produção: um contato mandou
+   * três mensagens em sequência ("oi", "tudo bem?", "queria marcar") e nasceram
+   * TRÊS cards, os três no mesmo segundo, no mesmo funil e na mesma etapa.
+   *
+   * A causa era check-then-act: a consulta de "já existe aberto?" e o insert
+   * eram dois passos, e três execuções simultâneas passavam as três pela
+   * consulta antes de qualquer insert concluir.
+   *
+   * ⚠️ ESTE CASO SÓ VALE EM PARALELO. Chamar as três em sequência passaria mesmo
+   * com o defeito — cada uma esperaria a anterior terminar, e a segunda veria o
+   * card da primeira. É o `Promise.all` que reproduz o que o WhatsApp faz.
+   */
+  it("três entradas SIMULTÂNEAS do mesmo contato criam UM lead", async () => {
+    const contato = await criarContato(ORG_VIVA, "Ana Simultânea");
+
+    const resultados = await Promise.all(
+      [1, 2, 3].map(() =>
+        garantirLeadDaConversa(db, {
+          organizationId: ORG_VIVA,
+          contactId: contato,
+          conversationId: CONVERSA,
+          nomeDoContato: "Ana Simultânea",
+        }),
+      ),
+    );
+
+    const criados = resultados.filter((r) => r.criado).length;
+    expect(criados, `esperava 1 criação, veio ${JSON.stringify(resultados)}`).toBe(1);
+
+    // A prova que importa é a do BANCO, não a do retorno: um retorno pode dizer
+    // "não criei" e a linha existir assim mesmo.
+    const { rows } = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where organization_id = $1 and contact_id = $2",
+      [ORG_VIVA, contato],
+    );
+    expect(Number(rows[0]!.n), "mais de um card para o mesmo contato").toBe(1);
+  });
+
+  it("as duas que não criaram dizem `ja_existe`, e não `erro`", async () => {
+    // A diferença importa para quem depura: `erro` manda procurar defeito onde
+    // o sistema fez exatamente o certo.
+    const contato = await criarContato(ORG_VIVA, "Bia Simultânea");
+    const resultados = await Promise.all(
+      [1, 2].map(() =>
+        garantirLeadDaConversa(db, {
+          organizationId: ORG_VIVA,
+          contactId: contato,
+          conversationId: CONVERSA,
+          nomeDoContato: "Bia Simultânea",
+        }),
+      ),
+    );
+    const naoCriados = resultados.filter((r) => !r.criado);
+    expect(naoCriados).toHaveLength(1);
+    expect(naoCriados[0] && "motivo" in naoCriados[0] ? naoCriados[0].motivo : "?").toBe(
+      "ja_existe",
+    );
+  });
+});

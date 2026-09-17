@@ -22,6 +22,22 @@ export interface MetaWebhookSession {
 }
 
 /**
+ * A sessão oficial ATIVA da organização **e o número dela**.
+ *
+ * O par `(organization_id, meta_phone_number_id)` é a chave com que
+ * `resolveMetaCreds` acha a credencial que o operador salvou na tela — a mesma porta
+ * que `send`, `checkHealth` e `fetchInboundMedia` já usam. Mora aqui, e não na rota,
+ * porque nome de provider fora de `lib/channels/` viola o invariante 1 (o
+ * `lint-channels` pegou isso uma vez e a lição ficou); e existe como interface
+ * própria para não obrigar a sessão do WEBHOOK, que não tem número, a carregar um
+ * campo que ela nunca preenche.
+ */
+export interface MetaSessaoDaOrg extends MetaWebhookSession {
+  /** `channel_sessions.meta_phone_number_id` — `null` em base anterior à 0144. */
+  phoneNumberId: string | null;
+}
+
+/**
  * Sessão amarrada a este token de webhook. `null` = token desconhecido (a rota
  * responde 404 sem revelar por quê).
  *
@@ -74,12 +90,16 @@ export async function metaSessionByWebhookToken(
  */
 export async function metaSessionForOrg(
   organizationId: string,
-): Promise<MetaWebhookSession | null> {
+): Promise<MetaSessaoDaOrg | null> {
   const admin = createAdminClient();
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("id, organization_id, meta_waba_id")
+      // `meta_phone_number_id` entra na seleção porque é a segunda metade da chave da
+      // credencial (`organization_id` + ele): sem o número, quem chama não tem como
+      // pedir a credencial DESTA sessão e volta a olhar o ambiente — que é o defeito
+      // que a fatia F4 da #850 fecha.
+      .select("id, organization_id, meta_waba_id, meta_phone_number_id")
       .eq("organization_id", organizationId)
       .eq("provider", CHANNEL_PROVIDER_META)
       .order("created_at", { ascending: true })
@@ -94,5 +114,6 @@ export async function metaSessionForOrg(
     id: data.id,
     organizationId: data.organization_id,
     wabaId: data.meta_waba_id ?? null,
+    phoneNumberId: data.meta_phone_number_id ?? null,
   };
 }

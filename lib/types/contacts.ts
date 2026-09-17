@@ -27,6 +27,23 @@ export interface Contact {
   updated_at: string;
   last_activity_at: string | null;
   /**
+   * "Cliente desde": a data do primeiro horário que conta — o dia em que se combinou, ou o dia do atendimento quando ele for mais antigo —, nunca uma data futura.
+   * É `min(least(created_at, starts_at))` dos agendamentos que contam — as duas
+   * metades do `least`, e não só uma: chamar isto de "início do primeiro
+   * agendamento" é falso sempre que o horário é futuro (o caso comum de quem
+   * acabou de marcar), e chamar de "o dia em que se combinou" é falso no
+   * histórico importado, que é a razão de a coluna existir.
+   *
+   * Mantido só com `settings.crm.cliente_pela_agenda` ligado; desligado fica
+   * congelado, e aí nenhuma TELA o mostra (`ActiveOrg.cliente_pela_agenda`) —
+   * o export de LGPD e esta API continuam levando o valor congelado, porque é
+   * dado guardado. A tag `cliente` é etiqueta de trabalho, removível à mão.
+   *
+   * Derivado por trigger, e isso é do BANCO: um BEFORE UPDATE em `contacts`
+   * recusa (42501) a escrita de sessão nesta coluna. Não entra no PATCH.
+   */
+  first_service_at: string | null;
+  /**
    * Derivado (não é coluna): a conversa mais recente deste contato — atalho para o inbox.
    * Ausente é normal: contato criado à mão pode nunca ter conversado.
    */

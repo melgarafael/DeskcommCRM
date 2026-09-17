@@ -1,0 +1,55 @@
+-- 0241 — toda chamada de API passa a ter PRAZO para esperar uma trava
+--
+-- ## O incidente, em produção, 2026-09-12
+--
+-- `fn_meet_action` (o "Enviar link ao cliente") pede duas travas antes de
+-- decidir: `fn_service_lock` pelo contato e um `select ... for update` na
+-- conversa. No Postgres, `lock_timeout` é **0 por padrão — esperar para
+-- sempre**.
+--
+-- O cliente HTTP do produto desiste em 10s (`DEFAULT_TIMEOUT_MS`, em
+-- `lib/api/client.ts`). As duas coisas juntas produzem um defeito que nenhuma
+-- tem sozinha:
+--
+--   1. a pessoa clica; a chamada entra na fila de uma trava e espera;
+--   2. aos 10s o navegador desiste e mostra "Erro inesperado. Tente novamente."
+--      — sem identificador, porque o erro é do NAVEGADOR, não do servidor;
+--   3. a consulta **continua viva no banco**, ainda na fila;
+--   4. o botão volta a aceitar clique (o `isPending` do cliente já acabou);
+--   5. o clique seguinte empilha atrás da anterior.
+--
+-- Medido: dez chamadas simultâneas, Postgres a **357% de CPU**, load 7,33, num
+-- servidor onde app e worker estavam em 0,16%. Cancelá-las devolveu o banco a
+-- 1,47% em segundos. Três sintomas foram investigados por horas como problemas
+-- separados — o botão que "não funciona", o erro sem identificador e a carga no
+-- banco. Era um só.
+--
+-- ## Por que no PAPEL, e não na função
+--
+-- A primeira versão desta migration punha `set lock_timeout` no cabeçalho de
+-- `fn_meet_action`. Aí a varredura que veio junto
+-- (`tests/invariants/trava-de-definer-tem-prazo.test.ts`) mediu as irmãs e
+-- achou **sete** com a mesma forma — `fn_reply_action` (o "Aprovar e enviar" da
+-- sugestão de resposta), `fn_mesclar_contatos`, `fn_reserve_channel_connection`,
+-- `fn_set_channel_routing`, `fn_lgpd_anonymize_contact`, `fn_google_resolve` e
+-- `fn_google_selection`. Todas chamadas por telas que desistem em 10s.
+--
+-- Consertar uma a uma protegeria só as sete de hoje, e cada função nova nasceria
+-- com o defeito de volta — porque `lock_timeout` ausente não é uma linha errada,
+-- é uma linha que não existe, e ninguém revisa a ausência de uma linha.
+--
+-- `authenticator` é o papel que o PostgREST usa em TODA requisição da API; ele
+-- faz `set role` para `authenticated`/`anon` sem reiniciar os parâmetros da
+-- sessão, então o prazo vale para a requisição inteira. Uma linha cobre as sete,
+-- as futuras, e as que ninguém lembrou de olhar.
+--
+-- **O worker não é afetado**: ele usa `service_role`, que fica de fora de
+-- propósito — trabalho de fundo pode esperar, ninguém está olhando a tela.
+--
+-- **4 segundos** por medição: confortavelmente abaixo dos 10s do cliente, para a
+-- recusa CHEGAR na tela em vez de o navegador desistir antes; e muito acima de
+-- uma operação legítima, que leva milissegundos. Quem estourar levanta `55P03`
+-- (`lock_not_available`), que as rotas traduzem em linguagem de quem usa.
+
+alter role authenticator set lock_timeout = '4s';
+alter role authenticated set lock_timeout = '4s';

@@ -101,6 +101,10 @@ SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 # Precisa bater com o baseURL real do Playwright (ver comentário acima).
 NEXT_PUBLIC_APP_URL=http://localhost:$E2E_PORT
 
+# Catálogo servido pelas provas de extensões. A exceção HTTP só é aceita
+# quando o aplicativo também é local; o ambiente do produto deixa isto vazio.
+EXTENSIONS_LOCAL_CATALOG_ORIGIN=http://127.0.0.1:56331
+
 # Placeholders: 'next start' roda em NODE_ENV=production, e lib/env.ts exige
 # estas vars em produção. As specs não exercitam os serviços por trás delas.
 # Local e CI falham pelos mesmos motivos porque leem ESTE arquivo: o workflow

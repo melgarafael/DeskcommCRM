@@ -134,6 +134,8 @@ function makeDb(opts: DbOpts = {}): Registro {
 
   class Q implements PromiseLike<unknown> {
     private filtros: Array<[string, unknown]> = [];
+    /** `neq`: o oposto de `filtros`, guardado à parte para não virar igualdade. */
+    private negados: Array<[string, unknown]> = [];
     private colunas = "";
     private unica = false;
 
@@ -156,6 +158,10 @@ function makeDb(opts: DbOpts = {}): Registro {
     }
     is(col: string, val: unknown): this {
       this.filtros.push([col, val]);
+      return this;
+    }
+    neq(col: string, val: unknown): this {
+      this.negados.push([col, val]);
       return this;
     }
     order(): this {
@@ -186,7 +192,9 @@ function makeDb(opts: DbOpts = {}): Registro {
     }
 
     private casam(): Linha[] {
-      return linhas.filter((l) => this.filtros.every(([c, v]) => Array.isArray(v) ? v.includes(l[c]) : (l[c] ?? null) === v));
+      return linhas.filter((l) =>
+        this.filtros.every(([c, v]) => Array.isArray(v) ? v.includes(l[c]) : (l[c] ?? null) === v)
+        && this.negados.every(([c, v]) => (l[c] ?? null) !== v));
     }
 
     private executar(): { data: unknown; error: unknown } {
@@ -213,8 +221,13 @@ function makeDb(opts: DbOpts = {}): Registro {
         linhas.push(nova);
         return { data: nova, error: null };
       }
-      for (const l of this.casam()) Object.assign(l, this.patch);
-      return { data: null, error: null };
+      // As linhas casam ANTES do patch: aplicar primeiro mudaria o que casa.
+      const casadas = this.casam();
+      for (const l of casadas) Object.assign(l, this.patch);
+      // `update().select()` devolve as linhas afetadas, como o PostgREST. Sem
+      // `select()`, nada — é o que os chamadores antigos esperam.
+      if (!this.colunas) return { data: null, error: null };
+      return { data: this.unica ? (casadas[0] ?? null) : casadas, error: null };
     }
 
     then<R1 = unknown, R2 = never>(
@@ -494,6 +507,54 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
     expect(waha.stopSession).not.toHaveBeenCalled();
     expect(waha.startSession).not.toHaveBeenCalled();
     expect(db.escritas).toEqual([]);
+  });
+
+  /**
+   * O nome de 69 caracteres da 0228/0230. O WAHA recusa `name` acima de 54, e
+   * reconectar com ele pedia 400 três vezes (stop, logout, start).
+   */
+  const NOME_LONGO = `org_${ORG.replaceAll("-", "")}_${CANAL.replaceAll("-", "")}`;
+
+  it("⭐ nome fora do teto num canal que NUNCA pareou é curado e o transporte recebe o nome novo", () => {
+    expect(NOME_LONGO).toHaveLength(69);
+  });
+
+  it("⭐ canal que nunca pareou com nome de 69: renomeia e reconecta", async () => {
+    authOk();
+    const db = makeDb({ sessions: [canalQr({ status: "FAILED", waha_session_name: NOME_LONGO, phone_number: null })] });
+    const waha = transporteOk();
+    const { POST } = await import("@/app/api/v1/channel-sessions/[id]/reconnect/route");
+    const res = await POST(req(), ctx());
+
+    expect(res.status).toBe(200);
+    const novo = db.linhas[0]?.waha_session_name as string;
+    expect(novo).not.toBe(NOME_LONGO);
+    expect(novo.length).toBeLessThanOrEqual(54);
+    expect(waha.stopSession).toHaveBeenCalledWith(novo);
+    expect(waha.startSession).toHaveBeenCalledWith(novo);
+    expect(waha.stopSession).not.toHaveBeenCalledWith(NOME_LONGO);
+  });
+
+  /**
+   * ⭐ O caso que uma guarda só por `status` perderia. Este canal PAREOU (tem
+   * `phone_number`) e está parado. O WAHA guarda a credencial em
+   * `/app/.sessions/<name>`: renomear aqui aponta o CRM para uma sessão que não
+   * existe e abandona a que existe — o número some e só volta com QR novo.
+   */
+  it("⭐ canal PAREADO e parado com nome de 69: recusa, não renomeia, não toca o transporte", async () => {
+    authOk();
+    const db = makeDb({ sessions: [canalQr({ status: "STOPPED", waha_session_name: NOME_LONGO })] });
+    const waha = transporteOk();
+    const { POST } = await import("@/app/api/v1/channel-sessions/[id]/reconnect/route");
+    const res = await POST(req(), ctx());
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe("connection_session_name_too_long");
+    expect(db.linhas[0]?.waha_session_name).toBe(NOME_LONGO);
+    expect(db.escritas).toEqual([]);
+    expect(waha.stopSession).not.toHaveBeenCalled();
+    expect(waha.logoutSession).not.toHaveBeenCalled();
+    expect(waha.startSession).not.toHaveBeenCalled();
   });
 
   it("sem auth não chega no banco nem no transporte", async () => {

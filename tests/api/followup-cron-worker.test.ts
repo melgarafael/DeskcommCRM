@@ -12,6 +12,7 @@ import { NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runFollowupTick, createSupabaseAdminClient } from "@/lib/followup/engine";
+import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
 
 vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: "dev-secret", INTERNAL_CRON_SECRET: "" } }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
@@ -19,6 +20,9 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({ from:
 vi.mock("@/lib/followup/engine", () => ({
   runFollowupTick: vi.fn(),
   createSupabaseAdminClient: vi.fn(() => ({})),
+}));
+vi.mock("@/lib/followup/enviar-texto-fixo", () => ({
+  enviarTextoFixoPendente: vi.fn(async () => 0),
 }));
 
 function req(headers: Record<string, string> = {}): NextRequest {
@@ -37,6 +41,7 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("forbidden");
     expect(vi.mocked(runFollowupTick)).not.toHaveBeenCalled();
+    expect(vi.mocked(enviarTextoFixoPendente)).not.toHaveBeenCalled();
   });
 
   it("secret errado → 403", async () => {
@@ -44,6 +49,7 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     const res = await POST(req({ authorization: "Bearer wrong-secret" }));
     expect(res.status).toBe(403);
     expect(vi.mocked(runFollowupTick)).not.toHaveBeenCalled();
+    expect(vi.mocked(enviarTextoFixoPendente)).not.toHaveBeenCalled();
   });
 
   it("secret correto → 200, chama runFollowupTick e audita followup.worker_run", async () => {
@@ -57,9 +63,25 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     expect(body.data).toEqual(summary);
     expect(vi.mocked(createSupabaseAdminClient)).toHaveBeenCalledWith(expect.anything());
     expect(vi.mocked(createAdminClient)).toHaveBeenCalled();
+    expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "followup.worker_run", metadata: summary }),
     );
+  });
+
+  it("tick vazio ainda drena texto fixo pendente — senão o no_reply enfileira e a mensagem nunca sai", async () => {
+    vi.mocked(runFollowupTick).mockResolvedValue({
+      claimed: 0,
+      advanced: 0,
+      scheduled: 0,
+      failed: 0,
+      dead: 0,
+    });
+    const { POST } = await import("@/app/api/v1/cron/followup-flow-worker/route");
+    const res = await POST(req({ authorization: "Bearer dev-secret" }));
+    expect(res.status).toBe(200);
+    expect(vi.mocked(enviarTextoFixoPendente)).toHaveBeenCalled();
+    expect(vi.mocked(audit)).not.toHaveBeenCalled();
   });
 
   it("runFollowupTick lança → 500 internal_error, sem audit", async () => {
@@ -71,6 +93,7 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("internal_error");
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
+    expect(vi.mocked(enviarTextoFixoPendente)).not.toHaveBeenCalled();
   });
   it("leitura da confirmação indisponível recusa o tick sem auditar sucesso",async()=>{
     vi.mocked(createAdminClient).mockReturnValueOnce({rpc:vi.fn(async()=>({data:null,error:{message:"database down"}}))} as never);

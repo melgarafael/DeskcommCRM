@@ -227,4 +227,50 @@ describe("o count ausente não pode virar 'varri o catálogo inteiro'", () => {
     expect(r.produtos).toHaveLength(0);
     expect(r.mensagem ?? "").toMatch(/não há nada com esse nome/i);
   });
+
+  it("⭐ sem count, o TAMANHO do catálogo também não é afirmado — nada de 'tem null'", async () => {
+    // A varredura parcial era declarada, mas o tamanho NÃO foi medido: `total`
+    // segue `null`, e a frase o interpolava direto — o agente lia "o catálogo
+    // desta loja tem null". Afirmar o tamanho sem ter medido é a MESMA classe
+    // do defeito da issue: dizer o que não se sabe, no lugar onde a regra é
+    // declarar a dúvida.
+    const db = fakeDb(12000, 1000, true);
+    const r = await buscar(db, "produto que nao existe em lugar nenhum");
+    const msg = String(r.mensagem ?? "");
+
+    expect(msg, `afirmou um tamanho que ninguém mediu: ${msg}`).not.toMatch(/null/i);
+    // E, na dúvida, DECLARA a dúvida — ficar em silêncio não é o conserto.
+    expect(msg, `não declarou que o tamanho do catálogo é desconhecido: ${msg}`).toMatch(
+      /não informou|não sei|desconhecid/i,
+    );
+  });
+
+  it("⚠️ CONTROLE: com count, o tamanho medido continua sendo dito", async () => {
+    // Guarda contra um "conserto" que apagasse o número sempre: com `count`, o
+    // "10 mil de 200 mil" é justamente o que explica o corte a quem lê.
+    const db = fakeDb(200_000, 1000);
+    const r = await buscar(db, "produto que nao existe em lugar nenhum");
+
+    expect(String(r.mensagem ?? "")).toContain("200000");
+  });
+});
+
+/**
+ * A DESCRIÇÃO DA FERRAMENTA TAMBÉM É LIDA PELO AGENTE (nota 1 da issue #539).
+ *
+ * A descrição é prompt: o agente obedece ao TEXTO, não ao código. O #520 trocou
+ * o desfecho — lista vazia deixou de significar "a loja não tem" — e a
+ * descrição continuou afirmando exatamente isso, sem ressalva, desde o
+ * `bcd6c845`. Sem esta catraca, a frase volta a contradizer o desfecho na
+ * próxima edição de qualquer um dos dois.
+ */
+describe("a descrição não promete ausência incondicional", () => {
+  it("⭐ diz que lista vazia só é ausência quando a varredura chegou ao fim", () => {
+    const desc = crmSearchProducts.description;
+
+    expect(desc, `a descrição contradiz o próprio desfecho: ${desc}`).not.toMatch(
+      /lista vazia significa que a loja não tem/i,
+    );
+    expect(desc, "não avisa o agente sobre a varredura parcial").toMatch(/parcial/i);
+  });
 });

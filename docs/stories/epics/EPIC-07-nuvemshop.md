@@ -41,6 +41,8 @@ owner: Rafael Melgaço
 
 > **Para o epic-executor**: leia este arquivo inteiro antes de qualquer wave. Stories em ordem estrita de dependência. As 3 webhooks LGPD (`customer/redact`, `customer/data_request`, `store/redact`) **NÃO** estão neste epic — ficam em EPIC-08. Aqui entregamos a infraestrutura OAuth + adapter + 5 webhooks operacionais + sync workers + UI de configuração. EPIC-08 reusa `processWebhook`, `NuvemshopAdapter`, `tenant_integrations` e `webhook_events_log`.
 
+> **Registro de 2026-04-28.** Escrito quando o alvo de deploy era a Vercel; hoje o CRM é self-host em VPS (ver [`docs/runbooks/deploy.md`](../../runbooks/deploy.md)). O corpo não foi reescrito — mas `vercel.json` não existe neste repositório, e os crons são agendados pelo serviço `scheduler` do `docker-compose.prod.yml`.
+
 ## 1. Objetivo
 
 Conectar tenant DeskcommCRM a uma loja Nuvemshop via OAuth, ingerir pedidos/clientes/produtos via 5 webhooks operacionais + 3 sync workers iniciais, e materializar cada pedido como lead no pipeline "Pedidos" (criado por T-05). Resultado mensurável: ao final do epic, conectar uma loja real → ver pedidos abertos virando cards no Kanban em <30s do `order/created`.
@@ -419,7 +421,7 @@ exposes:
 #### Definition of Done
 
 - [ ] ACs passam
-- [ ] Vercel cron configurado em vercel.json
+- ~~Vercel cron configurado em vercel.json~~ — **superada**: `vercel.json` não existe neste repositório; o agendamento é do serviço `scheduler` do `docker-compose.prod.yml`
 - [ ] Commit `feat(EPIC-07): oauth-refresh cron worker [wave 3]`
 
 ---

@@ -269,17 +269,26 @@ describe("os elos que somem sem barulho", () => {
     );
   });
 
-  it("a faixa usa a MESMA lista de estados que o aviso", () => {
+  it("a tela não monta o select de canais à mão", () => {
     // Duas listas divergem com o tempo, e uma faixa que não aparece para um
     // estado que a Central considera grave ensina que a tela está tranquila
-    // quando não está.
-    // A tela chama a função do seam; é ela que carrega a lista. Uma tela que
-    // montasse o select à mão divergiria — e o invariante `canais-selecionaveis`
-    // reprova, porque foi assim que três seletores passaram a oferecer canal
-    // arquivado.
+    // quando não está. Quem impede a divergência é a tela PERGUNTAR ao seam.
+    //
+    // Que ela pergunta, e que entrega o retorno à faixa, quem prova é
+    // `tests/unit/faixa-de-conexao-caida-vem-do-seam.test.tsx`, EXECUTANDO o
+    // layout. Aqui ficou só a metade que não tem como ser executada: a AUSÊNCIA
+    // de uma segunda consulta. Até 2026-09-14 este caso também afirmava
+    // `toMatch(/await listarConexoesCaidas\(/)` sobre o texto-fonte — e uma
+    // asserção de texto não vigia comportamento, ela cimenta uma
+    // implementação: ficou vermelha quando a chamada entrou num `Promise.all`
+    // (PR #762), com o mesmo seam, o mesmo retorno e a mesma faixa; e ficaria
+    // verde com a chamada dentro de um `if (false)`.
+    //
+    // A negativa continua aqui porque é sobre o que NÃO existe no arquivo:
+    // nenhuma execução prova ausência, e foi uma consulta montada à mão que
+    // deixou três seletores oferecendo canal arquivado (invariante
+    // `canais-selecionaveis`).
     const layout = readFileSync("app/app/layout.tsx", "utf8");
-    expect(layout).toMatch(/await listarConexoesCaidas\(/);
-    expect(layout).toMatch(/<ConexaoCaidaBanner/);
     expect(layout, "tela montando o select de canais à mão").not.toMatch(
       /from\(\s*["'`]channel_sessions/,
     );

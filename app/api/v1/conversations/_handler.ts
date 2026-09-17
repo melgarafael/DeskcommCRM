@@ -16,6 +16,8 @@ import type {
   PatchConversationInput,
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
+import { normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
+import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
 
 /**
  * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
@@ -157,15 +159,21 @@ export async function listConversationsHandler(
   // a ordenação por tempo de espera sumiria **sem nenhum sintoma na tela**: a
   // lista continuaria populada, só que ordenada por atividade recente, e quem
   // espera desde ontem afundaria embaixo de quem escreveu agora.
-  const isQueue = q.comando?.includes("aguardando") ?? q.assigned_to === "unassigned";
-  const sortCol = isQueue ? "last_inbound_at" : "last_message_at";
+  const isQueue = ehAFila(q);
+  // A régua da Fila não se escreve aqui: vem de `ORDEM_DA_ESPERA`, a mesma que
+  // numera a posição da linha na tela e o número que o cliente ouve. Enquanto
+  // cada lugar tinha a sua cópia, trocar uma só fazia a lista ordenar por uma
+  // pergunta e a posição responder outra — sem sintoma nenhum, porque as duas
+  // telas continuam populadas e plausíveis.
+  const sortCol = isQueue ? ORDEM_DA_ESPERA.coluna : "last_message_at";
+  const ordem = isQueue ? ORDEM_DA_ESPERA.opcoes : ({ ascending: false, nullsFirst: false } as const);
   const asc = isQueue;
 
   let query = supabase
     .from("conversations")
     .select(SELECT_COLS)
     .eq("organization_id", ctx.organization_id)
-    .order(sortCol, { ascending: asc, nullsFirst: false })
+    .order(sortCol, ordem)
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
 
@@ -188,6 +196,15 @@ export async function listConversationsHandler(
   }
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
   if (q.tag) query = query.contains("tags", [q.tag]); // tags @> array[tag] (GIN)
+
+  // No BANCO, e não em memória: filtrar depois de paginar devolveria páginas curtas —
+  // e, quando a página inteira estivesse lida, uma lista vazia que a tela apresentava
+  // como caixa vazia, sem sequer oferecer "Carregar mais".
+  //
+  // ⛔ Compõe sobre `query`, que JÁ tem `.eq("organization_id", ctx.organization_id)`.
+  // Este handler usa o admin client, que passa por cima da RLS: esse filtro é a Única
+  // barreira. Consulta nova só para os não lidos nasceria sem barreira nenhuma.
+  if (q.unread) query = query.gt("unread_count_for_assignee", 0);
 
   if (q.assigned_to === "me") {
     if (ctx.actor.type !== "user") {
@@ -244,7 +261,16 @@ export async function listConversationsHandler(
     //
     // O controle que impede o degenerado está no teste: termo inexistente
     // continua devolvendo ZERO. Sem ele, "troque tudo por `*`" passaria.
-    const s = termoSeguroParaOr(q.search);
+    // Duas normalizações, em ordem, com responsabilidades diferentes:
+    //   normalizarTermoDeBusca → como a PESSOA digitou (espaço duplo, vírgula e
+    //                            ponto e vírgula viram o mesmo curinga)
+    //   termoSeguroParaOr      → a GRAMÁTICA do `or=` do PostgREST (não mexer)
+    //
+    // A ordem importa e a composição é segura: `termoSeguroParaOr` escapa `%` e
+    // `_` e troca `,()` por `*`, mas NÃO escapa `*` — então o curinga posto pela
+    // primeira chega inteiro ao banco. O telefone também sobrevive: `somenteDigitos`
+    // descarta tudo que não é dígito, inclusive o curinga.
+    const s = termoSeguroParaOr(normalizarTermoDeBusca(q.search));
 
     // ─── A BUSCA ALCANÇA O CONTATO, NÃO SÓ A ÚLTIMA MENSAGEM ──────────────
     //
@@ -472,7 +498,9 @@ export async function patchConversationHandler(
         ? "conversation.claimed"
         : input.status === "closed"
           ? "conversation.closed"
-          : "conversation.released";
+          : input.status === "archived"
+            ? "conversation.archived"
+            : "conversation.released";
     await audit({
       action,
       actorUserId: a.actorUserId,

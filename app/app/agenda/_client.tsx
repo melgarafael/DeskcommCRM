@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 import { EntradaDaAgenda } from "@/components/agenda/EntradaDaAgenda";
 import { VinculoDaMarcacao } from "@/components/agenda/VinculoDaMarcacao";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
@@ -18,6 +20,8 @@ import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
+import { useVinculoDaMarcacao } from "@/lib/agenda/vinculo-da-marcacao";
 import { Button } from "@/components/ui/button";
 import { PainelDeMarcacao } from "@/components/agenda/PainelDeMarcacao";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -73,6 +77,7 @@ export function AgendaClient({
   linkDeConfiguracaoDoGoogle,
   tiposIniciais,
   agendamentosIniciais,
+  podeMarcarEncaixe,
 }: {
   fusoDeApresentacao: string | null;
   googleConfigurado: boolean;
@@ -92,13 +97,47 @@ export function AgendaClient({
   }>;
   /** A semana corrente, resolvida no servidor: `GET /agendamentos` não existe. */
   agendamentosIniciais: Agendamento[];
+  /**
+   * Quem está logado pode MARCAR — o mesmo piso da rota (`requireRole("agent")`
+   * em `app/api/v1/agenda/agendamentos/route.ts`). É ele que liga o encaixe no
+   * painel: oferecer "Outro horário" a quem só lê seria oferecer um 403.
+   */
+  podeMarcarEncaixe: boolean;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
+  const router = useRouter();
   const [marcando, setMarcando] = React.useState(false);
-  const [contactId,setContactId]=React.useState("");
-  const [conversationId,setConversationId]=React.useState("");
-  const onContext=React.useCallback((contact:string,conversation:string)=>{setContactId(contact);setConversationId(conversation);setMarcando(true);},[]);
+  // O compromisso criado NESTA abertura do painel. Serve para levar a grade até
+  // ele quando o painel fechar por qualquer caminho — ver `ancoraAoFecharPainel`.
+  const [marcadoEm, setMarcadoEm] = React.useState<string | null>(null);
+  // QUEM SERÁ ATENDIDO. A regra inteira — e por que ela não é "limpar ao
+  // fechar" — está em `lib/agenda/vinculo-da-marcacao.ts`. Em uma frase: o
+  // painel abre com o vínculo que a ROTA carrega (`?contato=…&conversa=…`, o
+  // link "Marcar compromisso" do Inbox), e o que a pessoa escolhe dentro dele
+  // vive só enquanto ele está aberto.
+  const {
+    vinculo,
+    registrarRota: registrarVinculoDaRota,
+    reiniciar: reiniciarVinculo,
+    escolher: escolherVinculo,
+  } = useVinculoDaMarcacao();
+  const contactId = vinculo.contact;
+  const conversationId = vinculo.conversation;
+  const onContext = React.useCallback(
+    (contact: string, conversation: string) => {
+      // Só abre sozinho quando a rota TROUXE um cliente: a chamada sem cliente
+      // é a que avisa que a página deixou de ter contexto, e ela não é um
+      // pedido para marcar nada.
+      if (registrarVinculoDaRota({ contact, conversation })) setMarcando(true);
+    },
+    [registrarVinculoDaRota],
+  );
+  /** Abrir o painel do zero: o vínculo volta a ser o da rota, nunca o da vez anterior. */
+  const abrirMarcacao = React.useCallback(() => {
+    reiniciarVinculo();
+    setMarcando(true);
+  }, [reiniciarVinculo]);
   // O horário que veio de um CLIQUE NA GRADE. Preenchido, o painel abre já em
   // "confirmando" naquele instante; vazio, ele abre pedindo o dia, como sempre.
   const [horarioEscolhido, setHorarioEscolhido] = React.useState<HorarioLivre | null>(null);
@@ -134,6 +173,26 @@ export function AgendaClient({
   const [tipoId, setTipoId] = React.useState<string | null>(() => tiposIniciais[0]?.id ?? null);
   const tipo = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
   const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
+  /**
+   * No CELULAR a agenda abre no DIA, não na semana.
+   *
+   * Duas razões, e a segunda é consequência da primeira. A semana em 360px é
+   * ilegível — por isso a grade esconde as outras colunas abaixo de `md`. Mas o
+   * passo de navegação da semana é de SETE dias: quem visse um dia só e tocasse
+   * em avançar pularia a semana inteira, sem alcançar os outros seis. Abrindo no
+   * dia, o passo é 1 e cada toque anda um dia.
+   *
+   * Em `useEffect`, e não no estado inicial, porque `window` não existe no
+   * servidor: decidir a visão na primeira renderização faria o HTML do servidor
+   * discordar do cliente. Roda uma vez, na montagem, então não desfaz escolha
+   * de quem trocou a visão depois.
+   */
+  React.useEffect(() => {
+    // O aviso da regra é justo em geral; aqui trocar a visão É o ponto do efeito.
+    // A largura só existe no cliente, e decidir antes divergiria da hidratação.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (window.matchMedia("(max-width: 767px)").matches) setVisao("dia");
+  }, []);
   const [isolada, setIsolada] = React.useState<string | null>(null);
   const [ancora, setAncora] = React.useState(() => new Date());
 
@@ -173,7 +232,9 @@ export function AgendaClient({
   // nenhum, que é exatamente o que uma instalação fresca produz (a rota devolve
   // 422 porque ninguém está em `attendant_availability`).
   const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
-    marcando && tipo ? { event_type_id: tipo.id, de: janelaDeBusca.de, ate: janelaDeBusca.ate } : null,
+    marcando && tipo
+      ? { event_type_id: tipo.id, de: janelaDeBusca.de, ate: janelaDeBusca.ate }
+      : null,
   );
 
   const horariosPorDia = React.useMemo(() => {
@@ -209,7 +270,9 @@ export function AgendaClient({
           ? startOfWeek(ancora, { weekStartsOn: 0 })
           : startOfDay(ancora);
     const fim =
-      visao === "mes" ? addDays(endOfMonth(ancora), 1) : addDays(inicio, visao === "semana" ? 7 : 1);
+      visao === "mes"
+        ? addDays(endOfMonth(ancora), 1)
+        : addDays(inicio, visao === "semana" ? 7 : 1);
     return { de: inicio.toISOString(), ate: fim.toISOString() };
   }, [visao, ancora]);
 
@@ -292,7 +355,7 @@ export function AgendaClient({
       */}
       <React.Suspense fallback={null}>
         <AvisoDaConexaoGoogle />
-        <EntradaDaAgenda onContext={onContext}/>
+        <EntradaDaAgenda onContext={onContext} />
       </React.Suspense>
 
       <CartaoDaConexaoGoogle
@@ -350,7 +413,7 @@ export function AgendaClient({
             // escreveu, e vai anotada no PR.
             data-testid="novo-agendamento"
             title={tipo ? undefined : t("Cadastre um tipo de agendamento para começar")}
-            onClick={() => setMarcando(true)}
+            onClick={abrirMarcacao}
           >
             <CalendarPlus size={16} weight="bold" aria-hidden />
             <span>{t("Novo agendamento")}</span>
@@ -448,6 +511,34 @@ export function AgendaClient({
             // não usado reapareceria na PRÓXIMA marcação, que é de outro
             // cliente — convite para a pessoa errada, sem ninguém ter pedido.
             setEmailConvidado("");
+            // E o próprio cliente, que é o pior dos quatro a sobrar: medido numa
+            // instalação real em 2026-09-12, "Novo agendamento" abriu com um
+            // contato JÁ selecionado, herdado de uma abertura anterior feita a
+            // partir da conversa dele (`onContext` preenche os dois). Quem não
+            // reparasse marcaria o compromisso no nome de outra pessoa — e o
+            // campo parece preenchido de propósito, então não há o que estranhar.
+            //
+            // ⚠️ MAS NÃO É `setContactId("")`, e o `e2e` mediu a diferença:
+            // limpar no fechamento apaga também o contexto que a CONVERSA
+            // acabou de dar — `agenda-google-meet.spec.ts:196` e
+            // `agenda-presenca-recuperacao.spec.ts:312` reprovaram com
+            // `contact_id: null`, porque as duas fecham o painel só para
+            // navegar a grade até a semana certa, como uma pessoa faz.
+            //
+            // `reiniciarVinculo()` devolve o vínculo da ROTA: vazio quando a
+            // pessoa está na Agenda sem contexto (o defeito relatado), e o
+            // cliente da conversa quando ela chegou pelo link do Inbox.
+            reiniciarVinculo();
+            // ⛔ E LEVAR A GRADE ATÉ O QUE ACABOU DE NASCER.
+            //
+            // "Ver na agenda" já fazia isto; fechar no X, clicar fora ou apertar
+            // Esc, não — e a grade ficava na semana em que estava, sem o
+            // compromisso recém-criado, que quase sempre é de outra semana.
+            // ⚠️ O relato que puxou isto NÃO se confirmou (ver o módulo). O que
+            // sustenta é a simetria com o caso do botão, esse sim relatado.
+            const destino = ancoraAoFecharPainel(marcadoEm, startOfDay);
+            if (destino) setAncora(destino);
+            setMarcadoEm(null);
           }
         }}
       >
@@ -486,9 +577,17 @@ export function AgendaClient({
           className="flex w-full flex-col overflow-y-auto sm:max-w-3xl lg:max-w-[1040px] lg:overflow-hidden"
         >
           <SheetHeader>
-            <SheetTitle>{remarcandoId ? t("Remarcar agendamento") : t("Novo agendamento")}</SheetTitle>
+            <SheetTitle>
+              {remarcandoId ? t("Remarcar agendamento") : t("Novo agendamento")}
+            </SheetTitle>
           </SheetHeader>
-            {!remarcandoId?<VinculoDaMarcacao contactId={contactId} conversationId={conversationId} onChange={(contact,conversation)=>{setContactId(contact);setConversationId(conversation);}}/>:null}
+          {!remarcandoId ? (
+            <VinculoDaMarcacao
+              contactId={contactId}
+              conversationId={conversationId}
+              onChange={(contact, conversation) => escolherVinculo({ contact, conversation })}
+            />
+          ) : null}
           {tiposIniciais.length > 1 && (
             <div className="mt-4" data-testid="tipos-de-agendamento">
               <p className="mb-2 text-xs font-medium text-text-muted">{t("Tipo de agendamento")}</p>
@@ -508,7 +607,7 @@ export function AgendaClient({
                     )}
                   >
                     {opcao.nome}
-                    <span className="ml-1 opacity-70 tabular-nums">{opcao.duracaoMin}min</span>
+                    <span className="ml-1 tabular-nums opacity-70">{opcao.duracaoMin}min</span>
                   </button>
                 ))}
               </div>
@@ -524,7 +623,10 @@ export function AgendaClient({
             uma lista rolável de horários é um campo que ninguém vê.
           */}
           <div className="mt-4">
-            <label className="block text-xs font-medium text-text-muted" htmlFor="email-do-convidado">
+            <label
+              className="block text-xs font-medium text-text-muted"
+              htmlFor="email-do-convidado"
+            >
               {t("E-mail do convidado")}{" "}
               <span className="font-normal opacity-70">({t("opcional")})</span>
             </label>
@@ -566,7 +668,7 @@ export function AgendaClient({
                   // <primeira pessoa>" enquanto oferecia a jornada de outra —
                   // e marcava na agenda da primeira, que não tinha jornada.
                   pessoas.find((p) => p.id === tipo.donoId) ??
-                  pessoas[0] ?? { id: "", nome: "Você", trilha: 1 }
+                  pessoas[0] ?? { id: "", nome: t("Você"), trilha: 1 }
                 }
                 tipo={tipo.nome}
                 duracaoMin={tipo.duracaoMin}
@@ -591,6 +693,11 @@ export function AgendaClient({
                 fontesDefasadas={horarios?.fontes_defasadas}
                 googleCoberturaParcial={horarios?.google_cobertura_parcial}
                 horarioInicial={horarioEscolhido ?? undefined}
+                // O ENCAIXE é desta tela, e só dela: aqui quem marca é uma
+                // pessoa da equipe com sessão, que é exatamente o ator a quem a
+                // rota permite sair da grade. Vale também para REMARCAR, que é
+                // este mesmo painel com PATCH — e a rota aplica a mesma regra lá.
+                permiteEncaixe={podeMarcarEncaixe}
                 // ESTE é o fio que faltava. Sem ele o "Marcado ✓" era estado
                 // local do React e nenhuma linha nascia no banco.
                 onConfirmar={(instante) => {
@@ -612,7 +719,7 @@ export function AgendaClient({
                   // o 422 voltasse, e desfazer aquilo é pior do que não deixar
                   // sair. O campo já está vermelho e explicado quando isto corta.
                   if (emailConvidadoInvalido) {
-                    return Promise.reject(new Error("e-mail do convidado inválido"));
+                    return Promise.reject(new Error(t("e-mail do convidado inválido")));
                   }
                   // `|| undefined` e não a string vazia: campo em branco tem de
                   // ficar FORA do corpo, senão o PATCH leria "" como "apague o
@@ -620,7 +727,12 @@ export function AgendaClient({
                   const convidado = emailConvidadoLimpo || undefined;
                   if (remarcandoId) {
                     return remarcar
-                      .mutateAsync({ id: remarcandoId,revision:agendamentos.find(a=>a.id===remarcandoId)?.revision, starts_at: instante, guest_email: convidado })
+                      .mutateAsync({
+                        id: remarcandoId,
+                        revision: agendamentos.find((a) => a.id === remarcandoId)?.revision,
+                        starts_at: instante,
+                        guest_email: convidado,
+                      })
                       .then((r) => {
                         setRemarcandoId(null);
                         setMarcando(false);
@@ -631,13 +743,15 @@ export function AgendaClient({
                   return marcar
                     .mutateAsync({
                       event_type_id: tipo.id,
-                      contact_id:contactId||undefined,
-                      conversation_id:conversationId||undefined,
+                      contact_id: contactId || undefined,
+                      conversation_id: conversationId || undefined,
                       starts_at: instante,
                       guest_email: convidado,
                     })
                     .then((r) => {
                       setEmailConvidado("");
+                      // Guardado para o fechamento saber para onde levar a grade.
+                      setMarcadoEm(instante);
                       return r;
                     });
                 }}
@@ -689,7 +803,10 @@ export function AgendaClient({
                 return `${alvo.titulo}${quem}, ${format(new Date(alvo.comeca), t("d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}.`;
               })()}
             </p>
-            <label className="block text-xs font-medium text-text-muted" htmlFor="motivo-do-cancelamento">
+            <label
+              className="block text-xs font-medium text-text-muted"
+              htmlFor="motivo-do-cancelamento"
+            >
               {t("Por que está cancelando?")}
             </label>
             <textarea
@@ -714,10 +831,16 @@ export function AgendaClient({
                 onClick={() => {
                   const id = cancelandoId;
                   if (!id) return;
-                  void cancelar.mutateAsync({ id,revision:agendamentos.find(a=>a.id===id)?.revision, reason: motivo.trim() }).then(
-                    () => setCancelandoId(null),
-                    () => undefined,
-                  );
+                  void cancelar
+                    .mutateAsync({
+                      id,
+                      revision: agendamentos.find((a) => a.id === id)?.revision,
+                      reason: motivo.trim(),
+                    })
+                    .then(
+                      () => setCancelandoId(null),
+                      () => undefined,
+                    );
                 }}
               >
                 {cancelar.isPending ? t("Cancelando…") : t("Cancelar agendamento")}
@@ -782,8 +905,30 @@ export function AgendaClient({
         // Sem cerimônia de confirmação, ao contrário de cancelar: registrar
         // desfecho não avisa ninguém e se desfaz voltando o status. Cancelar
         // exige motivo porque é o que a equipe lê ao ver o horário vago.
-        onRealizado={(id) => desfecho.mutate({ id,revision:agendamentos.find(a=>a.id===id)?.revision, status: "completed" })}
-        onFaltou={(id) => desfecho.mutate({ id,revision:agendamentos.find(a=>a.id===id)?.revision, status: "no_show" })}
+        // CONFIRMAR usa o mesmo `desfecho` que realizado/faltou: os três são o
+        // mesmo PATCH com outro `status`. Criar um hook próprio duplicaria a
+        // invalidação de cache e o tratamento de erro por nada.
+        onConfirmar={(id) =>
+          desfecho.mutate({
+            id,
+            revision: agendamentos.find((a) => a.id === id)?.revision,
+            status: "confirmed",
+          })
+        }
+        onRealizado={(id) =>
+          desfecho.mutate({
+            id,
+            revision: agendamentos.find((a) => a.id === id)?.revision,
+            status: "completed",
+          })
+        }
+        onFaltou={(id) =>
+          desfecho.mutate({
+            id,
+            revision: agendamentos.find((a) => a.id === id)?.revision,
+            status: "no_show",
+          })
+        }
       />
 
       {/* ⚠️ O VAZIO NÃO ESCONDE MAIS A GRADE, e o achado veio do CI.
@@ -823,11 +968,19 @@ export function AgendaClient({
         onMarcarEm={(instante) => {
           setHorarioEscolhido({ instante, rotulo: format(new Date(instante), "HH:mm") });
           setRemarcandoId(null);
-          setMarcando(true);
+          // `abrirMarcacao` e não `setMarcando(true)`: clicar num bloco livre
+          // abre uma marcação NOVA, e ela nasce com o vínculo da rota.
+          abrirMarcacao();
         }}
+        /* Tocar num card abre o detalhe. A prop já atravessava `AgendaInterativa`
+           e `GradeDaAgenda` e chegava `undefined` aqui: o toque não fazia nada, e
+           o detalhe só abria por `?compromisso=`, que apenas o Histórico e o Radar
+           linkavam. Reusa o MESMO parâmetro que `EntradaDaAgenda` já lê — e `push`,
+           não `replace`, porque é o que o Histórico faz com `<Link>` e é o que faz
+           o botão voltar do celular fechar o detalhe. */
+        onAbrirAgendamento={(id) => router.push(`/app/agenda?compromisso=${id}`)}
         className="min-h-0 flex-1"
       />
-
     </div>
   );
 }

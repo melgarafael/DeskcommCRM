@@ -22,6 +22,7 @@ COMUNIDADE_URL="https://lp-comunidade.automatiklabs.com.br"
 REPO_DIR="${REPO_DIR:-deskcommcrm}"
 COMPOSE="docker-compose.prod.yml"
 COMPOSE_TRAEFIK="docker-compose.traefik.yml"
+COMPOSE_NPM="docker-compose.npm.yml"
 NONINTERACTIVE=0
 [ "${1:-}" = "--yes" ] && NONINTERACTIVE=1
 
@@ -29,18 +30,18 @@ NONINTERACTIVE=0
 # usar o _common.sh). As duas funções abaixo são gêmeas das de lá — se mexer
 # numa, mexa na outra.
 dc() {
-  if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
-    docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" "$@"
-  else
-    docker compose -f "$COMPOSE" "$@"
-  fi
+  case "${REVERSE_PROXY:-caddy}" in
+  traefik) docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" "$@" ;;
+  npm)     docker compose -f "$COMPOSE" -f "$COMPOSE_NPM" "$@" ;;
+  *)       docker compose -f "$COMPOSE" "$@" ;;
+  esac
 }
 dc_files() {
-  if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
-    printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_TRAEFIK"
-  else
-    printf -- '-f %s' "$COMPOSE"
-  fi
+  case "${REVERSE_PROXY:-caddy}" in
+  traefik) printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_TRAEFIK" ;;
+  npm)     printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_NPM" ;;
+  *)       printf -- '-f %s' "$COMPOSE" ;;
+  esac
 }
 
 # ── Aparência ───────────────────────────────────────────────────────────────
@@ -1161,10 +1162,19 @@ escolher_provedor
 
 # O campo da chave do provedor ESCOLHIDO — e só dele. Pedir as três faria a
 # pessoa achar que precisa das três.
+#
+# O campo é `opcional` (issue #670). `docs/deploy-selfhost` promete que dá para
+# "deixar vazio e cadastrar a chave depois", e o runtime concorda (`lib/env.ts`
+# trata as três chaves como opcionais; faltar todas é `warn`, não erro) — mas o
+# instalador exigia uma chave que PASSASSE numa chamada real, e não havia
+# caminho para subir o produto sem antes abrir conta num provedor de IA. Quem
+# pula instala, e o caminho de volta sai na tela final (`pendencia_da_ia`, no
+# fecho). O validador continua valendo para quem digita uma chave — o que
+# mudou é que pular deixou de ser erro.
 case "$AI_PROVIDER" in
-  openrouter) CAMPO_IA="OPENROUTER_API_KEY|Chave da OpenRouter — a IA que atende (openrouter.ai/keys)||v_openrouter|secret|";;
-  openai)     CAMPO_IA="OPENAI_API_KEY|Chave da OpenAI — a IA que atende (platform.openai.com/api-keys)||v_openai|secret|";;
-  *)          CAMPO_IA="ANTHROPIC_API_KEY|Chave da Anthropic — a IA que atende (console.anthropic.com)||v_anthropic|secret|";;
+  openrouter) CAMPO_IA="OPENROUTER_API_KEY|Chave da OpenRouter — a IA que atende (openrouter.ai/keys; Enter pula: dá para cadastrar depois pela tela, em IA › Credenciais)||v_openrouter|secret|opcional";;
+  openai)     CAMPO_IA="OPENAI_API_KEY|Chave da OpenAI — a IA que atende (platform.openai.com/api-keys; Enter pula: dá para cadastrar depois pela tela, em IA › Credenciais)||v_openai|secret|opcional";;
+  *)          CAMPO_IA="ANTHROPIC_API_KEY|Chave da Anthropic — a IA que atende (console.anthropic.com; Enter pula: dá para cadastrar depois pela tela, em IA › Credenciais)||v_anthropic|secret|opcional";;
 esac
 
 # A chave da OpenAI é pedida À PARTE quando ela NÃO é o provedor de conversa,
@@ -1551,10 +1561,15 @@ esac
   envq SCHEDULER_PULL_POLICY "$PULL_POLICY_ALVO"
   envq DOMAIN "$DOMAIN"
   envq ACME_EMAIL "$ACME_EMAIL"
-  printf '# Proxy reverso: "caddy" (o kit sobe o dele nas portas 80/443) ou "traefik"\n'
-  printf '# (o VPS já tem um Traefik nessas portas — Hostinger, Coolify, Dokploy...).\n'
-  printf '# Em "traefik" entra o docker-compose.traefik.yml, que desliga o Caddy e\n'
-  printf '# publica o app por labels. TRAEFIK_* só é lido nesse modo.\n'
+  printf '# Proxy reverso: "caddy" (o kit sobe o dele nas portas 80/443), "traefik"\n'
+  printf '# (o VPS já tem um Traefik nessas portas — Hostinger, Coolify, Dokploy...)\n'
+  printf '# ou "npm" (Nginx Proxy Manager, que não lê labels — ver o cabeçalho de\n'
+  printf '# docker-compose.npm.yml). Em "traefik" entra o docker-compose.traefik.yml,\n'
+  printf '# que desliga o Caddy e publica o app por labels (TRAEFIK_* só é lido nesse\n'
+  printf '# modo). Em "npm" entra o docker-compose.npm.yml, que também desliga o Caddy\n'
+  printf '# e fixa o app na rede/IP que o Proxy Host espera (PROXY_NETWORK_* só é lido\n'
+  printf '# nesse modo, e é sempre configuração manual — não há como detectar o NPM\n'
+  printf '# sozinho, ao contrário do Traefik).\n'
   envq REVERSE_PROXY "$REVERSE_PROXY"
   # O default mora aqui, junto dos irmãos TRAEFIK_* logo abaixo, e não numa
   # atribuição solta lá atrás: em modo caddy ninguém DECIDE esta variável, e
@@ -1791,16 +1806,15 @@ if [ -f supabase/baseline.sql ]; then
 
   if [ "$has_schema" = "1" ]; then
     c_ylw "• schema já existe — re-aplicando em modo update (erros 'já existe' são esperados e ficam no log)"
-    raw="$(docker run --rm -i -v "$PROJECT_DIR/supabase/baseline.sql:/baseline.sql:ro" \
-          postgres:17-alpine psql "$(url_do_schema)" -q -f /baseline.sql 2>&1 || true)"
-    printf '%s\n' "$raw" > "$SCHEMA_LOG"
-    benign='already exists|multiple primary keys|multiple default values|is already a member|already a partition'
-    unexpected="$(printf '%s\n' "$raw" | grep -iE 'ERROR|FATAL' | grep -viE "$benign" || true)"
-    if [ -n "$unexpected" ]; then
-      c_ylw "⚠ Erros no banco que NÃO são os esperados (log completo: $SCHEMA_LOG):"
-      printf '%s\n' "$unexpected" | head -20
-    else
+    # Mesmo contrato do update.sh, inclusive a nova passada quando o banco está
+    # em disputa: `reaplicar_baseline` em _common.sh.
+    if reaplicar_baseline "$PROJECT_DIR/supabase/baseline.sql" "$SCHEMA_LOG"; then
       c_grn "✓ schema re-aplicado (apêndice de migrations incluído)"
+    else
+      c_ylw "⚠ Erros no banco que NÃO são os esperados (log completo: $SCHEMA_LOG):"
+      # Sem `| head`: com pipefail, o head que fecha cedo mata o printf com SIGPIPE
+      # numa lista grande, e o set -e derrubava o instalador aqui.
+      listar_erros_do_banco "$BASELINE_INESPERADO" 20
     fi
   else
     if docker run --rm -i -v "$PROJECT_DIR/supabase/baseline.sql:/baseline.sql:ro" \
@@ -1924,6 +1938,42 @@ $(sed 's/^/    /' "$PENDENCIA_EMAIL")
   Depois reinicie só o auth do seu Supabase e confira aqui com:
 
        bash hostgator-setup-kit/healthcheck.sh
+PEND
+}
+
+# ── A pendência da IA, quando a chave ficou para depois ─────────────────────
+# A #670 tornou o campo da chave `opcional`: antes o instalador morria sem uma
+# chave que passasse numa chamada real, contra a doc e contra o runtime.
+# Instalar sem chave é legítimo; o que não pode é a pessoa terminar sem saber
+# que a IA ainda não atende e ONDE cadastrar depois. Este bloco repete o
+# caminho na TELA FINAL, que é a única tela que a pessoa lê inteira.
+#
+# Critério: nenhuma credencial DE AMBIENTE preenchida — nem a do provedor
+# escolhido, nem o AI Gateway (que tem precedência na resolução do chat, ver
+# `.env.hostgator.example`). Credencial cadastrada pela tela (banco) não dá
+# para ver daqui; quem já cadastrou reconhece o aviso e ignora.
+pendencia_da_ia() {
+  local chave="" rotulo=""
+  case "${AI_PROVIDER:-anthropic}" in
+    openrouter) chave="${OPENROUTER_API_KEY:-}"; rotulo="OpenRouter" ;;
+    openai)     chave="${OPENAI_API_KEY:-}";     rotulo="OpenAI" ;;
+    *)          chave="${ANTHROPIC_API_KEY:-}";  rotulo="Anthropic" ;;
+  esac
+  [ -n "$chave" ] && return 0
+  [ -n "${AI_GATEWAY_API_KEY:-}" ] && return 0
+
+  cat <<PEND
+
+$(c_ylw "  ─── A IA ainda não atende — falta cadastrar a chave ───")
+
+  Você deixou a chave de IA para depois, e o CRM está no ar sem ela. O que
+  ainda não funciona é o agente: ele responde quando uma credencial existir.
+
+  Quando tiver a chave da ${rotulo}, cadastre em:
+
+      IA › Credenciais
+
+  A chave fica CIFRADA no banco — não precisa mexer no .env nem reiniciar nada.
 PEND
 }
 
@@ -2139,6 +2189,7 @@ $(c_grn " Instalação concluída!")
 $(c_grn "═══════════════════════════════════════════════════════")
 
 $(pendencia_dos_emails)
+$(pendencia_da_ia)
   1. Acesse:  https://${DOMAIN}
      (o SSL leva ~1min pra emitir no primeiro acesso)
 

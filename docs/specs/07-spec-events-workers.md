@@ -19,7 +19,7 @@ related:
 
 # Spec 07 — Event Log + Workers + Crons (transversal)
 
-> Esta spec define o **bus interno** do DeskcommCRM: como módulos publicam eventos no banco, como workers consomem, quais crons rodam no Vercel, como tratamos retries, dead-letter, idempotência e observabilidade. É **transversal** — todos os outros sub-PRDs (02–06) emitem ou consomem deste bus.
+> Esta spec define o **bus interno** do DeskcommCRM: como módulos publicam eventos no banco, como workers consomem, quais crons rodam (no serviço `scheduler` do `docker-compose.prod.yml`, na infraestrutura de quem instala), como tratamos retries, dead-letter, idempotência e observabilidade. É **transversal** — todos os outros sub-PRDs (02–06) emitem ou consomem deste bus.
 
 ---
 
@@ -65,7 +65,7 @@ A solução adotada:
                                   LOCKED, batch)           não crítico)
                 │                       │
                 ▼                       ▼
-        Vercel Cron / Background      Side-effects:
+        Cron / worker                 Side-effects:
         Functions                     - WAHA send
                                       - AI bot
                                       - Webhooks out
@@ -485,7 +485,14 @@ await boss.start();
 
 ## 6. Worker Implementations
 
-> Padrão: cada worker = arquivo TS em `workers/`, deploy como **Vercel Background Function** (long-running) OU **Edge Function Supabase agendada**. Para o MVP usamos Vercel Background Functions com **fluid compute**.
+> Padrão: cada worker = arquivo TS em `workers/`, e o cabeçalho do arquivo diz por qual caminho ele roda.
+> O `workers/agent-worker/main.ts` é o entrypoint do serviço `worker` do `docker-compose.prod.yml`
+> (é o `CMD` do `Dockerfile.worker`). Os `workers/*.handler.ts` são consumidores de `event_log`:
+> registrados em `lib/event-log/register-handlers.ts` e drenados por dois processos em paralelo — o
+> laço do próprio `worker` (`lib/event-log/drain-loop.ts`) e o cron `app/api/v1/cron/event-log-drain`,
+> no processo do `app`. Há ainda worker com rota de cron dedicada — `workers/storage-cleanup-worker.ts`
+> é drenado por `app/api/v1/cron/storage-redaction`. As imagens são publicadas pelo CI e os contêineres sobem na infraestrutura de
+> quem instala; ver [`docs/doctrine/packaging.md`](../doctrine/packaging.md).
 
 ### 6.1 `whatsapp-send-worker`
 
@@ -548,25 +555,18 @@ await boss.start();
 
 ---
 
-## 7. Crons (Vercel Cron)
+## 7. Crons
 
-Configuração em `vercel.json` (ou `app/api/cron/[name]/route.ts` com schedule). Todos os crons batem em `/api/cron/{name}` autenticados via `CRON_SECRET` (header `Authorization: Bearer ...`).
+A lista vigente não mora neste documento: ela vive em duas fontes espelhadas — `docker/scheduler/entrypoint.sh` (o serviço `scheduler` do compose, que é o caminho self-host) e `vercel.ts` na raiz (para quem hospeda a própria instalação na Vercel). `tests/unit/cron-routes-scheduled.test.ts` confere as duas uma contra a outra e contra o diretório `app/api/v1/cron/`, e reprova divergência. Para ver a de hoje:
 
-```json
-{
-  "crons": [
-    { "path": "/api/cron/sync-sessions",            "schedule": "* * * * *" },
-    { "path": "/api/cron/recover-stuck-messages",   "schedule": "* * * * *" },
-    { "path": "/api/cron/process-pending-webhooks", "schedule": "* * * * *" },
-    { "path": "/api/cron/health-check-integrations","schedule": "*/15 * * * *" },
-    { "path": "/api/cron/oauth-refresh-tokens",     "schedule": "0 * * * *" },
-    { "path": "/api/cron/daily-budget-reset",       "schedule": "0 3 * * *" },
-    { "path": "/api/cron/prune-old-media",          "schedule": "30 3 * * *" }
-  ]
-}
+```bash
+grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u
 ```
 
-> Nota: Vercel cron usa **UTC**. `0 3 * * *` ≈ 00:00 BRT (UTC-3).
+O que esse comando devolve são os crons em vigor. **As subseções abaixo são planejamento, e nem toda
+rota nomeada nelas existe** — confira cada nome contra `ls app/api/v1/cron`. Toda rota de cron aceita `Authorization: Bearer <segredo>`, conferido contra `INTERNAL_CRON_SECRET` e `INTERNAL_SECRET`; parte delas usa o helper `autorizaCron()` (`lib/auth/cron-auth.ts`), que também aceita `x-cron-secret` — para ver quais, `grep -rl autorizaCron app/api/v1/cron/`.
+
+> Nota: o `crond` do scheduler roda em **UTC** (`TZ=UTC` no `Dockerfile.scheduler`). `0 3 * * *` ≈ 00:00 BRT (UTC-3).
 
 ### 7.1 `sync-sessions` (1min)
 Verifica WAHA sessions ativas vs `whatsapp_sessions` no DB, sincroniza status (`WORKING`, `STOPPED`, `FAILED`), emite `system.session_changed` quando status diverge.
@@ -804,7 +804,7 @@ Ordem recomendada (sob `supabase/migrations/`):
 7. `2026XX07_pgboss_schema.sql` — `create schema pgboss;` + grants (pg_boss cria tabelas no init runtime).
 8. `2026XX08_event_archive_storage_bucket.sql` — bucket Storage `event-archive` private.
 9. `2026XX09_webhook_subscriptions_columns.sql` — `consecutive_failures`, `enabled`.
-10. `2026XX10_event_log_reaper_cron.sql` — `pg_cron` (se disponível) ou Vercel cron equivalente.
+10. `2026XX10_event_log_reaper_cron.sql` — `pg_cron` (se disponível) ou rota de cron equivalente.
 
 Cada migration tem **rollback** (`down.sql`) testado em branch Supabase antes de merge.
 

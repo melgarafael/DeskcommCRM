@@ -34,8 +34,10 @@ vi.mock("@/hooks/channels/useChannelSessions", async (original) => {
   const real = await original<typeof CanaisModule>();
   return { ...real, useChannelSessions: () => ({ data: canaisRef.current }) };
 });
+/** `undefined` = vocabulário ainda carregando — não é "zero etiquetas". */
+const tagsRef: { current: string[] | undefined } = { current: [] };
 vi.mock("@/hooks/inbox/useConversationTags", () => ({
-  useConversationTagVocabulary: () => ({ data: [] }),
+  useConversationTagVocabulary: () => ({ data: tagsRef.current }),
 }));
 vi.mock("@/hooks/inbox/useConversationCounts", () => ({
   useConversationCounts: () => ({ data: { unassigned: 3, mine: 2, all: 5 } }),
@@ -151,6 +153,34 @@ describe("InboxFilters — seletor de número e o filtro órfão", () => {
     const seletor = screen.getByLabelText(SELETOR);
     expect(seletor).toBeInTheDocument();
     expect(seletor).toHaveTextContent("Número removido");
+  });
+
+  /**
+   * O MESMO tratamento, agora para a etiqueta.
+   *
+   * O canal já tinha: filtro apontando para algo fora da lista mantinha o seletor
+   * e nomeava o removido. A etiqueta não tinha — o seletor inteiro sumia com o
+   * filtro AINDA APLICADO, e a lista ficava num subconjunto, às vezes vazio, sem
+   * nada na tela dizendo que havia filtro nem como tirá-lo.
+   */
+  it("etiqueta fora do vocabulário: o seletor FICA e oferece a etiqueta órfã", () => {
+    setOrg("manager", "all");
+    tagsRef.current = [];
+    render(
+      <InboxFilters value={{ ...VALUE, tag: "etiqueta-orfa" }} onChange={() => {}} />,
+    );
+    const seletor = screen.getByLabelText("Filtrar por tag");
+    expect(seletor).toBeInTheDocument();
+    expect(seletor).toHaveTextContent("etiqueta-orfa");
+  });
+
+  it("CONTROLE: sem vocabulário e SEM filtro, o seletor de tag não aparece", () => {
+    // Sem este caso, mostrar o seletor SEMPRE passaria no de cima — e a barra
+    // ganharia um controle vazio em toda instalação que nunca usou etiqueta.
+    setOrg("manager", "all");
+    tagsRef.current = [];
+    render(<InboxFilters value={VALUE} onChange={() => {}} />);
+    expect(screen.queryByLabelText("Filtrar por tag")).not.toBeInTheDocument();
   });
 
   it("filtro que casa com a lista: nada de 'Número removido'", () => {

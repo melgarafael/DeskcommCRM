@@ -137,7 +137,6 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const candidatos: Array<{ linha: number; contato: Record<string, unknown> }> = [];
   const errors: LinhaErro[] = [];
-  const vistosNoArquivo = new Set<string>();
 
   for (let i = 0; i < dataRows.length; i++) {
     const linha = i + 2; // 1-based contando o cabeçalho — bate com o editor de planilhas.
@@ -150,12 +149,6 @@ export async function POST(req: NextRequest): Promise<Response> {
       errors.push({ linha, motivo: t("CPF inválido: ") + `"${contato.cpf}"` });
       continue;
     }
-    const chave = contato.phone_number ?? `email:${(contato.email as string).toLowerCase()}`;
-    if (vistosNoArquivo.has(chave)) {
-      continue; // repetido DENTRO do arquivo — conta como duplicado, sem ruído de erro.
-    }
-    vistosNoArquivo.add(chave);
-
     const parsed = contactCreateSchema.safeParse({ ...contato, source: SOURCE_IMPORT_CSV });
     if (!parsed.success) {
       const primeiro = parsed.error.issues[0];
@@ -218,6 +211,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   for (const { linha, contato } of candidatos) {
     const phone = contato.phone_number as string | undefined;
     const email = contato.email as string | undefined;
+    // Só contatos existentes ou gravados com sucesso reservam identificadores.
+    // Cada repetição chega aqui para ter desfecho; uma linha inválida ou que
+    // falhou no insert não pode descartar outra válida do mesmo arquivo.
     if (
       (phone && phoneLookupVariants(phone).some((v) => existentes.has(`tel:${v}`))) ||
       (email && existentes.has(`email:${email.toLowerCase()}`))

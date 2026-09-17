@@ -9,13 +9,17 @@
 
 <!-- 1-3 frases, do ponto de vista de quem USA o sistema. Se resolve issue: Closes #123 -->
 
+<!-- Destino da mudança (opcional para quem contribui): núcleo, extensão, ambos ou
+     infraestrutura/documentação. Diga por quê, se já souber. A triagem completa essa
+     avaliação com você; não é necessário usar um SDK que ainda não foi entregue.
+     Critério: triagem/TRIAGEM.md, passe 2-bis. -->
+
 ---
 
 ### 📌 Contribuindo de um fork? Você está no lugar certo.
 
-**Duas coisas vão parecer erro seu e não são** — e nenhuma é motivo para fechar o PR:
+**Uma coisa vai parecer erro seu e não é** — e ela não é motivo para fechar o PR:
 
-- **`Vercel` vermelho** (`Authorization required to deploy`): esperado em PR de fork, porque a `main` faz deploy de produção. **Não entra no gate de merge.**
 - **Workflows parados** esperando aprovação: política do GitHub no primeiro PR de quem nunca contribuiu. Um mantenedor libera.
 
 <details>
@@ -25,7 +29,7 @@
 |---|---|
 | **Fragmento em `.changes/`** | É o aviso que aparece na tela de quem opera uma VPS. Se faltar, **nós escrevemos**, com o seu nome. Não é cobrança. |
 | **Numeração de migration** | Se colidir com um PR aberto que você não tinha como ver, **quem renumera somos nós**. |
-| **Conflito com a `main`** | Resolvemos do nosso lado, preservando os seus commits. Você não refaz nada. |
+| **Conflito com a `main`** | Resolvemos nós, preservando os seus commits. Com "Allow edits by maintainers" ligado, o merge da `main` pode chegar na sua própria branch — avisamos no PR, e você só dá `git pull --no-rebase` antes do seu próximo push. Você não refaz nada. |
 | **Prova pela tela (`test:e2e`)** | Exige Docker, banco semeado e WAHA local. Fica com o mantenedor — exigir prova sem entregar a ferramenta de produzi-la seria pedágio, não rigor. |
 
 </details>
@@ -48,4 +52,4 @@
 
 Convenções completas em [`CLAUDE.md`](../CLAUDE.md) · fluxo em [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
-<sub>Seu trabalho aparece no seu perfil do GitHub? Se você commitou de um servidor, pode estar assinado como `root`, e o GitHub não associa isso à sua conta. `git config --global user.email "<e-mail da sua conta>"` resolve dali em diante — e se pedir, a gente corrige o histórico.</sub>
+<sub>Seu trabalho aparece no seu perfil do GitHub? Se você commitou de um servidor, pode estar assinado como `root`, e o GitHub não associa isso à sua conta. `git config --global user.email "<e-mail da sua conta>"` resolve dali em diante — e se pedir, a gente associa os commits antigos à sua conta pelo `.mailmap`, sem reescrever nada.</sub>

@@ -903,6 +903,7 @@ create unique index idx_recovery_unique on public.user_recovery_codes(user_id, c
 - `contact.created`
 - `contact.updated`
 - `contact.deleted`
+- `contact.delete_blocked`
 - `contact.blocked`
 - `contact.unblocked`
 - `consent.granted`
@@ -1227,6 +1228,14 @@ export async function rateLimitMiddleware(req: Request, orgId: string) {
 | `pipeline_immutable_use_clone` | 422 | Tentativa de mover lead pra outro pipeline (P-01) |
 | `lost_reason_required` | 422 | Lead → status `lost` sem `lost_reason` (P-03) |
 | `lost_reason_invalid` | 422 | `lost_reason` fora da lista canônica (P-03) |
+| `lead_stage_changed_concurrent` | 409 | `expected_updated_at` não bate — a trava otimista do arrasto (P-08) |
+| `stage_pipeline_mismatch` | 422 | A etapa informada não é do funil alvo |
+| `pipeline_unchanged` | 422 | Troca de funil pedida para o funil em que o negócio já está — o caminho é `/move` |
+| `lead_not_open` | 422 | Troca de funil pedida para negócio já encerrado |
+| `stage_destino_terminal` | 422 | Etapa de destino da troca é de ganho/perda — o clone nasceria fechado |
+| `pipeline_without_initial_stage` | 422 | Funil de destino sem etapa aberta para receber o negócio |
+| `pipeline_no_lost_stage` | 422 | Funil de origem sem etapa de perda para encerrar o negócio (espelho: `pipeline_no_won_stage` no `/win`) |
+| `pipeline_not_found` | 404 | Funil de destino inexistente nesta organização |
 | `phone_must_be_e164` | 422 | Telefone fora do formato `+\d{8,15}` |
 | `merge_irreversible` | 405 | Tentativa de desfazer merge de contacts (Sub-PRD 02 §3.4) |
 | `internal_error` | 500 | Catch-all, sempre logado em Sentry |
@@ -1594,7 +1603,7 @@ export function logWithCtx(orgId: string, requestId: string) {
 
 ### 11.3 Métricas custom
 
-Emitidas via OpenTelemetry → Vercel Observability ou Grafana Cloud:
+Emitidas via OpenTelemetry → o coletor da instalação (Grafana Cloud, Sentry ou equivalente):
 
 | Métrica | Tipo | Tags |
 |---|---|---|

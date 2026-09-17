@@ -7,10 +7,10 @@ o que rotacionamos aqui é a **master key** que cifra essas BYO keys.
 ## Quando rotacionar
 - Suspeita de exposição da `AI_CRED_AES_KEY` (vazamento de env var, leak de logs).
 - Política de rotação anual (default).
-- Saída de engenheiro com acesso ao Vercel project secrets.
+- Saída de engenheiro com acesso ao `.env` da instalação.
 
 ## Pré-requisitos
-- Acesso ao Vercel project (env vars Production + Preview).
+- Acesso ao `.env` da instalação e à possibilidade de recriar os contêineres do CRM.
 - `psql` direto ou Supabase Studio com service role.
 - Janela de manutenção curta (≤5 min) ou estratégia online (descrita abaixo).
 
@@ -24,7 +24,9 @@ v1. Backfill é feito por job que decifra com a key antiga e recifra com a nova.
 
 ## Estratégia offline (manutenção curta — usar em emergência)
 
-1. Coloque a app em modo manutenção (Vercel maintenance redirect ou flag).
+1. Tire a app do ar durante a janela, parando os contêineres do CRM. **Não há chave de
+   manutenção no código:** a página `app/503/page.tsx` existe e é pública
+   (`lib/auth/public-paths.ts`), mas nada no repositório coloca a instalação nela.
 2. Gere a nova key local: `openssl rand -base64 32` → `NEW_AES_KEY`.
 3. Mantenha a antiga em mãos como `OLD_AES_KEY`.
 4. Rode o script de rotação (a ser implementado em
@@ -39,8 +41,12 @@ v1. Backfill é feito por job que decifra com a key antiga e recifra com a nova.
    - Decifra com `OLD`
    - Cifra com `NEW`
    - UPDATE ai_provider_credentials SET ... WHERE id = $1
-5. Atualize `AI_CRED_AES_KEY` no Vercel (Production + Preview).
-6. Tire o modo manutenção.
+5. Atualize `AI_CRED_AES_KEY` no `.env` da instalação e recrie os contêineres — env var
+   é lida no boot, então editar o arquivo sozinho não troca chave nenhuma. Quem recria
+   tudo é `bash hostgator-setup-kit/update.sh`, que roda o `up -d` sem nomear serviço;
+   à mão, o comando (e a armadilha dos **dois** `-f` num host com proxy reverso próprio)
+   está em [`deploy.md`](deploy.md).
+6. Suba os contêineres do CRM de volta.
 7. Apague `AI_CRED_AES_KEY_OLD` de qualquer lugar persistido.
 
 ## Smoke test pós-rotação

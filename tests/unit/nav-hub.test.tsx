@@ -9,10 +9,52 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 
 import { NavHub } from "@/components/shell/NavHub";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
+import type { ExtensionGuideView } from "@/lib/extensions/view";
+import { hubSections } from "@/lib/navigation/registry";
 
 afterEach(cleanup);
 
 describe("NavHub", () => {
+  const extensionGuide: ExtensionGuideView = {
+    organization_id: "00000000-0000-4000-8000-000000000001",
+    installation_id: "00000000-0000-4000-8000-000000000002",
+    version: "1.0.0",
+    revision: 3,
+    configuration: { density: "compact", show_description: false },
+    manifest: {
+      format_version: 1,
+      profile: "declarative",
+      publisher: "equipe-exemplo",
+      name: "rotina-comercial",
+      version: "1.0.0",
+      license: "MIT",
+      host_api: { min: 1, max: 1 },
+      permissions: ["navigation.tasks"],
+      dependencies: [],
+      data: { mode: "none" },
+      display: {
+        title: { "pt-BR": "Rotina comercial", es: "Rutina comercial" },
+        summary: { "pt-BR": "Organize os próximos passos." },
+        category: "sales",
+        icon: "ListChecks",
+      },
+      configuration: { density: "comfortable", show_description: true },
+      contributions: {
+        crm_cards: [
+          {
+            id: "primeiro-passo",
+            title: { "pt-BR": "Comece por aqui", es: "Empieza aquí" },
+            description: { "pt-BR": "Uma descrição que a configuração esconde." },
+            icon: "Lightbulb",
+            blocks: [],
+            action: { label: { "pt-BR": "Abrir tarefas" }, capability: "tasks.open" },
+          },
+        ],
+      },
+    },
+  };
+
   it("apresenta a IA nas três etapas da jornada, na ordem", () => {
     render(<NavHub group="ia" isPlatformAdmin role={null} title="Agente de IA" subtitle="" />);
     const secoes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim());
@@ -36,13 +78,19 @@ describe("NavHub", () => {
     expect(screen.getByRole("link", { name: /Agentes/ })).toBeTruthy();
   });
 
-  it("some com a seção inteira quando a permissão esvazia", () => {
+  it("Extensões fica em Sua empresa, visível ao viewer; Dados e acesso continua sumindo sem destino", () => {
     render(
       <NavHub group="organizacao" isPlatformAdmin={false} role="viewer" title="Org" subtitle="" />,
     );
     const secoes = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim());
     expect(secoes).toContain("Sua conta");
+    expect(secoes).toContain("Sua empresa");
     expect(secoes).not.toContain("Dados e acesso");
+    expect(screen.getByRole("link", { name: /Extensões/ })).toHaveAttribute(
+      "href",
+      "/app/extensions",
+    );
+    expect(screen.queryByRole("link", { name: /API Tokens/ })).toBeNull();
   });
 
   it("agrupa os cards sob a própria seção, não numa lista solta", () => {
@@ -50,5 +98,82 @@ describe("NavHub", () => {
     const ensinar = screen.getByRole("region", { name: "Ensinar o agente" });
     expect(within(ensinar).getByRole("link", { name: /Memória/ })).toBeTruthy();
     expect(within(ensinar).queryByRole("link", { name: /Credenciais/ })).toBeNull();
+  });
+
+  it("traduz o conteúdo do hub quando a página entrega o idioma", () => {
+    render(
+      <NavHub
+        group="ia"
+        isPlatformAdmin
+        role={null}
+        title="Agente de IA"
+        subtitle="Tudo que define quem atende por você — e como acompanhar o que ele faz."
+        locale="es"
+      />,
+    );
+
+    expect(
+      screen.getByText("Todo lo que define quién atiende por ti — y cómo seguir lo que hace."),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent?.trim())).toEqual([
+      "Configurar el agente",
+      "Enseñar al agente",
+      "Acompañar al agente",
+    ]);
+    expect(
+      screen.getByRole("link", { name: /Credenciales.*La clave del proveedor de IA/ }),
+    ).toBeTruthy();
+  });
+
+  it("todo texto registrado no hub de IA tem tradução em espanhol", () => {
+    const textos = hubSections("ia", true, "admin").flatMap(({ section, items }) => [
+      section,
+      ...items.flatMap((item) => [item.label, item.description]),
+    ]);
+
+    expect(textos.filter((texto) => !DICIONARIO[texto]?.es)).toEqual([]);
+  });
+
+  it("integra contribuições tipadas no CRM sem aceitar destino vindo do pacote", () => {
+    render(
+      <NavHub
+        group="crm"
+        isPlatformAdmin={false}
+        role="viewer"
+        title="CRM"
+        subtitle=""
+        locale="es"
+        extensionGuides={[extensionGuide]}
+      />,
+    );
+
+    const contribution = screen.getByRole("link", { name: /Empieza aquí/ });
+    expect(contribution).toHaveAttribute(
+      "href",
+      "/app/extensions/00000000-0000-4000-8000-000000000002?card=primeiro-passo",
+    );
+    expect(contribution).not.toHaveTextContent("Uma descrição que a configuração esconde.");
+    expect(screen.getByText("Abre Tareas; no lee tus datos.")).toBeInTheDocument();
+  });
+
+  it("expõe falha de leitura das contribuições sem derrubar o hub do CRM", () => {
+    render(
+      <NavHub
+        group="crm"
+        isPlatformAdmin={false}
+        role="viewer"
+        title="CRM"
+        subtitle=""
+        extensionsUnavailable
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Não foi possível conferir as orientações instaladas" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Gerenciar extensões" })).toHaveAttribute(
+      "href",
+      "/app/extensions",
+    );
   });
 });

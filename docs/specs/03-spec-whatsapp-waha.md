@@ -152,10 +152,10 @@ volumes:
 
 ### 2.2 Variáveis de ambiente
 
-A `WAHA_API_KEY` do servidor é o **hash SHA512 hex (lowercase) do plaintext**. O backend DeskcommCRM guarda **só** o plaintext em Vercel Encrypted Env Var; nunca a hash duplicada. Geração:
+A `WAHA_API_KEY` do servidor é o **hash SHA512 hex (lowercase) do plaintext**. O backend DeskcommCRM guarda **só** o plaintext no `.env` da instalação (modo 0600, como o `install.sh` o grava); nunca a hash duplicada. Geração:
 
 ```bash
-# Gerar plaintext seguro (nunca commitar; armazenar em 1Password/Vercel)
+# Gerar plaintext seguro (nunca commitar; guardar num gerenciador de senhas)
 PLAINTEXT=$(openssl rand -hex 32)
 echo "Plaintext (env do app): $PLAINTEXT"
 
@@ -167,7 +167,7 @@ echo -n "$PLAINTEXT" | sha512sum | awk '{print $1}'
 `.env.production.example` (não commitar valores reais):
 
 ```dotenv
-# === WAHA server (no host do WAHA, NÃO no Vercel) ===
+# === WAHA server (no host do WAHA, NÃO no `.env` do app) ===
 WAHA_API_KEY_SHA512=<sha512 hex do plaintext>
 WAHA_DASHBOARD_USERNAME=admin_deskcomm
 WAHA_DASHBOARD_PASSWORD=<senha forte gerada>
@@ -176,7 +176,7 @@ WAHA_S3_BUCKET=deskcomm-waha-media
 WAHA_S3_ACCESS_KEY_ID=<r2/s3 access key>
 WAHA_S3_SECRET_ACCESS_KEY=<r2/s3 secret>
 
-# === Backend Vercel (Encrypted Env) ===
+# === Backend DeskcommCRM (`.env` da instalação) ===
 WAHA_API_KEY=<plaintext — só aqui>
 WAHA_BASE_URL=https://waha.deskcomm.internal
 WAHA_WEBHOOK_PUBLIC_BASE_URL=https://api.deskcomm.com
@@ -233,8 +233,9 @@ server {
 
   client_max_body_size 64M;     # mídia até 50MB + overhead
 
-  # Allowlist do Vercel (egress IPs) — atualizar via cron
-  include /etc/nginx/conf.d/vercel-egress-allowlist.conf;
+  # Allowlist de egress: só o servidor onde o CRM roda chama este WAHA
+  # (receita viva em docs/runbooks/waha-hostgator.md)
+  include /etc/nginx/conf.d/crm-egress-allowlist.conf;
   deny all;
 
   location / {
@@ -1679,21 +1680,16 @@ Pra distinguir múltiplos celulares vinculados, fora do escopo MVP (WAHA não ex
 
 ---
 
-## 10. Crons (Vercel Cron)
+## 10. Crons
 
-`vercel.json`:
+A cadência vigente não mora neste documento: ela vive em duas fontes espelhadas — `docker/scheduler/entrypoint.sh` (o serviço `scheduler` do compose, que é o caminho self-host) e `vercel.ts` na raiz (para quem hospeda a própria instalação na Vercel). `tests/unit/cron-routes-scheduled.test.ts` confere as duas uma contra a outra e contra o diretório `app/api/v1/cron/`, e reprova divergência. Para ver a lista de hoje:
 
-```json
-{
-  "crons": [
-    { "path": "/api/cron/wa/sync-sessions",            "schedule": "* * * * *" },
-    { "path": "/api/cron/wa/recover-stuck-messages",   "schedule": "* * * * *" },
-    { "path": "/api/cron/wa/process-pending-webhooks", "schedule": "* * * * *" }
-  ]
-}
+```bash
+grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u
 ```
 
-Auth via header `Authorization: Bearer ${INTERNAL_CRON_SECRET}` + `x-vercel-cron: 1`.
+O que esse comando devolve são os crons em vigor. **As subseções abaixo são planejamento, e nem toda
+rota nomeada nelas existe** — confira cada nome contra `ls app/api/v1/cron`. Toda rota de cron aceita `Authorization: Bearer <segredo>`, conferido contra `INTERNAL_CRON_SECRET` e `INTERNAL_SECRET`; parte delas usa o helper `autorizaCron()` (`lib/auth/cron-auth.ts`), que também aceita `x-cron-secret` — para ver quais, `grep -rl autorizaCron app/api/v1/cron/`.
 
 ### 10.1 `sync-sessions`
 

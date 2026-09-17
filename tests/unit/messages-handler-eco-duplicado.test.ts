@@ -76,8 +76,14 @@ function makeSupabase(preexistentes: Row[] = []) {
 
   const from = (table: string) => {
     if (table === 'conversations') {
+      // Encadeável sem limite: ver o comentário irmão em `contacts` logo abaixo.
+      // A consulta da conversa filtra por id E por `organization_id`.
+      const cadeiaConv: Record<string, unknown> = {
+        eq: () => cadeiaConv,
+        maybeSingle: async () => ({ data: conversationRow(), error: null }),
+      };
       return {
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: conversationRow(), error: null }) }) }),
+        select: () => cadeiaConv,
         update: () => ({ eq: async () => ({ error: null }) }),
       };
     }

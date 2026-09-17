@@ -1,0 +1,192 @@
+#938 menu · motivos oferecidos = ["Sem orçamento","Fora do perfil","other"]
+#938 menu · POST /lose = 200
+#938 menu · banco = {"status":"lost","lost_reason":"Sem orçamento"}
+#938 outro · vazio, Confirmar habilitado = true
+#938 outro · com texto fora da lista: alerta="Esse motivo de perda não está na lista deste funil — escolha um dos motivos configurados." · Confirmar habilitado = false
+#938 outro · vazio → POST /lose = 200
+#938 outro · banco = {"status":"lost","lost_reason":"other"}
+#935 arrasto · POST /move = 422 · corpo = {"error":{"code":"lost_reason_required","message":"Informe o motivo da perda."}}
+#935 arrasto · banco INTACTO = {"status":"open","stage_id":"8cf9e979-6d5a-4a1b-aa65-5c00e5bfeb21","lost_reason":null}
+#935 lote · POST /leads/bulk = 422 · corpo = {"error":{"code":"lost_reason_required","message":"Informe o motivo da perda.","details":{"lead_ids":["beb740bc-79cf-4cab-87a0-658960828d40","8ae73244-ce7f-4972-81c1-fecc1bdebce8"]}}}
+#935 lote · banco INTACTO = [{"id":"beb740bc-79cf-4cab-87a0-658960828d40","status":"open","stage_id":"8cf9e979-6d5a-4a1b-aa65-5c00e5bfeb21"},{"id":"8ae73244-ce7f-4972-81c1-fecc1bdebce8","status":"open","stage_id":"8cf9e979-6d5a-4a1b-aa65-5c00e5bfeb21"}]
+#948 · tags oferecidas sem filtro = ["google ads","orçamento","verão","vip"]
+#948 · digitei "verão" com "vip" na lista → campo = "verão"
+#948 · filtro "verão" → ["verão"]
+#948 · Enter enviou = {"action":"tag","lead_ids":["beb740bc-79cf-4cab-87a0-658960828d40","8ae73244-ce7f-4972-81c1-fecc1bdebce8"],"params":{"add":["verão"]}} → 200
+#948 · banco = [{"id":"beb740bc-79cf-4cab-87a0-658960828d40","tags":["vip","google ads","verão"]},{"id":"8ae73244-ce7f-4972-81c1-fecc1bdebce8","tags":["orçamento","verão"]}]
+#911 · itens do menu do card (manager) = ["Editar","Responsável","Marcar como ganho","Marcar como perdido","Excluir"]
+#911 · aviso = "Excluir "Excluir 8042332"? |  | O card sai do funil com o histórico de atividades. O contato e as conversas continuam. Esta ação não pode ser desfeita. |  | Cancelar | Excluir"
+#911 · POST = {"action":"delete","lead_ids":["6ab07681-9ba1-4808-9b2e-f852cd2b57fe"],"params":{}} → 200
+#911 · banco depois = []
+#911 toque · opacity COMPUTADA do botão sem hover (390px, hasTouch) = 1
+#911 toque · itens do menu = ["Editar","Responsável","Marcar como ganho","Marcar como perdido","Excluir"]
+#911 toque · documento 390px: scrollWidth=390 clientWidth=390 transborda=false
+#911 escuro · quadro 400px tema escuro: scrollWidth=400 clientWidth=400 transborda=false
+L12.G2.2 · 400px tema escuro · documento: scrollWidth=400 clientWidth=400 transborda=false
+#955 renomear · POST = 200 · {"data":{"tag":"obra8158910","acao":"renomear","leads":0,"regras":1,"alterou":true,"destino":"obra8158910-renomeada","contatos":2,"conversas":0}}
+#955 renomear · contatos = [{"id":"a7473c40-0cf5-4701-a85b-9395fc026600","tags":["reforma8158910"]},{"id":"ad11c996-82a3-479b-b36d-b7406ed939ef","tags":["obra8158910-renomeada"]},{"id":"f26fbe60-a15c-4f97-9a8f-fce238d78dec","tags":["obra8158910-renomeada","orcamento8158910"]}]
+#955 renomear · regra = {"actions":[{"type":"add_tag","config":{"tags":["obra8158910-renomeada"]}}]}
+#955 juntar · opções de destino = ["Escolha a etiqueta que fica","obra8158910-renomeada","reforma8158910","VIP"]
+#955 juntar · POST = 200 · {"data":{"tag":"orcamento8158910","acao":"juntar","leads":0,"regras":0,"alterou":true,"destino":"obra8158910-renomeada","contatos":1,"conversas":0}}
+#955 juntar · contatos = [{"id":"a7473c40-0cf5-4701-a85b-9395fc026600","tags":["reforma8158910"]},{"id":"ad11c996-82a3-479b-b36d-b7406ed939ef","tags":["obra8158910-renomeada"]},{"id":"f26fbe60-a15c-4f97-9a8f-fce238d78dec","tags":["obra8158910-renomeada"]}]
+#955 excluir · aviso na tela = "Excluir obra8158910-renomeada de 2 contato(s), 0 lead(s) e 0 conversa(s).\n\nAtenção: 1 regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.\n\nConfirmar\nCancelar"
+#955 excluir · POST = 200
+#955 excluir · a REGRA continua = {"id":"485b8898-3657-47d4-a657-5e2c7d4fcc8e","actions":[{"type":"add_tag","config":{"tags":["obra8158910-renomeada"]}}]}
+#955 J24.5 · viewer em /app/settings/tags → http://localhost:3052/403
+#955 J24.5 · viewer vê a porta em Configurações = 0
+#955 J24.5 · agent em /app/settings/tags → http://localhost:3052/403
+#955 J24.5 · agent vê a porta em Configurações = 0
+#941 · radar contém "Risco Ativo 158918" = true
+#941 · radar contém "Risco Arquivado 158918" = false
+#907 radar · "Maria Escolhida" presente = true · "Ze do Pix" presente = false
+#941 · radar 1440px: scrollWidth=1280 clientWidth=1280
+#936 · POST /leads/49b7b4fa-8e4d-406d-b253-4156a90693bc/clone = 201 · {"data":{"lead":{"id":"f21dbbec-7c4e-47bc-8b02-aa36da59d4c7","organization_id":"4ab12fe7-45e1-4fcd-bd35-d517f6c671b1","pipeline_id":"2e4de51b-f6be-489b-ae20-fc561cb94bc3","stage_id":"aea688a0-d6d3-4cd9-b5b3-e8837bfa930a","contact_id":null,"title":"Negócio 190980","description":null,"status":"open","lost_reason":null,"position_in_stage":1000,"value_cents":null,"currency":"BRL","owner_user_id":null,"assigned_at":null,"last_activity_at":null,"expected_close_date":null,"closed_at":null,"source":"man
+#936 · custom_fields do clone = {"bairro":"Savassi","orcamento":"R$ 42.000"}
+#936 · dossiê do CLONE = "Close\nNegócio 190980\n—\nEntrada\nSem responsável\nEditar campos\nLINHA DO TEMPO\n\nVeio de outro funil\n\nVeio do funil Troca Origem 190980\n\nE2E Manager · 16 de set., 16:50\n\nDADOS DO NEGÓCIO\nTítulo\nDescrição\nValor (R$)\nFechamento previsto\nTags (separadas por vírgula)\n\nCampos do funil\n\nOrçamento\nBairro\nSalvar"
+#936 fronteira · POST /move para etapa de OUTRO funil = 422 · {"error":{"code":"pipeline_immutable_use_clone","message":"Move cross-pipeline não é permitido. Use POST /api/v1/leads/[id]/clone para levar o negócio a outro funil.","details":{"use":"/api/v1/leads/{id}/clone"}}}
+#931 fresco · [endereco-de-retorno] = 1 · [conectar-google] = 0
+#931 fresco · endereço de retorno na tela = "http://localhost:3052/api/v1/agenda/google/callback"
+#915 · evento semeado: 2026-09-16T02:30:00.000Z → 2026-09-16T03:30:00.000Z (atravessa a meia-noite)
+#915 · janela PEDIDA pela tela: de=2026-09-13T03:00:00.000Z ate=2026-09-20T03:00:00.000Z
+#915 · corpo de /agenda/agendamentos = {"data":[{"id":"2fd42e94-9df2-425a-bded-95b2d55bc6d2","titulo":"Ocupado","donoId":"eae74b12-88c1-4747-a99d-c7221e1e91d1","iniciaEm":"2026-09-16T02:30:00.000Z","terminaEm":"2026-09-16T03:30:00.000Z","situacao":"confirmed","fuso":"","contatoId":null,"contatoNome":null,"origem":"google_sync"}]}
+#915 · bloco 2026-09-16T02:30:00.000Z→2026-09-16T03:30:00.000Z dentro da janela 2026-09-13T03:00:00.000Z→2026-09-20T03:00:00.000Z? true
+#915 · a tela contém "Ocupado" = true
+#915 · a tela contém o título sensível "SEGREDO 232768" = false
+#907 · antes de editar, a ficha mostra o nome do perfil do WhatsApp
+#907 · PATCH do nome = 200
+#907 · banco = {"name":"Maria Silva 232768","display_name":"Ze do Pix 232768"} (as DUAS colunas continuam preenchidas)
+#907 ficha · "Maria Silva" = false · "Ze do Pix" = false
+#942 · agente da org = {"id":"49aff905-172b-475b-9bff-286a5eddcf59","name":"Bot Padrão E2E","is_active":true,"published_version_id":null}
+#942 · o pacote "Vender e mover o funil" está na tela = 1
+#942 · texto do pacote = "Vender e mover o funil |  | O agente registra a oportunidade, atualiza o negócio e move o cliente de etapa conforme a conversa avança. |  | 0 de 22 capacidades ligadas |  | Só ligando uma a uma — o pacote não liga por você: |  | Desmarcar um compromisso | Efeito que não dá para desfazer | · Agenda da equipe | Desmarca um horário combinado e devolve esse horário para outra pessoa poder pegar, o que não dá para desfazer. | Iniciar conversa com cliente novo e enviar mensagem | Efeito que não dá para desfazer | · Atendimento | Cria o cadastro do cliente se ele ainda não existir, abre uma conversa nova no número de WhatsApp escolhido e manda a primeira mensagem para ele — de verdade, no celular dele."
+#942 · rótulo do avançado = "Escolher uma a uma (modo avançado)"
+#942 · a caixa "Ver se o horário está livre e já marcar" existe na tela = 1
+#942 · a capacidade está ligada nesta instalação = false
+#942 · consumo do teto do agente semeado = "0 de 25"
+#942 · a tela explica o que a capacidade faz = 1
+L12.G2.2 · 400px tema escuro · documento: scrollWidth=400 clientWidth=400 transborda=false
+#955 renomear · POST = 200 · {"data":{"tag":"obra8369178","acao":"renomear","leads":0,"regras":1,"alterou":true,"destino":"obra8369178-renomeada","contatos":2,"conversas":0}}
+#955 renomear · contatos = [{"id":"976d7596-a2da-476a-b2c9-ee6ac01db308","tags":["reforma8369178"]},{"id":"b0f78af2-7921-4913-95c0-6e5a3557643b","tags":["obra8369178-renomeada"]},{"id":"cd718374-c588-4097-95be-af504e283559","tags":["obra8369178-renomeada","orcamento8369178"]}]
+#955 renomear · regra = {"actions":[{"type":"add_tag","config":{"tags":["obra8369178-renomeada"]}}]}
+#955 juntar · opções de destino = ["Escolha a etiqueta que fica","obra8369178-renomeada","reforma8369178","VIP"]
+#955 juntar · POST = 200 · {"data":{"tag":"orcamento8369178","acao":"juntar","leads":0,"regras":0,"alterou":true,"destino":"obra8369178-renomeada","contatos":1,"conversas":0}}
+#955 juntar · contatos = [{"id":"976d7596-a2da-476a-b2c9-ee6ac01db308","tags":["reforma8369178"]},{"id":"b0f78af2-7921-4913-95c0-6e5a3557643b","tags":["obra8369178-renomeada"]},{"id":"cd718374-c588-4097-95be-af504e283559","tags":["obra8369178-renomeada"]}]
+#944 · GET /crm-summary = 200
+#909 · rótulo do botão = "Novo Lead"
+#909 · título do diálogo = "Novo Lead"
+#944 · seção "Leads recentes" = "Leads recentes\nProposta 8391481\nFunil de Vendas Consultivas B2B Enterprise 8391481 · Fechado\nGanho · —\nProposta 8391481\nFunil de Vendas Consultivas B2B Enterprise 8391481 · Proposta enviada ao comitê\nAberto · —\n\nEste funil não tem campos extras."
+#944 · crm_pipelines.vocabulary do funil = {"vocabulary":{"won":"Pago","deal":"Pedido","lead":"Cliente","lost":"Cancelado","stage":"Etapa","deal_plural":"Pedidos","lead_plural":"Clientes","stage_plural":"Etapas"}}
+L12.G2.3 · 1440px "Funil · Etapa": scrollWidth=245 clientWidth=245 transborda=false
+L12.G2.1 · GET /api/v1/contact-tags = 200 · corpo = {"data":["obra","obra8369178-renomeada","reforma8369178","vip"]}
+#946 · chips oferecidos = ["+ obra","+ obra8369178-renomeada","+ reforma8369178"]
+L12.G2.2 · 400px tema escuro · documento: scrollWidth=400 clientWidth=400 transborda=false
+#955 J24.3 · porta em /app/settings = "Tags |  | O vocabulário de etiquetas da empresa: onde cada uma é usada e como renomear, juntar ou excluir."
+[ambiente] login de e2e-manager@deskcomm.test: tentativa 1 falhou (http://localhost:3052/login)
+#955 J24.3 · linha de obra8419015 = ["obra8419015em uso, fora do vocabulário","2","0","0","1","Renomear\nJuntar\nExcluir"]
+#955 renomear · POST = 200 · {"data":{"tag":"obra8419015","acao":"renomear","leads":0,"regras":1,"alterou":true,"destino":"obra8419015-renomeada","contatos":2,"conversas":0}}
+#955 renomear · contatos = [{"id":"390acc1a-0990-443f-9528-3c24cc261969","tags":["obra8419015-renomeada"]},{"id":"32b9848c-c8c6-4502-95cd-a3afb074c6e2","tags":["obra8419015-renomeada","orcamento8419015"]},{"id":"cfc04580-94b8-4ffc-9649-cb434a38535e","tags":["reforma8419015"]}]
+#955 renomear · regra = {"actions":[{"type":"add_tag","config":{"tags":["obra8419015-renomeada"]}}]}
+[ambiente] login de e2e-manager@deskcomm.test só entrou na tentativa 2
+#955 excluir · aviso na tela = "Excluir obra8369178-renomeada de 2 contato(s), 0 lead(s) e 0 conversa(s).\n\nAtenção: 1 regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.\n\nConfirmar\nCancelar"
+#955 excluir · POST = 200
+#955 excluir · a REGRA continua = {"id":"33654914-dcbf-4c7d-96e0-ad85edbb8435","actions":[{"type":"add_tag","config":{"tags":["obra8369178-renomeada"]}}]}
+#955 juntar · opções de destino = ["Escolha a etiqueta que fica","Obra","obra8369178-renomeada","obra8419015-renomeada","reforma8369178","reforma8419015","vip"]
+#955 juntar · POST = 200 · {"data":{"tag":"orcamento8419015","acao":"juntar","leads":0,"regras":0,"alterou":true,"destino":"obra8419015-renomeada","contatos":1,"conversas":0}}
+#955 juntar · contatos = [{"id":"390acc1a-0990-443f-9528-3c24cc261969","tags":["obra8419015-renomeada"]},{"id":"32b9848c-c8c6-4502-95cd-a3afb074c6e2","tags":["obra8419015-renomeada"]},{"id":"cfc04580-94b8-4ffc-9649-cb434a38535e","tags":["reforma8419015"]}]
+#955 J24.5 · viewer em /app/settings/tags → http://localhost:3052/403
+#955 excluir · aviso na tela = "Excluir obra8419015-renomeada de 2 contato(s), 0 lead(s) e 0 conversa(s).\n\nAtenção: 1 regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.\n\nConfirmar\nCancelar"
+#955 J24.5 · viewer vê a porta em Configurações = 0
+#955 excluir · POST = 200
+#955 excluir · a REGRA continua = {"id":"1b34f3f0-5342-4b9f-b370-43d09d434725","actions":[{"type":"add_tag","config":{"tags":["obra8419015-renomeada"]}}]}
+#955 J24.5 · agent em /app/settings/tags → http://localhost:3052/403
+#955 J24.5 · agent vê a porta em Configurações = 0
+#955 J24.5 · viewer em /app/settings/tags → http://localhost:3052/403
+#955 J24.5 · viewer vê a porta em Configurações = 0
+#955 J24.5 · agent em /app/settings/tags → http://localhost:3052/403
+#941 · radar contém "Risco Ativo 443817" = true
+#941 · radar contém "Risco Arquivado 443817" = false
+#907 radar · "Maria Escolhida" presente = true · "Ze do Pix" presente = false
+#941 · radar 1440px: scrollWidth=1280 clientWidth=1280
+#955 J24.5 · agent vê a porta em Configurações = 0
+#941 · radar contém "Risco Ativo 419022" = true
+#941 · radar contém "Risco Arquivado 419022" = false
+#907 radar · "Maria Escolhida" presente = true · "Ze do Pix" presente = false
+#941 · radar 1440px: scrollWidth=1280 clientWidth=1280
+#936 · POST /leads/9beb4fe8-92b6-4ae1-b9b6-7e5c1718587a/clone = 201 · {"data":{"lead":{"id":"ad4ce77b-985d-4ea3-a6a1-12d4a0196446","organization_id":"4ab12fe7-45e1-4fcd-bd35-d517f6c671b1","pipeline_id":"27c29fd7-fefb-4b11-aabc-f11a5c8e245a","stage_id":"08800e03-cc54-4afe-a3df-297f17e8c48a","contact_id":null,"title":"Negócio 537828","description":null,"status":"open","lost_reason":null,"position_in_stage":1000,"value_cents":null,"currency":"BRL","owner_user_id":null,"assigned_at":null,"last_activity_at":null,"expected_close_date":null,"closed_at":null,"source":"man
+#936 · custom_fields do clone = {"bairro":"Savassi","orcamento":"R$ 42.000"}
+#936 · dossiê do CLONE = "Close\nNegócio 537828\n—\nEntrada\nSem responsável\nEditar campos\nLINHA DO TEMPO\n\nVeio de outro funil\n\nVeio do funil Troca Origem 537828\n\nE2E Manager · 16 de set., 16:55\n\nDADOS DO NEGÓCIO\nTítulo\nDescrição\nValor (R$)\nFechamento previsto\nTags (separadas por vírgula)\n\nCampos do funil\n\nOrçamento\nBairro\nSalvar"
+#936 · campos do dossiê do CLONE = [{"nome":"title","valor":"Negócio 537828"},{"nome":"valueReais","valor":""},{"nome":"expected_close_date","valor":""},{"nome":"tagsRaw","valor":""},{"nome":"cf-orcamento","valor":"R$ 42.000"},{"nome":"cf-bairro","valor":"Savassi"}]
+#936 · atividades da ORIGEM = [{"type":"demand_closed","reason":"Levado para o funil Troca Destino 537828"}]
+#936 · lead de ORIGEM depois = {"status":"lost","lost_reason":"other","source_metadata":{"movido_para":{"lead_id":"ad4ce77b-985d-4ea3-a6a1-12d4a0196446","stage_id":"08800e03-cc54-4afe-a3df-297f17e8c48a","pipeline_id":"27c29fd7-fefb-4b11-aabc-f11a5c8e245a"}}}
+#936 · dossiê da ORIGEM = "Close\nNegócio 537828\n—\nPerdido\nSem responsável\nEditar campos\nLINHA DO TEMPO\n\nCarregando a linha do tempo…\n\nDADOS DO NEGÓCIO\nTítulo\nDescrição\nValor (R$)\nFechamento previsto\nTags (separadas por vírgula)\n\nCampos do funil\n\nOrçamento\nBairro\nSalvar"
+#936 fronteira · POST /move para etapa de OUTRO funil = 422 · {"error":{"code":"pipeline_immutable_use_clone","message":"Move cross-pipeline não é permitido. Use POST /api/v1/leads/[id]/clone para levar o negócio a outro funil.","details":{"use":"/api/v1/leads/{id}/clone"}}}
+#931 fresco · [endereco-de-retorno] = 1 · [conectar-google] = 0
+#931 fresco · endereço de retorno na tela = "http://localhost:3052/api/v1/agenda/google/callback"
+#915 · evento semeado: 2026-09-16T02:30:00.000Z → 2026-09-16T03:30:00.000Z (atravessa a meia-noite)
+#915 · janela PEDIDA pela tela: de=2026-09-13T03:00:00.000Z ate=2026-09-20T03:00:00.000Z
+#915 · corpo de /agenda/agendamentos = {"data":[{"id":"dae6bad9-07ec-49db-a8ca-f2355f61564e","titulo":"Ocupado","donoId":"eae74b12-88c1-4747-a99d-c7221e1e91d1","iniciaEm":"2026-09-16T02:30:00.000Z","terminaEm":"2026-09-16T03:30:00.000Z","situacao":"confirmed","fuso":"","contatoId":null,"contatoNome":null,"origem":"google_sync"}]}
+#915 · bloco 2026-09-16T02:30:00.000Z→2026-09-16T03:30:00.000Z dentro da janela 2026-09-13T03:00:00.000Z→2026-09-20T03:00:00.000Z? true
+#915 · a tela contém "Ocupado" = true
+#915 · a tela contém o título sensível "SEGREDO 586854" = false
+#907 · antes de editar, a ficha mostra o nome do perfil do WhatsApp
+#907 · PATCH do nome = 200
+#907 · banco = {"name":"Maria Silva 586854","display_name":"Ze do Pix 586854"} (as DUAS colunas continuam preenchidas)
+#907 ficha · "Maria Silva" = true · "Ze do Pix" = true
+#907 inbox · "Maria Silva" = true · "Ze do Pix" = false
+#907 · GET /api/v1/conversations = 200 · contém "Maria Silva" = true · contém "Ze do Pix" = true
+#942 · agente da org = {"id":"49aff905-172b-475b-9bff-286a5eddcf59","name":"Bot Padrão E2E","is_active":true,"published_version_id":null}
+#942 · o pacote "Vender e mover o funil" está na tela = 1
+#942 · texto do pacote = "Vender e mover o funil |  | O agente registra a oportunidade, atualiza o negócio e move o cliente de etapa conforme a conversa avança. |  | 0 de 22 capacidades ligadas |  | Só ligando uma a uma — o pacote não liga por você: |  | Desmarcar um compromisso | Efeito que não dá para desfazer | · Agenda da equipe | Desmarca um horário combinado e devolve esse horário para outra pessoa poder pegar, o que não dá para desfazer. | Iniciar conversa com cliente novo e enviar mensagem | Efeito que não dá para desfazer | · Atendimento | Cria o cadastro do cliente se ele ainda não existir, abre uma conversa nova no número de WhatsApp escolhido e manda a primeira mensagem para ele — de verdade, no celular dele."
+#942 · rótulo do avançado = "Escolher uma a uma (modo avançado)"
+#942 · a caixa "Ver se o horário está livre e já marcar" existe na tela = 1
+#942 · a capacidade está ligada nesta instalação = false
+#942 · consumo do teto do agente semeado = "0 de 25"
+#942 · a tela explica o que a capacidade faz = 1
+#942 · data-marcada=nao data-risco=atencao · caixa desabilitada = true
+#942 · o clique na capacidade NÃO completou: locator.click: Timeout 15000ms exceeded.
+#942 · NÃO MEDIDO: o agente conferir e reservar numa conversa de verdade. Falta chave de IA (AI_GATEWAY_API_KEY/ANTHROPIC_API_KEY/OPENROUTER_API_KEY) — sem ela o motor pula toda resposta com reason='ai_gateway_key_missing', que é o estado declarado desta instalação.
+#942 · agente da org = {"id":"49aff905-172b-475b-9bff-286a5eddcf59","name":"Bot Padrão E2E","is_active":true,"published_version_id":null}
+#942 · o pacote "Vender e mover o funil" está na tela = 1
+#942 · texto do pacote = "Vender e mover o funil |  | O agente registra a oportunidade, atualiza o negócio e move o cliente de etapa conforme a conversa avança. |  | 0 de 22 capacidades ligadas |  | Só ligando uma a uma — o pacote não liga por você: |  | Desmarcar um compromisso | Efeito que não dá para desfazer | · Agenda da equipe | Desmarca um horário combinado e devolve esse horário para outra pessoa poder pegar, o que não dá para desfazer. | Iniciar conversa com cliente novo e enviar mensagem | Efeito que não dá para desfazer | · Atendimento | Cria o cadastro do cliente se ele ainda não existir, abre uma conversa nova no número de WhatsApp escolhido e manda a primeira mensagem para ele — de verdade, no celular dele."
+#942 · rótulo do avançado = "Escolher uma a uma (modo avançado)"
+#942 · a caixa "Ver se o horário está livre e já marcar" existe na tela = 1
+#942 · a capacidade está ligada nesta instalação = false
+#942 · consumo do teto do agente semeado = "0 de 25"
+#942 · a tela explica o que a capacidade faz = 1
+#942 · data-marcada=nao data-risco=atencao · caixa desabilitada = false
+#942 · depois do clique, a capacidade está ligada = true
+#942 · NÃO MEDIDO: o agente conferir e reservar numa conversa de verdade. Falta chave de IA (AI_GATEWAY_API_KEY/ANTHROPIC_API_KEY/OPENROUTER_API_KEY) — sem ela o motor pula toda resposta com reason='ai_gateway_key_missing', que é o estado declarado desta instalação.
+#938 menu · motivos oferecidos = ["Sem orçamento","Fora do perfil","other"]
+#938 menu · POST /lose = 200
+#938 menu · banco = {"status":"lost","lost_reason":"Sem orçamento"}
+#938 outro · vazio, Confirmar habilitado = true
+#938 outro · com texto fora da lista: alerta="Esse motivo de perda não está na lista deste funil — escolha um dos motivos configurados." · Confirmar habilitado = false
+#938 outro · vazio → POST /lose = 200
+#938 outro · banco = {"status":"lost","lost_reason":"other"}
+#935 arrasto · POST /move = 422 · corpo = {"error":{"code":"lost_reason_required","message":"Informe o motivo da perda."}}
+#935 arrasto · banco INTACTO = {"status":"open","stage_id":"bb72f32d-43f2-45e8-9c88-ff298049f8ee","lost_reason":null}
+#935 lote · POST /leads/bulk = 422 · corpo = {"error":{"code":"lost_reason_required","message":"Informe o motivo da perda.","details":{"lead_ids":["65966edd-be12-4155-837e-338f6256af0e","28539625-e508-4ff2-95e2-058a83149cbc"]}}}
+#935 lote · banco INTACTO = [{"id":"65966edd-be12-4155-837e-338f6256af0e","status":"open","stage_id":"bb72f32d-43f2-45e8-9c88-ff298049f8ee"},{"id":"28539625-e508-4ff2-95e2-058a83149cbc","status":"open","stage_id":"bb72f32d-43f2-45e8-9c88-ff298049f8ee"}]
+#948 · o quadro tem 13 tags distintas; o menu oferece 10: ["google ads","obra","oferta","onboarding","orçamento","outlet","varejo","verde","verão","viagem"]
+#948 · digitei "verão" com "vip" na lista → campo = "verão"
+#948 · filtro "verão" → ["verão"]
+#948 · Enter enviou = {"action":"tag","lead_ids":["65966edd-be12-4155-837e-338f6256af0e","28539625-e508-4ff2-95e2-058a83149cbc"],"params":{"add":["verão"]}} → 200
+#948 · banco = [{"id":"65966edd-be12-4155-837e-338f6256af0e","tags":["vip","google ads","verde","vitrine","varejo","vistoria","viagem","verão"]},{"id":"28539625-e508-4ff2-95e2-058a83149cbc","tags":["orçamento","obra","oferta","onboarding","outlet","verão"]}]
+#911 · itens do menu do card (manager) = ["Editar","Responsável","Marcar como ganho","Marcar como perdido","Excluir"]
+#911 · aviso = "Excluir "Excluir 8794231"? |  | O card sai do funil com o histórico de atividades. O contato e as conversas continuam. Esta ação não pode ser desfeita. |  | Cancelar | Excluir"
+#911 · POST = {"action":"delete","lead_ids":["39fee992-08cc-46bd-8eb1-01a8307966b4"],"params":{}} → 200
+#911 · banco depois = []
+#911 toque · opacity COMPUTADA do botão sem hover (390px, hasTouch) = 1
+#911 toque · itens do menu = ["Editar","Responsável","Marcar como ganho","Marcar como perdido","Excluir"]
+#911 toque · documento 390px: scrollWidth=390 clientWidth=390 transborda=false
+#911 escuro · quadro 400px tema escuro: scrollWidth=400 clientWidth=400 transborda=false
+#944 · GET /crm-summary = 200
+#909 · rótulo do botão = "Novo Lead"
+#909 · título do diálogo = "Novo Lead"
+#944 · seção "Leads recentes" = "Leads recentes\nProposta 8859319\nFunil de Vendas Consultivas B2B Enterprise 8859319 · Fechado\nGanho · —\nProposta 8859319\nFunil de Vendas Consultivas B2B Enterprise 8859319 · Proposta enviada ao comitê\nAberto · —\n\nEste funil não tem campos extras."
+#944 · crm_pipelines.vocabulary do funil = {"vocabulary":{"won":"Pago","deal":"Pedido","lead":"Cliente","lost":"Cancelado","stage":"Etapa","deal_plural":"Pedidos","lead_plural":"Clientes","stage_plural":"Etapas"}}
+L12.G2.3 · 1440px "Funil · Etapa": scrollWidth=245 clientWidth=245 transborda=false
+L12.G2.1 · GET /api/v1/contact-tags = 200 · corpo = {"data":["obra","vip"]}
+#946 · chips oferecidos = ["+ obra"]
+#946 · PATCH = 200 · antes={"tags":["VIP"]} depois={"tags":["VIP","obra"]}
+L12.G2.2 · 400px tema escuro · documento: scrollWidth=400 clientWidth=400 transborda=false

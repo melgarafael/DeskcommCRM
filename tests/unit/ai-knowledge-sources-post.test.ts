@@ -108,7 +108,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/v1/ai/knowledge/sources — colisão do índice único", () => {
-  it("23505 vira 409 knowledge_source_type_in_use, em português e sem texto do Postgres", async () => {
+  it("23505 vira 409 knowledge_source_name_in_use, em português e sem texto do Postgres", async () => {
     sessaoOk();
     dublarBanco({
       erroDoInsert: {

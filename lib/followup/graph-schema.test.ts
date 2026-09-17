@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   NODE_TYPES,
-  NodeType,
   waitConfigSchema,
   aiClassifyConfigSchema,
   matchReplyConfigSchema,
@@ -11,9 +10,6 @@ import {
   flowNodeSchema,
   flowEdgeSchema,
   flowGraphSchema,
-  FlowGraph,
-  FlowNode,
-  FlowEdge,
   FALLBACK_BRANCH_ID,
   NO_REPLY_BRANCH_ID,
   CONDITION_TRUE_BRANCH_ID,
@@ -23,6 +19,7 @@ import {
   branchIdForCondition,
   conditionForBranch,
 } from './graph-schema';
+import type { NodeType, FlowGraph, FlowNode, FlowEdge } from './graph-schema';
 import { toReactFlow, fromReactFlow } from './graph-mappers';
 
 describe('graph-schema', () => {
@@ -933,6 +930,93 @@ describe('graph-schema', () => {
         extra_key: 'should reject',
       });
       expect(result.success).toBe(false);
+    });
+
+    /**
+     * Integridade ENTRE nós e arestas (#699). Cada peça passava no schema
+     * sozinha — quem montava o grafo (o canvas, ao excluir um nó) produzia
+     * aresta órfã e ids repetidos que só quebravam longe do defeito. Aqui o
+     * contrato é de fora: rejeitar com o id a corrigir na mensagem.
+     */
+    describe('integridade: aresta órfã e ids repetidos (#699)', () => {
+      const noTrigger = (id: string) => ({
+        id,
+        type: 'trigger' as const,
+        label: 'Start',
+        position: { x: 0, y: 0 },
+        config: {},
+      });
+      const noEnd = (id: string) => ({
+        id,
+        type: 'end' as const,
+        label: 'End',
+        position: { x: 100, y: 100 },
+        config: { outcome: 'converted' as const },
+      });
+      const aresta = (id: string, source: string, target: string) => ({
+        id,
+        source,
+        target,
+        condition: { type: 'always' as const },
+      });
+
+      /** [] quando o grafo passou — a asserção de mensagem falha em vez de pular. */
+      function mensagensDe(resultado: ReturnType<typeof flowGraphSchema.safeParse>): string[] {
+        return resultado.success ? [] : resultado.error.issues.map((i) => i.message);
+      }
+
+      it('aceita grafo íntegro com aresta ligando dois nós existentes (controle)', () => {
+        const result = flowGraphSchema.safeParse({
+          nodes: [noTrigger('no-1'), noEnd('no-2')],
+          edges: [aresta('e-1', 'no-1', 'no-2')],
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it('rejeita aresta cujo source aponta para nó inexistente', () => {
+        const result = flowGraphSchema.safeParse({
+          nodes: [noTrigger('no-1'), noEnd('no-2')],
+          edges: [aresta('e-3', 'no-9', 'no-2')],
+        });
+        expect(result.success).toBe(false);
+        expect(mensagensDe(result)).toContain('aresta "e-3" aponta para nó inexistente: "no-9"');
+      });
+
+      it('rejeita aresta cujo target aponta para nó inexistente', () => {
+        const result = flowGraphSchema.safeParse({
+          nodes: [noTrigger('no-1'), noEnd('no-2')],
+          edges: [aresta('e-3', 'no-1', 'no-9')],
+        });
+        expect(result.success).toBe(false);
+        expect(mensagensDe(result)).toContain('aresta "e-3" aponta para nó inexistente: "no-9"');
+      });
+
+      it('rejeita dois nós com o mesmo id', () => {
+        const result = flowGraphSchema.safeParse({
+          nodes: [noTrigger('no-1'), noTrigger('no-1'), noEnd('no-2')],
+          edges: [aresta('e-1', 'no-1', 'no-2')],
+        });
+        expect(result.success).toBe(false);
+        expect(mensagensDe(result)).toContain('id de nó repetido: "no-1"');
+      });
+
+      it('rejeita duas arestas com o mesmo id', () => {
+        const result = flowGraphSchema.safeParse({
+          nodes: [noTrigger('no-1'), noEnd('no-2')],
+          edges: [aresta('e-2', 'no-1', 'no-2'), aresta('e-2', 'no-1', 'no-2')],
+        });
+        expect(result.success).toBe(false);
+        expect(mensagensDe(result)).toContain('id de aresta repetido: "e-2"');
+      });
+
+      it('CONTROLE: campo desconhecido continua rejeitado', () => {
+        const result = flowGraphSchema.safeParse({
+          nodes: [noTrigger('no-1'), noEnd('no-2')],
+          edges: [aresta('e-1', 'no-1', 'no-2')],
+          campo_desconhecido: true,
+        });
+        expect(result.success).toBe(false);
+      });
     });
   });
 

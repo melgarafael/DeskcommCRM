@@ -4,7 +4,7 @@ import { GOV_ADMIN, GOV_MANAGER, GOV_ORG, GOV_VIEWER, seedGov, sql } from "./gov
 
 /**
  * AS CREDENCIAIS DE IA SÃO LIDAS POR QUEM NÃO É ADMIN — E O SEGREDO NÃO É
- * (migration 0206, issue #292).
+ * (migration 0207, issue #292).
  *
  * ─── O defeito ──────────────────────────────────────────────────────────────
  *
@@ -65,7 +65,7 @@ beforeAll(() => {
   seedCredencial();
 });
 
-describe("0206 — a lista de credenciais de IA é legível por quem não é admin", () => {
+describe("0207 — a lista de credenciais de IA é legível por quem não é admin", () => {
   it("⭐ manager LÊ a view segura — a tela dele deixa de vir vazia", () => {
     const saida = leComo(
       GOV_MANAGER,
@@ -79,7 +79,7 @@ describe("0206 — a lista de credenciais de IA é legível por quem não é adm
     expect(String(saida)).toContain("Chave da leitura");
   });
 
-  it("viewer também LÊ — a tela é read-only e não é admin-gated", () => {
+  it("viewer também LÊ no banco — a policy é por organização, sem gate de papel; quem barra o viewer é a tela", () => {
     const saida = leComo(
       GOV_VIEWER,
       `select label from public.ai_provider_credentials_safe where id = '${CRED_LEITURA}';`,
@@ -97,7 +97,7 @@ describe("0206 — a lista de credenciais de IA é legível por quem não é adm
   });
 });
 
-describe("0206 — e reabrir a LEITURA não reabre o SEGREDO", () => {
+describe("0207 — e reabrir a LEITURA não reabre o SEGREDO", () => {
   it("⭐ manager NÃO alcança api_key_encrypted", () => {
     // Sem este caso, um "conserto" que devolvesse `grant select` na tabela
     // inteira ficaria verde nos casos acima — e entregaria o ciphertext, o iv e

@@ -192,7 +192,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     return ok(result, { status: 201, requestId });
   } catch (err) {
     if (err instanceof ApiError) {
-      return fail(err.code, err.message, err.status, { requestId });
+      return fail(err.code, err.message, err.status, {
+        details: err.details as Record<string, unknown> | undefined,
+        requestId,
+      });
     }
     throw err;
   }

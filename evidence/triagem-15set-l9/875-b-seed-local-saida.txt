@@ -1,0 +1,28 @@
+# #875 (b) — cadeia documentada contra o Supabase LOCAL qa-l9 (127.0.0.1:59321), com set -a; . ./.env.e2e
+## seed-e2e-credentials.ts (exit 0)
+✅ Seed completo. Credenciais escritas em .e2e-creds.json
+org: 896aac55-b412-44f2-abcd-bd47f76b2aba
+agent default: 62c305a0-03c1-4da3-9cb8-e81ebc1153c3
+users: admin(admin)=e2e-admin@deskcomm.test, manager(manager)=e2e-manager@deskcomm.test, agent(agent)=e2e-agent@deskcomm.test, viewer(viewer)=e2e-viewer@deskcomm.test, dono(admin)=e2e-dono@deskcomm.test
+## seed-crm-vivo.ts (exit 0)
+
+✅ Seed CRM Vivo completo: 12 leads em 6 estágios.
+   Board: /app/pipelines/a7f59c63-ed28-4cad-9793-c1c70e26e9d4
+## seed-automacoes-e-followups.ts — 1ª rodada (exit 0)
+[seed-automacoes-e-followups] escrevendo em LOCAL: http://127.0.0.1:59321 (origem: ambiente)
+
+✅ Seed de automações e follow-ups completo.
+   Automações: 3 regras ativas, 3 execuções no histórico
+   Follow-up:  fluxo "Retomada de contato (demonstração)" ativo, 4 inscrições
+   Telas: /app/webhooks (abas Regras e Atividade) e /app/ai/followups
+## seed-automacoes-e-followups.ts — 2ª rodada, idempotência (exit 0)
+[seed-automacoes-e-followups] escrevendo em LOCAL: http://127.0.0.1:59321 (origem: ambiente)
+
+✅ Seed de automações e follow-ups completo.
+   Automações: 3 regras ativas, 0 execuções no histórico
+   Follow-up:  fluxo "Retomada de contato (demonstração)" ativo, 0 inscrições
+   Telas: /app/webhooks (abas Regras e Atividade) e /app/ai/followups
+## banco depois da 2ª rodada (leitura)
+regras|3
+execucoes|3
+inscricoes|4

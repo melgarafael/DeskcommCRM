@@ -4,8 +4,8 @@
  * um pool falso, invariante com Postgres real.
  *
  * Cada preflight é uma função `(ctx) => Promise<Resultado>`. Nenhuma escreve
- * nada: a única escrita do fluxo (`channel_sessions.metadata.ai_gate`) mora no
- * script, atrás de `--apply`.
+ * nada: a única escrita do fluxo (`channel_sessions.metadata`, os DOIS campos do
+ * gate) mora no script, atrás de `--apply`.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -20,7 +20,9 @@ import {
   decidirElegibilidade,
   lerModoDoGate,
   montarEstadoDeElegibilidade,
+  type DecisaoDeElegibilidade,
 } from "../../lib/ai/elegibilidade/gate";
+import { lerModoDeAcessoDaIa } from "../../lib/ai/elegibilidade/pre-go-live";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -49,13 +51,55 @@ export interface CtxAtivacao {
   /** raiz do repo — para as checagens de código-fonte (INFO se ausente). */
   raiz: string;
   ttlMs: number;
-  alvoModo: "allowlist" | "open";
+  alvoModo: ModoDaEscrita;
   rollback: boolean;
   opcoes: {
     permitirSemAgente: boolean;
     campanhasPerigosasOk: boolean;
     tamAmostra: number;
   };
+}
+
+/** Os modos que o script sabe escrever. São o par `ai_gate` + `ai_gate_mode`. */
+export type ModoDaEscrita = "allowlist" | "open";
+
+/**
+ * A metadata que o `--apply` deixa no canal: os DOIS campos do gate, coerentes.
+ *
+ * ─── Por que os dois andam juntos ──────────────────────────────────────────
+ *
+ * O script liga o allowlist POR ORIGEM (gate da 0206), não o pré-go-live. A
+ * versão anterior escrevia só `{ai_gate}` e deixava `ai_gate_mode` como estava —
+ * e um canal que já tinha passado pela tela carregava `ai_gate_mode='pre_go_live'`
+ * (a RPC da 0218 gravava esse literal em TODA chamada, inclusive ao abrir ao
+ * público — issue #602). Resultado: o `--apply` devolvia o canal ao PRÉ-GO-LIVE,
+ * com a lista de testadores antiga, em vez da autorização por origem que o
+ * operador pediu. A IA parava de responder a quem deveria atender, sem erro em
+ * lugar nenhum: uma falha fechada e silenciosa.
+ *
+ * Quem lê `ai_gate_mode` é o motor (`montarEstadoDeElegibilidade` →
+ * `preGoLiveAtivo`): o marcador 'pre_go_live' é o que faz a lista de testadores
+ * valer acima das autorizações por origem. Escrever o alvo nos dois campos é o
+ * que mantém motor, tela e preflight falando do mesmo canal.
+ *
+ * A escrita em si NÃO passa por aqui — ela é um `jsonb_set` por chave, no
+ * servidor, para não apagar as demais chaves de metadata (transporte, onboarding)
+ * nem perder alteração concorrente. Esta função é o CONTRATO: os valores que o
+ * script grava e a simulação que o preflight imprime saem daqui.
+ */
+export function metadataComGate(
+  metadata: Record<string, unknown> | null | undefined,
+  alvoModo: ModoDaEscrita,
+): Record<string, unknown> {
+  return { ...(metadata ?? {}), ai_gate: alvoModo, ai_gate_mode: alvoModo };
+}
+
+/** O par de campos do gate, na forma que `montarEstadoDeElegibilidade` lê. */
+function parDoGate(metadata: Record<string, unknown>): {
+  ai_gate: unknown;
+  ai_gate_mode: unknown;
+} {
+  return { ai_gate: metadata.ai_gate, ai_gate_mode: metadata.ai_gate_mode };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -98,12 +142,13 @@ export function campanhaPerigosa(c: CampanhaWhatsapp): string | null {
 
 function estado(
   r: Record<string, unknown>,
-  modo: "open" | "allowlist",
+  par: { ai_gate: unknown; ai_gate_mode: unknown },
   ttlMs: number,
   agora: Date,
 ) {
   return montarEstadoDeElegibilidade({
-    aiGate: modo,
+    aiGate: par.ai_gate,
+    aiGateMode: par.ai_gate_mode,
     forceHuman: r.force_human,
     assigneeKind: (r.assignee_kind as string | null) ?? null,
     botSilencedUntil: r.bot_silenced_until as string | null,
@@ -111,6 +156,33 @@ function estado(
     agora,
     ttlMs,
   });
+}
+
+/**
+ * O par de campos que o `--apply` DEIXA no canal — o "depois" das simulações.
+ *
+ * Antes isto era o literal `"allowlist"` sem `ai_gate_mode`, e era aí que o
+ * preflight passava a divergir do motor (issue #602): o motor lê o jsonb real,
+ * com o marcador de teste que a escrita antiga deixava para trás, e devolve
+ * `fora_da_lista_de_teste` onde a simulação prometia `autorizado`.
+ */
+function parDepoisDoApply(ctx: CtxAtivacao): { ai_gate: unknown; ai_gate_mode: unknown } {
+  return parDoGate(metadataComGate(ctx.channelMetadata, ctx.alvoModo));
+}
+
+/** Uma linha de conversa sintética, para simular o motor sem banco. */
+function linhaSimulada(aiAuthorizedAt: string | null): Record<string, unknown> {
+  return {
+    force_human: false,
+    assignee_kind: "ai",
+    bot_silenced_until: null,
+    ai_authorized_at: aiAuthorizedAt,
+  };
+}
+
+/** O telefone do contato é o único que a lista de testadores deixa passar? */
+function estaForaDaLista(decisao: DecisaoDeElegibilidade): boolean {
+  return decisao.motivo === "fora_da_lista_de_teste";
 }
 
 function lerFonte(raiz: string, arq: string): string | null {
@@ -158,7 +230,8 @@ export async function checkQueryElegibilidade(ctx: CtxAtivacao): Promise<Resulta
   const linhas: string[] = [];
   try {
     const { rows } = await ctx.pool.query(
-      `select cs.metadata->>'ai_gate' as ai_gate, ct.force_human, cv.assignee_kind,
+      `select cs.metadata->>'ai_gate' as ai_gate, cs.metadata->>'ai_gate_mode' as ai_gate_mode,
+              ct.force_human, cv.assignee_kind,
               cv.bot_silenced_until, ct.ai_authorized_at
          from conversations cv
          join contacts ct on ct.id = cv.contact_id and ct.organization_id = cv.organization_id
@@ -175,7 +248,8 @@ export async function checkQueryElegibilidade(ctx: CtxAtivacao): Promise<Resulta
     };
   }
   const { rows: real } = await ctx.pool.query(
-    `select cv.id, cs.metadata->>'ai_gate' as ai_gate, ct.force_human, cv.assignee_kind,
+    `select cv.id, cs.metadata->>'ai_gate' as ai_gate, cs.metadata->>'ai_gate_mode' as ai_gate_mode,
+            ct.force_human, cv.assignee_kind,
             cv.bot_silenced_until, ct.ai_authorized_at
        from conversations cv
        join contacts ct on ct.id = cv.contact_id and ct.organization_id = cv.organization_id
@@ -187,11 +261,18 @@ export async function checkQueryElegibilidade(ctx: CtxAtivacao): Promise<Resulta
   );
   if (real[0]) {
     const agora = new Date();
-    const hoje = decidirElegibilidade(estado(real[0], lerModoDoGate(real[0].ai_gate), ctx.ttlMs, agora));
-    const comGate = decidirElegibilidade(estado(real[0], "allowlist", ctx.ttlMs, agora));
+    // "HOJE" é o jsonb como ele ESTÁ no banco — inclusive o marcador de teste,
+    // que é justamente o que decide entre a lista do canal e a autorização por
+    // origem. Simular sem ele era o que fazia o preflight prometer o que o motor
+    // não executa (issue #602).
+    const hoje = decidirElegibilidade(estado(real[0], parDoGate(real[0]), ctx.ttlMs, agora));
+    const comGate = decidirElegibilidade(estado(real[0], parDepoisDoApply(ctx), ctx.ttlMs, agora));
     linhas.push(
       `conversa real ${real[0].id as string}: hoje → ${hoje.permite ? "responde" : "não responde"} (${hoje.motivo}); ` +
         `com allowlist → ${comGate.permite ? "responde" : "não responde"} (${comGate.motivo})`,
+      `  marcador do canal (leitura do motor): ai_gate_mode = ${JSON.stringify(real[0].ai_gate_mode ?? null)} → ` +
+        `${lerModoDeAcessoDaIa({ ai_gate: real[0].ai_gate, ai_gate_mode: real[0].ai_gate_mode })}` +
+        (estaForaDaLista(hoje) ? " (a lista de testadores está acima da autorização por origem)" : ""),
     );
   } else {
     linhas.push("nenhuma conversa neste canal para exercitar a regra com dado real");
@@ -288,13 +369,21 @@ export async function checkImpactoConversas(ctx: CtxAtivacao): Promise<Resultado
     [ctx.organizationId, ctx.channelSessionId],
   );
   const agora = new Date();
+  // O "hoje" é o canal COMO ELE ESTÁ (o jsonb real, com o marcador de teste que
+  // ele tiver) e o "depois" é o que o `--apply` escreve nos DOIS campos do gate.
+  // Simular os dois lados com literais fixos — `open` hoje, `allowlist` depois —
+  // fazia o preflight descrever um canal que não era o do operador (issue #602).
+  const parHoje = parDoGate(ctx.channelMetadata);
+  const parDepois = parDepoisDoApply(ctx);
   const perdem: Array<Record<string, unknown>> = [];
+  const ganham: Array<Record<string, unknown>> = [];
   let mantem = 0;
   let jaBloqueada = 0;
   for (const r of rows) {
-    const hoje = decidirElegibilidade(estado(r, "open", ctx.ttlMs, agora));
-    const depois = decidirElegibilidade(estado(r, "allowlist", ctx.ttlMs, agora));
+    const hoje = decidirElegibilidade(estado(r, parHoje, ctx.ttlMs, agora));
+    const depois = decidirElegibilidade(estado(r, parDepois, ctx.ttlMs, agora));
     if (hoje.permite && !depois.permite) perdem.push(r);
+    else if (!hoje.permite && depois.permite) ganham.push(r);
     else if (depois.permite) mantem++;
     else jaBloqueada++;
   }
@@ -304,19 +393,34 @@ export async function checkImpactoConversas(ctx: CtxAtivacao): Promise<Resultado
     agora.getTime() - new Date(r.last_inbound_at as string).getTime() < 7 * 24 * 3600 * 1000;
   const perdemAtivas = perdem.filter(recente).length;
   const mascara = (t: unknown) => (typeof t === "string" && t ? t.replace(/\d(?=\d{4})/g, "•") : "(sem)");
-  const amostra = perdem
-    .sort(
-      (a, b) =>
-        new Date((b.last_inbound_at as string) ?? 0).getTime() -
-        new Date((a.last_inbound_at as string) ?? 0).getTime(),
-    )
-    .slice(0, ctx.opcoes.tamAmostra)
-    .map(
-      (r) =>
-        `  ${r.conversation_id as string}  ·  ${((r.name as string) ?? "(sem nome)").slice(0, 24).padEnd(24)}  ·  ` +
-        `${mascara(r.phone_number)}  ·  status=${r.status as string}  ·  ` +
-        `último inbound: ${r.last_inbound_at ? new Date(r.last_inbound_at as string).toISOString().slice(0, 10) : "(nunca)"}`,
-    );
+  const porRecencia = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+    new Date((b.last_inbound_at as string) ?? 0).getTime() -
+    new Date((a.last_inbound_at as string) ?? 0).getTime();
+  const amostrar = (lista: Array<Record<string, unknown>>) =>
+    lista
+      .slice()
+      .sort(porRecencia)
+      .slice(0, ctx.opcoes.tamAmostra)
+      .map(
+        (r) =>
+          `  ${r.conversation_id as string}  ·  ${((r.name as string) ?? "(sem nome)").slice(0, 24).padEnd(24)}  ·  ` +
+          `${mascara(r.phone_number)}  ·  status=${r.status as string}  ·  ` +
+          `último inbound: ${r.last_inbound_at ? new Date(r.last_inbound_at as string).toISOString().slice(0, 10) : "(nunca)"}`,
+      );
+  if (ctx.alvoModo === "open") {
+    const amostra = amostrar(ganham);
+    return {
+      status: "INFO",
+      detalhe:
+        `DESLIGAR o gate (open) devolve o canal ao comportamento de hoje: ${ganham.length} conversa(s) que o gate bloqueava ` +
+        `passam a ser atendidas pela IA. ${jaBloqueada} continuam bloqueadas por handoff/silêncio/dono humano.` +
+        (capado ? ` ⚠️  amostrado em ${CAP} conversas — o total pode ser maior.` : ""),
+      linhas: amostra.length
+        ? [`amostra (as ${amostra.length} mais recentes que passam a ser atendidas — telefone mascarado):`, ...amostra]
+        : ["nenhuma conversa bloqueada pelo gate neste canal"],
+    };
+  }
+  const amostra = amostrar(perdem);
   return {
     status: "INFO",
     detalhe:
@@ -433,6 +537,7 @@ export async function checkRespondiAutoriza(ctx: CtxAtivacao): Promise<Resultado
 export async function checkDenyByDefault(ctx: CtxAtivacao): Promise<Resultado> {
   const linhas: string[] = [];
   const agora = new Date();
+  const parDepois = parDepoisDoApply(ctx);
 
   const { rows: rebeldes } = await ctx.pool.query(
     `select count(*)::int as n from contacts
@@ -464,7 +569,7 @@ export async function checkDenyByDefault(ctx: CtxAtivacao): Promise<Resultado> {
   );
   let todosNegados = true;
   for (const r of antigos) {
-    const d = decidirElegibilidade(estado(r, "allowlist", ctx.ttlMs, agora));
+    const d = decidirElegibilidade(estado(r, parDepois, ctx.ttlMs, agora));
     if (d.permite) todosNegados = false;
     linhas.push(
       `  contato ${r.id as string} (desde ${new Date(r.created_at as string).toISOString().slice(0, 10)}) → ` +
@@ -476,14 +581,14 @@ export async function checkDenyByDefault(ctx: CtxAtivacao): Promise<Resultado> {
     return { status: "FAIL", detalhe: "um contato antigo/sem-origem seria atendido pela IA em modo allowlist — a regra está furada", linhas };
   }
 
-  const simNova = decidirElegibilidade(
-    montarEstadoDeElegibilidade({ aiGate: "allowlist", forceHuman: false, assigneeKind: "ai", botSilencedUntil: null, aiAuthorizedAt: null, agora, ttlMs: ctx.ttlMs }),
-  );
+  const simNova = decidirElegibilidade(estado(linhaSimulada(null), parDepois, ctx.ttlMs, agora));
   const simExpirada = decidirElegibilidade(
-    montarEstadoDeElegibilidade({
-      aiGate: "allowlist", forceHuman: false, assigneeKind: "ai", botSilencedUntil: null,
-      aiAuthorizedAt: new Date(agora.getTime() - ctx.ttlMs - 86_400_000), agora, ttlMs: ctx.ttlMs,
-    }),
+    estado(
+      linhaSimulada(new Date(agora.getTime() - ctx.ttlMs - 86_400_000).toISOString()),
+      parDepois,
+      ctx.ttlMs,
+      agora,
+    ),
   );
   linhas.push(
     `  simulação "mensagem nova, contato nunca autorizado" → ${simNova.permite ? "❌" : "não responde"} (${simNova.motivo})`,
@@ -495,23 +600,98 @@ export async function checkDenyByDefault(ctx: CtxAtivacao): Promise<Resultado> {
   return { status: "PASS", detalhe: "histórico, contato antigo, conversa anterior e submissão vencida NÃO autorizam", linhas };
 }
 
+/**
+ * O veredito que o MOTOR dará DEPOIS do `--apply` — para um contato com
+ * autorização por origem dentro do prazo e para um sem autorização nenhuma.
+ *
+ * Existe para o preflight PROMETER o que o motor EXECUTA. No defeito da issue
+ * #602 o plano dizia `autorizado` e o runtime devolvia `fora_da_lista_de_teste`:
+ * o preflight simulava um canal sem o marcador de teste que a escrita deixava
+ * para trás. Aqui os dois lados saem da MESMA metadata (`metadataComGate`) —
+ * a promessa só diverge se o motor mudar.
+ */
+export function vereditoDepoisDoGate(
+  ctx: CtxAtivacao,
+  agora: Date = new Date(),
+): {
+  par: { ai_gate: unknown; ai_gate_mode: unknown };
+  comOrigem: DecisaoDeElegibilidade;
+  semOrigem: DecisaoDeElegibilidade;
+} {
+  const par = parDepoisDoApply(ctx);
+  return {
+    par,
+    comOrigem: decidirElegibilidade(estado(linhaSimulada(agora.toISOString()), par, ctx.ttlMs, agora)),
+    semOrigem: decidirElegibilidade(estado(linhaSimulada(null), par, ctx.ttlMs, agora)),
+  };
+}
+
 export function checkPlanoDeEscrita(ctx: CtxAtivacao): Resultado {
-  const atual = lerModoDoGate(ctx.channelMetadata.ai_gate);
+  const gateAtual = lerModoDoGate(ctx.channelMetadata.ai_gate);
+  const acessoAtual = lerModoDeAcessoDaIa(ctx.channelMetadata);
+  const marcadorAtual = ctx.channelMetadata.ai_gate_mode ?? null;
+  // O no-op é o gate já no alvo SEM o marcador de teste vencido. Comparar o
+  // marcador com o alvo (em vez de só excluir o `pre_go_live`) reprovaria um
+  // caso que já era WARN antes desta correção: canal com `ai_gate` em
+  // 'allowlist' que nunca teve marcador — canal que nunca passou pela tela do
+  // pré-go-live, e não defeito. O que NÃO é no-op é a issue #602: gate no alvo
+  // com `ai_gate_mode` ainda em `pre_go_live`, porque aí o motor reaplicaria a
+  // lista de testadores velha por cima da autorização por origem.
+  const marcadorVencido = marcadorAtual === "pre_go_live";
+  const coerente = gateAtual === ctx.alvoModo && !marcadorVencido;
+  const veredito = vereditoDepoisDoGate(ctx);
   const linhas = [
     `ALVO: ${ctx.alvoModo === "allowlist" ? "LIGAR (allowlist)" : "DESLIGAR (open)"} o gate do canal ${ctx.channelSessionId}`,
-    `estado atual: metadata.ai_gate = ${JSON.stringify(ctx.channelMetadata.ai_gate ?? null)} (${atual})`,
+    `estado atual: ai_gate = ${JSON.stringify(ctx.channelMetadata.ai_gate ?? null)} (${gateAtual}) · ` +
+      `ai_gate_mode = ${JSON.stringify(marcadorAtual)} (${acessoAtual})`,
     "",
-    "ÚNICA escrita que o --apply faz:",
+    "ÚNICA escrita que o --apply faz — os DOIS campos do gate, na mesma instrução:",
     `  update channel_sessions`,
-    `     set metadata = jsonb_set(coalesce(metadata,'{}'::jsonb), '{ai_gate}', '"${ctx.alvoModo}"'), updated_at = now()`,
+    `     set metadata = jsonb_set(jsonb_set(coalesce(metadata,'{}'::jsonb),`,
+    `                         '{ai_gate}', '"${ctx.alvoModo}"'), '{ai_gate_mode}', '"${ctx.alvoModo}"'),`,
+    `         updated_at = now()`,
     `   where id = '${ctx.channelSessionId}' and organization_id = '${ctx.organizationId}';`,
     "",
     "NÃO escreve em: contacts (ZERO autorização em massa), conversations, ai_agents, organizations.",
+    "",
+    `efeito no motor: contato com autorização de origem válida → ${veredito.comOrigem.permite ? "responde" : "não responde"} ` +
+      `(${veredito.comOrigem.motivo}); contato sem origem → ${veredito.semOrigem.permite ? "responde" : "não responde"} ` +
+      `(${veredito.semOrigem.motivo})`,
   ];
-  if (atual === ctx.alvoModo) {
-    return { status: "WARN", detalhe: `o gate JÁ está em '${atual}' — o --apply seria no-op`, linhas };
+  // O sinal é o MARCADOR, não só a leitura derivada: com `ai_gate` já em 'open'
+  // (porta aberta ao público), a leitura do modo de acesso engole o
+  // `ai_gate_mode='pre_go_live'` que ficou para trás — e é justamente esse
+  // marcador esquecido que faz o motor voltar a exigir a lista de testadores
+  // (issue #602). O `ai_gate` em pré-go-live entra pelo mesmo motivo: o --apply
+  // tira o canal do teste nos dois campos.
+  if ((marcadorAtual === "pre_go_live" || acessoAtual === "pre_go_live") && ctx.alvoModo === "allowlist") {
+    linhas.push(
+      "⚠ o canal SAI do pré-go-live: a lista de testadores deixa de limitar as respostas e passa a valer a autorização por origem",
+    );
   }
-  return { status: "INFO", detalhe: `transição ${atual} → ${ctx.alvoModo}`, linhas };
+  if (coerente) {
+    return { status: "WARN", detalhe: `o gate JÁ está coerente em '${ctx.alvoModo}' — o --apply seria no-op`, linhas };
+  }
+  if (gateAtual === ctx.alvoModo) {
+    return {
+      status: "INFO",
+      detalhe: `o gate já está em '${ctx.alvoModo}', mas o marcador ainda diz ${JSON.stringify(marcadorAtual)} — o --apply alinha os dois campos`,
+      linhas,
+    };
+  }
+  // O marcador vencido sozinho já é motivo para o operador ser avisado: mesmo na
+  // transição do `ai_gate`, é ele que devolve o canal ao teste se o --apply não
+  // alinhar os dois campos (issue #602).
+  if (marcadorAtual === "pre_go_live") {
+    return {
+      status: "INFO",
+      detalhe:
+        `transição ${gateAtual} → ${ctx.alvoModo} nos dois campos do gate — o marcador ainda diz ` +
+        `${JSON.stringify(marcadorAtual)}: o --apply alinha os dois`,
+      linhas,
+    };
+  }
+  return { status: "INFO", detalhe: `transição ${gateAtual} → ${ctx.alvoModo} nos dois campos do gate`, linhas };
 }
 
 // ───────────────────────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -10,6 +11,7 @@ import { TeamInvitesClient } from "./_components/TeamInvitesClient";
 import { AttendantsClient } from "./_components/AttendantsClient";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Equipe" };
 
 /**
  * As duas abas são endereçáveis, e isso não é conveniência.

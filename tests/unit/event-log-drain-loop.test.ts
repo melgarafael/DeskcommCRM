@@ -21,7 +21,12 @@ vi.mock('@/lib/event-log/drain', () => ({ drainEventLog }));
 vi.mock('@/lib/event-log/register-handlers', () => ({ ensureHandlersRegistered }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient }));
 
-const { proximaEspera, runEventLogDrainLoop } = await import('@/lib/event-log/drain-loop');
+const {
+  _reiniciarProntidaoDoLaco,
+  prontidaoDoLacoDeEventLog,
+  proximaEspera,
+  runEventLogDrainLoop,
+} = await import('@/lib/event-log/drain-loop');
 
 const knobs = { intervalMs: 2_000, idleIntervalMs: 10_000, batchSize: 50 };
 const vazio: DrainSummary = { scanned: 0, done: 0, retried: 0, failed: 0, dead: 0 };
@@ -35,6 +40,7 @@ const logger = log as unknown as Logger;
 beforeEach(() => {
   vi.clearAllMocks();
   createAdminClient.mockReturnValue({ marcador: 'admin' });
+  _reiniciarProntidaoDoLaco();
 });
 
 describe('proximaEspera — a regra de ritmo', () => {
@@ -76,6 +82,10 @@ describe('runEventLogDrainLoop', () => {
     // módulo quando falta variável obrigatória. Num `.env` enxuto, um import
     // estático mataria o worker INTEIRO — fila durável, cron e turnos — por
     // causa de um laço acessório. Ele tem que se desligar sozinho e avisar.
+    //
+    // `error`, e não o `warn` de antes: era o `warn` que fazia o laço desligado
+    // parecer ruído — a #648 ficou dez dias assim, com o `/healthz` verde
+    // (#604). A prontidão publicada é o que transforma isso em sinal visível.
     createAdminClient.mockImplementation(() => {
       throw new Error('env inválido — verifique no .env: INTERNAL_SECRET');
     });
@@ -86,7 +96,12 @@ describe('runEventLogDrainLoop', () => {
     ).resolves.toBeUndefined();
 
     expect(drainEventLog).not.toHaveBeenCalled();
-    expect(log.warn).toHaveBeenCalledOnce();
+    expect(log.error).toHaveBeenCalledOnce();
+    expect(prontidaoDoLacoDeEventLog()).toEqual({
+      carregado: false,
+      motivo: expect.stringContaining('INTERNAL_SECRET'),
+    });
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it('erro num tick não interrompe o laço nem acelera as tentativas', async () => {

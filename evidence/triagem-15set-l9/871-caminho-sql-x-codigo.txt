@@ -1,0 +1,135 @@
+# #871/#872 — o que foi SQL e o que foi código
+
+## 1. Canal WAHA da organização (SQL — conectar exige WAHA real)
+insert into channel_sessions (organization_id, provider, waha_session_name, status, phone_number, webhook_secret_encrypted) values ('<org>','waha','clinica-l9','WORKING','+5511955550001', fn_encrypt_oauth('<segredo>')) → id 023a7067-8e0f-4c85-bee5-633c4e89c02d
+
+## 2. Mensagens (CÓDIGO): POST /api/v1/webhooks/waha/<token> assinado com HMAC SHA512, como o WAHA faz (script abaixo). Uma imagem (05:24) e um texto (05:36). A ingestão real gravou contato, conversa, mensagens e emitiu media.persist_requested e ai_agent.dispatch_requested.
+```js
+// Entrega um webhook WAHA assinado (HMAC SHA512) ao app LOCAL, como o WAHA faria.
+import { createHmac, randomUUID } from "node:crypto";
+const [,, token, kind = "image", from = "5511987650001@c.us", nome = "Paciente Mídia"] = process.argv;
+const APP = "http://localhost:3041";
+const id = `false_${from}_${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`;
+const payload = kind === "image"
+  ? { id, from, fromMe: false, timestamp: Math.floor(Date.now() / 1000), hasMedia: true, body: "",
+      notifyName: nome,
+      media: { url: `http://127.0.0.1:3999/api/files/clinica-l9/${id}.jpeg`, mimetype: "image/jpeg", filename: null },
+      _data: { pushName: nome, message: { imageMessage: {} } } }
+  : { id, from, fromMe: false, timestamp: Math.floor(Date.now() / 1000), hasMedia: false, body: kind,
+      notifyName: nome, _data: { pushName: nome, message: { conversation: kind } } };
+const body = JSON.stringify({ id: `evt_${randomUUID()}`, event: "message", session: "clinica-l9", payload });
+const sig = createHmac("sha512", "segredo-do-webhook-qa-l9-local").update(body, "utf8").digest("hex");
+const r = await fetch(`${APP}/api/v1/webhooks/waha/${token}`, { method: "POST", headers: { "content-type": "application/json", "x-webhook-hmac": sig }, body });
+console.log(r.status, (await r.text()).slice(0, 300), id);
+```
+
+## 3. Morte do media.persist_requested (CÓDIGO): o dreno do cron GET /api/v1/cron/event-log-drain, Bearer INTERNAL_SECRET, 1x/min — nenhum SQL mexeu no evento nem no relógio do backoff (2, 4, 8, 16 min). O WAHA_API_BASE_URL aponta para 127.0.0.1:3999, onde nada escuta.
+05:24:56 {"data":{"scanned":1,"done":0,"retried":0,"failed":1,"dead":0,"pulados":[]}}
+05:26:56 {"data":{"scanned":1,"done":0,"retried":0,"failed":1,"dead":0,"pulados":[]}}
+05:30:58 {"data":{"scanned":1,"done":0,"retried":0,"failed":1,"dead":0,"pulados":[]}}
+05:38:59 {"data":{"scanned":1,"done":0,"retried":0,"failed":1,"dead":0,"pulados":[]}}
+05:55:00 {"data":{"scanned":1,"done":0,"retried":0,"failed":0,"dead":1,"pulados":[]}}
+
+## 4. Despachos da IA que morrem (SQL no ESTADO, código na MORTE)
+### SQL executado (arquivo)
+```sql
+-- PREPARO POR SQL (declarado no README): agente publicado na sessão WAHA da org da dona
+-- e UM despacho da IA cujo contact_id não existe — o insert em job_queue estoura na FK,
+-- o mesmo erro de um contato removido entre a mensagem e o turno. A conversa e a
+-- mensagem referenciadas são REAIS (vieram do webhook WAHA assinado).
+\set org '9eab14b8-f20b-4676-8bf5-8abba9cf2f5e'
+\set sess '023a7067-8e0f-4c85-bee5-633c4e89c02d'
+with ag as (
+  insert into ai_agents (organization_id, name, system_prompt, kind)
+  values (:'org', 'Recepção (cenário QA)', 'você é a recepção da clínica', 'mcp_agent') returning id
+), ver as (
+  insert into ai_agent_versions (organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status, published_at)
+  select :'org', ag.id, 1, 'você é a recepção da clínica', 'anthropic', 'claude-sonnet-4-6', :'sess', 'published', now() from ag returning id, agent_id
+)
+update ai_agents a set published_version_id = ver.id from ver where a.id = ver.agent_id returning a.id, a.published_version_id;
+
+insert into event_log (organization_id, event_type, entity_kind, entity_id, payload, status, attempts)
+select :'org', 'ai_agent.dispatch_requested', 'message', m.id,
+       jsonb_build_object('conversation_id', m.conversation_id::text,
+                          'contact_id', 'ed0f0000-0000-4000-8000-0000000000ff',
+                          'channel_session_id', :'sess',
+                          'inbound_message_id', m.id::text),
+       'pending', 0
+  from messages m
+ where m.organization_id = :'org' and m.direction = 'inbound'
+ order by coalesce(m.sent_at, m.created_at) desc, m.created_at desc, m.id desc
+ limit 1
+returning id, payload;
+```
+### saída
+```
+ id | published_version_id 
+----+----------------------
+(0 rows)
+
+UPDATE 0
+                  id                  |                                                                                                                    payload                                                                                                                    
+--------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ cf19c035-20a9-4b35-8c2f-9fd09b824fbd | {"contact_id": "ed0f0000-0000-4000-8000-0000000000ff", "conversation_id": "c10a2c55-b4db-438f-bb74-c239c691d597", "channel_session_id": "023a7067-8e0f-4c85-bee5-633c4e89c02d", "inbound_message_id": "5e4a6557-3bc6-4494-a928-484d56657a94"}
+(1 row)
+
+INSERT 0 1
+-- 2º passo (o UPDATE do CTE não enxerga as linhas inseridas no mesmo comando e voltou 0): executado às 05:56:03, com o evento ainda pending/attempts=0
+update ai_agents a set published_version_id = v.id from ai_agent_versions v where v.agent_id = a.id and a.name = 'Recepção (cenário QA)' and a.published_version_id is null; -- UPDATE 1
+```
+### mais despachos com o mesmo defeito (SQL, :n=3 às 05:58:41 para o dedupe; :n=1 às 06:01:18 para o rearme)
+```sql
+-- PREPARO POR SQL (declarado): N despachos da IA com o mesmo defeito (contato inexistente),
+-- apontando para a conversa e a última mensagem REAIS.
+insert into event_log (organization_id, event_type, entity_kind, entity_id, payload, status, attempts)
+select m.organization_id, 'ai_agent.dispatch_requested', 'message', m.id,
+       jsonb_build_object('conversation_id', m.conversation_id::text,
+                          'contact_id', 'ed0f0000-0000-4000-8000-0000000000ff',
+                          'channel_session_id', '023a7067-8e0f-4c85-bee5-633c4e89c02d',
+                          'inbound_message_id', m.id::text),
+       'pending', 0
+  from messages m, generate_series(1, :n)
+ where m.id = '5e4a6557-3bc6-4494-a928-484d56657a94'
+returning id;
+```
+
+## 5. Morte (CÓDIGO): o processo real do worker (workers/agent-worker/main.ts, tsx), drainTick → enqueueJob → FK de job_queue. Sem WAHA_API_KEY no env dele (desliga só o watchdog de sessão).
+```
+{"ts":"2026-09-15T08:55:35.508Z","level":"warn","msg":"watchdog de sessão OFF — WAHA_API_BASE_URL/WAHA_API_KEY ausentes no env"}
+{"ts":"2026-09-15T08:55:35.509Z","level":"info","msg":"agent-engine pronto","worker_id":"agent-engine-MacBook-Pro.local-65479","healthz_port":8797,"max_concurrency":8,"poll_ocioso_ms":2000,"claim_retry_ms":250}
+{"ts":"2026-09-15T08:55:35.858Z","level":"info","msg":"drain: nenhum agente publicado para a sessão — turno pulado (sem gasto)","event_id":"81703efe-d803-435e-874a-cbd03806879c","channel_session_id":"023a7067-8e0f-4c85-bee5-633c4e89c02d"}
+{"ts":"2026-09-15T08:55:35.862Z","level":"info","msg":"drain: nenhum agente publicado para a sessão — turno pulado (sem gasto)","event_id":"f01cb33f-3cfb-45d1-a2f2-3933e41455fe","channel_session_id":"023a7067-8e0f-4c85-bee5-633c4e89c02d"}
+{"ts":"2026-09-15T08:55:52.899Z","level":"error","msg":"drain: evento falhou","event_id":"cf19c035-20a9-4b35-8c2f-9fd09b824fbd","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:56:24.971Z","level":"error","msg":"drain: evento falhou","event_id":"cf19c035-20a9-4b35-8c2f-9fd09b824fbd","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:56:57.031Z","level":"error","msg":"drain: evento falhou","event_id":"cf19c035-20a9-4b35-8c2f-9fd09b824fbd","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:57:29.121Z","level":"error","msg":"drain: evento falhou","event_id":"cf19c035-20a9-4b35-8c2f-9fd09b824fbd","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:58:01.183Z","level":"error","msg":"drain: evento falhou","event_id":"cf19c035-20a9-4b35-8c2f-9fd09b824fbd","terminal":true,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:58:48.251Z","level":"error","msg":"drain: evento falhou","event_id":"4e74fe54-0a86-44e1-9504-afbfce2d3cf4","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:58:48.276Z","level":"error","msg":"drain: evento falhou","event_id":"b90aed02-affe-4e6f-8c12-9654fb4898b2","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:58:48.300Z","level":"error","msg":"drain: evento falhou","event_id":"3211f3e6-ec9c-486c-b6d0-471f52e91713","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:59:20.375Z","level":"error","msg":"drain: evento falhou","event_id":"b90aed02-affe-4e6f-8c12-9654fb4898b2","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:59:20.400Z","level":"error","msg":"drain: evento falhou","event_id":"4e74fe54-0a86-44e1-9504-afbfce2d3cf4","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:59:20.424Z","level":"error","msg":"drain: evento falhou","event_id":"3211f3e6-ec9c-486c-b6d0-471f52e91713","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:59:52.479Z","level":"error","msg":"drain: evento falhou","event_id":"b90aed02-affe-4e6f-8c12-9654fb4898b2","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:59:52.520Z","level":"error","msg":"drain: evento falhou","event_id":"4e74fe54-0a86-44e1-9504-afbfce2d3cf4","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T08:59:52.551Z","level":"error","msg":"drain: evento falhou","event_id":"3211f3e6-ec9c-486c-b6d0-471f52e91713","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:00:24.643Z","level":"error","msg":"drain: evento falhou","event_id":"b90aed02-affe-4e6f-8c12-9654fb4898b2","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:00:24.673Z","level":"error","msg":"drain: evento falhou","event_id":"4e74fe54-0a86-44e1-9504-afbfce2d3cf4","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:00:24.701Z","level":"error","msg":"drain: evento falhou","event_id":"3211f3e6-ec9c-486c-b6d0-471f52e91713","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:00:56.757Z","level":"error","msg":"drain: evento falhou","event_id":"b90aed02-affe-4e6f-8c12-9654fb4898b2","terminal":true,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:00:56.783Z","level":"error","msg":"drain: evento falhou","event_id":"4e74fe54-0a86-44e1-9504-afbfce2d3cf4","terminal":true,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:00:56.830Z","level":"error","msg":"drain: evento falhou","event_id":"3211f3e6-ec9c-486c-b6d0-471f52e91713","terminal":true,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:01:28.880Z","level":"error","msg":"drain: evento falhou","event_id":"8d04da2f-e0db-4d0a-902e-82142d192e7a","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:02:00.931Z","level":"error","msg":"drain: evento falhou","event_id":"8d04da2f-e0db-4d0a-902e-82142d192e7a","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:02:32.991Z","level":"error","msg":"drain: evento falhou","event_id":"8d04da2f-e0db-4d0a-902e-82142d192e7a","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:03:05.048Z","level":"error","msg":"drain: evento falhou","event_id":"8d04da2f-e0db-4d0a-902e-82142d192e7a","terminal":false,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+{"ts":"2026-09-15T09:03:37.083Z","level":"error","msg":"drain: evento falhou","event_id":"8d04da2f-e0db-4d0a-902e-82142d192e7a","terminal":true,"error":"insert or update on table \"job_queue\" violates foreign key constraint \"job_queue_contact_id_fkey\""}
+```
+
+## 6. Avisos na Central (leitura do banco no fim)
+05:55:00|event_dead|critical|open|Um processamento parou de tentar (media.persist_requested)
+05:58:01|event_dead|critical|resolved|A IA deixou de responder uma mensagem de cliente
+06:03:37|event_dead|critical|open|A IA deixou de responder uma mensagem de cliente
+ai_agent.dispatch_requested|dead|5
+ai_agent.dispatch_requested|done|2
+media.persist_requested|dead|1

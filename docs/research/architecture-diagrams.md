@@ -10,6 +10,8 @@ formato: Mermaid
 
 # DeskcommCRM — Diagramas de Arquitetura
 
+> **Registro de 2026-04-28.** Os diagramas abaixo foram desenhados quando o alvo de deploy era a Vercel. Hoje o CRM é self-host em VPS, e o deploy que vale está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md). O corpo não foi atualizado: é o desenho daquele dia, não o estado do sistema.
+
 Este documento consolida os diagramas canônicos do DeskcommCRM em sintaxe Mermaid. Serve como referência visual única para discussões de arquitetura, onboarding técnico, revisão de PRs estruturais e auditoria LGPD. Os diagramas aderem ao modelo C4 (níveis 1, 2 e 3), complementados por ER, sequência, deployment, fluxo de dados e máquinas de estado. Toda decisão arquitetural representada aqui foi herdada do bundle de referência (`reference-synthesis.md`) ou explicitada nos sub-PRDs `01` a `06`.
 
 ---

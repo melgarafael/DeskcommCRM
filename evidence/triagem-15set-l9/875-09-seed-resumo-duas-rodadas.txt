@@ -1,0 +1,24 @@
+# #875 item 2 — resumo do seed contra o Supabase LOCAL fx-l9-qa (127.0.0.1:59721), set -a; . ./.env.e2e
+# SHA do seed: árvore de triagem/lote-9-qa-consertos antes do commit do item 2 (conteúdo = o commit)
+## rodada A — inscrições apagadas do banco descartável, regras e histórico mantidos
+[seed-automacoes-e-followups] escrevendo em LOCAL: http://127.0.0.1:59721 (origem: ambiente)
+
+✅ Seed de automações e follow-ups completo. O que existe agora na organização de teste:
+   Automações: 3 regras de demonstração, 3 ligadas (0 criadas nesta rodada)
+   Atividade:  3 execuções no histórico (0 criadas nesta rodada)
+   Follow-ups: fluxo "Retomada de contato (demonstração)" ativo, 4 inscrições (4 criadas nesta rodada)
+   Onde ver: Webhooks › abas Automações e Atividade (/app/webhooks); Follow-ups › abas Fluxos e Fila (/app/ai/followups)
+exit=0
+## rodada B — repetida, nada a criar
+[seed-automacoes-e-followups] escrevendo em LOCAL: http://127.0.0.1:59721 (origem: ambiente)
+
+✅ Seed de automações e follow-ups completo. O que existe agora na organização de teste:
+   Automações: 3 regras de demonstração, 3 ligadas (0 criadas nesta rodada)
+   Atividade:  3 execuções no histórico (0 criadas nesta rodada)
+   Follow-ups: fluxo "Retomada de contato (demonstração)" ativo, 4 inscrições (0 criadas nesta rodada)
+   Onde ver: Webhooks › abas Automações e Atividade (/app/webhooks); Follow-ups › abas Fluxos e Fila (/app/ai/followups)
+exit=0
+## banco depois da rodada B (leitura)
+regras|3
+execucoes|3
+inscricoes|4

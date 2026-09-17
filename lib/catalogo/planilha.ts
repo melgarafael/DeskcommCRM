@@ -49,6 +49,45 @@ function campoDaColuna(cabecalho: string): string | null {
   return null;
 }
 
+/**
+ * IDENTIDADE DO PRODUTO — é ela que faz reimportar ATUALIZAR em vez de duplicar.
+ *
+ * O código cabe em 60 caracteres (limite da coluna e do schema em
+ * `lib/schemas/produtos.ts`). Passando disso, o corte seco entregava o MESMO
+ * código a produtos diferentes: "…Tingidos Cor Manhã" e "…Tingidos Cor Noite"
+ * compartilham os 60 primeiros caracteres, e a segunda linha era recusada como
+ * código repetido — o produto não entrava no catálogo. O corte leva a
+ * assinatura do texto INTEIRO, como o slug de pergunta em
+ * `lib/webhooks/respondi.ts`.
+ */
+const LIMITE_DO_CODIGO = 60;
+
+/** 32 bits em hex, zero à esquerda: o tamanho não varia com o valor. */
+const TAMANHO_DA_ASSINATURA = 8;
+
+/** Espaço colapsado e sem sobra nas pontas: "IP15  128 " e "IP15 128" são a MESMA linha. */
+function normalizarIdentidade(texto: string): string {
+  return texto.replace(/\s+/g, " ").trim();
+}
+
+function codigoDoProduto(texto: string): string {
+  const base = normalizarIdentidade(texto);
+  if (base.length <= LIMITE_DO_CODIGO) return base;
+  // trimEnd: o corte pode cair no meio de um espaço e deixar "… -a1b2c3d4".
+  const corte = base.slice(0, LIMITE_DO_CODIGO - 1 - TAMANHO_DA_ASSINATURA).trimEnd();
+  return `${corte}-${assinaturaDoTexto(base)}`;
+}
+
+/** FNV-1a de 32 bits: distinguir dois textos de prefixo igual, não resistir a ataque. */
+function assinaturaDoTexto(texto: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i += 1) {
+    h ^= texto.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(TAMANHO_DA_ASSINATURA, "0");
+}
+
 export interface LinhaImportada {
   /** A linha como a pessoa a vê na planilha: 1 é o cabeçalho. */
   linha: number;
@@ -156,8 +195,10 @@ export function lerPlanilha(
 
     // Sem código na planilha, o nome vira a identidade. É o que permite reimportar
     // a mesma planilha atualizando em vez de duplicar — que é o gesto real da
-    // loja quando o preço muda.
-    const codigo = (valor("codigo") || nome).slice(0, 60).replace(/\s+/g, " ");
+    // loja quando o preço muda. O corte em 60 caracteres fica em
+    // `codigoDoProduto`: cortar AQUI, antes de colapsar os espaços, fazia dois
+    // nomes longos chegarem ao banco com o mesmo código.
+    const codigo = codigoDoProduto(valor("codigo") || nome);
     if (codigosVistos.has(codigo.toLowerCase())) {
       erros.push({
         linha: numeroNaPlanilha,

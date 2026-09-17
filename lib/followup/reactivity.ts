@@ -8,8 +8,8 @@
  * sugeria um cursor próprio em `watchdog_cursors` drenado DENTRO do tick do
  * `runFollowupTick`. Investiguei o consumidor de `event_log` REALMENTE em
  * produção neste repo — `lib/event-log/dispatcher.ts` + `drain.ts` +
- * `app/api/v1/cron/event-log-drain/route.ts` (roda a cada minuto, tanto no
- * Vercel quanto no cron do kit self-host — ver README.md) — e ele já resolve
+ * `app/api/v1/cron/event-log-drain/route.ts` (roda a cada minuto pelo serviço
+ * `scheduler` do kit self-host — ver README.md) — e ele já resolve
  * exatamente este problema: múltiplos consumidores por `event_type`,
  * idempotência via `consumed_by[]` (sem duplo efeito em re-drain), retry com
  * backoff, dead-letter. `watchdog_cursors` tem ZERO consumidores TS neste
@@ -34,7 +34,8 @@
  *      (`opted_out`). Senão, para enrollments `waiting_reply` do contato:
  *      `cancel_on_reply` no `trigger_config` do pointer → cancela
  *      (`replied`); senão, acorda (marker `inbound_woke` + `next_eval_at=now`).
- *      Inscrições `active` no nó `wait` também acordam — a resposta corta o timer.
+ *      Inscrições `active` no nó `wait` seguem a mesma política: com
+ *      `cancel_on_reply`, cancelam; sem ela, acordam e cortam o timer.
  *   2. `ai.handoff_triggered` (handoff aberto) — já emitido em produção por
  *      `lib/ai/handoff/orchestrator.ts` (triggerHandoff, chamado por
  *      workers/ai-response-worker.ts, workers/ai-handoff-from-sentiment.handler.ts,
@@ -221,9 +222,26 @@ async function reactToInbound(
 
     if (await acordarPorInbound(db, clock, row, e)) reacted++;
   }
-  // Nó `wait` fica `active` com timer — sem isto a resposta do lead não corta
-  // a espera de 5min (o motor só acordava `waiting_reply`).
+  // Uma espera por tempo fixo fica `active` com timer. Quando o fluxo declara
+  // `cancel_on_reply`, a resposta deve encerrar também esta ocupação — não
+  // acordar o próximo nó e disparar a próxima mensagem imediatamente. Sem a
+  // verificação abaixo, a opção funcionava apenas para nós `waiting_reply`.
   for (const e of esperaAtiva) {
+    if (parseCancelOnReply(e.trigger_config)) {
+      const key = `reactivity:${row.id}:${e.id}:reactivity_replied`;
+      const applied = await applyStep(
+        db,
+        row.organization_id,
+        e,
+        key,
+        "reactivity_replied",
+        { reason: "cancel_on_reply" },
+        cancelPatch(clock, "replied", "cancel_on_reply"),
+      );
+      if (applied) reacted++;
+      continue;
+    }
+
     if (await acordarPorInbound(db, clock, row, e)) reacted++;
   }
   return { matched: true, reacted };

@@ -40,7 +40,16 @@ c_red() { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 c_grn() { printf '\033[32m%s\033[0m\n' "$*" >&2; }
 c_ylw() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
 c_dim() { printf '\033[2m%s\033[0m\n' "$*" >&2; }
-die()   { c_red "✖ $*"; exit 1; }
+# `die` diz ONDE a senha do banco sobrevive. Sem esta linha, quem morre depois do
+# passo 3 recria o projeto — gastando a segunda vaga do plano grátis — porque a
+# credencial que já foi gravada no banco não é recuperável pela API.
+die()   {
+  c_red "✖ $*"
+  local arq
+  arq="$(sb_arquivo_senha)"
+  if [ -f "$arq" ]; then c_ylw "  a senha do banco está guardada em $arq (chmod 600)"; fi
+  exit 1
+}
 
 # Senha do banco: 32 alfanuméricos, sem os caracteres que quebram uma URL
 # (@ : / ? # &) — ela entra na connection string, e um '@' aqui parte o host.
@@ -67,8 +76,79 @@ gen_db_pass() {
   printf '%s' "${p:0:32}"
 }
 
+# ── A senha do banco é guardada ANTES de ser usada ──────────────────────────
+# Ela é a única credencial do projeto que a API NÃO devolve depois, e nasce aqui
+# dentro do processo. Se um passo POSTERIOR morre — e o passo 5 morria, por causa
+# da leitura das chaves —, o projeto fica de pé no Supabase com uma senha que
+# ninguém mais conhece: gasta uma das 2 vagas do plano grátis, e a credencial só
+# se recupera por reset. Por isso ela vai para o disco ANTES do POST /projects e
+# sobrevive a `die`, Ctrl-C e queda de SSH.
+#
+# O nome do arquivo começa com `.env` de propósito: o .gitignore deste repo já
+# ignora `.env*` (é a linha que cobre o `.env` que o install.sh escreve ao lado),
+# então ele não entra em história de git nenhuma, nem a sua nem a de quem instala.
+#
+# A leitura é por PADRÃO fixo, nunca `source`/`eval`: arquivo adulterado não
+# executa nada, no máximo não é entendido — e aí a senha é gerada de novo. O nome
+# do projeto entra na conta porque senha guardada por máquina repetiria a MESMA
+# senha de banco entre dois clientes provisionados no mesmo VPS.
+sb_arquivo_senha() { printf '%s' "${SUPABASE_PROVISION_STATE:-$PWD/.env.supabase-provision}"; }
+
+# Ecoa a senha já guardada para ESTE projeto, ou nada. Sem o nome do projeto no
+# arquivo não devolve nada: senha de outro projeto não se reaproveita.
+sb_senha_guardada() {
+  local arq="$1" proj="$2" v
+  [ -f "$arq" ] || return 0
+  grep -qxF "SUPABASE_PROVISION_PROJECT='$proj'" "$arq" || return 0
+  v="$(sed -n "s/^SUPABASE_DB_PASS='\([A-Za-z0-9]\{32\}\)'\$/\1/p" "$arq" | head -1 || true)"
+  [ -n "$v" ] || return 0
+  printf '%s' "$v"
+}
+
+# Grava a senha em 600, trocando o arquivo de forma atômica (`mv` no fim): o
+# arquivo é a rede de segurança de quem morre no meio, então um estado
+# meio-escrito seria pior que nenhum.
+sb_guarda_senha() {
+  local arq="$1" proj="$2" senha="$3" tmp="$1.tmp.$$"
+  # Um apóstrofo no nome fecharia o literal lido pelo `sed` da linha de baixo —
+  # nesse caso o nome NÃO é guardado (a senha continua a salvo; o preço é não
+  # reaproveitar numa retomada). Espaço e acento não atrapalham nada: a leitura
+  # compara a linha inteira, e o nome real do projeto costuma ter espaço.
+  case "$proj" in *"'"*) proj="" ;; esac
+  ( umask 077; printf "SUPABASE_PROVISION_PROJECT='%s'\nSUPABASE_DB_PASS='%s'\n" "$proj" "$senha" > "$tmp" ) || return 1
+  chmod 600 "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$arq"
+}
+
+# ── Leitura do array de chaves (GET /projects/<ref>/api-keys) ───────────────
+# A ORDEM DOS CAMPOS dessa resposta não é contrato com o cliente, e a extração
+# antiga dependia dela: casava `"name":"anon"` e só então procurava `api_key` no
+# que vinha DEPOIS, até o `}` do objeto. Quando a API passou a devolver
+# `api_key` ANTES de `name`, os dois greps devolveram vazio e o passo 5 morreu
+# com "Não consegui ler anon/service_role" num projeto JÁ CRIADO — a vaga do
+# plano grátis ia junto. Medido com a resposta reduzida ao essencial,
+#   [{"api_key":"K","name":"anon"},{"api_key":"S","name":"service_role"}]
+# antes: vazio | depois: K e S.
+#
+# Aqui a leitura é por OBJETO, não por posição: o array vira uma linha por objeto
+# e `name`/`api_key` são procurados dentro do MESMO objeto, em qualquer ordem. Se
+# `name` não vier, o casamento cai no `type` (publishable/secret) — o outro par
+# de rótulos da mesma dupla de chaves. Segue só bash+grep+sed+tr: a promessa do
+# kit (nada de jq/python) vale mais que a robustez que eles dariam.
+json_objetos() { printf '%s' "$1" | tr -d '\n\r' | sed 's/}[[:space:]]*,[[:space:]]*{/}\n{/g'; }
+
+# chave_api <json do array> <nome> <type> → api_key do objeto que casar
+chave_api() {
+  local obj
+  obj="$(json_objetos "$1" | grep -E "\"name\"[[:space:]]*:[[:space:]]*\"$2\"" | head -1 || true)"
+  [ -n "$obj" ] || obj="$(json_objetos "$1" | grep -E "\"type\"[[:space:]]*:[[:space:]]*\"$3\"" | head -1 || true)"
+  [ -n "$obj" ] || return 0
+  grep -o '"api_key"[[:space:]]*:[[:space:]]*"[^"]*"' <<<"$obj" | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true
+}
+
 # Carrega só as funções acima, sem provisionar nada — é assim que o
-# test-validators.sh exercita o gerador de senha.
+# test-validators.sh exercita o gerador de senha, a leitura das chaves e o
+# arquivo onde a senha é guardada.
 if [ "${SUPABASE_PROVISION_LIB:-}" = "1" ]; then return 0; fi
 
 # Passo numerado: quem instala precisa saber ONDE está e QUANTO falta. "▶ Criando
@@ -146,8 +226,38 @@ fi
 # ── 2. Senha do banco ───────────────────────────────────────────────────────
 # Sem caracteres que quebram uma URL (@ : / ? # &) — a senha entra na
 # connection string, e um '@' aqui parte o host no meio.
-DB_PASS="$(gen_db_pass)"
-[ "${#DB_PASS}" -eq 32 ] || die "não consegui gerar a senha do banco (só ${#DB_PASS} caracteres). Rode de novo."
+#
+# Precedência: SUPABASE_DB_PASS (quem instala pode impor a dele), a senha já
+# guardada para ESTE projeto (retomada depois de uma falha) e, só então, uma
+# nova. Em todos os caminhos ela é gravada AGORA, antes do POST /projects: o
+# passo 3 gasta uma vaga do plano grátis, e daí em diante a senha não existe em
+# nenhum outro lugar.
+ARQ_SENHA="$(sb_arquivo_senha)"
+DB_PASS="${SUPABASE_DB_PASS:-}"
+if [ -n "$DB_PASS" ]; then
+  # A senha entra CRUA na connection string (nada de percent-encoding aqui), então
+  # um '@' ou ':' vindo de fora parte o host no meio e o erro só apareceria no
+  # psql, no passo 6, com cara de problema de rede.
+  case "$DB_PASS" in
+    *[!A-Za-z0-9_.~-]*)
+      die "SUPABASE_DB_PASS tem caractere fora de [A-Za-z0-9_.~-]: ele entraria cru na connection string e partiria o host no meio. Escolha outra ou deixe o script gerar." ;;
+  esac
+  c_dim "      senha do banco: a de SUPABASE_DB_PASS (definida por você)"
+else
+  DB_PASS="$(sb_senha_guardada "$ARQ_SENHA" "$PROJECT_NAME")"
+  if [ -n "$DB_PASS" ]; then
+    c_dim "      senha do banco: a que já estava guardada para este projeto (não gerei outra)"
+  else
+    DB_PASS="$(gen_db_pass)"
+    [ "${#DB_PASS}" -eq 32 ] || die "não consegui gerar a senha do banco (só ${#DB_PASS} caracteres). Rode de novo."
+    c_dim "      senha do banco: nova"
+  fi
+fi
+if sb_guarda_senha "$ARQ_SENHA" "$PROJECT_NAME" "$DB_PASS"; then
+  c_dim "      guardada em $ARQ_SENHA (chmod 600): se um passo falhar, ela não se perde"
+else
+  c_ylw "      ⚠ não consegui guardar a senha em $ARQ_SENHA — anote-a antes de seguir"
+fi
 
 # ── 3. Cria o projeto ───────────────────────────────────────────────────────
 step "Criando o projeto '$PROJECT_NAME' em $REGION"
@@ -193,11 +303,12 @@ c_grn "✓ banco no ar (levou $(( (SECONDS-inicio)/60 ))m$(( (SECONDS-inicio)%60
 # ── 5. Chaves ───────────────────────────────────────────────────────────────
 step "Buscando as chaves de API"
 keys="$(api GET "/projects/$REF/api-keys")"
-# `|| true` pelo mesmo motivo do json_str(): sem ele, resposta inesperada da API
-# mata o script na atribuição e a linha de baixo — que imprime a resposta crua e
-# explica o que houve — nunca roda.
-ANON="$(grep -o '"name"[[:space:]]*:[[:space:]]*"anon"[^}]*' <<<"$keys" | grep -o '"api_key"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
-SERVICE="$(grep -o '"name"[[:space:]]*:[[:space:]]*"service_role"[^}]*' <<<"$keys" | grep -o '"api_key"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+# `|| true` nos dois: sem ele, resposta inesperada da API mata o script na
+# atribuição e a linha de baixo — que imprime a resposta crua e explica o que
+# houve — nunca roda. A leitura da chave em si é a `chave_api()`, insensível à
+# ordem dos campos do JSON (ver o cabeçalho dela).
+ANON="$(chave_api "$keys" anon publishable || true)"
+SERVICE="$(chave_api "$keys" service_role secret || true)"
 [ -n "$ANON" ] && [ -n "$SERVICE" ] || { printf '%s\n' "$keys" >&2; die "Não consegui ler anon/service_role."; }
 c_grn "✓ anon e service_role obtidas"
 
@@ -233,6 +344,7 @@ printf '  %-14s %s\n' "service"  "$(mascara "$SERVICE")" >&2
 printf '  %-14s %s\n' "banco"    "$(mascara "$DB_PASS") @ $(sed 's|.*@||; s|:5432.*||' <<<"$DB_URL")" >&2
 printf '\n' >&2
 c_ylw "  ⚠ A senha do banco NÃO é recuperável pela API depois. Guarde agora."
+c_dim "     Cópia local em $ARQ_SENHA (chmod 600) — apague depois de colar no .env."
 c_dim "     Painel: https://supabase.com/dashboard/project/$REF"
 printf '\n' >&2
 c_grn "  Cole as 4 linhas abaixo no seu .env (ou redirecione: >> .env)"

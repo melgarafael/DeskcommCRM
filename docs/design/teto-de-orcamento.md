@@ -1179,8 +1179,8 @@ aplica.
    `scripts/smoke-llm.ts:168`, um smoke de dev, o que **sugere** zero; sugerir não é medir, e
    o campo é jsonb livre, editável por qualquer acesso privilegiado ao banco.
    `select count(*) from organizations where jsonb_typeof(settings->'llm'->'monthly_budget_cents') = 'number'`
-   responde em um segundo. Há **dois** ambientes de produção com bancos diferentes (Vercel e
-   VPS) e a resposta pode divergir entre eles.
+   responde em um segundo. Rode-o contra o banco da instalação em VPS — o produto é self-host,
+   e é lá que ele opera.
 2. Quantas têm `monthly_limit_cents <> 5000` — dimensiona quantas pessoas vão ler "você
    definiu X, mas nunca foi aplicado".
 3. Quantas orgs estão no recorte que alcança o guard de `ai-response-worker.ts:408-413`

@@ -196,6 +196,32 @@ describe("anunciarDestino — o rótulo diz a verdade sobre os DOIS canais", () 
     expect(destinoEhLocal("")).toBe(true);
   });
 
+  it("compara o HOSTNAME inteiro — nome de DNS que começa com 127. é remoto", () => {
+    // A versão anterior conferia o PREFIXO: `127.evil.example.com` é um nome
+    // que resolve para onde o dono quiser, e o seed que recusa produção gravava
+    // nele. Cada linha remota abaixo devolvia `true`.
+    for (const remoto of [
+      "http://127.evil.example.com",
+      "https://127.0.0.1.evil.example.com:54321",
+      "postgresql://postgres:x@127.0.0.1.nip.io:5432/postgres",
+      "http://localhost.evil.example.com",
+      "http://localhostx:54321",
+      "não é url",
+    ]) {
+      expect(destinoEhLocal(remoto), remoto).toBe(false);
+    }
+    for (const local of [
+      "http://127.0.0.1:54321",
+      "http://127.12.0.3:54321",
+      "http://LOCALHOST:54321",
+      "http://[::1]:54321",
+      // Cortar no primeiro `:` transformava este host em `[` e o recusava.
+      "postgresql://postgres:postgres@[::1]:54322/postgres",
+    ]) {
+      expect(destinoEhLocal(local), local).toBe(true);
+    }
+  });
+
   it("tudo local: mantém o formato que o operador já conhece, em info", () => {
     const { info, warn } = capturar({});
     expect(info.join("\n")).toContain("escrevendo em LOCAL");

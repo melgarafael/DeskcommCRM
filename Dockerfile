@@ -41,8 +41,8 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
 
 # Turbopack (`pnpm build`): ~4min vs ~34min do webpack num VPS. O bloco `webpack:`
 # do Sentry (tree-shake + upload de sourcemap em build-time) é ignorado, mas o
-# Sentry RUNTIME segue ativo (DSN hardcoded nas configs). Sourcemap upload é
-# concern só da Vercel; aqui o ganho de tempo de build é o que importa pro leigo.
+# Sentry RUNTIME segue ativo (DSN hardcoded nas configs); aqui o ganho de tempo
+# de build é o que importa pro leigo.
 RUN pnpm build
 
 # ---- runner: imagem slim de produção ----

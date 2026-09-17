@@ -229,5 +229,44 @@ export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
 export const agendaSettingsWriteSchema = z.strictObject({
   confirmation_delay_minutes: z.number().int().min(1).max(10080),
   unknown_protection_minutes: z.number().int().min(1).max(10080),
+  /**
+   * Quanto tempo um pedido não confirmado segura o horário.
+   *
+   * ⚠️ `.default()` e não obrigatório: este schema é `strictObject`, e torná-lo
+   * exigido faria TODO PATCH já escrito (que manda só os dois campos de cima)
+   * passar a falhar — o tipo de mudança que a doutrina de packaging proíbe,
+   * porque quebra quem já instalou sem nenhum aviso.
+   *
+   * 24h é o default porque quem confere a fila uma vez por dia não pode perder
+   * pedido. O mínimo é 15 minutos: abaixo disso a expiração corre com quem está
+   * decidindo naquele instante.
+   */
+  pending_expires_after_minutes: z.number().int().min(15).max(10080).default(1440),
 }).refine(v => v.unknown_protection_minutes >= v.confirmation_delay_minutes, {message:"O prazo de proteção deve ser maior que o prazo de confirmação."});
-export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmation_delay_minutes:10,unknown_protection_minutes:1440});
+export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmation_delay_minutes:10,unknown_protection_minutes:1440,pending_expires_after_minutes:1440});
+
+/**
+ * `organizations.settings.crm` — regras de CRM que cada organização liga para si.
+ *
+ * `cliente_pela_agenda`: quem tem horário marcado vira cliente (migration 0262).
+ * Nasce DESLIGADA em toda organização, e só um administrador a liga, por
+ * `fn_definir_cliente_pela_agenda` (nunca por UPDATE em `organizations`).
+ *
+ * ⚠️ SÓ O BOOLEANO `true` LIGA — e é a mesma régua do banco, que compara
+ * `settings->'crm'->'cliente_pela_agenda' = 'true'::jsonb` em
+ * `fn_marcar_contato_como_cliente`. Ausente, `false`, a string `"true"` ou
+ * qualquer lixo é desligado aqui E lá. Se os dois idiomas divergissem, a tela
+ * mostraria o selo de uma regra que o trigger não aplica.
+ */
+export const crmSettingsSchema = z
+  .object({ cliente_pela_agenda: z.boolean().catch(false) })
+  .catch({ cliente_pela_agenda: false });
+
+/** A regra "cliente pela agenda" está ligada nesta organização? Nunca lança. */
+export function clientePelaAgendaLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).cliente_pela_agenda === true;
+}

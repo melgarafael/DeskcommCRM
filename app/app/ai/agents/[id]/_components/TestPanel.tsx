@@ -174,6 +174,17 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        // ⚠️ O padrão do cliente é 10s, e um turno de agente NÃO cabe nele: o
+        // teste roda o motor inteiro (classificador de etapa, jailbreak, o
+        // agente com as ferramentas, checkpoint, verificação de promessa).
+        // Medido numa instalação real: 14,5s só na chamada ao modelo. Com 10s,
+        // o resultado nunca chegava — o painel ficava em "Nenhum teste
+        // executado ainda" enquanto o servidor terminava e devolvia para
+        // ninguém (issue #783).
+        //
+        // 120s é o teto do orçamento de passos do agente, não um chute
+        // confortável: acima disso o problema é o agente, não a espera.
+        { timeoutMs: 120_000 },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });

@@ -12,7 +12,9 @@
  * ─── O que ele garante ─────────────────────────────────────────────────────
  *
  *  - DRY-RUN é o PADRÃO; `--apply` é obrigatório para qualquer escrita;
- *  - a ÚNICA escrita possível é UMA linha de `channel_sessions.metadata`;
+ *  - a ÚNICA escrita possível é UMA linha de `channel_sessions.metadata`, com os
+ *    DOIS campos do gate (`ai_gate` + `ai_gate_mode`) — juntos, senão o motor
+ *    lê uma coisa e o operador pediu outra (issue #602);
  *  - NUNCA escreve em `contacts` — nada de autorização em massa. Um contato só
  *    fica elegível pelas quatro origens do produto (webhook do Respondi, match
  *    de campanha, ação `send_ai_message`, retomada manual pela tela);
@@ -45,8 +47,15 @@
 import pg from "pg";
 
 import { carregarEnvLocal, credenciaisSupabaseDeTeste, anunciarDestino } from "./lib/env-de-teste";
-import { montarPreflights, type CtxAtivacao, type Resultado, type Status } from "./lib/gate-ativacao";
+import {
+  metadataComGate,
+  montarPreflights,
+  type CtxAtivacao,
+  type Resultado,
+  type Status,
+} from "./lib/gate-ativacao";
 import { lerModoDoGate, ttlDaAutorizacaoMs } from "../lib/ai/elegibilidade/gate";
+import { lerModoDeAcessoDaIa } from "../lib/ai/elegibilidade/pre-go-live";
 
 // ─── Args ─────────────────────────────────────────────────────────────────
 
@@ -150,34 +159,69 @@ async function resolverCanal(ref: string): Promise<Canal> {
 
 // ─── Escrita (a ÚNICA) ────────────────────────────────────────────────────
 
+/**
+ * Grava os DOIS campos do gate na mesma instrução.
+ *
+ * Os valores saem de `metadataComGate` — o contrato compartilhado com o
+ * preflight —, mas a escrita NÃO reescreve o objeto: é um `jsonb_set` por
+ * chave, no servidor, porque ler o jsonb, espalhar em memória e gravar tudo
+ * apagaria uma alteração concorrente do transporte.
+ *
+ * A escrita antiga gravava só `{ai_gate}` e deixava `ai_gate_mode='pre_go_live'`
+ * para trás: o canal voltava ao PRÉ-GO-LIVE, com a lista de testadores velha, em
+ * vez da autorização por origem que o operador pediu — e o preflight prometia
+ * `autorizado` enquanto o motor executava `fora_da_lista_de_teste` (issue #602).
+ */
 async function aplicarEscrita(canal: Canal): Promise<void> {
+  const depois = metadataComGate(canal.metadata, ALVO_MODO);
   const cliente = await pool.connect();
   try {
     await cliente.query("begin");
     const antes = await cliente.query(
-      `select metadata->>'ai_gate' as g from channel_sessions where id = $1 and organization_id = $2 for update`,
+      `select metadata->>'ai_gate' as g, metadata->>'ai_gate_mode' as m
+         from channel_sessions where id = $1 and organization_id = $2 for update`,
       [canal.id, canal.organization_id],
     );
     if (antes.rows.length === 0) throw new Error("o canal sumiu entre o preflight e a escrita");
-    if (lerModoDoGate(antes.rows[0].g) === ALVO_MODO) {
+    if (lerModoDoGate(antes.rows[0].g) === ALVO_MODO && (antes.rows[0].m ?? null) === ALVO_MODO) {
       await cliente.query("rollback");
-      console.info(`\nℹ️  o gate JÁ estava em "${ALVO_MODO}" — nada a escrever.\n`);
+      console.info(`\nℹ️  os DOIS campos do gate JÁ estavam em "${ALVO_MODO}" — nada a escrever.\n`);
       return;
     }
     const res = await cliente.query(
       `update channel_sessions
-          set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{ai_gate}', $3::jsonb), updated_at = now()
+          set metadata = jsonb_set(
+                jsonb_set(coalesce(metadata, '{}'::jsonb), '{ai_gate}', to_jsonb($3::text), true),
+                '{ai_gate_mode}', to_jsonb($4::text), true
+              ),
+              updated_at = now()
         where id = $1 and organization_id = $2`,
-      [canal.id, canal.organization_id, JSON.stringify(ALVO_MODO)],
+      [canal.id, canal.organization_id, depois.ai_gate, depois.ai_gate_mode],
     );
     if (res.rowCount !== 1) throw new Error(`update afetou ${res.rowCount} linha(s), esperado 1 — revertendo`);
-    const depois = await cliente.query(
-      `select metadata->>'ai_gate' as g from channel_sessions where id = $1 and organization_id = $2`,
+    const gravado = await cliente.query(
+      `select metadata->>'ai_gate' as g, metadata->>'ai_gate_mode' as m
+         from channel_sessions where id = $1 and organization_id = $2`,
       [canal.id, canal.organization_id],
     );
-    if (lerModoDoGate(depois.rows[0].g) !== ALVO_MODO) throw new Error("leitura pós-escrita não bate — revertendo");
+    // A leitura que decide é a do MOTOR: `lerModoDeAcessoDaIa` é quem separa o
+    // pré-go-live do allowlist por origem. Gravar só `ai_gate` passava por este
+    // teste e ainda assim devolvia o canal ao modo de teste — por isso o commit
+    // exige os dois campos no alvo E o motor lendo o alvo.
+    const lido = { ai_gate: gravado.rows[0].g, ai_gate_mode: gravado.rows[0].m };
+    const leituraDoMotor = lerModoDeAcessoDaIa(lido);
+    if (lerModoDoGate(lido.ai_gate) !== ALVO_MODO || leituraDoMotor !== ALVO_MODO) {
+      throw new Error(
+        `o motor leria "${leituraDoMotor}" depois da escrita, esperado "${ALVO_MODO}" — revertendo`,
+      );
+    }
     await cliente.query("commit");
-    console.info(`\n✅ ESCRITO. channel_sessions.metadata.ai_gate: ${JSON.stringify(antes.rows[0].g ?? null)} → "${ALVO_MODO}"\n`);
+    console.info(
+      `\n✅ ESCRITO. channel_sessions.metadata:\n` +
+        `   ai_gate: ${JSON.stringify(antes.rows[0].g ?? null)} → "${depois.ai_gate as string}"\n` +
+        `   ai_gate_mode: ${JSON.stringify(antes.rows[0].m ?? null)} → "${depois.ai_gate_mode as string}"\n` +
+        `   o motor agora lê: ${leituraDoMotor}\n`,
+    );
   } catch (e) {
     await cliente.query("rollback").catch(() => {});
     throw e;

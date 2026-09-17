@@ -606,7 +606,7 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   const { data: conv, error: convErr } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, contacts:contact_id(id, display_name, locale, is_blocked, force_human)",
+      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, contacts:contact_id(id, name, display_name, locale, is_blocked, force_human)",
     )
     .eq("id", input.conversationId)
     .eq("organization_id", input.organizationId)
@@ -626,6 +626,7 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
     assignee_kind: string | null;
     contacts: {
       id: string;
+      name: string | null;
       display_name: string | null;
       locale: string | null;
       is_blocked: boolean;
@@ -834,6 +835,7 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
       },
       contact: {
         id: c.contacts.id,
+        name: c.contacts.name,
         display_name: c.contacts.display_name,
         locale: c.contacts.locale,
       },

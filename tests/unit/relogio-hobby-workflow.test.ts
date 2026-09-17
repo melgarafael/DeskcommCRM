@@ -1,6 +1,7 @@
 /**
- * O cron Hobby some do radar fácil: arquivo só em develop, schedule na main,
- * variável desligada. Este teste ancora o contrato mínimo no fonte.
+ * Este relógio some do radar fácil: arquivo só numa branch de trabalho,
+ * schedule que só roda na default, variável desligada. Este teste ancora o
+ * contrato mínimo no fonte.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

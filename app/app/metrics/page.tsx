@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -5,6 +6,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { MetricsClient } from "./_components/MetricsClient";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Desempenho" };
 
 export default async function MetricsPage() {
   const user = await requireAuth();

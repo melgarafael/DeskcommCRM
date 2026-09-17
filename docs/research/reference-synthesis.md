@@ -4,6 +4,8 @@
 
 **Status:** Adotada integralmente como linha de base arquitetural do DeskcommCRM (decisão registrada em memória do projeto).
 
+> **O corpo abaixo é registro, não estado — este arquivo não traz data.** Foi escrito quando o alvo de deploy era a Vercel; hoje o CRM é self-host em VPS, e o deploy que vale está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md).
+
 Esse documento extrai apenas as decisões e padrões da referência que o DeskcommCRM herda. Para citações literais, schema SQL completo e edge cases detalhados, consultar a fonte original.
 
 ---

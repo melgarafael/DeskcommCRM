@@ -1,5 +1,5 @@
 /**
- * Trabalhos de MINUTO que o Hobby da Vercel não agenda.
+ * Trabalhos de MINUTO para instalação sem agendador próprio.
  *
  * No self-host o contêiner `scheduler` já chama cada rota. Esta lista é o
  * que o relógio HTTP (GitHub Actions, cron-job.org, botão na tela) precisa

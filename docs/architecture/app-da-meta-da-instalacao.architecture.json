@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "App da Meta da instalação",
+    "subtitle": "Chave secreta e token de verificação cadastrados pela tela, com o .env como reserva",
+    "output": "app-da-meta-da-instalacao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Operação" },
+    { "id": "servidor", "label": "Servidor" },
+    { "id": "banco", "label": "Persistência" },
+    { "id": "externo", "label": "Meta" }
+  ],
+  "mainPath": ["telaAdmin", "action", "tabela", "resolvedor", "webhook", "meta"],
+  "nodes": [
+    { "id": "telaAdmin", "lane": "operador", "col": 1, "type": "frontend", "label": "/admin/meta — chave só de escrita, token mostrado uma vez" },
+    { "id": "action", "lane": "servidor", "col": 2, "type": "service", "label": "updateMetaApp / rotacionarVerifyTokenDaMeta (platform admin)" },
+    { "id": "tabela", "lane": "banco", "col": 3, "type": "database", "label": "platform_meta_app (cifrada, RLS sem policy)" },
+    { "id": "ambiente", "lane": "servidor", "col": 3, "type": "config", "label": "META_APP_SECRET / META_WEBHOOK_VERIFY_TOKEN (reserva)" },
+    { "id": "resolvedor", "lane": "servidor", "col": 4, "type": "lib", "label": "appDaMeta() — banco primeiro, par inteiro de uma fonte" },
+    { "id": "webhook", "lane": "servidor", "col": 5, "type": "route", "label": "GET|POST /api/v1/webhooks/meta/[token]" },
+    { "id": "meta", "lane": "externo", "col": 5, "type": "external", "label": "Painel e entregas da Meta" },
+    { "id": "conexoes", "lane": "operador", "col": 4, "type": "frontend", "label": "Conexões › API Oficial (Meta) + aviso do primeiro acesso" },
+    { "id": "audit", "lane": "banco", "col": 2, "type": "database", "label": "api_audit_log / platform_meta_app.updated | verify_token_rotated" },
+    { "id": "auditTela", "lane": "operador", "col": 2, "type": "frontend", "label": "/admin/audit" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "telaAdmin", "to": "action", "label": "salva chave / gera token" },
+    { "id": "e2", "from": "action", "to": "tabela", "label": "upsert cifrado" },
+    { "id": "e3", "from": "action", "to": "telaAdmin", "label": "token em claro, só nesta resposta" },
+    { "id": "e4", "from": "action", "to": "audit", "label": "o que mudou, nunca o valor" },
+    { "id": "e5", "from": "audit", "to": "auditTela", "label": "trilha legível" },
+    { "id": "e6", "from": "tabela", "to": "resolvedor", "label": "par completo decifrado" },
+    { "id": "e7", "from": "ambiente", "to": "resolvedor", "label": "piso quando o banco não tem par" },
+    { "id": "e8", "from": "resolvedor", "to": "webhook", "label": "handshake e assinatura" },
+    { "id": "e9", "from": "meta", "to": "webhook", "label": "verify token + entregas assinadas" },
+    { "id": "e10", "from": "resolvedor", "to": "conexoes", "label": "origem do token; valor só se vier do .env" },
+    { "id": "e11", "from": "conexoes", "to": "telaAdmin", "label": "link para quem administra a instalação" },
+    { "id": "e12", "from": "telaAdmin", "to": "meta", "label": "operador cola o token no painel" }
+  ]
+}

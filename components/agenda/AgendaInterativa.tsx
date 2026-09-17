@@ -193,17 +193,16 @@ export function AgendaInterativa({
       // toast e a tela fica sem registro de que a remarcação não valeu.
       setOtimista(null);
       setRecusa(
-        `A remarcação não foi aceita — o compromisso voltou para ${format(
-          new Date(antes.comeca),
-          "EEEE, d 'de' MMMM 'às' HH:mm",
-          { locale: localeDaData },
-        )}.`,
+        t("A remarcação não foi aceita — o compromisso voltou para {data}.").replace(
+          "{data}",
+          format(new Date(antes.comeca), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData }),
+        ),
       );
     });
-  }, [agendamentos, pendente, remarcar]);
+  }, [agendamentos, pendente, remarcar, localeDaData, t]);
 
   const nomeDoPendente = pendente
-    ? (agendamentos.find((a) => a.id === pendente.id)?.titulo ?? "o compromisso")
+    ? (agendamentos.find((a) => a.id === pendente.id)?.titulo ?? t("o compromisso"))
     : "";
 
   return (
@@ -281,16 +280,16 @@ export function AgendaInterativa({
           <p className="text-xs leading-4 text-text">
             {t("Remarcar")} <span className="font-semibold">{nomeDoPendente}</span> {t("para")}{" "}
             <span className="font-semibold">
-              {format(new Date(pendente.instante), "EEEE, d 'de' MMMM 'às' HH:mm", { locale: localeDaData })}
+              {format(new Date(pendente.instante), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
             </span>
             {t("? Quem foi atendido recebe o aviso da mudança.")}
           </p>
           <div className="flex shrink-0 gap-2">
             <Button variant="ghost" size="sm" onClick={() => setPendente(null)}>
-              Cancelar
+              {t("Cancelar")}
             </Button>
             <Button size="sm" data-testid="confirmar-remarcacao-botao" onClick={confirmar}>
-              Remarcar
+              {t("Remarcar")}
             </Button>
           </div>
         </div>
@@ -308,7 +307,7 @@ export function AgendaInterativa({
             onClick={() => setRecusa(null)}
             className="shrink-0 text-xs font-medium text-text-muted underline underline-offset-2 hover:text-text"
           >
-            Entendi
+            {t("Entendi")}
           </button>
         </div>
       )}
@@ -334,7 +333,7 @@ export function AgendaInterativa({
                     // está na disponibilidade publicada. Remarcar assim mesmo
                     // criaria um compromisso que o motor não teria oferecido.
                     setPendente(null);
-                    setRecusa(`Não dá para remarcar para esse horário — ${razao}.`);
+                    setRecusa(t("Não dá para remarcar para esse horário — {motivo}.").replace("{motivo}", t(razao)));
                     return;
                   }
                   setRecusa(null);

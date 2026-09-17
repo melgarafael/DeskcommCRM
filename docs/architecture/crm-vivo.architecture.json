@@ -39,13 +39,17 @@
     { "id": "traces", "lane": "agente", "col": 0, "type": "database", "label": "before_send_traces", "sublabel": "os portões — e os vetos" },
     { "id": "ritual", "lane": "agente", "col": 1, "type": "service", "label": "inbound-turn (ritual)", "sublabel": "abre lendo checkpoint + lead_state" },
     { "id": "espelho", "lane": "agente", "col": 5, "type": "service", "label": "mirrorLeadStageToCrm", "sublabel": "propõe quando há conflito" },
+    { "id": "promocaocliente", "lane": "negocio", "col": 2, "type": "trigger", "label": "trg_agendamento_marca_cliente", "sublabel": "agendamento inserido/alterado/apagado (regra ligada) → first_service_at + etiqueta com dono" },
+    { "id": "interruptorcliente", "lane": "humano", "col": 1, "type": "frontend", "label": "Clientes pela agenda", "sublabel": "Tipos de agendamento › fn_definir_cliente_pela_agenda (admin)" },
 
     { "id": "eventlog", "lane": "fila", "col": 2, "type": "database", "label": "event_log", "sublabel": "marca d'água: só evento novo" },
     { "id": "workerscore", "lane": "fila", "col": 2, "type": "service", "label": "worker do score", "sublabel": "fórmula determinística, nunca modelo" },
     { "id": "fila", "lane": "fila", "col": 4, "type": "service", "label": "job_queue · followup_turn", "sublabel": "o envio passa pelos portões" },
     { "id": "risco", "lane": "fila", "col": 5, "type": "service", "label": "classifyRisk + resolveStageWindow", "sublabel": "fonte ÚNICA de esfriamento" },
 
-    { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" }
+    { "id": "inbox", "lane": "fora", "col": 4, "type": "frontend", "label": "agent_inbox_items", "sublabel": "demanda sem dono não mora no Kanban" },
+    { "id": "auditoria", "lane": "fora", "col": 2, "type": "database", "label": "api_audit_log", "sublabel": "quem mudou a regra, e o que ela mudou" },
+    { "id": "telaauditoria", "lane": "humano", "col": 0, "type": "frontend", "label": "/app/audit", "sublabel": "action + metadata na tela — onde o laço se fecha" }
   ],
   "edges": [
     { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
@@ -91,7 +95,15 @@
     { "id": "e41", "from": "atividades", "to": "chat", "label": "âncora {conversation_id, message_id}" },
     { "id": "e42", "from": "dossie", "to": "chat", "label": "clique leva ao momento" },
     { "id": "e43", "from": "dossie", "to": "atividades", "label": "editar campo deixa rastro humano" },
-    { "id": "e44", "from": "filtro", "to": "card", "label": "applyFilters decide o que aparece" }
+    { "id": "e44", "from": "filtro", "to": "card", "label": "applyFilters decide o que aparece" },
+    { "id": "e45", "from": "promocaocliente", "to": "leads", "label": "define o funil onde o lead nasce" },
+    { "id": "e46", "from": "promocaocliente", "to": "resolver", "label": "cliente reconhecido na próxima mensagem" },
+    { "id": "e47", "from": "promocaocliente", "to": "eventlog", "label": "contact.tag_added uma vez por contato — nunca na junção nem ao ligar" },
+    { "id": "e48", "from": "interruptorcliente", "to": "promocaocliente", "label": "liga/desliga o trigger e classifica o histórico sem evento" },
+    { "id": "e49", "from": "interruptorcliente", "to": "auditoria", "label": "crm.cliente_pela_agenda_alterado com ganharam/perderam" },
+    { "id": "e50", "from": "interruptorcliente", "to": "leads", "label": "lerClientePelaAgenda decide se o funil de clientes vale" },
+    { "id": "e51", "from": "auditoria", "to": "telaauditoria", "label": "a linha vira texto legível (action + metadata)" },
+    { "id": "e52", "from": "telaauditoria", "to": "interruptorcliente", "label": "LAÇO DE RETORNO: quem vê o que a regra fez desliga se estiver errado" }
   ],
   "cards": [
     {

@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { sendMessageHandler } from '@/app/api/v1/messages/_handler';
 import type { HandlerCtx } from '@/lib/api/handlers/types';
+import { deriveActor } from '@/lib/mcp/auth';
 import type { SendMessageInput } from '@/lib/schemas';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
@@ -106,8 +107,15 @@ function makeSupabase(
       }
       if (table === 'conversations') {
         return {
-          select: (cols?: string) => ({
-            eq: () => ({
+          select: (cols?: string) => {
+            // Encadeável SEM LIMITE de propósito: a consulta da conversa filtra
+            // por id E por `organization_id` (este handler também roda com o
+            // client de service role, que bypassa RLS). Um dublê que fixa a
+            // quantidade de `eq` quebra quando a consulta ganha o filtro que
+            // fecha o vazamento entre organizações — com um erro que não fala do
+            // comportamento sob teste.
+            const cadeia: Record<string, unknown> = {
+              eq: () => cadeia,
               maybeSingle: async () =>
                 opts.semColunaArquivada === true && (cols ?? '').includes('archived_at')
                   ? {
@@ -118,8 +126,9 @@ function makeSupabase(
                       },
                     }
                   : { data: conversation, error: null },
-            }),
-          }),
+            };
+            return cadeia;
+          },
           update: () => ({ eq: async () => ({ error: null }) }),
         };
       }
@@ -543,5 +552,65 @@ describe('sendMessageHandler — os 6 desfechos do envio', () => {
 
     expect(msg.status).toBe('sent');
     expect(msg.external_id).toBe('TEXT9');
+  });
+});
+
+/**
+ * TOKEN DE SERVIDOR NO PONTO DE USO (#848).
+ *
+ * `lib/mcp/auth-ator.test.ts` guarda a FUNÇÃO: `deriveActor` devolve
+ * `api_token`. Não guarda o que o handler faz com isso. Medido na triagem: trocar
+ * `=== "user"` por `!== "ai_agent"` nas duas linhas do handler deixa os 6 casos
+ * daquele arquivo verdes — e a única falha que sobra na suíte relacionada vem do
+ * `webhook_source` do caso de gate acima, por acidente. Uma regressão que reabra
+ * só o token (`=== "user" || === "api_token"`) não derrubava nada.
+ *
+ * O ator vem de `deriveActor`, e não de um literal: é o que `resolveAuthDual` e
+ * o servidor MCP entregam ao handler para um token sem escopo de agente. Assim a
+ * função e o ponto de uso ficam presos no mesmo caso.
+ *
+ * ⚠️ `sent_via` NÃO é asserido de propósito. Hoje o token sai como `"ai"`, o que
+ * contradiz o próprio argumento do PR — é defeito conhecido, e prendê-lo aqui
+ * cimentaria a atribuição errada.
+ */
+describe('sendMessageHandler — token de servidor (api_token) no ponto de uso', () => {
+  const TOKEN_ID = '77777777-7777-4777-8777-777777777777';
+  const tokenDeServidor = deriveActor(['mcp:write'], TOKEN_ID);
+
+  it('grava sent_by_user_id = null: o id do TOKEN não vai para a coluna com FK para auth.users', async () => {
+    wahaConfigured(false);
+    vi.stubGlobal('fetch', vi.fn());
+
+    const msg = await sendMessageHandler(
+      makeSupabase(conversationRow()),
+      { ...ctx, actor: tokenDeServidor },
+      textInput(),
+    );
+
+    expect(tokenDeServidor.type, 'o caso perdeu o alvo: o ator já não é api_token').toBe('api_token');
+    expect(
+      msg.sent_by_user_id,
+      'o handler gravou o id do token em sent_by_user_id — em Postgres isso é violação de FK e o envio morre com 500',
+    ).toBeNull();
+  });
+
+  it('consulta o modo de teste do canal: número fora da lista não recebe, e nada sai pela rede', async () => {
+    wahaConfigured(true);
+    const fetchMock = vi.fn(async (..._args: unknown[]) => Response.json({ key: { id: 'NAO-DEVIA-SAIR' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const msg = await sendMessageHandler(
+      makeSupabase(conversationRow(), null, {
+        channelMetadata: { ai_gate: 'allowlist', ai_gate_mode: 'pre_go_live', ai_test_phone_numbers: [] },
+      }),
+      { ...ctx, actor: tokenDeServidor },
+      textInput(),
+    );
+
+    expect(
+      msg,
+      'o token atravessou o modo de teste do canal — pular o gate é privilégio de pessoa, não de integração',
+    ).toMatchObject({ status: 'failed', error_code: 'pre_go_live' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

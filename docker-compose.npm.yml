@@ -1,0 +1,51 @@
+# docker-compose.npm.yml — override para VPS que já tem Nginx Proxy Manager (ou
+# proxy equivalente que NÃO lê labels Docker, ao contrário do Traefik) ocupando
+# as portas 80/443.
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.npm.yml --env-file .env up -d
+#
+# QUANDO USAR
+# -----------
+# O `docker-compose.traefik.yml` já existente resolve o caso de um Traefik na
+# frente (lê labels). O NPM não lê labels — o roteamento é configurado na UI
+# dele (porta 81), num "Proxy Host" que aponta pro app por IP fixo dentro de
+# uma rede Docker compartilhada. Este arquivo faz só a parte que falta nesse
+# cenário: garantir que o `app` SEMPRE entre nessa rede, no MESMO IP que o
+# Proxy Host espera.
+#
+# Sem isto, qualquer recriação do container `app` (deploy, `--force-recreate`,
+# atualização de imagem) derruba o roteamento e o domínio volta a responder
+# 502 — foi exatamente o que aconteceu no incidente de 2026-09-11: alguém
+# tinha plugado a rede manualmente com `docker network connect`, o app foi
+# recriado, a conexão manual se perdeu e o NPM ficou apontando pro vácuo.
+#
+# CONFIGURAR PRA OUTRA INSTALAÇÃO
+# --------------------------------
+# Ajuste PROXY_NETWORK_NAME e PROXY_NETWORK_APP_IP no .env se a rede ou o IP
+# do seu Proxy Host forem outros. Pra descobrir os valores atuais: Nginx Proxy
+# Manager > Proxy Hosts > <domínio> > Edit > Forward Hostname / IP, e a rede é
+# a que o container do próprio NPM já está conectado (`docker inspect
+# <container-do-npm> --format '{{json .NetworkSettings.Networks}}'`).
+#
+# O `caddy` deste projeto nunca deve subir aqui: as portas 80/443 já são do
+# NPM, e o `docker-compose.prod.yml` sozinho tenta criá-lo mesmo assim (fica
+# em `Created`, falhando o bind — inofensivo, mas suja o `docker ps`). Mesmo
+# truque de profile do `docker-compose.traefik.yml`.
+
+services:
+  app:
+    networks:
+      internal: {}
+      npm:
+        ipv4_address: ${PROXY_NETWORK_APP_IP:-172.18.0.3}
+
+  caddy:
+    profiles: ["caddy-nao-usado-com-proxy-externo"]
+
+# `external: true` = quem cria esta rede não é este compose — é o stack do NPM
+# (ou de quem hospeda o proxy). Rede ausente é recusada ANTES de criar
+# qualquer coisa: "network X declared as external, but could not be found".
+networks:
+  npm:
+    external: true
+    name: ${PROXY_NETWORK_NAME:-proxy_network}

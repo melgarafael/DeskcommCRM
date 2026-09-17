@@ -38,7 +38,8 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { assertWahaConnectionIdle, ChannelConnectionError } from "@/lib/channels/connect-waha";
+import { assertWahaConnectionIdle, ChannelConnectionError, renomearSessaoParaOTeto } from "@/lib/channels/connect-waha";
+import { nomeDaSessaoCabeNoWaha, podeRenomearSessaoDoWaha } from "@/lib/channels/nome-da-sessao";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
@@ -95,12 +96,14 @@ export async function POST(
   // arquivado, e exigir a coluna aqui derrubaria a reconexão inteira — que é o
   // socorro de quem está com o número fora do ar.
   const { data: sessionRaw } = await queryTolerantToMissingArchived(
-    () => buscar(`id, waha_session_name, ${ARCHIVED_AT}`),
-    () => buscar("id, waha_session_name"),
+    () => buscar(`id, waha_session_name, status, phone_number, ${ARCHIVED_AT}`),
+    () => buscar("id, waha_session_name, status, phone_number"),
   );
   const session = sessionRaw as {
     id: string;
     waha_session_name: string | null;
+    status?: string | null;
+    phone_number?: string | null;
     archived_at?: string | null;
   } | null;
   if (!session) return fail("not_found", t("Canal não encontrado."), 404, { requestId });
@@ -137,14 +140,42 @@ export async function POST(
     );
   }
 
+  // Reconectar com um nome fora do teto do WAHA é pedir 400 três vezes seguidas
+  // (stop, logout, start). Mesma fronteira do caminho de conectar: cura quem a
+  // 0232 curaria, recusa o resto. Aqui o `status` vale de verdade — esta linha
+  // veio da tabela, não da reserva, que sobrescreve o status com `STARTING`.
+  let nomeParaOTransporte = nomeSessao;
+  if (!nomeDaSessaoCabeNoWaha(nomeSessao)) {
+    if (!podeRenomearSessaoDoWaha(session)) {
+      return fail(
+        "connection_session_name_too_long",
+        t("O identificador desta conexão passou do limite que o WhatsApp aceita e não pode ser trocado sem desligar o número. Fale com o suporte antes de reconectar."),
+        409,
+        { requestId },
+      );
+    }
+    try {
+      nomeParaOTransporte = await renomearSessaoParaOTeto(createAdminClient(), {
+        id: session.id, organization_id: activeOrg.orgId, waha_session_name: nomeSessao,
+      });
+    } catch {
+      return fail(
+        "connection_session_name_too_long",
+        t("O identificador desta conexão passou do limite que o WhatsApp aceita e não pôde ser corrigido agora. Tente novamente em instantes."),
+        409,
+        { requestId },
+      );
+    }
+  }
+
   try {
     await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id);
     const managed = await prepareManagedSession(createAdminClient(), waha, activeOrg.orgId, id, parsedBody.data, user.id);
-    await waha.stopSession(nomeSessao);
+    await waha.stopSession(nomeParaOTransporte);
     // Só no modo forçado: descartar a credencial é irreversível — obriga a
     // reescanear o QR mesmo que ela ainda estivesse boa.
-    if (force) await waha.logoutSession(nomeSessao);
-    const remote = (await (managed ? waha.startSession(nomeSessao, managed) : waha.startSession(nomeSessao))) as { status?: string };
+    if (force) await waha.logoutSession(nomeParaOTransporte);
+    const remote = (await (managed ? waha.startSession(nomeParaOTransporte, managed) : waha.startSession(nomeParaOTransporte))) as { status?: string };
     const nextStatus = remote.status ?? "STARTING";
     const patch = { status: nextStatus, status_reason: null, last_status_change_at: new Date().toISOString(), consecutive_health_fails: 0 };
     const { error: syncError } = await supabase.from("channel_sessions").update(patch).eq("organization_id", activeOrg.orgId).eq("id", id);
@@ -158,7 +189,7 @@ export async function POST(
       resourceType: "channel_session",
       resourceId: id,
       requestId,
-      metadata: { waha_session_name: nomeSessao, force },
+      metadata: { waha_session_name: nomeParaOTransporte, force },
     });
 
     return ok({ id, status: nextStatus, force }, { requestId });

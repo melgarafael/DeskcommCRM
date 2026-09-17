@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -6,6 +7,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { TarefasClient } from "./_components/TarefasClient";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Tarefas" };
 
 /**
  * TAREFAS — "ligar de volta na terça", num lugar que não é a memória de ninguém.

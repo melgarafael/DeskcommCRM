@@ -80,7 +80,7 @@ describe("seedPlatformPlaybook (boot do worker, self-host)", () => {
 
     const loaded = await loadPlaybook(pool, ORG);
     expect(loaded.prompt).toContain("=== playbook:platform ===");
-    expect(loaded.prompt).toContain("assistente virtual");
+    expect(loaded.prompt).toContain("Nunca afirme ser humano");
     expect(loaded.versionIds.platform).toBe(after.pointerVersionId);
   });
 

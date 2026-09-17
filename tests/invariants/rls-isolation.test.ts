@@ -265,6 +265,12 @@ beforeAll(() => {
               'auth-rls'
             );
         end if;
+
+        if not exists (select 1 from public.ai_provider_credentials where organization_id = v_org) then
+          insert into public.ai_provider_credentials
+            (organization_id, provider, label, api_key_encrypted, api_key_iv, api_key_tag, api_key_last4)
+            values (v_org, 'anthropic', 'rls-invariant', '\\x00'::bytea, '\\x00'::bytea, '\\x00'::bytea, '0000');
+        end if;
       end loop;
     end
     $seed$;
@@ -327,6 +333,13 @@ export const TABLES = [
   // aceitou o risco do segundo aparelho vinculado: vazar entre organizacoes
   // diria a uma empresa quem, na outra, ligou a feature e quando.
   "org_voice_calls",
+  // migration 0207 — as credenciais de IA da organização. A 0150 apagou a policy
+  // de leitura por organização sem que nada acusasse, e a 0207 a restaurou; esta
+  // linha é o que passa a acusar se ela sumir de novo (issue #545). A leitura é
+  // org-scoped sem gate de papel, então o `agent` semeado serve de controle
+  // positivo. O SELECT de `authenticated` é por COLUNA, sem as colunas cifradas:
+  // a contagem abaixo usa só `organization_id` e mede o que um membro enxerga.
+  "ai_provider_credentials",
   // ⚠️ `webhook_lead_captures` (migration 0174) NÃO entra nesta lista, e a
   // ausência é deliberada: a policy dela exige `manager`, e o usuário semeado
   // aqui é `agent` — o controle positivo falharia por ACERTO, e a "correção"

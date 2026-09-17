@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { generateReplyDraft } from "@/lib/agent-engine/agent/reply-drafts";
+import { motivoDaFalha } from "@/lib/agent-engine/agent/sugestao-de-resposta";
+import { logger } from "@/lib/logger";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -71,12 +73,18 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       { draft: draft.original_body ?? "", draft_id: draft.id, status: draft.status },
       { requestId },
     );
-  } catch {
-    return fail(
-      "reply_unavailable",
-      c.t("Não foi possível gerar a sugestão. Confira a publicação e a configuração do agente."),
-      422,
-      { requestId },
-    );
+  } catch (erro) {
+    const motivo = motivoDaFalha(erro);
+    // O `catch` daqui era SEM NOME, e a causa morria nesta linha. Registrar é
+    // metade do conserto: a outra metade é a frase, que antes mandava conferir
+    // a publicação do agente mesmo quando o problema era outro.
+    logger.error("[draft-reply] não foi possível gerar a sugestão", {
+      requestId,
+      organizationId: c.auth.org.orgId,
+      conversationId,
+      motivo: motivo.codigo,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
+    return fail(motivo.codigo, c.t(motivo.texto), 422, { requestId });
   }
 }

@@ -1,0 +1,135 @@
+import { NextRequest } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { requireRole } from "@/lib/auth/require-role";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { createClient } from "@/lib/supabase/server";
+
+vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/leads/activity-emitter", () => ({
+  emitLeadActivity: vi.fn(),
+  stageChangeReason: () => "movido",
+}));
+vi.mock("@/lib/leads/activity-write-failure", () => ({
+  registraFalhaDeAtividade: vi.fn(async () => undefined),
+}));
+
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const ORG_ID = "22222222-2222-4222-8222-222222222222";
+const LEAD_ID = "33333333-3333-4333-8333-333333333333";
+const PIPELINE_ID = "44444444-4444-4444-8444-444444444444";
+const STAGE_A = "55555555-5555-4555-8555-555555555555";
+const STAGE_B = "66666666-6666-4666-8666-666666666666";
+
+const CARREGADO = "2026-09-15T12:00:00.000Z";
+/** O `updated_at` depois do UPDATE do move. */
+const DEPOIS_DO_MOVE = "2026-09-15T12:00:01.000Z";
+/** O `updated_at` depois que a atividade, pelo gatilho de `last_activity_at`, escreve no lead de novo. */
+const DEPOIS_DA_ATIVIDADE = "2026-09-15T12:00:01.500Z";
+
+/**
+ * Banco falso com a cascata real: gravar a atividade (`crm_lead_activities`)
+ * dispara `trg_update_last_activity_at`, que escreve em `crm_leads` e troca o
+ * `updated_at` de novo. Quem relê o lead antes da atividade devolve um valor
+ * que já não vale — e o próximo arrastar do mesmo card cai na OCC (issue #916).
+ */
+function bancoFalso() {
+  const banco = { updatedAt: CARREGADO, stageId: STAGE_A };
+  vi.mocked(emitLeadActivity).mockImplementation(async () => {
+    banco.updatedAt = DEPOIS_DA_ATIVIDADE;
+    return { ok: true } as never;
+  });
+
+  const lead = () => ({
+    id: LEAD_ID,
+    organization_id: ORG_ID,
+    pipeline_id: PIPELINE_ID,
+    stage_id: banco.stageId,
+    contact_id: null,
+    status: "open",
+    updated_at: banco.updatedAt,
+  });
+
+  const from = (tabela: string) => {
+    if (tabela === "crm_stages") {
+      const chain = {
+        select: () => chain,
+        eq: (_col: string, id: string) => {
+          (chain as { id?: string }).id = id;
+          return chain;
+        },
+        maybeSingle: async () => ({
+          data: { id: (chain as { id?: string }).id, pipeline_id: PIPELINE_ID, name: "Etapa" },
+          error: null,
+        }),
+      };
+      return chain;
+    }
+    if (tabela === "crm_leads") {
+      return {
+        select: () => {
+          const leitura = { eq: () => leitura, maybeSingle: async () => ({ data: lead(), error: null }) };
+          return leitura;
+        },
+        update: (valores: { stage_id: string }) => {
+          const escrita = {
+            eq: () => escrita,
+            select: () => escrita,
+            maybeSingle: async () => {
+              banco.stageId = valores.stage_id;
+              banco.updatedAt = DEPOIS_DO_MOVE;
+              return { data: { id: LEAD_ID }, error: null };
+            },
+          };
+          return escrita;
+        },
+      };
+    }
+    throw new Error(`tabela inesperada: ${tabela}`);
+  };
+
+  return { from, rpc: vi.fn(() => Promise.resolve({ error: null })) };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(requireRole).mockResolvedValue({
+    ok: true,
+    user: { id: USER_ID, idioma: "pt-BR" },
+    org: { orgId: ORG_ID },
+  } as never);
+  vi.mocked(createClient).mockResolvedValue(bancoFalso() as never);
+});
+
+function request(body: Record<string, unknown>): NextRequest {
+  return new NextRequest(`http://localhost/api/v1/leads/${LEAD_ID}/move`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+describe("POST /api/v1/leads/[id]/move", () => {
+  it("devolve o updated_at FINAL, depois da atividade que o próprio move grava", async () => {
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    const corpo = (await response.json()) as { data: { updated_at: string; stage_id: string } };
+    expect(corpo.data.stage_id).toBe(STAGE_B);
+    expect(corpo.data.updated_at).toBe(DEPOIS_DA_ATIVIDADE);
+  });
+});
+
+// Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
+vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  requireSupportWrite: vi.fn(async () => null),
+  authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
+}));

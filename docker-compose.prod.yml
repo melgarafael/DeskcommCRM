@@ -202,7 +202,8 @@ services:
 
   scheduler:
     # Cron sem docker.sock: crond interno batendo curl na rede interna.
-    # Resolução de 1 min (= paridade com os crons da Vercel).
+    # Resolução de 1 min — o menor passo que o crond tem, e o piso de latência
+    # de tudo que depende de cron (a lista tem rotas de minuto em minuto).
     #
     # A lista de crons mora em docker/scheduler/entrypoint.sh, não mais aqui. O
     # `command:` inline instalava curl e tzdata (`apk add`) a CADA start — num

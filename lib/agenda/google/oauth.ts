@@ -3,7 +3,16 @@
  *
  * Sem rede, sem `process.env` e sem relógio próprio: quem chama injeta a
  * configuração do app e o instante. É o que permite provar, em teste de
- * unidade, as três armadilhas que matam esta integração em produção.
+ * unidade, as três primeiras armadilhas desta integração em produção — e a
+ * GUARDA contra a quarta. São quatro, e elas não se dividem só pelo estrago
+ * (três matam a conexão em silêncio, a quarta tranca quem tem a agenda num
+ * e-mail diferente do login do CRM): dividem-se também pelo que um teste de
+ * unidade alcança. Nas três primeiras o mecanismo É o que enviamos, então
+ * medir o que sai mede a armadilha inteira. Na quarta o mecanismo é a tela do
+ * Google pular o seletor — daqui só se prova que `select_account` SAI, nunca
+ * que o seletor aparece. O teste irmão já faz essa distinção, e o cabeçalho
+ * não pode desfazê-la: `tests/unit/agenda-google-oauth.test.ts` abre com
+ * "três armadilhas medidas" e só depois com "e uma quarta".
  *
  * ─── Armadilha 1: sem `prompt=consent` não vem `refresh_token` ────────────
  *
@@ -27,6 +36,17 @@
  * número relativo dá um token eternamente novo — a validade nunca chega. Aqui
  * ele vira instante absoluto na leitura, usando o `agora` injetado, e o valor
  * relativo não sobrevive à fronteira desta função.
+ *
+ * ─── Armadilha 4: sem `select_account` o `login_hint` vira imposição ───────
+ *
+ * `login_hint` SUGERE a conta, não obriga. Com uma sessão do Google já aberta
+ * no navegador e `prompt=consent` sozinho, o Google autoriza aquela conta e
+ * pula o seletor: quem tem a agenda de trabalho num e-mail diferente do login
+ * do CRM chega na tela, autoriza, e a agenda que volta para o CRM é a do login
+ * — sem caminho nenhum para trocar. `select_account` PEDE o seletor de volta, e
+ * o `login_hint` continua junto como sugestão. O que a tela do Google faz com
+ * essa sugestão — destacar a conta, pré-selecionar, ignorar — é decisão dele, e
+ * ninguém deste lado observou: daqui só se prova o que SAI (ver o topo).
  */
 
 /**
@@ -88,15 +108,23 @@ export function montarUrlDeConsentimento(
     response_type: "code",
     scope: ESCOPOS_OBRIGATORIOS.join(" "),
     // Sem `offline` não vem refresh_token nenhum; sem `consent` ele some na
-    // segunda vez. Os dois juntos, sempre — ver o cabeçalho.
+    // segunda vez; sem `select_account` o Google pula o seletor de contas e
+    // autoriza direto a conta do `login_hint`. Os três juntos, sempre — ver o
+    // cabeçalho.
     access_type: "offline",
-    prompt: "consent",
+    prompt: "consent select_account",
     state: opcoes.state,
   });
 
   // Cada atendente conecta a agenda DELE. Sugerir a conta evita o erro mais
   // comum do fluxo: autorizar com a conta pessoal que já estava logada no
   // navegador e ver a agenda errada aparecer no CRM.
+  //
+  // Sugerir NÃO é decidir: quem tem a agenda de trabalho num e-mail diferente do
+  // login do CRM precisa conseguir escolher o dele na tela do Google — é o
+  // `select_account` acima que mantém o seletor de pé. Como o Google desenha a
+  // sugestão DENTRO do seletor é com ele; o que garantimos é que o seletor é
+  // pedido.
   const conta = opcoes.contaSugerida?.trim();
   if (conta) parametros.set("login_hint", conta);
 

@@ -28,6 +28,12 @@ export interface UsageTenantRow {
   ai_tokens_total: number;
   ai_cost_cents: number;
   conversations_count: number;
+  /**
+   * Nome do agente publicado nesta organização — o de maior prioridade, quando
+   * há mais de um. `null` significa nenhum agente publicado, e é o sinal que o
+   * operador procura na carteira: cliente cujo agente não está no ar.
+   */
+  agent_name: string | null;
 }
 
 export interface DailyPoint {
@@ -71,9 +77,7 @@ export async function GET(req: NextRequest) {
     return fail("forbidden", "Platform admin required", 403, { requestId });
   }
 
-  const parsed = querySchema.safeParse(
-    Object.fromEntries(req.nextUrl.searchParams.entries()),
-  );
+  const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
   if (!parsed.success) {
     return fail("validation_error", "Invalid query params", 400, {
       requestId,
@@ -92,9 +96,7 @@ export async function GET(req: NextRequest) {
   // -------------------------------------------------------------------------
 
   // Fetch organizations first (need name/slug)
-  let orgsQuery = admin
-    .from("organizations")
-    .select("id, display_name, slug");
+  let orgsQuery = admin.from("organizations").select("id, display_name, slug");
   if (tenant_id) {
     orgsQuery = orgsQuery.eq("id", tenant_id);
   }
@@ -177,10 +179,29 @@ export async function GET(req: NextRequest) {
             ((row.input_tokens as number) ?? 0) +
             ((row.output_tokens as number) ?? 0),
         );
-        aiCostMap.set(
-          oid,
-          (aiCostMap.get(oid) ?? 0) + ((row.cost_cents as number) ?? 0),
-        );
+        aiCostMap.set(oid, (aiCostMap.get(oid) ?? 0) + ((row.cost_cents as number) ?? 0));
+      }
+    }
+  }
+
+  // ---- agente publicado por organização ----
+  //
+  // Uma linha por organização basta para a carteira: o agente de MAIOR
+  // prioridade entre os publicados. A lista completa vive na aba Agente do
+  // cliente — aqui a pergunta é só "este cliente está atendendo?".
+  const agentNamePorOrg: Record<string, string> = {};
+  if (orgIds.length > 0) {
+    const { data: agentRows, error: agentErr } = await admin
+      .from("ai_agents")
+      .select("organization_id, name, priority")
+      .in("organization_id", orgIds)
+      .is("archived_at", null)
+      .not("published_version_id", "is", null)
+      .order("priority", { ascending: false });
+    if (!agentErr && agentRows) {
+      for (const row of agentRows) {
+        const oid = row.organization_id as string;
+        if (!agentNamePorOrg[oid]) agentNamePorOrg[oid] = row.name as string;
       }
     }
   }
@@ -198,12 +219,12 @@ export async function GET(req: NextRequest) {
         ai_tokens_total: aiTokensMap.get(org.id) ?? 0,
         ai_cost_cents: aiCostMap.get(org.id) ?? 0,
         conversations_count: convsCountMap.get(org.id) ?? 0,
+        agent_name: agentNamePorOrg[org.id] ?? null,
       };
     })
     .sort(
       (a: UsageTenantRow, b: UsageTenantRow) =>
-        b.ai_cost_cents - a.ai_cost_cents ||
-        b.messages_count - a.messages_count,
+        b.ai_cost_cents - a.ai_cost_cents || b.messages_count - a.messages_count,
     );
 
   // -------------------------------------------------------------------------
@@ -249,10 +270,7 @@ export async function GET(req: NextRequest) {
     if (!aiDayErr && aiDays) {
       for (const row of aiDays) {
         const day = (row.created_at as string).slice(0, 10);
-        aiCostDayMap.set(
-          day,
-          (aiCostDayMap.get(day) ?? 0) + ((row.cost_cents as number) ?? 0),
-        );
+        aiCostDayMap.set(day, (aiCostDayMap.get(day) ?? 0) + ((row.cost_cents as number) ?? 0));
         aiTokensDayMap.set(
           day,
           (aiTokensDayMap.get(day) ?? 0) +

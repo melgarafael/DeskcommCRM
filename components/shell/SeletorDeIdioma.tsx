@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useT } from "@/hooks/i18n/useT";
 import { useAplicarIdioma, useIdioma } from "@/lib/i18n/IdiomaProvider";
-import { IDIOMAS, type Idioma } from "@/lib/i18n/idiomas";
+import { type Idioma } from "@/lib/i18n/idiomas";
+import { IDIOMAS_VISIVEIS, idiomaVisivelPorCodigo } from "@/lib/i18n/registro";
 import { Check } from "@/lib/ui/icons";
 
 /**
@@ -33,16 +34,11 @@ import { Check } from "@/lib/ui/icons";
  * ícone. Um ícone de globo diria "idioma" sem dizer QUAL — e saber qual está
  * em vigor é metade da pergunta de quem procura este botão.
  */
-const NOME_DO_IDIOMA: Record<Idioma, { curto: string; completo: string }> = {
-  // Cada língua no nome dela própria: é assim que se reconhece a sua numa
-  // lista que você não sabe ler.
-  "pt-BR": { curto: "PT", completo: "Português (BR)" },
-  es: { curto: "ES", completo: "Español" },
-};
 
 export function SeletorDeIdioma() {
   const t = useT();
   const idioma = useIdioma();
+  const emVigor = idiomaVisivelPorCodigo(idioma);
   const aplicar = useAplicarIdioma();
   const [salvando, startTransition] = useTransition();
 
@@ -90,16 +86,16 @@ export function SeletorDeIdioma() {
           variant="ghost"
           size="icon"
           disabled={salvando}
-          aria-label={`${t("Idioma")}: ${NOME_DO_IDIOMA[idioma].completo}`}
+          aria-label={`${t("Idioma")}: ${emVigor.nomeNativo}`}
           data-testid="seletor-de-idioma"
         >
           <span className="text-xs font-semibold tabular-nums">
-            {NOME_DO_IDIOMA[idioma].curto}
+            {emVigor.rotuloCurto}
           </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[180px]">
-        {IDIOMAS.map((codigo) => (
+        {IDIOMAS_VISIVEIS.map(({ codigo, nomeNativo }) => (
           <DropdownMenuItem
             key={codigo}
             onClick={() => escolher(codigo)}
@@ -111,7 +107,7 @@ export function SeletorDeIdioma() {
               className={`mr-2 ${codigo === idioma ? "" : "invisible"}`}
               aria-hidden
             />
-            {NOME_DO_IDIOMA[codigo].completo}
+            {nomeNativo}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

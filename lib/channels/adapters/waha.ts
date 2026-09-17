@@ -11,9 +11,10 @@ import { getWahaClient } from "@/lib/waha/client";
 import { wahaSendPlanFor } from "@/lib/waha/media-send";
 import {
   resolveCanonicalCusChatId,
+  resolvePhoneJidDigitsForCall,
   resolveWhatsappIdForContactCard,
 } from "@/lib/waha/resolve-contact-whatsapp-id";
-import { bareWaMessageId, parseWahaMessageId } from "@/lib/waha/message-id";
+import { parseWahaMessageId, wahaEchoExternalIds } from "@/lib/waha/message-id";
 import { resolveWahaChatId } from "@/lib/waha/send";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
 import { DETALHE_CREDENCIAL_RECUSADA } from "../health";
@@ -46,20 +47,13 @@ export const wahaAdapter: ChannelAdapter = {
   },
 
   /**
-   * As duas pontas do mesmo id, porque os engines gravam lados opostos:
-   *   NOWEB — o envio devolve o id cru (`3EB0…`) e o webhook manda o composto
-   *           `true_<chatId>_3EB0…`
-   *   WEBJS — os dois lados usam o `_serialized` completo
-   *
-   * Reduzir ao bare cobre o segundo caso; para o primeiro é preciso CONSTRUIR o
-   * composto a partir do destinatário — daí o `recipient`. Sem ele o par nunca
-   * contém a forma que o webhook realmente gravou.
-   *
-   * `true_` porque o eco de um envio nosso é sempre `fromMe`.
+   * As formas que o eco do nosso envio pode ter gravado. A regra mora em
+   * `wahaEchoExternalIds` (`lib/waha/message-id.ts`) porque o reenvio do watchdog
+   * precisa da MESMA resposta e não passa por este adaptador — o comentário de lá
+   * explica as duas pontas de cada engine.
    */
   echoExternalIds(input: { externalId: string; recipient: string }): string[] {
-    const bare = bareWaMessageId(input.externalId);
-    return [...new Set([input.externalId, bare, `true_${input.recipient}_${bare}`])];
+    return wahaEchoExternalIds(input.externalId, input.recipient);
   },
 
   // Mesmo pre-check que o handler já fazia com `getWahaClient() !== null`,
@@ -103,6 +97,16 @@ export const wahaAdapter: ChannelAdapter = {
     const client = getWahaClient();
     if (!client) return null;
     return client.resolvePhoneForLid(input.sessionRef, input.identity.slice("lid:".length));
+  },
+
+  /**
+   * `check-exists` nas duas grafias do nono dígito; só JID de telefone serve
+   * (ver `phoneJidDigitsFromCheckResult`). Transporte não configurado é `null`.
+   */
+  async resolveRegisteredPhone(input: { sessionRef: string; phone: string }): Promise<string | null> {
+    const client = getWahaClient();
+    if (!client) return null;
+    return resolvePhoneJidDigitsForCall(client, input.sessionRef, input.phone);
   },
 
   /**

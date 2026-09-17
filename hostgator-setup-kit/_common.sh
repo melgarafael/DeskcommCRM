@@ -4,6 +4,7 @@ set -euo pipefail
 
 COMPOSE="docker-compose.prod.yml"
 COMPOSE_TRAEFIK="docker-compose.traefik.yml"
+COMPOSE_NPM="docker-compose.npm.yml"
 
 # Proxy reverso desta instalação. Vem do .env (load_env), com default 'caddy' —
 # ou seja, toda instalação que já existe continua exatamente como está.
@@ -12,26 +13,30 @@ COMPOSE_TRAEFIK="docker-compose.traefik.yml"
 #   traefik → a VPS JÁ tem um Traefik nessas portas (Hostinger, Coolify,
 #             Dokploy...). Entra o override, que desliga o Caddy e publica o app
 #             por labels. Ver o cabeçalho de docker-compose.traefik.yml.
+#   npm     → a VPS JÁ tem um Nginx Proxy Manager nessas portas (não lê labels
+#             Docker — o roteamento é manual, na UI dele). Entra o override, que
+#             desliga o Caddy e garante o `app` na rede/IP que o Proxy Host
+#             espera. Ver o cabeçalho de docker-compose.npm.yml.
 #
 # Todo `docker compose` do kit passa por aqui: com proxy externo, um comando sem
-# o override subiria o Caddy e ele iria bater de frente com o Traefik.
+# o override subiria o Caddy e ele iria bater de frente com o proxy da hospedagem.
 dc() {
-  if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
-    docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" "$@"
-  else
-    docker compose -f "$COMPOSE" "$@"
-  fi
+  case "${REVERSE_PROXY:-caddy}" in
+  traefik) docker compose -f "$COMPOSE" -f "$COMPOSE_TRAEFIK" "$@" ;;
+  npm)     docker compose -f "$COMPOSE" -f "$COMPOSE_NPM" "$@" ;;
+  *)       docker compose -f "$COMPOSE" "$@" ;;
+  esac
 }
 
 # A mesma lista de -f, como texto, para as mensagens que ensinam o comando ao
 # dono. Se a mensagem omitisse o override numa instalação com proxy externo, o
 # próprio dono derrubaria o site seguindo a instrução do kit.
 dc_files() {
-  if [ "${REVERSE_PROXY:-caddy}" = "traefik" ]; then
-    printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_TRAEFIK"
-  else
-    printf -- '-f %s' "$COMPOSE"
-  fi
+  case "${REVERSE_PROXY:-caddy}" in
+  traefik) printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_TRAEFIK" ;;
+  npm)     printf -- '-f %s -f %s' "$COMPOSE" "$COMPOSE_NPM" ;;
+  *)       printf -- '-f %s' "$COMPOSE" ;;
+  esac
 }
 
 # ── A rede externa por onde o proxy de fora alcança o app ────────────────────
@@ -171,6 +176,18 @@ veredito_rede_do_proxy() {  # veredito_rede_do_proxy <driver encontrado> <rede> 
 # Define TRAEFIK_NETWORK quando ela vem vazia — de propósito, é o mesmo default
 # que o instalador grava no .env.
 garantir_rede_do_proxy() {
+  # NPM nunca é criado por nós: a rede é sempre do stack do Proxy Manager (ou de
+  # quem hospeda), então não há "nossa" bridge para oferecer — só checar e, se
+  # sumiu (prune, down -v), morrer explicando em vez do opaco erro do compose.
+  if [ "${REVERSE_PROXY:-caddy}" = "npm" ]; then
+    local rede
+    rede="${PROXY_NETWORK_NAME:-proxy_network}"
+    docker network inspect "$rede" >/dev/null 2>&1 && return 0
+    die "A rede Docker '$rede' (a do Nginx Proxy Manager) não existe.
+Rode 'docker network ls', identifique a rede do seu NPM (Settings > a que o
+contêiner dele já está conectado) e ponha PROXY_NETWORK_NAME=<nome> no .env
+antes de tentar de novo."
+  fi
   [ "${REVERSE_PROXY:-caddy}" = "traefik" ] || return 0
   local nossa drv erro
   nossa="$(rede_reservada_do_proxy)"
@@ -367,7 +384,11 @@ load_env() {
         # quatro caracteres a mais, e o erro só aparece longe daqui (o psql
         # recusa a conexão, o login não bate) sem nada apontando para o .env.
         # Achado pelo teste de round-trip.
-        val="${val//"'\\''"/"'"}"
+        # A substituição `${var//…/…}` acima era correta no Bash 5 da VPS,
+        # mas o Bash 3.2 ainda presente no macOS preservava o escape como
+        # texto. `sed` opera sobre os bytes e mantém o mesmo resultado nas
+        # duas versões; `printf` impede que o conteúdo seja interpretado.
+        val="$(printf '%s' "$val" | sed "s/'\\\\''/'/g")"
         ;;
     esac
     printf -v "$key" '%s' "$val"
@@ -421,6 +442,98 @@ url_do_schema() {
 # os chamadores mexem em `auth.mfa_factors` e `private.app_secrets`, fora do
 # alcance de uma role de app com grants só em `public`.
 psql_run() { docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 "$@"; }
+
+# ── Re-aplicar o baseline num banco que JÁ existe ────────────────────────────
+# Chamado pelo `update.sh` e pelo `install.sh` re-executado. Sem `ON_ERROR_STOP`,
+# de propósito: com a flag, o primeiro "já existe" de um clone antigo pararia o
+# arquivo, e o apêndice com as migrations novas nunca chegaria.
+#
+# O preço é que o psql segue depois de QUALQUER erro, inclusive dos que não vêm
+# do arquivo. Medido numa VPS real, na v1.27.3: com o app atendendo, dois
+# comandos perderam um `deadlock detected`, e um deles era o `create policy` logo
+# depois do `drop policy` da mesma policy — `ai_knowledge_sources` ficou sem a
+# policy de leitura até alguém refazer o bloco à mão. O aviso saiu na tela, no
+# meio das três linhas de ruído das atualizações daquela VPS (v1.27.2 e v1.27.3).
+#
+# O arquivo é idempotente (o job `invariants` o re-aplica com ON_ERROR_STOP=1),
+# então a cura de uma disputa é aplicá-lo de novo, inteiro. O veredito é o da
+# ÚLTIMA passada: o comando que perdeu na primeira rodou outra vez na seguinte,
+# e é o estado dela que fica no banco. Só re-aplica por erro de disputa ou de
+# conexão — a que cai no meio e a que nem chega a abrir. Erro de permissão ou de
+# dado se repetiria igual, só mais tarde. Medido contra um Postgres 17 real:
+# deadlock (psql sai 0), `pg_terminate_backend`, restart do servidor e
+# "too many clients" (psql sai 2) — todos curados na 2ª passada.
+#
+# O limite da cura, e por que cada nova passada imprime o que não aplicou: um
+# comando que COPIA dado guardado por uma checagem de catálogo, e que perde a
+# disputa enquanto o comando seguinte (o que destrói a origem) passa, não tem o
+# que copiar na passada seguinte — ela sai limpa e o dado não veio. O ✓ depois
+# de uma disputa nunca é mudo: cada nova passada lista na tela as linhas que não
+# aplicaram (as de disputa primeiro, até 10, dizendo quantas ficaram de fora) e,
+# quando quem chama passa um log, a saída inteira de cada passada vai para ele.
+#
+# Nada de `| grep -q` nem `| head` aqui: com `pipefail`, o leitor que sai cedo
+# mata o `printf` com SIGPIPE quando a saída passa do buffer do pipe (os milhares
+# de "must be owner" de uma role sem dono passam), e o pipeline inteiro vira
+# falha — medido: a disputa deixava de ser reconhecida. `grep` sem `-q`, `sed`
+# e `awk` leem até o fim; o `grep -q` que sobra lê de here-string, e se ela
+# falhar a função devolve 1 (aviso), nunca 0.
+#
+#   reaplicar_baseline <baseline.sql> [log]
+#     0 → a última passada não teve erro fora dos benignos
+#     1 → teve; as linhas ficam em BASELINE_INESPERADO
+#   BASELINE_PASSADAS diz quantas passadas foram feitas.
+#   O log, quando dado, recebe a saída de TODAS as passadas, cada uma com cabeçalho.
+#   BASELINE_TENTATIVAS (padrão 3) e BASELINE_ESPERA_S (padrão 10, vezes o número
+#   da passada) existem para a suíte de shell não esperar de verdade.
+BASELINE_ERROS_BENIGNOS='already exists|multiple primary keys|multiple default values|is already a member|already a partition'
+BASELINE_ERROS_DE_DISPUTA='deadlock detected|could not serialize access|lock timeout|could not obtain lock|terminating connection|server closed the connection|connection to server was lost|SSL connection has been closed unexpectedly|SSL SYSCALL error|remaining connection slots|too many clients|max client(s| connections) reached|the database system is (starting up|shutting down|in recovery mode|not yet accepting connections)|Temporary failure in name resolution|Connection refused|Connection timed out|timeout expired|Network (is )?unreachable'
+# listar_erros_do_banco <linhas> <máximo> [recuo]: as de disputa ou conexão primeiro
+# — são as que explicam uma nova passada, e numa lista de milhares de "must be
+# owner" ficariam fora do corte —, depois o resto, dizendo quantas ficaram de fora.
+listar_erros_do_banco() {
+  local linhas="$1" maximo="$2" recuo="${3:-}" total
+  total="$(printf '%s\n' "$linhas" | grep -c . || true)"
+  # `awk` com -v, e não `sed "s/^/$recuo/"`: assim o recuo e o máximo entram como
+  # DADO. Uma barra no recuo quebraria o programa do sed, e `maximo=0` viraria o
+  # endereço inválido `1,0` — os dois derrubariam o script sob set -e.
+  { printf '%s\n' "$linhas" | grep -iE "$BASELINE_ERROS_DE_DISPUTA" || true
+    printf '%s\n' "$linhas" | grep -viE "$BASELINE_ERROS_DE_DISPUTA" || true
+  } | awk -v r="$recuo" -v n="$maximo" 'NF && ++i <= n { print r $0 }'
+  [ "${total:-0}" -le "$maximo" ] || printf '%s(e mais %s linhas)\n' "$recuo" "$((total - maximo))"
+}
+
+reaplicar_baseline() {
+  local arquivo="$1" log="${2:-}" tentativas="${BASELINE_TENTATIVAS:-3}" espera="${BASELINE_ESPERA_S:-10}"
+  local raw rc causa
+  BASELINE_PASSADAS=1
+  [ -z "$log" ] || : > "$log"
+  while :; do
+    rc=0
+    raw="$(docker run --rm -i -v "$arquivo:/b.sql:ro" postgres:17-alpine \
+          psql "$(url_do_schema)" -q -f /b.sql 2>&1)" || rc=$?
+    [ -z "$log" ] || printf '── passada %s de %s (saída %s) ──\n%s\n' "$BASELINE_PASSADAS" "$tentativas" "$rc" "$raw" >> "$log"
+    BASELINE_INESPERADO="$(printf '%s\n' "$raw" | grep -iE 'ERROR|FATAL' | grep -viE "$BASELINE_ERROS_BENIGNOS" || true)"
+    # Sem ON_ERROR_STOP o psql sai 0 mesmo com erro de SQL: saída diferente de
+    # zero é o psql (ou o docker) que NÃO chegou ao fim do arquivo. Sem isto, uma
+    # conexão que cai no meio sem imprimir a palavra ERROR terminaria em
+    # "✓ banco atualizado" com metade do arquivo aplicada. A causa citada é a
+    # última linha que não é continuação indentada — a última de todas costuma ser
+    # a dica "Is the server running…", e não o motivo.
+    if [ "$rc" -ne 0 ]; then
+      causa="$(printf '%s\n' "$raw" | awk 'NF && !/^[[:space:]]/ { l = $0 } END { print l }')"
+      BASELINE_INESPERADO="$(printf '%s\n' "$BASELINE_INESPERADO" \
+        "a aplicação não chegou ao fim do arquivo (o psql saiu com código $rc): $causa" | sed '/^$/d')"
+    fi
+    [ -n "$BASELINE_INESPERADO" ] || return 0
+    [ "$BASELINE_PASSADAS" -lt "$tentativas" ] || return 1
+    grep -qiE "$BASELINE_ERROS_DE_DISPUTA" <<<"$BASELINE_INESPERADO" || return 1
+    c_ylw "• parte do banco não aplicou (disputa com o app no ar ou conexão instável) — aplicando de novo, é seguro (passada $((BASELINE_PASSADAS + 1)) de $tentativas). O que não aplicou:"
+    listar_erros_do_banco "$BASELINE_INESPERADO" 10 "    "
+    sleep "$((espera * BASELINE_PASSADAS))"
+    BASELINE_PASSADAS=$((BASELINE_PASSADAS + 1))
+  done
+}
 
 # ── As três imagens que NÓS publicamos ───────────────────────────────────────
 # O namespace é constante e literal de propósito: ele está gravado no .env de
@@ -777,6 +890,28 @@ cron_merge() {  # cron_merge <marcador> <assinatura_legada> <linha_nova>
   printf '%s\n' "$nova"
 }
 
+# ── O segredo do cron mora num ARQUIVO, nunca na linha do crontab ────────────
+# O `cron` do Ubuntu registra no syslog a linha de comando inteira de cada
+# execução. Com `-H "Authorization: Bearer <segredo>"` escrito na linha, o
+# segredo que libera as rotas de cron (e a de atualização do agente) ia para o
+# log a cada minuto — medido numa VPS de produção em 2026-09-17: 24.827 linhas
+# no journal, legíveis por qualquer coisa que leia o log do sistema e copiadas
+# para cada relatório que alguém tira dele.
+#
+# Agora a linha aponta para `.env.cron-drain` (`curl -H @arquivo`, curl ≥ 7.55),
+# que nasce com 600 e é regravado a cada install/update a partir do `.env`:
+# trocar o segredo no `.env` e rodar o update basta para o cron acompanhar. O
+# nome casa com `.env*` de propósito — `.gitignore` e `.dockerignore` já o
+# deixam de fora.
+gravar_cabecalho_do_cron() {  # gravar_cabecalho_do_cron <arquivo> <segredo>
+  local arquivo="$1" segredo="$2" tmp
+  # `mktemp` cria com 600 desde o primeiro byte: um `printf > arquivo` seguido
+  # de `chmod` deixaria o segredo legível por um instante, e o `mv` troca de uma vez.
+  tmp="$(mktemp "${arquivo}.XXXXXX")" || return 1
+  if ! printf 'Authorization: Bearer %s\n' "$segredo" > "$tmp"; then rm -f "$tmp"; return 1; fi
+  chmod 600 "$tmp" && mv -f "$tmp" "$arquivo"
+}
+
 setup_event_log_drain_cron() {
   command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — instale o pacote 'cron' e rode de novo pra ativar as automações."; return 0; }
 
@@ -794,7 +929,16 @@ setup_event_log_drain_cron() {
   local first_time=1
   if crontab -l 2>/dev/null | grep -qF -e "$url_drain"; then first_time=0; fi
 
-  local cron_line="* * * * * curl -fsS -H \"Authorization: Bearer ${secret}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
+  local cabecalho="${PROJECT_DIR:-$PWD}/.env.cron-drain"
+  gravar_cabecalho_do_cron "$cabecalho" "$secret" \
+    || { c_ylw "⚠ não consegui gravar ${cabecalho} — não ativei o cron das automações."; return 0; }
+
+  # A linha legada (com o Bearer escrito nela) sai pela assinatura da URL.
+  # ⚠️ Numa instalação existente isso só acontece a partir do update SEGUINTE ao
+  # que traz este conserto: o `update.sh` faz `source` deste arquivo ANTES do
+  # `git checkout` da tag, então no update que o traz quem roda aqui ainda é a
+  # versão anterior desta função.
+  local cron_line="* * * * * curl -fsS -H @\"${cabecalho}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
   # ⚠️ `|| true` OBRIGATÓRIO, e não é defensividade: `crontab -l` sai com status
   # 1 (sem stdout, só um aviso no stderr) quando o usuário NUNCA teve crontab —
   # o caso NORMAL de uma VPS recém-provisionada, que é o caso normal de quem
@@ -805,9 +949,25 @@ setup_event_log_drain_cron() {
   # O dono vê o script morrer sem mensagem, numa instalação que na verdade
   # funcionou.
   #
+  # ACHADO DUAS VEZES, POR DUAS PESSOAS QUE NÃO SE FALARAM, NO MESMO DIA:
+  # @luiscgc91 (PR #683) e @rafaelbatistazz (issue #715 + PR #726), os dois
+  # instalando numa VPS limpa. Os dois escreveram EXATAMENTE a mesma linha. Isso
+  # não é redundância — é a medida de quanto o defeito doía, e a razão de este
+  # comentário ser longo: ele existe para a terceira pessoa não precisar
+  # descobrir de novo.
+  #
+  # A issue #715 descreve o sintoma como quem o viveu: o instalador para logo
+  # depois de "✓ chave de cifra ativa no banco", cai na tela "A instalação
+  # parou", e os contêineres estão SAUDÁVEIS. Rodar de novo passa — porque aí o
+  # crontab já não está vazio, o que faz o defeito parecer fantasma.
+  #
   # Reproduzido com um dublê de `crontab` que sai 1 no `-l`: sem o `|| true`, a
-  # linha seguinte a este bloco nunca é alcançada. Vigiado por
-  # `tests/shell/cron-sem-crontab-previo.test.sh`.
+  # linha seguinte a este bloco nunca é alcançada. Vigiado por DOIS testes, de
+  # propósito: `tests/shell/cron-sem-crontab-previo.test.sh` mede cada função
+  # isolada, e o bloco `cron numa VPS sem crontab nenhum` de
+  # `hostgator-setup-kit/test-validators.sh` (de @rafaelbatistazz) roda AS DUAS
+  # no mesmo processo — como o `install.sh` faz — e confere que as duas linhas
+  # foram gravadas.
   #
   # Stdin vazio para o `cron_merge` é exatamente o que "sem crontab prévio" deve
   # produzir — o comportamento não muda, só o status.

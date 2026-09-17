@@ -17,6 +17,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { roleAtLeast } from "@/lib/auth/types";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { hashCpf, encryptCpfSql } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
@@ -31,7 +32,7 @@ import { contactListQuerySchema } from "@/lib/schemas";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at";
+  "id, organization_id, name, display_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
 
 interface CursorPayload {
   sort: string | null;
@@ -132,10 +133,16 @@ export async function listContactsHandler(
       // ⚠️ `display_name` ESTAVA DE FORA, e é a coluna que a tela MOSTRA.
       //
       // Contato que entra pelo WhatsApp nasce só com `display_name` (o pushName);
-      // `name` fica nulo até alguém editar à mão. `resolveContactName` e o resto
-      // da UI preferem `display_name` — então a busca ignorava exatamente o nome
-      // que o usuário vê e digita. Medido nesta instalação: 15 de 33 contatos
-      // têm `display_name` e nenhum `name`.
+      // `name` fica nulo até alguém editar à mão, e a busca ignorava exatamente
+      // o nome que o usuário vê e digita. Medido nesta instalação: 15 de 33
+      // contatos têm `display_name` e nenhum `name`.
+      //
+      // Quem decide o nome exibido é `nomeDoContato`/`rotuloDoContato`
+      // (lib/contacts/rotulo-do-contato.ts) — a ordem em vigor se lê ali, não
+      // aqui. Esta linha já afirmou que a UI prefere `display_name`, e a issue
+      // #906 inverteu a precedência sem que a frase acompanhasse. O que
+      // justifica a coluna no OR não é a ordem: é que ela é a ÚNICA preenchida
+      // em metade da base, então buscar sem ela devolve zero para quem existe.
       //
       // Achado por um turno de agente REAL (IA 360 · wave 2): pedido para marcar
       // um retorno para "Cliente Retorno E2E", o modelo chamou esta busca, levou
@@ -400,6 +407,30 @@ export async function createContactHandler(
     .single();
 
   if (insErr) {
+    // 409 quando o telefone já é de um contato vivo desta organização: o índice
+    // parcial `uniq_contacts_org_phone` (organization_id, phone_number) barra o
+    // insert com 23505. E-mail e CPF também têm trava única na tabela, então o
+    // 23505 sozinho não diz qual índice bateu: só vira `contact_exists` se a
+    // releitura do telefone achar um contato vivo. A releitura repete o filtro
+    // por `organization_id` — o id devolvido no `details` nunca vem do corpo da
+    // requisição — e qualquer outro conflito continua no 500 de sempre.
+    const telefoneDoInsert = insertRow.phone_number as string | null;
+    if (insErr.code === "23505" && telefoneDoInsert) {
+      const existente = await encontrarContatoPorTelefone(
+        supabase,
+        ctx.organization_id,
+        telefoneDoInsert,
+      );
+      if (existente) {
+        throw new ApiError(
+          409,
+          "contact_exists",
+          { contact_id: existente.id },
+          ctx.requestId,
+          traduzir("Já existe um contato com este telefone.", ctx.idioma ?? "pt-BR"),
+        );
+      }
+    }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
@@ -673,6 +704,31 @@ function throwOnDbError(
   throw new ApiError(500, "internal_error", undefined, requestId, err.message);
 }
 
+/**
+ * Os vínculos `on delete restrict` que apontam para `contacts` e que este
+ * handler NÃO apaga de propósito.
+ *
+ * Medido em `supabase/baseline.sql` (não inferido): além de
+ * `conversations.contact_id` (linha 3531) e `messages.contact_id` (3781) — o
+ * histórico, que sai logo abaixo porque é o pedido da exclusão —, a única FK
+ * RESTRICT que sobra é `calendar_appointments.contact_id` (linha 15226, da
+ * migração 0177). Ela é da agenda, e a decisão da 0177 foi explícita: o
+ * compromisso aconteceu, tem dono e tem texto livre, então ele não cai por
+ * cascata junto com a ficha.
+ *
+ * Conferir esta lista ANTES do primeiro DELETE é o arranjo que a issue #752
+ * pede: sem ele, apagar `messages`/`conversations` e só então esbarrar no
+ * RESTRICT é destruir o histórico do lead para devolver 409 — o pior dos dois
+ * desfechos, porque a ficha continua lá e as mensagens não.
+ *
+ * Tabela nova com RESTRICT para `contacts` entra aqui como uma linha, e o
+ * teste que acompanha este handler (`tests/unit/contato-delete.test.ts`)
+ * exercita a contagem com filtro de organização.
+ */
+const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{ tabela: string; rotulo: string }> = [
+  { tabela: "calendar_appointments", rotulo: "compromisso(s) na agenda" },
+];
+
 export async function deleteContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
@@ -698,30 +754,101 @@ export async function deleteContactHandler(
     );
   }
 
-  // Mensagens e conversas RESTRICT no contato: apagar primeiro, senão o DELETE
-  // da ficha falha para qualquer lead que já falou no canal.
-  const { error: msgErr } = await supabase
-    .from("messages")
-    .delete()
-    .eq("contact_id", contactId)
-    .eq("organization_id", ctx.organization_id);
-  throwOnDbError(msgErr, ctx.requestId, ctx.idioma);
+  const a = actorAuditPayload(ctx.actor);
 
-  const { error: convErr } = await supabase
-    .from("conversations")
-    .delete()
-    .eq("contact_id", contactId)
-    .eq("organization_id", ctx.organization_id);
-  throwOnDbError(convErr, ctx.requestId, ctx.idioma);
+  // Pré-checagem dos vínculos que barram o DELETE da ficha (issue #752).
+  //
+  // Só CONTA: quem recusa continua sendo o banco, com o 23503 do RESTRICT. A
+  // contagem existe para saber disso antes de apagar o histórico, e é por isso
+  // que ela vem antes do primeiro DELETE — depois não há mais como desfazer.
+  const vinculos: string[] = [];
+  for (const vinculo of VINCULOS_RESTRICT_NAO_APAGADOS) {
+    const { count, error } = await supabase
+      .from(vinculo.tabela)
+      .select("id", { count: "exact", head: true })
+      .eq("contact_id", contactId)
+      .eq("organization_id", ctx.organization_id);
+    if (error) {
+      // Falha da CONTAGEM não autoriza seguir apagando: seguir aqui é cair no
+      // defeito que esta pré-checagem existe para impedir (histórico
+      // destruído antes de saber se a ficha sai). Um 500 agora é reversível;
+      // mensagem apagada não volta.
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+    if ((count ?? 0) > 0) vinculos.push(`${count} ${vinculo.rotulo}`);
+  }
 
-  const { data: deleted, error: delErr } = await supabase
-    .from("contacts")
-    .delete()
-    .eq("id", contactId)
-    .eq("organization_id", ctx.organization_id)
-    .select("id")
-    .maybeSingle();
-  throwOnDbError(delErr, ctx.requestId, ctx.idioma);
+  if (vinculos.length > 0) {
+    // O 409 é o MESMO do caminho de FK (mesma causa, mesmo tratamento no
+    // cliente), mas aqui ele chega com `messages`/`conversations` intactos.
+    // O detalhe que o cliente não vê está na auditoria: `vinculos` diz o que
+    // barrou, `apagados` vazio diz que nada foi tocado.
+    await audit({
+      action: "contact.delete_blocked",
+      actorUserId: a.actorUserId,
+      organizationId: ctx.organization_id,
+      resourceType: "contact",
+      resourceId: contactId,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, motivo: "vinculo_restrict", vinculos, apagados: [] },
+    });
+    throw new ApiError(
+      409,
+      "state_conflict",
+      undefined,
+      ctx.requestId,
+      traduzir("Não foi possível excluir: o contato ainda tem registros vinculados.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+
+  // `apagados` é preenchido passo a passo de propósito: se um DELETE do meio
+  // falhar, a linha de auditoria do erro precisa dizer exatamente até onde o
+  // histórico foi, senão o incidente vira arqueologia.
+  const apagados: string[] = [];
+  let deleted: { id: string } | null = null;
+  try {
+    // Mensagens e conversas RESTRICT no contato: apagar primeiro, senão o
+    // DELETE da ficha falha para qualquer lead que já falou no canal.
+    const { error: msgErr } = await supabase
+      .from("messages")
+      .delete()
+      .eq("contact_id", contactId)
+      .eq("organization_id", ctx.organization_id);
+    throwOnDbError(msgErr, ctx.requestId, ctx.idioma);
+    apagados.push("messages");
+
+    const { error: convErr } = await supabase
+      .from("conversations")
+      .delete()
+      .eq("contact_id", contactId)
+      .eq("organization_id", ctx.organization_id);
+    throwOnDbError(convErr, ctx.requestId, ctx.idioma);
+    apagados.push("conversations");
+
+    const { data, error: delErr } = await supabase
+      .from("contacts")
+      .delete()
+      .eq("id", contactId)
+      .eq("organization_id", ctx.organization_id)
+      .select("id")
+      .maybeSingle();
+    throwOnDbError(delErr, ctx.requestId, ctx.idioma);
+    deleted = data;
+  } catch (err) {
+    // `audit()` é best-effort por doutrina (engole a própria falha e reporta),
+    // então registrar aqui não pode trocar o desfecho do erro real.
+    await audit({
+      action: "contact.delete_blocked",
+      actorUserId: a.actorUserId,
+      organizationId: ctx.organization_id,
+      resourceType: "contact",
+      resourceId: contactId,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, motivo: "falha_ao_apagar", vinculos: [], apagados },
+    });
+    throw err;
+  }
+
   if (!deleted) {
     throw new ApiError(
       404,
@@ -731,8 +858,6 @@ export async function deleteContactHandler(
       traduzir("Contato não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
-
-  const a = actorAuditPayload(ctx.actor);
 
   await supabase
     .rpc("emit_event", {

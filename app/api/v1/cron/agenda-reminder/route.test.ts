@@ -23,7 +23,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { estaNaHora, montarLembrete } from "./route";
+import { degrausPendentes, estaNaHora, montarLembrete } from "./route";
 
 const MIN = 60_000;
 
@@ -145,5 +145,66 @@ describe("isolamento entre organizações (estrutural)", () => {
     expect(fonte).toContain("const org = linha.organization_id");
     // controle: se alguém trocar por leitura de query string, isto reprova.
     expect(fonte).not.toContain("searchParams.get(\"organization_id\")");
+  });
+});
+
+describe("degrausPendentes — o lembrete que tem mais de um degrau", () => {
+  const comeca = new Date("2026-09-20T14:00:00.000Z");
+  const base = { comeca, principal: 1440, extras: [180], jaEnviados: null as number[] | null };
+
+  it("dois dias antes não deve nada — nem o degrau mais antecipado venceu", () => {
+    expect(degrausPendentes({ ...base, agora: new Date("2026-09-18T14:00:00.000Z") })).toEqual([]);
+  });
+
+  it("um dia antes deve só o degrau de um dia", () => {
+    expect(degrausPendentes({ ...base, agora: new Date("2026-09-19T15:00:00.000Z") })).toEqual([1440]);
+  });
+
+  it("três horas antes, com o de um dia já enviado, deve o de três horas", () => {
+    expect(
+      degrausPendentes({ ...base, agora: new Date("2026-09-20T11:30:00.000Z"), jaEnviados: [1440] }),
+    ).toEqual([180]);
+  });
+
+  it("com os dois já enviados não deve nada — é o que impede a mensagem repetida", () => {
+    expect(
+      degrausPendentes({ ...base, agora: new Date("2026-09-20T13:00:00.000Z"), jaEnviados: [1440, 180] }),
+    ).toEqual([]);
+  });
+
+  it("cron parado: dois degraus vencidos saem JUNTOS, para virarem uma mensagem só", () => {
+    // Quem chama manda um texto e carimba os dois. Se esta função devolvesse um
+    // por rodada, a pessoa receberia o mesmo aviso duas vezes seguidas.
+    expect(degrausPendentes({ ...base, agora: new Date("2026-09-20T13:00:00.000Z") })).toEqual([1440, 180]);
+  });
+
+  it("depois de começar não deve nada — lembrete atrasado não é lembrete", () => {
+    expect(degrausPendentes({ ...base, agora: new Date("2026-09-20T14:00:00.000Z") })).toEqual([]);
+  });
+
+  it("sem extras se comporta exatamente como antes", () => {
+    const so = { ...base, extras: null };
+    expect(degrausPendentes({ ...so, agora: new Date("2026-09-19T15:00:00.000Z") })).toEqual([1440]);
+    expect(degrausPendentes({ ...so, agora: new Date("2026-09-19T15:00:00.000Z"), jaEnviados: [1440] })).toEqual([]);
+  });
+
+  it("extra igual ao principal não duplica o aviso", () => {
+    expect(
+      degrausPendentes({ ...base, extras: [1440], agora: new Date("2026-09-19T15:00:00.000Z") }),
+    ).toEqual([1440]);
+  });
+});
+
+describe("o cron NÃO pode filtrar por reminder_sent_at", () => {
+  it("o filtro antigo não voltou — com ele o segundo degrau nunca sairia", () => {
+    // Guarda estrutural: este filtro passou a ser errado quando o lembrete ganhou
+    // degraus, e o erro não daria sinal nenhum — o compromisso simplesmente não
+    // receberia o segundo aviso, em silêncio.
+    //
+    // Os comentários saem antes: o texto que EXPLICA o filtro é o mais parecido
+    // com o filtro, e é ele que faria a asserção passar com o código removido.
+    const fonte = readFileSync(join(__dirname, "route.ts"), "utf8").replace(/--[^\n]*|\/\/[^\n]*/g, "");
+    expect(fonte).not.toMatch(/\.is\(\s*["']reminder_sent_at["']/);
+    expect(fonte).toMatch(/reminder_sent_offsets_minutes/);
   });
 });

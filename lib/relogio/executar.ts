@@ -74,8 +74,8 @@ async function aplicarRespostasQueChegaram(admin: SupabaseClient, deps: TickDeps
 }
 
 /**
- * Roda as tarefas de minuto neste processo — sem depender do crontab da VPS
- * nem do cron pago da Vercel.
+ * Roda as tarefas de minuto neste processo — sem depender do contêiner
+ * `scheduler` do compose nem de um cron da hospedagem.
  */
 export async function executarTickDoRelogio(): Promise<{
   tarefas: ResultadoDeTarefa[];
@@ -112,9 +112,9 @@ export async function executarTickDoRelogio(): Promise<{
     const acordados = await aplicarRespostasQueChegaram(admin, deps);
     if (acordados > 0) {
       mexeu = true;
-      // Sem esta linha o SIM que a ingestão do canal gravou e o Hobby não
-      // processou some
-      // do radar — o sintoma é "Aguardando resposta" com mensagem na inbox.
+      // Sem esta linha o SIM que a ingestão do canal gravou e nenhum tick
+      // processou some do radar — o sintoma é "Aguardando resposta" com
+      // mensagem na inbox.
       logger.info("[relogio] follow-up avancou por resposta inbound", { acordados });
     }
     const summary = await runFollowupTick(deps);

@@ -42,6 +42,15 @@ export interface ResultadoDoDesparear {
   channelSessionId: string | null;
 }
 
+async function tolerarSessaoInexistente(acao: () => Promise<void>): Promise<void> {
+  try {
+    await acao();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.startsWith("wacalls_404")) throw err;
+  }
+}
+
 export async function despareaVoz(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any>,
@@ -63,11 +72,18 @@ export async function despareaVoz(
   // reduzir risco.
   if (!linha) return { desapareado: false, channelSessionId: null };
 
-  if (linha.wacalls_session_id) {
-    // Sem try/catch: erro daqui sobe e o chamador NÃO arquiva. Engolir seria
-    // dizer "desconectado" com o aparelho vinculado.
-    await wacalls.logoutSession(linha.wacalls_session_id);
-    await wacalls.deleteSession(linha.wacalls_session_id);
+  const sessaoNoWacalls = linha.wacalls_session_id;
+  if (sessaoNoWacalls) {
+    // Erro daqui sobe e o chamador NÃO arquiva. Engolir seria dizer
+    // "desconectado" com o aparelho vinculado.
+    //
+    // A ÚNICA exceção é o 404 "no session": o WaCalls não conhece a sessão —
+    // volume perdido, serviço reinstalado, ou `Restore` descartando-a no boot.
+    // Sem sessão lá não há aparelho vinculado por ela, e recusar deixava a
+    // organização presa: o pareamento responde 409 para o banco que diz
+    // "pareado", e este caminho, a única saída, devolvia 502 para sempre.
+    await tolerarSessaoInexistente(() => wacalls.logoutSession(sessaoNoWacalls));
+    await tolerarSessaoInexistente(() => wacalls.deleteSession(sessaoNoWacalls));
   }
 
   const agora = new Date().toISOString();

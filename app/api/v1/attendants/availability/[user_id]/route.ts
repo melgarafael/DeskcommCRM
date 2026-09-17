@@ -6,10 +6,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * membro da org. requireRole("agent") + checagem (user_id == auth.uid() OR
  * role>=manager). A RLS de attendant_availability (own OR manager) é backstop.
  *
- * Persistência do <AttendantStatusToggle> (spec 04 §8) + heartbeat AT-08:
- * quando is_available=true, bumpa last_heartbeat_at=now — "online" é também o
- * ping de vida (o useHeartbeat/60s do inbox chama este PATCH). O cron
- * attendant-heartbeat marca offline quem não pinga há 15min.
+ * Persistência do <AttendantStatusToggle> (spec 04 §8). A chave diz a INTENÇÃO
+ * de quem atende ("estou de plantão"), e nada a desliga por conta própria: o
+ * cron `attendant-heartbeat`, que marcava offline quem não pingasse em 15 min,
+ * saiu no #720 — ele desligava justamente quem tinha acabado de se declarar
+ * disponível. Quem limita o plantão passou a ser a jornada publicada, avaliada
+ * na hora da pergunta (`estaDePlantao` em lib/routing/eligibility.ts); sem
+ * jornada, a chave vale 24 horas.
  *
  * org_id de fonte confiável (activeOrg do cookie), NUNCA do body. Upsert por
  * unique(organization_id, user_id).
@@ -29,7 +32,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const SELECT_COLS =
-  "user_id, is_available, capacity, schedule, last_heartbeat_at, updated_at";
+  "user_id, is_available, capacity, schedule, updated_at";
 
 export async function PATCH(
   req: NextRequest,
@@ -95,8 +98,17 @@ export async function PATCH(
   if (input.is_available !== undefined) patch.is_available = input.is_available;
   if (input.capacity !== undefined) patch.capacity = input.capacity;
   if (input.schedule !== undefined) patch.schedule = input.schedule;
-  // "online" = ping de vida (heartbeat AT-08).
-  if (input.is_available === true) patch.last_heartbeat_at = now;
+  // ⚠️ AQUI ESCREVIA-SE `last_heartbeat_at = now`, e a coluna ficou.
+  //
+  // Ela se chama "último sinal de vida" e registrava, na verdade, o CLIQUE na
+  // chave — nunca houve emissor de presença nenhum no produto. Enquanto o cron
+  // de auto-offline existia, esse carimbo era o que o derrubava 15 min depois;
+  // com o cron fora, virou escrita que ninguém lê.
+  //
+  // Parou de ser escrita, e a coluna NÃO foi removida: se alguém construir um
+  // emissor de presença de verdade, ela é o lugar — e limpa, sem carimbos de
+  // clique se fingindo de batida. Remover pediria migration e fecharia essa
+  // porta enquanto a decisão está aberta (ver o PR do plantão).
 
   const { data: row, error } = await supabase
     .from("attendant_availability")

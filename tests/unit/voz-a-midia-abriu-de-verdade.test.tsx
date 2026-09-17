@@ -189,8 +189,15 @@ async function assentar(voltas = 10) {
   }
 }
 
-/** Monta o hook, entrega uma chamada JÁ conectada e devolve o resultado. */
+/**
+ * Monta o hook, entrega uma chamada JÁ conectada e devolve o resultado.
+ *
+ * A marca da aba é gravada ANTES: é o caminho de quem recarregou a página no
+ * meio da ligação — a aba que discou continua dona do áudio. Sem a marca, o hook
+ * não abre nada de propósito (ver `tests/unit/voz-audio-em-uma-aba-so.test.tsx`).
+ */
 async function emLigacao() {
+  window.sessionStorage.setItem("voz:midia", CHAMADA);
   const ref = { current: null };
   const vista = renderHook(() => useVoiceCallSession(ref), {
     wrapper: ({ children }: { children: ReactNode }) => (
@@ -209,6 +216,7 @@ async function emLigacao() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.sessionStorage.clear();
   vi.useFakeTimers();
   instalarDublesDoNavegador();
   espiao.get.mockResolvedValue({ data: [] });
@@ -291,7 +299,7 @@ describe("o painel só diz que há áudio quando a mídia abriu de verdade", () 
     expect(result.current.estadoDaMidia).toBe("com_audio");
   });
 
-  it("reconexão devolve o estado: um soluço de rede não prende o painel em `sem_rota`", async () => {
+  it("reconexão devolve o estado: um soluço de rede não prende o painel em `caiu`", async () => {
     const { result } = await emLigacao();
     await act(async () => {
       conexao!.canal.readyState = "open";
@@ -302,7 +310,9 @@ describe("o painel só diz que há áudio quando a mídia abriu de verdade", () 
       conexao!.connectionState = "disconnected";
       conexao!.onconnectionstatechange?.();
     });
-    expect(result.current.estadoDaMidia).toBe("sem_rota");
+    // O canal JÁ tinha aberto: isto é queda, não "não abriu" — o texto do painel
+    // é o que alguém lê para diagnosticar, e ele enganou o de 2026-09-15.
+    expect(result.current.estadoDaMidia).toBe("caiu");
 
     // `dc.onopen` NÃO dispara de novo num canal que já abriu — quem devolve o
     // estado é a volta por `connectionState`.

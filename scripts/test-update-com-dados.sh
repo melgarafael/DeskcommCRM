@@ -33,20 +33,30 @@
 #
 # ## O que ele NÃO prova
 #
-# Não sobe um Supabase completo: usa `pgvector/pgvector:pg17` com o mesmo
-# prelude de stubs do `scripts/test-db.sh`. O que faltava ao `test:db` eram os
-# DADOS, não o `storage` — e trocar o container por um stack inteiro custaria
-# minutos e brigaria por porta com quem estiver trabalhando.
+# Não sobe um Supabase completo: usa o `pgvector/pgvector` na major do piso,
+# com o mesmo prelude de stubs do `scripts/test-db.sh`. O que faltava ao
+# `test:db` eram os DADOS, não o `storage` — e trocar o container por um stack
+# inteiro custaria minutos e brigaria por porta com quem estiver trabalhando.
 # Se um dia a diferença virar o `storage`, este script precisa mudar de base.
 #
-# Uso:  bash scripts/test-update-com-dados.sh
+# ## Quem chama
+#
+# O job `invariants` do CI (`pnpm test:db:update`), nas DUAS majors da matriz
+# (pg15 e pg17) — a variável de major é a mesma dos dois scripts.
+#
+# Uso:  pnpm test:db:update          (= bash scripts/test-update-com-dados.sh)
+#       TEST_DB_IMAGE=pgvector/pgvector:pg17 pnpm test:db:update   # outra major
 # Requisito: Docker rodando. Não toca no seu banco nem nos seus contêineres.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASELINE="$ROOT/supabase/baseline.sql"
 CONTAINER="deskcomm-update-dados-$$"
-IMAGE="pgvector/pgvector:pg17"
+# A major, pelo mesmo mecanismo do `scripts/test-db.sh` (o comentário longo
+# está lá): quem PEDE escolhe, quem não pede fica no PISO. Assim o mesmo script
+# serve às duas pontas — a versão que prometemos suportar (pg15, padrão) e a que
+# gerou o `pg_dump` do baseline (pg17, o que a matriz do CI passa).
+IMAGE="${TEST_DB_IMAGE:-pgvector/pgvector:pg15}"
 
 [ -f "$BASELINE" ] || { echo "FATAL: $BASELINE não encontrado" >&2; exit 1; }
 

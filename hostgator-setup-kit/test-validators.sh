@@ -855,6 +855,58 @@ else
   printf '  ✗ uma apagou a outra (drain=%s, agente=%s — esperava 1 de cada)\n' "$tem_drain" "$tem_agent"; fail=1
 fi
 
+echo "cron: o segredo não vai para a linha do crontab (nem para o syslog)"
+# O `cron` do Ubuntu registra no syslog a linha de comando de cada execução. Com
+# o Bearer escrito na linha, o segredo das rotas de cron ia para o log a cada
+# minuto — medido numa VPS de produção em 2026-09-17: 24.827 linhas no journal.
+# O cenário parte da linha LEGADA, a que toda instalação existente tem.
+TMP_CRON="$(mktemp -d)"
+(
+  . ./_common.sh
+  # Dublê em FUNÇÃO, e não no PATH: `command -v crontab` e os dois lados do cano
+  # enxergam a função, e o crontab real de quem roda a suíte nunca é tocado.
+  crontab() {
+    case "${1:-}" in
+      -l) [ -f "$TMP_CRON/crontab" ] || return 1; cat "$TMP_CRON/crontab" ;;
+      -)  cat > "$TMP_CRON/crontab.novo" && mv "$TMP_CRON/crontab.novo" "$TMP_CRON/crontab" ;;
+    esac
+  }
+  step() { :; }; psql_run() { :; }
+  PROJECT_DIR="$TMP_CRON/projeto"; mkdir -p "$PROJECT_DIR"
+  NEXT_PUBLIC_APP_URL="https://crm.exemplo.com.br"
+  URL="$NEXT_PUBLIC_APP_URL/api/v1/cron/event-log-drain"
+  printf '* * * * * curl -fsS -H "Authorization: Bearer segredo-velho-a1b2c3" "%s" >/dev/null 2>&1 # deskcomm:%s:drain\n' \
+    "$URL" "$PROJECT_DIR" > "$TMP_CRON/crontab"
+  CAB="$PROJECT_DIR/.env.cron-drain"
+  checa() { if eval "$2"; then printf '  ✓ %s\n' "$1"; else printf '  ✗ %s\n' "$1"; exit 1; fi; }
+
+  INTERNAL_CRON_SECRET="segredo-novo-9f8e7d"; INTERNAL_SECRET=""
+  setup_event_log_drain_cron >/dev/null 2>&1
+  checa "a linha do drain continua existindo (controle de vacuidade)" \
+    '[ "$(grep -cF "$URL" "$TMP_CRON/crontab")" = 1 ]'
+  checa "nenhuma linha do crontab carrega o segredo novo" \
+    '! grep -qF "segredo-novo-9f8e7d" "$TMP_CRON/crontab"'
+  checa "a linha legada, com o segredo velho, foi substituída" \
+    '! grep -qF "segredo-velho-a1b2c3" "$TMP_CRON/crontab"'
+  checa "a linha lê o cabeçalho do arquivo" \
+    'grep -F "$URL" "$TMP_CRON/crontab" | grep -qF -- "-H @\"$CAB\""'
+  checa "o arquivo tem o cabeçalho que a rota espera" \
+    '[ "$(cat "$CAB")" = "Authorization: Bearer segredo-novo-9f8e7d" ]'
+  # `stat -c` é GNU; no macOS o equivalente é `stat -f '%Lp'` (mesma forma usada mais
+  # abaixo neste arquivo). No Windows o `stat` do Git Bash não reflete o chmod; no CI, Linux, reflete.
+  checa "o arquivo nasce só para o dono (600)" \
+    '[ "$(stat -c "%a" "$CAB" 2>/dev/null || stat -f "%Lp" "$CAB" 2>/dev/null)" = 600 ]'
+
+  # Trocar o segredo no `.env` e rodar o update de novo é a rotação inteira.
+  INTERNAL_CRON_SECRET="segredo-rotacionado-4c3b2a"
+  setup_event_log_drain_cron >/dev/null 2>&1
+  checa "rodar de novo com segredo novo regrava o arquivo" \
+    '[ "$(cat "$CAB")" = "Authorization: Bearer segredo-rotacionado-4c3b2a" ]'
+  checa "e não empilha linha no crontab" \
+    '[ "$(grep -cF "$URL" "$TMP_CRON/crontab")" = 1 ]'
+) || fail=1
+rm -rf "$TMP_CRON"
+
 echo "provisionamento do Supabase: senha do banco"
 # Dois testes distintos, porque o defeito e o contrato moram em lugares
 # diferentes — e o primeiro teste que escrevi aqui era VÁCUO por não separá-los.
@@ -868,6 +920,7 @@ echo "provisionamento do Supabase: senha do banco"
 #     O passo 3 imprime o título antes de tocar a rede, então a asserção não
 #     depende de a API responder (e o token aqui é propositalmente inválido).
 saida="$(SUPABASE_ACCESS_TOKEN=token-invalido-de-teste SUPABASE_ORG_ID=org-de-teste \
+         SUPABASE_PROVISION_STATE="$SUITE_TMP/senha-do-teste.env" \
          bash ./supabase-provision.sh "Projeto de Teste" sa-east-1 2>&1 || true)"
 if printf '%s' "$saida" | grep -q 'Criando o projeto'; then
   printf '  ✓ o script passa da geração da senha e chega ao passo de criar\n'
@@ -887,6 +940,175 @@ case "$senha" in
   '')             printf '  ✗ senha vazia\n'; fail=1;;
   *)              printf '  ✓ só alfanuméricos (não parte a connection string)\n';;
 esac
+
+echo "provisionamento do Supabase: leitura das chaves e senha do banco"
+# POR QUE ESTES CENÁRIOS EXISTEM (issue #856): o GET /projects/<ref>/api-keys
+# passou a devolver `api_key` ANTES de `name`, e a leitura antiga casava
+# `"name":"anon"` e só então procurava `api_key` no que vinha DEPOIS, até o `}`.
+# No dia em que a API mudou, o passo 5 morreu com "Não consegui ler
+# anon/service_role" num projeto JÁ criado — e a senha do banco, que só existia
+# na memória do processo, foi junto (a vaga do plano grátis também).
+#
+# Por isso os cenários abaixo rodam o SCRIPT INTEIRO contra uma API de mentira
+# (dublês de curl e de docker no PATH, nada de rede): provar que a função de
+# leitura lê não prova que a instalação deixa de morrer no passo 5, e é o script
+# inteiro que quem instala roda. O CONTROLE é a resposta na ordem ANTIGA (a que
+# sempre funcionou) e o CENÁRIO OPOSTO é a resposta SEM as chaves — que tem de
+# morrer, e morrer deixando a senha no disco.
+PROV_TMP="$SUITE_TMP/provisionamento"
+KIT_DIR="$(pwd)"
+mkdir -p "$PROV_TMP/bin" "$PROV_TMP/proj"
+cat > "$PROV_TMP/bin/curl" <<'DUBLECURL'
+#!/usr/bin/env bash
+# Dublê de curl: responde o que o supabase-provision.sh pergunta, a partir da
+# fixture que o cenário apontou em DUBLE_CHAVES. A ordem dos casos importa —
+# .../api-keys também casa com */projects/*, e vem primeiro.
+url=""
+for a in "$@"; do case "$a" in https://api.supabase.com/*) url="$a" ;; esac; done
+case "$url" in
+  */api-keys)   cat "${DUBLE_CHAVES:?dublê de curl sem DUBLE_CHAVES}" ;;
+  */projects/*) printf '{"status":"ACTIVE_HEALTHY"}' ;;
+  */projects)   printf '{"ref":"%s"}' "${DUBLE_REF:-abcdefghijklmnop}" ;;
+  *)            printf '{"message":"dublê sem resposta para %s"}' "$url"; exit 22 ;;
+esac
+DUBLECURL
+cat > "$PROV_TMP/bin/docker" <<'DUBLEDOCKER'
+#!/usr/bin/env bash
+# Dublê de docker: o passo 6 PROVA cada host de pooler com uma conexão real.
+# Aqui o primeiro candidato responde — o teste não é sobre o pooler, é sobre a
+# senha chegar inteira até lá.
+printf '%s\n' "$*" >> "${DOCKER_LOG:-/dev/null}"
+exit 0
+DUBLEDOCKER
+chmod +x "$PROV_TMP/bin/curl" "$PROV_TMP/bin/docker"
+
+# Fixtures: o essencial de cada forma da resposta (valores obviamente de teste).
+cat > "$PROV_TMP/chaves-ordem-nova.json" <<'JSON'
+[{"api_key":"chave-anon-nova","id":"a1","type":"publishable","name":"anon"},{"api_key":"chave-service-nova","id":"a2","type":"secret","name":"service_role"}]
+JSON
+cat > "$PROV_TMP/chaves-ordem-antiga.json" <<'JSON'
+[{"id":"a1","name":"anon","api_key":"chave-anon-antiga"},{"id":"a2","name":"service_role","api_key":"chave-service-antiga"}]
+JSON
+cat > "$PROV_TMP/chaves-sem-as-chaves.json" <<'JSON'
+[{"api_key":"chave-de-outra-coisa","id":"a1","name":"outra"}]
+JSON
+
+# rodar_prov <chaves> <projeto> <arquivo de estado> [senha imposta]
+#   → stdout em $PROV_TMP/out, stderr em $PROV_TMP/err, código em $prov_rc.
+#     Os dois canais ficam separados porque é o stdout (as 4 linhas do .env) que
+#     carrega a senha em claro, e o stderr é o resumo visual — que não pode
+#     carregá-la.
+prov_rc=0
+rodar_prov() {
+  ( cd "$PROV_TMP/proj" && env PATH="$PROV_TMP/bin:$PATH" \
+      SUPABASE_ACCESS_TOKEN=token-de-teste SUPABASE_ORG_ID=org-de-teste \
+      SUPABASE_DB_PASS="${4:-}" SUPABASE_PROVISION_STATE="$3" \
+      DUBLE_CHAVES="$1" DUBLE_REF=abcdefghijklmnop DOCKER_LOG="$PROV_TMP/docker.log" \
+      bash "$KIT_DIR/supabase-provision.sh" "$2" sa-east-1 ) >"$PROV_TMP/out" 2>"$PROV_TMP/err"
+  prov_rc=$?
+}
+senha_do_estado() { [ -f "$1" ] && sed -n "s/^SUPABASE_DB_PASS='\(.*\)'$/\1/p" "$1" | head -1 || true; }
+url_do_estado() { grep -qF "postgres.abcdefghijklmnop:$1@aws-0-sa-east-1.pooler.supabase.com:5432/postgres" "$2"; }
+
+# (1) O CASO DA ISSUE: api_key ANTES de name. A asserção cobra o VALOR lido, não
+#     a presença da linha — presença passaria com qualquer chave.
+rodar_prov "$PROV_TMP/chaves-ordem-nova.json" "Projeto de Teste" "$PROV_TMP/estado-novo"
+if [ "$prov_rc" -eq 0 ] \
+   && grep -qF "NEXT_PUBLIC_SUPABASE_ANON_KEY='chave-anon-nova'" "$PROV_TMP/out" \
+   && grep -qF "SUPABASE_SERVICE_ROLE_KEY='chave-service-nova'" "$PROV_TMP/out"; then
+  printf '  ✓ lê as chaves com api_key ANTES de name (o defeito da #856 não volta)\n'
+else
+  printf '  ✗ não leu as chaves na ordem nova (rc=%s)\n' "$prov_rc"
+  printf '     o script disse: %s\n' "$(sed -E 's/\x1b\[[0-9;]*m//g' "$PROV_TMP/err" | grep -v '^$' | tail -2 | tr '\n' ' ')"
+  fail=1
+fi
+
+# (2) A outra metade da issue: a senha do banco. Ela tem de existir em arquivo de
+#     600, com 32 caracteres, e ser EXATAMENTE a que entrou na connection string.
+senha1="$(senha_do_estado "$PROV_TMP/estado-novo")"
+# `stat -c` é GNU; no macOS o equivalente é `stat -f '%Lp'`. Sem o segundo ramo, a
+# asserção abaixo reprova na máquina de quem tria (o `|| printf '?'` engole o erro
+# e o modo vira '?'), com um ✗ que não é do conserto. Medido em Darwin 25.4.0:
+# `stat -c '%a' /etc/hosts` → "stat: illegal option -- c".
+modo1="$(stat -c '%a' "$PROV_TMP/estado-novo" 2>/dev/null || stat -f '%Lp' "$PROV_TMP/estado-novo" 2>/dev/null || printf '?')"
+if [ "${#senha1}" -eq 32 ] && [ "$modo1" = 600 ] && url_do_estado "$senha1" "$PROV_TMP/out"; then
+  printf '  ✓ senha guardada em 600 e é a mesma que foi para a connection string\n'
+else
+  printf '  ✗ a senha não sobreviveu (caracteres=%s, modo=%s)\n' "${#senha1}" "$modo1"
+  fail=1
+fi
+
+# (3) E ela NÃO aparece no resumo visual: quem instala costuma mandar print
+#     pedindo ajuda, e a senha do banco dá acesso direto ao banco.
+if [ -n "$senha1" ] && grep -qF "$senha1" "$PROV_TMP/err"; then
+  printf '  ✗ a senha apareceu em claro no resumo (stderr)\n'; fail=1
+else
+  printf '  ✓ o resumo visual segue mascarado (senha só no arquivo e no .env)\n'
+fi
+
+# (4) CONTROLE: a ordem ANTIGA continua funcionando. Sem este cenário, um
+#     conserto que só soubesse ler a ordem nova passaria no teste da #856 e
+#     quebraria onde a API ainda responde na ordem antiga.
+rodar_prov "$PROV_TMP/chaves-ordem-antiga.json" "Projeto de Teste" "$PROV_TMP/estado-antigo"
+if [ "$prov_rc" -eq 0 ] \
+   && grep -qF "NEXT_PUBLIC_SUPABASE_ANON_KEY='chave-anon-antiga'" "$PROV_TMP/out" \
+   && grep -qF "SUPABASE_SERVICE_ROLE_KEY='chave-service-antiga'" "$PROV_TMP/out"; then
+  printf '  ✓ lê as chaves também com name antes de api_key (ordem antiga)\n'
+else
+  printf '  ✗ a ordem antiga parou de funcionar (rc=%s)\n' "$prov_rc"; fail=1
+fi
+
+# (5) CENÁRIO OPOSTO: resposta SEM anon/service_role (API mudou de novo, ou token
+#     de outra organização). O certo é MORRER — e morrer dizendo onde a senha
+#     ficou, para ninguém recriar o projeto e queimar a segunda vaga do grátis.
+rodar_prov "$PROV_TMP/chaves-sem-as-chaves.json" "Projeto de Teste" "$PROV_TMP/estado-sem-chaves"
+falou_motivo=""; grep -qF 'Não consegui ler anon/service_role' "$PROV_TMP/err" && falou_motivo=1
+falou_onde=""
+[ -f "$PROV_TMP/estado-sem-chaves" ] && grep -qF 'a senha do banco está guardada em' "$PROV_TMP/err" && falou_onde=1
+if [ "$prov_rc" -ne 0 ] && [ -n "$falou_motivo" ] && [ -n "$falou_onde" ]; then
+  printf '  ✓ resposta sem as chaves morre pelo motivo certo e diz onde a senha ficou\n'
+else
+  printf '  ✗ esperava morrer dizendo o motivo e onde a senha ficou (rc=%s, motivo=%s, caminho=%s)\n' \
+    "$prov_rc" "${falou_motivo:-não}" "${falou_onde:-não}"; fail=1
+fi
+
+# (6) RETOMADA: rodar de novo com o MESMO arquivo e o MESMO projeto reaproveita a
+#     senha. Gerar outra aqui é o que deixaria o banco com uma senha órfã.
+senha_antes="$(senha_do_estado "$PROV_TMP/estado-sem-chaves")"
+rodar_prov "$PROV_TMP/chaves-ordem-nova.json" "Projeto de Teste" "$PROV_TMP/estado-sem-chaves"
+if [ "$prov_rc" -eq 0 ] && [ -n "$senha_antes" ] && url_do_estado "$senha_antes" "$PROV_TMP/out"; then
+  printf '  ✓ a retomada reaproveita a senha guardada em vez de gerar outra\n'
+else
+  printf '  ✗ a retomada trocou a senha do banco\n'; fail=1
+fi
+
+# (7) CENÁRIO OPOSTO do reaproveitamento: OUTRO projeto no mesmo arquivo tem de
+#     ganhar senha nova — guardar por máquina repetiria a senha de banco entre
+#     dois clientes provisionados no mesmo VPS.
+rodar_prov "$PROV_TMP/chaves-ordem-nova.json" "Outro Projeto" "$PROV_TMP/estado-sem-chaves"
+senha_outro="$(senha_do_estado "$PROV_TMP/estado-sem-chaves")"
+if [ "$prov_rc" -eq 0 ] && [ -n "$senha_outro" ] && [ "$senha_outro" != "$senha_antes" ]; then
+  printf '  ✓ outro projeto no mesmo arquivo gera outra senha (não repete credencial)\n'
+else
+  printf '  ✗ outro projeto reaproveitou a senha do anterior\n'; fail=1
+fi
+
+# (8) SUPABASE_DB_PASS imposta: a válida é a que entra na connection string; a que
+#     tem caractere de URL (@, :) morre avisando POR QUE — ela entra crua, sem
+#     percent-encoding, e o erro só apareceria no psql do passo 6, com cara de
+#     problema de rede.
+rodar_prov "$PROV_TMP/chaves-ordem-nova.json" "Projeto de Teste" "$PROV_TMP/estado-imposta" "senha-imposta-1"
+if [ "$prov_rc" -eq 0 ] && url_do_estado "senha-imposta-1" "$PROV_TMP/out"; then
+  printf '  ✓ SUPABASE_DB_PASS imposta é a que vai para a connection string\n'
+else
+  printf '  ✗ SUPABASE_DB_PASS imposta não chegou à connection string\n'; fail=1
+fi
+rodar_prov "$PROV_TMP/chaves-ordem-nova.json" "Projeto de Teste" "$PROV_TMP/estado-imposta2" "senha@com@arroba"
+if [ "$prov_rc" -ne 0 ] && grep -qF 'partiria o host' "$PROV_TMP/err"; then
+  printf '  ✓ SUPABASE_DB_PASS com caractere que quebra a URL morre explicando\n'
+else
+  printf '  ✗ SUPABASE_DB_PASS inválida passou (rc=%s)\n' "$prov_rc"; fail=1
+fi
 
 echo "e-mails de acesso: marca-emails.sh"
 # POR QUE ESTE BLOCO EXISTE: o e-mail de confirmação de conta é o PRIMEIRO
@@ -1336,6 +1558,45 @@ STUB
 }
 rede_e2e "overlay attachable: install/update seguem" segue overlay true
 rede_e2e "overlay sem attachable: morre explicando"  morre overlay false
+
+echo "proxy reverso: NPM (Nginx Proxy Manager)"
+# NPM nunca é auto-detectado (ao contrário do Traefik, ele não fala por labels) —
+# é sempre REVERSE_PROXY=npm escrito à mão no .env. O que precisa de prova é o
+# CALL SITE: dc()/dc_files() entram o override certo, e garantir_rede_do_proxy
+# não deixa o `up -d` morrer no erro opaco do compose quando a rede do NPM sumiu
+# (prune, down -v) — o mesmo risco que o Traefik já tinha, e o update.sh roda
+# sozinho pelo agent.sh, sem ninguém lendo a tela.
+if REVERSE_PROXY=npm dc_files | grep -q 'docker-compose.npm.yml'; then
+  printf '  ✓ dc_files() entra o docker-compose.npm.yml com REVERSE_PROXY=npm\n'
+else
+  printf '  ✗ dc_files() não entrou o docker-compose.npm.yml com REVERSE_PROXY=npm (deu: %s)\n' \
+    "$(REVERSE_PROXY=npm dc_files)"; fail=1
+fi
+if REVERSE_PROXY=caddy dc_files | grep -q 'docker-compose.npm.yml'; then
+  printf '  ✗ dc_files() entrou o docker-compose.npm.yml SEM REVERSE_PROXY=npm (vacuidade)\n'; fail=1
+else
+  printf '  ✓ REVERSE_PROXY=caddy (default): dc_files() não menciona o override do NPM\n'
+fi
+
+npm_rede_e2e() {  # npm_rede_e2e <descrição> <segue|morre> <rede existe: 0 ok, 1 sumiu>
+  local desc="$1" esperado="$2" existe="$3" dir real kit="$PWD"
+  dir="$(mktemp -d)"; mkdir -p "$dir/bin"
+  cat > "$dir/bin/docker" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/chamadas.log"
+[ "\$1" = network ] && [ "\$2" = inspect ] && exit $existe
+exit 0
+STUB
+  chmod +x "$dir/bin/docker"
+  if (cd "$dir" && env PATH="$dir/bin:$PATH" REVERSE_PROXY=npm PROJECT_DIR="$dir" \
+        bash -c '. "$1/_common.sh"; garantir_rede_do_proxy' _ "$kit") >/dev/null 2>&1
+  then real=segue; else real=morre; fi
+  rm -rf "$dir"
+  if [ "$real" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
+  else printf '  ✗ %s  (deu %s, esperava %s)\n' "$desc" "$real" "$esperado"; fail=1; fi
+}
+npm_rede_e2e "rede do NPM presente: install/update seguem"        segue 0
+npm_rede_e2e "rede do NPM sumiu (prune/down -v): morre explicando" morre 1
 
 echo "proxy reverso: quanta confiança a eleição merece"
 # A eleição por porta publicada traz a evidência (a coluna Ports diz ':80->'); a
@@ -1912,6 +2173,106 @@ provedor_ok "OpenAI: instala e o .env sai inteiro"      OPENAI_API_KEY     sk-te
 provedor_ok "Anthropic: instala e o .env sai inteiro"   ANTHROPIC_API_KEY  sk-ant-teste   anthropic
 
 
+echo "integração: instalar SEM chave de IA — o caminho que a documentação prometia (issue #670)"
+# A issue #670: `docs/deploy-selfhost` promete "deixe vazio e cadastre a chave
+# depois em IA › Credenciais", e o runtime concorda — `lib/env.ts` trata as três
+# chaves como opcionais, e faltar todas é `warn`, não erro. O instalador, não:
+# exigia uma chave que PASSASSE numa chamada real ao provedor, e a instalação
+# inteira parava sem ela. Não havia caminho para subir o produto sem antes abrir
+# conta num provedor de IA.
+#
+# O que este cenário mede é o caminho inteiro, com o .env de quem não tem conta
+# em provedor nenhum: BASE_ENV sem as três chaves e sem o AI Gateway (que tem
+# precedência na resolução do chat). Com o campo de volta a obrigatório, o
+# `ask_one` morre em "Falta ANTHROPIC_API_KEY (modo --yes exige .env
+# preenchido)" na coleta de configuração, e é a PRIMEIRA asserção que fica
+# vermelha.
+TMP_SEM_IA="$(mktemp -d)"
+(
+  montar_vps "$TMP_SEM_IA" "crmsemia" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+
+  # O .env da entrevista pulada: BASE_ENV sem NENHUMA chave de IA.
+  printf '%s\n' "$BASE_ENV" \
+    | grep -vE '^(ANTHROPIC|OPENROUTER|OPENAI)_API_KEY=|^AI_GATEWAY_API_KEY=' > "$VPS_PROJ/.env"
+
+  rodar_sem_ia() {
+    : > "$VPS_LOG"
+    (cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" DOCKER_LOG="$VPS_LOG" \
+      CRONTAB_SANDBOX="$CRONTAB_SANDBOX" SUPABASE_ACCESS_TOKEN= \
+      bash "$VPS_RAIZ/install.sh" --yes 2>&1 || true) | sed -E 's/\x1b\[[0-9;]*m//g'
+  }
+
+  saida="$(rodar_sem_ia)"
+
+  # A marca do defeito: com o campo obrigatório, o instalador morre aqui.
+  if printf '%s' "$saida" | grep -q 'exige .env preenchido'; then
+    printf '  ✗ o instalador ainda morre sem chave de IA — o campo do provedor não é `opcional`\n'
+    printf '     %s\n' "$(printf '%s' "$saida" | grep -m1 'exige .env preenchido')"
+    exit 1
+  fi
+  # CONTROLE POSITIVO: "não morreu" só significa alguma coisa se a instalação
+  # chegou ao fim; sem esta âncora, um install que parasse antes passaria.
+  if ! printf '%s' "$saida" | grep -q 'Instalação concluída'; then
+    printf '  ✗ a instalação sem chave de IA não chegou à tela final — cenário inconclusivo, não verde\n'
+    printf '     última linha: %s\n' "$(printf '%s' "$saida" | grep -v '^$' | tail -1)"
+    exit 1
+  fi
+  # O .env sai INTEIRO: sem chave, a última linha do bloco continua presente —
+  # a mesma régua dos cenários de provedor acima.
+  if ! grep -qE '^OWNER_PASSWORD="' "$VPS_PROJ/.env"; then
+    printf '  ✗ o .env saiu pela metade na instalação sem chave de IA\n'
+    printf '     últimas chaves gravadas: %s\n' \
+      "$(grep -oE '^[A-Z_]+=' "$VPS_PROJ/.env" | tail -3 | tr '\n' ' ')"
+    exit 1
+  fi
+  # A chave que ninguém respondeu sai DECLARADA e vazia — a mesma distinção
+  # entre ausente e declarada-e-vazia que o caso do APP_ACCENT_HEX guarda.
+  if ! grep -qE '^ANTHROPIC_API_KEY=' "$VPS_PROJ/.env"; then
+    printf '  ✗ ANTHROPIC_API_KEY nem apareceu no .env (esperado: declarada e vazia)\n'; exit 1
+  fi
+  if [ -n "$(valor_no_env "$VPS_PROJ/.env" ANTHROPIC_API_KEY)" ]; then
+    printf '  ✗ ANTHROPIC_API_KEY veio com valor [%s] — ninguém digitou nada\n' \
+      "$(valor_no_env "$VPS_PROJ/.env" ANTHROPIC_API_KEY)"; exit 1
+  fi
+  # A TELA FINAL lembra o caminho de volta. A medição é no RABO (depois de
+  # "Instalação concluída"), como no caso do Site URL: é a única tela que a
+  # pessoa lê inteira, e um aviso no meio do log de dez minutos não conta.
+  rabo="${saida##*Instalação concluída}"
+  if ! printf '%s' "$rabo" | grep -q 'A IA ainda não atende'; then
+    printf '  ✗ a tela final não avisa que a IA ainda não atende\n'; exit 1
+  fi
+  if ! printf '%s' "$rabo" | grep -q 'IA › Credenciais'; then
+    printf '  ✗ o aviso da tela final não diz ONDE cadastrar a chave (IA › Credenciais)\n'; exit 1
+  fi
+  printf '  ✓ sem chave de IA: instala, .env inteiro, e a tela final dá o caminho de volta\n'
+
+  # ── O outro lado: com a chave, o aviso NÃO aparece ────────────────────────
+  # Sem isto, um `pendencia_da_ia` que imprimisse sempre passaria no caso acima
+  # e viraria ruído em toda instalação que já tem chave — inclusive nas rodadas
+  # de `provedor_ok` logo acima.
+  printf '%s\n' "$BASE_ENV" > "$VPS_PROJ/.env"
+  saida="$(rodar_sem_ia)"
+  if ! printf '%s' "$saida" | grep -q 'Instalação concluída'; then
+    printf '  ✗ (controle) a segunda rodada, com chave, não chegou à tela final — cenário inconclusivo\n'
+    exit 1
+  fi
+  rabo="${saida##*Instalação concluída}"
+  if printf '%s' "$rabo" | grep -q 'A IA ainda não atende'; then
+    printf '  ✗ com a chave presente, a tela final avisou que falta chave de IA\n'; exit 1
+  fi
+  printf '  ✓ com a chave presente, o lembrete não aparece (o aviso não é ruído permanente)\n'
+) || fail=1
+rm -rf "$TMP_SEM_IA"
+
+
 echo "integração: instalação NOVA numa VPS com Traefik em modo host"
 # O install.sh roda contra um `docker` dublê que imita a Hostinger: 80/443
 # ocupadas, NINGUÉM publicando, um Traefik em `--network host`, e a rede do
@@ -2340,6 +2701,101 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
 ) || fail=1
 rm -rf "$TMP_DDL_C"
 
+echo "install.sh re-executado: deadlock no baseline faz o arquivo ser aplicado de novo"
+# Sobre um banco que JÁ tem o schema, o install.sh segue o contrato do update.sh
+# (sem ON_ERROR_STOP) e tinha o mesmo buraco: um `deadlock detected` com o app no
+# ar deixava um `drop policy` sem o `create` seguinte — medido numa VPS real na
+# v1.27.3, pelo update.sh. A função é uma só (`reaplicar_baseline`, _common.sh),
+# com suíte própria em tests/shell/baseline-reaplica-apos-disputa.test.sh; este
+# caso prova que o install.sh passa por ela.
+TMP_REAPLICA="$(mktemp -d)"
+(
+  montar_vps "$TMP_REAPLICA" "crmreaplica" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+case "$*" in
+  # A sonda "o schema já existe?" responde que sim: é o ramo sob prova.
+  *"table_name='organizations'"*) printf '1\n' ;;
+  # A 1ª aplicação do baseline perde uma disputa; as seguintes saem limpas.
+  *" -f /b.sql")
+    marca="$(dirname "$DOCKER_LOG")/baseline-passadas"
+    printf x >> "$marca"
+    [ "$(wc -c < "$marca" | tr -d ' ')" = 1 ] && printf 'psql:/b.sql:16766: ERROR:  deadlock detected\n' ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  export BASELINE_ESPERA_S=0
+  saida="$(rodar install.sh --yes)"
+
+  # Vacuidade: sem o ramo de schema existente, não há re-aplicação para medir.
+  if ! printf '%s' "$saida" | grep -q "schema já existe"; then
+    printf '  ✗ o install.sh não entrou no ramo de schema existente — teste inconclusivo, não verde\n'; exit 1
+  fi
+  n="$(grep -c -- '-f /b.sql' "$VPS_LOG")"
+  if [ "$n" != 2 ]; then
+    printf '  ✗ esperava o baseline aplicado 2 vezes (deadlock, depois limpo); foram %s\n' "$n"; exit 1
+  fi
+  printf '  ✓ o deadlock da 1ª passada fez o install.sh aplicar o baseline de novo\n'
+  if ! printf '%s' "$saida" | grep -q "✓ schema re-aplicado"; then
+    printf '  ✗ a 2ª passada saiu limpa e a tela não disse ✓ schema re-aplicado:\n'
+    printf '%s\n' "$saida" | grep -iE "schema|banco|deadlock" | sed 's/^/       /'; exit 1
+  fi
+  if printf '%s' "$saida" | grep -q "NÃO são os esperados"; then
+    printf '  ✗ o deadlock da 1ª passada virou aviso, embora a 2ª tenha curado\n'; exit 1
+  fi
+  printf '  ✓ e o veredito é o da última passada: ✓ schema re-aplicado, sem aviso\n'
+) || fail=1
+rm -rf "$TMP_REAPLICA"
+
+echo "install.sh re-executado: aviso de banco com lista grande não derruba o instalador"
+# O ramo de aviso ("⚠ Erros no banco que NÃO são os esperados") imprimia com
+# `| head -20`: sob pipefail, numa lista maior que o buffer do pipe (milhares de
+# "must be owner" de uma role sem dono) o head fecha cedo, o printf leva SIGPIPE e
+# o set -e mata o instalador ali. Nenhum caso chegava a este ramo.
+TMP_AVISO_GRANDE="$(mktemp -d)"
+(
+  montar_vps "$TMP_AVISO_GRANDE" "crmavisogrande" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+case "$*" in
+  *"table_name='organizations'"*) printf '1\n' ;;
+  *" -f /b.sql")
+    printf 'psql:/b.sql:16766: ERROR:  deadlock detected\n'
+    for i in $(seq 1 4000); do printf 'psql:/b.sql:%s: ERROR:  must be owner of table tabela_%s\n' "$i" "$i"; done ;;
+esac
+exit 0
+STUB
+  mkdir -p "$VPS_PROJ/supabase"; : > "$VPS_PROJ/supabase/baseline.sql"
+  export BASELINE_ESPERA_S=0
+  saida="$(rodar install.sh --yes)"
+
+  if ! printf '%s' "$saida" | grep -q "schema já existe"; then
+    printf '  ✗ o install.sh não entrou no ramo de schema existente — teste inconclusivo, não verde\n'; exit 1
+  fi
+  if ! printf '%s' "$saida" | grep -q "Erros no banco que NÃO são os esperados"; then
+    printf '  ✗ a lista grande não chegou ao aviso de banco\n'; exit 1
+  fi
+  # A linha seguinte ao bloco do schema: se ela saiu, o instalador sobreviveu ao aviso.
+  if ! printf '%s' "$saida" | grep -q "verificação:"; then
+    printf '  ✗ o instalador morreu no aviso de banco (a verificação de tabelas, logo depois, não saiu)\n'
+    printf '%s\n' "$saida" | grep -iE "schema|banco|erro" | tail -5 | sed 's/^/       /'; exit 1
+  fi
+  printf '  ✓ o instalador passa do aviso de banco com uma lista maior que o buffer do pipe\n'
+  n="$(grep -c -- '-f /b.sql' "$VPS_LOG")"
+  if [ "$n" != 3 ]; then
+    printf '  ✗ a disputa no topo da lista grande não foi reconhecida: %s passada(s), esperava 3\n' "$n"; exit 1
+  fi
+  printf '  ✓ e a disputa no topo foi reconhecida (3 passadas)\n'
+) || fail=1
+rm -rf "$TMP_AVISO_GRANDE"
+
 echo "e-mails de acesso: quem JÁ instalou também é avisado — uma vez só"
 # A população realmente quebrada hoje é quem instalou ANTES de a entrevista pedir
 # o token: o Site URL do projeto dela está em `localhost:3000` e nada a alcança.
@@ -2471,6 +2927,84 @@ NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
 ) || fail=1
 rm -rf "$TMP6"
 
+echo "integração: update.sh quando a rede do NPM sumiu"
+# NPM nunca é "nossa" bridge — ninguém cria de novo, só morre explicando ANTES
+# do `up -d`, em vez do opaco "network X declared as external, but could not
+# be found" (o mesmo cuidado que o Traefik já tinha, agora pro segundo proxy
+# que não fala por labels).
+TMP7="$(mktemp -d)"
+(
+  montar_vps "$TMP7" "crmupdatenpm" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+  network) case "$2" in inspect) exit 1 ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+  (cd "$VPS_PROJ" && git init -q -b main . \
+    && git -c user.email=t@exemplo -c user.name=teste add -A \
+    && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+    && git tag v9.9.9) >/dev/null 2>&1
+
+  saida="$(rodar update.sh --skip-backup "REVERSE_PROXY='npm'
+PROXY_NETWORK_NAME='proxy_network'
+INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'")"
+
+  if grep -q -E '^compose .* up -d$' "$VPS_LOG"; then
+    printf '  ✗ o update.sh subiu a stack mesmo com a rede do NPM ausente\n'; exit 1
+  fi
+  if ! printf '%s' "$saida" | grep -q 'PROXY_NETWORK_NAME'; then
+    printf '  ✗ a morte não ensina a saída (PROXY_NETWORK_NAME no .env)\n'
+    printf '     saída: %s\n' "$(printf '%s' "$saida" | tail -3)"; exit 1
+  fi
+  printf '  ✓ o update.sh para ANTES do "up -d" e ensina a saída\n'
+) || fail=1
+rm -rf "$TMP7"
+
+echo "integração: update.sh com proxy externo nunca recria o Caddy sozinho"
+# `up -d --force-recreate --no-deps caddy` NOMEIA o serviço — e nomear um
+# serviço ATIVA o profile dele no Compose mesmo com o override presente (é o
+# mesmo defeito que o docker-compose.traefik.yml já documenta). Com um segundo
+# proxy (Traefik OU NPM) já nas portas 80/443, isso sobe um Caddy que bate de
+# frente com ele. A checagem por CADA valor evita que só o Traefik continue
+# coberto e o NPM (o proxy novo) reproduza o defeito que motivou o guard.
+caddy_skip_e2e() {  # caddy_skip_e2e <descrição> <REVERSE_PROXY> <linha extra do .env> <deve tentar recriar: sim|nao>
+  local desc="$1" rp="$2" extra="$3" esperado="$4" dir tentou
+  dir="$(mktemp -d)"
+  (
+    montar_vps "$dir" "crmcaddyskip" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DOCKER_LOG"
+case "$1" in
+  compose) case "$*" in *" exec "*) printf 'healthy\n{"data":{"status":"healthy"}}\n' ;; esac; exit 0 ;;
+esac
+exit 0
+STUB
+    (cd "$VPS_PROJ" && git init -q -b main . \
+      && git -c user.email=t@exemplo -c user.name=teste add -A \
+      && git -c user.email=t@exemplo -c user.name=teste commit -qm base \
+      && git tag v9.9.9) >/dev/null 2>&1
+    rodar update.sh --skip-backup "REVERSE_PROXY='${rp}'
+${extra}
+INTERNAL_SECRET='segredo-de-teste'
+NEXT_PUBLIC_APP_URL='https://crm.exemplo.com.br'" >/dev/null
+    if grep -qF -- '--force-recreate --no-deps caddy' "$VPS_LOG"; then
+      tentou=sim
+    else
+      tentou=nao
+    fi
+    if [ "$tentou" = "$esperado" ]; then printf '  ✓ %s\n' "$desc"
+    else printf '  ✗ %s  (tentou recriar: %s, esperado: %s)\n' "$desc" "$tentou" "$esperado"; exit 1; fi
+  ) || fail=1
+  rm -rf "$dir"
+}
+caddy_skip_e2e "caddy (default): recria o próprio proxy"       caddy   ""                                          sim
+caddy_skip_e2e "traefik: nunca recria o Caddy"                  traefik "TRAEFIK_NETWORK='crmcaddyskip_proxy'"      nao
+caddy_skip_e2e "npm: nunca recria o Caddy"                      npm     "PROXY_NETWORK_NAME='proxy_network'"       nao
+
 echo "nome do projeto que o docker compose usa"
 # O compose faz TrimLeft("_-") no basename. Sem isso, uma pasta /root/_deskcomm
 # faz o kit calcular "_deskcomm" enquanto os contêineres carregam "deskcomm" — a
@@ -2565,6 +3099,33 @@ reexec_neg() {
 }
 reexec_neg
 reexec_ok "o bloco de variáveis conhecidas acha o kit depois do cd"
+
+echo "cron numa VPS sem crontab nenhum (#715)"
+# VPS nova não tem crontab para o root: `crontab -l` sai 1. As rodadas acima
+# nunca mediram isso, porque o sandbox já tinha linhas quando elas agendavam — e
+# o install.sh morria em "Ativando as automações" em toda VPS recém-criada. As
+# duas funções rodam aqui sob o MESMO `set -euo pipefail` do install.sh, com o
+# dublê de crontab apontado para um arquivo que não existe.
+cron_vazio() (
+  # Subshell: `montar_vps` define VPS_* globais, e os blocos seguintes da suíte
+  # não podem herdar esta fixture.
+  montar_vps "$SUITE_TMP/cron-vazio" projeto < <(printf '#!/bin/sh\nexit 0\n')
+  local sandbox="$SUITE_TMP/crontab-vazio.txt"; rm -f "$sandbox"
+  local out rc
+  out="$(cd "$VPS_PROJ" && env PATH="$VPS_RAIZ/bin:$PATH" CRONTAB_SANDBOX="$sandbox" \
+    INTERNAL_SECRET=segredo-de-teste NEXT_PUBLIC_APP_URL=https://crm.exemplo.com.br PROJECT_DIR="$VPS_PROJ" \
+    bash -c 'set -euo pipefail; . "$1/_common.sh"; psql_run() { :; }
+             setup_event_log_drain_cron; setup_update_agent_cron; echo CHEGOU-AO-FIM' _ "$VPS_RAIZ" 2>&1)" \
+    && rc=0 || rc=$?
+  if [ $rc -ne 0 ] || ! printf '%s' "$out" | grep -q CHEGOU-AO-FIM; then
+    printf '  ✗ agendar o cron numa VPS sem crontab derrubou o script (saída %s)\n' "$rc"; return 1
+  fi
+  if [ "$(grep -c '# deskcomm:' "$sandbox" 2>/dev/null)" != 2 ]; then
+    printf '  ✗ esperava 2 linhas (drain + agente) no crontab, veio %s\n' "$(grep -c '# deskcomm:' "$sandbox" 2>/dev/null || echo 0)"; return 1
+  fi
+  printf '  ✓ sem crontab prévio, drain e agente agendados e o script segue\n'
+)
+cron_vazio || fail=1
 
 echo "isolamento: a suíte não escreve no crontab da máquina"
 # Isto não é hipótese defensiva: os testes JÁ escreveram 10 linhas órfãs no

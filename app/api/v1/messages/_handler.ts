@@ -46,6 +46,7 @@ import {
 } from "@/lib/messaging/contact-card";
 import type { ListMessagesQuery, SendMessageInput } from "@/lib/schemas";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 
@@ -132,7 +133,7 @@ async function removerEcoDoProprioEnvio(
 }
 
 const MSG_COLS =
-  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, sent_via, sent_by_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at, attachments:message_attachments(id,position,file_name,mime_type,size_bytes,availability)";
+  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, sent_via, sent_by_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at";
 
 function actorAuditPayload(actor: Actor): {
   actorUserId: string | null;
@@ -236,6 +237,61 @@ export async function listMessagesHandler(
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
 
+  // Anexos são buscados numa segunda consulta. Além de manter a seleção-base
+  // reutilizável pelos fluxos de envio, isto evita que writes que fazem
+  // `.select(MSG_COLS)` carreguem uma relação PostgREST que não pertence à
+  // linha recém-escrita. O escopo da organização aparece nas DUAS consultas:
+  // service role não pode depender de RLS para separar tenants.
+  const attachmentsByMessage = new Map<string, NonNullable<Message["attachments"]>>();
+  if (page.length > 0) {
+    const { data: attachments, error: attachmentsError } = await supabase
+      .from("message_attachments")
+      .select("id, message_id, position, file_name, mime_type, size_bytes, availability")
+      .eq("organization_id", ctx.organization_id)
+      .in(
+        "message_id",
+        page.map((message) => message.id),
+      )
+      .order("position", { ascending: true });
+
+    if (attachmentsError) {
+      throw new ApiError(
+        500,
+        "internal_error",
+        undefined,
+        ctx.requestId,
+        attachmentsError.message,
+      );
+    }
+
+    for (const attachment of attachments ?? []) {
+      const row = attachment as {
+        id: string;
+        message_id: string;
+        position: number;
+        file_name: string | null;
+        mime_type: string | null;
+        size_bytes: number | null;
+        availability: "available" | "unavailable";
+      };
+      const current = attachmentsByMessage.get(row.message_id) ?? [];
+      current.push({
+        id: row.id,
+        position: row.position,
+        file_name: row.file_name,
+        mime_type: row.mime_type,
+        size_bytes: row.size_bytes,
+        availability: row.availability,
+      });
+      attachmentsByMessage.set(row.message_id, current);
+    }
+  }
+
+  const pageWithAttachments = page.map((message) => ({
+    ...message,
+    attachments: attachmentsByMessage.get(message.id) ?? [],
+  }));
+
   // Em ordem decrescente, o ÚLTIMO da página é o mais antigo dela — é dele que
   // sai o cursor, porque a próxima página é a que vem ANTES no tempo.
   const oldest = page[page.length - 1];
@@ -245,7 +301,7 @@ export async function listMessagesHandler(
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens
   // entram na página, não a ordem em que saem.
-  return { messages: page.slice().reverse(), cursor, has_more: hasMore };
+  return { messages: pageWithAttachments.reverse(), cursor, has_more: hasMore };
 }
 
 // ---------------------------------------------------------------------------
@@ -311,18 +367,36 @@ export async function sendMessageHandler(
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
     `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, provider_recipient_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+  //
+  // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
+  // proteção que existe na metade dos chamadores. Este handler é a porta de
+  // saída de TODOS eles, e eles se dividem em dois mundos:
+  //
+  //   - rota REST com sessão de navegador → client de RLS, a policy basta;
+  //   - servidor MCP (lib/mcp/server.ts:41) e rota REST por `Bearer dsk_…`
+  //     (lib/api/auth-dual.ts) → `createAdminClient()`, SERVICE ROLE, que
+  //     bypassa RLS. Aqui não há policy nenhuma no caminho.
+  //
+  // Sem o filtro, um chamador de service-role com a org A passava um
+  // `conversation_id` da org B e a linha VINHA — e daí em diante todo o resto
+  // usa `c.organization_id`, a org da VÍTIMA: a mensagem era inserida na
+  // conversa dela e enviada pelo canal dela. Medido, não deduzido:
+  // `tests/invariants/envio-nao-alcanca-conversa-de-outro-tenant.test.ts`
+  // (anti-pattern 10 do CLAUDE.md).
   const { data: conv, error: convErr } = await queryTolerantToMissingArchived(
     () =>
       supabase
         .from("conversations")
         .select(convSelect(true))
         .eq("id", input.conversation_id)
+        .eq("organization_id", ctx.organization_id)
         .maybeSingle(),
     () =>
       supabase
         .from("conversations")
         .select(convSelect(false))
         .eq("id", input.conversation_id)
+        .eq("organization_id", ctx.organization_id)
         .maybeSingle(),
   );
 
@@ -439,7 +513,7 @@ export async function sendMessageHandler(
           traduzir("Contato sem telefone para envio como cartão.", ctx.idioma ?? "pt-BR"),
         );
       }
-      const displayName = row.display_name ?? row.name ?? row.phone_number;
+      const displayName = nomeDoContato(row) ?? row.phone_number;
       outboundBody = displayName;
       outboundMetadata = {
         ...outboundMetadata,
@@ -726,11 +800,15 @@ export async function sendMessageHandler(
         // coisa que só faz sentido para template.
         //
         // Mas quem SABE falar template é o adapter, quando sabe. Antes disto a
-        // linha de baixo era o único caminho, e ela lê `META_PHONE_NUMBER_ID` e
+        // linha de baixo era o único caminho, e ela lia `META_PHONE_NUMBER_ID` e
         // `META_SYSTEM_USER_TOKEN` do ambiente: template de QUALQUER canal saía
         // pelo número da Meta, com o token da Meta. Para o canal intermediado
         // isso não é falha de envio — é a mensagem saindo pelo número ERRADO
         // para o cliente certo, e ninguém percebe porque ela sai.
+        //
+        // Hoje a linha de baixo resolve a credencial DA SESSÃO e o ambiente ficou
+        // só como reserva (fatia F4 da #850), então ela precisa do número desta
+        // conexão: `sessionRef` sai da MESMA linha que o adapter recebe acima.
         // ─── Pré-voo ANTES de escolher transporte ──────────────────────────
         //
         // Vale para os dois caminhos, e é por isso que está aqui e não dentro
@@ -766,6 +844,10 @@ export async function sendMessageHandler(
           : await sendTemplateForSession(supabase, {
               beforeSend: checkBoundary,
               organizationId: ctx.organization_id,
+              // O número DESTA conexão: é por ele (com a organização) que a
+              // credencial da tela é achada. Sem ele, a resolução não casaria
+              // linha nenhuma e o envio voltaria ao ambiente.
+              sessionRef: resolveSessionRef(c.channel_sessions),
               to: chatId,
               name: input.template_name ?? "",
               language: input.template_language ?? "",

@@ -10,8 +10,10 @@
 # projeto dizia a quem contribui era um check `Vercel` vermelho que não é culpa
 # dela.
 #
-# Este workflow diz três coisas, e nada além: o `Vercel` vermelho é esperado em
-# fork; os workflows podem ficar parados esperando liberação; e quando vem o
+# Este workflow diz três coisas, e nada além: os workflows podem ficar parados
+# esperando liberação; o que trava o merge são os checks marcados obrigatórios no
+# próprio PR de quem lê; e quando vem o veredito humano.
+#
 # O PRAZO PROMETIDO NÃO É CHUTE — foi medido antes de entrar no texto.
 #
 # A doutrina proíbe prometer o que não se cumpre, então "em até um dia útil"
@@ -65,6 +67,23 @@
 #   4. O texto fixo vai por heredoc COM ASPAS (`<<'MD'`). Sem as aspas, as crases
 #      da própria prosa (`` `gh pr checks` ``) viram substituição de comando.
 #
+# ## Por que o texto apresenta `--required` como atalho PARCIAL
+#
+# `gh pr checks <n> --required` mostra os obrigatórios que JÁ REPORTARAM, e só
+# esses: o que ainda não rodou não aparece na saída. Medido em 2026-09-17 — a
+# proteção da `main` exigia cinco contextos, e o comando listou DOIS no PR #1069
+# (`invariants`, `verify`), contra os cinco que a proteção da `main` exigia.
+# Escrever que ele "mostra os mesmos" da tela do PR faria alguém ler três verdes
+# no terminal e concluir que passou. Refaça a comparação em vez de confiar nesta
+# linha:
+#
+#   gh api repos/$REPO/branches/main/protection --jq '.required_status_checks.contexts'
+#   gh pr checks <n> --required --json name --jq '[.[].name]'
+#
+# O primeiro só responde a quem administra o repositório, e para quem não
+# administra o GitHub devolve 404 — que lê como "não há proteção nenhuma", e não
+# é isso. Medido em `gh api repos/vercel/next.js/branches/canary/protection`.
+#
 # ## O que este workflow DELIBERADAMENTE não faz: liberar o CI sozinho
 #
 # No primeiro PR de quem nunca contribuiu, os runs ficam em `action_required` e
@@ -98,8 +117,8 @@ jobs:
   # `github.repository_owner` guarda o fork: este arquivo vai para a `main` de um
   # produto self-host, e o fork de cada pessoa herda o workflow. Sem a guarda, um
   # bot falaria pela gente no repositório de outra pessoa — prometendo o prazo de
-  # mantenedores que nunca concordaram com ele, e explicando um deploy da Vercel
-  # que não é o dela. É `repository_owner` e não `repository` porque renomear o
+  # mantenedores que nunca concordaram com ele, e apontando um gate de merge que
+  # não é o dela. É `repository_owner` e não `repository` porque renomear o
   # repositório não deve calar a acolhida; mudar de dono deve.
   acolher:
     if: github.repository_owner == 'melgarafael' && github.event.pull_request.head.repo.full_name != github.repository
@@ -147,15 +166,18 @@ jobs:
             # Heredoc COM aspas: nada aqui dentro é expandido pelo shell, e as
             # crases da prosa continuam sendo crases.
             cat <<'MD'
-          Duas coisas que vão parecer erro seu e não são:
+          Uma coisa vai parecer erro seu e não é:
 
-          - O check **Vercel** vermelho ("Authorization required to deploy") é esperado em PR de fork. A
-            `main` faz deploy de produção e a Vercel se recusa a construir código de fora, o que está
-            certo. **Ele não entra no gate de merge.**
           - No primeiro PR de quem nunca contribuiu aqui, os workflows ficam **parados esperando
             liberação** — política do GitHub, não sua. Enquanto isso o PR parece não ter check nenhum
             (nem o `gh pr checks` mostra os que estão nesse estado). Quem tria libera; você não precisa
             fazer nada.
+
+          Quando eles rodarem, o que trava o merge são só os checks marcados **Required** aqui no seu
+          próprio PR — é essa lista que vale, não qualquer outro vermelho que apareça. No terminal,
+          `gh pr checks <número> --required` mostra os obrigatórios que **já reportaram**, e só esses:
+          enquanto um deles não rodou, ele não aparece ali. Se um reprovar, a saída dele diz o que
+          falta; se não estiver claro, comente aqui — não feche o PR.
 
           Um mantenedor vai revisar de verdade — rodando os gates e reproduzindo o comportamento, não só
           lendo o diff — e responde aqui **em até um dia útil**, com a medição junto, nunca com um "acho

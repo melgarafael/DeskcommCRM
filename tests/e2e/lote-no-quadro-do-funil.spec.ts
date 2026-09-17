@@ -39,6 +39,9 @@ import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 const EVIDENCIA =
   process.env.E2E_EVIDENCIA ?? path.join(process.cwd(), ".superpowers/evidence/lote-no-funil");
+/** A prova do toque é citada na triagem do #911: mora em `evidence/`, versionada. */
+const EVIDENCIA_TOQUE =
+  process.env.E2E_EVIDENCIA_TOQUE ?? path.join(process.cwd(), "evidence/excluir-card-no-toque");
 
 interface Creds {
   password: string;
@@ -471,5 +474,52 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
       page.locator("[data-lote-selecionados]").getByRole("button", { name: /respons[áa]vel/i }),
       "controle positivo: para manager o botão existe",
     ).toBeVisible();
+  });
+
+  /**
+   * EXCLUIR UM CARD PELO MENU, NO TOQUE (issue #910).
+   *
+   * A afirmação-título do conserto é "aparece no toque", e ela não tem prova de
+   * unidade possível: o caso de jsdom compara a STRING do `className`, e o jsdom
+   * não compila Tailwind nem avalia `@media (hover:hover)` — ele diria verde com
+   * a classe escrita errada. Quem responde é a opacidade COMPUTADA num contexto
+   * sem hover, que é o que um celular tem.
+   *
+   * Este bloco não exclui nada de propósito: ele mede alcance. A exclusão em si
+   * já é a mesma rota em lote que o teste de "mover vários" exercita, e apagar um
+   * card aqui mudaria a fixture debaixo dos testes vizinhos.
+   */
+  test.describe("no toque, o menu do card é alcançável — e traz Excluir", () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+    test("o botão de ações é visível sem hover e o menu oferece Excluir", async ({ page }) => {
+      await login(page, creds.users.manager!.email, creds.password);
+      await page.goto(`/app/pipelines/${pipelineId}`);
+      await expect(page.getByText(TITULO(1), { exact: true })).toBeVisible({ timeout: 30_000 });
+
+      // ⚠️ Nenhum `hover()` antes desta leitura: num aparelho de toque o ponteiro
+      // nunca "passa por cima", e era com `opacity-0` incondicional que o menu
+      // ficava inalcançável.
+      const botao = page.getByRole("button", { name: "Ações do lead" }).first();
+      await expect(botao).toHaveCount(1);
+      const opacidade = await botao.evaluate((el) => Number(getComputedStyle(el).opacity));
+      expect(
+        opacidade,
+        `o menu do card precisa ser visível sem hover no toque (opacidade computada ${opacidade})`,
+      ).toBe(1);
+
+      fs.mkdirSync(EVIDENCIA_TOQUE, { recursive: true });
+      await page.screenshot({
+        path: path.join(EVIDENCIA_TOQUE, "01-botao-visivel-sem-hover.png"),
+        fullPage: false,
+      });
+
+      await botao.click();
+      await expect(page.getByRole("menuitem", { name: "Excluir" })).toBeVisible();
+      await page.screenshot({
+        path: path.join(EVIDENCIA_TOQUE, "02-menu-com-excluir.png"),
+        fullPage: false,
+      });
+    });
   });
 });

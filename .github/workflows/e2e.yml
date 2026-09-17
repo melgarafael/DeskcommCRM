@@ -263,6 +263,25 @@ jobs:
     #   parte 2 ≈ 14,4 min de Playwright → job ≈ 22,4 min
     #   folga contra o teto: ≈ 7,6 min no pior dos dois (era 4 min, e virou −0:17)
     #
+    # ── 16/09, noite: a previsão acima NÃO se confirmou, e as duas voltam ───
+    #
+    # Medido no run 35160549180 (lote 12, head 2a847f6f0): a parte 1 ESTOUROU o
+    # teto — 30 min cravados, cancelada no caso 141 de 156, ainda passando. A
+    # parte 2 mediu 15 min e a 3, 22 min. Ou seja, a partição prevista em
+    # 21,6/22,4 virou >30 contra 15: a folga está toda na parte 2.
+    #
+    # O que cresceu não foram as specs novas: as três de QA do lote 12 que caíram
+    # na parte 1 somam 5 casos e 31 s. Cresceram os casos acrescentados às specs
+    # que já estavam lá (o arrasto duplo do #919 em `kanban-owner-filter`, entre
+    # outros), que é crescimento que nenhuma linha deste arquivo anuncia.
+    #
+    # Então `prova-painel-provedores` (199,4 s, a alavanca que o bloco abaixo já
+    # nomeava) e `navegacao` (239,2 s) vão as duas para a PARTE_2. Medido nos
+    # logs deste run: a parte 1 gastou 978 s de Playwright em 138 casos
+    # concluídos; tirar 438 s devolve ~7,3 min e põe o job perto de 22 min, com
+    # a parte 2 em ~23 min. Subir `timeout-minutes` não entra: o teto é o que
+    # denuncia o crescimento, e calá-lo devolveria o problema maior mais tarde.
+
     # ── A próxima alavanca, quando esta acabar ──────────────────────────────
     #
     # `prova-painel-provedores` é 199,4 s — 42% de toda a parte 1, num arquivo
@@ -274,6 +293,9 @@ jobs:
     env:
       # Provider controlado; preview/assistência executam core, ferramentas e gates reais.
       INTERNAL_AGENT_RUN_STUB: "true"
+      # Única exceção HTTP do laboratório de extensões. O servidor é iniciado
+      # pela própria spec, em loopback, com SQLite e PID exclusivos.
+      EXTENSIONS_LOCAL_CATALOG_ORIGIN: "http://127.0.0.1:56331"
       SPECS_PARTE_1: >-
         importacao-historica.spec.ts
         social-dms.spec.ts
@@ -289,7 +311,7 @@ jobs:
         confirmar-dado-do-contato.spec.ts
         credenciais-de-ia.spec.ts
         risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
-        agente-papeis-operador.spec.ts prova-painel-provedores.spec.ts
+        agente-papeis-operador.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
         agenda-tela-do-produto.spec.ts
@@ -297,11 +319,14 @@ jobs:
         relogio-http-cron-externo.spec.ts
         j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
         j20-elegibilidade-atendimento-manual.spec.ts
-        navegacao.spec.ts
         juntar-contatos-duplicados.spec.ts
         lote-no-quadro-do-funil.spec.ts
+        motivos-de-perda-do-funil.spec.ts
         importar-leads-planilha.spec.ts
         relatorio-de-atividades.spec.ts
+        qa-l12-inbox.spec.ts
+        qa-l12-troca-de-funil.spec.ts
+        qa-l12-agente-ia.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava
@@ -377,6 +402,7 @@ jobs:
         agenda-marcar-pela-tela.spec.ts
         agenda-remarcar-e-cancelar.spec.ts
         agenda-tipos-de-agendamento.spec.ts
+        cliente-pela-agenda.spec.ts
         agenda-grade-interativa.spec.ts
         agente-novo-e-uso.spec.ts
         agente-organiza-operacao.spec.ts
@@ -405,6 +431,8 @@ jobs:
         agenda-caminho-ate-os-horarios.spec.ts
         agenda-google-volta-do-consentimento.spec.ts
         agenda-google-volta-nao-desloga.spec.ts
+        qa-l12-funil.spec.ts
+        navegacao.spec.ts prova-painel-provedores.spec.ts
       # `moeda-da-organizacao` entrou na PARTE_2 em 2026-09-04, ao lado de
       # `navegacao` — mesmo domínio (Configurações) e a mesma ausência de
       # dependência: sem WAHA, Resend, Nuvemshop ou Redis. Toca a organização
@@ -479,9 +507,12 @@ jobs:
       # motivo é medido nos dois eixos que importam — não é "está flaky, tira".
       #
       #  (a) ELE NÃO DISCRIMINA O CONSERTO QUE DIZ GUARDAR. Bancada local fiel a
-      #      este job (Supabase local pg17, `baseline.sql`, Realtime reiniciado
-      #      depois do baseline, `next build` de produção, os mesmos seeds),
-      #      revertendo SÓ `lib/supabase/browser.ts` para a versão anterior ao
+      #      este job (Supabase local na major do `config.toml` — era pg17 em
+      #      2026-08-26, o dia da medição abaixo; quem cobre pg15 E pg17 hoje é a
+      #      matriz do job `invariants`, no ci.yml —, `baseline.sql`, Realtime
+      #      reiniciado depois do baseline, `next build` de produção, os mesmos
+      #      seeds), revertendo SÓ `lib/supabase/browser.ts` para a versão
+      #      anterior ao
       #      #327 — e conferindo no bundle que o conserto saiu
       #      (`grep -rc realtime-token .next/static` → 0, controle positivo
       #      `sb-deskcomm-auth` → 1):
@@ -508,8 +539,17 @@ jobs:
       #      execução quando a issue #347 entregar entrega determinística (o
       #      caminho provável é desligar o `refetchOnWindowFocus` durante a
       #      asserção, para sobrar um caminho só).
-      # ✅ `agenda-marcar-pela-tela` SAIU DAQUI — e o registro é o motivo.
       #
+      # Atualização de 2026-09-16 (issue #347): a spec ganhou o discriminador que
+      # faltava. Ela deixou de asserir só a SAÍDA (o texto na tela, que tem dois
+      # caminhos) e passou a asserir a ENTRADA do caminho realtime — o `phx_join`
+      # com token do USUÁRIO e o frame `postgres_changes` com o corpo da mensagem
+      # (ver o cabeçalho da spec). O item (a) acima caducou como motivo de
+      # exclusão; o que falta para voltar ao gate é fechar a matriz de sabotagem
+      # (reverter só `lib/supabase/browser.ts` e ver VERMELHO) numa rodada do
+      # runner — a bancada exige Docker, ausente na VPS onde a mudança foi escrita.
+      #
+      # ✅ `agenda-marcar-pela-tela` SAIU DAQUI — e o registro é o motivo.
       # Ela nasceu `skip` pela DECISÃO 21.3: a frente 1 é API e não tem pixel
       # próprio, então em vez de CITAR num relatório qual spec vai prová-la em
       # tela, a spec é CRIADA com a condição de saída no cabeçalho.
@@ -589,6 +629,7 @@ jobs:
         retorno-anti-morte.spec.ts
         webhooks.spec.ts
         marca-logo.spec.ts
+        logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts
         inbox-rotulo-de-origem.spec.ts
@@ -601,6 +642,16 @@ jobs:
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         central-avisos-resolver-em-lote.spec.ts
         voz-desligada-por-padrao.spec.ts
+        voz-primeiro-pareamento.spec.ts
+        inbox-busca-e-filtros-dizem-a-verdade.spec.ts
+        qa-titulos-das-telas.spec.ts
+        qa-equipe-pinta-na-hora.spec.ts
+        qa-sugestao-rejeitada-e-motivo.spec.ts
+        qa-l12-agenda-contatos.spec.ts
+        qa-l12-tags-radar.spec.ts
+        extensoes-declarativas.spec.ts
+        extensoes-recuperacao.spec.ts
+        extensoes-versao.spec.ts
 
       # proxy-por-conexao exige WAHA e pool Webshare reais (opt-in, sem pareamento).
       FORA_DO_CI: >-
@@ -616,9 +667,18 @@ jobs:
         # aceita `timeout-minutes`. Razão e medições: o cabeçalho da action.
         timeout-minutes: 5
 
+      # Versão EXATA, e nunca `latest`: é o CLI que escolhe qual stack o e2e
+      # sobe (PostgREST, GoTrue, Storage, Realtime) e o e2e exercita exatamente
+      # esse stack. Com `latest`, o registry no minuto do run decidia o produto
+      # sob teste — release upstream virava vermelho num PR sem relação.
+      # 2.117.0 é o que `latest` apontava em 2026-09-14 (release de 2026-09-07).
+      # Subir o pino é ato deliberado: data e razão junto, no mesmo commit.
+      # A catraca que reprova `latest`/faixa está em
+      # tests/unit/workflows-pinam-o-supabase-cli.test.ts, e roda no job
+      # `verify` (o `pnpm test:unit` do ci.yml).
       - uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 2.117.0
 
       # Sobe Postgres + Auth (GoTrue) + PostgREST + Storage. Auth de verdade é
       # requisito: os specs de login exercitam o GoTrue, não um mock.

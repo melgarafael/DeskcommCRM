@@ -1,6 +1,6 @@
 ---
 name: deskcomm-contribuir
-description: Guia de contribuição ao DeskcommCRM para quem vai mexer no código e abrir um pull request, sobretudo de um fork. Use SEMPRE que a pessoa disser que vai contribuir, corrigir um bug, implementar algo, abrir ou atualizar um PR, criar uma migration, resolver conflito com a main, ou perguntar "como eu testo isso", "minha branch está atrasada?", "por que o CI ficou vermelho", "o Vercel falhou" — e antes de qualquer commit em clone que não seja do mantenedor. É o espelho da triagem: mede ANTES do PR o que o mantenedor mede depois (branch atrasada, tripla de migration, marca do fork no diff, fragmento de release, teste que falta, prova em tela), arma os hooks de git e evita retrabalho e PR recusado.
+description: 'Guia de contribuição ao DeskcommCRM para quem vai mexer no código e abrir um pull request, sobretudo de um fork. Use SEMPRE que a pessoa disser que vai contribuir, corrigir um bug, implementar algo, abrir ou atualizar um PR, criar uma migration, resolver conflito com a main, ou perguntar "como eu testo isso", "minha branch está atrasada?", "por que o CI ficou vermelho" — e antes de qualquer commit em clone que não seja do mantenedor. É o espelho da triagem: mede ANTES do PR o que o mantenedor mede depois (branch atrasada, tripla de migration, marca do fork no diff, fragmento de release, teste que falta, prova em tela), arma os hooks de git e evita retrabalho e PR recusado.'
 metadata:
   publico: contribuidor externo, dev de agência, fork
   espelho-de: triagem/TRIAGEM.md
@@ -28,14 +28,40 @@ fork: zero. O que trava é retrabalho — e retrabalho se evita medindo.
 
 ## Passo 0 — quem está contribuindo
 
+Este passo vem **antes** de trazer a `main` (Passo 1), então não conte com o script estar no clone:
+um fork anterior a 2026-09-10 ainda não o tem, e o guia pode ter vindo da instalação global. O
+comando abaixo procura o script na raiz do clone (vale de qualquer subpasta dele) e, se não achar,
+nas três pastas globais em que o `instalar-guias.sh` põe os guias. Cole como está, de onde você
+estiver:
+
 ```bash
-bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh
+r="$(git rev-parse --show-toplevel 2>/dev/null)"; s=""
+for g in ${r:+"$r/.agents/skills"} ~/.claude/skills ~/.agents/skills ~/.gemini/config/skills; do
+  [ -f "$g/deskcomm-contribuir/scripts/quem-sou.sh" ] && { s="$g/deskcomm-contribuir/scripts/quem-sou.sh"; break; }
+done
+if [ -n "$s" ]; then bash "$s"; else
+  echo "NÃO MEDIDO — não achei o quem-sou.sh ${r:+no clone $r }nem nas pastas globais dos guias." >&2
+  echo "Instale os guias pelo comando de uma linha do README (https://github.com/melgarafael/DeskcommCRM#readme) e rode de novo." >&2
+  false
+fi
 ```
 
-Se a resposta começar com `mantenedor`, este guia fica quieto — o mantenedor tem o próprio ritual
-(triagem, gov-loop) e hooks próprios em `loop/hooks`. Só siga se a pessoa pedir por nome. Se
-começar com `contribuidor`, siga. O script diz **por quê** (e-mail do git no `.mailmap`, conta do
-`gh`, o `origin` ser fork).
+A resposta vem da pasta **onde você rodou**, não de onde o script mora: fora de um clone ela é
+`contribuidor — fora de um clone git`, e se afina sozinha assim que o terminal estiver dentro do
+clone.
+
+A resposta decide o resto do guia, e são três:
+
+- Começa com `mantenedor`: este guia fica quieto — o mantenedor tem o próprio ritual (triagem,
+  gov-loop) e hooks próprios em `loop/hooks`. Só siga se a pessoa pedir por nome.
+- Começa com `contribuidor`: siga. O script diz **por quê** (e-mail do git no `.mailmap`, conta do
+  `gh`, o `origin` ser fork).
+- Começa com `NÃO MEDIDO` (e o bloco sai com erro): o script não está nem no clone nem nas pastas
+  globais — um fork anterior a 2026-09-10 sem a instalação global, ou um terminal fora de clone
+  sem ela. Ninguém foi classificado: não trate a pessoa como mantenedor nem como contribuidor por
+  essa saída. Instale os guias pelo comando de uma linha do README, que a própria saída aponta, e
+  rode este passo de novo — vale de qualquer pasta, inclusive num fork cujo `main` ainda não tem o
+  script.
 
 ## Passo 1 — a âncora: `origin/main`, nunca o disco
 
@@ -146,6 +172,18 @@ de release é automático e uma seção à mão já quase publicou uma versão p
 `exige_acao` só se o operador precisa fazer algo na VPS (variável nova obrigatória, por exemplo) —
 e aí o instalador precisa perguntar por ela.
 
+O texto do fragmento vira a nota pública da versão: a LP publica o `CHANGELOG.md` em
+[deskcomm.com.br/changelog](https://www.deskcomm.com.br/changelog), nos três idiomas. Escreva
+para quem nunca viu o código.
+
+**Mexeu num guia** (`.agents/skills/deskcomm-*`: nome, o que ele faz, como chamar)? Rode
+`pnpm skills:sync` e avise no PR que a página de guias da LP
+([deskcomm.com.br/guias](https://www.deskcomm.com.br/guias), arquivo `conteudo/guias.ts` do
+repositório `deskcomm-site`) precisa acompanhar — senão ela passa a ensinar um guia que não existe.
+
+As duas páginas saem de um PR do `deskcomm-site`; um `404` nesses dois links quer dizer que ele
+ainda não entrou, não que você errou o caminho.
+
 ## Passo 8 — o PR
 
 - **Título** no imperativo, do ponto de vista de quem usa (`fix(agenda): a consulta remarcada não
@@ -155,7 +193,12 @@ e aí o instalador precisa perguntar por ela.
   separa medição de relato.
 - **Identidade**: `git log --format='%an <%ae>' origin/main..HEAD | sort -u` — se aparecer
   `root@…` ou um e-mail que não é da sua conta, o trabalho não aparece no seu perfil. Conserte antes
-  do push (`git config user.email`, `git commit --amend --reset-author` nos seus commits).
+  do push (`git config user.email`, `git commit --amend --reset-author` nos seus commits). É também
+  a identidade que a triagem põe como autor quando porta o seu trabalho do lado de cá.
+- **Edição por mantenedores**: com "Allow edits by maintainers" ligado (confira com
+  `gh pr view <n> --json maintainerCanModify --jq .maintainerCanModify`), a triagem pode empurrar
+  na sua branch um conserto ou o merge da `main`, avisando no PR antes. Antes de empurrar de novo,
+  `git pull --no-rebase` — nunca `--force`.
 
 O que vai parecer erro depois de abrir — e não é — e como acompanhar o CI de verdade:
 `references/depois-do-pr.md`. Os erros mais frequentes de quem contribui, com o número do PR onde

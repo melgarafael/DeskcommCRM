@@ -13,12 +13,11 @@
  *
  * ─── Por que existe um fallback, e por que ele não é paliativo ───────────────
  * Neste projeto o código chega ao clone/produção por deploy, e aplicar a
- * migration é passo SEPARADO e manual — já aconteceu de a `main` subir sem ela
- * (memória `project_vercel_deploy_sem_gate_de_schema`). Nesse estado, uma
- * consulta que filtra `archived_at` volta com SQLSTATE 42703 do Postgres,
- * repassado pelo PostgREST. Quem trata isso como "não achei" mostra "nenhum
- * número conectado" numa org que tem canal ligado, ou descarta a mensagem que
- * acabou de entrar.
+ * migration é passo SEPARADO e manual — já aconteceu de a versão nova subir sem
+ * ela. Nesse estado, uma consulta que filtra `archived_at` volta com SQLSTATE
+ * 42703 do Postgres, repassado pelo PostgREST. Quem trata isso como "não achei"
+ * mostra "nenhum número conectado" numa org que tem canal ligado, ou descarta a
+ * mensagem que acabou de entrar.
  *
  * Repetir a consulta SEM o filtro não é degradar: se a coluna não existe, NADA
  * está arquivado, então o resultado sem filtro é o resultado exato. O que o

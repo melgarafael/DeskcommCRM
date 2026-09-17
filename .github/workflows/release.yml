@@ -353,3 +353,76 @@ jobs:
             exit 1
           fi
           echo "stable e ${VERSAO} são o mesmo manifesto nas três imagens"
+
+      # ─── A VERSÃO CHEGOU À VITRINE? ───────────────────────────────────────
+      #
+      # Lei em docs/doctrine/versionamento.md, seção "A vitrine". A página de
+      # changelog da LP (deskcomm-site) lê o CHANGELOG.md da `main` e revalida a
+      # cada 10 min; somando o cache de 5 min do raw.githubusercontent.com, a
+      # versão aparece em até ~15 min. Ninguém escreve release no site — por isso
+      # o que se confere aqui é a CONSEQUÊNCIA, nos três idiomas, e não um passo
+      # de "atualizar a LP" que poderia rodar verde sem mudar nada.
+      #
+      # Cada sonda também é o que DISPARA a regeneração: numa página vencida, o
+      # primeiro acesso recebe a versão velha e agenda a nova. Por isso a sonda
+      # repete em vez de esperar parada.
+      #
+      # Só no repositório oficial: um fork herda este workflow, e a LP dele não é
+      # a nossa. A release em si já saiu quando este passo roda — vermelho aqui
+      # quer dizer "a vitrine não mostra", não "a versão não existe".
+      - name: A versão aparece na página de changelog da LP?
+        if: steps.pendente.outputs.cortar == 'sim' && github.repository == 'melgarafael/DeskcommCRM'
+        # O teto cobre o pior caso, para o diagnóstico rodar antes de o GitHub matar o passo:
+        # 35 tentativas × (3 páginas × 10 s de curl + 50 s de espera) ≈ 47 min, mais o
+        # diagnóstico e as páginas das versões. Com 40 min e curl de 30 s, um site que aceita a
+        # conexão e não responde estourava o teto e o log não dizia qual página faltou.
+        timeout-minutes: 55
+        env:
+          VERSAO: ${{ steps.pendente.outputs.versao }}
+          LP: https://www.deskcomm.com.br
+        run: |
+          set -euo pipefail
+          paginas="/changelog /en/changelog /es/changelog"
+          faltando="$paginas"
+          for tentativa in $(seq 1 35); do
+            faltando=""
+            for p in $paginas; do
+              # O link para a página da versão, e não o número solto: "1.2.1"
+              # aparece dentro de "1.2.10"; o href fecha a aspa.
+              # Sem pipeline: sob pipefail, `printf | grep -q` dá "faltando" com a
+              # versão listada assim que o HTML tiver quebra de linha depois do link
+              # (o grep sai cedo e o printf morre de SIGPIPE, 141).
+              html=$(curl -fsSL --max-time 10 "${LP}${p}" 2>/dev/null || true)
+              if [[ "$html" == *"href=\"${p}/${VERSAO}\""* ]]; then
+                echo "  ${p}: v${VERSAO} listada"
+              else
+                faltando="${faltando} ${p}"
+              fi
+            done
+            [ -z "$faltando" ] && break
+            echo "tentativa ${tentativa}: ainda falta em${faltando}"
+            sleep 50
+          done
+          if [ -n "$faltando" ]; then
+            # O `-f` do curl acima descarta o corpo de um 404 (o `|| true` só impede o set -e de
+            # abortar), e html vazio é indistinguível de "a página existe e não lista a versão".
+            # O status — com -L, como a sonda, para não parar no 3xx de um redirecionamento — diz qual
+            # dos dois: 404 é a vitrine fora do ar (nenhuma espera conserta), 200 é a
+            # versão que não chegou ao CHANGELOG que a LP lê.
+            for p in $faltando; do
+              echo "::error::${LP}${p} respondeu $(curl -sL -o /dev/null -w '%{http_code}' --max-time 10 "${LP}${p}")"
+            done
+            echo "::error::v${VERSAO} saiu (tag, release e imagens conferidas), mas a LP não a lista em:${faltando}"
+            echo "::error::Confira se ${LP}/changelog responde e se o CHANGELOG.md da main tem a seção '## [${VERSAO}] — AAAA-MM-DD'."
+            echo "::error::Se o formato do cabeçalho mudou, o leitor da LP (lib/changelog.ts em deskcomm-site) precisa mudar junto."
+            exit 1
+          fi
+          # A página da própria versão é gerada no primeiro acesso: confirma que ela abre.
+          for p in $paginas; do
+            codigo=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 30 "${LP}${p}/${VERSAO}")
+            if [ "$codigo" != "200" ]; then
+              echo "::error::${LP}${p}/${VERSAO} respondeu ${codigo}."
+              exit 1
+            fi
+          done
+          echo "a LP mostra v${VERSAO} em pt-BR, en e es"

@@ -22,41 +22,61 @@
  * alguém acrescentar um `reload()` aqui "para estabilizar", ele passa a medir o
  * F5 — exatamente o sintoma que existe para proibir.
  *
- * ─── O QUE ELE NÃO PROVA — medido em 2026-08-26, contra este mesmo HEAD ─────
+ * ─── O QUE ELE PROVA AGORA — e a lacuna que continua aberta (issue #347) ────
  *
- * Ele **não discrimina o conserto do token**. Medido, com Supabase local, build
- * de produção, revertendo SÓ `lib/supabase/browser.ts` para a versão da `main`
- * (e conferindo no bundle: `grep -rc realtime-token .next/static` → 0, com
- * controle positivo em `sb-deskcomm-auth` → 1):
+ * Medido em 2026-08-26, contra o HEAD da época: ele **não discriminava o
+ * conserto do token**. Com Supabase local e build de produção, revertendo SÓ
+ * `lib/supabase/browser.ts` para a versão da `main` (e conferindo no bundle:
+ * `grep -rc realtime-token .next/static` → 0, com controle positivo em
+ * `sb-deskcomm-auth` → 1):
  *
  *   com o conserto      → 1 passed
- *   sem o conserto      → 1 passed   ← aqui está o problema
+ *   sem o conserto      → 1 passed   ← aqui estava o problema
  *
- * Quem discrimina é `tests/unit/realtime-token-do-socket.test.ts`, que cobra a
- * callback INSTALADA e o token que ela devolve — e que reprova 6 de 7 casos
- * quando a callback some.
+ * A explicação mais provável era o SEGUNDO caminho: `useMessagesRealtime` liga
+ * `refetchOnWindowFocus: true`, e o `execFileSync` que injetava a mensagem
+ * devolvia o foco à janela. Duas rotas para a mesma saída — a sabotagem de uma
+ * é invisível para uma asserção que só olha a saída.
  *
- * A explicação mais provável do empate é que a tela tem mais de um caminho para
- * a mesma mensagem: `useMessagesRealtime` liga `refetchOnWindowFocus: true`, e
- * o `execFileSync` que injeta a mensagem devolve o foco à janela. Dois caminhos
- * com a mesma saída — a sabotagem de um é invisível na asserção.
+ * O que esta versão muda: passa a asserir sobre a ENTRADA da rota, não sobre a
+ * saída. O que trafega no socket é fato observável, e não tem caminho
+ * alternativo:
  *
- * Então o que este spec É: a cerca de ponta a ponta contra o SINTOMA relatado
- * (a mensagem não aparece sem F5), por qualquer causa. É valioso, e é menos do
- * que o cabeçalho acima sugeria antes desta medição.
+ *   1. o canal assina com o token do USUÁRIO — JWT com `role: authenticated`
+ *      (`data-realtime-status` diz `subscribed` com a entrega morta; o token,
+ *      não — anônimo ele é anônimo, dito pelo próprio JWT);
+ *   2. o servidor EMPURRA a linha — frame `postgres_changes` com o corpo da
+ *      mensagem. Canal anônimo não recebe frame nenhum: a RLS filtra do outro
+ *      lado.
  *
- * ⚠️ E POR ISSO ELE SAIU DO GATE DE MERGE (2026-08-26, issue #347). Ele está em
- * `FORA_DO_CI` no `.github/workflows/e2e.yml`, com o motivo medido escrito lá:
- * além de não discriminar, ele reprovou duas vezes o mesmo sha de um PR que não
- * toca inbox, realtime nem socket, depois de passar em dois outros. Gate que
- * reprova por moeda treina o time a reexecutar em vez de olhar.
+ * É a asserção (2) que fica VERMELHA quando o conserto do #327 não está no
+ * bundle. O refetch de foco pode até acontecer durante a espera — ele deixa de
+ * bastar, porque não é ele que a asserção mede. A injeção também deixou de ser
+ * `execFileSync`: o processo sobe sem bloquear o loop do runner durante a
+ * janela de asserção, que era um confundidor a mais.
  *
- * Ele CONTINUA aqui e continua rodando local — `pnpm exec playwright test
- * tests/e2e/inbox-tempo-real.spec.ts`. O que a issue #347 precisa entregar para
- * ele voltar: um caminho só até a mensagem durante a asserção, e a matriz de
- * sabotagem ficando VERMELHA sem o conserto.
+ * ⚠️ HONESTIDADE — O QUE NÃO FOI MEDIDO AQUI: a matriz de sabotagem desta
+ * versão. A bancada exige Docker (Supabase local + build de produção) e a VPS
+ * onde esta mudança foi escrita não tem Docker. O que se mediu: `tsc --noEmit`,
+ * os unitários e a fila de gates. A prova de discriminação — verde com o
+ * conserto, VERMELHO revertendo só `lib/supabase/browser.ts` — precisa de uma
+ * rodada no runner, e é ela que libera a volta desta spec ao CI.
+ *
+ * Quem discrimina em unidade é `tests/unit/realtime-token-do-socket.test.ts`,
+ * que cobra a callback INSTALADA e o token que ela devolve — e que reprova 6 de
+ * 7 casos quando a callback some.
+ *
+ * ⚠️ E POR ISSO ELE CONTINUA FORA DO GATE DE MERGE (2026-08-26, issue #347). Ele
+ * está em `FORA_DO_CI` no `.github/workflows/e2e.yml`, com o motivo medido
+ * escrito lá: além de não discriminar, ele reprovou duas vezes o mesmo sha de um
+ * PR que não toca inbox, realtime nem socket, depois de passar em dois outros.
+ * Gate que reprova por moeda treina o time a reexecutar em vez de olhar.
+ *
+ * Ele CONTINUA rodando local: `pnpm exec playwright test
+ * tests/e2e/inbox-tempo-real.spec.ts`. O que falta para ele voltar ao CI é uma
+ * rodada no runner com a sabotagem acima VERMELHA.
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -119,13 +139,117 @@ async function login(page: Page, email: string, senha: string): Promise<void> {
  * mostra o que ela mesma escreveu, que é outra coisa. O script grava as duas
  * pontas que o inbox escuta (`messages` e o carimbo de `conversations`) — dois
  * canais no mesmo socket, e era a coexistência deles que expunha o defeito.
+ *
+ * ⚠️ ASSÍNCRONO DE PROPÓSITO (issue #347). Era `execFileSync`, que bloqueia o
+ * loop do runner por todo o tempo de vida do processo filho — e o runner é quem
+ * responde ao browser. O `expect.poll` desta spec depende de o loop andar: com
+ * o loop parado, cada espera estica junto com o banco. Não é a causa medida da
+ * não-determinação (a hipótese do foco de janela segue NÃO medida), mas é um
+ * confundidor a menos numa janela em que o que se mede é tempo.
  */
-function chegarMensagem(conversationId: string, corpo: string): void {
-  execFileSync(
-    process.execPath,
-    ["--import", "tsx", "scripts/e2e-chega-mensagem.ts", conversationId, corpo],
-    { cwd: process.cwd(), stdio: "inherit" },
-  );
+async function chegarMensagem(conversationId: string, corpo: string): Promise<void> {
+  await new Promise<void>((resolve, rejeitar) => {
+    const filho = spawn(
+      process.execPath,
+      ["--import", "tsx", "scripts/e2e-chega-mensagem.ts", conversationId, corpo],
+      { cwd: process.cwd(), stdio: "inherit" },
+    );
+    filho.on("error", (erro: Error) => rejeitar(erro));
+    filho.on("close", (codigo) =>
+      codigo === 0
+        ? resolve()
+        : rejeitar(new Error(`e2e-chega-mensagem.ts saiu com código ${codigo}`)),
+    );
+  });
+}
+
+/**
+ * ─── A PROVA QUE FALTAVA: O QUE O SOCKET LEVOU E TROUXE ─────────────────────
+ *
+ * A asserção antiga media o SINTOMA (o texto na tela) e ficava verde com o canal
+ * mudo, porque `useMessagesRealtime` liga `refetchOnWindowFocus: true`: a tela
+ * tem dois caminhos para a mesma mensagem. Asserção sobre a saída não separa as
+ * rotas; asserção sobre o socket separa, porque não há rota alternativa.
+ *
+ * Anonimato e entrega são fatos da FIAÇÃO, lidos no frame:
+ *
+ *   - `phx_join` levando um JWT com `role: authenticated` (issue #327: sem o
+ *     conserto o socket vai de ANON KEY);
+ *   - `postgres_changes` chegando com o corpo da mensagem (canal anônimo não
+ *     recebe frame NENHUM — a RLS filtra do outro lado).
+ */
+interface FrameDeSocket {
+  direcao: "enviado" | "recebido";
+  evento: string;
+  topico: string;
+  payload: string;
+  ts: number;
+}
+
+/**
+ * Decodifica as claims dos JWTs presentes num texto.
+ *
+ * Procura o token ONDE ELE ESTIVER (payload do join, URL do handshake) em vez de
+ * num campo específico: o layout do frame é decisão da lib, e afirmar sobre ele
+ * criaria uma spec que quebra quando a lib sobe de versão por motivo alheio. O
+ * que interessa é o que o token DIZ — `role: authenticated` é do usuário,
+ * `role: anon` é a chave pública.
+ *
+ * Token ilegível fica FORA da conta e aparece no diagnóstico: contar um token
+ * que não foi lido como se fosse anônimo seria inventar a prova.
+ */
+function tokensDoTexto(texto: string): { role?: string; sub?: string }[] {
+  const achados =
+    texto.match(/eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*/g) ?? [];
+  const claims: { role?: string; sub?: string }[] = [];
+  for (const t of achados) {
+    try {
+      const json = Buffer.from(t.split(".")[1] ?? "", "base64url").toString("utf8");
+      claims.push(JSON.parse(json) as { role?: string; sub?: string });
+    } catch {
+      // Não é JWT legível — segue para o próximo.
+    }
+  }
+  return claims;
+}
+
+/**
+ * Escuta TODOS os sockets da página.
+ *
+ * Tem de ser chamado ANTES do primeiro `goto`: o Playwright só emite `websocket`
+ * para sockets criados DEPOIS do `on`, e o canal do inbox nasce na primeira
+ * navegação autenticada. Registrar depois seria uma escuta cega que passa
+ * sempre — o modo de falha desta classe de teste.
+ */
+function escutarSockets(page: Page, frames: FrameDeSocket[]): void {
+  page.on("websocket", (ws) => {
+    const url = ws.url();
+    // O apikey viaja na URL do handshake; o token do canal, no payload do join.
+    // Registrar os dois é o que torna a asserção independente de onde a lib põe
+    // o quê.
+    frames.push({ direcao: "enviado", evento: "handshake", topico: url, payload: url, ts: Date.now() });
+    const registrar = (direcao: "enviado" | "recebido", bruto: Buffer | string) => {
+      const texto = bruto.toString();
+      let evento = "<sem-evento>";
+      let topico = "<sem-topico>";
+      try {
+        const arr = JSON.parse(texto) as [unknown, unknown, string, string, unknown];
+        topico = String(arr[2]);
+        evento = String(arr[3]);
+      } catch {
+        // Frame que não é JSON de evento (heartbeat, controle) — fica registrado
+        // cru, sem inventar rótulo.
+      }
+      frames.push({ direcao, evento, topico, payload: texto, ts: Date.now() });
+    };
+    // O argumento do evento mudou de forma entre versões do Playwright: bruto
+    // (`string | Buffer`) ou `{ payload }`. Aceitar as duas mantém a escuta de
+    // pé numa atualização de dependência, em vez de virar vermelho falso.
+    const brutoDoEvento = (e: string | Buffer | { payload: string | Buffer }): string | Buffer =>
+      typeof e === "object" && e !== null && "payload" in e ? e.payload : e;
+    ws.on("framesent", (evento) => registrar("enviado", brutoDoEvento(evento)));
+    ws.on("framereceived", (evento) => registrar("recebido", brutoDoEvento(evento)));
+  });
 }
 
 test.describe("inbox em tempo real", () => {
@@ -162,7 +286,6 @@ test.describe("inbox em tempo real", () => {
   });
 
   test("mensagem que chega aparece na conversa aberta, sem recarregar", async ({ page }) => {
-
     // `manager` e não `admin`: o admin do seed tem fator MFA cadastrado e o
     // login dele para em /login/mfa. O manager vê a aba "Todas" (leitura
     // org-wide), que é o que este teste precisa.
@@ -177,6 +300,12 @@ test.describe("inbox em tempo real", () => {
     const console_: string[] = [];
     page.on("console", (m) => console_.push(`${m.type()}: ${m.text()}`.slice(0, 300)));
     page.on("pageerror", (e) => console_.push(`pageerror: ${e.message}`.slice(0, 300)));
+
+    /**
+     * A ESCUTA DO SOCKET VEM ANTES DO PRIMEIRO `goto` — ver `escutarSockets`.
+     */
+    const frames: FrameDeSocket[] = [];
+    escutarSockets(page, frames);
 
     await login(page, c.users.manager!.email, c.password);
 
@@ -223,10 +352,11 @@ test.describe("inbox em tempo real", () => {
      * de esperar 25s pela mensagem e dar "element(s) not found" — que não
      * distingue "não assinou" de "assinou e não entregou".
      *
-     * QUEM PROVA A ENTREGA é a asserção seguinte (a mensagem aparecendo) somada
-     * a `data-refetch-divergencias` continuar 0: se o texto aparecesse porque a
-     * rede de segurança curou a perda, o contador teria subido. As duas juntas
-     * separam "o canal entregou" de "alguém consertou depois".
+     * QUEM PROVA A ENTREGA é a asserção do FRAME mais abaixo (o servidor
+     * empurrou a linha pelo socket), somada aos contadores de divergência
+     * continuarem 0: se o texto aparecesse porque a rede de segurança curou a
+     * perda, o contador teria subido. As duas juntas separam "o canal entregou"
+     * de "alguém consertou depois".
      *
      * Vem ANTES da escrita de propósito: um canal que subisse só depois da
      * entrega passaria igual. (A primeira versão tinha esta asserção DEPOIS do
@@ -238,41 +368,121 @@ test.describe("inbox em tempo real", () => {
       { timeout: 20_000 },
     );
 
-    const corpo = `chegou em tempo real ${Date.now()}`;
-    chegarMensagem(conversationId, corpo);
-
     // O canal DO THREAD — que é quem traz esta mensagem. A asserção anterior
     // cobre o canal da LISTA (`conversations`); são canais diferentes, e até
     // esta versão o teste afirmava sobre um enquanto esperava a entrega do
     // outro.
-    await expect(page.getByTestId("chat-thread")).toHaveAttribute(
-      "data-realtime-status-mensagens",
-      "subscribed",
-      { timeout: 20_000 },
-    );
-
-    // ⚠️ SEM reload. Se aparecer, o canal entregou.
-    //
-    // Escopado ao THREAD de propósito, e não por estilo: quando os dois canais
-    // funcionam, o mesmo texto aparece DUAS vezes na tela — na bolha da conversa
-    // e na prévia do item da lista, que o outro canal acabou de atualizar. Um
-    // `page.getByText(corpo)` solto resolve para 2 elementos e o modo estrito do
-    // Playwright reprova o teste **por excesso de sucesso**:
-    //
-    //   strict mode violation: getByText('chegou em tempo real …') resolved to
-    //   2 elements: 1) <p class="…truncate text-xs…"> (a prévia na lista)
-    //               2) <p class="whitespace-pre-wrap…"> (a bolha no thread)
-    //
-    // Medido localmente contra o Supabase local, build de produção, com o
-    // conserto aplicado. A lista ter reagido é asserido no fim, no seu lugar.
     const thread = page.getByTestId("chat-thread");
+    await expect(thread).toHaveAttribute("data-realtime-status-mensagens", "subscribed", {
+      timeout: 20_000,
+    });
+
+    /**
+     * ⚠️ A PROVA DO #327, E ELA NÃO OLHA A TELA (issue #347).
+     *
+     * Sem o conserto de `lib/supabase/browser.ts` o socket assina com a ANON
+     * KEY. O `data-realtime-status` continua dizendo `subscribed` — é o
+     * instrumento cego que já se sabe cego — mas o JWT do join diz `anon`, e
+     * este teste lê o JWT. É esta asserção (e a do frame, logo abaixo) que fica
+     * VERMELHA com o conserto fora do bundle, sem depender de foco de janela,
+     * de refetch, de timing ou de qualquer caminho alternativo da tela.
+     *
+     * Vem ANTES da escrita, como o filtro: canal que assinasse anônimo só
+     * depois da mensagem chegar passaria igual.
+     */
+    const joins = frames.filter((f) => f.direcao === "enviado" && f.evento === "phx_join");
+
+    // Primeiro, a leitura em si precisa ser possível. Se ninguém conseguiu ler
+    // token nenhum, a falha é do INSTRUMENTO (layout de frame novo, lib subiu de
+    // versão) e não do produto — duas causas que pedem ações opostas, e que uma
+    // asserção só não separaria.
+    await expect
+      .poll(() => joins.filter((j) => tokensDoTexto(j.payload).length > 0).length, {
+        timeout: 20_000,
+        message:
+          "não foi possível ler o token de nenhum `phx_join` — instrumento quebrado, " +
+          "não produto (ver frames no diagnóstico)",
+      })
+      .toBeGreaterThan(0);
+
+    await expect
+      .poll(
+        () =>
+          frames
+            .flatMap((f) => tokensDoTexto(f.payload))
+            .filter((claims) => claims.role === "authenticated").length,
+        {
+          timeout: 20_000,
+          message:
+            "nenhum canal assinou com o token do USUÁRIO — o socket está anônimo, " +
+            "que é o defeito do #327",
+        },
+      )
+      .toBeGreaterThan(0);
+
+    // E nenhum canal pode assinar como anônimo enquanto outro assina certo:
+    // era exatamente a coexistência de um canal bom com um anônimo que o
+    // defeito original escondia.
+    const anonimos = joins.filter((j) =>
+      tokensDoTexto(j.payload).some((claims) => claims.role === "anon"),
+    );
+    expect(
+      anonimos.map((j) => j.topico),
+      "canal assinando como ANÔNIMO — é o defeito do #327 (a varredura de joins viu estas roles: " +
+        JSON.stringify(frames.flatMap((f) => tokensDoTexto(f.payload).map((c) => c.role))) +
+        ")",
+    ).toHaveLength(0);
+
+    const corpo = `chegou em tempo real ${Date.now()}`;
+    await chegarMensagem(conversationId, corpo);
+
+    /**
+     * As bolhas do thread: o `<p>` do corpo em `MessageBubble`. Serve para
+     * asserir VALOR e ORDEM, não presença — a diferença entre "tem o texto em
+     * algum lugar" e "tem o texto, uma vez só, no fim da fila".
+     */
+    const bolhas = thread.locator("p.whitespace-pre-wrap");
+
     try {
-      await expect(thread.getByText(corpo)).toBeVisible({ timeout: 25_000 });
+      /**
+       * ⚠️ 1) O CAMINHO, e aqui está o conserto da #347: o SERVIDOR EMPUROU a
+       * linha pelo socket. Canal anônimo não recebe frame nenhum (a RLS filtra
+       * do outro lado), então esta asserção é a que discrimina o conserto do
+       * #327 — e não existe refetch, foco de janela ou F5 que a satisfaça no
+       * lugar do canal.
+       *
+       * A mensagem é casada pelo CORPO (timestamp único), não pela contagem de
+       * frames: qualquer outro tráfego de `postgres_changes` na mesma página
+       * (a lista, outra conversa) passaria por uma asserção de "chegou algum
+       * frame".
+       */
+      await expect
+        .poll(
+          () =>
+            frames.filter(
+              (f) =>
+                f.direcao === "recebido" &&
+                f.evento === "postgres_changes" &&
+                f.payload.includes(corpo),
+            ).length,
+          {
+            timeout: 25_000,
+            message: `o servidor não empurrou a mensagem pelo socket (corpo: ${corpo})`,
+          },
+        )
+        .toBeGreaterThan(0);
+
+      // ⚠️ 2) SEM reload. O SINTOMA, no valor: a bolha com este corpo existe —
+      // uma vez só.
+      await expect(bolhas.filter({ hasText: corpo })).toHaveCount(1, { timeout: 25_000 });
+
+      // ⚠️ 3) E é a ÚLTIMA da fila — ordem, não presença.
+      await expect(bolhas.last()).toContainText(corpo);
     } catch (err) {
       // Sem isto, a falha diz só "element(s) not found" — que é verdade para
       // todas as causas já vistas e não separa nenhuma. O que segue é o que
-      // distingue: estado dos DOIS canais, contadores de perda, e o que o
-      // browser falou.
+      // distingue: estado dos DOIS canais, contadores de perda, o que o socket
+      // levou e trouxe, e o que o browser falou.
       const diag = {
         canalDaLista: await page
           .locator("[data-realtime-status]")
@@ -288,6 +498,13 @@ test.describe("inbox em tempo real", () => {
         perdasNoThread: await thread
           .getAttribute("data-refetch-divergencias-mensagens")
           .catch(() => "<ausente>"),
+        rolesVistasNosTokens: frames.flatMap((f) => tokensDoTexto(f.payload).map((t) => t.role)),
+        framesDoSocket: frames
+          .slice(-25)
+          .map((f) => `${f.direcao}:${f.evento}:${f.topico}`.slice(0, 160)),
+        framesDeMensagemRecebidos: frames.filter(
+          (f) => f.direcao === "recebido" && f.evento === "postgres_changes",
+        ).length,
         conversationId,
         corpoEsperado: corpo,
       };
@@ -301,6 +518,20 @@ test.describe("inbox em tempo real", () => {
     await expect(page.locator("[data-refetch-divergencias]")).toHaveAttribute(
       "data-refetch-divergencias",
       "0",
+    );
+    await expect(thread).toHaveAttribute("data-refetch-divergencias-mensagens", "0");
+
+    // Evidência do caminho, no log do CI: com que token os canais assinaram e
+    // quantos frames de mensagem o socket recebeu. É o que se lê quando alguém
+    // pergunta "passou pelo canal ou pelo refetch?".
+    console.info(
+      "[inbox-tempo-real] prova do caminho:",
+      JSON.stringify({
+        rolesDosTokens: frames.flatMap((f) => tokensDoTexto(f.payload).map((t) => t.role)),
+        framesDeMensagemRecebidos: frames.filter(
+          (f) => f.direcao === "recebido" && f.evento === "postgres_changes",
+        ).length,
+      }),
     );
 
     // A evidência vai para `evidence/`, que é VERSIONADO — `.superpowers/` é

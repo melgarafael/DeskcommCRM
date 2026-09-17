@@ -114,4 +114,20 @@ export const TOOLS_ATENDIMENTO = declararTools([
     risco: "critico",
     pacotes: ["atender"],
   },
+  {
+    name: "crm_start_conversation_and_send",
+    category: "write",
+    rotulo: "Iniciar conversa com cliente novo e enviar mensagem",
+    explicacao:
+      "Cria o cadastro do cliente se ele ainda não existir, abre uma conversa nova no número de " +
+      "WhatsApp escolhido e manda a primeira mensagem para ele — de verdade, no celular dele.",
+    oQueToca: "Atendimento",
+    risco: "critico",
+    // Nasce para automação externa (ex.: prospecção que acabou de captar um
+    // cliente novo), não para o agente conversacional em turno — por isso
+    // `apenasHumano` abaixo e o papel mínimo ficam acima do que o agente
+    // publicado alcança (ver tests/unit/capacidade-alcancavel-pelo-agente.test.ts).
+    pacotes: ["vender"],
+    apenasHumano: true,
+  },
 ]);

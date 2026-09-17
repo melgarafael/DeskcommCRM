@@ -95,6 +95,7 @@ type Res = { data: unknown; error: { message: string } | null };
 class FakeQuery implements PromiseLike<Res> {
   private cols = "*";
   private eqs: Array<{ col: string; val: unknown }> = [];
+  private ins: Array<{ col: string; vals: unknown[] }> = [];
   private ors: string[] = [];
   // ACUMULA os order: o handler encadeia .order("sent_at").order("id") e o
   // desempate por id é o que segura a borda da página quando há sent_at igual.
@@ -113,6 +114,10 @@ class FakeQuery implements PromiseLike<Res> {
     this.eqs.push({ col, val });
     return this;
   }
+  in(col: string, vals: unknown[]): this {
+    this.ins.push({ col, vals });
+    return this;
+  }
   or(raw: string): this {
     this.ors.push(`(${splitTopLevel(raw).map(orNodeToSql).join(" or ")})`);
     return this;
@@ -129,6 +134,10 @@ class FakeQuery implements PromiseLike<Res> {
   private toSql(): string {
     const where = [
       ...this.eqs.map((f) => `${f.col} = ${sqlString(String(f.val))}`),
+      ...this.ins.map(
+        (f) =>
+          `${f.col} in (${f.vals.map((value) => sqlString(String(value))).join(", ")})`,
+      ),
       ...this.ors,
     ];
     let q = `select ${this.cols} from public.${this.table}`;

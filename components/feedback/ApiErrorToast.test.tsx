@@ -67,6 +67,33 @@ describe("ApiErrorToast", () => {
     );
   });
 
+  it("a recusa do motivo da perda é AVISO, não erro — e passa o texto da rota", () => {
+    // Recusa rotineira (o operador não escolheu a causa; o card volta e nada foi
+    // tocado) não é "algo quebrou". Vermelho aqui ensina a ignorar vermelho.
+    showApiError(
+      new ApiError(422, "lost_reason_required", undefined, "req-917", "Informe o motivo da perda."),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Informe o motivo da perda.",
+      expect.objectContaining({ description: "ID: req-917" }),
+    );
+  });
+
+  it("motivo fora do vocabulário do funil também é AVISO", () => {
+    showApiError(
+      new ApiError(
+        422,
+        "lost_reason_invalid",
+        undefined,
+        "req-918",
+        "Esse motivo de perda não está na lista deste funil — escolha um dos motivos configurados.",
+      ),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to toast.error for unknown ApiError code", () => {
     const err = new ApiError(418, "unknown_teapot_code", undefined, "req-2", "I'm a teapot");
     showApiError(err);

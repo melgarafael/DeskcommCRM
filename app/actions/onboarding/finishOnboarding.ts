@@ -45,6 +45,8 @@ export async function finishOnboarding(): Promise<FinishOnboardingResult> {
     await admin.from("event_log").insert({
       organization_id: ctx.orgId,
       event_type: "tenant.onboarded",
+      // NOT NULL sem default — ver `tests/unit/evento-de-publicacao-tem-dono.test.ts`.
+      entity_kind: "organization",
       payload: { completed_by: ctx.userId },
     });
 

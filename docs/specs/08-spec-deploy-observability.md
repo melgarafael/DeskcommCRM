@@ -21,6 +21,19 @@ referencias:
 
 > Documento transversal que rege topologia de produção, ambiente local, secrets, CI/CD, observability, alertas, runbooks, performance targets, disaster recovery e custo. Toda decisão arquitetural conflitante com este documento exige justificativa explícita no PRD/Spec de origem.
 
+> **Nota de 2026-09-17.** A topologia de infraestrutura descrita abaixo é a da fase em que o CRM
+> era hospedado num PaaS. O produto é self-host: `app`, `worker` e `scheduler` sobem como
+> contêineres na infraestrutura de quem instala (`docker-compose.prod.yml`), e o que o merge na
+> `main` dispara neste repositório é a publicação das imagens
+> (`.github/workflows/publish-image.yml`), não um deploy de aplicação. O que vale hoje para
+> produção está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md) e na seção "Packaging e
+> distribuição" do [`CLAUDE.md`](../../CLAUDE.md), com a lei completa em
+> [`docs/doctrine/packaging.md`](../doctrine/packaging.md). Leia como registro daquela fase toda
+> seção de infraestrutura abaixo que não disser, no próprio texto, o que vale hoje — várias já
+> foram trazidas para o presente e dizem isso onde estão. Uma ressalva é de escolha, não de
+> hospedagem: o provedor de modelos do §5.4 (Vercel AI Gateway) segue na Stack canônica do
+> [`CLAUDE.md`](../../CLAUDE.md) — ele serve a IA, não hospeda o CRM.
+
 ---
 
 ## 1. Visão Geral
@@ -33,21 +46,28 @@ referencias:
 - **Mean time to recovery (MTTR) ≤ 30 min** pros 6 incidentes mais frequentes documentados em runbooks.
 
 ### 1.2 Princípios não-negociáveis
-1. **Stateless app.** Nada de estado em filesystem do Vercel. Toda persistência vai pra Supabase, Storage, Upstash ou volume Docker do WAHA.
+1. **Stateless app.** Nada de estado no filesystem do app. Toda persistência vai pra Supabase, Storage, Upstash ou volume Docker do WAHA.
 2. **Trigger NUNCA faz HTTP.** Workers consomem `event_log` via Realtime/cron — herdado da referência.
 3. **Service role bypassa RLS — filtro manual obrigatório.** Em todo handler que usa admin client, `organization_id` é resolvido a partir de cookie/JWT/path token, NUNCA do body.
 4. **Encryption-at-rest separada por contexto.** Chaves distintas pra CPF, OAuth tokens Nuvemshop, e WAHA BYO API keys.
 5. **Backups verificados.** Restore drill trimestral em ambiente de staging; backup que não foi restaurado é teoria.
 6. **Logs estruturados em JSON.** Nada de `console.log("erro: " + e)`.
-7. **Deploy = git push.** Sem `vercel deploy` manual em produção. Tudo passa por main.
+7. **Nada de deploy manual.** Produção só recebe o que passou pela `main`.
 
 ### 1.3 Estados e ambientes
-| Ambiente | Branch | Domínio | Supabase | WAHA | Sentry env |
-|---|---|---|---|---|---|
-| Production | `main` | `app.deskcomm.com.br` + `admin.deskcomm.com.br` | projeto Pro `deskcomm-prod` | `waha.deskcomm.com.br` (Hostgator) | `production` |
-| Staging | `staging` | `staging.deskcomm.com.br` | projeto Free `deskcomm-staging` | `waha-staging.deskcomm.com.br` (Hostgator mesmo VPS, container separado) | `staging` |
-| Preview | qualquer PR | `*.vercel.app` | projeto Free `deskcomm-preview` (compartilhado) | mock/staging | `preview` |
-| Local dev | local | `localhost:3000` | `supabase start` (Docker) | `localhost:3000` (compose) | `development` |
+
+A tabela original amarrava branch, domínio e deploy de preview por PR à hospedagem num PaaS (ver a nota do topo). **Não há ambiente compartilhado de staging nem deploy de preview por PR neste repositório:** um PR é validado pelos checks do CI e pelo ambiente local.
+
+| Ambiente | Onde roda | WAHA | Sentry env |
+|---|---|---|---|
+| Produção | instalação em VPS (`install.sh` / `update.sh`; imagens publicadas pelo CI) | serviço `waha` do compose da instalação | `production` |
+| Local dev | `localhost:3000`; `supabase start` (Docker) | `localhost:3030` (serviço `waha` do `docker-compose.yml`, que publica `3030:3000`) | `development` |
+
+Para saber quais checks a `main` exige, pergunte à fonte em vez de a uma lista escrita:
+
+```bash
+gh api repos/<owner>/<repo>/branches/main/protection --jq '.required_status_checks.contexts|join(", ")'
+```
 
 ---
 
@@ -55,13 +75,15 @@ referencias:
 
 ### 2.1 Componentes
 
+> **Onde isto roda hoje:** o Next.js (frontend, Route Handlers `/api/v1/*` e os webhook receivers) roda no serviço `app`; os workers, no serviço `worker`; os crons, no serviço `scheduler` — os três do `docker-compose.prod.yml`, na infraestrutura de quem instala. O bloco abaixo é o registro da fase hospedada.
+
 #### Vercel (Next.js app + API + crons)
 - **Plano:** Pro ($20/mês/seat).
 - **Região:** `gru1` (São Paulo) prioritária; fallback `iad1`. Edge functions só onde latência precisa <50ms (rate-limit middleware).
 - **Hospeda:**
   - Next.js 14+ App Router (frontend `/`, super-admin `/admin`)
   - Route Handlers `/api/v1/*`
-  - 7 Vercel Crons (lista exaustiva em §5.3)
+  - Vercel Crons (ver §5.3)
   - Webhook receivers WAHA (`/api/webhooks/waha/[sessionId]`) e Nuvemshop (`/api/webhooks/nuvemshop/[event]`)
 - **Não hospeda:** workers de longa duração (>60s no Pro com Fluid Compute), processamento síncrono de mídia >25MB, base vetorial (vai pro Postgres com pgvector).
 
@@ -366,10 +388,9 @@ create extension if not exists btree_gin      with schema extensions;  -- tags i
 Configuração via Supabase Dashboard ou `supabase/config.toml`:
 ```toml
 [auth]
-site_url = "https://app.deskcomm.com.br"
+site_url = "https://<dominio-da-sua-instalacao>"
 additional_redirect_urls = [
-  "https://app.deskcomm.com.br/auth/callback",
-  "https://admin.deskcomm.com.br/auth/callback",
+  "https://<dominio-da-sua-instalacao>/auth/callback",
 ]
 jwt_expiry = 3600                          # 1h, refresh token rotation ativa
 refresh_token_rotation_enabled = true
@@ -511,22 +532,25 @@ Estratégia:
 
 Vars NUNCA commitadas: tudo prefixado `*_KEY`, `*_SECRET`, `*_TOKEN`, `DATABASE_URL`, `*_DSN`. Pre-commit gitleaks bloqueia (§7.5).
 
-### 5.3 Vercel Cron schedules (lista exaustiva)
+### 5.3 Crons — a lista vigente não mora neste documento
 
-| # | Path | Schedule (UTC) | Descrição | Owner PRD | Timeout |
-|---|---|---|---|---|---|
-| 1 | `/api/cron/recover-stuck-messages` | `*/5 * * * *` | Mensagens em `status='sending'` há >5min viram `failed` + alerta | 03 | 60s |
-| 2 | `/api/cron/sync-waha-sessions` | `*/2 * * * *` | Pull `GET /api/sessions` do WAHA e atualiza `channel_sessions.status` | 03 | 60s |
-| 3 | `/api/cron/process-pending-webhooks` | `*/1 * * * *` | Processa webhooks deduplicados com `status='pending'` (Nuvemshop + WAHA) | 03/06 | 60s |
-| 4 | `/api/cron/lgpd-sla-warning` | `0 9 * * *` | Alerta em `data_request` ainda não respondidas em D+5 | 06 | 60s |
-| 5 | `/api/cron/event-log-cleanup` | `0 3 * * *` | Move events >90d pra `event_log_archive`, depois pra S3 cold storage | 01 | 300s |
-| 6 | `/api/cron/nuvemshop-sync-incremental` | `*/15 * * * *` | Pull diff de orders/products desde último checkpoint | 06 | 300s |
-| 7 | `/api/cron/audit-log-archive` | `0 4 * * 0` | Semanal: comprime audit log antigo +18m e move pra S3 | 01 | 300s |
+São duas fontes espelhadas: `docker/scheduler/entrypoint.sh` (o serviço `scheduler` do compose, que é o caminho self-host) e `vercel.ts` na raiz (para quem hospeda a própria instalação na Vercel). `tests/unit/cron-routes-scheduled.test.ts` confere as duas uma contra a outra e contra o diretório `app/api/v1/cron/`, e reprova divergência. Para ver a lista de hoje:
+
+```bash
+grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u
+```
+
+Toda rota de cron aceita `Authorization: Bearer <segredo>`, conferido contra `INTERNAL_CRON_SECRET` e
+`INTERNAL_SECRET` — qualquer um dos dois que esteja preenchido serve. Parte delas usa o helper
+`autorizaCron()` (`lib/auth/cron-auth.ts`), que também aceita `x-cron-secret`; para ver quais,
+`grep -rl autorizaCron app/api/v1/cron/`. Em produção, se houver `CRON_SECRET` no ambiente, `lib/env.ts` o copia para
+`INTERNAL_CRON_SECRET` — **não** para `INTERNAL_SECRET`, que nunca é sobrescrito; é nas duas primeiras
+que se depura um 403 de cron.
 
 Cada cron handler:
-1. Valida header `Authorization: Bearer ${CRON_SECRET}` (Vercel injeta automático).
+1. Valida o header acima antes de qualquer trabalho — quem passa pelo `autorizaCron()` falha fechado quando nenhum segredo está configurado.
 2. Loga `event_log` row `cron.{name}.started` no início e `cron.{name}.completed` no fim, com `metadata.duration_ms` e `metadata.rows_processed`.
-3. Se falha: Sentry capture + `cron.{name}.failed` no event_log + retorno 500 (Vercel marca como failed, dashboard alerta).
+3. Se falha: Sentry capture + `cron.{name}.failed` no event_log + retorno 500.
 
 ### 5.4 AI Gateway integration
 
@@ -587,7 +611,7 @@ services:
       WAHA_DASHBOARD_ENABLED: "false"     # desabilita em prod
       WAHA_SWAGGER_ENABLED: "false"
       WHATSAPP_DEFAULT_ENGINE: NOWEB
-      WHATSAPP_HOOK_URL: https://app.deskcomm.com.br/api/webhooks/waha
+      WHATSAPP_HOOK_URL: https://<dominio-da-sua-instalacao>/api/webhooks/waha
       WHATSAPP_HOOK_EVENTS: "message.any,session.status,message.ack,call.received,group.v2.join,group.v2.leave"
       WHATSAPP_HOOK_HMAC_ALGORITHM: SHA512
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_WEBHOOK_HMAC_KEY}
@@ -886,20 +910,25 @@ repos:
 
 ## 8. CI/CD
 
-### 8.1 Vercel Git integration
-- GitHub repo conectado ao project Vercel via OAuth.
-- Trigger: push em `main` → deploy `Production`. Push em qualquer outra branch → `Preview`.
-- Deploy protection: branch `main` requer (a) PR aprovado, (b) checks verdes, (c) 1 reviewer mínimo.
+### 8.1 Integração com o GitHub
+- **Não há projeto de PaaS ligado a este repositório:** push e PR não disparam deploy de aplicação.
+- O que o merge na `main` dispara é `.github/workflows/publish-image.yml`, que constrói e publica as imagens `app`, `worker` e `scheduler` no GHCR; cada instalação puxa a imagem no próprio servidor.
+- Deploy protection: a `main` exige PR com checks verdes. Para ver quais são obrigatórios hoje:
+
+```bash
+gh api repos/<owner>/<repo>/branches/main/protection --jq '.required_status_checks.contexts'
+```
 
 ### 8.2 Preview deployments
-- 1 deploy por commit. URL `deskcomm-app-git-{branch}-{team}.vercel.app`.
-- Cada Preview cria uma branch Supabase (`supabase branch create --name preview-{pr}`) automaticamente via GitHub Action.
-- Comentário automático no PR com URL Preview + link Sentry environment.
 
-### 8.3 Rolling releases
-Vercel Pro com Skew Protection ativado garante que clients antigos não chamem API nova quebrada durante deploy. Toggle no Dashboard: **Settings → Deployment → Skew Protection** (max age 12h).
+Não existem neste repositório: não há URL de preview por commit, nem branch Supabase por PR, nem comentário automático com o link. Um PR é validado pelos checks do CI e pelo ambiente local — a receita de ambiente fresco está no [`CLAUDE.md`](../../CLAUDE.md), na doutrina de QA Visual. (Um fork que ligue o próprio projeto de hospedagem volta a ter preview; isso é configuração dele, não deste repositório.)
 
-Para rollback: `vercel rollback <previous-deployment-url>` ou via UI. Banco de dados não rollbacka — toda migration é forward-compatible (regra de ouro: nunca DROP COLUMN no mesmo PR que adiciona uso novo; espalhar em 2 PRs com 1 release no meio).
+### 8.3 Atualização e rollback
+
+Atualizar troca o contêiner do app. **Não há proteção de skew no self-host:** nada neste repositório
+força o cliente a recarregar quando a imagem muda, então uma aba já aberta segue com o bundle antigo
+até o próximo carregamento — bundle antigo chamando API nova continua sendo um risco de release aqui,
+não uma hipótese coberta pela plataforma. O rollback é de **imagem**, não de deploy — voltar `APP_IMAGE` (e `WORKER_IMAGE`/`SCHEDULER_IMAGE`) para a versão anterior no `.env` e subir de novo; é o que o `agent.sh` do kit faz sozinho quando a versão nova não sobe, reescrevendo o `.env` para a volta não ser desfeita no `up -d` seguinte. Banco de dados não rollbacka — toda migration é forward-compatible (regra de ouro: nunca DROP COLUMN no mesmo PR que adiciona uso novo; espalhar em 2 PRs com 1 release no meio).
 
 ### 8.4 Migrations runner (Supabase CLI no CI)
 

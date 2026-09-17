@@ -280,7 +280,12 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
         toast.error(json?.error?.message ? t(json.error.message) : t("não consegui salvar"));
         return;
       }
-      toast.success(`${t("O padrão agora é")} ${modelId}`);
+      // Sem catálogo sincronizado a rota grava, mas avisa que não deu para
+      // conferir o identificador. Engolir o aviso trocaria um "não salvou" por um
+      // "salvou" que só falha depois, em todo ponto herdado pelo padrão.
+      const avisos: string[] = json?.data?.avisos ?? [];
+      if (avisos.length > 0) avisos.forEach((a) => toast.warning(t(a)));
+      else toast.success(`${t("O padrão agora é")} ${modelId}`);
       await aoSalvar();
     } finally {
       setSalvando(false);
@@ -302,8 +307,9 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
             value={provider}
             onValueChange={(v) => {
               setProvider(v);
-              // Modelo de outro provedor não vale nada aqui: a rota confere o
-              // par (provider, model_id) no catálogo e devolveria 404.
+              // Modelo de outro provedor não vale nada aqui: com catálogo
+              // sincronizado a rota confere o par (provider, model_id) e
+              // devolveria 404.
               setModelId("");
             }}
           >
@@ -322,18 +328,44 @@ function CartaoDoPadrao({ dados, aoSalvar }: { dados: Dados; aoSalvar: () => Pro
 
         <div className="min-w-64">
           <Label className="text-xs">{t("Modelo")}</Label>
-          <Select value={modelId} onValueChange={setModelId}>
-            <SelectTrigger data-testid="padrao-modelo">
-              <SelectValue placeholder={t("escolha")} />
-            </SelectTrigger>
-            <SelectContent>
-              {modelosDoProvedor.map((m) => (
-                <SelectItem key={m.model_id} value={m.model_id}>
-                  {m.display_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/*
+            AQUI VALE A MESMA REGRA DO `CartaoDoPonto`, e pelo mesmo motivo: o
+            `baseline.sql` semeia `ai_models` só para anthropic/openai/google, e
+            os modelos da OpenRouter só chegam quando a sincronização do catálogo
+            roda. Numa instalação recém-feita — ou sem scheduler — o combo abria
+            com zero opções e o "Salvar padrão" ficava desabilitado, sem nenhum
+            caminho para gravar o modelo. Com o catálogo vazio o campo vira texto
+            livre, e a rota grava avisando que não deu para conferir o
+            identificador.
+          */}
+          {modelosDoProvedor.length === 0 ? (
+            <>
+              <Input
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                placeholder="ex.: meta-llama/llama-3.3-70b-instruct"
+                data-testid="padrao-modelo"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t(
+                  "O catálogo deste provedor ainda não foi baixado. Digite o identificador do modelo como o provedor o nomeia — a lista completa aparece sozinha depois da primeira sincronização.",
+                )}
+              </p>
+            </>
+          ) : (
+            <Select value={modelId} onValueChange={setModelId}>
+              <SelectTrigger data-testid="padrao-modelo">
+                <SelectValue placeholder={t("escolha")} />
+              </SelectTrigger>
+              <SelectContent>
+                {modelosDoProvedor.map((m) => (
+                  <SelectItem key={m.model_id} value={m.model_id}>
+                    {m.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {dados.podeEditar && (

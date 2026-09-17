@@ -1,6 +1,6 @@
 ---
 name: deskcomm-cliente-novo
-description: Guia para montar um cliente novo no DeskcommCRM por nicho — clínica, imobiliária, serviços/agência, curso/infoproduto, loja — criando os agentes de IA, roteadores, follow-ups, base de conhecimento, memória e funil, na ordem certa e pela tela. Use SEMPRE que alguém quiser "configurar o CRM para um cliente", "criar o agente da clínica", "montar o atendimento", "que prompt eu uso", "como faço o roteador/follow-up", "subir a base de conhecimento", ou terminou o onboarding e pergunta "e agora?" — inclusive agências implantando para terceiros. Faz a triagem, monta o pacote do nicho como texto pronto para colar e conduz tela a tela até o teste.
+description: 'Guia para montar um cliente novo no DeskcommCRM por nicho — clínica, imobiliária, serviços/agência, curso/infoproduto, loja — criando os agentes de IA, roteadores, follow-ups, base de conhecimento, memória e funil, na ordem certa e pela tela. Use SEMPRE que alguém quiser "configurar o CRM para um cliente", "criar o agente da clínica", "montar o atendimento", "que prompt eu uso", "como faço o roteador/follow-up", "subir a base de conhecimento", ou terminou o onboarding e pergunta "e agora?" — inclusive agências implantando para terceiros. Faz a triagem, monta o pacote do nicho como texto pronto para colar e conduz tela a tela até o teste.'
 metadata:
   publico: leigo, agência, implantador
   ponto-de-partida: depois do onboarding (o wizard para no funil e nos convites)

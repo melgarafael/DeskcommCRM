@@ -1,8 +1,9 @@
 /**
  * GET/POST /api/v1/cron/event-log-drain
  *
- * Vercel cron entry point for the generic event_log drain (Task 2, spec
- * webhooks/automação 2026-07-17). Each tick drains up to 50 `pending` rows
+ * Cron entry point for the generic event_log drain (Task 2, spec
+ * webhooks/automação 2026-07-17), scheduled by the `scheduler` service
+ * (`docker/scheduler/entrypoint.sh`). Each tick drains up to 50 `pending` rows
  * whose `event_type` has a handler registered via `ensureHandlersRegistered()`
  * — types drained by a dedicated cron (e.g. `ai_agent.dispatch_requested` →
  * agent-dispatcher) have no handler here and are left untouched.
