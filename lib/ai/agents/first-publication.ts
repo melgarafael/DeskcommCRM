@@ -1,5 +1,5 @@
 import { listSelectableChannels, type SelectableChannel } from "@/lib/channels/selectable";
-import { createAdminClient } from "@/lib/supabase/admin";
+import type { createAdminClient } from "@/lib/supabase/admin";
 import { capacidadesPadraoDoOnboarding } from "./capacidades-padrao";
 import { escolherModeloDoProvedor } from "./escolher-modelo";
 import { chaveDePlataforma } from "@/lib/ai/runtime/agent";
@@ -111,7 +111,11 @@ export async function publishFirstVersion(
     return { published: false, reason: "failed", message: mensagemDoErro(err) };
   }
   const canal = selection ? canais.find((c) => c.id === selection.channelId) : canais[0];
-  if (!canal) return { published: false, reason: "no_channel" };
+  // Reconciliação legado pede um canal concreto: sem ele não há o que
+  // republicar, e inventar um rascunho aqui misturaria dois fluxos. O
+  // onboarding (sem `selection`) segue mesmo sem canal — grava o rascunho
+  // configurado e só recusa colocar no atendimento.
+  if (selection && !canal) return { published: false, reason: "no_channel" };
 
   // Erro de leitura aqui NÃO pode virar "assume anthropic": publicar sem saber
   // qual provedor a instalação escolheu é exatamente o defeito de origem, com
@@ -279,7 +283,7 @@ export async function publishFirstVersion(
       credential_id: credentialId,
       tool_ids: selection ? [] : capacidadesPadraoDoOnboarding(),
       pipeline_ids: pipelineIds,
-      channel_session_id: canal.id,
+      channel_session_id: canal?.id ?? null,
       status: "draft",
       created_by: userId,
     })
@@ -308,6 +312,18 @@ export async function publishFirstVersion(
           ? "existing_version_requires_review"
           : (versionErr?.message ?? "version_insert_failed"),
     };
+
+  // O cartão lê `ai_agents.model`; o editor lê a versão. Gravar o id NU do
+  // catálogo aqui faz os dois mostrarem a mesma coisa. Falha neste UPDATE não
+  // desfaz o rascunho: a versão já é a fonte do ensaio.
+  await admin.from("ai_agents").update({ model: modelId }).eq("organization_id", orgId).eq("id", agent.id);
+
+  // Sem canal o rascunho existe e pode ser ensaiado no CRM. Publicar de
+  // verdade — `published_version_id` + runtime de atendimento — continua
+  // bloqueado. `no_channel` no audit é o mesmo desfecho de antes; o que
+  // mudou é que agora há versão para o editor hidratar e o ensaio executar.
+  if (!canal) return { published: false, reason: "no_channel" };
+
   const { data: current } = await admin
     .from("ai_agents")
     .select("published_version_id")

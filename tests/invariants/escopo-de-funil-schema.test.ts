@@ -44,7 +44,9 @@ beforeAll(async () => {
   );
   agente = a[0]!.id;
 
-  // `channel_session_id` é NOT NULL — a versão precisa de um canal.
+  // `channel_session_id` aceita NULL no rascunho sem canal. Publicar
+  // continua exigindo sessão: `fn_publish_ai_agent_version` não encontra a
+  // linha e levanta `channel_session_not_found`.
   const { rows: cs } = await pool.query<{ id: string }>(
     `insert into channel_sessions (organization_id, waha_session_name, display_name, webhook_secret_encrypted)
      values ($1, 'escopo-funil-session', 'Canal do escopo', decode('00','hex')) returning id`,

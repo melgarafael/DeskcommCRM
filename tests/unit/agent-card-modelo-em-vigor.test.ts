@@ -78,6 +78,12 @@ describe("modelo mostrado no cartão do agente", () => {
     expect(modeloEmVigor(a)).toBe("anthropic · claude-sonnet-4-6");
   });
 
+  it("mcp_agent com cadastro prefixado mostra o id nu, igual ao editor", () => {
+    expect(
+      modeloEmVigor(agente({ kind: "mcp_agent", model: "anthropic/claude-sonnet-4-6" })),
+    ).toBe("claude-sonnet-4-6");
+  });
+
   it("agente sem modelo nenhum não inventa um", () => {
     expect(modeloEmVigor(agente({ model: "" }))).toBe("—");
   });

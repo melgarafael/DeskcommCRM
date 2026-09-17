@@ -78,9 +78,9 @@ function semear(): void {
         ('eeee1111-0000-4000-8000-000000000003', '${ORG_ARQ}', 'Arquivado', 'p', true)
       on conflict do nothing;
 
-    -- ai_agent_versions.channel_session_id é NOT NULL: a versão publicada
-    -- carrega o canal por onde ela fala. O engine é justamente quem age por
-    -- canal, então o dublê tem de ter a linha de verdade.
+    -- ai_agent_versions.channel_session_id aceita NULL no rascunho; a versão
+    -- publicada carrega o canal por onde ela fala. O engine é quem age por
+    -- canal, então o dublê da publicada tem de ter a linha de verdade.
     do $eng$ begin
       insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
         values

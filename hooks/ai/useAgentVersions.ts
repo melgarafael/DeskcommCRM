@@ -15,7 +15,7 @@ export interface AgentVersionRow {
   credential_id: string;
   tool_ids: string[];
   trigger_config: Record<string, unknown> | null;
-  channel_session_id: string;
+  channel_session_id: string | null;
   max_steps: number;
   token_budget: number;
   cost_budget_cents: number;

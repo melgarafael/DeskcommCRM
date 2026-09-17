@@ -103,4 +103,10 @@ describe("versionCreateSchema aceita as flags por-agente que a tela edita", () =
     expect(parsed.success && parsed.data.split_messages).toBe(false);
     expect(parsed.success && parsed.data.split_max_chars).toBe(600);
   });
+
+  it("aceita rascunho sem canal — channel_session_id nulo", () => {
+    const parsed = versionCreateSchema.safeParse({ ...base, channel_session_id: null });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.channel_session_id).toBeNull();
+  });
 });

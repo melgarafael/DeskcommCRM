@@ -49,7 +49,12 @@ export function modeloEmVigor(agent: AgentRow): string {
   if (cadastro === "") return "—";
   if (!cadastro.includes("/")) return cadastro;
   const [provedor, ...resto] = cadastro.split("/");
-  return `${provedor} · ${resto.join("/")}`;
+  const idNu = resto.join("/");
+  // mcp_agent do onboarding nasce com `anthropic/claude-sonnet-4-6` (default
+  // do schema). O editor hidrata o id nu; o cartão tem de mostrar o mesmo,
+  // senão a lista mente sobre o que a tela de edição abre.
+  if (agent.kind !== "rag_bot") return idNu || cadastro;
+  return `${provedor} · ${idNu}`;
 }
 
 export function AgentCard({ agent, canWrite }: Props) {

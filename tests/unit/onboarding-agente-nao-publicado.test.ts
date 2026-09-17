@@ -554,7 +554,12 @@ describe("onboarding: publicação impossível não pode terminar em silêncio",
     // Quem pulou o WhatsApp não tem número — tratar isso como erro seria mentir
     // sobre um caminho normal. É o `failed` do teste anterior que é diferente.
     expect(res).toBe("redirecionou");
-    expect(estado.versoes).toHaveLength(0);
+    expect(estado.versoes).toHaveLength(1);
+    expect(estado.versoes[0]).toMatchObject({
+      status: "draft",
+      channel_session_id: null,
+    });
+    expect(estado.agentes[0]?.published_version_id).toBeNull();
     expect(estado.eventos[0]?.payload).toMatchObject({ published: false });
   });
 

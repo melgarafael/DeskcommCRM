@@ -57,8 +57,8 @@ interface AgenteDoOnboarding {
  * saber" são desfechos SEPARADOS.
  *
  * `no_channel` é um estado CONHECIDO do produto: quem pulou o WhatsApp não tem
- * número, a versão exige `channel_session_id`, e o agente fica rascunho de
- * propósito (a lista de agentes já mostra "Rascunho"). `failed` é o estado
+ * número, a 1ª versão nasce em rascunho com `channel_session_id` nulo, e o
+ * agente NÃO entra em atendimento (a lista já mostra "Rascunho"). `failed` é o estado
  * DESCONHECIDO: a consulta não respondeu, então não se sabe se há canal.
  * Colapsar os dois no mesmo `return` seria engolir erro — e engolir erro aqui
  * significa terminar o onboarding com um agente mudo sem ninguém saber por quê.

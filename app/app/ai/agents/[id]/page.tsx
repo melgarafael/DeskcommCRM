@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
+import type { ModelOption } from "./_components/ModelPicker";
 
 import { LegacyRecovery } from "./_components/LegacyRecovery";
 import { AgentOperation } from "./_components/AgentOperation";
@@ -68,7 +69,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
   const readOnly = ROLE_RANK[activeOrg.role] < ROLE_RANK.admin;
 
   // mcp_agent: busca versions + lookups.
-  const [versionsRes, credentialsRes, channelSessions, routerMemberRes, funisRes, acervoRes] =
+  const [versionsRes, credentialsRes, channelSessions, routerMemberRes, funisRes, acervoRes, catalogoRes] =
     await Promise.all([
       supabase
         .from("ai_agent_versions")
@@ -106,11 +107,33 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         .eq("organization_id", activeOrg.orgId)
         .eq("is_active", true)
         .order("created_at", { ascending: true }),
+      // O catálogo vem com a página para o seletor de modelo não pintar
+      // "nenhum disponível" no primeiro GET, que neste editor coincidia com a
+      // compilação da rota e estourava o timeout de 10s do cliente.
+      supabase
+        .from("ai_models")
+        .select("provider, model_id, display_name, context_window, is_default_for_provider")
+        .is("deprecated_at", null),
     ]);
 
   const versions = (versionsRes.data ?? []) as unknown as AgentVersionRow[];
   const funis = (funisRes.data ?? []) as unknown as FunilDaResposta[];
   const materiaisVivos = (acervoRes.data ?? []) as unknown as MaterialDoAcervo[];
+  const catalogo = ((catalogoRes.data ?? []) as Array<{
+    provider: string;
+    model_id: string;
+    display_name: string | null;
+    context_window: number | null;
+    is_default_for_provider: boolean | null;
+  }>).map(
+    (m): ModelOption => ({
+      provider: m.provider as ModelOption["provider"],
+      model_id: m.model_id,
+      display_name: m.display_name ?? m.model_id,
+      context_window: m.context_window,
+      is_default_for_provider: Boolean(m.is_default_for_provider),
+    }),
+  );
 
   // Quanto de cada funil o assistente sabe percorrer (spec 17 passo 4). Vem
   // junto com a página porque a lacuna precisa aparecer no MESMO lugar em que o
@@ -196,6 +219,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         versions={versions}
         credentials={credentials}
         provedoresDaInstalacao={provedoresDaInstalacao()}
+        catalogo={catalogo}
         channelSessions={channelSessions}
         funis={funis}
         cobertura={cobertura}

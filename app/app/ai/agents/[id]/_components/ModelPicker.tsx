@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PROVEDORES } from "@/lib/ai/pontos/provedores";
+import type { PROVEDORES } from "@/lib/ai/pontos/provedores";
 import { useT } from "@/hooks/i18n/useT";
 
 /**
@@ -42,36 +43,83 @@ interface Props {
    * modelo que conversa", e chamar isso de "Selecione um modelo" mentiria.
    */
   placeholder?: string;
+  /**
+   * Catálogo já lido no servidor. Sem isto, o primeiro GET no cliente coincidia
+   * com a compilação da rota (medido: 10.3s) e o timeout de 10s do `apiClient`
+   * pintava "Nenhum modelo disponível" numa lista que existia.
+   *
+   * `undefined` = a página não pré-buscou, o cliente busca.
+   * array (inclusive vazio) = o servidor já olhou; vazio é catálogo vazio de
+   * verdade, não erro.
+   */
+  modelsFromServer?: ModelOption[];
 }
 
 interface ApiResponse {
   data: { models: ModelOption[] };
 }
 
-export function ModelPicker({ provider, value, onChange, disabled, id, placeholder }: Props) {
+export function ModelPicker({
+  provider,
+  value,
+  onChange,
+  disabled,
+  id,
+  placeholder,
+  modelsFromServer,
+}: Props) {
   const t = useT();
+  const doServidor = React.useMemo(
+    () => modelsFromServer?.filter((m) => m.provider === provider),
+    [modelsFromServer, provider],
+  );
+
   const query = useQuery({
     queryKey: ["ai", "providers", provider, "models"],
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse>(`/api/v1/ai/providers/${provider}/models`);
-      return res.data.models;
+      return res.data.models ?? [];
     },
-    staleTime: 60_000,
+    initialData: doServidor,
+    // Lista pré-buscada não dispara GET no primeiro paint. `refetch()` do
+    // botão "Tentar novamente" ignora `enabled`.
+    enabled: doServidor === undefined,
+    staleTime: doServidor !== undefined ? Infinity : 60_000,
   });
 
   const models = query.data ?? [];
+  const carregando = query.isLoading && doServidor === undefined;
+  const falhou = query.isError && models.length === 0;
 
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>{t("Modelo")}</Label>
-      {models.length === 0 && !query.isLoading ? (
-        <Input
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value, { contextWindow: null })}
-          placeholder={t("Digite o identificador do modelo")}
-          disabled={disabled}
-        />
+      {falhou ? (
+        <div data-testid="model-picker-status" className="flex items-center gap-2">
+          <p className="text-xs text-destructive">{t("Não consegui carregar os modelos.")}</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-0 text-xs"
+            onClick={() => void query.refetch()}
+          >
+            {t("Tentar novamente")}
+          </Button>
+        </div>
+      ) : models.length === 0 && !carregando ? (
+        <>
+          <Input
+            id={id}
+            value={value}
+            onChange={(e) => onChange(e.target.value, { contextWindow: null })}
+            placeholder={t("Digite o identificador do modelo")}
+            disabled={disabled}
+          />
+          <p data-testid="model-picker-status" className="text-xs text-muted-foreground">
+            {t("O catálogo deste provedor está vazio.")}
+          </p>
+        </>
       ) : (
         <Select
           value={value || undefined}
@@ -79,12 +127,12 @@ export function ModelPicker({ provider, value, onChange, disabled, id, placehold
             const m = models.find((m) => m.model_id === v);
             onChange(v, { contextWindow: m?.context_window ?? null });
           }}
-          disabled={disabled || query.isLoading}
+          disabled={disabled || carregando}
         >
           <SelectTrigger id={id}>
             <SelectValue
               placeholder={
-                query.isLoading ? t("Carregando…") : (placeholder ?? t("Selecione um modelo"))
+                carregando ? t("Carregando…") : (placeholder ?? t("Selecione um modelo"))
               }
             />
           </SelectTrigger>
@@ -98,18 +146,30 @@ export function ModelPicker({ provider, value, onChange, disabled, id, placehold
           </SelectContent>
         </Select>
       )}
+      {carregando ? (
+        <p data-testid="model-picker-status" className="text-xs text-muted-foreground">
+          {t("Carregando…")}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-export function useModelMeta(provider: Provider, modelId: string): ModelOption | null {
+export function useModelMeta(
+  provider: Provider,
+  modelId: string,
+  modelsFromServer?: ModelOption[],
+): ModelOption | null {
+  const doServidor = modelsFromServer?.filter((m) => m.provider === provider);
   const query = useQuery({
     queryKey: ["ai", "providers", provider, "models"],
     queryFn: async () => {
       const res = await apiClient.get<ApiResponse>(`/api/v1/ai/providers/${provider}/models`);
-      return res.data.models;
+      return res.data.models ?? [];
     },
-    staleTime: 60_000,
+    initialData: doServidor,
+    enabled: doServidor === undefined,
+    staleTime: doServidor !== undefined ? Infinity : 60_000,
   });
   return (query.data ?? []).find((m) => m.model_id === modelId) ?? null;
 }

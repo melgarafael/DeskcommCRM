@@ -16,7 +16,12 @@ type Row = Record<string, unknown> & { id: string };
 function database(existing: Row[] = []) {
   const versions = structuredClone(existing);
   const legacyConfig = { rag_top_k: 9, guardrails: { enabled: true }, active_kb_version_id: 'kb-original' };
-  const agent = { id: agentId, published_version_id: null as string | null, config: legacyConfig };
+  const agent = {
+    id: agentId,
+    published_version_id: null as string | null,
+    config: legacyConfig,
+    model: null as string | null,
+  };
   const mutations: Array<{ table: string; values: Record<string, unknown> }> = [];
   const admin = { from(table: string) {
     const filters: Record<string, unknown> = {};
@@ -52,6 +57,10 @@ function database(existing: Row[] = []) {
       limit: (_count: number) => builder,
       order: (_key: string) => builder,
       insert: (values: Record<string, unknown>) => { inserted = values; return builder; },
+      update: (values: Record<string, unknown>) => {
+        if (table === 'ai_agents') Object.assign(agent, values);
+        return builder;
+      },
       single: async () => result(), maybeSingle: async () => result(),
       then: <T>(resolve: (value: ReturnType<typeof result>) => T) => Promise.resolve(result()).then(resolve),
     };
@@ -118,5 +127,39 @@ describe('primeira publicação e retomada segura da reconciliação', () => {
     expect(await publish(db)).toEqual({ published: true });
     expect(mocks.publish).toHaveBeenCalledOnce();
     expect(db.versions).toHaveLength(1);
+  });
+
+  it('sem canal grava rascunho configurado e não publica', async () => {
+    mocks.channels.mockResolvedValue([]);
+    const db = database();
+    expect(
+      await publishFirstVersion(
+        db.admin as never,
+        org,
+        { id: agentId, published_version_id: null },
+        'PROMPT ORIGINAL',
+        user,
+      ),
+    ).toEqual({ published: false, reason: 'no_channel' });
+    expect(db.versions).toHaveLength(1);
+    expect(db.versions[0]).toMatchObject({
+      status: 'draft',
+      channel_session_id: null,
+      provider: 'anthropic',
+      model: 'model-A',
+      system_prompt: 'PROMPT ORIGINAL',
+      provisioning_origin: 'onboarding',
+    });
+    expect(mocks.publish).not.toHaveBeenCalled();
+    expect(db.agent.published_version_id).toBeNull();
+    expect(db.agent.model).toBe('model-A');
+  });
+
+  it('no_channel na reconciliação legado não inventa rascunho', async () => {
+    mocks.channels.mockResolvedValue([]);
+    const db = database();
+    expect(await publish(db)).toEqual({ published: false, reason: 'no_channel' });
+    expect(db.versions).toHaveLength(0);
+    expect(mocks.publish).not.toHaveBeenCalled();
   });
 });

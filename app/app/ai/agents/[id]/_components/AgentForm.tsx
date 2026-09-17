@@ -38,7 +38,7 @@ import Link from "next/link";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 
-import { ModelPicker, useModelMeta } from "./ModelPicker";
+import { ModelPicker, useModelMeta, type ModelOption } from "./ModelPicker";
 import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { bloqueioDePublicacao } from "@/lib/ai/agents/bloqueio-de-publicacao";
@@ -66,6 +66,10 @@ import {
   agentMcpCreateSchema,
   agentMcpPatchSchema,
 } from "@/lib/ai/agents/validation";
+import {
+  escolherCredencialParaEditor,
+  escolherModeloParaEditor,
+} from "@/lib/ai/agents/hidratar-editor";
 import type { SelectableChannel as ChannelSessionLite } from "@/lib/channels/selectable";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
@@ -101,6 +105,11 @@ interface BaseProps {
    * conseguia salvar nada.
    */
   provedoresDaInstalacao?: string[];
+  /**
+   * Catálogo ativo pré-buscado no servidor. Sem isto o seletor de modelo
+   * pinta "vazio" no primeiro GET lento. Ver `ModelPicker`.
+   */
+  catalogo?: ModelOption[];
   channelSessions: ChannelSessionLite[];
   routerMembership?: { routerId: string; routerName: string } | null;
   readOnly?: boolean;
@@ -207,17 +216,32 @@ function buildState(args: {
   agent?: AgentRow;
   version: AgentVersionRow | null;
   t: (texto: string) => string;
+  catalogo?: ModelOption[];
+  credentials?: CredentialRow[];
 }): FormState {
-  const { agent, version, t } = args;
+  const { agent, version, t, catalogo = [], credentials = [] } = args;
+  const provider = (version?.provider as Provider) ?? "anthropic";
   return {
     name: agent?.name ?? "",
     description: agent?.description ?? "",
     priority: agent?.priority ?? 0,
-    provider: (version?.provider as Provider) ?? "anthropic",
-    model: version?.model ?? "",
+    provider,
+    model: escolherModeloParaEditor({
+      versionModel: version?.model,
+      cadastroModel: agent?.model,
+      provider,
+      catalogo,
+    }),
     // `null` gravado = a versão usa a chave da instalação. Sem esta tradução,
     // reabrir o agente mostraria o campo em branco e pediria para escolher de novo.
-    credential_id: version ? (version.credential_id ?? CHAVE_DA_INSTALACAO) : "",
+    // Sem versão, uma única credencial ativa e validada do provedor é pré-escolhida.
+    credential_id: escolherCredencialParaEditor({
+      versionExists: Boolean(version),
+      versionCredentialId: version?.credential_id,
+      tokenInstalacao: CHAVE_DA_INSTALACAO,
+      provider,
+      credenciais: credentials,
+    }),
     channel_session_id: version?.channel_session_id ?? "",
     // O DEFAULT vira o prompt real do agente se ninguém editar — por isso é
     // traduzido de verdade (não só a interface): em espanhol ele instrui a IA
@@ -322,9 +346,20 @@ export function AgentForm(props: Props) {
       // O fallback existe para chamadores que ainda não a passam; sem ele, um
       // agente pausado abriria no texto padrão e o prompt "sumiria".
       const ref = props.base ?? props.draft ?? props.published;
-      return buildState({ agent: props.agent, version: ref, t });
+      return buildState({
+        agent: props.agent,
+        version: ref,
+        t,
+        catalogo: props.catalogo,
+        credentials: props.credentials,
+      });
     }
-    return buildState({ version: null, t });
+    return buildState({
+      version: null,
+      t,
+      catalogo: props.catalogo,
+      credentials: props.credentials,
+    });
   }, [isEdit, props, t]);
 
   const [form, setForm] = React.useState<FormState>(baseline);
@@ -346,13 +381,27 @@ export function AgentForm(props: Props) {
 
   // Quando provider muda, limpa credential e modelo (eles dependem do provider).
   function changeProvider(p: Provider) {
-    patch({ provider: p, credential_id: "", model: "" });
+    patch({
+      provider: p,
+      model: escolherModeloParaEditor({
+        versionModel: "",
+        cadastroModel: "",
+        provider: p,
+        catalogo: props.catalogo ?? [],
+      }),
+      credential_id: escolherCredencialParaEditor({
+        versionExists: false,
+        tokenInstalacao: CHAVE_DA_INSTALACAO,
+        provider: p,
+        credenciais: props.credentials,
+      }),
+    });
   }
 
   const cred = findCredential(props.credentials, form.credential_id);
   const credSt = cred ? credentialStatus(cred) : null;
   const channelSession = props.channelSessions.find((c) => c.id === form.channel_session_id);
-  const modelMeta = useModelMeta(form.provider, form.model);
+  const modelMeta = useModelMeta(form.provider, form.model, props.catalogo);
 
   // ---------------------------------------------------------------------
   // Validação (espelha versionCreateSchema, no client; server revalida).
@@ -415,7 +464,7 @@ export function AgentForm(props: Props) {
       }
     }
     return errors;
-  }, [form, t]);
+  }, [form, t, props.provedoresDaInstalacao]);
 
   const isValid = Object.keys(validation).length === 0;
 
@@ -606,6 +655,11 @@ export function AgentForm(props: Props) {
           {isEdit && props.agent.description ? (
             <p className="text-xs text-muted-foreground">{props.agent.description}</p>
           ) : null}
+          {!form.channel_session_id ? (
+            <p data-testid="aviso-rascunho-sem-canal" className="mt-1 text-xs text-muted-foreground">
+              {t("Você pode testar este agente aqui. Para atender clientes, conecte um canal.")}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -618,7 +672,21 @@ export function AgentForm(props: Props) {
               {t("Descartar alterações")}
             </Button>
           ) : null}
-          <Button onClick={handleSave} disabled={(!dirty && isEdit) || disabled || !isValid}>
+          <Button
+            onClick={handleSave}
+            disabled={
+              // Sem versão ainda, o save GRAVA o rascunho hidratado do cadastro
+              // — exigir "sujeira" obrigaria a pessoa a mexer num campo só para
+              // o primeiro INSERT acontecer.
+              (isEdit &&
+                Boolean(
+                  (props.mode === "edit" && (props.draft || props.published || props.base)),
+                ) &&
+                !dirty) ||
+              disabled ||
+              !isValid
+            }
+          >
             {saving ? t("Salvando…") : isEdit ? t("Salvar rascunho") : t("Criar agente")}
           </Button>
           {isEdit ? (
@@ -713,6 +781,7 @@ export function AgentForm(props: Props) {
           onToolIdsChange={(ids) => patch({ operator_tool_ids: ids })}
           modeloDoConversador={form.model}
           disabled={disabled}
+          modelsFromServer={props.catalogo}
         />
       ) : null}
 
@@ -822,6 +891,7 @@ export function AgentForm(props: Props) {
               onChange={(modelId) => patch({ model: modelId })}
               disabled={disabled}
               id="model"
+              modelsFromServer={props.catalogo}
             />
             {validation.model ? (
               <p className="text-xs text-destructive">{validation.model}</p>

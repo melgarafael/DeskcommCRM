@@ -868,7 +868,7 @@ export type Database = {
           provisioning_origin?: string | null
           agent_id: string
           cases_enabled?: boolean
-          channel_session_id: string | null
+          channel_session_id?: string | null
           cost_budget_cents?: number
           created_at?: string
           created_by?: string | null

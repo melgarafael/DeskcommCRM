@@ -6,6 +6,7 @@ import * as React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/hooks/i18n/useT";
 import { AgentForm, type ChannelSessionLite } from "./AgentForm";
+import type { ModelOption } from "./ModelPicker";
 import type { CoberturaPorFunil } from "./FunisDoAgente";
 import type { MaterialDoAcervo } from "./BasesDoAgente";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
@@ -35,6 +36,7 @@ interface Props {
   credentials: CredentialRow[];
   /** Provedores cuja chave veio na instalação — ver `AgentForm`. */
   provedoresDaInstalacao?: string[];
+  catalogo?: ModelOption[];
   channelSessions: ChannelSessionLite[];
   routerMembership?: { routerId: string; routerName: string } | null;
   readOnly?: boolean;
@@ -74,6 +76,7 @@ export function AgentTabs(props: Props) {
           draftObsoleto={props.draftObsoleto}
           credentials={props.credentials}
           provedoresDaInstalacao={props.provedoresDaInstalacao}
+          catalogo={props.catalogo}
           channelSessions={props.channelSessions}
           funis={props.funis}
           cobertura={props.cobertura}

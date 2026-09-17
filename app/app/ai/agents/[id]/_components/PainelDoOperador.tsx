@@ -22,7 +22,7 @@ import { useT } from "@/hooks/i18n/useT";
 
 import { useOperatorMetrics } from "@/hooks/ai/useOperatorMetrics";
 
-import { ModelPicker } from "./ModelPicker";
+import { ModelPicker, type ModelOption } from "./ModelPicker";
 import { ToolPicker } from "./ToolPicker";
 import type { Provider } from "@/hooks/ai/useCredentials";
 
@@ -38,6 +38,7 @@ interface Props {
   /** o modelo do Conversador, para dizer o que "herdar" significa na prática. */
   modeloDoConversador: string;
   disabled?: boolean;
+  modelsFromServer?: ModelOption[];
 }
 
 /**
@@ -183,6 +184,7 @@ export function PainelDoOperador(props: Props) {
                   ? t("A mesma que conversa")
                   : `${t("A mesma que conversa")} (${props.modeloDoConversador})`
               }
+              modelsFromServer={props.modelsFromServer}
             />
             {/*
               O caminho de VOLTA. Um Select não consegue oferecer "nenhum" como
