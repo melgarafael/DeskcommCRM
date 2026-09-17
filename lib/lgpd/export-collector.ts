@@ -197,6 +197,43 @@ export interface AppointmentNoticeRow {
   resolved_at: string | null;
 }
 
+/**
+ * Resposta coletada por um fluxo de atendimento (migration 0236). É dado do
+ * titular. A cascata de anonimização (0240) apaga `completion_note` e a trilha;
+ * o que se apaga a pedido tem de ser entregue a pedido.
+ */
+export interface FlowDataRow {
+  id: string;
+  flow_pointer_id: string;
+  field_key: string;
+  value: string | null;
+  value_json: unknown;
+  source: string;
+  collected_at: string;
+}
+
+/** Execução de fluxo do titular (migration 0239) — trilha + síntese. */
+export interface FlowEnrollmentRow {
+  id: string;
+  pointer_id: string;
+  status: string;
+  outcome: string | null;
+  completion_note: string | null;
+  started_at: string;
+  completed_at: string | null;
+}
+
+/** Evento da trilha de uma execução de fluxo (migration 0239). */
+export interface FlowEventRow {
+  id: string;
+  enrollment_id: string;
+  flow_pointer_id: string;
+  kind: string;
+  field_key: string | null;
+  payload: unknown;
+  created_at: string;
+}
+
 export interface ExportPayload {
   request_id: string;
   organization_id: string;
@@ -226,6 +263,9 @@ export interface ExportPayload {
   audit_log_extract: AuditRow[];
   meeting_deliveries: MeetingDeliveryRow[];
   appointment_notices: AppointmentNoticeRow[];
+  flow_data?: FlowDataRow[];
+  flow_enrollments?: FlowEnrollmentRow[];
+  flow_events?: FlowEventRow[];
   reply_drafts?: Array<{
     id: string;
     status: string;
@@ -605,6 +645,64 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Fluxo de atendimento — respostas (0236), execuções e trilha (0239).
+  //
+  // A 0240 fez a cascata alcançar `completion_note` e a trilha; este bloco paga
+  // a outra metade: o titular recebe o que se apaga. Achado pelo gate
+  // `tests/unit/lgpd-exporta-o-que-redige.test.ts`.
+  let flow_data: FlowDataRow[] = [];
+  let flow_enrollments: FlowEnrollmentRow[] = [];
+  let flow_events: FlowEventRow[] = [];
+  if (contactId) {
+    const dados = await admin
+      .from("contact_flow_data")
+      .select("id, flow_pointer_id, field_key, value, value_json, source, collected_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("collected_at", { ascending: false })
+      .limit(500);
+    if (dados.error) {
+      logger.warn("[lgpd-export-worker] flow data load failed", {
+        request_id: requestId,
+        error: dados.error.message,
+      });
+    } else if (dados.data) {
+      flow_data = dados.data;
+    }
+
+    const execucoes = await admin
+      .from("followup_enrollments")
+      .select("id, pointer_id, status, outcome, completion_note, started_at, completed_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("started_at", { ascending: false })
+      .limit(500);
+    if (execucoes.error) {
+      logger.warn("[lgpd-export-worker] flow enrollments load failed", {
+        request_id: requestId,
+        error: execucoes.error.message,
+      });
+    } else if (execucoes.data) {
+      flow_enrollments = execucoes.data;
+    }
+
+    const trilha = await admin
+      .from("contact_flow_events")
+      .select("id, enrollment_id, flow_pointer_id, kind, field_key, payload, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (trilha.error) {
+      logger.warn("[lgpd-export-worker] flow events load failed", {
+        request_id: requestId,
+        error: trilha.error.message,
+      });
+    } else if (trilha.data) {
+      flow_events = trilha.data;
+    }
+  }
+
   // Audit log extract (best-effort: rows where metadata.contact_id matches).
   let audit_log_extract: AuditRow[] = [];
   if (contactId) {
@@ -757,6 +855,9 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     reply_drafts,
     meeting_deliveries,
     appointment_notices,
+    flow_data,
+    flow_enrollments,
+    flow_events,
   };
 }
 
@@ -787,5 +888,8 @@ function emptyPayload(
     audit_log_extract: [],
     meeting_deliveries: [],
     appointment_notices: [],
+    flow_data: [],
+    flow_enrollments: [],
+    flow_events: [],
   };
 }

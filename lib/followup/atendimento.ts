@@ -746,6 +746,32 @@ export async function finalizarFluxoDeAtendimento(
     payload: args.payload ?? { nota },
   }).catch(() => {});
 
+  // Síntese NATURAL (modelo) do que foi coletado. O motor garante a nota
+  // determinística acima; o job `flow_summary` a enriquece quando o modelo
+  // responde (e só então sobrescreve). Best-effort e DEDUPLICADO: não enfileira
+  // um segundo job enquanto houver um vivo para esta execução.
+  try {
+    await db.query(
+      `insert into job_queue (organization_id, contact_id, kind, payload)
+       select $1, $2, 'flow_summary', $3::jsonb
+        where not exists (
+          select 1 from job_queue
+           where organization_id = $1
+             and kind = 'flow_summary'
+             and status in ('pending', 'running')
+             and payload->>'enrollment_id' = $4
+        )`,
+      [
+        args.organizationId,
+        estado.enrollment.contact_id,
+        JSON.stringify({ enrollment_id: estado.enrollment.id }),
+        estado.enrollment.id,
+      ],
+    );
+  } catch {
+    // best-effort: sem o job, a nota determinística já cobre a continuação.
+  }
+
   let proximoEnrollmentId: string | null = null;
   // Autoencadeamento (fluxo → ele mesmo) é ignorado: seria um laço sem fim. Um
   // vínculo A→B→A é configuração do dono e só avança um passo por turno.

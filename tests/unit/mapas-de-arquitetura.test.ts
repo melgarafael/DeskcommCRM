@@ -178,6 +178,7 @@ describe("o mapa do turno conhece todos os turnos", () => {
   const NAO_SAO_TURNO: Record<string, string> = {
     watchdog: "vigia sessões e não roda modelo — não é turno de agente",
     flywheel: "ciclo de auto-aprimoramento, tem mapa próprio (flywheel)",
+    flow_summary: "sintetiza o fluxo de atendimento concluído; não responde ao cliente",
   };
 
   it("cada kind de turno aparece como peça ou tag do mapa do turno", () => {

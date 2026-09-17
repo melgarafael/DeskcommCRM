@@ -294,6 +294,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
       "As retomadas saem todas no mesmo horário fixo, sem respeitar o ritmo de cada cliente.",
     registraEm: "llm_calls",
   },
+  {
+    id: "flow_summary",
+    rotulo: "Resumir o fluxo de atendimento",
+    oQueFaz:
+      "Ao concluir um fluxo de perguntas, escreve a síntese do que o cliente respondeu — é o que o próximo passo da venda lê para não reperguntar.",
+    papel: "lembrar",
+    exige: {},
+    emissor: "lib/agent-engine/agent/flow-summary.ts",
+    sintomaDeFalha:
+      "A retomada da venda volta a perguntar o que o cliente já respondeu (fica só a síntese automática, sem o texto natural).",
+    registraEm: "llm_calls",
+  },
 
   // ────────────────────────── Proteger a operação ──────────────────────────
   {
