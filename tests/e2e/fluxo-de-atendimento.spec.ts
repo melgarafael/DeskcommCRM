@@ -74,4 +74,42 @@ test.describe("fluxos de atendimento — tela, guia e editor", () => {
     await expect(page.getByText("Skill", { exact: true })).toBeVisible();
     await page.screenshot({ path: "test-results/fluxo-atendimento-02-editor.png", fullPage: true });
   });
+
+  /**
+   * Fase 3 — encadeamento da venda: o nó Fim passa a oferecer "Iniciar outro
+   * fluxo de atendimento" e, escolhida a opção, o seletor do próximo fluxo. A
+   * prova é de UI (o runtime é o teste ao vivo); `followup-builder.spec.ts` cobre
+   * o resto do editor.
+   */
+  test("o nó Fim oferece encadear outro fluxo e revela o seletor do próximo", async ({ page }) => {
+    await login(page, creds.users.manager!.email);
+
+    await page.goto("/app/ai/atendimento");
+    const nome = `E2E Encadear ${Date.now()}`;
+    await page.getByRole("button", { name: "Novo fluxo de atendimento" }).click();
+    await page.locator("#flow-name").fill(nome);
+    await page.getByRole("button", { name: "Criar fluxo" }).click();
+    await page.locator("a", { hasText: nome }).first().click();
+    await page.waitForURL(/\/app\/ai\/atendimento\/.+/);
+    await expect(page.locator(".react-flow")).toBeVisible();
+
+    await page.getByTestId("palette-add-end").click();
+    const endCard = page.locator('[data-testid^="node-card-end-"]').first();
+    await expect(endCard).toBeVisible();
+    await endCard.click();
+
+    const panel = page.getByTestId("node-config-panel");
+    await expect(panel).toBeVisible();
+    await panel.getByRole("combobox", { name: "Ao concluir, o que fazer" }).click();
+    await page
+      .getByRole("option", { name: "Iniciar outro fluxo de atendimento" })
+      .click();
+
+    // A opção escolhida revela o seletor do fluxo que começa quando este termina.
+    await expect(panel.getByRole("combobox", { name: "Próximo fluxo" })).toBeVisible();
+    await page.screenshot({
+      path: "test-results/fluxo-atendimento-03-encadear.png",
+      fullPage: true,
+    });
+  });
 });
