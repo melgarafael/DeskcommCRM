@@ -7,24 +7,17 @@ import { describe, expect, it } from "vitest";
  * O CORPO DO BASELINE NÃO RECONCEDE O QUE O APÊNDICE REVOGA.
  *
  * Irmão de `baseline-nao-constroi-o-que-derruba.test.ts`, no eixo de PERMISSÃO.
- * O `baseline.sql` é aplicado inteiro em todo `update.sh`, em autocommit e com o
- * app no ar. Um `GRANT` no corpo do dump devolve a `anon`/`authenticated` um
- * EXECUTE que o apêndice revoga milhares de linhas adiante — e num clone que já
- * estava apertado isso não é "ainda não endureceu": é a atualização AFROUXANDO o
- * que aquele banco já tinha fechado, até o revoke chegar.
- *
- * Medido em Postgres 17 (clone na v1.27.3 + baseline atual por cima, cortes em
- * 4746/11981/16216): entrando a atualização, ZERO funções têm ACL mais permissivo
- * que o estado final — mas `fn_publish_ai_agent_version(uuid,uuid,uuid)` (security
- * definer, escreve, recebe a organização por argumento) partia FECHADA para anon e
- * era reaberta pelo GRANT do corpo, com o revoke ~5.600 linhas depois; e
- * `activate_kb_version(uuid,uuid)` o mesmo para authenticated. `CREATE OR REPLACE`
- * não mexe em ACL, então o único jeito de a atualização reabrir é um GRANT.
+ * O `baseline.sql` é aplicado inteiro em todo `update.sh`, em autocommit. Um
+ * `GRANT` no corpo do dump devolve um EXECUTE que o apêndice revoga adiante:
+ * enquanto o arquivo corre, o banco fica com uma permissão a mais do que terá no
+ * fim. `CREATE OR REPLACE` não altera ACL, então GRANT é a única forma de a
+ * aplicação afrouxar permissão no meio do caminho.
  *
  * A regra: nenhum `grant … on function … to anon|authenticated` no CORPO (antes do
  * primeiro rótulo de apêndice) pode ser revogado adiante sem reconcessão. Ou o
- * corpo não concede, ou o revoke vem antes. O estado final não muda nos dois casos
- * — quem prova isso em banco é `tests/invariants/update-nao-reabre-permissao.test.ts`.
+ * corpo não concede, ou o revoke vem antes. O estado final é o mesmo nos dois
+ * casos — quem prova isso em banco é
+ * `tests/invariants/update-nao-reabre-permissao.test.ts`.
  *
  * ## Por que a assinatura precisa ser normalizada, e não comparada como texto
  *
