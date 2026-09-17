@@ -94,6 +94,7 @@ interface Dados {
   credenciais: Credencial[];
   modelos: Modelo[];
   padrao: { provider: string; defaultModel: string | null };
+  herancaAdvomax: { ativa: boolean; modelo: string | null };
   podeEditar: boolean;
 }
 
@@ -173,7 +174,7 @@ export function PainelDeProvedores() {
     return <div className="p-6 text-sm text-muted-foreground">{t("Carregando…")}</div>;
   }
 
-  const semChave = dados.credenciais.length === 0;
+  const semChave = dados.credenciais.length === 0 && !dados.herancaAdvomax.ativa;
 
   return (
     <div className="mx-auto w-full max-w-5xl p-6" data-testid="painel-de-provedores">
@@ -184,6 +185,16 @@ export function PainelDeProvedores() {
           {t("lugares diferentes. Aqui você vê qual está atendendo cada um — e troca, se quiser.")}
         </p>
       </header>
+
+      {dados.herancaAdvomax.ativa && (
+        <Card className="mb-6 border-emerald-500/40 bg-emerald-500/5 p-4" data-testid="ia-herdada-advomax">
+          <p className="text-sm font-medium">{t("IA gerenciada pelo Advomax Gestão")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("O CRM usa a configuração do Max IA deste escritório sem receber nem exibir a chave.")} {" "}
+            {dados.herancaAdvomax.modelo ? `${t("Modelo em uso")}: ${dados.herancaAdvomax.modelo}.` : null}
+          </p>
+        </Card>
+      )}
 
       {semChave && (
         <Card className="mb-6 border-amber-500/40 bg-amber-500/5 p-4" data-testid="aviso-sem-chave">
@@ -198,7 +209,7 @@ export function PainelDeProvedores() {
         </Card>
       )}
 
-      <CartaoDoPadrao dados={dados} aoSalvar={carregar} />
+      {!dados.herancaAdvomax.ativa && <CartaoDoPadrao dados={dados} aoSalvar={carregar} />}
 
       <div className="space-y-8">
         {porPapel.map(({ papel, info, pontos }) => (

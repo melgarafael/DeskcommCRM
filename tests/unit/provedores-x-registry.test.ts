@@ -22,6 +22,7 @@ import {
   ehProvedorSuportado,
   IDS_DE_PROVEDOR,
   PROVEDORES,
+  PROVEDORES_HERDADOS,
   PROVEDOR_POR_ID,
 } from "@/lib/ai/pontos/provedores";
 
@@ -42,7 +43,7 @@ describe("lista de provedores × registry", () => {
   });
 
   it("todo provedor executável é oferecido na tela", () => {
-    const semPorta = Object.keys(registry).filter((id) => !ehProvedorSuportado(id));
+    const semPorta = Object.keys(registry).filter((id) => !ehProvedorSuportado(id) && !PROVEDORES_HERDADOS.has(id));
     expect(
       semPorta,
       "o sistema saberia usar um provedor que ninguém consegue escolher — trabalho inalcançável",

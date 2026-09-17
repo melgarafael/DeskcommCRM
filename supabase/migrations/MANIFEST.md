@@ -305,3 +305,6 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260915110000` | `0246_advomax_contact_links_lgpd` | A anonimização LGPD invalida o vínculo Advomax e remove o e-mail do atendente antes da auditoria. |
 | `20260916100000` | `0247_advomax_phone_match` | Persiste a classificação automática do telefone recebido no WhatsApp como cliente, Pessoa, ambíguo ou novo contato. |
 | `20260916120000` | `0248_attendant_availability_defaults` | Cria disponibilidade inicial sem horários publicados para membros ativos, evitando erro 422 sem inventar jornada/fuso. |
+| `20260917130000` | `0249_checklist_documental_juridico` | Templates de checklist por tipo de ação e conclusão auditável por processo, com criação transacional, RLS por organização e limpeza na anonimização LGPD; nenhuma credencial ou arquivo é duplicado no CRM. |
+| `20260917150000` | `0250_advomax_ai_usage_idempotency` | Identificador externo idempotente em `llm_calls` para contabilizar chamadas do Max sem duplicação e sem persistir prompt ou credencial. |
+| `20260917160000` | `0251_advomax_ai_budget_reservations` | Reserva server-only e serializada por escritório para impedir estouro concorrente do orçamento entre o gate do CRM e chamadas nativas do Max, sem armazenar prompt, resposta ou credencial. |

@@ -36,6 +36,7 @@ function poolFalso(opts: {
   binding?: LinhaBinding | null;
   llmSettings?: Record<string, unknown>;
   erroNoBinding?: boolean;
+  advomaxEmpresaCodigo?: number;
 }) {
   const inserts: Array<{ sql: string; params: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
@@ -50,6 +51,7 @@ function poolFalso(opts: {
               enabled_models: [],
               monthly_budget_cents: null,
             },
+            advomax_empresa_codigo: opts.advomaxEmpresaCodigo ?? null,
           },
         ],
       };
@@ -72,9 +74,9 @@ function poolFalso(opts: {
 
 /** Registry que registra COM O QUE foi chamado — o ponto de verdade. */
 function registrySpiao() {
-  const chamadas: Array<{ provider: string; apiKey: string; modelId: string }> = [];
-  const fabrica = (provider: string) => (apiKey: string, modelId: string) => {
-    chamadas.push({ provider, apiKey, modelId });
+  const chamadas: Array<{ provider: string; apiKey: string; modelId: string; baseUrl?: string; organizationId?: string }> = [];
+  const fabrica = (provider: string) => (apiKey: string, modelId: string, baseUrl?: string, organizationId?: string) => {
+    chamadas.push({ provider, apiKey, modelId, ...(baseUrl ? { baseUrl } : {}), ...(organizationId ? { organizationId } : {}) });
     return {
       specificationVersion: "v3",
       provider,
@@ -96,6 +98,7 @@ function registrySpiao() {
       anthropic: fabrica("anthropic"),
       openai: fabrica("openai"),
       openrouter: fabrica("openrouter"),
+      advomax: fabrica("advomax"),
     },
   };
 }
@@ -120,6 +123,39 @@ async function rodar(opts: Parameters<typeof poolFalso>[0] & { purpose: string; 
 }
 
 describe("o seam usa o modelo que o painel escolheu", () => {
+  it("empresa Advomax usa o modelo herdado mesmo com o modelo antigo do agente publicado", async () => {
+    const fetchAnterior = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      modelo: "deepseek-chat", ativo: true, apiKeyConfigurada: true,
+    }), { status: 200 })) as typeof fetch;
+    try {
+      const { pool } = poolFalso({ binding: null, advomaxEmpresaCodigo: 7 });
+      const { registry, chamadas } = registrySpiao();
+      const resultado = await runModelCall(
+        pool,
+        { ...cfg, advomaxApiUrl: "https://gestao.local", advomaxIntegrationKey: "ponte-secreta" },
+        {
+          tenantId: ORG,
+          purpose: "agent_turn",
+          model: "claude-antigo-do-agente",
+          llmOverride: { provider: "anthropic", credentialId: null },
+          messages: [{ role: "user", content: "oi" }],
+        },
+        { registry },
+      );
+      expect(chamadas[0]).toMatchObject({
+        provider: "advomax",
+        modelId: "deepseek-chat",
+        apiKey: "ponte-secreta",
+        baseUrl: "https://gestao.local/integracoes/crm/ia",
+        organizationId: ORG,
+      });
+      expect(resultado.origem).toBe("padrao_da_organizacao");
+    } finally {
+      global.fetch = fetchAnterior;
+    }
+  });
+
   it("sem binding, nada muda — segue o padrão da organização", () => {
     // A recíproca de tudo abaixo. Sem ela, um seam que ignorasse o painel por
     // completo passaria neste arquivo inteiro se os outros testes fossem

@@ -24239,3 +24239,164 @@ drop policy if exists advomax_contact_process_links_delete on public.advomax_con
 create policy advomax_contact_process_links_delete on public.advomax_contact_process_links
   for delete using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id, 'manager'));
 revoke all on public.advomax_contact_process_links from anon;
+-- 0249 checklist documental jurídico
+create table if not exists public.crm_document_checklist_templates (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  advomax_tipo_acao_codigo bigint not null,
+  name text not null check (char_length(trim(name)) between 1 and 120),
+  active boolean not null default true,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, advomax_tipo_acao_codigo),
+  unique (organization_id, id)
+);
+
+create table if not exists public.crm_document_checklist_items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  template_id uuid not null,
+  label text not null check (char_length(trim(label)) between 1 and 180),
+  required boolean not null default true,
+  position integer not null default 0 check (position >= 0),
+  created_at timestamptz not null default now(),
+  unique (template_id, label),
+  unique (organization_id, id),
+  foreign key (organization_id, template_id)
+    references public.crm_document_checklist_templates(organization_id, id) on delete cascade
+);
+
+create table if not exists public.crm_document_checklist_completions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null,
+  pessoa_codigo bigint not null,
+  processo_codigo bigint not null,
+  item_id uuid not null,
+  completed boolean not null default false,
+  completed_by uuid references auth.users(id) on delete set null,
+  completed_at timestamptz,
+  updated_at timestamptz not null default now(),
+  unique (organization_id, processo_codigo, item_id),
+  foreign key (organization_id, contact_id) references public.contacts(organization_id, id) on delete restrict,
+  foreign key (organization_id, item_id) references public.crm_document_checklist_items(organization_id, id) on delete restrict
+);
+
+create index if not exists idx_crm_checklist_items_template on public.crm_document_checklist_items(template_id, position);
+create index if not exists idx_crm_checklist_completions_case on public.crm_document_checklist_completions(organization_id, processo_codigo);
+
+alter table public.crm_document_checklist_templates enable row level security;
+alter table public.crm_document_checklist_items enable row level security;
+alter table public.crm_document_checklist_completions enable row level security;
+
+drop policy if exists crm_checklist_templates_select on public.crm_document_checklist_templates;
+create policy crm_checklist_templates_select on public.crm_document_checklist_templates for select
+  using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+drop policy if exists crm_checklist_templates_write on public.crm_document_checklist_templates;
+create policy crm_checklist_templates_write on public.crm_document_checklist_templates for all
+  using (public.fn_role_at_least(organization_id, 'manager') or public.fn_is_platform_admin())
+  with check (public.fn_role_at_least(organization_id, 'manager') or public.fn_is_platform_admin());
+drop policy if exists crm_checklist_items_select on public.crm_document_checklist_items;
+create policy crm_checklist_items_select on public.crm_document_checklist_items for select
+  using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+drop policy if exists crm_checklist_items_write on public.crm_document_checklist_items;
+create policy crm_checklist_items_write on public.crm_document_checklist_items for all
+  using (public.fn_role_at_least(organization_id, 'manager') or public.fn_is_platform_admin())
+  with check (public.fn_role_at_least(organization_id, 'manager') or public.fn_is_platform_admin());
+drop policy if exists crm_checklist_completions_select on public.crm_document_checklist_completions;
+create policy crm_checklist_completions_select on public.crm_document_checklist_completions for select
+  using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+drop policy if exists crm_checklist_completions_write on public.crm_document_checklist_completions;
+create policy crm_checklist_completions_write on public.crm_document_checklist_completions for all
+  using (public.fn_role_at_least(organization_id, 'agent') or public.fn_is_platform_admin())
+  with check (public.fn_role_at_least(organization_id, 'agent') or public.fn_is_platform_admin());
+
+revoke all on public.crm_document_checklist_templates, public.crm_document_checklist_items,
+  public.crm_document_checklist_completions from anon;
+grant select, insert, update, delete on public.crm_document_checklist_templates,
+  public.crm_document_checklist_items, public.crm_document_checklist_completions to authenticated;
+grant all on public.crm_document_checklist_templates, public.crm_document_checklist_items,
+  public.crm_document_checklist_completions to service_role;
+create or replace function public.fn_create_checklist_template(
+  p_org uuid, p_tipo_acao bigint, p_name text, p_items jsonb
+) returns uuid language plpgsql as $$
+declare v_id uuid;
+begin
+  insert into public.crm_document_checklist_templates(organization_id, advomax_tipo_acao_codigo, name, created_by)
+  values (p_org, p_tipo_acao, p_name, auth.uid()) returning id into v_id;
+  insert into public.crm_document_checklist_items(organization_id, template_id, label, required, position)
+  select p_org, v_id, item->>'label', coalesce((item->>'required')::boolean, true), ordinality - 1
+  from jsonb_array_elements(p_items) with ordinality as rows(item, ordinality);
+  return v_id;
+end $$;
+revoke all on function public.fn_create_checklist_template(uuid,bigint,text,jsonb) from public,anon;
+grant execute on function public.fn_create_checklist_template(uuid,bigint,text,jsonb) to authenticated,service_role;
+create or replace function public.fn_redact_checklist_completions() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.is_anonymized and not old.is_anonymized then
+    delete from public.crm_document_checklist_completions
+    where organization_id = new.organization_id and contact_id = new.id;
+  end if;
+  return new;
+end $$;
+revoke all on function public.fn_redact_checklist_completions() from public,anon,authenticated;
+grant execute on function public.fn_redact_checklist_completions() to service_role;
+drop trigger if exists trg_redact_checklist_completions on public.contacts;
+create trigger trg_redact_checklist_completions after update of is_anonymized on public.contacts
+for each row execute function public.fn_redact_checklist_completions();
+alter table public.llm_calls add column if not exists external_request_id text;
+create unique index if not exists uq_llm_calls_org_external_request
+  on public.llm_calls(organization_id, external_request_id) where external_request_id is not null;
+comment on column public.llm_calls.external_request_id is
+  'Identificador idempotente de chamada feita por sistema integrado, sem credencial ou conteúdo do prompt.';
+-- 0251 — reserva atômica do orçamento das chamadas nativas do Advomax Gestão.
+create table if not exists public.advomax_ai_budget_reservations (
+  id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade,
+  external_request_id text not null, purpose text not null, provider text not null, model text not null,
+  estimated_cost_cents numeric, status text not null default 'reserved' check (status in ('reserved', 'finalized', 'failed')),
+  expires_at timestamptz not null default (now() + interval '24 hours'), created_at timestamptz not null default now(), finalized_at timestamptz,
+  unique (organization_id, external_request_id)
+);
+create index if not exists idx_advomax_ai_reservations_active on public.advomax_ai_budget_reservations (organization_id, expires_at) where status = 'reserved';
+alter table public.advomax_ai_budget_reservations enable row level security;
+revoke all on table public.advomax_ai_budget_reservations from public, anon, authenticated;
+grant select, insert, update on table public.advomax_ai_budget_reservations to service_role;
+create or replace function public.fn_reservar_orcamento_advomax_ia(p_org uuid, p_external_request_id text, p_purpose text, p_provider text, p_model text, p_estimated_cost_cents numeric)
+returns table(allowed boolean, idempotent boolean, reason text) language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_budget public.ai_budgets%rowtype; v_spent numeric; v_reserved numeric;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text, 0));
+  if exists (select 1 from public.advomax_ai_budget_reservations where organization_id = p_org and external_request_id = p_external_request_id and (purpose, provider, model) is distinct from (p_purpose, p_provider, p_model)) then return query select false, false, 'idempotency_conflict'::text; return;
+  elsif exists (select 1 from public.advomax_ai_budget_reservations where organization_id = p_org and external_request_id = p_external_request_id) then return query select true, true, 'already_reserved'::text; return; end if;
+  select * into v_budget from public.ai_budgets where organization_id = p_org;
+  select coalesce(sum(cost_cents), 0) into v_spent from public.llm_calls where organization_id = p_org and created_at >= date_trunc('month', now());
+  select coalesce(sum(estimated_cost_cents), 0) into v_reserved from public.advomax_ai_budget_reservations where organization_id = p_org and status = 'reserved' and expires_at > now();
+  if v_budget.enforcement_mode = 'bloquear' and v_budget.enforcement_effective_at <= now()
+     and coalesce(v_spent, 0) + coalesce(v_reserved, 0) + coalesce(p_estimated_cost_cents, 0) >= v_budget.monthly_limit_cents
+     and exists (select 1 from public.agent_inbox_items where organization_id = p_org and kind = 'budget_warning' and created_at >= date_trunc('month', now())) then
+    return query select false, false, 'monthly_limit_reached'::text; return;
+  end if;
+  insert into public.advomax_ai_budget_reservations (organization_id, external_request_id, purpose, provider, model, estimated_cost_cents)
+  values (p_org, p_external_request_id, p_purpose, p_provider, p_model, p_estimated_cost_cents);
+  return query select true, false, 'reserved'::text;
+end; $$;
+revoke execute on function public.fn_reservar_orcamento_advomax_ia(uuid,text,text,text,text,numeric) from public, anon, authenticated;
+grant execute on function public.fn_reservar_orcamento_advomax_ia(uuid,text,text,text,text,numeric) to service_role;
+create or replace function public.fn_finalizar_advomax_ia(p_org uuid, p_external_request_id text, p_purpose text, p_provider text, p_model text, p_input_tokens int, p_output_tokens int, p_cache_read_tokens int, p_cache_write_tokens int, p_latency_ms int, p_cost_cents numeric)
+returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_inserted boolean;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text, 0));
+  if not exists (select 1 from public.advomax_ai_budget_reservations where organization_id = p_org and external_request_id = p_external_request_id and purpose = p_purpose and provider = p_provider and model = p_model) then raise exception 'advomax_ai_reservation_not_found' using errcode = 'P0001'; end if;
+  insert into public.llm_calls (organization_id, external_request_id, purpose, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, latency_ms, cost_cents, status)
+  values (p_org, p_external_request_id, p_purpose, p_provider, p_model, p_input_tokens, p_output_tokens, p_cache_read_tokens, p_cache_write_tokens, p_latency_ms, p_cost_cents, 'ok')
+  on conflict (organization_id, external_request_id) where external_request_id is not null do nothing;
+  get diagnostics v_inserted = row_count;
+  update public.advomax_ai_budget_reservations set status = 'finalized', finalized_at = coalesce(finalized_at, now()) where organization_id = p_org and external_request_id = p_external_request_id;
+  return v_inserted;
+end; $$;
+revoke execute on function public.fn_finalizar_advomax_ia(uuid,text,text,text,text,int,int,int,int,int,numeric) from public, anon, authenticated;
+grant execute on function public.fn_finalizar_advomax_ia(uuid,text,text,text,text,int,int,int,int,int,numeric) to service_role;
+comment on table public.advomax_ai_budget_reservations is 'Reservas server-only que fecham a corrida entre o gate do CRM e a chamada nativa de IA no Advomax Gestão. Não contém prompt, resposta ou credencial.';

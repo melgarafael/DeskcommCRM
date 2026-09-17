@@ -49,6 +49,9 @@ export interface LlmEdgeConfig {
    * era mudo: 5 tentativas, `media_derived_status='failed'`, zero avisos.
    */
   openrouterApiKey?: string;
+  /** Ponte da suíte: a chave permanece no Gestão; esta credencial autentica só o CRM. */
+  advomaxApiUrl?: string;
+  advomaxIntegrationKey?: string;
   /**
    * TTL do prefixo estável de cache (knob LLM_CACHE_TTL). Opcional para quem
    * monta a config na mão (testes) — o seam aplica a doutrina '1h' quando ausente.
@@ -83,6 +86,8 @@ export function llmEdgeConfigFromEnv(env: {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  ADVOMAX_API_URL?: string;
+  ADVOMAX_CRM_INTEGRATION_KEY?: string;
   LLM_CACHE_TTL?: string;
   AI_BUDGET_ENFORCEMENT?: string;
 }): LlmEdgeConfig {
@@ -94,6 +99,8 @@ export function llmEdgeConfigFromEnv(env: {
     ...(env.ANTHROPIC_API_KEY ? { anthropicApiKey: env.ANTHROPIC_API_KEY } : {}),
     ...(env.OPENAI_API_KEY ? { openaiApiKey: env.OPENAI_API_KEY } : {}),
     ...(env.OPENROUTER_API_KEY ? { openrouterApiKey: env.OPENROUTER_API_KEY } : {}),
+    ...(env.ADVOMAX_API_URL ? { advomaxApiUrl: env.ADVOMAX_API_URL } : {}),
+    ...(env.ADVOMAX_CRM_INTEGRATION_KEY ? { advomaxIntegrationKey: env.ADVOMAX_CRM_INTEGRATION_KEY } : {}),
     cacheTtl: ttl,
     // Sem `if` de valor vazio, ao contrário das chaves acima: aqui o ausente
     // TEM um significado ('on'), e o normalizador é quem o dá. Um campo
@@ -139,6 +146,8 @@ export interface OrgLlmConfig {
   defaultModel: string | null;
   params: Record<string, unknown>;
   enabledModels: string[];
+  organizationId: string;
+  baseUrl?: string;
   orcamento: OrcamentoDaOrg;
   /**
    * `null` = a leitura do orçamento foi normal. Não-nulo = a causa, já pronta
@@ -167,6 +176,7 @@ const llmSettingsSchema = z
     default_model: z.string().min(1).nullable().catch(null),
     params: z.record(z.string(), z.unknown()).catch({}),
     enabled_models: z.array(z.string()).catch([]),
+    inherit_advomax_ai: z.boolean().catch(true),
   })
   .passthrough()
   .catch({
@@ -174,6 +184,7 @@ const llmSettingsSchema = z
     default_model: null,
     params: {},
     enabled_models: [],
+    inherit_advomax_ai: true,
   });
 
 /**
@@ -189,6 +200,7 @@ const llmSettingsSchema = z
  */
 const SQL_CONFIG_COM_ORCAMENTO = `
   select o.settings->'llm'            as llm,
+         o.advomax_empresa_codigo     as advomax_empresa_codigo,
          b.monthly_limit_cents        as teto,
          b.enforcement_mode           as modo,
          b.enforcement_effective_at   as efetivo_em,
@@ -198,7 +210,8 @@ const SQL_CONFIG_COM_ORCAMENTO = `
    where o.id = $1`;
 
 /** A query de antes da 0159 — a rede quando o schema do clone está atrasado. */
-const SQL_CONFIG_LEGADO = `select settings->'llm' as llm from organizations where id = $1`;
+const SQL_CONFIG_LEGADO = `select settings->'llm' as llm, advomax_empresa_codigo from organizations where id = $1`;
+const SQL_CONFIG_MINIMO = `select settings->'llm' as llm from organizations where id = $1`;
 
 interface LinhaDeConfig {
   llm: unknown;
@@ -206,6 +219,27 @@ interface LinhaDeConfig {
   modo?: string | null;
   efetivo_em?: Date | null;
   limiar_pct?: number | string | null;
+  advomax_empresa_codigo?: number | string | null;
+}
+
+export async function configuracaoHerdadaAdvomax(
+  cfg: LlmEdgeConfig,
+  organizationId: string,
+): Promise<{ modelo: string; baseUrl: string } | null> {
+  if (!cfg.advomaxApiUrl || !cfg.advomaxIntegrationKey) return null;
+  const baseUrl = cfg.advomaxApiUrl.replace(/\/$/, '');
+  const response = await fetch(`${baseUrl}/integracoes/crm/ia/configuracao`, {
+    headers: {
+      'X-CRM-Integration-Key': cfg.advomaxIntegrationKey,
+      'X-CRM-Organization-Id': organizationId,
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new LlmNotConfiguredError();
+  const body = z.object({ modelo: z.string().min(1), ativo: z.boolean(), apiKeyConfigurada: z.boolean() })
+    .parse(await response.json());
+  if (!body.ativo || !body.apiKeyConfigurada) throw new LlmNotConfiguredError();
+  return { modelo: body.modelo, baseUrl: `${baseUrl}/integracoes/crm/ia` };
 }
 
 const ORCAMENTO_DESLIGADO: OrcamentoDaOrg = {
@@ -269,14 +303,21 @@ export async function resolveOrgLlmConfig(
     ({ rows } = await db.query<LinhaDeConfig>(SQL_CONFIG_COM_ORCAMENTO, [organizationId]));
   } catch (err) {
     orcamentoIndisponivelPorque = causaDoBanco(err);
-    ({ rows } = await db.query<LinhaDeConfig>(SQL_CONFIG_LEGADO, [organizationId]));
+    try {
+      ({ rows } = await db.query<LinhaDeConfig>(SQL_CONFIG_LEGADO, [organizationId]));
+    } catch {
+      ({ rows } = await db.query<LinhaDeConfig>(SQL_CONFIG_MINIMO, [organizationId]));
+    }
   }
   if (rows.length === 0) {
     throw new Error('organização inexistente ao resolver config LLM');
   }
   const linha = rows[0];
   const settings = llmSettingsSchema.parse(linha?.llm ?? {});
-  const provider = override?.provider ?? settings.provider;
+  const herdarAdvomax = override?.credentialId == null && settings.inherit_advomax_ai &&
+    linha?.advomax_empresa_codigo != null;
+  const herdada = herdarAdvomax ? await configuracaoHerdadaAdvomax(cfg, organizationId) : null;
+  const provider = herdada ? 'advomax' : (override?.provider ?? settings.provider);
 
   // Organização sem linha em `ai_budgets` cai aqui com tudo nulo, e o
   // normalizador resolve `modo` para 'off'. NULO É SEMPRE A RESPOSTA MAIS
@@ -335,6 +376,8 @@ export async function resolveOrgLlmConfig(
     apiKey = cfg.openaiApiKey;
   } else if (provider === 'openrouter' && cfg.openrouterApiKey) {
     apiKey = cfg.openrouterApiKey;
+  } else if (provider === 'advomax' && cfg.advomaxIntegrationKey) {
+    apiKey = cfg.advomaxIntegrationKey;
   } else {
     throw new LlmNotConfiguredError();
   }
@@ -342,9 +385,11 @@ export async function resolveOrgLlmConfig(
   return {
     provider,
     apiKey,
-    defaultModel: settings.default_model ?? null,
+    defaultModel: herdada?.modelo ?? settings.default_model ?? null,
     params: settings.params,
-    enabledModels: settings.enabled_models,
+    enabledModels: herdada ? [herdada.modelo] : settings.enabled_models,
+    organizationId,
+    ...(herdada ? { baseUrl: herdada.baseUrl } : {}),
     orcamento,
     orcamentoIndisponivelPorque,
   };

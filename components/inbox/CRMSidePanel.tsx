@@ -27,6 +27,8 @@ import { useEditLead } from "@/hooks/kanban/useUpdateLead";
 import { cn } from "@/lib/utils";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { ROLE_RANK } from "@/lib/auth/types";
+import { AdvomaxLinkCard } from "@/components/contacts/AdvomaxLinkCard";
 
 interface Props {
   conversation: ConversationWithContact | null;
@@ -402,7 +404,7 @@ function CamposDoFunil({
 }
 
 export function CRMSidePanel({ conversation }: Props) {
-  const { user } = useAuth();
+  const { user, activeOrg } = useAuth();
   const readonly = user.support?.access_mode === "support_readonly";
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -599,6 +601,16 @@ export function CRMSidePanel({ conversation }: Props) {
           {tagEditorOpen && contactId && <ContactTagsEditor contactId={contactId} tags={tags} />}
         </Card>
       </section>
+
+      {contactId && (
+        <section data-testid="inbox-contexto-juridico">
+          <AdvomaxLinkCard
+            key={contactId}
+            contactId={contactId}
+            canManage={!readonly && Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager)}
+          />
+        </section>
+      )}
 
       {contactId && defaultPipeline.data && (
         <NewLeadDialog

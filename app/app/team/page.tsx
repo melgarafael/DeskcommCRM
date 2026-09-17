@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TeamMembersClient } from "./_components/TeamMembersClient";
 import { TeamInvitesClient } from "./_components/TeamInvitesClient";
 import { AttendantsClient } from "./_components/AttendantsClient";
+import { AdvomaxTeamReadiness } from "./_components/AdvomaxTeamReadiness";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Equipe" };
@@ -67,6 +68,7 @@ export default async function TeamPage({
           <TabsTrigger value="attendants">{t("Atendimento")}</TabsTrigger>
         </TabsList>
         <TabsContent value="members" className="mt-4 flex flex-col gap-8">
+          {isManager ? <AdvomaxTeamReadiness /> : null}
           <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
           {/*
             Convites pendentes vivem AQUI, na mesma aba de quem já entrou —

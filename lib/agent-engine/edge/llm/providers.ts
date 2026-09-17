@@ -24,7 +24,7 @@ import { allowlistedFetch, buildAllowlist } from '../egress';
  */
 export type ProviderRegistry = Record<
   string,
-  (apiKey: string, modelId: string, baseUrl?: string) => LanguageModel
+  (apiKey: string, modelId: string, baseUrl?: string, organizationId?: string) => LanguageModel
 >;
 
 /**
@@ -112,6 +112,20 @@ export function createDefaultRegistry(opts?: { allowedHosts?: string[] }): Provi
         fetch: contain(endpoint),
       })(modelId);
     },
+    advomax: (integrationKey, modelId, baseUrl, organizationId) => {
+      if (!baseUrl || !organizationId) throw new Error('ponte de IA do Advomax incompleta');
+      return createOpenAI({
+        // O SDK exige Authorization, mas a ponte autentica pelo header próprio.
+        // Não duplicar a chave real num Bearer que o filtro JWT do Gestão tentaria interpretar.
+        apiKey: 'advomax-bridge',
+        baseURL: baseUrl,
+        headers: {
+          'X-CRM-Integration-Key': integrationKey,
+          'X-CRM-Organization-Id': organizationId,
+        },
+        fetch: contain(baseUrl),
+      })(modelId);
+    },
   };
 }
 
@@ -142,5 +156,5 @@ export function createFakeRegistry(
           warnings: [],
         },
     });
-  return { anthropic: factory, fake: factory };
+  return { anthropic: factory, fake: factory, advomax: factory };
 }

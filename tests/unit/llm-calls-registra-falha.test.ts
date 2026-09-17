@@ -18,7 +18,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
+import { redigirMensagemDoProvedor, runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 
@@ -180,6 +180,16 @@ describe("a classificação separa os problemas que exigem conversas diferentes"
 });
 
 describe("o que NUNCA pode entrar no log", () => {
+  it("remove chaves ecoadas em headers e mensagens de erro", () => {
+    const segredo = "ponte-super-secreta-123456";
+    const redigida = redigirMensagemDoProvedor(
+      `sk-proj-chaveSuperSecreta123 X-CRM-Integration-Key: ${segredo} Authorization: Bearer ${segredo}`,
+    );
+    expect(redigida).not.toContain(segredo);
+    expect(redigida).not.toContain("sk-proj-chaveSuperSecreta123");
+    expect(redigida.match(/\[CHAVE\]/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("a mensagem de erro é truncada", async () => {
     const { linhaDeErro } = await chamarComErro(new Error("x".repeat(5000)));
     expect(String(linhaDeErro!.params[9]).length).toBeLessThanOrEqual(500);

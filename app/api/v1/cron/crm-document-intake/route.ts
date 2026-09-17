@@ -6,18 +6,31 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
-import { advomaxFileCode } from "@/lib/crm/document-intake";
+import { advomaxFileCode, DOCUMENT_INTAKE_MAX_ATTEMPTS } from "@/lib/crm/document-intake";
+import { type GateAcessoCrm, type MotivoBloqueioAcessoCrm, verificarAcessoCrmDaOrganizacao } from "@/lib/advomax/licenca";
 
 export const dynamic = "force-dynamic";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
-const MAX_ATTEMPTS = 5;
 
 type IntakeRow = {
   id: string; organization_id: string; message_id: string; pessoa_codigo: number;
   filename: string; mime_type: string; media_storage_path: string; descricao: string | null;
   attempts: number; requested_by: string | null; requested_by_email: string | null;
 };
+
+type OrganizationRow = { id: string; status: string; advomax_empresa_codigo: number | null };
+
+function novoMapaDeBloqueios(): Record<MotivoBloqueioAcessoCrm, number> {
+  return {
+    bridge_not_configured: 0,
+    organization_unmapped: 0,
+    organization_inactive: 0,
+    license_inactive: 0,
+    license_unavailable: 0,
+    identity_missing: 0,
+  };
+}
 
 export async function GET(req: NextRequest): Promise<Response> { return run(req); }
 export async function POST(req: NextRequest): Promise<Response> { return run(req); }
@@ -26,7 +39,7 @@ async function run(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   if (!validCronSecret(req)) return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   if (!env.ADVOMAX_API_URL.trim() || !env.ADVOMAX_CRM_INTEGRATION_KEY.trim()) {
-    return ok({ processed: 0, skipped: "bridge_not_configured" }, { requestId });
+    return ok({ processed: 0, claimed: 0, uploaded: 0, retried: 0, failed: 0, skipped: 1, blocked: 0, skipped_reasons: { ...novoMapaDeBloqueios(), bridge_not_configured: 1 } }, { requestId });
   }
   const rawLimit = Number.parseInt(req.nextUrl.searchParams.get("limit") ?? "", 10);
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, MAX_LIMIT) : DEFAULT_LIMIT;
@@ -41,11 +54,49 @@ async function run(req: NextRequest): Promise<Response> {
   const { data: recoveredRows } = await admin.from("crm_document_intake" as never)
     .update({ status: "pending", next_attempt_at: now, claimed_at: null, claimed_by: null } as never)
     .eq("status", "processing").lt("claimed_at", staleAt).select("id");
-  const stats = { recovered: recoveredRows?.length ?? 0, claimed: 0, uploaded: 0, retried: 0, failed: 0 };
+  const stats = { recovered: recoveredRows?.length ?? 0, claimed: 0, uploaded: 0, retried: 0, failed: 0, skipped: 0, blocked: 0, skipped_reasons: novoMapaDeBloqueios() };
+  const organizationIds = [...new Set(((pending ?? []) as unknown as IntakeRow[]).map((row) => row.organization_id))];
+  const organizations = organizationIds.length
+    ? await admin.from("organizations" as never).select("id,status,advomax_empresa_codigo").in("id", organizationIds)
+    : { data: [], error: null };
+  if (organizations.error) return fail("internal_error", "Não foi possível validar as organizações da fila.", 500, { requestId });
+  const organizationById = new Map((organizations.data ?? []).map((organization) => {
+    const row = organization as OrganizationRow;
+    return [row.id, row];
+  }));
+  const gateCache = new Map<string, Promise<GateAcessoCrm>>();
   for (const candidate of (pending ?? []) as unknown as IntakeRow[]) {
+    const organization = organizationById.get(candidate.organization_id);
+    if (!organization || organization.status !== "active") {
+      stats.blocked++;
+      stats.skipped_reasons[organization ? "organization_inactive" : "organization_unmapped"]++;
+      continue;
+    }
+    if (!Number.isSafeInteger(organization.advomax_empresa_codigo) || (organization.advomax_empresa_codigo as number) <= 0) {
+      stats.blocked++;
+      stats.skipped_reasons.organization_unmapped++;
+      continue;
+    }
+    const email = candidate.requested_by_email?.trim();
+    if (!email) {
+      stats.skipped++;
+      stats.skipped_reasons.identity_missing++;
+      continue;
+    }
+    let gate = gateCache.get(candidate.organization_id);
+    if (!gate) {
+      gate = verificarAcessoCrmDaOrganizacao(email, candidate.organization_id, organization.advomax_empresa_codigo);
+      gateCache.set(candidate.organization_id, gate);
+    }
+    const acesso = await gate;
+    if (!acesso.ok) {
+      stats.skipped++;
+      stats.skipped_reasons[acesso.reason]++;
+      continue;
+    }
     const { data: claimed } = await admin.from("crm_document_intake" as never).update({
       status: "processing", attempts: candidate.attempts + 1, claimed_at: now, claimed_by: `cron:${requestId}`,
-    } as never).eq("id", candidate.id).eq("status", "pending").select("*").maybeSingle();
+    } as never).eq("id", candidate.id).eq("organization_id", candidate.organization_id).eq("status", "pending").select("*").maybeSingle();
     if (!claimed) continue;
     stats.claimed++;
     const row = claimed as unknown as IntakeRow;
@@ -85,7 +136,7 @@ async function enviar(row: IntakeRow, admin: ReturnType<typeof createAdminClient
   }
   const { data: updated, error } = await admin.from("crm_document_intake" as never).update({
     status: "uploaded", advomax_file_id: codigo, failure_reason: null, claimed_at: null, claimed_by: null,
-  } as never).eq("id", row.id).eq("status", "processing").select("id").maybeSingle();
+  } as never).eq("id", row.id).eq("organization_id", row.organization_id).eq("status", "processing").eq("claimed_by", `cron:${requestId}`).select("id").maybeSingle();
   if (error || !updated) return registrarFalha(admin, row, requestId, "Documento arquivado, mas o recibo não foi atualizado.");
   if (updated) {
     await audit({ action: "document_intake.uploaded", actorUserId: row.requested_by, organizationId: row.organization_id, resourceType: "crm_document_intake", resourceId: row.id, requestId, metadata: { worker: true } });
@@ -94,12 +145,12 @@ async function enviar(row: IntakeRow, admin: ReturnType<typeof createAdminClient
 }
 
 async function registrarFalha(admin: ReturnType<typeof createAdminClient>, row: IntakeRow, requestId: string, motivo: string): Promise<{ ok: false; terminal: boolean }> {
-  const terminal = row.attempts >= MAX_ATTEMPTS;
+  const terminal = row.attempts >= DOCUMENT_INTAKE_MAX_ATTEMPTS;
   const { error: updateError } = await admin.from("crm_document_intake" as never).update({
     status: terminal ? "failed" : "pending",
     next_attempt_at: new Date(Date.now() + Math.min(60, 2 ** row.attempts) * 60_000).toISOString(),
     failure_reason: motivo, claimed_at: null, claimed_by: null,
-  } as never).eq("id", row.id).eq("status", "processing");
+  } as never).eq("id", row.id).eq("organization_id", row.organization_id).eq("status", "processing").eq("claimed_by", `cron:${requestId}`);
   if (!updateError || terminal) {
     await audit({ action: terminal ? "document_intake.failed" : "document_intake.retrying", actorUserId: row.requested_by, organizationId: row.organization_id, resourceType: "crm_document_intake", resourceId: row.id, requestId, metadata: { worker: true, retry: !terminal, reason: motivo } });
   }

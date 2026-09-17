@@ -84,6 +84,9 @@ export const PROVEDORES = [
     prefixoDaChave: "sk-or-…",
   },
 ] as const satisfies readonly ProvedorSuportado[];
+
+/** Providers internos resolvidos automaticamente, sem chave ou seleção na UI. */
+export const PROVEDORES_HERDADOS = new Set(["advomax"]);
 // `as const satisfies` e não anotação de tipo: a anotação apagaria os literais
 // e `Provider` viraria `string`, deixando o compilador aceitar qualquer texto
 // como provedor — que é exatamente a garantia que esta lista existe para dar.

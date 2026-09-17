@@ -315,6 +315,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // A config da org é lida ANTES da decisão porque o resolvedor precisa dela
   // como último degrau da precedência (o padrão, quando ninguém mais opinou).
   const padrao = await resolveOrgLlmConfig(db, cfg, input.tenantId, input.llmOverride);
+  const herdaAdvomax = padrao.provider === 'advomax' && input.llmOverride?.credentialId == null;
 
   // O painel de provedores entra AQUI, e é o que faz `purpose` deixar de ser
   // só um rótulo de custo e virar decisão. Sem binding configurado, `decisao`
@@ -323,9 +324,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   const decisao = await decidirParaOSeam(db, {
     organizationId: input.tenantId,
     purpose,
-    modeloDoCallSite: input.model,
+    modeloDoCallSite: herdaAdvomax ? undefined : input.model,
     overrideDoAgente:
-      input.llmOverride === undefined
+      input.llmOverride === undefined || herdaAdvomax
         ? null
         : {
             provider: input.llmOverride.provider ?? padrao.provider,
@@ -420,7 +421,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
       // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
       // ignoram o terceiro argumento e vão ao endpoint intrínseco.
-      model: factory(config.apiKey, model, decisao.baseUrl ?? undefined),
+      model: factory(config.apiKey, model, config.baseUrl ?? decisao.baseUrl ?? undefined, config.organizationId),
       system: prefix.system,
       messages: input.messages,
       tools: guardServiceTools(prefix.tools),
@@ -614,14 +615,16 @@ export function normalizarErro(err: unknown): {
  */
 export function redigirMensagemDoProvedor(bruto: string): string {
   const semSegredo = bruto
+    // Sem limites `\\b`: este arquivo já recebeu U+0008 no lugar da sequência
+    // textual em uma edição anterior. Casar o formato da chave é mais robusto.
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, '[CHAVE]')
+    .replace(/AIza[A-Za-z0-9_-]{10,}/g, '[CHAVE]')
+    .replace(/[Bb]earer\s+[A-Za-z0-9._-]{8,}/g, 'Bearer [CHAVE]')
+    .replace(/(x-crm-integration-key|x-api-key|api[-_]?key|authorization)\s*[:=]\s*\S+/gi, '$1: [CHAVE]');
     // Chaves de API dos provedores que este produto fala: `sk-ant-…`,
     // `sk-or-v1-…`, `sk-proj-…`, `sk-…`, e as do Google (`AIza…`).
-    .replace(/sk-[A-Za-z0-9_-]{8,}/g, '[CHAVE]')
-    .replace(/AIza[A-Za-z0-9_-]{10,}/g, '[CHAVE]')
     // O header inteiro, em qualquer caixa, com ou sem `Authorization:` na
     // frente — é assim que ele costuma aparecer ecoado num corpo de erro.
-    .replace(/[Bb]earer\s+[A-Za-z0-9._-]{8,}/g, 'Bearer [CHAVE]')
-    .replace(/(x-api-key|api[-_]?key|authorization)\s*[:=]\s*\S+/gi, '$1: [CHAVE]');
   return scrubMessage(semSegredo).slice(0, 500);
 }
 

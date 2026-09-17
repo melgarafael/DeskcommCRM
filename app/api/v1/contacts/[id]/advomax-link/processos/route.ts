@@ -1,6 +1,7 @@
 /** GET /api/v1/contacts/[id]/advomax-link/processos. */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { fail, ok } from "@/lib/api/wrappers";
@@ -9,6 +10,11 @@ import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 interface RouteCtx { params: Promise<{ id: string }> }
+const processoSchema = z.object({
+  codigo: z.number().int().positive(), pasta: z.string().nullable(), numero: z.string().nullable(),
+  status: z.number().int(), ultimaMovimentacao: z.string().nullable(), tribunal: z.string().nullable(),
+  tipoAcaoCodigo: z.number().int().positive().nullable(), tipoAcaoNome: z.string().nullable(),
+}).strip();
 
 export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
@@ -40,7 +46,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     signal: AbortSignal.timeout(15_000),
   }).catch(() => null);
   if (!response?.ok) return fail("bad_gateway", "Não foi possível consultar os processos no Advomax.", 502, { requestId });
-  const body = await response.json().catch(() => null);
-  if (!Array.isArray(body)) return fail("bad_gateway", "O Advomax devolveu um resumo inválido.", 502, { requestId });
-  return ok(body, { requestId });
+  const body = z.array(processoSchema).safeParse(await response.json().catch(() => null));
+  if (!body.success) return fail("bad_gateway", "O Advomax devolveu um resumo inválido.", 502, { requestId });
+  return ok(body.data, { requestId });
 }

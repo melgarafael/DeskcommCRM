@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { emailValidoOuNull, lotesDeTelefones, prepararClientesAdvomax } from "./route";
 
 describe("prepararClientesAdvomax", () => {
-  it("traz apenas clientes com telefone e normaliza o número para o CRM", () => {
+  it("traz clientes mesmo sem telefone e normaliza números válidos", () => {
     expect(prepararClientesAdvomax([
       { codigo: 1, nome: "Cliente local", telefone: "(85) 98765-4321", cliente: true },
       { codigo: 2, nome: "Sem telefone", telefone: null, cliente: true },
@@ -11,6 +11,8 @@ describe("prepararClientesAdvomax", () => {
       { codigo: 4, nome: "Telefone inválido", telefone: "123", cliente: true },
     ])).toEqual([
       { codigo: 1, nome: "Cliente local", telefone: "+5585987654321", cliente: true },
+      { codigo: 2, nome: "Sem telefone", telefone: null, cliente: true },
+      { codigo: 4, nome: "Telefone inválido", telefone: null, cliente: true },
     ]);
   });
 });

@@ -13,12 +13,12 @@ import {
 } from "./credentials";
 
 /** Pool falso: 1ª query devolve settings->'llm', 2ª devolve credenciais BYOK. */
-function poolFake(settingsLlm: unknown, credenciais: unknown[]) {
+function poolFake(settingsLlm: unknown, credenciais: unknown[], organization: Record<string, unknown> = {}) {
   let n = 0;
   return {
     query: async () => {
       n += 1;
-      return n === 1 ? { rows: [{ llm: settingsLlm }] } : { rows: credenciais };
+      return n === 1 ? { rows: [{ llm: settingsLlm, ...organization }] } : { rows: credenciais };
     },
   } as never;
 }
@@ -26,6 +26,34 @@ function poolFake(settingsLlm: unknown, credenciais: unknown[]) {
 const SEM_BYOK: unknown[] = [];
 
 describe("resolveOrgLlmConfig — chave de plataforma por provider", () => {
+  it("herda modelo e execução do Advomax para empresa vinculada sem copiar a chave", async () => {
+    const fetchAnterior = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      modelo: "deepseek-chat", ativo: true, apiKeyConfigurada: true,
+    }), { status: 200 })) as typeof fetch;
+    try {
+      const out = await resolveOrgLlmConfig(
+        poolFake({ provider: "anthropic" }, SEM_BYOK, { advomax_empresa_codigo: 7 }),
+        { advomaxApiUrl: "https://gestao.local/", advomaxIntegrationKey: "ponte-secreta" },
+        "org-1",
+      );
+      expect(out).toMatchObject({
+        provider: "advomax",
+        apiKey: "ponte-secreta",
+        defaultModel: "deepseek-chat",
+        enabledModels: ["deepseek-chat"],
+        organizationId: "org-1",
+        baseUrl: "https://gestao.local/integracoes/crm/ia",
+      });
+      expect(global.fetch).toHaveBeenCalledWith(
+        "https://gestao.local/integracoes/crm/ia/configuracao",
+        expect.objectContaining({ headers: expect.objectContaining({ "X-CRM-Organization-Id": "org-1" }) }),
+      );
+    } finally {
+      global.fetch = fetchAnterior;
+    }
+  });
+
   it("usa a chave OpenAI do ambiente quando a org não tem BYOK", async () => {
     // O defeito de origem: existia fallback de env só para a Anthropic. A
     // transcrição de áudio chama o Whisper (OpenAI), e numa org que usa

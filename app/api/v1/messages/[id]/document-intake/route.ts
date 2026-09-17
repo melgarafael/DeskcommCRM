@@ -14,16 +14,44 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
-import { advomaxFileCode, requeueDocumentIntake } from "@/lib/crm/document-intake";
+import {
+  advomaxFileCode,
+  DOCUMENT_INTAKE_MAX_ATTEMPTS,
+  publicDocumentIntake,
+} from "@/lib/crm/document-intake";
 
 export const dynamic = "force-dynamic";
 
 interface RouteCtx { params: Promise<{ id: string }> }
+type IntakeRow = Record<string, unknown> & {
+  id: string;
+  organization_id: string;
+  status: "pending" | "processing" | "uploaded" | "failed" | "ignored";
+  attempts?: number;
+  claimed_by?: string | null;
+};
 
 const bodySchema = z.object({
   pessoa_codigo: z.coerce.number().int().positive(),
   descricao: z.string().trim().max(1000).optional(),
 }).strict();
+
+export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const requestId = randomUUID();
+  const authz = await requireRole("agent", { requestId, resource: "document_intake_status" });
+  if (!authz.ok) return authz.response;
+  const { id: messageId } = await ctx.params;
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("crm_document_intake" as never)
+    .select("*")
+    .eq("organization_id", authz.org.orgId)
+    .eq("message_id", messageId)
+    .maybeSingle();
+  if (error) return fail("internal_error", "Não foi possível consultar o arquivamento.", 500, { requestId });
+  if (!data) return fail("not_found", "Nenhum arquivamento foi solicitado para esta mensagem.", 404, { requestId });
+  return ok(publicDocumentIntake(data as unknown as Record<string, unknown>), { requestId });
+}
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const denied = await requireSupportWrite();
@@ -88,23 +116,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .eq("message_id", messageId)
     .maybeSingle();
   if (existingError) return fail("internal_error", "Não foi possível consultar a atribuição.", 500, { requestId });
-  if (existing && (existing as { status?: string }).status === "uploaded") return ok(existing, { requestId });
+  if (existing && (existing as { status?: string }).status === "uploaded") {
+    return ok(publicDocumentIntake(existing as unknown as Record<string, unknown>), { requestId });
+  }
 
   let intake: unknown = existing;
-  if (existing) {
-    const { data: requeued, error: requeueError } = await supabase
-      .from("crm_document_intake" as never)
-      .update({
-        ...requeueDocumentIntake(parsed.data.pessoa_codigo, parsed.data.descricao),
-        requested_by_email: authz.user.email,
-      } as never)
-      .eq("id", (existing as { id: string }).id)
-      .eq("organization_id", authz.org.orgId)
-      .select("*")
-      .single();
-    if (requeueError) return fail("internal_error", "Não foi possível reprocessar a atribuição.", 500, { requestId });
-    intake = requeued;
-  } else {
+  if (!existing) {
     const { data: inserted, error: insertError } = await supabase
       .from("crm_document_intake" as never)
       .insert(payload as never)
@@ -113,7 +130,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (insertError) {
       if (insertError.code === "23505") {
         const { data: raced } = await supabase.from("crm_document_intake" as never).select("*").eq("organization_id", authz.org.orgId).eq("message_id", messageId).single();
-        if (raced) return ok(raced, { requestId });
+        if (raced) return ok(publicDocumentIntake(raced as unknown as Record<string, unknown>), { requestId });
       }
       return fail("internal_error", "Não foi possível registrar a atribuição.", 500, { requestId });
     }
@@ -129,14 +146,56 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     });
   }
 
+  const current = intake as IntakeRow | null;
+  if (!current) return fail("internal_error", "Não foi possível preparar o arquivamento.", 500, { requestId });
+  if (current.status === "processing") {
+    return ok(publicDocumentIntake(current), { requestId });
+  }
+  if (current.status === "ignored") {
+    return ok(publicDocumentIntake(current), { requestId });
+  }
+
   // A ponte é síncrona quando configurada; sem configuração a linha fica
   // pending e a tela consegue explicar o próximo passo ao administrador.
-  if (env.ADVOMAX_API_URL.trim() && env.ADVOMAX_CRM_INTEGRATION_KEY.trim()) {
+  if (!(env.ADVOMAX_API_URL.trim() && env.ADVOMAX_CRM_INTEGRATION_KEY.trim())) {
+    return ok(publicDocumentIntake(current), { requestId });
+  }
+
+  const claimId = `request:${requestId}`;
+  const { data: claimed, error: claimError } = await supabase
+    .from("crm_document_intake" as never)
+    .update({
+      status: "processing",
+      attempts: current.status === "failed" ? 1 : (current.attempts ?? 0) + 1,
+      next_attempt_at: new Date().toISOString(),
+      claimed_at: new Date().toISOString(),
+      claimed_by: claimId,
+      pessoa_codigo: parsed.data.pessoa_codigo,
+      descricao: parsed.data.descricao ?? null,
+      requested_by: authz.user.id,
+      requested_by_email: authz.user.email,
+      failure_reason: null,
+    } as never)
+    .eq("id", current.id)
+    .eq("organization_id", authz.org.orgId)
+    .eq("status", current.status)
+    .select("*")
+    .maybeSingle();
+  if (claimError) return fail("internal_error", "Não foi possível iniciar o arquivamento.", 500, { requestId });
+  if (!claimed) {
+    const { data: raced } = await supabase.from("crm_document_intake" as never)
+      .select("*").eq("organization_id", authz.org.orgId).eq("message_id", messageId).maybeSingle();
+    if (raced) return ok(publicDocumentIntake(raced as unknown as Record<string, unknown>), { requestId });
+    return fail("conflict", "O arquivamento já está sendo processado.", 409, { requestId });
+  }
+  intake = claimed;
+
+  {
     const admin = createAdminClient();
     const { data: blob, error: downloadError } = await admin.storage
       .from("whatsapp-media")
       .download(message.media_storage_path);
-    if (downloadError || !blob) return marcarFalha(supabase, intake, requestId, "Mídia não disponível no Storage.");
+    if (downloadError || !blob) return marcarFalha(supabase, intake, claimId, authz.user.id, requestId, "Mídia não disponível no Storage.");
 
     const form = new FormData();
     form.append("file", new File([blob], payload.filename, { type: payload.mime_type }));
@@ -154,26 +213,34 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       signal: AbortSignal.timeout(60_000),
     }).catch(() => null);
     if (!response || !response.ok) {
-      return marcarFalha(supabase, intake, requestId, "Advomax não confirmou o arquivamento.");
+      return marcarFalha(supabase, intake, claimId, authz.user.id, requestId, "Advomax não confirmou o arquivamento.");
     }
     const advomax = await response.json().catch(() => ({}));
     const codigo = advomaxFileCode(advomax);
     if (codigo === null) {
-      return marcarFalha(supabase, intake, requestId, "Advomax devolveu um recibo de arquivo inválido.");
+      return marcarFalha(supabase, intake, claimId, authz.user.id, requestId, "Advomax devolveu um recibo de arquivo inválido.");
     }
     const { data: atualizado, error: updateError } = await supabase
       .from("crm_document_intake" as never)
-      .update({ status: "uploaded", advomax_file_id: codigo, failure_reason: null } as never)
+      .update({ status: "uploaded", advomax_file_id: codigo, failure_reason: null, claimed_at: null, claimed_by: null } as never)
       .eq("id", (intake as { id: string }).id)
       .eq("organization_id", authz.org.orgId)
+      .eq("status", "processing")
+      .eq("claimed_by", claimId)
       .select("*")
-      .single();
+      .maybeSingle();
     if (updateError) return fail("internal_error", "Documento arquivado, mas o recibo não foi atualizado.", 500, { requestId });
+    if (!atualizado) {
+      const { data: currentAfterUpload } = await supabase.from("crm_document_intake" as never)
+        .select("*").eq("organization_id", authz.org.orgId).eq("message_id", messageId).maybeSingle();
+      if ((currentAfterUpload as { status?: string } | null)?.status === "uploaded") {
+        return ok(publicDocumentIntake(currentAfterUpload as unknown as Record<string, unknown>), { requestId });
+      }
+      return fail("internal_error", "Documento arquivado, mas o recibo não foi atualizado.", 500, { requestId });
+    }
     await audit({ action: "document_intake.uploaded", actorUserId: authz.user.id, organizationId: authz.org.orgId, resourceType: "crm_document_intake", resourceId: (intake as { id: string }).id, requestId });
-    return ok(atualizado, { requestId });
+    return ok(publicDocumentIntake(atualizado as unknown as Record<string, unknown>), { requestId });
   }
-
-  return ok(intake, { requestId });
 }
 
 function filenameFor(type: string | null, mime: string | null): string {
@@ -181,15 +248,28 @@ function filenameFor(type: string | null, mime: string | null): string {
   return `whatsapp-${type || "arquivo"}.${ext}`;
 }
 
-async function marcarFalha(supabase: Awaited<ReturnType<typeof createClient>>, intake: unknown, requestId: string, motivo: string): Promise<Response> {
+async function marcarFalha(supabase: Awaited<ReturnType<typeof createClient>>, intake: unknown, claimId: string, actorUserId: string, requestId: string, motivo: string): Promise<Response> {
   const row = intake as { id: string; organization_id: string; attempts?: number };
-  const attempts = (row.attempts ?? 0) + 1;
-  const terminal = attempts >= 5;
-  await supabase.from("crm_document_intake" as never).update({
+  const attempts = Math.max(row.attempts ?? 1, 1);
+  const terminal = attempts >= DOCUMENT_INTAKE_MAX_ATTEMPTS;
+  const { error: updateError } = await supabase.from("crm_document_intake" as never).update({
     status: terminal ? "failed" : "pending",
     attempts,
     next_attempt_at: new Date(Date.now() + Math.min(60, 2 ** attempts) * 60_000).toISOString(),
     failure_reason: motivo,
-  } as never).eq("id", row.id).eq("organization_id", row.organization_id);
+    claimed_at: null,
+    claimed_by: null,
+  } as never).eq("id", row.id).eq("organization_id", row.organization_id).eq("status", "processing").eq("claimed_by", claimId);
+  if (!updateError) {
+    await audit({
+      action: terminal ? "document_intake.failed" : "document_intake.retrying",
+      actorUserId,
+      organizationId: row.organization_id,
+      resourceType: "crm_document_intake",
+      resourceId: row.id,
+      requestId,
+      metadata: { worker: false, retry: !terminal, reason: motivo },
+    });
+  }
   return fail("bad_gateway", motivo, 502, { requestId });
 }

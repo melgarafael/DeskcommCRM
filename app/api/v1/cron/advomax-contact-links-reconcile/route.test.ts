@@ -26,17 +26,26 @@ function request(secret = "local-secret") {
   });
 }
 
-function setup(rows = [pending]) {
+function setup(rows = [pending], access = true) {
   const updated = vi.fn().mockResolvedValue({ data: pending, error: null });
   const query: Record<string, ReturnType<typeof vi.fn>> = {};
   let updating = false;
   query.select = vi.fn(() => { if (!updating) return query; return query; });
   query.eq = vi.fn(() => query);
+  query.not = vi.fn(() => query);
   query.order = vi.fn(() => query);
   query.limit = vi.fn(async () => ({ data: rows, error: null }));
   query.update = vi.fn(() => { updating = true; return query; });
   query.maybeSingle = vi.fn(async () => ({ data: updating ? await updated() : null, error: null }));
-  const admin = { from: vi.fn(() => query) };
+  const emptyOrganizations = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    in: vi.fn(async () => ({ data: access ? [{ id: pending.organization_id, status: "active", advomax_empresa_codigo: 7 }] : [{ id: pending.organization_id, status: "active", advomax_empresa_codigo: null }], error: null })),
+    limit: vi.fn(async () => ({ data: [], error: null })),
+  };
+  const admin = { from: vi.fn((table: string) => table === "organizations" ? emptyOrganizations : query) };
   vi.mocked(createAdminClient).mockReturnValue(admin as never);
   return { admin, query, updated };
 }
@@ -51,7 +60,9 @@ describe("reconciliação de vínculos Advomax", () => {
 
   it("confirma a Pessoa com a identidade original e atualiza somente pending", async () => {
     const s = setup();
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ codigo: 42 }), { status: 200 }));
+    const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).endsWith("/integracoes/crm/acesso")
+      ? Promise.resolve(new Response(JSON.stringify({ enabled: true, source: "advomax", expiresAt: null }), { status: 200 }))
+      : Promise.resolve(new Response(JSON.stringify({ codigo: 42 }), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     const response = await POST(request());
     expect(response.status).toBe(200);
@@ -64,10 +75,25 @@ describe("reconciliação de vínculos Advomax", () => {
 
   it("mantém pending quando o recibo não confirma a mesma Pessoa", async () => {
     const s = setup();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ codigo: 7 }), { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input).endsWith("/integracoes/crm/acesso")
+      ? Promise.resolve(new Response(JSON.stringify({ enabled: true, source: "advomax", expiresAt: null }), { status: 200 }))
+      : Promise.resolve(new Response(JSON.stringify({ codigo: 7 }), { status: 200 }))));
     const response = await POST(request());
     expect(response.status).toBe(200);
     expect(s.query.update).not.toHaveBeenCalled();
     expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia organização sem mapeamento antes da confirmação no Advomax", async () => {
+    setup([pending], false);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ enabled: true, source: "advomax" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(request());
+    const body = await response.json() as { data: { blocked: number; skipped_reasons: { organization_unmapped: number } } };
+    expect(response.status).toBe(200);
+    expect(body.data.blocked).toBe(1);
+    expect(body.data.skipped_reasons.organization_unmapped).toBe(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

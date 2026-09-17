@@ -1,75 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
-import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
-import { parseDialablePhone } from "@/lib/messaging/contact-card";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  buscarPessoasAdvomax,
+  PEOPLE_PAGE_SIZE,
+  sincronizarClientesAdvomax,
+} from "@/lib/advomax/people-sync";
+import { verificarAcessoCrmDaOrganizacao } from "@/lib/advomax/licenca";
+
+export {
+  prepararClientesAdvomax,
+  emailValidoOuNull,
+  lotesDeTelefones,
+} from "@/lib/advomax/people-sync";
 
 export const dynamic = "force-dynamic";
-
-type PessoaAdvomax = {
-  codigo: number;
-  nome: string;
-  email?: string | null;
-  telefone?: string | null;
-  cliente: boolean;
-};
-
-export function prepararClientesAdvomax(pessoas: PessoaAdvomax[]) {
-  return pessoas
-    .filter((p) => p.cliente && p.telefone?.trim() && Number.isSafeInteger(p.codigo) && p.codigo > 0)
-    .flatMap((p) => {
-      const digits = p.telefone!.replace(/\D/g, "");
-      const comPais = digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
-      const telefone = parseDialablePhone(comPais);
-      return telefone ? [{ ...p, telefone: canonicalPhoneBR(telefone) }] : [];
-    });
-}
-
-const PAGE_SIZE = 200;
-const PHONE_LOOKUP_BATCH_SIZE = 60;
-const emailSchema = z.string().trim().email().max(254);
-
-export function emailValidoOuNull(email: string | null | undefined): string | null {
-  const resultado = emailSchema.safeParse(email);
-  return resultado.success ? resultado.data : null;
-}
-
-export function lotesDeTelefones(telefones: string[]): string[][] {
-  const lotes: string[][] = [];
-  for (let i = 0; i < telefones.length; i += PHONE_LOOKUP_BATCH_SIZE) {
-    lotes.push(telefones.slice(i, i + PHONE_LOOKUP_BATCH_SIZE));
-  }
-  return lotes;
-}
-
-async function pessoasDoAdvomax(email: string, organizationId: string, offset: number): Promise<PessoaAdvomax[] | null> {
-  const base = process.env.ADVOMAX_API_URL?.replace(/\/$/, "");
-  const key = process.env.ADVOMAX_CRM_INTEGRATION_KEY?.trim();
-  if (!base || !key) return null;
-
-  const params = new URLSearchParams({ somenteClientes: "true", offset: String(offset), limite: String(PAGE_SIZE) });
-  const response = await fetch(`${base}/integracoes/crm/pessoas?${params}`, {
-    headers: {
-      "X-CRM-Integration-Key": key,
-      "X-CRM-User-Email": email,
-      "X-CRM-Organization-Id": organizationId,
-    },
-    cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
-  }).catch(() => null);
-  if (!response?.ok) return null;
-  const page = await response.json().catch(() => null);
-  if (!Array.isArray(page) || page.length > PAGE_SIZE || !page.every((p) =>
-    p && typeof p === "object" && Number.isSafeInteger(p.codigo) && typeof p.nome === "string" &&
-    typeof p.cliente === "boolean" && (p.telefone == null || typeof p.telefone === "string")
-  )) return null;
-  return page;
-}
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -77,85 +26,34 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
 
   const offset = Number(req.nextUrl.searchParams.get("offset") ?? "0");
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100_000 || offset % PAGE_SIZE !== 0) {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100_000 || offset % PEOPLE_PAGE_SIZE !== 0) {
     return fail("validation_failed", "Página inválida.", 422, { requestId });
   }
 
-  const pessoas = await pessoasDoAdvomax(authz.user.email, authz.org.orgId, offset);
+  const admin = createAdminClient();
+  const { data: organization, error: organizationError } = await admin.from("organizations" as never)
+    .select("status,advomax_empresa_codigo").eq("id", authz.org.orgId).maybeSingle();
+  if (organizationError) return fail("internal_error", "Não foi possível validar a organização para a sincronização.", 500, { requestId });
+  const org = organization as { status?: string; advomax_empresa_codigo?: number | null } | null;
+  if (!org || org.status !== "active" || !Number.isSafeInteger(org.advomax_empresa_codigo) || (org.advomax_empresa_codigo as number) <= 0) {
+    return ok({ processed: 0, skipped: 1, blocked: 1, skipped_reason: "organization_unmapped" }, { requestId });
+  }
+  const gate = await verificarAcessoCrmDaOrganizacao(authz.user.email, authz.org.orgId, org.advomax_empresa_codigo);
+  if (!gate.ok) return ok({ processed: 0, skipped: 1, blocked: 1, skipped_reason: gate.reason }, { requestId });
+
+  const pessoas = await buscarPessoasAdvomax(authz.user.email, authz.org.orgId, offset);
   if (!pessoas) return fail("bad_gateway", "Não foi possível sincronizar os clientes do Advomax.", 502, { requestId });
 
-  const candidatos = prepararClientesAdvomax(pessoas);
-  const admin = createAdminClient();
-  const codigos = candidatos.map((p) => p.codigo);
-  const variantes = [...new Set(candidatos.flatMap((p) => phoneLookupVariants(p.telefone)))];
-
-  const linksPromise =
-    codigos.length
-      ? admin.from("advomax_contact_links").select("pessoa_codigo,contact_id").eq("organization_id", authz.org.orgId).in("pessoa_codigo", codigos)
-      : Promise.resolve({ data: [], error: null });
-  // PostgREST rejeita URLs longas; uma página pode gerar centenas de variantes.
-  const contatosResultados = await Promise.all(lotesDeTelefones(variantes).map((lote) =>
-    admin.from("contacts").select("id,phone_number")
-      .eq("organization_id", authz.org.orgId).is("is_merged_into", null).in("phone_number", lote)
-  ));
-  const { data: links, error: linksError } = await linksPromise;
-  const contactsError = contatosResultados.find((resultado) => resultado.error)?.error;
-  if (linksError || contactsError) return fail("internal_error", "Não foi possível conferir os contatos existentes.", 500, { requestId });
-  const contatos = contatosResultados.flatMap((resultado) => resultado.data ?? []);
-
-  const ligados = new Set((links ?? []).map((row) => Number(row.pessoa_codigo)));
-  const porTelefone = new Map<string, string>();
-  for (const row of contatos ?? []) {
-    for (const variante of phoneLookupVariants(row.phone_number ?? "")) porTelefone.set(variante, row.id);
-  }
-
-  let criados = 0;
-  let vinculados = 0;
-  let conflitos = 0;
-  for (const pessoa of candidatos) {
-    if (ligados.has(pessoa.codigo)) continue;
-    let contactId = phoneLookupVariants(pessoa.telefone).map((v) => porTelefone.get(v)).find(Boolean);
-    if (!contactId) {
-      const { data: contato, error } = await admin.from("contacts").insert({
-        organization_id: authz.org.orgId,
-        created_by_user_id: authz.user.id,
-        name: pessoa.nome,
-        display_name: pessoa.nome,
-        email: emailValidoOuNull(pessoa.email),
-        phone_number: pessoa.telefone,
-        source: "advomax",
-        source_metadata: { advomax_pessoa_codigo: pessoa.codigo },
-        consent: {},
-        tags: [],
-      }).select("id").single();
-      if (error?.code === "23505") { conflitos += 1; continue; }
-      if (error || !contato) return fail("internal_error", "Não foi possível gravar um contato.", 500, { requestId });
-      const createdContactId = contato.id as string;
-      contactId = createdContactId;
-      criados += 1;
-      for (const variante of phoneLookupVariants(pessoa.telefone)) porTelefone.set(variante, createdContactId);
-    }
-    const { error: linkError } = await admin.from("advomax_contact_links").insert({
-      organization_id: authz.org.orgId,
-      contact_id: contactId,
-      pessoa_codigo: pessoa.codigo,
-      status: "linked",
-      authority_source: "advomax",
-      last_synced_at: new Date().toISOString(),
-      created_by: authz.user.id,
-    });
-    if (linkError?.code === "23505") conflitos += 1;
-    else if (linkError) return fail("internal_error", "Não foi possível vincular um contato.", 500, { requestId });
-    else vinculados += 1;
-  }
+  const sync = await sincronizarClientesAdvomax(admin, authz.org.orgId, authz.user.id, pessoas);
+  if ("error" in sync) return fail("internal_error", sync.error, 500, { requestId });
 
   await audit({
     action: "contact.advomax_linked",
     actorUserId: authz.user.id,
     organizationId: authz.org.orgId,
     resourceType: "advomax_contact_sync",
-    metadata: { encontrados: candidatos.length, criados, vinculados, conflitos },
+    metadata: sync,
     requestId,
   });
-  return ok({ encontrados: candidatos.length, criados, vinculados, conflitos, has_more: pessoas.length === PAGE_SIZE, next_offset: offset + pessoas.length }, { requestId });
+  return ok({ ...sync, has_more: pessoas.length === PEOPLE_PAGE_SIZE, next_offset: offset + pessoas.length }, { requestId });
 }

@@ -33,6 +33,8 @@ import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { env } from "@/lib/env";
+import { configuracaoHerdadaAdvomax } from "@/lib/agent-engine/edge/llm/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +75,7 @@ export async function GET(): Promise<Response> {
       .is("deprecated_at", null)
       .order("provider")
       .order("display_name"),
-    db.from("organizations").select("settings").eq("id", org.orgId).maybeSingle(),
+    db.from("organizations").select("settings, advomax_empresa_codigo").eq("id", org.orgId).maybeSingle(),
     db
       .from("ai_agents")
       .select(
@@ -96,6 +98,17 @@ export async function GET(): Promise<Response> {
     provider: typeof llm.provider === "string" ? llm.provider : "anthropic",
     defaultModel: typeof llm.default_model === "string" ? llm.default_model : null,
   };
+  const vinculadaAoAdvomax = (orgRes.data as { advomax_empresa_codigo?: number | null } | null)
+    ?.advomax_empresa_codigo != null;
+  const configuracaoAdvomax = vinculadaAoAdvomax
+    ? await configuracaoHerdadaAdvomax(
+        {
+          advomaxApiUrl: env.ADVOMAX_API_URL,
+          advomaxIntegrationKey: env.ADVOMAX_CRM_INTEGRATION_KEY,
+        },
+        org.orgId,
+      ).catch(() => null)
+    : null;
 
   const versao = (agenteRes.data as { versao?: { provider: string; model: string; credential_id: string | null } } | null)
     ?.versao;
@@ -118,7 +131,7 @@ export async function GET(): Promise<Response> {
   const capacidadePorModelo = new Map(modelos.map((m) => [`${m.provider}|${m.model_id}`, m]));
 
   const pontos = PONTOS_DE_IA.map((ponto) => {
-    const decisao = decidirBinding({
+    const decisaoLocal = decidirBinding({
       pontoId: ponto.id,
       binding: bindings.get(ponto.id) ?? null,
       // Só os pontos que de fato consomem o agente. Em runtime quem sinaliza a
@@ -142,6 +155,17 @@ export async function GET(): Promise<Response> {
       modeloDeAmbiente: undefined,
       padraoDaOrganizacao,
     });
+    const usaAdvomax = configuracaoAdvomax !== null && decisaoLocal.credentialId === null;
+    const decisao = usaAdvomax
+      ? {
+          ...decisaoLocal,
+          provider: "advomax",
+          modelId: configuracaoAdvomax.modelo,
+          baseUrl: null,
+          origem: "advomax_gestao",
+          porQue: t("Herdado da configuração segura do Max IA no Advomax Gestão."),
+        }
+      : { ...decisaoLocal, porQue: EXPLICACAO_DA_ORIGEM[decisaoLocal.origem] };
     const chave = `${decisao.provider}|${decisao.modelId ?? ""}`;
     const capacidade = capacidadePorModelo.get(chave);
     return {
@@ -170,7 +194,7 @@ export async function GET(): Promise<Response> {
         credentialId: decisao.credentialId,
         baseUrl: decisao.baseUrl,
         origem: decisao.origem,
-        porQue: EXPLICACAO_DA_ORIGEM[decisao.origem],
+        porQue: decisao.porQue,
       },
       avisos: [
         ...decisao.avisos,
@@ -193,6 +217,9 @@ export async function GET(): Promise<Response> {
     // ponto; o que faltava era CHEGAR À TELA, e sem isso não havia como
     // mostrá-lo nem trocá-lo (invariante 6: toda configuração tem superfície).
     padrao: padraoDaOrganizacao,
+    herancaAdvomax: configuracaoAdvomax
+      ? { ativa: true, modelo: configuracaoAdvomax.modelo }
+      : { ativa: false, modelo: null },
     provedores: PROVEDORES,
     credenciais: credsRes.data ?? [],
     modelos,
