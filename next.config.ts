@@ -34,6 +34,20 @@ const nextConfig: NextConfig = {
    * O glob passa pelo layout do pnpm (`.pnpm/@swc+helpers@<versão>/…`) porque é
    * onde o pacote realmente mora aqui; o `*` cobre o bump de versão seguinte
    * sem exigir que alguém lembre de editar esta linha.
+   *
+   * TERCEIRO padrão, medido numa instalação real em 2026-09-17: o próprio
+   * `pdfjs-dist` (35 MB / 554 arquivos em `.pnpm`) sai do standalone **inteiro**
+   * — 0 arquivos —, não só o binário nativo do canvas. `extractPdfText`
+   * (lib/ai/rag/extractors/pdf.ts) importa `"pdfjs-dist/legacy/build/pdf.mjs"`
+   * por STRING LITERAL, e mesmo assim o tracer não segue: esse subpath não
+   * está no mapa de `exports` do `package.json` do pacote, então o NFT não
+   * tem como validar a resolução e não inclui nenhum arquivo do pacote — não
+   * é o mesmo defeito parcial do `@swc/helpers` (que perdia 106 de 108
+   * arquivos), é ausência total. Efeito em produção: toda tentativa de
+   * ensinar o agente com PDF cai no catch de `PdfExtractError` com
+   * "Cannot find package 'pdfjs-dist'", e `lib/ai/rag/ingest/documento.ts`
+   * reembala isso na mensagem genérica de "só imagens escaneadas" — o
+   * operador não tinha como saber que o problema era o build, não o arquivo.
    */
   outputFileTracingIncludes: {
     "/**": [
@@ -54,6 +68,8 @@ const nextConfig: NextConfig = {
       // vez de para o diretório que os agrega, nenhum symlink é visitado.
       "./node_modules/.pnpm/@napi-rs+canvas@*/node_modules/@napi-rs/canvas/**",
       "./node_modules/.pnpm/@napi-rs+canvas-*/node_modules/@napi-rs/*/*.node",
+      // pdfjs-dist em si (ver comentário acima).
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
     ],
   },
   reactStrictMode: true,

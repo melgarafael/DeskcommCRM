@@ -45,6 +45,39 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
 # de build é o que importa pro leigo.
 RUN pnpm build
 
+# `outputFileTracingIncludes` (next.config.ts) copia o CONTEÚDO de pdfjs-dist e
+# @napi-rs/canvas pro standalone, mas não os DOIS SYMLINKS que pnpm cria e que a
+# resolução de módulo do Node precisa pra achar os pacotes pelo nome — o Turbopack
+# não tem como emiti-los por glob (é o "Is a directory" do comentário ao lado do
+# glob do canvas: ele tenta ler o symlink como arquivo pra hashear o .nft.json e
+# quebra). Sem isto, medido: os 554 arquivos de pdfjs-dist chegam ao standalone e
+# mesmo assim `import("pdfjs-dist/legacy/build/pdf.mjs")` falha em runtime com
+# "Cannot find package 'pdfjs-dist'" — o pacote existe em disco e é inalcançável
+# por nome. `cp -a` roda como shell puro, fora do tracer, e preserva os dois como
+# symlink de verdade: o de topo (pra o import do PRÓPRIO app) e o interno de
+# pdfjs-dist (pra o `require("@napi-rs/canvas")` que a lib faz sozinha).
+#
+# Isto resolve o NOME do pacote, mas não é o caminho que o servidor real usa: o
+# Turbopack BUNDLA o corpo do pdfjs-dist num chunk próprio
+# (`.next/server/chunks/<hash>_pdfjs-dist_legacy_build_pdf_mjs_<hash>._.js`), e
+# esse bundle nunca passa pelos symlinks acima — só o `import()` cru (o que os
+# testes deste PR exercitavam) passa. Medido com um PDF real de 170 páginas,
+# reproduzindo o carregamento de chunk do Turbopack via `[turbopack]_runtime.js`
+# (não um `import()` de mão, que mascarava o defeito): o bundle sobe, mas o
+# "fake worker" do pdf.js — o fallback de quando não há Web Worker de verdade,
+# que é o caso do Node — procura `pdf.worker.mjs` como ARQUIVO VIZINHO do
+# próprio chunk, dentro de `.next/server/chunks/`, e não em `node_modules/`
+# nenhum. Sem ele: "Setting up fake worker failed: Cannot find module
+# '/app/.next/server/chunks/pdf.worker.mjs'" — um SEGUNDO arquivo ausente,
+# de causa diferente dos dois symlinks, e só aparece testando o bundle real.
+RUN PDFJS_DIR=$(basename node_modules/.pnpm/pdfjs-dist@*) && \
+    cp -a "node_modules/pdfjs-dist" ".next/standalone/node_modules/pdfjs-dist" && \
+    mkdir -p ".next/standalone/node_modules/.pnpm/$PDFJS_DIR/node_modules/@napi-rs" && \
+    cp -a "node_modules/.pnpm/$PDFJS_DIR/node_modules/@napi-rs/canvas" \
+          ".next/standalone/node_modules/.pnpm/$PDFJS_DIR/node_modules/@napi-rs/canvas" && \
+    cp "node_modules/.pnpm/$PDFJS_DIR/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs" \
+       ".next/standalone/.next/server/chunks/pdf.worker.mjs"
+
 # ---- runner: imagem slim de produção ----
 FROM node:22-alpine AS runner
 WORKDIR /app

@@ -92,6 +92,18 @@ export async function extrairTextoDoArquivo(
       texto = await extractPdfText(buffer);
     } catch (err) {
       if (err instanceof PdfExtractError) {
+        // A mensagem que chega à pessoa é SEMPRE a de "só imagens escaneadas" —
+        // é a única frase que faz sentido pra quem não sabe o que é pdfjs-dist.
+        // Mas isso também apaga o diagnóstico de falha de INFRAESTRUTURA (pacote
+        // ausente no build standalone, binário nativo faltando) que
+        // `extractPdfText` já constrói com cuidado — e nem `documento.ts` nem
+        // a rota de upload logavam `ErroDeExtracao` em lugar nenhum. Medido numa
+        // instalação real em 2026-09-17: "Cannot find package 'pdfjs-dist'"
+        // (pacote inteiro fora do tracing do `next build standalone`) virava
+        // "só imagens escaneadas" pro operador, sem rastro nenhum em log.
+        if (err.message !== "pdfjs-dist extracted no text (possibly image-only PDF)") {
+          console.error("[extracao-pdf] falha de infraestrutura, não de conteúdo:", err.message);
+        }
         throw new ErroDeExtracao(
           "não consegui extrair texto deste PDF. Se ele for só imagens escaneadas, " +
             "não há letra nenhuma para ler — envie uma versão com texto selecionável.",
