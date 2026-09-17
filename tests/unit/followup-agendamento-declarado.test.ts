@@ -116,6 +116,14 @@ const ESCRITORES: Record<string, { agenda: "agora" | "futuro" | "nenhum"; nota: 
     agenda: "nenhum",
     nota: "traduz o campo para a timeline do dossiê; não escreve.",
   },
+  "atendimento.ts": {
+    agenda: "futuro",
+    nota:
+      "o enrollment do fluxo de atendimento nasce com next_eval_at num FUTURO distante ('2999-…') " +
+      "de propósito: o CHECK de relógio exige a coluna quando o status é active, e este enrollment " +
+      "é guiado pelo turno, não pelo relógio do follow-up — ele não pode ser reivindicado pelo motor " +
+      "de retomada. O desvio do relógio do processo é irrelevante diante de séculos.",
+  },
 };
 
 function modulosQueMencionam(): string[] {

@@ -49,6 +49,7 @@ import { decidePacing } from '../pacing/engine';
 import type { PacingState } from '../pacing/engine';
 import type { PacingKnobs } from '../pacing/defaults';
 import { loadChannelKnobs, loadPacingState, recordSend } from '../pacing/store';
+import { detectarMuletaMecanica } from './anti-mecanico';
 import { decideSpinning } from '../spinning/engine';
 import type { RecentCopy } from '../spinning/engine';
 import { loadRecentCopies, loadSpinningKnobs, recordCopy } from '../spinning/store';
@@ -234,6 +235,18 @@ export interface GateContext {
    * gate persegue —, e ele continua contando no cap diário (`recordSend`).
    */
   spinningEnforced?: boolean;
+  /**
+   * Arma o `antiMecanicoGate` (Fase 2 do fluxo robusto). **Ausente = no-op** —
+   * mesma direção segura de `internalVocabularyEnforced`: só o caminho do agente
+   * COM fluxo ativo o arma, e um caller que não conhece o campo não muda de
+   * comportamento.
+   *
+   * Diferente do spinning (anti-ban, default armado), este é de ESTILO: vetar a
+   * fala do modelo por causa de uma costura de transição só faz sentido no
+   * contexto em que a costura aparece — o fluxo garantido pelo motor. Fora dele,
+   * um veto seria censura de redação sem dano a prevenir.
+   */
+  antiMecanicoEnforced?: boolean;
   /**
    * Arma o `agendaStallGate`. Ausente = no-op — mesma direção segura de
    * `internalVocabularyEnforced` (caller que não conhece o campo não arma nada). `active`
@@ -643,6 +656,30 @@ const spinningGate: Gate = {
 };
 
 /**
+ * Gate 3.7 — anti-mecânico: costuras de retomada ("como estamos falando disso,
+ * vamos continuar") quando há fluxo ativo. Nasce DESARMADO (ver
+ * `GateContext.antiMecanicoEnforced`); o caminho do agente com fluxo o arma.
+ * `skipped` explícito quando desarmado, para o trace não confundir "não veto"
+ * com "nem olhou".
+ */
+const antiMecanicoGate: Gate = {
+  name: 'anti_mecanico',
+  evaluate: (ctx) => {
+    if (ctx.antiMecanicoEnforced !== true) return { pass: true, skipped: 'not_applicable' };
+    const achado = detectarMuletaMecanica(ctx.body);
+    if (achado === null) return { pass: true };
+    return {
+      pass: false,
+      code: 'muleta_mecanica',
+      reason:
+        `a mensagem usa uma costura mecânica de retomada ("${achado}"). Não anuncie que está ` +
+        'continuando o assunto: responda ao cliente e, se for o caso, faça a pergunta de forma ' +
+        'natural, sem essa frase de ligação.',
+    };
+  },
+};
+
+/**
  * VERSÃO da ordem da cadeia (F4-08, acceptance 2). Toda mudança na ordem/composição de
  * `BEFORE_SEND_GATES` EXIGE bumpar esta versão, porque a ordem é contrato e não detalhe
  * de implementação. Quem cobra isso é `tests/unit/before-send-chain-shape.test.ts`.
@@ -672,8 +709,12 @@ const spinningGate: Gate = {
  * `GateContext.agenda`): só o caminho do agente o arma quando o agente publicado tem
  * `crm_book_appointment` nas tools, então a v7 também não muda o destino de nenhum envio que
  * já existia fora desse caso — muda o TRACE e passa a medir/impedir a promessa vazia.
+ * v8 = insere `antiMecanicoGate` logo após `spinning` — a rede contra costuras de retomada
+ * ("como estamos falando disso, vamos continuar") quando há fluxo de atendimento ativo
+ * (`GateContext.antiMecanicoEnforced`). Nasce DESARMADO por default; só o caminho do agente
+ * com fluxo o arma, então a v8 também não muda o destino de envio nenhum fora desse caso.
  */
-export const BEFORE_SEND_CHAIN_VERSION = 7;
+export const BEFORE_SEND_CHAIN_VERSION = 8;
 
 /**
  * Ordem FINAL da cadeia (F4-08/F4-09; edge-contract §before_send / blueprint órgão 5) — DADO
@@ -699,6 +740,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   pacingGate,
   messagingWindowGate,
   spinningGate,
+  antiMecanicoGate,
   promiseGate,
   semanticPromiseGate,
   casePromiseGate,
@@ -820,6 +862,11 @@ export interface RunBeforeSendArgs {
    * diário (`recordSend`) continua valendo — o aviso é uma mensagem de verdade.
    */
   enforceSpinning?: boolean;
+  /**
+   * Arma o `antiMecanicoGate` para ESTA tentativa — ver
+   * `GateContext.antiMecanicoEnforced`. Ausente = gate no-op (estilo, não dano).
+   */
+  antiMecanicoEnforced?: boolean;
   /**
    * Arma o `agendaStallGate` para ESTA tentativa — ver `GateContext.agenda`. Ausente = gate
    * no-op (retrocompatível com todo caller que não conhece agenda, ex.: `followup-turn.ts`).
@@ -995,6 +1042,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       },
       spinning: { knobs: spinningKnobs, window },
       ...(args.enforceSpinning === false ? { spinningEnforced: false as const } : {}),
+      ...(args.antiMecanicoEnforced === true ? { antiMecanicoEnforced: true as const } : {}),
       promise: {
         table: promise?.table ?? null,
         ...(promise?.versionId !== undefined ? { versionId: promise.versionId } : {}),

@@ -365,6 +365,7 @@ export const DICIONARIO: Traducoes = {
   Automação: { es: "Automatización" },
   Agentes: { es: "Agentes" },
   "Follow-ups": { es: "Seguimientos" },
+  "Fluxos de atendimento": { es: "Flujos de atención" },
   Roteadores: { es: "Enrutadores" },
   "Ver tudo em IA": { es: "Ver todo en IA" },
   "Ver tudo em CRM": { es: "Ver todo en CRM" },
@@ -8306,6 +8307,144 @@ export const DICIONARIO: Traducoes = {
   "Crie uma conexão separada por QR no outro sistema.": {
     es: "Crea una conexión separada por QR en el otro sistema.",
   },
+
+  // ─── Fluxos de atendimento (superfície `atendimento` + editor) ───
+  "Perguntas que a IA faz durante a conversa, em ordem, e o que fazer ao concluir — os dados ficam guardados por cliente.":
+    {
+      es: "Preguntas que la IA hace durante la conversación, en orden, y qué hacer al concluir — los datos quedan guardados por cliente.",
+    },
+  "Como usar os fluxos de atendimento (guia rápido)": {
+    es: "Cómo usar los flujos de atención (guía rápida)",
+  },
+  "É um": { es: "Es un" },
+  "roteiro de perguntas": { es: "guion de preguntas" },
+  "que a IA segue durante a conversa. Ela pergunta, entende a resposta, guarda no cadastro do cliente e":
+    {
+      es: "que la IA sigue durante la conversación. Pregunta, entiende la respuesta, la guarda en el registro del cliente y",
+    },
+  "para de perguntar": { es: "deja de preguntar" },
+  "quando você não precisa mais daquele dado.": { es: "cuando ya no necesitas ese dato." },
+  "Montando o fluxo": { es: "Armando el flujo" },
+  "Clique em": { es: "Haz clic en" },
+  "Novo fluxo de atendimento": { es: "Nuevo flujo de atención" },
+  "e dê um nome.": { es: "y dale un nombre." },
+  "Adicione uma": { es: "Agrega una" },
+  Pergunta: { es: "Pregunta" },
+  ": escreva o que a IA deve perguntar, uma": {
+    es: ": escribe lo que la IA debe preguntar, una",
+  },
+  chave: { es: "clave" },
+  "curta para o dado (ex.:": { es: "corta para el dato (ej.:" },
+  "), o tipo e se é obrigatória.": { es: "), el tipo y si es obligatoria." },
+  "Se quiser, adicione uma": { es: "Si quieres, agrega una" },
+  Skill: { es: "Skill" },
+  "— um procedimento da loja que a IA usa naquele momento.": {
+    es: "— un procedimiento de la tienda que la IA usa en ese momento.",
+  },
+  "Ligue as caixas em ordem (do": { es: "Conecta las cajas en orden (del" },
+  "até o": { es: "hasta el" },
+  "). No Fim, em": { es: "). En el Fin, en" },
+  "Ao concluir": { es: "Al concluir" },
+  ", escolha o que acontece: nada, devolver à IA ou chamar uma skill.": {
+    es: ", elige qué pasa: nada, devolver a la IA o llamar a una skill.",
+  },
+  "Como a IA se comporta": { es: "Cómo se comporta la IA" },
+  "Só age quando o fluxo é": { es: "Solo actúa cuando el flujo es" },
+  disparado: { es: "disparado" },
+  "— ligue o fluxo a uma intenção em IA → Roteadores.": {
+    es: "— conecta el flujo a una intención en IA → Enrutadores.",
+  },
+  "uma coisa por vez": { es: "una cosa a la vez" },
+  "e guarda a resposta (no sentido, não só nas palavras dele).": {
+    es: "y guarda la respuesta (por el sentido, no solo por sus palabras).",
+  },
+  "Se o cliente já disser um dado antes de ser perguntado, ela": {
+    es: "Si el cliente ya dice un dato antes de que se le pregunte, ella",
+  },
+  "registra sem perguntar": { es: "lo registra sin preguntar" },
+  "Se o cliente mudar de ideia, a resposta é": {
+    es: "Si el cliente cambia de opinión, la respuesta se",
+  },
+  atualizada: { es: "actualiza" },
+  "(quando “Permitir correção” está ligado).": {
+    es: "(cuando “Permitir corrección” está activado).",
+  },
+  "Pergunta sem resposta é repetida até o": { es: "La pregunta sin respuesta se repite hasta el" },
+  "Máximo de tentativas": { es: "Máximo de intentos" },
+  "; depois ela é encerrada e não trava o fluxo.": {
+    es: "; después se cierra y no bloquea el flujo.",
+  },
+  "Cada resposta fica guardada por cliente e por fluxo. O que já foi respondido não é perguntado de novo.":
+    {
+      es: "Cada respuesta queda guardada por cliente y por flujo. Lo que ya se respondió no se vuelve a preguntar.",
+    },
+  "Nenhum fluxo de atendimento ainda": { es: "Aún no hay ningún flujo de atención" },
+  "Os fluxos de atendimento cadastram as perguntas que a IA faz durante a conversa e o que acontece ao concluir — os dados ficam guardados por cliente.":
+    {
+      es: "Los flujos de atención registran las preguntas que la IA hace durante la conversación y qué pasa al concluir — los datos quedan guardados por cliente.",
+    },
+  "Nasce como rascunho. Você cadastra as perguntas e a finalização no editor em seguida.": {
+    es: "Nace como borrador. Registras las preguntas y la finalización en el editor después.",
+  },
+  "Fluxo de atendimento (opcional)": { es: "Flujo de atención (opcional)" },
+  "Nenhum — só roteia o agente": { es: "Ninguno — solo enruta el agente" },
+  "Quando a intenção casar, este fluxo começa e as perguntas dele guiam o atendimento até o cliente completar.":
+    {
+      es: "Cuando la intención coincida, este flujo comienza y sus preguntas guían la atención hasta que el cliente complete.",
+    },
+  "Pergunta (o que a IA deve perguntar)": { es: "Pregunta (lo que la IA debe preguntar)" },
+  "Chave do campo (onde a resposta é guardada)": {
+    es: "Clave del campo (donde se guarda la respuesta)",
+  },
+  "Minúsculas, sem espaço (ex.: cidade, cnh, moto_interesse).": {
+    es: "Minúsculas, sin espacios (ej.: ciudad, licencia, moto_interes).",
+  },
+  "Tipo da resposta": { es: "Tipo de respuesta" },
+  "Opções (separe por vírgula)": { es: "Opciones (separa por coma)" },
+  Obrigatória: { es: "Obligatoria" },
+  "Permitir correção": { es: "Permitir corrección" },
+  "Se o cliente mudar de ideia, a nova informação substitui a anterior.": {
+    es: "Si el cliente cambia de opinión, la nueva información sustituye a la anterior.",
+  },
+  "Texto sugerido (opcional)": { es: "Texto sugerido (opcional)" },
+  "A IA pode adaptar a pergunta ao tom da conversa.": {
+    es: "La IA puede adaptar la pregunta al tono de la conversación.",
+  },
+  "Ao concluir, o que fazer": { es: "Al concluir, qué hacer" },
+  "Vale para o fluxo de atendimento: o que acontece quando o cliente completa as perguntas.": {
+    es: "Vale para el flujo de atención: qué pasa cuando el cliente completa las preguntas.",
+  },
+  "Orientação para a IA (opcional)": { es: "Orientación para la IA (opcional)" },
+  "Nome da skill": { es: "Nombre de la skill" },
+  "Ex.: fechamento-pagamento, catalogo-apresentacao.": {
+    es: "Ej.: cierre-pago, catalogo-presentacion.",
+  },
+  "Skill a puxar neste passo": { es: "Skill a usar en este paso" },
+  "Carregando suas skills…": { es: "Cargando tus skills…" },
+  "Você ainda não tem skills instaladas. Instale em IA → Skills.": {
+    es: "Todavía no tienes skills instaladas. Instálalas en IA → Skills.",
+  },
+  "Escolha uma skill": { es: "Elige una skill" },
+  "Máximo de tentativas por pergunta": { es: "Máximo de intentos por pregunta" },
+  "Depois de tantas vezes sem resposta, a pergunta é encerrada como não respondida e deixa de ser feita.":
+    {
+      es: "Después de tantas veces sin respuesta, la pregunta se cierra como no respondida y deja de hacerse.",
+    },
+  "Palavras-gatilho (separe por vírgula)": { es: "Palabras disparadoras (separa por coma)" },
+  "Quando a mensagem do cliente contiver uma delas, o fluxo começa sozinho.": {
+    es: "Cuando el mensaje del cliente contenga una de ellas, el flujo comienza solo.",
+  },
+  "Excluir nó": { es: "Eliminar nodo" },
+  "Excluir aresta": { es: "Eliminar arista" },
+  "Excluir este nó?": { es: "¿Eliminar este nodo?" },
+  "Excluir esta aresta?": { es: "¿Eliminar esta arista?" },
+  "Este nó e as arestas ligadas a ele são apagados. Não é possível desfazer.": {
+    es: "Este nodo y las aristas conectadas a él se eliminan. No es posible deshacer.",
+  },
+  "A aresta entre os dois nós é apagada. Não é possível desfazer.": {
+    es: "La arista entre los dos nodos se elimina. No es posible deshacer.",
+  },
+  Organizar: { es: "Organizar" },
 };
 
 /**

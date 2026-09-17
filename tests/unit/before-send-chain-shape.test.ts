@@ -29,6 +29,7 @@ const ORDEM_ESPERADA = [
   "pacing",
   "messaging_window",
   "spinning",
+  "anti_mecanico",
   "promise",
   "semantic_promise",
   "case_promise",
@@ -65,8 +66,8 @@ describe("forma da cadeia before_send", () => {
     // O par (tamanho, versão) é o que amarra os dois. Acrescentar um gate sem
     // bumpar deixa o trace de auditoria mentindo sobre qual cadeia rodou — e o
     // trace é justamente a prova que as Fases 0–2 usam para dizer "não regrediu".
-    expect(BEFORE_SEND_GATES).toHaveLength(11);
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(7);
+    expect(BEFORE_SEND_GATES).toHaveLength(12);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(8);
   });
 
   it("internal_vocabulary roda ANTES do disclosure — inspeciona o texto do modelo, não o emendado", () => {
@@ -82,6 +83,12 @@ describe("forma da cadeia before_send", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("agenda_stall")).toBeLessThan(nomes.indexOf("disclosure"));
     expect(nomes.indexOf("agenda_stall")).toBe(nomes.indexOf("internal_vocabulary") + 1);
+  });
+
+  it("anti_mecanico vem logo após spinning e antes do disclosure — age no texto do modelo", () => {
+    const nomes = BEFORE_SEND_GATES.map((g) => g.name);
+    expect(nomes.indexOf("anti_mecanico")).toBe(nomes.indexOf("spinning") + 1);
+    expect(nomes.indexOf("anti_mecanico")).toBeLessThan(nomes.indexOf("disclosure"));
   });
 
   it("nenhum gate repetido — nome duplicado quebraria a leitura do trace", () => {

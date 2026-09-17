@@ -116,6 +116,16 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "anti_mecanico",
+    rotulo: "Não soar mecânico ao retomar o assunto",
+    oQueProtege:
+      "Barra a frase de ligação que denuncia o robô (\"como estamos falando disso, vamos continuar\") quando um fluxo de atendimento está ativo.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "É o que separa uma conversa de um formulário falado: a pergunta do fluxo continua sendo feita, apenas com naturalidade, sem a costura repetida.",
+     camada: null,
+  },
+  {
     nome: "promise",
     rotulo: "Não prometer preço ou prazo por conta própria",
     oQueProtege:

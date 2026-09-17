@@ -46,7 +46,7 @@ export default async function AtendimentoFlowsPage() {
           </p>
         </div>
       </header>
-      <ComoUsar />
+      <ComoUsar t={t} />
       <FlowsList initialData={flows} canWrite={canWrite} surface="atendimento" />
     </div>
   );

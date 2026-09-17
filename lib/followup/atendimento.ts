@@ -31,6 +31,7 @@ import {
   type FlowNode,
 } from "./graph-schema";
 import type { ContactFlowEventKind } from "./contact-flow-data";
+import { classificarInbound, type CampoPendenteParaCaptura } from "./captura-do-fluxo";
 
 export type PassoDeAtendimento =
   | { kind: "collect"; node: Extract<FlowNode, { type: "collect" }> }
@@ -494,6 +495,150 @@ export async function registrarTentativaDoTurno(
     return { estado: atualizado, concluiu: true };
   }
   return { estado: atualizado, concluiu: false };
+}
+
+/** Recalcula a situação do checklist preservando o resto do estado. */
+function recomputarSituacao(
+  estado: EstadoDeAtendimento,
+  valores: ReadonlySet<string>,
+  tentativas: Record<string, number> = estado.tentativas,
+): EstadoDeAtendimento {
+  return {
+    ...estado,
+    situacao: situacaoDoChecklist(estado.checklist, valores, {
+      tentativas,
+      maxTentativas: estado.maxTentativas,
+    }),
+  };
+}
+
+/** O campo pendente como a captura determinística o enxerga. */
+function comoCampoParaCaptura(
+  no: Extract<FlowNode, { type: "collect" }>,
+): CampoPendenteParaCaptura {
+  return {
+    key: no.config.key,
+    label: no.config.label,
+    type: no.config.type,
+    ...(no.config.options !== undefined ? { options: no.config.options } : {}),
+    ...(no.config.question !== undefined ? { question: no.config.question } : {}),
+  };
+}
+
+export interface ResultadoDoInbound {
+  estado: EstadoDeAtendimento;
+  /** true = o fluxo concluiu neste processamento (resposta capturada ou esgotamento). */
+  concluiu: boolean;
+  /** Ação de finalização, quando concluiu. */
+  finalizacao?: EndFinish;
+}
+
+/**
+ * Processa o INBOUND contra a PRIMEIRA pergunta pendente antes de o modelo rodar:
+ *
+ *   - `respondeu`  → grava o valor normalizado (fonte `deterministic`) e conclui
+ *                    se era o último obrigatório. NÃO conta tentativa.
+ *   - `desviou`    → registra `fora_do_fluxo`; a pergunta continua pendente e a
+ *                    tentativa NÃO conta (decisão 7 do plano robusto).
+ *   - `ignorou`/`nao_identificado` → conta tentativa (a pergunta foi feita e não
+ *                    veio resposta capturável); ao teto, esgota e conclui.
+ *
+ * Best-effort na gravação (falha não derruba o turno); a telemetria nunca conta
+ * como bloqueio.
+ */
+export async function processarInboundDoFluxo(
+  db: pg.Pool,
+  args: {
+    organizationId: string;
+    estado: EstadoDeAtendimento;
+    texto: string | null;
+    messageId?: string | null;
+  },
+): Promise<ResultadoDoInbound> {
+  const { estado } = args;
+  const primeiro = estado.situacao.pendentes[0];
+  if (primeiro === undefined) return { estado, concluiu: false };
+
+  const leitura = classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
+
+  if (leitura.resultado === "desviou") {
+    await registrarEventoDoFluxo(db, {
+      organizationId: args.organizationId,
+      enrollmentId: estado.enrollment.id,
+      flowPointerId: estado.enrollment.pointer_id,
+      contactId: estado.enrollment.contact_id,
+      kind: "fora_do_fluxo",
+      messageId: args.messageId ?? null,
+      fieldKey: primeiro.config.key,
+    }).catch(() => {});
+    return { estado, concluiu: false };
+  }
+
+  if (leitura.resultado === "respondeu") {
+    let gravou = false;
+    try {
+      await registrarDadoDoFluxo(db, {
+        organizationId: args.organizationId,
+        contactId: estado.enrollment.contact_id,
+        flowPointerId: estado.enrollment.pointer_id,
+        enrollmentId: estado.enrollment.id,
+        fieldKey: primeiro.config.key,
+        value: leitura.captura.bruto,
+        valueJson: {
+          normalizado: leitura.captura.valor,
+          tipo: primeiro.config.type,
+          deterministico: true,
+        },
+        source: "deterministic",
+      });
+      gravou = true;
+    } catch {
+      // best-effort: sem gravar, o campo segue pendente e o modelo pode registrar.
+    }
+    if (!gravou) return { estado, concluiu: false };
+
+    void registrarEventoDoFluxo(db, {
+      organizationId: args.organizationId,
+      enrollmentId: estado.enrollment.id,
+      flowPointerId: estado.enrollment.pointer_id,
+      contactId: estado.enrollment.contact_id,
+      kind: "resposta",
+      messageId: args.messageId ?? null,
+      fieldKey: primeiro.config.key,
+      payload: { normalizado: leitura.captura.valor, tipo: primeiro.config.type, deterministico: true },
+    }).catch(() => {});
+
+    const valores = new Set(Object.keys(estado.valores));
+    valores.add(primeiro.config.key);
+    const atualizado = recomputarSituacao(estado, valores);
+    if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
+
+    try {
+      await concluirEnrollmentDeAtendimento(db, {
+        organizationId: args.organizationId,
+        enrollmentId: estado.enrollment.id,
+        outcome: atualizado.checklist.fim.config.outcome,
+      });
+    } catch {
+      // best-effort: a conclusão se repete no próximo turno se falhar aqui.
+    }
+    void registrarEventoDoFluxo(db, {
+      organizationId: args.organizationId,
+      enrollmentId: estado.enrollment.id,
+      flowPointerId: estado.enrollment.pointer_id,
+      contactId: estado.enrollment.contact_id,
+      kind: "concluido",
+      messageId: args.messageId ?? null,
+    }).catch(() => {});
+    return { estado: atualizado, concluiu: true, finalizacao: atualizado.checklist.fim.config.ao_finalizar };
+  }
+
+  // `ignorou` ou `nao_identificado`: a pergunta segue pendente e o turno conta
+  // como tentativa (o teto é o freio contra a pergunta infinita).
+  const r = await registrarTentativaDoTurno(db, { organizationId: args.organizationId, estado });
+  return r.concluiu
+    ? { estado: r.estado, concluiu: true, finalizacao: r.estado.checklist.fim.config.ao_finalizar }
+    : { estado: r.estado, concluiu: false };
 }
 
 /** Marca o enrollment de atendimento como concluído (as perguntas param). */

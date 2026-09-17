@@ -15,8 +15,8 @@ titulo: Fluxos de atendimento em tempo real + melhorias no editor de fluxos
   e aresta, e validação de integridade do grafo (id repetido / aresta órfã) —
   vale para Follow-ups e para os Fluxos de atendimento.
 - **Entrada pelo motor:** cada fluxo pode ter **palavras-gatilho** (no nó Início);
-  quando a mensagem do cliente contém uma delas, o sistema **inicia o fluxo
-  sozinho** — sem depender do modelo. Saudação/assunto sem gatilho apenas é
+  quando a mensagem do cliente contém uma delas, o sistema inicia o fluxo
+  **sozinho** — sem depender do modelo. Saudação/assunto sem gatilho apenas é
   respondido, sem iniciar fluxo.
 
 Nada exige ação de quem opera: a atualização entra sem editar `.env` ou compose.

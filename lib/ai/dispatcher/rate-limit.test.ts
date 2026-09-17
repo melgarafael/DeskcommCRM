@@ -31,6 +31,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("contador em memória", () => {
   beforeEach(() => {
+    // O objeto sob teste é o CONTADOR EM MEMÓRIA. Sem este stub, uma `.env`
+    // real (VPS instalada) traz UPSTASH alcançável, `getRedis()` devolve um
+    // cliente de verdade e a chamada vira rede — que sob `vi.useFakeTimers()`
+    // nunca resolve e faz o teste estourar por timeout, medindo o ambiente em
+    // vez do contador. Valor de FORMA inválida: `lib/env` aceita e
+    // `validarConfigRedisRest` recusa, que é o caminho de fallback sob teste.
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "not-a-url");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "not-a-token");
     vi.resetModules();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-10T12:00:00Z"));
@@ -38,6 +46,7 @@ describe("contador em memória", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllEnvs();
   });
 
   it("não acumula uma chave por janela vencida", async () => {

@@ -65,6 +65,10 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
   { gate: "pacing", porque: "depende de quantas mensagens o número já enviou hoje e do horário do envio" },
   { gate: "messaging_window", porque: "depende de quando o contato falou com você pela última vez" },
   { gate: "spinning", porque: "depende das últimas mensagens enviadas por este número" },
+  {
+    gate: "anti_mecanico",
+    porque: "só age quando há um fluxo de atendimento ativo para o contato — não há fluxo no teste",
+  },
   { gate: "promise", porque: "depende da tabela de preços e condições da organização" },
   { gate: "semantic_promise", porque: "usa uma chamada de modelo extra, que o teste não gasta" },
   { gate: "case_promise", porque: "depende de haver um chamado aberto para este contato" },

@@ -288,10 +288,22 @@ describe("catraca: ninguém mais repete o namespace", () => {
       // árvores do repo, com o gate delas próprio.
       "evidence",
       ".claude",
+      // `backups/` é gitignored e guarda cópia de `.env`/compose de instalação
+      // (`.gitignore` linha ~127). Não é fonte: o namespace ali é cópia, não
+      // repetição, e varrê-la fazia o gate falhar em quem tem backups locais.
+      "backups",
     ].map((d) => `--exclude-dir=${d}`);
     // `.bak`/`.orig`/`.rej`/`~` são sobra de editor e de `sed -i.bak`. Sem isto,
     // uma sabotagem local deixa o gate vermelho pelo motivo errado.
-    const excluiArq = ["*.md", "*.bak", "*.orig", "*.rej", "*~"].map((g) => `--exclude=${g}`);
+    //
+    // `.env*` é ESTADO de instalação, não fonte: o `install.sh` grava o
+    // namespace no `.env` real do cliente (é a variável que ele DEFINE). O CI
+    // não tem `.env` e por isso nunca via isso; numa VPS instalada o gate
+    // vermelhecia por config correta. A declaração versionada segue coberta por
+    // `.env.hostgator.example`, que continua na varredura.
+    const excluiArq = ["*.md", "*.bak", "*.orig", "*.rej", "*~", ".env*"].map(
+      (g) => `--exclude=${g}`,
+    );
 
     let saida = "";
     try {

@@ -178,13 +178,14 @@ import {
   escolherFluxoPeloGatilho,
   iniciarFluxoDeAtendimento,
   listarFluxosDeAtendimentoAtivos,
+  processarInboundDoFluxo,
   registrarDadoDoFluxo,
   registrarEventoDoFluxo,
-  registrarTentativaDoTurno,
   renderBlocoDeAtendimento,
   situacaoDoChecklist,
 } from '@/lib/followup/atendimento';
 import type { EndFinish } from '@/lib/followup/graph-schema';
+import { perguntaSaiuNosTextos, textoDaPergunta } from '@/lib/followup/captura-do-fluxo';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -459,6 +460,13 @@ export const AGENT_TOOL_DEFS = {
  * que o modelo não fez não vale um cliente sem resposta.
  */
 export const MAX_VETOS_DE_VOCABULARIO_INTERNO = 2;
+
+/**
+ * O mesmo degrau para o veto de `muleta_mecanica` (costura de retomada com fluxo
+ * ativo): 1ª vez ensina o modelo a reescrever sem a muleta; a 2ª solta o envio.
+ * Mesma assimetria do vazamento interno — estilo não vale um cliente mudo.
+ */
+export const MAX_VETOS_DE_MULETA = 2;
 
 /**
  * O mesmo degrau para o veto de `false_empty_inbound`, e pela mesma assimetria.
@@ -1981,10 +1989,21 @@ async function executarTurnoDoAgente(
   // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
   const skills = await loadSkills(pool, tenantId);
   const skillIndex = renderSkillIndex(skills);
+  // Mensagem inbound do job, lida UMA vez: alimenta o gatilho por assunto, a
+  // captura determinística do fluxo e o contexto do turno (antes era lida duas
+  // vezes). `null` quando o job não tem inbound (ex.: follow-up).
+  const currentInboundText =
+    input.inboundMessageId === undefined
+      ? null
+      : await loadInboundBodyForJob(pool, {
+          tenantId,
+          conversationId: input.conversationId,
+          inboundMessageId: input.inboundMessageId,
+        });
+
   // Fluxo de atendimento ATIVO do contato (surface=atendimento): guia as
   // perguntas do turno e some quando o cliente completa. Sem enrollment ativo é
-  // null e nada muda. A tentativa do turno é registrada aqui — é o que faz a
-  // pergunta parar de ser feita depois de N tentativas sem resposta.
+  // null e nada muda.
   let atendimento = preview
     ? null
     : await carregarEstadoDeAtendimento(pool, { organizationId: tenantId, contactId: leadId });
@@ -1998,12 +2017,10 @@ async function executarTurnoDoAgente(
     input.inboundMessageId !== undefined
   ) {
     try {
-      const texto = await loadInboundBodyForJob(pool, {
-        tenantId,
-        conversationId: input.conversationId,
-        inboundMessageId: input.inboundMessageId,
+      const alvo = await escolherFluxoPeloGatilho(pool, {
+        organizationId: tenantId,
+        texto: currentInboundText,
       });
-      const alvo = await escolherFluxoPeloGatilho(pool, { organizationId: tenantId, texto });
       if (alvo !== null) {
         await iniciarFluxoDeAtendimento(pool, {
           organizationId: tenantId,
@@ -2021,14 +2038,29 @@ async function executarTurnoDoAgente(
       });
     }
   }
+  // FASE 2 — CAPTURA DETERMINÍSTICA + CONTAGEM DE TENTATIVA (motor): processa o
+  // inbound contra a pergunta pendente ANTES de gerar. Resposta e desvio NÃO
+  // contam tentativa; aceno/silêncio conta; ao teto, o fluxo esgota e conclui.
   let finalizacaoDoFluxo: EndFinish | undefined;
-  if (atendimento !== null) {
+  if (
+    atendimento !== null &&
+    !preview &&
+    liveJob().kind === 'inbound_turn' &&
+    input.inboundMessageId !== undefined
+  ) {
     try {
-      const r = await registrarTentativaDoTurno(pool, { organizationId: tenantId, estado: atendimento });
+      const r = await processarInboundDoFluxo(pool, {
+        organizationId: tenantId,
+        estado: atendimento,
+        texto: currentInboundText,
+        messageId: input.inboundMessageId,
+      });
       atendimento = r.estado;
-      if (r.concluiu) finalizacaoDoFluxo = atendimento.checklist.fim.config.ao_finalizar;
+      if (r.concluiu) {
+        finalizacaoDoFluxo = r.finalizacao ?? atendimento.checklist.fim.config.ao_finalizar;
+      }
     } catch (err) {
-      runLog.warn('não consegui registrar a tentativa do fluxo de atendimento', {
+      runLog.warn('não consegui processar o inbound do fluxo de atendimento', {
         error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
       });
     }
@@ -2077,14 +2109,6 @@ async function executarTurnoDoAgente(
     // sumiu) — ambos re-tentam pela fila e morrem em 'dead' se persistirem.
     throw new Error(`abertura do turno falhou em get_lead_context (${openingContext.error.code})`);
   }
-  const currentInboundText =
-    input.inboundMessageId === undefined
-      ? null
-      : await loadInboundBodyForJob(pool, {
-          tenantId,
-          conversationId: input.conversationId,
-          inboundMessageId: input.inboundMessageId,
-        });
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
@@ -2374,6 +2398,11 @@ async function executarTurnoDoAgente(
   // (`internal_vocabulary_leak`): 1º veto no turno ensina o modelo a reescrever; persistir
   // solta o envio com registro. Por turno (closure), nunca cross-turno.
   let internalVocabularyVetoCount = 0;
+  // Contador do fail-safe do gate anti-mecânico (`muleta_mecanica`): 1º veto no
+  // turno ensina o modelo a reescrever sem a costura; persistiu, solta o envio
+  // (com registro) — mesma doutrina do vazamento de vocabulário: cliente mudo
+  // nunca é desfecho.
+  let muletaVetoCount = 0;
   // Uma recusa deste tipo devolve o texto confirmado ao modelo para que ele
   // reescreva antes de falar com o cliente. Não gasta envio nem toca no canal.
   let falseEmptyInboundVetoCount = 0;
@@ -2417,6 +2446,10 @@ async function executarTurnoDoAgente(
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
   const outcomes: ChannelSendResult[] = [];
+  // Corpos EFETIVAMENTE enviados neste turno (já após a cadeia de guardrails).
+  // Usados pela trava "a pergunta saiu?" do fluxo de atendimento: se a pergunta
+  // pendente não apareceu em nenhum deles, o motor a envia em mensagem própria.
+  const corposEnviados: string[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
   let pendingCitations: ReturnType<typeof citationsFromHits> = [];
@@ -2861,6 +2894,7 @@ async function executarTurnoDoAgente(
           sleep: deps.sleep,
           lgpd,
           send: (finalBody: string) => {
+            corposEnviados.push(finalBody);
             seq += 1;
             return liveChannel().send({
               tenantId,
@@ -3060,6 +3094,10 @@ async function executarTurnoDoAgente(
             // não é dele, e a única saída seria o silêncio. O follow-up determinístico
             // idem (ver GateContext.internalVocabularyEnforced).
             enforceInternalVocabulary: true,
+            // Fase 2 do fluxo robusto: com um fluxo de atendimento ATIVO, veta a
+            // costura mecânica ("como estamos falando disso, vamos continuar").
+            // Sem fluxo, o gate fica desarmado — é estilo, não dano a prevenir.
+            antiMecanicoEnforced: fluxoAtendimento !== null,
             // Mesmo padrão do vocabulário interno: só o `send_message` arma — é o único
             // corpo escrito pelo modelo. `active` segue a MESMA condição de
             // `AGENDA_SYSTEM_BLOCK` (crm_book_appointment publicado); sem ela o gate
@@ -3082,8 +3120,9 @@ async function executarTurnoDoAgente(
             // C-007 (mídia): quando há `media_url`, envia UMA mensagem de imagem com o
             // `finalBody` como legenda — NÃO passa por `sendInBubbles` (quebrar uma
             // imagem em bolhas não faz sentido). Sem mídia, o caminho é o de sempre.
-            send: (finalBody: string) =>
-              fotos.length > 0
+            send: (finalBody: string) => {
+              corposEnviados.push(finalBody);
+              return fotos.length > 0
                 ? enviarFotos(finalBody)
                 : sendInBubbles(finalBody, {
                 enabled: agentConfig?.splitMessages ?? false,
@@ -3131,7 +3170,8 @@ async function executarTurnoDoAgente(
                     body: bubble,
                   });
                 },
-              }),
+                });
+            },
           };
           let chain = await runBeforeSend(beforeSendArgs);
           if (chain.status === 'vetoed' && chain.code === 'case_promise_without_case') {
@@ -3208,6 +3248,25 @@ async function executarTurnoDoAgente(
               openedCaseThisTurn,
               hasOpenCase: hasOpenCase || openedCaseThisTurn,
               enforceInternalVocabulary: false,
+            });
+          }
+          if (chain.status === 'vetoed' && chain.code === 'muleta_mecanica') {
+            // Mesma doutrina do vazamento de vocabulário: rede de estilo, não
+            // invariante sagrada. 1º veto ensina (o modelo reescreve sem a
+            // costura); persistiu, o envio sai com SÓ este gate desarmado — o
+            // re-run passa pela cadeia inteira, os demais continuam valendo.
+            muletaVetoCount += 1;
+            if (muletaVetoCount < MAX_VETOS_DE_MULETA) {
+              return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            runLog.warn('fail-safe do gate anti-mecânico: envio liberado após vetos seguidos', {
+              vetos: muletaVetoCount,
+            });
+            chain = await runBeforeSend({
+              ...beforeSendArgs,
+              openedCaseThisTurn,
+              hasOpenCase: hasOpenCase || openedCaseThisTurn,
+              antiMecanicoEnforced: false,
             });
           }
           if (chain.status === 'vetoed') {
@@ -4042,6 +4101,91 @@ async function executarTurnoDoAgente(
       // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
       // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
       throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+    }
+
+    // FASE 2 — TRAVA "A PERGUNTA SAIU?" (motor): a pergunta pendente do fluxo é
+    // COMPROMISSO, não sugestão. Se o modelo não a incluiu em NENHUMA das
+    // mensagens deste turno, o motor a envia em mensagem própria — pela MESMA
+    // cadeia de guardrails (nada sai por baixo dela). Best-effort: falhar aqui
+    // não derruba o turno que já respondeu ao cliente.
+    if (
+      !preview &&
+      liveJob().kind === 'inbound_turn' &&
+      atendimento !== null &&
+      valoresDoFluxo !== null &&
+      seq < maxSendsPerTurn
+    ) {
+      const estadoDoFluxo = atendimento;
+      const pendenteDoTurno = estadoDoFluxo.situacao.pendentes[0];
+      if (pendenteDoTurno !== undefined && !valoresDoFluxo.has(pendenteDoTurno.config.key)) {
+        const cfg = pendenteDoTurno.config;
+        const pergunta = textoDaPergunta({
+          key: cfg.key,
+          label: cfg.label,
+          type: cfg.type,
+          ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+          ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+        });
+        const eventoPergunta = (origem: 'modelo' | 'motor'): void => {
+          void registrarEventoDoFluxo(pool, {
+            organizationId: tenantId,
+            enrollmentId: estadoDoFluxo.enrollment.id,
+            flowPointerId: estadoDoFluxo.enrollment.pointer_id,
+            contactId: estadoDoFluxo.enrollment.contact_id,
+            kind: 'pergunta_feita',
+            messageId: input.inboundMessageId ?? null,
+            fieldKey: cfg.key,
+            payload: { origem },
+          }).catch(() => {});
+        };
+        if (perguntaSaiuNosTextos(pergunta, corposEnviados)) {
+          eventoPergunta('modelo');
+        } else {
+          try {
+            const chain = await runBeforeSend({
+              pool,
+              log: runLog,
+              agentOperation,
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              channelSessionId: input.channelSessionId,
+              body: pergunta,
+              optedOutThisTurn,
+              crmDailyLimit: null,
+              // A pergunta é DETERMINÍSTICA e pode repetir por design (foi feita e
+              // não respondida): o gate anti-blast vetaria justamente o que este
+              // caminho existe para garantir. Mesmo motivo do aviso de escalação.
+              enforceSpinning: false,
+              now: clock(),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+              ...(lgpd !== undefined ? { lgpd } : {}),
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              send: (finalBody: string) => {
+                seq += 1;
+                corposEnviados.push(finalBody);
+                return liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq,
+                  conversationId: input.conversationId,
+                  body: finalBody,
+                });
+              },
+            });
+            if (chain.status === 'sent') eventoPergunta('motor');
+          } catch (err) {
+            runLog.warn('trava da pergunta do fluxo falhou — o turno segue', {
+              error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+            });
+          }
+        }
+      }
     }
 
     // F3-10: poda os tool results antigos da fita do run ANTES de reenviá-los no fechamento
