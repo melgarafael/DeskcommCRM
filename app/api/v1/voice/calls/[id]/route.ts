@@ -11,6 +11,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
 import { getWacallsClient, wacallsFriendlyError } from "@/lib/wacalls/client";
 import { podeEncerrar, resolveVoiceCall } from "@/lib/wacalls/calls";
 
@@ -53,6 +54,22 @@ export async function DELETE(
       403,
       { requestId },
     );
+  }
+
+  // LIGAÇÃO QUE JÁ ACABOU NÃO SE ENCERRA DE NOVO.
+  //
+  // `ended` só nasce do `call-ended` do próprio serviço de voz
+  // (`lib/wacalls/events-bridge.ts`), então não há áudio vivo a cortar. Medido
+  // em produção em 2026-09-15: o celular desligou, o painel ficou preso na tela,
+  // e o clique em encerrar 66 s depois gravou DOIS `voice.call_ended` atribuindo
+  // ao atendente o fim de uma ligação que o cliente tinha encerrado — o serviço
+  // de voz responde 204 para qualquer id. Sucesso idempotente, sem trilha falsa.
+  if (call.status === "ended") {
+    logger.info("voz: pedido de encerrar ligação já encerrada", {
+      request_id: requestId,
+      voice_call_id: id,
+    });
+    return noContent(requestId);
   }
 
   try {

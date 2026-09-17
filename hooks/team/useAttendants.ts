@@ -16,7 +16,6 @@ export interface AttendantAvailability {
   /** null = atendente ainda sem linha de availability (nunca configurado). */
   capacity: number | null;
   schedule: AvailabilitySchedule;
-  last_heartbeat_at: string | null;
   updated_at: string | null;
   /** Conversas abertas atribuídas (G5-04): a mesma carga que o router usa. */
   current_load: number;

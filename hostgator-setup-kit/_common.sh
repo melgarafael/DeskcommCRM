@@ -439,6 +439,98 @@ url_do_schema() {
 # alcance de uma role de app com grants só em `public`.
 psql_run() { docker run --rm -i postgres:17-alpine psql "$(url_do_schema)" -v ON_ERROR_STOP=1 "$@"; }
 
+# ── Re-aplicar o baseline num banco que JÁ existe ────────────────────────────
+# Chamado pelo `update.sh` e pelo `install.sh` re-executado. Sem `ON_ERROR_STOP`,
+# de propósito: com a flag, o primeiro "já existe" de um clone antigo pararia o
+# arquivo, e o apêndice com as migrations novas nunca chegaria.
+#
+# O preço é que o psql segue depois de QUALQUER erro, inclusive dos que não vêm
+# do arquivo. Medido numa VPS real, na v1.27.3: com o app atendendo, dois
+# comandos perderam um `deadlock detected`, e um deles era o `create policy` logo
+# depois do `drop policy` da mesma policy — `ai_knowledge_sources` ficou sem a
+# policy de leitura até alguém refazer o bloco à mão. O aviso saiu na tela, no
+# meio das três linhas de ruído das atualizações daquela VPS (v1.27.2 e v1.27.3).
+#
+# O arquivo é idempotente (o job `invariants` o re-aplica com ON_ERROR_STOP=1),
+# então a cura de uma disputa é aplicá-lo de novo, inteiro. O veredito é o da
+# ÚLTIMA passada: o comando que perdeu na primeira rodou outra vez na seguinte,
+# e é o estado dela que fica no banco. Só re-aplica por erro de disputa ou de
+# conexão — a que cai no meio e a que nem chega a abrir. Erro de permissão ou de
+# dado se repetiria igual, só mais tarde. Medido contra um Postgres 17 real:
+# deadlock (psql sai 0), `pg_terminate_backend`, restart do servidor e
+# "too many clients" (psql sai 2) — todos curados na 2ª passada.
+#
+# O limite da cura, e por que cada nova passada imprime o que não aplicou: um
+# comando que COPIA dado guardado por uma checagem de catálogo, e que perde a
+# disputa enquanto o comando seguinte (o que destrói a origem) passa, não tem o
+# que copiar na passada seguinte — ela sai limpa e o dado não veio. O ✓ depois
+# de uma disputa nunca é mudo: cada nova passada lista na tela as linhas que não
+# aplicaram (as de disputa primeiro, até 10, dizendo quantas ficaram de fora) e,
+# quando quem chama passa um log, a saída inteira de cada passada vai para ele.
+#
+# Nada de `| grep -q` nem `| head` aqui: com `pipefail`, o leitor que sai cedo
+# mata o `printf` com SIGPIPE quando a saída passa do buffer do pipe (os milhares
+# de "must be owner" de uma role sem dono passam), e o pipeline inteiro vira
+# falha — medido: a disputa deixava de ser reconhecida. `grep` sem `-q`, `sed`
+# e `awk` leem até o fim; o `grep -q` que sobra lê de here-string, e se ela
+# falhar a função devolve 1 (aviso), nunca 0.
+#
+#   reaplicar_baseline <baseline.sql> [log]
+#     0 → a última passada não teve erro fora dos benignos
+#     1 → teve; as linhas ficam em BASELINE_INESPERADO
+#   BASELINE_PASSADAS diz quantas passadas foram feitas.
+#   O log, quando dado, recebe a saída de TODAS as passadas, cada uma com cabeçalho.
+#   BASELINE_TENTATIVAS (padrão 3) e BASELINE_ESPERA_S (padrão 10, vezes o número
+#   da passada) existem para a suíte de shell não esperar de verdade.
+BASELINE_ERROS_BENIGNOS='already exists|multiple primary keys|multiple default values|is already a member|already a partition'
+BASELINE_ERROS_DE_DISPUTA='deadlock detected|could not serialize access|lock timeout|could not obtain lock|terminating connection|server closed the connection|connection to server was lost|SSL connection has been closed unexpectedly|SSL SYSCALL error|remaining connection slots|too many clients|max client(s| connections) reached|the database system is (starting up|shutting down|in recovery mode|not yet accepting connections)|Temporary failure in name resolution|Connection refused|Connection timed out|timeout expired|Network (is )?unreachable'
+# listar_erros_do_banco <linhas> <máximo> [recuo]: as de disputa ou conexão primeiro
+# — são as que explicam uma nova passada, e numa lista de milhares de "must be
+# owner" ficariam fora do corte —, depois o resto, dizendo quantas ficaram de fora.
+listar_erros_do_banco() {
+  local linhas="$1" maximo="$2" recuo="${3:-}" total
+  total="$(printf '%s\n' "$linhas" | grep -c . || true)"
+  # `awk` com -v, e não `sed "s/^/$recuo/"`: assim o recuo e o máximo entram como
+  # DADO. Uma barra no recuo quebraria o programa do sed, e `maximo=0` viraria o
+  # endereço inválido `1,0` — os dois derrubariam o script sob set -e.
+  { printf '%s\n' "$linhas" | grep -iE "$BASELINE_ERROS_DE_DISPUTA" || true
+    printf '%s\n' "$linhas" | grep -viE "$BASELINE_ERROS_DE_DISPUTA" || true
+  } | awk -v r="$recuo" -v n="$maximo" 'NF && ++i <= n { print r $0 }'
+  [ "${total:-0}" -le "$maximo" ] || printf '%s(e mais %s linhas)\n' "$recuo" "$((total - maximo))"
+}
+
+reaplicar_baseline() {
+  local arquivo="$1" log="${2:-}" tentativas="${BASELINE_TENTATIVAS:-3}" espera="${BASELINE_ESPERA_S:-10}"
+  local raw rc causa
+  BASELINE_PASSADAS=1
+  [ -z "$log" ] || : > "$log"
+  while :; do
+    rc=0
+    raw="$(docker run --rm -i -v "$arquivo:/b.sql:ro" postgres:17-alpine \
+          psql "$(url_do_schema)" -q -f /b.sql 2>&1)" || rc=$?
+    [ -z "$log" ] || printf '── passada %s de %s (saída %s) ──\n%s\n' "$BASELINE_PASSADAS" "$tentativas" "$rc" "$raw" >> "$log"
+    BASELINE_INESPERADO="$(printf '%s\n' "$raw" | grep -iE 'ERROR|FATAL' | grep -viE "$BASELINE_ERROS_BENIGNOS" || true)"
+    # Sem ON_ERROR_STOP o psql sai 0 mesmo com erro de SQL: saída diferente de
+    # zero é o psql (ou o docker) que NÃO chegou ao fim do arquivo. Sem isto, uma
+    # conexão que cai no meio sem imprimir a palavra ERROR terminaria em
+    # "✓ banco atualizado" com metade do arquivo aplicada. A causa citada é a
+    # última linha que não é continuação indentada — a última de todas costuma ser
+    # a dica "Is the server running…", e não o motivo.
+    if [ "$rc" -ne 0 ]; then
+      causa="$(printf '%s\n' "$raw" | awk 'NF && !/^[[:space:]]/ { l = $0 } END { print l }')"
+      BASELINE_INESPERADO="$(printf '%s\n' "$BASELINE_INESPERADO" \
+        "a aplicação não chegou ao fim do arquivo (o psql saiu com código $rc): $causa" | sed '/^$/d')"
+    fi
+    [ -n "$BASELINE_INESPERADO" ] || return 0
+    [ "$BASELINE_PASSADAS" -lt "$tentativas" ] || return 1
+    grep -qiE "$BASELINE_ERROS_DE_DISPUTA" <<<"$BASELINE_INESPERADO" || return 1
+    c_ylw "• parte do banco não aplicou (disputa com o app no ar ou conexão instável) — aplicando de novo, é seguro (passada $((BASELINE_PASSADAS + 1)) de $tentativas). O que não aplicou:"
+    listar_erros_do_banco "$BASELINE_INESPERADO" 10 "    "
+    sleep "$((espera * BASELINE_PASSADAS))"
+    BASELINE_PASSADAS=$((BASELINE_PASSADAS + 1))
+  done
+}
+
 # ── As três imagens que NÓS publicamos ───────────────────────────────────────
 # O namespace é constante e literal de propósito: ele está gravado no .env de
 # toda instalação viva, e derivá-lo de variável faria o kit antigo (que já está
@@ -794,6 +886,28 @@ cron_merge() {  # cron_merge <marcador> <assinatura_legada> <linha_nova>
   printf '%s\n' "$nova"
 }
 
+# ── O segredo do cron mora num ARQUIVO, nunca na linha do crontab ────────────
+# O `cron` do Ubuntu registra no syslog a linha de comando inteira de cada
+# execução. Com `-H "Authorization: Bearer <segredo>"` escrito na linha, o
+# segredo que libera as rotas de cron (e a de atualização do agente) ia para o
+# log a cada minuto — medido numa VPS de produção em 2026-09-17: 24.827 linhas
+# no journal, legíveis por qualquer coisa que leia o log do sistema e copiadas
+# para cada relatório que alguém tira dele.
+#
+# Agora a linha aponta para `.env.cron-drain` (`curl -H @arquivo`, curl ≥ 7.55),
+# que nasce com 600 e é regravado a cada install/update a partir do `.env`:
+# trocar o segredo no `.env` e rodar o update basta para o cron acompanhar. O
+# nome casa com `.env*` de propósito — `.gitignore` e `.dockerignore` já o
+# deixam de fora.
+gravar_cabecalho_do_cron() {  # gravar_cabecalho_do_cron <arquivo> <segredo>
+  local arquivo="$1" segredo="$2" tmp
+  # `mktemp` cria com 600 desde o primeiro byte: um `printf > arquivo` seguido
+  # de `chmod` deixaria o segredo legível por um instante, e o `mv` troca de uma vez.
+  tmp="$(mktemp "${arquivo}.XXXXXX")" || return 1
+  if ! printf 'Authorization: Bearer %s\n' "$segredo" > "$tmp"; then rm -f "$tmp"; return 1; fi
+  chmod 600 "$tmp" && mv -f "$tmp" "$arquivo"
+}
+
 setup_event_log_drain_cron() {
   command -v crontab >/dev/null 2>&1 || { c_ylw "⚠ 'crontab' não encontrado — instale o pacote 'cron' e rode de novo pra ativar as automações."; return 0; }
 
@@ -811,7 +925,16 @@ setup_event_log_drain_cron() {
   local first_time=1
   if crontab -l 2>/dev/null | grep -qF -e "$url_drain"; then first_time=0; fi
 
-  local cron_line="* * * * * curl -fsS -H \"Authorization: Bearer ${secret}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
+  local cabecalho="${PROJECT_DIR:-$PWD}/.env.cron-drain"
+  gravar_cabecalho_do_cron "$cabecalho" "$secret" \
+    || { c_ylw "⚠ não consegui gravar ${cabecalho} — não ativei o cron das automações."; return 0; }
+
+  # A linha legada (com o Bearer escrito nela) sai pela assinatura da URL.
+  # ⚠️ Numa instalação existente isso só acontece a partir do update SEGUINTE ao
+  # que traz este conserto: o `update.sh` faz `source` deste arquivo ANTES do
+  # `git checkout` da tag, então no update que o traz quem roda aqui ainda é a
+  # versão anterior desta função.
+  local cron_line="* * * * * curl -fsS -H @\"${cabecalho}\" \"${url_drain}\" >/dev/null 2>&1 ${marcador}"
   # ⚠️ `|| true` OBRIGATÓRIO, e não é defensividade: `crontab -l` sai com status
   # 1 (sem stdout, só um aviso no stderr) quando o usuário NUNCA teve crontab —
   # o caso NORMAL de uma VPS recém-provisionada, que é o caso normal de quem

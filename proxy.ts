@@ -22,10 +22,10 @@ export async function proxy(request: NextRequest) {
   response.headers.set("x-pathname", pathname);
   request.headers.set("x-pathname", pathname);
 
-  // EPIC-11: in dev we route by path (`/admin/*`); in prod the
-  // `admin.deskcomm.com` sub-domain is mapped via Vercel rewrites to the same
-  // `/admin/*` paths. The host-based branch below stays a NOOP today and only
-  // exists as documentation of the intended deploy topology.
+  // EPIC-11: the admin surface is reached by PATH (`/admin/*`) — the self-host kit
+  // points `NEXT_PUBLIC_ADMIN_URL` at the same host as the app and maps no `admin.`
+  // sub-domain. The host-based branch below stays a NOOP today and only exists as
+  // documentation of the intended deploy topology.
   const host = request.headers.get("host") ?? "";
   const isAdminSurface = host.startsWith("admin.") || pathname.startsWith("/admin");
 

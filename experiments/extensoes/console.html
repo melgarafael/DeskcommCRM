@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bancada de extensões</title>
+  <link rel="icon" href="data:,">
+  <style nonce="__NONCE__">
+    :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #f5f7fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1140px; margin: 0 auto; padding: 48px 24px 64px; }
+    .eyebrow { color: #425ca0; font-size: 13px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+    h1 { font-size: clamp(29px, 5vw, 42px); line-height: 1.15; letter-spacing: -.035em; margin: 12px 0 16px; }
+    .intro { max-width: 750px; color: #46546a; line-height: 1.7; font-size: 17px; }
+    .notice { margin: 28px 0; border: 1px solid #d6dfee; border-left: 4px solid #5772ad; border-radius: 10px; background: #edf2fa; padding: 17px 20px; line-height: 1.6; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+    article { border: 1px solid #dfe5ee; background: white; border-radius: 16px; padding: 24px; min-width: 0; box-shadow: 0 3px 12px #17203305; }
+    .number { font-weight: 700; font-size: 13px; color: #66748b; }
+    h2 { margin: 14px 0 10px; font-size: 21px; line-height: 1.3; letter-spacing: -.025em; }
+    .description { min-height: 92px; font-size: 14px; color: #536176; line-height: 1.65; }
+    .status { display: inline-block; border-radius: 20px; background: #edf0f5; color: #46546a; padding: 6px 10px; font-size: 12px; font-weight: 700; margin: 4px 0 16px; }
+    .passed { background: #e5f4ee; color: #176646; }
+    .failed, .interrupted { background: #fbe9e8; color: #96362e; }
+    .running, .blocked { background: #fff1cf; color: #77510b; }
+    button { display: block; width: 100%; border: 1px solid #223d79; border-radius: 9px; padding: 12px 14px; background: #294988; color: #fff; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; min-height: 44px; }
+    button:hover:not(:disabled) { background: #1d386f; }
+    button:disabled { background: #e8edf4; color: #627087; border-color: #d8e0ec; cursor: wait; }
+    :focus-visible { outline: 3px solid #658af3; outline-offset: 4px; }
+    .result { margin-top: 20px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+    .check { display: flex; gap: 9px; padding: 10px 0; border-top: 1px solid #edf0f5; }
+    .check-symbol { color: #137651; flex-shrink: 0; font-weight: 700; }
+    .check-symbol.bad { color: #ae352f; }
+    .check-name { font-weight: 600; }
+    .muted { color: #617087; font-size: 12px; }
+    .limit { border-left: 3px solid #d5b66b; padding-left: 10px; margin: 12px 0; color: #675435; }
+    details { margin-top: 10px; border-top: 1px solid #edf0f5; }
+    summary { cursor: pointer; font-weight: 650; color: #294988; padding: 13px 0; min-height: 44px; }
+    .outcome { font-size: 14px; color: #34465e; }
+    .count { font-weight: 650; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: #f4f6f9; border-radius: 8px; font-size: 11px; }
+    footer { color: #637187; font-size: 13px; margin-top: 30px; line-height: 1.7; }
+    #connection { min-height: 22px; margin: 12px 0 0; color: #96362e; font-size: 14px; }
+    @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } .description { min-height: auto; } main { padding: 28px 16px; } article { padding: 22px; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Pesquisa de arquitetura · dados sintéticos</div>
+  <h1>Bancada de extensões</h1>
+  <p class="intro">Cada prova executa mecanismos reais e mostra o que aconteceu. Os resultados orientam a arquitetura antes de conectar novas capacidades ao CRM.</p>
+  <aside class="notice"><strong>Alcance desta bancada:</strong> executor Wasmtime local e PostgreSQL exclusivo. Estas provas não são a jornada integrada do CRM. A comparação com contêiner depende do Docker; sua indisponibilidade aparece como limitação.</aside>
+  <div class="grid">
+    <article id="runtime">
+      <span class="number">PROVA 01</span><h2>Execução isolada</h2>
+      <p class="description">Verificar permissões, memória e interrupção. Depois de uma falha, uma chamada válida precisa continuar funcionando.</p>
+      <div class="status" data-testid="runtime-status" aria-live="polite">Ainda não executada</div>
+      <button data-probe="runtime">Executar prova de execução</button>
+      <div class="result" data-testid="runtime-result"></div>
+    </article>
+    <article id="events">
+      <span class="number">PROVA 02</span><h2>Eventos e continuidade</h2>
+      <p class="description">Capturar fatos, retomar uma entrega interrompida e tratar uma resposta incerta sem repetir o efeito às cegas.</p>
+      <div class="status" data-testid="events-status" aria-live="polite">Ainda não executada</div>
+      <button data-probe="events">Executar prova de eventos</button>
+      <div class="result" data-testid="events-result"></div>
+    </article>
+    <article id="state">
+      <span class="number">PROVA 03</span><h2>Dados e permissões</h2>
+      <p class="description">Atualizar dados com tarefas antigas, desativar durante uma ação e preservar o histórico depois de remover o executável.</p>
+      <div class="status" data-testid="state-status" aria-live="polite">Ainda não executada</div>
+      <button data-probe="state">Executar prova de dados</button>
+      <div class="result" data-testid="state-result"></div>
+    </article>
+  </div>
+  <p id="connection" role="status"></p>
+  <footer>As medições são do ambiente desta rodada. Resultados concluídos ficam salvos localmente e reaparecem ao recarregar a página. Os detalhes incluem verificações técnicas e limites para orientar a próxima entrega.</footer>
+</main>
+<script type="module" nonce="__NONCE__">
+  const labels = { running: 'Em andamento', passed: 'Concluída', failed: 'Falhou', blocked: 'Ambiente pendente', interrupted: 'Interrompida' };
+  const outcomes = {
+    runtime: 'As barreiras testadas funcionaram, e uma execução válida continuou funcionando após cada falha.',
+    events: 'Os cenários de captura, retomada e resposta incerta tiveram os resultados esperados.',
+    state: 'Os cenários testados de atualização, desativação e preservação do histórico passaram.',
+  };
+  const scope = {
+    runtime: 'O isolamento medido aqui ainda precisa ser testado no ambiente da VPS.',
+    events: 'A prova usa o banco exclusivo da bancada; a integração com as filas do CRM segue pendente.',
+    state: 'A prova usa dados e permissões de teste; a jornada completa no CRM segue pendente.',
+  };
+  const rendered = new Map();
+  const connection = document.querySelector('#connection');
+  let requesting = false;
+  let actionMessage = '';
+  let pending = null;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('pending-probe'));
+    if (saved && ['runtime', 'events', 'state'].includes(saved.id)
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(saved.request_id)) pending = saved;
+  } catch { /* Estado local ausente ou inválido não inicia uma prova. */ }
+  function confirmed() {
+    pending = null;
+    sessionStorage.removeItem('pending-probe');
+    actionMessage = '';
+  }
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+  function showResult(card, job) {
+    const key = `${job.run_id}:${job.status}`;
+    if (rendered.get(card.id) === key) return;
+    rendered.set(card.id, key);
+    const target = card.querySelector('.result');
+    target.dataset.runId = job.run_id;
+    const fragment = document.createDocumentFragment();
+    if (job.message) fragment.append(element('p', job.message));
+    if (job.finished_at) fragment.append(element('p', `Última rodada: ${new Date(job.finished_at).toLocaleString('pt-BR')}`, 'muted'));
+    const report = job.report;
+    if (report) {
+      if (report.status === 'passed') fragment.append(element('p', outcomes[card.id], 'outcome'));
+      if (report.status === 'blocked') fragment.append(element('p', 'O ambiente desta prova está incompleto. Consulte os limites abaixo, prepare o recurso que falta e execute novamente.', 'outcome'));
+      fragment.append(element('p', report.checks.length ? `${report.checks.filter(check => check.passed).length} de ${report.checks.length} verificações passaram.` : 'Nenhuma verificação foi concluída nesta rodada.', 'count'));
+      fragment.append(element('p', scope[card.id], 'limit'));
+      const checks = element('details', '');
+      checks.open = report.checks.some(check => !check.passed);
+      checks.append(element('summary', `Ver ${report.checks.length} verificações`));
+      for (const check of report.checks) {
+        const row = element('div', '', 'check');
+        const symbol = element('span', check.passed ? '✓' : '!', `check-symbol${check.passed ? '' : ' bad'}`);
+        symbol.setAttribute('aria-label', check.passed ? 'Passou' : 'Falhou');
+        const copy = element('div', '');
+        copy.append(element('div', check.name ?? check.id, 'check-name'));
+        copy.append(element('div', typeof check.observed === 'string' ? check.observed : JSON.stringify(check.observed), 'muted'));
+        row.append(symbol, copy); checks.append(row);
+      }
+      if (report.checks.length) fragment.append(checks);
+      const limits = element('details', '');
+      limits.append(element('summary', 'Limites desta prova'));
+      for (const limit of report.limitations) limits.append(element('p', typeof limit === 'string' ? limit : JSON.stringify(limit), 'limit'));
+      fragment.append(limits);
+      const details = element('details', '');
+      details.append(element('summary', 'Ver medições e referências técnicas'));
+      details.append(element('pre', JSON.stringify({ environment: report.environment, measurements: report.measurements, checks: report.checks }, null, 2)));
+      fragment.append(details);
+    }
+    target.replaceChildren(fragment);
+  }
+  async function refresh() {
+    try {
+      const response = await fetch('/api/status', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Não foi possível consultar a bancada.');
+      const data = await response.json();
+      if (pending) {
+        const expected = pending;
+        const receipt = await fetch(`/api/request/${expected.request_id}`, { cache: 'no-store' });
+        if (receipt.ok) {
+          const job = await receipt.json();
+          if (job.request_id === expected.request_id && job.id === expected.id && pending === expected) confirmed();
+        } else if (receipt.status !== 404) throw new Error('Não foi possível confirmar a solicitação.');
+      }
+      for (const card of document.querySelectorAll('article')) {
+        const job = data.jobs[card.id];
+        const status = card.querySelector('.status');
+        status.textContent = job ? (labels[job.status] ?? 'Estado desconhecido') : 'Ainda não executada';
+        status.className = `status ${job?.status ?? ''}`;
+        card.querySelector('button').disabled = Boolean(data.active) || requesting || Boolean(pending && pending.id !== card.id);
+        if (job) showResult(card, job);
+      }
+      connection.textContent = pending ? 'Ainda não foi possível confirmar o início. A bancada está consultando a solicitação; você pode tentar novamente pelo mesmo botão, sem duplicar a prova.' : actionMessage;
+    } catch {
+      connection.textContent = 'Sem conexão com a bancada. Os resultados já exibidos foram preservados; tentando reconectar.';
+      for (const button of document.querySelectorAll('button')) button.disabled = true;
+    }
+  }
+  for (const button of document.querySelectorAll('[data-probe]')) button.addEventListener('click', async () => {
+    requesting = true;
+    actionMessage = '';
+    pending ??= { id: button.dataset.probe, request_id: crypto.randomUUID() };
+    sessionStorage.setItem('pending-probe', JSON.stringify(pending));
+    for (const other of document.querySelectorAll('button')) other.disabled = true;
+    try {
+      const response = await fetch(`/api/run/${button.dataset.probe}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-request-id': pending.request_id }, body: '{}' });
+      const result = await response.json();
+      if (response.ok) confirmed();
+      else {
+        // Uma recusa não prova o destino de uma tentativa anterior com este ID.
+        actionMessage = result.error;
+      }
+    } catch {
+      if (pending) {
+        actionMessage = 'Ainda não foi possível confirmar o início. Consultando a solicitação na bancada.';
+        connection.textContent = actionMessage;
+      }
+    }
+    finally { requesting = false; await refresh(); }
+  });
+  await refresh();
+  setInterval(refresh, 800);
+</script>
+</body>
+</html>

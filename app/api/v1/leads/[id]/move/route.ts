@@ -19,6 +19,11 @@ import { moveLeadSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import {
+  decideMotivoDaPerda,
+  recusaDeMotivoDaPerdaPeloBanco,
+} from "@/lib/leads/motivo-da-perda";
+import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -67,10 +72,11 @@ export async function POST(
     return fail("not_found", t("Lead não encontrado."), 404, { requestId });
   }
 
-  // Fetch target stage to validate same pipeline (P-01).
+  // Fetch target stage to validate same pipeline (P-01) — e `is_lost`, que é o
+  // que decide se esta escrita precisa do motivo da perda (issue #917).
   const { data: stage, error: stageErr } = await supabase
     .from("crm_stages")
-    .select("id, pipeline_id, name")
+    .select("id, pipeline_id, name, is_lost")
     .eq("id", input.stage_id)
     .maybeSingle();
 
@@ -83,19 +89,36 @@ export async function POST(
   if (stage.pipeline_id !== lead.pipeline_id) {
     return fail(
       "pipeline_immutable_use_clone",
-      t("Move cross-pipeline não é permitido. Clone o lead para o pipeline alvo."),
+      t(RECUSA_DE_TROCA_DE_FUNIL),
       422,
-      { requestId },
+      { requestId, details: { use: "/api/v1/leads/{id}/clone" } },
     );
   }
 
-  // OCC update (Pattern B / Spec 09 §7.2).
+  // ── O MOTIVO DA PERDA (issue #917) ──────────────────────────────────────────
+  //
+  // A etapa de destino é de perda? Então esta escrita fecha o negócio, e o banco
+  // exige o motivo. Decidido ANTES do update, porque depois dele o que existe é a
+  // linha recusada — e a recusa do Postgres chegava ao board como 500.
+  const veredito = decideMotivoDaPerda({
+    etapaDeDestino: stage,
+    motivo: input.lost_reason,
+    motivoAtual: (lead as { lost_reason?: string | null }).lost_reason ?? null,
+    idioma: user.idioma,
+  });
+  if (!veredito.ok) {
+    return fail(veredito.codigo, veredito.mensagem, 422, { requestId });
+  }
+
+  // OCC update (Pattern B / Spec 09 §7.2). O motivo da perda entra NA MESMA
+  // escrita que muda a etapa — nunca numa segunda, que teria janela.
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update({
       stage_id: input.stage_id,
       position_in_stage: input.position_in_stage,
       updated_at: new Date().toISOString(),
+      ...veredito.patch,
     })
     .eq("id", leadId)
     .eq("updated_at", input.expected_updated_at)
@@ -103,6 +126,12 @@ export async function POST(
     .maybeSingle();
 
   if (updErr) {
+    // Rede de segurança (issue #917): se o banco recusar por motivo da perda mesmo
+    // com a decisão acima, quem está na tela recebe a recusa de negócio. Sem isto,
+    // qualquer caminho novo que escreva `stage_id` sem passar pela decisão volta a
+    // chegar aqui como 500 — que é o defeito, com outro nome.
+    const recusa = recusaDeMotivoDaPerdaPeloBanco(updErr, user.idioma);
+    if (recusa) return fail(recusa.codigo, recusa.mensagem, 422, { requestId });
     return fail("internal_error", updErr.message, 500, { requestId });
   }
 
@@ -123,15 +152,6 @@ export async function POST(
       },
     );
   }
-
-  // Re-SELECT so trigger-driven status/closed_at changes are reflected.
-  const { data: fresh } = await supabase
-    .from("crm_leads")
-    .select("*")
-    .eq("id", leadId)
-    .maybeSingle();
-
-  const finalLead = fresh ?? lead;
 
   // Wave 3 (CORE 2): esta é a rota que o BOARD usa — arrastar o card passa por
   // aqui, não pelo moveLeadHandler. O emissor é o mesmo dos outros escritores
@@ -170,6 +190,19 @@ export async function POST(
       requestId,
     });
   }
+
+  // Re-SELECT so trigger-driven status/closed_at changes are reflected — e
+  // DEPOIS da atividade: gravá-la dispara `trg_update_last_activity_at`, que
+  // escreve no lead e troca o `updated_at` de novo. Relido antes, a resposta
+  // levava um `updated_at` já vencido e o próximo arrastar do mesmo card caía
+  // na OCC com 409 "modificado por outro usuário" (issue #916).
+  const { data: fresh } = await supabase
+    .from("crm_leads")
+    .select("*")
+    .eq("id", leadId)
+    .maybeSingle();
+
+  const finalLead = fresh ?? lead;
 
   // Emit domain event (fire-and-forget; trigger NEVER does HTTP — workers do).
   await supabase

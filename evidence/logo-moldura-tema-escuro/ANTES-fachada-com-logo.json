@@ -1,0 +1,82 @@
+{
+  "dark": {
+    "temaReal": "dark",
+    "temImgEnviada": true,
+    "temMarcaDoProduto": false,
+    "medida": {
+      "tagDoPai": "div",
+      "classeDoPai": "flex justify-center",
+      "fundo": "rgba(0, 0, 0, 0)",
+      "padding": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sombra": "none",
+      "raio": "0px",
+      "caixaDoPai": {
+        "x": 448,
+        "y": 241,
+        "largura": 384,
+        "altura": 40
+      },
+      "caixaDoLogo": {
+        "x": 620,
+        "y": 241,
+        "largura": 40,
+        "altura": 40
+      },
+      "naturalWidth": 64
+    },
+    "cartao": {
+      "x": 448,
+      "y": 387,
+      "largura": 384,
+      "altura": 200
+    }
+  },
+  "light": {
+    "temaReal": "light",
+    "temImgEnviada": true,
+    "temMarcaDoProduto": false,
+    "medida": {
+      "tagDoPai": "div",
+      "classeDoPai": "flex justify-center",
+      "fundo": "rgba(0, 0, 0, 0)",
+      "padding": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sombra": "none",
+      "raio": "0px",
+      "caixaDoPai": {
+        "x": 448,
+        "y": 241,
+        "largura": 384,
+        "altura": 40
+      },
+      "caixaDoLogo": {
+        "x": 620,
+        "y": 241,
+        "largura": 40,
+        "altura": 40
+      },
+      "naturalWidth": 64
+    },
+    "cartao": {
+      "x": 448,
+      "y": 387,
+      "largura": 384,
+      "altura": 200
+    }
+  },
+  "deslocamentoDoCartao": {
+    "dx": 0,
+    "dy": 0,
+    "dLargura": 0,
+    "dAltura": 0
+  }
+}

@@ -90,7 +90,10 @@ const ORG = "00000000-0000-4000-8000-000000000236";
 function configurar() {
   vi.stubEnv("META_PHONE_NUMBER_ID", "1103328999528818");
   vi.stubEnv("META_SYSTEM_USER_TOKEN", "tok");
-  vi.stubEnv("META_GRAPH_VERSION", "v22.0");
+  // Versão DIFERENTE do default de propósito: com o mesmo número do default, o
+  // teste passaria mesmo se o adapter ignorasse a variável e falasse a versão
+  // do código — era o que acontecia antes de a versão ter um lugar só.
+  vi.stubEnv("META_GRAPH_VERSION", "v19.0");
 }
 
 function stubFetch(resposta: unknown, ok = true) {
@@ -174,7 +177,7 @@ describe("adapter meta_cloud — envio", () => {
 
     expect(r).toEqual({ externalId: "wamid.T" });
     const [url, init] = spy.mock.calls[0]!;
-    expect(url).toContain("/v22.0/1103328999528818/messages");
+    expect(url).toContain("/v19.0/1103328999528818/messages");
     const corpo = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(corpo).toMatchObject({ messaging_product: "whatsapp", to: "5531998966398", type: "text" });
     expect(corpo).not.toHaveProperty("session");
@@ -302,7 +305,7 @@ describe("adapter meta_cloud — mídia recebida", () => {
     expect([...media.buffer]).toEqual([79, 103, 103, 83]);
     expect(media.mime).toBe("audio/ogg");
     expect(spy.mock.calls.map(([url]) => url)).toEqual([
-      "https://graph.facebook.com/v22.0/987654321",
+      "https://graph.facebook.com/v19.0/987654321",
       "https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=987654321",
     ]);
     for (const [, init] of spy.mock.calls) {

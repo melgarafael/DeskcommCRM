@@ -178,6 +178,16 @@ implementam guard de URL de saída, e existe E2E dedicado
 `outbound-url.test.ts` é unitário e roda, o que cobre a lógica de decisão; o que não roda é a
 prova de que o egress real está barrado ponta a ponta. Uma regressão na integração passa.
 
+**Segundo egress do servidor (branch das extensões declarativas):** `lib/extensions/download.ts`
+baixa o pacote de uma origem de catálogo que o dono da instalação admitiu. Guarda própria, não a
+de webhook: só HTTPS, sem redirect, sem cookie nem credencial, DNS resolvido uma vez e o endereço
+amarrado à conexão (sem janela de rebinding), endereços especiais IPv4/IPv6 recusados, teto de
+bytes contado no corpo lido e prazo total de 15 s. A exceção HTTP em loopback
+(`EXTENSIONS_LOCAL_CATALOG_ORIGIN`) só vale com o app também em loopback. Para ver o que roda:
+`pnpm exec vitest run lib/extensions/download.test.ts lib/extensions/download-rebinding.test.ts`.
+**Ressalva do mesmo tipo:** o caminho HTTPS real (SNI, certificado, lookup amarrado) não é
+exercitado por nenhum gate — os testes usam HTTP local e um dublê do lookup.
+
 ### T7 — Sem varredura de secret no histórico git 🟡 CONFIRMADO
 
 Sem gitleaks/trufflehog no CI, sem pre-commit hook (`.husky` e `.pre-commit-config.yaml`

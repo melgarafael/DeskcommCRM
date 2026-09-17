@@ -1,6 +1,6 @@
 # Resposta ao contribuidor
 
-> Puxe nos passes 1 e 10. Este reference é o **como falar**; o que medir está em
+> Puxe nos passes 1 e 10, e no 12-ter quando só parte de um PR entrou. Este reference é o **como falar**; o que medir está em
 > `complemento-do-ci.md`.
 
 O objetivo não é ser simpático. É que a pessoa saiba exatamente onde está, o que foi medido, e o que
@@ -28,13 +28,15 @@ Três informações, nesta ordem. Nada além.
 <!-- triagem-de-pr:v1:pass=1 -->
 Recebido, @<login> — obrigado por isto.
 
-Duas coisas que vão parecer erro seu e não são:
+Uma coisa vai parecer erro seu e não é:
 
-- O check **Vercel** vermelho ("Authorization required to deploy") é esperado em PR de fork. A `main`
-  faz deploy de produção e a Vercel se recusa a construir código de fora, o que está certo. **Ele não
-  entra no gate de merge.**
 - Os workflows ficam parados esperando liberação no primeiro PR de quem nunca contribuiu — política
   do GitHub, não sua. **Acabei de liberar**, o CI já está rodando.
+
+Quando eles terminarem, o que trava o merge são só os checks marcados **Required** no seu PR — é essa
+lista que vale, não qualquer outro vermelho que apareça. No terminal, `gh pr checks <número> --required`
+mostra os obrigatórios que **já reportaram**, e só esses: enquanto um deles não rodou, ele não aparece
+ali. Se um reprovar, a saída dele diz o que falta; se não estiver claro, me diga aqui — não feche o PR.
 
 Vou revisar de verdade — rodando os gates e reproduzindo o comportamento, não só lendo o diff — e
 volto com o resultado <prazo>. Se eu achar algo, venho com a medição junto, nunca com um "acho que".
@@ -101,6 +103,41 @@ descobre que quebrou.
 
 **Sugestão, se fizer sentido pra você:** <opção>. Mas o desenho é seu — se preferir outro caminho,
 me diz que eu meço o seu.
+```
+
+---
+
+## Quando só parte do PR entrou
+
+O PR parcialmente incorporado fica aberto só se o que sobrou tem destino (decisão do dono em
+16/09/2026; passe 12-ter). O comentário começa igual nos dois casos — **o que entrou**, com o link, e
+**o que não entrou**, com o motivo de cada parte — e muda no fim:
+
+- **O resto tem destino** (decisão pendente, acompanhamento planejado, espera por resposta dele,
+  destino de extensão): diga qual, e que é por isso que o PR continua aberto. PR aberto sem destino
+  escrito lê como esquecido.
+- **O resto foi descartado:** o PR fecha — por quem tem a autoridade de fechar naquela rodada
+  (fronteira do `TRIAGEM.md`); sem ela, o comentário diz o que entrou e o fechamento vai para o
+  relatório ao mantenedor. O motivo é sobre a parte, não sobre
+  ele — por exemplo, *"serve à sua instalação e não a todas"*, ou *"a `main` já resolve isto de outro
+  jeito, aqui"*.
+
+O crédito não depende do desfecho: o que entrou está nos commits com ele como autor. Diga isso, com
+o link — é o que ele vai procurar no próprio perfil.
+
+```markdown
+<!-- triagem-de-pr:v1:pass=12-ter -->
+Parte deste PR entrou na `main`, nos commits com você como autor: <o que entrou> — <link>.
+
+**O que não entrou, e por quê:** <a parte> — <o motivo, com a medição quando houver>.
+
+<!-- se o resto tem destino -->
+Por isso o PR continua aberto: <o destino — a decisão que falta e de quem ela é, o acompanhamento
+planejado, ou o que eu preciso de você>.
+
+<!-- se o resto foi descartado, e só quando quem escreve tem a autoridade de fechar nesta rodada -->
+Por isso estou fechando o PR. Fechar aqui só registra que o resto não entra; o que entrou está
+dentro, com o seu nome.
 ```
 
 ---

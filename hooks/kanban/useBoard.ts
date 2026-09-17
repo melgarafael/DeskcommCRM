@@ -47,9 +47,22 @@ function idDoEvento(payload: unknown): string | null {
   return typeof id === "string" ? id : null;
 }
 
+/**
+ * A CHAVE DE CACHE DO QUADRO — uma só, e exportada.
+ *
+ * `useMotivosDePerdaDoFunil` lê o quadro pela cache em vez de buscar de novo. Com
+ * a chave escrita como literal nos dois lados, mudar a daqui faria aquele hook
+ * devolver `[]` em silêncio — a janela de perder voltaria ao padrão do produto,
+ * que é exatamente o defeito da #918, e os testes continuariam verdes porque
+ * cada um escreve a sua própria literal.
+ */
+export function chaveDoQuadro(pipelineId: string | null) {
+  return ["board", pipelineId] as const;
+}
+
 export function useBoard(pipelineId: string | null) {
   const qc = useQueryClient();
-  const queryKey = ["board", pipelineId] as const;
+  const queryKey = chaveDoQuadro(pipelineId);
 
   /**
    * Cards que acabaram de mudar POR EVENTO REMOTO — o pulso da Wave 3.

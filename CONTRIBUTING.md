@@ -6,6 +6,9 @@
    Antigravity): o guia `deskcomm-contribuir` (`.agents/skills/deskcomm-contribuir/SKILL.md`) mede
    antes do PR o que a triagem mede depois — branch atrasada, tripla de migration, marca do fork no
    diff, fragmento de release — e arma os hooks de git com `bash .agents/skills/deskcomm-contribuir/scripts/armar-hooks.sh`.
+   Para ter os guias em qualquer pasta: `bash scripts/instalar-guias.sh`. Vai **editar** um guia?
+   Rode `bash scripts/instalar-guias.sh --fonte .` no seu clone — no Claude Code a skill global
+   vence a do projeto, e sem isso você testaria a versão da `main`, não a sua.
 1. Leia [`CLAUDE.md`](CLAUDE.md) — convenções não-negociáveis.
 2. Leia [`ARCHITECTURE.md`](ARCHITECTURE.md) — visão de 1 página.
 3. Identifique o epic de origem em [`docs/stories/epics/MASTER.md`](docs/stories/epics/MASTER.md).
@@ -118,11 +121,8 @@ abaixo são para que isso não se repita.
 
 ### Se você está contribuindo de fora (fork) — leia isto
 
-Duas coisas vão parecer erro seu e não são:
+Uma coisa vai parecer erro seu e não é:
 
-- **O check `Vercel` fica vermelho** com "Authorization required to deploy". A `main` deste
-  repositório faz deploy de produção, e a Vercel se recusa a construir PR de fork por
-  segurança — o que está certo. **Ignore esse check**; ele não entra no gate de merge.
 - **Os workflows ficam parados esperando aprovação** no seu primeiro PR. É política do
   GitHub para quem nunca contribuiu antes. Um mantenedor libera; do segundo PR em diante
   roda sozinho. Se demorar, comente no PR.
@@ -133,6 +133,14 @@ essas personalizações ao produto inteiro. Isso não gera conflito e não acend
 entram em silêncio para todas as instalações. Foi medido (PR #465): sete arquivos com a marca de um
 cliente, seis deles mergeando sem um único conflito. O caminho é `git checkout -b fix/o-que-voce-conserta`
 a partir da `main` **deste** repositório, com só o seu conserto dentro.
+
+**Com "Allow edits by maintainers" ligado no seu PR, o projeto pode empurrar um conserto direto na
+branch do PR** — um ajuste mecânico, ou a `main` trazida para dentro quando há conflito. Sempre como
+commit novo: nunca `--force`, nunca rebase, e os seus commits ficam como estão. Avisamos no PR antes
+de empurrar. Quando isso acontecer, traga a branch antes de continuar (`git pull --no-rebase`) e só
+então empurre de novo; um `--force` do seu lado apagaria o que foi empurrado do lado de cá. Com a
+opção desligada, o conserto vai numa branch nossa. Nos dois caminhos, o trabalho que é seu entra com
+você como autor.
 
 **A marca da sua instalação não se troca editando código.** Não altere `DEFAULT_APP_NAME` em
 `lib/branding.ts`, nem os títulos em `app/`. O banco manda (`platform_branding`,
@@ -145,6 +153,48 @@ E sobre o `pnpm test:e2e` do DoD: rodar a suíte completa exige Docker, banco se
 local. **Não travamos PR externo nisso** — mande o que conseguiu provar (unit + descrição do
 que testou na mão), que a prova de tela fica com o mantenedor. Exigir prova sem entregar a
 ferramenta de produzi-la seria pedágio, não rigor.
+
+### `tests/invariants/` é congelado — e isso vale para o COMPORTAMENTO, não só para o arquivo
+
+Os arquivos de `tests/invariants/` guardam leis do produto, e mexer neles pede justificativa
+escrita. Duas coisas que não estão óbvias e já custaram tempo a quem contribui:
+
+1. **O guarda é um hook local do mantenedor** (`core.hooksPath=loop/hooks`), não um check do CI.
+   Você não vai vê-lo reprovar no seu fork — o que você vê é a integração travar depois.
+2. **Um PR pode reprovar um invariante sem tocar no arquivo dele.** Se o seu conserto muda o
+   comportamento que a lei afirma, o vermelho aparece lá. Isso **não é um descuido seu** — é o
+   sinal de que existem duas regras concorrentes, a que está escrita e a que você propõe.
+
+Quando acontecer, **não apague nem afrouxe a asserção**: diga no PR qual é a sua razão e deixe a
+escolha explícita. Quem tria escreve a mudança do invariante com a justificativa exigida, ou ajusta
+o conserto para preservar a lei antiga — e a decisão fica registrada no PR, que é onde ela serve
+para a próxima pessoa.
+
+### Texto de tela: toda frase nova precisa do espanhol
+
+O produto fala português e espanhol, e o CI reprova **frase nova sem tradução**. A regra não
+estava escrita aqui até 16/09/2026, e um PR de primeira contribuição foi reprovado por ela — a
+falha era nossa, não de quem contribuiu.
+
+Se você acrescentou uma frase que aparece na tela, ela passa por `t("...")` **e** ganha uma linha
+em `lib/i18n/dicionario.ts`:
+
+```ts
+"Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
+```
+
+A chave é o texto em português (não um código). Só o espanhol precisa de linha; o resto degrada
+para o português de propósito.
+
+Para conferir antes de abrir o PR, sem rodar a suíte inteira:
+
+```bash
+pnpm test:unit tests/unit/i18n-espanhol-cobre-a-tela.test.ts
+```
+
+Ele reprova nas duas direções: chave usada na tela sem espanhol, e prosa em português que não
+passou por `t()`. **Se você não fala espanhol, mande assim mesmo** e diga no PR — a tradução é
+trabalho de dez segundos para quem tria, e não é motivo para segurar um conserto.
 
 ### Anti-patterns proibidos
 

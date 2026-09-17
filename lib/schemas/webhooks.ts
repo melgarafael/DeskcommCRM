@@ -1,17 +1,50 @@
 /**
  * Zod schemas for webhook-sources e automation-rules (feature Webhooks, Task 12).
- * TRIGGER_EVENTS deve espelhar exatamente os 5 eventos que o motor
- * (`lib/automation/engine.ts` → EXPECTED_ENTITY_KIND) reconhece.
+ *
+ * `ENTIDADE_ESPERADA_POR_GATILHO`, logo abaixo, é a fonte única dos gatilhos:
+ * `lib/automation/engine.ts` e `lib/automation/engine.handler.ts` leem daqui.
+ * (Este cabeçalho já afirmou "exatamente os 5 eventos" — número que envelheceu
+ * na primeira vez que alguém acrescentou um. Agora não há número a envelhecer.)
  */
 import { z } from "zod";
 
-export const TRIGGER_EVENTS = [
-  "lead.created",
-  "lead.stage_changed",
-  "message.received",
-  "lead.tag_added",
-  "contact.tag_added",
-] as const;
+/**
+ * Os gatilhos que o motor reconhece, e a entidade que cada um tem que trazer.
+ *
+ * É UMA FONTE, e não três, porque as três divergiam: este arquivo listava os
+ * gatilhos para o Zod, `engine.ts` repetia o mapa de entidade, e
+ * `engine.handler.ts` repetia a lista de novo para se registrar no dispatcher.
+ * Acrescentar um gatilho exigia lembrar dos três lugares, e esquecer o terceiro
+ * produz o pior desfecho possível: a regra aparece na tela, o operador a salva,
+ * o evento acontece — e nada roda, porque o handler não assinou aquele evento.
+ * Sem erro, sem log, sem run.
+ *
+ * A entidade existe porque o trigger legado `fn_emit_event_on_lead_change` emite
+ * `lead.created` com `entity_kind='lead'` (derivado por `split_part` do
+ * event_type) enquanto os handlers desta feature emitem `crm_lead`. Sem o guard,
+ * o motor rodaria a regra duas vezes por mudança de lead.
+ */
+export const ENTIDADE_ESPERADA_POR_GATILHO = {
+  "lead.created": "crm_lead",
+  "lead.stage_changed": "crm_lead",
+  "message.received": "message",
+  "lead.tag_added": "crm_lead",
+  "contact.tag_added": "contact",
+  // O aniversário nasce do cron `contact-birthdays`, e não de uma ação de
+  // alguém: a entidade que ele traz é o próprio contato que faz aniversário.
+  "contact.birthday": "contact",
+  "appointment.created": "calendar_appointment",
+  "appointment.confirmed": "calendar_appointment",
+  "appointment.rescheduled": "calendar_appointment",
+  "appointment.cancelled": "calendar_appointment",
+} as const;
+
+export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;
+
+export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
+  GatilhoDeAutomacao,
+  ...GatilhoDeAutomacao[],
+];
 
 export const conditionSchema = z.object({
   field: z.string().min(1).max(200),

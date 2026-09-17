@@ -140,7 +140,7 @@ export interface FaixaEmMinutos {
 }
 
 /** Faixa em instantes (`getTime()`) — é assim que um compromisso existe. */
-interface FaixaEmInstantes {
+export interface FaixaEmInstantes {
   inicio: number;
   fim: number;
 }
@@ -279,8 +279,22 @@ function slotInflado(inicio: number, fim: number, tipo: TipoDeAgendamento): Faix
  * Um compromisso que termina 09:00 não impede o slot que começa 09:00 — é o
  * comportamento que o dono da agenda espera, e quem quiser folga entre um e
  * outro configura o buffer, que é o campo feito para isso.
+ *
+ * Exportada para o ENCAIXE fora da grade (`exigeSemSobreposicao`, no handler de
+ * agendamentos) — e lá ela é REDUNDANTE hoje. O filtro de `coletaOQueOcupa` já é
+ * o mesmo cruzamento estrito (`starts_at < fim` e `ends_at > inicio`), então
+ * tudo o que chega ao encaixe já cruza o pedido e esta chamada não muda o
+ * desfecho. O encostado é decidido duas vezes, e cada uma sozinha basta:
+ * afrouxar só uma das duas não deixa vermelho no caso "encostado" de
+ * `tests/unit/pessoa-marca-fora-da-grade.test.ts`.
+ *
+ * A chamada fica como defesa. A coleta da GRADE já é alargada pelo buffer
+ * (issue #876, PR #1027, dentro de `horariosLivresDaOrg`), mas o encaixe chama
+ * `coletaOQueOcupa` direto, com a janela estreita. Se um dia a coleta do encaixe
+ * também for alargada, esta é a régua que separa o vizinho que só encosta; sem
+ * ela, o encaixe passaria a recusar o encostado.
  */
-function colide(inicio: number, fim: number, faixa: FaixaEmInstantes): boolean {
+export function colide(inicio: number, fim: number, faixa: FaixaEmInstantes): boolean {
   return inicio < faixa.fim && fim > faixa.inicio;
 }
 

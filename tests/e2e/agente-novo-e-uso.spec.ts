@@ -8,10 +8,15 @@
  * já colocou os dados lá; não prova que alguém consegue chegar lá sozinho.
  *
  * O que ele NÃO consegue provar, e por quê: a organização de teste já tem
- * credencial de IA e número de WhatsApp (outros seeds do repo criam), então o
- * caso "instalei agora e não tenho nada" é montado interceptando as duas
- * listagens — o mais perto do estado real sem plantar nem apagar dado de
- * ninguém num banco que quatro frentes compartilham.
+ * credencial de IA e número de WhatsApp (outros seeds do repo criam), e o caso
+ * "instalei agora e não tenho nada" não se monta daqui — a página é Server
+ * Component, as duas listagens acontecem NO SERVIDOR, e interceptar no
+ * navegador não as alcança (a primeira versão tentava, e passava sem medir
+ * nada). Esse caso é coberto onde ele cabe: no componente, por
+ * `tests/unit/agente-salva-sem-numero-conectado.test.tsx` (a tela SEM nenhum
+ * número na lista), e no banco, por
+ * `tests/invariants/rascunho-de-agente-sem-numero.test.ts` (o rascunho sem
+ * número entra e não publica). Aqui fica o que só a tela real prova.
  *
  * Locale pt-BR fixado no arquivo: sem isso o navegador de teste roda en-US e
  * campos `<input type="date">` aparecem como mm/dd/yyyy, que parece defeito do
@@ -49,16 +54,23 @@ test.describe("Criar um agente pela tela", () => {
     const criar = page.getByRole("button", { name: /criar agent/i });
     await expect(criar).toBeDisabled();
 
-    // E ela diz o que falta — as três exigências que o servidor também impõe.
+    // E ela diz o que falta — as exigências que o servidor também impõe.
     // Escritas como instrução, não como acusação — um formulário recém-aberto
     // que já diz "obrigatório" em vermelho trata o usuário como quem errou.
-    for (const exigencia of [
-      /escolha o modelo/i,
-      /escolha a chave de acesso/i,
-      /escolha por qual número de whatsapp/i,
-    ]) {
+    for (const exigencia of [/escolha o modelo/i, /escolha a chave de acesso/i]) {
       await expect(page.getByText(exigencia).first()).toBeVisible();
     }
+
+    // ⚠️ O NÚMERO DE WHATSAPP NÃO ESTÁ NESSA LISTA, e a ausência é o teste.
+    //
+    // Ele já esteve: a tela cobrava o número para SALVAR, e numa instalação
+    // nova — onde não existe uma linha em `channel_sessions` — isso trancava o
+    // rascunho de quem tinha acabado de escrever o prompt do atendente. Hoje o
+    // número é requisito para PUBLICAR, e a tela diz isso em vez de acusar
+    // falta (migration 0239, `lib/ai/agents/bloqueio-de-publicacao.ts`).
+    await expect(
+      page.getByText(/o rascunho salva|rascunho salva sem ele/i).first(),
+    ).toBeVisible();
 
     await page.screenshot({
       path: path.join(EVIDENCIA, "w1-nova-01-tela-de-criar.png"),
@@ -141,12 +153,12 @@ test.describe("Criar um agente pela tela", () => {
     // sem medir nada — a página é Server Component, as duas consultas acontecem
     // NO SERVIDOR, e interceptar no browser não alcança. Montar o estado de
     // verdade exigiria uma organização zerada, que este banco (compartilhado
-    // por quatro frentes) não tem. Fica como item para quem tiver ambiente
-    // fresco; ver o HANDOFF.
+    // por quatro frentes) não tem. Onde ele é medido está no cabeçalho deste
+    // arquivo.
     //
-    // O que dá para cobrar sempre: a tela exige credencial e número — então ela
-    // precisa dizer ONDE se consegue cada um. Sem isso, quem não tem trava sem
-    // pista, e quem tem mas quer outro também.
+    // O que dá para cobrar sempre: a tela exige credencial para criar e número
+    // para publicar — então ela precisa dizer ONDE se consegue cada um. Sem
+    // isso, quem não tem trava sem pista, e quem tem mas quer outro também.
     const caminhos = await page.evaluate(() =>
       [...document.querySelectorAll("a[href]")]
         .map((a) => `${(a.textContent ?? "").trim()} -> ${a.getAttribute("href")}`)

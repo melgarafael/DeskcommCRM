@@ -102,7 +102,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
       // no primeiro render diria isso por engano.
       supabase
         .from("ai_knowledge_sources")
-        .select("id, name, source_type, chunks_count, last_index_status")
+        .select("id, name, source_type, chunks_count, last_index_status, is_active")
         .eq("organization_id", activeOrg.orgId)
         .eq("is_active", true)
         .order("created_at", { ascending: true }),
@@ -110,7 +110,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
 
   const versions = (versionsRes.data ?? []) as unknown as AgentVersionRow[];
   const funis = (funisRes.data ?? []) as unknown as FunilDaResposta[];
-  const materiais = (acervoRes.data ?? []) as unknown as MaterialDoAcervo[];
+  const materiaisVivos = (acervoRes.data ?? []) as unknown as MaterialDoAcervo[];
 
   // Quanto de cada funil o assistente sabe percorrer (spec 17 passo 4). Vem
   // junto com a página porque a lacuna precisa aparecer no MESMO lugar em que o
@@ -151,6 +151,29 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
     versions,
     agent.published_version_id ?? null,
   );
+
+  // Material ARQUIVADO que ficou MARCADO (issue #774). O acervo vem filtrado por
+  // `is_active = true`, então o id marcado e arquivado não voltava para a tela: o
+  // formulário seguia com ele em `knowledge_source_ids` (o `base` é a versão
+  // vigente, mesma régua do AgentForm), o salvar recusava com "um dos materiais
+  // marcados não existe mais, ou foi arquivado" e não havia onde desmarcar — a
+  // seção não desenhava a linha dele. A marcação é vínculo material-agente e não
+  // pode impedir o arquivamento: quem arquiva está certo. Aqui a linha volta só
+  // quando FALTA algum marcado, então o caminho comum — nada arquivado marcado —
+  // continua com a MESMA consulta de antes, sem ida extra ao banco.
+  const idsMarcadosForaDaLista = (base?.knowledge_source_ids ?? []).filter(
+    (id) => !materiaisVivos.some((m) => m.id === id),
+  );
+  const arquivadosMarcadosRes = idsMarcadosForaDaLista.length
+    ? await supabase
+        .from("ai_knowledge_sources")
+        .select("id, name, source_type, chunks_count, last_index_status, is_active")
+        .eq("organization_id", activeOrg.orgId)
+        .in("id", idsMarcadosForaDaLista)
+    : null;
+  const materiaisArquivadosMarcados = (arquivadosMarcadosRes?.data ??
+    []) as unknown as MaterialDoAcervo[];
+  const materiais = [...materiaisVivos, ...materiaisArquivadosMarcados];
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">

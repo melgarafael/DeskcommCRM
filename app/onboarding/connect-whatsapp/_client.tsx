@@ -321,7 +321,7 @@ export function ConnectWhatsappClient({
         await markWhatsappConfigured(confirmedSession, "WORKING");
       } catch (err) {
         if (isRedirectError(err)) throw err;
-        toast.error("Falha ao avançar: " + String(err));
+        toast.error(`${t("Falha ao avançar:")} ${String(err)}`);
       }
     });
   }, [status, info.session, t]);
@@ -399,7 +399,7 @@ export function ConnectWhatsappClient({
             </p>
             <p className="mt-1">
               {t(
-                "Dá para conectar e já enviar, mas as respostas do cliente não vão chegar até quem instalou o sistema completar uma configuração no servidor. Se você quer atender hoje, o caminho do código com o celular funciona agora — e dá para trocar depois, sem perder nada.",
+                "Dá para conectar e já enviar, mas as respostas do cliente não vão chegar até quem administra a instalação cadastrar o App da Meta, em Admin › API Oficial (Meta). Se você quer atender hoje, o caminho do código com o celular funciona agora — e dá para trocar depois, sem perder nada.",
               )}
             </p>
           </div>

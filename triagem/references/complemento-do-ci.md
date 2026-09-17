@@ -15,6 +15,15 @@ workflow real.
 
 ## 1. Tripla de migration — a violação nº 1, e 100% invisível no CI
 
+> **A unicidade do `NNNN`/timestamp SAIU desta linha** (issue #285, 2026-09-16). O job `verify`
+> roda `pnpm checar:colisao-de-migration` e reprova a migration que o PR acrescenta com número ou
+> timestamp já usados na `origin/main`, nomeando o número **e** os dois arquivos (o da base e o do
+> PR). Os limites são os do hook, declarados no cabeçalho do script: renome que só troca o slug
+> passa, e a medição é a do merge (`HEAD` = merge ref no `pull_request`).
+>
+> O que **continua pendente** aqui é a outra metade da tripla — o apêndice no `baseline.sql` e a
+> linha no `MANIFEST.md` —, que nenhum job confere.
+
 **Gatilho:** o diff adiciona `supabase/migrations/*.sql`.
 
 **Checagem:** o mesmo commit precisa trazer as três coisas — o arquivo da migration, um apêndice
@@ -26,7 +35,9 @@ bash loop/hooks/check-migration-triple.sh    # se disponível na árvore
 ```
 
 **Por que o CI não pega:** o guard é um hook de git ativado por `core.hooksPath=loop/hooks`, que é
-**configuração local, não versionada**. Um fork nunca o executa e nenhum job do `ci.yml` o invoca.
+**configuração local, não versionada**. Um fork nunca o executa, e nenhum job do `ci.yml` confere o
+apêndice no `baseline.sql` nem a linha no `MANIFEST.md` — a **colisão de número**, que era o outro
+item desta linha, virou gate em 2026-09-16 (issue #285, acima).
 
 **Por que importa mais do que parece:** o kit self-host aplica **só o `baseline.sql`**, tanto no
 `install.sh` quanto no `update.sh`. Migration que não chega ao baseline **não chega em quem instalou
@@ -194,9 +205,10 @@ Para não gastar passe à toa:
 
 | item | gate que já cobre |
 |---|---|
+| migration nova com `NNNN`/timestamp já tomados na `origin/main` | passo `Colisão de número de migration` do job `verify` (`pnpm checar:colisao-de-migration`, issue #285) |
 | DoD 14, "tela nova tem porta" | `pnpm test:unit` → `navegacao-completude.test.ts` |
 | provider nomeado fora de `lib/channels/` | `pnpm lint:channels` |
-| baseline aplica fresh **e** idempotente | `pnpm test:db` (job `invariants`) |
+| baseline aplica fresh **e** idempotente | `pnpm test:db` (job `invariants-majors`, sob a fachada `invariants`) |
 | isolamento RLS nas 10 tabelas listadas | `pnpm test:db` |
 | tipos, lint, unit, shell, build | job `verify` + `build-and-size` |
 | a imagem Docker do self-host constrói | job `build-and-push` (PR #233) — **ainda não obrigatório** |
@@ -218,3 +230,40 @@ exatamente o produto que se vende.
 
 Ler `e2e` verde como "jornada de usuário provada" é falso verde **declarado pelo próprio arquivo**.
 Para PR que toca instalação ou onboarding, a prova é o passe 5, não o job.
+
+---
+
+## 12. O `build` não é gate de teste — e é o único que cobre o EMIT
+
+**Gatilho:** qualquer PR que toque `next.config.ts`, `outputFileTracingIncludes`, `package.json`,
+lockfile, ou que dependa de binário nativo (`.node`). E **todo lote de integração**, sempre.
+
+**Checagem:** `pnpm build`, exit code direto.
+
+**Por que os outros gates não pegam:** `typecheck`, `lint`, `lint:channels`, `test:unit`,
+`test:shell` e `test:db` analisam ou executam **código**. O defeito desta classe mora na hora de
+**emitir o artefato** — o `.nft.json`, o standalone, a imagem. Medido em 14/09/2026: um lote com os
+seis verdes (823 arquivos de teste, 194 de invariante, 1553 asserções de banco) quebrou o `build`
+no CI com
+
+```
+FATAL: An unexpected Turbopack error occurred:
+- Is a directory (os error 21)
+- Execution of <NftJsonAsset as Asset>::content failed
+```
+
+A causa era um glob de `outputFileTracingIncludes` que casava o **symlink de plataforma** que o
+pnpm põe dentro de `node_modules/.pnpm/<pkg>/node_modules/<escopo>/` ao lado do pacote real. O
+tracer tenta ler o symlink como arquivo para calcular o hash e morre.
+
+**A armadilha do conserto**, que vale além deste caso: tirar o `include` devolve o build ao verde e
+**mantém o defeito que o PR existia para consertar**. Aponte o glob para o conteúdo dos pacotes, e
+prove as duas coisas — que o build passa **e** que o arquivo continua entrando:
+
+```bash
+pnpm build && find .next/standalone -name '*.node' -path '*<pacote>*'
+```
+
+`imagens-ok` é obrigatório na branch protection e depende deste build, então esta linha **tem**
+gate no CI. O que ela não tem é gate **antes** do CI — e num lote isso custa um ciclo inteiro de
+fila.

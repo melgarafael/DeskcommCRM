@@ -284,15 +284,25 @@ consequência natural de trabalho em branches paralelas, mas ilustra a regra:
 5. **`lib/agent-engine/agent/inbound-turn.ts` com 1789 linhas** — 2,4× o segundo maior arquivo
    de lógica (`AgentForm.tsx`, 746), e é o hot path do produto. Cresceu ~200 linhas desde a
    primeira medição desta auditoria.
-6. **NENHUM cron roda no deploy Vercel.** Os 14 crons do produto são agendados exclusivamente
-   pelo `crond` do serviço `scheduler` do `docker-compose.prod.yml` — e **não existe
-   `vercel.json` neste repo** (medido: `ls vercel.json` → ausente). Como a Vercel é a produção
-   real de quem mantém (ver `project_dois_ambientes_de_producao`), tudo que depende de
-   agendamento está **dormente lá**: `event-log-drain`, `agent-dispatcher`, `followup-flow-worker`,
-   `recover-stuck-messages`, `sync-model-catalog`, `contact-proposals-watcher`, etc. O sintoma
-   nunca é um erro — a tela só fica velha, a fila só não anda. Está escrito aqui porque cada
-   frente nova repetia a suposição de que "o cron roda"; a decisão (portar para Vercel Cron ou
-   assumir que a Vercel é vitrine e a VPS é a operação) é do dono do repo.
+6. **Cron parado não dá erro — a tela só fica velha e a fila só não anda.** Está escrito aqui
+   porque cada frente nova repete a suposição de que "o cron roda" sem olhar quem bate. No
+   self-host quem bate é o `crond` do serviço `scheduler`, e a lista de rotas mora em
+   `docker/scheduler/entrypoint.sh` — não no `docker-compose.prod.yml` (a de hoje sai de
+   `grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u`). Cada linha
+   descarta a saída do `curl` (`>/dev/null 2>&1`), então o resultado da batida não chega ao
+   log do scheduler. Quem instala sem agendador próprio tem um segundo caminho, que roda
+   **parte** dessas tarefas dentro do processo do app (`lib/relogio/executar.ts`).
+   A cerca contra rota que nasce sem agendamento é
+   `tests/unit/cron-routes-scheduled.test.ts`: ele compara o diretório `app/api/v1/cron/` com
+   esse crontab nas duas direções — reprova rota de cron sem agendamento e agendamento
+   apontando para rota que não existe. **Decidido em 2026-09-17, e por isso não há mais
+   decisão em aberto aqui:** a operação é a instalação em VPS e a Vercel ficou só com a
+   landing page; o projeto Vercel do CRM foi desvinculado do GitHub, e no mesmo dia saiu da
+   raiz o `vercel.ts` — o inventário de crons daquele destino — junto com a trava que
+   obrigava toda rota de cron nova a ser cadastrada nele. Para conferir o desvínculo, olhe os
+   status do último commit da `main` — enquanto o projeto esteve ligado, aparecia ali um
+   check `Vercel`:
+   `gh api repos/melgarafael/DeskcommCRM/commits/main/status --jq '[.statuses[].context]'`.
 
 ---
 

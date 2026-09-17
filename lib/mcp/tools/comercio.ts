@@ -139,8 +139,10 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     "('ifone') e acha por marca, categoria ou código. " +
     "⚠️ SE VOLTAR MAIS DE UM produto com `empate: true`, NÃO escolha por conta própria — os dois " +
     "casam igualmente o que ela disse, e a diferença entre eles é de preço. Pergunte qual é. " +
-    "Lista vazia significa que a loja não tem esse item cadastrado: não invente, ofereça consultar " +
-    "com a equipe.",
+    "Lista vazia só significa que a loja não tem esse item quando a busca conseguiu varrer o " +
+    "catálogo INTEIRO: se a resposta disser que a varredura foi parcial, não afirme que a loja não " +
+    "tem — diga que vai confirmar com a equipe. Em qualquer caso, não invente preço e nunca " +
+    "invente um valor que você lembra.",
   inputSchema: produtosInputShape,
   category: "read",
   requiresRole: "agent",
@@ -250,12 +252,24 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       // Afirmar ausência exige ter varrido o catálogo inteiro. Sobre uma
       // amostra, a frase honesta é outra — e ela leva o agente a uma conduta
       // diferente com o cliente, que é o ponto.
+      //
+      // ⚠️ E O TAMANHO ENTRA NA MESMA REGRA: `total` é `number | null` e o
+      // `null` é "o servidor não disse os quantos", não "zero". Interpolar
+      // `${total}` sem olhar entregava ao agente a frase "o catálogo desta
+      // loja tem null" — uma afirmação sobre o tamanho que ninguém mediu, no
+      // lugar exato onde a regra é declarar a dúvida. Quando o count não veio,
+      // o tamanho desconhecido é DITO como desconhecido: medido, o agente
+      // repetia "tem null" (tests/unit/catalogo-nao-corta-cego.test.ts).
       return {
         produtos: [],
         mensagem: varreduraParcial
-          ? `não encontrei entre os ${linhas.length} produtos que consegui consultar, e o catálogo ` +
-            `desta loja tem ${total}. NÃO diga que a loja não tem — diga que vai confirmar com a ` +
-            "equipe. Se a pessoa souber o código ou o nome exato, peça: com ele a busca acha."
+          ? `não encontrei entre os ${linhas.length} produtos que consegui consultar, e ` +
+            (total === null
+              ? "o servidor não informou quantos produtos o catálogo desta loja tem ao todo: " +
+                "eu não sei. "
+              : `o catálogo desta loja tem ${total}. `) +
+            "NÃO diga que a loja não tem — diga que vai confirmar com a equipe. Se a pessoa souber " +
+            "o código ou o nome exato, peça: com ele a busca acha."
           : "não há nada com esse nome no catálogo da loja. Não invente preço — diga que vai confirmar com a equipe.",
       };
     }

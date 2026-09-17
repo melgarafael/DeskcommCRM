@@ -118,6 +118,31 @@ const camposDoTipo = {
     .min(15, { message: "O lembrete precisa sair pelo menos 15 minutos antes do compromisso." })
     .max(10_080, { message: "O lembrete não pode sair mais de 7 dias (10080 minutos) antes." })
     .optional(),
+  /**
+   * Os degraus ADICIONAIS — o "e de novo três horas antes" que faltava.
+   *
+   * `reminder_minutes_before` continua sendo o degrau principal; estes somam a
+   * ele. Vazio é o comportamento anterior, um lembrete só, e por isso o campo
+   * não tem `.default()`: quem não manda não ganha aviso nenhum a mais.
+   *
+   * O teto de 3 é o mesmo do CHECK da 0241, e existe para que "lembrar" não
+   * vire "insistir". A faixa de cada degrau é a do principal, pelo mesmo motivo
+   * escrito acima dele: 0 min nunca sai e 30 dias não é lembrete, é convite.
+   */
+  reminder_extra_offsets_minutes: z
+    .array(
+      z
+        .number()
+        .int()
+        .min(15, { message: "O lembrete precisa sair pelo menos 15 minutos antes do compromisso." })
+        .max(10_080, { message: "O lembrete não pode sair mais de 7 dias (10080 minutos) antes." }),
+    )
+    .max(3, { message: "No máximo 3 lembretes adicionais por tipo." })
+    // Duplicata não é erro de quem preenche, é ruído: dois degraus iguais
+    // produziriam o mesmo aviso duas vezes se algum dia alguém lesse a lista
+    // sem deduplicar. Some aqui, uma vez, em vez de virar guarda em cada leitor.
+    .transform((v) => [...new Set(v)].sort((a, b) => b - a))
+    .optional(),
 };
 
 const criarSchema = z.object(camposDoTipo);
@@ -184,6 +209,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       // leitura não conta é o mesmo controle decorativo, do outro lado.
       reminder_enabled: t.lembreteLigado,
       reminder_minutes_before: t.lembreteAntecedenciaMin,
+      reminder_extra_offsets_minutes: t.lembreteDegrausExtras,
     })),
     { requestId },
   );

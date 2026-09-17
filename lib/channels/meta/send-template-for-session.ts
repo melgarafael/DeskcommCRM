@@ -15,11 +15,25 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { createAdminClient } from "@/lib/supabase/admin";
+
+import { resolveMetaCreds } from "./credentials";
 import { sendTemplate } from "./send-template";
 
 export interface SendTemplateForSessionInput {
   beforeSend?: () => Promise<void>;
   organizationId: string;
+  /**
+   * `channel_sessions.meta_phone_number_id` DESTA conexão — o `sessionRef` do canal
+   * oficial. É a segunda metade da chave por que a credencial é resolvida (a primeira
+   * é a organização) e o número por que a mensagem sai.
+   *
+   * Vem do chamador em vez de ser buscado aqui porque é ele quem tem a linha da
+   * sessão na mão — e pedir a credencial "da sessão" com o número de OUTRA conexão
+   * não casaria linha nenhuma, devolvendo o envio ao ambiente: o defeito que esta
+   * fatia fecha, de volta pela porta dos fundos.
+   */
+  sessionRef: string;
   /** Destinatário em dígitos E.164, já resolvido pelo adapter. */
   to: string;
   name: string;
@@ -43,21 +57,27 @@ export async function sendTemplateForSession(
     throw new Error("template_incompleto: nome e idioma são obrigatórios em type=template");
   }
 
-  // A credencial de AMBIENTE é o único caminho deste envio, e a guarda vem
-  // ANTES da consulta ao espelho de propósito: "canal não conectado" é desfecho
-  // da classe `queued` (recuperável), e a ordem dos desfechos é comportamento
-  // neste repo. Sem ela, uma instalação que conectou o número pela TELA
-  // (credencial cifrada no banco, `.env` sem chave) tentaria a Graph com
-  // `Bearer` vazio e viraria `failed` com um erro que não nomeia o motivo real
-  // — a mudança de elegibilidade da #674 transformaria uma fila recuperável em
-  // falha. Com ela, o desfecho é o mesmo de antes do #674: `queued` com
-  // `meta_not_configured`.
+  // A credencial vem da SESSÃO (o que o operador salvou na tela de conexão) e o
+  // ambiente fica só como RESERVA — a mesma porta que `send`, `checkHealth` e
+  // `fetchInboundMedia` já usam. Antes disto este caminho lia
+  // `META_PHONE_NUMBER_ID`/`META_SYSTEM_USER_TOKEN` do ambiente e mais nada: numa
+  // instalação que conectou o número pela TELA (credencial cifrada no banco, `.env`
+  // sem chave) o modelo não sincronizava nem saía, e a recusa não dizia por quê —
+  // logo o modelo, que é justamente o que a janela fechada exige.
   //
-  // Enviar template com a credencial da SESSÃO é um passo próprio (o adapter
-  // ainda não implementa `sendTemplate`); até lá, este caminho é só do env.
-  if (!process.env.META_PHONE_NUMBER_ID || !process.env.META_SYSTEM_USER_TOKEN) {
+  // A GUARDA continua ANTES da consulta ao espelho, e a ordem dos desfechos é
+  // comportamento neste repo: "canal não conectado" é desfecho da classe `queued`
+  // (recuperável). Sem ela, uma instalação sem credencial nenhuma tentaria a Graph
+  // com `Bearer` vazio e viraria `failed` com um erro que não nomeia o motivo real —
+  // e a mudança de elegibilidade da #674 transformaria uma fila recuperável em
+  // falha. Com ela, o desfecho é `queued` com `meta_not_configured`.
+  const creds = await resolveMetaCreds(createAdminClient(), {
+    organizationId: input.organizationId,
+    phoneNumberId: input.sessionRef,
+  });
+  if (!creds) {
     throw new Error(
-      "meta_not_configured: sem credencial de ambiente para enviar template (a conexão feita pela tela ainda não é usada por este caminho).",
+      "meta_not_configured: sem credencial para esta sessão (nem na sessão, nem no ambiente).",
     );
   }
 
@@ -73,9 +93,9 @@ export async function sendTemplateForSession(
 
   await input.beforeSend?.();
   const resultado = await sendTemplate({
-    phoneNumberId: process.env.META_PHONE_NUMBER_ID ?? "",
-    token: process.env.META_SYSTEM_USER_TOKEN ?? "",
-    graphVersion: process.env.META_GRAPH_VERSION ?? "v22.0",
+    phoneNumberId: creds.phoneNumberId,
+    token: creds.token,
+    graphVersion: creds.graphVersion,
     to: input.to,
     binding: {
       name: input.name,

@@ -25,7 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ArrowsClockwise, Trash } from "@/lib/ui/icons";
+import { ArrowsClockwise, PencilSimple, Trash } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import {
@@ -37,6 +37,7 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
+import { RotateCredentialDialog } from "./RotateCredentialDialog";
 
 interface Props {
   credential: CredentialRow;
@@ -65,6 +66,7 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
   const router = useRouter();
   const qc = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const status = credentialStatus(credential);
@@ -170,6 +172,18 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
 
       {canWrite && (
         <div className="flex items-center justify-end gap-1 pt-1">
+          {/* Rotacionar é o caminho que NÃO passa pela exclusão — e por isso
+              fica habilitado mesmo com a chave em uso. É por aqui que o
+              operador de um agente publicado troca a chave. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t("Editar credencial")}
+            disabled={isPending}
+            onClick={() => setEditOpen(true)}
+          >
+            <PencilSimple size={14} aria-hidden />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -186,9 +200,7 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
                   <span tabIndex={0}>{deleteButton}</span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {t("Em uso por")} {usageCount} {t("agente")}
-                  {usageCount === 1 ? "" : "s"} {t("publicado")}
-                  {usageCount === 1 ? "" : "s"}.
+                  {t("Em uso por")} {usageCount} {t("versão(ões) de agente")}. {t("Para trocar a chave, use editar; para excluir, aponte essas versões para outra chave.")}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -198,6 +210,12 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
         </div>
       )}
 
+      <RotateCredentialDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        credential={credential}
+      />
+
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -205,7 +223,11 @@ export function CredentialCard({ credential, canWrite, usageCount }: Props) {
               {t("Remover credencial")} &ldquo;{credential.label}&rdquo;?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t("Agents que usam esta credencial vão falhar ao executar. Esta ação não pode ser desfeita.")}
+              {/* O diálogo só abre com `usageCount === 0` (a chave em uso tem o
+                  botão desabilitado), então não há agente a avisar — a frase
+                  antiga ("agents vão falhar") descrevia um caso que não chega
+                  aqui. O que sobra é o irreversível. */}
+              {t("Esta ação não pode ser desfeita.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

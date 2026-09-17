@@ -79,10 +79,11 @@ export function CanalVozClient({ wacallsConfigured }: { wacallsConfigured: boole
     setQrDataUrl(null);
     try {
       // A stream tem que estar ABERTA antes de disparar o pareamento: o
-      // WaCalls emite o QR no INSTANTE do `pair` (whatsmeow gera na hora),
-      // não em resposta a quem está ouvindo. Chamar o POST primeiro e só
-      // depois abrir o `EventSource` (ordem anterior) perdia esse primeiro
-      // QR — a tela ficava presa em "Preparando o código…" pra sempre.
+      // WaCalls emite o QR no INSTANTE em que a sessão é criada (whatsmeow
+      // gera na hora), não em resposta a quem está ouvindo. O relay não exige
+      // sessão para abrir — ele reconhece a nossa pelo nome quando ela nasce
+      // (`lib/wacalls/nome-da-sessao.ts`), então não há mais passo de
+      // "preparar" antes: o POST único cria a sessão e o QR chega por aqui.
       let pareamentoDisparado = false;
       const es = new EventSource("/api/v1/voice/events");
       esRef.current = es;
@@ -93,13 +94,25 @@ export function CanalVozClient({ wacallsConfigured }: { wacallsConfigured: boole
           es.close();
           esRef.current = null;
           setPareando(false);
+          // O QR que talvez já tenha chegado é de uma sessão que a rota desfez.
+          setQrDataUrl(null);
           toast.error(errMsg(err, "Não foi possível iniciar o pareamento.", t));
+          // Recarrega SEMPRE: o 409 `voice_already_paired` é justamente o caso
+          // em que a rota acabou de corrigir o banco (o WaCalls já estava
+          // pareado), e sem reler a tela seguia "Não pareado" com o botão.
+          void carregar();
         });
       };
       es.onmessage = (ev) => {
         const payload = JSON.parse(ev.data) as { type: string; dataUrl?: string };
         if (payload.type === "qr" && payload.dataUrl) {
           setQrDataUrl(payload.dataUrl);
+        } else if (payload.type === "expired") {
+          es.close();
+          esRef.current = null;
+          setPareando(false);
+          setQrDataUrl(null);
+          toast.error(t("O código de pareamento venceu. Clique em parear para gerar outro."));
         } else if (payload.type === "paired") {
           es.close();
           esRef.current = null;
@@ -113,6 +126,12 @@ export function CanalVozClient({ wacallsConfigured }: { wacallsConfigured: boole
         es.close();
         esRef.current = null;
         setPareando(false);
+        // Sem a stream não chega "venceu" nem "pareado": um QR que ficasse na
+        // tela seria um código morto, e o botão de tentar de novo não voltaria.
+        setQrDataUrl(null);
+        toast.error(t("Não foi possível receber o código de pareamento. Tente novamente."));
+        // A pessoa pode ter escaneado antes de a conexão cair.
+        void carregar();
       };
     } catch (err) {
       toast.error(errMsg(err, "Não foi possível iniciar o pareamento.", t));

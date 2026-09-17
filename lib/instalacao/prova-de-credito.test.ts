@@ -39,6 +39,16 @@ describe("montarRequisicaoDeProva", () => {
     expect(anthropic!.body).toMatchObject({ max_tokens: 1 });
   });
 
+  it("OpenAI usa max_completion_tokens — max_tokens é recusado pelos modelos de raciocínio (o1/o3/gpt-5)", () => {
+    // Medido em produção: o modelo padrão curado para OpenAI é da família de
+    // raciocínio, e ela responde 400 "Unsupported parameter: 'max_tokens' is
+    // not supported with this model. Use 'max_completion_tokens' instead."
+    // Isso derrubava a prova de crédito no onboarding com toda chave válida.
+    const openai = montarRequisicaoDeProva("openai", "k", "gpt-5.6-terra");
+    expect(openai!.body).toMatchObject({ max_completion_tokens: 1 });
+    expect(openai!.body).not.toHaveProperty("max_tokens");
+  });
+
   it("provedor desconhecido não recebe 'ok' por omissão", () => {
     expect(montarRequisicaoDeProva("inventado", "k", "m")).toBeNull();
   });

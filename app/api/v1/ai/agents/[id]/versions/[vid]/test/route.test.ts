@@ -135,8 +135,14 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
       message: "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.",
     });
     expect(body.error?.message).not.toContain("AI_GATEWAY_API_KEY");
+    // ⚠️ `failed`, não `"error"`. Este teste cobrava `"error"` — e passava,
+    // porque o mock do Supabase não tem o CHECK que o Postgres tem. No banco de
+    // verdade o update era rejeitado com 23514 e o erro descartado, então o
+    // teste verde e a produção quebrada conviviam. O vocabulário da coluna está
+    // agora sob `tests/unit/teste-do-agente-usa-status-que-a-coluna-aceita.test.ts`,
+    // que lê o CHECK do `baseline.sql` em vez de confiar num mock.
     expect(atualizacoes).toContainEqual(expect.objectContaining({
-      status: "error",
+      status: "failed",
       error_code: "preview_failed",
     }));
   });

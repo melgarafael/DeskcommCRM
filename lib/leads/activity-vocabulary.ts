@@ -122,6 +122,14 @@ export type ActivityType =
    */
   | "voice_call_missed"
   /**
+   * Ligação FEITA pelo CRM que ninguém atendeu. Não é "perdida": quem discou
+   * sabe que ninguém pegou, e o rótulo da linha do tempo sai do TIPO — gravar
+   * `voice_call_missed` aqui escrevia "Chamada de voz perdida" no negócio de
+   * quem acabou de ligar. Fora da lista positiva de `fn_update_last_activity_at`
+   * pelo mesmo motivo de `voice_call_missed`: ninguém falou com ninguém.
+   */
+  | "voice_call_unanswered"
+  /**
    * A TAREFA COMBINADA, na linha do tempo do negócio (migration 0210).
    *
    * "Ligar de volta na terça" só existe por causa de um negócio. Sem estas duas
@@ -149,7 +157,16 @@ export type ActivityType =
    * doutrina de migrations), então o banco aceitaria a divergência calado e a
    * timeline cairia no fallback.
    */
-  | "contacts_merged";
+  | "contacts_merged"
+  /**
+   * O negócio nasceu da TROCA DE FUNIL (`POST /api/v1/leads/[id]/clone`).
+   *
+   * ⚠️ Não é `lead_created`: aquele rótulo diz "Entrou pelo WhatsApp", e este
+   * negócio não entrou por canal nenhum — ele veio de outro funil, e é isso que
+   * quem abre o card no destino precisa ler. O outro lado da troca é a
+   * `demand_closed` da origem, com a razão "Levado para o funil X".
+   */
+  | "moved_from_pipeline";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou pelo WhatsApp",
@@ -241,6 +258,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   conversation_ai_paused: "Pausou o automático",
   voice_call: "Chamada de voz",
   voice_call_missed: "Chamada de voz perdida",
+  voice_call_unanswered: "Chamada de voz sem resposta",
   task_created: "Tarefa combinada",
   task_completed: "Tarefa concluída",
   // Rótulo com OBJETO e sem jargão de banco: "Mesclado" sozinho é palavra de
@@ -248,6 +266,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // cadastros da mesma pessoa viraram um — e é por isso que este negócio pode
   // ter mudado de contato sem ninguém tê-lo movido.
   contacts_merged: "Contatos duplicados juntados",
+  moved_from_pipeline: "Veio de outro funil",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */

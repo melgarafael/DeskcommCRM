@@ -313,8 +313,14 @@ async function credenciaisDaLoja(
  * material antigo em vez de ficar sem material nenhum. E **nunca ativa versão
  * vazia** — trocar um acervo que funcionava por um acervo vazio é pior que a
  * indexação ter falhado.
+ *
+ * O "se algo falhar" inclui o UPSERT de um trecho: antes, o erro de gravação
+ * virava só `console.warn` e, com pelo menos um trecho gravado, a versão era
+ * marcada pronta e ativada — um índice com buracos entrava no ar sem ninguém
+ * saber. Agora qualquer trecho não gravado derruba a indexação inteira: a
+ * versão falha com o motivo e a anterior segue ativa.
  */
-async function indexarFonte(
+export async function indexarFonte(
   fonte: FonteRow,
   chave: ChaveDeEmbedding,
   extra: { productId?: string },
@@ -365,6 +371,9 @@ async function indexarFonte(
 
   const admin = createAdminClient();
   let gravados = 0;
+  // Trecho que não gravou NÃO pode seguir para a ativação: a versão fica
+  // incompleta e a anterior — que funciona — é quem deve continuar no ar.
+  const falhas: Array<{ posicao: number; mensagem: string }> = [];
 
   for (let i = 0; i < pedacos.length; i++) {
     const p = pedacos[i]!;
@@ -403,7 +412,7 @@ async function indexarFonte(
     );
 
     if (upErr) {
-      console.warn(`[rag-indexer] trecho ${i} não gravou:`, upErr.message);
+      falhas.push({ posicao: i, mensagem: upErr.message });
     } else {
       gravados++;
     }
@@ -412,6 +421,17 @@ async function indexarFonte(
   if (gravados === 0) {
     await markVersionFailed(versionId, fonte.organization_id, "nenhum trecho gravado");
     return { tipo: "erro", detalhe: "nenhum_trecho_gravado" };
+  }
+
+  if (falhas.length > 0) {
+    await markVersionFailed(
+      versionId,
+      fonte.organization_id,
+      `${falhas.length} de ${pedacos.length} trechos não gravaram: ${falhas
+        .map((f) => `posição ${f.posicao} (${f.mensagem})`)
+        .join("; ")}`,
+    );
+    return { tipo: "erro", detalhe: `trechos_nao_gravados:${falhas.length}` };
   }
 
   await markVersionReady(versionId, fonte.organization_id, gravados);

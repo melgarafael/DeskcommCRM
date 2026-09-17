@@ -186,8 +186,12 @@ reprovações espera — reprovar menos que o previsto denuncia mecanismo redund
 
 #### Ambiente de prova (montado pelo maestro, pronto antes da 1ª entrega)
 
-- **Banco**: Supabase local `pg17` já de pé (`supabase_db_deskcomm-crm`), que é o alvo
-  que a doutrina exige (o `baseline.sql` usa `GRANT MAINTAIN`, privilégio pg17+).
+- **Banco**: Supabase local `pg17` já de pé (`supabase_db_deskcomm-crm`), que era o alvo
+  que a doutrina exigia então (o `baseline.sql` usava `GRANT MAINTAIN`, privilégio pg17+).
+  ⚠️ **Superado em 2026-09:** os 9 `GRANT … MAINTAIN` saíram do baseline (#422) e a doutrina
+  hoje manda medir no PISO, pg15 (`supabase/config.toml`, `scripts/test-db.sh`); pg17 segue
+  coberto pela matriz do job `invariants` (#454). Este parágrafo é registro da sessão, não
+  receita — quem for montar ambiente leia o `config.toml`.
 - **Isolamento de produção**: os worktrees `fv-*` nasceram do git limpos, **sem
   `.env.local`** — que é exatamente a configuração segura. Esta base já teve
   `pnpm test:e2e` escrevendo organizações e usuários **no banco real**, porque 93

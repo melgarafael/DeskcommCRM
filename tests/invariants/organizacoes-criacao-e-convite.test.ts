@@ -59,6 +59,78 @@ describe("organização criada leva acesso e convite seguro", () => {
         raise exception 'legacy restored revocation'; exception when insufficient_privilege then null; end;
     end $$;`));
 
+  /**
+   * O CRIADOR PROVISÓRIO SAI NA ENTREGA (migration 0237).
+   *
+   * ⚠️ SEGUNDA TENTATIVA. A primeira deduzia a entrega de "existe outro admin
+   * aceito" e, em produção, expulsou o dono do servidor da PRÓPRIA empresa —
+   * uma organização que ele abriu para si e onde depois deu `admin` a um sócio.
+   *
+   * Agora a marca é GRAVADA na criação (`provisional_until_handover`), e só
+   * quando o tenant é de outra pessoa. O caso que quebrou virou o primeiro
+   * teste desta série, e ele é de SOBREVIVÊNCIA: prova que ninguém que não
+   * devia sair, saiu.
+   */
+  it("SOBREVIVÊNCIA: organização própria com um SEGUNDO admin não perde o dono", () => prove(`
+    do $$ declare org uuid; begin
+      -- Exatamente a forma da empresa que quebrou: criada pela própria pessoa
+      -- (como o /signup faz — sem passar por fn_create_tenant_with_owner),
+      -- com um sócio que depois virou admin.
+      insert into public.organizations(slug,display_name,legal_name,created_by)
+        values ('propria-0237','Minha empresa','Minha empresa','${actor}') returning id into org;
+      insert into public.user_organizations(organization_id,user_id,role,accepted_at)
+        values (org,'${actor}','admin',now());
+      perform public.fn_accept_team_invite('${guest}',org,'admin','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 1
+        then raise exception 'EXPULSOU O DONO DA PROPRIA EMPRESA — o defeito de 2026-09-11 voltou'; end if;
+      if (select count(*) from public.user_organizations where organization_id=org) <> 2
+        then raise exception 'a organizacao devia ter os dois admins'; end if;
+    end $$;`));
+
+  it("a marca só nasce quando o tenant é de OUTRA pessoa", () => prove(`
+    do $$ declare r jsonb; org uuid; begin
+      r := ${call}; org := (r->>'id')::uuid;
+      if not (select provisional_until_handover from public.user_organizations
+               where organization_id=org and user_id='${actor}')
+        then raise exception 'tenant de terceiro e o vinculo nao nasceu provisorio'; end if;
+    end $$;`));
+
+  it("quem cria o PRÓPRIO tenant nasce SEM a marca, e nunca sai", () => prove(`
+    do $$ declare r jsonb; org uuid; corpo jsonb; begin
+      -- Mesmo payload, mas com o owner_email = o e-mail de quem cria.
+      corpo := '{"display_name":"Minha","slug":"minha-0237","plan":"standard"}'::jsonb
+             || jsonb_build_object('owner_email', (select email from auth.users where id='${actor}'));
+      r := public.fn_create_tenant_with_owner('${actor}','f2180000-0000-4000-8000-0000000000aa', corpo, 'abcd');
+      org := (r->>'id')::uuid;
+      if (select provisional_until_handover from public.user_organizations
+           where organization_id=org and user_id='${actor}')
+        then raise exception 'criou para si e o vinculo nasceu provisorio'; end if;
+      perform public.fn_accept_team_invite('${guest}',org,'admin','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 1
+        then raise exception 'saiu do proprio tenant'; end if;
+    end $$;`));
+
+  it("na entrega o provisório sai — e a organização não fica vazia", () => prove(`
+    do $$ declare r jsonb; org uuid; begin
+      r := ${call}; org := (r->>'id')::uuid;
+      perform public.fn_accept_team_invite('${guest}',org,'admin','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 0
+        then raise exception 'o provisorio ficou'; end if;
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${guest}' and role='admin' and revoked_at is null) <> 1
+        then raise exception 'o dono nao assumiu'; end if;
+      -- A ordem: o vínculo do dono é gravado ANTES de o provisório sair.
+      if (select count(*) from public.user_organizations where organization_id=org and revoked_at is null) < 1
+        then raise exception 'organizacao ficou vazia'; end if;
+    end $$;`));
+
+  it("papel que não é o do dono não dispara a entrega", () => prove(`
+    do $$ declare r jsonb; org uuid; begin
+      r := ${call}; org := (r->>'id')::uuid;
+      perform public.fn_accept_team_invite('${guest}',org,'agent','${actor}',now()-interval '1 minute',now()-interval '1 minute','{"preset":"completa"}'::jsonb);
+      if (select count(*) from public.user_organizations where organization_id=org and user_id='${actor}') <> 1
+        then raise exception 'um colega entrando expulsou o provisorio'; end if;
+    end $$;`));
+
   it("convidado só enxerga organização aceita, com RLS real", () => prove(`
     select ${call};
     insert into public.organizations(slug,display_name,legal_name) values ('outra-0218','Outra','Outra');

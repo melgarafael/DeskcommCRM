@@ -223,7 +223,7 @@ function conversaCompleta(forma: Forma = {}): Row {
  * relação ao dublê de `messages-handler-desfechos.test.ts`, e é ela que faz a
  * rede morder a perda de uma coluna.
  */
-function makeSupabase(linhaCompleta: Row) {
+function makeSupabase(linhaCompleta: Row, espelhoDoModelo: Row | null = null) {
   const estado: {
     message: Row | null;
     selects: string[];
@@ -236,11 +236,17 @@ function makeSupabase(linhaCompleta: Row) {
         return {
           select: (cols: string) => {
             estado.selects.push(cols);
-            return {
-              eq: () => ({
-                maybeSingle: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
-              }),
+              // Encadeável SEM LIMITE de propósito: a consulta da conversa filtra
+              // por id E por `organization_id` (este handler também roda com o
+              // client de service role, que bypassa RLS). Um dublê que fixa a
+              // quantidade de `eq` quebra quando a consulta ganha o filtro que
+              // fecha o vazamento entre organizações — com um erro que não fala
+              // do comportamento sob teste.
+            const cadeia: Record<string, unknown> = {
+              eq: () => cadeia,
+              maybeSingle: async () => ({ data: projetar(linhaCompleta, cols), error: null }),
             };
+            return cadeia;
           },
           update: () => ({ eq: async () => ({ error: null }) }),
         };
@@ -251,12 +257,17 @@ function makeSupabase(linhaCompleta: Row) {
         // deixa passar de propósito: recusar o que não se sabe barraria todo
         // envio de modelo numa instalação cujo sync ainda não rodou.
         //
+        // O caminho do canal OFICIAL (`sendTemplateForSession`) é mais estrito:
+        // sem linha no espelho ele recusa com `template_missing` antes da rede.
+        // Quem precisa ver o modelo SAIR por esse caminho passa a linha em
+        // `espelhoDoModelo`.
+        //
         // Encadeável sem limite: um dublê que fixa a quantidade de filtros faz
         // o teste quebrar quando a consulta ganha um `eq` novo, com um erro que
         // não fala do comportamento sob teste.
         const cadeia: Record<string, unknown> = {
           eq: () => cadeia,
-          maybeSingle: async () => ({ data: null, error: null }),
+          maybeSingle: async () => ({ data: espelhoDoModelo, error: null }),
         };
         return { select: () => cadeia };
       }
@@ -665,5 +676,70 @@ describe("canal oficial conectado pela TELA — a credencial da sessão manda (#
       (c) => (c[1] as { headers: Record<string, string> }).headers.Authorization,
     );
     expect(auth).toEqual(["Bearer tok-A", "Bearer tok-B"]);
+  });
+});
+
+/**
+ * O MODELO do canal oficial, pelo HANDLER (fatia F4 da #850, PR #863).
+ *
+ * `sendTemplateForSession` resolve a credencial pelo par (organização, número
+ * DESTA conexão) — e o número chega do handler, em `sessionRef`. A suíte do PR
+ * prova a função com o número entregue na mão; nenhum caso atravessava o call
+ * site. Medido na revisão do PR: trocar o `sessionRef` do handler por `""`
+ * deixava 19 arquivos / 209 casos verdes. O efeito é o defeito que a fatia
+ * fecha, de volta pela porta dos fundos: sem número, a resolução não casa
+ * linha nenhuma e o modelo sai pelo `.env`.
+ *
+ * Por isso o ambiente deste caso tem OUTRO número e OUTRO token, de propósito:
+ * é a instalação em que a regressão não se anuncia — o modelo sai, a linha
+ * diz `sent`, e só o endereço e a autorização da chamada denunciam o número
+ * errado. É isso que o caso afere.
+ */
+describe("o MODELO do canal oficial sai pela credencial da sessão, não pelo .env (#863)", () => {
+  const NUMERO_DA_SESSAO = "1103328999528818";
+  const NUMERO_DO_ENV = "999000999000";
+
+  const espelho: Row = {
+    name: "boas_vindas",
+    language: "pt_BR",
+    status: "APPROVED",
+    contract_hash: "hash-do-espelho",
+    components: [{ type: "BODY", text: "Olá, {{1}}! Seu atendimento está aberto." }],
+  };
+
+  it("credencial só na sessão e .env com outro número: a Graph recebe o número e o token da SESSÃO", async () => {
+    credencialDaSessao.porOrg = {
+      [`${ORG}|${NUMERO_DA_SESSAO}`]: { cifrado: "\\xsessao", token: "tok-da-sessao" },
+    };
+    vi.stubEnv("META_PHONE_NUMBER_ID", NUMERO_DO_ENV);
+    vi.stubEnv("META_SYSTEM_USER_TOKEN", "tok-do-env");
+    const fetchMock = respostaMeta("wamid.MODELO");
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { supabase } = makeSupabase(conversaCompleta({ provider: "meta_cloud" }), espelho);
+    const msg = await sendMessageHandler(
+      supabase,
+      ctx,
+      texto({
+        type: "template",
+        body: undefined,
+        template_name: "boas_vindas",
+        template_language: "pt_BR",
+        template_values: { "1": "Ana" },
+      }),
+    );
+
+    expect(msg.status).toBe("sent");
+    expect(msg.external_id).toBe("wamid.MODELO");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit & { headers: Record<string, string> }];
+    expect(String(url)).toContain(`/${NUMERO_DA_SESSAO}/messages`);
+    expect(String(url)).not.toContain(NUMERO_DO_ENV);
+    expect(init.headers.Authorization).toBe("Bearer tok-da-sessao");
+    // Guarda de vacuidade: foi o MODELO que saiu, não um texto por outro ramo.
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      type: "template",
+      template: { name: "boas_vindas", language: { code: "pt_BR" } },
+    });
   });
 });

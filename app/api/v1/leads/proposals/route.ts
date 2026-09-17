@@ -29,6 +29,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (leadIds.length > 0) {
     const { data: leads, error: leadsErr } = await supabase
       .from("crm_leads")
-      .select("id, title, contact_id, crm_stages(name), contacts(display_name)")
+      .select("id, title, contact_id, crm_stages(name), contacts(name, display_name)")
       .eq("organization_id", orgId)
       .in("id", leadIds);
     if (leadsErr) return fail("internal", leadsErr.message, 500, { requestId });
@@ -112,7 +113,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       id: string;
       title: string | null;
       crm_stages: { name: string | null } | null;
-      contacts: { display_name: string | null } | null;
+      contacts: { name: string | null; display_name: string | null } | null;
     }>) {
       const proposta = porLead.get(l.id);
       if (!proposta) continue;
@@ -120,7 +121,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         lead_id: l.id,
         lead_title: l.title ?? traduzir("(sem título)", user.idioma),
         stage_name: l.crm_stages?.name ?? null,
-        contact_name: l.contacts?.display_name ?? null,
+        contact_name: nomeDoContato(l.contacts),
         next_action: proposta.label,
         seq: proposta.seq,
         proposed_at: proposta.proposed_at,

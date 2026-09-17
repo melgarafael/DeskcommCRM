@@ -149,11 +149,28 @@ export interface SendInBubblesOpts<T extends BubbleOutcome = BubbleOutcome> {
  */
 const OK_KINDS = new Set(["sent", "already_sent", "queued"]);
 
+/**
+ * A decisão de fatiamento do `sendInBubbles`, exposta separadamente (issue #654).
+ *
+ * O turno precisa saber QUAL é a primeira bolha ANTES de o guardrail tomar o
+ * lock do número: desde o conserto da #654 a pausa humana é paga fora da
+ * transação (no `esperaForaDoLock` do turno; o dimensionamento é o de
+ * `atraso-humano.ts`), e ela é medida pela primeira bolha — não pelo corpo todo.
+ * Duas cópias desta lógica fariam a
+ * pausa medir um texto e o canal mandar outro.
+ *
+ * Pura: sem I/O, sem relógio, sem canal. Devolve `[]` para corpo vazio (quem
+ * chama decide — o `sendInBubbles` passa o corpo original ao `send`).
+ */
+export function splitForSend(body: string, enabled: boolean, maxChars: number): string[] {
+  return enabled ? splitIntoBubbles(body, maxChars) : [body];
+}
+
 export async function sendInBubbles<T extends BubbleOutcome>(
   body: string,
   opts: SendInBubblesOpts<T>,
 ): Promise<T> {
-  const bubbles = opts.enabled ? splitIntoBubbles(body, opts.maxChars) : [body];
+  const bubbles = splitForSend(body, opts.enabled, opts.maxChars);
   if (bubbles.length === 0) return opts.send(body); // corpo vazio: deixa o canal decidir
   let last: T | undefined;
   for (let i = 0; i < bubbles.length; i++) {

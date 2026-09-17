@@ -3,6 +3,8 @@
 **Data**: 2026-04-28 (entrega overnight pra apresentação SP 2026-04-29 cedo)
 **Sessão**: autônoma via Claude Opus 4.7 + 11 subagentes paralelos
 
+> **Registro de 2026-04-28.** Foi escrito quando o alvo de deploy era a Vercel — inclusive o próximo passo de conectar o projeto à plataforma. Hoje o CRM é self-host em VPS, e o deploy que vale está em [`docs/runbooks/deploy.md`](../runbooks/deploy.md).
+
 ---
 
 ## TL;DR

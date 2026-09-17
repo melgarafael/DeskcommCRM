@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
+import {
+  TETO_NOME_DE_SESSAO_WAHA, nomeDaSessaoCabeNoWaha, nomeDaSessaoNovo, podeRenomearSessaoDoWaha,
+} from "@/lib/channels/nome-da-sessao";
 import type { WahaClient } from "@/lib/waha/client";
 import { WahaSessionError } from "@/lib/waha/client";
 
@@ -52,6 +55,34 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
     if (result.error) throw new ChannelConnectionError("connection_checkpoint_failed", 503);
     return result.data;
   }
+  // Teto do WAHA conferido AQUI, antes de qualquer chamada ao transporte.
+  //
+  // Deixar passar é o defeito da issue #667: o WAHA devolve um 400 opaco no
+  // meio do fluxo, com a reserva já feita, e o card de Conexões fica preso em
+  // `Parado`. Nome fora do teto não é falha de transporte — é dado de uma
+  // instalação cujo banco ainda não recebeu o backfill da 0232.
+  //
+  // O que dá para curar, é curado; o que não dá, para aqui. A fronteira é a
+  // da 0232 (`podeRenomearSessaoDoWaha`), e ela existe porque renomear um
+  // canal que já pareou o desliga do diretório de sessão do WAHA — o número
+  // some e só volta com QR novo. A reserva é fechada em `FAILED` para não
+  // travar a próxima tentativa.
+  if (!nomeDaSessaoCabeNoWaha(channel.waha_session_name)) {
+    if (!podeRenomearSessaoDoWaha(channel)) {
+      await finish("FAILED", "session_name_too_long");
+      throw new ChannelConnectionError("connection_session_name_too_long", 409, {
+        waha_session_name: channel.waha_session_name,
+        comprimento: channel.waha_session_name.length,
+        teto: TETO_NOME_DE_SESSAO_WAHA,
+      });
+    }
+    try {
+      channel.waha_session_name = await renomearSessaoParaOTeto(serviceDb, channel);
+    } catch (cause) {
+      await finish("FAILED", "session_name_too_long");
+      throw cause;
+    }
+  }
   try {
     if (input.restart) await waha.stopSession(channel.waha_session_name);
     const creation = await waha.createSession(channel.waha_session_name);
@@ -75,6 +106,35 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
     throw new ChannelConnectionError(code, 502, cause instanceof WahaSessionError
       ? { operation: cause.operation, http_status: cause.httpStatus } : undefined);
   }
+}
+
+/**
+ * Troca o nome fora do teto por um `org_<8>_<32>`, e só quando é seguro.
+ *
+ * A guarda de `podeRenomearSessaoDoWaha` é repetida no WHERE de propósito: a
+ * decisão em memória parte de uma linha lida antes, e o que impede o UPDATE de
+ * alcançar um canal pareado precisa estar no próprio UPDATE. Nenhuma linha
+ * casada = ninguém renomeia e ninguém finge que renomeou.
+ */
+export async function renomearSessaoParaOTeto(
+  db: SupabaseClient,
+  canal: { id: string; organization_id: string; waha_session_name: string },
+): Promise<string> {
+  const novo = nomeDaSessaoNovo(canal.organization_id);
+  const { data, error } = await db.from("channel_sessions")
+    .update({ waha_session_name: novo })
+    .eq("organization_id", canal.organization_id).eq("id", canal.id)
+    .is("phone_number", null).neq("status", "WORKING")
+    .select("id").maybeSingle();
+  if (error || !data) {
+    throw new ChannelConnectionError("connection_session_name_too_long", 409, {
+      waha_session_name: canal.waha_session_name,
+      comprimento: canal.waha_session_name.length,
+      teto: TETO_NOME_DE_SESSAO_WAHA,
+      renomeio_recusado: true,
+    });
+  }
+  return novo;
 }
 
 /** Ações manuais aguardam apenas a reserva em execução; FAILED é recuperável. */

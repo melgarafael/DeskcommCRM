@@ -14,6 +14,58 @@ export type RequestOpts = {
 };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * O prazo de uma ESCRITA — o orçamento que o fim do retry tirou sem repor.
+ *
+ * ─── A conta ────────────────────────────────────────────────────────────────
+ *
+ * Enquanto método mutante era retentado, uma escrita tinha três tentativas de
+ * `DEFAULT_TIMEOUT_MS` separadas pelo `backoffMs`: 10s + ~0,2s + 10s + ~0,4s +
+ * 10s ≈ **30,6s** de parede até o cliente desistir de vez. O retry era errado
+ * (executava a escrita de novo, e foi por isso que caiu — ver o bloco
+ * `MUTATING_METHODS` no `catch` abaixo), mas ele também era, sem querer, o
+ * ORÇAMENTO DE ESPERA de toda escrita do produto. Tirar a repetição sem repor a
+ * espera cortou esse orçamento para 10s num único gesto, em toda mutação da
+ * base — e ninguém mexeu no número.
+ *
+ * ─── O que isso quebrou, medido ─────────────────────────────────────────────
+ *
+ * CI `e2e` do lote, run 34876435491, `followup-dossie.spec.ts:190`. No trace:
+ *
+ *     POST /api/v1/ai/followups/enrollments/…/pause
+ *     time 9999.558ms   _failureText net::ERR_ABORTED   1 tentativa
+ *
+ * 9999,558ms é o `DEFAULT_TIMEOUT_MS` cravado: quem desistiu foi o NAVEGADOR,
+ * não o servidor. E a máquina não estava lenta — dos 16 testes `followup-*`
+ * vizinhos no mesmo job, 15 correram MAIS RÁPIDO que no run verde da `main`
+ * 34878063927 (builder:414 9,9s contra 11,7s; queue:153 8,9s contra 12,2s;
+ * dossie:288 11,4s contra 14,6s), e o único mais lento foi builder:287, por
+ * 1s. Foi uma paralisada isolada daquela escrita, do tipo que os 30s absorviam
+ * e os 10s não absorvem mais.
+ *
+ * O que a pessoa via na tela, no frame seguinte ao corte: "Erro inesperado.
+ * Tente novamente." sobre um dossiê ainda escrito "Ativo" — exatamente o
+ * sintoma que o cabeçalho da migration 0243 descreve como o incidente de
+ * 2026-09-12, e que ela consertou só do lado do banco (`lock_timeout` em
+ * `authenticator`/`authenticated`; rota que escreve por `service_role`, como
+ * esta, fica de fora de propósito).
+ *
+ * ─── Por que ESPERAR mais é a direção certa ─────────────────────────────────
+ *
+ * Pelo mesmo motivo que não se repete: o servidor não cancela nada quando o
+ * cliente desiste. Abortar uma escrita aos 10s não a impede — só joga fora a
+ * RESPOSTA que estava a caminho, trocando um resultado conhecido por uma
+ * dúvida. Numa leitura, desistir cedo é bom (a tela não fica presa, e o GET
+ * ainda é repetido, então o orçamento dele não mudou); numa escrita, desistir
+ * cedo não tem nada a ganhar.
+ *
+ * 30s não é folga nova: é a mesma parede que a escrita já tinha, entregue como
+ * UMA tentativa em vez de três. Chamada que precisa de mais passa `timeoutMs`
+ * (o "Testar agente" pede 120s, e segue mandando).
+ */
+const MUTATION_TIMEOUT_MS = 30_000;
+
 const MAX_ATTEMPTS = 3;
 const RETRYABLE_STATUSES = new Set([429, 503]);
 const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PATCH", "PUT", "DELETE"]);
@@ -199,7 +251,8 @@ async function request<T>(
 
   const serializedBody =
     body === undefined || body === null ? undefined : JSON.stringify(body);
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs =
+    opts.timeoutMs ?? (MUTATING_METHODS.has(method) ? MUTATION_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
 
   let lastError: unknown;
 
@@ -286,7 +339,24 @@ async function request<T>(
       if (opts.signal?.aborted) {
         throw err;
       }
-      // Network error / timeout — retry
+      // ⚠️ TIMEOUT NUMA ESCRITA NÃO É "não aconteceu" — é "não sei".
+      //
+      // O servidor não cancela o trabalho quando o cliente desiste: ele termina
+      // e devolve para ninguém. Retentar ali executa a escrita DE NOVO, e o
+      // `Idempotency-Key` que este cliente estampa só protege quem o honra —
+      // hoje, poucas rotas.
+      //
+      // Medido (issue #783): "Testar agente" leva ~14,5s de modelo e o timeout
+      // padrão é 10s. Um clique virava até TRÊS execuções completas do LLM, as
+      // três pagas, nenhuma devolvida à tela — que mostrava só um toast de erro
+      // enquanto os créditos iam embora em triplo.
+      //
+      // Erro de REDE (servidor inalcançável) é indistinguível de timeout aqui,
+      // e some no mesmo balde de propósito: na dúvida sobre uma escrita, não
+      // repetir é a direção segura. Leitura (GET) segue retentando.
+      if (MUTATING_METHODS.has(method)) {
+        throw err;
+      }
       lastError = err;
       if (attempt < MAX_ATTEMPTS) {
         await sleep(backoffMs(attempt), opts.signal);

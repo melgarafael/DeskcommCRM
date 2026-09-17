@@ -69,6 +69,47 @@ export function atividadeDaTransicao(
 }
 
 /**
+ * O gatilho de automação que a transição emite, ou `null` quando ela não é
+ * notícia para uma regra.
+ *
+ * Existe porque o motor de regras (`lib/automation/engine.ts`) é forte —
+ * condições, runs, auditoria, e a ação de mandar WhatsApp já pronta — e não
+ * enxergava a agenda: nenhum dos seus gatilhos vinha de um compromisso. Um
+ * estúdio que quisesse avisar "amanhã é seu horário" tinha o motor, tinha o
+ * envio, e não tinha o fato.
+ *
+ * ⚠️ NÃO É A MESMA RÉGUA DA TIMELINE, e a diferença é o ponto:
+ * `atividadeDaTransicao` devolve `null` em `pending → confirmed` porque a
+ * história do lead já contou "foi marcado". Para uma regra, confirmar é
+ * EXATAMENTE o momento que interessa — é quando o horário deixa de ser pedido e
+ * vira compromisso, e é o gancho de "mandar a confirmação para a cliente".
+ * Reaproveitar a função da timeline aqui apagaria o gatilho mais útil dos três.
+ *
+ * `completed` e `no_show` ficam de fora porque já têm emissor próprio:
+ * `appointment.outcome_confirmed`, consumido por
+ * `lib/followup/gatilho-presenca.handler.ts`. Dois eventos para o mesmo fato
+ * fariam a regra rodar duas vezes.
+ */
+export function gatilhoDaTransicao(de: SituacaoAnterior, para: Transicao): string | null {
+  if (de === null) {
+    return para === "pending" || para === "confirmed" ? "appointment.created" : null;
+  }
+
+  switch (para) {
+    case "confirmed":
+      // Só sobe quando VEIO de pendente: `atualizarAgendamento` só chama com
+      // transição quando o status mudou de fato.
+      return de === "pending" ? "appointment.confirmed" : null;
+    case "rescheduled":
+      return "appointment.rescheduled";
+    case "cancelled":
+      return "appointment.cancelled";
+    default:
+      return null;
+  }
+}
+
+/**
  * O compromisso precisa ser empurrado para o Google?
  *
  * ⚠️ `completed` e `no_show` NÃO empurram. O evento lá fora já aconteceu;

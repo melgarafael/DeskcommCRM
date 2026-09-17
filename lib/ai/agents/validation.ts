@@ -99,7 +99,22 @@ const versionShapeSchema = z
         { message: "tool_id_invalid" },
       ),
     trigger_config: triggerConfigSchema.optional(),
-    channel_session_id: UUID,
+    /**
+     * Por qual número o agente atende. `null` = AINDA NÃO ESCOLHIDO.
+     *
+     * Era UUID obrigatório, e isso trancava o caminho mais comum de uma
+     * instalação nova: o dono escreve o prompt do atendente ANTES de conectar o
+     * WhatsApp (pareia o aparelho outro dia, com o celular na mão). Sem número
+     * em `channel_sessions`, o editor não deixava salvar uma linha do que ele
+     * acabou de escrever — a tela exigia escolher de uma lista vazia.
+     *
+     * ⚠️ NULO RASCUNHA, NÃO ATENDE. Publicar sem número continua recusado, e em
+     * três camadas independentes: `bloqueioDePublicacao` desabilita o botão,
+     * `fn_publish_ai_agent_version` levanta `channel_session_not_found` (o
+     * `select` por `channel_session_id` nulo não acha linha), e o runtime resolve
+     * o agente por `published_version_id` — sem publicação, ninguém o executa.
+     */
+    channel_session_id: UUID.nullable(),
     max_steps: z.number().int().min(1).max(25).default(10),
     token_budget: z.number().int().min(1000).max(500000).default(50000),
     cost_budget_cents: z.number().int().min(1).max(10000).default(50),

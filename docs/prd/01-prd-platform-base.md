@@ -226,7 +226,7 @@ Contrato completo e limites OAuth: [`docs/support-sessions.md`](../support-sessi
 - p95 de tenant resolution + RLS query simples: <100ms
 - p95 de mutação simples (POST/PATCH lead): <300ms
 - p95 de audit log write: <500ms (fire-and-forget)
-- Suporte concorrente: 100 RPS por tenant no MVP, escalável horizontalmente via Vercel
+- Suporte concorrente: 100 RPS por tenant no MVP
 
 ### 4.3 Compliance
 - LGPD desde o dia 1 (vide §3.6)
@@ -265,7 +265,7 @@ A Plataforma Base é considerada **MVP-completa** quando:
 
 ### Externas
 - **Supabase** (Auth, Postgres, Storage) — projeto provisionado, plano Pro mínimo pra produção
-- **Vercel** — projeto + domínio + AI Gateway (pra Sub-PRDs futuros)
+- **Vercel AI Gateway** — só o gateway de LLM, via `AI_GATEWAY_API_KEY` (pra Sub-PRDs futuros). Hospedagem não entra aqui: quem instala roda o CRM na própria infraestrutura
 - **Upstash Redis** — instância de produção pra rate limit
 - **Sentry** — projeto criado, com regras de sanitização aprovadas
 - **Domínio + subdomínio** `admin.deskcomm.com` (pra UI super-admin)

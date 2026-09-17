@@ -283,7 +283,14 @@ const moveInputShape = {
 export const crmMoveLeadStage: McpToolDefinition<typeof moveInputShape> = {
   name: "crm_move_lead_stage",
   description:
-    "Move um lead para outro stage dentro do MESMO pipeline. Cross-pipeline é proibido (use clone). Audit registra from/to stage e reason.",
+    "Move um lead para outro stage dentro do MESMO pipeline. Audit registra from/to stage e reason. " +
+    // "use clone" apontava para uma porta que o agente NÃO tem: não existe tool
+    // de clone em lib/mcp/tools/, e ele não faz HTTP autenticado por cookie de
+    // sessão. Instrução que não pode ser cumprida faz o modelo prometer ao
+    // cliente uma ação que nunca acontece — o mesmo defeito da #922, do outro
+    // lado. A tool de clone é fatia própria; até lá, a saída honesta é o humano.
+    "Levar o negócio para OUTRO funil é proibido aqui e ainda não é uma ferramenta sua: " +
+    "não prometa ao cliente que você vai mudar o funil — diga que vai passar para a equipe.",
   inputSchema: moveInputShape,
   category: "write",
   requiresRole: "agent",

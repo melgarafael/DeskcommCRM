@@ -45,7 +45,11 @@ describe("o canal volta sozinho", () => {
 
   it("monta canal NOVO a cada tentativa", () => {
     // Reassinar o mesmo objeto devolve SUBSCRIBED e não entrega nada.
-    expect(FONTE).toMatch(/supabase\.removeChannel\(active\);\s*\n\s*montar\(\);/);
+    // Solta `active` ANTES de remover: o CLOSED síncrono do canal velho não pode
+    // passar pela guarda e armar outra retomada (ver
+    // `tests/unit/realtime-retomada-sem-timer-orfao.test.tsx`, que prende isso
+    // pelo comportamento).
+    expect(FONTE).toMatch(/const velho = active;\s*\n\s*active = null;\s*\n\s*if \(velho\) supabase\.removeChannel\(velho\);\s*\n\s*montar\(\);/);
     expect(FONTE).toMatch(/supabase\.channel\(`\$\{channelName\}#\$\{tentativas\}`\)/);
   });
 

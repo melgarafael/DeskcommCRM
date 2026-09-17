@@ -40,7 +40,7 @@ Implicações de leitura deste documento e dos sub-PRDs:
 3. **MCP-ready**: arquitetura inclui MCP server (interno hoje; contrato público na Fase 2) com 19 tools canônicas pra LLMs operarem o sistema.
 4. **LGPD nativa**: redact e data_request como contrato de primeira-classe (incluindo os webhooks da Nuvemshop no vertical e-commerce), não afterthought.
 
-**Restrições principais.** MVP-B em produção em **8–12 semanas**. Stack obrigatória: bundle adotado (Next.js 14+ App Router + Supabase + WAHA Plus + Vercel + MCP server separado em Node ESM). LGPD desde o dia 1. Arquitetura multi-tenant com RLS Postgres em toda tabela tenant-aware.
+**Restrições principais.** MVP-B em produção em **8–12 semanas**. Stack obrigatória: bundle adotado (Next.js 14+ App Router + Supabase + WAHA Plus + MCP server separado em Node ESM). LGPD desde o dia 1. Arquitetura multi-tenant com RLS Postgres em toda tabela tenant-aware.
 
 ---
 
@@ -174,7 +174,7 @@ Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de
 DeskcommCRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
 
 **Pontos não negociáveis herdados:**
-- Stack Next.js + Supabase + WAHA Plus + Vercel
+- Stack Next.js + Supabase + WAHA Plus
 - Multi-tenant via RLS com helper `fn_user_org_ids()`
 - 5 tabelas core CRM (`crm_pipelines`, `crm_stages`, `crm_leads`, `crm_lead_activities`, `crm_lead_links`)
 - Polimorfismo explícito em timeline e vínculos

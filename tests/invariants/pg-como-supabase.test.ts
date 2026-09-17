@@ -320,6 +320,46 @@ describe("rpc — argumentos NOMEADOS, como o PostgREST", () => {
   });
 });
 
+describe("o adaptador FILTRA POR CONJUNTO — `in`", () => {
+  // Nasceu pelo mesmo mecanismo dos anteriores, e desta vez por pressão de um PR
+  // de contribuidor: a cascata de LGPD passou a cancelar a régua do contato
+  // anonimizado com `.in("status", STATUS_DA_REGUA_VIVA)`. Um `in` que
+  // devolvesse vazio deixaria o invariante VERDE afirmando que a cascata
+  // cancelou a régua — "nenhuma régua viva" é o desfecho natural de uma lista
+  // vazia.
+  it("`in` traz só os do conjunto, e não a tabela inteira", async () => {
+    const { data } = await db
+      .from("crm_pipelines")
+      .select("name")
+      .eq("organization_id", ORG)
+      .in("name", ["Alfa", "Zulu"]);
+    expect((data as Array<{ name: string }>).map((x) => x.name).sort()).toEqual(["Alfa", "Zulu"]);
+  });
+
+  it("conjunto vazio devolve vazio — e isso É o comportamento, não o adaptador desistindo", async () => {
+    const { data } = await db
+      .from("crm_pipelines")
+      .select("name")
+      .eq("organization_id", ORG)
+      .in("name", []);
+    expect(data).toEqual([]);
+  });
+
+  it("`in` convive com `eq` na mesma consulta, sem uma anular a outra", async () => {
+    const { data } = await db
+      .from("crm_pipelines")
+      .select("name")
+      .eq("organization_id", ORG)
+      .eq("is_default", false)
+      .in("name", ["Alfa", "Zulu", "Bravo"]);
+    expect((data as Array<{ name: string }>).map((x) => x.name).sort()).toEqual([
+      "Alfa",
+      "Bravo",
+      "Zulu",
+    ]);
+  });
+});
+
 describe("o que NÃO está implementado estoura", () => {
   it("método ausente lança em vez de devolver vazio — vazio silencioso é teste verde medindo nada", () => {
     expect(() => db.from("crm_pipelines").delete()).toThrow(/não está implementado/);

@@ -61,7 +61,7 @@ it("ready oferece URL utilizável sem afirmar envio; erro oferece retry separado
     "href",
     "https://meet.google.com/abc-defg-hij",
   );
-  expect(screen.getByText("O envio do link ainda não foi autorizado.")).toBeInTheDocument();
+  expect(screen.getByText("Link não enviado ainda.")).toBeInTheDocument();
   view.unmount();
   show({ ...initial, state: "failed", error: "unknown" });
   expect(screen.getByRole("button", { name: "Verificar link novamente" })).toBeInTheDocument();

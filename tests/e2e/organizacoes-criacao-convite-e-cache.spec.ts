@@ -74,11 +74,27 @@ test("org única oferece criação, responsável aceita e A→B→A não mistura
         if (forged.error) throw forged.error;
       }
       if (!loseResponse) return route.continue();
-      const committed = await route.fetch();
-      expect(committed.status()).toBe(201);
-      const data = (await committed.json()).data;
-      lost.push(data);
-      if (!orgs.includes(data.id)) orgs.push(data.id);
+      // TRÊS entregas do MESMO request, com a MESMA `Idempotency-Key`, e todas
+      // com a resposta perdida no caminho de volta.
+      //
+      // Antes do #787 as três vinham do retry automático do cliente. Aquele PR
+      // parou de retentar método mutante — e a razão é boa: timeout numa
+      // escrita significa "não sei", não "não aconteceu", e o retry cobrava o
+      // mesmo turno de IA três vezes. Clicar de novo NÃO substitui aquilo: cada
+      // clique carimba uma chave nova, e a idempotência do servidor é por chave.
+      //
+      // O que esta spec mede é do SERVIDOR e não mudou: o mesmo pedido entregue
+      // N vezes cria UMA organização. Quem entrega N vezes, hoje, é a rede —
+      // proxy que reenvia, cliente HTTP intermediário, ou o próprio navegador
+      // numa conexão instável. Por isso a repetição vive aqui, na interceptação,
+      // e não num laço de cliques que mediria outra coisa.
+      for (let entrega = 0; entrega < 3; entrega++) {
+        const committed = await route.fetch();
+        expect(committed.status()).toBe(201);
+        const data = (await committed.json()).data;
+        lost.push(data);
+        if (!orgs.includes(data.id)) orgs.push(data.id);
+      }
       await route.abort("failed");
     });
     await page.getByRole("button", { name: "Criar organização", exact: true }).click();

@@ -109,8 +109,9 @@ Nesta ordem:
 **A liberação do CI é o primeiro comando da triagem, antes de ler o diff.** Medido em 2026-09-03: numa fila de 26 PRs, **12 workflows** de cinco contribuidores estavam parados em `action_required`, um deles havia mais de um dia — e três PRs tinham **zero** execuções no `head_sha` (ver modo de falha 17). Cada minuto entre abrir o PR e liberar é latência pura, que é o gargalo que este documento existe para matar. Libere primeiro; avalie depois.
 
 A acolhida **não contém juízo técnico**. É isso, e só isso, que a torna segura de ser automática:
-ela não pode estar errada sobre o mérito porque não fala do mérito. Ela diz três coisas — o `Vercel`
-vermelho é esperado em fork e não é culpa dele, o CI está sendo liberado, e quando vem o veredito.
+ela não pode estar errada sobre o mérito porque não fala do mérito. Ela diz três coisas — o CI está
+sendo liberado, onde olhar o que trava o merge, e quando vem o veredito. O texto vive em
+`references/resposta-ao-contribuidor.md`, espelhado em `.github/workflows/acolhida.yml`.
 
 Todo comentário desta triagem abre com a âncora invisível `<!-- triagem-de-pr:v1:pass=N -->`. Leia as
 âncoras existentes antes de escrever: **acolhida nunca é postada duas vezes.**
@@ -130,6 +131,40 @@ Todo comentário desta triagem abre com a âncora invisível `<!-- triagem-de-pr
 
 PR pequeno não paga pipeline caro. Isso não é economia: triagem lenta reintroduz exatamente a
 latência que ela existe para matar.
+
+---
+
+## 2-bis. Destino da mudança — núcleo, extensão ou ambos
+
+Para uma mudança de comportamento, registre o destino e a razão antes da reconciliação. A lei
+é a [doutrina de extensões](../docs/doctrine/extensoes.md) (item 18 do DoD); o critério foi
+aprovado no PROG-017, seção 2 (documento interno de decisão, fora do repositório público; a régua que vale para PR está em [`docs/doctrine/extensoes.md`](../docs/doctrine/extensoes.md)).
+O núcleo precisa continuar útil com zero extensões; nichos podem acrescentar capacidades sem
+determinar a operação de todas as instalações.
+
+| Destino | O que sustenta a classificação |
+|---|---|
+| Núcleo | Operação comum ou garantia compartilhada: identidade, autorização, isolamento, auditoria, contratos e cadeia de envio. Correções de comportamento já entregue continuam no componente responsável. |
+| Extensão | Jornada adicional, aparência, integração ou especialização com configuração, dados e manutenção próprios, cuja ausência não compromete a operação comum. |
+| Ambos | Um ponto genérico necessário no núcleo e uma extensão que o consome. Declare o consumidor real, o contrato e a prova dos dois lados. |
+| Infraestrutura/documentação | Mudança em build, CI, kit de instalação, ferramenta interna ou documentação, inclusive a correção de um comportamento desses componentes (um `update.sh` que falhava é infraestrutura). Correção de comportamento do produto fica no destino do componente que corrige: núcleo ou extensão. Indique a superfície que ela mantém. |
+
+Ser útil a vários setores não obriga um recurso a ficar ligado para todos. Também não basta
+chamar uma pasta de plugin: um candidato precisa de caminho previsto de instalação, permissões,
+compatibilidade, atualização, desativação e preservação dos dados. Se uma fronteira ainda não
+existe, registre a dependência; não anuncie um SDK ou isolamento que ainda não foi entregue.
+
+**Durante a construção da plataforma**, classificar como extensão é orientação de destino, não
+exigência de que o contribuidor use uma ferramenta inexistente. Preserve o trabalho, separe a
+parte genérica quando isso mantiver a intenção e leve apenas a escolha de produto ainda aberta
+ao mantenedor. Uma correção urgente não espera a plataforma inteira ficar pronta. Recursos já
+distribuídos só serão extraídos com equivalência demonstrada e migração explícita; esta
+classificação não autoriza removê-los ou desligá-los.
+
+Na revisão, percorra três relações: o que a mudança usa, quem depende dela e quais falhas externas
+podem alterá-la. Compatibilidade de contrato, filas antigas, revogação e exportação/anonimização
+entram na prova quando forem alcançadas pelo diff. O parecer registra o destino; a publicação e
+o merge continuam sujeitos à fronteira de autorização deste procedimento.
 
 ---
 
@@ -299,7 +334,7 @@ o custo de errar é mandar um contribuidor consertar o que não quebrou.
 |---|---|---|---|
 | **Saturação da SUA máquina** | falhas com `Test timed out in 15000ms` / `Hook timed out in 10000ms`; nunca uma asserção | rode **os mesmos arquivos isolados**. Se ficam verdes, era carga | ignorar — e não escrever "N failed" no veredito sem esta nota |
 | **Infra do runner** | `address already in use`, `failed to bind host port`, job de 2-3 min | leia o log do PASSO, não do job. Um job que morre em 2m38s não rodou teste nenhum | `gh run rerun <id> --failed` |
-| **Run anterior ao conserto** | vermelho num PR cuja causa você acabou de consertar na `main` | compare o `head_sha` do run com o head do PR | `git merge origin/main` na branch e deixe o CI remedir |
+| **Run anterior ao conserto** | vermelho num PR cuja causa você acabou de consertar na `main` | compare o `head_sha` do run com o head do PR | `git merge origin/main` na branch do PR e deixe o CI remedir — só se ele permite edição por mantenedores, avisando no PR antes e sem `--force` (passe 8); se não permite, close+reopen (modo 18) |
 
 O erro que isto evita tem nome: **eu rodei a suíte com build, Playwright, Supabase e seis agentes
 na mesma máquina, vi 3 vermelhos, e quase os reportei como defeito de um contribuidor.** Rodados
@@ -400,9 +435,205 @@ junto com o disco do 12-bis: são os dois instrumentos da triagem que falham em 
 
 ---
 
+## 3-quinquies. Fila grande — a integração em lote, e o gate que ela esconde
+
+**Gatilho: mais de ~10 PRs abertos.** Abaixo disso, trie e mergeie um a um. Acima, um a um é a
+decisão errada, e a razão se mede antes de começar:
+
+```bash
+git fetch origin --force $(for n in $(gh pr list --state open --limit 100 --json number \
+  --jq '.[].number'); do printf "pull/%s/head:refs/tri/%s " "$n" "$n"; done)
+for n in $(git for-each-ref --format='%(refname:short)' refs/tri/ | sed 's#refs/tri/##'); do
+  git diff --name-only origin/main...refs/tri/$n | sed "s/^/$n\t/"
+done | cut -f2 | sort | uniq -c | sort -rn | head
+```
+
+Medido em 14/09/2026, com 74 PRs abertos: `lib/i18n/dicionario.ts` tocado por **25** PRs,
+`supabase/migrations/MANIFEST.md` por **23**, `supabase/baseline.sql` por **21**. Ali todo mundo
+acrescenta no mesmo lugar, então **cada merge quebra o próximo** — e quem paga é o contribuinte
+seguinte, que recebe num PR limpo um conflito que não é dele.
+
+O caminho é uma **branch de integração**, com `git merge --no-ff` de cada head. Três coisas fazem
+isso funcionar, e cada uma já falhou quando ausente:
+
+1. **Merge de verdade, nunca squash.** O head precisa virar ancestral da `main` — é assim que o
+   GitHub fecha o PR como **Merged**, com o nome do autor. Confirmado em 14/09: os 14 do lote 1
+   fecharam `MERGED` sozinhos. Squash os fecharia como `CLOSED`, que é o que desanima quem
+   contribuiu de graça.
+2. **Conflito de apêndice resolve-se ficando com OS DOIS LADOS** (`dicionario.ts`, `baseline.sql`,
+   `MANIFEST.md`, `lib/audit/actions.ts`, as listas de `e2e.yml`). Se o arquivo não for de
+   apêndice, **pare e resolva à mão** — um `Sidebar.tsx` no meio disso é conflito semântico.
+
+   **Duas armadilhas desta resolução, as duas pagas em 14/09:**
+
+   **(a) Ela não vale quando os dois lados acrescentam a MESMA chave.** O #744 e o #806 traduziram
+   as mesmas 24 entradas do dicionário; ficar com os dois produziu propriedades repetidas e
+   `TS1117`. Num arquivo de 8 mil linhas isso não se vê lendo o diff — quem vê é o `tsc`. Depois de
+   resolver por apêndice, **rode o typecheck antes de seguir**, e ao deduplicar prove que nada
+   sumiu com o nome normalizado (`"Alertas"` e `Alertas` são a mesma propriedade; comparar com
+   aspas acusa seis chaves "perdidas" que são justamente as duplicatas).
+
+   **(b) O laço que aborta o merge desfaz também o que já tinha resolvido.** Se o script resolve o
+   arquivo A e recusa o B, o `git merge --abort` leva o A junto. Ao refazer o merge à mão para
+   tratar o B, é fácil dar `git add` no A **ainda cru** — e commitar marcador de conflito. Foi o que
+   aconteceu: 16 linhas de `<<<<<<<` no `AGENTS.md`, pegas por
+   `tests/unit/sem-marcador-de-conflito.test.ts` e não pela minha releitura. Depois de qualquer
+   merge refeito à mão, o controle é uma linha:
+
+   ```bash
+   git grep -n '^<<<<<<<\|^>>>>>>>' -- . && echo "PARE: marcador versionado"
+   ```
+3. **Meça se o merge ACONTECEU, não se houve conflito.** `git diff --diff-filter=U` vazio quer
+   dizer "sem conflito agora" — inclusive quando o merge sequer foi tentado porque um hook
+   bloqueou o commit anterior. A medida certa é o `HEAD` ter andado:
+
+   ```bash
+   antes=$(git rev-parse HEAD); git merge --no-ff ... ; [ "$antes" = "$(git rev-parse HEAD)" ] && echo "NÃO andou"
+   ```
+
+   Isto me custou duas rodadas em 14/09: o laço reportou "OK, sem conflito" para seis PRs que o
+   `pre-commit` tinha barrado, e o log lido de cima parecia sucesso.
+4. **Antes de escolher quem entra: leia o CORPO e o estado de rascunho — a ancestralidade por SHA
+   não vê empilhamento por CONTEÚDO.** Em 15/09, `git merge-base --is-ancestor` entre #861, #862 e
+   #865 respondeu "independentes", e o corpo do #865 dizia *"rascunho empilhado — contém os commits
+   do #861 e do #862"*. O autor tinha **recriado** um dos commits (SHA novo, patch idêntico). A
+   sonda que responde "está empilhado?" compara PATCH, não ponta:
+
+   ```bash
+   git log --oneline origin/main..refs/tri/<topo>                     # os commits do topo, um a um
+   git show <commit> | git patch-id --stable                           # mesmo patch-id = mesmo trabalho
+   git cherry -v refs/tri/<base> refs/tri/<topo>                       # "-" = já está na base
+   ```
+
+   Integrar base e topo no mesmo lote faz o mesmo conteúdo entrar duas vezes por caminhos
+   diferentes: conflito em todo arquivo da base ou, pior, merge limpo com bloco de apêndice
+   duplicado. **E PR em rascunho não entra no lote.** Rascunho é o autor dizendo "não terminei";
+   mede-se e comenta-se (a revisão de segurança vale como comentário antecipado), mas integrá-lo
+   tira dele o rebase que ele mesmo anunciou.
+
+### ⚠️ O gate que o lote esconde: `build`
+
+`typecheck`, `lint`, `lint:channels`, `test:unit`, `test:shell` e `test:db` **não constroem o
+app**. Medido em 14/09: o lote 2 passou nos seis, com 823 arquivos de teste e 194 de invariante
+verdes, e **o `build` quebrou no CI** — `FATAL: An unexpected Turbopack error occurred: Is a
+directory (os error 21)`, na hora de emitir o `.nft.json`.
+
+A causa era um glob de `outputFileTracingIncludes` que casava um **symlink de plataforma** do pnpm.
+Nada disso é alcançável por teste: o defeito mora no **emit**, não no import.
+
+> **Num lote, rode `pnpm build` antes de abrir o PR.** É o gate mais caro e o único que cobre a
+> classe inteira de "o artefato não se monta" — que é justamente o artefato que o self-hoster
+> instala.
+
+### O teto do CHANGELOG impõe o ritmo do trem: um lote, uma release
+
+`tests/unit/changelog-cabe-na-tela-da-vps.test.ts` reprova quando a seção que os fragmentos de
+`.changes/` produziriam passa de **30.000 bytes** — o corte que o `agent.sh` aplica sobre o arquivo
+tagueado. Além dele, o dono da VPS recebe o texto cortado no meio, ou pior: a tela troca o histórico
+por *"este histórico pode não alcançar a sua versão"*.
+
+Num trem de lotes isso vira uma **regra de ordem**, não um defeito a consertar. Medido em 14/09:
+
+```
+lote 2 sozinho ...... 31 fragmentos → cabe, 1.21.0 + minor = 1.22.0
+lote 3 (herda o 2) .. 42 fragmentos → 40.667 bytes, REPROVA
+lote 4 (herda os 2) . 42+ fragmentos → REPROVA
+```
+
+O vermelho do lote 3 não é do lote 3: é dele **carregando os fragmentos do lote 2**. Quando o lote 2
+entra e a release é cortada, os 31 são consumidos e o seguinte volta a caber.
+
+> **Logo: cada lote corta a sua versão antes de o próximo entrar.** Não é preferência de processo —
+> é o que o teto do changelog permite. Empilhar quatro lotes e cortar uma release só reprova, e a
+> mensagem do teste ("enxugue o corpo dos fragmentos") aponta para o conserto errado nesse caso: o
+> problema não é fragmento gordo, é lote empilhado.
+
+Antes de declarar vermelho num lote, confira se o vermelho some com o corte anterior:
+
+```bash
+ls .changes/*.md | wc -l          # quantos fragmentos este lote carrega
+pnpm release:conferir             # e que versão eles produzem juntos
+```
+
+---
+
+### A fila de CI é finita, e destravá-la toda de uma vez a entope
+
+Liberar workflow parado (passe 1) é certo. Fazê-lo para 36 branches num minuto criou **144
+execuções** e uma fila de 100 — e os PRs de integração, que são os que decidem, foram para o fim
+dela. Duas correções, ambas medidas no mesmo dia:
+
+- Aprove **só o run mais recente por branch e por workflow**; o resto é CI de push velho.
+- Assim que um PR entra numa branch de integração, **cancele os runs dele** — o gate dele passou a
+  ser o da integração. Em 14/09 isso devolveu **81 execuções** à fila.
+
+---
+
+## 3-sexies. Renumerar migration quando o conflito é entre CONTRIBUINTES
+
+O passe 4-bis resolve o caso "nosso lado contra o deles": quem cede somos nós. Ele não cobre o caso
+que aparece em fila grande — **oito PRs de oito pessoas reivindicando o mesmo `NNNN`**, todos
+corretos pela régua que lhes foi dada (`ls supabase/migrations/`), nenhum com como ver a fila.
+
+Não existe escolha que preserve a numeração de todos. O critério que sobrevive a auditoria é
+**ordem de merge**: quem entra primeiro fica com o que pediu.
+
+É arbitrário **de propósito**. Qualquer critério de mérito — PR maior, autor mais antigo, "quem
+abriu primeiro" — puniria alguém por uma colisão que ele não podia enxergar. Escreva o critério no
+corpo do commit, com a tabela de quem ficou com o quê, para a próxima pessoa poder conferir.
+
+**Renumere por ferramenta, e escope a substituição.** Um script que troca `0239` por `0244` no
+`baseline.sql` inteiro reescreve o rótulo de apêndice de **outros** PRs que por acaso citavam
+aquele número — aconteceu em 14/09, e quem denunciou foi o teste de um terceiro PR. O rótulo se
+confere contra o **nome do arquivo** da migration, que é a fonte da verdade:
+
+```bash
+git diff --name-only <base>..HEAD -- supabase/migrations/ | grep '\.sql$' \
+  | sed -E 's/.*_([0-9]{4})_.*/\1/' | sort | uniq -c | awk '$1>1{print "DUPLICADO: "$2}'
+```
+
+**São TRÊS artefatos que acompanham o nome do arquivo, não dois.** O MANIFEST e o rótulo do
+apêndice no `baseline.sql` estão nos lugares onde se procura. O terceiro não: **teste que cita o
+caminho da migration**. Ele guarda o conteúdo do arquivo lendo-o do disco, e o vermelho chega como
+`ENOENT: no such file or directory` — que não se parece com renumeração incompleta.
+
+Varra a classe, não a instância — num trem com sete renumerações, o grep custa um segundo:
+
+```bash
+for n in <lista dos NNNN que você mexeu>; do grep -rl "$n" tests lib app; done
+```
+
+E confira as duas dimensões depois, porque `NNNN` único não garante timestamp único:
+
+```bash
+ls supabase/migrations/*.sql | sed -E 's#.*/([0-9]+)_.*#\1#' | sort | uniq -d   # timestamps
+ls supabase/migrations/*.sql | sed -E 's/.*_([0-9]{4})_.*/\1/' | sort | uniq -d  # NNNN
+```
+
+---
+
 ## 4. Complemento — o que os gates não provam
 
 `references/complemento-do-ci.md`, linha por linha, com o gatilho de cada uma no diff.
+
+**A parte mecânica disto é um script**, e rodá-lo é o primeiro ato do passe:
+
+```bash
+bash triagem/scripts/complemento.sh <n>   # uma linha CHAVE<TAB>VALOR por checagem
+```
+
+Ele mede a prévia do merge, a tripla de migration e a colisão de `NNNN`, RLS de tabela nova,
+`security definer` sem `revoke`, `console.log`, env var nos dois arquivos, kit self-host,
+catraca de canal, workflow de fork, fragmento em `.changes/` e `## [X.Y.Z]` à mão. **Toda
+linha que ele devolve é medição, nenhuma é veredito** — quem decide é você, quem refuta é o
+cético.
+
+O que ele **não** faz é o julgamento, e é onde o seu tempo rende: duplicata entre PRs, nicho
+contra genérico, e se o teste vigia comportamento ou símbolo.
+
+**Ele precisa dos heads no clone.** Sem `git fetch origin pull/<n>/head`, `git merge-tree`
+responde `not something we can merge` e a prévia sai como CONFLITO — em 14/09 isso pintaria
+**74 de 74** PRs de vermelho, e o número seria do instrumento, não dos PRs.
 
 Esta é a razão de a triagem existir tecnicamente. Repetir o que o CI já faz é teatro; o trabalho é o
 que ele **não** alcança — e a lista não é opinião, é o que foi medido: a tripla de migration é
@@ -585,29 +816,64 @@ publicar; ao contribuidor vai marcada como pergunta, com essas palavras.
 
 ## 8. Reconciliação
 
-O que é mecânico, você conserta — branch própria, commit próprio, creditando o autor original no
-corpo. O que muda uma decisão de projeto do contribuidor **volta como pergunta**, nunca como patch
-por cima. A diferença entre as duas é: você consegue enunciar a intenção dele e mostrar que ela
-sobrevive à sua mudança?
+O que é mecânico, você conserta, com commit próprio. O que muda uma decisão de projeto do
+contribuidor **volta como pergunta**, nunca como patch por cima. A diferença entre as duas é: você
+consegue enunciar a intenção dele e mostrar que ela sobrevive à sua mudança?
+
+**Onde o conserto entra.** Empurrar para a branch do PR do contribuidor é permitido (decisão do
+dono em 16/09/2026; a proibição anterior foi sobreposta por engano). A condição é o PR permitir
+edição por mantenedores:
+
+```bash
+gh pr view <n> --json maintainerCanModify --jq .maintainerCanModify   # true
+```
+
+Sempre commit novo ou merge da `main` para dentro; nunca `--force`, nunca rebase, nunca reescrever
+os commits do autor. Antes de empurrar, avise no PR, para o autor trazer a branch antes de
+continuar. Quando o PR não permite edição, ou quando o trabalho precisa separar escopo (recorte,
+reimplementação, extração), o caminho é uma branch nossa. Para conserto mecânico num PR que permite
+edição, a branch do próprio PR é o caminho mais curto: o CI roda nele, e ele fecha como incorporado
+no merge.
+
+**Com a autoria de quem.** Trabalho do contribuidor entra com a autoria dele (decisão do dono em
+16/09/2026: *"não quero créditos, quero só a evolução do sistema"*). Commit que leva trabalho dele —
+portado, recortado ou reimplementado a partir do PR dele — sai com
+`git commit --author="Nome <email>"`, usando o nome e o e-mail que ele usa nos próprios commits
+(`git log --format='%an <%ae>' origin/main..<head-do-PR> | sort -u`); o git registra quem comitou
+separadamente. Prefira commits separados entre o trabalho dele e o nosso; quando um commit misturar
+os dois, o autor é ele. O acréscimo que é só nosso, em commit separado, fica com a nossa autoria,
+para o histórico não pôr no nome dele o que ele não escreveu. `Co-authored-by` deixa de ser a forma
+principal de crédito: fica para o segundo autor quando um commit junta o trabalho de duas pessoas de
+fora.
 
 ---
 
 ## 8-0. O PR que não se mergeia — se reconstrói
 
-O passe 8-bis abaixo diz que a saída para conflito é `git merge <head-do-PR>`. Há **uma** exceção, e
-ela é absoluta: quando o branch traz um arquivo que **não pode entrar** — dump de banco, binário,
+O passe 8-bis abaixo diz que a saída para conflito é trazer a `main` para dentro — na branch do PR,
+quando ele permite edição por mantenedores, ou numa branch nossa com `git merge <head-do-PR>`. Há
+**uma** exceção, e ela é absoluta: quando o branch traz um arquivo que **não pode entrar** — dump de banco, binário,
 credencial, artefato de sessão. Aí `merge` está fora, e `--squash` também: os dois levam a árvore do
 branch, e **história de git público é permanente**. Commit posterior de remoção não tira o blob.
+Isto vale também para o PR que permite edição: empurrar a remoção na branch dele deixa o blob no
+histórico do PR, então o caso se reconstrói numa branch nossa.
 
 ```bash
 git worktree add --detach <wt> origin/main && cd <wt> && git switch -c triagem/<n>-<slug>
-git diff --diff-filter=D --name-only origin/main..refs/triagem/pr<n>   # ele APAGA algo? replique
-git checkout refs/triagem/pr<n> -- .
-rm -f <o arquivo que não entra>
+base=$(git merge-base origin/main refs/triagem/pr<n>)
+git diff --binary "$base" refs/triagem/pr<n> -- . ':(exclude)<o arquivo que não entra>' \
+  | git apply --3way --index       # o que ELE mudou, apagou e criou — e nada além disso
 git status --porcelain | grep -c <padrão>   # 0
 git status --porcelain | wc -l              # controle positivo: >0, senão a sonda está morta
 git commit --author="<Nome> <email>" ...    # autoria E a razão do squash, escritas
 ```
+
+**O diff sai do `merge-base`, nunca de `origin/main`.** A receita anterior usava
+`origin/main..refs/triagem/pr<n>` para achar o que o PR apaga e `git checkout <head> -- .` para trazer
+o resto. As duas comparam a árvore do PR com a `main` de hoje: a primeira lista como "apagado pelo
+autor" todo arquivo que a `main` criou depois da base do PR, e a segunda devolve à versão velha todo
+arquivo que a `main` mudou nesse intervalo. Provado num repositório descartável, nos dois sentidos. E
+com o commit saindo com `--author` do contribuidor (passe 8), essas reversões iriam para o nome dele.
 
 **Sonde o conteúdo por CATEGORIA antes de dimensionar a coisa**, e reporte a categoria — nunca o
 material: `postgres://`, `service_role`, `$2a$/$2b$`, `PRIVATE KEY`, e a contagem de linhas por
@@ -626,12 +892,22 @@ git check-ignore -v <arquivo que deve ser ignorado>   # exit 0, e a linha do .gi
 git check-ignore -v <um .ts comum>                    # exit 1 — sem este, "pega" é "pega tudo"
 ```
 
+**E o PR original fecha**, por quem tem a autoridade de fechar naquela rodada: o que sobrou dele é o
+arquivo que não pode entrar, e isso foi descartado — não há destino que o mantenha aberto (decisão
+do dono em 16/09/2026, passe 12-ter). O fechamento diz o que entrou, com o link, e por que o arquivo
+não entra; o crédito do que entrou fica no `--author` do commit acima. **Não** use aqui o merge de
+proveniência do 12-ter: `-s ours` não traz a árvore, mas torna os commits dele ancestrais da
+`main`, e o blob que não podia entrar iria junto para todo clone.
+
 ---
 
 ## 8-bis. Reconciliação de PR de fork: o merge que credita em vez de descartar
 
-Quando o PR de um contribuidor conflita, a saída **não** é fechá-lo pedindo rebase. É montar uma
-branch sua com `git merge <head-do-PR>`, resolver o conflito do **nosso** lado, e mergear a sua.
+Quando o PR de um contribuidor conflita, a saída **não** é fechá-lo pedindo rebase. Se ele permite
+edição por mantenedores (passe 8), traga a `main` para dentro da branch dele
+(`git merge origin/main`), resolva o conflito ali e empurre, avisando no PR antes e sem `--force` —
+o CI roda no próprio PR, e ele fecha como `MERGED` no merge. Se não permite, é montar uma branch sua
+com `git merge <head-do-PR>`, resolver o conflito do **nosso** lado, e mergear a sua.
 
 O detalhe que decide o desfecho para a pessoa: se o head do PR dele virar **ancestral** da `main`,
 o GitHub fecha o PR dele como **`MERGED`**, não como `CLOSED`. A diferença é o que aparece no
@@ -714,6 +990,35 @@ nesses dois casos — mas **a razão vai escrita no corpo do commit, com a medi�
 no uso da variável. A linha do segundo caso é a mais importante: o hook da migration **não é rede
 para renumeração**, e quem lê a mensagem dele achando que é vai renumerar contra uma régua cega.
 
+### E há o caso oposto, que é pior: o merge LIMPO não chama hook nenhum
+
+A tabela acima trata do hook que dispara quando não devia. O furo mais caro é o hook que **não
+dispara quando devia** — e num trem de lotes ele é a regra, não a exceção.
+
+`git merge` que termina **sem conflito** cria o commit sozinho e **não roda o `pre-commit`**. Dois
+PRs que trazem migrations de nomes diferentes (`…_0241_lembrete_em_degraus.sql` e
+`…_0241_rascunho_de_agente_sem_numero.sql`) não conflitam textualmente — então o merge sai limpo, o
+commit nasce sem o hook, e o `0241` duplicado entra calado.
+
+Medido em 14/09: o #804 entrou assim no lote 6, com o `0241` que o #770 já ocupava na `main` desde
+o lote 2. Nenhuma guarda viu. Quem viu foi a sonda abaixo, rodada depois de montar o lote.
+
+**Num trem, a colisão de migration se mede na ÁRVORE montada, nunca se confia no hook:**
+
+```bash
+ls supabase/migrations/*.sql | sed -E 's/.*_([0-9]{4})_.*/\1/'   | sort | uniq -d   # NNNN
+ls supabase/migrations/*.sql | sed -E 's#.*/([0-9]+)_.*#\1#'     | sort | uniq -d   # timestamp
+```
+
+Vazio nas duas é o esperado. Rode depois de **cada** merge que traga migration, e **sempre** antes
+de abrir o PR do lote — com **linha de base** contra a `origin/main`: se ela também devolver a
+duplicata, o número é antigo e não do lote.
+
+Linha de base não é controle positivo, e a diferença importa: a `main` limpa devolvendo vazio não
+prova que a sonda enxerga — prova só que não há dívida herdada. O controle positivo é a sonda **ter
+achado** uma duplicata real alguma vez; em 14/09 foi o `0241` do #804. Sem esse registro, vazio nas
+duas é indistinguível de instrumento morto.
+
 ---
 
 ## 8-quinquies. O PR cujo conteúdo foi REESCRITO — o merge de história
@@ -725,7 +1030,11 @@ fechar o PR (o histórico diria que o trabalho dele não entrou) estão certos.
 O desfecho é `git merge -s ours <head>` numa branch a partir da `main`: a história recebe os
 commits dele, o conteúdo fica como está, e o GitHub fecha o PR como **mergeado**.
 
-**A estratégia só é honesta com a medição ao lado, e a medição é a sobrevivência dos arquivos:**
+**A estratégia só é honesta se TUDO o que o PR trazia entrou** — é esse o critério (decisão do dono em
+16/09/2026), e ele se mede lendo o diff do PR contra a `main` por mudança, não por caminho de arquivo.
+A sonda abaixo é **apoio, e não decide sozinha**: `git cat-file -e` dá verdadeiro para qualquer
+arquivo que exista na `main`, inclusive um que já existia antes do PR, então um PR que só modifica
+arquivos existentes sai com 100% de sobrevivência mesmo que nenhuma mudança dele tenha entrado:
 
 ```bash
 tot=0; viv=0
@@ -735,9 +1044,13 @@ done
 echo "trazidos=$tot vivos_na_main=$viv"
 ```
 
-No épico da voz (PR #628, 11/09/2026) deu `trazidos=52 vivos_na_main=49`. **Com esse número, `-s
-ours` registra um fato; sem ele, é carimbo.** Se a sobrevivência for baixa, não é este o caso — o
-desfecho volta a ser fechar o PR com a explicação.
+No épico da voz (PR #628, 11/09/2026) deu `trazidos=52 vivos_na_main=49`, e a leitura do conteúdo
+confirmou o que o número sugeria. **Sem a leitura, `-s ours` é carimbo.** Se alguma mudança do PR
+não entrou — com sobrevivência alta ou baixa —, não é este o caso: o PR entrou só em parte, e o desfecho depende do que sobrou (decisão do dono em 16/09/2026). Se o que não
+entrou tem destino — decisão pendente, acompanhamento planejado, espera por resposta do autor,
+destino de extensão —, o PR fica aberto com esse destino escrito nele (12-ter). Se foi descartado, o
+PR fecha dizendo o que entrou, com o link, e por que o resto não entra; o crédito do que entrou fica
+nos commits com a autoria dele (passe 8).
 
 Três regras duras:
 
@@ -757,6 +1070,7 @@ Três regras duras:
 ```
 VEREDITO: MERGEAR | MERGEAR+ISSUE | SEGURAR
 main: <sha curto>            prévia do merge: <tree>
+DESTINO:     <núcleo | extensão | ambos | infraestrutura/documentação> — <razão e dependências>
 MEDIDO:      <o quê> — <comando> — <saída observada>
 NÃO MEDIDO:  <o quê> — <por quê>
 BLOQUEADOR:  <arquivo:linha> — <o defeito> — <como reproduzir>
@@ -867,9 +1181,11 @@ Todo PR que muda comportamento traz um arquivo em `.changes/` declarando **o efe
 **não aparece na tela de atualização**: o dono ganha a mudança e não fica sabendo.
 
 Contribuidor externo não conhece essa regra, e o passe 10 proíbe cobrar como descuido um gate não
-documentado. Então: **se o PR muda comportamento e não traz fragmento, escreva você**, em branch
-própria, creditando o autor — é reconciliação mecânica (passe 8), não decisão de projeto. Só volta
-como pergunta se você não souber dizer o que muda para quem opera.
+documentado. Então: **se o PR muda comportamento e não traz fragmento, escreva você**, creditando o
+autor no texto do fragmento: na branch do próprio PR, quando ele permite edição por mantenedores, ou
+numa branch nossa, sempre num commit separado que fica com a nossa autoria. É reconciliação mecânica
+(passe 8), não decisão de projeto. Só volta como pergunta se você não souber dizer o que muda para
+quem opera.
 
 > **⚠️ NÃO QUEBRE LINHA DENTRO DE PARÁGRAFO DE FRAGMENTO.** Escreva cada parágrafo do `.changes/`
 > numa linha só, por mais longa que fique — o Markdown renderiza igual.
@@ -941,9 +1257,91 @@ E confira o desfecho, porque "a tag saiu" não é "a versão chegou":
 ```bash
 git ls-remote --tags origin 'refs/tags/vX.Y.Z'          # a tag existe
 gh release list --limit 1                                # a release é a Latest
+
+# A vitrine lista, nos TRÊS idiomas. O href carrega o prefixo da PÁGINA, então o padrão
+# se monta com ele: trocar só a URL e manter `href="/changelog/..."` devolve 0 nas
+# páginas em en e es COM a versão listada. Cada linha tem de dar http=200 e listada≥1.
+# O http= vai junto porque `listada=0` sozinho não distingue "não listou ainda" de
+# "essa página não existe" — num 404 a contagem também é 0.
+V=X.Y.Z
+for p in /changelog /en/changelog /es/changelog; do
+  u="https://www.deskcomm.com.br$p"
+  echo "$p: http=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 30 "$u")" \
+       "listada=$(curl -sL --max-time 30 "$u" | grep -c "href=\"$p/$V\"")"
+done
+
 # e as três imagens no digest da versão, contra `stable` — receita em
 # docs/runbooks/ativar-packaging.md
 ```
+
+**Deu 0? Olhe o `http=` ANTES de repetir.** `http=404` não é janela de cache: é a página não
+existir, e nenhuma quantidade de repetição conserta isso. Nesse estado o 0 não fala da versão,
+fala do site — a vitrine sai de um PR do repositório `deskcomm-site`, e sem ele no ar o passo do
+corte reprova toda release. Escale ao mantenedor em vez de investigar o `CHANGELOG.md`.
+
+**`http=200` com `listada=0`? Repita antes de concluir qualquer coisa.** A página revalida a cada
+10 minutos e lê o `CHANGELOG.md` pelo `raw.githubusercontent.com`, que guarda outros 5: a versão
+aparece em até ~15 min, e é o próprio acesso que agenda a regeneração. Por isso o passo do
+`release.yml` repete a sonda 35 vezes com um minuto entre elas — não duas. Se persistir depois
+disso, a ordem de investigação está em `docs/doctrine/versionamento.md` (seção "A vitrine").
+
+O `grep -c` é de propósito: ele conta, e para contar lê a entrada inteira. Um `grep -q` no lugar
+sai no primeiro casamento, o `curl` do outro lado do cano leva EPIPE e desiste — e a versão
+LISTADA aparece como faltando assim que o HTML tiver uma quebra de linha depois do link.
+
+**O status desse caso é 23, não 141.** O `curl` ignora o SIGPIPE e escolhe o próprio código de
+saída (`CURLE_WRITE_ERROR`); com `set -o pipefail` o status do cano vira 23, e o `-s` engole a
+única frase que explicaria (`curl: (23) Failure writing output to destination` — troque por `-S -s`
+para vê-la). O **141** que a lista de erros registra é o caso vizinho — `echo "$DIFF" | grep -q`
+no `complemento.sh` —, em que a esquerda do cano é builtin do shell: builtin morre de sinal mesmo,
+e aí sim 128+13. Procurar 141 numa triagem vermelha por ESTA receita não acha nada.
+
+---
+
+## 12-ter. O PR cujo conteúdo entrou DERIVADO — o merge de proveniência
+
+Este passe é para o caso em que a reconciliação (passe 8) **reimplementou** o conteúdo numa branch
+**nossa** que não contém o head do contribuinte — porque a versão original conflitava com o estado de
+hoje de um jeito que o merge não resolvia, ou carregava um defeito que um commit por cima do head não
+resolvia. Defeito que um commit por cima conserta vai por cima: na branch do PR, quando ele permite
+edição, ou no head mesclado numa branch nossa (8-bis).
+Não é o caso do PR que só não permite edição por mantenedores: aí o 8-bis mescla o head numa branch
+nossa, os commits dele ficam como ancestrais, e o PR fecha como incorporado sem proveniência. O commit que traz esse
+conteúdo sai com a autoria dele — `--author` com o nome e o e-mail que ele usa nos próprios commits
+(passe 8). O merge de proveniência abaixo registra a origem no grafo; um não substitui o outro.
+
+O desfecho automático disso é o PR dele fechar como **`CLOSED`**. E isso é o registro mentindo: o
+trabalho entrou.
+
+Quando o conteúdo do PR entrou inteiro por esse caminho, o conserto é um **merge de proveniência** —
+`git merge -s ours` do head dele na sua branch:
+
+```bash
+antes=$(git rev-parse HEAD^{tree})
+git merge -s ours --no-edit -m "Merge PR #<n> de @<autor> — <título> (proveniência: entrou derivado)" refs/tri/<n>
+[ "$antes" = "$(git rev-parse HEAD^{tree})" ] || echo "PARE: a árvore mudou, não era para mudar"
+```
+
+`-s ours` **não traz árvore nenhuma** — e a asserção acima é obrigatória, porque é ela que separa
+"registrar proveniência" de "importar conteúdo sem querer". O que muda é só o grafo: com o head
+virando ancestral, o GitHub fecha como **`MERGED`**, e é essa diferença que aparece no perfil e na
+contagem de contribuições de quem trabalhou de graça.
+
+Escreva no corpo do commit **por que** foi derivado. Um merge `ours` sem explicação, daqui a seis
+meses, parece alguém tendo descartado o trabalho de outra pessoa.
+
+Medido em 14/09: seis PRs (#745, #739, #782, #784, #789, #794) fechariam `CLOSED` com o conteúdo
+deles dentro da `main`. `git merge-base --is-ancestor refs/tri/<n> <sua-branch>` responde isso
+antes, e é barato conferir os seus todos de uma vez.
+
+**Quando entrou só parte, o merge de proveniência não é o desfecho** (decisão do dono em
+16/09/2026). O PR parcialmente incorporado fica aberto só se o que sobrou tem destino — decisão
+pendente, acompanhamento planejado, espera por resposta do autor, ou destino de extensão —, escrito
+no próprio PR; e aí não se faz o `-s ours`, porque com o head ancestral o GitHub o fecharia. Se o
+que sobrou foi descartado, o PR fecha, dizendo o que entrou, com o link, e por que o resto não
+entra; o crédito do que entrou fica nos commits com a autoria dele. Quem fecha é quem tem a
+autoridade de fechar naquela rodada.
+
 ---
 
 ## 12-bis. Higiene de disco: um worktree por agente custa 1,2 GB
@@ -952,6 +1350,24 @@ A regra "um worktree por agente" (modo de falha 5) tem um custo que ninguém tin
 `node_modules` real — obrigatório, porque symlink quebra o Turbopack —, **cada worktree pesa 1,2 a
 2,5 GB**. Quinze deles encheram o disco no meio da fila, e `ENOSPC` derruba build, agente e
 `gh` de uma vez, com mensagem que não parece falta de espaço.
+
+**Num trem de lotes a regra muda, e o gatilho é outro.** O worktree de um lote NÃO pode ser
+removido quando o PR dele é mergeado — o lote seguinte é montado em cima dele. O que se acumula é
+pior: cada `pnpm build` deixa **1,0 a 1,3 GB** de cache do Turbopack em `.next/`, e num trem de cinco
+lotes isso soma mais que os `node_modules`.
+
+Medido em 14/09: o disco chegou a **170 MB livres** e o `build` do lote 5 morreu com
+
+```
+failed to write to file `.../.next/cache/turbopack/.../00000031.sst`: No space left on device
+```
+
+— que **não se parece com falta de espaço** quando lido no meio de um log de build, e é fácil
+confundir com defeito do lote. Remover os worktrees já entregues devolveu 6 GB; apagar os `.next/`
+devolveu mais 2,4 GB.
+
+O gatilho certo no trem: **remova o worktree de um lote quando a VERSÃO dele estiver publicada**, não
+quando o PR entrar — e apague o `.next/` de qualquer lote que você não vá reconstruir agora.
 
 Remova o worktree assim que o PR dele for mergeado — não ao fim da sessão:
 
@@ -967,18 +1383,19 @@ df -h /System/Volumes/Data | tail -1     # confira, não presuma
 | você faz sozinho | é a palavra do mantenedor |
 |---|---|
 | liberar CI, rotular, acolher, comentar veredito | **mergear na `main`** |
-| criar worktree, rodar gate, escrever teste, sabotar | **fechar um PR** |
-| abrir issue e PR de follow-up | empurrar para a branch do fork alheio |
-| consertar CONTRIBUTING/README/docs | **mergear o PR de release** (é ele que cria a tag) |
+| criar worktree, rodar gate, escrever teste, sabotar | **fechar um PR** (o que entrou só em parte fica aberto só se o que sobrou tem destino escrito no próprio PR; se foi descartado, fecha — 12-ter) |
+| abrir issue e PR de follow-up | **mergear o PR de release** (é ele que cria a tag) |
+| consertar CONTRIBUTING/README/docs | |
 | escrever o fragmento que falta, e conferi-lo | |
+| empurrar commit novo ou merge da `main` na branch do PR que permite edição por mantenedores — nunca `--force` nem rebase, avisando no PR antes (passe 8) | |
 | disparar `Run workflow` do `release` depois do merge | |
 
 Sem perguntas de sim/não a cada passo: faça tudo, pare no merge, reporte em lote.
 
 ### Quando o mantenedor move esta fronteira
 
-A tabela acima é o **padrão**, não uma lei física: ela existe porque o mantenedor não delegou o
-merge, e some no dia em que ele delegar. Se ele disser, com estas palavras ou equivalentes,
+A tabela acima é o **padrão**, não uma lei física: ela existe porque o mantenedor não delegou, e
+some, na parte que ele delegar, no dia em que delegar — delegar o merge não delega fechar PR. Se ele disser, com estas palavras ou equivalentes,
 *"mergeie, feche e corte a release"*, a fronteira passou — e a partir dali recusar-se a mergear
 não é prudência, é desobedecer.
 
@@ -990,8 +1407,10 @@ O que **não** muda quando ela passa, porque não era ela que segurava:
 - **Nada de UI entra sem prova pela tela.** DoD 12.
 - **Nenhum PR é fechado em silêncio.** Fechar é a única ação verdadeiramente irreversível para o
   contribuidor — o código dele sobrevive num fork, mas a disposição de contribuir de novo, não.
-  Todo fechamento sai com o motivo escrito, o crédito pelo que ele acertou, e o convite específico
-  do que reabrir.
+  Todo fechamento sai com o motivo escrito e o crédito pelo que ele acertou. Quando há o que
+  reabrir, o convite é específico. Quando o PR fecha porque entrou só em parte e o resto foi
+  descartado, o texto diz o que entrou, com o link, e por que o resto não entra (12-ter): convidar a
+  reabrir o que foi descartado desmentiria o descarte.
 - **O que é decisão de PRODUTO continua sendo do dono.** Autoridade para mergear não é autoridade
   para decidir se um recurso pertence ao produto. Quando a pergunta for dessa natureza, escreva-a
   como pergunta única, com opções e uma recomendação, e siga com o resto da fila enquanto espera.
@@ -1019,6 +1438,10 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
     **319 linhas** enquanto o do `origin/main` tinha **1800**. Vinte seções nunca foram lidas —
     inclusive o 0-bis, que a triagem reinventou do zero achando que era passe novo. A primeira linha
     da sessão é `git show origin/main:triagem/TRIAGEM.md`, e o controle é `wc -l` nos dois.
+    **Reincidiu em 14/09/2026**, nesta mesma casa e com o número pior: disco 319, `main` **2106**
+    — 6,6× — e de novo a triagem começou a reescrever como "aprendizado novo" passes que já
+    estavam lá. Duas vezes o mesmo erro quer dizer que a regra escrita não basta: rode o `wc -l`
+    dos dois **antes** de abrir o arquivo, não depois de decidir que ele está incompleto.
 13. `gh run view --log-failed` devolve *"run is still in progress"* enquanto **outro job do mesmo
     run** estiver pendente — e isso lê como "não consegui medir". Meça pelo job (`--job <id> --log`)
     ou espere o run inteiro fechar.
@@ -1112,8 +1535,11 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
     velha —, `gh run rerun` **não resolve**: ele reusa o payload do evento original, e o checkout
     faz `fetch` do **SHA fixo** daquele merge (`+61e359c…:refs/remotes/pull/<n>/merge`), não do ref.
     Medido no #422 em 2026-09-03. Se o workflow não tiver `workflow_dispatch` — e o `e2e.yml` não
-    tem —, o único caminho é um evento `pull_request` novo: close+reopen do PR. **Avise o
-    contribuidor antes de fazer**, porque ele recebe um e-mail de "fechado" e isso lê como rejeição.
+    tem —, o único caminho é um evento `pull_request` novo. Se o PR permite edição por mantenedores,
+    empurre `git merge origin/main` na branch dele (passe 8: aviso no PR antes, sem `--force`) — o
+    push é o evento, e ninguém recebe e-mail de "fechado". Se não permite, close+reopen do PR.
+    **Avise o contribuidor antes do close+reopen**, porque ele recebe um e-mail de "fechado" e isso
+    lê como rejeição.
 
     ⚠️ **E o close+reopen NÃO basta sozinho: o run novo nasce TRAVADO.** Medido logo em seguida, no
     mesmo #422 — reabri o PR, os quatro workflows foram criados, e os quatro nasceram em
@@ -1122,8 +1548,8 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
     **do run velho**, então a tela dizia "reprovou de novo" quando na verdade **nada tinha rodado**.
     Eu quase reabri o diagnóstico e desmenti publicamente uma explicação que estava certa.
 
-    **Depois de todo close+reopen, refaça o passe 1** — libere os runs novos e confirme pelo
-    `head_sha`, nunca pelo `gh pr checks`:
+    **Depois de todo evento novo — o push na branch ou o close+reopen —, refaça o passe 1** —
+    libere os runs novos e confirme pelo `head_sha`, nunca pelo `gh pr checks`:
 
     ```bash
     SHA=$(gh pr view <n> --json headRefOid --jq .headRefOid)
@@ -1683,7 +2109,8 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
     legítimo e completo — só que o *seu* trabalho estava noutra árvore, que ninguém pediu para
     ninguém.
 
-    A regra: **trabalho seu nasce numa branch a partir de `origin/main`, nunca na prévia.** Se você
+    A regra: **trabalho seu nasce numa branch de verdade — a partir de `origin/main`, ou a própria
+    branch do PR quando ele permite edição por mantenedores (passe 8) —, nunca na prévia.** Se você
     já escreveu na prévia, `cherry-pick` para uma branch de verdade **antes** de mergear o PR que a
     originou — depois do merge, a prévia vira uma árvore órfã que só você sabe que existe, e o
     worktree pode ser varrido por qualquer limpeza.
@@ -1993,9 +2420,14 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
     desfecho único. Segurar tudo até a decisão vir deixa um P0 de instalação na fila atrás de uma
     questão de gosto; mergear tudo decide a cara do produto sem o dono.
 
-    O desfecho é **dois**: o conserto sai num PR próprio, creditado, hoje; o PR original fica aberto
-    com um documento de decisão, e o contribuidor recebe a explicação de por que o trabalho dele foi
-    partido — incluindo a frase que importa: *"não estou recusando; quem decide isto não sou eu"*.
+    O desfecho é **dois**: o conserto sai num PR próprio, hoje, com o commit na autoria dele
+    (passe 8); o PR original fica aberto com um documento de decisão, e o contribuidor recebe a
+    explicação de por que o trabalho dele foi partido — incluindo a frase que importa: *"não estou
+    recusando; quem decide isto não sou eu"*.
+
+    Aberto porque a decisão pendente é o destino do que sobrou (decisão do dono em 16/09/2026,
+    passe 12-ter). Quando o dono decidir e o que sobrou for descartado, o PR fecha, dizendo o que
+    entrou, com o link, e por que o resto não entra.
 
 47. **O CI é recurso compartilhado e saturável, e quem satura é você.** Abrir seis PRs de
     reconciliação em vinte minutos pôs **41 execuções na fila** da conta em 11/09/2026, com 8 em
@@ -2038,7 +2470,7 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
 
     ```bash
     gh pr checks <N> --json name,bucket --jq '
-      [.[]|select(.bucket!="skipping")|select(.name|test("^Vercel")|not)]
+      [.[]|select(.bucket!="skipping")]
       | if   (any(.bucket=="fail"))    then "VERMELHO"
         elif (any(.bucket=="pending")) then "AINDA RODANDO"
         else "VERDE" end'
@@ -2104,3 +2536,198 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
     isolado, antes de escrever uma linha de diagnóstico. Três `console.log` num teste de invariante
     custam uma rodada de `test:db` e trocam uma teoria por um número. O silêncio dele torna a
     acusação fácil demais — e é exatamente por isso que ela precisa de prova.
+
+53. **`git diff --diff-filter=U` vazio lido como "mergeou".** Vazio quer dizer "sem conflito
+    agora" — inclusive quando o merge sequer foi tentado, porque um hook barrou o commit anterior.
+    A medida é o `HEAD` ter andado: `antes=$(git rev-parse HEAD)` e comparar depois. Em 14/09 um
+    laço reportou "OK, sem conflito" para seis PRs que o `pre-commit` tinha bloqueado.
+
+54. **Os gates verdes lidos como "o lote está pronto".** `typecheck`, `lint`, `lint:channels`,
+    `test:unit`, `test:shell` e `test:db` **não constroem o app**. Medido em 14/09: os seis verdes
+    (823 arquivos de teste, 194 de invariante) e o `build` vermelho no CI — `Is a directory
+    (os error 21)`, num glob que casava symlink de plataforma do pnpm. O defeito mora no **emit**,
+    onde nenhum teste chega. Num lote, `pnpm build` antes de abrir o PR.
+
+55. **Substituição de texto global ao renumerar migration.** Trocar `0239` por `0244` no
+    `baseline.sql` inteiro reescreve o rótulo de apêndice de **outros** PRs que citavam o número.
+    Aconteceu em 14/09, e quem denunciou foi o teste de um terceiro PR. Escope pelo nome do
+    arquivo da migration, que é a fonte da verdade.
+
+56. **`sed` para inserir texto multilinha.** Ele recusa com `unescaped newline inside substitute
+    pattern`, e dentro de um laço isso falha **no meio** enquanto o resto segue: em 14/09, 11 de 29
+    vereditos não foram postados e o laço imprimiu "vereditos postados" no fim. Texto com mais de
+    uma linha vai por Python, e o laço confere o `returncode` de cada envio.
+
+
+57. **Reconciliação que REMOVE um artefato e deixa o inventário que o declarava.** Tirar um
+    workflow, uma rota ou uma tela é metade do conserto: a outra metade é o mapa que a enumera
+    (`GATILHO_ESPERADO`, `registry.ts`, `SPECS_PARTE_*`). Em 14/09 removi o workflow de deploy de
+    um fork e deixei as três entradas dele no `GATILHO_ESPERADO` — e não vi porque, no worktree da
+    reconciliação, rodei só o teste que eu sabia afetado. **Depois de reconciliar, rode a suíte,
+    não o arquivo.** O arquivo que você lembra é o que você já sabe; o que quebra é o que você não
+    pensou.
+
+58. **Duas reconciliações feitas em ordem diferente da ordem de merge.** Reconciliei o inventário
+    de crons `vercel.ts` (apagado em 17/09) do #767 antes de o #805 entrar no lote; o #805 criou um
+    cron que aquele inventário não conhecia. Cada reconciliação estava certa contra a árvore em que
+    foi feita. **Inventário se confere na árvore do LOTE montado, depois do último merge** — nunca
+    na branch de reconciliação isolada.
+
+59. **Exit 1 com zero falhas, e as duas sondas concordando em zero.** O rodapé `Tests … 0 failed` e
+    o `grep FAIL` vazio não esgotam o que reprova uma suíte: erro não tratado sai numa terceira
+    linha, `Errors N error`. Em 15/09 a suíte de um lote saiu `exit=1` com 866 arquivos passados.
+    O exit code é a autoridade; quando ele diverge, leia `Errors` — e prove que é carga rodando o
+    arquivo apontado **isolado, mais de uma vez**, e depois a suíte de novo na árvore final.
+
+60. **Gate de merge que já estava vermelho, consertado pela metade.** Um PR chegou com `verify`
+    E `invariants` vermelhos. Consertei o `verify` e assumi que o `invariants` era a mesma causa,
+    sem abrir o log. Não era — era um invariante que o PR tinha atualizado em uma de duas linhas
+    irmãs. **Cada job vermelho tem o seu log.** Dois vermelhos não são um defeito até o segundo
+    log dizer que são.
+
+61. **O instrumento de medição mentiu em três direções no mesmo lote.** Em 15/09 o
+    `triagem/scripts/complemento.sh` entregou ao dossiê do lote 8 três números que eram dele, não
+    dos PRs — e o analista só não os herdou porque conferiu cada um:
+    - **SIGPIPE com `pipefail`.** `echo "$DIFF" | grep -q` devolve 141 em diff grande (o `grep -q`
+      fecha o pipe no primeiro acerto e o `echo` morre). A sonda lia FALSO justamente quando achava:
+      `rls_enable AUSENTE — bloqueador` no #865 com a linha duas vezes no diff, e
+      `migration_constraint`, `migration_idempotente` e `falha_em_verde` simplesmente **sumiam** —
+      o último era o achado real do PR. Conserto: here-string (`grep ... <<<"$DIFF"`), sem pipe.
+    - **Comentário casado como código.** `definer_revoke: SEM revoke` no #861, que não cria função
+      nenhuma: casou em `+-- \`security definer\` nova ⇒ ... não é acionado`. Conserto: as sondas
+      semânticas leem só linhas acrescentadas em arquivo de código, sem comentário.
+    - **`.test.tsx` fora da conta.** `muda fonte SEM teste` no #860, que trazia
+      `agenda-confirmar-pela-tela.test.tsx`. A `main` tem mais de cem `.test.tsx`.
+
+    O controle que prova o conserto tem **quatro quadrantes**, não um: definer em CÓDIGO e em
+    COMENTÁRIO, cada um em diff PEQUENO e GRANDE. O script antigo errava nos dois sentidos —
+    acusava o comentário no diff pequeno e perdia o código no grande. Um controle só com o caso
+    que motivou o conserto teria aprovado metade dele.
+
+62. **Renumerar migration de PR que trouxe invariante novo: a prosa muda, o fixture fica.** Ao
+    renumerar a `0255` do #861 para `0257`, a troca com escopo alcançou três rótulos de valor de
+    teste (`"segredo-de-app-de-teste-0255"`) dentro de `tests/invariants/` — e o `pre-commit`
+    barrou, porque invariante é congelado **mesmo quando nasceu no mesmo lote**. O rótulo de
+    fixture não cita a migration: é texto sem efeito. Troque só a frase que aponta para a
+    migration (comentário, MANIFEST, rótulo do apêndice, caminho lido por teste) e deixe o valor.
+
+63. **O PR que devia fechar sozinho continua `OPEN` logo depois do merge do lote.** Em 15/09 o #841
+    apareceu `OPEN` com o lote 7 já `MERGED`, e o head dele já era ancestral da `main`. O GitHub
+    processa o fechamento por ancestralidade com atraso de dezenas de segundos. **Meça a
+    ancestralidade antes de agir** (`git merge-base --is-ancestor <head> origin/main`); se for
+    ancestral, espere e releia — reabrir, comentar ou mergear de novo nesse intervalo produz ruído
+    no PR de quem contribuiu.
+
+64. **Prove a JORNADA DO MOTIVO, não a função que o PR mudou.** O #858 dizia no corpo "hoje isso é
+    impossível **até pela tela**: o `PainelDeMarcacao` monta as opções da lista de slots" — e mudou
+    só o servidor. Dossiê, três consertadores e o cético mediram o servidor (sabotagens, 620 casos)
+    e ficaram verdes; só a QA em tela viu que a dona do negócio continuava sem conseguir o encaixe.
+    **Antes de medir, copie a frase "Como apareceu"/"O que muda" do PR para o briefing do dossiê e
+    escreva a jornada que ela descreve.** É essa que precisa ficar verde — e, se a tela não a
+    oferece, a triagem constrói a porta (foi o que entrou no lote 8) ou declara no fragmento.
+
+65. **Fatia que promete "pela tela" e entrega a action sem chamador.** O #861 cumpria a fatia F3 da
+    issue #850 ("App Secret e verify token **pela tela**") com tabela, action e leitura na rota — e
+    `git grep updateMetaApp -- app components hooks lib` só achava a própria action. A sonda é
+    barata e vai no passe 4: **toda server action ou rota nova tem ao menos um chamador fora do
+    próprio arquivo e dos testes?** Sem chamador, a capacidade não existe para quem opera, e o
+    fragmento que a anuncia é falso.
+
+66. **Invariante de GRANT de tabela no `test:db` é verde por construção.** O prelude de
+    `scripts/test-db.sh` simula o default ACL do Supabase para FUNÇÕES e não para TABELAS; num
+    Supabase real toda tabela nova de `public` nasce com `arwdDxt` para `anon`, `authenticated` e
+    `service_role`, e o dump só ACRESCENTA grants. O #873 revogou TRUNCATE de `api_audit_log`, o
+    invariante saiu verde, e o cético mostrou `service_role: DELETE 1` com o default ACL reproduzido
+    — a frase "append-only, nem `service_role`" do `CLAUDE.md` já era falsa na `main`. **Todo PR que
+    afirme "papel X não pode Y na tabela Z" é medido com `grant all on table … to anon,
+    authenticated, service_role` na transação ANTES do bloco do PR** (issue #887 pede o prelude).
+
+67. **Dedupe por `kind` faz o aviso menos grave tampar o mais grave.** O #871 estendeu `event_dead` à
+    morte do despacho da IA; com um `event_dead` de mídia aberto, "a IA deixou de responder" não
+    abria. Ao estender um aviso deduplicado a um caso novo, **meça com outro aviso do mesmo kind já
+    aberto** — a contagem "1000 mortes → 1 aviso" sozinha aprova o defeito.
+
+68. **Número de migration prometido a PR que não entrou é dívida com o contribuidor.** Escrevi no
+    #867 "fica com `0258`" e no #865 "`0259`"; vinte minutos depois chegaram #873 e #874 com
+    migration, gates verdes e sem decisão pendente — e entraram antes. Tive de editar os dois
+    comentários. **O número é de quem ENTRA primeiro**; ao contribuidor diga "o próximo livre na hora
+    da integração".
+
+69. **`bash scripts/test-db.sh` sem o `pnpm` é gate que não rodou.** O prelúdio imprime `✓ install ok`
+    e `✓ update ok`, e depois `vitest: comando não encontrado`, exit 127 — as linhas verdes estão no
+    log, os invariantes não. O caminho é `pnpm test:db`. E `pnpm test:db -- <arquivo>` **não
+    filtra**: roda os 200 (três agentes pagaram 10 minutos por isso no mesmo dia).
+
+70. **Não mova o HEAD de um worktree com gates rodando.** Um merge de proveniência (#860, árvore
+    idêntica) entrou no worktree do lote enquanto o `test:unit` corria. Inofensivo desta vez, mas o
+    log dos gates passou a declarar um SHA que já não era o HEAD. Proveniência entra **depois** dos
+    gates, ou o resumo dos gates declara o **tree** (`git rev-parse HEAD^{tree}`), que é o que o
+    teste mediu.
+
+71. **A vigia que engole a falha do `gh` fica calada durante uma queda de rede.** O monitor de um
+    re-run tinha `gh … || { sleep 30; continue; }` e expirou em 30 minutos "sem eventos": a rede tinha
+    caído (um agente morreu com `ENOTFOUND` no mesmo intervalo) e o run já tinha terminado verde.
+    Silêncio de vigia não é "ainda rodando". **Conte as falhas seguidas do instrumento e emita aviso a
+    partir de N**, como qualquer outro estado terminal.
+
+72. **Vermelho de e2e num lote que não toca a área: meça o intermitente antes de investigar o lote.**
+    O lote 9 (#893) caiu em `logo-moldura-no-tema-escuro` nas duas tentativas, sem nenhum arquivo de
+    marca, cache ou layout no diff. O trace mostrou `POST /api/v1/marca/logo` 200 e a barra lateral
+    ainda com a marca do produto 15 s depois — o sintoma de uma corrida que o próprio
+    `lib/branding/instalacao.ts` documenta. Re-run no mesmo SHA: verde. **A ordem é: diff do lote ×
+    área da spec; trace da falha; re-run no mesmo SHA; e só então concluir.** O intermitente vira
+    issue com o trace (#895), não conserto dentro do lote.
+
+73. **`git commit … | tail; echo "rc=$?"` imprime `rc=0` com o commit BARRADO.** Reincidência do
+    "pipe mascara exit" (lote 9, título do aviso da Central): o pre-commit recusou, o `tail` saiu 0, e
+    a linha seguinte afirmava o commit. **Em commit, a sonda é o HEAD ter andado**
+    (`antes=$(git rev-parse HEAD)` … comparar), nunca um exit impresso depois de pipe.
+
+74. **Mudar `args` ao retomar um workflow invalida o cache de tudo que os interpola.** Ao retomar o
+    lote 12 atualizei `medidoEm`, o SHA da main e o do lote anterior; os 17 dossiês — a parte cara —
+    recomeçaram do zero, porque o bloco de contexto interpolava os três. Pior que o custo: o texto
+    novo mandava montar sobre uma branch que o merge do lote anterior já tinha apagado, e o agente
+    obedeceu a uma instrução impossível. **Ao retomar, mude `args` só quando o texto ficaria FALSO
+    sem a mudança**; e, quando mudar, releia o roteiro inteiro procurando a instrução que a
+    realidade nova tornou irrealizável.
+
+75. **Agente morto por limite de uso ou por reboot deixa commits que o diário do workflow não
+    registra.** O diário só guarda o `result` de quem terminou. No disco, os cinco grupos do lote 12
+    tinham de 5 a 12 commits locais não publicados, e dois tinham trabalho não commitado. **Antes de
+    retomar:** `git log <base>..HEAD` em cada worktree, salvar o não commitado como patch, restaurar
+    a árvore e **publicar as branches**. Sem isso, o agente retomado tenta `git worktree add -b` num
+    caminho que já existe e falha, ou refaz o que já estava pronto — e o prompt da retomada precisa
+    dizer que há trabalho anterior, senão ele atesta sabotagem que não rodou.
+
+76. **O scratchpad em `/private/tmp` não sobrevive a reboot.** Em 16/09 o Mac reiniciou no meio do
+    lote 12 e levou patches de resgate, dossiês, o molde do aviso de versão e o arquivo de lições.
+    **O que precisa durar mais que a sessão vai para disco durável** — uma branch, a memória, ou uma
+    pasta fora de `/tmp`. O que é descartável pode ficar no scratchpad.
+
+77. **Depois de um reboot, nada do que estava rodando existe mais.** Supabase de QA, `next start`,
+    Docker Desktop e processos de teste somem; os worktrees e as branches publicadas ficam. Um agente
+    retomado que confie no "ambiente de pé" do relatório anterior mede o vazio. **Retomada pós-reboot
+    começa por `uptime`, `docker info` e `git status` em cada worktree**, não pelo diário.
+
+78. **Guarda cujo mecanismo foi revertido fica vermelha afirmando um contrato que o projeto não tem
+    mais.** No lote 12, o #921 saiu da integração por decisão do dono, e o teste que escrevemos para
+    vigiar o ponto de uso dele sobreviveu ao revert — três casos vermelhos cobrando um carimbo que
+    nem a integração nem a `main` fazem mais. **Ao reverter um PR de dentro de um lote, procure
+    também o que NÓS escrevemos por causa dele**: guarda, fragmento, evidência e linha de mapa. A
+    sonda é o mecanismo, não o arquivo: se `git grep <símbolo>` no fonte devolve vazio dos dois
+    lados, a guarda perdeu o objeto.
+
+79. **Gate que varre uma PASTA fica cego quando a leitura muda de endereço — e a cegueira é verde.**
+    O gate de privacidade da agenda cobrava que os caminhos da tela lessem a ocupação externa; o #915
+    juntou as duas consultas inline num módulo, e o caso "nenhuma pede o título" passou a valer por
+    vacuidade, que é exatamente o desfecho que o controle existia para negar. **Antes de mexer no
+    gate, confira a decisão no endereço novo** (aqui: nenhum `select` pede o título, e o tipo
+    devolvido não tem o campo); e então **amplie o alcance para o dono da leitura**, sem tirar
+    ninguém — ampliar não é allowlist, tirar é.
+
+80. **Quatro frentes na mesma máquina transformam um portão em vermelho de ninguém.** Com o QA em
+    tela, um build de outra sessão, a suíte do lote e os agentes de pesquisa juntos, a carga chegou a
+    89: casos de `test:db` que levam segundos levaram 36 s, 50 s e 112 s, e a suíte inteira morreu com
+    `SIGTERM` — que não é reprovação, é morte. **Portão de lote se roda sozinho.** Antes de disparar,
+    meça `uptime` e `ps`; ao ver `exit=143` ou tempos absurdos por caso, o desfecho é remedir com a
+    máquina vazia, nunca investigar o lote.

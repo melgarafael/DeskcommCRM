@@ -53,6 +53,15 @@ export function PipelinePageClient({
   const [newOpen, setNewOpen] = useState(false);
 
   const filteredLeads = data ? applyFilters(data.leads, filters) : [];
+  // Mesma conta do FilterBar — inclusive o `useMemo`, que o comentário anterior
+  // prometia e a linha não tinha: solta no corpo, ela roda em toda renderização
+  // e devolve um array NOVO a cada vez. E esta página re-renderiza a cada tecla
+  // da busca (o debounce do FilterBar mexe na query string) e a cada mudança de
+  // seleção de card. A tag em lote grava em `lead.tags` (#852).
+  const tagsDoQuadro = useMemo(
+    () => [...new Set((data?.leads ?? []).flatMap((l) => l.tags))].sort(),
+    [data?.leads],
+  );
 
   return (
     <div
@@ -122,6 +131,7 @@ export function PipelinePageClient({
         stages={data?.stages ?? []}
         pipelineId={pipelineId}
         vocabulary={data?.pipeline.vocabulary ?? null}
+        tagsExistentes={tagsDoQuadro}
         onClear={() => setSelectedIds([])}
       />
     </div>

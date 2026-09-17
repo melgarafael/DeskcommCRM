@@ -1,8 +1,7 @@
 import type {JobClaim} from "@/lib/agent-engine/queue/claim";
 import { assertAgendaEffectPg } from "@/lib/agenda/efeito";
-import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { isFollowupCasRecusado, parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { requireCurrentServiceBoundary } from "@/lib/atendimento/fronteira-server";
-import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * Ponte engine ⇄ job_queue (Task 5.1, onda 5). Traduz o RESULTADO de um turno
  * `followup_turn` do agent-engine (lib/agent-engine/agent/followup-turn.ts) de
@@ -335,7 +334,7 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
     async applyEnrollmentStep(id,orgId,patch,event){
       const revision=revisions.get(id);if(revision===undefined) throw new StaleServiceBoundaryError();
       try{const {rows}=await pool.query("select fn_followup_apply_step($1,$2,$3,$4,$5) revision",[orgId,id,revision,patch,event]);revisions.set(id,Number(rows[0].revision));}
-      catch(error){if((error as {code?:string}).code==="23505") return;if((error as {code?:string}).code==="40001") throw new StaleServiceBoundaryError();throw error;}
+      catch(error){if((error as {code?:string}).code==="23505") return;if(isFollowupCasRecusado(error as {code?:string;message?:string})) throw new StaleServiceBoundaryError();throw error;}
     },
     async updateEnrollment(id, orgId, patch) {
       const revision=revisions.get(id);
@@ -343,7 +342,7 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       try {
         const {rows}=await pool.query<{revision:number}>("select fn_followup_patch($1,$2,$3,$4) as revision",[orgId,id,revision,patch]);
         revisions.set(id,Number(rows[0]!.revision));
-      } catch(error){if((error as {code?:string}).code==="40001") throw new StaleServiceBoundaryError();throw error;}
+      } catch(error){if(isFollowupCasRecusado(error as {code?:string;message?:string})) throw new StaleServiceBoundaryError();throw error;}
 
     },
     async loadFlowPointerName(orgId, pointerId) {
@@ -369,10 +368,13 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
       // anonimizado, `fn_meet_redact_contact` resolve os abertos, e há um bloco
       // de cura no baseline. Esta nascia sem, e a consequência é concreta:
       //
-      //   a cascata de LGPD NÃO cancela `followup_enrollments` (medido, com
+      //   a cascata de LGPD não cancelava `followup_enrollments` (medido, com
       //   controle positivo). Um contato anonimizado com régua em curso chega
       //   ao fim dela DEPOIS da redação — e reabriria, aqui, um aviso
       //   apontando para o compromisso que a anonimização tinha desligado.
+      //   Desde o #701 a cascata cancela a régua, e ESTA guarda continua sendo a
+      //   segunda linha: um turno já reivindicado pode terminar depois do
+      //   cancelamento, e é nesta escrita que ele não vira aviso.
       //
       // Um `if` em TypeScript antes do insert resolveria o caso e deixaria a
       // guarda a um refactor de distância de sumir. No `select` ela é parte da

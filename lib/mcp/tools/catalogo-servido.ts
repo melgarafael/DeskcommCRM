@@ -15,6 +15,7 @@
  */
 import type { McpToolCatalogEntry } from "./catalogo";
 import type { ToolBundle, ToolRisk } from "./pacotes";
+import { IDS_DO_HARNESS, motivoDoHarness } from "./ferramentas-do-harness";
 
 /** Só o que a junção precisa de um handler — mantém a função testável sem zod. */
 export interface HandlerDeclarado {
@@ -37,6 +38,17 @@ export interface CapacidadeServida {
   o_que_toca: string;
   risco: ToolRisk;
   pacotes: ReadonlyArray<ToolBundle>;
+  /**
+   * `false` = a capacidade é do harness: a tela MOSTRA (o humano precisa saber
+   * que aquilo existe e já acontece sozinho) e não deixa marcar.
+   *
+   * A tela marcava, o dono salvava, o engine descartava — e o único sinal era
+   * um `log.warn` no log do worker. O campo existe para que o descarte nunca
+   * mais seja invisível para quem configura.
+   */
+  marcavel: boolean;
+  /** Por que não é marcável, em pt-BR para a tela. `null` quando é marcável. */
+  motivo_nao_marcavel: string | null;
 }
 
 export function juntarCatalogoComHandlers(
@@ -64,6 +76,8 @@ export function juntarCatalogoComHandlers(
       o_que_toca: entrada.oQueToca,
       risco: entrada.risco,
       pacotes: entrada.pacotes,
+      marcavel: !IDS_DO_HARNESS.has(handler.name),
+      motivo_nao_marcavel: motivoDoHarness(handler.name),
     };
   });
 }

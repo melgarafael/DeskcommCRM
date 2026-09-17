@@ -56,6 +56,8 @@ describe("juntar as duas metades do catálogo", () => {
       o_que_toca: "Atendimento",
       risco: "seguro",
       pacotes: ["atender"],
+      marcavel: true,
+      motivo_nao_marcavel: null,
     });
   });
 

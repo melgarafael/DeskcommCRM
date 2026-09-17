@@ -1,7 +1,19 @@
 "use client";
 
+import { useState } from "react";
+
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,6 +75,7 @@ export function PublishBar({
   canAutoFit = false,
 }: Props) {
   const t = useT();
+  const [openDeleteSelection, setOpenDeleteSelection] = useState(false);
   const save = useSaveFollowupFlowDraft(flowId);
   const publish = usePublishFollowupFlow(flowId);
   const disable = useDisableFollowupFlow(flowId);
@@ -180,17 +193,45 @@ export function PublishBar({
           </Button>
         )}
         {selection ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-destructive"
-            data-testid="delete-selection"
-            onClick={onDeleteSelection}
-          >
-            <Trash size={14} aria-hidden className="mr-1" />
-            {selection === "node" ? t("Excluir nó") : t("Excluir aresta")}
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-destructive"
+              data-testid="delete-selection"
+              onClick={() => setOpenDeleteSelection(true)}
+            >
+              <Trash size={14} aria-hidden className="mr-1" />
+              {selection === "node" ? t("Excluir nó") : t("Excluir aresta")}
+            </Button>
+            <AlertDialog open={openDeleteSelection} onOpenChange={setOpenDeleteSelection}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {selection === "node" ? t("Excluir este nó?") : t("Excluir esta aresta?")}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {selection === "node"
+                      ? t("Este nó e as arestas ligadas a ele são apagados. Não é possível desfazer.")
+                      : t("A aresta entre os dois nós é apagada. Não é possível desfazer.")}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setOpenDeleteSelection(false);
+                      onDeleteSelection();
+                    }}
+                  >
+                    {t("Excluir")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
         ) : (
           <DeleteFollowupFlowButton flowId={flowId} flowName={flow.name} redirectToList />
         )}

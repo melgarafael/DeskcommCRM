@@ -1,0 +1,82 @@
+{
+  "dark": {
+    "temaReal": "dark",
+    "temImgEnviada": true,
+    "temMarcaDoProduto": false,
+    "medida": {
+      "tagDoPai": "div",
+      "classeDoPai": "rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm",
+      "fundo": "rgb(255, 255, 255)",
+      "padding": [
+        8,
+        12,
+        8,
+        12
+      ],
+      "sombra": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.2) 0px 1px 1px 0px",
+      "raio": "8px",
+      "caixaDoPai": {
+        "x": 608,
+        "y": 233,
+        "largura": 64,
+        "altura": 56
+      },
+      "caixaDoLogo": {
+        "x": 620,
+        "y": 241,
+        "largura": 40,
+        "altura": 40
+      },
+      "naturalWidth": 64
+    },
+    "cartao": {
+      "x": 448,
+      "y": 395,
+      "largura": 384,
+      "altura": 200
+    }
+  },
+  "light": {
+    "temaReal": "light",
+    "temImgEnviada": true,
+    "temMarcaDoProduto": false,
+    "medida": {
+      "tagDoPai": "div",
+      "classeDoPai": "rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm",
+      "fundo": "rgba(0, 0, 0, 0)",
+      "padding": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "sombra": "none",
+      "raio": "8px",
+      "caixaDoPai": {
+        "x": 620,
+        "y": 241,
+        "largura": 40,
+        "altura": 40
+      },
+      "caixaDoLogo": {
+        "x": 620,
+        "y": 241,
+        "largura": 40,
+        "altura": 40
+      },
+      "naturalWidth": 64
+    },
+    "cartao": {
+      "x": 448,
+      "y": 387,
+      "largura": 384,
+      "altura": 200
+    }
+  },
+  "deslocamentoDoCartao": {
+    "dx": 0,
+    "dy": 8,
+    "dLargura": 0,
+    "dAltura": 0
+  }
+}

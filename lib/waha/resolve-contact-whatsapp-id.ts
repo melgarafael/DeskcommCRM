@@ -64,6 +64,44 @@ async function firstExistingOnWhatsapp(
   return null;
 }
 
+/**
+ * Dígitos do JID de TELEFONE que o check-exists devolveu — `null` quando o único
+ * endereço é `@lid`.
+ *
+ * Existe separado de `whatsappIdFromCheckResult` porque aquele aceita o `@lid`
+ * quando não há `pn`, e para um cartão de contato isso é tolerável. Para uma
+ * LIGAÇÃO não é: o WaCalls monta o destino com `types.NewJID(dígitos,
+ * DefaultUserServer)` (`internal/app/session/commands.go`), ou seja,
+ * `<dígitos>@s.whatsapp.net` — dígitos de um lid viram um telefone que não
+ * existe.
+ */
+export function phoneJidDigitsFromCheckResult(r: WahaCheckExistsResult): string | null {
+  if (!r.numberExists) return null;
+  for (const jid of [r.pn, r.chatId]) {
+    if (!jid) continue;
+    const [user, server] = jid.split("@");
+    if (server !== "c.us" && server !== "s.whatsapp.net") continue;
+    // `5531…:12@s.whatsapp.net` — o sufixo `:N` é o aparelho, não o número.
+    const digits = (user ?? "").split(":")[0]!.replace(/\D/g, "");
+    if (digits.length >= 8 && digits.length <= 15) return digits;
+  }
+  return null;
+}
+
+/**
+ * O número, em dígitos, pelo qual o WhatsApp endereça este telefone — o que
+ * uma ligação precisa discar. `null` = nenhuma grafia existe, só há `@lid`, ou
+ * a consulta falhou; quem chama decide o fallback.
+ */
+export async function resolvePhoneJidDigitsForCall(
+  client: WahaClient,
+  session: string,
+  phone: string,
+): Promise<string | null> {
+  const r = await firstExistingOnWhatsapp(client, session, phone);
+  return r ? phoneJidDigitsFromCheckResult(r) : null;
+}
+
 /** Consulta WAHA; null = não achou ou falhou (caller usa fallback). */
 export async function resolveWhatsappIdForContactCard(
   client: WahaClient,

@@ -8,9 +8,12 @@ import type { NextConfig } from "next";
  *  - Initial bundle /app/inbox < 250KB gzipped
  */
 const nextConfig: NextConfig = {
-  // Self-host: gera .next/standalone pro container Docker (node server.js).
-  // Na Vercel (VERCEL=1) fica desligado — Next 16.3 + adapter + standalone
-  // quebra o onBuildComplete com ENOENT next-server.js.nft.json (#96646).
+  // Self-host: gera .next/standalone pro container Docker (node server.js) — é
+  // o que o estágio `runner` do Dockerfile copia, então é o modo de build deste
+  // repositório. O ramo de `process.env.VERCEL` é resíduo defensivo, não um modo
+  // suportado aqui: onde essa variável existe, o standalone precisa ficar
+  // desligado porque Next 16.3 + adapter + standalone quebra o onBuildComplete
+  // com ENOENT next-server.js.nft.json (#96646).
   output: process.env.VERCEL ? undefined : "standalone",
   /**
    * O `standalone` copia SÓ o que o file tracing detecta — e ele não detecta
@@ -33,7 +36,25 @@ const nextConfig: NextConfig = {
    * sem exigir que alguém lembre de editar esta linha.
    */
   outputFileTracingIncludes: {
-    "/**": ["./node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**"],
+    "/**": [
+      "./node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**",
+      // Mesmo defeito do @swc/helpers acima: js-binding.js do @napi-rs/canvas
+      // resolve o binário nativo com `require()` computado em runtime
+      // (process.platform/isMusl()), então o tracer não o segue e o
+      // standalone sobe sem o binário — pdfjs-dist quebra no import com
+      // "DOMMatrix is not defined" (lib/ai/rag/extractors/pdf.ts).
+      //
+      // São DOIS padrões, e o motivo de não ser um `@napi-rs/**` só está
+      // medido: dentro de `@napi-rs/` o pnpm põe, ao lado do pacote real, um
+      // SYMLINK por plataforma (`canvas-linux-x64-gnu` ->
+      // `../../../@napi-rs+canvas-linux-x64-gnu@…`). O glob casa o symlink, o
+      // Turbopack tenta lê-lo como arquivo para calcular o hash do
+      // `.nft.json`, e o build morre com `Is a directory (os error 21)` —
+      // não no import, no EMIT. Apontando para o conteúdo de cada pacote em
+      // vez de para o diretório que os agrega, nenhum symlink é visitado.
+      "./node_modules/.pnpm/@napi-rs+canvas@*/node_modules/@napi-rs/canvas/**",
+      "./node_modules/.pnpm/@napi-rs+canvas-*/node_modules/@napi-rs/*/*.node",
+    ],
   },
   reactStrictMode: true,
   poweredByHeader: false,
@@ -106,10 +127,11 @@ export default withSentryConfig(nextConfig, {
   tunnelRoute: "/monitoring",
 
   webpack: {
-    // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
-    // See the following for more information:
+    // Herança do wizard do Sentry (instrumentação automática de cron monitors).
+    // Inerte aqui: o bloco `webpack:` inteiro é ignorado pelo build de produção,
+    // que roda Turbopack (ver Dockerfile). Fica como resíduo defensivo, não como
+    // modo de build suportado por este repositório.
     // https://docs.sentry.io/product/crons/
-    // https://vercel.com/docs/cron-jobs
     automaticVercelMonitors: true,
 
     // Tree-shaking options for reducing bundle size

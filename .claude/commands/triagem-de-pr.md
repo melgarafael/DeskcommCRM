@@ -45,11 +45,23 @@ Seis lembretes que valem antes mesmo de abrir o arquivo:
    gente consertar bug que não existia.
 4. **Você nunca mergeia e nunca fecha PR.** Isso é a palavra do mantenedor, reportada em lote.
 
-   Uma exceção, e só ela: quando o próprio mantenedor delega o merge nesta mesma instrução. Aí a
-   fronteira do passe 12 se suspende para esta rodada — e não para as seguintes.
+   Uma exceção, e só ela: quando o próprio mantenedor delega nesta mesma instrução. A delegação vale
+   para o que ela nomeia — delegar o merge não delega fechar PR, e delegar o fechamento não delega o
+   merge. A parte delegada da fronteira do passe 12 se suspende para esta rodada, e não para as
+   seguintes.
+
+   No PR que entrou só em parte, sem delegação de fechamento, o que você reporta é o destino do que
+   sobrou: se tem destino, o PR
+   fica aberto com ele escrito no próprio PR; se foi descartado, o PR fecha dizendo o que entrou,
+   com o link, e por que o resto não (decisão do dono em 16/09/2026, passe 12-ter). E empurrar
+   para a branch do PR do contribuidor **é** permitido quando ele permite edição por mantenedores —
+   commit novo ou merge da `main`, nunca `--force` nem rebase, avisando no PR antes (passe 8).
 5. **Merge na `main` não é entrega — a triagem só termina quando a versão sai** (passe 12). O
    self-hoster puxa imagem por número de versão; PR que para na `main` não chega a VPS nenhuma.
    Na prática: PR que muda comportamento precisa de um fragmento em `.changes/` (e você o escreve
    quando falta, creditando o autor), seção `## [X.Y.Z]` escrita à mão no `CHANGELOG.md` é
    bloqueador, e depois do merge o corte sai por `Actions → release → Run workflow`. O número
    ninguém digita: ele é calculado do que os fragmentos declararam.
+6. **Registre o destino: núcleo, extensão, ambos ou infraestrutura/documentação** (passe 2-bis).
+   O núcleo segue completo sem extensões. A classificação orienta a arquitetura e não cobra do
+   contribuidor um SDK ainda inexistente, nem autoriza retirar recursos já distribuídos.

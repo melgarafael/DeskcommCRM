@@ -11,6 +11,7 @@
  */
 
 import type { BotContext } from "@/lib/ai/types";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 const PLACEHOLDER_RX = /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g;
 
@@ -62,7 +63,7 @@ export function renderSystemPrompt(template: string, ctx: BotContext): string {
 
   const scope: Record<string, unknown> = {
     vocabulary,
-    contact_name: ctx.contact.display_name ?? "cliente",
+    contact_name: nomeDoContato(ctx.contact) ?? "cliente",
     contact_locale: ctx.contact.locale ?? "pt-BR",
     recent_messages: formatRecentMessages(ctx),
     retrieved_chunks: formatRetrievedChunks(ctx),

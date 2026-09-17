@@ -1,0 +1,42 @@
+# #875 (a) — seed contra URL remota fictícia, SEM --permitir-remoto (cwd: worktree qa-l9, sem .env.local)
+# comando: env -i PATH HOME NEXT_PUBLIC_SUPABASE_URL=https://exemplo-remoto.invalid SUPABASE_SERVICE_ROLE_KEY=chave-ficticia NODE_OPTIONS=--require sonda-rede.cjs pnpm exec tsx scripts/seed-automacoes-e-followups.ts
+# exit=2
+## saída
+[seed-automacoes-e-followups] ⚠️  DESTINO MISTO — a API vai para REMOTO (https://exemplo-remoto.invalid) e o Postgres para LOCAL ((vazio)). Quem abre pg.Pool escreve no SEGUNDO. (origem: ambiente)
+[seed-automacoes-e-followups] recusado: https://exemplo-remoto.invalid não é local, e este seed cria regras de automação e follow-up ATIVOS. Para gravar mesmo assim, rode de novo com --permitir-remoto.
+## sonda de rede (fetch, http/https.request|get, net.connect, dns.lookup) — pipe do tsx é IPC local
+{"t":1789461014120,"tipo":"sonda_ativa","pid":62523}
+{"t":1789461014575,"tipo":"sonda_ativa","pid":62525}
+{"t":1789461014672,"tipo":"sonda_ativa","pid":62534}
+{"t":1789461014686,"tipo":"net.connect","alvo":"\"/tmp/tsx-501/62525.pipe\""}
+{"t":1789461014743,"tipo":"net.connect","alvo":"\"/tmp/tsx-501/62525.pipe\""}
+{"t":1789461014802,"tipo":"sonda_ativa","pid":62534}
+{"t":1789461015042,"tipo":"exit","code":2}
+{"t":1789461015052,"tipo":"exit","code":2}
+{"t":1789461015061,"tipo":"exit","code":2}
+
+# CONTROLE da sonda — o MESMO destino com --permitir-remoto e um .e2e-creds.json fictício (cwd separado)
+# exit=1
+## saída (início)
+[seed-automacoes-e-followups] ⚠️  DESTINO MISTO — a API vai para REMOTO (https://exemplo-remoto.invalid) e o Postgres para LOCAL ((vazio)). Quem abre pg.Pool escreve no SEGUNDO. (origem: ambiente)
+[seed] sem crm_vivo em .e2e-creds.json — a regra de aniversário fica de fora (rode scripts/seed-crm-vivo.ts antes para tê-la).
+❌ Seed de automações e follow-ups falhou: Error: regra "Lead VIP ganha prioridade e cai com o gerente": TypeError: fetch failed
+    at semearAutomacoes (/Users/rafaelmelgaco/wt/qa-l9/scripts/seed-automacoes-e-followups.ts:140:22)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async main (/Users/rafaelmelgaco/wt/qa-l9/
+## sonda de rede
+{"t":1789461029616,"tipo":"sonda_ativa","pid":62580}
+{"t":1789461029689,"tipo":"sonda_ativa","pid":62586}
+{"t":1789461029770,"tipo":"sonda_ativa","pid":62586}
+{"t":1789461030006,"tipo":"fetch","url":"https://exemplo-remoto.invalid/rest/v1/automation_rules?select=id&organization_id=eq.00000000-0000-4000-8000-0000000000aa&name=eq.Lead+VIP+ganha+prioridade+e+cai+com+o+gerente","metodo":"GET"}
+{"t":1789461030016,"tipo":"dns.lookup","host":"exemplo-remoto.invalid"}
+{"t":1789461031029,"tipo":"fetch","url":"https://exemplo-remoto.invalid/rest/v1/automation_rules?select=id&organization_id=eq.00000000-0000-4000-8000-0000000000aa&name=eq.Lead+VIP+ganha+prioridade+e+cai+com+o+gerente","metodo":"GET"}
+{"t":1789461031031,"tipo":"dns.lookup","host":"exemplo-remoto.invalid"}
+{"t":1789461033032,"tipo":"fetch","url":"https://exemplo-remoto.invalid/rest/v1/automation_rules?select=id&organization_id=eq.00000000-0000-4000-8000-0000000000aa&name=eq.Lead+VIP+ganha+prioridade+e+cai+com+o+gerente","metodo":"GET"}
+{"t":1789461033033,"tipo":"dns.lookup","host":"exemplo-remoto.invalid"}
+{"t":1789461037036,"tipo":"fetch","url":"https://exemplo-remoto.invalid/rest/v1/automation_rules?select=id&organization_id=eq.00000000-0000-4000-8000-0000000000aa&name=eq.Lead+VIP+ganha+prioridade+e+cai+com+o+gerente","metodo":"GET"}
+{"t":1789461037037,"tipo":"dns.lookup","host":"exemplo-remoto.invalid"}
+{"t":1789461037039,"tipo":"fetch","url":"https://exemplo-remoto.invalid/rest/v1/automation_rules?select=id","metodo":"POST"}
+{"t":1789461037041,"tipo":"dns.lookup","host":"exemplo-remoto.invalid"}
+{"t":1789461037044,"tipo":"exit","code":1}
+{"t":1789461037050,"tipo":"exit","code":1}

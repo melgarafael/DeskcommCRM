@@ -32,6 +32,12 @@ describe("todo canal criado pela interface nasce em pré-go-live", () => {
     expect(initial).not.toBeNull();
     expect(JSON.parse(initial![1]!)).toEqual(metadataInicialDoCanal());
     expect(fn).toContain("case when p_onboarding then '{\"onboarding\":true}'::jsonb");
+    // 0232: o formato da 0228/0230 (dois uuid sem hífen) tem 69 caracteres, e o
+    // WAHA recusa `name` acima de 54 com HTTP 400 — nenhum canal novo era criado.
+    // O prefixo da org encolhe para 8 (`org_<8>_<32>` = 45). O gerador do banco é
+    // a outra metade do mesmo defeito que `lib/channels/nome-da-sessao.ts` cobre
+    // do lado do código; sem esta linha, só o `test:db` o vigiaria.
+    expect(fn).toContain("left(replace(p_org::text,'-',''),8)");
   });
 
   it("reconectar canal parceiro preserva a configuração que já existia", () => {

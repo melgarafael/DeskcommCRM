@@ -1,0 +1,545 @@
+régua: 43 versões no CHANGELOG, mais nova v1.29.0
+== cabeçalho pt-BR
+  ✓ pt-BR 360px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 360px: botão dos guias visível e clicável (38x36)
+  ✓ pt-BR 360px: nada do cabeçalho fora da tela
+  ✓ pt-BR 360px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 360px: links da nav em uma linha (nav oculta)
+  ✓ pt-BR 360px: rótulo do botão [] (esperado []), aria-label "Guias para devs"
+  ✓ home pt-BR 360px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 360px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 390px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 390px: botão dos guias visível e clicável (38x36)
+  ✓ pt-BR 390px: nada do cabeçalho fora da tela
+  ✓ pt-BR 390px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 390px: links da nav em uma linha (nav oculta)
+  ✓ pt-BR 390px: rótulo do botão [] (esperado []), aria-label "Guias para devs"
+  ✓ home pt-BR 390px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 390px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 640px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 640px: botão dos guias visível e clicável (85x36)
+  ✓ pt-BR 640px: nada do cabeçalho fora da tela
+  ✓ pt-BR 640px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 640px: links da nav em uma linha (nav oculta)
+  ✓ pt-BR 640px: rótulo do botão ["Guias"] (esperado ["Guias"]), aria-label "Guias para devs"
+  ✓ home pt-BR 640px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 640px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 768px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 768px: botão dos guias visível e clicável (85x36)
+  ✓ pt-BR 768px: nada do cabeçalho fora da tela
+  ✓ pt-BR 768px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 768px: links da nav em uma linha (nav oculta)
+  ✓ pt-BR 768px: rótulo do botão ["Guias"] (esperado ["Guias"]), aria-label "Guias para devs"
+  ✓ home pt-BR 768px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 768px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 900px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 900px: botão dos guias visível e clicável (85x36)
+  ✓ pt-BR 900px: nada do cabeçalho fora da tela
+  ✓ pt-BR 900px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 900px: links da nav em uma linha (nav oculta)
+  ✓ pt-BR 900px: rótulo do botão ["Guias"] (esperado ["Guias"]), aria-label "Guias para devs"
+  ✓ home pt-BR 900px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 900px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 1024px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 1024px: botão dos guias visível e clicável (85x36)
+  ✓ pt-BR 1024px: nada do cabeçalho fora da tela
+  ✓ pt-BR 1024px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 1024px: links da nav em uma linha (20,20,20,20)
+  ✓ pt-BR 1024px: rótulo do botão ["Guias"] (esperado ["Guias"]), aria-label "Guias para devs"
+  ✓ home pt-BR 1024px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 1024px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 1100px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 1100px: botão dos guias visível e clicável (85x36)
+  ✓ pt-BR 1100px: nada do cabeçalho fora da tela
+  ✓ pt-BR 1100px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 1100px: links da nav em uma linha (20,20,20,20)
+  ✓ pt-BR 1100px: rótulo do botão ["Guias"] (esperado ["Guias"]), aria-label "Guias para devs"
+  ✓ home pt-BR 1100px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 1100px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 1180px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 1180px: botão dos guias visível e clicável (85x36)
+  ✓ pt-BR 1180px: nada do cabeçalho fora da tela
+  ✓ pt-BR 1180px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 1180px: links da nav em uma linha (20,20,20,20)
+  ✓ pt-BR 1180px: rótulo do botão ["Guias"] (esperado ["Guias"]), aria-label "Guias para devs"
+  ✓ home pt-BR 1180px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 1180px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 1280px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 1280px: botão dos guias visível e clicável (149x36)
+  ✓ pt-BR 1280px: nada do cabeçalho fora da tela
+  ✓ pt-BR 1280px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 1280px: links da nav em uma linha (20,20,20,20)
+  ✓ pt-BR 1280px: rótulo do botão ["Guias para devs"] (esperado ["Guias para devs"]), aria-label "Guias para devs"
+  ✓ home pt-BR 1280px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR 1440px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ pt-BR 1440px: botão dos guias visível e clicável (149x36)
+  ✓ pt-BR 1440px: nada do cabeçalho fora da tela
+  ✓ pt-BR 1440px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ pt-BR 1440px: links da nav em uma linha (20,20,20,20)
+  ✓ pt-BR 1440px: rótulo do botão ["Guias para devs"] (esperado ["Guias para devs"]), aria-label "Guias para devs"
+  ✓ home pt-BR 1440px: sem vazamento de string (nenhum)
+  ✓ home pt-BR 1440px: sem rolagem horizontal (excesso 0px )
+== cabeçalho en
+  ✓ en 360px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 360px: botão dos guias visível e clicável (38x36)
+  ✓ en 360px: nada do cabeçalho fora da tela
+  ✓ en 360px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 360px: links da nav em uma linha (nav oculta)
+  ✓ en 360px: rótulo do botão [] (esperado []), aria-label "Dev guides"
+  ✓ home en 360px: sem vazamento de string (nenhum)
+  ✓ home en 360px: sem rolagem horizontal (excesso 0px )
+  ✓ en 390px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 390px: botão dos guias visível e clicável (38x36)
+  ✓ en 390px: nada do cabeçalho fora da tela
+  ✓ en 390px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 390px: links da nav em uma linha (nav oculta)
+  ✓ en 390px: rótulo do botão [] (esperado []), aria-label "Dev guides"
+  ✓ home en 390px: sem vazamento de string (nenhum)
+  ✓ home en 390px: sem rolagem horizontal (excesso 0px )
+  ✓ en 640px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 640px: botão dos guias visível e clicável (93x36)
+  ✓ en 640px: nada do cabeçalho fora da tela
+  ✓ en 640px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 640px: links da nav em uma linha (nav oculta)
+  ✓ en 640px: rótulo do botão ["Guides"] (esperado ["Guides"]), aria-label "Dev guides"
+  ✓ home en 640px: sem vazamento de string (nenhum)
+  ✓ home en 640px: sem rolagem horizontal (excesso 0px )
+  ✓ en 768px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 768px: botão dos guias visível e clicável (93x36)
+  ✓ en 768px: nada do cabeçalho fora da tela
+  ✓ en 768px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 768px: links da nav em uma linha (nav oculta)
+  ✓ en 768px: rótulo do botão ["Guides"] (esperado ["Guides"]), aria-label "Dev guides"
+  ✓ home en 768px: sem vazamento de string (nenhum)
+  ✓ home en 768px: sem rolagem horizontal (excesso 0px )
+  ✓ en 900px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 900px: botão dos guias visível e clicável (93x36)
+  ✓ en 900px: nada do cabeçalho fora da tela
+  ✓ en 900px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 900px: links da nav em uma linha (nav oculta)
+  ✓ en 900px: rótulo do botão ["Guides"] (esperado ["Guides"]), aria-label "Dev guides"
+  ✓ home en 900px: sem vazamento de string (nenhum)
+  ✓ home en 900px: sem rolagem horizontal (excesso 0px )
+  ✓ en 1024px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 1024px: botão dos guias visível e clicável (93x36)
+  ✓ en 1024px: nada do cabeçalho fora da tela
+  ✓ en 1024px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 1024px: links da nav em uma linha (20,20,20,20)
+  ✓ en 1024px: rótulo do botão ["Guides"] (esperado ["Guides"]), aria-label "Dev guides"
+  ✓ home en 1024px: sem vazamento de string (nenhum)
+  ✓ home en 1024px: sem rolagem horizontal (excesso 0px )
+  ✓ en 1100px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 1100px: botão dos guias visível e clicável (93x36)
+  ✓ en 1100px: nada do cabeçalho fora da tela
+  ✓ en 1100px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 1100px: links da nav em uma linha (20,20,20,20)
+  ✓ en 1100px: rótulo do botão ["Guides"] (esperado ["Guides"]), aria-label "Dev guides"
+  ✓ home en 1100px: sem vazamento de string (nenhum)
+  ✓ home en 1100px: sem rolagem horizontal (excesso 0px )
+  ✓ en 1180px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 1180px: botão dos guias visível e clicável (93x36)
+  ✓ en 1180px: nada do cabeçalho fora da tela
+  ✓ en 1180px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 1180px: links da nav em uma linha (20,20,20,20)
+  ✓ en 1180px: rótulo do botão ["Guides"] (esperado ["Guides"]), aria-label "Dev guides"
+  ✓ home en 1180px: sem vazamento de string (nenhum)
+  ✓ home en 1180px: sem rolagem horizontal (excesso 0px )
+  ✓ en 1280px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 1280px: botão dos guias visível e clicável (118x36)
+  ✓ en 1280px: nada do cabeçalho fora da tela
+  ✓ en 1280px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 1280px: links da nav em uma linha (20,20,20,20)
+  ✓ en 1280px: rótulo do botão ["Dev guides"] (esperado ["Dev guides"]), aria-label "Dev guides"
+  ✓ home en 1280px: sem vazamento de string (nenhum)
+  ✓ home en 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ en 1440px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ en 1440px: botão dos guias visível e clicável (118x36)
+  ✓ en 1440px: nada do cabeçalho fora da tela
+  ✓ en 1440px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ en 1440px: links da nav em uma linha (20,20,20,20)
+  ✓ en 1440px: rótulo do botão ["Dev guides"] (esperado ["Dev guides"]), aria-label "Dev guides"
+  ✓ home en 1440px: sem vazamento de string (nenhum)
+  ✓ home en 1440px: sem rolagem horizontal (excesso 0px )
+== cabeçalho es
+  ✓ es 360px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 360px: botão dos guias visível e clicável (38x36)
+  ✓ es 360px: nada do cabeçalho fora da tela
+  ✓ es 360px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 360px: links da nav em uma linha (nav oculta)
+  ✓ es 360px: rótulo do botão [] (esperado []), aria-label "Guías para devs"
+  ✓ home es 360px: sem vazamento de string (nenhum)
+  ✓ home es 360px: sem rolagem horizontal (excesso 0px )
+  ✓ es 390px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 390px: botão dos guias visível e clicável (38x36)
+  ✓ es 390px: nada do cabeçalho fora da tela
+  ✓ es 390px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 390px: links da nav em uma linha (nav oculta)
+  ✓ es 390px: rótulo do botão [] (esperado []), aria-label "Guías para devs"
+  ✓ home es 390px: sem vazamento de string (nenhum)
+  ✓ home es 390px: sem rolagem horizontal (excesso 0px )
+  ✓ es 640px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 640px: botão dos guias visível e clicável (85x36)
+  ✓ es 640px: nada do cabeçalho fora da tela
+  ✓ es 640px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 640px: links da nav em uma linha (nav oculta)
+  ✓ es 640px: rótulo do botão ["Guías"] (esperado ["Guías"]), aria-label "Guías para devs"
+  ✓ home es 640px: sem vazamento de string (nenhum)
+  ✓ home es 640px: sem rolagem horizontal (excesso 0px )
+  ✓ es 768px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 768px: botão dos guias visível e clicável (85x36)
+  ✓ es 768px: nada do cabeçalho fora da tela
+  ✓ es 768px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 768px: links da nav em uma linha (nav oculta)
+  ✓ es 768px: rótulo do botão ["Guías"] (esperado ["Guías"]), aria-label "Guías para devs"
+  ✓ home es 768px: sem vazamento de string (nenhum)
+  ✓ home es 768px: sem rolagem horizontal (excesso 0px )
+  ✓ es 900px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 900px: botão dos guias visível e clicável (85x36)
+  ✓ es 900px: nada do cabeçalho fora da tela
+  ✓ es 900px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 900px: links da nav em uma linha (nav oculta)
+  ✓ es 900px: rótulo do botão ["Guías"] (esperado ["Guías"]), aria-label "Guías para devs"
+  ✓ home es 900px: sem vazamento de string (nenhum)
+  ✓ home es 900px: sem rolagem horizontal (excesso 0px )
+  ✓ es 1024px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 1024px: botão dos guias visível e clicável (85x36)
+  ✓ es 1024px: nada do cabeçalho fora da tela
+  ✓ es 1024px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 1024px: links da nav em uma linha (20,20,20,20)
+  ✓ es 1024px: rótulo do botão ["Guías"] (esperado ["Guías"]), aria-label "Guías para devs"
+  ✓ home es 1024px: sem vazamento de string (nenhum)
+  ✓ home es 1024px: sem rolagem horizontal (excesso 0px )
+  ✓ es 1100px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 1100px: botão dos guias visível e clicável (85x36)
+  ✓ es 1100px: nada do cabeçalho fora da tela
+  ✓ es 1100px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 1100px: links da nav em uma linha (20,20,20,20)
+  ✓ es 1100px: rótulo do botão ["Guías"] (esperado ["Guías"]), aria-label "Guías para devs"
+  ✓ home es 1100px: sem vazamento de string (nenhum)
+  ✓ home es 1100px: sem rolagem horizontal (excesso 0px )
+  ✓ es 1180px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 1180px: botão dos guias visível e clicável (85x36)
+  ✓ es 1180px: nada do cabeçalho fora da tela
+  ✓ es 1180px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 1180px: links da nav em uma linha (20,20,20,20)
+  ✓ es 1180px: rótulo do botão ["Guías"] (esperado ["Guías"]), aria-label "Guías para devs"
+  ✓ home es 1180px: sem vazamento de string (nenhum)
+  ✓ home es 1180px: sem rolagem horizontal (excesso 0px )
+  ✓ es 1280px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 1280px: botão dos guias visível e clicável (149x36)
+  ✓ es 1280px: nada do cabeçalho fora da tela
+  ✓ es 1280px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 1280px: links da nav em uma linha (20,20,20,20)
+  ✓ es 1280px: rótulo do botão ["Guías para devs"] (esperado ["Guías para devs"]), aria-label "Guías para devs"
+  ✓ home es 1280px: sem vazamento de string (nenhum)
+  ✓ home es 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ es 1440px: cabeçalho com 56px + 1px de borda, como o original (57)
+  ✓ es 1440px: botão dos guias visível e clicável (149x36)
+  ✓ es 1440px: nada do cabeçalho fora da tela
+  ✓ es 1440px: nenhum item do cabeçalho quebra linha (mais alto 36px)
+  ✓ es 1440px: links da nav em uma linha (20,20,20,20)
+  ✓ es 1440px: rótulo do botão ["Guías para devs"] (esperado ["Guías para devs"]), aria-label "Guías para devs"
+  ✓ home es 1440px: sem vazamento de string (nenhum)
+  ✓ home es 1440px: sem rolagem horizontal (excesso 0px )
+== jornada guias pt-BR
+  ✓ pt-BR 360px: botão do cabeçalho leva a /guias
+  ✓ pt-BR: html lang=pt-BR
+  ✓ pt-BR: canonical da página é ela mesma (https://deskcomm.com.br/guias)
+  ✓ pt-BR: título na Atkinson Hyperlegible, carregada
+  ✓ pt-BR: comandos na IBM Plex Mono, carregada
+  ✓ guias pt-BR 360px: sem vazamento de string (nenhum)
+  ✓ guias pt-BR 360px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: seis cartões de guia
+  ✓ pt-BR 360px: filtro "para quem programa" mostra 2 guias (2)
+  ✓ pt-BR 360px: filtro "quem usa o CRM" mostra 4 guias
+  ✓ pt-BR: cinco abas de assistente
+  ✓ pt-BR 360px: aba Codex abre o painel do Codex
+  ✓ pt-BR: painel do Codex mostra $deskcomm-prompt
+  ✓ pt-BR: seta para a direita vai para a aba Cursor
+  ✓ pt-BR: End vai para a última aba
+  ✓ pt-BR 360px: aba selecionada visível na faixa de abas
+  ✓ pt-BR 360px: copiar põe o comando exato na área de transferência
+  ✓ pt-BR: pergunta do FAQ abre
+  ✓ pt-BR: CTA do cabeçalho fora da home aponta para /#instalar
+  ✓ pt-BR 1280px: botão do cabeçalho leva a /guias
+  ✓ pt-BR: html lang=pt-BR
+  ✓ pt-BR: canonical da página é ela mesma (https://deskcomm.com.br/guias)
+  ✓ pt-BR: título na Atkinson Hyperlegible, carregada
+  ✓ pt-BR: comandos na IBM Plex Mono, carregada
+  ✓ guias pt-BR 1280px: sem vazamento de string (nenhum)
+  ✓ guias pt-BR 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: seis cartões de guia
+  ✓ pt-BR 1280px: filtro "para quem programa" mostra 2 guias (2)
+  ✓ pt-BR 1280px: filtro "quem usa o CRM" mostra 4 guias
+  ✓ pt-BR: cinco abas de assistente
+  ✓ pt-BR 1280px: aba Codex abre o painel do Codex
+  ✓ pt-BR: painel do Codex mostra $deskcomm-prompt
+  ✓ pt-BR: seta para a direita vai para a aba Cursor
+  ✓ pt-BR: End vai para a última aba
+  ✓ pt-BR 1280px: aba selecionada visível na faixa de abas
+  ✓ pt-BR 1280px: copiar põe o comando exato na área de transferência
+  ✓ pt-BR: pergunta do FAQ abre
+  ✓ pt-BR: seletor de idioma leva a /en/guides
+  ✓ pt-BR: CTA do cabeçalho fora da home aponta para /#instalar
+== jornada guias en
+  ✓ en 360px: botão do cabeçalho leva a /en/guides
+  ✓ en: html lang=en
+  ✓ en: canonical da página é ela mesma (https://deskcomm.com.br/en/guides)
+  ✓ en: título na Atkinson Hyperlegible, carregada
+  ✓ en: comandos na IBM Plex Mono, carregada
+  ✓ guias en 360px: sem vazamento de string (nenhum)
+  ✓ guias en 360px: sem rolagem horizontal (excesso 0px )
+  ✓ en: seis cartões de guia
+  ✓ en 360px: filtro "para quem programa" mostra 2 guias (2)
+  ✓ en 360px: filtro "quem usa o CRM" mostra 4 guias
+  ✓ en: cinco abas de assistente
+  ✓ en 360px: aba Codex abre o painel do Codex
+  ✓ en: painel do Codex mostra $deskcomm-prompt
+  ✓ en: seta para a direita vai para a aba Cursor
+  ✓ en: End vai para a última aba
+  ✓ en 360px: aba selecionada visível na faixa de abas
+  ✓ en 360px: copiar põe o comando exato na área de transferência
+  ✓ en: pergunta do FAQ abre
+  ✓ en: CTA do cabeçalho fora da home aponta para /en#instalar
+  ✓ en 1280px: botão do cabeçalho leva a /en/guides
+  ✓ en: html lang=en
+  ✓ en: canonical da página é ela mesma (https://deskcomm.com.br/en/guides)
+  ✓ en: título na Atkinson Hyperlegible, carregada
+  ✓ en: comandos na IBM Plex Mono, carregada
+  ✓ guias en 1280px: sem vazamento de string (nenhum)
+  ✓ guias en 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ en: seis cartões de guia
+  ✓ en 1280px: filtro "para quem programa" mostra 2 guias (2)
+  ✓ en 1280px: filtro "quem usa o CRM" mostra 4 guias
+  ✓ en: cinco abas de assistente
+  ✓ en 1280px: aba Codex abre o painel do Codex
+  ✓ en: painel do Codex mostra $deskcomm-prompt
+  ✓ en: seta para a direita vai para a aba Cursor
+  ✓ en: End vai para a última aba
+  ✓ en 1280px: aba selecionada visível na faixa de abas
+  ✓ en 1280px: copiar põe o comando exato na área de transferência
+  ✓ en: pergunta do FAQ abre
+  ✓ en: seletor de idioma leva a /guias
+  ✓ en: CTA do cabeçalho fora da home aponta para /en#instalar
+== jornada guias es
+  ✓ es 360px: botão do cabeçalho leva a /es/guias
+  ✓ es: html lang=es
+  ✓ es: canonical da página é ela mesma (https://deskcomm.com.br/es/guias)
+  ✓ es: título na Atkinson Hyperlegible, carregada
+  ✓ es: comandos na IBM Plex Mono, carregada
+  ✓ guias es 360px: sem vazamento de string (nenhum)
+  ✓ guias es 360px: sem rolagem horizontal (excesso 0px )
+  ✓ es: seis cartões de guia
+  ✓ es 360px: filtro "para quem programa" mostra 2 guias (2)
+  ✓ es 360px: filtro "quem usa o CRM" mostra 4 guias
+  ✓ es: cinco abas de assistente
+  ✓ es 360px: aba Codex abre o painel do Codex
+  ✓ es: painel do Codex mostra $deskcomm-prompt
+  ✓ es: seta para a direita vai para a aba Cursor
+  ✓ es: End vai para a última aba
+  ✓ es 360px: aba selecionada visível na faixa de abas
+  ✓ es 360px: copiar põe o comando exato na área de transferência
+  ✓ es: pergunta do FAQ abre
+  ✓ es: CTA do cabeçalho fora da home aponta para /es#instalar
+  ✓ es 1280px: botão do cabeçalho leva a /es/guias
+  ✓ es: html lang=es
+  ✓ es: canonical da página é ela mesma (https://deskcomm.com.br/es/guias)
+  ✓ es: título na Atkinson Hyperlegible, carregada
+  ✓ es: comandos na IBM Plex Mono, carregada
+  ✓ guias es 1280px: sem vazamento de string (nenhum)
+  ✓ guias es 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ es: seis cartões de guia
+  ✓ es 1280px: filtro "para quem programa" mostra 2 guias (2)
+  ✓ es 1280px: filtro "quem usa o CRM" mostra 4 guias
+  ✓ es: cinco abas de assistente
+  ✓ es 1280px: aba Codex abre o painel do Codex
+  ✓ es: painel do Codex mostra $deskcomm-prompt
+  ✓ es: seta para a direita vai para a aba Cursor
+  ✓ es: End vai para a última aba
+  ✓ es 1280px: aba selecionada visível na faixa de abas
+  ✓ es 1280px: copiar põe o comando exato na área de transferência
+  ✓ es: pergunta do FAQ abre
+  ✓ es: seletor de idioma leva a /guias
+  ✓ es: CTA do cabeçalho fora da home aponta para /es#instalar
+== changelog pt-BR
+  ✓ pt-BR 360px: link do rodapé leva a /changelog
+  ✓ changelog pt-BR 360px: sem vazamento de string (nenhum)
+  ✓ changelog pt-BR 360px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: 43 versões listadas (43)
+  ✓ pt-BR 360px: busca "whatsapp" filtra (17)
+  ✓ pt-BR: busca sem acento acha "instalação" (14)
+  ✓ pt-BR: busca sem resultado esvazia
+  ✓ pt-BR: "limpar filtros" aparece no vazio
+  ✓ pt-BR: limpar volta às 43
+  ✓ pt-BR 360px: filtro "requer atenção" (8 versões)
+  ✓ pt-BR 360px: barra de filtros cabe na largura (altura 147px)
+  ✓ pt-BR 360px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 pt-BR 360px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 pt-BR 360px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: texto da versão marcado lang=pt-BR
+  ✓ pt-BR 360px: "versão anterior" leva à v1.28.0
+  ✓ pt-BR 768px: link do rodapé leva a /changelog
+  ✓ changelog pt-BR 768px: sem vazamento de string (nenhum)
+  ✓ changelog pt-BR 768px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: 43 versões listadas (43)
+  ✓ pt-BR 768px: busca "whatsapp" filtra (17)
+  ✓ pt-BR: busca sem acento acha "instalação" (14)
+  ✓ pt-BR: busca sem resultado esvazia
+  ✓ pt-BR: "limpar filtros" aparece no vazio
+  ✓ pt-BR: limpar volta às 43
+  ✓ pt-BR 768px: filtro "requer atenção" (8 versões)
+  ✓ pt-BR 768px: barra de filtros cabe na largura (altura 147px)
+  ✓ pt-BR 768px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 pt-BR 768px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 pt-BR 768px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: texto da versão marcado lang=pt-BR
+  ✓ pt-BR 768px: "versão anterior" leva à v1.28.0
+  ✓ pt-BR 1280px: link do rodapé leva a /changelog
+  ✓ changelog pt-BR 1280px: sem vazamento de string (nenhum)
+  ✓ changelog pt-BR 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: 43 versões listadas (43)
+  ✓ pt-BR 1280px: busca "whatsapp" filtra (17)
+  ✓ pt-BR: busca sem acento acha "instalação" (14)
+  ✓ pt-BR: busca sem resultado esvazia
+  ✓ pt-BR: "limpar filtros" aparece no vazio
+  ✓ pt-BR: limpar volta às 43
+  ✓ pt-BR 1280px: filtro "requer atenção" (8 versões)
+  ✓ pt-BR 1280px: barra de filtros cabe na largura (altura 101px)
+  ✓ pt-BR 1280px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 pt-BR 1280px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 pt-BR 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ pt-BR: texto da versão marcado lang=pt-BR
+  ✓ pt-BR 1280px: "versão anterior" leva à v1.28.0
+== changelog en
+  ✓ en 360px: link do rodapé leva a /en/changelog
+  ✓ changelog en 360px: sem vazamento de string (nenhum)
+  ✓ changelog en 360px: sem rolagem horizontal (excesso 0px )
+  ✓ en: 43 versões listadas (43)
+  ✓ en 360px: busca "whatsapp" filtra (17)
+  ✓ en: busca sem acento acha "instalação" (14)
+  ✓ en: busca sem resultado esvazia
+  ✓ en: "limpar filtros" aparece no vazio
+  ✓ en: limpar volta às 43
+  ✓ en 360px: filtro "requer atenção" (8 versões)
+  ✓ en 360px: barra de filtros cabe na largura (altura 147px)
+  ✓ en 360px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 en 360px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 en 360px: sem rolagem horizontal (excesso 0px )
+  ✓ en: texto da versão marcado lang=pt-BR
+  ✓ en: aviso de idioma com link de tradução visível
+  ✓ en: link de tradução aponta para esta versão (https://www-deskcomm-com-br.translate.goog/en/changelog/1.29.0?_x_tr_sl=pt&_x_tr_tl=en&_x_tr_hl=en)
+  ✓ en 360px: "versão anterior" leva à v1.28.0
+  ✓ en 768px: link do rodapé leva a /en/changelog
+  ✓ changelog en 768px: sem vazamento de string (nenhum)
+  ✓ changelog en 768px: sem rolagem horizontal (excesso 0px )
+  ✓ en: 43 versões listadas (43)
+  ✓ en 768px: busca "whatsapp" filtra (17)
+  ✓ en: busca sem acento acha "instalação" (14)
+  ✓ en: busca sem resultado esvazia
+  ✓ en: "limpar filtros" aparece no vazio
+  ✓ en: limpar volta às 43
+  ✓ en 768px: filtro "requer atenção" (8 versões)
+  ✓ en 768px: barra de filtros cabe na largura (altura 147px)
+  ✓ en 768px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 en 768px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 en 768px: sem rolagem horizontal (excesso 0px )
+  ✓ en: texto da versão marcado lang=pt-BR
+  ✓ en: aviso de idioma com link de tradução visível
+  ✓ en: link de tradução aponta para esta versão (https://www-deskcomm-com-br.translate.goog/en/changelog/1.29.0?_x_tr_sl=pt&_x_tr_tl=en&_x_tr_hl=en)
+  ✓ en 768px: "versão anterior" leva à v1.28.0
+  ✓ en 1280px: link do rodapé leva a /en/changelog
+  ✓ changelog en 1280px: sem vazamento de string (nenhum)
+  ✓ changelog en 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ en: 43 versões listadas (43)
+  ✓ en 1280px: busca "whatsapp" filtra (17)
+  ✓ en: busca sem acento acha "instalação" (14)
+  ✓ en: busca sem resultado esvazia
+  ✓ en: "limpar filtros" aparece no vazio
+  ✓ en: limpar volta às 43
+  ✓ en 1280px: filtro "requer atenção" (8 versões)
+  ✓ en 1280px: barra de filtros cabe na largura (altura 101px)
+  ✓ en 1280px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 en 1280px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 en 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ en: texto da versão marcado lang=pt-BR
+  ✓ en: aviso de idioma com link de tradução visível
+  ✓ en: link de tradução aponta para esta versão (https://www-deskcomm-com-br.translate.goog/en/changelog/1.29.0?_x_tr_sl=pt&_x_tr_tl=en&_x_tr_hl=en)
+  ✓ en 1280px: "versão anterior" leva à v1.28.0
+== changelog es
+  ✓ es 360px: link do rodapé leva a /es/changelog
+  ✓ changelog es 360px: sem vazamento de string (nenhum)
+  ✓ changelog es 360px: sem rolagem horizontal (excesso 0px )
+  ✓ es: 43 versões listadas (43)
+  ✓ es 360px: busca "whatsapp" filtra (17)
+  ✓ es: busca sem acento acha "instalação" (14)
+  ✓ es: busca sem resultado esvazia
+  ✓ es: "limpar filtros" aparece no vazio
+  ✓ es: limpar volta às 43
+  ✓ es 360px: filtro "requer atenção" (8 versões)
+  ✓ es 360px: barra de filtros cabe na largura (altura 147px)
+  ✓ es 360px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 es 360px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 es 360px: sem rolagem horizontal (excesso 0px )
+  ✓ es: texto da versão marcado lang=pt-BR
+  ✓ es: aviso de idioma com link de tradução visível
+  ✓ es: link de tradução aponta para esta versão (https://www-deskcomm-com-br.translate.goog/es/changelog/1.29.0?_x_tr_sl=pt&_x_tr_tl=es&_x_tr_hl=es)
+  ✓ es 360px: "versão anterior" leva à v1.28.0
+  ✓ es 768px: link do rodapé leva a /es/changelog
+  ✓ changelog es 768px: sem vazamento de string (nenhum)
+  ✓ changelog es 768px: sem rolagem horizontal (excesso 0px )
+  ✓ es: 43 versões listadas (43)
+  ✓ es 768px: busca "whatsapp" filtra (17)
+  ✓ es: busca sem acento acha "instalação" (14)
+  ✓ es: busca sem resultado esvazia
+  ✓ es: "limpar filtros" aparece no vazio
+  ✓ es: limpar volta às 43
+  ✓ es 768px: filtro "requer atenção" (8 versões)
+  ✓ es 768px: barra de filtros cabe na largura (altura 147px)
+  ✓ es 768px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 es 768px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 es 768px: sem rolagem horizontal (excesso 0px )
+  ✓ es: texto da versão marcado lang=pt-BR
+  ✓ es: aviso de idioma com link de tradução visível
+  ✓ es: link de tradução aponta para esta versão (https://www-deskcomm-com-br.translate.goog/es/changelog/1.29.0?_x_tr_sl=pt&_x_tr_tl=es&_x_tr_hl=es)
+  ✓ es 768px: "versão anterior" leva à v1.28.0
+  ✓ es 1280px: link do rodapé leva a /es/changelog
+  ✓ changelog es 1280px: sem vazamento de string (nenhum)
+  ✓ changelog es 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ es: 43 versões listadas (43)
+  ✓ es 1280px: busca "whatsapp" filtra (17)
+  ✓ es: busca sem acento acha "instalação" (14)
+  ✓ es: busca sem resultado esvazia
+  ✓ es: "limpar filtros" aparece no vazio
+  ✓ es: limpar volta às 43
+  ✓ es 1280px: filtro "requer atenção" (8 versões)
+  ✓ es 1280px: barra de filtros cabe na largura (altura 101px)
+  ✓ es 1280px: cartão da mais recente abre a v1.29.0
+  ✓ versão 1.29.0 es 1280px: sem vazamento de string (nenhum)
+  ✓ versão 1.29.0 es 1280px: sem rolagem horizontal (excesso 0px )
+  ✓ es: texto da versão marcado lang=pt-BR
+  ✓ es: aviso de idioma com link de tradução visível
+  ✓ es: link de tradução aponta para esta versão (https://www-deskcomm-com-br.translate.goog/es/changelog/1.29.0?_x_tr_sl=pt&_x_tr_tl=es&_x_tr_hl=es)
+  ✓ es 1280px: "versão anterior" leva à v1.28.0
+  ✓ v1.0.0 (seções por domínio): ids únicos (ok)
+  ✓ v1.0.0: nenhum ** cru sobrando no texto
+  ✓ v1.0.0: seções por domínio (10)
+  ✓ v1.0.0: sem vazamento de string (nenhum)
+  ✓ v1.0.0: sem rolagem horizontal (excesso 0px )
+  ✓ v1.3.0 (citação e código): ids únicos (ok)
+  ✓ v1.3.0: nenhum ** cru sobrando no texto
+  ✓ v1.3.0: citação (1) e bloco de código (1) renderizados
+  ✓ v1.3.0: sem vazamento de string (nenhum)
+  ✓ v1.3.0: sem rolagem horizontal (excesso 0px )
+  ✓ v1.6.0 (Corrigido repetido): ids únicos (ok)
+  ✓ v1.6.0: nenhum ** cru sobrando no texto
+  ✓ v1.6.0: sem vazamento de string (nenhum)
+  ✓ v1.6.0: sem rolagem horizontal (excesso 0px )
+  ✓ v1.2.1 (introdução): ids únicos (ok)
+  ✓ v1.2.1: nenhum ** cru sobrando no texto
+  ✓ v1.2.1: introdução antes das seções aparece
+  ✓ v1.2.1: sem vazamento de string (nenhum)
+  ✓ v1.2.1: sem rolagem horizontal (excesso 0px )
+  ✓ âncora "Instalar" de /changelog chega à seção na home (topo 0px)
+== erros de console/rede: 0
+RESULTADO: 533 verdes, 0 vermelhos

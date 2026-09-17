@@ -21,6 +21,8 @@ owner: Rafael Melgaço
 
 > **Para o epic-executor**: leia este arquivo inteiro antes de qualquer wave. Última fase pré-produção. Stories em ordem de dependência. Nenhuma é skippable — performance budgets, error boundaries, observability e suite E2E são gates de go-live, não nice-to-have.
 
+> **Registro de 2026-04-28.** Escrito quando o alvo de deploy era a Vercel; hoje o CRM é self-host em VPS (ver [`docs/runbooks/deploy.md`](../../runbooks/deploy.md)). O corpo não foi reescrito — onde ele cobra preview deploy, projeto de staging ou RUM da plataforma, o gancho não existe mais; o que sobrevive é a exigência (budget de Core Web Vitals, smoke antes do go-live), não o instrumento citado.
+
 ## 1. Objetivo
 
 Endurecer o produto pra produção: error boundaries em todos os layouts, páginas 404/403/500/503 com copy PT-BR canônico, catálogo de empty states reusáveis, loading orchestration, Core Web Vitals dentro de budget, Sentry com PII scrubbing, suite Playwright E2E cobrindo as 5 jornadas críticas, auditoria de acessibilidade keyboard-first, polish dos docs (README/ARCHITECTURE/CONTRIBUTING) e smoke test de deploy preview pré-go-live.

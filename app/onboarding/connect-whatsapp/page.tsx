@@ -1,6 +1,8 @@
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
+import { fontesDoAppDaMeta } from "@/lib/channels/meta/app";
 import { metaPodeReceber } from "@/lib/channels/meta/webhook";
+import { nomeCurtoDaSessao } from "@/lib/channels/nome-da-sessao";
 import { getWahaClient } from "@/lib/waha/client";
 import { ConnectWhatsappClient } from "./_client";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -16,8 +18,12 @@ export default async function ConnectWhatsappPage() {
   const wahaConfigured = getWahaClient() !== null;
 
   // Receber pelo canal oficial exige DOIS segredos, não um — a regra e o porquê
-  // moram em `lib/channels/meta/webhook.ts`, ao lado de quem os consome.
-  const oficialPodeReceber = metaPodeReceber();
+  // moram em `lib/channels/meta/webhook.ts`, ao lado de quem os consome. Agora os
+  // dois podem vir do BANCO (`platform_meta_app`, migration 0257) e não só do
+  // `.env`: `fontesDoAppDaMeta()` devolve a fonte VENCEDORA, sem misturar as duas
+  // — App Secret de um lado com verify token do outro é um app que não existe, e
+  // esta tela diria que está tudo pronto.
+  const oficialPodeReceber = metaPodeReceber(await fontesDoAppDaMeta());
   // We don't try to start the session at SSR — client kicks off the call
   // (and shows graceful banner if WAHA is not reachable).
 
@@ -37,7 +43,7 @@ export default async function ConnectWhatsappPage() {
       </p>
       <ConnectWhatsappClient
         wahaConfigured={wahaConfigured}
-        sessionName={`org_${activeOrg.orgId.slice(0, 8)}`}
+        sessionName={nomeCurtoDaSessao(activeOrg.orgId)}
         oficialPodeReceber={oficialPodeReceber}
       />
     </div>

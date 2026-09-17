@@ -31,6 +31,30 @@ export type Actor =
    * "não sei qual agente" tem de virar atividade de sistema, nunca linha perdida.
    */
   | { type: "ai_agent"; id: string; role: string; api_token_id?: string; agent_id?: string }
+  /**
+   * TOKEN DE SERVIDOR sem escopo de agente — uma integração, não uma pessoa.
+   *
+   * ⚠️ ESTA VARIANTE EXISTE PORQUE ELE ERA `"user"`, e isso custava duas coisas
+   * ao mesmo tempo:
+   *
+   * 1. **FK quebrada.** Os handlers gravam `…_by_user_id: actor.type === "user"
+   *    ? actor.id : null`, e `actor.id` de um token é o id do TOKEN. Todo
+   *    INSERT por token morria em `violates foreign key constraint` — medido em
+   *    `POST /api/v1/messages`, e o mesmo padrão existe em nove lugares
+   *    (agenda, contatos, leads, conversas, mensagens). É o defeito que o
+   *    comentário de `ai_agent` acima já descreve, repetido noutra coluna.
+   *
+   * 2. **Gate de canal furado.** `messages/_handler.ts` pula a verificação de
+   *    `pre_go_live` quando o ator é `"user"`, porque **envio humano** não deve
+   *    responder pelo modo de teste da IA. Com o token disfarçado de pessoa, uma
+   *    integração atravessava o modo de teste do canal — a proteção que o
+   *    operador liga para segurar a IA não segurava um token.
+   *
+   * Com um tipo próprio, os dois se consertam sem tocar nos nove lugares: o
+   * `=== "user"` passa a ser falso, então a coluna recebe `null` e o gate passa
+   * a valer.
+   */
+  | { type: "api_token"; id: string; role?: string }
   | { type: "webhook_source"; id: string };
 
 export interface HandlerCtx {

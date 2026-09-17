@@ -1,0 +1,14 @@
+// Pré-carregado no processo do seed: registra TODA tentativa de rede (fetch, http(s), net, dns).
+const fs = require("node:fs");
+const LOG = process.env.SONDA_REDE_LOG;
+const reg = (o) => fs.appendFileSync(LOG, JSON.stringify({ t: Date.now(), ...o }) + "\n");
+reg({ tipo: "sonda_ativa", pid: process.pid });
+const origFetch = globalThis.fetch;
+globalThis.fetch = function (input, init) { reg({ tipo: "fetch", url: String(input && input.url || input), metodo: (init && init.method) || "GET" }); return origFetch.apply(this, arguments); };
+for (const m of ["http", "https"]) {
+  const mod = require(m);
+  for (const fn of ["request", "get"]) { const o = mod[fn]; mod[fn] = function (...a) { reg({ tipo: `${m}.${fn}`, alvo: String(a[0] && (a[0].href || a[0].hostname || a[0])) }); return o.apply(this, a); }; }
+}
+const net = require("node:net"); const oc = net.connect; net.connect = net.createConnection = function (...a) { reg({ tipo: "net.connect", alvo: JSON.stringify(a[0]).slice(0, 200) }); return oc.apply(this, a); };
+const dns = require("node:dns"); const ol = dns.lookup; dns.lookup = function (h, ...r) { reg({ tipo: "dns.lookup", host: h }); return ol.call(this, h, ...r); };
+process.on("exit", (c) => reg({ tipo: "exit", code: c }));

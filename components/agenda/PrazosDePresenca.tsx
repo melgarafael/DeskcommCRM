@@ -5,7 +5,11 @@ import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-type Config = { confirmation_delay_minutes: number; unknown_protection_minutes: number };
+type Config = {
+  confirmation_delay_minutes: number;
+  unknown_protection_minutes: number;
+  pending_expires_after_minutes: number;
+};
 export function PrazosDePresenca({ podeEditar }: { podeEditar: boolean }) {
   const t = useT();
   const qc = useQueryClient();
@@ -71,6 +75,31 @@ export function PrazosDePresenca({ podeEditar }: { podeEditar: boolean }) {
           <p className="text-sm">
             {t(
               "Quando esse prazo acabar, a pendência continua visível. Outro compromisso vivo ainda protege o contato.",
+            )}
+          </p>
+          {/*
+            Prazo de coisa diferente das duas de cima: elas tratam do DEPOIS do
+            compromisso (compareceu ou não); esta trata do ANTES — do pedido que
+            ainda não foi confirmado e está segurando o horário.
+          */}
+          <label className="block">
+            {t("Soltar o horário de um pedido não confirmado após (minutos)")}
+            <input
+              aria-label={t("Soltar o horário de um pedido não confirmado após (minutos)")}
+              className="ml-2 w-24 rounded-md border p-2"
+              type="number"
+              min={15}
+              max={10080}
+              disabled={!podeEditar}
+              value={value.pending_expires_after_minutes}
+              onChange={(e) =>
+                setDraft({ ...value, pending_expires_after_minutes: Number(e.target.value) })
+              }
+            />
+          </label>
+          <p className="text-sm text-text-muted">
+            {t(
+              "Vale só para tipos de atendimento que pedem confirmação. Enquanto o pedido espera, o horário fica reservado e ninguém mais o pega; passado o prazo sem decisão, ele volta a ser oferecido. O cliente não é avisado, e o pedido continua na fila.",
             )}
           </p>
           {podeEditar ? (

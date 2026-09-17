@@ -1,11 +1,12 @@
 "use client";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
+import { randomId } from "@/lib/random-id";
 import { float32ToInt16LE, int16LEToFloat32 } from "@/lib/wacalls/pcm";
 
 export type VoiceCallStatus = "starting" | "ringing" | "connected" | "ended";
@@ -40,8 +41,19 @@ export type VoiceCallStatus = "starting" | "ringing" | "connected" | "ended";
  * - `com_audio`   chegou o primeiro quadro de PCM do outro lado. Prova de que
  *                 há SOM, não só rota;
  * - `sem_rota`    ICE falhou, ou o prazo venceu sem o canal abrir.
+ * - `caiu`        o canal CHEGOU a abrir e a conexão caiu depois. Separado de
+ *                 `sem_rota` porque o texto do painel é o que alguém lê para
+ *                 diagnosticar: "não abriu" aponta para rede/porta, "caiu"
+ *                 aponta para queda no meio — e o fim da ligação, que fecha a
+ *                 ponte do lado do WaCalls, também cai aqui.
+ * - `falhou`      a tentativa nem chegou à rede: microfone negado ou fechado no
+ *                 pedido do navegador, worklet que não carregou, troca de SDP
+ *                 recusada. Existe porque a trava contra novas tentativas em
+ *                 laço deixava o painel em "Abrindo o áudio…" para sempre, sem
+ *                 botão — justo na primeira ligação de quem nunca deu permissão
+ *                 ao microfone.
  */
-export type EstadoDaMidia = "ociosa" | "negociando" | "aberta" | "com_audio" | "sem_rota";
+export type EstadoDaMidia = "ociosa" | "negociando" | "aberta" | "com_audio" | "sem_rota" | "caiu" | "falhou";
 
 /**
  * Quanto tempo o caminho de mídia tem para abrir antes de o painel declarar que
@@ -78,6 +90,123 @@ export interface VoiceCallRow {
 interface VoiceCallsListResponse {
   data: VoiceCallRow[];
 }
+
+/**
+ * A resposta de `POST /voice/calls` COMPLETA a linha que o Realtime já trouxe,
+ * em vez de substituí-la.
+ *
+ * A ponte de eventos grava a ligação ~200 ms antes de a rota responder, e o
+ * Realtime entrega essa linha primeiro. Substituir pela resposta trocava uma
+ * linha mais fresca por outra mais velha — e, enquanto a resposta não trazia
+ * `owner_user_id`, `minha` virava `false` e o painel de quem discou sumia, com
+ * o botão de desligar junto. Vale o que o Realtime já tem; a resposta só
+ * preenche o que ele trouxe nulo (`created_by`, por exemplo, que a ponte não
+ * conhece).
+ */
+export function mesclarRespostaDaChamada(
+  atual: VoiceCallRow | null,
+  resposta: VoiceCallRow,
+): VoiceCallRow {
+  if (!atual || atual.id !== resposta.id) return resposta;
+  const mesclada = { ...resposta } as Record<string, unknown>;
+  for (const [chave, valor] of Object.entries(atual)) {
+    if (valor !== null && valor !== undefined) mesclada[chave] = valor;
+  }
+  return mesclada as unknown as VoiceCallRow;
+}
+
+/**
+ * DE QUAL ABA É O ÁUDIO DESTA LIGAÇÃO.
+ *
+ * O WaCalls guarda UMA ponte de áudio por chamada: a troca de SDP mais recente
+ * substitui a anterior e fecha a outra sem erro nem log (`setBridge`,
+ * `internal/app/session/session.go`). A versão anterior deste hook abria o
+ * áudio em TODO documento do usuário que recebesse o "connected" pelo Realtime.
+ * Medido em produção em 2026-09-15: duas abertas, dois `voice.call_media_attached`
+ * com 7 ms de diferença, duas assinaturas de `voice_calls` do mesmo usuário
+ * abertas — e ninguém ouviu ninguém, porque a ponte que sobrou era a do
+ * documento que ninguém estava usando.
+ *
+ * A marca mora em `sessionStorage`, e é essa a escolha: é por ABA (outra aba e
+ * outro aparelho não a enxergam) e sobrevive ao recarregar — que é o único caso
+ * em que o áudio precisa reabrir sem um clique. Quem grava é o gesto: "Chamar"
+ * e "Atender". Storage bloqueado não afrouxa nada: sem marca, esta aba só abre
+ * o áudio pelo clique.
+ */
+const MARCA_DA_ABA = "voz:midia";
+const ID_DA_ABA = "voz:aba";
+
+/** Espelho em memória: com o storage bloqueado, a marca vale até a aba recarregar. */
+let marcaEmMemoria: string | null = null;
+const ouvintesDaMarca = new Set<() => void>();
+
+function lerMarcaDaAba(): string | null {
+  try {
+    return window.sessionStorage.getItem(MARCA_DA_ABA);
+  } catch {
+    return marcaEmMemoria;
+  }
+}
+
+function gravarMarcaDaAba(callId: string | null): void {
+  marcaEmMemoria = callId;
+  try {
+    if (callId) window.sessionStorage.setItem(MARCA_DA_ABA, callId);
+    else window.sessionStorage.removeItem(MARCA_DA_ABA);
+  } catch {
+    // Storage bloqueado: fica o espelho em memória.
+  }
+  ouvintesDaMarca.forEach((avisar) => avisar());
+}
+
+/** A marca lida no render (`useSyncExternalStore`), sem efeito copiando para estado. */
+function assinarMarcaDaAba(avisar: () => void): () => void {
+  ouvintesDaMarca.add(avisar);
+  return () => {
+    ouvintesDaMarca.delete(avisar);
+  };
+}
+const semMarcaNoServidor = () => null;
+
+/**
+ * Identificador aleatório desta aba, enviado na troca de SDP e gravado no audit.
+ * Não identifica ninguém; existe para a pergunta "quantas abas abriram áudio
+ * nesta ligação?" ter resposta no banco sem console de navegador nenhum.
+ */
+function idDaAba(): string | undefined {
+  try {
+    let id = window.sessionStorage.getItem(ID_DA_ABA);
+    if (!id) {
+      // `randomId`, nunca `crypto.randomUUID` cru: em self-host servido por
+      // http://IP ele não existe (contexto não seguro) — ver lib/random-id.ts.
+      id = randomId();
+      window.sessionStorage.setItem(ID_DA_ABA, id);
+    }
+    return id;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Ordem do ciclo de vida — a conferência com o servidor só avança, nunca recua. */
+const ORDEM_DO_STATUS: Record<VoiceCallStatus, number> = {
+  starting: 0,
+  ringing: 1,
+  connected: 2,
+  ended: 3,
+};
+
+/**
+ * De quanto em quanto tempo o painel confere a ligação com o servidor.
+ *
+ * O painel dependia de UMA entrega do Realtime para saber que a ligação acabou.
+ * O Realtime entrega no máximo uma vez e não guarda o que passou enquanto o
+ * canal estava fora; medido em produção em 2026-09-15, o "ended" nunca chegou e
+ * o painel ficou 66 s na tela depois de o celular desligar, até um clique em
+ * encerrar. 10 s é o pior caso aceitável para um painel fantasma — e só roda
+ * enquanto HÁ ligação, então tela sem ligação não consulta nada.
+ */
+export const RECONCILIAR_CHAMADA_MS = 10_000;
 
 /** Chamada que a UI mostra AGORA: a mais recente ainda não `ended`. */
 function ehRelevante(row: VoiceCallRow): boolean {
@@ -135,6 +264,30 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
   const localStreamRef = useRef<MediaStream | null>(null);
   const callRef = useRef<VoiceCallRow | null>(null);
   const isAcceptingRef = useRef(false);
+  /** Trava de clique repetido em "Encerrar" — o botão não tinha, e saíram dois DELETE. */
+  const encerrandoRef = useRef(false);
+  const [encerrando, setEncerrando] = useState(false);
+  /** O canal `pcm` chegou a abrir nesta tentativa? Separa `caiu` de `sem_rota`. */
+  const canalAbriuRef = useRef(false);
+  /**
+   * A chamada para a qual esta instância JÁ tentou abrir o áudio.
+   *
+   * Gravado de forma síncrona, antes do primeiro `await` de `conectarMidia`, e
+   * NÃO limpo quando a tentativa falha: sem isso, falha → teardown → efeito →
+   * nova tentativa, em laço. Só a troca de chamada ou "Ouvir aqui" liberam.
+   */
+  const midiaTentadaRef = useRef<string | null>(null);
+  /**
+   * Geração da mídia: `teardownMedia` e cada `conectarMidia` avançam. Uma
+   * tentativa que volta de um `await` numa geração velha abandona o que criou em
+   * vez de pendurar microfone e conexão órfãos por cima da tentativa atual.
+   */
+  const geracaoDaMidiaRef = useRef(0);
+  /** Última chamada viva que esta instância acompanhou — para saber quando ELA acabou. */
+  const ultimaChamadaRef = useRef<string | null>(null);
+  /** Chamadas que esta instância sabe encerradas: nenhuma leitura velha as ressuscita. */
+  const encerradasRef = useRef(new Set<string>());
+  const marcaDaAba = useSyncExternalStore(assinarMarcaDaAba, lerMarcaDaAba, semMarcaNoServidor);
   // Sincronizado em efeito, não durante o render: `callRef` só serve pra
   // closures de callback (accept/reject/hangUp) lerem o valor mais recente
   // sem entrar nas dependências — nunca é lido durante a renderização em si.
@@ -161,7 +314,15 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
       ? call.owner_user_id === user.id
       : !!call.created_by && call.created_by === user.id);
 
+  /**
+   * O áudio desta ligação está noutra aba (ou noutro aparelho) deste usuário:
+   * a ligação é dele, está conectada, e a marca do áudio não é desta aba.
+   * Derivado no render — é o que o painel usa para oferecer "Ouvir aqui".
+   */
+  const midiaEmOutraAba = minha && call?.status === "connected" && marcaDaAba !== call.id;
+
   const teardownMedia = useCallback(() => {
+    geracaoDaMidiaRef.current++;
     try {
       dcRef.current?.close();
     } catch {}
@@ -198,12 +359,23 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
   useEffect(() => {
     if (!orgId) return;
     let cancelado = false;
+    // Recarregou no meio da ligação: a marca desta aba diz QUAL ligação é a
+    // dela. Sem isso o boot adotava a mais recente da organização — de um
+    // colega, ou uma recebida tocando — e a própria ligação não reabria.
+    const marcada = lerMarcaDaAba();
+    const url = marcada
+      ? `/api/v1/voice/calls/history?id=${encodeURIComponent(marcada)}&limit=1`
+      : "/api/v1/voice/calls/history?limit=5";
     apiClient
-      .get<VoiceCallsListResponse>("/api/v1/voice/calls/history?limit=5")
-      .then((res) => {
+      .get<VoiceCallsListResponse>(url)
+      .then(async (res) => {
+        let linhas = res.data;
+        if (marcada && !linhas.some((r) => r.id === marcada && ehRelevante(r))) {
+          linhas = (await apiClient.get<VoiceCallsListResponse>("/api/v1/voice/calls/history?limit=5")).data;
+        }
         if (cancelado) return;
-        const ativa = res.data.find(ehRelevante);
-        if (ativa) setCall(ativa);
+        const ativa = linhas.find((r) => ehRelevante(r) && !encerradasRef.current.has(r.id));
+        if (ativa) setCall((atual) => atual ?? ativa);
       })
       .catch(() => {
         // Falha aqui não é crítica: o Realtime pega o próximo evento. Uma
@@ -215,9 +387,49 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     };
   }, [orgId]);
 
+  /**
+   * Confere a ligação desta tela com o servidor.
+   *
+   * Só AVANÇA o ciclo de vida (tocando → conectada → encerrada) e nunca adota
+   * uma ligação que a tela não tinha: é a rede de segurança do Realtime, não uma
+   * segunda fonte que brigue com ele. Erro de leitura não muda nada — a próxima
+   * rodada tenta de novo.
+   */
+  const reconciliar = useCallback(async () => {
+    const atual = callRef.current;
+    if (!atual || !ehRelevante(atual)) return;
+    try {
+      // Pelo id, e não "entre as 5 mais recentes": num escritório com várias
+      // ligações a desta tela sai da janela, e a rede de segurança deixaria de
+      // achar justamente a ligação que precisa fechar.
+      const res = await apiClient.get<VoiceCallsListResponse>(
+        `/api/v1/voice/calls/history?id=${encodeURIComponent(atual.id)}&limit=1`,
+      );
+      const noServidor = res.data.find((r) => r.id === atual.id);
+      if (!noServidor) return;
+      if (noServidor.status === "ended") encerradasRef.current.add(noServidor.id);
+      setCall((agora) => {
+        if (!agora || agora.id !== noServidor.id) return agora;
+        if (ORDEM_DO_STATUS[noServidor.status] <= ORDEM_DO_STATUS[agora.status]) return agora;
+        return ehRelevante(noServidor) ? { ...agora, ...noServidor } : null;
+      });
+    } catch {
+      // Sem resposta agora; o intervalo pergunta de novo.
+    }
+  }, []);
+
   const onRealtimeChange = useCallback((payload: unknown) => {
+    // O canal voltou depois de cair: o que aconteceu enquanto ele esteve fora
+    // NÃO vai chegar. Esta entrega sintética era descartada aqui (não tem
+    // `.new`), e era justamente o sinal para buscar o que se perdeu.
+    if ((payload as { tipo?: string } | null)?.tipo === "reassinado") {
+      void reconciliar();
+      return;
+    }
     const row = (payload as { new?: VoiceCallRow } | null)?.new;
     if (!row?.id) return;
+    if (row.status === "ended") encerradasRef.current.add(row.id);
+    else if (encerradasRef.current.has(row.id)) return;
     setCall((atual) => {
       // Só substitui se for a MESMA chamada (atualização) ou se não há
       // nenhuma em andamento (nova chamada chegando) — evita uma chamada de
@@ -225,7 +437,7 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
       if (atual && atual.id !== row.id && ehRelevante(atual)) return atual;
       return ehRelevante(row) ? row : null;
     });
-  }, []);
+  }, [reconciliar]);
 
   useRealtimeChannel({
     name: "voice-calls",
@@ -240,11 +452,37 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
 
   /** Abre a RTCPeerConnection, conecta o DataChannel "pcm" e troca o áudio via AudioWorklets. */
   const conectarMidia = useCallback(async (callId: string) => {
+    midiaTentadaRef.current = callId;
+    const geracao = ++geracaoDaMidiaRef.current;
     setConnectingMedia(true);
     setEstadoDaMidia("negociando");
     recebeuAudioRef.current = false;
+    canalAbriuRef.current = false;
+
+    // O que ESTA tentativa criou — para abandonar só o que é dela quando uma
+    // geração mais nova (encerrar, "Ouvir aqui") passou por cima durante um
+    // `await`. Os refs, a essa altura, podem ser de outra tentativa.
+    let meuStream: MediaStream | null = null;
+    let minhaConexao: RTCPeerConnection | null = null;
+    let meuContexto: AudioContext | null = null;
+    const superada = () => {
+      if (geracaoDaMidiaRef.current === geracao) return false;
+      try {
+        meuStream?.getTracks().forEach((t) => t.stop());
+      } catch {}
+      try {
+        minhaConexao?.close();
+      } catch {}
+      try {
+        void meuContexto?.close();
+      } catch {}
+      return true;
+    };
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      meuStream = stream;
+      if (superada()) return;
       localStreamRef.current = stream;
 
       /**
@@ -267,6 +505,7 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
        * exatamente esse caso que `sem_rota` passa a nomear em vez de esconder.
        */
       const pc = new RTCPeerConnection({ iceServers: [] });
+      minhaConexao = pc;
       pcRef.current = pc;
 
       // O WaCalls opera áudio via DataChannel rotulado "pcm" com PCM 16kHz mono (Int16 LE)
@@ -277,12 +516,18 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
       // Só a partir daqui existe alguém escutando o transporte de verdade.
       // Antes disto, o único sinal de áudio na tela vinha do banco.
       dc.onopen = () => {
+        canalAbriuRef.current = true;
         setEstadoDaMidia(recebeuAudioRef.current ? "com_audio" : "aberta");
       };
       pc.onconnectionstatechange = () => {
+        if (geracaoDaMidiaRef.current !== geracao) return;
         const estado = pc.connectionState;
         if (estado === "failed" || estado === "closed" || estado === "disconnected") {
-          setEstadoDaMidia("sem_rota");
+          setEstadoDaMidia(canalAbriuRef.current ? "caiu" : "sem_rota");
+          // O fim da ligação fecha a ponte do lado do WaCalls, e é esta a
+          // primeira notícia que o navegador tem dele — muito antes do próximo
+          // intervalo. Perguntar ao servidor aqui faz o painel sumir em ~1 s.
+          void reconciliar();
           return;
         }
         // Reconexão: `dc.onopen` não dispara de novo num canal que já abriu, e
@@ -302,11 +547,15 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioContextClass({ sampleRate: 16000 });
+      meuContexto = ctx;
       audioCtxRef.current = ctx;
 
       await ctx.audioWorklet.addModule("/worklets/capture-processor.js");
+      if (superada()) return;
       await ctx.audioWorklet.addModule("/worklets/playback-processor.js");
+      if (superada()) return;
       await ctx.resume();
+      if (superada()) return;
 
       // Microfone -> capture-processor -> DataChannel (PCM 16-bit LE)
       const micSource = ctx.createMediaStreamSource(stream);
@@ -342,7 +591,9 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
       }
 
       const offer = await pc.createOffer();
+      if (superada()) return;
       await pc.setLocalDescription(offer);
+      if (superada()) return;
 
       // Aguarda a coleta de candidatos ICE completar para enviar a oferta com todos os candidatos
       await new Promise<void>((resolve) => {
@@ -359,56 +610,141 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
         }
       });
 
+      // A última verificação ANTES do POST é a que importa: depois dele o
+      // WaCalls já trocou a ponte, e uma tentativa superada que ainda enviasse a
+      // oferta derrubaria a ponte da tentativa vigente.
+      if (superada()) return;
       const res = await apiClient.post<{ data: { sdpAnswer: string } }>(
         `/api/v1/voice/calls/${callId}/webrtc`,
-        { sdpOffer: pc.localDescription!.sdp },
+        { sdpOffer: pc.localDescription!.sdp, aba: idDaAba() },
       );
+      if (superada()) return;
       await pc.setRemoteDescription({ type: "answer", sdp: res.data.sdpAnswer });
     } catch (err) {
+      if (geracaoDaMidiaRef.current !== geracao) return;
       showApiError(err);
       teardownMedia();
+      // Depois do teardown (que devolve `ociosa`): a tentativa NÃO é refeita
+      // sozinha — `midiaTentadaRef` segue marcada, contra o laço —, então o
+      // painel precisa dizer que falhou e oferecer o botão.
+      setEstadoDaMidia("falhou");
     } finally {
-      setConnectingMedia(false);
+      // Só a tentativa vigente fala pelo estado: uma superada que baixasse o
+      // "conectando" apagaria o indicador da tentativa que está em curso.
+      if (geracaoDaMidiaRef.current === geracao) setConnectingMedia(false);
     }
-  }, [remoteAudioRef, teardownMedia]);
+  }, [remoteAudioRef, teardownMedia, reconciliar]);
 
-  // Assim que o Realtime confirma `connected`, abre o áudio — não antes: o
-  // WaCalls só aceita a troca de SDP depois que o `<call>` foi realmente
-  // aceito do lado do WhatsApp (§4.1 da spec).
+  /**
+   * Quem abre o áudio é o GESTO ("Chamar", "Atender"), nesta aba — ver
+   * `MARCA_DA_ABA`. Este efeito cobre só o que sobra:
+   *
+   * - **recarregar no meio da ligação:** a marca sobreviveu no `sessionStorage`
+   *   desta aba, a tentativa não (os refs nasceram de novo) — reabre;
+   * - **outra aba ou aparelho do mesmo usuário:** a ligação é dele, conectada,
+   *   e a marca não é desta aba — NÃO abre, e avisa. Abrir ali trocaria a ponte
+   *   do WaCalls e emudeceria a aba que o usuário está usando;
+   * - **fim da ligação:** fecha a mídia e apaga a marca.
+   *
+   * A versão anterior abria em todo documento que recebesse o "connected", com
+   * um comentário dizendo que o WaCalls só aceita a troca de SDP depois do
+   * atendimento. Não é verdade: `doWebRTC` só exige que a chamada exista
+   * (`internal/app/handlers_call.go`), e o cliente oficial troca o SDP logo
+   * depois de discar (`client/src/hooks/useStartCall.ts`).
+   */
   useEffect(() => {
-    // `minha` na condição: sem isso, o navegador de todo colega logado abria
-    // microfone e RTCPeerConnection na ligação de outra pessoa assim que o
-    // Realtime dizia `connected`.
-    if (minha && call?.status === "connected" && !pcRef.current && !connectingMedia) {
+    const viva = !!call && ehRelevante(call);
+    if (viva) ultimaChamadaRef.current = call.id;
+
+    if (!viva) {
+      // `midiaTentadaRef` entra na condição: com o pedido de microfone ainda
+      // pendente não há conexão nem stream para fechar, mas HÁ tentativa em
+      // curso — e sem avançar a geração ela voltaria do `await` e trocaria o
+      // SDP de uma ligação que já acabou.
+      if (pcRef.current || localStreamRef.current || midiaTentadaRef.current) teardownMedia();
+      const acabou = ultimaChamadaRef.current;
+      // Só apaga a marca da ligação que ESTA instância viu acabar: no boot,
+      // `call` nasce nulo antes de o histórico responder, e apagar ali mataria
+      // a reabertura depois de recarregar.
+      if (acabou && lerMarcaDaAba() === acabou) gravarMarcaDaAba(null);
+      if (acabou) {
+        midiaTentadaRef.current = null;
+        ultimaChamadaRef.current = null;
+      }
+      return;
+    }
+
+    const conectada = call.status === "connected";
+    if (minha && marcaDaAba === call.id && conectada && midiaTentadaRef.current !== call.id && !pcRef.current) {
       void conectarMidia(call.id);
     }
-    if ((call?.status === "ended" || !call) && (pcRef.current || localStreamRef.current)) {
-      teardownMedia();
-    }
-  }, [minha, call, connectingMedia, conectarMidia, teardownMedia]);
+  }, [minha, call, marcaDaAba, conectarMidia, teardownMedia]);
+
+  // Enquanto HÁ ligação: confere com o servidor a cada intervalo e quando a aba
+  // volta a ficar visível (o navegador congela timers de aba escondida). O id,
+  // e não a linha, na dependência — senão o intervalo reiniciaria a cada UPDATE.
+  const idDaChamadaViva = call && ehRelevante(call) ? call.id : null;
+  useEffect(() => {
+    if (!idDaChamadaViva) return;
+    const intervalo = setInterval(() => void reconciliar(), RECONCILIAR_CHAMADA_MS);
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") void reconciliar();
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => {
+      clearInterval(intervalo);
+      document.removeEventListener("visibilitychange", aoVoltar);
+    };
+  }, [idDaChamadaViva, reconciliar]);
+
+  /**
+   * Traz o áudio para ESTA aba: grava a marca e abre a mídia de novo. Serve
+   * para "o áudio está em outra aba", para "o áudio caiu" e para "não abriu" —
+   * o WaCalls fica com a ponte mais recente, então esta passa a ser a viva.
+   */
+  const ouvirAqui = useCallback(() => {
+    const atual = callRef.current;
+    if (!atual || !ehRelevante(atual)) return;
+    teardownMedia();
+    gravarMarcaDaAba(atual.id);
+    void conectarMidia(atual.id);
+  }, [conectarMidia, teardownMedia]);
 
   const startCall = useCallback(async (contactId: string) => {
     if (!podeLigar) return;
+    let criada: VoiceCallRow;
     try {
       const res = await apiClient.post<{ data: VoiceCallRow }>("/api/v1/voice/calls", { contactId });
-      setCall(res.data);
+      criada = res.data;
     } catch (err) {
       showApiError(err);
+      return;
     }
-  }, [podeLigar]);
+    // O áudio abre AQUI, no gesto e ainda tocando — como o cliente oficial do
+    // WaCalls. A primeira palavra de quem atende chega, e só esta aba abre.
+    gravarMarcaDaAba(criada.id);
+    ultimaChamadaRef.current = criada.id;
+    setCall((atual) => mesclarRespostaDaChamada(atual, criada));
+    void conectarMidia(criada.id);
+  }, [podeLigar, conectarMidia]);
 
   const acceptCall = useCallback(async () => {
     const atual = callRef.current;
     if (!atual || isAcceptingRef.current) return;
     isAcceptingRef.current = true;
+    // A marca antes do POST: o "connected" pode chegar pelo Realtime antes de a
+    // resposta voltar, e esta é a aba que atendeu.
+    gravarMarcaDaAba(atual.id);
     try {
       await apiClient.post(`/api/v1/voice/calls/${atual.id}/accept`, {});
+      void conectarMidia(atual.id);
     } catch (err) {
+      gravarMarcaDaAba(null);
       showApiError(err);
     } finally {
       isAcceptingRef.current = false;
     }
-  }, []);
+  }, [conectarMidia]);
 
   const rejectCall = useCallback(async () => {
     const atual = callRef.current;
@@ -416,18 +752,24 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     try {
       await apiClient.post(`/api/v1/voice/calls/${atual.id}/reject`, {});
     } finally {
+      encerradasRef.current.add(atual.id);
       setCall(null);
     }
   }, []);
 
   const hangUp = useCallback(async () => {
     const atual = callRef.current;
-    if (!atual) return;
+    if (!atual || encerrandoRef.current) return;
+    encerrandoRef.current = true;
+    setEncerrando(true);
     try {
       await apiClient.delete(`/api/v1/voice/calls/${atual.id}`);
     } catch (err) {
       showApiError(err);
     } finally {
+      encerradasRef.current.add(atual.id);
+      encerrandoRef.current = false;
+      setEncerrando(false);
       setCall(null);
     }
   }, []);
@@ -450,10 +792,15 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     connectingMedia,
     /** O que o transporte de áudio está fazendo DE FATO — ver `EstadoDaMidia`. */
     estadoDaMidia,
+    /** O áudio desta ligação está em outra aba/aparelho deste usuário. */
+    midiaEmOutraAba,
+    /** Encerrar em voo — o botão fica desabilitado para não sair outro DELETE. */
+    encerrando,
     startCall,
     acceptCall,
     rejectCall,
     hangUp,
     toggleMute,
+    ouvirAqui,
   };
 }

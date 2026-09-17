@@ -142,6 +142,31 @@ describe("mapas de arquitetura — coerência interna", () => {
     ).toEqual([]);
   });
 
+  it("clientes pela agenda está no mapa, e nenhuma peça dela é ilha", () => {
+    // O caso concreto do DoD 13 para a migration 0262. A regra genérica acima
+    // cobra ≥1 aresta, e foi por essa fresta que o nó `auditoria` entrou com UMA
+    // só — a de entrada —, sem nenhuma saída: o invariante 1 do Sistema Vivo
+    // pede entrada E saída, e a saída é justamente o laço de retorno (quem lê a
+    // auditoria é quem desliga a regra). As listas de ≥2 deste arquivo eram
+    // fixas em `marca-propria` e no índice de atrito; `crm-vivo` não entrava em
+    // nenhuma, então nada media isto.
+    const m = JSON.parse(
+      fs.readFileSync(path.join(DIR, "crm-vivo.architecture.json"), "utf8"),
+    ) as Mapa;
+    const grau = (id: string) =>
+      (m.edges ?? []).filter((e) => e.from === id || e.to === id).length;
+    for (const peca of ["interruptorcliente", "promocaocliente", "auditoria", "telaauditoria"]) {
+      expect(grau(peca), `${peca} com menos de 2 arestas — é ilha pelo invariante 1`).toBeGreaterThanOrEqual(2);
+    }
+    // E a saída existe de fato: `auditoria` PARTE de alguma aresta. Só contar o
+    // grau aceitaria duas arestas de entrada, que é o mesmo defeito com outro
+    // número.
+    expect(
+      (m.edges ?? []).filter((e) => e.from === "auditoria").map((e) => e.to),
+      "api_audit_log sem nenhuma aresta de SAÍDA: a feature registra e ninguém lê",
+    ).toContain("telaauditoria");
+  });
+
   it("o índice de atrito está no mapa, e com mais de duas arestas", () => {
     // O caso concreto do DoD 13 para o trabalho desta branch. Genérico demais
     // não guardaria nada: "algum mapa existe" é verdade desde sempre.

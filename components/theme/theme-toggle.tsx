@@ -4,8 +4,10 @@ import { useTheme } from "@/lib/theme";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Sun, Moon, MonitorPlay } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/hooks/i18n/useT";
 
 export function ThemeToggle() {
+  const t = useT();
   const { theme, setTheme } = useTheme();
 
   const cycle = () => {
@@ -21,7 +23,7 @@ export function ThemeToggle() {
       variant="ghost"
       size="icon"
       onClick={cycle}
-      aria-label={`Tema: ${theme}. Cmd+Shift+L para alternar.`}
+      aria-label={t(`Tema: ${theme}. Cmd+Shift+L para alternar.`)}
     >
       <Icon size={16} aria-hidden />
     </Button>

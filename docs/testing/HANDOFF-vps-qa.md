@@ -13,8 +13,12 @@ os bugs achados na causa raiz.
 
 ## Ambiente montado (reproduzível)
 
-- **Banco:** Supabase local **pg17** (`config.toml major_version = 17`) do
+- **Banco:** Supabase local **pg15** (`config.toml major_version = 15`) do
   `baseline.sql`; extensões `vector/pg_trgm/citext/uuid-ossp/pgcrypto` antes.
+  pg15 é o PISO que prometemos suportar — era pg17 enquanto o baseline exigia
+  `GRANT … MAINTAIN`, e a #422 tirou os tokens. A major de cima (pg17) é coberta
+  pela matriz do job `invariants` (`pnpm test:db` em pg15 e pg17), não por este
+  ambiente.
 - **Primeiro usuário:** `scripts/bootstrap-owner.ts` (como o `install.sh`):
   `dono@qa.local` / `QaVps!2026#Dono`, org "Loja QA VPS".
 - **Deps:** WAHA Core local (`deskcomm-waha`, :3030), Redis + serverless-redis-http
@@ -56,11 +60,17 @@ os bugs achados na causa raiz.
    admin salvá-los. Fix: gate envolve o shell e latcha a decisão client-side.
    (`components/auth/MfaEnrollGate.tsx` + `app/app/layout.tsx`)
 
-### Bug de DX corrigido
+### Bug de DX corrigido — e revertido depois
 
-- **`config.toml major_version=15` vs baseline pg17.** Baseline usa `GRANT MAINTAIN`
+- **`config.toml major_version=15` vs baseline pg17** (2026-07). O baseline usava `GRANT MAINTAIN`
   (pg17+); contribuidor rodando `supabase start` pegava pg15 e o baseline quebrava.
-  Fix: `major_version = 17`.
+  Fix de então: `major_version = 17` — certo para o baseline daquele momento.
+- **O baseline deixou de exigir pg17** (#422, 2026-09): os 9 `GRANT … MAINTAIN` que o `pg_dump` de
+  um Supabase pg17 emitiu sozinho saíram do arquivo, e o piso voltou a ser pg15 — o mesmo escrito
+  no topo desta página e o que o `baseline.sql` de fato exige (`security_invoker` em view). Quem
+  guarda as duas pontas (`config.toml` e `scripts/test-db.sh`) é
+  `tests/unit/baseline-no-piso-do-postgres.test.ts`; a cobertura de pg17 virou matriz no job
+  `invariants` (#454).
 
 ## Achados pendentes (mapa completo em `docs/testing/user-journey-map.md`)
 

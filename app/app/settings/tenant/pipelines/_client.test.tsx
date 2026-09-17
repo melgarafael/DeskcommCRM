@@ -14,7 +14,7 @@
  * e mostra as opções para TODO tipo de lista fechada — não só para `select`.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { customFieldSchema } from "@/lib/schemas/settings";
 
@@ -45,6 +45,7 @@ globalThis.ResizeObserver = class {
   disconnect() {}
 };
 
+import { updatePipelineConfig } from "@/app/actions/settings/updatePipelineConfig";
 import { PipelinesClient, TIPOS_DE_CAMPO, tipoTemOpcoes, type PipelineRow } from "./_client";
 
 /** Um funil de clínica: o campo que importa é a lista de procedimentos, e ela é múltipla. */
@@ -99,5 +100,108 @@ describe("um campo multiselect já gravado", () => {
 
     const opcoes = screen.getByLabelText(/Opções do campo 1/i);
     expect(opcoes).toHaveValue("Clareamento Dental, Implantes");
+  });
+});
+
+/**
+ * Um funil cujo único campo é uma lista fechada AINDA SEM opções — o estado de
+ * quem acabou de criar o campo e vai digitar a primeira. Os testes de digitação
+ * partem daqui: com a lista já cheia, a vírgula some no meio do valor existente
+ * e o defeito fica escondido atrás do texto que já estava lá.
+ */
+const FUNIL_SEM_OPCOES: PipelineRow = {
+  id: "22222222-2222-4222-8222-222222222222",
+  name: "Vendas",
+  slug: "vendas",
+  vocabulary: null,
+  settings: {
+    fields: [{ key: "dor", label: "Dor", type: "select" }],
+  },
+};
+
+/**
+ * Digita TECLA A TECLA, relendo o valor ATUAL do input antes de acrescentar a
+ * seguinte — é o que o navegador faz, e é o que reproduz o defeito. Um único
+ * `fireEvent.change` com o texto inteiro passa longe: sem um "valor anterior"
+ * sendo relido entre as teclas, o item vazio que a vírgula cria não chega a
+ * atrapalhar.
+ */
+function digitar(input: HTMLInputElement, texto: string): void {
+  for (const tecla of texto) {
+    fireEvent.change(input, { target: { value: input.value + tecla } });
+  }
+}
+
+describe("o input de opções de um campo de lista fechada", () => {
+  it("não apaga a vírgula recém-digitada — sem ela não há como criar a segunda opção", () => {
+    render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+
+    const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
+    digitar(opcoes, "Dor,");
+
+    // O item vazio que a vírgula criou sobrevive à digitação, e o `join(", ")`
+    // o devolve como o separador visível. Descartá-lo já no `onChange` deixaria
+    // o campo em "Dor" — a vírgula some e a próxima palavra cola.
+    expect(opcoes).toHaveValue("Dor, ");
+  });
+
+  it("mantém o separador entre TODAS as opções ao digitar a lista tecla a tecla", () => {
+    render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+
+    const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
+    digitar(opcoes, "Dor, Orçamento, Prazo");
+
+    // Com o filtro de vazio no `onChange`, isto sairia "DorOrçamentoPrazo":
+    // as vírgulas desaparecem e as palavras colam.
+    expect(opcoes).toHaveValue("Dor, Orçamento, Prazo");
+  });
+
+  it("não apaga o espaço DENTRO de uma opção de duas palavras ao digitar", () => {
+    render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+
+    const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
+    digitar(opcoes, "Clareamento Dental, Implantes");
+
+    // Mesma classe da vírgula: aparar o FIM do item a cada tecla apaga o espaço
+    // recém-digitado, e a palavra seguinte cola ("ClareamentoDental").
+    expect(opcoes).toHaveValue("Clareamento Dental, Implantes");
+  });
+
+  it("grava a lista inteira e descarta só o vazio do fim", async () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+
+    const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
+    // A vírgula final deixa um terceiro item vazio, que o input agora preserva.
+    digitar(opcoes, "Dor, Orçamento,");
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+    // O save roda dentro de `startTransition`; o mock resolve num microtask.
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+
+    const patch = vi.mocked(updatePipelineConfig).mock.calls[0]?.[1];
+    // O vazio morre no `handleSave` (o schema exige `label` não-vazio) e as
+    // opções de verdade ficam. Um filtro no `onChange` faria a segunda opção
+    // nunca chegar aqui.
+    expect(patch?.fields?.[0]?.options?.map((o) => o.label)).toEqual(["Dor", "Orçamento"]);
+  });
+
+  it("grava cada opção aparada, com o espaço de dentro e sem o do fim", async () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(<PipelinesClient pipelines={[FUNIL_SEM_OPCOES]} podeEditarConfig />);
+
+    const opcoes = screen.getByLabelText(/Opções do campo 1/i) as HTMLInputElement;
+    // O espaço antes da vírgula sobrevive à digitação (a pessoa ainda pode
+    // estar no meio da palavra); é o salvar que o apara.
+    digitar(opcoes, "Clareamento Dental , Implantes ,");
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+
+    const patch = vi.mocked(updatePipelineConfig).mock.calls[0]?.[1];
+    expect(patch?.fields?.[0]?.options).toEqual([
+      { value: "Clareamento Dental", label: "Clareamento Dental" },
+      { value: "Implantes", label: "Implantes" },
+    ]);
   });
 });

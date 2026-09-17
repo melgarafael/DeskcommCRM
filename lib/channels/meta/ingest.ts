@@ -23,9 +23,13 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
+
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
+import { extrairAtribuicaoMeta } from "../atribuicao-de-anuncio-oficial";
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
 import { encontrarContatoPorTelefone } from "../contato-por-telefone";
+import { marcarConversaComMensagem } from "../marcar-conversa";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
 import type { ChannelTenantScope } from "../types";
 import type { InboundMessageEvent } from "./webhook";
@@ -157,6 +161,12 @@ export async function ingestMetaInbound(
     return { status: "failed", reason: `contato: ${erroContato?.message ?? "sem id"}` };
   }
 
+  // Clique em anúncio: o `referral` vem na própria mensagem e só nela. Estampar
+  // AQUI, antes de `aplicarEfeitosPosEntrada`, porque é lá que o lead nasce. A
+  // guarda de primeiro toque fica no banco, então a re-entrega não reescreve.
+  const atribuicao = extrairAtribuicaoMeta(e.referral);
+  if (atribuicao) await estamparAtribuicaoDoContato(admin, contactId as string, atribuicao);
+
   const { data: conversationId, error: erroConversa } = await admin.rpc(
     "fn_upsert_wa_conversation" as never,
     { p_org: orgId, p_contact: contactId as string, p_session: sessao.id } as never,
@@ -200,16 +210,24 @@ export async function ingestMetaInbound(
     return { status: "failed", reason: `mensagem: ${erroInsert.message}` };
   }
 
-  // Carimba a conversa — é ISTO que move `last_inbound_at` e abre a janela de 24h.
-  // Falha aqui não derruba a ingestão (a mensagem já entrou), mas o preview e a
-  // janela ficariam desatualizados, então o erro sobe como `failed` parcial no log
-  // do chamador em vez de sumir.
-  await admin.rpc("fn_mark_conversation_message" as never, {
-    p_conv: conversationId as string,
-    p_direction: "inbound",
-    p_preview: previewOf(e),
-    p_at: e.sentAt.toISOString(),
-  } as never);
+  // Carimba a conversa — é ISTO que move `last_message_at`, `last_inbound_at` e
+  // abre a janela de 24h. Falha aqui não derruba a ingestão (a mensagem já
+  // entrou), mas a prévia, a ordenação da Inbox e a janela ficariam paradas.
+  //
+  // ⚠️ O RETORNO ERA IGNORADO, e o comentário que estava aqui afirmava o
+  // contrário — "o erro sobe como `failed` parcial no log do chamador em vez de
+  // sumir". Sumia: era um `await` sem destino para o `{ error }`. O canal
+  // oficial era o pior dos três justamente onde a falha dói mais, porque é ele
+  // que tem janela de 24h — e conversa sem carimbo é janela que ninguém vê
+  // fechar. Quem decide o que fazer com a falha agora é uma função só.
+  await marcarConversaComMensagem(admin, {
+    organizationId: orgId,
+    conversationId: conversationId as string,
+    direction: "inbound",
+    preview: previewOf(e),
+    at: e.sentAt.toISOString(),
+    canal: "meta",
+  });
 
   const messageId = (inserida as { id: string } | null)?.id ?? "";
   if (e.media && messageId) {

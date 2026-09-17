@@ -1,5 +1,5 @@
 import { LogotipoDoProduto } from "@/components/branding/MarcaDoProduto";
-import { ADVOMAX_LOGO_URL, marcaEhADoProduto } from "@/lib/branding";
+import { marcaEhADoProduto } from "@/lib/branding";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { createClient } from "@/lib/supabase/server";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
@@ -51,37 +51,10 @@ export default async function PublicLayout({ children }: { children: React.React
 
   return (
     <IdiomaProvider locale={locale}>
-      <main className="grid min-h-[100dvh] gap-[18px] bg-[#f7f9fc] p-[18px] lg:grid-cols-[minmax(0,1.08fr)_minmax(420px,.92fr)]">
-        <section className="relative hidden min-h-[calc(100dvh-36px)] flex-col justify-between overflow-hidden rounded-[28px] bg-[#071b33] p-[clamp(36px,5vw,72px)] text-[#e8eef5] shadow-[0_24px_60px_rgba(7,27,51,.18)] lg:flex">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(81,119,160,.28),transparent_32%),linear-gradient(145deg,#102a4b_0%,#071b33_55%,#041426_100%)]" />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/advomax-logo.svg"
-            alt="Advomax"
-            className="relative h-auto w-[270px] brightness-0 invert"
-          />
-          <div className="relative max-w-[680px]">
-            <p className="mb-[22px] text-[11px] font-bold tracking-[.22em] text-[#c8d5e4] uppercase">
-              CRM jurídico integrado
-            </p>
-            <h1 className="text-[clamp(42px,5vw,72px)] leading-[1.03] font-bold tracking-[-.045em] text-[#f8fafc]">
-              Relacionamentos que viram resultados para o escritório.
-            </h1>
-            <p className="mt-[26px] max-w-[620px] text-base leading-[1.7] text-[#c8d5e4]">
-              Atendimento, WhatsApp, oportunidades e documentos conectados às pessoas e aos processos do Advomax.
-            </p>
-          </div>
-          <div className="relative grid grid-cols-3 gap-5 border-t border-white/15 pt-6 text-[13px] leading-6 text-[#dbe5f0]">
-            <p><strong className="block text-base text-white">Atendimento único</strong>Conversas e histórico no mesmo fluxo.</p>
-            <p><strong className="block text-base text-white">Contexto jurídico</strong>Pessoas, clientes e processos conectados.</p>
-            <p><strong className="block text-base text-white">Acesso seguro</strong>A mesma identidade usada no Advomax.</p>
-          </div>
-        </section>
-
-        <section className="grid min-h-[calc(100dvh-36px)] place-items-center rounded-[28px] border border-[#e4e9f0] bg-[#fdfefe] px-6 py-12 lg:px-12">
-          <div className="w-full max-w-[420px] space-y-8">
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <div className="w-full max-w-sm space-y-6">
           {marca.logoUrl ? (
-            <div>
+            <div className="flex justify-center">
               {/*
                 <img> em vez de next/image pelo mesmo motivo da barra lateral: a URL
                 é de quem hospeda e o `next/image` exige allowlist de domínios
@@ -98,23 +71,29 @@ export default async function PublicLayout({ children }: { children: React.React
                 "primeira <img> da página", e uma asserção de negação com seletor
                 largo passa sozinha assim que outra imagem entra na tela.
               */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                data-testid="logo-da-fachada"
-                src={marca.logoUrl}
-                alt={marca.nome}
-                className={`h-auto w-[236px] max-w-full object-contain ${marca.logoUrl === ADVOMAX_LOGO_URL ? "advomax-product-logo" : ""}`}
-              />
+              {/* O chip `dark:bg-white` é o mesmo da barra lateral
+                (`components/shell/Sidebar.tsx`): esta tela também respeita
+                `data-theme` (o `ThemeProvider` embrulha a raiz inteira, login
+                incluso), então um logo escuro contra `--color-surface` escuro tem
+                o mesmo problema de contraste aqui. */}
+              <div className="rounded-md dark:bg-white dark:px-3 dark:py-2 dark:shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  data-testid="logo-da-fachada"
+                  src={marca.logoUrl}
+                  alt={marca.nome}
+                  className="h-10 w-auto max-w-[12rem] object-contain"
+                />
+              </div>
             </div>
           ) : marcaEhADoProduto({ name: marca.nome, logoUrl: null }) ? (
-            <div>
+            <div className="flex justify-center">
               <LogotipoDoProduto nome={marca.nome} className="h-12 w-auto" />
             </div>
           ) : null}
           {children}
-          </div>
-        </section>
-      </main>
+        </div>
+      </div>
     </IdiomaProvider>
   );
 }

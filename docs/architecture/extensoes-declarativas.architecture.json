@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Extensões declarativas v1",
+    "subtitle": "Perfil declarativo com versões: instalar, atualizar, desfazer e remover",
+    "output": "extensoes-declarativas.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "human",
+      "label": "Pessoa"
+    },
+    {
+      "id": "app",
+      "label": "Aplicação"
+    },
+    {
+      "id": "db",
+      "label": "Banco local"
+    },
+    {
+      "id": "external",
+      "label": "Catálogo de ensaio"
+    }
+  ],
+  "mainPath": [
+    "operator",
+    "manager",
+    "guards",
+    "trust",
+    "operations",
+    "download",
+    "artifact",
+    "binding",
+    "hub",
+    "capability",
+    "tasks"
+  ],
+  "nodes": [
+    {
+      "id": "operator",
+      "lane": "human",
+      "col": 0,
+      "type": "ui",
+      "label": "Dono admite catálogo revisado"
+    },
+    {
+      "id": "catalog",
+      "lane": "external",
+      "col": 1,
+      "type": "database",
+      "label": "CLI/HTTP de ensaio · SQLite próprio"
+    },
+    {
+      "id": "manager",
+      "lane": "human",
+      "col": 2,
+      "type": "ui",
+      "label": "Gestão /app/extensions"
+    },
+    {
+      "id": "guards",
+      "lane": "app",
+      "col": 3,
+      "type": "service",
+      "label": "Papel, MFA, suporte e org confiável"
+    },
+    {
+      "id": "trust",
+      "lane": "db",
+      "col": 4,
+      "type": "database",
+      "label": "extension_catalogs · origem/revisão/digest"
+    },
+    {
+      "id": "download",
+      "lane": "app",
+      "col": 5,
+      "type": "service",
+      "label": "Download limitado · DNS ligado à conexão"
+    },
+    {
+      "id": "operations",
+      "lane": "db",
+      "col": 6,
+      "type": "database",
+      "label": "extension_operations · preparar/concluir/cancelar"
+    },
+    {
+      "id": "artifact",
+      "lane": "db",
+      "col": 7,
+      "type": "database",
+      "label": "Documento original + hash · instalação imutável"
+    },
+    {
+      "id": "binding",
+      "lane": "db",
+      "col": 8,
+      "type": "database",
+      "label": "organization_extensions · estado/config/revisão"
+    },
+    {
+      "id": "hub",
+      "lane": "human",
+      "col": 9,
+      "type": "ui",
+      "label": "Hub CRM e guia /app/extensions/[id]"
+    },
+    {
+      "id": "capability",
+      "lane": "app",
+      "col": 10,
+      "type": "service",
+      "label": "tasks.open · estado e revisão atuais"
+    },
+    {
+      "id": "tasks",
+      "lane": "human",
+      "col": 11,
+      "type": "ui",
+      "label": "Tarefas do núcleo · autorização habitual"
+    },
+    {
+      "id": "audit",
+      "lane": "db",
+      "col": 12,
+      "type": "database",
+      "label": "api_audit_log · ações de extensão"
+    },
+    {
+      "id": "updater",
+      "lane": "app",
+      "col": 13,
+      "type": "service",
+      "label": "Atualizador do app · lock compartilhado"
+    },
+    {
+      "id": "audit_view",
+      "lane": "human",
+      "col": 14,
+      "type": "ui",
+      "label": "Auditoria existente /admin/audit"
+    },
+    {
+      "id": "revert",
+      "lane": "app",
+      "col": 15,
+      "type": "service",
+      "label": "Desfazer a última troca · sem download"
+    },
+    {
+      "id": "removal",
+      "lane": "app",
+      "col": 16,
+      "type": "service",
+      "label": "Remover da instalação · desliga vínculos ativos"
+    },
+    {
+      "id": "org_audit_view",
+      "lane": "human",
+      "col": 17,
+      "type": "ui",
+      "label": "Auditoria da organização /app/audit"
+    }
+  ],
+  "edges": [
+    {
+      "from": "operator",
+      "to": "catalog",
+      "label": "revisar/publicar/exportar arquivo"
+    },
+    {
+      "from": "operator",
+      "to": "manager",
+      "label": "admitir arquivo por canal confiado"
+    },
+    {
+      "from": "manager",
+      "to": "guards",
+      "label": "pedir instalação ou configuração"
+    },
+    {
+      "from": "guards",
+      "to": "trust",
+      "label": "registrar admissão"
+    },
+    {
+      "from": "trust",
+      "to": "operations",
+      "label": "fixar identidade e revisão"
+    },
+    {
+      "from": "operations",
+      "to": "download",
+      "label": "preparar antes da rede"
+    },
+    {
+      "from": "catalog",
+      "to": "download",
+      "label": "servir bytes por digest"
+    },
+    {
+      "from": "download",
+      "to": "artifact",
+      "label": "validar e publicar na mesma transação do recibo"
+    },
+    {
+      "from": "artifact",
+      "to": "operations",
+      "label": "pós-condição e resultado durável"
+    },
+    {
+      "from": "guards",
+      "to": "binding",
+      "label": "CAS + limite agregado"
+    },
+    {
+      "from": "artifact",
+      "to": "binding",
+      "label": "versão compartilhada, ativação local"
+    },
+    {
+      "from": "binding",
+      "to": "hub",
+      "label": "conteúdo habilitado nesta organização"
+    },
+    {
+      "from": "artifact",
+      "to": "hub",
+      "label": "documento local sem consulta remota"
+    },
+    {
+      "from": "hub",
+      "to": "capability",
+      "label": "ação tipada e revisão"
+    },
+    {
+      "from": "capability",
+      "to": "binding",
+      "label": "revalidar disponibilidade"
+    },
+    {
+      "from": "capability",
+      "to": "tasks",
+      "label": "abrir destino conhecido"
+    },
+    {
+      "from": "tasks",
+      "to": "hub",
+      "label": "retornar pelo CRM"
+    },
+    {
+      "from": "guards",
+      "to": "audit",
+      "label": "ator e IDs sem conteúdo bruto"
+    },
+    {
+      "from": "audit",
+      "to": "audit_view",
+      "label": "ler pela API administrativa de auditoria"
+    },
+    {
+      "from": "operations",
+      "to": "manager",
+      "label": "reler/retomar/cancelar com motivo"
+    },
+    {
+      "from": "updater",
+      "to": "operations",
+      "label": "recusar conflito com preparação"
+    },
+    {
+      "from": "operations",
+      "to": "updater",
+      "label": "exclusão transacional da atualização pelo app"
+    },
+    {
+      "from": "operator",
+      "to": "audit_view",
+      "label": "consultar ações com acesso administrativo"
+    },
+    {
+      "from": "guards",
+      "to": "revert",
+      "label": "desfazer com a revisão exibida, só plataforma"
+    },
+    {
+      "from": "revert",
+      "to": "artifact",
+      "label": "trocar ponteiro vigente com o anterior"
+    },
+    {
+      "from": "revert",
+      "to": "operations",
+      "label": "recibo revert com de/para"
+    },
+    {
+      "from": "guards",
+      "to": "removal",
+      "label": "remover com a revisão exibida, só plataforma"
+    },
+    {
+      "from": "removal",
+      "to": "binding",
+      "label": "desligar vínculos ativos, marca e configuração preservada"
+    },
+    {
+      "from": "removal",
+      "to": "operations",
+      "label": "recibo removal com organizações desligadas"
+    },
+    {
+      "from": "removal",
+      "to": "audit",
+      "label": "extension.deactivated_by_removal por organização"
+    },
+    {
+      "from": "removal",
+      "to": "hub",
+      "label": "guia responde 410 removida"
+    },
+    {
+      "from": "revert",
+      "to": "audit",
+      "label": "extension.reverted na instância"
+    },
+    {
+      "from": "audit",
+      "to": "org_audit_view",
+      "label": "organização vê a própria desativação pela remoção (salvo resposta perdida)"
+    },
+    {
+      "from": "manager",
+      "to": "org_audit_view",
+      "label": "gerente da organização confere por que o guia saiu"
+    },
+    {
+      "from": "org_audit_view",
+      "to": "manager",
+      "label": "organização volta à gestão para reativar depois da reinstalação"
+    },
+    {
+      "from": "audit_view",
+      "to": "manager",
+      "label": "responsável volta à gestão para desfazer, remover ou reinstalar"
+    }
+  ],
+  "contracts": {
+    "status": "implementado nesta branch; instalação e recuperação provadas em tela no J25 (15/09/2026); atualizar, desfazer e remover provados no banco, com a jornada em tela J26; nada publicado",
+    "spec": "docs/specs/extensoes-declarativas-v1.md",
+    "no_links": [
+      "Catálogo não recebe contatos, conversas, tarefas ou identidade persistente da VPS.",
+      "Pacote não recebe cliente Supabase, ambiente, shell, JavaScript ou SQL.",
+      "tasks.open não lê nem escreve tarefas em nome da extensão.",
+      "Desativação preserva configuração e dados de domínio existentes.",
+      "Remover não reativa nem apaga a configuração de nenhuma organização; a plataforma não decide pela organização."
+    ],
+    "limits": [
+      "Admissão manual de catálogo não é TUF nem distribuição pública.",
+      "Coordenação cobre o atualizador pelo app, não comandos externos arbitrários.",
+      "Desfazer guarda um passo de histórico; versões mais antigas voltam pelo catálogo, se a revisão admitida ainda as listar.",
+      "Remoção é lógica: nenhuma linha é apagada, e reinstalar exige que cada organização ative de novo."
+    ]
+  }
+}

@@ -195,6 +195,79 @@ E o `package.json` **não** é a fonte: ele segue em `0.1.0`, de propósito. A f
 
 ---
 
+## A vitrine
+
+Toda versão publicada aparece na página de changelog da LP, nos três idiomas:
+[deskcomm.com.br/changelog](https://www.deskcomm.com.br/changelog),
+[/en/changelog](https://www.deskcomm.com.br/en/changelog) e
+[/es/changelog](https://www.deskcomm.com.br/es/changelog), cada versão com página própria
+(`/changelog/X.Y.Z`). É lá que quem ainda não instalou — e quem decide se atualiza — lê o que
+mudou sem abrir o GitHub.
+
+**Enquanto as três páginas não responderem 200, o parágrafo acima descreve o alvo e não o estado.**
+Elas nascem num PR do repositório `deskcomm-site`, e o corte depende delas: com a vitrine fora do
+ar, o passo abaixo reprova **toda** release depois de 35 tentativas, cerca de meia hora de espera. Quem for cortar confere
+antes — o comando não envelhece, a frase envelheceria:
+
+```bash
+for p in /changelog /en/changelog /es/changelog /guias; do
+  echo "$p: $(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://www.deskcomm.com.br$p")"
+done
+```
+
+Quatro `200` e esta seção vale como está escrita. Qualquer `404` e a ordem é a inversa: a vitrine
+entra no ar primeiro, o corte depois.
+
+**Ninguém escreve release no site.** A LP (repositório `deskcomm-site`) lê o `CHANGELOG.md` da
+`main` e revalida a cada 10 minutos. Então a regra de quem corta release não é "lembre de
+atualizar a LP" — regra que não protege quem a escreve —, e sim:
+
+1. **A seção entra no `CHANGELOG.md` pelo caminho normal** (fragmentos → PR de release). Uma
+   seção que chegou à `main` de outro jeito também aparece: a LP lê o arquivo, não as Releases
+   do GitHub. Foi o que salvou a v1.20.0, cuja tag foi criada à mão e nunca ganhou Release.
+2. **O cabeçalho da seção é contrato.** `## [X.Y.Z] — AAAA-MM-DD`, subseções em `###`. O leitor
+   da LP (`deskcomm-site/lib/changelog.ts`, outro repositório) usa a mesma expressão que
+   `tests/unit/release-chega-na-lp.test.ts` cobra aqui. Mudar o formato é mudar os dois
+   repositórios no mesmo movimento.
+3. **O corte confere a consequência.** O último passo do job `cortar-tag` —
+   *"A versão aparece na página de changelog da LP?"* — procura o link da versão nas três
+   páginas em 35 tentativas, cerca de meia hora (até ~47 min se o site responder devagar), e **reprova** o job se ela não aparecer. Vermelho ali não quer
+   dizer que a versão não saiu (tag, Release e imagens já foram conferidas antes); quer dizer
+   que a vitrine não mostra, e isso se conserta na LP.
+4. **O texto é escrito em português.** Em inglês e espanhol a página traduz a moldura, avisa que
+   as notas estão em português e oferece a tradução do navegador. Traduzir a seção a cada
+   release fica fora até existir quem revise a tradução — nota de versão com erro de tradução
+   num `⚠️ Requer atenção` é pior que nota em outra língua.
+
+Se o passo falhar, a ordem de investigação é: a LP responde? → o `CHANGELOG.md` da `main` tem a
+seção com o cabeçalho certo? → o formato mudou sem o leitor da LP mudar junto?
+
+**Depois de consertar a LP, não re-rode o job para conferir.** Um "Re-run failed jobs" roda no
+mesmo commit, onde a tag já existe: a guarda de idempotência do passo `pendente` grava
+`cortar=nao`, e este passo — como o das imagens — aparece como pulado. O job fica verde sem ter
+olhado a LP. A conferência depois do conserto é à mão, com o laço de `curl … | grep -c` de
+`triagem/TRIAGEM.md` (seção "Depois do merge, a versão sai"), nos três caminhos: `/changelog`,
+`/en/changelog` e `/es/changelog`.
+
+Três coisas fazem essa conferência à mão mentir, e as três mentem no sentido do susto:
+
+- **Não basta trocar a URL.** O `href` procurado carrega o prefixo da própria página —
+  `/en/changelog/X.Y.Z` na inglesa, `/es/changelog/X.Y.Z` na espanhola. Procurar o link do pt nas
+  outras duas devolve 0 **com a versão listada**. O passo do `release.yml` monta o padrão com
+  `${p}` justamente por isso; o laço da receita monta igual.
+- **0 também é o que a página inexistente devolve.** Num 404 o corpo não tem o `href`, e o
+  `grep -c` conta 0 igualzinho a uma página que existe e ainda não listou a versão — dois
+  desfechos opostos com o mesmo número. Por isso a receita imprime o `http=` ao lado da contagem,
+  e o passo do `release.yml` nomeia o status de cada página que faltou antes de reprovar.
+  `http=404` é a vitrine fora do ar, e repetir não conserta.
+- **Com `http=200`, 0 na primeira volta não é veredito.** A página revalida a cada 10 minutos e lê
+  o `CHANGELOG.md` pelo `raw.githubusercontent.com`, que guarda outros 5: a versão aparece em até
+  ~15 min, e é o próprio acesso que agenda a regeneração. Repita antes de concluir que a vitrine
+  não mostra — é a mesma razão pela qual o passo do `release.yml` repete a sonda 35 vezes, e não
+  duas.
+
+---
+
 ## Os invariantes
 
 1. **O número responde ao operador, não ao autor.** A pergunta é sempre o que ele precisa
@@ -206,3 +279,5 @@ E o `package.json` **não** é a fonte: ele segue em `0.1.0`, de propósito. A f
    operador é reconstruído por quem não estava lá — ou não chega.
 6. **Bump não pode exigir edição manual de arquivo na VPS.** Se exigir, é major e vem com
    plano de migração.
+7. **Toda versão publicada aparece na vitrine.** A LP lê o `CHANGELOG.md`; o corte confere
+   que ela chegou, nos três idiomas, e reprova quando não chegou.

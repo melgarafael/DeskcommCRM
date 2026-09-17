@@ -204,7 +204,7 @@ create table public.ai_provider_credentials (
   provider text not null check (provider in ('anthropic', 'openai', 'google')),
   label text not null,                           -- "Produção", "Testes", etc
 
-  -- API key cifrada (AES-GCM, key em KMS/Vercel KV secret)
+  -- API key cifrada (AES-GCM, chave no `.env` da instalação)
   api_key_encrypted bytea not null,
   api_key_iv bytea not null,                     -- 12 bytes IV
   api_key_tag bytea not null,                    -- 16 bytes auth tag
@@ -535,7 +535,7 @@ if (!isGroup && !fromMe && message.kind === 'inbound') {
 ### 5.1 Cron (Spec 07)
 
 ```
-schedule: "*/5 * * * * *"   (a cada 5s; Vercel não suporta sub-minute, então roda a cada 1min e processa batch)
+schedule: "*/5 * * * * *"   (a cada 5s; cron de minuto não faz sub-minute, então roda a cada 1min e processa batch)
 endpoint: POST /api/v1/cron/agent-dispatcher
 auth: header X-Cron-Secret
 ```
@@ -660,7 +660,7 @@ function triggerMatches(config: TriggerConfig, msg: Message): boolean {
 
 ## 6. Runtime — Endpoint `/api/internal/agents/run`
 
-Não é parte de `/api/v1/`. É **internal-only**, autenticado por `X-Internal-Secret` (env var). Vercel function com `maxDuration = 300`.
+Não é parte de `/api/v1/`. É **internal-only**, autenticado por `X-Internal-Secret` (env var). Rota com `maxDuration = 300`.
 
 ### 6.1 Algoritmo
 
@@ -788,7 +788,7 @@ Preços vêm do seed `ai_models`. Sem hardcode.
 **Provider key handling — defesa em profundidade**:
 1. Plaintext recebido só no POST `/credentials` (HTTPS, body)
 2. Cifrado AES-GCM no servidor antes de bater no DB
-3. Key de criptografia em `process.env.AI_CRED_AES_KEY` (gerenciado por Vercel/KMS, rotacionado anualmente)
+3. Key de criptografia em `process.env.AI_CRED_AES_KEY` — no `.env` da instalação (modo 0600), exigida em `lib/env.ts`; rotação anual
 4. Decrypt apenas no `/api/internal/agents/run`, key fica só em variável de função
 5. Sentry `beforeSend` strip: `authorization`, `x-api-key`, `api_key`, `*_key`, `*_secret`
 6. Logs estruturados (lib/logger) já strippa esses campos

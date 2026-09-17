@@ -1,0 +1,9 @@
+{
+  "publisher": "versoes-a231a70653",
+  "name": "guia-a231a70653",
+  "revision": 34,
+  "package_sha256": {
+    "1.0.0": "2a8703485c6a4f2f75e858c510e9cc65148a2671ae66b8958e588f9a34cbf7e6",
+    "1.1.0": "4d9768f75e60fefdff771f92db74ff79c036da635554cd7b17241746c24210e9"
+  }
+}

@@ -113,7 +113,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {
     if (error instanceof ChannelConnectionError) return fail(error.code,
-      error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.") : t("Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número."),
+      error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.")
+        : error.code === "connection_session_name_too_long" ? t("O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente.")
+        : t("Não foi possível concluir a conexão. Abra Conexões para tentar novamente ou reparar o número."),
       error.status, { requestId, details: error.technical });
     return fail("internal_error", t("Não foi possível concluir a conexão. Tente novamente."), 500, { requestId });
   }

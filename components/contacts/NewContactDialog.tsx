@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { contactCreateSchema, type ContactCreate } from "@/lib/schemas/contacts";
+import type { Contact } from "@/lib/types/contacts";
 import { useCreateContact } from "@/hooks/contacts/useCreateContact";
 
 interface FormShape {
@@ -28,15 +29,29 @@ interface FormShape {
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /**
+   * Nome já digitado por quem chamou, para não redigitar. Quem abre com um termo
+   * de busca em mãos passa aqui; o resto continua abrindo vazio.
+   *
+   * É `defaultValue` do formulário, então só vale na montagem — quem precisa
+   * trocar o termo com o diálogo já montado remonta com `key`.
+   */
+  nomeInicial?: string;
+  /**
+   * Recebe o contato recém-criado. Existe para quem abriu o diálogo NO MEIO de
+   * outro fluxo (marcar um horário, por exemplo) poder seguir com ele já
+   * selecionado, em vez de mandar a pessoa procurar de novo o que acabou de criar.
+   */
+  onCriado?: (contato: Contact) => void;
 }
 
-export function NewContactDialog({ open, onOpenChange }: Props) {
+export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: Props) {
   const t = useT();
   const create = useCreateContact();
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
-    defaultValues: { name: "", email: "", phone_number: "", cpf: "", tagsRaw: "" },
+    defaultValues: { name: nomeInicial ?? "", email: "", phone_number: "", cpf: "", tagsRaw: "" },
   });
 
   async function onSubmit(values: FormShape) {
@@ -61,10 +76,16 @@ export function NewContactDialog({ open, onOpenChange }: Props) {
     }
 
     try {
-      await create.mutateAsync(parsed.data as ContactCreate);
+      const resposta = await create.mutateAsync(parsed.data as ContactCreate);
       toast.success(t("Contato criado"));
       form.reset();
       onOpenChange(false);
+      // `.data` é o envelope do `ok()`, e dentro dele mora `{ contact, action }`.
+      // Entregar `resposta.data` aqui devolveria esse envelope como se fosse o
+      // contato: o `id` sairia `undefined` e a marcação ficaria sem ninguém, em
+      // silêncio. Quem garante que este caminho não volta a errar é o tipo do
+      // hook, ligado ao retorno da rota.
+      if (resposta?.data?.contact) onCriado?.(resposta.data.contact);
     } catch {
       // error toast already handled by hook
     }
@@ -85,7 +106,7 @@ export function NewContactDialog({ open, onOpenChange }: Props) {
             <Input id="name" {...form.register("name")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t("Email")}</Label>
             <Input id="email" type="email" {...form.register("email")} />
           </div>
           <div className="space-y-2">

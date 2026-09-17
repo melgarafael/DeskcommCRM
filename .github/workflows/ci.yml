@@ -47,6 +47,22 @@ jobs:
       - name: Channel provider leak
         run: pnpm lint:channels
 
+      # Auditoria de autorização e papel: impede comparações diretas de papel
+      # fora de lib/auth/ que contornem o gate de MFA e requireRole().
+      - name: Role rank audit
+        run: pnpm lint:role-rank
+
+      # O merge LIMPO não chama hook nenhum: dois PRs com migrations de nomes
+      # diferentes não conflitam textualmente, o commit nasce sem `pre-commit` e o
+      # número duplicado entra calado (o #804 entrou assim com o `0241`; o `0161` foi
+      # disputado por cinco PRs — issue #285). A régua por número era só hook local:
+      # `core.hooksPath` é configuração local, NÃO versionada, que fork nenhum executa.
+      # Step próprio, como os dois acima, porque é o CI que gateia PR — `gov:verify`
+      # não é invocado por workflow nenhum. Mesma régua do hook do contribuidor,
+      # contra o REMOTO (e o script busca a base: o checkout daqui não traz origin/main).
+      - name: Colisão de número de migration
+        run: pnpm checar:colisao-de-migration
+
       - name: Unit tests
         run: pnpm test:unit
 
@@ -66,13 +82,40 @@ jobs:
   # Gate de isolamento multi-tenant + invariantes de governança.
   # Job separado de propósito: roda em paralelo ao verify (não atrasa o feedback
   # rápido) e vira um check nomeado, que é o que a doutrina de RLS exige provar.
-  # scripts/test-db.sh sobe pgvector/pgvector:pg17, aplica supabase/baseline.sql
+  # Cada perna sobe `pgvector/pgvector` na SUA major, aplica supabase/baseline.sql
   # em modo install (ON_ERROR_STOP=1) e update (idempotência), e roda
   # tests/invariants/** contra ele. Invocar via `pnpm test:db` é o que põe
   # node_modules/.bin no PATH que o script herda para chamar `vitest`.
-  invariants:
+  #
+  # AS DUAS MAJORS, e por que as duas (issue #454): pg15 é o PISO que dizemos
+  # suportar — o piso real do `baseline.sql`, `security_invoker` em view — e é
+  # onde quem digita `pnpm test:db` na própria máquina cai por padrão; pg17 é a
+  # major de onde o `pg_dump` do baseline saiu e o que o Supabase entrega a
+  # projeto novo. Rodar só no piso mediu uma instalação que não era a do dump;
+  # rodar só na de cima era o estado até a #422. A major entra por
+  # `TEST_DB_IMAGE`, a MESMA variável dos dois scripts, e o PADRÃO dela continua
+  # sendo o piso (`scripts/test-db.sh`) — quem guarda isso é
+  # tests/unit/baseline-no-piso-do-postgres.test.ts.
+  invariants-majors:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Eram 20 min quando a perna tinha UMA passada; agora ela tem duas
+    # (`test:db` + `test:db:update`) e o teto acompanha. O 30 é DECLARADO, não
+    # medido — não há Docker onde esta matriz foi escrita —, e existe para o
+    # vermelho continuar falando de schema: mantido em 20, a perna morreria por
+    # relógio no meio da segunda passada.
+    timeout-minutes: 30
+    strategy:
+      # `false` e não o padrão (`true`): com `fail-fast`, a primeira major que
+      # reprovasse CANCELARIA a outra e o relatório diria "cancelled" em vez de
+      # medir as duas. Cobertura declarada que o CI cancela é o modo de falha
+      # que esta issue existe para fechar.
+      fail-fast: false
+      matrix:
+        pg: ["15", "17"]
+    env:
+      # Uma variável, os dois scripts: `scripts/test-db.sh` e
+      # `scripts/test-update-com-dados.sh` leem esta para escolher a imagem.
+      TEST_DB_IMAGE: pgvector/pgvector:pg${{ matrix.pg }}
     steps:
       - uses: actions/checkout@v7
 
@@ -81,5 +124,40 @@ jobs:
         # aceita `timeout-minutes`. Razão e medições: o cabeçalho da action.
         timeout-minutes: 5
 
-      - name: RLS isolation + governance invariants
+      - name: RLS isolation + governance invariants (pg${{ matrix.pg }})
         run: pnpm test:db
+
+      # O `update.sh` do cliente roda sobre um banco COM DADOS, e nenhum gate
+      # exercitava isso: `test:db` aplica o baseline num banco VAZIO, então
+      # constraint que só quebra com linha existente passava verde (é o achado
+      # que o cabeçalho de scripts/test-update-com-dados.sh mede). O script
+      # existia desde 2026-08-27 e NENHUM workflow o chamava (issue #454): aqui
+      # ele passa a ser gate, nas duas majors, pela mesma variável de imagem.
+      - name: update.sh sobre banco COM DADOS (pg${{ matrix.pg }})
+        run: pnpm test:db:update
+
+  # O NOME DESTE JOB É O CHECK OBRIGATÓRIO, e é por isso que ele existe — mesmo
+  # padrão do `e2e` em e2e.yml e do `imagens-ok` em publish-image.yml.
+  #
+  # A branch protection da `main` exige um check chamado exatamente `invariants`
+  # (a lista dos cinco — `verify, build-and-size, invariants, e2e, imagens-ok` —
+  # está na triagem do CI; token de fork não lê branch protection pela API, e por
+  # isso ela é citada, não remedida aqui). Job de matrix se
+  # chama `invariants-majors (15)` e `invariants-majors (17)`: se a matriz
+  # tivesse ficado com o nome `invariants`, a proteção passaria a esperar para
+  # sempre um check que nenhum run produz, e NENHUM PR mergearia.
+  invariants:
+    if: always()
+    needs: [invariants-majors]
+    runs-on: ubuntu-latest
+    # Nenhuma permissão: este job só lê o resultado de `needs`.
+    permissions: {}
+    steps:
+      - name: Falhar se qualquer major não passou
+        run: |
+          echo "invariants-majors: ${{ needs.invariants-majors.result }}"
+          # `success` é o único desfecho aceito: o agregado de uma matrix só é
+          # `success` com TODAS as pernas verdes, então uma major sozinha
+          # reprovando derruba o check obrigatório. `skipped` também reprova, de
+          # propósito — perna pulada não mediu nada.
+          [ "${{ needs.invariants-majors.result }}" = "success" ]

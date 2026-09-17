@@ -35,8 +35,9 @@ parte da primeira e mais nada):
 
 **Âncora de arquitetura:** o público-alvo principal instala o CRM numa **VPS da
 HostGator** pelo `hostgator-setup-kit/`, com **Supabase cloud**. Toda decisão se
-avalia contra isso primeiro — não contra a Vercel, não contra o laptop. E a pergunta
-que quase sempre é esquecida: **como isto chega a um clone que JÁ RODA e vai atualizar?**
+avalia contra isso primeiro — não contra uma hospedagem gerenciada, não contra o
+laptop. E a pergunta que quase sempre é esquecida: **como isto chega a um clone
+que JÁ RODA e vai atualizar?**
 
 ---
 
@@ -57,11 +58,11 @@ que quase sempre é esquecida: **como isto chega a um clone que JÁ RODA e vai a
 
 ## Estado das fases
 
-**A ordem mudou depois da reancoragem.** A antiga fazia sentido para a Vercel, onde nada
-chega ao usuário sem deploy. Sob a âncora VPS, o valor chega antes por outro caminho: o
-que o comprador percebe primeiro não é upload de logo, é **a interface não parecer a
-nossa** — e cor é o eixo mais barato, mais visível, e o único que a doc de venda declara
-impossível hoje.
+**A ordem mudou depois da reancoragem.** A antiga fazia sentido para uma hospedagem
+gerenciada, onde nada chega ao usuário sem deploy. Sob a âncora VPS, o valor chega
+antes por outro caminho: o que o comprador percebe primeiro não é upload de logo, é
+**a interface não parecer a nossa** — e cor é o eixo mais barato, mais visível, e o
+único que a doc de venda declara impossível hoje.
 
 > **A numeração divergiu no meio do épico, e esta tabela é a que vale.** A versão anterior
 > reservava a **Fase 3** para "upload de logo" e chamava a marca por organização de Fase 2 —
@@ -117,8 +118,10 @@ de um agente que rodou o cálculo — e está marcado de propósito.
 - **Supabase é cloud**, provisionado pela Management API (`hostgator-setup-kit/supabase-provision.sh`).
   Storage não consome disco da VPS, mas consome **cota do plano do cliente**,
   competindo com `whatsapp-media`. Plano grátis: 2 projetos por usuário.
-- **O scheduler da VPS já roda 16 crons** (`docker-compose.prod.yml:145-172`) — o
-  anti-morte por cron **existe** para o público principal. A Vercel é o caso degradado.
+- **O scheduler da VPS agenda toda rota de `app/api/v1/cron/`** — o crontab mora em
+  `docker/scheduler/entrypoint.sh`, e quem mantém as duas listas iguais nas duas direções
+  é `tests/unit/cron-routes-scheduled.test.ts`. O anti-morte por cron **existe** para o
+  público principal.
 - Serviços do compose: `app`, `worker`, `waha`, `redis`, `srh`, `scheduler`, `caddy`.
   **Dois processos Node** (app + worker), não N lambdas — isso muda a escolha de cache.
 - A única policy de escrita em `organizations` é `orgs_write_platform_admin`

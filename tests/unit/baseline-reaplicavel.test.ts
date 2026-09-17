@@ -27,7 +27,7 @@
  *  - **Apêndice (4 policies): `drop` + `create`.** É o único guard em que uma MUDANÇA
  *    de corpo chega ao clone, e é o defeito desta issue. É também a convenção que as
  *    outras ~89 policies do apêndice já seguem.
- *  - **Corpo (49 policies): guarda `IF NOT EXISTS`.** Aqui o `drop`+`create` seria
+ *  - **Corpo (32 policies; eram 49 até 2026-09-16): guarda `IF NOT EXISTS`.** Aqui o `drop`+`create` seria
  *    troca ruim: o benefício é nulo (mudança de policy neste repo entra pelo
  *    apêndice, ninguém reescreve o dump) e o custo foi MEDIDO — um `update.sh` que
  *    morre entre o `DROP` e o `CREATE` deixa a tabela **sem** a policy, de forma
@@ -35,7 +35,7 @@
  *      guarda `IF NOT EXISTS` -> policy SOBREVIVEU
  *      `drop` + `create`      -> policy APAGADA
  *    É o mesmo modo de falha que `baseline-constraint-reconstruida.test.ts` condena
- *    para constraints; generalizá-lo para 49 policies seria trocar um erro benigno
+ *    para constraints; generalizá-lo para as policies do corpo seria trocar um erro benigno
  *    filtrado por um buraco de isolamento.
  *
  * ## O que este teste NÃO cobre
@@ -135,6 +135,12 @@ describe("baseline.sql é re-aplicável", () => {
 
   it("toda CREATE POLICY está guardada — e cada zona com a forma que lhe cabe", () => {
     const problemas: string[] = [];
+    const linhaDoPrimeiroDrop = new Map<string, number>();
+    for (let i = 0; i < LINHAS.length; i++) {
+      const d = (LINHAS[i] ?? "").match(/drop policy if exists "?([^"\s]+)"?\s/i);
+      const alvo = d?.[1]?.toLowerCase();
+      if (alvo && !linhaDoPrimeiroDrop.has(alvo)) linhaDoPrimeiroDrop.set(alvo, i);
+    }
     let guardadasNoCorpo = 0;
     let guardadasNoApendice = 0;
 
@@ -169,10 +175,11 @@ describe("baseline.sql é re-aplicável", () => {
         // A régua correta é: o nome aparece num `drop policy if exists` em QUALQUER
         // ponto anterior, com ou sem aspas. Um gate que acusa o inocente é pior que
         // gate nenhum — ele ensina a ignorá-lo.
-        const escapado = nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const dropAntes = LINHAS.slice(0, i).some((l) =>
-          new RegExp(`drop policy if exists "?${escapado}"?\\s`, "i").test(l),
-        );
+        // `linhaDoPrimeiroDrop` é pré-calculado: a versão anterior varria
+        // LINHAS.slice(0, i) para CADA policy — quadrático sobre 25 mil linhas,
+        // 5 s no normal e 16 s sob carga, contra o limite de 15 s do vitest. Um
+        // gate que vermelha por carga da máquina ensina a ignorar vermelho.
+        const dropAntes = (linhaDoPrimeiroDrop.get(nome.toLowerCase()) ?? Infinity) < i;
         if (dropAntes) guardadasNoApendice++;
         else problemas.push(`apêndice ${i + 1}: "${nome}" sem drop-if-exists — mudança de corpo não chega`);
       }
@@ -185,10 +192,12 @@ describe("baseline.sql é re-aplicável", () => {
     expect(problemas).toEqual([]);
 
     // Guardas de vacuidade, com números MEDIDOS e não chutados (49 no corpo, 80 no
-    // apêndice em 2026-08-13): se o laço parar de achar policies, `problemas` fica
-    // vazio e o `toEqual([])` acima passa por omissão. A margem é folgada de
-    // propósito — este par existe para pegar regex morto, não para cravar contagem.
-    expect(guardadasNoCorpo, "policies guardadas no corpo").toBeGreaterThan(40);
+    // apêndice em 2026-08-13; 32 no corpo em 2026-09-16, quando saíram as 17 que o
+    // apêndice derruba — ver baseline-nao-constroi-o-que-derruba.test.ts): se o laço
+    // parar de achar policies, `problemas` fica vazio e o `toEqual([])` acima passa
+    // por omissão. A margem é folgada de propósito — este par existe para pegar
+    // regex morto, não para cravar contagem.
+    expect(guardadasNoCorpo, "policies guardadas no corpo").toBeGreaterThan(25);
     expect(guardadasNoApendice, "policies guardadas no apêndice").toBeGreaterThan(70);
   });
 });

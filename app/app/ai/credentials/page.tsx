@@ -5,7 +5,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import type { CredentialRow } from "@/hooks/ai/useCredentials";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { contarUsoPublicado, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
+import { contarUsoQueBloqueia, type VersaoVinculada } from "@/lib/ai/credenciais/uso";
 import { CredentialsList } from "./_components/CredentialsList";
 
 export const dynamic = "force-dynamic";
@@ -32,17 +32,17 @@ export default async function CredentialsPage() {
   const credentials = (data ?? []) as unknown as CredentialRow[];
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
-  // Mesma regra do DELETE: só conta a versão PUBLICADA de agente não arquivado.
+  // Mesma regra do DELETE — e a mesma da FK `ON DELETE RESTRICT`: TODA versão
+  // que aponta para a credencial trava a exclusão, não só a publicada. O número
+  // que a tela mostra é o que explica o bloqueio (ver `lib/ai/credenciais/uso.ts`).
   let usageMap: Record<string, number> = {};
   if (credentials.length > 0) {
     const { data: linked } = await supabase
       .from("ai_agent_versions")
-      .select(
-        "id, credential_id, ai_agents!ai_agent_versions_agent_id_fkey!inner(archived_at, published_version_id)",
-      )
+      .select("id, credential_id, version_number, status")
       .eq("organization_id", activeOrg.orgId)
       .in("credential_id", credentials.map((c) => c.id));
-    usageMap = contarUsoPublicado((linked ?? []) as unknown as VersaoVinculada[]);
+    usageMap = contarUsoQueBloqueia((linked ?? []) as unknown as VersaoVinculada[]);
   }
 
   return (

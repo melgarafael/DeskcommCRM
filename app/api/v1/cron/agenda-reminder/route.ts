@@ -71,6 +71,7 @@ import { env } from "@/lib/env";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -86,6 +87,7 @@ interface TipoDoCompromisso {
   name: string;
   reminder_enabled: boolean;
   reminder_minutes_before: number;
+  reminder_extra_offsets_minutes: number[] | null;
   reminder_template_name: string | null;
   location_details: string | null;
 }
@@ -97,6 +99,7 @@ interface CompromissoAVencer {
   title: string;
   starts_at: string;
   location_details: string | null;
+  reminder_sent_offsets_minutes: number[] | null;
   calendar_event_types: TipoDoCompromisso | TipoDoCompromisso[] | null;
 }
 
@@ -180,6 +183,36 @@ export function estaNaHora(agora: Date, comeca: Date, antecedenciaMin: number): 
   return comeca.getTime() - antecedenciaMin * 60_000 <= agora.getTime();
 }
 
+/**
+ * Quais degraus de lembrete estão vencidos e ainda não saíram.
+ *
+ * Um tipo pode pedir mais de um aviso — um dia antes e de novo três horas antes,
+ * por exemplo. O degrau principal é `reminder_minutes_before`; os demais vêm de
+ * `reminder_extra_offsets_minutes`.
+ *
+ * ⚠️ **Devolve todos os vencidos, e quem chama manda UMA mensagem só.** Se o
+ * cron ficou parado e dois degraus venceram no intervalo, o certo é avisar uma
+ * vez e dar os dois por cumpridos: mandar dois textos iguais em sequência é o
+ * que faz a pessoa bloquear o número, e o degrau mais antecipado já perdeu a
+ * função quando o mais próximo venceu.
+ *
+ * Pura e exportada pelo mesmo motivo que `estaNaHora`: é a regra que decide se
+ * alguém recebe mensagem, e ela precisa ser exercitável sem banco.
+ */
+export function degrausPendentes(input: {
+  agora: Date;
+  comeca: Date;
+  principal: number;
+  extras: number[] | null;
+  jaEnviados: number[] | null;
+}): number[] {
+  const enviados = new Set(input.jaEnviados ?? []);
+  const todos = new Set([input.principal, ...(input.extras ?? [])]);
+  return [...todos]
+    .filter((degrau) => !enviados.has(degrau) && estaNaHora(input.agora, input.comeca, degrau))
+    .sort((a, b) => b - a);
+}
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -199,13 +232,22 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, title, starts_at, location_details, " +
-        "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_template_name, location_details)",
+      "id, organization_id, contact_id, title, starts_at, location_details, reminder_sent_offsets_minutes, " +
+        "calendar_event_types!inner(name, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, location_details)",
     )
     .eq("status", "confirmed")
     .eq("calendar_event_types.reminder_enabled", true)
     .not("contact_id", "is", null)
-    .is("reminder_sent_at", null)
+    // ⚠️ NÃO se filtra por `reminder_sent_at is null` aqui, e a ausência é a
+    // feature: com ela, o compromisso que recebeu o aviso de um dia nunca
+    // voltaria para receber o de três horas. Quem decide o que falta é
+    // `degrausPendentes`, sobre `reminder_sent_offsets_minutes`.
+    //
+    // O teto da varredura continua sendo o de sempre, e a ordem por `starts_at`
+    // crescente é o que o torna seguro: quando ele corta, corta os compromissos
+    // mais distantes, que só precisam do degrau mais antecipado e voltam nas
+    // próximas rodadas. Os próximos — os únicos com degrau curto vencendo —
+    // estão sempre no começo da lista.
     .gt("starts_at", agora.toISOString())
     .lte("starts_at", new Date(agora.getTime() + MAIOR_ANTECEDENCIA_MS).toISOString())
     .order("starts_at", { ascending: true })
@@ -231,7 +273,14 @@ async function handle(req: NextRequest): Promise<Response> {
       pular("sem_tipo");
       continue;
     }
-    if (!estaNaHora(agora, new Date(linha.starts_at), tipo.reminder_minutes_before)) {
+    const pendentes = degrausPendentes({
+      agora,
+      comeca: new Date(linha.starts_at),
+      principal: tipo.reminder_minutes_before,
+      extras: tipo.reminder_extra_offsets_minutes,
+      jaEnviados: linha.reminder_sent_offsets_minutes,
+    });
+    if (pendentes.length === 0) {
       pular("ainda_nao");
       continue;
     }
@@ -285,7 +334,7 @@ async function handle(req: NextRequest): Promise<Response> {
       .maybeSingle();
 
     let corpo = montarLembrete({
-      nomeDoContato: contato.display_name ?? contato.name ?? null,
+      nomeDoContato: nomeDoContato(contato),
       titulo: linha.title,
       quando: new Date(linha.starts_at),
       timezone: organizacao?.timezone ?? "America/Sao_Paulo",
@@ -324,9 +373,18 @@ async function handle(req: NextRequest): Promise<Response> {
         >[2],
       );
       // Carimba a TENTATIVA — o desfecho da entrega vive na mensagem.
+      //
+      // Carimba TODOS os degraus vencidos, não só o que motivou este texto: os
+      // outros já venceram, e deixá-los pendentes faria a próxima rodada mandar
+      // a mesma mensagem de novo.
       await admin
         .from("calendar_appointments")
-        .update({ reminder_sent_at: new Date().toISOString() })
+        .update({
+          reminder_sent_at: new Date().toISOString(),
+          reminder_sent_offsets_minutes: [
+            ...new Set([...(linha.reminder_sent_offsets_minutes ?? []), ...pendentes]),
+          ],
+        })
         .eq("id", linha.id)
         .eq("organization_id", org);
       enviados += 1;

@@ -94,16 +94,16 @@ function supabaseFalso(linha: { id: string; wacalls_session_id: string | null } 
 }
 
 /** Cliente de mentira que registra a SEQUÊNCIA — é a ordem que se está provando. */
-function wacallsFalso(falhaEm?: "logout" | "delete") {
+function wacallsFalso(falhaEm?: "logout" | "delete", erro = "wacalls_502: caiu") {
   const passos: string[] = [];
   const cliente = {
     logoutSession: async () => {
       passos.push("logout");
-      if (falhaEm === "logout") throw new Error("wacalls_502: caiu");
+      if (falhaEm === "logout") throw new Error(erro);
     },
     deleteSession: async () => {
       passos.push("delete");
-      if (falhaEm === "delete") throw new Error("wacalls_502: caiu");
+      if (falhaEm === "delete") throw new Error(erro);
     },
   } as unknown as WacallsClient;
   return { passos, cliente };
@@ -148,6 +148,30 @@ describe("despareaVoz — desligar não é esconder", () => {
 
     await expect(despareaVoz(db, cliente, "org-1")).rejects.toThrow();
     expect(escritas).toEqual([]);
+  });
+
+  it("sessão que o serviço de voz já não conhece (404) desparea e arquiva — não prende a organização", async () => {
+    // Volume do WaCalls perdido, serviço reinstalado, `Restore` descartando a
+    // sessão no boot: o banco segue dizendo "pareado", o pareamento responde
+    // 409 e ESTE caminho era a única saída — que devolvia 502 para sempre.
+    // Sem sessão lá, não há aparelho vinculado por ela.
+    const { db, escritas } = supabaseFalso({ id: "cs-1", wacalls_session_id: "wa-1" });
+    const { cliente, passos } = wacallsFalso("logout", 'wacalls_404: {"error":"no session wa-1"}');
+
+    const r = await despareaVoz(db, cliente, "org-1");
+
+    expect(r.desapareado).toBe(true);
+    expect(passos).toEqual(["logout", "delete"]);
+    expect(escritas[0]).toMatchObject({ status: "STOPPED", wacalls_session_id: null });
+  });
+
+  it("controle: só o 404 é tolerado — 409, 401 ou 500 continuam segurando o banco", async () => {
+    for (const erro of ["wacalls_409: conflito", "wacalls_401: credencial", "wacalls_500: boom"]) {
+      const { db, escritas } = supabaseFalso({ id: "cs-1", wacalls_session_id: "wa-1" });
+      const { cliente } = wacallsFalso("delete", erro);
+      await expect(despareaVoz(db, cliente, "org-1"), erro).rejects.toThrow();
+      expect(escritas, erro).toEqual([]);
+    }
   });
 
   it("desparear o que nunca foi pareado é sucesso, não erro", async () => {

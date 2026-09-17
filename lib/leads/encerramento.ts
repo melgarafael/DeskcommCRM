@@ -35,6 +35,17 @@ export interface EncerraDemandaInput {
   desfecho: DesfechoDaDemanda;
   /** OBRIGATÓRIO em `lost` (P-03): perder sem motivo não ensina nada a ninguém. */
   motivo?: string | null;
+  /**
+   * A razão da linha na timeline, quando o desfecho padrão ("Ganho" /
+   * "Perdido — <motivo>") diria algo FALSO a quem lê. Hoje só a troca de funil a
+   * usa: a origem fecha como perda porque é o único desfecho que o schema oferece
+   * para "saiu daqui", e "Perdido — other" num negócio que foi levado para outro
+   * funil é uma perda que não aconteceu. O motivo continua gravado na coluna e
+   * no audit; só a frase da tela muda.
+   */
+  razaoNaTimeline?: string;
+  /** Acrescentado ao `payload` da linha (ex.: para onde o negócio foi). */
+  payloadNaTimeline?: Record<string, unknown>;
 }
 
 export interface DemandaEncerrada {
@@ -204,8 +215,11 @@ export async function encerraDemanda(
     // com a mesma frase duas vezes (ver `motivoLegivel` em retorno-crm.ts).
     // Canônico em português: quem traduz é a LEITURA (`t(item.reason)`). Ver o
     // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
-    reason: input.desfecho === "won" ? "Ganho" : `Perdido — ${input.motivo}`,
+    reason:
+      input.razaoNaTimeline ??
+      (input.desfecho === "won" ? "Ganho" : `Perdido — ${input.motivo}`),
     payload: {
+      ...(input.payloadNaTimeline ?? {}),
       desfecho: input.desfecho,
       from_stage_id: (lead as { stage_id: string }).stage_id,
       to_stage_id: (stage as { id: string }).id,

@@ -1,7 +1,7 @@
 ---
 title: Runbook — WAHA em produção (VPS Hostgator)
 status: canônico
-last_review: 2026-05-04
+last_review: 2026-09-17
 owner: Rafael Melgaço
 ---
 
@@ -32,7 +32,7 @@ owner: Rafael Melgaço
 2. Domínio com DNS gerenciado em Cloudflare (ou outro provider) — ex.: `waha.deskcomm.com.br`.
 3. Conta Backblaze B2 com bucket `deskcomm-waha-backup` (R$0,06/GB/mês ≈ $0.005/GB).
 4. Licença ativa **WAHA Plus** (`https://waha.devlike.pro` — ~$30/mês).
-5. Vercel project com env vars `WAHA_API_BASE_URL`, `WAHA_API_KEY`, `WAHA_WEBHOOK_BASE_URL`, `WAHA_HMAC_SECRET` configurados (ainda apontando pra dev — atualizamos no fim).
+5. Uma instalação do CRM já de pé, com `WAHA_API_BASE_URL`, `WAHA_API_KEY`, `WAHA_WEBHOOK_BASE_URL` e `WAHA_HMAC_SECRET` no `.env` dela (ainda apontando pra dev — atualizamos no fim).
 
 ---
 
@@ -152,7 +152,7 @@ services:
 
 ```bash
 WAHA_API_KEY=<plaintext gerado novo, 64 chars hex>
-WAHA_WEBHOOK_BASE_URL=https://app.deskcomm.com.br
+WAHA_WEBHOOK_BASE_URL=https://<dominio-da-sua-instalacao-do-crm>
 WAHA_HMAC_SECRET=<32 bytes random distinto da api key>
 ```
 
@@ -190,8 +190,8 @@ server {
     ssl_certificate     /etc/letsencrypt/live/waha.deskcomm.com.br/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/waha.deskcomm.com.br/privkey.pem;
 
-    # Egress allowlist — só Vercel pode chamar.
-    include /etc/nginx/conf.d/vercel-egress-allowlist.conf;
+    # Egress allowlist — só o servidor onde o CRM roda pode chamar.
+    include /etc/nginx/conf.d/crm-egress-allowlist.conf;
     deny all;
 
     proxy_buffering off;        # SSE / streaming WAHA
@@ -215,23 +215,14 @@ server {
 }
 ```
 
-`/etc/nginx/conf.d/vercel-egress-allowlist.conf` — atualizado por cron diário:
+`/etc/nginx/conf.d/crm-egress-allowlist.conf` — o IP público do servidor onde o CRM roda:
 
 ```bash
-sudo tee /usr/local/bin/refresh-vercel-cidrs.sh > /dev/null <<'EOF'
-#!/bin/bash
-set -euo pipefail
-TMP=$(mktemp)
-curl -s https://api.vercel.com/v1/edge/cidrs | jq -r '.cidrs[]' | sed 's/^/allow /;s/$/;/' > "$TMP"
-sudo mv "$TMP" /etc/nginx/conf.d/vercel-egress-allowlist.conf
+echo "allow <IP_DO_SERVIDOR_DO_CRM>;" | sudo tee /etc/nginx/conf.d/crm-egress-allowlist.conf
 sudo nginx -t && sudo systemctl reload nginx
-EOF
-sudo chmod +x /usr/local/bin/refresh-vercel-cidrs.sh
-sudo /usr/local/bin/refresh-vercel-cidrs.sh
-echo "0 4 * * * deskcomm /usr/local/bin/refresh-vercel-cidrs.sh" | sudo tee /etc/cron.d/vercel-cidrs
 ```
 
-> Endpoint da Vercel pode mudar. Se a API responder 404, fallback é colar manualmente os ranges de https://vercel.com/docs/limits e revisar trimestralmente.
+> É um endereço só, escrito à mão: não há lista para sincronizar nem cron para manter. Quem o muda é você, ao mover o CRM de servidor — quando isso acontecer, reescreva este arquivo e recarregue o Nginx. Para descobrir o IP de saída, rode de dentro do próprio servidor do CRM: `curl -s https://ifconfig.me`.
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/waha /etc/nginx/sites-enabled/waha
@@ -316,18 +307,28 @@ Better Stack ou Datadog Agent → `docker logs deskcomm-waha`. Sem isso, logs fi
 
 ---
 
-## 9. Atualizar Vercel envs
+## 9. Apontar o CRM para este WAHA
 
-No painel Vercel → Project Settings → Environment Variables (escopo: **Production** apenas):
+As variáveis do CRM vivem no `.env` da instalação dele — não num painel. Edite lá:
 
 ```
 WAHA_API_BASE_URL=https://waha.deskcomm.com.br
 WAHA_API_KEY=<mesmo plaintext do .env do VPS>
-WAHA_WEBHOOK_BASE_URL=https://app.deskcomm.com.br
+WAHA_WEBHOOK_BASE_URL=https://<dominio-da-sua-instalacao-do-crm>
 WAHA_HMAC_SECRET=<mesmo do VPS>
 ```
 
-Redeploy da branch `main` aplica.
+Env var é lida no boot: editar o `.env` não muda nada até os contêineres serem recriados.
+
+Não tente descobrir quais são eles com um `grep env_file`: esse grep não enxerga o
+serviço `waha` do compose, que recebe `WAHA_WEBHOOK_BASE_URL` e `WAHA_HMAC_SECRET` por
+interpolação (`${...}` dentro do bloco `environment:`), sem `env_file` nenhum — a
+resposta sai incompleta com cara de completa.
+
+Numa instalação real, quem recria tudo é `bash hostgator-setup-kit/update.sh`: ele roda
+o `up -d` sem nomear serviço. Subindo à mão, o comando está em [`deploy.md`](deploy.md) —
+numa VPS com proxy reverso próprio o `up -d` precisa dos **dois** arquivos de compose,
+senão o domínio passa a responder 404.
 
 ---
 
@@ -338,13 +339,13 @@ Redeploy da branch `main` aplica.
 - [ ] UFW ativo, só 22/80/443
 - [ ] SSH password disabled, root login disabled
 - [ ] fail2ban com jails de SSH + nginx-http-auth
-- [ ] Egress allowlist Nginx atualizando via cron
+- [ ] Egress allowlist Nginx com o IP do servidor do CRM
 - [ ] TLS válido (testar `https://www.ssllabs.com/ssltest/` ≥ A)
 - [ ] Backup `restic` rodando + restore drill executado uma vez
 - [ ] UptimeRobot configurado
 - [ ] Watchdog cron de 1min ativo
 - [ ] Sentry release tagging do app capturando erros do `lib/waha/client`
-- [ ] Vercel envs apontando pro domínio público
+- [ ] `.env` do CRM apontando pro domínio público do WAHA
 - [ ] Webhook entrante funcionando (mensagem de teste WhatsApp → aparece na Inbox)
 - [ ] API key WAHA documentada em 1Password com data de rotação +90d
 
@@ -369,7 +370,7 @@ Redeploy da branch `main` aplica.
 
 | Sintoma | Diagnóstico | Fix |
 |---|---|---|
-| App recebe 401 do WAHA | Env var `WAHA_API_KEY` desalinhada (Vercel vs VPS) | Confirmar plaintext idêntico nos dois lados |
+| App recebe 401 do WAHA | Env var `WAHA_API_KEY` desalinhada (`.env` do CRM vs `.env` do WAHA) | Confirmar plaintext idêntico nos dois lados |
 | WAHA cria session mas não inicia | `start: true` ignorado em algumas versões | Chamar `POST /api/sessions/:name/start` explicitamente |
 | Webhook não chega | Nginx allowlist bloqueando, ou Cloudflare Proxy ON | `tail -f /var/log/nginx/access.log` + desligar proxy CF |
 | QR expira sempre | RTT alto, ou clock drift no VPS | `timedatectl set-ntp true`, conferir RTT pro `web.whatsapp.com` |
@@ -380,4 +381,5 @@ Redeploy da branch `main` aplica.
 
 ## 13. Histórico de decisão
 
+- **2026-09-17** — O passo 9 deixou de mandar editar env var em painel de hospedagem: o CRM é self-host, e as variáveis dele vivem no `.env` da instalação. A allowlist de egress do Nginx passou a liberar o IP do servidor onde o CRM roda, no lugar dos ranges da plataforma — que eram atualizados por cron diário e sobrescreveriam qualquer ajuste manual.
 - **2026-05-04** — Trocamos referências Hetzner→Hostgator nos docs por parceria comercial existente. Custo subiu (~$5 → ~$28) mas latência BR melhora pareamento e suporte ticketing fica em PT-BR. Hetzner mantido como plano B documentado em §1.

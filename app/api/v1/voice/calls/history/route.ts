@@ -6,6 +6,7 @@
  * tabela já tem `contact_id`/`end_reason` que o upstream não devolve.
  */
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { logger } from "@/lib/logger";
@@ -23,16 +24,22 @@ export async function GET(req: Request): Promise<Response> {
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(Number(searchParams.get("limit") ?? "50") || 50, 200);
+  // `id`: o painel de chamada confere UMA ligação com o servidor. Procurá-la
+  // entre as N mais recentes da organização falhava em escritório movimentado.
+  const id = searchParams.get("id");
+  if (id !== null && !z.string().uuid().safeParse(id).success) {
+    return fail("invalid_request", "id precisa ser um uuid.", 400, { requestId });
+  }
 
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let consulta = supabase
     .from("voice_calls")
     .select(
       "id, contact_id, direction, peer_phone, status, end_reason, started_at, answered_at, ended_at, duration_ms, owner_user_id, created_by",
     )
-    .eq("organization_id", activeOrg.orgId)
-    .order("started_at", { ascending: false })
-    .limit(limit);
+    .eq("organization_id", activeOrg.orgId);
+  if (id) consulta = consulta.eq("id", id);
+  const { data, error } = await consulta.order("started_at", { ascending: false }).limit(limit);
 
   // ERRO NÃO É LISTA VAZIA.
   //

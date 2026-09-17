@@ -38,7 +38,10 @@ export default async function KanbanPickerPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("crm_pipelines")
-    .select("id, name, slug, description, position, is_default")
+    // `is_client_pipeline` entra: sem ela o selo "Clientes" não aparecia ao
+    // carregar a página e o botão sempre oferecia "Funil de clientes", mesmo no
+    // funil já marcado — só o corpo de um PATCH trazia a coluna.
+    .select("id, name, slug, description, position, is_default, is_client_pipeline")
     .eq("organization_id", activeOrg.orgId)
     .eq("is_archived", false)
     .order("position");

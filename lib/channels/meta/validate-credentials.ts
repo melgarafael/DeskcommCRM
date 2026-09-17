@@ -10,6 +10,8 @@
  * entender que não na primeira mensagem que não sai, com o lead esperando do outro
  * lado. Esta é a mesma chamada que provou o ambiente na Fase 3b.
  */
+import { graphVersion } from "@/lib/graph-version";
+
 export type ValidacaoCredencial =
   | { ok: true; displayPhoneNumber: string | null; verifiedName: string | null; qualityRating: string | null }
   | { ok: false; motivo: string };
@@ -19,7 +21,7 @@ export async function validateMetaCredentials(input: {
   token: string;
   graphVersion?: string;
 }): Promise<ValidacaoCredencial> {
-  const version = input.graphVersion ?? process.env.META_GRAPH_VERSION ?? "v22.0";
+  const version = input.graphVersion ?? graphVersion();
   try {
     const res = await fetch(
       `https://graph.facebook.com/${version}/${input.phoneNumberId}` +

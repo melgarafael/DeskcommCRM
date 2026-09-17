@@ -104,13 +104,54 @@ export async function audit(entry: AuditEntry): Promise<void> {
 }
 
 /**
+ * O mesmo fato de plataforma registrado na auditoria de N organizações, num único insert de N
+ * linhas. Existe para a remoção de uma extensão: cada organização desligada precisa ver em
+ * `/app/audit` por que o guia sumiu, e N chamadas a `audit()` seriam N idas ao banco.
+ *
+ * Não resolve contexto de suporte, porque o único emissor é ação de plataforma, que a guarda de
+ * rota já proíbe durante o acompanhamento de suporte. A falha segue a doutrina: não bloqueia a
+ * mutação e é reportada como a de `audit()`.
+ */
+export async function auditForOrganizations(
+  entry: Omit<AuditEntry, "organizationId" | "actorAuthSessionId">,
+  organizationIds: readonly string[],
+): Promise<void> {
+  if (organizationIds.length === 0) return;
+  try {
+    const client = isServiceRoleConfigured() ? createAdminClient() : await createClient();
+    const { error } = await client.from("api_audit_log").insert(
+      organizationIds.map((organizationId) => ({
+        action: entry.action,
+        actor_user_id: entry.actorUserId ?? null,
+        actor_api_token_id: entry.actorApiTokenId ?? null,
+        organization_id: organizationId,
+        resource_type: entry.resourceType ?? null,
+        resource_id: entry.resourceId ?? null,
+        metadata: entry.metadata ?? {},
+        request_id: entry.requestId ?? null,
+        actor_ip: entry.ip ?? null,
+        actor_user_agent: entry.userAgent ?? null,
+        bypassed_rls: entry.bypassedRls ?? false,
+        acting_as_platform_admin: entry.actingAsPlatformAdmin ?? false,
+      })),
+    );
+    if (error) reportAuditFailure(error.message, entry);
+  } catch (err) {
+    reportAuditFailure(err instanceof Error ? err.message : String(err), entry);
+  }
+}
+
+/**
  * Falha de audit não bloqueia a mutação (por doutrina), mas TEM que ser
  * barulhenta em algum lugar — senão a trilha de auditoria pode parar inteira
  * sem ninguém perceber. Foi exatamente o que aconteceu: TODA chamada de
  * ferramenta MCP falhava ao auditar ("invalid input syntax for type uuid") e o
  * único sinal era um console.error dentro do contêiner.
  */
-function reportAuditFailure(message: string, entry: AuditEntry): void {
+function reportAuditFailure(
+  message: string,
+  entry: Pick<AuditEntry, "action" | "resourceType" | "organizationId">,
+): void {
   console.error("[audit] insert error", message, { action: entry.action });
   void import("@sentry/nextjs")
     .then((Sentry) => {

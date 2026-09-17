@@ -52,9 +52,16 @@ const TETOS: Record<string, { minutos: number; razao: string }> = {
     minutos: 15,
     razao: "trabalho real medido: p90 594s, máximo 609s em 51 verdes — folga de ~4m45",
   },
-  "ci.yml::invariants": {
-    minutos: 20,
-    razao: "sobe Postgres e aplica o baseline; trabalho real p90 325s",
+  // O agregado `invariants` NÃO tem teto de propósito: ele não roda a suíte, só
+  // lê o desfecho de `needs`. O teto que denuncia a suíte crescendo vive na perna
+  // que a roda.
+  "ci.yml::invariants-majors": {
+    minutos: 30,
+    razao:
+      "a perna deixou de ser UMA passada: agora é `test:db` + `test:db:update`, e cada uma sobe " +
+      "Postgres e aplica o baseline (p90 medido de uma passada: 325s). O 30 é DECLARADO, não " +
+      "medido — não há Docker onde esta matriz foi escrita; mantido em 20, a perna morreria por " +
+      "relógio no meio da segunda passada",
   },
 };
 

@@ -1,0 +1,8 @@
+# Log do servidor do LOTE (cfdb43575, next start :3041) — contagens no log inteiro, depois da marcação de Marina Agenda
+linhas no log:       21
+'gatilho de automação não foi emitido': 0
+'violates row-level security policy': 0
+# drenos do cron (scheduler local, Bearer INTERNAL_SECRET, 1x/min) entre 05:28 e 05:30:
+05:27:56 {"data":{"scanned":0,"done":0,"retried":0,"failed":0,"dead":0,"pulados":[]}}
+05:28:56 {"data":{"scanned":1,"done":1,"retried":0,"failed":0,"dead":0,"pulados":[]}}
+05:29:56 {"data":{"scanned":1,"done":1,"retried":0,"failed":0,"dead":0,"pulados":["contact.tag_added/automation-rules: caused_by_rule"]}}

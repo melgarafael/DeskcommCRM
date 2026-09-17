@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
  * apareça no seletor idioma que realmente muda a tela.
  */
 import { traduzir } from "@/lib/i18n/dicionario";
-import { IDIOMAS, IDIOMA_PADRAO, normalizarIdioma } from "@/lib/i18n/idiomas";
+import { IDIOMAS, IDIOMA_PADRAO, normalizarIdioma, parseAcceptLanguage } from "@/lib/i18n/idiomas";
 import { NAV_DESTINATIONS, NAV_GROUPS } from "@/lib/navigation/registry";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
 
@@ -69,6 +69,30 @@ describe("normalizar o idioma que veio do perfil", () => {
   });
 });
 
+describe("Accept-Language de quem ainda não tem sessão", () => {
+  // As telas públicas (login, signup, convite, legal) não têm `user` pra
+  // consultar — sem isto, um visitante em espanhol via anônimo cai sempre em
+  // português, mesmo que o navegador dele diga `es` na frente da lista.
+  it("acha o primeiro idioma suportado na ORDEM de preferência, não no maior q", () => {
+    expect(parseAcceptLanguage("en;q=0.9,es;q=0.8")).toBe("es");
+  });
+
+  it("reconhece a família do idioma, não só a tag exata", () => {
+    expect(parseAcceptLanguage("es-MX,es;q=0.9,en;q=0.8")).toBe("es");
+    expect(parseAcceptLanguage("pt-PT,pt;q=0.9")).toBe("pt-BR");
+  });
+
+  it("sem nenhum idioma suportado na lista, devolve null (cai no padrão depois)", () => {
+    expect(parseAcceptLanguage("en-US,en;q=0.9,fr;q=0.8")).toBeNull();
+  });
+
+  it("cabeçalho ausente ou vazio devolve null", () => {
+    expect(parseAcceptLanguage(null)).toBeNull();
+    expect(parseAcceptLanguage(undefined)).toBeNull();
+    expect(parseAcceptLanguage("")).toBeNull();
+  });
+});
+
 describe("os elos que somem sem barulho", () => {
   it("o idioma CHEGA ao cliente, e por contexto PRÓPRIO", () => {
     // Buscá-lo numa consulta própria faria a tela aparecer em português e
@@ -98,6 +122,14 @@ describe("os elos que somem sem barulho", () => {
     // sabe permissão. Traduzir é apresentação.
     const layout = readFileSync("app/app/layout.tsx", "utf8");
     expect(layout).toMatch(/<IdiomaProvider locale=\{user\.idioma\}>/);
+    // E nenhuma outra tela com sessão pula a cadeia: onboarding e get-started
+    // passavam `user.locale` (só a preferência) ao provider enquanto o texto do
+    // servidor da mesma tela usava `user.idioma` — metade da tela em cada língua.
+    for (const tela of ["app/onboarding/layout.tsx", "app/get-started/page.tsx"]) {
+      expect(readFileSync(tela, "utf8"), `${tela} passa a preferência crua ao provider`).not.toMatch(
+        /<IdiomaProvider locale=\{user\.locale\}>/,
+      );
+    }
     // O IMPORT, não a palavra: o cabeçalho do arquivo EXPLICA por que não
     // depende da autenticação, e a primeira versão deste caso ficava vermelha
     // por causa do próprio comentário que documenta a decisão.
@@ -117,9 +149,19 @@ describe("os elos que somem sem barulho", () => {
   it("o seletor oferece só o que MUDA a tela", () => {
     // `en-US` saiu: nunca teve tradução. Oferecer um idioma que não muda nada é
     // prometer o que a tela não cumpre.
-    const perfil = readFileSync("app/app/settings/profile/_form.tsx", "utf8");
-    expect(perfil).toMatch(/value="es">Español/);
-    expect(perfil, "ainda oferece um idioma sem tradução").not.toMatch(/value="en-US"/);
+    //
+    // Este caso casava `value="es">Español` no texto do formulário. A lista
+    // passou a vir do registro de idiomas, filtrada pelo nível, e quem prende o
+    // que as duas telas de Configurações OFERECEM é o render em
+    // `tests/unit/idioma-aparece-pelo-nivel-do-registro.test.tsx`. Aqui fica o
+    // que o render não vê: ninguém volta a escrever um idioma à mão.
+    for (const arquivo of ["app/app/settings/profile/_form.tsx", "app/app/settings/tenant/_form.tsx"]) {
+      const fonte = readFileSync(arquivo, "utf8");
+      expect(fonte, `${arquivo} voltou a listar idioma à mão`).not.toMatch(
+        /<SelectItem\s+value="(pt-BR|es|en-US|zh-CN)"/,
+      );
+      expect(fonte, `${arquivo} deixou de ler a lista do registro`).toMatch(/IDIOMAS_VISIVEIS\.map/);
+    }
   });
 
   it("a barra lateral traduz — ela aparece em TODA tela", () => {

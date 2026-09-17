@@ -1,0 +1,3 @@
+# Log do servidor da MAIN (b9bc24cf4, next start :3042) no momento em que a dona marcou Rui Controle Main pela Agenda
+# grep do log inteiro por 'gatilho de automação não foi emitido':
+{"level":"error","msg":"[agenda] gatilho de automação não foi emitido","ts":"2026-09-15T08:33:10.293Z","appointment_id":"5a436a1e-08e5-41a0-a646-ec9dbb972a6d","organization_id":"9eab14b8-f20b-4676-8bf5-8abba9cf2f5e","gatilho":"appointment.created","error":"new row violates row-level security policy for table \"event_log\""}

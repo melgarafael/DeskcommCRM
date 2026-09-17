@@ -11,8 +11,11 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { audit } from "@/lib/audit";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
+import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
@@ -496,6 +499,11 @@ async function upsertConversation(
  *
  * O evento é o que torna a pergunta respondível: `select count(*) from event_log
  * where event_type = 'whatsapp.conversation_mark_failed'`.
+ *
+ * ⚠️ O CORPO MUDOU DE CASA, e o motivo está em `lib/channels/marcar-conversa.ts`:
+ * Meta e Zernio chamavam a mesma RPC e tratavam a falha pior — a Meta ignorava
+ * o retorno inteiro. Esta função continua existindo com a assinatura que os dois
+ * chamadores daqui usam; quem decide o que fazer com a falha é uma só.
  */
 async function markConversation(
   admin: Admin,
@@ -505,35 +513,14 @@ async function markConversation(
   preview: string,
   at: string,
 ): Promise<void> {
-  const { error } = await admin.rpc("fn_mark_conversation_message" as never, {
-    p_conv: convId,
-    p_direction: direction,
-    p_preview: preview,
-    p_at: at,
-  } as never);
-  if (!error) return;
-
-  const { error: erroAviso } = await admin.rpc("emit_event" as never, {
-    p_event_type: "whatsapp.conversation_mark_failed",
-    p_entity_kind: "conversation",
-    p_entity_id: convId,
-    // O preview NÃO entra no payload: ele é o texto da mensagem do cliente, e
-    // isto é registro operacional, não cópia de conteúdo. O que se precisa
-    // saber para agir é qual conversa, que sentido, e o erro.
-    p_payload: { direction, erro: error.message },
-    p_metadata: { severity: "warn" },
-    p_organization_id: organizationId,
-  } as never);
-
-  if (erroAviso) {
-    // Segunda linha de defesa: o próprio canal de aviso caiu. Aqui o log do
-    // processo é o que sobra — é para ESTE caso que ele existe, não como rotina.
-    console.error("[waha.ingest] o carimbo falhou E o aviso também", {
-      conversa: convId,
-      erro: error.message,
-      aviso: erroAviso.message,
-    });
-  }
+  await marcarConversaComMensagem(admin as unknown as SupabaseClient, {
+    organizationId,
+    conversationId: convId,
+    direction,
+    preview,
+    at,
+    canal: "waha",
+  });
 }
 
 /**

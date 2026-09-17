@@ -83,6 +83,14 @@ case " $* " in
   # devolver algo: com PREV_IMAGE vazio o rollback nem seria tentado, e o teste
   # do agente passaria mesmo com o defeito de volta.
   *" images "*) printf 'sha256:deadbeef\n' ;;
+  # Aplicação do baseline. Só com BASELINE_ROTEIRO no ambiente (caso 4c): cada
+  # chamada imprime a próxima passada do roteiro. Fora dele, sai limpa como antes.
+  *" -f /b.sql "*)
+    if [ -n "${BASELINE_ROTEIRO:-}" ]; then
+      n=$(( $(cat "$BASELINE_ROTEIRO/n" 2>/dev/null || echo 0) + 1 ))
+      printf '%s' "$n" > "$BASELINE_ROTEIRO/n"
+      [ -f "$BASELINE_ROTEIRO/passada.$n" ] && cat "$BASELINE_ROTEIRO/passada.$n"
+    fi ;;
 esac
 exit 0
 STUB
@@ -245,6 +253,85 @@ check "o scheduler herda a política da tag imutável" \
   grep -q '^SCHEDULER_PULL_POLICY=missing$' .env
 check "nenhuma das chaves novas duplicou" \
   test "$(grep -cE '^(WORKER|SCHEDULER)_(IMAGE|PULL_POLICY)=' .env)" -eq 4
+
+echo "── 4c. Deadlock com o app no ar: o banco é aplicado de novo antes do ✓"
+# Medido numa VPS real na v1.27.3: com o app atendendo, o `create policy` logo
+# depois de um `drop policy` perdeu um deadlock, o script avisou e seguiu, e a
+# tabela ficou sem a policy de leitura. A função tem a própria suíte
+# (baseline-reaplica-apos-disputa.test.sh); este caso prova que o update.sh
+# passa por ela e que a tela diz a verdade nos dois desfechos.
+ROTEIRO_UG="$WORK/roteiro-baseline"
+DEADLOCK_UG='psql:/b.sql:16766: ERROR:  deadlock detected'
+mkdir -p "$ROTEIRO_UG"
+printf '%s\n' "$DEADLOCK_UG" > "$ROTEIRO_UG/passada.1"
+: > "$DOCKER_LOG"
+BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
+check "a atualização termina com sucesso" test "$RC" -eq 0
+check "o update.sh aplicou o baseline duas vezes" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 2
+check "e diz ✓ banco atualizado" grep -q "✓ banco atualizado" "$OUTFILE"
+check "  contando que foi na 2ª passada (o ✓ depois de disputa não é mudo)" grep -q "✓ banco atualizado na passada 2" "$OUTFILE"
+# linha_de <texto fixo>: número da primeira linha da saída que contém o texto (0 se nenhuma).
+linha_de() { grep -nF -- "$1" "$OUTFILE" | head -1 | cut -d: -f1 | grep . || echo 0; }
+check "  e a linha que perdeu a disputa foi listada ANTES do ✓" \
+  test "$(linha_de 'psql:/b.sql:16766: ERROR:  deadlock detected')" -gt 0 -a \
+       "$(linha_de 'psql:/b.sql:16766: ERROR:  deadlock detected')" -lt "$(linha_de '✓ banco atualizado na passada 2')"
+check "  sem o aviso de banco" test -z "$(grep 'NÃO são os esperados' "$OUTFILE" || true)"
+check "  e o fim diz Atualização concluída" grep -q "✓ Atualização concluída" "$OUTFILE"
+# Com --force na mesma tag ninguém conferiu a imagem: a frase antiga ("o app está
+# rodando uma imagem antiga") mentia justo para quem seguiu a dica de repetir.
+check "--force na mesma tag diz que está refazendo, sem inventar imagem antiga" grep -q "Refazendo a versão v1.1.0" "$OUTFILE"
+check "  (a frase da imagem antiga não aparece)" test -z "$(grep 'imagem antiga' "$OUTFILE" || true)"
+
+rm -rf "$ROTEIRO_UG"; mkdir -p "$ROTEIRO_UG"
+for n in 1 2 3; do printf '%s\n' "$DEADLOCK_UG" > "$ROTEIRO_UG/passada.$n"; done
+: > "$DOCKER_LOG"
+BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
+check "deadlock que não passa aplica 3 vezes e desiste" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 3
+check "  NÃO vira ✓ banco atualizado" test -z "$(grep '✓ banco atualizado' "$OUTFILE" || true)"
+check "  a tela mostra o deadlock" grep -q "deadlock detected" "$OUTFILE"
+# Sem --force, repetir o update.sh responderia "já está na versão mais recente"
+# e não tocaria no banco.
+check "  e ensina a repetir de um jeito que re-aplica" grep -qF "update.sh --to v1.1.0 --force" "$OUTFILE"
+# Na v1.27.3 de uma VPS real o aviso do passo 4 ficou soterrado pelo docker pull,
+# e a última frase da tela era "Atualização concluída".
+# O cabeçalho do bloco FINAL, e não a frase do passo 6: as duas diziam "banco NÃO
+# terminou limpo", e o check passava com o bloco final apagado (medido em sabotagem).
+check "  o FIM da tela repete que o banco NÃO terminou limpo" \
+  grep -q "Atenção: o banco NÃO terminou limpo nesta atualização" "$OUTFILE"
+check "  e não diz Atualização concluída" test -z "$(grep 'Atualização concluída' "$OUTFILE" || true)"
+check "  a dica aparece no passo do banco E no fim" test "$(grep -cF 'update.sh --to v1.1.0 --force' "$OUTFILE")" -eq 2
+# Restaurar o backup desfaz também o que o CRM gravou desde ele: é o último recurso.
+check "  no passo do banco, repetir vem ANTES de restaurar" \
+  test "$(linha_de 'update.sh --to v1.1.0 --force')" -lt "$(linha_de 'Só em último caso, volte ao backup')"
+check "  e a orientação é a ÚLTIMA coisa da saída, depois do passo 7" \
+  test -n "$(tail -n 8 "$OUTFILE" | grep -F 'update.sh --to v1.1.0 --force' || true)"
+
+# Lista grande (role sem dono: milhares de "must be owner") com a disputa no topo.
+# `printf | head -20` sob pipefail levava SIGPIPE e o set -e matava o update.sh
+# com 141 — antes do aviso de PERMISSÃO, que existe para este caso, e antes do pull.
+rm -rf "$ROTEIRO_UG"; mkdir -p "$ROTEIRO_UG"
+{ printf '%s\n' "$DEADLOCK_UG"; for i in $(seq 1 4000); do printf 'psql:/b.sql:%s: ERROR:  must be owner of table tabela_%s\n' "$i" "$i"; done; } > "$ROTEIRO_UG/passada.1"
+cp "$ROTEIRO_UG/passada.1" "$ROTEIRO_UG/passada.2"; cp "$ROTEIRO_UG/passada.1" "$ROTEIRO_UG/passada.3"
+: > "$DOCKER_LOG"
+BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
+check "lista de erros maior que o buffer do pipe não mata o update.sh" test "$RC" -eq 0
+check "  a disputa no topo foi reconhecida (3 passadas)" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 3
+check "  o aviso de PERMISSÃO chegou à tela" grep -q "erros de PERMISSÃO" "$OUTFILE"
+check "  e o fim diz que o banco NÃO terminou limpo" grep -q "banco NÃO terminou limpo" "$OUTFILE"
+# Lista misturada: repetir cura a parte da disputa e NÃO cura a de permissão. As
+# duas metades são ditas — escolher uma escondia a ação possível da outra.
+check "  a metade que repetir cura é dita" grep -q "Parte não aplicou porque o banco seguiu ocupado" "$OUTFILE"
+check "  e a metade que repetir NÃO cura também" grep -q "esses repetir não cura" "$OUTFILE"
+check "  e o fim orienta a conexão do dono" test -n "$(tail -n 8 "$OUTFILE" | grep -F 'SUPABASE_DB_ADMIN_URL' || true)"
+
+# Só permissão, sem disputa nenhuma: uma passada, e o fim diz o que fazer.
+rm -rf "$ROTEIRO_UG"; mkdir -p "$ROTEIRO_UG"
+for i in $(seq 1 200); do printf 'psql:/b.sql:%s: ERROR:  must be owner of table tabela_%s\n' "$i" "$i"; done > "$ROTEIRO_UG/passada.1"
+: > "$DOCKER_LOG"
+BASELINE_ROTEIRO="$ROTEIRO_UG" BASELINE_ESPERA_S=0 run_update --to v1.1.0 --force
+check "só permissão: uma passada (repetir não cura)" test "$(grep -c -- '-f /b.sql' "$DOCKER_LOG")" -eq 1
+check "  sem a metade de banco ocupado (não houve disputa)" test -z "$(grep 'Parte não aplicou' "$OUTFILE" || true)"
+check "  e o FIM orienta a conexão do dono" test -n "$(tail -n 8 "$OUTFILE" | grep -F 'SUPABASE_DB_ADMIN_URL' || true)"
 
 # ── Clone RASO: a topologia que o install.sh realmente entrega ───────────────
 # `install.sh` instala com `git clone --depth 1`. Num repositório raso o

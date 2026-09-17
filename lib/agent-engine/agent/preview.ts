@@ -5,6 +5,7 @@ import type { ToolSet } from '../edge/llm/run-model-call';
 import type { LeadContext, LeadContextResult } from '../edge/crm/get-lead-context';
 import type { PublishedAgentConfig } from './agent-config';
 import type { LeadCheckpointRow } from './inbound-turn';
+import { ferramentasDeAgendaDoAgente, temFerramentaDeAgenda } from './inbound-turn';
 import {
   evaluateBeforeSend,
   type GateContext,
@@ -117,7 +118,14 @@ export async function previewGateContext(
         : false,
     openedCaseThisTurn: false,
     humanPromiseExtraTargets: p.agent.handoffKeywords,
-    agenda: { active: p.agent.toolIds.includes('crm_book_appointment'), toolCalledThisTurn: false },
+    // A MESMA condição do turno real (`temFerramentaDeAgenda`): a prévia existe
+    // para mostrar o que vai acontecer, e um gate que arma diferente aqui faz
+    // quem afina o prompt testar contra outro sistema.
+    agenda: {
+      active: temFerramentaDeAgenda(p.agent.toolIds),
+      ferramentas: ferramentasDeAgendaDoAgente(p.agent.toolIds),
+      toolCalledThisTurn: false,
+    },
     internalVocabularyEnforced: true,
   };
 }

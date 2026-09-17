@@ -9,7 +9,7 @@ histórico dos PRs de fork (10 dos ~40 mais recentes fechados sem merge). Ordem 
 | 2 | **Config ou marca do próprio fork dentro do PR** — nome do cliente, logo, `.env`, compose editado, imagens publicadas no namespace do fork | #465 (7 arquivos com a marca de um cliente mergeando sem conflito), #518, #596, #600, #605 | branch nomeada a partir de `origin/main`, nunca do `main` do fork; item "marca/config" do pré-voo; a marca é tela, não código |
 | 3 | **Seção de versão `## [x.y.z]` escrita à mão no CHANGELOG** — o corte é automático e a seção manual quase publicou uma versão pelo merge | #354, #518, #588 | fragmento em `.changes/`; item "CHANGELOG" do pré-voo |
 | 4 | **PR aberto do `main` do fork** (traz tudo que a instalação da pessoa tem) | #418, #465 | `git switch -c fix/… origin/main` |
-| 5 | **Autor fecha o próprio PR** achando que "fez ruído" ou "abriu no lugar errado" (6 vezes; um fechou 36 segundos depois de abrir, levando junto um bug real) | #515, #547, #588 | nunca feche; o Vercel vermelho e os workflows parados são esperados (`depois-do-pr.md`) |
+| 5 | **Autor fecha o próprio PR** achando que "fez ruído" ou "abriu no lugar errado" (6 vezes; um fechou 36 segundos depois de abrir, levando junto um bug real) | #515, #547, #588 | nunca feche; workflow parado esperando liberação é o normal no primeiro PR (`depois-do-pr.md`) |
 | 6 | **Commit assinado como `root@vps` ou com nome alheio** — o trabalho some do perfil | #569-#571 (`root@vpsbr-…`), #352 ("SoftIA Backup Agent") | `git config user.email`; hook avisa; `.mailmap` só credita com prova |
 | 7 | **Mudança de comportamento sem teste**, ou teste que não fica vermelho quando o conserto sai (uma segunda porta sem guarda) | #474 e vários | passe 5 do guia: teste + sabotagem com contagem prevista |
 | 8 | **Funciona em instalação nova e quebra em quem já usa** — constraint nova sobre dados existentes; env obrigatória nova sem default | relato 13 da triagem | corrigir dados antes da constraint; env com default; fragmento `exige_acao` quando não há saída |
@@ -22,7 +22,6 @@ histórico dos PRs de fork (10 dos ~40 mais recentes fechados sem merge). Ordem 
 
 ## O que NÃO é erro seu (e já assustou gente)
 
-- `Vercel` vermelho com "Authorization required to deploy" — esperado em fork; não entra no gate.
 - Workflows "aguardando aprovação" no primeiro PR — política do GitHub; um mantenedor libera.
 - Vermelho em arquivo que você não tocou: `Test timed out in 15000ms` em dezenas de arquivos é
   saturação da máquina (`uptime`); `address already in use` é o runner; leia o log do **passo**,

@@ -53,6 +53,13 @@ export interface Conversation {
   updated_at: string;
 }
 
+/**
+ * Espelha o CHECK `messages_sent_via_check` do banco. O alias exportado existe
+ * para o invariante banco×TypeScript ler a fonte real do vocabulário, sem criar
+ * uma terceira lista manual só para o teste.
+ */
+export type SentVia = "user" | "ai" | "system" | "external_device" | "automation" | "crm";
+
 export interface Message {
   id: string;
   organization_id: string;
@@ -75,7 +82,7 @@ export interface Message {
   // 'automation', 'ai', 'user', 'system'. O tipo listava só três e o TypeScript
   // aceitava os demais só porque o dado vem do Supabase sem cast — a tela então
   // não conseguia nem NOMEAR o valor para exibi-lo (ver MessageBubble).
-  sent_via: "user" | "ai" | "system" | "external_device" | "automation" | "crm";
+  sent_via: SentVia;
   sent_by_user_id: string | null;
   sent_at: string;
   delivered_at: string | null;

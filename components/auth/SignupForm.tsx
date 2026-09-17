@@ -114,6 +114,14 @@ export function SignupForm({ convite }: { convite?: ConviteDoSignup }) {
         // não na tela inicial (que, para quem foi revogado, é a tela de acesso
         // revogado, com um botão Sair e mais nada).
         setContaExistente(true);
+      } else if (res.error === "somente_convite") {
+        // Ramo próprio porque o `else` diria "Tente novamente", e aqui tentar
+        // de novo nunca vai funcionar — é política, não falha transitória.
+        setServerError(
+          t(
+            "Esta instalação aceita cadastro apenas por convite. Se você foi convidado, use o link que chegou no seu e-mail.",
+          ),
+        );
       } else {
         setServerError(t("Não foi possível criar a conta. Tente novamente."));
       }

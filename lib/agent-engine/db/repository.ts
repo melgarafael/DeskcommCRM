@@ -26,6 +26,7 @@ export type { InboxRefKind } from '@/lib/ai/inbox-destino';
  * kind numa migration adiciona aqui na mesma mudança.
  */
 export type InboxKind =
+  | 'case_stale'
   | 'appointment_outcome_required'
   | 'appointment_recovery_review'
   | 'qr_rescan'
@@ -103,8 +104,21 @@ function one<T>(rows: T[], what: string): T {
  * `kind_e_ref` — um por (kind, ref). Serve para aviso que fala de UMA conversa
  * ou de UM lead. Dedupar esses por `kind` sozinho engoliria o aviso de outro
  * cliente, que é pior que repetir: some sinal em vez de sobrar ruído.
+ *
+ * `kind_e_titulo` — um por (kind, título). Serve quando o mesmo `kind` carrega
+ * problemas de natureza diferente, distinguidos por um título FIXO: o
+ * `event_dead` da IA que deixou de responder não pode sumir atrás do
+ * `event_dead` de uma mídia (`lib/event-log/aviso-de-evento-morto.ts`).
+ *
+ * `kind_ref_e_titulo` — um por (kind, ref, título). É a soma dos dois de cima, e
+ * existe porque UM `kind` genérico (`other`) carrega problemas diferentes DE UM
+ * MESMO lead: o espelho do funil recusa por escopo e recusa por perda sem motivo
+ * (`lib/agent-engine/edge/crm/move-lead-stage.ts`), com textos opostos e o mesmo
+ * `ref`. Por `kind_e_ref`, o segundo sumiria atrás do primeiro — o defeito que o
+ * dedupe existe para evitar, invertido. Por `kind_e_titulo`, o aviso de um lead
+ * calaria o do lead seguinte.
  */
-export type InboxDedupe = 'kind' | 'kind_e_ref';
+export type InboxDedupe = 'kind' | 'kind_e_ref' | 'kind_e_titulo' | 'kind_ref_e_titulo';
 
 /**
  * Abre um aviso na Central.
@@ -167,9 +181,14 @@ export async function insertInboxItem(
            and kind = $2
            and status = 'open'
            and ($8 = false or (ref_kind is not distinct from $6 and ref_id is not distinct from $7))
+           and ($9 = false or title = $4)
       )
      returning *`,
-    [...valores, dedupe === 'kind_e_ref'],
+    [
+      ...valores,
+      dedupe === 'kind_e_ref' || dedupe === 'kind_ref_e_titulo',
+      dedupe === 'kind_e_titulo' || dedupe === 'kind_ref_e_titulo',
+    ],
   );
   return rows[0] ?? null;
 }

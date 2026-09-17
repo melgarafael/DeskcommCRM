@@ -18,7 +18,8 @@
  *    organizações é medido pelos invariantes que usam papel restrito — não aqui.
  * 2. **Rede.** Timeout, retry e erro de transporte não existem neste caminho.
  * 3. **A superfície inteira do PostgREST.** Só o que está implementado abaixo:
- *    `select/insert` com `eq`, `order`, `limit`, `maybeSingle`, `single`. Um
+ *    `select/insert` com `eq`, `order`, `limit`, `maybeSingle`, `single` e
+ *    embed to-one (`alias:coluna_fk(colunas)`, traduzido para subquery). Um
  *    método não implementado **estoura** em vez de ser ignorado em silêncio —
  *    ver `naoImplementado`. Silêncio aqui viraria teste verde medindo nada.
  *
@@ -58,10 +59,91 @@ function erroDe(e: unknown): ErroPg {
 /** Aspas em cada coluna: `slug`, `position` e afins são palavras vivas no SQL. */
 function colunasSql(colunas: string): string {
   if (colunas.trim() === "*") return "*";
-  return colunas
-    .split(",")
+  return fatiarNoTopo(colunas)
     .map((c) => `"${c.trim()}"`)
     .join(", ");
+}
+
+/**
+ * Fatia por vírgula **de topo** — a que está fora de parênteses.
+ *
+ * `"id, contacts:contact_id(a, b)"` tem três vírgulas e só DUAS colunas. Um
+ * `split(",")` cru quebraria o embed no meio e pediria ao Postgres uma coluna
+ * chamada `contacts:contact_id(a`.
+ */
+function fatiarNoTopo(lista: string): string[] {
+  const partes: string[] = [];
+  let profundidade = 0;
+  let atual = "";
+  for (const ch of lista) {
+    if (ch === "(") profundidade += 1;
+    if (ch === ")") profundidade -= 1;
+    if (ch === "," && profundidade === 0) {
+      partes.push(atual);
+      atual = "";
+      continue;
+    }
+    atual += ch;
+  }
+  if (atual.trim() !== "") partes.push(atual);
+  return partes;
+}
+
+/**
+ * EMBED do PostgREST — `alias:coluna_fk(colunas)`.
+ *
+ * Nasceu porque `sendMessageHandler` (a ÚNICA porta de saída de mensagem do
+ * produto) lê a conversa com dois embeds — `contacts:contact_id(...)` e
+ * `channel_sessions:channel_session_id(...)`. Sem tradução, esse select
+ * ESTOURAVA no adaptador, e qualquer invariante sobre o caminho de envio
+ * morria num 500 genérico em vez de medir a decisão do handler.
+ *
+ * A tabela do embed é o ALIAS. É a convenção que o repo inteiro usa (o alias
+ * nomeia a tabela referenciada), e o custo de errar é barulhento — `relation
+ * "x" does not exist` — nunca silencioso.
+ *
+ * Zero linhas vira `null`, como o PostgREST devolve para um embed to-one sem
+ * correspondente. É o caso real de conversa sem canal.
+ */
+interface Embed {
+  alias: string;
+  colunaFk: string;
+  colunas: string;
+}
+
+function lerEmbed(pedaco: string): Embed | null {
+  const m = /^\s*([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_]+)\s*\(([^]*)\)\s*$/.exec(pedaco);
+  if (!m) return null;
+  return { alias: m[1]!, colunaFk: m[2]!, colunas: m[3]! };
+}
+
+function embedSql(e: Embed, aliasExterno: string): string {
+  const cols = fatiarNoTopo(e.colunas)
+    .map((c) => `"${c.trim()}"`)
+    .join(", ");
+  return (
+    `(select to_jsonb(emb) from (select ${cols} from public."${e.alias}" ` +
+    `where "id" = ${aliasExterno}."${e.colunaFk}") emb) as "${e.alias}"`
+  );
+}
+
+/**
+ * Projeção do `select`, já com os embeds traduzidos. Devolve também se houve
+ * embed: quando há, o FROM precisa de alias para a subquery poder apontar para
+ * a coluna de FK da linha externa.
+ */
+function projecaoSql(colunas: string, aliasExterno: string): { sql: string; temEmbed: boolean } {
+  if (colunas.trim() === "*") return { sql: "*", temEmbed: false };
+  let temEmbed = false;
+  const sql = fatiarNoTopo(colunas)
+    .map((pedaco) => {
+      const embed = lerEmbed(pedaco);
+      if (!embed) return `"${pedaco.trim()}"`;
+      temEmbed = true;
+      return embedSql(embed, aliasExterno);
+    })
+    .join(", ");
+  return { sql, temEmbed };
 }
 
 class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
@@ -127,10 +209,26 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
     return this;
   }
 
-  /** Presentes para ESTOURAR: o código que os usar precisa de implementação real. */
-  in(): never {
-    return naoImplementado("in");
+  /**
+   * `in` — QUINTA vez que o `naoImplementado` se paga, e desta vez o estouro
+   * veio de um PR de contribuidor: a cascata de LGPD passou a cancelar a régua
+   * do contato anonimizado com `.in("status", STATUS_DA_REGUA_VIVA)`
+   * (`lib/lgpd/cascata.ts:221`), e o invariante que exercita a anonimização
+   * estourou aqui em vez de ficar verde.
+   *
+   * O que teria acontecido com um `in` que devolvesse vazio: "nenhuma régua
+   * viva" é o desfecho natural de uma lista vazia, então o teste passaria
+   * afirmando que a cascata cancelou a régua — sem ela ter cancelado nada.
+   *
+   * `= any($n)` e não `in ($1,$2,…)` porque a lista é um parâmetro só: número
+   * variável de placeholders reabriria a porta de montar SQL por concatenação.
+   */
+  in(coluna: string, valores: readonly unknown[]): this {
+    this.filtros.push(["= any", coluna, [...valores]]);
+    return this;
   }
+
+  /** Presentes para ESTOURAR: o código que os usar precisa de implementação real. */
   neq(): never {
     return naoImplementado("neq");
   }
@@ -139,9 +237,16 @@ class ConsultaPg<T> implements PromiseLike<RespostaFalsa<T[]>> {
     const valores: unknown[] = [];
     const onde = this.filtros.map(([op, c, v]) => {
       valores.push(v);
+      // `= any` recebe o array inteiro num placeholder só; os demais operadores
+      // são infixos comuns.
+      if (op === "= any") return `"${c}" = any($${valores.length})`;
       return `"${c}" ${op} $${valores.length}`;
     });
-    let texto = `select ${colunasSql(this.colunas)} from public."${this.tabela}"`;
+    const projecao = projecaoSql(this.colunas, "linha");
+    let texto = `select ${projecao.sql} from public."${this.tabela}"`;
+    // O alias só entra quando há embed: a subquery precisa apontar para a
+    // coluna de FK DA LINHA EXTERNA, e sem alias a referência seria ambígua.
+    if (projecao.temEmbed) texto += " linha";
     if (onde.length > 0) texto += ` where ${onde.join(" and ")}`;
     if (this.ordem) texto += ` order by "${this.ordem.coluna}" ${this.ordem.asc ? "asc" : "desc"}`;
     if (this.teto !== null) texto += ` limit ${this.teto}`;

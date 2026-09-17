@@ -43,6 +43,20 @@ export function useMoveCard(pipelineId: string) {
       }
       return { snapshot };
     },
+    onSuccess: (res, args) => {
+      // A resposta é o lead como o servidor o deixou, com o `updated_at` final.
+      // Sem gravá-la aqui, o cache seguia com o valor de antes até o refetch do
+      // `onSettled` chegar, e arrastar o mesmo card de novo nesse intervalo
+      // mandava `expected_updated_at` velho → 409 (issue #916).
+      qc.setQueryData<BoardData>(queryKey, (atual) =>
+        atual
+          ? {
+              ...atual,
+              leads: atual.leads.map((l) => (l.id === args.leadId ? { ...l, ...res.data } : l)),
+            }
+          : atual,
+      );
+    },
     onError: (err, _args, ctx) => {
       if (ctx?.snapshot) qc.setQueryData(queryKey, ctx.snapshot);
       if (err instanceof ApiError && err.status === 409) {

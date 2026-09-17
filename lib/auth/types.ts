@@ -148,6 +148,17 @@ export interface ActiveOrg {
    */
   visibility_mode?: VisibilityMode;
   /**
+   * A regra "cliente pela agenda" está ligada nesta organização
+   * (`organizations.settings.crm.cliente_pela_agenda`, migration 0262)?
+   *
+   * Opcional pelo mesmo motivo de `visibility_mode`: só o layout de `/app`
+   * preenche, e ausente é desligado. NÃO é autorização nem é quem aplica a
+   * regra — quem decide é o banco (o trigger lê a chave). Serve para a tela não
+   * mostrar selo, data e funil de clientes de uma regra desligada, em que
+   * `first_service_at` está congelada.
+   */
+  cliente_pela_agenda?: boolean;
+  /**
    * O que ESTA organização definiu para si — CAMPO A CAMPO, e só o que ela
    * mesma definiu.
    *

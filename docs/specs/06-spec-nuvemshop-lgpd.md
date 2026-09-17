@@ -69,7 +69,7 @@ Conectar o DeskcommCRM ao backend de e-commerce do tenant (Nuvemshop no MVP) de 
 |---|---|---|
 | App embedded vs External | **External** | Mais flexibilidade de UI custom (admin DeskcommCRM tem UX própria); evita iframe sandbox; consent renderizado no domínio Nuvemshop é suficiente |
 | Lib Nuvemshop | **Wrapper próprio em `lib/nuvemshop/`** | SDK oficial PT-BR é incompleto pra webhooks LGPD; wrapper fino sobre `fetch` permite tipagem rigorosa e telemetria custom |
-| Worker runtime | **Vercel Cron + Upstash QStash** pra jobs longos (>30s); Edge Functions pros receivers | Hobby/Pro têm limite de 5/15 min; QStash dá retry e dedupe de fila; mantém stack Vercel-only |
+| Worker runtime | ~~**Vercel Cron + Upstash QStash** pra jobs longos (>30s); Edge Functions pros receivers~~ — **superado**: os serviços `worker` e `scheduler` do `docker-compose.prod.yml` (Spec 07) | A justificativa original ("mantém stack Vercel-only") caiu junto com a premissa: o produto é distribuído como self-host, sem teto de plano serverless; retry e dedupe vivem no `event_log` |
 | Particionamento `webhook_events_log` | **Por mês (`PARTITION BY RANGE (received_at)`)** | Hot 90 dias acessível; partições antigas detacháveis pra cold S3 |
 | Roteamento receiver | **`/api/v1/webhooks/nuvemshop/<event>?t=<webhook_path_token>`** | Token por tenant gerado no onboarding (Spec 01); evita subdomínio dinâmico |
 | Mapeamento status | Tabela canônica + override em `tenant_integrations.store_metadata.stage_mapping` | Configurável por tenant (PRD §3.10) |
@@ -795,7 +795,8 @@ export async function postConnect({ integrationId, organizationId }: PostConnect
 
 ### 4.7 Refresh token rotation worker
 
-Cron `*/15 * * * *` (Vercel Cron) varre `tenant_integrations` com `expires_at < now() + interval '30 minutes'`:
+Cron `*/15 * * * *` **previsto** para o serviço `scheduler` — é planejamento: nenhuma rota de refresh
+existe hoje, confira com `ls app/api/v1/cron` — varrendo `tenant_integrations` com `expires_at < now() + interval '30 minutes'`:
 
 ```typescript
 export async function refreshExpiringTokens() {

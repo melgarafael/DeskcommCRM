@@ -96,6 +96,17 @@ export async function GET(_req: NextRequest): Promise<Response> {
     current,
     run,
   );
+  // A mesma prova vale para a TELA, não só para a versão exibida. Enquanto a
+  // falha é o run mais recente, a tela mostra o aviso dela sem o botão de
+  // atualizar — e o único jeito de trocar o run mais recente é justamente
+  // clicar nesse botão. Depois de um deploy por outro caminho, sai versão nova
+  // e o dono lê um aviso de dias atrás, sem saída pela tela (medido em
+  // produção: rollback de 13/09 bloqueando a 1.27.2 em 15/09, com a 1.23.0 no
+  // ar desde 14/09 via `update.sh` no terminal). Vale para `failed` também: o
+  // host reportar uma versão que o run não descreve é deploy posterior, e não o
+  // app preso na versão que quebrou.
+  const falhaSuperada =
+    (run?.status === "failed_rolled_back" || run?.status === "failed") && rollbackSuperado;
   // O outro lado do mesmo silêncio: o run deu CERTO e o host ainda não bateu.
   // `current_version` segue nomeando a versão antiga por até 5 minutos, e sem
   // isto `update_available` continua verdadeiro — a tela volta do reinício
@@ -180,6 +191,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
           from_version: run.from_version ?? "",
           to_version: run.to_version ?? "",
           log_tail: run.log_tail ?? "",
+          superseded: falhaSuperada,
         }
       : null,
   });

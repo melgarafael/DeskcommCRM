@@ -40,6 +40,16 @@ import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
  * não tem knob: se alguém trocar a fonte pelo fuso do pacing, o bloco dirá
  * 14:30 e este arquivo reprova.
  *
+ * ─── O vermelho que não era defeito (#506) ──────────────────────────────────
+ *
+ * A asserção procurava a hora SOLTA (`"14:30"`) no prompt inteiro — e o prompt
+ * carrega carimbos de tempo cunhados durante a execução, como o `sent_at` do
+ * histórico que esta fixture semeia com `now()`. Qualquer um deles contém
+ * `14:30` quando o relógio do runner está nesse minuto, e o gate reprovava sem
+ * defeito nenhum de produção: um vermelho que depende da hora de parede treina
+ * quem observa a ignorar o gate. Agora a asserção mira a LINHA INTEIRA que o
+ * defeito produziria — e nenhum carimbo de tempo reproduz uma linha inteira.
+ *
  * ─── O instante ─────────────────────────────────────────────────────────────
  *
  * `2026-09-04T17:30:00Z` = sexta, 14:30 em São Paulo e 13:30 em Manaus. Escolhi
@@ -80,8 +90,13 @@ const INSTANTE = new Date("2026-09-04T17:30:00Z");
 
 /** O que o bloco tem de dizer. Se sair a hora de São Paulo, a fonte está errada. */
 const ESPERADO_MANAUS = "sexta-feira, 04/09/2026, 13:30 (America/Manaus)";
-/** O que ele NÃO pode dizer — é a hora que `channel_knobs`/pacing daria. */
-const HORA_DO_PACING = "14:30";
+/**
+ * O que ele NÃO pode dizer — a linha INTEIRA que sairia com o fuso do pacing.
+ * Não é hora solta de propósito: `"14:30"` cru colide com os carimbos de tempo
+ * que o prompt carrega (o `sent_at` do histórico é cunhado durante a execução),
+ * e aí o arquivo reprova por hora de parede do runner — ver o cabeçalho (#506).
+ */
+const BLOCO_DO_PACING = "sexta-feira, 04/09/2026, 14:30 (America/Sao_Paulo)";
 
 interface EnvioCapturado {
   body: string;
@@ -276,11 +291,11 @@ describe("o prompt do turno carrega a data de hoje", () => {
   });
 
   it("NÃO usa o fuso do pacing — a org é de Manaus e o canal não tem knob", async () => {
-    // Com a fonte trocada por `channel_knobs.timezone`, o bloco diria 14:30
-    // (São Paulo, o default do pacing) e este caso é o único que reprova.
+    // Com a fonte trocada por `channel_knobs.timezone`, o bloco diria a hora de
+    // São Paulo (o default do pacing) e este caso é o único que reprova.
     await rodaTurno(montaHandler(modeloQueGravaOPrompt(), INSTANTE));
 
-    expect(promptsVistos[0]).not.toContain(HORA_DO_PACING);
+    expect(promptsVistos[0]).not.toContain(BLOCO_DO_PACING);
     expect(promptsVistos[0]).not.toContain("America/Sao_Paulo");
   });
 

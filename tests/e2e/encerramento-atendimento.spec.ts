@@ -169,6 +169,12 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     const panel = page.getByTestId("inbox-demandas");
     await expect(panel.getByText("Demanda vigente neste canal")).toBeVisible();
     await expect(page.getByTestId("inbox-memoria")).toContainText("Preferência de horário");
+    // DoD 12 para a issue #908: o rótulo do botão que CRIA o lead provado pela
+    // tela, não só em jsdom. O painel é `flex flex-wrap` e o rótulo ficou mais
+    // longo — se ele quebrar a fileira ou sumir, é aqui que aparece. Cabe nesta
+    // spec, e não numa nova, porque o painel já está montado neste ponto: spec
+    // nova custaria mais um login e mais um seed ao relógio do CI.
+    await expect(page.getByRole("button", { name: "Novo Lead", exact: true })).toBeVisible();
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Fechar", exact: true }).click();
     await expect

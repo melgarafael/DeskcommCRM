@@ -68,7 +68,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 - **Engine NOWEB por default** (mais leve, sem Chromium); **WEBJS apenas pra features específicas** (stickers animados, listas/botões interativos) — decisão por feature, não por sessão inteira; revisitar na Spec
 - `webhook_secret` é **único por sessão** (não global) — facilita revogação e rotação
 - 1 tenant pode ter N sessões (MVP-B: 1-2 por tenant; arquitetura suporta mais)
-- Auth WAHA: `WAHA_API_KEY` armazenada como **SHA512 do plaintext** no servidor WAHA; o backend DeskcommCRM guarda o plaintext em variável de ambiente segura (Vercel Encrypted Env Var)
+- Auth WAHA: `WAHA_API_KEY` armazenada como **SHA512 do plaintext** no servidor WAHA; o backend DeskcommCRM guarda o plaintext no `.env` da instalação (permissão 600)
 - Mudança de status é evento de timeline + audit (`channel_session.status_changed`)
 
 **ACs principais.**
@@ -283,7 +283,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 
 ### 3.10 Crons obrigatórios
 
-**O que provê.** Tarefas agendadas (Vercel Cron) que sustentam consistência e auto-recovery.
+**O que provê.** Tarefas agendadas — no self-host, pelo serviço `scheduler` do `docker-compose.prod.yml` — que sustentam consistência e auto-recovery. A tabela abaixo é o requisito deste PRD, não o crontab em vigor: esse sai de `grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u`.
 
 | Cron | Frequência | Responsabilidade |
 |---|---|---|
@@ -320,7 +320,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 - SLA WAHA upstream: 99% (Railway/Hostgator não dão SLA forte; aceito como tradeoff)
 
 ### 4.3 Segurança
-- `WAHA_API_KEY` plaintext armazenada apenas em Vercel Encrypted Env Vars; SHA512 no servidor WAHA
+- `WAHA_API_KEY` plaintext armazenada apenas no `.env` da instalação (permissão 600); SHA512 no servidor WAHA
 - `webhook_secret` por sessão (não global); rotação suportada
 - HMAC-SHA512 com timing-safe compare; nunca comparação ingênua de strings
 - Mídia em Supabase Storage com RLS por bucket; URLs assinadas com TTL ≤30min
@@ -373,7 +373,7 @@ O canal WhatsApp é considerado **MVP-completo** quando:
 ### Externas
 - **WAHA Plus** — instância hospedada (Railway $5-10/mês no MVP; VPS Hostgator plano Turing ~R$140/mês em produção com Nginx + Let's Encrypt; datacenter São Paulo)
 - **Supabase Storage** (bucket por tenant pra mídia)
-- **Vercel Cron** (3 jobs: sync-sessions, recover-stuck-messages, process-pending-webhooks)
+- **Agendamento de crons** — 3 jobs previstos (sync-sessions, recover-stuck-messages, process-pending-webhooks) no serviço `scheduler` do `docker-compose.prod.yml`. Previsto: nem todo job desta linha está no crontab de hoje, que sai de `grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u`
 - **Fila de envio**: Inngest, Trigger.dev, ou pg_boss (decisão na Spec)
 
 ### Decisões deferidas pra Spec
@@ -399,7 +399,7 @@ O canal WhatsApp é considerado **MVP-completo** quando:
 | W3 | **Falha de webhook** (WAHA down, network partition, handler crash) | Alto | `webhook_events_log` raw como fonte de verdade; cron `process-pending-webhooks` re-processa; WAHA Plus tem retry nativo (Core não); dead-letter com alerta após 3 tentativas |
 | W4 | **Inconsistência multi-device** (mensagem enviada por celular não aparece no CRM, ou aparece duplicada) | Médio | Assinar `message.any` (não `message`); idempotência por `(org, external_id)`; teste de regressão simulando envio cross-device |
 | W5 | **Abuso de envio em campanha** (atendente faz blast de 1000 msgs sem warm-up) | Alto | Hard-cap diário por sessão; validação de min 5 variações de copy; bloqueio de campanha durante warm-up; revisão manual de campanhas >500 msgs no MVP |
-| W6 | **Vazamento de credentials WAHA** (`WAHA_API_KEY` em log, repo, ou env exposto) | Crítico | Plaintext apenas em Vercel Encrypted Env Vars; sanitização agressiva em logs; `gitleaks` pre-commit (Sub-PRD 01 §4.1); rotação trimestral; SHA512 no servidor WAHA garante que comprometimento do servidor não vaza o plaintext |
+| W6 | **Vazamento de credentials WAHA** (`WAHA_API_KEY` em log, repo, ou env exposto) | Crítico | Plaintext apenas no `.env` da instalação (permissão 600); sanitização agressiva em logs; `gitleaks` pre-commit (Sub-PRD 01 §4.1); rotação trimestral; SHA512 no servidor WAHA garante que comprometimento do servidor não vaza o plaintext |
 | W7 | **Dependência de upstream WAHA Plus** (mudança de política, deprecação, ban da WAHA pelo WhatsApp) | Alto | Variante BYO documentada (cliente roda WAHA próprio) como Fase 2; consideração futura de migração pra Cloud API oficial Meta como Fase 2.5; monitoramento de release notes WAHA; contrato de suporte explícito com mantenedor da WAHA Plus |
 | W8 | **Mensagem fora de ordem** (webhook chega depois de mensagem mais nova) | Médio | Ordenar timeline por `sent_at` (do payload), não `created_at` do DB; UI re-renderiza ao receber out-of-order |
 | W9 | **Mídia >50MB inviável** (WhatsApp aceita até 100MB pra alguns tipos, mas WAHA pode falhar) | Médio | UI rejeita >16MB no outbound (limite WhatsApp para a maioria dos tipos); inbound >50MB usa S3 do WAHA Plus ou stream em chunks; fallback de download |

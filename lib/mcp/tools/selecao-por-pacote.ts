@@ -60,6 +60,17 @@ export interface CapacidadeSelecionavel {
   name: string;
   risco: ToolRisk;
   pacotes: ReadonlyArray<ToolBundle>;
+  /**
+   * `false` = o MOTOR descarta (capacidade do harness, ver
+   * `lib/mcp/tools/ferramentas-do-harness.ts`).
+   *
+   * O pacote não pode oferecer o que o turno joga fora: era assim que o dono
+   * ligava "Atender e responder", via `crm_send_whatsapp_message` nas críticas e
+   * `crm_request_human_handoff` entrar sozinho pelo toggle de escalar, e o engine
+   * descartava as duas em silêncio. Ausente = marcável, porque quem monta uma
+   * capacidade à mão (teste, catálogo de terceiro) não tem como saber disto.
+   */
+  marcavel?: boolean;
 }
 
 export type EstadoPacote = "ligado" | "parcial" | "desligado";
@@ -68,7 +79,7 @@ function doPacote(
   catalogo: ReadonlyArray<CapacidadeSelecionavel>,
   pacote: ToolBundle,
 ): CapacidadeSelecionavel[] {
-  return catalogo.filter((c) => c.pacotes.includes(pacote));
+  return catalogo.filter((c) => c.pacotes.includes(pacote) && c.marcavel !== false);
 }
 
 /** As que o toggle do pacote liga sozinho — tudo que não é `critico`. */

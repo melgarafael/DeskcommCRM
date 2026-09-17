@@ -1,8 +1,9 @@
 /**
  * Relógio do pipeline webhook → automação → follow-up → 1º envio.
  *
- * NÃO usa cron da Vercel. O Hobby só agenda 1×/dia e event-log-drain nem
- * entra na lista. Este código corre DENTRO do POST (captação ou inbound).
+ * NÃO depende de agendador externo: onde não há cron de minuto, o dreno de
+ * eventos não roda a tempo. Este código corre DENTRO do POST (captação ou
+ * inbound).
  *
  * O crontab da VPS continua existindo como rede de segurança; não é requisito
  * desta jornada. Falha aqui nunca vira 5xx do webhook.

@@ -8,8 +8,10 @@
  * Body: { run_id: uuid, sample_message?, sample_contact? }
  *   sample_message/sample_contact only honored when the run row is_dry_run=true.
  *
- * Configured for `maxDuration=300` in vercel.ts — agent loops with multiple
- * tool calls can stretch close to that budget.
+ * `maxDuration=300` is declared below (`export const maxDuration`) and nowhere
+ * else for this route — agent loops with multiple tool calls can stretch close
+ * to that budget. To check instead of trusting this line:
+ * `git grep -n maxDuration -- app/api/internal`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";

@@ -2,6 +2,7 @@
 import { useState, useTransition, type ReactNode } from "react";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
+import { BarraDeProgressoNavegacao } from "@/components/shell/BarraDeProgressoNavegacao";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
@@ -30,6 +31,7 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
   useNotifyOpenFromServiceWorker();
   return (
     <div className="flex min-h-screen w-full bg-background text-foreground">
+      <BarraDeProgressoNavegacao />
       <div className="hidden md:block">
         <Sidebar collapsed={collapsed} />
       </div>

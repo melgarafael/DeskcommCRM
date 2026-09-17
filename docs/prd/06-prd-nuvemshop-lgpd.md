@@ -337,7 +337,7 @@ A integração Nuvemshop + LGPD é considerada **MVP-completa** quando:
 - **Conta Nuvemshop developer** + app registrado (production) com scopes mínimos definidos
 - **Acesso aos endpoints OAuth da Nuvemshop** (production e sandbox)
 - **`pgcrypto` ativo** no Postgres (Supabase) — vide Sub-PRD 01 §4.1
-- **Worker runtime** pra background jobs (Vercel Functions / serviço externo — decisão Spec)
+- **Worker runtime** pra background jobs — decidido depois deste PRD; ver o item 13 de §9
 
 ### Decisões deferidas pra Spec
 - App embedded vs External da Nuvemshop
@@ -364,7 +364,7 @@ A integração Nuvemshop + LGPD é considerada **MVP-completa** quando:
 | N6 | **Sync inicial demora dias e bloqueia admin** | Worker em background; UI mostra progresso e ETA; chunking + cursor para resume após interrupção; throttle pra respeitar rate limit Nuvemshop |
 | N7 | **Conflito identity resolution gera `merge_queue` enorme** (loja com 50k clientes histórico vs WhatsApp existente) | UI de merge em batch; opção de "auto-aceitar" merges com confiança alta após review humano dos primeiros 100; documentação clara pro lojista no onboarding |
 | N8 | **Re-sync corrompe estado** (idempotência falha por bug) | Idempotência testada com fixture de produção (re-rodar sync 3x deve resultar em zero linhas novas); rollback procedure documentado |
-| N9 | **`pgcrypto` encryption key vazada** → todos os tokens OAuth expostos | Chave separada (`NUVEMSHOP_OAUTH_ENCRYPTION_KEY`) das demais; rotação trimestral planejada; processo de re-encrypt em background; secret manager (Vercel Encrypted env) com audit de acesso |
+| N9 | **`pgcrypto` encryption key vazada** → todos os tokens OAuth expostos | Chave separada (`NUVEMSHOP_OAUTH_ENCRYPTION_KEY`) das demais; rotação trimestral planejada; processo de re-encrypt em background; chave no `.env` da instalação (permissão 600) — **sem auditoria de leitura** |
 | N10 | **Rate limit Nuvemshop estourado** durante incident bloqueia outros tenants | Worker pool por tenant (não global); circuit breaker se 429 persistente; alarme em 3+ tentativas em 1h |
 
 ---
@@ -399,7 +399,7 @@ A serem decididas no spec correspondente (`docs/specs/06-spec-nuvemshop-lgpd.md`
 10. **Backoff específico do rate limit Nuvemshop**: parâmetros exatos baseados em testes
 11. **Política de retenção de `webhook_events_log`**: hot 90 dias, cold após (S3?)
 12. **Estrutura de notificação ao admin** sobre token expirado, store/redact, DLQ (in-app, email, ambos)
-13. **Worker runtime**: Vercel Functions (timeout 5min na Hobby, 15min Pro), serviço externo (Render, Railway), ou fila gerenciada (Inngest, Trigger.dev)
+13. ~~**Worker runtime**: Vercel Functions, serviço externo (Render, Railway), ou fila gerenciada (Inngest, Trigger.dev)~~ — **decidido, e fora desta lista desde então**: runtime próprio, no serviço `worker` do `docker-compose.prod.yml`, na infraestrutura de quem instala. Os dois caminhos de execução (o entrypoint do `worker` e os handlers de `event_log`) estão em [`docs/specs/07-spec-events-workers.md`](../specs/07-spec-events-workers.md) §6
 14. **Estratégia de teste de contrato** com sandbox Nuvemshop no CI
 
 ---

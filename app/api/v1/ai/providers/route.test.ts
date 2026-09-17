@@ -42,6 +42,9 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
+
+/** O que o `baseline.sql` semeia para openai — o catálogo "já existente". */
+const CATALOGO_SEMEADO = ["gpt-5.4-mini"];
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 
 /** O que já vive em `settings` e não pode sumir quando o padrão é gravado. */
@@ -53,7 +56,13 @@ const SETTINGS_EXISTENTES = {
 
 interface EstadoDoBanco {
   atualizacao: Record<string, unknown> | null;
-  modeloExiste: boolean;
+  /**
+   * Os modelos que `ai_models` conhece para o provedor pedido. Lista VAZIA é
+   * o estado de uma instalação em que a sincronização do catálogo nunca
+   * rodou — que NÃO é a mesma coisa que "o catálogo existe e este modelo não
+   * está nele", e é a diferença que a rota precisa enxergar.
+   */
+  catalogo: string[];
 }
 
 function stubDoBanco(estado: EstadoDoBanco) {
@@ -82,16 +91,29 @@ function stubDoBanco(estado: EstadoDoBanco) {
         };
       }
       if (tabela === "ai_models") {
+        // A tabela responde por FILTRO, como o PostgREST: com `model_id` no
+        // `where`, só há resposta se aquele modelo estiver no catálogo; sem ele,
+        // a resposta diz apenas se o provedor tem alguma linha. É essa diferença
+        // que separa "modelo errado" (404) de "catálogo ainda não sincronizou"
+        // (grava, com aviso).
+        const filtros: Record<string, string> = {};
         return {
           select() {
             return this;
           },
-          eq() {
+          eq(coluna: string, valor: string) {
+            filtros[coluna] = valor;
+            return this;
+          },
+          limit() {
             return this;
           },
           maybeSingle() {
+            const alvo = filtros.model_id;
+            const achado =
+              alvo === undefined ? estado.catalogo[0] : estado.catalogo.find((m) => m === alvo);
             return Promise.resolve({
-              data: estado.modeloExiste ? { model_id: "gpt-5.4-mini" } : null,
+              data: achado === undefined ? null : { model_id: achado },
               error: null,
             });
           },
@@ -132,8 +154,8 @@ describe("PATCH /api/v1/ai/providers — padrão da organização", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    estado = { atualizacao: null, modeloExiste: true };
-    estadoDeSessao = { atualizacao: null, modeloExiste: true };
+    estado = { atualizacao: null, catalogo: CATALOGO_SEMEADO };
+    estadoDeSessao = { atualizacao: null, catalogo: CATALOGO_SEMEADO };
     vi.mocked(requireSupportWrite).mockResolvedValue(null);
     vi.mocked(createClient).mockResolvedValue(
       stubDoBanco(estadoDeSessao) as unknown as Awaited<ReturnType<typeof createClient>>,
@@ -184,14 +206,52 @@ describe("PATCH /api/v1/ai/providers — padrão da organização", () => {
 
   it("recusa modelo que não está no catálogo do provedor", async () => {
     // `ai_models` é catálogo global e é lido pelo cliente de SESSÃO — só a
-    // escrita em `organizations` precisa do admin. Por isso a bandeira vai no
+    // escrita em `organizations` precisa do admin. Por isso o catálogo vai no
     // dublê de sessão, e não no do admin.
-    estadoDeSessao.modeloExiste = false;
+    //
+    // O catálogo EXISTE (é o do `baseline.sql`) e o modelo pedido não está nele:
+    // é o erro de digitação, e continua sendo recusado.
+    estadoDeSessao.catalogo = ["gpt-5.4-mini"];
     const { PATCH } = await import("./route");
     const res = await PATCH(requisicao({ provider: "openai", default_model: "modelo-que-nao-existe" }));
 
     expect(res.status).toBe(404);
     expect(estado.atualizacao).toBeNull();
+  });
+
+  it("grava — com aviso — quando o catálogo do provedor ainda não sincronizou", async () => {
+    // O defeito da #765: numa VPS recém-instalada o `ai_models` não tem NENHUMA
+    // linha do provedor escolhido (o cron de sincronização nunca rodou). A
+    // conferência do par (provider, model_id) recusava todo modelo então —
+    // inclusive o certo, digitado de dentro da tela, que é o único caminho
+    // disponível com o combo vazio. Sem catálogo não há o que conferir: a
+    // escrita passa, e o aviso é o que impede a tela de dizer "salvo" como se
+    // alguém tivesse validado o identificador.
+    estadoDeSessao.catalogo = [];
+    const modelo = "meta-llama/llama-3.3-70b-instruct";
+    const { PATCH } = await import("./route");
+    const res = await PATCH(requisicao({ provider: "openrouter", default_model: modelo }));
+
+    expect(res.status).toBe(200);
+
+    const settings = (estado.atualizacao?.settings ?? {}) as Record<string, unknown>;
+    expect(settings.llm).toEqual({ provider: "openrouter", default_model: modelo });
+
+    const json = (await res.json()) as { data: { avisos: string[] } };
+    expect(json.data.avisos).toHaveLength(1);
+    expect(json.data.avisos[0]).toContain("openrouter");
+    expect(json.data.avisos[0]).toContain(modelo);
+  });
+
+  it("não avisa quando o modelo está no catálogo do provedor", async () => {
+    // O aviso não pode virar ruído na instalação sadia: com o catálogo
+    // sincronizado, gravar um modelo conhecido não rende aviso nenhum.
+    const { PATCH } = await import("./route");
+    const res = await PATCH(requisicao({ provider: "openai", default_model: "gpt-5.4-mini" }));
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { avisos: string[] } };
+    expect(json.data.avisos).toEqual([]);
   });
 
   it("exige papel admin — a troca do padrão muda todo ponto herdado", async () => {

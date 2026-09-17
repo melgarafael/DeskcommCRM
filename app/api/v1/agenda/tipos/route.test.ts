@@ -382,6 +382,7 @@ describe("GET /api/v1/agenda/tipos", () => {
           janelaDeAgendamentoDias: 60,
           lembreteLigado: true,
           lembreteAntecedenciaMin: 180,
+          lembreteDegrausExtras: [],
         },
       ],
     });

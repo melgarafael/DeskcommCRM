@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Console de agência — o agente de cada cliente",
+    "subtitle": "Custo e saúde já existem; o que faltava era saber se o cliente está atendendo",
+    "output": "console-de-agencia.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "plataforma", "label": "Plataforma (admin)" },
+    { "id": "api", "label": "API" },
+    { "id": "dados", "label": "Dados" }
+  ],
+  "mainPath": ["carteira", "aba-agente", "rota-agents", "ai_agents"],
+  "nodes": [
+    {
+      "id": "carteira",
+      "lane": "plataforma",
+      "col": 0,
+      "type": "ui",
+      "label": "Carteira de clientes (admin/usage + admin/tenants)"
+    },
+    {
+      "id": "saude",
+      "lane": "plataforma",
+      "col": 1,
+      "type": "ui",
+      "label": "Aba Saúde do tenant"
+    },
+    {
+      "id": "aba-agente",
+      "lane": "plataforma",
+      "col": 2,
+      "type": "ui",
+      "label": "Aba Agente do tenant"
+    },
+    {
+      "id": "rota-agents",
+      "lane": "api",
+      "col": 2,
+      "type": "service",
+      "label": "GET /api/v1/admin/tenants/[id]/agents (requirePlatformAdmin)"
+    },
+    {
+      "id": "ai_agents",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "ai_agents — published_version_id, kind, archived_at"
+    },
+    {
+      "id": "ai_agent_versions",
+      "lane": "dados",
+      "col": 3,
+      "type": "database",
+      "label": "ai_agent_versions — versão que o motor executa"
+    }
+  ],
+  "edges": [
+    {
+      "id": "carteira-abre-saude",
+      "from": "carteira",
+      "to": "saude",
+      "label": "custo e saúde por cliente"
+    },
+    {
+      "id": "carteira-abre-agente",
+      "from": "carteira",
+      "to": "aba-agente",
+      "label": "qual agente está publicado nele"
+    },
+    {
+      "id": "aba-le-rota",
+      "from": "aba-agente",
+      "to": "rota-agents",
+      "label": "leitura, sem escrita — publicar não mora aqui"
+    },
+    {
+      "id": "rota-le-agentes",
+      "from": "rota-agents",
+      "to": "ai_agents",
+      "label": "filtra por organization_id e archived_at is null"
+    },
+    {
+      "id": "rota-le-versoes",
+      "from": "rota-agents",
+      "to": "ai_agent_versions",
+      "label": "junta a publicada; sem publicada, devolve null"
+    }
+  ]
+}

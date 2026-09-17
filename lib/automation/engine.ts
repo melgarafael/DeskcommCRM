@@ -20,17 +20,12 @@ import { evaluateConditions, type RuleCondition } from "@/lib/automation/conditi
 import { getAction } from "@/lib/automation/actions";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
+import { ENTIDADE_ESPERADA_POR_GATILHO } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
 
-const EXPECTED_ENTITY_KIND: Record<string, string> = {
-  "lead.created": "crm_lead",
-  "lead.stage_changed": "crm_lead",
-  "lead.tag_added": "crm_lead",
-  "contact.tag_added": "contact",
-  "message.received": "message",
-};
+const EXPECTED_ENTITY_KIND: Record<string, string> = ENTIDADE_ESPERADA_POR_GATILHO;
 
 interface RuleRow {
   id: string;
@@ -72,6 +67,28 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
       .eq("organization_id", org)
       .maybeSingle();
     if (contact) context.contact = contact;
+  } else if (row.entity_kind === "calendar_appointment" && row.entity_id) {
+    const { data: appointment } = await admin
+      .from("calendar_appointments")
+      .select("*")
+      .eq("id", row.entity_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (appointment) {
+      context.appointment = appointment;
+      // O contato sai do COMPROMISSO, não do payload: quem escreve a regra vai
+      // querer `contact.name` no texto da mensagem, e a linha do banco é a
+      // versão de agora — o payload é a de quando o evento nasceu.
+      if (appointment.contact_id) {
+        const { data: contact } = await admin
+          .from("contacts")
+          .select("*")
+          .eq("id", appointment.contact_id)
+          .eq("organization_id", org)
+          .maybeSingle();
+        if (contact) context.contact = contact;
+      }
+    }
   } else if (row.entity_kind === "message" && row.entity_id) {
     const contactId = row.payload.contact_id as string | undefined;
     if (contactId) {

@@ -49,6 +49,20 @@ const PARES: Array<{
   simbolo: string;
 }> = [
   {
+    tabela: "extension_operations",
+    coluna: "kind",
+    // O recibo das extensões (0271). Quatro cópias no TypeScript viraram uma; um kind
+    // novo que nascesse só no banco faria o navegador descartar o recibo como inválido.
+    arquivo: "lib/extensions/vocabulario.ts",
+    simbolo: "EXTENSION_OPERATION_KINDS",
+  },
+  {
+    tabela: "extension_operations",
+    coluna: "status",
+    arquivo: "lib/extensions/vocabulario.ts",
+    simbolo: "EXTENSION_OPERATION_STATUSES",
+  },
+  {
     tabela: "crm_lead_activities",
     coluna: "actor_kind",
     // lib/leads/activity-emitter.ts → ActivityActorKind
@@ -168,6 +182,14 @@ const PARES: Array<{
     // suposto: com as duas constraints no banco, `valoresDoCheck` devolve uma só.
     arquivo: "lib/channels/types.ts",
     simbolo: "ChannelProvider",
+  },
+  {
+    tabela: "messages",
+    coluna: "sent_via",
+    // lib/types/messaging.ts → SentVia. A union deixa de viver inline em Message
+    // para o gate ler a fonte real em vez de manter uma terceira lista manual.
+    arquivo: "lib/types/messaging.ts",
+    simbolo: "SentVia",
   },
   {
     tabela: "followup_enrollments",
@@ -366,7 +388,6 @@ function valoresDoCheck(tabela: string, coluna: string): string[] {
   }
   return definidoras[0]?.valores ?? [];
 }
-
 
 /**
  * Os literais do union type, LIDOS DO ARQUIVO — nunca transcritos.

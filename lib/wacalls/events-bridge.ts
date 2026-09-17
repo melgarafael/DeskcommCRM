@@ -14,6 +14,7 @@
  */
 import type pg from 'pg';
 
+import { phoneLookupVariants } from '@/lib/channels/phone-variants';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 import { motivoDaChamadaEmPortugues } from '@/lib/wacalls/motivo-da-chamada';
 
@@ -21,6 +22,7 @@ import type { Logger } from '../agent-engine/obs/logger';
 
 export interface WacallsBridgeConfig {
   baseUrl: string;
+  apiToken: string;
   /** Backoff de reconexão da SSE (ms) — sobe até este teto. */
   maxBackoffMs: number;
 }
@@ -119,6 +121,26 @@ function donoValido(owner: unknown): string | null {
   return typeof owner === 'string' && UUID.test(owner) ? owner : null;
 }
 
+/**
+ * O contato do número que ligou ou foi ligado — pelas DUAS grafias do celular.
+ *
+ * O peer vem do WhatsApp, e o WhatsApp registra muito celular brasileiro SEM o
+ * nono dígito (`553198966398`); o cadastro guarda COM (`+5531998966398`,
+ * `lib/channels/phone-variants.ts`). Casar só `'+' || peer` achava o contato
+ * por acaso enquanto a ligação era discada para o endereço errado; com o
+ * destino certo (`lib/voice/numero-discavel.ts`) deixaria de achar, e toda
+ * ligação desse contato nasceria sem ele. `$1` = organização, `$2` = peer em
+ * dígitos (compara com `wa_lid`), `$3` = `phoneLookupVariants(peer)`. A grafia
+ * idêntica ao peer vence, para dois cadastros duplicados não sortearem.
+ */
+const CONTATO_DO_PEER = (org: string, peer: string, variantes: string) => `
+  (select id from contacts
+    where organization_id = ${org}
+      and (phone_number = any(${variantes}::text[]) or wa_lid = ${peer})
+      and is_merged_into is null
+    order by (phone_number = '+' || ${peer}) desc
+    limit 1)`;
+
 /** `5511999999999@s.whatsapp.net` → `5511999999999`. JID sem o domínio. */
 function peerToPhone(jid: string): string {
   return jid.split('@')[0] ?? jid;
@@ -150,7 +172,34 @@ async function handleAuthState(
   ev: { paired: boolean; state: string; qr?: string },
   log: Logger,
 ): Promise<void> {
-  if (!ev.paired) return;
+  if (!ev.paired) {
+    // O APARELHO FOI DESVINCULADO — pelo celular (WhatsApp › Aparelhos
+    // conectados), por `Logout`, ou por o WhatsApp ter derrubado o vínculo.
+    // O upstream emite `auth-state {state:"logged_out", paired:false}` e esta
+    // ponte ignorava: `wacalls_paired_at` ficava preenchido para sempre, a tela
+    // seguia dizendo "pareado", o botão "Chamar" continuava oferecido para uma
+    // sessão sem aparelho, e parear de novo recebia 409 `voice_already_paired`
+    // (`app/api/v1/voice/sessions/pair/route.ts`) — um beco sem saída.
+    //
+    // SÓ `logged_out`. Durante o pareamento o upstream emite `paired:false` com
+    // `state:"qr"` a cada código novo, e isso não desfaz nada. A guarda
+    // `wacalls_paired_at is not null` torna o QR vencido de uma sessão que
+    // nunca pareou (também `logged_out`) um no-op.
+    if (ev.state !== 'logged_out') return;
+    const { rowCount } = await pool.query(
+      `update channel_sessions
+          set wacalls_paired_at = null,
+              status = 'STOPPED',
+              last_status_change_at = now(),
+              updated_at = now()
+        where id = $1 and wacalls_paired_at is not null`,
+      [sess.channelSessionId],
+    );
+    if (rowCount) {
+      log.warn('wacalls: aparelho de voz desvinculado', { channel_session_id: sess.channelSessionId });
+    }
+    return;
+  }
   //
   // A guarda era `wacalls_paired_at is distinct from now()`, e o comentário
   // dizia que isso evitava reescrever a cada heartbeat. Não evitava nada:
@@ -196,35 +245,50 @@ async function handleCallStatus(
   log: Logger,
 ): Promise<void> {
   const peerPhone = peerToPhone(ev.peer);
-  const direction = ev.direction === 'outbound' ? 'outbound' : 'inbound';
   // Quem está na linha. O upstream manda em TODO `call-status`; a versão
   // anterior desta ponte descartava, e o resultado era uma ligação sem dono:
   // qualquer colega da organização desligava a chamada de qualquer outro, a
   // linha do tempo dizia "Sistema", e o painel de chamada em andamento
   // aparecia para o escritório inteiro.
   const dono = donoValido(ev.owner);
+  // O SENTIDO NÃO VEM NO EVENTO. `call-status` sai do broker com
+  // `type, sessionId, id, owner, status, peer, startedAt, peerName,
+  // peerPhotoUrl` — sem `direction` (`internal/app/events/callregistry.go`);
+  // só o snapshot `call-list` e a API REST carregam o campo. A versão anterior
+  // caía em `'inbound'` sempre que ele faltava, ou seja, em TODA ligação feita
+  // pelo CRM: o painel dizia "Conectando…" em vez de "Chamando…", e a que
+  // ninguém atendeu virava "Chamada perdida" na Central — medido na VPS em
+  // 2026-09-15, duas ligações, dois avisos falsos.
+  //
+  // O que distingue os dois sentidos no PRIMEIRO evento é o dono: quem disca
+  // pelo CRM já entra com `X-Client-Id`, então a ligação nasce com `owner`;
+  // uma recebida toca sem dono até alguém atender. Limite conhecido: uma
+  // ligação FEITA fora do CRM (a tela web do próprio WaCalls) nasce sem dono e
+  // é lida como recebida até o snapshot a corrigir.
+  //
+  // Sentido INFERIDO só vale no INSERT; no caminho de conflito ele não
+  // reescreve nada, para um `connected` com dono numa recebida não a virar.
+  // Sentido DECLARADO (o snapshot `call-list` o traz) reescreve, porque é a
+  // verdade do upstream — é assim que a reconexão corrige o que foi inferido.
+  const declarada = ev.direction === 'outbound' || ev.direction === 'inbound';
+  const direction: 'inbound' | 'outbound' = declarada
+    ? (ev.direction as 'inbound' | 'outbound')
+    : dono
+      ? 'outbound'
+      : 'inbound';
 
   // O peer do WhatsApp vem em DÍGITOS PUROS ("5511999998888"); a coluna
   // `contacts.phone_number` guarda E.164 COM o "+", e a constraint
   // `contacts_phone_e164_format` garante que é sempre assim. Casar cru contra
   // cru NUNCA acha ninguém: toda ligação nasceria sem contato, sem atividade na
-  // linha do tempo, e o aviso de chamada perdida sem o botão de ligar de volta —
-  // o ramo "número que não casou com contato nenhum" deixaria de ser a exceção
-  // que o comentário abaixo descreve e passaria a ser TODA chamada.
-  // A ingestão do canal de mensagem faz o mesmo `"+" + digitos` ao GRAVAR;
-  // aqui é a
-  // ponta que LÊ. O `wa_lid` continua cru: é identificador do WhatsApp, não
-  // telefone.
+  // linha do tempo, e o aviso de chamada perdida sem o botão de ligar de volta.
+  // As duas grafias do nono dígito entram — ver `CONTATO_DO_PEER`. O `wa_lid`
+  // continua cru: é identificador do WhatsApp, não telefone.
   const { rows } = await pool.query<{ contact_id: string | null }>(
     `insert into voice_calls
        (organization_id, channel_session_id, contact_id, wacalls_call_id, direction,
         peer_phone, status, started_at, owner_user_id, answered_at)
-     values ($1, $2,
-             (select id from contacts
-               where organization_id = $1
-                 and (phone_number = '+' || $5 or phone_number = $5 or wa_lid = $5)
-                 and is_merged_into is null
-               limit 1),
+     values ($1, $2, ${CONTATO_DO_PEER('$1', '$5', '$10')},
              $3, $4, $5, $6, to_timestamp($7 / 1000.0), $8,
              -- Tambem no INSERT, e nao so no caminho de conflito: nem toda
              -- chamada passa por 'ringing' antes de 'connected'. Ligacao de
@@ -237,6 +301,7 @@ async function handleCallStatus(
              case when $6 = 'connected' then now() else null end)
      on conflict (organization_id, wacalls_call_id) do update
        set status = excluded.status,
+           direction = case when $9 then excluded.direction else voice_calls.direction end,
            contact_id = coalesce(voice_calls.contact_id, excluded.contact_id),
            -- coalesce e nao excluded: o dono e gravado pela rota de atender
            -- (que sabe QUEM clicou) antes de o SSE chegar, e um evento posterior
@@ -258,6 +323,8 @@ async function handleCallStatus(
       ev.status,
       ev.startedAt,
       dono,
+      declarada,
+      phoneLookupVariants(peerPhone),
     ],
   );
   log.info('wacalls: call-status', {
@@ -286,6 +353,7 @@ async function handleCallEnded(
     answered_at: string | null;
     peer_phone: string;
     owner_user_id: string | null;
+    direction: 'inbound' | 'outbound';
   }>(
     `update voice_calls
         set status = 'ended', end_reason = $3, ended_at = to_timestamp($4 / 1000.0),
@@ -296,7 +364,7 @@ async function handleCallEnded(
             end,
             updated_at = now()
       where organization_id = $1 and wacalls_call_id = $2
-      returning id, contact_id, started_at, answered_at, peer_phone, owner_user_id`,
+      returning id, contact_id, started_at, answered_at, peer_phone, owner_user_id, direction`,
     [sess.organizationId, ev.id, ev.reason, ev.endedAt, donoValido(ev.owner)],
   );
   const row = rows[0];
@@ -308,6 +376,7 @@ async function handleCallEnded(
   }
 
   const atendida = !!row.answered_at;
+  const recebida = row.direction === 'inbound';
 
   // Desligou: a IA volta a falar. Antes de qualquer outra coisa — se a linha
   // abaixo falhar, o pior desfecho é um aviso que não nasceu, não uma conversa
@@ -316,16 +385,18 @@ async function handleCallEnded(
     await devolverAVozDaIa(pool, sess.organizationId, row.contact_id);
   }
 
-  // Perdida = nunca atendida. `end_reason` do upstream não distingue "tocou e
-  // ninguém pegou" de "operador recusou" — para o inbox os dois merecem
-  // alerta igual: alguém precisa ligar de volta.
+  // Perdida = RECEBIDA e nunca atendida. `end_reason` do upstream não distingue
+  // "tocou e ninguém pegou" de "operador recusou" — para o inbox os dois merecem
+  // alerta igual: alguém precisa ligar de volta. Uma ligação FEITA daqui que o
+  // cliente não atendeu não é perdida: quem discou já sabe, e um aviso pedindo
+  // para "ligar de volta" a quem acabou de ligar é ruído com cara de urgência.
   //
   // `ref_kind = 'contact'` e não `'voice_call'`: a ficha do contato é onde mora
   // o botão de ligar, então abrir o contexto e FAZER o que o aviso pede viram o
   // mesmo clique (ver `POLITICAS_DE_AVISO` em `lib/ai/inbox-destino.ts`).
   // Chamada de número que não casou com contato nenhum entra sem referência —
   // o telefone está no título, e o aviso continua sendo aviso.
-  if (!atendida) {
+  if (!atendida && recebida) {
     await pool.query(
       `insert into agent_inbox_items (organization_id, kind, severity, title, body, ref_kind, ref_id)
        values ($1, 'voice_call_missed', 'warn', $2, $3, $4, $5)`,
@@ -366,10 +437,18 @@ async function handleCallEnded(
       // telefone que tocou sem ninguém atender é constatação de silêncio, não
       // interação — carimbar `last_activity_at` ali esfriaria o Radar de Risco
       // por um contato com quem ninguém falou.
-      type: atendida ? 'voice_call' : 'voice_call_missed',
+      // TRÊS desfechos, e o terceiro tem tipo próprio porque a linha do tempo
+      // rotula pelo TIPO (`activityLabel`): gravar a ligação FEITA sem resposta
+      // como `voice_call_missed` escrevia "Chamada de voz perdida" no negócio
+      // de quem acabou de discar — o mesmo texto falso que a Central deixou de
+      // mostrar. `voice_call_unanswered` também fica fora da lista positiva de
+      // `fn_update_last_activity_at`: ninguém falou com ninguém.
+      type: atendida ? 'voice_call' : recebida ? 'voice_call_missed' : 'voice_call_unanswered',
       reason: atendida
         ? 'Chamada de voz atendida'
-        : `Chamada de voz perdida — ${motivoDaChamadaEmPortugues(ev.reason)}`,
+        : recebida
+          ? `Chamada de voz perdida — ${motivoDaChamadaEmPortugues(ev.reason)}`
+          : `Chamada de voz sem resposta — ${motivoDaChamadaEmPortugues(ev.reason)}`,
       sourceModule: 'voice_calls',
       sourceId: row.id,
       // Quem atendeu assina. Sem isto a linha caía em `webhook_source` →
@@ -410,17 +489,102 @@ export async function despacharEventoWacalls(
     return;
   }
   const type = ev['type'];
+  if (type === 'call-list') {
+    // O snapshot que o broker manda a todo assinante NOVO — isto é, a cada
+    // reconexão desta ponte. É a única fonte no stream que carrega `direction`
+    // (registros `CallRecord`, `internal/app/events/callregistry.go`: `sessionId,
+    // callId, owner, direction, peer, startedAt, status, endedAt?`), e cobre a
+    // ligação que começou enquanto a ponte estava caída: cada registro ativo
+    // passa pelo mesmo upsert do `call-status`, com o sentido DECLARADO — que,
+    // ao contrário do inferido, reescreve a linha que já existia.
+    //
+    // Limite conhecido: a ligação que TERMINOU com a ponte caída não vem aqui
+    // (registro `ended` ou ausente), e a linha dela segue aberta até o teto de
+    // silêncio da IA. Fechá-la exigiria disparar os efeitos de `call-ended`
+    // sem o evento — ver o issue aberto junto com este conserto.
+    const calls = Array.isArray(ev['calls']) ? (ev['calls'] as Record<string, unknown>[]) : [];
+    for (const c of calls) {
+      if (typeof c['sessionId'] !== 'string' || typeof c['callId'] !== 'string') {
+        // Forma inesperada é informação, não silêncio: se o upstream renomear
+        // a chave, esta linha é o único rastro de que a reconexão parou de
+        // reconciliar.
+        log.warn('wacalls: registro do call-list fora do formato', {
+          chaves: Object.keys(c).join(',').slice(0, 200),
+        });
+        continue;
+      }
+      if (c['status'] === 'ended') continue;
+      // Um registro que lança não derruba o lote: no incremental 1 evento é 1
+      // linha, e o snapshot precisa da mesma granularidade.
+      try {
+        const sess = await resolveSession(pool, cache, c['sessionId']);
+        if (!sess) continue;
+        await handleCallStatus(
+          pool,
+          sess,
+          {
+            id: c['callId'],
+            status: String(c['status']),
+            peer: String(c['peer'] ?? ''),
+            direction: typeof c['direction'] === 'string' ? c['direction'] : undefined,
+            startedAt: typeof c['startedAt'] === 'number' ? c['startedAt'] : Date.now(),
+            owner: c['owner'],
+          },
+          log,
+        );
+      } catch (err) {
+        log.error('wacalls: registro do call-list falhou ao reconciliar', {
+          wacalls_call_id: c['callId'],
+          error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+        });
+      }
+    }
+    return;
+  }
   const sessionId = ev['sessionId'];
   if (typeof type !== 'string' || typeof sessionId !== 'string') return;
-  // call-list/session-list são snapshots completos pro client React do
-  // próprio WaCalls reconectar — não precisamos, nossa fonte de verdade é o
-  // incremental abaixo.
-  if (type === 'call-list' || type === 'session-list') return;
+  // `session-list` é snapshot pro client React do próprio WaCalls — a
+  // `auth-state` incremental já diz tudo o que o banco precisa.
+  if (type === 'session-list') return;
 
   const sess = await resolveSession(pool, cache, sessionId);
   if (!sess) return; // sessão de outra instalação/teste — não é nossa
 
   switch (type) {
+    case 'incoming': {
+      // A ÚNICA fonte de "recebida" que o upstream emite por nome, uma vez por
+      // ligação (`wireCall` → `OnIncoming`: `UpsertCall` e então
+      // `EmitIncoming`). Normalmente só confirma o que a inferência pelo dono já
+      // gravou no `call-status` anterior. É defesa para dois casos: o
+      // `call-status` que se perdeu (a linha nasce aqui, como manda a §4.2) e a
+      // inferência que errou por qualquer motivo (o sentido é corrigido).
+      const id = ev['id'];
+      const peer = ev['peer'];
+      if (typeof id !== 'string' || !id || typeof peer !== 'string' || !peer) {
+        log.warn('wacalls: incoming fora do formato', { chaves: Object.keys(ev).join(',').slice(0, 200) });
+        return;
+      }
+      const peerPhone = peerToPhone(peer);
+      await pool.query(
+        `insert into voice_calls
+           (organization_id, channel_session_id, contact_id, wacalls_call_id, direction,
+            peer_phone, status, started_at)
+         values ($1, $2, ${CONTATO_DO_PEER('$1', '$4', '$6')},
+                 $3, 'inbound', $4, 'ringing', to_timestamp($5 / 1000.0))
+         on conflict (organization_id, wacalls_call_id) do update
+           set direction = 'inbound', updated_at = now()
+           where voice_calls.direction is distinct from 'inbound'`,
+        [
+          sess.organizationId,
+          sess.channelSessionId,
+          id,
+          peerPhone,
+          typeof ev['offeredAt'] === 'number' ? ev['offeredAt'] : Date.now(),
+          phoneLookupVariants(peerPhone),
+        ],
+      );
+      return;
+    }
     case 'auth-state':
       await handleAuthState(pool, sess, ev as { paired: boolean; state: string; qr?: string }, log);
       return;
@@ -448,7 +612,7 @@ export async function despacharEventoWacalls(
       );
       return;
     default:
-      // session-qr / incoming / incoming-claimed: pura notificação de UI
+      // session-qr / incoming-claimed / call-quality…: pura notificação de UI
       // (§5.2/§5.1 da spec) — sem escrita no banco.
       return;
   }
@@ -507,7 +671,10 @@ export async function runVoiceCallsBridgeLoop(
   while (!signal.aborted) {
     try {
       const res = await fetch(`${cfg.baseUrl}/api/events`, {
-        headers: { 'X-Client-Id': 'deskcomm-worker' },
+        headers: {
+          'X-Client-Id': 'deskcomm-worker',
+          Authorization: `Bearer ${cfg.apiToken.trim()}`,
+        },
         signal,
       });
       if (!res.ok || !res.body) {

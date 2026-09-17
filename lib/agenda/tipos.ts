@@ -278,6 +278,34 @@ export const ALVO_DE_VINCULO_DO_AGENDAMENTO = "appointment" as const;
 export const VINCULO_DE_AGENDAMENTO = "scheduled" as const;
 
 /**
+ * O `entity_kind` do compromisso no `event_log`.
+ *
+ * É a TABELA no singular (`calendar_appointments` → `calendar_appointment`), e
+ * não o `appointment` do vínculo acima: são vocabulários de tabelas diferentes,
+ * e o motor de regras compara este valor contra `EXPECTED_ENTITY_KIND` para
+ * decidir se o evento é dele. Aproximar as duas strings porque "parecem a mesma
+ * coisa" faria o motor descartar todo gatilho de agenda em silêncio, como
+ * `entity_kind_mismatch` — que é exatamente o defeito que aquele guard existe
+ * para pegar em `lead` vs `crm_lead`.
+ */
+export const ENTIDADE_DO_AGENDAMENTO = "calendar_appointment" as const;
+
+/**
+ * O nome a usar quando o tipo do compromisso não pôde ser lido.
+ *
+ * ⚠️ É FALLBACK, NÃO PADRÃO. Ele descreve a categoria, não o atendimento, e
+ * nenhuma condição de automação escrita por um operador vai casar com ele de
+ * propósito. Existe só para o caso real de o tipo ter sido apagado depois do
+ * compromisso ter nascido — o caminho normal lê `calendar_event_types.name`.
+ *
+ * Enquanto esta string era digitada como literal dentro dos handlers, ela ERA o
+ * caminho normal em três dos quatro gatilhos, e o efeito foi uma condição
+ * decorativa: a tela oferece "Tipo de atendimento contém …", a pessoa configura,
+ * salva, e a regra nunca dispara porque o payload sempre dizia "Agendamento".
+ */
+export const NOME_GENERICO_DO_TIPO = "Agendamento" as const;
+
+/**
  * O tipo de atividade que o agendamento emite na timeline do lead.
  *
  * `crm_lead_activities.type` é vocabulário ABERTO e não tem CHECK — de

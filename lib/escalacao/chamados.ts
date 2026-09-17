@@ -22,6 +22,18 @@ export interface ChamadoDaLista {
   summary: string;
   blocker: string;
   status: string;
+  /**
+   * Do que o caso trata — o corte por onde a fila se tria.
+   *
+   * ⚠️ ESTE CAMPO PRECISA APARECER EM TRÊS LUGARES, e os três são o contrato:
+   * na `COLUNAS_*` (o que o PostgREST traz), aqui (o que a rota promete) e em
+   * `achatarContato` (o que a rota de fato devolve). Ele já entrou na consulta
+   * sem entrar na projeção uma vez: a coluna vinha do banco e morria no `map`,
+   * e a tela renderizava "Outro" para todo caso, para sempre, com os gates
+   * verdes. `string` e não a união porque o vocabulário é ABERTO no banco —
+   * quem resolve valor desconhecido é `tipoDeCasoLabel`.
+   */
+  kind: string;
   opened_at: string;
   conversation_id: string;
   contact_name: string | null;
@@ -45,11 +57,11 @@ export interface ChamadoDetalhado extends ChamadoDaLista {
 }
 
 const COLUNAS_LISTA =
-  "id, title, summary, blocker, status, opened_at, conversation_id, " +
+  "id, title, summary, blocker, status, kind, opened_at, conversation_id, " +
   "conversations:conversation_id(contacts:contact_id(name, phone_number))";
 
 const COLUNAS_DETALHE =
-  "id, title, summary, blocker, status, source, opened_at, closed_at, conversation_id, " +
+  "id, title, summary, blocker, status, kind, source, opened_at, closed_at, conversation_id, " +
   "conversations:conversation_id(contacts:contact_id(name, phone_number))";
 
 interface LinhaComContato {
@@ -58,6 +70,7 @@ interface LinhaComContato {
   summary: string;
   blocker: string;
   status: string;
+  kind: string | null;
   opened_at: string;
   conversation_id: string;
   source?: string;
@@ -72,6 +85,11 @@ function achatarContato(r: LinhaComContato): ChamadoDaLista {
     summary: r.summary,
     blocker: r.blocker,
     status: r.status,
+    // `?? "outro"` e não `r.kind` cru: a coluna é `not null default 'outro'`,
+    // mas uma linha lida por um caminho que ainda não a traga viraria
+    // `undefined` no JSON — e `undefined` some na serialização, devolvendo à
+    // tela exatamente o buraco que este campo existe para fechar.
+    kind: r.kind ?? "outro",
     opened_at: r.opened_at,
     conversation_id: r.conversation_id,
     contact_name: r.conversations?.contacts?.name ?? null,

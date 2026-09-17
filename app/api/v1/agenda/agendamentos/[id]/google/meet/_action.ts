@@ -60,6 +60,25 @@ export async function meetingAction(
     return ok({ pending: true, changed: Boolean(changed) }, { requestId });
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    // ⛔ 55P03 = `lock_not_available`: a migration 0241 pôs `lock_timeout='4s'`
+    // em `fn_meet_action`, e este é o caminho que ela abriu.
+    //
+    // ANTES DELA a espera era infinita, e o desfecho era pior do que um erro:
+    // o cliente HTTP desiste aos 10s (`DEFAULT_TIMEOUT_MS`), a pessoa lia "Erro
+    // inesperado. Tente novamente." — sem identificador, porque o erro vinha do
+    // NAVEGADOR e não daqui —, **a consulta continuava viva** segurando a fila,
+    // e o clique seguinte empilhava atrás. Medido em produção em 2026-09-12:
+    // dez chamadas simultâneas, Postgres a 357% de CPU.
+    //
+    // A frase diz o que fazer e quanto esperar. "Tente novamente" sozinho
+    // convida ao clique imediato, que é exatamente o gesto que empilhava.
+    if (code === "55P03")
+      return fail(
+        "conflict",
+        "Este atendimento está ocupado neste instante. Aguarde alguns segundos e tente de novo.",
+        409,
+        { requestId },
+      );
     if (code === "40001") return fail("conflict", "O compromisso ou atendimento mudou. Atualize e tente novamente.", 409, { requestId });
     if (code === "42501") return fail("forbidden", "Esta ação exige o responsável pelo compromisso e uma conversa disponível.", 403, { requestId });
     logger.error("agenda.meet_action_failed", { requestId, action, code: "internal_error" });

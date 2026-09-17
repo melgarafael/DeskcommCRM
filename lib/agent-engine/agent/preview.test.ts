@@ -118,7 +118,7 @@ it('refreshes agenda read state for each candidate while writes stay proposals',
   const p = preview();
   p.contactId = 'actual-contact';
   let called = false;
-  const ctx = { ...gate(), agenda: { active: true, toolCalledThisTurn: false } };
+  const ctx = { ...gate(), agenda: { active: true, ferramentas: ['crm_find_free_slots'], toolCalledThisTurn: false } };
   const tools = applyPreviewPolicy(
     {
       crm_find_free_slots: definition(() => {
@@ -131,7 +131,7 @@ it('refreshes agenda read state for each candidate while writes stay proposals',
     ctx,
     () => [],
     undefined,
-    () => ({ agenda: { active: true, toolCalledThisTurn: called } }),
+    () => ({ agenda: { active: true, ferramentas: ['crm_find_free_slots'], toolCalledThisTurn: called } }),
   );
   await execute(tools, 'send_message', { body: 'Vou verificar o horário para você.' });
   expect(p.result.impediments.some((i) => i.code === 'agenda_stall_sem_ferramenta')).toBe(true);

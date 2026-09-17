@@ -53,11 +53,21 @@ fi
 [ "${#CHAVE_AI}" -ge 44 ] || CHAVE_AI="$(openssl rand -base64 32)"
 
 ENVOUT="$($SUPABASE status -o env 2>/dev/null)"
-ler() { printf '%s\n' "$ENVOUT" | grep "^$1=" | cut -d= -f2- | tr -d '"'; }
+# O `|| true` no fim não é decoração: sob `set -e` + `pipefail`, um `grep` sem
+# casamento (chave que o stack não devolveu) derruba o script AQUI, calado, antes
+# das guardas abaixo. Quem não tem a chave precisa chegar na recusa explicada.
+ler() { printf '%s\n' "$ENVOUT" | grep "^$1=" | cut -d= -f2- | tr -d '"' || true; }
 
 API_URL="$(ler API_URL)"
 ANON="$(ler ANON_KEY)"
 SERVICE="$(ler SERVICE_ROLE_KEY)"
+# A URL do Postgres sai do MESMO status do stack que está de pé — host E porta.
+# Até a #1091 ela era um literal com a porta padrão do Supabase local: com dois
+# stacks no ar (cada checkout tem o próprio `project_id` e a própria faixa de
+# portas), os seeds que abrem conexão DIRETA escreviam no banco da OUTRA sessão —
+# conexão válida, schema idêntico, suíte verde, estrago invisível. É a mesma
+# família do `.env.local` de produção que este arquivo existe para impedir.
+DB_URL="$(ler DB_URL)"
 
 if [ -z "$API_URL" ] || [ -z "$ANON" ] || [ -z "$SERVICE" ]; then
   echo "==> Não consegui ler as chaves do stack local (API_URL/ANON_KEY/SERVICE_ROLE_KEY)." >&2
@@ -72,6 +82,27 @@ case "$API_URL" in
   http://127.0.0.1:*|http://localhost:*) ;;
   *)
     echo "==> RECUSADO: o stack local respondeu com uma URL que não é local: $API_URL" >&2
+    exit 1
+    ;;
+esac
+
+# Mesmo raciocínio do guard acima, agora para o Postgres. Sem `DB_URL` no status
+# não há como saber a porta DESTE stack, e gravar a padrão é exatamente o defeito
+# da #1091 — então aqui é recusa declarada, não chute. O modo de falha silencioso
+# é o caro: um `.env.e2e` plausível apontando para o banco errado não dá erro
+# nenhum.
+if [ -z "$DB_URL" ]; then
+  echo "==> Não consegui ler a DB_URL do stack local (o 'supabase status -o env' não trouxe DB_URL)." >&2
+  echo "    Sem ela, a alternativa seria chutar a porta padrão e semear o banco de outro stack." >&2
+  exit 1
+fi
+
+# O valor é do stack local ou não serve. A URL é impressa sem a credencial: este
+# arquivo não põe senha de banco em log nem em saída de terminal.
+case "$DB_URL" in
+  *@127.0.0.1:*|*@localhost:*|*@\[::1\]:*) ;;
+  *)
+    echo "==> RECUSADO: o Postgres do stack local respondeu com um host que não é local: $(printf '%s' "$DB_URL" | sed -E 's#://[^@/]*@#://[REDACTED]@#')" >&2
     exit 1
     ;;
 esac
@@ -96,10 +127,17 @@ cat > .env.e2e <<EOF
 NEXT_PUBLIC_SUPABASE_URL=$API_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON
 SUPABASE_SERVICE_ROLE_KEY=$SERVICE
-SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+# Vem do stack que está de pé (ver o comentário do `ler DB_URL` acima), não de
+# um literal: é isto que mantém duas sessões locais escrevendo cada uma no seu
+# banco.
+SUPABASE_DB_URL=$DB_URL
 
 # Precisa bater com o baseURL real do Playwright (ver comentário acima).
 NEXT_PUBLIC_APP_URL=http://localhost:$E2E_PORT
+
+# Catálogo servido pelas provas de extensões. A exceção HTTP só é aceita
+# quando o aplicativo também é local; o ambiente do produto deixa isto vazio.
+EXTENSIONS_LOCAL_CATALOG_ORIGIN=http://127.0.0.1:56331
 
 # Placeholders: 'next start' roda em NODE_ENV=production, e lib/env.ts exige
 # estas vars em produção. As specs não exercitam os serviços por trás delas.
@@ -138,5 +176,5 @@ NEXT_TELEMETRY_DISABLED=1
 SENTRY_DSN=off
 EOF
 
-echo "==> .env.e2e gerado, apontando para $API_URL"
+echo "==> .env.e2e gerado, apontando para $API_URL (Postgres em $(printf '%s' "$DB_URL" | sed -E 's#^.*@##'))"
 echo "==> Próximo: pnpm e2e:build && pnpm test:e2e"

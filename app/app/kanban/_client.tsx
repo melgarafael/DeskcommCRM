@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 
+import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 
 import { ImportarLeads } from "./_components/ImportarLeads";
@@ -21,6 +22,7 @@ export interface FunilDaLista {
   description: string | null;
   position: number;
   is_default: boolean;
+  is_client_pipeline?: boolean;
 }
 
 /**
@@ -66,6 +68,14 @@ export function FunisClient({
   podeImportar: boolean;
 }) {
   const t = useT();
+  /**
+   * O funil de clientes só tem efeito com a regra "Clientes pela agenda" ligada
+   * (migration 0262): desligada, o roteamento ignora a marca. Botão e selo
+   * somem, e a marca gravada fica — volta a valer quando alguém religar.
+   * Mostrar o controle com a regra desligada seria oferecer o que o motor
+   * ignora.
+   */
+  const clientesLigado = useActiveOrg()?.cliente_pela_agenda === true;
   /**
    * ⚠️ A LISTA VEM DO SERVIDOR E É ATUALIZADA PELO CORPO DA RESPOSTA.
    *
@@ -292,6 +302,11 @@ export function FunisClient({
                             {t("Padrão")}
                           </Badge>
                         )}
+                        {clientesLigado && funil.is_client_pipeline && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            {t("Clientes")}
+                          </Badge>
+                        )}
                       </span>
                       {funil.description && (
                         <span className="text-xs text-muted-foreground">{funil.description}</span>
@@ -322,6 +337,28 @@ export function FunisClient({
                         data-testid={`padrao-${funil.id}`}
                       >
                         <Check size={16} className="mr-1" aria-hidden /> {t("Tornar padrão")}
+                      </Button>
+                    )}
+                    {/*
+                      Ligar e desligar no MESMO lugar, ao contrário de "Tornar
+                      padrão", que só liga: toda organização precisa de um funil
+                      padrão, nenhuma precisa de um funil de clientes. Quem
+                      experimentou tem de conseguir desfazer sem pedir ajuda.
+                    */}
+                    {clientesLigado && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          aplicar(funil.id, { is_client_pipeline: !funil.is_client_pipeline })
+                        }
+                        disabled={ocupado}
+                        data-testid={`clientes-${funil.id}`}
+                      >
+                        <Check size={16} className="mr-1" aria-hidden />{" "}
+                        {funil.is_client_pipeline
+                          ? t("Deixar de ser funil de clientes")
+                          : t("Funil de clientes")}
                       </Button>
                     )}
                     <Button
@@ -395,6 +432,32 @@ export function FunisClient({
           );
         })}
       </ul>
+
+      {/*
+        SEMPRE visível, e não só quando não há funil de clientes marcado: a regra
+        de roteamento é invisível por natureza — ninguém descobre, olhando o
+        quadro, por que um card nasceu num funil e não no outro. Dizer o que
+        acontece nos DOIS estados é o caminho visível de falha do invariante 6,
+        e custa uma linha de texto em vez de uma consulta.
+
+        Com a regra desligada, o rodapé é a PORTA para ela: diz onde se liga.
+      */}
+      {clientesLigado ? (
+        <p className="mt-4 text-xs text-muted-foreground" data-testid="funis-rodape-clientes">
+          {t(
+            "Quem já tem atendimento marcado entra pelo funil de clientes. Sem um funil marcado, entra pelo padrão.",
+          )}
+        </p>
+      ) : (
+        <p className="mt-4 text-xs text-muted-foreground" data-testid="funis-rodape-clientes">
+          {t(
+            "Para separar quem já é cliente, ligue “Clientes pela agenda” em Configurações › Tipos de agendamento. Enquanto estiver desligado, todo contato novo entra pelo funil padrão.",
+          )}{" "}
+          <Link href="/app/settings/tenant/agenda" className="underline" data-testid="funis-rodape-ligar">
+            {t("Abrir Tipos de agendamento")}
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

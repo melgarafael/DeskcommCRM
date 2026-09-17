@@ -35,6 +35,7 @@ function exportCSV(tenants: UsageTenantRow[], range: UsageRange): void {
     "organization_id",
     "tenant",
     "slug",
+    "agente",
     "mensagens",
     "conversas",
     "invocacoes_ai",
@@ -46,6 +47,7 @@ function exportCSV(tenants: UsageTenantRow[], range: UsageRange): void {
     t.organization_id,
     `"${t.tenant_name.replace(/"/g, '""')}"`,
     t.tenant_slug,
+    t.agent_name ? `"${t.agent_name.replace(/"/g, '""')}"` : "",
     t.messages_count,
     t.conversations_count,
     t.ai_invocations_count,
@@ -89,9 +91,7 @@ export function UsageTable({ tenants, range }: UsageTableProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          {t("Uso por tenant")}
-        </h2>
+        <h2 className="text-sm font-medium text-muted-foreground">{t("Uso por tenant")}</h2>
         <Button
           variant="outline"
           size="sm"
@@ -107,6 +107,7 @@ export function UsageTable({ tenants, range }: UsageTableProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Tenant</TableHead>
+              <TableHead>{t("Agente")}</TableHead>
               <TableHead className="text-right">{t("Mensagens")}</TableHead>
               <TableHead className="text-right">{t("Conversas")}</TableHead>
               <TableHead className="text-right">{t("Invoc. AI")}</TableHead>
@@ -119,25 +120,30 @@ export function UsageTable({ tenants, range }: UsageTableProps) {
               <TableRow key={row.organization_id}>
                 <TableCell>
                   <div className="flex flex-col gap-0.5">
-                    <span className="font-medium text-sm">{row.tenant_name}</span>
-                    <Badge variant="secondary" className="w-fit text-[10px] px-1.5 py-0">
+                    <span className="text-sm font-medium">{row.tenant_name}</span>
+                    <Badge variant="secondary" className="w-fit px-1.5 py-0 text-[10px]">
                       {row.tenant_slug}
                     </Badge>
                   </div>
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-sm">
+                <TableCell className="text-sm">
+                  {row.agent_name ?? (
+                    <span className="text-muted-foreground">{t("Nenhum agente publicado")}</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right text-sm tabular-nums">
                   {fmtNum(row.messages_count)}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-sm">
+                <TableCell className="text-right text-sm tabular-nums">
                   {fmtNum(row.conversations_count)}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-sm">
+                <TableCell className="text-right text-sm tabular-nums">
                   {fmtNum(row.ai_invocations_count)}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-sm">
+                <TableCell className="text-right text-sm tabular-nums">
                   {fmtNum(row.ai_tokens_total)}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-sm font-medium">
+                <TableCell className="text-right text-sm font-medium tabular-nums">
                   {fmtUSD(row.ai_cost_cents)}
                 </TableCell>
               </TableRow>

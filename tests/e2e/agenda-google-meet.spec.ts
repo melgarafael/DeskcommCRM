@@ -406,7 +406,7 @@ test("marca Meet, copia link, autoriza em atendimento humano e entrega novamente
     const id = await book(page, f);
     await detail(page, id);
     await expect(meet(page).getByText("Criando link do Google Meet")).toBeVisible();
-    await expect(meet(page).getByText("O envio do link ainda não foi autorizado.")).toBeVisible();
+    await expect(meet(page).getByText("Link não enviado ainda.")).toBeVisible();
     await expect(meet(page).getByRole("link")).toHaveCount(0);
     await capture(page, info, "pending-desktop", "Enviar quando ficar pronto");
     await page.setViewportSize({ width: 390, height: 844 });

@@ -13,8 +13,17 @@ export function EntradaDaAgenda({
   const router = useRouter();
   const contact = params.get("contato");
   const conversation = params.get("conversa");
+  // ⚠️ SEMPRE avisa, inclusive quando a rota NÃO traz contexto.
+  //
+  // Era `if (contact) onContext(...)`, e a guarda era o defeito: quem abria
+  // "Marcar compromisso" de dentro de uma conversa e depois ia para a Agenda
+  // pelo menu continuava com aquele cliente no painel. A rota mudava
+  // (`?contato=` sumia), mas esta é a MESMA rota do App Router — o componente
+  // não remonta, só a query muda —, e sem a chamada ninguém contava ao painel
+  // que o contexto tinha acabado. Quem decide abrir é o `onContext`, pelo
+  // valor de `contact`; aqui é só o recado.
   useEffect(() => {
-    if (contact) onContext(contact, conversation ?? "");
+    onContext(contact ?? "", conversation ?? "");
   }, [contact, conversation, onContext]);
   return (
     <DetalheDoCompromisso

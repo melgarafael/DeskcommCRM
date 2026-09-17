@@ -315,10 +315,14 @@ jobs:
   # NÚMERO sempre (cada imagem, independente — ninguém instala por um número que
   # o instalador não escreveu) e mover o CANAL num job final.
   promover-stable:
-    # Sem `always()`, e isso é o ponto: `needs` só libera quando as DUAS entradas
+    # Sem `always()`, e isso é o ponto: `needs` só libera quando as TRÊS entradas
     # deram `success`. Com `always()` o canal andaria por cima de uma irmã que
     # falhou, que é exatamente o defeito de volta com outra roupa.
-    needs: [build-and-push, imagem-do-app-sobe]
+    # `imagens-de-fundo-sobem` entrou aqui de propósito (#604): worker ou
+    # scheduler que não sobe/carrega o laço do event_log não pode virar o
+    # `stable` de quem self-hospeda — publicar seria empurrar o defeito da #648
+    # canal abaixo.
+    needs: [build-and-push, imagem-do-app-sobe, imagens-de-fundo-sobem]
     # As três condições, e cada uma barra um caminho medido. Sem `push`, um
     # dispatch numa release ANTIGA faria `stable` REGREDIR, e todo self-hoster no
     # default do compose sofreria downgrade silencioso no próximo `up -d` — app
@@ -360,6 +364,284 @@ jobs:
           done
           echo "stable agora aponta para ${numero} nas três imagens"
 
+  # As imagens de FUNDO sobem — e o laço do event_log CARREGA? (issue #604)
+  #
+  # `imagem-do-app-sobe` prova a imagem do app. As imagens `deskcomm-worker`
+  # (Dockerfile.worker) e `deskcomm-scheduler` (Dockerfile.scheduler) eram
+  # construídas em `build-and-push` e publicadas sem que NINGUÉM as executasse
+  # antes: o defeito da #648 — um `import` que estoura só sob `tsx`, o
+  # `event_log` parado dez dias e o `/healthz` verde — atravessava build, push,
+  # tag e release sem ser visto por gate nenhum. Um job que só checa `docker ps`
+  # teria ficado verde no dia do defeito; por isso "contêiner de pé" não é o
+  # critério aqui.
+  #
+  # O QUE ESTE JOB MEDE:
+  #   1. dentro da imagem do worker, a MESMA função do boot
+  #      (`carregarDepsDoLaco`, via scripts/sonda-do-laco-de-event-log.ts)
+  #      responde `ok:true` — com a marca `event-log drain: laço carregado` no
+  #      log e `carregado:true` na prontidão;
+  #   2. o `/healthz` do worker, o MESMO caminho que a produção consulta,
+  #      publica `event_log_drain.carregado: true` (aceita 200 e 503: sem banco
+  #      no runner não há 200 honesto, e a prontidão do laço não depende do
+  #      banco estar de pé);
+  #   3. a imagem do scheduler entrega o que ela promete: crond de pé (o
+  #      HEALTHCHECK da própria imagem) E a linha `api/v1/cron/event-log-drain`
+  #      instalada no crontab — a segunda via do mesmo drain, que a produção usa
+  #      quando o laço do worker não carregou.
+  #
+  # Sem `if:` neste job, de propósito, como nos irmãos: job pulado vira
+  # `skipped`, e `imagens-ok` (que roda com `always()`) lê `skipped` como
+  # reprovação. Em PR ele roda e constrói as duas imagens de fundo com o mesmo
+  # escopo de cache do `build-and-push`; na tag, roda igual.
+  #
+  # Ele entra POR BAIXO de `imagens-ok`, que é a fachada que a branch protection
+  # já exige: nenhum check obrigatório novo — a proteção da main não passa a
+  # esperar um nome que ninguém produz.
+  imagens-de-fundo-sobem:
+    needs: [a-tag-veio-da-main]
+    runs-on: ubuntu-latest
+    # Só leitura, explícita: sem o bloco o GITHUB_TOKEN herda o default do
+    # REPOSITÓRIO — configuração que vive fora do repo, muda num clique e não
+    # passa por PR. Mesma razão do `permissions:` dos outros jobs.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build local da imagem do worker (sem push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.worker
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: deskcomm-worker:pr
+          # Mesmo escopo de cache do build-and-push, por imagem. Os dois jobs
+          # correm em PARALELO, então o cache costuma estar frio no primeiro run
+          # de um push e quente nos seguintes — "reaproveita aquele build" só
+          # vale a partir do segundo. Medido em 16/09/2026 no primeiro run deste
+          # gate: manifesto importado, camadas reconstruídas.
+          cache-from: type=gha,scope=deskcommcrm-worker
+
+      - name: Build local da imagem do scheduler (sem push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.scheduler
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: deskcomm-scheduler:pr
+          cache-from: type=gha,scope=deskcommcrm-scheduler
+
+      - name: O laço do event_log CARREGA dentro da imagem do worker?
+        run: |
+          set -euo pipefail
+          # Env de mentira, igual à do smoke do app: o runner não tem Supabase.
+          # Montar o admin client não abre conexão — o que se mede aqui é o
+          # CAMINHO DE BOOT (o import sob `tsx`), não o banco.
+          # `--entrypoint pnpm`: a sonda substitui o CMD do worker e prova o
+          # carregamento sem depender de o entrypoint da imagem ser executável
+          # fora do cluster.
+          saida=$(docker run --rm --name worker-laco \
+            --entrypoint pnpm \
+            -e NEXT_PUBLIC_SUPABASE_URL=https://exemplo.supabase.co \
+            -e NEXT_PUBLIC_SUPABASE_ANON_KEY=chave-de-mentira \
+            -e SUPABASE_SERVICE_ROLE_KEY=chave-de-mentira \
+            -e SENTRY_DSN=off \
+            deskcomm-worker:pr \
+            exec tsx scripts/sonda-do-laco-de-event-log.ts)
+
+          echo "$saida"
+          printf '%s' "$saida" | tail -1 | grep -q '"ok":true' || {
+            echo "::error::o laço do event_log NÃO carregou dentro da imagem do worker."
+            echo "::error::Este é o defeito da #648: o worker sobe, o /healthz fica verde e o event_log fica parado."
+            exit 1
+          }
+          printf '%s' "$saida" | grep -q 'event-log drain: laço carregado' || {
+            echo "::error::a sonda não emitiu a marca 'event-log drain: laço carregado'."
+            exit 1
+          }
+
+      - name: O worker BOOTA com o CMD da imagem? (sem banco no runner, o boot para na camada de banco)
+        run: |
+          set -euo pipefail
+          # Por que este passo existe se a sonda já provou o laço: a sonda importa a
+          # cadeia do DRAIN; o boot importa bem mais (playbook-seed, waha, wacalls,
+          # cron, observabilidade). A #648 foi um `import` que estourava só sob `tsx`
+          # — a classe de defeito que só um boot de verdade pega.
+          #
+          # O que NÃO dá para medir aqui é o `/healthz` respondendo `ok`: o runner não
+          # tem Postgres, `startWorker` roda `assertHarnessSchema(pool)` (uma query)
+          # antes de escutar, e o worker sai de propósito. Então este passo
+          # CLASSIFICA a saída em vez de ignorá-la:
+          #   • `event-log drain OFF` no log            → REPROVA (é a #648 na cara);
+          #   • morte com a cadeia de boot quebrada     → REPROVA (import/módulo);
+          #   • de pé sem `event_log_drain` no /healthz → REPROVA;
+          #   • morto por banco ausente (ECONNREFUSED…) → passa com `::notice::`,
+          #     declarando o que este runner não mede;
+          #   • morto por motivo não reconhecido        → REPROVA (morte silenciosa é
+          #     exatamente o que este gate existe para não deixar passar).
+          docker rm -f worker-boot >/dev/null 2>&1 || true
+          docker run -d --name worker-boot \
+            -p 127.0.0.1:3971:3971 \
+            -e HEALTH_PORT=3971 \
+            -e NEXT_PUBLIC_SUPABASE_URL=https://exemplo.supabase.co \
+            -e NEXT_PUBLIC_SUPABASE_ANON_KEY=chave-de-mentira \
+            -e SUPABASE_SERVICE_ROLE_KEY=chave-de-mentira \
+            -e SUPABASE_DB_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres \
+            -e SENTRY_DSN=off \
+            deskcomm-worker:pr
+
+          # ESPERA UM SINAL, e não o `docker ps`: o contêiner fica `running` 0,2s
+          # depois do `run -d` — antes de o `tsx` importar a primeira linha. O loop
+          # antigo saía na PRIMEIRA volta, lia logs vazios e um `/healthz` que
+          # ninguém ainda escutava, e reprovava um worker SADIO (medido: run
+          # 35099604595, o passo morreu 0,2s depois do `docker run`). Esperar o
+          # sinal é o que separa "não bootou" de "ainda não bootou".
+          estado=nao_bootou
+          corpo=""
+          for _ in $(seq 1 30); do          # até 90s: tsx + pool + a query do harness
+            sleep 3
+            if ! docker ps --filter name=worker-boot --filter status=running -q | grep -q .; then
+              estado=saiu
+              break
+            fi
+            logs_ate_agora=$(docker logs worker-boot 2>&1 || true)
+            if printf '%s' "$logs_ate_agora" | grep -qE 'agent-engine pronto'; then
+              estado=pronto
+              break
+            fi
+            # Defeito FATAL já escrito no log: não há por que esperar os 90s — a
+            # classificação abaixo reprova por estes mesmos marcadores, então o
+            # veredito não muda; só não fica 90s parado para dizê-lo.
+            if printf '%s' "$logs_ate_agora" | grep -qE 'event-log drain OFF|Cannot find module|ERR_MODULE_NOT_FOUND|Cannot use import statement'; then
+              estado=fatal_no_log
+              break
+            fi
+            corpo=$(curl -s -m 2 "http://127.0.0.1:3971/healthz" || true)
+            if [ -n "$corpo" ]; then
+              estado=servindo
+              break
+            fi
+          done
+
+          docker logs worker-boot > boot.log 2>&1 || true
+          echo "--- logs do boot (tail) ---"
+          tail -30 boot.log
+          echo "estado: $estado"
+
+          # A volta pode ter parado no LOG de prontidão antes de o `curl`
+          # acontecer; esta última tentativa garante que o caso 4 (worker de pé)
+          # não dependa do caminho por onde o loop saiu.
+          if [ -z "$corpo" ]; then
+            corpo=$(curl -s -m 5 "http://127.0.0.1:3971/healthz" || true)
+          fi
+
+          # 1) A #648 na cara: o laço desligou no boot.
+          if grep -q 'event-log drain OFF' boot.log; then
+            echo "::error::o laço do event_log NÃO carregou no boot da imagem — este é o defeito da #648, e a sonda do passo anterior também reprovou."
+            exit 1
+          fi
+
+          # 2) Cadeia de boot quebrada (import/módulo) — a classe da #648. Vale nos
+          #    DOIS estados: o contêiner pode ter morrido, ou ter ficado de pé com a
+          #    exceção engolida em outro laço do boot.
+          if grep -qE 'Cannot find module|ERR_MODULE_NOT_FOUND|Cannot use import statement|SyntaxError|is not a function|Failed to resolve' boot.log; then
+            echo "::error::o worker morreu com a CADEIA DE BOOT quebrada (import/módulo) — a classe da #648."
+            exit 1
+          fi
+
+          # 3) Banco ausente: é o desfecho DECLARADO deste runner (não tem Postgres).
+          #    `assertHarnessSchema(pool)` roda uma query ANTES de escutar, então o
+          #    boot para aqui de propósito. O que este passo NÃO mede, por causa
+          #    disso, é o `/healthz` respondendo 200 — isso é medido em produção e
+          #    pelo e2e, que têm banco.
+          if grep -qE 'ECONNREFUSED|ENOTFOUND|getaddrinfo|schema do harness ausente|password authentication|Connection terminated|timeout expired|ECONNRESET' boot.log; then
+            echo "::notice::o worker parou na camada de banco (este runner não tem Postgres). O laço carregado foi medido pela sonda, dentro da imagem; o /healthz respondendo 200 é medido em produção e no e2e — não aqui."
+            exit 0
+          fi
+
+          # 4) De pé e servindo: aí o campo TEM de estar lá — é o sinal que o gate de
+          #    publicação lê antes de deixar a imagem ir para o canal.
+          if [ -n "$corpo" ]; then
+            echo "healthz: $corpo"
+            printf '%s' "$corpo" | grep -q '"event_log_drain"' || {
+              echo "::error::o worker está de pé mas o /healthz não publica event_log_drain (#604)."
+              exit 1
+            }
+            printf '%s' "$corpo" | grep -q '"event_log_drain":{"carregado":true' || {
+              echo "::error::o /healthz publica event_log_drain com carregado:false — o laço não carregou."
+              exit 1
+            }
+            docker logs worker-boot 2>&1 | tail -20
+            exit 0
+          fi
+
+          # 5) Não bootou, não morreu por banco, não serviu: morte silenciosa ou boot
+          #    que não chega — exatamente o que este gate existe para não deixar
+          #    passar. Se for de outro tipo, o classificador precisa de mais um caso
+          #    escrito, não de um passe livre.
+          echo "::error::o worker não bootou por um motivo que este gate não reconhece (estado: $estado)."
+          echo "::error::Se for esperado, o classificador acima precisa de mais um caso escrito — não de um passe livre."
+          exit 1
+      - name: O scheduler sobe E tem o evento do event_log no crontab?
+        run: |
+          set -euo pipefail
+          # `INTERNAL_SECRET` é obrigatório: com ele vazio o entrypoint sai 1, e é
+          # assim mesmo (cron que responderia 401 em silêncio não deve subir).
+          docker run -d --name sched \
+            --health-interval=3s --health-timeout=3s --health-start-period=3s --health-retries=20 \
+            -e INTERNAL_SECRET=chave-de-mentira \
+            -e APP_URL=http://127.0.0.1:3000 \
+            -e TZ=UTC \
+            deskcomm-scheduler:pr
+
+          cron=nao
+          for _ in $(seq 1 20); do
+            if ! docker ps --filter name=sched --filter status=running -q | grep -q .; then
+              echo "::error::o scheduler MORREU durante o boot"
+              docker logs sched 2>&1 | tail -40
+              exit 1
+            fi
+            docker exec sched sh -lc 'crontab -l 2>/dev/null || cat /etc/crontabs/root 2>/dev/null || cat "${CRONTAB_PATH:-/etc/crontabs/root}" 2>/dev/null' > cron.txt 2>/dev/null || true
+            if grep -q 'api/v1/cron/event-log-drain' cron.txt; then
+              cron=sim
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "$cron" != "sim" ]; then
+            echo "::error::o crontab do scheduler não tem a linha do event-log-drain"
+            cat cron.txt || true
+            docker logs sched 2>&1 | tail -40
+            exit 1
+          fi
+          grep -c 'api/v1/cron' cron.txt | sed 's/^/linhas de cron instaladas: /'
+          grep 'event-log-drain' cron.txt
+
+          # E o crond está de pé? O HEALTHCHECK da própria imagem é quem responde
+          # (mesma checagem que o `docker ps` do compose mostra ao self-hoster).
+          saude=nao
+          for _ in $(seq 1 20); do
+            estado=$(docker inspect -f '{{.State.Health.Status}}' sched 2>/dev/null || echo sem-healthcheck)
+            if [ "$estado" = "healthy" ]; then saude=sim; break; fi
+            [ "$estado" = "sem-healthcheck" ] && { echo "::error::a imagem do scheduler perdeu o HEALTHCHECK — o compose mostraria o scheduler sem estado de saúde"; exit 1; }
+            sleep 3
+          done
+          if [ "$saude" != "sim" ]; then
+            echo "::error::o scheduler não chegou a 'healthy' (crond de pé) em 60s"
+            docker inspect -f '{{json .State.Health}}' sched || true
+            docker logs sched 2>&1 | tail -40
+            exit 1
+          fi
+          docker logs sched 2>&1 | tail -20
+
   # Job de fachada: dá UM nome estável para a branch protection exigir. Sem ele,
   # o required check teria que listar as três instâncias da matriz pelo nome
   # gerado, e acrescentar uma quarta imagem um dia quebraria o gate em silêncio —
@@ -377,11 +659,17 @@ jobs:
     # justificativa do teste antecipa — "um job novo nasce sem bloco e herda o
     # default de novo".
     permissions: {}
-    needs: [build-and-push, imagem-do-app-sobe]
+    needs: [build-and-push, imagem-do-app-sobe, imagens-de-fundo-sobem]
     steps:
       - name: Falhar se qualquer imagem não construiu — ou se o app não sobe
         run: |
-          echo "build-and-push:     ${{ needs.build-and-push.result }}"
-          echo "imagem-do-app-sobe: ${{ needs.imagem-do-app-sobe.result }}"
+          set -euo pipefail
+          echo "build-and-push:         ${{ needs.build-and-push.result }}"
+          echo "imagem-do-app-sobe:     ${{ needs.imagem-do-app-sobe.result }}"
+          echo "imagens-de-fundo-sobem: ${{ needs.imagens-de-fundo-sobem.result }}"
+          # As imagens de fundo entram na mesma exigência: worker ou scheduler que
+          # não sobe (ou que sobe com o laço do event_log morto, #604) reprova o
+          # check que a branch protection já espera — sem check novo obrigatório.
           [ "${{ needs.build-and-push.result }}" = "success" ]
           [ "${{ needs.imagem-do-app-sobe.result }}" = "success" ]
+          [ "${{ needs.imagens-de-fundo-sobem.result }}" = "success" ]

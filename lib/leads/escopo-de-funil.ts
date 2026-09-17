@@ -101,6 +101,9 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // diferente de remarcar e cancelar, que operam por `appointment_id` e continuam
   // `sem_funil` declarado enquanto não houver resolvedor por agendamento.
   crm_book_appointment: "funil_vem_do_contato",
+  // Consulta E marca numa chamada só (issue #831): o `contact_id` é OBRIGATÓRIO
+  // como no marcar puro (DECISÃO 27), então o alvo resolve de verdade.
+  crm_find_and_book_appointment: "funil_vem_do_contato",
   crm_reschedule_appointment: "sem_funil",
   crm_cancel_appointment: "sem_funil",
   // Mesmo argumento das duas acima, e pela mesma razão: operam por
@@ -112,6 +115,13 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
 
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
+  // Abre conversa nova (contato pode nem ter negócio ainda) e manda a primeira
+  // mensagem — não recebe `lead_id` nem `pipeline_id`. Como as de configuração
+  // logo abaixo, a barreira dela é OUTRA: `requiresRole: manager` +
+  // `apenasHumano` no catálogo já a tiram do alcance do agente publicado (ver
+  // tests/unit/capacidade-alcancavel-pelo-agente.test.ts), então o escopo de
+  // funil nunca chega a ser perguntado para ela.
+  crm_start_conversation_and_send: "sem_funil",
   crm_add_case_note: "sem_funil",
   crm_close_human_case: "sem_funil",
   crm_assign_conversation: "sem_funil",
