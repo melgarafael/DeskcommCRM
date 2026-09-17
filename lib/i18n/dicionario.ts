@@ -8445,6 +8445,13 @@ export const DICIONARIO: Traducoes = {
     es: "La arista entre los dos nodos se elimina. No es posible deshacer.",
   },
   Organizar: { es: "Organizar" },
+  "Iniciar outro fluxo de atendimento": { es: "Iniciar otro flujo de atención" },
+  "Próximo fluxo": { es: "Siguiente flujo" },
+  "Escolha um fluxo": { es: "Elige un flujo" },
+  "Quando este fluxo terminar, o próximo começa sozinho — o que o cliente já respondeu segue valendo.":
+    {
+      es: "Cuando este flujo termine, el siguiente comienza solo — lo que el cliente ya respondió sigue valiendo.",
+    },
 };
 
 /**

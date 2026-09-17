@@ -337,6 +337,14 @@ export const endFinishSchema = z.discriminatedUnion('tipo', [
   z.strictObject({ tipo: z.literal('nada') }),
   z.strictObject({ tipo: z.literal('ia'), prompt: z.string().max(1000).optional() }),
   z.strictObject({ tipo: z.literal('skill'), skill_name: z.string().min(1).max(80) }),
+  /**
+   * Encadeia a venda: ao concluir, o motor inicia OUTRO fluxo de atendimento
+   * (`fluxo` = id do `followup_flow_pointers`). A síntese do fluxo concluído
+   * (`completion_note`) entra no contexto do próximo. O id é validado em runtime
+   * contra os fluxos instalados da organização (o grafo é portável) — como
+   * `skill_name`. Autoencadeamento (fluxo → ele mesmo) é ignorado pelo motor.
+   */
+  z.strictObject({ tipo: z.literal('proximo_fluxo'), fluxo: z.string().min(1).max(80) }),
 ]);
 export type EndFinish = z.infer<typeof endFinishSchema>;
 

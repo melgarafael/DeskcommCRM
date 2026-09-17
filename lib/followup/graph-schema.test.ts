@@ -514,6 +514,22 @@ describe('graph-schema', () => {
         });
         expect(result.success).toBe(false);
       });
+
+      it('aceita encadear o próximo fluxo (id do pointer)', () => {
+        const result = endConfigSchema.safeParse({
+          outcome: 'converted',
+          ao_finalizar: { tipo: 'proximo_fluxo', fluxo: 'a5a3f7c2-0000-4000-8000-000000000000' },
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it('recusa proximo_fluxo sem o id do fluxo', () => {
+        const result = endConfigSchema.safeParse({
+          outcome: 'converted',
+          ao_finalizar: { tipo: 'proximo_fluxo' },
+        });
+        expect(result.success).toBe(false);
+      });
     });
   });
 

@@ -174,8 +174,8 @@ import { gravarDadosDeterministicos } from './dados-do-lead';
 import {
   campoPorChave,
   carregarEstadoDeAtendimento,
-  concluirEnrollmentDeAtendimento,
   escolherFluxoPeloGatilho,
+  finalizarFluxoDeAtendimento,
   iniciarFluxoDeAtendimento,
   listarFluxosDeAtendimentoAtivos,
   processarInboundDoFluxo,
@@ -2623,23 +2623,17 @@ async function executarTurnoDoAgente(
             pendentes: situacao.pendentes.map((n) => n.config.key),
           };
         }
-        try {
-          await concluirEnrollmentDeAtendimento(pool, {
-            organizationId: tenantId,
-            enrollmentId: fluxoAtendimento.enrollment.id,
-            outcome: fluxoAtendimento.checklist.fim.config.outcome,
-          });
-        } catch {
-          // best-effort: a conclusão se repete no próximo turno se falhar aqui.
-        }
-        void registrarEventoDoFluxo(pool, {
+        // O valor recém-capturado entra no estado: é ele que a síntese enxerga.
+        const estadoComValor = {
+          ...fluxoAtendimento,
+          valores: { ...fluxoAtendimento.valores, [campoNode.config.key]: valor },
+        };
+        const { finalizacao: fim } = await finalizarFluxoDeAtendimento(pool, {
           organizationId: tenantId,
-          enrollmentId: fluxoAtendimento.enrollment.id,
-          flowPointerId: fluxoAtendimento.enrollment.pointer_id,
-          contactId: leadId,
+          estado: estadoComValor,
+          messageId: input.inboundMessageId ?? null,
           kind: 'concluido',
-        }).catch(() => {});
-        const fim = fluxoAtendimento.checklist.fim.config.ao_finalizar;
+        });
         if (fim?.tipo === 'skill') {
           const skill = skills.find((s) => s.name === fim.skill_name);
           return {
@@ -2657,6 +2651,15 @@ async function executarTurnoDoAgente(
             acao: 'ia',
             ...(fim.prompt ? { orientacao: fim.prompt } : {}),
             mensagem: 'Fluxo concluído — siga o atendimento normalmente.',
+          };
+        }
+        if (fim?.tipo === 'proximo_fluxo') {
+          return {
+            ok: true,
+            completo: true,
+            acao: 'proximo_fluxo',
+            mensagem:
+              'Fluxo concluído. O próximo fluxo da sequência já foi iniciado — continue o atendimento a partir dele.',
           };
         }
         return { ok: true, completo: true, acao: 'nada', mensagem: 'Fluxo concluído.' };

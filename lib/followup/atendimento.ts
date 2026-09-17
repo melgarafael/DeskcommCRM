@@ -212,6 +212,13 @@ export function renderBlocoDeAtendimento(
   estado: EstadoDeAtendimento,
   finalizacao?: EndFinish,
 ): string {
+  // O "passa-bastão" do fluxo ANTERIOR (quando este foi encadeado): o que já foi
+  // respondido não se repergunta, e o próximo passo da venda começa daqui.
+  const contexto =
+    estado.notaAnterior !== undefined && estado.notaAnterior.length > 0
+      ? `Contexto do atendimento anterior: ${estado.notaAnterior}\n\n`
+      : "";
+
   if (estado.situacao.pendentes.length === 0) {
     const nota =
       finalizacao?.tipo === "skill"
@@ -219,7 +226,7 @@ export function renderBlocoDeAtendimento(
         : finalizacao?.tipo === "ia"
           ? "O fluxo foi concluído — siga o atendimento normalmente."
           : "O fluxo foi concluído — siga o atendimento normalmente.";
-    return `## Fluxo de atendimento — ${estado.nomeDoFluxo}\n${nota}`;
+    return `${contexto}## Fluxo de atendimento — ${estado.nomeDoFluxo}\n${nota}`;
   }
 
   const linhas = estado.situacao.pendentes.map((n) => {
@@ -235,7 +242,7 @@ export function renderBlocoDeAtendimento(
   });
 
   return [
-    `## Fluxo de atendimento ativo — ${estado.nomeDoFluxo}`,
+    `${contexto}## Fluxo de atendimento ativo — ${estado.nomeDoFluxo}`,
     "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO; encaixe no máximo UMA pergunta por resposta, quando houver abertura.",
     "Se o cliente já informar um dado pendente — mesmo sem você ter perguntado —, registre com flow_collect: não pergunte o que ele já disse.",
     "Guarde o valor NORMALIZADO (o sentido do que ele disse), em `valor`: sim/não vira true/false; número só com dígitos; data em AAAA-MM-DD; escolha vira uma das opções; texto livre é o sentido resumido. Mande o texto cru do cliente em `bruto`.",
@@ -267,6 +274,12 @@ export interface EstadoDeAtendimento {
   tentativas: Record<string, number>;
   maxTentativas: number;
   situacao: SituacaoDoChecklist;
+  /**
+   * Síntese do fluxo ANTERIOR do mesmo contato (`completion_note` do último
+   * enrollment de atendimento concluído). É o "passa-bastão" do encadeamento:
+   * entra no bloco do turno para o próximo passo não reperguntar nem recomeçar.
+   */
+  notaAnterior?: string;
 }
 
 /**
@@ -324,6 +337,23 @@ export async function carregarEstadoDeAtendimento(
   const maxTentativas =
     parsed.data.settings?.max_tentativas_pergunta ?? MAX_TENTATIVAS_PADRAO;
 
+  // "Passa-bastão": a síntese do último fluxo CONCLUÍDO deste contato. Ausente
+  // quando é o primeiro fluxo (ou quando a síntese não chegou a ser gravada).
+  const anterior = await db.query<{ completion_note: string | null }>(
+    `select e.completion_note
+       from followup_enrollments e
+       join followup_flow_pointers p on p.id = e.pointer_id
+      where e.organization_id = $1
+        and e.contact_id = $2
+        and p.surface = 'atendimento'
+        and e.status = 'completed'
+        and e.completion_note is not null
+      order by e.completed_at desc nulls last
+      limit 1`,
+    [args.organizationId, args.contactId],
+  );
+  const notaAnterior = anterior.rows[0]?.completion_note ?? undefined;
+
   return {
     enrollment: {
       id: row.id,
@@ -342,6 +372,7 @@ export async function carregarEstadoDeAtendimento(
       tentativas,
       maxTentativas,
     }),
+    ...(notaAnterior !== undefined ? { notaAnterior } : {}),
   };
 }
 
@@ -479,19 +510,12 @@ export async function registrarTentativaDoTurno(
   const atualizado = { ...estado, tentativas, situacao };
 
   if (situacao.completo) {
-    await concluirEnrollmentDeAtendimento(db, {
+    await finalizarFluxoDeAtendimento(db, {
       organizationId: args.organizationId,
-      enrollmentId: estado.enrollment.id,
-      outcome: estado.checklist.fim.config.outcome,
-    });
-    await registrarEventoDoFluxo(db, {
-      organizationId: args.organizationId,
-      enrollmentId: estado.enrollment.id,
-      flowPointerId: estado.enrollment.pointer_id,
-      contactId: estado.enrollment.contact_id,
-      kind: 'esgotado',
+      estado: atualizado,
+      kind: "esgotado",
       payload: { esgotadas: situacao.esgotadas.map((n) => n.config.key) },
-    }).catch(() => {});
+    });
     return { estado: atualizado, concluiu: true };
   }
   return { estado: atualizado, concluiu: false };
@@ -610,27 +634,26 @@ export async function processarInboundDoFluxo(
 
     const valores = new Set(Object.keys(estado.valores));
     valores.add(primeiro.config.key);
-    const atualizado = recomputarSituacao(estado, valores);
+    // O valor recém-capturado entra no estado ANTES de finalizar: é ele que a
+    // síntese (`montarNotaDeConclusao`) precisa enxergar.
+    const comValor = {
+      ...estado,
+      valores: { ...estado.valores, [primeiro.config.key]: leitura.captura.valor },
+    };
+    const atualizado = recomputarSituacao(comValor, valores);
     if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
 
-    try {
-      await concluirEnrollmentDeAtendimento(db, {
-        organizationId: args.organizationId,
-        enrollmentId: estado.enrollment.id,
-        outcome: atualizado.checklist.fim.config.outcome,
-      });
-    } catch {
-      // best-effort: a conclusão se repete no próximo turno se falhar aqui.
-    }
-    void registrarEventoDoFluxo(db, {
+    const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
       organizationId: args.organizationId,
-      enrollmentId: estado.enrollment.id,
-      flowPointerId: estado.enrollment.pointer_id,
-      contactId: estado.enrollment.contact_id,
-      kind: "concluido",
+      estado: atualizado,
       messageId: args.messageId ?? null,
-    }).catch(() => {});
-    return { estado: atualizado, concluiu: true, finalizacao: atualizado.checklist.fim.config.ao_finalizar };
+      kind: "concluido",
+    });
+    return {
+      estado: atualizado,
+      concluiu: true,
+      ...(finalizacao !== undefined ? { finalizacao } : {}),
+    };
   }
 
   // `ignorou` ou `nao_identificado`: a pergunta segue pendente e o turno conta
@@ -641,20 +664,118 @@ export async function processarInboundDoFluxo(
     : { estado: r.estado, concluiu: false };
 }
 
-/** Marca o enrollment de atendimento como concluído (as perguntas param). */
+/**
+ * Marca o enrollment de atendimento como concluído (as perguntas param).
+ * `completionNote` é a SÍNTESE do fluxo (passa-bastão para a continuação);
+ * quando ausente, a coluna fica como está (não apaga uma nota anterior).
+ */
 export async function concluirEnrollmentDeAtendimento(
   db: pg.Pool,
-  args: { organizationId: string; enrollmentId: string; outcome: string },
+  args: { organizationId: string; enrollmentId: string; outcome: string; completionNote?: string },
 ): Promise<void> {
   await db.query(
     `update followup_enrollments
         set status = 'completed',
             outcome = $3,
             completed_at = now(),
-            updated_at = now()
+            updated_at = now(),
+            completion_note = coalesce($4, completion_note)
       where organization_id = $1 and id = $2 and status in ('active', 'waiting_reply')`,
-    [args.organizationId, args.enrollmentId, args.outcome],
+    [args.organizationId, args.enrollmentId, args.outcome, args.completionNote ?? null],
   );
+}
+
+/**
+ * SÍNTESE DETERMINÍSTICA do fluxo concluído — o "passa-bastão" para a
+ * continuação. Robusta por construção (não depende de modelo): percorre os
+ * passos na ordem e usa o valor NORMALIZADO guardado. Campos não respondidos
+ * (esgotados) aparecem marcados, para o próximo fluxo/IA saber o que ficou em
+ * aberto em vez de reperguntar.
+ */
+export function montarNotaDeConclusao(estado: EstadoDeAtendimento): string {
+  const linhas = estado.checklist.passos
+    .filter((p): p is Extract<PassoDeAtendimento, { kind: "collect" }> => p.kind === "collect")
+    .map((p) => {
+      const { key, label } = p.node.config;
+      return `${label}: ${estado.valores[key] ?? "(não respondido)"}`;
+    });
+  const nota = `Fluxo "${estado.nomeDoFluxo}" — ${linhas.join("; ")}`;
+  return nota.slice(0, 2000);
+}
+
+/**
+ * Fecha um fluxo de atendimento: grava a síntese (`completion_note`), emite o
+ * evento final e — se o nó Fim pedir `ao_finalizar: proximo_fluxo` — inicia o
+ * PRÓXIMO fluxo da corrente (decisão 5: terminou o fluxo, continua a venda).
+ *
+ * Best-effort: toda falha é engolida para não derrubar o turno que já respondeu
+ * ao cliente; a conclusão se repete no próximo turno se algo falhar aqui.
+ */
+export async function finalizarFluxoDeAtendimento(
+  db: pg.Pool,
+  args: {
+    organizationId: string;
+    estado: EstadoDeAtendimento;
+    messageId?: string | null;
+    /** `concluido` (completou) ou `esgotado` (teto de tentativas). */
+    kind?: "concluido" | "esgotado";
+    payload?: unknown;
+  },
+): Promise<{ finalizacao?: EndFinish; proximoEnrollmentId: string | null }> {
+  const { estado } = args;
+  const fim = estado.checklist.fim.config.ao_finalizar;
+  const nota = montarNotaDeConclusao(estado);
+
+  try {
+    await concluirEnrollmentDeAtendimento(db, {
+      organizationId: args.organizationId,
+      enrollmentId: estado.enrollment.id,
+      outcome: estado.checklist.fim.config.outcome,
+      completionNote: nota,
+    });
+  } catch {
+    // best-effort: a conclusão se repete no próximo turno.
+  }
+  void registrarEventoDoFluxo(db, {
+    organizationId: args.organizationId,
+    enrollmentId: estado.enrollment.id,
+    flowPointerId: estado.enrollment.pointer_id,
+    contactId: estado.enrollment.contact_id,
+    kind: args.kind ?? "concluido",
+    messageId: args.messageId ?? null,
+    payload: args.payload ?? { nota },
+  }).catch(() => {});
+
+  let proximoEnrollmentId: string | null = null;
+  // Autoencadeamento (fluxo → ele mesmo) é ignorado: seria um laço sem fim. Um
+  // vínculo A→B→A é configuração do dono e só avança um passo por turno.
+  if (fim?.tipo === "proximo_fluxo" && fim.fluxo !== estado.enrollment.pointer_id) {
+    try {
+      proximoEnrollmentId = await iniciarFluxoDeAtendimento(db, {
+        organizationId: args.organizationId,
+        contactId: estado.enrollment.contact_id,
+        flowPointerId: fim.fluxo,
+      });
+      if (proximoEnrollmentId !== null) {
+        void registrarEventoDoFluxo(db, {
+          organizationId: args.organizationId,
+          enrollmentId: estado.enrollment.id,
+          flowPointerId: estado.enrollment.pointer_id,
+          contactId: estado.enrollment.contact_id,
+          kind: "encadeou",
+          messageId: args.messageId ?? null,
+          payload: { proximo_fluxo: fim.fluxo, proximo_enrollment_id: proximoEnrollmentId },
+        }).catch(() => {});
+      }
+    } catch {
+      // best-effort: sem encadear, o fluxo apenas termina (não trava o turno).
+    }
+  }
+
+  return {
+    ...(fim !== undefined ? { finalizacao: fim } : {}),
+    proximoEnrollmentId,
+  };
 }
 
 /**

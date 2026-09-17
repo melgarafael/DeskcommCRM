@@ -18,5 +18,8 @@ titulo: Fluxos de atendimento em tempo real + melhorias no editor de fluxos
   quando a mensagem do cliente contém uma delas, o sistema inicia o fluxo
   **sozinho** — sem depender do modelo. Saudação/assunto sem gatilho apenas é
   respondido, sem iniciar fluxo.
+- **Encadear a venda:** no nó Fim, ao concluir você pode escolher **outro fluxo**
+  para começar sozinho. A síntese do fluxo anterior entra no contexto do próximo,
+  então o que o cliente já respondeu **não é perguntado de novo**.
 
 Nada exige ação de quem opera: a atualização entra sem editar `.env` ou compose.

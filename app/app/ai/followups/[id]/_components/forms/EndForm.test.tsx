@@ -8,9 +8,34 @@
  */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EndForm } from "./EndForm";
+
+// A lista de fluxos para encadear vem de um hook de rede; o teste isola o
+// formulário e fixa a lista (um ativo, um rascunho — só o ativo é oferecido).
+vi.mock("@/hooks/followup/useFollowupFlows", () => ({
+  useFollowupFlows: () => ({
+    data: [
+      {
+        id: "flow-b",
+        name: "Financiamento",
+        status: "active",
+        active_version_id: "ver-b",
+        handoff_policy: "none",
+        updated_at: "2026-09-17T00:00:00Z",
+      },
+      {
+        id: "flow-draft",
+        name: "Rascunho",
+        status: "draft",
+        active_version_id: null,
+        handoff_policy: "none",
+        updated_at: "2026-09-17T00:00:00Z",
+      },
+    ],
+  }),
+}));
 
 beforeAll(() => {
   // Radix Select usa pointer capture e scrollIntoView; o jsdom não implementa
@@ -58,5 +83,34 @@ describe("EndForm — seletor de resultado", () => {
 
     // O rótulo é português; o que desce para o grafo continua sendo o wire.
     expect(gravados).toEqual([{ outcome: "converted" }]);
+  });
+});
+
+describe("EndForm — encadear o próximo fluxo de atendimento", () => {
+  it("oferece a ação, lista os fluxos ATIVOS e grava o id escolhido", { timeout: TETO_MS }, async () => {
+    const gravados: Array<Record<string, unknown>> = [];
+    const user = usuario();
+    render(
+      <EndForm
+        config={{ outcome: "converted" }}
+        onChange={(c) => gravados.push(c as Record<string, unknown>)}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Ao concluir, o que fazer" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Iniciar outro fluxo de atendimento" }),
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Próximo fluxo" }));
+    const fluxos = await screen.findAllByRole("option");
+    // O rascunho não aparece: só fluxo ativo pode ser encadeado.
+    expect(fluxos.map((f) => f.textContent)).toEqual(["Escolha um fluxo", "Financiamento"]);
+
+    await user.click(screen.getByRole("option", { name: "Financiamento" }));
+    expect(gravados.at(-1)).toEqual({
+      outcome: "converted",
+      ao_finalizar: { tipo: "proximo_fluxo", fluxo: "flow-b" },
+    });
   });
 });
