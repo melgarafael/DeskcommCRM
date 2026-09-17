@@ -10,17 +10,10 @@ import { lastLine, sql } from "./gov-helpers";
  * A ATUALIZAÇÃO NÃO REABRE PERMISSÃO QUE O CLONE JÁ TINHA FECHADO.
  *
  * O `update.sh` re-aplica o `baseline.sql` inteiro num banco que já tem o schema,
- * em autocommit e com o app no ar. `CREATE OR REPLACE` NÃO mexe em ACL, então o
- * único jeito de a atualização afrouxar permissão é um `GRANT` no meio do arquivo
- * que o apêndice só revoga adiante.
- *
- * Era o caso de duas funções, medido em pg17 num clone da v1.27.3 recebendo o
- * baseline atual por cima: `fn_publish_ai_agent_version(uuid,uuid,uuid)` —
- * security definer, escreve, recebe a organização por argumento — partia FECHADA
- * para `anon` e era reaberta pelo `GRANT` do corpo do dump, com o revoke ~5.600
- * linhas depois; `activate_kb_version(uuid,uuid)` o mesmo para `authenticated`.
- * Quem entrasse naquele intervalo pegava a função aberta, e nas primeiras ~2.600
- * linhas ainda com o corpo antigo.
+ * em autocommit. `CREATE OR REPLACE` NÃO altera ACL, então o único jeito de a
+ * aplicação afrouxar permissão no meio do caminho é um `GRANT` que o apêndice só
+ * revoga adiante. Eram duas funções; as linhas saíram, e este invariante existe
+ * para que não voltem.
  *
  * ## O que este invariante faz, e por que é assim
  *
