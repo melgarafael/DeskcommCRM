@@ -80,7 +80,10 @@ describe("seedPlatformPlaybook (boot do worker, self-host)", () => {
 
     const loaded = await loadPlaybook(pool, ORG);
     expect(loaded.prompt).toContain("=== playbook:platform ===");
-    expect(loaded.prompt).toContain("assistente virtual");
+    // O seed da plataforma deixou de trazer o disclosure ("assistente virtual"):
+    // a persona/disclosure passaram a ser da camada do tenant (decisão do dono,
+    // commit 6c1e98e7, C-001…C-016). O que se ancora aqui é a CONDUTA genérica.
+    expect(loaded.prompt).toContain("Camada plataforma — conduta");
     expect(loaded.versionIds.platform).toBe(after.pointerVersionId);
   });
 
