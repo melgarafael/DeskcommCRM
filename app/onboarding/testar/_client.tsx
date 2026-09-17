@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -8,11 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { marcarTesteFeito, pularTeste } from "@/app/actions/onboarding/marcarTeste";
+import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
+import { ehTimeoutDeRequisicao, mensagemSeguraDeHttp, mensagemVisivelDeApiError } from "@/lib/api/erro-http";
+import { TIMEOUT_MS_DO_ENSAIO, urlEnsaioDoAgente } from "@/lib/ai/agents/rota-de-ensaio";
 
 interface Props {
   nome: string | null;
   agenteId: string | null;
   versaoId: string | null;
+  /** Há versão publicada no atendimento. Sem isto o ensaio é só interno. */
+  noAr: boolean;
 }
 
 /** O que o ensaio devolveu — ou por que ele não aconteceu. */
@@ -22,51 +28,34 @@ type Desfecho =
 
 const EXEMPLO = "Oi! Vocês atendem hoje? Queria saber o preço.";
 
-export function TestarClient({ nome, agenteId, versaoId }: Props) {
+export function TestarClient({ nome, agenteId, versaoId, noAr }: Props) {
   const t = useT();
   const [mensagem, setMensagem] = useState(EXEMPLO);
   const [desfecho, setDesfecho] = useState<Desfecho | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [pending, startTransition] = useTransition();
+  const emVoo = useRef(false);
 
   const funcionario = nome ?? t("seu funcionário");
 
-  // Três estados possíveis, e nenhum deles pode virar uma tela vazia: sem
-  // agente (a pessoa pulou o treinamento), agente em rascunho (não tem versão
-  // publicada, então não há o que executar), e o caso normal.
   const semAgente = !agenteId;
-  const rascunho = Boolean(agenteId) && !versaoId;
+  const semVersao = Boolean(agenteId) && !versaoId;
+  const podeEnsaiar = Boolean(agenteId && versaoId);
 
   async function ensaiar() {
     if (!agenteId || !versaoId) return;
+    if (emVoo.current || carregando) return;
+    emVoo.current = true;
     setCarregando(true);
     setDesfecho(null);
     try {
-      const res = await fetch(`/api/v1/ai/agents/${agenteId}/versions/${versaoId}/test`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sample_message: mensagem }),
-      });
-      const json = (await res.json()) as {
+      const res = await apiClient.post<{
         data?: { final_text?: string; status?: string; error_code?: string; error_message?: string };
-        error?: { message?: string };
-      };
-      if (!res.ok) {
-        // A causa crua importa: quem instalou numa VPS é quem vai consertar, e
-        // "não foi possível testar" não diz se falta chave, saldo ou modelo.
-        setDesfecho({
-          tipo: "erro",
-          mensagem: json.error?.message ?? `${t("O ensaio falhou")} (HTTP ${res.status}).`,
-        });
-        return;
-      }
-      // O ensaio responde 200 mesmo quando o turno FALHA — o resultado traz o
-      // status. Ler só o texto e concluir "executou e não devolveu nada" foi o
-      // que a tela fez no primeiro percurso real, enquanto a causa verdadeira
-      // era outra: a versão não tinha credencial. Mentir sobre a causa manda a
-      // pessoa procurar no lugar errado.
-      const d = json.data;
-      if (d?.status && d.status !== "completed") {
+      }>(urlEnsaioDoAgente(agenteId, versaoId), { sample_message: mensagem }, {
+        timeoutMs: TIMEOUT_MS_DO_ENSAIO,
+      });
+      const d = res.data;
+      if (d?.status && d.status !== "completed" && d.status !== "ok") {
         setDesfecho({
           tipo: "erro",
           mensagem: d.error_message ?? d.error_code ?? `${t("o ensaio terminou como")} "${d.status}"`,
@@ -80,8 +69,34 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
           : { tipo: "erro", mensagem: t("Ele executou, mas não devolveu texto nenhum.") },
       );
     } catch (err) {
-      setDesfecho({ tipo: "erro", mensagem: err instanceof Error ? err.message : String(err) });
+      if (ehTimeoutDeRequisicao(err)) {
+        setDesfecho({
+          tipo: "erro",
+          mensagem: t(
+            "O teste demorou mais que o esperado. Verifique a aba Execuções antes de tentar novamente.",
+          ),
+        });
+        return;
+      }
+      if (err instanceof ApiError) {
+        const naoJson =
+          err.details !== undefined &&
+          typeof err.details === "object" &&
+          "content_kind" in err.details;
+        setDesfecho({
+          tipo: "erro",
+          mensagem: naoJson
+            ? mensagemSeguraDeHttp(err.status, "executar o teste")
+            : mensagemVisivelDeApiError(err, "executar o teste"),
+        });
+        return;
+      }
+      setDesfecho({
+        tipo: "erro",
+        mensagem: t("Não foi possível executar o teste."),
+      });
     } finally {
+      emVoo.current = false;
       setCarregando(false);
     }
   }
@@ -99,21 +114,27 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
         </div>
       )}
 
-      {rascunho && (
+      {semVersao && (
         <div className="rounded-lg border bg-background p-6" role="status">
           <p className="text-sm font-medium">
             {funcionario} {t("está como")} <strong>{t("rascunho")}</strong> — {t("ainda não foi para o ar.")}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {t(
-              "Rascunho não responde mensagem, então não há o que ensaiar. O passo anterior explicou o que falta; você pode resolver depois em IA › Agentes.",
+              "Abra IA › Agentes, salve o rascunho e volte aqui para ensaiar. Para atender clientes, conecte um canal.",
             )}
           </p>
         </div>
       )}
 
-      {!semAgente && !rascunho && (
+      {podeEnsaiar && (
         <div className="space-y-4 rounded-lg border bg-background p-6">
+          {!noAr ? (
+            <p data-testid="aviso-ensaio-sem-canal" className="text-sm text-muted-foreground" role="status">
+              {funcionario} {t("está como")} <strong>{t("rascunho")}</strong>.{" "}
+              {t("Você pode testar este agente aqui. Para atender clientes, conecte um canal.")}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="mensagem">{t("Escreva como se fosse um cliente")}</Label>
             <Textarea
@@ -186,12 +207,6 @@ export function TestarClient({ nome, agenteId, versaoId }: Props) {
           disabled={pending}
           onClick={() =>
             startTransition(async () => {
-              // `respondeu` guarda a diferença entre "vi funcionando" e "passei
-              // por aqui" — é o que o resumo final usa para não dizer que está
-              // tudo certo quando ninguém viu nada.
-              //
-              // A action redireciona no servidor (o `redirect` do Next lança),
-              // então só chega aqui quem falhou antes disso.
               try {
                 await marcarTesteFeito(desfecho?.tipo === "resposta");
               } catch (err) {

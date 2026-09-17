@@ -1,6 +1,6 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * POST /api/v1/ai/agents/:id/versions/:vid/test (admin)
+ * POST /api/v1/ai/agents/:id/versions/:vid/dry-run (admin)
  *
  * Spec 10 §4.4. Cria ai_agent_runs com is_dry_run=true e executa o runtime
  * real. ⚠️ Não é mais `callInternalRuntime` → `runAgent`, como esta linha
@@ -20,10 +20,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Crítico: dry_run=true → bypass do partial unique
  *   ai_agent_runs_one_running_per_conv (que filtra is_dry_run=false), por
- *   isso múltiplos tests simultâneos pra mesma conversation não conflitam.
+ *   isso múltiplos ensaios simultâneos pra mesma conversation não conflitam.
  *
  * Sample contact é apenas pra contexto do prompt — nunca toca contacts/conversations
  * tables, nunca chama WAHA, nunca cria messages.outbound.
+ *
+ * O segmento não se chama `test`: pasta com esse nome o App Router não registra
+ * (HTML 404 no lugar deste handler). Ver `lib/ai/agents/rota-de-ensaio.ts`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -33,10 +36,13 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
-import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
+import { classificarFalhaDoEnsaio } from "@/lib/ai/agents/ensaio-falha";
+import { montarPayloadDoEnsaio } from "@/lib/ai/agents/ensaio-resultado";
+import { ensurePlatformPlaybook } from "@/lib/agent-engine/agent/playbook-ensure";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { createLogger } from "@/lib/agent-engine/obs/logger";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 
@@ -146,10 +152,16 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("internal_error", "Erro ao iniciar test run.", 500, { requestId });
   }
 
+  // Seed DEPOIS do INSERT: se o playbook falhar, o run existe e fecha como
+  // `failed` — a aba Execuções vê a tentativa. Seed ANTES criaria 422 sem rastro.
+  const log = createLogger();
   let resultPayload: Record<string, unknown>;
 
   try {
-    const result = await testAgentVersion(getRequestPool(), requestTurnDeps(), {
+    const pool = getRequestPool();
+    const deps = requestTurnDeps();
+    await ensurePlatformPlaybook(pool, deps.log ?? log, { origem: "ensaio" });
+    const result = await testAgentVersion(pool, deps, {
       organizationId: activeOrg.orgId,
       agentId: id,
       versionId: vid,
@@ -158,65 +170,40 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       sampleContact: parsed.data.sample_contact,
       channelId: version.channel_session_id,
     });
-    const finalText = result.candidates.map((c) => c.body).join("\n\n");
-    resultPayload = {
-      run_id: runRow.id,
-      status: result.candidates.length ? "ok" : "blocked",
-      latency_ms: Date.now() - startedAt.getTime(),
-      final_text: finalText,
-      tool_calls: result.proposals,
-      ...result,
+    resultPayload = montarPayloadDoEnsaio(runRow.id, result, {
       stub: process.env.INTERNAL_AGENT_RUN_STUB === "true",
-      guardrails: avaliarRespostaDeTeste(finalText),
-    };
-    // ⚠️ `completed`, não `"ok"`. O CHECK da coluna aceita
-    // pending|running|completed|failed|aborted|handoff — `"ok"` é o vocabulário
-    // de `llm_calls`, que é outra tabela. Enquanto esteve `"ok"` aqui, TODO
-    // update era rejeitado pelo Postgres com 23514 e o erro era descartado (o
-    // `await` não olhava `error`, ao contrário do INSERT logo acima): a linha
-    // nascia `running` e morria `running`, em toda instalação, para sempre.
-    // Medido numa VPS v1.20.0: 16 execuções, 16 linhas em `running`.
-    await atualizarRun(admin, activeOrg.orgId, runRow.id, requestId, {
+      wallMs: Date.now() - startedAt.getTime(),
+    });
+    const fechou = await encerrarRunDoEnsaio(admin, {
+      orgId: activeOrg.orgId,
+      runId: runRow.id,
       status: "completed",
-      completed_at: new Date().toISOString(),
-      latency_ms: Date.now() - startedAt.getTime(),
-      // `steps_count`, `tokens_in`, `tokens_out` e `cost_cents` seguem em zero
-      // de propósito: o turno de prévia não devolve essas contagens à rota, e
-      // gravar `candidates.length` no lugar de passos seria um número errado com
-      // cara de certo. Quem tem o dado é `llm_calls` (`purpose='agent_preview'`),
-      // e ligar as duas é trabalho à parte — não se conserta um zero honesto com
-      // um palpite.
-      tool_calls: JSON.parse(JSON.stringify(result.proposals)),
+      toolCalls: {
+        offered: result.tools_offered,
+        called: result.tools_called,
+      },
+      stepsCount: result.steps_count,
+      tokensIn: result.tokens_in,
+      tokensOut: result.tokens_out,
+      costCents: typeof resultPayload.cost_cents === "number" ? resultPayload.cost_cents : result.cost_cents,
+      latencyMs: typeof resultPayload.latency_ms === "number" ? resultPayload.latency_ms : null,
     });
+    if (!fechou) {
+      log.error("ensaio: checkpoint nao gravado", { code: "completed" });
+    }
   } catch (err) {
-    // ⚠️ Este `catch` era vazio, e engolir o erro aqui é o que tornava o
-    // problema INDIAGNOSTICÁVEL: o teste falhava, a tela dizia uma frase
-    // genérica sobre modelo e credencial, e a causa real não existia em lugar
-    // nenhum — nem no log, nem na linha do run, nem na resposta.
-    const mensagem = err instanceof Error ? err.message : String(err);
-    logger.error("[ai.test] o teste do agente falhou", {
-      request_id: requestId,
-      run_id: runRow.id,
-      agent_id: id,
-      version_id: vid,
-      organization_id: activeOrg.orgId,
-      error: mensagem,
-    });
-    await atualizarRun(admin, activeOrg.orgId, runRow.id, requestId, {
+    const classificado = classificarFalhaDoEnsaio(err);
+    const fechou = await encerrarRunDoEnsaio(admin, {
+      orgId: activeOrg.orgId,
+      runId: runRow.id,
       status: "failed",
-      completed_at: new Date().toISOString(),
-      latency_ms: Date.now() - startedAt.getTime(),
-      error_code: "preview_failed",
-      // Guardado na linha para quem for diagnosticar depois; a resposta ao
-      // operador segue genérica, porque o texto do erro é técnico.
-      error_message: mensagem.slice(0, 2000),
+      errorCode: classificado.code,
+      errorMessage: classificado.message,
     });
-    return fail(
-      "preview_failed",
-      t("Não foi possível executar o teste. Confira modelo, credencial e materiais do agente."),
-      422,
-      { requestId },
-    );
+    if (!fechou) {
+      log.error("ensaio: checkpoint nao gravado", { code: classificado.code });
+    }
+    return fail(classificado.code, t(classificado.message), 422, { requestId });
   }
 
   void audit({
@@ -230,4 +217,42 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   });
 
   return ok(resultPayload, { requestId });
+}
+
+type AdminDoEnsaio = ReturnType<typeof createAdminClient>;
+
+async function encerrarRunDoEnsaio(
+  admin: AdminDoEnsaio,
+  args: {
+    orgId: string;
+    runId: string;
+    status: "completed" | "failed";
+    errorCode?: string;
+    errorMessage?: string;
+    toolCalls?: unknown;
+    stepsCount?: number;
+    tokensIn?: number;
+    tokensOut?: number;
+    costCents?: number;
+    latencyMs?: number | null;
+  },
+): Promise<boolean> {
+  const patch: Record<string, unknown> = {
+    status: args.status,
+    completed_at: new Date().toISOString(),
+  };
+  if (args.errorCode) patch.error_code = args.errorCode;
+  if (args.errorMessage) patch.error_message = args.errorMessage;
+  if (args.toolCalls !== undefined) patch.tool_calls = args.toolCalls;
+  if (args.stepsCount !== undefined) patch.steps_count = args.stepsCount;
+  if (args.tokensIn !== undefined) patch.tokens_in = args.tokensIn;
+  if (args.tokensOut !== undefined) patch.tokens_out = args.tokensOut;
+  if (args.costCents !== undefined) patch.cost_cents = args.costCents;
+  if (args.latencyMs !== undefined && args.latencyMs !== null) patch.latency_ms = args.latencyMs;
+  const { error } = await admin
+    .from("ai_agent_runs")
+    .update(patch)
+    .eq("organization_id", args.orgId)
+    .eq("id", args.runId);
+  return !error;
 }

@@ -25,6 +25,7 @@ const gate = (): GateContext => ({
   casesEnabled: false,
   hasOpenCase: false,
   openedCaseThisTurn: false,
+  internalVocabularyEnforced: true,
 });
 const preview = () =>
   ({
@@ -62,6 +63,8 @@ describe('preview policy shares gates and contains side effects', () => {
     expect(write).not.toHaveBeenCalled();
     expect(p.result.proposals).toHaveLength(1);
     expect(p.result.candidates[0]?.body).toBe('Olá, posso ajudar?');
+    expect(p.result.delivery_status).toBe('allowed');
+    expect(p.result.delivery_impediments).toEqual([]);
   });
   it('uses exactly the real opt-out decision and prevents a simulated candidate too', async () => {
     const p = preview(),
@@ -71,6 +74,11 @@ describe('preview policy shares gates and contains side effects', () => {
     await execute(tools, 'send_message', { body: ctx.body });
     expect(p.result.candidates).toEqual([]);
     expect(p.result.impediments[0]?.code).toBe(evaluateBeforeSend(ctx).veto?.code);
+    expect(p.result.delivery_status).toBe('withheld');
+    expect(p.result.security_impediments[0]?.code).toBe('contato_bloqueado');
+    expect(p.result.security_impediments[0]?.message).toBe(
+      'O contato pediu para não receber mensagens',
+    );
     expect(spy).not.toHaveBeenCalled();
   });
   it('keeps knowledge reads real and preserves independently generated citations', async () => {
@@ -143,4 +151,61 @@ it('uses only supplied in-memory sample contact in sandbox', () => {
   const context = scenarioContext([], { name: 'Maria Cenário', phone: '+5511999999999' });
   expect(context.context.contact.name).toBe('Maria Cenário');
   expect(context.context.contact.phone).toBe('+5511999999999');
+});
+
+describe('ensaio separa geração da autorização de entrega', () => {
+  const fetchSpy = vi.fn();
+
+  it('fora da janela: modelo mockado uma vez, resposta presente, entrega bloqueada, sem efeito externo', async () => {
+    vi.stubGlobal('fetch', fetchSpy);
+    const modelo = vi.fn((texto: string) => texto);
+    const p = preview();
+    const ctx = {
+      ...gate(),
+      now: new Date('2026-09-16T02:00:00.000Z'),
+      messagingWindow: { lastInboundAt: new Date('2026-09-16T01:00:00.000Z') },
+    };
+    const send = vi.fn();
+    const tools = applyPreviewPolicy({ send_message: definition(send) }, p, ctx, () => []);
+    const gerada = modelo('Olá, posso ajudar com o pedido.');
+    expect(modelo).toHaveBeenCalledTimes(1);
+    await execute(tools, 'send_message', { body: gerada });
+    expect(send).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(p.result.candidates[0]?.body).toBe(gerada);
+    expect(p.result.delivery_status).toBe('blocked');
+    expect(p.result.delivery_impediments[0]?.code).toBe('outside_window');
+    expect(p.result.delivery_impediments[0]?.message).toBe('Fora da janela de envio 7h–22h');
+    expect(p.result.security_impediments).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
+  it('dentro da janela: resposta presente, entrega allowed, nenhum WhatsApp', async () => {
+    vi.stubGlobal('fetch', fetchSpy);
+    const p = preview();
+    const send = vi.fn();
+    const tools = applyPreviewPolicy({ send_message: definition(send) }, p, gate(), () => []);
+    await execute(tools, 'send_message', { body: 'Olá, posso ajudar?' });
+    expect(p.result.candidates[0]?.body).toBe('Olá, posso ajudar?');
+    expect(p.result.delivery_status).toBe('allowed');
+    expect(p.result.delivery_impediments).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(p.result.restrictions).toContain('preview_no_client_effects');
+    vi.unstubAllGlobals();
+  });
+
+  it('bloqueio de segurança não mostra o conteúdo e sanitiza a categoria', async () => {
+    const p = preview();
+    const send = vi.fn();
+    const vazou = 'Vou chamar crm_list_leads para buscar seu cadastro.';
+    const tools = applyPreviewPolicy({ send_message: definition(send) }, p, gate(), () => []);
+    await execute(tools, 'send_message', { body: vazou });
+    expect(p.result.candidates).toEqual([]);
+    expect(p.result.delivery_status).toBe('withheld');
+    expect(p.result.security_impediments[0]?.code).toBe('internal_vocabulary_leak');
+    expect(p.result.security_impediments[0]?.message).toBe('A resposta usaria palavras internas');
+    expect(JSON.stringify(p.result)).not.toContain('crm_list_leads');
+    expect(send).not.toHaveBeenCalled();
+  });
 });

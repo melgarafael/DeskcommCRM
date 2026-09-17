@@ -13,7 +13,7 @@
  * Este spec faz isso e **guarda o que viu**.
  *
  * Roda pelo MESMO endpoint que o botão "Executar teste" da tela chama
- * (`/versions/[vid]/test`) — é dry-run, nada é enviado ao cliente, e o run fica
+ * (`/versions/[vid]/dry-run`) — é dry-run, nada é enviado ao cliente, e o run fica
  * registrado em `ai_agent_runs`.
  *
  * ⚠️ CONSOME CRÉDITO DE VERDADE. É o preço de saber se funciona de fato.
@@ -448,7 +448,7 @@ test.describe("QA — o agente usa as mãos que a W4 entregou?", () => {
     let cenariosQueMediram = 0;
     for (const cenario of aRodar) {
       const res = await page.request.post(
-        `${APP_URL}/api/v1/ai/agents/${agenteId}/versions/${versaoId}/test`,
+        `${APP_URL}/api/v1/ai/agents/${agenteId}/versions/${versaoId}/dry-run`,
         { data: { sample_message: cenario.mensagem }, timeout: 180_000 },
       );
       const bruto = await res.text();

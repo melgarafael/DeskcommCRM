@@ -33,6 +33,21 @@ export default async function TestarPage() {
     .eq("is_default", true)
     .maybeSingle();
 
+  const publicadoId = (agente?.published_version_id as string | null | undefined) ?? null;
+  let versaoId = publicadoId;
+  if (agente?.id && !versaoId) {
+    const { data: rascunho } = await admin
+      .from("ai_agent_versions")
+      .select("id")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("agent_id", agente.id as string)
+      .eq("status", "draft")
+      .order("version_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    versaoId = (rascunho?.id as string | undefined) ?? null;
+  }
+
   return (
     <div className="space-y-6">
       <header>
@@ -47,7 +62,8 @@ export default async function TestarPage() {
       <TestarClient
         nome={(agente?.name as string | undefined) ?? null}
         agenteId={(agente?.id as string | undefined) ?? null}
-        versaoId={(agente?.published_version_id as string | null | undefined) ?? null}
+        versaoId={versaoId}
+        noAr={Boolean(publicadoId)}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { apiClient } from "@/lib/api/client";
+import { apiClient, DEFAULT_TIMEOUT_MS } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { TIMEOUT_MS_DO_ENSAIO } from "@/lib/ai/agents/rota-de-ensaio";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
@@ -21,6 +22,20 @@ describe("apiClient", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it("envelope JSON com message HTML também não vaza no toast", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(404, {
+        error: { code: "not_found", message: "<!DOCTYPE html><html lang='pt-BR'>" },
+      }),
+    );
+    const err = await apiClient.get("/x").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toBe(
+      "Não foi possível completar a solicitação (HTTP 404).",
+    );
+    expect((err as ApiError).message).not.toContain("<!DOCTYPE");
   });
 
   it("t1: POST injects Idempotency-Key (uuid) and X-Request-Id headers", async () => {
@@ -95,6 +110,94 @@ describe("apiClient", () => {
     const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>;
     expect(headers["Idempotency-Key"]).toBe("custom-key-123");
   });
+
+  it("404 text/html não coloca DOCTYPE em ApiError.message", async () => {
+    const html = `<!DOCTYPE html><html lang="pt-BR"><body>404</body></html>`;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    fetchMock.mockResolvedValueOnce(
+      new Response(html, {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      }),
+    );
+    const err = await apiClient.post("/x", { a: 1 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    const e = err as ApiError;
+    expect(e.status).toBe(404);
+    expect(e.message).toBe("Não foi possível completar a solicitação (HTTP 404).");
+    expect(e.message).not.toContain("<!DOCTYPE");
+    expect(e.message).not.toContain("<html");
+    expect(JSON.stringify(e)).not.toMatch(/cookie|sk-|ANTHROPIC/i);
+    expect(e.details).toMatchObject({ content_kind: "html" });
+    expect(JSON.stringify(e.details)).not.toContain("<!DOCTYPE");
+    const diagnostico = JSON.stringify(warn.mock.calls);
+    expect(diagnostico).toContain("api.resposta_nao_json");
+    expect(diagnostico).not.toContain("<!DOCTYPE");
+    expect(diagnostico).not.toMatch(/sk-|cookie|ANTHROPIC/i);
+    warn.mockRestore();
+  });
+
+  it("timeout de POST não provoca retry", async () => {
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        }),
+    );
+    await expect(apiClient.post("/x", { a: 1 }, { timeoutMs: 5 })).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  }, 10_000);
+
+  it("DEFAULT_TIMEOUT_MS permanece 10s — o ensaio usa outro teto", () => {
+    expect(DEFAULT_TIMEOUT_MS).toBe(10_000);
+    expect(TIMEOUT_MS_DO_ENSAIO).toBe(120_000);
+    expect(DEFAULT_TIMEOUT_MS).not.toBe(TIMEOUT_MS_DO_ENSAIO);
+  });
+
+  it("POST sem opts agenda 10s; POST de ensaio agenda 120s", async () => {
+    const delays: number[] = [];
+    const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: TimerHandler,
+      ms?: number,
+      ...args: unknown[]
+    ) => {
+      if (typeof ms === "number") delays.push(ms);
+      return realSetTimeout(fn as () => void, ms, ...args);
+    }) as typeof setTimeout);
+
+    try {
+      fetchMock.mockImplementation(() => jsonResponse(200, { data: { ok: true } }));
+      await apiClient.post("/x", { a: 1 });
+      expect(delays).toContain(DEFAULT_TIMEOUT_MS);
+      expect(delays).not.toContain(TIMEOUT_MS_DO_ENSAIO);
+
+      delays.length = 0;
+      await apiClient.post("/api/v1/ai/agents/a/versions/b/dry-run", { a: 1 }, {
+        timeoutMs: TIMEOUT_MS_DO_ENSAIO,
+      });
+      expect(delays).toContain(TIMEOUT_MS_DO_ENSAIO);
+      expect(delays).not.toContain(DEFAULT_TIMEOUT_MS);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("timeout de GET continua repetindo", async () => {
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        }),
+    );
+    await expect(apiClient.get("/x", { timeoutMs: 5 })).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  }, 10_000);
 
   it("t8: timeout carrega um motivo descritivo — não a mensagem genérica do navegador", async () => {
     // `fetch` real, ligado a um signal abortado, rejeita com o `.reason` desse

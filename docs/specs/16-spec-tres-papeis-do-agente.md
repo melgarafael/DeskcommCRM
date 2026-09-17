@@ -227,7 +227,7 @@ controle diz onde impacta.
 
 ### 6.1 O botão "Testar" mente hoje — e isso entra no escopo
 
-`/api/v1/ai/agents/[id]/versions/[vid]/test` chama `runAgent` de `lib/ai/runtime/agent.ts`, marcado
+`/api/v1/ai/agents/[id]/versions/[vid]/dry-run` chama `runAgent` de `lib/ai/runtime/agent.ts`, marcado
 `@deprecated`, que **não importa `runBeforeSend`**. Medido: a cadeia inteira de guardrails está
 ausente do build do app Next — ela vive no processo do worker.
 

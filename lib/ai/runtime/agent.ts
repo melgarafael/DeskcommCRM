@@ -59,7 +59,7 @@ import {
 
 export interface RunAgentInput {
   runId: string;
-  /** Optional override for test mode invocations from /ai/agents/:id/versions/:vid/test. */
+  /** Optional override for test mode invocations from /ai/agents/:id/versions/:vid/dry-run. */
   override?: {
     sampleMessage?: string;
     sampleContact?: { name?: string; phone?: string };

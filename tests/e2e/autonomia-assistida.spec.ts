@@ -271,7 +271,7 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
       ).rows[0];
     const before = await count();
     const tested = page.waitForResponse(
-      (r) => r.url().endsWith(`/versions/${f.version}/test`) && r.request().method() === "POST",
+      (r) => r.url().endsWith(`/versions/${f.version}/dry-run`) && r.request().method() === "POST",
     );
     await page.getByRole("button", { name: "Executar teste", exact: true }).click();
     const response = await tested;

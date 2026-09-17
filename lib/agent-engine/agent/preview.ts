@@ -12,6 +12,14 @@ import {
   type GateTraceEntry,
   loadChannelProvider,
 } from '../guardrails/before-send';
+import {
+  BEFORE_SEND_GATES_DE_ENTREGA,
+  BEFORE_SEND_GATES_DE_SEGURANCA,
+  classificarVeto,
+  mensagemSanitizadaDoImpedimento,
+  type ImpedimentoDoEnsaio,
+  type StatusDeEntregaDoEnsaio,
+} from '../guardrails/classificacao-de-impedimento';
 import { loadChannelKnobs, loadPacingState } from '../pacing/store';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
@@ -22,6 +30,7 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
+import { aplicarUsoDaChamada } from './uso-do-run';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -35,6 +44,12 @@ export interface TurnPreview {
   /** Null means a scenario, never a synthetic identifier passed to SQL. */
   contactId: string | null;
   channelId: string | null;
+  /**
+   * Ensaio da aba Teste: cenário fresco, sem lead e sem turno seguinte.
+   * Sem isto o preview ainda fecha (rascunho assistido / invariante de
+   * governança). Com isto, `purpose=checkpoint` não roda.
+   */
+  isolated?: boolean;
   gateContext?: GateContext;
   result: PreviewResult;
 }
@@ -43,13 +58,50 @@ export interface PreviewResult {
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;
   impediments: Array<{ code: string; message: string }>;
+  delivery_impediments: ImpedimentoDoEnsaio[];
+  security_impediments: ImpedimentoDoEnsaio[];
+  delivery_status: StatusDeEntregaDoEnsaio;
+  tokens_in: number;
+  tokens_out: number;
+  cost_cents: number;
+  /**
+   * Relógio do ensaio (parede). Não some latências de chamadas sobrepostas —
+   * `promise_semantic` roda dentro de `send_message`. A soma das chamadas é
+   * `llm_latency_ms`.
+   */
+  latency_ms: number;
+  llm_latency_ms: number;
+  llm_purposes: string[];
+  llm_call_ids: string[];
+  steps_count: number;
+  tools_offered: string[];
+  tools_called: string[];
+  /** Passos sanitizados do generateText: índice, nomes de tools, finish_reason. */
+  steps: Array<{ index: number; tools: string[]; finish_reason: string }>;
   restrictions: string[];
+  /** Dry-run isolado: checkpoint não foi gerado de propósito. */
+  checkpoint_omitted?: boolean;
+  checkpoint_omitted_reason?: string;
 }
 export function newPreviewResult(): PreviewResult {
   return {
     candidates: [],
     proposals: [],
     impediments: [],
+    delivery_impediments: [],
+    security_impediments: [],
+    delivery_status: 'allowed',
+    tokens_in: 0,
+    tokens_out: 0,
+    cost_cents: 0,
+    latency_ms: 0,
+    llm_latency_ms: 0,
+    llm_purposes: [],
+    llm_call_ids: [],
+    steps_count: 0,
+    tools_offered: [],
+    tools_called: [],
+    steps: [],
     restrictions: [
       'preview_no_client_effects',
       'writes_require_separate_authorization',
@@ -168,27 +220,75 @@ export function applyPreviewPolicy(
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
-              const result = evaluateBeforeSend({
+              const live = {
                 ...ctx,
                 ...liveContext?.(),
                 body,
-                semanticPromise: semanticClassifier ? await semanticClassifier(body) : null,
-              });
-              if (result.veto) {
-                p.result.impediments.push({ code: result.veto.code, message: result.veto.message });
+                semanticPromise: semanticClassifier
+                  ? await semanticClassifier(body)
+                  : ctx.semanticPromise,
+              };
+              const janela = {
+                start: live.pacing.knobs.windowStartHour,
+                end: live.pacing.knobs.windowEndHour,
+              };
+              // Segurança PRIMEIRO, mesmo fora da janela — senão o ensaio
+              // mostraria conteúdo que o envio real nunca deixaria sair.
+              const seguranca = evaluateBeforeSend(live, BEFORE_SEND_GATES_DE_SEGURANCA);
+              if (seguranca.veto) {
+                const classificado = classificarVeto(seguranca.veto);
+                classificado.message = mensagemSanitizadaDoImpedimento(
+                  classificado.code,
+                  'seguranca',
+                );
+                p.result.security_impediments.push(classificado);
+                p.result.impediments.push({
+                  code: classificado.code,
+                  message: classificado.message,
+                });
+                p.result.delivery_status = 'withheld';
                 return {
                   ok: false,
-                  error: { code: result.veto.code, message: result.veto.message },
+                  error: { code: seguranca.veto.code, message: seguranca.veto.message },
                 };
               }
+              const entrega = evaluateBeforeSend(
+                { ...live, body: seguranca.body },
+                BEFORE_SEND_GATES_DE_ENTREGA,
+              );
               p.result.candidates.push({
-                body: result.body,
+                body: seguranca.body,
                 citations: citations(),
-                trace: result.trace,
+                trace: [...seguranca.trace, ...entrega.trace],
               });
+              if (entrega.veto) {
+                const classificado = classificarVeto(entrega.veto);
+                classificado.message = mensagemSanitizadaDoImpedimento(
+                  classificado.code,
+                  'entrega',
+                  janela,
+                );
+                p.result.delivery_impediments.push(classificado);
+                p.result.impediments.push({
+                  code: classificado.code,
+                  message: classificado.message,
+                });
+                p.result.delivery_status = 'blocked';
+                return {
+                  ok: true,
+                  status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',
+                  delivery: 'blocked',
+                  message:
+                    'Resposta proposta. Nenhuma mensagem enviada. O envio real estaria bloqueado agora.',
+                };
+              }
+              if (p.result.delivery_status !== 'blocked' && p.result.delivery_status !== 'withheld') {
+                p.result.delivery_status = 'allowed';
+              }
               return {
                 ok: true,
                 status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',
+                delivery: 'allowed',
                 message: 'Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.',
               };
             }
@@ -234,6 +334,27 @@ export function applyPreviewPolicy(
     }),
   ) as ToolSet;
 }
+
+/** Copia o uso já gravado em `llm_calls` — não insere linha nova nem some latência de parede. */
+export function somarUsoNoPreview(
+  preview: TurnPreview,
+  chamada: {
+    callId?: string | null;
+    purpose?: string;
+    usage?: { inputTokens?: number; outputTokens?: number };
+    costCents?: number | null;
+    latencyMs?: number;
+  },
+): void {
+  aplicarUsoDaChamada(preview.result, chamada);
+}
+
+export function textoGeradoDoPreview(result: PreviewResult): string | null {
+  if (result.delivery_status === 'withheld') return null;
+  const texto = result.candidates.map((c) => c.body).join('\n\n').trim();
+  return texto.length > 0 ? texto : null;
+}
+
 export function scenarioContext(
   messages: LeadContext['messages'],
   contact?: { name?: string; phone?: string },

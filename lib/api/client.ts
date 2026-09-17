@@ -1,6 +1,12 @@
 import type { ZodSchema } from "zod";
 
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
+import {
+  diagnosticoDeCorpoNaoJson,
+  mensagemEhSeguraParaToast,
+  mensagemSeguraDeHttp,
+} from "@/lib/api/erro-http";
+import { logger } from "@/lib/logger";
 import { randomId } from "@/lib/random-id";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -13,7 +19,7 @@ export type RequestOpts = {
   signal?: AbortSignal;
 };
 
-const DEFAULT_TIMEOUT_MS = 10_000;
+export const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
  * O prazo de uma ESCRITA — o orçamento que o fim do retry tirou sem repor.
@@ -65,7 +71,6 @@ const DEFAULT_TIMEOUT_MS = 10_000;
  * (o "Testar agente" pede 120s, e segue mandando).
  */
 const MUTATION_TIMEOUT_MS = 30_000;
-
 const MAX_ATTEMPTS = 3;
 const RETRYABLE_STATUSES = new Set([429, 503]);
 const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PATCH", "PUT", "DELETE"]);
@@ -313,22 +318,33 @@ async function request<T>(
         if (res.status === 403 && e.code === "no_active_org") {
           pedirDecisaoAoServidor();
         }
+        const mensagemJson =
+          typeof e.message === "string" && mensagemEhSeguraParaToast(e.message)
+            ? e.message
+            : mensagemSeguraDeHttp(res.status, "completar a solicitação");
         throw new ApiError(
           res.status,
           e.code ?? synthesizeCode(res.status),
           e.details,
           e.request_id ?? responseRequestId,
-          e.message,
+          mensagemJson,
         );
       }
+      // HTML de página 404, texto cru, stack — nunca vão para o toast.
+      const diagnostico = diagnosticoDeCorpoNaoJson(
+        typeof errBody === "string" ? errBody : null,
+      );
+      logger.warn("api.resposta_nao_json", {
+        status: res.status,
+        content_kind: diagnostico.kind,
+        body_length: diagnostico.length,
+      });
       throw new ApiError(
         res.status,
         synthesizeCode(res.status),
-        undefined,
+        { content_kind: diagnostico.kind, body_length: diagnostico.length },
         responseRequestId,
-        typeof errBody === "string" && errBody.length > 0
-          ? errBody
-          : `HTTP ${res.status}`,
+        mensagemSeguraDeHttp(res.status, "completar a solicitação"),
       );
     } catch (err) {
       // ApiError thrown above for non-retryable: propagate immediately
@@ -354,11 +370,9 @@ async function request<T>(
       // Erro de REDE (servidor inalcançável) é indistinguível de timeout aqui,
       // e some no mesmo balde de propósito: na dúvida sobre uma escrita, não
       // repetir é a direção segura. Leitura (GET) segue retentando.
-      if (MUTATING_METHODS.has(method)) {
-        throw err;
-      }
       lastError = err;
-      if (attempt < MAX_ATTEMPTS) {
+      const mutacao = MUTATING_METHODS.has(method);
+      if (!mutacao && attempt < MAX_ATTEMPTS) {
         await sleep(backoffMs(attempt), opts.signal);
         continue;
       }

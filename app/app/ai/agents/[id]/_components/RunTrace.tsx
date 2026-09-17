@@ -28,12 +28,22 @@ interface ToolCallStep {
 interface Props {
   toolCalls: unknown;
   finalText?: string | null;
+  finalTextLabel?: string;
   emptyMessage?: string;
 }
 
 function asArray(input: unknown): ToolCallStep[] {
-  if (!Array.isArray(input)) return [];
-  return input.filter((x) => x && typeof x === "object") as ToolCallStep[];
+  if (Array.isArray(input)) {
+    return input.filter((x) => x && typeof x === "object") as ToolCallStep[];
+  }
+  if (input && typeof input === "object") {
+    const o = input as { offered?: unknown; called?: unknown };
+    const called = Array.isArray(o.called) ? o.called : [];
+    return called
+      .filter((n): n is string => typeof n === "string")
+      .map((tool_name, i) => ({ step: i + 1, tool_name }));
+  }
+  return [];
 }
 
 function fmtJson(value: unknown): string {
@@ -53,6 +63,7 @@ function clip(text: string, max = 4000): string {
 export function RunTrace({
   toolCalls,
   finalText,
+  finalTextLabel,
   emptyMessage = "Sem trace disponível.",
 }: Props) {
   const t = useT();
@@ -125,7 +136,7 @@ export function RunTrace({
       {finalText ? (
         <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-primary">
-            {t("Mensagem que SERIA enviada")}
+            {finalTextLabel ?? t("Mensagem que SERIA enviada")}
           </p>
           <p className="whitespace-pre-wrap">{finalText}</p>
         </div>

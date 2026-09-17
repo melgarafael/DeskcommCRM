@@ -1075,6 +1075,11 @@ export const DICIONARIO: Traducoes = {
   "Selecione um modelo": { es: "Selecciona un modelo" },
   "Digite o identificador do modelo": { es: "Escribe el identificador del modelo" },
   "Nenhum modelo disponível": { es: "Ningún modelo disponible" },
+  "Não consegui carregar os modelos.": { es: "No pude cargar los modelos." },
+  "O catálogo deste provedor está vazio.": { es: "El catálogo de este proveedor está vacío." },
+  "Você pode testar este agente aqui. Para atender clientes, conecte um canal.": {
+    es: "Puedes probar este agente aquí. Para atender clientes, conecta un canal.",
+  },
   "Nenhuma capacidade disponível ainda para esta jornada.": {
     es: "Todavía no hay capacidades disponibles para esta jornada.",
   },
@@ -1375,7 +1380,67 @@ export const DICIONARIO: Traducoes = {
   "(rascunho)": { es: "(borrador)" },
   "Informe uma mensagem de teste.": { es: "Ingresa un mensaje de prueba." },
   "Teste executado.": { es: "Prueba ejecutada." },
+  "Resposta gerada": { es: "Respuesta generada" },
+  "Resposta gerada — envio bloqueado": {
+    es: "Respuesta generada — envío bloqueado",
+  },
+  "Resposta gerada, mas não seria enviada agora.": {
+    es: "Respuesta generada, pero no se enviaría ahora.",
+  },
+  "Fora da janela de envio 7h–22h": {
+    es: "Fuera de la ventana de envío 7h–22h",
+  },
+  "Nenhuma mensagem foi enviada.": { es: "No se envió ningún mensaje." },
+  "Resposta retida": { es: "Respuesta retenida" },
+  "O contato pediu para não receber mensagens": {
+    es: "El contacto pidió no recibir mensajes",
+  },
+  "Limite de aquecimento do número": { es: "Límite de calentamiento del número" },
+  "Limite diário de envio do número": { es: "Límite diario de envío del número" },
+  "Janela de conversa do canal fechada": {
+    es: "Ventana de conversación del canal cerrada",
+  },
+  "Cópia idêntica demais para este número": {
+    es: "Copia demasiado idéntica para este número",
+  },
+  "Envio bloqueado por regra operacional": {
+    es: "Envío bloqueado por una regla operativa",
+  },
+  "A resposta não pode ser exibida": { es: "La respuesta no puede mostrarse" },
+  "Sem base legal para o primeiro contato": {
+    es: "Sin base legal para el primer contacto",
+  },
+  "Promessa fora das condições cadastradas": {
+    es: "Promesa fuera de las condiciones registradas",
+  },
+  "Promessa não permitida": { es: "Promesa no permitida" },
+  "Promessa sobre um chamado que não existe": {
+    es: "Promesa sobre un llamado que no existe",
+  },
+  "A resposta usaria palavras internas": {
+    es: "La respuesta usaría palabras internas",
+  },
+  "Horário afirmado sem consultar a agenda": {
+    es: "Horario afirmado sin consultar la agenda",
+  },
+  "Falta a apresentação como assistente virtual": {
+    es: "Falta la presentación como asistente virtual",
+  },
+  "Não foi possível executar o teste.": { es: "No fue posible ejecutar la prueba." },
+  "Não foi possível preparar o playbook obrigatório do ensaio.": {
+    es: "No fue posible preparar el playbook obligatorio de la prueba.",
+  },
+  "Não foi possível executar o teste (HTTP 404).": {
+    es: "No fue posible ejecutar la prueba (HTTP 404).",
+  },
+  "Não foi possível completar a solicitação (HTTP 404).": {
+    es: "No fue posible completar la solicitud (HTTP 404).",
+  },
+  "Rota não encontrada.": { es: "Ruta no encontrada." },
   "Erro inesperado.": { es: "Error inesperado." },
+  "O teste demorou mais que o esperado. Verifique a aba Execuções antes de tentar novamente.": {
+    es: "La prueba tardó más de lo esperado. Revisa la pestaña Ejecuciones antes de intentar de nuevo.",
+  },
   "Versão alvo": { es: "Versión de destino" },
   "⚠ Modo teste consome créditos do provider.": {
     es: "⚠ El modo de prueba consume créditos del proveedor.",
@@ -1394,6 +1459,19 @@ export const DICIONARIO: Traducoes = {
   "Executando dry-run…": { es: "Ejecutando dry-run…" },
   "Stub: o runtime real é entregue na S-13.08. O trace abaixo é simulado.": {
     es: "Stub: el runtime real se entrega en S-13.08. La traza de abajo es simulada.",
+  },
+  "Uso total do ensaio (tokens in/out)": {
+    es: "Uso total de la prueba (tokens entrada/salida)",
+  },
+  "Passos do modelo": { es: "Pasos del modelo" },
+  "Ferramentas oferecidas": { es: "Herramientas ofrecidas" },
+  "Ferramentas chamadas": { es: "Herramientas llamadas" },
+  "Chamadas da IA neste ensaio": { es: "Llamadas de IA en esta prueba" },
+  "Checkpoint não gerado: ensaio isolado.": {
+    es: "Checkpoint no generado: prueba aislada.",
+  },
+  "Checkpoint não é gerado neste ensaio: execução isolada, sem turno seguinte.": {
+    es: "No se genera checkpoint en esta prueba: ejecución aislada, sin turno siguiente.",
   },
   "Tokens in/out": { es: "Tokens entrada/salida" },
   "Custo (cents)": { es: "Costo (centavos)" },
@@ -5495,6 +5573,9 @@ export const DICIONARIO: Traducoes = {
   "ainda não foi para o ar.": { es: "todavía no salió al aire." },
   "Rascunho não responde mensagem, então não há o que ensaiar. O passo anterior explicou o que falta; você pode resolver depois em IA › Agentes.": {
     es: "Un borrador no responde mensajes, así que no hay qué ensayar. El paso anterior explicó lo que falta; puedes resolverlo después en IA › Agentes.",
+  },
+  "Abra IA › Agentes, salve o rascunho e volte aqui para ensaiar. Para atender clientes, conecte um canal.": {
+    es: "Abre IA › Agentes, guarda el borrador y vuelve aquí para ensayar. Para atender clientes, conecta un canal.",
   },
   "Escreva como se fosse um cliente": { es: "Escribe como si fueras un cliente" },
   "Ele está pensando...": { es: "Está pensando..." },

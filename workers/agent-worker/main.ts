@@ -82,7 +82,7 @@ import {
 import { createCaseReplyTurnHandler } from "@/lib/agent-engine/agent/case-reply-turn";
 import { createOperatorTurnHandler } from "@/lib/agent-engine/agent/operator-turn";
 import { completeTurnForEnrollment, createPgAdminClient } from "@/lib/followup/turn-bridge";
-import { seedPlatformPlaybook } from "@/lib/agent-engine/agent/playbook-seed";
+import { ensurePlatformPlaybook } from "@/lib/agent-engine/agent/playbook-ensure";
 import { runCronLoop } from "@/lib/agent-engine/cron/scheduler";
 import { createPool } from "@/lib/agent-engine/db/pool";
 import {
@@ -266,13 +266,10 @@ export async function startWorker(
 
   await assertHarnessSchema(pool);
 
-  // Self-host limpo: sem ponteiro platform, TODO inbound_turn morre. O seed só
-  // age quando não existe ponteiro nenhum (regra dura nº 10 — nunca move
-  // ponteiro existente) e é concorrência-safe (advisory lock).
-  const playbookSeed = await seedPlatformPlaybook(pool);
-  if (playbookSeed === "seeded") {
-    log.info("playbook platform seedado no boot (primeiro boot do self-host)");
-  }
+  // Self-host limpo: sem ponteiro platform, TODO inbound_turn morre. O mesmo
+  // ensure do ensaio web: seed só age quando não existe ponteiro nenhum
+  // (regra dura nº 10 — nunca move ponteiro existente) e é concorrência-safe.
+  await ensurePlatformPlaybook(pool, log, { origem: "boot" });
 
   const bootReap = await reapExpiredJobs(pool, {
     visibilityTimeoutMs: env.QUEUE_VISIBILITY_TIMEOUT_MS,

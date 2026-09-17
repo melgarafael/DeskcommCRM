@@ -4,7 +4,7 @@
  *
  * ═══ O DEFEITO (medido em 2026-08-05) ═══
  *
- * `/api/v1/ai/agents/[id]/versions/[vid]/test` chama `runAgent` de
+ * `/api/v1/ai/agents/[id]/versions/[vid]/dry-run` chama `runAgent` de
  * `lib/ai/runtime/agent.ts`, marcado `@deprecated`, que **não importa
  * `runBeforeSend`**. A cadeia inteira de guardrails vive no processo do worker e
  * está ausente do build do app Next — provado por três medições com controle

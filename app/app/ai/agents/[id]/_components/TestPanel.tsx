@@ -2,7 +2,7 @@
 /**
  * TestPanel — dry-run de uma version (S-13.12).
  *
- * Envia sample message via POST `:test` (admin-only). Renderiza trace +
+ * Envia sample message via POST `:dry-run` (admin-only). Renderiza trace +
  * "Mensagem que SERIA enviada". Não toca WAHA, não cria messages.outbound.
  * Quando `INTERNAL_AGENT_RUN_STUB=true` o backend devolve trace stub com
  * `stub: true`; o componente mostra um aviso amigável.
@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { ehTimeoutDeRequisicao, mensagemSeguraDeHttp, mensagemVisivelDeApiError } from "@/lib/api/erro-http";
+import { TIMEOUT_MS_DO_ENSAIO, urlEnsaioDoAgente } from "@/lib/ai/agents/rota-de-ensaio";
 import { agentRunsKey } from "@/hooks/ai/useAgentRuns";
 import { useT } from "@/hooks/i18n/useT";
 import type { AgentRow } from "@/hooks/ai/useAgent";
@@ -37,12 +39,25 @@ interface TestResponse {
   data: {
     run_id: string;
     status: string;
+    generated_response?: string | null;
+    delivery_status?: "allowed" | "blocked" | "withheld";
+    delivery_impediments?: Array<{ code: string; message: string }>;
+    security_impediments?: Array<{ code: string; message: string }>;
+    proposed_actions?: Array<{ tool: string; arguments: unknown }>;
+    notice?: string | null;
     final_text?: string | null;
     tool_calls?: unknown;
     tokens_in?: number;
     tokens_out?: number;
     cost_cents?: number;
     latency_ms?: number;
+    llm_latency_ms?: number;
+    llm_purposes?: string[];
+    steps_count?: number;
+    tools_offered?: string[];
+    tools_called?: string[];
+    checkpoint_generated?: boolean;
+    checkpoint_notice?: string | null;
     would_send_to?: { session?: string | null; chat_id?: string | null };
     stub?: boolean;
     candidates?: Array<{ body: string; trace: Array<{ gate: string; verdict: string }> }>;
@@ -57,6 +72,10 @@ interface TestResponse {
       naoAvaliados: Array<{ gate: string; porque: string }>;
     };
   };
+}
+
+function formatarCustoUi(n: number): string {
+  return n.toLocaleString("pt-BR", { maximumFractionDigits: 4, minimumFractionDigits: 0 });
 }
 
 /**
@@ -141,6 +160,7 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
   const [contactPhone, setContactPhone] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
+  const emVoo = React.useRef(false);
 
   if (!target) {
     return (
@@ -156,11 +176,13 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
       : `v${target.version_number} ${t("(rascunho)")}`;
 
   async function handleRun() {
+    if (emVoo.current || pending) return;
     if (!message.trim()) {
       toast.error(t("Informe uma mensagem de teste."));
       return;
     }
     if (!target) return;
+    emVoo.current = true;
     setPending(true);
     setResult(null);
     try {
@@ -172,30 +194,38 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
         };
       }
       const res = await apiClient.post<TestResponse>(
-        `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
+        urlEnsaioDoAgente(agent.id, target.id),
         body,
-        // ⚠️ O padrão do cliente é 10s, e um turno de agente NÃO cabe nele: o
-        // teste roda o motor inteiro (classificador de etapa, jailbreak, o
-        // agente com as ferramentas, checkpoint, verificação de promessa).
-        // Medido numa instalação real: 14,5s só na chamada ao modelo. Com 10s,
-        // o resultado nunca chegava — o painel ficava em "Nenhum teste
-        // executado ainda" enquanto o servidor terminava e devolvia para
-        // ninguém (issue #783).
-        //
-        // 120s é o teto do orçamento de passos do agente, não um chute
-        // confortável: acima disso o problema é o agente, não a espera.
-        { timeoutMs: 120_000 },
+        // ⚠️ O padrão do cliente é 10s para GET e 30s para mutação; um turno
+        // de agente NÃO cabe nisso: o ensaio roda o motor inteiro. Medido numa
+        // instalação real: 14,5s só na chamada ao modelo (issue #783).
+        // 120s é o teto do orçamento de passos do agente.
+        { timeoutMs: TIMEOUT_MS_DO_ENSAIO },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
       toast.success(t("Teste executado."));
     } catch (err) {
-      if (err instanceof ApiError) {
-        toast.error(t(err.message) || `${t("Erro")}: ${err.code}`);
+      if (ehTimeoutDeRequisicao(err)) {
+        toast.error(
+          t(
+            "O teste demorou mais que o esperado. Verifique a aba Execuções antes de tentar novamente.",
+          ),
+        );
+      } else if (err instanceof ApiError) {
+        const naoJson =
+          err.details !== undefined &&
+          typeof err.details === "object" &&
+          "content_kind" in err.details;
+        const visivel = naoJson
+          ? mensagemSeguraDeHttp(err.status, "executar o teste")
+          : mensagemVisivelDeApiError(err, "executar o teste");
+        toast.error(t(visivel) || `${t("Erro")}: ${err.code}`);
       } else {
         toast.error(t("Erro inesperado."));
       }
     } finally {
+      emVoo.current = false;
       setPending(false);
     }
   }
@@ -288,20 +318,90 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
             ) : null}
 
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <Cell label={t("Status")}>{result.status}</Cell>
+              <Cell label={t("Status")}>
+                {result.delivery_status === "blocked" && result.generated_response
+                  ? t("Resposta gerada — envio bloqueado")
+                  : result.delivery_status === "withheld"
+                    ? t("Resposta retida")
+                    : result.status}
+              </Cell>
               <Cell label={t("Latência")}>
                 {typeof result.latency_ms === "number" ? `${result.latency_ms}ms` : "—"}
               </Cell>
-              <Cell label={t("Tokens in/out")}>
-                {result.tokens_in?.toLocaleString()??"—"} /{" "}
-                {result.tokens_out?.toLocaleString()??"—"}
+              <Cell label={t("Uso total do ensaio (tokens in/out)")}>
+                {result.tokens_in?.toLocaleString() ?? "—"} /{" "}
+                {result.tokens_out?.toLocaleString() ?? "—"}
               </Cell>
-              <Cell label={t("Custo (cents)")}>{result.cost_cents ?? "—"}</Cell>
+              <Cell label={t("Custo (cents)")}>
+                {typeof result.cost_cents === "number" ? formatarCustoUi(result.cost_cents) : "—"}
+              </Cell>
+              <Cell label={t("Passos do modelo")}>
+                {typeof result.steps_count === "number" ? result.steps_count : "—"}
+              </Cell>
+              <Cell label={t("Ferramentas oferecidas")}>
+                {result.tools_offered?.length
+                  ? result.tools_offered.join(", ")
+                  : "—"}
+              </Cell>
+              <Cell label={t("Ferramentas chamadas")}>
+                {result.tools_called?.length
+                  ? result.tools_called.join(", ")
+                  : "—"}
+              </Cell>
+              <Cell label={t("Chamadas da IA neste ensaio")}>
+                {result.llm_purposes?.length
+                  ? result.llm_purposes.join(", ")
+                  : "—"}
+              </Cell>
             </div>
+
+            {result.checkpoint_generated === false ? (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  result.checkpoint_notice ??
+                    "Checkpoint não gerado: ensaio isolado.",
+                )}
+              </p>
+            ) : null}
+
+            {result.delivery_status === "blocked" && result.generated_response ? (
+              <div
+                className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs"
+                data-testid="ensaio-envio-bloqueado"
+              >
+                <p className="font-medium">{t("Resposta gerada, mas não seria enviada agora.")}</p>
+                {result.delivery_impediments?.map((x, i) => (
+                  <p key={i} role="status">
+                    {t(x.message)}
+                  </p>
+                ))}
+                <p className="text-muted-foreground">{t("Nenhuma mensagem foi enviada.")}</p>
+              </div>
+            ) : null}
+
+            {result.delivery_status === "withheld" ? (
+              <div
+                className="space-y-2 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-xs"
+                data-testid="ensaio-resposta-retida"
+              >
+                <p className="font-medium text-destructive">{t("Resposta retida")}</p>
+                {(result.security_impediments ?? result.impediments)?.map((x, i) => (
+                  <p key={i} role="status">
+                    {t(x.message)}
+                  </p>
+                ))}
+                <p className="text-muted-foreground">{t("Nenhuma mensagem foi enviada.")}</p>
+              </div>
+            ) : null}
 
             <RunTrace
               toolCalls={result.tool_calls}
-              finalText={result.final_text ?? null}
+              finalText={result.generated_response ?? result.final_text ?? null}
+              finalTextLabel={
+                result.delivery_status === "blocked"
+                  ? t("Resposta gerada")
+                  : t("Mensagem que SERIA enviada")
+              }
               emptyMessage={t("Sem tool calls (resposta direta do LLM).")}
             />
 
@@ -325,7 +425,10 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
                     </pre>
                   </details>
                 ))}
-                {result.impediments?.map((x, i) => (
+                {result.impediments
+                  ?.filter((x) => !result.delivery_impediments?.some((d) => d.code === x.code))
+                  .filter((x) => !result.security_impediments?.some((d) => d.code === x.code))
+                  .map((x, i) => (
                   <p role="status" key={i}>
                     {x.message}
                   </p>

@@ -41,6 +41,7 @@ export async function testAgentVersion(
     context,
     contactId: null,
     channelId: input.channelId,
+    isolated: true,
     result,
   });
   return result;

@@ -137,14 +137,14 @@ async function main() {
       record("TC-07: GET /ai/agents/:id/runs em agent fake", status === 404 || status === 400 || status === 200, `status=${status}`);
     }
 
-    // TC-08: POST /ai/agents/:id/versions/:vid/test em ids inexistentes
+    // TC-08: POST /ai/agents/:id/versions/:vid/dry-run em ids inexistentes
     {
       const fake = "00000000-0000-0000-0000-000000000000";
-      const r = await api.post(`${BASE_URL}/api/v1/ai/agents/${fake}/versions/${fake}/test`, {
+      const r = await api.post(`${BASE_URL}/api/v1/ai/agents/${fake}/versions/${fake}/dry-run`, {
         data: { input_text: "olá" },
       });
       const status = r.status();
-      record("TC-08: POST /versions/:vid/test em ids fake", status === 404 || status === 400 || status === 422, `status=${status}`);
+      record("TC-08: POST /versions/:vid/dry-run em ids fake", status === 404 || status === 400 || status === 422, `status=${status}`);
     }
 
     // TC-09: Auth — chamar sem cookie deve retornar 401/redirect

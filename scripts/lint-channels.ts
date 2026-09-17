@@ -170,7 +170,7 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
       "correta ('o container converte o áudio no servidor') para escapar de um " +
       "regex PIORA o código — por isso a decisão é registrar, não reescrever.",
     files: [
-      "app/api/v1/ai/agents/[id]/versions/[vid]/test/route.ts",
+      "app/api/v1/ai/agents/[id]/versions/[vid]/dry-run/route.ts",
       "app/api/v1/conversations/[id]/media/route.ts",
       "app/api/v1/webhook-sources/route.ts",
       "app/api/v1/webhooks/in/[token]/route.ts",
