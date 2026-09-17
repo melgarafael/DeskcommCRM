@@ -189,6 +189,33 @@ function extrairMotivos(erro: unknown): string[] {
     }
   }
 
+  // O corpo CRU da recusa quando quem lançou foi o TRANSPORTE da agenda: o
+  // `GoogleHttpError` guarda o corpo do Google ao lado do status, em `corpo`, e
+  // ele não tem `response` — sem este unwrap a recusa de uma ESCRITA chegava
+  // aqui com status e sem motivo nenhum, e a frase persistida ficava só
+  // "Google HTTP 400" para um erro que o Google tinha explicado.
+  //
+  // Os `reason` entram ANTES do `status` simbólico de propósito: é o primeiro
+  // motivo que vira a frase persistida, e `invalid` diz o que consertar
+  // enquanto `INVALID_ARGUMENT` só repete a categoria. (O bloco do corpo cru
+  // logo acima mantém a ordem antiga — trocá-la não é o escopo da #950.)
+  //
+  // Daqui só sai o que tem FORMATO de identificador (`invalid`,
+  // `INVALID_ARGUMENT`). O corpo é de quem respondeu, e nem sempre é o Google:
+  // um proxy que devolva `{"error":"<texto livre>"}` levaria nome e e-mail para
+  // a frase gravada no compromisso.
+  const corpoDaRecusa = comoObjeto(e.corpo);
+  if (corpoDaRecusa) {
+    const antes = achados.length;
+    empilhar(corpoDaRecusa.error);
+    const erroDaRecusa = comoObjeto(corpoDaRecusa.error);
+    if (erroDaRecusa) listaDeReasons(erroDaRecusa.errors);
+    listaDeReasons(corpoDaRecusa.errors);
+    if (erroDaRecusa) empilhar(erroDaRecusa.status);
+    const doCorpo = achados.splice(antes).filter((m) => /^[a-z_]{1,64}$/.test(m));
+    achados.push(...doCorpo);
+  }
+
   // A mensagem entra por último e só serve para os motivos que o Google manda
   // em texto puro na renovação de token — `googleapis` copia `invalid_grant`
   // para `message` e não preenche `errors[]`.
@@ -279,6 +306,10 @@ export function classificarErroDoGoogle(erro: unknown, operacao: OperacaoNoGoogl
     //
     // A distinção não é cosmética: `evento_sumiu` pede reconciliar (recriar),
     // `calendario_sumiu` pede reconectar. Consertos opostos.
+    // A recusa veio da consulta ao CALENDÁRIO (o transporte marca `alvo`): o
+    // evento nem chegou a ser a pergunta, e nenhuma das leituras acima vale.
+    if ((status === 404 || status === 410) && comoObjeto(erro)?.alvo === "calendario")
+      return "calendario_sumiu";
     if (status === 404) {
       if (operacao === "apagar") return "ja_esta_feito";
       if (operacao === "criar") return "calendario_sumiu";

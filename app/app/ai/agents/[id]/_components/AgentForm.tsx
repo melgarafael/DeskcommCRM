@@ -76,6 +76,18 @@ import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
  */
 export type { ChannelSessionLite };
 
+/**
+ * O id que liga o botão "Publicar" ao TEXTO que diz por que ele está desabilitado.
+ *
+ * O motivo vivia só no `title` de um span: aparecia com o ponteiro parado em
+ * cima. Em tela de toque não existe hover — nunca aparecia —, e o botão
+ * desabilitado nem entra na ordem do Tab, então quem navega de teclado também
+ * não sabia o que faltava para o agente entrar no ar. Além do texto na tela, o
+ * `aria-describedby` do botão aponta para cá: quem chega pelo leitor de tela
+ * ouve o motivo junto do rótulo, sem depender de hover.
+ */
+const ID_DO_MOTIVO_DO_PUBLICAR = "motivo-do-publicar";
+
 interface BaseProps {
   credentials: CredentialRow[];
   /**
@@ -605,6 +617,7 @@ export function AgentForm(props: Props) {
                 variant="default"
                 onClick={() => setConfirmOpen(true)}
                 disabled={disabled || publishBlockReason !== null}
+                aria-describedby={publishBlockReason ? ID_DO_MOTIVO_DO_PUBLICAR : undefined}
               >
                 {publishing
                   ? t("Publicando…")
@@ -616,6 +629,27 @@ export function AgentForm(props: Props) {
           ) : null}
         </div>
       </div>
+
+      {/*
+        O MOTIVO NA TELA, não só no `title` (issue #951).
+
+        O `title` do span acima continua ali para quem usa mouse, mas ele é
+        hover: em tela de toque não existe, e um botão desabilitado nem entra na
+        ordem do Tab — a explicação do bloqueio ficava inalcançável justamente
+        para quem mais precisa dela. Aqui o MESMO motivo (`publishBlockReason`) é
+        texto da tela, e o `aria-describedby` do botão o anuncia junto do rótulo.
+      */}
+      {isEdit && publishBlockReason ? (
+        <p
+          id={ID_DO_MOTIVO_DO_PUBLICAR}
+          data-testid={ID_DO_MOTIVO_DO_PUBLICAR}
+          role="status"
+          aria-live="polite"
+          className="-mt-2 text-xs text-muted-foreground"
+        >
+          {publishBlockReason}
+        </p>
+      ) : null}
 
       {/*
         NAVEGAÇÃO POR PAPEL (spec 16 §6). Um form só, um save só — os papéis são

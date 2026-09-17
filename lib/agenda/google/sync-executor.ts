@@ -22,6 +22,44 @@ import {
   type CalendarFence,
 } from "./sync-store";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { classificarErroDoGoogle, type OperacaoNoGoogle } from "./erros";
+
+/** A operação do Google que corresponde ao método HTTP usado na publicação. */
+const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
+  POST: "criar",
+  PATCH: "atualizar",
+  DELETE: "apagar",
+};
+
+/**
+ * A frase que o caminho de publicação PERSISTE quando o Google recusa (#950).
+ *
+ * Antes disto a escrita persistia `erro.message`, que fora do 412 era apenas
+ * `"Google HTTP 400"`: o Google já tinha dito o motivo (`errors[].reason`) e a
+ * frase exibida não dizia o que consertar.
+ *
+ * O corpo cru da resposta NUNCA entra aqui — a frase é persistida e mostrada, e
+ * o corpo carrega nome e e-mail de convidado. `classificarErroDoGoogle` monta a
+ * frase a partir dos identificadores (status e `errors[].reason`), e é ele que
+ * lê o corpo guardado no `GoogleHttpError`.
+ *
+ * O 412 fica de fora de propósito: o transporte tem frase própria e acionável
+ * para ele ("O evento mudou no Google. Releia antes de publicar."), enquanto o
+ * classificador não tem caso para 412 — cairia em `permanente`, "repetir não
+ * muda o resultado", que é o oposto do que resolve uma pré-condição vencida.
+ */
+export function mensagemDaRecusaDePublicacao(
+  erro: unknown,
+  metodo: PendingWrite["method"],
+): string {
+  if (erro instanceof GoogleHttpError) {
+    if (erro.status === 412) return erro.message;
+    return classificarErroDoGoogle(erro, OPERACAO_POR_METODO[metodo]).mensagem;
+  }
+  return erro instanceof Error && "code" in erro
+    ? "O compromisso mudou. A sincronização vai reler a versão atual."
+    : "Não foi possível sincronizar. Confira a conexão e tente novamente.";
+}
 
 export async function tokenForConnection(db: SupabaseClient, org: string, connectionId: string) {
   const { data, error } = await db
@@ -79,6 +117,11 @@ export async function reconcileAppointment(
     a = appointmentSnapshotSchema.parse(saved);
     return true;
   };
+  // Qual método estava em voo quando o Google recusou. O `catch` está FORA do
+  // `send`, então o parâmetro dele não alcança a frase persistida — e o método
+  // muda o significado da recusa (404 e 410 querem dizer coisas opostas em
+  // `apagar` e em `criar`).
+  let metodoEmVoo: PendingWrite["method"] = "PATCH";
   try {
     if (!a.google_event_id && a.status === "cancelled") {
       await commit({ ack: true });
@@ -435,6 +478,8 @@ export async function reconcileAppointment(
       await call("prepare", { operation: pending });
       // Imediatamente antes do efeito: mesma aquisição/revisão e membership.
       await call("renew");
+      // O método que está em voo — é ele que a frase da recusa vai usar.
+      metodoEmVoo = method;
       const response = await api.write(
         a.google_calendar_id!,
         a.google_event_id!,
@@ -463,13 +508,9 @@ export async function reconcileAppointment(
       }
     }
   } catch (e) {
-    // Nunca persistir corpo remoto, e-mail ou payload no erro exibido.
-    const message =
-      e instanceof GoogleHttpError
-        ? e.message
-        : e instanceof Error && "code" in e
-          ? "O compromisso mudou. A sincronização vai reler a versão atual."
-          : "Não foi possível sincronizar. Confira a conexão e tente novamente.";
+    // Nunca persistir corpo remoto, e-mail ou payload no erro exibido: a frase
+    // sai dos identificadores da recusa, nunca do texto livre do Google.
+    const message = mensagemDaRecusaDePublicacao(e, metodoEmVoo);
     try {
       await call("error", { message });
     } catch {

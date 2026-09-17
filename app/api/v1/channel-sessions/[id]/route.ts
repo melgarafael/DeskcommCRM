@@ -27,12 +27,14 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
+import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { numeroObservadoDaSessao } from "@/lib/channels/numero-observado";
 import { isChannelStatus } from "@/lib/schemas/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -379,12 +381,55 @@ export async function DELETE(
     if (delErr) return fail("internal_error", delErr.message, 500, { requestId });
   }
 
+  // ─── O AVISO NÃO FICA ÓRFÃO (issue #1023) ─────────────────────────────────
+  //
+  // Arquivar/excluir tira o ÚNICO emissor que existia: a sessão que manda
+  // `session.status` para `sincronizarSaudeDaConexao` — e, no arquivamento, a
+  // própria rota de webhook passa a recusar evento do canal, por desenho. Sem
+  // esta chamada o crítico fica aberto para sempre, apontando para uma linha que
+  // a tela já não carrega ("Este contexto não está disponível para você"),
+  // enquanto a conexão NOVA do mesmo número aparece WORKING.
+  //
+  // Best-effort de propósito: o canal já saiu do transporte e a linha já mudou.
+  // Uma falha aqui não pode desfazer a exclusão que o operador pediu — mas o
+  // motivo vai para o log e o resultado para o metadata da auditoria.
+  let avisosFechados: "resolvido" | "sem_mudanca" | "falhou" = "sem_mudanca";
+  try {
+    avisosFechados = await resolverSaudeDaConexaoRemovida(createAdminClient(), {
+      id,
+      organization_id: activeOrg.orgId,
+      status: "STOPPED",
+    });
+  } catch (err) {
+    avisosFechados = "falhou";
+    logger.warn("Falha ao fechar os avisos de saúde da conexão removida", {
+      requestId,
+      channel_session_id: id,
+      organization_id: activeOrg.orgId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // O transporte já confirmou a exclusão; só agora o proxy pode ser reutilizado.
-  if (arquivar && session.provider === CHANNEL_PROVIDER_WAHA &&
-      (process.env.WAHA_EXTERNAL === "true" || process.env.WEBSHARE_API_KEY || process.env.WHATSAPP_PROXY_REQUIRED === "true")) {
-    const { error: bindingError } = await createAdminClient().from("channel_proxy_bindings").delete()
-      .eq("organization_id", activeOrg.orgId).eq("channel_session_id", id);
-    if (bindingError) return fail("internal_error", "Canal desconectado, mas o proxy continua reservado. Tente excluir novamente.", 500, { requestId });
+  if (
+    arquivar &&
+    session.provider === CHANNEL_PROVIDER_WAHA &&
+    (process.env.WAHA_EXTERNAL === "true" ||
+      process.env.WEBSHARE_API_KEY ||
+      process.env.WHATSAPP_PROXY_REQUIRED === "true")
+  ) {
+    const { error: bindingError } = await createAdminClient()
+      .from("channel_proxy_bindings")
+      .delete()
+      .eq("organization_id", activeOrg.orgId)
+      .eq("channel_session_id", id);
+    if (bindingError)
+      return fail(
+        "internal_error",
+        "Canal desconectado, mas o proxy continua reservado. Tente excluir novamente.",
+        500,
+        { requestId },
+      );
   }
 
   void audit({
@@ -398,6 +443,7 @@ export async function DELETE(
       waha_session_name: session.waha_session_name,
       phone_number: session.phone_number,
       provider: session.provider,
+      avisos_fechados: avisosFechados,
       ...impact.history,
       ...impact.configuration,
     },

@@ -153,6 +153,16 @@ export type ResultadoDaConsulta =
  */
 const DIA = 86_400_000;
 
+/**
+ * O intervalo antes/depois do atendimento é regra de OFERTA — quem o aplica é o
+ * motor, inflando cada candidato (`horarios-livres.ts`). A COLETA, porém, precisa
+ * enxergar o que esse intervalo alcança: um compromisso que termina dentro dele
+ * não cruza a janela pedida e ficava invisível. Sem ele, a ESCRITA aceitava o
+ * horário que a LEITURA escondia (issue #876). Alargar só a coleta põe as duas
+ * pontas na mesma régua sem duplicar regra: quem decide continua sendo o motor.
+ */
+const MINUTO = 60_000;
+
 const NAO_OFERECA =
   "Não ofereça horários e não diga que está sem vaga — avise que alguém da equipe confirma o horário.";
 
@@ -273,7 +283,11 @@ export async function horariosLivresDaOrg(
       .eq("user_id", donoId)
       .gte("exception_date", primeiroDiaDaRegra)
       .lte("exception_date", ultimoDiaDaRegra),
-    coletaOQueOcupa(supabase, organizationId, { donoId, de: params.de, ate: params.ate }),
+    coletaOQueOcupa(supabase, organizationId, {
+      donoId,
+      de: new Date(params.de.getTime() - Number(tipo.buffer_before_minutes ?? 0) * MINUTO),
+      ate: new Date(params.ate.getTime() + Number(tipo.buffer_after_minutes ?? 0) * MINUTO),
+    }),
   ]);
 
   if (erroExc) {

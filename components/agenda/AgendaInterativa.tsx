@@ -90,7 +90,13 @@ export function AgendaInterativa({
    */
   tipos: Array<{ id: string; nome: string; duracaoMin: number }>;
   onEscolherTipo: (id: string) => void;
-  onMarcarEm: (instante: string) => void;
+  /**
+   * O clique num bloco livre da grade. OPCIONAL de propósito: quem só lê não
+   * recebe esta prop, e a AUSÊNCIA dela é o que desmonta a interação inteira
+   * abaixo — oferecer o gesto a quem não pode executá-lo é oferecer um 403, que
+   * é o defeito que este PR fecha. `undefined` = grade de leitura.
+   */
+  onMarcarEm?: (instante: string) => void;
   onAbrirAgendamento?: (id: string) => void;
   className?: string;
 }) {
@@ -321,7 +327,7 @@ export function AgendaInterativa({
         onAbrirAgendamento={onAbrirAgendamento}
         className="min-h-0 flex-1"
         interacao={
-          tipo
+          tipo && onMarcarEm
             ? {
                 horariosPorDia,
                 motivo,

@@ -140,6 +140,14 @@ describe("'Cliente desde' na ficha do contato", () => {
   });
 });
 
+describe("nome do perfil do WhatsApp na ficha do contato", () => {
+  it("identifica o campo sem expor o rótulo técnico em inglês", () => {
+    render(comQuery(<ContactDetailClient contactId="c-1" />));
+    expect(screen.getByText("Nome · WhatsApp")).toBeInTheDocument();
+    expect(screen.queryByText("Display name")).toBeNull();
+  });
+});
+
 describe("opção fixa 'cliente' no filtro de etiquetas", () => {
 
   const botaoDeTag = () => screen.getByRole("button", { name: /^Tag:/ });

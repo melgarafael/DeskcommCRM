@@ -652,6 +652,7 @@ jobs:
         extensoes-declarativas.spec.ts
         extensoes-recuperacao.spec.ts
         extensoes-versao.spec.ts
+        motivo-do-publicar-na-tela.spec.ts
 
       # proxy-por-conexao exige WAHA e pool Webshare reais (opt-in, sem pareamento).
       FORA_DO_CI: >-

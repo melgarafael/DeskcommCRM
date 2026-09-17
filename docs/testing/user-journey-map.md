@@ -863,7 +863,7 @@ esta jornada prende.
 
 **Por que P0:** para quem **não tem** o `scheduler` da VPS — hospedagem sem cron
 de minuto, ou instalação em que o serviço não subiu; é o cenário inteiro do
-runbook [`vercel-hobby-relogio.md`](../runbooks/vercel-hobby-relogio.md) — o
+runbook [`relogio-http.md`](../runbooks/relogio-http.md) — o
 relógio externo não é conveniência: é o **único** motor do follow-up. E a falha
 dele é silenciosa: os follow-ups não andam, ninguém recebe erro, e a instalação
 parece saudável.

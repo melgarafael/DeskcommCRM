@@ -30,7 +30,6 @@ const DIR_CRON = join(RAIZ, "app", "api", "v1", "cron");
 // do cron à internet da VPS. A cerca continua a mesma; só a fonte da verdade do
 // "o que roda" mudou de arquivo.
 const CRONTAB = join(RAIZ, "docker", "scheduler", "entrypoint.sh");
-const VERCEL_TS = join(RAIZ, "vercel.ts");
 
 /** As rotas que existem, lidas do disco — não de uma lista mantida à mão. */
 function rotasNoCodigo(): string[] {
@@ -78,20 +77,29 @@ describe("rotas de cron × agendamento no self-host", () => {
   });
 });
 
-function rotasNoVercelTs(): string[] {
-  const fonte = readFileSync(VERCEL_TS, "utf8");
-  const achadas = fonte.matchAll(/path:\s*"\/api\/v1\/cron\/([a-z0-9-]+)"/g);
-  return [...new Set([...achadas].map((m) => m[1]!))].sort();
-}
-
-describe("rotas de cron × agendamento no Vercel Pro", () => {
-  it("vercel.ts agenda as mesmas rotas do scheduler", () => {
-    expect(rotasNoVercelTs()).toEqual(rotasAgendadas());
-  });
-
-  it("documenta o CRON_SECRET da Vercel — senão o Pro agenda e a rota responde 403", () => {
+describe("o segredo que um agendador externo manda", () => {
+  it("lib/env.ts copia CRON_SECRET para INTERNAL_CRON_SECRET", () => {
+    // Esta é a ÚNICA guarda dessa cópia no repositório. Para conferir em vez de
+    // acreditar nesta linha:
+    //
+    //   git grep -l 'INTERNAL_CRON_SECRET = vercelCron'
+    //
+    // Se a saída for só `lib/env.ts` e este arquivo, apagar este `it` deixa a
+    // cópia sem cerca nenhuma.
+    //
+    // A cópia não existe por causa de plano de hospedagem nenhum — existe porque
+    // agendador externo que injeta `CRON_SECRET` no ambiente do app e chama a
+    // rota com `Authorization: Bearer <CRON_SECRET>` é padrão de mercado, e
+    // `lib/auth/cron-auth.ts` só confere o Bearer contra INTERNAL_CRON_SECRET e
+    // INTERNAL_SECRET. Sem a cópia, quem agenda por esse caminho leva 403 em toda
+    // rodada, e o `curl -fsS` do agendador manda o corpo para /dev/null: mesmo modo
+    // de falha silencioso dos outros casos deste arquivo.
+    //
+    // O caminho oficial deste produto é outro: o `crond` do serviço `scheduler`
+    // manda `Bearer $INTERNAL_SECRET` (docker/scheduler/entrypoint.sh), que a
+    // `autorizaCron` já aceita direto, sem passar por esta cópia.
     const fonte = readFileSync(join(RAIZ, "lib", "env.ts"), "utf8");
-    expect(fonte).toContain("CRON_SECRET");
+    expect(fonte).toContain("process.env.CRON_SECRET");
     expect(fonte).toContain("env.INTERNAL_CRON_SECRET = vercelCron");
   });
 });

@@ -466,7 +466,13 @@ Channels broadcast (não postgres_changes, mas eventos custom): `agent-presence:
 
 ## 5. Configuração do Vercel
 
-### 5.1 vercel.ts (recomendado sobre vercel.json)
+### 5.1 vercel.ts — apagado em 2026-09-17 (registro da fase hospedada)
+
+> **Apagado em 2026-09-17.** O `vercel.ts` desta subseção saiu da raiz do repositório, e com
+> ele a trava que obrigava toda rota de cron nova a ser cadastrada nele: o produto é self-host e
+> quem bate as rotas é o `crond` do serviço `scheduler` (`docker/scheduler/entrypoint.sh`, a fonte
+> única do §5.3). O bloco abaixo fica como registro da fase em que um PaaS hospedava o CRM —
+> não recrie o arquivo a partir dele.
 
 `vercel.ts` na raiz do projeto (Next.js 15+ suporta config tipada):
 ```typescript
@@ -534,7 +540,7 @@ Vars NUNCA commitadas: tudo prefixado `*_KEY`, `*_SECRET`, `*_TOKEN`, `DATABASE_
 
 ### 5.3 Crons — a lista vigente não mora neste documento
 
-São duas fontes espelhadas: `docker/scheduler/entrypoint.sh` (o serviço `scheduler` do compose, que é o caminho self-host) e `vercel.ts` na raiz (para quem hospeda a própria instalação na Vercel). `tests/unit/cron-routes-scheduled.test.ts` confere as duas uma contra a outra e contra o diretório `app/api/v1/cron/`, e reprova divergência. Para ver a lista de hoje:
+A fonte é uma: `docker/scheduler/entrypoint.sh` — o crontab do serviço `scheduler` do compose, que é quem bate as rotas no self-host. `tests/unit/cron-routes-scheduled.test.ts` confere essa lista contra o diretório `app/api/v1/cron/` nas duas direções: reprova rota de cron sem agendamento e agendamento apontando para rota que não existe. Para ver a lista de hoje:
 
 ```bash
 grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sort -u

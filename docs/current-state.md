@@ -294,11 +294,14 @@ consequência natural de trabalho em branches paralelas, mas ilustra a regra:
    **parte** dessas tarefas dentro do processo do app (`lib/relogio/executar.ts`).
    A cerca contra rota que nasce sem agendamento é
    `tests/unit/cron-routes-scheduled.test.ts`: ele compara o diretório `app/api/v1/cron/` com
-   o crontab nas duas direções, e cobre também `vercel.ts`, o inventário de quem hospeda um
-   fork na Vercel. **Decidido em 2026-09-17, e por isso não há mais decisão em aberto aqui:**
-   a operação é a instalação em VPS e a Vercel ficou só com a landing page; o projeto Vercel
-   do CRM foi desvinculado do GitHub. Para conferir, olhe os status do último commit da `main` —
-   enquanto o projeto esteve ligado, aparecia ali um check `Vercel`:
+   esse crontab nas duas direções — reprova rota de cron sem agendamento e agendamento
+   apontando para rota que não existe. **Decidido em 2026-09-17, e por isso não há mais
+   decisão em aberto aqui:** a operação é a instalação em VPS e a Vercel ficou só com a
+   landing page; o projeto Vercel do CRM foi desvinculado do GitHub, e no mesmo dia saiu da
+   raiz o `vercel.ts` — o inventário de crons daquele destino — junto com a trava que
+   obrigava toda rota de cron nova a ser cadastrada nele. Para conferir o desvínculo, olhe os
+   status do último commit da `main` — enquanto o projeto esteve ligado, aparecia ali um
+   check `Vercel`:
    `gh api repos/melgarafael/DeskcommCRM/commits/main/status --jq '[.statuses[].context]'`.
 
 ---

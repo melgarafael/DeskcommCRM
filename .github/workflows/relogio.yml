@@ -16,7 +16,7 @@
 # coisa que confunde quem liga isto.
 #
 # Como ligar, com os três valores e o teste manual:
-# docs/runbooks/vercel-hobby-relogio.md
+# docs/runbooks/relogio-http.md
 name: relogio
 
 on:
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${APP_URL}" ] || [ -z "${SECRET}" ]; then
-            echo "::error::RELOGIO_APP_URL ou RELOGIO_SECRET ausente — ver docs/runbooks/vercel-hobby-relogio.md"
+            echo "::error::RELOGIO_APP_URL ou RELOGIO_SECRET ausente — ver docs/runbooks/relogio-http.md"
             exit 1
           fi
           BASE="${APP_URL%/}"

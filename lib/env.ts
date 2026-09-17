@@ -422,10 +422,13 @@ export const env = parsed.data;
 if (env.NODE_ENV === "production") {
   const vercelCron = process.env.CRON_SECRET?.trim();
   if (vercelCron) {
-    // ponytail: Vercel Cron só manda Bearer CRON_SECRET. Sem copiar, o Pro
-    // agenda e a rota responde 403. Teto: se os dois segredos precisarem ser
-    // distintos, as rotas passam a aceitar os dois numa lista — INTERNAL_SECRET
-    // continua valendo como fallback nas rotas.
+    // Agendador externo que injeta `CRON_SECRET` (é o nome de mercado) chama as
+    // rotas com `Bearer $CRON_SECRET`, e `lib/auth/cron-auth.ts` só confere o
+    // Bearer contra INTERNAL_CRON_SECRET e INTERNAL_SECRET — sem esta cópia, quem
+    // agenda por esse caminho leva 401/403 em toda rodada. O caminho oficial do
+    // produto não passa por aqui: o `crond` do serviço `scheduler` manda
+    // `Bearer $INTERNAL_SECRET` (`docker/scheduler/entrypoint.sh`). A cópia é
+    // vigiada por `tests/unit/cron-routes-scheduled.test.ts`.
     env.INTERNAL_CRON_SECRET = vercelCron;
   }
 }

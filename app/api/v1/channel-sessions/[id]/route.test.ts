@@ -21,6 +21,7 @@ import type { AuthUser } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWahaClient } from "@/lib/waha/client";
+import { logger } from "@/lib/logger";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/auth/server", () => ({
@@ -54,6 +55,11 @@ interface Registro {
   escritas: Escrita[];
   /** Ordem observável de TUDO que tem efeito colateral (transporte + banco). */
   eventos: string[];
+  /**
+   * O que sobrou em cada tabela — para afirmar o EFEITO, e não só a chamada.
+   * Sem isso, "o aviso foi resolvido" viraria "alguém chamou update".
+   */
+  linhas: (table: string) => Linha[];
 }
 
 interface DbOpts {
@@ -81,7 +87,11 @@ function canal(over: Linha = {}): Linha {
 }
 
 function makeDb(opts: DbOpts = {}): Registro {
-  const registro: Registro = { escritas: [], eventos: [] };
+  const registro: Registro = {
+    escritas: [],
+    eventos: [],
+    linhas: (t) => tabelas[t] ?? [],
+  };
   const tabelas: Record<string, Linha[]> = {
     channel_sessions: opts.sessions ?? [canal()],
     ...(opts.rows ?? {}),
@@ -572,5 +582,151 @@ describe("GET /api/v1/channel-sessions/[id]", () => {
     expect(res.status).toBe(200);
     expect(waha.getVerifiedSession).not.toHaveBeenCalled();
     expect((await res.json()).data.waha_configured).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A conexão removida não deixa o aviso dela para trás (#1023)
+// ---------------------------------------------------------------------------
+
+/**
+ * Arquivar/excluir tira o ÚNICO emissor que existia — a sessão que manda
+ * `session.status` — e, no arquivamento, a própria rota de webhook passa a
+ * recusar evento do canal. Se ninguém fechar o episódio aberto aqui, ele fica
+ * para sempre na Central, crítico, apontando para uma linha que a tela já não
+ * carrega. Aqui se mede o fechamento, a contenção entre conexões e — o que mais
+ * importa para o caminho comum — que nada é escrito quando não há aviso.
+ */
+describe("#1023 — a conexão removida fecha o próprio aviso", () => {
+  const avisoAberto = (refId: string, id = "i1"): Linha => ({
+    id,
+    organization_id: ORG,
+    kind: "channel_number_alert",
+    severity: "critical",
+    title: "WhatsApp fora do ar (STOPPED)",
+    ref_kind: "channel_session",
+    ref_id: refId,
+    status: "open",
+  });
+
+  it("⭐ canal ARQUIVADO com aviso crítico aberto → aviso resolvido e episódio limpo", async () => {
+    authOk();
+    const db = makeDb({
+      rows: {
+        conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL }],
+        agent_inbox_items: [avisoAberto(CANAL)],
+        channel_session_health: [
+          { organization_id: ORG, channel_session_id: CANAL, escalated_status: "FAILED" },
+        ],
+      },
+    });
+    wahaOk(db);
+    const { DELETE } = await import("./route");
+    const res = await DELETE(reqDelete(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(db.linhas("agent_inbox_items")[0]?.status).toBe("resolved");
+    expect(db.linhas("channel_session_health")[0]?.escalated_status).toBe(null);
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "channel.archived",
+        metadata: expect.objectContaining({ avisos_fechados: "resolvido" }),
+      }),
+    );
+  });
+
+  it("⭐ canal VIRGEM (o caso comum) não escreve nada a mais", async () => {
+    authOk();
+    const db = makeDb();
+    wahaOk(db);
+    const { DELETE } = await import("./route");
+    await DELETE(reqDelete(), ctx());
+
+    // Só a linha do canal. Sem aviso aberto e sem episódio, não há update.
+    expect(db.escritas.map((e) => `${e.tipo}:${e.table}`)).toEqual([
+      "delete:channel_sessions",
+    ]);
+  });
+
+  it("o aviso de OUTRA conexão continua aberto — ela pode seguir caída", async () => {
+    authOk();
+    const db = makeDb({
+      rows: {
+        conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL }],
+        agent_inbox_items: [
+          avisoAberto(CANAL, "i1"),
+          avisoAberto("99999999-9999-4999-8999-999999999999", "i2"),
+        ],
+      },
+    });
+    wahaOk(db);
+    const { DELETE } = await import("./route");
+    await DELETE(reqDelete(), ctx());
+
+    const outro = db.linhas("agent_inbox_items").find((l) => l.id === "i2");
+    expect(outro?.status).toBe("open");
+  });
+
+  it("erro ao LER os avisos não desfaz a exclusão que o operador pediu", async () => {
+    authOk();
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const db = makeDb({
+      rows: {
+        conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL }],
+        agent_inbox_items: [avisoAberto(CANAL)],
+      },
+      readError: (table) => (table === "agent_inbox_items" ? { message: "boom" } : null),
+    });
+    wahaOk(db);
+    const { DELETE } = await import("./route");
+    const res = await DELETE(reqDelete(), ctx());
+
+    // O canal já saiu do transporte e a linha já mudou: o melhor-esforço não
+    // pode transformar uma exclusão bem-sucedida em erro para o operador.
+    expect(res.status).toBe(200);
+    expect(db.linhas("channel_sessions")[0]?.archived_at).toEqual(expect.any(String));
+    // O supabase-js não lança em erro do PostgREST: se a função engolisse o
+    // `error`, a leitura falha viraria "nenhum aviso aberto" e a auditoria
+    // diria "sem_mudanca" com o crítico ainda na Central.
+    expect(db.linhas("agent_inbox_items")[0]?.status).toBe("open");
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ avisos_fechados: "falhou" }),
+      }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      "Falha ao fechar os avisos de saúde da conexão removida",
+      expect.objectContaining({ channel_session_id: CANAL, organization_id: ORG }),
+    );
+  });
+
+  it("erro ao RESOLVER os avisos → auditoria diz \"falhou\", não \"resolvido\"", async () => {
+    authOk();
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const db = makeDb({
+      rows: {
+        conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL }],
+        agent_inbox_items: [avisoAberto(CANAL)],
+      },
+      writeError: (_n, table) =>
+        table === "agent_inbox_items" ? { code: "57014", message: "boom" } : null,
+    });
+    wahaOk(db);
+    const { DELETE } = await import("./route");
+    const res = await DELETE(reqDelete(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(db.linhas("channel_sessions")[0]?.archived_at).toEqual(expect.any(String));
+    expect(db.linhas("agent_inbox_items")[0]?.status).toBe("open");
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "channel.archived",
+        metadata: expect.objectContaining({ avisos_fechados: "falhou" }),
+      }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      "Falha ao fechar os avisos de saúde da conexão removida",
+      expect.objectContaining({ erro: expect.stringContaining("57014") }),
+    );
   });
 });

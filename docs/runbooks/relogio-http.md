@@ -1,32 +1,34 @@
-# Relógio para instalação sem agendador (follow-up não fica preso)
+# Relógio HTTP para instalação sem agendador de minuto
 
 ## Quando este runbook se aplica
 
 O caminho do produto é o self-host, e lá o agendador já vem junto: o serviço
 `scheduler` do compose bate cada rota na cadência do
-`docker/scheduler/entrypoint.sh` (follow-up, dreno, dispatcher, agenda…).
+`docker/scheduler/entrypoint.sh` (follow-up, dreno, dispatcher, agenda…). Esse
+crontab é a **única** fonte de agendamento do produto, e
+`tests/unit/cron-routes-scheduled.test.ts` o mantém colado ao diretório
+`app/api/v1/cron/` nas duas direções: reprova rota de cron sem agendamento e
+agendamento apontando para rota que não existe.
 
 Este runbook é para a instalação que **não** tem esse serviço — hospedagem
 gerenciada sem cron de minuto, ou um deploy em que o `scheduler` não está de pé.
-Aí o relógio precisa vir de fora.
+Aí o relógio precisa vir de fora, batendo `POST /api/v1/system/relogio/tick`.
 
-### O caso concreto: um FORK num plano que só agenda 1 cron por dia
+### ⚠️ O relógio HTTP não substitui o `scheduler` — ele é um subconjunto
 
-Este repositório não é hospedado na Vercel, mas **um fork pode ser** — e o plano
-gratuito de lá é o exemplo canônico de agendador que dispara uma vez ao dia. Duas
-regras valem para quem hospeda assim:
+O tick executa a lista `TAREFAS_DO_RELOGIO` de `lib/relogio/tarefas.ts`, que é o
+mínimo para follow-up, fila e dreno de eventos não pararem. O resto do crontab
+(agenda, dispatcher do agente, retenção, watchers…) **não roda** neste caminho.
+Para ver hoje, na sua árvore, o que fica de fora:
 
-- **Expressões de minuto derrubam o deploy no plano gratuito.** É o que o cabeçalho
-  do `vercel.ts` da raiz já avisa: nesse plano cabe uma entrada diária só. Deixe uma
-  (o `lgpd-sla-watcher` é a sugestão de lá) e traga o resto do relógio de fora, pelas
-  opções A e B abaixo.
-- **Não crie um `vercel.json` ao lado do `vercel.ts`: a Vercel recusa os dois.** Este
-  repositório traz só o `.ts` — `ls vercel.json` não acha nada.
+```bash
+comm -23 \
+  <(grep -oE 'api/v1/cron/[a-z0-9-]+' docker/scheduler/entrypoint.sh | sed 's|.*/||' | sort -u) \
+  <(grep -oE 'id: "[a-z0-9-]+"' lib/relogio/tarefas.ts | sed 's/.*"\(.*\)"/\1/' | sort -u)
+```
 
-O `vercel.ts` é o inventário de crons do fork, com as mesmas rotas e a mesma cadência
-do `docker/scheduler/entrypoint.sh`; `tests/unit/cron-routes-scheduled.test.ts` reprova
-quando as duas listas de **rotas** divergem — a cadência não está sob gate —, então rota de
-cron nova entra nos dois arquivos.
+Quem **pode** subir o `scheduler` quer o `scheduler`. Este runbook é o que fazer
+quando não pode.
 
 ## Por que existe
 

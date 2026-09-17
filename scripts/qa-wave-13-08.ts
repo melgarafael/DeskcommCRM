@@ -149,16 +149,19 @@ async function main() {
     );
   }
 
-  // TC-08: maxDuration=300 declared in vercel.ts (file-level check; cannot probe at runtime)
+  // TC-08: maxDuration=300 declared by the route itself (file-level check; cannot
+  // probe at runtime). O `export const maxDuration` da rota é onde o valor mora;
+  // para conferir: `git grep -n maxDuration -- app/api/internal`.
   {
-    const vercelTs = fs.readFileSync(path.resolve(process.cwd(), "vercel.ts"), "utf8");
-    const hasMaxDuration = /app\/api\/internal\/agents\/run\/route\.ts['"]\s*:\s*\{\s*maxDuration:\s*300\s*\}/.test(
-      vercelTs,
+    const rota = fs.readFileSync(
+      path.resolve(process.cwd(), "app/api/internal/agents/run/route.ts"),
+      "utf8",
     );
+    const hasMaxDuration = /^export const maxDuration = 300;$/m.test(rota);
     record(
-      "TC-08 vercel.ts declara maxDuration=300 para o endpoint",
+      "TC-08 a rota declara maxDuration=300",
       hasMaxDuration,
-      `vercel.ts ${hasMaxDuration ? "contains" : "missing"} maxDuration:300 entry`,
+      `app/api/internal/agents/run/route.ts ${hasMaxDuration ? "contains" : "missing"} "export const maxDuration = 300;"`,
     );
   }
 

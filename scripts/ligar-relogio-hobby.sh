@@ -37,5 +37,5 @@ cat <<EOF
 
    curl -fsS -X POST -H "Authorization: Bearer \$INTERNAL_SECRET" "${TICK}"
 
-Runbook: docs/runbooks/vercel-hobby-relogio.md
+Runbook: docs/runbooks/relogio-http.md
 EOF

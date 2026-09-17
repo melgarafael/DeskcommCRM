@@ -24,6 +24,7 @@ import {
   DETALHE_CREDENCIAL_RECUSADA,
   STATUS_QUE_AVISAM,
   avisoDaConexao,
+  resolverSaudeDaConexaoRemovida,
   sincronizarSaudeDaConexao,
 } from "@/lib/channels/health";
 
@@ -115,6 +116,12 @@ interface Op {
 }
 const ops: Op[] = [];
 let escalado: string | null = null;
+/**
+ * Avisos ABERTOS que o dublê enxerga para esta sessão — é este `select` que
+ * decide se há o que fechar quando a conexão é removida (#1023). Vazio é o canal
+ * virgem, que é o caso mais comum de exclusão e o que exige ZERO escrita.
+ */
+let abertos: string[] = [];
 
 function chain(tabela: string, op: string, payload?: unknown): Record<string, unknown> {
   const filtros: [string, unknown][] = [];
@@ -126,7 +133,8 @@ function chain(tabela: string, op: string, payload?: unknown): Record<string, un
         if (prop === "maybeSingle")
           return async () => ({ data: { escalated_status: escalado }, error: null });
         if (prop === "then")
-          return (ok: (v: unknown) => unknown) => ok({ data: [{ id: "x" }], error: null });
+          return (ok: (v: unknown) => unknown) =>
+            ok({ data: abertos.map((id) => ({ id })), error: null });
         return (...args: unknown[]) => {
           if (prop === "eq") filtros.push([String(args[0]), args[1]]);
           return proxy;
@@ -152,6 +160,7 @@ const caiu = { reachable: true, status: "FAILED", detail: null };
 beforeEach(() => {
   ops.length = 0;
   escalado = null;
+  abertos = [];
 });
 
 describe("avisar uma vez, e fechar quando volta", () => {
@@ -299,5 +308,63 @@ describe("os elos que somem sem barulho", () => {
     // proíbe, e que o `lint:channels` reprova.
     const cron = readFileSync("app/api/v1/cron/channel-health/route.ts", "utf8");
     expect(cron).not.toMatch(/"waha"|'waha'|meta_cloud|zernio/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A conexão REMOVIDA — o episódio não fica sem emissor (#1023)
+// ---------------------------------------------------------------------------
+
+/**
+ * O único caminho que fechava um episódio era a própria sessão voltar
+ * (`sincronizarSaudeDaConexao` pelo `session.status`). Arquivar/excluir tira
+ * esse emissor para sempre: a sessão sai do WAHA, o webhook passa a recusar
+ * evento do canal arquivado, e o crítico fica aberto sobre uma linha que a tela
+ * já não carrega. A remoção é do usuário — o aviso tem de sair junto.
+ */
+describe("a conexão removida fecha o próprio episódio (#1023)", () => {
+  it("⭐ aviso aberto → resolvido, e o episódio da linha de saúde volta a null", async () => {
+    abertos = ["i1"];
+    escalado = "PUSH:FAILED";
+
+    expect(await resolverSaudeDaConexaoRemovida(admin, sessao)).toBe("resolvido");
+
+    const item = ops.find((o) => o.tabela === "agent_inbox_items" && o.op === "update");
+    expect(item?.payload).toMatchObject({ status: "resolved" });
+    // Sem zerar o episódio, uma reconexão no mesmo status nunca mais avisaria.
+    const saude = ops.find((o) => o.tabela === "channel_session_health" && o.op === "update");
+    expect(saude?.payload).toMatchObject({ escalated_status: null });
+  });
+
+  it("fecha SÓ o desta conexão — a outra pode seguir caída", async () => {
+    abertos = ["i1"];
+    await resolverSaudeDaConexaoRemovida(admin, sessao);
+    const item = ops.find((o) => o.tabela === "agent_inbox_items" && o.op === "update");
+    expect(Object.fromEntries(item!.filtros)).toMatchObject({
+      ref_id: "sess-1",
+      ref_kind: "channel_session",
+      status: "open",
+      organization_id: "org-1",
+    });
+  });
+
+  it("⭐ sem aviso aberto e sem episódio → NENHUMA escrita", async () => {
+    abertos = [];
+    escalado = null;
+
+    expect(await resolverSaudeDaConexaoRemovida(admin, sessao)).toBe("sem_mudanca");
+    expect(ops.some((o) => o.op !== "select")).toBe(false);
+  });
+
+  it("NÃO cria linha de saúde — no delete ela já caiu junto com a sessão", async () => {
+    // `channel_session_health.channel_session_id` é `on delete cascade`: um
+    // upsert aqui morreria com violação de FK e derrubaria uma exclusão que o
+    // operador já pediu e que já aconteceu.
+    abertos = ["i1"];
+    escalado = "FAILED";
+
+    await resolverSaudeDaConexaoRemovida(admin, sessao);
+    expect(ops.some((o) => o.tabela === "channel_session_health" && o.op === "upsert")).toBe(false);
+    expect(ops.some((o) => o.tabela === "channel_session_health" && o.op === "update")).toBe(true);
   });
 });
