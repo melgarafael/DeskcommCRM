@@ -280,6 +280,30 @@ export function mediaMimeOf(p: WahaPayload): string | null {
 }
 
 /**
+ * `payload.timestamp` em ISO-8601, robusto à UNIDADE. O WAHA manda segundos
+ * (epoch s), mas um proxy/integrador pode mandar milissegundos ou
+ * nanossegundos — e `new Date(ns * 1000).toISOString()` LANÇA `RangeError:
+ * Invalid time value`, derrubando o webhook inteiro (medido em 2026-09-18).
+ * Aqui a unidade é inferida pela ordem de grandeza; valor ausente/ inválido cai
+ * no `agora`. Nunca lança.
+ */
+export function dataDoTimestamp(timestamp: number | null | undefined, agora: string): string {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp) || timestamp <= 0) {
+    return agora;
+  }
+  // `Date` aceita até 8.64e15 ms. Segundos (~1.7e9) ×1000; ms (~1.7e12) direto;
+  // ns (~1.7e18) ÷1e6. Faixas separadas por ordem de grandeza.
+  const ms =
+    timestamp >= 1e16
+      ? timestamp / 1e6 // nanossegundos
+      : timestamp >= 1e11
+        ? timestamp // milissegundos
+        : timestamp * 1000; // segundos
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? agora : d.toISOString();
+}
+
+/**
  * Mapeia o `type` cru do WAHA NOWEB para o vocabulário de messages.type do CRM
  * (check constraint messages_type_check). WAHA usa `chat` p/ texto, `ptt` p/
  * áudio de voz, `vcard` p/ contato, etc. Sem esse mapa o INSERT viola a
@@ -620,7 +644,7 @@ async function handleInbound(
       media_url: mediaUrlOf(p),
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
-      sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
+      sent_at: dataDoTimestamp(p.timestamp, now),
       delivered_at: now,
       metadata: { raw_type: p.type, ack_name: p.ackName },
     })
@@ -670,7 +694,7 @@ async function handleInbound(
     return;
   }
 
-  await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now);
+  await markConversation(admin, session.organization_id, conversationId, "inbound", previewFromMessage(p), dataDoTimestamp(p.timestamp, now));
 
   await audit({
     action: "message.received",
@@ -848,7 +872,7 @@ async function handleOutboundFromUserPhone(
       media_url: mediaUrlOf(p),
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
-      sent_at: p.timestamp ? new Date(p.timestamp * 1000).toISOString() : now,
+      sent_at: dataDoTimestamp(p.timestamp, now),
       metadata: { raw_type: p.type, fromMe: true },
     })
     .select("id")
