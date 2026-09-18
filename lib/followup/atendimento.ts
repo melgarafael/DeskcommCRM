@@ -581,7 +581,27 @@ export async function processarInboundDoFluxo(
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
   const primeiro = estado.situacao.pendentes[0];
-  if (primeiro === undefined) return { estado, concluiu: false };
+  // Nada pendente COM todos os obrigatórios preenchidos = o fluxo JÁ concluiu
+  // (os valores chegaram por outra via — `flow_collect` do modelo, captura
+  // anterior). Fechar e encadear aqui é o que faz a venda continuar; antes,
+  // este caminho devolvia sem concluir e o enrollment ficava `active` para
+  // sempre (medido no teste ao vivo de 2026-09-18).
+  if (primeiro === undefined) {
+    if (estado.situacao.completo) {
+      const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
+        organizationId: args.organizationId,
+        estado,
+        messageId: args.messageId ?? null,
+        kind: "concluido",
+      });
+      return {
+        estado,
+        concluiu: true,
+        ...(finalizacao !== undefined ? { finalizacao } : {}),
+      };
+    }
+    return { estado, concluiu: false };
+  }
 
   const leitura = classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
 

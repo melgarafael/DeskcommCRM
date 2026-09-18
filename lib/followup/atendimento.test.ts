@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type pg from "pg";
 
 import type { FlowEdge, FlowGraph, FlowNode } from "./graph-schema";
@@ -295,5 +297,14 @@ describe("finalizarFluxoDeAtendimento (conclusão + encadeamento da venda)", () 
     });
     expect(r.proximoEnrollmentId).toBeNull();
     expect(sqls.some((s) => /insert into followup_enrollments/.test(s))).toBe(false);
+  });
+});
+
+describe("processarInboundDoFluxo — estado já completo conclui e encadeia", () => {
+  it("sem pendentes e completo: NÃO devolve cedo — fecha o fluxo (era o bug do teste ao vivo)", () => {
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    // O caminho `primeiro === undefined` precisa considerar `completo` e chamar
+    // o finalizador; antes ele retornava direto e o enrollment ficava `active`.
+    expect(src).toMatch(/if \(primeiro === undefined\) \{[\s\S]*estado\.situacao\.completo[\s\S]*finalizarFluxoDeAtendimento/);
   });
 });
