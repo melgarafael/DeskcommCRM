@@ -79,6 +79,22 @@ async function ultimoInboundDoContato(
   return { texto, enviadaEm };
 }
 
+/**
+ * Ids dos pointers de superfície `atendimento`. O motor de FOLLOW-UP não pode
+ * tocar nos enrollments deles: aqueles são conduzidos pelo TURNO
+ * (`lib/followup/atendimento.ts`), e processá-los aqui cancelava o fluxo vivo em
+ * nome do follow-up (medido ao vivo, 2026-09-18).
+ */
+async function pointersDeAtendimento(admin: SupabaseClient, orgId: string): Promise<Set<string>> {
+  const { data, error } = await admin
+    .from("followup_flow_pointers")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("surface", "atendimento");
+  if (error) throw new Error(error.message);
+  return new Set((data ?? []).map((r) => r.id as string));
+}
+
 async function aplicarTextoAosEnrollmentsEmEspera(
   admin: SupabaseClient,
   orgId: string,
@@ -86,6 +102,7 @@ async function aplicarTextoAosEnrollmentsEmEspera(
   texto: string,
   enviadaEm: string | null,
   deps: TickDeps,
+  atendimento: ReadonlySet<string>,
 ): Promise<number> {
   const { data, error } = await admin
     .from("followup_enrollments")
@@ -97,6 +114,8 @@ async function aplicarTextoAosEnrollmentsEmEspera(
   let aplicados = 0;
   for (const row of data ?? []) {
     const enrollment = row as EnrollmentRow;
+    // Enrollment de ATENDIMENTO é do turno, não do relógio/inbound do follow-up.
+    if (atendimento.has(enrollment.pointer_id)) continue;
     // Sem sent_at não dá pra saber se a mensagem é desta pergunta — fail-closed
     // (igual ao relógio): não avança com texto velho.
     if (!enviadaEm || !inboundEhDestaPergunta(enviadaEm, enrollment.updated_at)) continue;
@@ -116,6 +135,9 @@ export async function aplicarTextoNosFollowups(
   if (!texto) return;
   const enviadaEm = ultimo.enviadaEm;
   const deps = tickDepsDe(admin);
+  // Uma leitura por chamada: a lista de pointers de atendimento não muda no meio
+  // do loop, e consultá-la a cada volta gastaria query à toa.
+  const atendimento = await pointersDeAtendimento(admin, sinal.organizationId);
 
   // Apply dentro do loop (não numa 2ª passada cega): a mensagem que ENFILEIROU
   // a confirmação de nome não pode responder a essa confirmação no mesmo request.
@@ -128,6 +150,7 @@ export async function aplicarTextoNosFollowups(
       texto,
       enviadaEm,
       deps,
+      atendimento,
     );
     const agora = new Date().toISOString();
     const { data: vivos, error: vivosErr } = await admin
@@ -140,7 +163,10 @@ export async function aplicarTextoNosFollowups(
       .limit(8);
     if (vivosErr) throw new Error(vivosErr.message);
     for (const row of vivos ?? []) {
-      await avancarEnrollmentAtivo(deps, row as EnrollmentRow);
+      const enrollment = row as EnrollmentRow;
+      // Mesmo corte do claim SQL (0242): atendimento é do turno.
+      if (atendimento.has(enrollment.pointer_id)) continue;
+      await avancarEnrollmentAtivo(deps, enrollment);
     }
     const enviados = await enviarTextoFixoPendente(admin, contactIds);
     if (!aplicados && !(vivos?.length) && !enviados) break;

@@ -49,9 +49,19 @@ async function aplicarRespostasQueChegaram(admin: SupabaseClient, deps: TickDeps
     .in("status", ["waiting_reply"])
     .limit(40);
   if (error) throw new Error(error.message);
+  // O enrollment do fluxo de ATENDIMENTO é conduzido pelo TURNO; o relógio do
+  // follow-up não pode tocá-lo (0242 — antes isto o cancelava em nome do
+  // follow-up). A leitura é uma só para todo o lote.
+  const { data: ptrs, error: ptrErr } = await admin
+    .from("followup_flow_pointers")
+    .select("id")
+    .eq("surface", "atendimento");
+  if (ptrErr) throw new Error(ptrErr.message);
+  const atendimento = new Set((ptrs ?? []).map((p) => p.id as string));
   let n = 0;
   for (const row of data ?? []) {
     const enrollment = row as EnrollmentRow;
+    if (atendimento.has(enrollment.pointer_id)) continue;
     const ids = await idsDoContatoEGemeos(admin, enrollment.organization_id, enrollment.contact_id);
     const { data: msg, error: msgErr } = await admin
       .from("messages")

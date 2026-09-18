@@ -46,4 +46,16 @@ describe("aplicarTextoNosFollowups — uma mensagem, uma pergunta", () => {
     expect(chamadas.length).toBe(1);
     expect(src).toMatch(/for \(let i = 0; i < 6; i\+\+\) \{[\s\S]*aplicarTextoAosEnrollmentsEmEspera/);
   });
+
+  it("não processa enrollment de pointer surface='atendimento' (0242)", () => {
+    // O fluxo de ATENDIMENTO é conduzido pelo TURNO; o motor de follow-up o
+    // cancelava em nome do follow-up (medido ao vivo, 2026-09-18). As DUAS
+    // consultas (waiting_reply e active-due) precisam do corte por surface.
+    const src = fonte();
+    expect(src).toMatch(/pointersDeAtendimento/);
+    expect(src).toMatch(/surface", "atendimento"/);
+    // Os dois laços cortam pelo set antes de processar.
+    const cortes = src.match(/atendimento\.has\(enrollment\.pointer_id\)/g) ?? [];
+    expect(cortes.length).toBeGreaterThanOrEqual(2);
+  });
 });
