@@ -66,6 +66,18 @@ async function tickAtivosDoContato(
   opts?: { mesmoAntesDoPrazo?: boolean },
 ): Promise<number> {
   const ids = await idsDoContatoEGemeos(admin, contato.organizationId, contato.contactId);
+  // O enrollment de ATENDIMENTO é conduzido pelo TURNO; o relógio/kick do
+  // follow-up não pode tocá-lo (0242 — antes isto o cancelava em nome do
+  // follow-up). Sem o corte, o `avancarEnrollmentAtivo` abaixo o processa pelo
+  // grafo de follow-up e o `assertServiceBoundary` o cancela.
+  const { data: ptrs, error: ptrErr } = await admin
+    .from("followup_flow_pointers")
+    .select("id")
+    .eq("organization_id", contato.organizationId)
+    .eq("surface", "atendimento");
+  if (ptrErr) throw new Error(ptrErr.message);
+  const atendimento = new Set((ptrs ?? []).map((p) => p.id as string));
+
   let q = admin
     .from("followup_enrollments")
     .select("*")
@@ -84,7 +96,8 @@ async function tickAtivosDoContato(
           (r) => r.status === "waiting_reply" || (typeof r.next_eval_at === "string" && r.next_eval_at <= agora),
         )
       : (data ?? [])
-  ) as EnrollmentRow[];
+  )
+    .filter((r) => !atendimento.has((r as EnrollmentRow).pointer_id)) as EnrollmentRow[];
   const deps = tickDepsDe(admin);
   for (const row of rows) {
     await avancarEnrollmentAtivo(deps, row);

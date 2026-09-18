@@ -53,6 +53,18 @@ describe("normalizarValorDoCampo", () => {
     ).toBeNull();
   });
 
+  it("booleano NÃO captura 'tenho interesse' nem com contexto frouxo (caso real 2026-09-18)", () => {
+    // No teste ao vivo, "tenho interesse em comprar uma moto" foi gravado como
+    // `true` no campo CNH — "tenho" estava na lista positiva sem exigir o rótulo.
+    // A mensagem é de ABERTURA, não resposta a sim/não.
+    const c = campo("boolean", { key: "cnh", label: "CNH" });
+    expect(
+      normalizarValorDoCampo(c, "tenho interesse em comprar uma moto", { exigirContexto: false }),
+    ).toBeNull();
+    // Com o rótulo presente, "tenho cnh" continua capturando (controle).
+    expect(normalizarValorDoCampo(c, "tenho cnh", { exigirContexto: false })?.valor).toBe("true");
+  });
+
   it("select casa a opção", () => {
     const c = campo("select", {
       key: "pagamento",

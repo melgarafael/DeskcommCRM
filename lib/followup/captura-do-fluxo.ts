@@ -192,13 +192,18 @@ function capturarBooleano(
   // a um sim/não — booleano só captura em réplica curta ou com pista do rótulo.
   if (!temContexto && tokens(bruto).length > 3) return null;
   const neg = /\b(nao|nunca|negativo|falso|sem)\b/.test(` ${n} `);
-  const pos =
-    /\b(sim|claro|isso|tenho|possuo|sou|habilitado|com certeza|positivo|verdadeiro|pode ser|exato|correto)\b/.test(
+  // A lista FORTE vale sempre. "tenho"/"possuo"/"sou" são genéricos demais
+  // sozinhos — "tenho interesse em uma moto" virava `true` para o campo CNH —
+  // então só contam quando o RÓTULO está presente ("tenho cnh", "tenho
+  // habilitação"): aí a palavra carrega o sentido de posse do campo.
+  const forte =
+    /\b(sim|claro|isso|com certeza|positivo|verdadeiro|pode ser|exato|correto|ja tenho|ja possuo|eu tenho|eu possuo)\b/.test(
       ` ${n} `,
     );
+  const comContexto = temContexto && /\b(tenho|possuo|sou)\b/.test(` ${n} `);
   // "não tenho"/"não possuo" contêm "tenho"/"possuo": o negativo vence.
   if (neg) return { key: campo.key, valor: "false", bruto };
-  if (pos) return { key: campo.key, valor: "true", bruto };
+  if (forte || comContexto) return { key: campo.key, valor: "true", bruto };
   return null;
 }
 
