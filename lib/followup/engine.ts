@@ -516,6 +516,16 @@ async function processEnrollment(
       return;
     }
     if (!(error instanceof StaleServiceBoundaryError)) throw error;
+    // DIAGNÓSTICO TEMPORÁRIO (remover): quem cancelou o enrollment de
+    // atendimento no teste ao vivo de 2026-09-18. `pointer_id` + `steps` dizem
+    // qual caminho chamou o engine.
+    logger.warn("followup: cancelando enrollment por fronteira vencida", {
+      enrollment_id: enrollment.id,
+      pointer_id: enrollment.pointer_id,
+      current_node_id: enrollment.current_node_id,
+      status: enrollment.status,
+      steps_taken: enrollment.steps_taken,
+    });
     await db.updateEnrollment(enrollment.id, enrollment.organization_id, { status: "cancelled", cancel_reason: "Atendimento encerrado ou substituído", claimed_until: null, completed_at: clock().toISOString() });
     return;
   }
