@@ -8,6 +8,115 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.35.1] — 2026-09-18
+
+### Alterado
+
+- **O campo "Motivos de perda extras" sai de Configurações › Organização** Havia dois lugares para cadastrar motivo de perda, com nomes quase iguais. Um
+  funciona: **Etapas do funil**, o campo "Motivos de perda (separados por
+  vírgula)" — é ele que a janela de perder oferece e é ele que o banco aceita. O
+  outro, em **Organização**, prometia "adicionados ao set padrão" e não era lido
+  por ninguém: nem pela janela, nem pela validação que decide se o motivo passa.
+
+  O efeito era pior do que não ter o campo. Quem cadastrava ali não via os motivos
+  na hora de marcar um negócio como perdido, escrevia o motivo à mão em "Outro" e
+  recebia um erro genérico — o banco recusava um texto que a tela dizia ter
+  aceitado, e nada na interface ligava uma coisa à outra.
+
+  O campo saiu da aba Organização. Motivo de perda continua se cadastrando em
+  **Etapas do funil**, por funil, que é onde o relatório de perdas agrupa.
+
+  Nada some do banco: o que já estava gravado fica na linha, apenas sem tela. Se
+  você tinha motivos cadastrados só ali, eles nunca chegaram a valer — recadastre
+  no funil para passarem a aparecer na janela de perder.
+
+### Corrigido
+
+- **A catraca do espanhol passa a cobrar a chave que vem de tabela de outro módulo** O teste que garante que toda frase de tela tem espanhol resolvia a chave quando a tabela de rótulos era declarada no MESMO arquivo. Quando a tabela morava noutro módulo — o caso de `TRIGGER_LABELS` e `ACTION_LABELS` (rótulos do construtor de fluxo), `SEVERITY_LABEL` (inbox da IA) e `ROTULO_DO_PAPEL` (convite de equipe) —, a chamada passava batida e ninguém era avisado. Agora a catraca atravessa o `import` e cobra cada valor possível da tabela no dicionário, nas áreas de produto, `lib/` inclusive.
+
+  Medido na `main` de 18/08/2026: 103 chamadas resolvidas, 196 valores exigidos do dicionário e 9 valores faltando, em 3 arquivos. Esses 9 ficam numa lista de dívida congelada dentro do próprio teste: a lista só encolhe, e traduzir um deles deixa o teste vermelho pedindo a remoção da linha. O que o `t()` recebe de dado de runtime — identificador solto, `algo.campo` — segue fora do alcance de propósito: cobrar isso é o passo seguinte da mesma issue. Nada muda na tela de quem opera.
+
+- **A cerca de `organizations` resolve o tipo do cliente admin que mora em outro arquivo** O gate que garante que toda escrita em `organizations` passa pelo cliente admin reconhecia o cliente injetado por parâmetro só quando o TIPO estava escrito no próprio arquivo — ou num `type` local. Três formas que o `tsc` aceita ficavam vermelhas com a escrita certa: o alias importado de outro módulo (`import type { Admin } from "@/lib/waha/ingest"`, que já é exportado no repositório), o membro que chega por `extends` de uma interface, e o cliente que uma função passa para outra dentro do mesmo arquivo, sem anotação no receptor.
+
+  Agora o resolvedor atravessa o `import` até o módulo que declara o tipo — dois arquivos, o que usa e o que declara — e segue a herança até a base. A passagem entre funções passou a ser provada pela CHAMADA: o parâmetro sem anotação de uma função local não exportada é aceito quando todas as chamadas visíveis a ele entregam um cliente admin. Todas, não uma: uma chamada correta com outra entregando o cliente de sessão mantém o vermelho, e função exportada continua fora do alcance, porque pode ser chamada de um arquivo que a varredura não vê.
+
+  Nada muda para quem opera: nenhum arquivo do repositório muda de veredito (a cerca já estava verde) e o que autoriza continua sendo o tipo, nunca o nome. O que muda é o atrito de quem escreve certo.
+
+- **O follow-up espera a janela abrir sem desistir do contato** Quando um passo de mensagem caía fora do horário permitido de envio — a noite,
+  o domingo fechado, ou a faixa de horário que você escolheu —, o acompanhamento
+  já reagendava a mensagem corretamente para a próxima abertura. O problema era o
+  outro lado: o motor do fluxo não ficava sabendo do adiamento, continuava
+  perguntando "essa mensagem já saiu?" e, depois de cerca de onze horas
+  perguntando, desistia do contato. Na tela aparecia o aviso
+  **"Um fluxo de follow-up parou de tentar"**, e o motivo registrado dizia que a
+  mensagem nunca tinha sido concluída — o que era falso: ela estava só esperando
+  o horário que você mesmo configurou. Uma janela que fechasse no sábado à noite
+  e só reabrisse na segunda já passava desse limite.
+
+  Agora o passo diz que está esperando, e diz até quando. O motor guarda o
+  contato parado até a hora da abertura em vez de gastar tentativas, o dossiê do
+  acompanhamento mostra a linha
+  **"Segurou o envio até o horário permitido"** com a data, e a desistência
+  automática continua existindo para o que ela sempre serviu: um envio que de
+  fato travou, sem sinal de vida nenhum.
+
+  Nada muda para quem opera: nenhuma variável nova, nenhum ajuste, nenhum passo
+  na atualização. Contatos que já tinham sido dados como perdidos por esse motivo
+  não voltam sozinhos — o conserto vale dos próximos em diante.
+
+- **Quem baixa o projeto para usar ou estudar deixa de receber um erro que não é dele** Quem faz uma cópia do projeto (um "fork") para estudar, testar ou contribuir
+  recebia um erro vermelho na verificação automática logo na primeira vez que a
+  rodava — e o erro não tinha nada a ver com o que a pessoa tinha feito. Ele
+  existia porque o projeto confere se as imagens de instalação pertencem ao dono
+  certo, e numa cópia esse dono é outro por definição.
+
+  Agora a conferência entende quando está rodando dentro de uma cópia e não cobra
+  nada ali, dizendo por escrito que aquele caso não foi medido — em vez de dizer
+  que passou, que seria mentira, ou que falhou, que era o problema.
+
+  Contra o projeto original a conferência continua exatamente como era: se alguém
+  tentar trocar o dono das imagens num pedido de alteração, o erro aparece.
+
+  Para quem já opera um servidor, nada muda: isto acontece inteiramente na esteira
+  de verificação, antes de qualquer versão ser publicada.
+
+- **O envio de vendas para o Google Ads volta a funcionar, e o botão só aparece quando a instalação está pronta** A versão 1.35.0 trouxe o envio de conversões para o Google Ads falando uma versão da API que o Google já tinha desativado (v17). Toda venda voltava recusada, sem nova tentativa, e a tela de Conversões mostrava a página de erro do Google no lugar do motivo. Agora o envio usa a v25, que o Google mantém até agosto de 2027. A versão fica num lugar só do código, e um teste impede que ela volte a ficar abaixo das que o Google ainda mantém. Quando o Google responder algo fora do formato de erro dele, a tela mostra um motivo legível, com a pista de que a versão pode ter saído do ar.
+
+  A 1.35.0 também dizia que, sem as credenciais do Google Ads no `.env`, o botão "Conectar com Google" não aparecia — e ele aparecia. Agora é verdade: sem `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_OAUTH_CLIENT_ID` e `GOOGLE_ADS_OAUTH_CLIENT_SECRET`, o cartão do Google Ads diz que o envio ainda não está disponível nesta instalação e lista, pelo nome, quais variáveis faltam. Quem já tem as três configuradas não precisa fazer nada.
+
+- **A guarda de primeira mensagem da origem de site passa a filtrar a organização** A origem da página só é gravada quando aquela é a PRIMEIRA mensagem do contato. A consulta que responde isso sai pelo client administrativo — o que passa por cima do isolamento entre organizações que o banco aplica sozinho — e ela não filtrava a organização: filtrava o contato e a direção, e só. A resposta era sobre o contato no banco inteiro, não sobre o contato desta organização.
+
+  O filtro passou a vir do chamador, com a organização de quem recebeu o webhook — nunca do corpo da requisição. Medido no `tests/unit/origem-do-site.test.ts` em 18/09/2026: 25 testes verdes; removida apenas a linha do filtro, 2 ficam vermelhos, e o caso de duas organizações responde `false` porque a mensagem de entrada mais antiga daquele contato vinha de fora da fronteira. Nada muda na tela de quem opera: o `contact_id` é uuid e não colide entre organizações, então o resultado de hoje já era o certo. O que muda é a consulta deixar de depender disso.
+
+- **Erros de leitura do acervo respeitam o idioma da interface** Mensagens de falha ao ler arquivos do acervo agora usam chaves estáveis de interface, impedindo que detalhes técnicos façam a tradução cair silenciosamente em português. Crédito: @joaopaulomirandamatias.
+
+- **O sinal de presença deixa de poder encher o registro de auditoria** O sinal de presença do atendente, que saiu na 1.34.0, faz uma batida por aba a cada 60 segundos. Agora só a PRIMEIRA batida de cada pessoa deixa uma entrada no registro de auditoria — que é a que cria a linha e acorda o roteamento, o único efeito que outra pessoa sente. As batidas seguintes não registram nada, pela mesma régua que já vale para a rodada de cron que não fez nada: audita-se quando houve efeito, nunca se deixa de auditar por comodidade.
+
+  Sem isso, uma instalação com oito atendentes de plantão somaria cerca de 3.800 entradas de auditoria por turno de oito horas, sem que ninguém tivesse feito nada — e o registro de auditoria é onde se procura quem fez o quê quando algo dá errado.
+
+  Nada a fazer na instalação: o comportamento muda sozinho na atualização, e nenhuma entrada já gravada é tocada.
+
+- **A prova de sincronia do kit para de acusar chave inocente sob carga** A prova de sincronia do `hostgator-setup-kit/test-validators.sh` montava a lista de escrita num pipeline de três estágios e, quando a máquina estava saturada, às vezes recebia essa lista truncada — e então acusava chaves inocentes que o `install.sh` grava na linha seguinte, com conjunto de acusadas diferente a cada rodada sobre os mesmos arquivos. O piso anti-truncagem de 30 chaves não pegava a truncagem parcial: 30 é menos da metade das 67 chaves da régua real, então 67 caindo para 40 passava por baixo da guarda e saía como acusação.
+
+  Agora a mesma régua é contada duas vezes, por caminhos independentes — a lista do pipeline e uma contagem direta no `install.sh`, de um processo só, sem pipeline e logo sem leitura parcial — e a acusação só sai se as duas contas baterem. Divergindo, ou voltando o pipeline acima com status ≠ 0, o desfecho é inconclusivo e o teste diz isso com todas as letras, nunca "chave faltando". O piso fixo sai de cena: não sobra número escolhido à mão para envelhecer a cada chave nova.
+
+  Medido em 18/09/2026 na `main`: régua real com 67 chaves e piso de 30. Truncando a régua para 40 chaves — o corte que hoje passa por baixo do piso —, o código anterior acusou 24 chaves inocentes; cortes de 31 e 33 chaves acusaram 27 e 29, sobre os mesmos arquivos. Com o mesmo corte de 40, o código novo não acusa nenhuma: fecha inconclusivo com `40 chave(s) contra 67 na contagem direta`. Com a régua inteira, a suíte segue verde até "todos os validadores passaram". Nada muda para quem instala pelo kit — o teste fica mais difícil de ficar vermelho por engano e mais claro quando fica vermelho de verdade.
+
+- **A verificação automática deixou de dizer "cancelado" quando ela mesma demora** Quando a bateria de verificação automática levava mais tempo que o limite
+  configurado, o sistema marcava o resultado como "cancelado" — a mesma palavra
+  que aparece quando alguém cancela de propósito. Quem tinha enviado uma
+  contribuição lia "cancelaram o meu trabalho", e quem ia conferir saía procurando
+  uma pessoa que não existia.
+
+  Agora o limite serve só para matar o que travou de verdade, e quem avisa que a
+  bateria engordou é uma mensagem em português que diz o que aconteceu e o que
+  fazer — nomeando a parte que passou do previsto.
+
+  Para quem opera um servidor, nada muda: isto acontece inteiramente na esteira de
+  verificação do projeto, antes de qualquer versão ser publicada. O que muda é o
+  tempo até um conserto chegar até você, porque contribuições boas deixam de ficar
+  paradas por um diagnóstico errado.
+
 ## [1.35.0] — 2026-09-18
 
 ### Adicionado
@@ -5700,7 +5809,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.35.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.35.1...HEAD
+[1.35.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.35.0...v1.35.1
 [1.35.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.33.0...v1.34.0
 [1.33.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.32.1...v1.33.0
