@@ -268,6 +268,40 @@ export function textoDaPergunta(campo: CampoPendenteParaCaptura): string {
 }
 
 /**
+ * O valor que o MODELO mandou em `flow_collect` bate com o TIPO do campo?
+ *
+ * Existe porque o modelo gravava lixo: no teste ao vivo de 2026-09-18, um "ok"
+ * foi registrado como `troca_ano` (campo `number`). A captura determinística
+ * não faz isso — ela respeita o tipo —, mas o caminho do `flow_collect` não
+ * validava nada e deixava o modelo sobrescrever a pergunta com um valor que não
+ * responde a ela.
+ *
+ * Não normaliza nem interpreta: só ACEITA ou RECUSA. `number` exige dígitos;
+ * `boolean` exige sim/não; `date` exige data; `select` exige uma das opções;
+ * `text` aceita qualquer coisa não-vazia (é o único tipo livre).
+ */
+export function valorBateComTipo(campo: CampoPendenteParaCaptura, valor: unknown): boolean {
+  const v = typeof valor === "string" ? valor.trim() : valor;
+  if (v === null || v === undefined || v === "") return false;
+  const s = String(v).trim();
+  switch (campo.type) {
+    case "number":
+      // Aceita "120000", "120.000", "120 mil" — mas NÃO "ok".
+      return /\d/.test(s) && /^[\d.,\s]*(mil|k)?$/i.test(s.replace(/\s+/g, " ").trim());
+    case "boolean":
+      return /^(true|false|sim|nao|não|1|0)$/i.test(s);
+    case "date":
+      return RE_DATA_ISO.test(s) || RE_DATA_BR.test(s);
+    case "select":
+      return (campo.options ?? []).some((o) => normalizar(o) === normalizar(s));
+    case "text":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
  * Palavras funcionais que não identificam uma pergunta (artigos, preposições,
  * pronomes, interrogativos genéricos). A comparação olha só o CONTEÚDO.
  */

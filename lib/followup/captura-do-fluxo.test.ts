@@ -6,6 +6,7 @@ import {
   ehAcenoOuSilencio,
   normalizarValorDoCampo,
   perguntaSaiuNosTextos,
+  valorBateComTipo,
   type CampoPendenteParaCaptura,
 } from "./captura-do-fluxo";
 
@@ -131,5 +132,33 @@ describe("perguntaSaiuNosTextos", () => {
 
   it("não reconhece quando a pergunta não foi feita", () => {
     expect(perguntaSaiuNosTextos("Qual é o ano da moto?", ["Ótimo, temos várias opções!"])).toBe(false);
+  });
+});
+
+describe("valorBateComTipo — o flow_collect do modelo respeita o tipo", () => {
+  it("number recusa 'ok' e aceita número (bug do teste ao vivo: 'ok' virou troca_ano)", () => {
+    const ano = campo("number", { key: "troca_ano", label: "Ano" });
+    expect(valorBateComTipo(ano, "ok")).toBe(false);
+    expect(valorBateComTipo(ano, "2019")).toBe(true);
+    expect(valorBateComTipo(ano, "120.000")).toBe(true);
+  });
+
+  it("boolean recusa texto livre e aceita sim/não", () => {
+    const doc = campo("boolean", { key: "doc", label: "Documentação" });
+    expect(valorBateComTipo(doc, "mais ou menos")).toBe(false);
+    expect(valorBateComTipo(doc, "sim")).toBe(true);
+    expect(valorBateComTipo(doc, "true")).toBe(true);
+  });
+
+  it("select recusa valor fora das opções", () => {
+    const c = campo("select", { key: "cor", label: "Cor", options: ["Azul", "Vermelha"] });
+    expect(valorBateComTipo(c, "verde")).toBe(false);
+    expect(valorBateComTipo(c, "azul")).toBe(true);
+  });
+
+  it("text aceita qualquer coisa não-vazia", () => {
+    const t = campo("text", { key: "obs", label: "Observação" });
+    expect(valorBateComTipo(t, "qualquer coisa")).toBe(true);
+    expect(valorBateComTipo(t, "")).toBe(false);
   });
 });

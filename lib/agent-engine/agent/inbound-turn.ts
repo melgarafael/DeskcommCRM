@@ -185,7 +185,11 @@ import {
   situacaoDoChecklist,
 } from '@/lib/followup/atendimento';
 import type { EndFinish } from '@/lib/followup/graph-schema';
-import { perguntaSaiuNosTextos, textoDaPergunta } from '@/lib/followup/captura-do-fluxo';
+import {
+  perguntaSaiuNosTextos,
+  textoDaPergunta,
+  valorBateComTipo,
+} from '@/lib/followup/captura-do-fluxo';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -2607,6 +2611,19 @@ async function executarTurnoDoAgente(
               code: 'campo_desconhecido',
               message: `O campo "${campo}" não pertence ao fluxo ativo.`,
               campos: fluxoAtendimento.situacao.pendentes.map((n) => n.config.key),
+            },
+          };
+        }
+        // O valor tem que bater com o TIPO do campo. Sem isto, o modelo gravava
+        // "ok" num campo `number` (medido no teste ao vivo) e a pergunta ficava
+        // "respondida" com lixo. Recusar devolve ao modelo para reinterpretar;
+        // `text` continua aceitando qualquer coisa (é o tipo livre).
+        if (!valorBateComTipo(campoNode.config, valor)) {
+          return {
+            ok: false,
+            error: {
+              code: 'valor_incompativel',
+              message: `O valor enviado não responde ao campo "${campoNode.config.key}" (tipo ${campoNode.config.type}). Se o cliente NÃO respondeu, não chame flow_collect.`,
             },
           };
         }
