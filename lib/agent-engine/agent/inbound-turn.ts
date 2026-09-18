@@ -2678,6 +2678,22 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // SÓ a PERGUNTA PENDENTE (a que está sendo feita agora) pode ser
+        // registrada pelo modelo — é ela que o VALIDADOR (`flow_validate`)
+        // controla. Sem este corte, o modelo gravava a MESMA resposta em campos
+        // seguintes (medido ao vivo: "é uma CG 125" ia para `moto_troca` E
+        // `troca_ano`). Dado de campo fora de ordem entra pelo validador/captura,
+        // não por aqui.
+        const pendenteAgora = fluxoAtendimento.situacao.pendentes[0];
+        if (pendenteAgora !== undefined && campoNode.config.key !== pendenteAgora.config.key) {
+          return {
+            ok: false,
+            error: {
+              code: 'fora_da_pergunta_atual',
+              message: `A pergunta atual é "${pendenteAgora.config.key}". Registre só ela; as demais vêm depois, uma por vez.`,
+            },
+          };
+        }
         // O valor tem que bater com o TIPO do campo. Sem isto, o modelo gravava
         // "ok" num campo `number` (medido no teste ao vivo) e a pergunta ficava
         // "respondida" com lixo. Recusar devolve ao modelo para reinterpretar;
