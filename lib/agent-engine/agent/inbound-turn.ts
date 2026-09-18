@@ -2051,6 +2051,9 @@ async function executarTurnoDoAgente(
   // pelo assunto da mensagem — não depende do modelo chamar flow_start. Só no
   // inbound e quando a mensagem casa as palavras-gatilho de um fluxo ativo.
   let fluxoIniciadoNesteTurno = false;
+  // O VALIDADOR já gravou a pergunta deste turno? Se sim, `flow_collect` do
+  // modelo vira no-op (uma resposta, um campo — quem grava é o motor).
+  let validadorGravouNesteTurno = false;
   if (
     !preview &&
     atendimento === null &&
@@ -2379,6 +2382,11 @@ async function executarTurnoDoAgente(
         }
         // `indefinido` → sem validação; o classificador puro decide abaixo.
       }
+      // Se o VALIDADOR já gravou a pergunta deste turno, o modelo principal NÃO
+      // pode chamar `flow_collect`: ele gravava a MESMA resposta no próximo campo
+      // (medido ao vivo: validador grava `moto_troca`, e 6s depois o modelo
+      // grava `troca_ano`). Uma resposta, um campo — quem grava é o motor.
+      validadorGravouNesteTurno = validacao?.respondeu === true;
       const r = await processarInboundDoFluxo(pool, {
         organizationId: tenantId,
         estado: atendimento,
@@ -2667,6 +2675,20 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        // O VALIDADOR já gravou a resposta desta pergunta no turno. Registrar de
+        // novo (ou no PRÓXIMO campo, que passou a ser o pendente) é o defeito
+        // medido: validador grava `moto_troca` e o modelo grava a mesma resposta
+        // em `troca_ano` segundos depois. Uma resposta, um campo.
+        if (validadorGravouNesteTurno) {
+          return {
+            ok: false,
+            error: {
+              code: 'resposta_ja_registrada',
+              message:
+                'A resposta desta pergunta já foi registrada pelo sistema. Não chame flow_collect; siga a conversa.',
+            },
+          };
+        }
         const campoNode = campoPorChave(fluxoAtendimento.checklist, campo);
         if (campoNode === null) {
           return {
@@ -2698,8 +2720,7 @@ async function executarTurnoDoAgente(
         // "ok" num campo `number` (medido no teste ao vivo) e a pergunta ficava
         // "respondida" com lixo. Recusar devolve ao modelo para reinterpretar;
         // `text` continua aceitando qualquer coisa (é o tipo livre).
-        if (!valorBateComTipo(campoNode.config, valor)) {
-          return {
+        if (!valorBateComTipo(campoNode.config, valor)) {          return {
             ok: false,
             error: {
               code: 'valor_incompativel',
