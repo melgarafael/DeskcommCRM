@@ -2049,6 +2049,7 @@ async function executarTurnoDoAgente(
   // FASE 2 — ENTRADA POR GATILHO (motor): sem fluxo ativo, o MOTOR decide começar
   // pelo assunto da mensagem — não depende do modelo chamar flow_start. Só no
   // inbound e quando a mensagem casa as palavras-gatilho de um fluxo ativo.
+  let fluxoIniciadoNesteTurno = false;
   if (
     !preview &&
     atendimento === null &&
@@ -2070,6 +2071,12 @@ async function executarTurnoDoAgente(
           organizationId: tenantId,
           contactId: leadId,
         });
+        // A mensagem que ACIONOU o fluxo é o gatilho, não resposta às perguntas
+        // que ainda nem foram feitas. Medido ao vivo (2026-09-18): a frase
+        // "quero dar minha moto na troca" foi gravada como resposta de
+        // `moto_troca` e de `troca_ano`. Sem processar captura/registro neste
+        // turno, a abertura só inicia e o modelo responde.
+        fluxoIniciadoNesteTurno = atendimento !== null;
       }
     } catch (err) {
       runLog.warn('não consegui avaliar o gatilho do fluxo de atendimento', {
@@ -2085,7 +2092,9 @@ async function executarTurnoDoAgente(
     atendimento !== null &&
     !preview &&
     liveJob().kind === 'inbound_turn' &&
-    input.inboundMessageId !== undefined
+    input.inboundMessageId !== undefined &&
+    // O turno que ACIONOU o fluxo não tem resposta a capturar (ver acima).
+    !fluxoIniciadoNesteTurno
   ) {
     try {
       const r = await processarInboundDoFluxo(pool, {
@@ -2603,6 +2612,20 @@ async function executarTurnoDoAgente(
       execute: async ({ campo, valor, bruto }) => {
         if (fluxoAtendimento === null || valoresDoFluxo === null) {
           return { ok: false, error: { code: 'sem_fluxo', message: 'Não há fluxo de atendimento ativo.' } };
+        }
+        // No turno que ACIONOU o fluxo, a mensagem do cliente é o gatilho — não
+        // resposta a pergunta alguma (que ainda não foi feita). Bloquear o
+        // registro aqui é o que impede o modelo de gravar a frase de abertura
+        // como `moto_troca`/`troca_ano` (medido ao vivo, 2026-09-18).
+        if (fluxoIniciadoNesteTurno) {
+          return {
+            ok: false,
+            error: {
+              code: 'fluxo_acabou_de_iniciar',
+              message:
+                'O fluxo acabou de começar por este assunto. NÃO registre nada ainda: responda o cliente e faça a primeira pergunta.',
+            },
+          };
         }
         const campoNode = campoPorChave(fluxoAtendimento.checklist, campo);
         if (campoNode === null) {

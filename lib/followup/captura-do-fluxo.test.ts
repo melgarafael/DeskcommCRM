@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   classificarInbound,
@@ -160,5 +162,15 @@ describe("valorBateComTipo — o flow_collect do modelo respeita o tipo", () => 
     const t = campo("text", { key: "obs", label: "Observação" });
     expect(valorBateComTipo(t, "qualquer coisa")).toBe(true);
     expect(valorBateComTipo(t, "")).toBe(false);
+  });
+});
+
+describe("abertura do fluxo não vira resposta (regressão do teste ao vivo)", () => {
+  it("inbound-turn: o turno que aciona o fluxo NÃO processa captura nem aceita flow_collect", () => {
+    const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+    // A flag existe, guarda o processamento do inbound E o flow_collect.
+    expect(src).toMatch(/fluxoIniciadoNesteTurno = atendimento !== null/);
+    expect(src).toMatch(/!fluxoIniciadoNesteTurno/);
+    expect(src).toMatch(/if \(fluxoIniciadoNesteTurno\) \{/);
   });
 });
