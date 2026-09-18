@@ -8,6 +8,121 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.35.0] — 2026-09-18
+
+### Adicionado
+
+- **A atualização agora conta se o banco deu disputa** Quando uma atualização termina, a tela passa a contar o que aconteceu com o
+  banco: se ele estava em disputa com o sistema no ar, quantas retentativas foram
+  necessárias e em qual passada o banco fechou. Se a rodada não passou pelo banco
+  — atualização só de código, por exemplo —, a tela não fala do assunto: ela não
+  inventa uma passada que ninguém mediu. E uma rodada que NÃO conseguiu fechar o
+  banco (a disputa persistiu até o teto de tentativas, ou veio um erro que
+  retentativa não cura) também fica em silêncio: a frase existe para dizer que
+  fechou, e afirmar fechamento onde não houve seria pior que não dizer nada.
+
+  O efeito para quem opera: uma atualização que precisou de três passadas por
+  causa do sistema em uso deixa de parecer idêntica a uma que fechou de primeira,
+  e o dono do servidor sabe que o "deu certo" dele veio acompanhado de disputa —
+  o que muda o que ele confere depois.
+
+### Alterado
+
+- **O relatório de acesso deixa de se chamar LGPD quando a lei não é essa** O PDF que responde ao direito de acesso do titular citava a LGPD fixa no
+  código. Agora a citação sai do perfil do país da organização — e o documento
+  simplesmente **não cita lei** quando o país ainda não tem a citação revisada, em
+  vez de citar a de outro.
+
+  No Brasil, nada muda no que você entrega: a citação continua "LGPD Art. 18, II
+  (Lei nº 13.709/2018)". O título do arquivo passa a ser "Relatório de Acesso aos
+  Dados" — o documento é sobre o direito ao acesso, e o nome da lei é do país. O
+  prazo de resposta também passa a ser contado no calendário de feriados do país
+  da organização, não no brasileiro fixo.
+
+  Não há ação para quem opera a VPS.
+
+### Corrigido
+
+- **A atualização numa VPS de outra arquitetura se vira sozinha** Numa VPS cuja arquitetura não tem imagem publicada, o registro responde `no matching manifest for linux/arm64/v8`, o `pull` não traz imagem nenhuma e o `up -d` morre junto. O desfecho era o pior possível: o CRM continuava na versão antiga e ninguém era avisado — pelo botão **Atualizar** nem isso, porque o agente roda sozinho no cron e a falha não cabia na tela. Agora, quando o `pull` falha por arquitetura, o kit constrói aqui nesta VPS a MESMA versão alvo (`docker-compose.build.yml`, subindo pelo override com `pull_policy: never` para o Compose não voltar ao registro) e termina dizendo, em português, que as imagens foram construídas aqui nesta VPS e o motivo. Quando a imagem existe para a sua arquitetura, nada muda: nenhum build local, nenhuma ação sua, nenhuma variável, nenhum comando. Crédito: @webtecnica.
+
+- **No construtor de fluxos, a regra de etapa passa a funcionar — e o cartão do passo diz a verdade** No passo "Verificar condição", a etapa do funil era digitada à mão. O sistema
+  compara a etapa pelo código interno dela, então a regra "o lead está na etapa
+  PAGO" nunca era verdadeira, e ninguém avisava: o fluxo publicava e o contato
+  seguia pelo caminho errado. Agora a etapa é escolhida numa lista (com o nome do
+  funil junto), o número de passos é um campo numérico, e publicar recusa a regra
+  sem valor, a que aponta para etapa que não existe mais e a que ficou arquivada —
+  dizendo qual regra corrigir. Um fluxo antigo com a etapa digitada à mão continua
+  rodando como está; ao publicar de novo, o sistema pede para escolher a etapa.
+
+  Regras de "passos" também voltam a decidir como foram escritas: a tela antiga
+  gravava o número como texto e o sistema nunca dava a regra por verdadeira, então
+  "pelo menos 3 passos" mandava todo mundo pelo caminho do "não". Vale a pena
+  conferir os fluxos ativos que comparam passos — eles podem passar a seguir por
+  outro caminho, que é o que foi pedido quando a regra foi escrita.
+
+  No cartão de cada passo, o texto deixa de ser cortado no meio, o passo de
+  classificar nasce com opções em português ("Interessado", "Sem interesse") no
+  lugar de "hot"/"cold", "grace 15min" virou "espera 15 min", e a saída de escape
+  de um passo que já tem saídas deixa de se chamar "Sempre" — ela só é usada
+  quando nenhuma das outras serve, e agora se chama "Outros casos". As linhas
+  entre os passos ganharam contraste: no tema claro elas quase sumiam.
+
+- **A agenda de quem atende passa a dizer por que não dá para marcar, e de quem é o horário** A agenda de quem atende abria com um aviso de permissão sem motivo no lugar dos horários: a tela pedia a lista de membros da organização a uma rota que só quem administra pode ler, recebia a recusa e mostrava "Você não tem permissão para esta ação" — sem dizer de que permissão se tratava, nem como pedir. Quem atende agora lê a mesma lista por um caminho próprio, com o papel mínimo de quem atende, e o que essa lista devolve é só o que a barra da agenda usa: nome e se a pessoa tem agenda. E-mail e data do último acesso não saem por ali.
+
+  O horário ocupado no Google da dona da agenda também deixa de aparecer livre para quem atende. A ocupação passa a ser lida por pessoa, e não pelo que a sessão de quem olha tem direito de ver: quem atende recebia apenas a própria ocupação, e desenhava livre o horário em que a dona já estava comprometida. Quando a leitura de uma pessoa falha, o que foi lido das outras continua na tela, e o motivo da falha fica registrado.
+
+  A explicação do bloqueio passou a distinguir os dois casos que a mesma frase cobria. "Ocupado" é quando alguém já está comprometido naquele horário — inclusive no Google; "fora da jornada" é quando aquele horário não faz parte do que a pessoa publicou. O rótulo da coluna só diz "Você" quando o dono da agenda é quem está logado, e o painel do dono não escreve mais "Você" para si mesmo. E um dia de folga dentro da jornada deixou de ser anunciado como "Nenhum horário publicado neste dia", que fazia parecer configuração faltando para quem já tinha publicado jornada: a folga agora se anuncia como folga, e a falta de jornada continua tendo o seu próprio aviso.
+
+  Quem já roda o sistema não precisa fazer nada: nada de configuração mudou, só o que a tela diz e o que ela mostra.
+
+- **O anonimizador cobre os documentos que o Brasil não usa** Quem manda texto de conversa para o modelo tinha dois buracos: o BI angolano
+  (`003862011LA042`) e o CPF de nove dígitos (`541712345`) atravessavam o
+  anonimizador intactos — medido, antes do conserto, nos dois casos, um depois do
+  outro.
+
+  Agora o conjunto de padrões é declarado no perfil do país, o anonimizador e a
+  guarda que o confere usam o MESMO conjunto (antes eram duas listas que podiam
+  divergir em silêncio), e documento novo entra pelo perfil em vez de virar mais
+  um padrão solto no meio dos outros.
+
+  Ninguém precisa fazer nada.
+
+- **Regra de automação transfere o negócio entre funis em vez de abrir um segundo** Quando uma regra de automação aponta para outro funil e o contato já tinha um negócio aberto no funil antigo, a regra criava um SEGUNDO negócio e deixava o primeiro aberto: o mesmo cliente aparecia duas vezes, um card em cada funil, e ninguém sabia qual dos dois era o de verdade. Agora a regra TRANSFERE: o negócio é levado para o funil da regra com os mesmos dados (título, valor, responsável, campos personalizados e etiquetas) e o do funil antigo é encerrado como perdido, com o registro de para onde foi. Negócio aberto no mesmo funil continua sendo movido de etapa, e contato sem negócio aberto continua ganhando um negócio novo.
+
+  Esse encerramento não conta como perda comercial: "Levado para outro funil" é o motivo próprio da transferência, e as métricas de perdas (a por responsável e a do relatório de atrito) deixam de contá-lo — trocar de funil não é perder o negócio. O motivo de sistema também não aparece na janela "Marcar como perdido": ele continua gravado pela transferência, mas não é oferecido a quem está fechando um negócio à mão — sem isso, um clique tiraria uma perda comercial real do número. A atualização aplica a mudança no banco sozinha: nada precisa ser feito à mão, e negócio encerrado antes dela continua contando como perda.
+
+- **Uma consulta de membro que não volta não acusa mais o responsável de estar fora da organização** Quando uma regra de automação ia atribuir um responsável a um negócio e a
+  consulta que confere se aquela pessoa é membro da organização não voltava — rede
+  fora, banco fora —, a regra terminava dizendo `user_not_in_org`, como se o
+  responsável escolhido tivesse saído da organização. O aviso mandava o operador
+  mexer justamente no que estava certo: quem ele havia escolhido para atender.
+
+  Agora a ação separa "não é membro" de "não deu para saber". O responsável que
+  realmente não é membro continua sendo recusado do mesmo jeito, com
+  `user_not_in_org`. Quando a consulta falha, a execução passa a ser marcada com o
+  código `membro_indeterminado`, e a mensagem do erro fica registrada no detalhe da
+  execução.
+
+  O que muda para quem opera, hoje: o histórico da regra deixa de acusar a
+  configuração. Antes ele dizia que o responsável escolhido estava fora da
+  organização, o que mandava mexer justamente no que estava certo. A frase amigável
+  para esse caso na aba Atividade ainda não existe — o histórico mostra o código —
+  e está sendo tratada à parte.
+
+- **A suíte E2E não deixa conexões de WhatsApp de teste no banco** Ao terminar, o Playwright agora remove as sessões de WhatsApp criadas pelos seeds E2E. Também há um script explícito para limpar resíduos antigos; em banco remoto ele exige `--allow-remote` para evitar exclusão acidental. Crédito: @joaopaulomirandamatias.
+
+- **A Fila para de empurrar para o fim quem insiste — a espera passa a contar da primeira mensagem sem resposta** Na aba Fila, a posição de cada conversa era calculada pela ÚLTIMA mensagem do cliente. O efeito era o inverso do pretendido: quem escrevia de novo — cobrando, perguntando outra vez — reiniciava a própria espera e descia para o fim, atrás de quem escreveu uma vez e ficou quieto. Quem mais estava tentando ser atendido era o último a ser atendido.
+
+  A régua agora é a mensagem do cliente **mais antiga que ninguém respondeu ainda**, e é ela que ordena a lista, que a pílula "Aguardando há…" mostra e que a posição dita no WhatsApp usa. A resposta do atendente continua encerrando a espera: a partir dela, a próxima mensagem do cliente conta do zero, como deve ser.
+
+  Um aviso para quem já tem fila rodando: a atualização preenche a coluna nova das conversas que já existem, usando as mensagens de cada atendimento. Na prática, conversas que estavam no fim da fila porque o cliente insistiu vão subir, e as que estavam no topo podem descer — a ordem passa a refletir quanto tempo cada um espera de fato. Nada precisa ser feito à mão.
+
+- **Instalador volta a pedir consentimento antes de ligar a telemetria** O template self-host não pré-define mais `SENTRY_DSN` vazio antes da primeira execução. Assim, o instalador volta a perguntar pelo envio de relatórios de erro; em modo `--yes`, mantém a telemetria desligada, e uma escolha anterior continua preservada nas reexecuções. Crédito: @joaopaulomirandamatias.
+
+- **O kit explica quando a VPS usa uma arquitetura sem imagem publicada** Instalação e atualização agora recusam ARM64/aarch64 antes de consultar ou baixar as imagens do DeskcommCRM, explicando que as imagens oficiais atuais são `linux/amd64` e orientando usar uma VPS x86_64/amd64. Crédito: @joaopaulomirandamatias.
+
+- **Um PDF recebido no WhatsApp não derruba mais o agente** Um PDF de poucos KB recebido no WhatsApp reiniciava o processo do agente de IA a cada poucos segundos (estouro de memória ao ler o arquivo), e enquanto isso nenhuma conversa era respondida — o mesmo PDF voltava à fila e derrubava de novo, sem limite. Agora a leitura de PDF roda num processo à parte, com teto de memória próprio: um arquivo que não dá para ler vira um erro comum daquela mensagem, o agente segue respondendo, e depois de cinco tentativas a Central de Avisos recebe o aviso. Vale também para qualquer outro processamento que derrube o processo no meio: ele passa a contar como tentativa em vez de voltar à fila para sempre.
+
 ## [1.34.0] — 2026-09-18
 
 ### Adicionado
@@ -5433,7 +5548,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.34.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.35.0...HEAD
+[1.35.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.33.0...v1.34.0
 [1.33.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/melgarafael/DeskcommCRM/compare/v1.32.0...v1.32.1
