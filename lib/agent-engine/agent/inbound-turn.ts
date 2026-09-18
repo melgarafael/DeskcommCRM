@@ -1189,6 +1189,13 @@ export function ritualBlocks(
    * o inbound decidiu.
    */
   compromissosBlock = '',
+  /**
+   * Há um FLUXO DE ATENDIMENTO ativo guiando este turno. Quando `true`, o bloco
+   * fixo "Dados essenciais / PENDENTES" (C-012) CEDE LUGAR ao fluxo — decisão do
+   * dono: a coleta passa a ser do fluxo, não do bloco. Sem fluxo, o bloco continua
+   * exatamente como era (aditivo, retrocompatível).
+   */
+  fluxoAtivo = false,
 ): string[] {
   const checkpointBlock = previous
     ? JSON.stringify({
@@ -1236,34 +1243,40 @@ export function ritualBlocks(
     // DADOS ESSENCIAIS DO CLIENTE + o que ainda falta perguntar (C-012). Sem este
     // bloco, o agente não sabe que já tem/não tem nome/cidade/CNH e simplesmente
     // não pergunta. Ele é o "estado de qualificação" por contato.
-    ...(() => {
-      const cf = (context.contact.custom_fields ?? {}) as Record<string, unknown>;
-      const str = (v: unknown): string | null =>
-        typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
-      const nome = context.contact.name ?? str(cf.nome);
-      const cidade = str(cf.cidade);
-      const cnhBruto = cf.cnh;
-      const cnh =
-        typeof cnhBruto === 'boolean'
-          ? cnhBruto
-            ? 'sim'
-            : 'não'
-          : str(cnhBruto);
-      const pendentes: string[] = [];
-      if (!nome) pendentes.push('nome');
-      if (!cidade) pendentes.push('cidade');
-      if (cnh === null) pendentes.push('CNH');
-      return [
-        '## Dados essenciais do cliente',
-        `Nome: ${nome ?? 'não informado'}`,
-        `Cidade: ${cidade ?? 'não informado'}`,
-        `CNH: ${cnh ?? 'não informado'}`,
-        pendentes.length > 0
-          ? `PENDENTES: ${pendentes.join(', ')} — colete NO MÁXIMO UMA quando houver abertura natural, sem deslocar o assunto do cliente; atenda/responda o cliente primeiro. NÃO pergunte financiamento, CPF, data de nascimento nem CNH antes de o cliente demonstrar interesse em uma moto. Pare quando não houver mais pendentes.`
-          : 'PENDENTES: nenhum (dados essenciais completos) — não pergunte esses dados.',
-        '',
-      ];
-    })(),
+    //
+    // QUANDO HÁ FLUXO DE ATENDIMENTO ATIVO, o bloco CEDE — o fluxo é a fonte das
+    // perguntas (bloco "Fluxo de atendimento" mais abaixo). Dois roteiros de
+    // coleta no mesmo turno é o defeito que a decisão do dono fecha.
+    ...(fluxoAtivo
+      ? []
+      : (() => {
+          const cf = (context.contact.custom_fields ?? {}) as Record<string, unknown>;
+          const str = (v: unknown): string | null =>
+            typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+          const nome = context.contact.name ?? str(cf.nome);
+          const cidade = str(cf.cidade);
+          const cnhBruto = cf.cnh;
+          const cnh =
+            typeof cnhBruto === 'boolean'
+              ? cnhBruto
+                ? 'sim'
+                : 'não'
+              : str(cnhBruto);
+          const pendentes: string[] = [];
+          if (!nome) pendentes.push('nome');
+          if (!cidade) pendentes.push('cidade');
+          if (cnh === null) pendentes.push('CNH');
+          return [
+            '## Dados essenciais do cliente',
+            `Nome: ${nome ?? 'não informado'}`,
+            `Cidade: ${cidade ?? 'não informado'}`,
+            `CNH: ${cnh ?? 'não informado'}`,
+            pendentes.length > 0
+              ? `PENDENTES: ${pendentes.join(', ')} — colete NO MÁXIMO UMA quando houver abertura natural, sem deslocar o assunto do cliente; atenda/responda o cliente primeiro. NÃO pergunte financiamento, CPF, data de nascimento nem CNH antes de o cliente demonstrar interesse em uma moto. Pare quando não houver mais pendentes.`
+              : 'PENDENTES: nenhum (dados essenciais completos) — não pergunte esses dados.',
+            '',
+          ];
+        })()),
     // Índice da memória durável do lead (F3-05): headlines + id, orçamento fixo. O
     // corpo vem sob demanda (get_lead_note). Injetado AQUI, no SUFIXO — depois do
     // prefixo cacheável (F2-17), como o bloco temporal da F3-03.
@@ -1322,6 +1335,13 @@ export function buildOpeningMessage(
   compromissosBlock = '',
   /** Mensagem canônica do job inbound; vence uma leitura concorrente do histórico. */
   currentInboundText?: string,
+  /**
+   * Há um FLUXO DE ATENDIMENTO ativo guiando este turno. Quando `true`, o bloco
+   * fixo de "Dados essenciais / PENDENTES" (C-012) CEDE LUGAR ao fluxo — decisão
+   * do dono: a coleta passa a ser do fluxo, não do bloco. Sem fluxo, o bloco
+   * continua como sempre foi (aditivo, retrocompatível).
+   */
+  fluxoAtivo = false,
 ): string {
   const entregue = (nome: string): boolean => entregues.includes(nome);
   const mensagemAtual =
@@ -1344,7 +1364,15 @@ export function buildOpeningMessage(
   return [
     'Novo turno de atendimento: o lead enviou uma mensagem (a última inbound do histórico abaixo).',
     '',
-    ...ritualBlocks(previous, leadState, context, notesIndexBlock, projeta, compromissosBlock),
+    ...ritualBlocks(
+      previous,
+      leadState,
+      context,
+      notesIndexBlock,
+      projeta,
+      compromissosBlock,
+      fluxoAtivo,
+    ),
     '',
     ...mensagemAtualBlock,
     '',
@@ -1477,6 +1505,12 @@ export interface AgentTurnInput {
     projeta?: boolean;
     /** ferramentas que saíram para o Operador — o prompt não pode citá-las. */
     entregues?: readonly string[];
+    /**
+     * O turno tem um FLUXO DE ATENDIMENTO ativo? Quando `true`, o bloco fixo de
+     * "Dados essenciais / PENDENTES" cede lugar ao fluxo. Decidido pelo turno
+     * (que carrega o enrollment), não pelo callback.
+     */
+    fluxoAtivo?: boolean;
   }) => string;
 }
 
@@ -3968,6 +4002,10 @@ async function executarTurnoDoAgente(
       entregues,
       compromissosBlock,
       ...(currentInboundText !== null ? { currentInboundText } : {}),
+      // O turno decide: com FLUXO ativo, o bloco fixo de PENDENTES cede lugar ao
+      // fluxo (decisão do dono). O callback não enxerga `fluxoAtendimento` — ele
+      // mora neste escopo, então o flag viaja junto.
+      fluxoAtivo: fluxoAtendimento !== null,
     });
     // Sufixos por-lead (situacionais, voláteis — depois do prefixo cacheável F2-17): corpos de
     // skill casadas (F3-09) + hint do classificador (F3-11) + instrução de split (F4-xx, quando
@@ -4678,6 +4716,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         entregues,
         compromissosBlock,
         currentInboundText,
+        fluxoAtivo,
       }) =>
         buildOpeningMessage(
           previous,
@@ -4688,6 +4727,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           entregues,
           compromissosBlock,
           currentInboundText,
+          fluxoAtivo ?? false,
         ),
     });
   };
