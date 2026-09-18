@@ -143,3 +143,8 @@ backups/
 # commit posterior de remoção não tira o blob.
 .qa-backups/
 *.dump
+
+# HostGator setup kit runtime artifacts (#1150)
+.update.lock
+.deskcomm-site-url-avisado
+
