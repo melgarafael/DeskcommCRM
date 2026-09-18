@@ -577,6 +577,13 @@ export async function processarInboundDoFluxo(
     estado: EstadoDeAtendimento;
     texto: string | null;
     messageId?: string | null;
+    /**
+     * Leitura do VALIDADOR (agente dedicado, ponto `flow_validate`), quando o
+     * chamador conseguiu rodá-lo. Tem PRECEDÊNCIA sobre a captura determinística
+     * porque ele vê o CONTEXTO da conversa — é o que evita gravar "ok"/2019 no
+     * campo errado. Ausente = comportamento de antes (só o classificador puro).
+     */
+    validacao?: { respondeu: boolean; valor?: string } | undefined;
   },
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
@@ -603,7 +610,22 @@ export async function processarInboundDoFluxo(
     return { estado, concluiu: false };
   }
 
-  const leitura = classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
+  // O VALIDADOR decide, quando disponível: `respondeu` com valor → grava (abaixo);
+  // `nao_respondeu` → trata como desvio do roteiro (não conta tentativa); sem
+  // validação → cai no classificador determinístico de sempre.
+  const leitura =
+    args.validacao === undefined
+      ? classificarInbound(comoCampoParaCaptura(primeiro), args.texto)
+      : args.validacao.respondeu
+        ? {
+            resultado: "respondeu" as const,
+            captura: {
+              key: primeiro.config.key,
+              valor: args.validacao.valor ?? args.texto ?? "",
+              bruto: args.texto ?? "",
+            },
+          }
+        : { resultado: "desviou" as const };
 
   if (leitura.resultado === "desviou") {
     await registrarEventoDoFluxo(db, {

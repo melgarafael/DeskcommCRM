@@ -191,6 +191,7 @@ import {
   textoDaPergunta,
   valorBateComTipo,
 } from '@/lib/followup/captura-do-fluxo';
+import { validarRespostaDoFluxo } from './flow-validate';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 
@@ -2084,38 +2085,6 @@ async function executarTurnoDoAgente(
       });
     }
   }
-  // FASE 2 — CAPTURA DETERMINÍSTICA + CONTAGEM DE TENTATIVA (motor): processa o
-  // inbound contra a pergunta pendente ANTES de gerar. Resposta e desvio NÃO
-  // contam tentativa; aceno/silêncio conta; ao teto, o fluxo esgota e conclui.
-  let finalizacaoDoFluxo: EndFinish | undefined;
-  if (
-    atendimento !== null &&
-    !preview &&
-    liveJob().kind === 'inbound_turn' &&
-    input.inboundMessageId !== undefined &&
-    // O turno que ACIONOU o fluxo não tem resposta a capturar (ver acima).
-    !fluxoIniciadoNesteTurno
-  ) {
-    try {
-      const r = await processarInboundDoFluxo(pool, {
-        organizationId: tenantId,
-        estado: atendimento,
-        texto: currentInboundText,
-        messageId: input.inboundMessageId,
-      });
-      atendimento = r.estado;
-      if (r.concluiu) {
-        finalizacaoDoFluxo = r.finalizacao ?? atendimento.checklist.fim.config.ao_finalizar;
-      }
-    } catch (err) {
-      runLog.warn('não consegui processar o inbound do fluxo de atendimento', {
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-      });
-    }
-  }
-  const fluxoAtendimento = atendimento;
-  const valoresDoFluxo =
-    fluxoAtendimento === null ? null : new Set(Object.keys(fluxoAtendimento.valores));
   // Fase 1 (harness): memória geral da org — prefixo estável, resolvida a cada
   // turno como o playbook (publicar ⇒ próximo turno vale). composeSystemPrompt já
   // encaixa playbook + memória + índice de skills no prefixo cacheável.
@@ -2360,6 +2329,77 @@ async function executarTurnoDoAgente(
       };
     }
   }
+
+  // FASE 2 — CAPTURA/VALIDAÇÃO DO FLUXO (motor): processa o inbound contra a
+  // pergunta pendente ANTES de gerar, agora com o CONTEXTO já carregado (o
+  // validador precisa das últimas mensagens). Resposta e desvio NÃO contam
+  // tentativa; aceno/silêncio conta; ao teto, o fluxo esgota e conclui.
+  let finalizacaoDoFluxo: EndFinish | undefined;
+  if (
+    atendimento !== null &&
+    !preview &&
+    liveJob().kind === 'inbound_turn' &&
+    input.inboundMessageId !== undefined &&
+    // O turno que ACIONOU o fluxo não tem resposta a capturar (ver acima).
+    !fluxoIniciadoNesteTurno
+  ) {
+    try {
+      // O VALIDADOR (agente dedicado) decide o que gravar — só quando há uma
+      // pergunta pendente e o cliente respondeu. Ele vê o CONTEXTO da conversa,
+      // o que impede a gravação errada do modelo principal. Falha dele
+      // (`indefinido`) cai no classificador determinístico de sempre.
+      const pendente = atendimento.situacao.pendentes[0];
+      let validacao: { respondeu: boolean; valor?: string } | undefined;
+      if (pendente !== undefined && currentInboundText !== null && currentInboundText.trim() !== '') {
+        const ultimasMensagens = effectiveContext.messages.slice(-6).map((m) => ({
+          de: (m.direction === 'inbound' ? 'cliente' : 'loja') as 'cliente' | 'loja',
+          texto: m.body,
+        }));
+        const cfg = pendente.config;
+        const leitura = await validarRespostaDoFluxo(
+          pool,
+          deps.llmCfg,
+          { tenantId, leadId, jobId: liveJob().id },
+          {
+            pergunta: {
+              key: cfg.key,
+              label: cfg.label,
+              type: cfg.type,
+              ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+              ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+            },
+            mensagens: ultimasMensagens,
+          },
+          { registry: deps.registry, log: runLog },
+        );
+        if (leitura.resultado === 'respondeu') {
+          validacao = { respondeu: true, valor: leitura.valor };
+        } else if (leitura.resultado === 'nao_respondeu') {
+          validacao = { respondeu: false };
+        }
+        // `indefinido` → sem validação; o classificador puro decide abaixo.
+      }
+      const r = await processarInboundDoFluxo(pool, {
+        organizationId: tenantId,
+        estado: atendimento,
+        texto: currentInboundText,
+        messageId: input.inboundMessageId,
+        ...(validacao !== undefined ? { validacao } : {}),
+      });
+      atendimento = r.estado;
+      if (r.concluiu) {
+        finalizacaoDoFluxo = r.finalizacao ?? atendimento.checklist.fim.config.ao_finalizar;
+      }
+    } catch (err) {
+      runLog.warn('não consegui processar o inbound do fluxo de atendimento', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
+  }
+
+  const fluxoAtendimento = atendimento;
+  const valoresDoFluxo =
+    fluxoAtendimento === null ? null : new Set(Object.keys(fluxoAtendimento.valores));
 
   // Índice da memória durável do lead (F3-05) — headlines dentro do orçamento fixo,
   // injetado no SUFIXO da abertura (não invalida o prefixo cacheável F2-17). Montado
