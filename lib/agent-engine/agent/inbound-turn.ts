@@ -186,6 +186,7 @@ import {
 } from '@/lib/followup/atendimento';
 import type { EndFinish } from '@/lib/followup/graph-schema';
 import {
+  ehAcenoOuSilencio,
   perguntaSaiuNosTextos,
   textoDaPergunta,
   valorBateComTipo,
@@ -2624,6 +2625,20 @@ async function executarTurnoDoAgente(
             error: {
               code: 'valor_incompativel',
               message: `O valor enviado não responde ao campo "${campoNode.config.key}" (tipo ${campoNode.config.type}). Se o cliente NÃO respondeu, não chame flow_collect.`,
+            },
+          };
+        }
+        // Aceno/silêncio NUNCA é resposta — vale para TODO tipo, inclusive `text`.
+        // Medido no teste ao vivo: o modelo gravou "ok" em `troca_estado` e
+        // "beleza" em `troca_documentacao`. Isso é dado errado no cadastro, e o
+        // certo é a tentativa contar (o motor já faz) e a pergunta seguir.
+        if (ehAcenoOuSilencio(String(bruto ?? valor))) {
+          return {
+            ok: false,
+            error: {
+              code: 'aceno_nao_e_resposta',
+              message:
+                'O cliente não respondeu à pergunta (foi só um "ok"/emoji). NÃO registre; siga a conversa.',
             },
           };
         }
