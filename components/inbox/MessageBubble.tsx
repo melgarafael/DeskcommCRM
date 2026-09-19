@@ -153,6 +153,11 @@ export function MessageBubble({
         </button>
       )}
       <div
+        // Identidade, não aparência. O e2e de citação contava bolhas por
+        // `[class*='rounded-2xl']`, e qualquer componente novo com a mesma
+        // classe utilitária entrava na conta — foi assim que o painel flutuante
+        // fez a spec achar que havia mensagem onde não havia (issue #1318).
+        data-testid="message-bubble"
         className={cn(
           "max-w-[75%] text-sm",
           isBareSticker

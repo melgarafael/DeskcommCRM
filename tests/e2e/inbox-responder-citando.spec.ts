@@ -1,7 +1,11 @@
+import { randomInt, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { createClient } from "@supabase/supabase-js";
 import { test, expect, type Page } from "@playwright/test";
+
+import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
 /**
  * RESPONDER "EM CIMA" DE UMA MENSAGEM — pela tela, como o atendente faz.
@@ -52,35 +56,137 @@ async function login(page: Page, email: string): Promise<void> {
 }
 
 /**
- * Abre o inbox e entra numa conversa que TENHA mensagens.
+ * ─── POR QUE ESTE ARQUIVO SEMEIA O PRÓPRIO DADO (issue #1318) ───────────────
  *
- * Devolve `false` quando o ambiente não tem nenhuma — e o caso é pulado em vez
- * de falhar. Um teste que exige dado semeado por outra spec quebra por ordem de
- * execução, não por defeito, e ensina a ignorar o vermelho.
+ * Os dois casos abaixo saíam como **skip** no CI, e verde por skip é o pior
+ * estado que existe: a lista de checks fica toda em ordem e a cobertura é
+ * zero. O helper antigo perguntava ao ambiente "existe alguma conversa com
+ * mensagens?" e pulava quando não existia — e o ambiente do CI nunca semeou
+ * nenhuma, então a feature de responder citando não era medida por ninguém.
+ *
+ * Pior: a pergunta era feita por APARÊNCIA (`[class*='rounded-2xl']`), então o
+ * painel flutuante, que fica no DOM mesmo fechado, respondia "sim" por meses —
+ * o caso não pulava, morria em 30s no hover de um elemento escondido. Tirar o
+ * painel (#963) não consertou o vermelho: trocou o disfarce dele por silêncio.
+ *
+ * Agora o dado é DESTE arquivo: duas conversas com mensagens de entrada, na
+ * organização do próprio usuário de teste, criadas no `beforeAll` e apagadas no
+ * `afterAll`. Se a semeadura falhar, os casos FALHAM — trocar "skip" por "verde
+ * que não mediu nada" seria a mesma doença com outro nome.
+ *
+ * E a bolha passa a ser achada por `data-testid="message-bubble"`: identidade,
+ * não aparência. Enquanto o seletor fosse uma classe utilitária, qualquer
+ * componente novo com ela voltava a mentir.
  */
-async function abrirConversaComMensagens(page: Page): Promise<boolean> {
-  await page.goto("/app/inbox?filter=all");
-  const bolhas = page.locator("[class*='rounded-2xl']");
-  const primeira = page.locator("li, [role='listitem']").first();
-  if (await primeira.count()) await primeira.click();
-  await expect(bolhas.first())
-    .toBeVisible({ timeout: 8000 })
-    .catch(() => undefined);
-  return (await bolhas.count()) > 0;
+
+const credenciais = credenciaisSupabaseDeTeste();
+const db = createClient(credenciais.url, credenciais.serviceRole, {
+  auth: { persistSession: false },
+});
+
+const SUFIXO = randomUUID().slice(0, 8);
+/** As duas conversas semeadas: a primeira é onde se cita, a segunda é a troca. */
+const conversas: string[] = [];
+const contatos: string[] = [];
+let canal = "";
+let orgId = "";
+
+async function insere(tabela: string, valores: Record<string, unknown>): Promise<string> {
+  const { data, error } = await db.from(tabela).insert(valores).select("id").single();
+  if (error) throw new Error(`${tabela}: ${error.message}`);
+  return (data as { id: string }).id;
 }
+
+/** Uma conversa com uma mensagem de entrada — o que a citação precisa existir. */
+async function conversaComMensagem(nome: string, texto: string): Promise<string> {
+  const contato = await insere("contacts", {
+    organization_id: orgId,
+    name: nome,
+    phone_number: `+5511${randomInt(100000000, 1000000000)}`,
+  });
+  const conversa = await insere("conversations", {
+    organization_id: orgId,
+    contact_id: contato,
+    channel_session_id: canal,
+    status: "open",
+    last_message_at: new Date().toISOString(),
+  });
+  await insere("messages", {
+    organization_id: orgId,
+    contact_id: contato,
+    conversation_id: conversa,
+    channel_session_id: canal,
+    direction: "inbound",
+    type: "text",
+    status: "received",
+    body: texto,
+    sent_at: new Date().toISOString(),
+    external_id: `citacao-${SUFIXO}-${randomUUID()}`,
+  });
+  contatos.push(contato);
+  conversas.push(conversa);
+  return conversa;
+}
+
+/**
+ * Abre UMA conversa pelo id — não "a primeira da lista".
+ *
+ * `/app/inbox/<id>` redireciona para `/app/inbox?id=<id>`; esperar a URL final
+ * é o que torna determinístico. Depender da ordem da lista faria este arquivo
+ * medir a conversa que outra spec semeou primeiro.
+ */
+async function abrirConversa(page: Page, conversaId: string): Promise<void> {
+  await page.goto(`/app/inbox/${conversaId}`);
+  await page.waitForURL(new RegExp(`/app/inbox\\?id=${conversaId}`), { timeout: 60_000 });
+  await expect(
+    bolhas(page).first(),
+    "a conversa semeada abriu sem nenhuma bolha de mensagem — a semeadura falhou",
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+/** A bolha por IDENTIDADE (`data-testid`), nunca por classe de aparência. */
+const bolhas = (page: Page) => page.getByTestId("message-bubble");
+
+test.beforeAll(async () => {
+  // A organização é a do próprio usuário de teste: conversa semeada noutra org
+  // não apareceria para ele, e o caso falharia por RLS parecendo defeito de tela.
+  const { data, error } = await db
+    .from("user_organizations")
+    .select("organization_id")
+    .eq("user_id", creds.users.agent!.id)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) throw new Error(`organização do agente: ${error?.message ?? "não achei"}`);
+  orgId = (data as { organization_id: string }).organization_id;
+
+  canal = await insere("channel_sessions", {
+    organization_id: orgId,
+    waha_session_name: `citacao-${SUFIXO}`,
+    display_name: `Canal citação ${SUFIXO}`,
+    status: "WORKING",
+    webhook_secret_encrypted: "\\x00",
+  });
+  await conversaComMensagem(`Cliente citação A ${SUFIXO}`, `Bom dia, queria saber do orçamento ${SUFIXO}`);
+  await conversaComMensagem(`Cliente citação B ${SUFIXO}`, `Olá, é sobre outro assunto ${SUFIXO}`);
+});
+
+test.afterAll(async () => {
+  if (conversas.length) await db.from("conversations").delete().in("id", conversas);
+  if (contatos.length) await db.from("contacts").delete().in("id", contatos);
+  if (canal) await db.from("channel_sessions").delete().eq("id", canal);
+});
 
 test.describe("responder citando", () => {
   test("o botão de responder revela a faixa, e o × a desfaz", async ({ page }) => {
     await login(page, creds.users.agent!.email);
-    const temMensagens = await abrirConversaComMensagens(page);
-    test.skip(!temMensagens, "ambiente sem conversa com mensagens — nada a citar");
+    await abrirConversa(page, conversas[0]!);
 
     const responder = page.getByRole("button", { name: /Responder a esta mensagem/i }).first();
 
     // O botão vive em `opacity-0` até o hover. `toBeVisible` do Playwright
     // considera opacidade 0 como visível, então o hover é o que prova de
     // verdade que ele é alcançável — e o clique, que é clicável.
-    await page.locator("[class*='rounded-2xl']").first().hover();
+    await bolhas(page).first().hover();
     await expect(responder).toBeVisible();
     await responder.click();
 
@@ -100,17 +206,17 @@ test.describe("responder citando", () => {
     // Sem isto a resposta sairia citando a mensagem de outro cliente — o pior
     // desfecho possível desta feature, e invisível até acontecer com alguém.
     await login(page, creds.users.agent!.email);
-    const temMensagens = await abrirConversaComMensagens(page);
-    test.skip(!temMensagens, "ambiente sem conversa com mensagens");
+    await abrirConversa(page, conversas[0]!);
 
-    await page.locator("[class*='rounded-2xl']").first().hover();
+    await bolhas(page).first().hover();
     const responder = page.getByRole("button", { name: /Responder a esta mensagem/i }).first();
     await responder.click();
     await expect(page.getByRole("button", { name: /Cancelar resposta/i })).toBeVisible();
 
-    // Volta para a lista e entra em OUTRA conversa.
-    await page.goto("/app/inbox?filter=all");
-    await page.waitForTimeout(1200);
+    // Entra em OUTRA conversa semeada — pelo id, não pela lista: "a segunda da
+    // lista" depende de quem semeou por último e faria este caso medir outra
+    // coisa em cada rodada.
+    await abrirConversa(page, conversas[1]!);
 
     await expect(
       page.getByRole("button", { name: /Cancelar resposta/i }),
