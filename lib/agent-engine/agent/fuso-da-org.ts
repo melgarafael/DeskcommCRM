@@ -11,12 +11,13 @@
  *   - `organizations.timezone` é o fuso que a PESSOA escolheu, no wizard de
  *     boas-vindas (`app/actions/onboarding/acceptWelcome.ts`) e em
  *     Configurações › Empresa (`app/actions/settings/updateTenant.ts`).
- *   - `channel_knobs.timezone` é knob ANTI-BAN por canal, e NADA no repo o
- *     semeia a partir da org: o PUT de `/api/v1/ai/pacing` grava só o que vem
- *     no body e trata linha ausente como `null`, que cai em
- *     `PACING_DEFAULTS.timezone`. Numa clínica de Manaus que nunca abriu o
- *     painel anti-ban, ele é o literal de São Paulo — uma hora de erro, calada,
- *     em toda consulta marcada.
+ *   - `channel_knobs.timezone` é knob ANTI-BAN por canal: o PUT de
+ *     `/api/v1/ai/pacing` grava só o que vem no body, e a coluna fica `null`
+ *     em quem nunca abriu o painel. Nulo, a JANELA cai no fuso da organização
+ *     (`fusoDaJanela`, em `pacing/store.ts`); preenchido, segue o número — e
+ *     ler esse valor aqui faria uma escolha anti-ban mudar o relógio do
+ *     agente. Até a janela ganhar essa escada, o nulo caía no literal de São
+ *     Paulo: numa clínica de Manaus, uma hora de erro, calada.
  *
  * Ler o fuso do pacing seria de graça (o turno já o carrega) e é exatamente por
  * isso que a armadilha existe.

@@ -31,6 +31,19 @@ export const dynamic = "force-dynamic";
 const KNOB_COLUMNS =
   "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, allow_sunday, timezone, warmup_daily_caps, number_activated_at";
 
+/**
+ * `organizations.timezone`, para a tela mostrar o fuso em que o motor avalia a
+ * janela de quem não escolheu um no número (`fusoDaJanela`). Falha vira `null`
+ * e a tela cai no padrão — é exibição, não pode derrubar a ficha.
+ */
+async function lerFusoDaOrganizacao(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+): Promise<string | null> {
+  const { data } = await admin.from("organizations").select("timezone").eq("id", orgId).maybeSingle();
+  return (data as { timezone?: string | null } | null)?.timezone ?? null;
+}
+
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "channel_knobs" });
@@ -39,7 +52,7 @@ export async function GET(): Promise<Response> {
   const { org } = authz;
 
   const admin = createAdminClient();
-  const [{ data: sessions, error: sErr }, { data: knobs, error: kErr }] = await Promise.all([
+  const [{ data: sessions, error: sErr }, { data: knobs, error: kErr }, fusoDaOrg] = await Promise.all([
     admin
       .from("channel_sessions")
       .select("id, waha_session_name, display_name, phone_number, status, daily_message_limit")
@@ -54,6 +67,7 @@ export async function GET(): Promise<Response> {
       .from("channel_knobs")
       .select(`channel_session_id, ${KNOB_COLUMNS}`)
       .eq("organization_id", org.orgId),
+    lerFusoDaOrganizacao(admin, org.orgId),
   ]);
   if (sErr || kErr) {
     return fail("internal_error", t("Falha ao carregar conexões/knobs."), 500, { requestId });
@@ -64,7 +78,7 @@ export async function GET(): Promise<Response> {
   );
   const items = (sessions ?? []).map((s) => ({
     channel_session: s,
-    ...knobsView(byuSession.get(s.id) ?? null),
+    ...knobsView(byuSession.get(s.id) ?? null, new Date(), fusoDaOrg),
   }));
   return ok({ items }, { requestId });
 }
@@ -212,7 +226,14 @@ export async function PUT(req: NextRequest): Promise<Response> {
     .eq("channel_session_id", channel_session_id)
     .maybeSingle();
   return ok(
-    { channel_session_id, ...knobsView((savedRow as unknown as ChannelKnobsRow) ?? null) },
+    {
+      channel_session_id,
+      ...knobsView(
+        (savedRow as unknown as ChannelKnobsRow) ?? null,
+        new Date(),
+        await lerFusoDaOrganizacao(admin, org.orgId),
+      ),
+    },
     { requestId },
   );
 }

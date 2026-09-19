@@ -34,7 +34,7 @@ import {
   janelaDeEnvioAberta,
   proximaAberturaDaJanela,
 } from "@/lib/agent-engine/pacing/engine";
-import { parseWarmupCaps } from "@/lib/agent-engine/pacing/store";
+import { fusoDaJanela, parseWarmupCaps } from "@/lib/agent-engine/pacing/store";
 import { logger } from "@/lib/logger";
 
 interface LinhaDeKnobs {
@@ -49,23 +49,28 @@ interface LinhaDeKnobs {
 
 /**
  * Os knobs em vigor para este número. Sem linha em `channel_knobs` — o caso de
- * quem nunca abriu a tela — devolve os defaults do pacing, que já são
- * 7h–22h em `America/Sao_Paulo`: o comportamento pretendido desde sempre, agora
- * no fuso certo.
+ * quem nunca abriu a tela — devolve os defaults do pacing (7h–22h) no fuso da
+ * ORGANIZAÇÃO: a mesma escada de `fusoDaJanela` que o motor usa.
  */
 export async function knobsDoCanal(
   admin: SupabaseClient,
   organizationId: string,
   channelSessionId: string,
 ): Promise<PacingKnobs> {
-  const { data, error } = await admin
-    .from("channel_knobs")
-    .select(
-      "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, allow_sunday, timezone, warmup_daily_caps",
-    )
-    .eq("organization_id", organizationId)
-    .eq("channel_session_id", channelSessionId)
-    .maybeSingle();
+  const [{ data, error }, { data: org }] = await Promise.all([
+    admin
+      .from("channel_knobs")
+      .select(
+        "throttle_ms, jitter_max_ms, window_start_hour, window_end_hour, allow_sunday, timezone, warmup_daily_caps",
+      )
+      .eq("organization_id", organizationId)
+      .eq("channel_session_id", channelSessionId)
+      .maybeSingle(),
+    // Falha aqui vira `null`, e `fusoDaJanela` cai no padrão: o fuso é
+    // refinamento, e não pode calar o envio.
+    admin.from("organizations").select("timezone").eq("id", organizationId).maybeSingle(),
+  ]);
+  const fusoDaOrg = (org as { timezone?: string | null } | null)?.timezone;
 
   // Falha ABERTA na ação (a automação segue com os defaults) e nomeada no log:
   // uma leitura que falha não pode calar o envio, mas também não pode sumir.
@@ -75,10 +80,10 @@ export async function knobsDoCanal(
       channelSessionId,
       causa: error.message,
     });
-    return { ...PACING_DEFAULTS };
+    return { ...PACING_DEFAULTS, timezone: fusoDaJanela(null, fusoDaOrg) };
   }
   const linha = data as LinhaDeKnobs | null;
-  if (!linha) return { ...PACING_DEFAULTS };
+  if (!linha) return { ...PACING_DEFAULTS, timezone: fusoDaJanela(null, fusoDaOrg) };
 
   const caps = linha.warmup_daily_caps === null ? null : parseWarmupCaps(linha.warmup_daily_caps);
   return {
@@ -87,7 +92,7 @@ export async function knobsDoCanal(
     windowStartHour: linha.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
     windowEndHour: linha.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
     allowSunday: linha.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-    timezone: linha.timezone ?? PACING_DEFAULTS.timezone,
+    timezone: fusoDaJanela(linha.timezone, fusoDaOrg),
     warmupDailyCaps: caps ?? PACING_DEFAULTS.warmupDailyCaps,
   };
 }

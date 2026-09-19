@@ -13,7 +13,7 @@ import {
   type PacingKnobs,
 } from "@/lib/agent-engine/pacing/defaults";
 import { warmupCapFor } from "@/lib/agent-engine/pacing/engine";
-import { parseWarmupCaps } from "@/lib/agent-engine/pacing/store";
+import { fusoDaJanela, parseWarmupCaps } from "@/lib/agent-engine/pacing/store";
 
 function isValidTimezone(tz: string): boolean {
   try {
@@ -179,15 +179,20 @@ export function windowIsValid(startHour: number, endHour: number): boolean {
   return startHour < endHour;
 }
 
-/** Knobs efetivos para exibição: linha (se houver) sobre os defaults do engine. */
-export function effectiveKnobs(row: ChannelKnobsRow | null): PacingKnobs {
+/**
+ * Knobs efetivos para exibição: linha (se houver) sobre os defaults do engine.
+ * `fusoDaOrg` entra para a tela mostrar o fuso em que o motor de fato avalia a
+ * janela (`fusoDaJanela`) — sem ele, "Usar o padrão" anunciava São Paulo a
+ * uma empresa de Lisboa.
+ */
+export function effectiveKnobs(row: ChannelKnobsRow | null, fusoDaOrg?: string | null): PacingKnobs {
   return {
     throttleMs: row?.throttle_ms ?? PACING_DEFAULTS.throttleMs,
     jitterMaxMs: row?.jitter_max_ms ?? PACING_DEFAULTS.jitterMaxMs,
     windowStartHour: row?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
     windowEndHour: row?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
     allowSunday: row?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-    timezone: row?.timezone ?? PACING_DEFAULTS.timezone,
+    timezone: fusoDaJanela(row?.timezone, fusoDaOrg),
     warmupDailyCaps: parseWarmupCaps(row?.warmup_daily_caps) ?? PACING_DEFAULTS.warmupDailyCaps,
   };
 }
@@ -218,8 +223,12 @@ export function idadeEmDias(row: ChannelKnobsRow | null, agora: Date = new Date(
  * era o teto por IDADE. Agora o número que decide aparece ao lado do que o
  * decide.
  */
-export function knobsView(row: ChannelKnobsRow | null, agora: Date = new Date()) {
-  const efetivo = effectiveKnobs(row);
+export function knobsView(
+  row: ChannelKnobsRow | null,
+  agora: Date = new Date(),
+  fusoDaOrg?: string | null,
+) {
+  const efetivo = effectiveKnobs(row, fusoDaOrg);
   const dias = idadeEmDias(row, agora);
   return {
     effective: efetivo,

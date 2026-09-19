@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
+import { fusoDaJanela } from "@/lib/agent-engine/pacing/store";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -71,12 +72,16 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // Knobs do número (coluna NULL = default conservador do engine) — a UI usa o
   // contexto pra dizer QUAL janela segurou o envio, não a genérica.
-  const { data: knobs } = await supabase
-    .from("channel_knobs")
-    .select("window_start_hour, window_end_hour, allow_sunday, timezone")
-    .eq("organization_id", activeOrg.orgId)
-    .eq("channel_session_id", conv.channel_session_id)
-    .maybeSingle();
+  const [{ data: knobs }, { data: org }] = await Promise.all([
+    supabase
+      .from("channel_knobs")
+      .select("window_start_hour, window_end_hour, allow_sunday, timezone")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("channel_session_id", conv.channel_session_id)
+      .maybeSingle(),
+    // Sem fuso no número, o motor avalia a janela no da organização.
+    supabase.from("organizations").select("timezone").eq("id", activeOrg.orgId).maybeSingle(),
+  ]);
 
   return ok(
     {
@@ -85,7 +90,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
         window_start_hour: knobs?.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
         window_end_hour: knobs?.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
         allow_sunday: knobs?.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-        timezone: knobs?.timezone ?? PACING_DEFAULTS.timezone,
+        timezone: fusoDaJanela(knobs?.timezone, (org as { timezone?: string | null } | null)?.timezone),
       },
     },
     { requestId },

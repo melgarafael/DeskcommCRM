@@ -5,6 +5,8 @@
  * sentToday (contado desde a meia-noite LOCAL do tenant). Quem grava no ledger
  * é a cadeia de envio (F2-13) via `recordSend` — este módulo é o seam.
  */
+import { fusoValido } from '@/lib/tempo/fusos';
+
 import type { Logger } from '../obs/logger';
 import type { Queryable } from '../queue/queue';
 import { PACING_DEFAULTS, type PacingKnobs, type WarmupStep } from './defaults';
@@ -18,7 +20,34 @@ interface ChannelKnobsRow {
   allow_sunday: boolean | null;
   timezone: string | null;
   warmup_daily_caps: unknown; // jsonb — shape validado em parseWarmupCaps (nunca confiado)
-  number_activated_at: Date;
+  /** Nulo quando o número não tem linha em channel_knobs (o `left join` da leitura). */
+  number_activated_at: Date | null;
+  /** `organizations.timezone` — o fuso da janela de quem não escolheu um no número. */
+  org_timezone?: string | null;
+}
+
+/**
+ * O fuso em que a janela de envio é avaliada: o do NÚMERO, se alguém o escolheu
+ * em Conexões › Proteção de envio; senão o da ORGANIZAÇÃO; senão o padrão.
+ *
+ * O degrau do meio faltava. Sem linha em `channel_knobs` — o caso de quem nunca
+ * abriu aquela tela — a janela caía direto no literal de `PACING_DEFAULTS`,
+ * `America/Sao_Paulo`, qualquer que fosse o fuso da empresa. Numa organização
+ * em `Europe/Lisbon` a janela 7h–22h virava 11h–02h de Lisboa, e a resposta do
+ * agente a quem escreveu às 9h esperava até as 11h. É o mesmo defeito que
+ * `agent/fuso-da-org.ts` descreve para o relógio do turno, do lado da janela.
+ *
+ * O fuso da organização não é validado por escritor nenhum (ver o cabeçalho de
+ * `fuso-da-org.ts`), e o `Intl` LANÇA num fuso inválido: por isso ele passa por
+ * `fusoValido` e degrada para o padrão, em vez de derrubar o envio.
+ */
+export function fusoDaJanela(
+  doCanal: string | null | undefined,
+  daOrganizacao: string | null | undefined,
+): string {
+  if (doCanal) return doCanal;
+  const tz = daOrganizacao?.trim() ?? '';
+  return tz !== '' && fusoValido(tz) ? tz : PACING_DEFAULTS.timezone;
 }
 
 /**
@@ -59,11 +88,16 @@ export async function loadChannelKnobs(
   channelSessionId: string,
   logger?: Logger,
 ): Promise<ChannelPacingConfig> {
+  // Parte da ORGANIZAÇÃO, e não do número: sem linha em channel_knobs a janela
+  // ainda precisa do fuso da empresa (`fusoDaJanela`). Uma ida ao banco só.
   const { rows } = await db.query<ChannelKnobsRow>(
-    `select throttle_ms, jitter_max_ms, window_start_hour, window_end_hour,
-            allow_sunday, timezone, warmup_daily_caps, number_activated_at
-     from channel_knobs
-     where organization_id = $1 and channel_session_id = $2`,
+    `select k.throttle_ms, k.jitter_max_ms, k.window_start_hour, k.window_end_hour,
+            k.allow_sunday, k.timezone, k.warmup_daily_caps, k.number_activated_at,
+            o.timezone as org_timezone
+     from organizations o
+     left join channel_knobs k
+       on k.organization_id = o.id and k.channel_session_id = $2
+     where o.id = $1`,
     [tenantId, channelSessionId],
   );
   const row = rows[0];
@@ -91,7 +125,7 @@ export async function loadChannelKnobs(
       windowStartHour: row.window_start_hour ?? PACING_DEFAULTS.windowStartHour,
       windowEndHour: row.window_end_hour ?? PACING_DEFAULTS.windowEndHour,
       allowSunday: row.allow_sunday ?? PACING_DEFAULTS.allowSunday,
-      timezone: row.timezone ?? PACING_DEFAULTS.timezone,
+      timezone: fusoDaJanela(row.timezone, row.org_timezone),
       warmupDailyCaps,
     },
     numberActivatedAt: row.number_activated_at,
