@@ -148,6 +148,17 @@ describe('separarTextoApresentacao', () => {
     expect(final).toBe('Qual te interessou?');
   });
 
+  it('NÃO remove uma frase de abertura que menciona motos (uma linha)', () => {
+    const texto = [
+      'Tenho a YS Fazer 250 e a CB 300 F Twister para você:',
+      'XMax 250 2023',
+      'Qual te interessou?',
+    ].join('\n\n');
+    const { introducao, final } = separarTextoApresentacao(texto, catalogo);
+    expect(introducao).toBe('Tenho a YS Fazer 250 e a CB 300 F Twister para você:');
+    expect(final).toBe('Qual te interessou?');
+  });
+
   it('remove bloco que é só o nome da moto', () => {
     const texto = [
       'Tenho estas opções:',

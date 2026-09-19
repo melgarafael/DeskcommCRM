@@ -207,14 +207,15 @@ function ehBlocoDeMoto(paragrafo: string, catalogo: readonly MotoDoCatalogo[]): 
     });
   };
 
-  // LISTA (uma moto por linha: "Nome Ano - R$ preço") ou bloco de UMA moto:
-  // se TODAS as linhas citam moto conhecida, o parágrafo é dado, não conversa.
-  if (linhas.length >= 1 && linhas.every(citaMoto)) return true;
+  // LISTA (uma moto por linha: "Nome Ano - R$ preço"): só com 2+ linhas e TODAS
+  // citando moto. Uma FRASE de abertura que menciona motos ("Tenho a X e a Y:")
+  // é UMA linha e NÃO pode ser confundida com lista — era isso que apagava a
+  // mensagem de abertura (medido 2026-09-19).
+  if (linhas.length >= 2 && linhas.every(citaMoto)) return true;
 
-  // Parágrafo curto que é apenas o nome de uma moto (com/sem ano).
-  if (linhas.length <= 2) {
-    const semEspaco = chaveSemEspaco(paragrafo);
-    if (semEspaco === '') return false;
+  // Parágrafo que é APENAS o nome de uma moto (com/sem ano), sem frase em volta.
+  const semEspaco = chaveSemEspaco(paragrafo);
+  if (semEspaco !== '' && linhas.length <= 2) {
     return catalogo.some((m) => {
       const nome = chaveSemEspaco(m.nome);
       return (
