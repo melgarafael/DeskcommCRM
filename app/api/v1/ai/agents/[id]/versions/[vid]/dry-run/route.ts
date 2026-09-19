@@ -44,46 +44,12 @@ import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { createLogger } from "@/lib/agent-engine/obs/logger";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Ctx = { params: Promise<{ id: string; vid: string }> };
-
-/**
- * Fecha a linha do run — e RECLAMA se não conseguir.
- *
- * O INSERT desta rota sempre checou o erro; os dois UPDATEs não checavam
- * nenhum, e foi por isso que um status fora do CHECK pôde ficar dois releases
- * no código sem ninguém ver. Falhar aqui não derruba o teste (o resultado já
- * está pronto e vai para a tela de qualquer jeito), mas tem que deixar rastro:
- * um update de fechamento que não fecha é exatamente o defeito que se quer
- * enxergar.
- */
-async function atualizarRun(
-  admin: ReturnType<typeof createAdminClient>,
-  organizationId: string,
-  runId: string,
-  requestId: string,
-  campos: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await admin
-    .from("ai_agent_runs")
-    .update(campos)
-    .eq("organization_id", organizationId)
-    .eq("id", runId);
-  if (error) {
-    logger.error("[ai.test] não foi possível fechar a linha do teste", {
-      request_id: requestId,
-      run_id: runId,
-      organization_id: organizationId,
-      status_pretendido: campos.status,
-      error: error.message,
-    });
-  }
-}
 
 export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
