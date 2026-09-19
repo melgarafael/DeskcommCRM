@@ -47,7 +47,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const admin = createAdminClient();
   const { data: pointer, error: fetchErr } = await admin
     .from("followup_flow_pointers")
-    .select("id, draft_graph, trigger_config")
+    .select("id, draft_graph, trigger_config, surface")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -138,12 +138,58 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   const graph = pointer.draft_graph as unknown as FlowGraph;
-  const validation = validateFlowForPublish(graph);
+  const surface = (pointer as { surface?: string }).surface as
+    | 'followup'
+    | 'atendimento'
+    | 'crm_automation'
+    | undefined;
+  const validation = validateFlowForPublish(graph, surface);
   if (!validation.ok) {
     return fail("validation_failed", t("Fluxo reprovado na validação de publish."), 422, {
       requestId,
       details: { errors: validation.errors },
     });
+  }
+
+  // SKILL REFERENCIADA QUE NÃO EXISTE = NÓ MORTO. O runtime descarta a skill
+  // ausente em silêncio (`skills.find` → undefined) — o fluxo publica, roda, e
+  // aquele passo simplesmente não acontece. A recusa é aqui, com o humano na
+  // tela. Vale para o nó `skill` e para `end.config.ao_finalizar.tipo='skill'`.
+  if (surface === "atendimento") {
+    const nomesDeSkill = new Set<string>();
+    for (const n of graph.nodes) {
+      if (n.type === "skill") nomesDeSkill.add(n.config.skill_name);
+      if (n.type === "end" && n.config.ao_finalizar?.tipo === "skill") {
+        nomesDeSkill.add(n.config.ao_finalizar.skill_name);
+      }
+    }
+    if (nomesDeSkill.size > 0) {
+      const { data: instaladas, error: skillErr } = await admin
+        .from("skill_pointers")
+        .select("name")
+        .eq("organization_id", activeOrg.orgId)
+        .in("name", [...nomesDeSkill]);
+      if (skillErr) return fail("internal_error", skillErr.message, 500, { requestId });
+      const disponiveis = new Set((instaladas ?? []).map((s) => s.name as string));
+      const faltando = [...nomesDeSkill].filter((n) => !disponiveis.has(n));
+      if (faltando.length > 0) {
+        return fail(
+          "skill_not_installed",
+          t("Este fluxo chama skill(s) que não estão instaladas nesta organização."),
+          422,
+          {
+            requestId,
+            details: {
+              errors: faltando.map((nome) => ({
+                node_id: null,
+                code: "skill_not_installed",
+                message: `A skill «${nome}» não está instalada — instale em IA › Skills ou troque o passo antes de publicar.`,
+              })),
+            },
+          },
+        );
+      }
+    }
   }
 
   const result = await publishFollowupFlowVersion(admin, {

@@ -20,6 +20,7 @@ export const PUBLISH_ERROR_CODES = [
   'long_wait_needs_template',
   'cycle_without_wait',
   'max_steps_exceeded',
+  'node_fora_do_atendimento',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -268,9 +269,48 @@ function cobrirRamos(
   }
 }
 
-export function validateFlowForPublish(graph: FlowGraph): PublishValidationResult {
+export function validateFlowForPublish(
+  graph: FlowGraph,
+  /**
+   * Superfície do pointer. `'atendimento'` restringe o grafo ao vocabulário que
+   * o motor de atendimento executa (`trigger`/`collect`/`skill`/`end` com
+   * arestas `always`). Sem isto, um fluxo `atendimento` com `wait`/`condition`
+   * era PUBLICADO com sucesso e o motor o recusava em silêncio
+   * (`mapearChecklist` devolve erro → `carregarEstadoDeAtendimento`/`iniciar`
+   * devolvem `null`) — um fluxo "vivo" que nunca enrolla. Achado da auditoria
+   * de 2026-09-19; o próprio `node-handlers.ts` já dizia que o publish é quem
+   * recorta isso.
+   */
+  surface?: 'followup' | 'atendimento' | 'crm_automation',
+): PublishValidationResult {
   const { nodes, edges } = graph;
   const errors: PublishValidationError[] = [];
+
+  // Fluxo de ATENDIMENTO: o motor só percorre trigger → collect/skill → end, por
+  // arestas `always`, sem ramificação. Barrar no publish dá erro ACIONÁVEL no
+  // editor, em vez do silêncio do runtime.
+  if (surface === 'atendimento') {
+    const PERMITIDOS_ATENDIMENTO = new Set(['trigger', 'collect', 'skill', 'end']);
+    for (const n of [...nodes].sort(byId)) {
+      if (!PERMITIDOS_ATENDIMENTO.has(n.type)) {
+        errors.push({
+          node_id: n.id,
+          code: 'node_fora_do_atendimento',
+          message: `O nó "${n.id}" (${n.type}) não é do fluxo de atendimento — use Pergunta, Skill e Fim.`,
+        });
+      }
+    }
+    for (const e of edges) {
+      if (e.condition.type !== 'always') {
+        errors.push({
+          node_id: e.source,
+          code: 'node_fora_do_atendimento',
+          message: `No fluxo de atendimento as etapas são ligadas direto (sem condição) — a aresta "${e.id}" tem condição.`,
+        });
+      }
+    }
+  }
+
   const nodesById = new Map(nodes.map((n) => [n.id, n]));
   const outEdges = buildOutEdges(edges);
   const inEdges = buildOutEdges(edges.map((e) => ({ ...e, source: e.target, target: e.source })));

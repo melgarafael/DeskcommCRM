@@ -24,6 +24,8 @@
  */
 import type pg from "pg";
 
+import { logger } from "@/lib/logger";
+
 import {
   flowGraphSchema,
   type EndFinish,
@@ -253,7 +255,7 @@ export function renderBlocoDeAtendimento(
     "Este fluxo foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO; encaixe no máximo UMA pergunta por resposta, quando houver abertura.",
     "Se o cliente já informar um dado pendente — mesmo sem você ter perguntado —, registre com flow_collect: não pergunte o que ele já disse.",
     "Guarde o valor NORMALIZADO (o sentido do que ele disse), em `valor`: sim/não vira true/false; número só com dígitos; data em AAAA-MM-DD; escolha vira uma das opções; texto livre é o sentido resumido. Mande o texto cru do cliente em `bruto`.",
-    "Se o cliente corrigir um dado já preenchido, chame flow_collect de novo com o novo valor (quando o campo permitir correção).",
+    "Se o cliente corrigir um dado já preenchido, o sistema registra a correção — não chame flow_collect para isso; apenas reconheça a mudança na conversa.",
     `Pergunta sem resposta pode ser repetida no máximo ${estado.maxTentativas} vez(es); depois disso, pare de perguntá-la.`,
     "Perguntas pendentes:",
     ...linhas,
@@ -317,6 +319,11 @@ export async function carregarEstadoDeAtendimento(
       where e.organization_id = $1
         and e.contact_id = $2
         and p.surface = 'atendimento'
+        -- Fluxo DESATIVADO para de guiar na hora: sem este filtro, desativar um
+        -- fluxo na tela não interrompia a execução em voo, e o bot seguia
+        -- perguntando (achado da auditoria). O enrollment órfão não roda e, se o
+        -- fluxo voltar a 'active', retoma.
+        and p.status = 'active'
         and e.status in ('active', 'waiting_reply')
       order by e.updated_at desc
       limit 1`,
@@ -710,8 +717,11 @@ export async function processarInboundDoFluxo(
   }
 
   // O VALIDADOR decide, quando disponível: `respondeu` com valor → grava (abaixo);
-  // `nao_respondeu` → trata como desvio do roteiro (não conta tentativa); sem
-  // validação → cai no classificador determinístico de sempre.
+  // `nao_respondeu` → aplica o classificador puro para decidir ENTRE desvio
+  // (não conta tentativa) e aceno/silêncio (CONTA tentativa). Sem esta distinção,
+  // "ok"/emoji repetidos viravam `fora_do_fluxo` e o teto de tentativas nunca
+  // disparava — `max_tentativas_pergunta` ficava inerte (achado da auditoria,
+  // 2026-09-19). Sem validação → classificador puro direto.
   const leitura =
     args.validacao === undefined
       ? classificarInbound(comoCampoParaCaptura(primeiro), args.texto)
@@ -724,7 +734,7 @@ export async function processarInboundDoFluxo(
               bruto: args.texto ?? "",
             },
           }
-        : { resultado: "desviou" as const };
+        : classificarInbound(comoCampoParaCaptura(primeiro), args.texto);
 
   if (leitura.resultado === "desviou") {
     await registrarEventoDoFluxo(db, {
@@ -909,8 +919,12 @@ export async function finalizarFluxoDeAtendimento(
         estado.enrollment.id,
       ],
     );
-  } catch {
+  } catch (err) {
     // best-effort: sem o job, a nota determinística já cobre a continuação.
+    logger.warn("[fluxo] enfileirar flow_summary falhou — o turno segue", {
+      enrollment_id: estado.enrollment.id,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
   }
 
   let proximoEnrollmentId: string | null = null;
@@ -934,8 +948,15 @@ export async function finalizarFluxoDeAtendimento(
           payload: { proximo_fluxo: fim.fluxo, proximo_enrollment_id: proximoEnrollmentId },
         }).catch(() => {});
       }
-    } catch {
+    } catch (err) {
       // best-effort: sem encadear, o fluxo apenas termina (não trava o turno).
+      // Loga porque o desfecho silencioso é o defeito: o fluxo termina, o
+      // próximo não começa, e nada na tela explica (auditoria 2026-09-19).
+      logger.warn("[fluxo] encadear o próximo fluxo falhou — o fluxo só terminou", {
+        enrollment_id: estado.enrollment.id,
+        proximo_fluxo: fim.fluxo,
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
     }
   }
 

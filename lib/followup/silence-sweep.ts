@@ -167,8 +167,12 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
     async loadActiveSilencePointers() {
       const { data, error } = await admin
         .from("followup_flow_pointers")
-        .select("id, organization_id, active_version_id, trigger_config")
+        .select("id, organization_id, active_version_id, trigger_config, surface")
         .eq("status", "active")
+        // O sweep é do FOLLOW-UP: um fluxo de ATENDIMENTO não é retomado por
+        // silêncio (é conduzido pelo turno) e não pode ser enrollado pelo relógio
+        // — mesma classe do defeito da 0242.
+        .neq("surface", "atendimento")
         .not("active_version_id", "is", null);
       if (error) throw new Error(error.message);
 

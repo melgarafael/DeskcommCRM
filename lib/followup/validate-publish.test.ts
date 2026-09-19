@@ -637,3 +637,33 @@ describe('validateFlowForPublish — cobertura por ramo num repeat', () => {
     expect(result.errors.some((e) => e.branch_id === 'body')).toBe(true);
   });
 });
+
+describe('validateFlowForPublish — recorte por superfície (atendimento)', () => {
+  const collect = (id: string, key: string): FlowNode =>
+    ({ id, type: 'collect', label: key, position: { x: 0, y: 0 }, config: { key, label: key, type: 'text', required: true, permite_correcao: true } }) as FlowNode;
+  const end = (id: string): FlowNode =>
+    ({ id, type: 'end', label: 'Fim', position: { x: 0, y: 0 }, config: { outcome: 'converted' } }) as FlowNode;
+  const trigger = (id: string): FlowNode =>
+    ({ id, type: 'trigger', label: 'Início', position: { x: 0, y: 0 }, config: {} }) as FlowNode;
+  const aresta = (id: string, source: string, target: string): FlowEdge =>
+    ({ id, source, target, priority: 0, condition: { type: 'always' } }) as FlowEdge;
+
+  it('aceita trigger → collect → end em surface=atendimento', () => {
+    const g = { nodes: [trigger('t'), collect('c1', 'cidade'), end('e')], edges: [aresta('a','t','c1'), aresta('b','c1','e')] } as FlowGraph;
+    expect(validateFlowForPublish(g, 'atendimento').ok).toBe(true);
+  });
+
+  it('RECUSA nó fora do vocabulário do atendimento (wait) — era fluxo morto com cara de vivo', () => {
+    const wait = { id: 'w', type: 'wait', label: 'Espera', position: { x: 0, y: 0 }, config: { mode: 'fixed', duration_ms: 600000 } } as FlowNode;
+    const g = { nodes: [trigger('t'), wait, end('e')], edges: [aresta('a','t','w'), aresta('b','w','e')] } as FlowGraph;
+    const r = validateFlowForPublish(g, 'atendimento');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.some((e) => e.code === 'node_fora_do_atendimento')).toBe(true);
+  });
+
+  it('sem surface, o mesmo grafo passa (não muda o follow-up)', () => {
+    const wait = { id: 'w', type: 'wait', label: 'Espera', position: { x: 0, y: 0 }, config: { mode: 'fixed', duration_ms: 600000 } } as FlowNode;
+    const g = { nodes: [trigger('t'), wait, end('e')], edges: [aresta('a','t','w'), aresta('b','w','e')] } as FlowGraph;
+    expect(validateFlowForPublish(g).ok).toBe(true);
+  });
+});
