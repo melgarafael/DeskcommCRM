@@ -164,6 +164,56 @@ export interface FotoComLegenda {
 }
 
 /**
+ * Plano a partir dos NOMES que o modelo informou no campo interno `motos` do
+ * `send_message` (o pedido do dono, 2026-09-19: a abertura NÃO cita as motos —
+ * os nomes viajam nesse campo e o sistema manda a foto/legenda de cada uma).
+ * Casa tolerante (acento/caixa/espaço) e mantém a ORDEM pedida; nome sem foto
+ * no catálogo é ignorado (não inventa). Sem nome reconhecido ⇒ [] (o motor cai
+ * no matching por texto do `body`, comportamento anterior).
+ */
+/**
+ * Escolhe o plano de fotos do turno: nomes explícitos do campo `motos` primeiro
+ * (a abertura não cita as motos); se o modelo não informou nomes OU nenhum casou
+ * no catálogo, cai no matching por texto do `body` (compatibilidade). Nunca os
+ * dois (evita foto repetida) e nunca inventa: sem catálogo ⇒ [].
+ */
+export function planoDeFotos(
+  nomes: readonly string[] | undefined,
+  texto: string,
+  catalogo: readonly MotoDoCatalogo[],
+): FotoComLegenda[] {
+  if (nomes !== undefined && nomes.length > 0) {
+    const porNome = fotosComLegendaDeNomes(nomes, catalogo);
+    if (porNome.length > 0) return porNome;
+  }
+  return fotosComLegenda(texto, catalogo);
+}
+
+export function fotosComLegendaDeNomes(
+  nomes: readonly string[],
+  catalogo: readonly MotoDoCatalogo[],
+  limite = MAX_FOTOS_AUTO,
+): FotoComLegenda[] {
+  const plano: FotoComLegenda[] = [];
+  const urlsVistas = new Set<string>();
+  for (const nomePedido of nomes) {
+    const alvo = chaveSemEspaco(nomePedido);
+    if (alvo.length < MIN_NOME_CASAVEL) continue;
+    // Prefere igualdade; senão, o catálogo que CONTÉM o nome pedido.
+    const moto =
+      catalogo.find((m) => chaveSemEspaco(m.nome) === alvo) ??
+      catalogo.find((m) => chaveSemEspaco(m.nome).includes(alvo) || alvo.includes(chaveSemEspaco(m.nome)));
+    if (moto === undefined) continue;
+    const foto = moto.fotos[0];
+    if (foto === undefined || urlsVistas.has(foto)) continue;
+    urlsVistas.add(foto);
+    plano.push({ url: foto, legenda: legendaDaMoto(moto) });
+    if (plano.length >= limite) break;
+  }
+  return plano;
+}
+
+/**
  * As fotos a enviar (1ª de cada moto citada) JÁ com a legenda da própria moto,
  * até `MAX_FOTOS_AUTO`. Texto sem moto conhecida ⇒ [] (o motor não inventa foto
  * de conversa genérica).

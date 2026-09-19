@@ -154,7 +154,7 @@ import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
 import {
   extrairMotosDoResultado,
-  fotosComLegenda,
+  planoDeFotos,
   separarTextoApresentacao,
   type MotoDoCatalogo,
 } from './fotos-do-catalogo';
@@ -265,7 +265,9 @@ export const AGENT_TOOL_DEFS = {
   send_message: {
     description:
       'Envia mensagem(ns) de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado. ' +
-      'Para FOTO(S), preencha media_urls com uma ou mais URLs e use body como LEGENDA — a legenda vai SÓ na primeira foto; as demais saem sem legenda.',
+      'Para FOTO(S), preencha media_urls com uma ou mais URLs e use body como LEGENDA — a legenda vai SÓ na primeira foto; as demais saem sem legenda. ' +
+      'APRESENTAR MOTOS DO CATÁLOGO: escreva em `body` a abertura SEM citar/ listar as motos + a pergunta final, e preencha `motos` com os nomes exatos. ' +
+      'O sistema envia a foto de CADA moto com a legenda dela (nome/ano, cor, km, preço) entre o seu texto de abertura e a sua pergunta final.',
     inputSchema: z.object({
       body: z
         .string()
@@ -282,6 +284,15 @@ export const AGENT_TOOL_DEFS = {
         .string()
         .optional()
         .describe('URL de UMA imagem (compatibilidade). Prefira media_urls para várias.'),
+      motos: z
+        .array(z.string().min(1))
+        .max(10)
+        .optional()
+        .describe(
+          'USO INTERNO (não aparece para o cliente): os NOMES exatos das motos do catálogo que você ' +
+            'está oferecendo nesta mensagem. O sistema envia a FOTO de cada uma com a legenda dela ' +
+            '(nome/ano, cor, km, preço) DEPOIS do seu texto. NÃO cite nem liste as motos no `body`.',
+        ),
     }),
   },
   update_lead_state: {
@@ -3187,7 +3198,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body, media_url, media_urls }) => {
+      execute: async ({ body, media_url, media_urls, motos }) => {
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
@@ -3223,7 +3234,7 @@ async function executarTurnoDoAgente(
         // moto e esquecem a foto; foto ao ofertar a moto é promessa do PRODUTO.
         // Se o modelo JÁ mandou fotos, a decisão dele vence e nada é mudado.
         const planoAutomatico =
-          fotosDeclaradas.length === 0 ? fotosComLegenda(body, catalogoDoTurno) : [];
+          fotosDeclaradas.length === 0 ? planoDeFotos(motos, body, catalogoDoTurno) : [];
         const fotos = fotosDeclaradas;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
