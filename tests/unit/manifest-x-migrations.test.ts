@@ -104,6 +104,17 @@ function nomesDeMigration(): string[] {
     .map((f) => (/^\d{14}_/.test(f) ? f.slice(15) : f));
 }
 
+
+/** Só linhas do MANIFEST com timestamp de 14 dígitos — as históricas `*(wave N)*` ficam de fora. */
+function timestampsDoManifest(): { timestamp: string; nome: string }[] {
+  const LINHA_TS = /^\| `(\d{14})` \| `(\d{4,5}_[a-z0-9_]+)`/;
+  return readFileSync(MANIFEST, "utf8")
+    .split("\n")
+    .map((l) => LINHA_TS.exec(l))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ timestamp: m[1]!, nome: m[2]! }));
+}
+
 describe("MANIFEST × arquivos de migration", () => {
   it("o MANIFEST não vem vazio (guarda de vacuidade)", () => {
     // Sem isto, um MANIFEST ilegível (formato mudou, arquivo movido) faria as
@@ -171,6 +182,33 @@ describe("MANIFEST × arquivos de migration", () => {
     expect(
       duplicados,
       "duas migrations com o mesmo timestamp — a ordem de aplicação vira desempate do runner",
+    ).toEqual([]);
+  });
+
+
+  // Timestamp na coluna 1 é a PK de schema_migrations no CLI. Casar só por
+  // NNNN_slug (acima) deixa a coluna mentir em silêncio — issue #1264: MANIFEST
+  // dizia 20260911160000 e o arquivo era 20260911170000_0238_…. Linhas
+  // históricas sem timestamp (`*(wave N)*`) ficam de fora de propósito.
+  it("quando a linha do MANIFEST tem timestamp, ele bate com o do arquivo", () => {
+    const porNome = new Map(
+      arquivosComTimestamp().map(({ timestamp, arquivo }) => {
+        const nome = arquivo.replace(/\.sql$/, "").replace(/^\d{14}_/, "");
+        return [nome, timestamp] as const;
+      }),
+    );
+    const divergentes = timestampsDoManifest()
+      .filter(({ nome, timestamp }) => {
+        const noArquivo = porNome.get(nome);
+        return noArquivo !== undefined && noArquivo !== timestamp;
+      })
+      .map(
+        ({ nome, timestamp }) =>
+          `${nome}: MANIFEST=${timestamp} arquivo=${porNome.get(nome)}`,
+      );
+    expect(
+      divergentes,
+      "timestamp do MANIFEST diverge do nome do arquivo — a coluna que o CLI usa como PK mentiu",
     ).toEqual([]);
   });
 
