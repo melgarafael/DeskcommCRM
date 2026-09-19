@@ -605,6 +605,13 @@ export async function processarInboundDoFluxo(
     const ehCorrecao = alvo !== null && alvo.config.key !== pendenteAgora?.config.key;
     if (ehCorrecao) {
       if (!alvo.config.permite_correcao) return { estado, concluiu: false };
+      const valorNovo = args.validacao.valor ?? "";
+      // Correção NO-OP: o valor não mudou. Sem este corte, um turno atrasado que
+      // reprocessa uma mensagem antiga sobrescrevia o campo com o MESMO texto da
+      // pergunta anterior (medido ao vivo, 2026-09-18: `troca_ano` virou
+      // "é uma CG 125"). Não é correção, é ruído.
+      const valorAtual = estado.valores[alvo.config.key] ?? "";
+      if (valorNovo === "" || valorNovo === valorAtual) return { estado, concluiu: false };
       try {
         await registrarDadoDoFluxo(db, {
           organizationId: args.organizationId,
@@ -612,9 +619,12 @@ export async function processarInboundDoFluxo(
           flowPointerId: estado.enrollment.pointer_id,
           enrollmentId: estado.enrollment.id,
           fieldKey: alvo.config.key,
-          value: args.texto ?? "",
+          // O texto cru de uma correção é o próprio valor normalizado: a mensagem
+          // que a trouxe pode ser de outro turno, e gravar `args.texto` colocava a
+          // pergunta anterior no cadastro.
+          value: valorNovo,
           valueJson: {
-            normalizado: args.validacao.valor ?? "",
+            normalizado: valorNovo,
             tipo: alvo.config.type,
             deterministico: true,
             correcao: true,
@@ -632,13 +642,13 @@ export async function processarInboundDoFluxo(
         kind: "resposta",
         messageId: args.messageId ?? null,
         fieldKey: alvo.config.key,
-        payload: { normalizado: args.validacao.valor ?? "", correcao: true, deterministico: true },
+        payload: { normalizado: valorNovo, correcao: true, deterministico: true },
       }).catch(() => {});
       const valores = new Set(Object.keys(estado.valores));
       valores.add(alvo.config.key);
       const comValor = {
         ...estado,
-        valores: { ...estado.valores, [alvo.config.key]: args.validacao.valor ?? "" },
+        valores: { ...estado.valores, [alvo.config.key]: valorNovo },
       };
       const atualizado = recomputarSituacao(comValor, valores);
       if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
