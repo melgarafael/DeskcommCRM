@@ -152,6 +152,7 @@ import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
+import { extrairMotosDoResultado, fotosParaAnexar, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -2488,6 +2489,12 @@ async function executarTurnoDoAgente(
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
   let seq = 0;
+  // Motos que `crm_query_external_data` devolveu NESTE turno (nome + fotos).
+  // O modelo lite lista a moto em texto mas esquece de mandar a foto (medido:
+  // gpt-4o-mini, gemini-2.5/3.1-flash-lite). O motor usa este índice para anexar
+  // a 1ª foto de cada moto citada quando o `send_message` sai sem mídia — ver
+  // `fotos-do-catalogo.ts` e o gancho no `send_message.execute`.
+  const catalogoDoTurno: MotoDoCatalogo[] = [];
   // Teto de mensagens físicas por turno (F2-15b) — `seq` JÁ é a contagem certa: ele só
   // avança quando o envio de fato sai pro canal (send_message + send_template, bolhas
   // incluídas), nunca em veto de gate. Checar `seq` antes de tentar o próximo envio
@@ -3194,7 +3201,7 @@ async function executarTurnoDoAgente(
         }
         // C-007/C-015: aceita UMA (media_url) ou VÁRIAS (media_urls) imagens; cada
         // valor pode trazer várias URLs separadas por "|". Dedup + só http(s).
-        const fotos = [
+        const fotosDeclaradas = [
           ...new Set(
             [...(media_urls ?? []), ...(media_url ? [media_url] : [])]
               .flatMap((u) => String(u).split('|'))
@@ -3202,6 +3209,16 @@ async function executarTurnoDoAgente(
               .filter((s) => /^https?:\/\//i.test(s)),
           ),
         ];
+        // FOTO QUE O MODELO ESQUECEU: se ele NÃO mandou mídia mas citou no texto
+        // motos que `crm_query_external_data` devolveu neste turno, o motor anexa
+        // a 1ª foto de cada uma (a legenda é o próprio `body`, na 1ª). Medido ao
+        // vivo: modelos lite listam a moto e esquecem a foto — e foto ao ofertar
+        // a moto é promessa do PRODUTO, não do humor do modelo. Se ele JÁ mandou
+        // fotos, a decisão dele vence e nada é acrescentado.
+        const fotos =
+          fotosDeclaradas.length > 0
+            ? fotosDeclaradas
+            : fotosParaAnexar(body, catalogoDoTurno);
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -4032,6 +4049,20 @@ async function executarTurnoDoAgente(
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
                   agendaToolCalledThisTurn = true;
                   return executeOriginal(...args);
+                }) as typeof mcpTool.execute,
+              };
+            } else if (name === 'crm_query_external_data' && typeof mcpTool.execute === 'function') {
+              // Guarda o catálogo devolvido para o motor anexar foto depois (ver
+              // `fotos-do-catalogo.ts`). Só LEITURA: envolve o retorno, não muda nada.
+              const executeOriginal = mcpTool.execute.bind(mcpTool);
+              rawTools[name] = {
+                ...mcpTool,
+                execute: (async (...args: Parameters<typeof executeOriginal>) => {
+                  const resultado = await executeOriginal(...args);
+                  for (const moto of extrairMotosDoResultado(resultado)) {
+                    if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
+                  }
+                  return resultado;
                 }) as typeof mcpTool.execute,
               };
             } else {
