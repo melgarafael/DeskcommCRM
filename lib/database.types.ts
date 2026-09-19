@@ -124,6 +124,592 @@ export type Database = {
         };
         Relationships: [];
       }
+      financial_accounts: {
+        Row: {
+          created_at: string
+          currency: string
+          id: string
+          is_active: boolean
+          kind: string
+          name: string
+          opening_balance_cents: number
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name: string
+          opening_balance_cents?: number
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name?: string
+          opening_balance_cents?: number
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_accounts_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_methods: {
+        Row: {
+          account_id: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_methods_account_id_fkey"
+            columns: ["account_id"]
+            referencedRelation: "financial_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_methods_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      account_plans: {
+        Row: {
+          created_at: string
+          direction: string
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          direction: string
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          direction?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_plans_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales: {
+        Row: {
+          appointment_id: string | null
+          attendant_user_id: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          contact_id: string | null
+          created_at: string
+          created_by_user_id: string | null
+          currency: string
+          discount_cents: number
+          finalized_at: string | null
+          id: string
+          notes: string | null
+          number: number
+          organization_id: string
+          payment_method_id: string | null
+          reverse_reason: string | null
+          reversed_at: string | null
+          status: string
+          total_cents: number
+          updated_at: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          attendant_user_id?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          currency?: string
+          discount_cents?: number
+          finalized_at?: string | null
+          id?: string
+          notes?: string | null
+          number: number
+          organization_id: string
+          payment_method_id?: string | null
+          reverse_reason?: string | null
+          reversed_at?: string | null
+          status?: string
+          total_cents?: number
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          attendant_user_id?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          currency?: string
+          discount_cents?: number
+          finalized_at?: string | null
+          id?: string
+          notes?: string | null
+          number?: number
+          organization_id?: string
+          payment_method_id?: string | null
+          reverse_reason?: string | null
+          reversed_at?: string | null
+          status?: string
+          total_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_appointment_id_fkey"
+            columns: ["appointment_id"]
+            referencedRelation: "calendar_appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_contact_id_fkey"
+            columns: ["contact_id"]
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_payment_method_id_fkey"
+            columns: ["payment_method_id"]
+            referencedRelation: "payment_methods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sale_items: {
+        Row: {
+          attendant_user_id: string | null
+          commission_percent: number
+          created_at: string
+          description: string
+          discount_cents: number
+          event_type_id: string | null
+          id: string
+          organization_id: string
+          quantity: number
+          sale_id: string
+          total_cents: number
+          unit_price_cents: number
+        }
+        Insert: {
+          attendant_user_id?: string | null
+          commission_percent?: number
+          created_at?: string
+          description: string
+          discount_cents?: number
+          event_type_id?: string | null
+          id?: string
+          organization_id: string
+          quantity?: number
+          sale_id: string
+          total_cents: number
+          unit_price_cents: number
+        }
+        Update: {
+          attendant_user_id?: string | null
+          commission_percent?: number
+          created_at?: string
+          description?: string
+          discount_cents?: number
+          event_type_id?: string | null
+          id?: string
+          organization_id?: string
+          quantity?: number
+          sale_id?: string
+          total_cents?: number
+          unit_price_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sale_items_event_type_id_fkey"
+            columns: ["event_type_id"]
+            referencedRelation: "calendar_event_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_items_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_items_sale_id_fkey"
+            columns: ["sale_id"]
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commission_rules: {
+        Row: {
+          attendant_user_id: string | null
+          created_at: string
+          event_type_id: string | null
+          id: string
+          organization_id: string
+          percent: number
+          name: string
+          is_active: boolean
+        }
+        Insert: {
+          attendant_user_id?: string | null
+          created_at?: string
+          event_type_id?: string | null
+          id?: string
+          organization_id: string
+          percent: number
+          name?: string
+          is_active?: boolean
+        }
+        Update: {
+          attendant_user_id?: string | null
+          created_at?: string
+          event_type_id?: string | null
+          id?: string
+          organization_id?: string
+          percent?: number
+          name?: string
+          is_active?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commission_rules_event_type_id_fkey"
+            columns: ["event_type_id"]
+            referencedRelation: "calendar_event_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commission_rules_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commissions: {
+        Row: {
+          amount_cents: number
+          attendant_user_id: string
+          created_at: string
+          id: string
+          organization_id: string
+          paid_at: string | null
+          percent: number
+          reversed_at: string | null
+          sale_item_id: string
+          status: string
+        }
+        Insert: {
+          amount_cents: number
+          attendant_user_id: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          paid_at?: string | null
+          percent: number
+          reversed_at?: string | null
+          sale_item_id: string
+          status?: string
+        }
+        Update: {
+          amount_cents?: number
+          attendant_user_id?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          paid_at?: string | null
+          percent?: number
+          reversed_at?: string | null
+          sale_item_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commissions_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commissions_sale_item_id_fkey"
+            columns: ["sale_item_id"]
+            referencedRelation: "sale_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_entries: {
+        Row: {
+          account_id: string
+          account_plan_id: string | null
+          amount_cents: number
+          created_at: string
+          created_by_user_id: string | null
+          currency: string
+          description: string | null
+          direction: string
+          entry_date: string
+          id: string
+          organization_id: string
+          origin: string
+          paid_at: string | null
+          reverses_entry_id: string | null
+          recurring_entry_id: string | null
+          sale_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          account_plan_id?: string | null
+          amount_cents: number
+          created_at?: string
+          created_by_user_id?: string | null
+          currency?: string
+          description?: string | null
+          direction: string
+          entry_date?: string
+          id?: string
+          organization_id: string
+          origin?: string
+          paid_at?: string | null
+          reverses_entry_id?: string | null
+          recurring_entry_id?: string | null
+          sale_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          account_plan_id?: string | null
+          amount_cents?: number
+          created_at?: string
+          created_by_user_id?: string | null
+          currency?: string
+          description?: string | null
+          direction?: string
+          entry_date?: string
+          id?: string
+          organization_id?: string
+          origin?: string
+          paid_at?: string | null
+          reverses_entry_id?: string | null
+          recurring_entry_id?: string | null
+          sale_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_entries_account_id_fkey"
+            columns: ["account_id"]
+            referencedRelation: "financial_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_account_plan_id_fkey"
+            columns: ["account_plan_id"]
+            referencedRelation: "account_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_sale_id_fkey"
+            columns: ["sale_id"]
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_ledger: {
+        Row: {
+          contact_id: string
+          created_at: string
+          created_by_user_id: string | null
+          id: string
+          idempotency_key: string | null
+          organization_id: string
+          points: number
+          reason: string
+          sale_id: string | null
+          sale_item_id: string | null
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          idempotency_key?: string | null
+          organization_id: string
+          points: number
+          reason: string
+          sale_id?: string | null
+          sale_item_id?: string | null
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          idempotency_key?: string | null
+          organization_id?: string
+          points?: number
+          reason?: string
+          sale_id?: string | null
+          sale_item_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_ledger_contact_id_fkey"
+            columns: ["contact_id"]
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_ledger_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_ledger_sale_id_fkey"
+            columns: ["sale_id"]
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recurring_entries: {
+        Row: {
+          account_id: string
+          account_plan_id: string | null
+          amount_cents: number
+          created_at: string
+          created_by_user_id: string | null
+          currency: string
+          day_of_month: number
+          direction: string
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          account_plan_id?: string | null
+          amount_cents: number
+          created_at?: string
+          created_by_user_id?: string | null
+          currency?: string
+          day_of_month: number
+          direction: string
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          account_plan_id?: string | null
+          amount_cents?: number
+          created_at?: string
+          created_by_user_id?: string | null
+          currency?: string
+          day_of_month?: number
+          direction?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_entries_account_id_fkey"
+            columns: ["account_id"]
+            referencedRelation: "financial_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_entries_organization_id_fkey"
+            columns: ["organization_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       channel_routing_policies: {
         Row: {
           channel_session_id: string
@@ -2725,6 +3311,7 @@ export type Database = {
           reminder_enabled: boolean
           reminder_minutes_before: number
           reminder_extra_offsets_minutes: number[]
+          default_price_cents: number | null
           reminder_template_name: string | null
           requires_confirmation: boolean
           slot_interval_minutes: number | null
@@ -2753,6 +3340,7 @@ export type Database = {
           reminder_enabled?: boolean
           reminder_minutes_before?: number
           reminder_extra_offsets_minutes?: number[]
+          default_price_cents?: number | null
           reminder_template_name?: string | null
           requires_confirmation?: boolean
           slot_interval_minutes?: number | null
@@ -2781,6 +3369,7 @@ export type Database = {
           reminder_enabled?: boolean
           reminder_minutes_before?: number
           reminder_extra_offsets_minutes?: number[]
+          default_price_cents?: number | null
           reminder_template_name?: string | null
           requires_confirmation?: boolean
           slot_interval_minutes?: number | null

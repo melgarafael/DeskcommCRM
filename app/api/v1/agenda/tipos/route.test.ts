@@ -459,6 +459,7 @@ describe("GET /api/v1/agenda/tipos", () => {
           lembreteDegrausExtras: [],
           lembreteMensagem: "Oi {{nome}}, te espero {{dia}} às {{hora}}.",
           lembreteMensagens: {},
+          precoPadraoCents: null,
         },
       ],
     });

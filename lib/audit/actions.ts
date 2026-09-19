@@ -518,6 +518,27 @@ export const AUDIT_ACTIONS = [
   // seria "sumiu". Só a rodada que expirou alguma coisa; varredura vazia não é
   // mutação.
   "agenda.pendente_expirado",
+  // O catálogo financeiro. Audita porque define PARA ONDE o dinheiro vai: a
+  // forma de pagamento escolhe a conta em que a entrada cai, e mudar isso em
+  // silêncio faria um mês inteiro cair na conta errada sem ninguém saber quem
+  // mexeu.
+  "financeiro.catalogo_criado",
+  "financeiro.catalogo_alterado",
+  "financeiro.catalogo_inativado",
+  "comanda.aberta",
+  "comanda.alterada",
+  "comanda.cancelada",
+  "comanda.item_incluido",
+  "comanda.item_removido",
+  "comanda.finalizada",
+  "comanda.estornada",
+  "financeiro.lancamento_criado",
+  "financeiro.lancamento_pago",
+  "financeiro.lancamento_removido",
+  "fidelidade.ponto_dado",
+  "fidelidade.ponto_resgatado",
+  "financeiro.recorrencia_gerada",
+  "comanda.faturada_em_lote",
   // A rodada de renovação — e ela só audita quando FEZ algo, como manda a regra
   // do cron desta base. Uma linha por rodada com efeito, carregando a contagem:
   // é o que permite responder "quantas agendas precisaram reconectar esta

@@ -247,6 +247,42 @@ export const NAV_CATALOG = [
     // na navegação" — a porta existia, era outra.
   },
   {
+    // O BALCÃO. Fica em CRM, e não em Configurações, porque é uso diário de quem
+    // está com a cliente na frente — a tela irmã, em Configurações › Financeiro,
+    // é onde o negócio se descreve uma vez.
+    //
+    // `viewer` porque conferir o que foi lançado no dia não é privilégio de
+    // quem lança; o que a RLS impede é ele escrever.
+    href: "/app/comandas",
+    label: "Comandas",
+    description: "O que foi feito, por quem, e quanto o cliente paga.",
+    icon: "Receipt",
+    group: "crm",
+    section: "O dia a dia da venda",
+    sidebar: true,
+    minRole: "viewer",
+  },
+  {
+    // O catálogo financeiro: contas, formas de pagamento e plano de contas.
+    //
+    // Fica em "Sua empresa" pelo mesmo motivo dos tipos de agendamento — é onde
+    // o negócio se DESCREVE, não onde o dia acontece. E vem ANTES de qualquer
+    // tela de venda porque a forma de pagamento é quem decide em que conta a
+    // entrada cai quando uma comanda é fechada: sem esta camada, a comanda não
+    // tem onde depositar.
+    href: "/app/settings/tenant/financeiro",
+    label: "Financeiro",
+    description: "Contas, formas de pagamento e como cada lançamento é classificado.",
+    icon: "ChartBar",
+    group: "organizacao",
+    section: "Sua empresa",
+    // Leitura para a organização, escrita para manager+ (é a RLS que decide).
+    // `viewer` aqui e não `manager`: quem só olha precisa conferir para onde o
+    // dinheiro vai, e esconder a tela não esconde o dado — só torna a
+    // conferência impossível.
+    minRole: "viewer",
+  },
+  {
     // Estava enterrado em Configurações e ninguém sabia que existia — o achado
     // que originou esta reorganização. A URL não muda; só o lugar na navegação.
     //
@@ -498,6 +534,22 @@ export const NAV_CATALOG = [
   // Sair do menu não é sair do produto — o hub `/app/analise` é INVENTÁRIO e
   // lista as cinco (`hubSections`), então as duas continuam a um clique, com a
   // frase que explica para que servem. O ⌘K também as acha por nome.
+  {
+    // A terceira ponta do módulo financeiro: Configurações › Financeiro descreve
+    // para onde o dinheiro vai, CRM › Comandas é onde o dia acontece, e aqui se
+    // responde a pergunta do fim do mês.
+    //
+    // Fora do sidebar de propósito: é consulta periódica, não uso diário, e o
+    // hub de Análise é onde ela se encontra sem disputar pixel com o que se abre
+    // toda hora.
+    href: "/app/faturamento",
+    label: "Faturamento",
+    description: "Quanto entrou, de que forma, e quanto cada pessoa tem a receber.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Dinheiro",
+    minRole: "viewer",
+  },
   {
     href: "/app/metrics",
     label: "Desempenho",

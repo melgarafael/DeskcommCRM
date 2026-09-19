@@ -84,6 +84,7 @@ function tipo(over: Partial<TipoDeAtendimento> = {}): TipoDeAtendimento {
     lembreteDegrausExtras: [],
     lembreteMensagem: null,
     lembreteMensagens: {},
+    precoPadraoCents: null,
     ...over,
   };
 }

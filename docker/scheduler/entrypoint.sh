@@ -107,6 +107,10 @@ CRONS="
 30 3 * * *|120|api/v1/cron/kb-conversations-batch
 15 4 * * *|60|api/v1/cron/sync-model-catalog
 40 4 * * *|120|api/v1/cron/data-retention
+# AS RECORRÊNCIAS. Uma vez ao dia é o bastante: o que ela gera é uma conta a
+# pagar, e a diferença entre nascer às 5h ou às 17h não muda nada para quem paga.
+# Barato: uma consulta por instalação, e quem não tem molde nenhum sai na hora.
+50 5 * * *|60|api/v1/cron/recurring-entries
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).
