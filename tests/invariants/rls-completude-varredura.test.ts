@@ -75,6 +75,10 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "prospecting_settings", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
+  { tabela: "prospecting_campaigns", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
+  { tabela: "prospecting_candidates", razao: "tests/invariants/prospecting.test.ts — tabela exclusiva do servidor, ACL e RLS verificadas; FK composta e comandos autenticados cercam a organização." },
+  { tabela: "channel_integrations", razao: "tests/invariants/social-native.test.ts — credencial exclusiva do servidor: SELECT com JWT authenticated recusado para as duas organizações, além de ACL e RLS habilitada." },
   { tabela: "config_aviso_de_caso", razao: "tests/invariants/aviso-de-caso-escrita.test.ts — dois tenants reais por JWT: admin lê só a própria organização, agent e viewer não leem nada, e a escrita direta por authenticated é negada (a única porta é fn_definir_aviso_de_caso, que revalida papel, suporte e MFA)" },
   { tabela: "entregas_de_aviso_de_caso", razao: "tests/invariants/aviso-de-caso-escrita.test.ts — manager lê o histórico da própria organização e zero do vizinho; viewer lê zero; escrita direta por authenticated negada nos três verbos, e apagar a channel_sessions apontada não falha e deixa a configuração desligada" },
   { tabela: "organization_extensions", razao: "tests/invariants/extensoes-declarativas.test.ts — dois tenants com vínculos reais: leitura positiva local/negativa cruzada por JWT, revogação de membership e escrita direta negada" },

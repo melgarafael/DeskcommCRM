@@ -207,7 +207,15 @@ export const AUDIT_ACTIONS = [
   "ai_agent.run_completed",
   "ai_agent.run_failed",
   "channel.connected",
+  "prospecting.changed",
+  // A ABORDAGEM que SAIU (PR #963). Distinta de `prospecting.changed`, que é
+  // configuração: esta é a única linha do produto que fala primeiro com quem
+  // nunca falou com a empresa, e é a resposta a "por que vocês me escreveram?".
+  // Emitida pelo worker quando houve EFEITO (tentativa de envio), nunca em
+  // rodada de cron vazia.
+  "prospecting.approach_sent",
   "channel.pairing_code_requested",
+  "channel.social_configured",
   "channel.ai_access_updated",
   "channel.reconnected",
   // Duas ações distintas de propósito: `deleted` apagou a linha (canal virgem),

@@ -66,6 +66,16 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
   //
   // O detalhe que engana: mandar um template NÃO abre a janela. Só o cliente
   // abre, respondendo. Quem ler o 200 como "enviado" acha que funciona.
+  zernio_social: {
+    freeformOutsideWindow: false,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: 1000,
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: true,
+  },
   zernio: {
     freeformOutsideWindow: false,
     requiresTemplates: true,
@@ -96,6 +106,7 @@ export const DEFAULT_CHANNEL_PROVIDER: ChannelProvider = "waha";
  */
 export const CHANNEL_PROVIDER_WAHA: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
+export const CHANNEL_PROVIDER_SOCIAL: ChannelProvider = "zernio_social";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
@@ -119,6 +130,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   "waha",
   "meta_cloud",
   "zernio",
+  "zernio_social",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**

@@ -14,7 +14,7 @@
 export type ChannelSessionRef =
   | { provider: "waha"; waha_session_name: string }
   | { provider: "meta_cloud"; meta_phone_number_id: string }
-  | { provider: "zernio"; zernio_account_id: string };
+  | { provider: "zernio" | "zernio_social"; zernio_account_id: string };
 
 /**
  * Colunas que um `select` do PostgREST precisa trazer para `resolveSessionRef`
@@ -33,6 +33,7 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     // O `accountId` que o provider devolve ao conectar a WABA. NÃO é o
     // phone_number_id da Meta: quem intermedeia guarda o número por dentro e
     // endereça pelo id dele. Mandar o id da Meta aqui responde 404.
+    case "zernio_social":
     case "zernio":
       return session.zernio_account_id;
   }

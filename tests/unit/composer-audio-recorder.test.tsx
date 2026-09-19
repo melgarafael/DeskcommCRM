@@ -1,12 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const uploadMock = vi.fn(async (_args: { conversationId: string; file: File | Blob; filename?: string }) => ({
-  storage_path: "org/conv/out-a.ogg",
-  media_mime: "audio/ogg",
-  media_size_bytes: 5,
-  kind: "audio" as const,
-}));
+const uploadMock = vi.fn(
+  async (_args: { conversationId: string; file: File | Blob; filename?: string }) => ({
+    storage_path: "org/conv/out-a.ogg",
+    media_mime: "audio/ogg",
+    media_size_bytes: 5,
+    kind: "audio" as const,
+  }),
+);
 const sendMock = vi.fn();
 vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
@@ -53,6 +55,25 @@ describe("AudioRecorder", () => {
         getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: trackStopMock }] })),
       },
     });
+  });
+
+  it("stops a late microphone permission result after unmount without uploading", async () => {
+    let resolve!: (value: MediaStream) => void;
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValue(
+      new Promise<MediaStream>((r) => {
+        resolve = r;
+      }),
+    );
+    const view = render(<AudioRecorder conversationId="conv-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /gravar áudio/i }));
+    view.unmount();
+    await act(async () => {
+      resolve({ getTracks: () => [{ stop: trackStopMock }] } as unknown as MediaStream);
+    });
+    expect(trackStopMock).toHaveBeenCalledOnce();
+    expect(FakeRecorder.instances).toHaveLength(0);
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it("mic inicia gravação e mostra timer + cancelar", async () => {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
+import { ChannelLogo } from "@/components/inbox/ChannelLogo";
 import { Phone, ArrowRight } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -149,6 +150,7 @@ export function ConversationHeader({ conversation }: Props) {
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
+          <ChannelLogo channel={conversation.channel_sessions} size={20} />
           <h2 className="truncate text-sm font-semibold">{displayName}</h2>
           <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
             {t(STATUS_LABEL[status] ?? status)}

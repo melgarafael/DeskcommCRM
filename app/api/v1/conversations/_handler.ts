@@ -92,7 +92,7 @@ const SELECT_COLS = `
   bot_silenced_until, last_handoff_at,
   comando_da_conversa,
   contacts:contact_id (id, display_name, name, phone_number, is_anonymized, tags, is_blocked, avatar_storage_path, force_human),
-  channel_sessions:channel_session_id (phone_number, display_name, provider)
+  channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)
 `;
 
 interface CursorPayload {

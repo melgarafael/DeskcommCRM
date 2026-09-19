@@ -34,6 +34,12 @@ export type Database = {
   }
   public: {
     Tables: {
+      channel_integrations: {
+        Row: { organization_id: string; profile_id: string; credential_encrypted: string; created_at: string; updated_at: string }
+        Insert: { organization_id: string; profile_id: string; credential_encrypted: string; created_at?: string; updated_at?: string }
+        Update: { organization_id?: string; profile_id?: string; credential_encrypted?: string; created_at?: string; updated_at?: string }
+        Relationships: [{ foreignKeyName: "channel_integrations_organization_id_fkey"; columns: ["organization_id"]; isOneToOne: true; referencedRelation: "organizations"; referencedColumns: ["id"] }]
+      }
       ai_reply_drafts: {
         Row: {
           id: string;
@@ -3357,6 +3363,7 @@ export type Database = {
           organization_id: string
           phone_lookup_at: string | null
           phone_number: string | null
+          social_identity: string | null
           source: string
           source_metadata: Json
           tags: string[]
@@ -3397,6 +3404,7 @@ export type Database = {
           organization_id: string
           phone_lookup_at?: string | null
           phone_number?: string | null
+          social_identity?: string | null
           source?: string
           source_metadata?: Json
           tags?: string[]
@@ -3437,6 +3445,7 @@ export type Database = {
           organization_id?: string
           phone_lookup_at?: string | null
           phone_number?: string | null
+          social_identity?: string | null
           source?: string
           source_metadata?: Json
           tags?: string[]
@@ -7118,6 +7127,80 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "promise_table_versions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prospecting_campaigns: {
+        Row: {
+          agent_setup: Json
+          agent_setup_revision: number
+          config: Json | null
+          cost_usd: number | null
+          created_at: string
+          dataset_id: string | null
+          error: string | null
+          id: string
+          name: string
+          next_send_at: string
+          organization_id: string
+          request_id: string
+          result_count: number
+          run_id: string | null
+          search: Json
+          search_status: string
+          skipped_count: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          agent_setup?: Json
+          agent_setup_revision?: number
+          config?: Json | null
+          cost_usd?: number | null
+          created_at?: string
+          dataset_id?: string | null
+          error?: string | null
+          id?: string
+          name: string
+          next_send_at?: string
+          organization_id: string
+          request_id: string
+          result_count?: number
+          run_id?: string | null
+          search: Json
+          search_status?: string
+          skipped_count?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_setup?: Json
+          agent_setup_revision?: number
+          config?: Json | null
+          cost_usd?: number | null
+          created_at?: string
+          dataset_id?: string | null
+          error?: string | null
+          id?: string
+          name?: string
+          next_send_at?: string
+          organization_id?: string
+          request_id?: string
+          result_count?: number
+          run_id?: string | null
+          search?: Json
+          search_status?: string
+          skipped_count?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prospecting_campaigns_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"

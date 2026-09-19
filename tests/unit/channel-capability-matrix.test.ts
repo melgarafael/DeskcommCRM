@@ -17,7 +17,7 @@ import {
   type ProviderDeMensagem,
 } from "@/lib/channels/capabilities";
 
-const PROVIDERS = ["waha", "meta_cloud", "zernio"] as const satisfies readonly ProviderDeMensagem[];
+const PROVIDERS = ["waha", "meta_cloud", "zernio", "zernio_social"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * Esquecer um provider aqui passa a ser erro de COMPILAÇÃO.

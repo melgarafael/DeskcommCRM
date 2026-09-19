@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/auth/AuthProvider";
+import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { estadoDaJanela, formatarDecorrido } from "@/lib/channels/janela";
 import { JanelaFechadaAviso } from "@/components/inbox/JanelaFechadaAviso";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
@@ -320,7 +321,9 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
   );
   const motivoDaJanela =
     janela.tipo === "fechada"
-      ? janela.fechadaHaMs === null
+      ? fonteDeTemplates(selectedConversation?.channel_sessions?.provider) === null
+        ? t("Aguarde uma nova mensagem do cliente para reabrir o atendimento nesta rede.")
+        : janela.fechadaHaMs === null
         ? t("O cliente ainda não escreveu — a janela de 24h nunca abriu. Só um modelo aprovado sai daqui.")
         : `${t("A janela de 24h fechou há")} ${formatarDecorrido(janela.fechadaHaMs)}. ${t("Só um modelo aprovado sai daqui — texto livre é recusado pela plataforma.")}`
       : null;

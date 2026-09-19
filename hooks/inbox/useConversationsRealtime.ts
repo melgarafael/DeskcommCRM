@@ -46,6 +46,7 @@ export interface ChannelSummary {
    * que a doutrina proíbe, e ele mora atrás do seam.
    */
   provider: string | null;
+  social_platform?: string | null;
 }
 
 export type ConversationWithContact = Conversation & {

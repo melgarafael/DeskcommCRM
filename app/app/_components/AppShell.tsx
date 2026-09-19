@@ -7,6 +7,7 @@ import { useSinalDePresenca } from "@/hooks/atendimento/useSinalDePresenca";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
+import { FloatingInbox } from "@/components/inbox/FloatingInbox";
 
 interface AppShellProps {
   sidebarCollapsed: boolean;
@@ -58,8 +59,24 @@ export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellPr
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        {/*
+          `pb-20` RESERVA o lugar do atalho de mensagens, que é `fixed` e não
+          empurra nada: `bottom-4` (16px) + `h-14` (56px) = 72px do rodapé
+          ocupados em TODA tela. Sem a reserva, quem desenha uma ação no rodapé
+          direito a desenha embaixo do atalho, e ela fica inclicável para o
+          usuário — não é hipótese: o botão "Excluir nó" do painel de fluxos
+          ficou 30s sem receber clique, e o log nomeia o culpado
+          ("<aside aria-label='Mensagens rápidas'> subtree intercepts pointer
+          events"). Consertar só aquela tela deixaria a próxima cair igual, por
+          isso a reserva mora aqui, uma vez, para todas.
+
+          A conta está sob gate: `inbox-flutuante-nao-cobre-a-acao` extrai
+          `bottom-N`/`h-N` do atalho e `pb-N` daqui e exige reserva ≥ ocupação.
+          Aumentar o atalho sem aumentar esta linha reprova.
+        */}
+        <main className="flex-1 overflow-auto p-6 pb-20">{children}</main>
       </div>
+      <FloatingInbox />
     </div>
   );
 }

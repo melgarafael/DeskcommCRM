@@ -1,3 +1,5 @@
+import { ingestSocialInbound, socialPayloadBelongsToSession } from "./social/ingest";
+import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
 /**
  * Entrada de webhook, do lado de dentro do seam.
  *
@@ -70,7 +72,19 @@ export type InboundWebhookOutcome =
  * trabalho — e respondido sem nomear provider do lado de fora.
  */
 export function acceptsInboundWebhook(provider: string): boolean {
-  return provider === CHANNEL_PROVIDER_ZERNIO;
+  return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
+}
+
+/** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
+export function verifyInboundWebhookSignature(provider: string, raw: string, headers: Headers, secret: string | null): boolean {
+  return acceptsInboundWebhook(provider) && !!secret && secret.length >= MIN_SECRET_LEN &&
+    verifyZernioSignature(raw, headers.get("x-zernio-signature"), secret);
+}
+
+export async function inboundPayloadBelongsToSession(admin: SupabaseClient, input: InboundWebhookInput): Promise<boolean> {
+  return input.session.provider !== CHANNEL_PROVIDER_SOCIAL || socialPayloadBelongsToSession(
+    admin, input.session.organization_id, input.session.id, input.rawBody,
+  );
 }
 
 export async function handleInboundWebhook(
@@ -80,6 +94,7 @@ export async function handleInboundWebhook(
   const provider = input.session.provider as ChannelProvider;
 
   switch (provider) {
+    case CHANNEL_PROVIDER_SOCIAL:
     case CHANNEL_PROVIDER_ZERNIO:
       return zernioInbound(admin, input);
     default:
@@ -129,6 +144,10 @@ async function zernioInbound(
     };
   }
   const payload = leitura.envelope;
+  if (input.session.provider === CHANNEL_PROVIDER_SOCIAL) {
+    const result = await ingestSocialInbound(admin, input.session.organization_id, input.session.id, payload);
+    return { ok: true, body: { ...result } };
+  }
 
   // ─── O que a plataforma decide sozinha ───────────────────────────────────
   //

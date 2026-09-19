@@ -1,5 +1,7 @@
 "use client";
 
+import { LeadEnrichment } from "./LeadEnrichment";
+import type { ProspectEnrichment } from "@/lib/prospecting/schema";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
@@ -468,6 +470,8 @@ export function CRMSidePanel({ conversation }: Props) {
   }, [conversation, contactId, desfechoDraft]);
 
 
+  const [enrichment, setEnrichment] = useState<(ProspectEnrichment & { collected_at: string }) | null>(null);
+  const [enrichmentError, setEnrichmentError] = useState(false);
   const [leads, setLeads] = useState<LeadRow[] | null>(null);
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [activities, setActivities] = useState<ActivityRow[] | null>(null);
@@ -517,6 +521,8 @@ export function CRMSidePanel({ conversation }: Props) {
       try {
         const r = await apiClient.get<{
           data: {
+            enrichment?: (ProspectEnrichment & { collected_at: string }) | null;
+            enrichment_error?: boolean;
             leads: LeadRow[];
             orders: OrderRow[];
             activities: ActivityRow[];
@@ -527,6 +533,8 @@ export function CRMSidePanel({ conversation }: Props) {
         }>(`/api/v1/contacts/${contactId}/crm-summary`);
         if (cancelled) return;
         setSummaryContactId(contactId);
+        setEnrichment(r.data.enrichment ?? null);
+        setEnrichmentError(r.data.enrichment_error ?? false);
         setLeads(r.data.leads);
         setOrders(r.data.orders);
         setActivities(r.data.activities);
@@ -565,7 +573,7 @@ export function CRMSidePanel({ conversation }: Props) {
     // Depender do DADO que muda é mais honesto que um contador de invalidação:
     // `assigned_to_user_id` cobre assumir/transferir/liberar e `bot_silenced_until`
     // cobre pausar e devolver — que são exatamente os quatro gestos que geram linha.
-  }, [contactId, tentativa, conversation?.assigned_to_user_id, conversation?.bot_silenced_until, conversation?.service_revision, conversation?.current_demanda_id]);
+  }, [contactId, contact?.is_anonymized, tentativa, conversation?.assigned_to_user_id, conversation?.bot_silenced_until, conversation?.service_revision, conversation?.current_demanda_id]);
 
   // Recarrega o resumo pelo MESMO caminho do "Tentar de novo": o efeito depende
   // de `tentativa`, então a demanda recém-marcada volta do servidor em vez de
@@ -649,6 +657,13 @@ export function CRMSidePanel({ conversation }: Props) {
           {tagEditorOpen && contactId && <ContactTagsEditor contactId={contactId} orgId={conversation.organization_id} tags={tags} />}
         </Card>
       </section>
+
+      <LeadEnrichment
+        data={summaryContactId === contactId && !erro && !contact?.is_anonymized ? enrichment : null}
+        loading={sectionsLoading}
+        error={erro || (summaryContactId === contactId && enrichmentError)}
+        onRetry={recarregar}
+      />
 
       {contactId && defaultPipeline.data && (
         <NewLeadDialog

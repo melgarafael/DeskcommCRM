@@ -530,6 +530,36 @@ if (!isGroup && !fromMe && message.kind === 'inbound') {
 
 ---
 
+### 4.7 Configuração conversacional e assistente de voz (contrato confirmado no código)
+
+`GET/PATCH /api/v1/prospecting/agents/session` persiste a conversa administrativa
+em `prospecting_campaigns.agent_setup`, com `revision` para rejeitar sobrescritas
+atrasadas (409). Não altera `campaign.config`. `attempt` e `attempt_action`
+preservam a diferença entre preparar um rascunho e publicar, inclusive após
+timeout. `POST /prospecting/agents/prepare` cria um rascunho pausado; o teste usa
+`POST /ai/agents/:id/versions/:vid/test`, pelo sandbox canônico, sem envio a contatos.
+`POST /prospecting/agents` continua sendo a publicação explícita.
+
+`GET /api/v1/ai/agents/:id/voice` retorna estado público e vozes disponíveis.
+`POST` no mesmo recurso aceita `action: credential | configure | test`. Administrador,
+organização autenticada, guarda de suporte e MFA protegem a escrita. A chave usa
+AES-GCM em `ai_provider_credentials`, provider `elevenlabs`, label `Assistentes de voz`;
+não é um provedor de texto no catálogo LLM. `ai_agents.config.voice_assistant`
+guarda apenas configuração e vínculo remoto. Auditoria usa `ai_agent.updated` ou
+`ai_agent.tested`, com módulo/operação, sem chave nem URL assinada.
+
+O agente remoto exige autenticação e não recebe ferramentas de escrita. Antes do
+teste, o servidor confere vínculo, prompt, voz, idioma, abertura, duração e privacidade
+remotos. Áudio não gravado e retenção de transcrição de até sete dias são condições
+verificadas, não apenas texto da interface. O navegador usa o SDK oficial com uma
+URL assinada temporária. Não há ligação automática deste assistente ao transporte
+WhatsApp, a chamadas de clientes ou às ferramentas do CRM.
+
+Erros: `prospecting_agent_session_failed`, `prospecting_agent_prepare_failed`,
+`prospecting_agent_chat_failed`, `prospecting_agent_setup_failed` e
+`voice_assistant_unavailable`; status distingue validação (422), ausência (404),
+conflito/recuperação pendente (409) e indisponibilidade (502/503).
+
 ## 5. Runtime — Worker `agent-dispatcher`
 
 ### 5.1 Cron (Spec 07)

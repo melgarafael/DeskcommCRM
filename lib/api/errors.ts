@@ -13,6 +13,13 @@ export const ApiErrorCodes = {
   validation_failed: "validation_failed", // Zod retornou erros de schema (422 também aceita)
   invalid_cursor: "invalid_cursor",
 
+  // Configuração de agentes: validação/estado ou indisponibilidade do provedor.
+  prospecting_agent_session_failed: "prospecting_agent_session_failed",
+  prospecting_agent_prepare_failed: "prospecting_agent_prepare_failed",
+  prospecting_agent_chat_failed: "prospecting_agent_chat_failed",
+  prospecting_agent_setup_failed: "prospecting_agent_setup_failed",
+  voice_assistant_unavailable: "voice_assistant_unavailable",
+
   // 401 — auth
   unauthorized: "unauthorized", // segredo interno inválido/ausente (rotas host↔app, ex. system/agent)
   unauthenticated: "unauthenticated",

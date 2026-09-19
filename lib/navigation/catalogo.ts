@@ -103,6 +103,27 @@ export const GRUPO_NO_RODAPE: NavGroupId = "organizacao";
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_CATALOG = [
+  {
+    // SEM `sidebar: true`, e a razão não tem nada a ver com a qualidade desta
+    // tela: o menu lateral está no limite medido. Com ela, seriam 20 portas, e
+    // `tests/e2e/navegacao.spec.ts` reprova ("em 900px o menu inteiro tem de
+    // caber sem scroll" · Received: true). O comentário daquela spec já
+    // antecipava o número: "Trocar '17 itens sem hierarquia' por '20 itens que
+    // não cabem' seria recriar o problema em outra forma."
+    //
+    // A porta NÃO sumiu: ela vive no hub do grupo CRM ("Ver tudo em CRM") e no
+    // ⌘K — o mesmo caminho das outras entradas do grupo.
+    // CONDIÇÃO QUE ENCERRA ESTA EXCEÇÃO: quando o menu couber mais uma porta
+    // (ver doc 47), este item volta ao sidebar — é o primeiro da fila, porque
+    // saiu por falta de espaço e não por decisão de produto.
+    href: "/app/prospecting",
+    label: "Prospecção",
+    description: "Busque empresas e conduza abordagens graduais com IA.",
+    icon: "Funnel",
+    group: "crm",
+    minRole: "admin",
+    section: "O dia a dia da venda",
+  },
   // ---- Atendimento — onde o operador passa o dia ----
   {
     href: "/app/inbox",

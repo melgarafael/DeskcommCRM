@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
+import { palavraDeSaida } from "@/lib/prospecting/rodape-de-saida";
 
 /**
  * OS EFEITOS QUE TRANSFORMAM UMA MENSAGEM EM TRABALHO.
@@ -201,6 +202,25 @@ describe("opt-out", () => {
   it("bloqueia o contato quando a mensagem pede para sair", async () => {
     await rodar({ texto: "quero PARAR de receber" });
     expect(ultimoUpdate).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
+  });
+
+  it("a palavra que a abordagem fria PROMETE é a que bloqueia aqui — a volta do laço", async () => {
+    // A ida (a mensagem oferece a saída) mora em
+    // `prospeccao-oferece-saida-e-a-saida-funciona`. Este é o outro lado, e os
+    // dois puxam da MESMA fonte: se alguém trocar a palavra do rodapé por uma
+    // que a ingestão não reconhece, um dos dois arquivos fica vermelho.
+    //
+    // Sem esta ligação, cada metade passava sozinha e a pessoa pedia para sair
+    // sem sair — que é pior que nunca ter prometido, porque ela responde, nada
+    // acontece, e conclui que foi ignorada.
+    for (const locale of ["pt-BR", "es-AR", "en-US"]) {
+      ultimoUpdate = null;
+      await rodar({ texto: palavraDeSaida(locale) });
+      expect(
+        ultimoUpdate,
+        `o rodapé de ${locale} promete "${palavraDeSaida(locale)}" e a ingestão não bloqueou`,
+      ).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
+    }
   });
 
   it("NÃO bloqueia quem só escreveu uma palavra parecida", async () => {

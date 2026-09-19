@@ -69,6 +69,14 @@ const TABELAS_NA_CASCATA = [
   // 0291 — o briefing da passagem: title/body/notes/content e as tentativas.
   // `body` é `not null` e recebe o RÓTULO, não `null`.
   "passagens_de_atendimento",
+  // 0345 — nome, telefone, endereço e `maps_url` do negócio raspado antes de
+  // existir conversa. O passo alcança por vínculo OU POR TELEFONE (variantes do
+  // nono dígito): quando o número já era de um contato conhecido, o candidato
+  // fica com `contact_id` NULO de propósito — lá o vínculo é o freio de mão do
+  // envio —, e só pelo vínculo a pessoa que a empresa JÁ conhecia era a única
+  // que o expurgo não alcançava. Prova de comportamento em
+  // `lgpd-alcanca-prospeccao-de-quem-ja-era-contato.test.ts`.
+  "prospecting_candidates",
   "voice_calls", //        0235 — o telefone de quem falou ao telefone
 ] as const;
 

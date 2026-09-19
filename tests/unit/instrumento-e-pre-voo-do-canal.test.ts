@@ -164,9 +164,14 @@ describe("a rota chama o arquivo nos dois lados", () => {
     expect(abertura, "o arquivo abre depois do processamento").toBeLessThan(processamento);
   });
 
-  it("fecha nos TRÊS desfechos — sucesso, recusa e exceção", () => {
+  it("fecha em TODOS os desfechos — sucesso, recusa, exceção, assinatura inválida e outra conta", () => {
+    // Eram 3. O conserto do arquivamento (#963) passou a abrir a linha ANTES da
+    // conferência de assinatura, o que acrescentou dois desfechos que antes
+    // saíam sem arquivo nenhum: assinatura inválida e evento de outra conta.
+    // A propriedade que este caso quer ficou MAIS satisfeita; o que envelheceu
+    // foi o número guardado aqui.
     const fechamentos = [...ROTA.matchAll(/await fecharArquivoDoWebhook\(/g)];
-    expect(fechamentos.length, "algum desfecho deixa a linha eternamente 'received'").toBe(3);
+    expect(fechamentos.length, "algum desfecho deixa a linha eternamente 'received'").toBe(5);
   });
 });
 

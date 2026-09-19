@@ -28,7 +28,7 @@ import { avisarLeadDoCrm } from "@/lib/ai/handoff/aviso-ao-lead";
 const generation = vi.hoisted(() => ({ run: async () => ({ ok: true as const, texto: "Resposta gerada" }), authorize: vi.fn(async () => {}) }));
 vi.mock("@/lib/agent-engine/agent/abordagem-de-formulario", () => ({ gerarAbordagemDeFormulario: () => generation.run() }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: () => ({}) }));
-vi.mock("@/lib/automation/dados-do-formulario", () => ({ dadosDoFormularioDoContexto: async () => ({ dados: {}, origem: "form", veioDeFormulario: true }) }));
+vi.mock("@/lib/automation/dados-do-formulario", () => ({ dadosDoFormularioDoContexto: async () => ({ dados: {}, origem: "form", origemDaAbordagem: "formulario" }) }));
 vi.mock("@/lib/ai/elegibilidade/autorizacao", () => ({ autorizarContatoParaIA: generation.authorize }));
 const pacing = vi.hoisted(() => ({ run: async () => {} }));
 vi.mock("@/lib/automation/throttle", () => ({ espacarEnvio: () => pacing.run(), checkDailyLimit: vi.fn() }));

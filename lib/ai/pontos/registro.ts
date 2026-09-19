@@ -210,6 +210,16 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "prospecting_agent_setup_chat",
+    rotulo: "Montar agente por conversa",
+    oQueFaz: "Conversa com o administrador e prepara uma proposta de agente para uma campanha. A criação depende da confirmação no resumo.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "lib/prospecting/agent-chat.ts",
+    sintomaDeFalha: "A conversa de configuração mostra um erro e preserva o que foi escrito; nenhum agente é criado.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "draft_suggestion",
     rotulo: "Sugerir resposta ao atendente",
     oQueFaz:

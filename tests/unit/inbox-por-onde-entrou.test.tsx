@@ -92,6 +92,19 @@ describe("NÃO mostra quando não ajuda", () => {
 });
 
 describe("o elo que some sem barulho", () => {
+  it.each([
+    ["waha", null, "WhatsApp"],
+    ["meta_cloud", null, "WhatsApp"],
+    ["zernio", null, "WhatsApp"],
+    ["zernio_social", "instagram", "Instagram"],
+    ["zernio_social", "facebook", "Messenger"],
+    ["zernio_social", null, "Canal"],
+  ])("identifica %s/%s mesmo com uma conexão", (provider, social_platform, label) => {
+    pintar({ ...base, channel_sessions: { provider, social_platform, phone_number: null, display_name: "Comercial" } }, false);
+    expect(screen.getByRole("img", { name: label })).toBeInTheDocument();
+    expect(screen.getByText("Cliente")).toBeInTheDocument();
+  });
+
   it("o SELECT do listado traz a sessão — sem isso o badge nunca tem o que mostrar", () => {
     // O componente pode estar perfeito e o rótulo não aparecer nunca, porque o
     // dado não chega. É a mesma classe do filtro por `tag`, que o hook serializa

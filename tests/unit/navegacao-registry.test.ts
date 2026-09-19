@@ -111,6 +111,12 @@ describe("sidebarGroups", () => {
     //
     // A lista é EXATA de propósito. `toContain` deixaria um sexto item entrar
     // calado no sidebar e reabrir a mesma corrida por pixel.
+    //
+    // `/app/prospecting` NÃO está aqui, e a ausência é decisão, não esquecimento:
+    // a tela existe e é alcançável pelo hub e pelo ⌘K, mas o menu já está no
+    // limite — com ela seriam 20 portas e o e2e reprova por scroll em 900px. A
+    // razão e a condição que encerram a exceção estão ao lado do item, em
+    // `lib/navigation/catalogo.ts`.
     const crm = sidebarGroups(true, null).find((g) => g.group.id === "crm");
     expect(crm?.items.map((i) => i.href)).toEqual([
       "/app/kanban",
@@ -142,13 +148,14 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
-  it("o hub do CRM é inventário: as cinco telas do grupo, nas duas seções", () => {
+  it("o hub do CRM é inventário: as seis telas do grupo, nas duas seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.
     const secoes = hubSections("crm", true, null);
     expect(secoes.map((s) => s.section)).toEqual(["O dia a dia da venda", "Preparar a venda"]);
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
+      "/app/prospecting",
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",

@@ -2630,6 +2630,37 @@ removida pelo fluxo de exclusão, após conferir zero histórico/vínculos; cana
 original permaneceu WORKING. Código gerado pelo transporte é coberto por teste
 de contrato; pareamento real por código ainda requer confirmação no celular.
 
+## Redes sociais nativas — 2026-09-15
+
+- [P0] Conexões → Redes sociais: credencial/perfil, contas e conexão sem expor chave.
+- [P0] Instagram/Facebook: habilitar recebimento, IA pausada, abrir Inbox existente.
+- [P0] Webhook de outra conta/rede, assinatura inválida e evento repetido não produzem resposta.
+- [P1] Conta sem DMs implementados informa a limitação; não oferece ativação fictícia.
+- [P1] Falha na assinatura do webhook fica visível e retenta com reconciliação por URL.
+- Evidência automatizada: `social/parser.test.ts`, `social/client.test.ts`, rota social,
+  `RedesSociaisClient.test.tsx`, invariante de banco `social-native.test.ts`.
+- QA local com Supabase e provedor de teste: entrada assinada, resposta manual, deduplicação, assinatura inválida, conta incorreta e concorrência de registro aprovadas.
+- QA visual local e na instalação self-host concluída; app/worker `788b0fe` saudáveis e testes de webhook do provedor aprovados. DM real e pareamento confirmado no celular permanecem pendentes.
+
+## Prospecção nativa — 2026-09-15
+
+[P0] Validado no navegador, com Next em modo produção e Supabase local: resultados comerciais semeados → escolher agente publicado, conexão, funil e duas etapas → definir oferta, critérios e ritmo → iniciar → ver contato, negócio e conversa criados → pausar a fila. Consulta do banco confirmou `paused/queued`, os três vínculos e zero mensagens. A busca paga e a entrega a pessoas reais não foram executadas neste QA. A Prospecção tem entrada direta na seção CRM do menu lateral para administradores.
+
+### Contexto de prospecção no Inbox
+
+O bloco `LeadEnrichment` do `CRMSidePanel` recebe os campos comerciais normalizados
+por `GET /api/v1/contacts/[id]/crm-summary` e permite consultar site/redes/Maps
+sem sair do atendimento. A rota autoriza primeiro o contato por RLS; a leitura
+administrativa de candidatos restringe organização e contato, projetando somente
+campos públicos. Sem candidato, mostra ausência; erro de consulta mostra tentativa
+novamente sem bloquear as outras seções. Contato anonimizado não mostra o contexto.
+
+Living System Checklist: entrada = prospecting_candidates; saída = atendente e
+fontes externas HTTP(S); superfície/porta = conversa existente no Inbox; configuração
+= busca de prospecção existente; continuidade = contexto da IA disponível ao humano.
+Leitura pura: não emite mutação/auditoria, não agenda ação nem altera o agente.
+Retorno de erro = estado explícito e nova leitura. Mapa: prospeccao-nativa.
+Cobertura: inbox-enrichment-route.test.ts e inbox-demandas-abertas.test.tsx.
 ## J28 — Uma pessoa assume uma conversa que a IA passou `[P0]` (2026-09-18)
 
 **Por que P0:** é a jornada em que o cliente mais sente a diferença entre um CRM com IA e

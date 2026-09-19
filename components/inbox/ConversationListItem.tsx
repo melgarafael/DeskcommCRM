@@ -5,7 +5,8 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import type { Locale } from "date-fns";
 import { format, formatDistanceToNowStrict } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { Phone, Robot } from "@/lib/ui/icons";
+import { Robot } from "@/lib/ui/icons";
+import { ChannelLogo } from "@/components/inbox/ChannelLogo";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
@@ -232,11 +233,12 @@ export function ConversationListItem({
         </Avatar>
         <span
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background",
+            "absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-full border-2 border-background",
             dot,
           )}
           aria-hidden
         />
+        <ChannelLogo channel={canal} size={16} className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-background ring-2 ring-background" />
       </div>
 
       <div className="min-w-0 flex-1">
@@ -311,7 +313,6 @@ export function ConversationListItem({
                 className="h-4 gap-1 px-1.5 text-[10px] font-normal text-text-muted"
                 title={`${t("Entrou por")} ${rotuloCanal}`}
               >
-                <Phone size={9} weight="regular" aria-hidden />
                 {rotuloCanal}
               </Badge>
             )}

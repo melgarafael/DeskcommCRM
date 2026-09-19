@@ -333,6 +333,22 @@ export interface VoiceCallRow {
   duration_ms: number | null;
 }
 
+/** Pesquisa e resultado da abordagem ligados ao titular (redação: migration 0361). */
+export interface ProspectingCandidateRow {
+  id: string;
+  campaign_id: string;
+  place_id: string;
+  phone: string | null;
+  data: Json;
+  status: string;
+  lead_id: string | null;
+  conversation_id: string | null;
+  attempted_at: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExportPayload {
   request_id: string;
   organization_id: string;
@@ -383,6 +399,7 @@ export interface ExportPayload {
    * próprio cascade.
    */
   voice_calls: VoiceCallRow[];
+  prospecting_candidates: ProspectingCandidateRow[];
   /**
    * Casos, linha do tempo do caso e demandas (migration 0280).
    *
@@ -871,6 +888,27 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       if (!data || data.length < 500) break;
     }
   }
+  // Espelha exatamente o escopo da redação 0361: contato + organização.
+  // Telefone coincidente sem vínculo não comprova identidade. Tokens de
+  // supressão e a autorização de envio permanecem internos, fora da projeção.
+  const prospecting_candidates: ProspectingCandidateRow[] = [];
+  if (contactId) {
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin
+        .from("prospecting_candidates")
+        .select(
+          "id,campaign_id,place_id,phone,data,status,lead_id,conversation_id,attempted_at,error,created_at,updated_at",
+        )
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + 499);
+      // Uma falha não pode virar um relatório que diz que não guardamos dados.
+      if (error) throw error;
+      prospecting_candidates.push(...(data ?? []));
+      if (!data || data.length < 500) break;
+    }
+  }
   // Casos, linha do tempo do caso e demandas — o que a 0280 pôs na cascata.
   //
   // O escopo do CASO é a CONVERSA do titular: `agent_cases` não tem FK para
@@ -1145,7 +1183,11 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     lei_citada: citacaoDaLei(perfil),
     documento_rotulo: perfil.documento.rotulo,
     generated_at: new Date().toISOString(),
-    no_local_footprint: !contact && conversations.length === 0 && orders.length === 0,
+    no_local_footprint:
+      !contact &&
+      conversations.length === 0 &&
+      orders.length === 0 &&
+      prospecting_candidates.length === 0,
     contact,
     consents,
     conversations,
@@ -1162,6 +1204,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     meeting_deliveries,
     appointment_notices,
     voice_calls,
+    prospecting_candidates,
     cases,
     case_events,
     demandas,
@@ -1201,6 +1244,7 @@ function emptyPayload(
     meeting_deliveries: [],
     appointment_notices: [],
     voice_calls: [],
+    prospecting_candidates: [],
     cases: [],
     case_events: [],
     demandas: [],

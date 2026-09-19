@@ -25,3 +25,8 @@ scratchpad
 .opencode
 .specs
 .changes
+
+# Artefatos locais de QA não fazem parte do runtime.
+evidence
+.superpowers
+*.tsbuildinfo

@@ -123,6 +123,8 @@ export function JanelaFechadaAviso({
     );
   }
 
+  if (!fonte) return <p role="status" className="border-t px-4 py-3 text-sm text-muted-foreground">{motivo}</p>;
+
   return (
     <div className="border-t border-amber-300 bg-amber-50/60 px-4 py-3 dark:border-amber-800/60 dark:bg-amber-950/30">
       <p className="mb-2 text-xs text-amber-900 dark:text-amber-200">{motivo}</p>

@@ -1,3 +1,4 @@
+import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
@@ -2146,10 +2147,11 @@ async function executarTurnoDoAgente(
   // Ritual de abertura: playbook por ponteiro + checkpoint + contexto curado.
   // Com agente publicado, o system_prompt DELE é a camada tenant (platform de
   // compliance continua à frente, sempre).
+  const prospectingContext = !preview && input.conversationId ? await prospectingConversationContext(pool, tenantId, input.conversationId) : "";
   const playbook = await loadPlaybook(
     pool,
     tenantId,
-    agentConfig !== null ? { agentLayer: agentConfig.systemPrompt } : undefined,
+    agentConfig !== null ? { agentLayer: agentConfig.systemPrompt + prospectingContext } : undefined,
   );
   // Skills situacionais (F3-09): índice (name+description) SEMPRE residente — vai junto do
   // system do playbook, no prefixo estável org-wide (disclosure progressivo; cacheável F2-17).

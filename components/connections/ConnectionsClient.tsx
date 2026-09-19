@@ -17,6 +17,7 @@ import {
   useChannelSessions,
   type ChannelSession,
 } from "@/hooks/channels/useChannelSessions";
+import { CHANNEL_PROVIDER_SOCIAL } from "@/lib/channels/capabilities";
 import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
 import { PairingOptions } from "./PairingOptions";
@@ -223,7 +224,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
     invalidate();
   }, [invalidate, t]);
 
-  const list = sessions ?? [];
+  const list = (sessions ?? []).filter((session) => session.provider !== CHANNEL_PROVIDER_SOCIAL);
 
   return (
     <div className="flex flex-col gap-4">

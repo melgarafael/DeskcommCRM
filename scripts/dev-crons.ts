@@ -12,6 +12,7 @@
 const INTERVAL_MS = Number(process.env.DEV_CRON_INTERVAL_MS ?? "15000");
 
 const PATHS = [
+  "/api/v1/cron/prospecting",
   "/api/v1/cron/event-log-drain",
   "/api/v1/cron/followup-flow-worker",
 ] as const;

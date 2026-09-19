@@ -7,10 +7,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
+import type { PoolClient } from "pg";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { writeRouterMembers } from "@/lib/ai/agents/router-members";
+import { replaceRouterMembersHttp } from "@/lib/ai/agents/router-members-http";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -62,52 +66,36 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   const { members } = parsed.data;
 
-  const admin = createAdminClient();
-
-  const { data: router, error: routerErr } = await admin
-    .from("ai_routers")
-    .select("id")
-    .eq("id", id)
-    .eq("organization_id", org.orgId)
-    .maybeSingle();
-  if (routerErr) {
-    return fail("internal_error", "Erro ao carregar router.", 500, { requestId });
-  }
-  if (!router) {
-    return fail("not_found", t("Router não encontrado."), 404, { requestId });
-  }
-
-  // Substitui a lista inteira: apaga os membros atuais (filtrando org) e
-  // insere os novos com position = índice do array recebido.
-  const { error: delErr } = await admin
-    .from("ai_router_members")
-    .delete()
-    .eq("router_id", id)
-    .eq("organization_id", org.orgId);
-  if (delErr) {
-    return fail("internal_error", "Erro ao limpar membros do router.", 500, { requestId });
-  }
-
-  if (members.length > 0) {
-    const rows = members.map((m, position) => ({
-      organization_id: org.orgId,
-      router_id: id,
-      agent_id: m.agent_id,
-      intent_name: m.intent_name,
-      intent_description: m.intent_description,
-      examples: m.examples,
-      position,
-    }));
-
-    const { error: insErr } = await admin.from("ai_router_members").insert(rows);
-    if (insErr) {
-      if (insErr.code === "23505") {
-        return fail("duplicate_intent_name", t("Duas intenções não podem ter o mesmo nome no router."), 409, {
-          requestId,
-        });
-      }
-      return fail("internal_error", "Erro ao gravar membros do router.", 500, { requestId });
+  let db: PoolClient | undefined;
+  try {
+    if (process.env.SUPABASE_DB_URL) {
+      db = await getRequestPool().connect();
+      await db.query("begin");
+      await writeRouterMembers(db, org.orgId, id, members, "replace");
+      await db.query("commit");
+    } else {
+      await replaceRouterMembersHttp(createAdminClient(), org.orgId, id, members);
     }
+  } catch (error) {
+    if (db) await db.query("rollback");
+    const message = error instanceof Error ? error.message : "";
+    const code = (error as { code?: string }).code;
+    if (message === "router_not_found")
+      return fail("not_found", t("Router não encontrado."), 404, { requestId });
+    if (message === "member_agent_not_found")
+      return fail("validation_failed", t("Um dos agentes não existe nesta organização."), 422, {
+        requestId,
+      });
+    if (message === "duplicate_intent_name" || code === "23505")
+      return fail(
+        "duplicate_intent_name",
+        t("Duas intenções não podem ter o mesmo nome no router."),
+        409,
+        { requestId },
+      );
+    return fail("internal_error", "Erro ao gravar membros do router.", 500, { requestId });
+  } finally {
+    db?.release();
   }
 
   void audit({
