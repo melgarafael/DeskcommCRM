@@ -70,6 +70,35 @@ export const atualizarConexaoSchema = z
   })
   .strict();
 
+const colunaDoCatalogo = z.string().trim().min(1).max(128);
+
+/**
+ * Mapeamento do catálogo do agente (migration 0244): qual tabela do banco
+ * externo e quais colunas são nome/ano/cor/km/preço/imagem/estoque. `col_nome` é
+ * obrigatória (é o que casa com o termo do cliente); as demais são opcionais.
+ * `busca_operador` espelha o CHECK de `catalog_mappings`.
+ */
+export const salvarCatalogoSchema = z
+  .object({
+    connection_id: z.string().uuid(),
+    schema_name: z.string().trim().min(1).max(128).default("public"),
+    table_name: z.string().trim().min(1).max(128),
+    col_nome: colunaDoCatalogo,
+    col_ano: colunaDoCatalogo.optional(),
+    col_cor: colunaDoCatalogo.optional(),
+    col_km: colunaDoCatalogo.optional(),
+    col_preco: colunaDoCatalogo.optional(),
+    col_imagem: colunaDoCatalogo.optional(),
+    col_estoque: colunaDoCatalogo.optional(),
+    col_cilindrada: colunaDoCatalogo.optional(),
+    col_tipo: colunaDoCatalogo.optional(),
+    busca_operador: z.enum(["contem", "eq", "comeca_com"]).default("contem"),
+    enabled: z.boolean().default(true),
+  })
+  .strict();
+
+export type SalvarCatalogoInput = z.infer<typeof salvarCatalogoSchema>;
+
 /**
  * Leitura paginada. Sem FILTRO de propósito: filtro carrega VALOR, valor carrega
  * PII, e querystring vai para log de proxy. A consulta filtrada da IA passa pelo

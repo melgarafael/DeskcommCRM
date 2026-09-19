@@ -471,6 +471,10 @@ export const AUDIT_ACTIONS = [
   "external_db_connection.deleted",
   "external_db_connection.tested",
   "external_db_connection.read",
+  // O mapeamento do catálogo do agente (migration 0244): qual tabela/colunas do
+  // banco externo o agente usa para montar a apresentação. Auditado porque muda
+  // o que o agente LÊ do dado de terceiro.
+  "external_db_catalog.updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
