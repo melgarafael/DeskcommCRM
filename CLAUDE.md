@@ -152,7 +152,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
   além do #275 (que só tinha coberto o vocabulário inequívoco) para o espanhol ganhar a
   camada ambígua e as construções com pronome preso ("escribirme"). Para ver o vocabulário
   em vigor sem confiar nesta linha:
-  `grep -n 'PALAVRAS_DE_OPT_OUT' -A20 lib/opt-out/deteccao.ts`, e as frases de controle em
+  `sed -n '/PALAVRAS_DE_OPT_OUT/,/^]/p' lib/opt-out/deteccao.ts | grep -E '^ *"'`, e as frases de controle em
   `tests/unit/opt-out-deteccao.test.ts`.
 - Mídia: subir pro Supabase Storage primeiro, passar URL ao WAHA (não inline base64)
 - Multi-device: assinar `message.any` (não só `message`); tratar `fromMe=true` sem duplicar
