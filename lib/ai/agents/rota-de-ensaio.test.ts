@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  OPCOES_HTTP_DO_ENSAIO,
   SEGMENTO_DE_ENSAIO,
   TIMEOUT_MS_DO_ENSAIO,
   urlEnsaioDoAgente,
@@ -16,6 +17,7 @@ describe("urlEnsaioDoAgente", () => {
     expect(url).not.toMatch(/\/test$/);
     expect(SEGMENTO_DE_ENSAIO).toBe("dry-run");
     expect(TIMEOUT_MS_DO_ENSAIO).toBe(120_000);
+    expect(OPCOES_HTTP_DO_ENSAIO).toEqual({ timeoutMs: 120_000, retry: false });
     expect(
       existsSync(join(process.cwd(), "app/api/v1/ai/agents/[id]/versions/[vid]/test")),
     ).toBe(false);

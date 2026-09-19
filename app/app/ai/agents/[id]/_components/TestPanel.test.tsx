@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
 import { ApiError } from "@/lib/api/types";
-import { TIMEOUT_MS_DO_ENSAIO, urlEnsaioDoAgente } from "@/lib/ai/agents/rota-de-ensaio";
+import {
+  OPCOES_HTTP_DO_ENSAIO,
+  TIMEOUT_MS_DO_ENSAIO,
+  urlEnsaioDoAgente,
+} from "@/lib/ai/agents/rota-de-ensaio";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 
@@ -99,7 +103,8 @@ describe("TestPanel — um clique, um POST em /dry-run", () => {
     expect(post.mock.calls[0]?.[0]).toBe(urlEnsaioDoAgente(AGENT_ID, VERSION_ID));
     expect(post.mock.calls[0]?.[0]).toContain("/dry-run");
     expect(post.mock.calls[0]?.[0]).not.toContain("/test");
-    expect(post.mock.calls[0]?.[2]).toEqual({ timeoutMs: TIMEOUT_MS_DO_ENSAIO });
+    expect(post.mock.calls[0]?.[2]).toEqual(OPCOES_HTTP_DO_ENSAIO);
+    expect(OPCOES_HTTP_DO_ENSAIO.retry).toBe(false);
     expect(TIMEOUT_MS_DO_ENSAIO).toBe(120_000);
   });
 

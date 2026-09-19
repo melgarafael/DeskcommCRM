@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { apiClient, DEFAULT_TIMEOUT_MS } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
-import { TIMEOUT_MS_DO_ENSAIO } from "@/lib/ai/agents/rota-de-ensaio";
+import {
+  OPCOES_HTTP_DO_ENSAIO,
+  TIMEOUT_MS_DO_ENSAIO,
+  urlEnsaioDoAgente,
+} from "@/lib/ai/agents/rota-de-ensaio";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
@@ -175,12 +179,11 @@ describe("apiClient", () => {
       expect(delays).not.toContain(TIMEOUT_MS_DO_ENSAIO);
 
       delays.length = 0;
-      await apiClient.post("/api/v1/ai/agents/a/versions/b/dry-run", { a: 1 }, {
-        timeoutMs: TIMEOUT_MS_DO_ENSAIO,
-      });
+      await apiClient.post("/api/v1/ai/agents/a/versions/b/dry-run", { a: 1 }, OPCOES_HTTP_DO_ENSAIO);
       expect(delays).toContain(TIMEOUT_MS_DO_ENSAIO);
       expect(delays).not.toContain(DEFAULT_TIMEOUT_MS);
       expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(OPCOES_HTTP_DO_ENSAIO.retry).toBe(false);
     } finally {
       spy.mockRestore();
     }
@@ -372,6 +375,97 @@ describe("apiClient", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(desfecho).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("GET 429 continua repetindo até 3 tentativas", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(429, { error: { code: "rate_limited", message: "slow" } }),
+    );
+    await expect(apiClient.get("/x")).rejects.toMatchObject({ status: 429 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("GET 503 continua repetindo até 3 tentativas", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(503, { error: { code: "unavailable", message: "down" } }),
+    );
+    await expect(apiClient.get("/x")).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("POST sem retry:false ainda repete 429 — a política das demais mutações não muda", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(429, { error: { code: "rate_limited", message: "slow" } }),
+      )
+      .mockResolvedValueOnce(jsonResponse(200, { data: { ok: true } }));
+    const result = await apiClient.post<{ data: { ok: boolean } }>("/x", { a: 1 });
+    expect(result).toEqual({ data: { ok: true } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("apiClient — ensaio /dry-run não repete", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const path = urlEnsaioDoAgente(
+    "08b5e8a0-5977-4366-ad85-9845b192d3bf",
+    "2c1838f5-c851-4a19-8e16-09c862ed21dd",
+  );
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function ensaiar() {
+    return apiClient.post(path, { sample_message: "Oi" }, OPCOES_HTTP_DO_ENSAIO);
+  }
+
+  it("429 dispara exatamente 1 fetch e ainda manda Idempotency-Key", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        429,
+        { error: { code: "rate_limited", message: "slow down" } },
+        { "Retry-After": "1" },
+      ),
+    );
+    await expect(ensaiar()).rejects.toMatchObject({ status: 429, code: "rate_limited" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>;
+    expect(headers["Idempotency-Key"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it("503 dispara exatamente 1 fetch", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(503, { error: { code: "unavailable", message: "down" } }),
+    );
+    await expect(ensaiar()).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("timeout dispara exatamente 1 fetch", async () => {
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        }),
+    );
+    await expect(
+      apiClient.post(path, { sample_message: "Oi" }, { ...OPCOES_HTTP_DO_ENSAIO, timeoutMs: 5 }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  }, 10_000);
+
+  it("erro de rede dispara exatamente 1 fetch", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(ensaiar()).rejects.toMatchObject({ name: "TypeError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

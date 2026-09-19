@@ -16,6 +16,16 @@ export const SEGMENTO_DE_ENSAIO = "dry-run" as const;
  */
 export const TIMEOUT_MS_DO_ENSAIO = 120_000;
 
+/**
+ * Uma tentativa HTTP. Sem isto o apiClient repetia 429/503 até 3 vezes e
+ * cobrava o modelo de novo no mesmo clique. Timeout e rede de mutação já
+ * não repetiam; 429/503 ainda repetiam.
+ */
+export const OPCOES_HTTP_DO_ENSAIO = {
+  timeoutMs: TIMEOUT_MS_DO_ENSAIO,
+  retry: false,
+} as const;
+
 export function urlEnsaioDoAgente(agentId: string, versionId: string): string {
   return `/api/v1/ai/agents/${agentId}/versions/${versionId}/${SEGMENTO_DE_ENSAIO}`;
 }

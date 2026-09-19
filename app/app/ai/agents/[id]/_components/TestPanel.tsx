@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { ehTimeoutDeRequisicao, mensagemSeguraDeHttp, mensagemVisivelDeApiError } from "@/lib/api/erro-http";
-import { TIMEOUT_MS_DO_ENSAIO, urlEnsaioDoAgente } from "@/lib/ai/agents/rota-de-ensaio";
+import { OPCOES_HTTP_DO_ENSAIO, urlEnsaioDoAgente } from "@/lib/ai/agents/rota-de-ensaio";
 import { agentRunsKey } from "@/hooks/ai/useAgentRuns";
 import { useT } from "@/hooks/i18n/useT";
 import type { AgentRow } from "@/hooks/ai/useAgent";
@@ -199,8 +199,9 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
         // ⚠️ O padrão do cliente é 10s para GET e 30s para mutação; um turno
         // de agente NÃO cabe nisso: o ensaio roda o motor inteiro. Medido numa
         // instalação real: 14,5s só na chamada ao modelo (issue #783).
-        // 120s é o teto do orçamento de passos do agente.
-        { timeoutMs: TIMEOUT_MS_DO_ENSAIO },
+        // 120s é o teto do orçamento de passos do agente. retry:false impede
+        // um clique virar três POSTs em 429/503.
+        OPCOES_HTTP_DO_ENSAIO,
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });

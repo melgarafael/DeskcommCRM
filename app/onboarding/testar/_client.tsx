@@ -11,7 +11,7 @@ import { marcarTesteFeito, pularTeste } from "@/app/actions/onboarding/marcarTes
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { ehTimeoutDeRequisicao, mensagemSeguraDeHttp, mensagemVisivelDeApiError } from "@/lib/api/erro-http";
-import { TIMEOUT_MS_DO_ENSAIO, urlEnsaioDoAgente } from "@/lib/ai/agents/rota-de-ensaio";
+import { OPCOES_HTTP_DO_ENSAIO, urlEnsaioDoAgente } from "@/lib/ai/agents/rota-de-ensaio";
 
 interface Props {
   nome: string | null;
@@ -51,9 +51,7 @@ export function TestarClient({ nome, agenteId, versaoId, noAr }: Props) {
     try {
       const res = await apiClient.post<{
         data?: { final_text?: string; status?: string; error_code?: string; error_message?: string };
-      }>(urlEnsaioDoAgente(agenteId, versaoId), { sample_message: mensagem }, {
-        timeoutMs: TIMEOUT_MS_DO_ENSAIO,
-      });
+      }>(urlEnsaioDoAgente(agenteId, versaoId), { sample_message: mensagem }, OPCOES_HTTP_DO_ENSAIO);
       const d = res.data;
       if (d?.status && d.status !== "completed" && d.status !== "ok") {
         setDesfecho({

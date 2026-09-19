@@ -17,6 +17,12 @@ export type RequestOpts = {
   timeoutMs?: number;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /**
+   * `false` desliga TODA repetição desta chamada — timeout, rede, 429 e 503.
+   * Uma tentativa só. O default preserva a política atual (GET até 3;
+   * mutação não repete timeout/rede, mas ainda repete 429/503).
+   */
+  retry?: boolean;
 };
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
@@ -258,10 +264,11 @@ async function request<T>(
     body === undefined || body === null ? undefined : JSON.stringify(body);
   const timeoutMs =
     opts.timeoutMs ?? (MUTATING_METHODS.has(method) ? MUTATION_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
+  const maxAttempts = opts.retry === false ? 1 : MAX_ATTEMPTS;
 
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const timeoutController = new AbortController();
     // Motivo explícito, não `abort()` puro: sem ele o navegador sintetiza um
     // `DOMException` cuja MENSAGEM é "signal is aborted without reason" — que
@@ -300,8 +307,8 @@ async function request<T>(
         return parsed;
       }
 
-      // Retry on 429/503
-      if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_ATTEMPTS) {
+      // Retry on 429/503 — salvo `retry: false` (maxAttempts=1).
+      if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
         const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
         const delay = retryAfter !== null ? retryAfter * 1000 : backoffMs(attempt);
         await sleep(delay, opts.signal);
@@ -372,7 +379,7 @@ async function request<T>(
       // repetir é a direção segura. Leitura (GET) segue retentando.
       lastError = err;
       const mutacao = MUTATING_METHODS.has(method);
-      if (!mutacao && attempt < MAX_ATTEMPTS) {
+      if (!mutacao && attempt < maxAttempts) {
         await sleep(backoffMs(attempt), opts.signal);
         continue;
       }
