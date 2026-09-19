@@ -227,4 +227,41 @@ describe("crm_query_external_data", () => {
     expect(r.erro).toBe("limite_de_filtros");
     expect(lerTabela).not.toHaveBeenCalled();
   });
+
+  // Achado ao vivo (2026-09-19): o modelo mandava `{ coluna:"nome", operador:"contem" }`
+  // SEM `valor` para buscar "CB 250". A versão anterior descartava o filtro em
+  // silêncio e devolvia o catálogo inteiro — o turno seguia `success: true` e o
+  // agente escolhia a moto no olho, sem a busca que o cliente pediu.
+  it("filtro de comparação SEM valor vira erro de ensino, nunca catálogo inteiro", async () => {
+    const r = (await crmQueryExternalData.handler(
+      {
+        connection_id: "conn-1",
+        schema: "public",
+        tabela: "assinaturas",
+        filtros: [{ coluna: "status", operador: "contem" }],
+        limite: 20,
+      },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect(r.erro).toBe("filtro_sem_valor");
+    expect(String(r.mensagem)).toContain("valor");
+    // não toca o banco: sem valor, não há o que buscar
+    expect(lerTabela).not.toHaveBeenCalled();
+  });
+
+  it("`nulo`/`nao_nulo` continuam válidos sem valor (ausência por definição)", async () => {
+    vi.mocked(lerTabela).mockResolvedValue({ colunas: ["id"], linhas: [], limite: 20, offset: 0 });
+    const r = (await crmQueryExternalData.handler(
+      {
+        connection_id: "conn-1",
+        schema: "public",
+        tabela: "assinaturas",
+        filtros: [{ coluna: "status", operador: "nao_nulo" }],
+        limite: 20,
+      },
+      ctxFake(),
+    )) as Record<string, unknown>;
+    expect(r.erro).toBeUndefined();
+    expect(lerTabela).toHaveBeenCalled();
+  });
 });

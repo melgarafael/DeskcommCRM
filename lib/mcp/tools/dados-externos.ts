@@ -287,15 +287,36 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
     if (!acesso.ok) return { erro: "acesso_negado", mensagem: mensagemDeAcesso(acesso.motivo) };
 
     // C-005/C-010: o modelo manda filtro SEM valor ("modelo eq", "preco lte").
-    // Sem corte, o pedido vira inválido e a leitura inteira falha. Com o corte,
-    // NÃO devolvemos uma amostra arbitrária (era isso que fazia a IA dizer "não
-    // temos" com a moto existindo): quando algum filtro é descartado, ampliamos
-    // o limite para o modelo ver o catálogo e escolher o que corresponde.
+    //
+    // Medido ao vivo (2026-09-19): o `gpt-4o-mini` mandou
+    // `{ coluna: "nome", operador: "contem" }` SEM `valor` para buscar "CB 250".
+    // A versão anterior DESCARTAVA o filtro em silêncio, ampliava o limite e
+    // devolvia o catálogo INTEIRO — então o turno seguia com `success: true` e o
+    // modelo escolhia a moto "no olho", sem a busca que o cliente pediu.
+    //
+    // Operadores que COMPARAM com um valor (eq/ne/gt/gte/lt/lte/contem/comeca_com/in)
+    // não têm sentido sem ele. Em vez de engolir o defeito e entregar a tabela
+    // toda, devolvemos um erro que ENSINA o modelo a repetir a chamada com o
+    // `valor` — a diferença entre "não temos" e "não consultei".
+    //
+    // `nulo`/`nao_nulo` são a exceção explícita: são ausência de valor por
+    // definição, nunca faltou dado ali.
     const filtrosBrutos = input.filtros ?? [];
-    const filtros = filtrosBrutos.filter(
-      (f) => f.operador === "nulo" || f.operador === "nao_nulo" || f.valor !== undefined,
+    const semValor = filtrosBrutos.filter(
+      (f) => f.operador !== "nulo" && f.operador !== "nao_nulo" && f.valor === undefined,
     );
-    const filtrosDescartados = filtrosBrutos.length - filtros.length;
+    if (semValor.length > 0) {
+      return {
+        erro: "filtro_sem_valor",
+        mensagem:
+          "um ou mais filtros vieram sem `valor` e a consulta não foi feita: " +
+          `${semValor.map((f) => `${f.coluna} ${f.operador}`).join(", ")}. ` +
+          "Repita a chamada preenchendo `valor` com o termo real do que o cliente pediu " +
+          '(ex.: { coluna: "nome", operador: "contem", valor: "CB 250" }). ' +
+          "Se o termo exato não existir, tente uma parte dele (ex.: \"CB\") para o agente ver as mais parecidas.",
+      };
+    }
+    const filtros = filtrosBrutos;
     if (filtros.length > acesso.conexao.maxFilters) {
       return {
         erro: "limite_de_filtros",
@@ -359,10 +380,8 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
         ...(f.valor !== undefined ? { valor: f.valor } : {}),
       })),
       ...(input.ordem ? { ordem: { coluna: input.ordem.coluna, desc: input.ordem.desc ?? false } } : {}),
-      // O teto é o da conexão, não o que o modelo pediu. Com filtro descartado,
-      // amplia (até 100) para o modelo encontrar o que procura em vez de receber
-      // uma amostra arbitrária.
-      limite: Math.min(filtrosDescartados > 0 ? 100 : input.limite, acesso.conexao.maxRows),
+      // O teto é o da conexão, não o que o modelo pediu.
+      limite: Math.min(input.limite, acesso.conexao.maxRows),
       offset: 0,
     };
 
@@ -428,12 +447,6 @@ export const crmQueryExternalData: McpToolDefinition<typeof consultarInputShape>
       linhas_devolvidas: linhas.length,
       limite_aplicado: resultado.limite,
       ...(truncadoPorBytes ? { truncado: true } : {}),
-      ...(filtrosDescartados > 0
-        ? {
-            filtro_ignorado:
-              'um ou mais filtros vieram SEM "valor" e foram ignorados; o catálogo (até 100 linhas) está abaixo — escolha na resposta o que corresponde ao que o cliente pediu.',
-          }
-        : {}),
       ...(fallbackSemFiltro
         ? {
             filtro_sem_resultado:
