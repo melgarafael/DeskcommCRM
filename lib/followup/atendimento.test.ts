@@ -117,10 +117,13 @@ describe("situacaoDoChecklist", () => {
     expect(s.completo).toBe(false);
   });
 
-  it("com os obrigatórios preenchidos: completo, mesmo faltando a opcional", () => {
+  it("com os obrigatórios preenchidos: a OPCIONAL continua pendente (percorre o fluxo até o Fim)", () => {
     const s = situacaoDoChecklist(checklist, new Set(["cidade", "cnh"]));
     expect(s.pendentes.map((n) => n.config.key)).toEqual(["obs"]);
-    expect(s.completo).toBe(true);
+    // "Opcional" = pode ser esgotada sem travar, NÃO pode ser pulada. Antes
+    // este caso esperava `completo: true` e o efeito medido (2026-09-18) foi que
+    // estado/documentação nunca eram perguntados no fluxo Troca.
+    expect(s.completo).toBe(false);
   });
 
   it("com tudo preenchido: sem pendentes", () => {
@@ -134,8 +137,19 @@ describe("situacaoDoChecklist", () => {
       tentativas: { cidade: 3, cnh: 3 },
       maxTentativas: 3,
     });
+    // As esgotadas saem de `pendentes`; a opcional `obs` segue pendente (será
+    // perguntada) — por isso `completo` ainda é false.
     expect(s.pendentes.map((n) => n.config.key)).toEqual(["obs"]);
     expect(s.esgotadas.map((n) => n.config.key)).toEqual(["cidade", "cnh"]);
+    expect(s.completo).toBe(false);
+  });
+
+  it("com tudo preenchido OU esgotado: completo (esgotar a opcional não trava)", () => {
+    const s = situacaoDoChecklist(checklist, new Set(["cidade", "cnh"]), {
+      tentativas: { obs: 3 },
+      maxTentativas: 3,
+    });
+    expect(s.pendentes).toHaveLength(0);
     expect(s.completo).toBe(true);
   });
 

@@ -150,7 +150,14 @@ export function situacaoDoChecklist(
     obrigatoriosPendentes,
     esgotadas,
     skills,
-    completo: obrigatoriosPendentes.length === 0,
+    // O fluxo percorre TODOS os passos, inclusive os opcionais: `completo` só
+    // quando não há mais nada a perguntar. Antes era
+    // `obrigatoriosPendentes.length === 0`, e o efeito medido (2026-09-18) foi
+    // que os passos OPCIONAIS nunca eram perguntados — o fluxo concluía assim
+    // que os obrigatórios preenchiam, e "estado de conservação"/"documentação"
+    // ficavam em branco. "Opcional" significa que pode ser ESGOTADO sem travar
+    // (o teto de tentativas o tira de `pendentes`), não que pode ser pulado.
+    completo: pendentes.length === 0,
   };
 }
 /** O nó `collect` de uma chave, ou `null` se a chave não pertence ao fluxo. */
