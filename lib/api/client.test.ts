@@ -160,7 +160,7 @@ describe("apiClient", () => {
     expect(DEFAULT_TIMEOUT_MS).not.toBe(TIMEOUT_MS_DO_ENSAIO);
   });
 
-  it("POST sem opts agenda 10s; POST de ensaio agenda 120s", async () => {
+  it("POST sem opts agenda 30s; POST de ensaio agenda 120s", async () => {
     const delays: number[] = [];
     const realSetTimeout = globalThis.setTimeout.bind(globalThis);
     const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
@@ -175,13 +175,15 @@ describe("apiClient", () => {
     try {
       fetchMock.mockImplementation(() => jsonResponse(200, { data: { ok: true } }));
       await apiClient.post("/x", { a: 1 });
-      expect(delays).toContain(DEFAULT_TIMEOUT_MS);
+      // Mutação na main espera 30s (`MUTATION_TIMEOUT_MS`), não os 10s do GET.
+      expect(delays).toContain(30_000);
       expect(delays).not.toContain(TIMEOUT_MS_DO_ENSAIO);
 
       delays.length = 0;
       await apiClient.post("/api/v1/ai/agents/a/versions/b/dry-run", { a: 1 }, OPCOES_HTTP_DO_ENSAIO);
       expect(delays).toContain(TIMEOUT_MS_DO_ENSAIO);
       expect(delays).not.toContain(DEFAULT_TIMEOUT_MS);
+      expect(delays).not.toContain(30_000);
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(OPCOES_HTTP_DO_ENSAIO.retry).toBe(false);
     } finally {
