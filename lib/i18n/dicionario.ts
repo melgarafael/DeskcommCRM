@@ -4182,6 +4182,9 @@ export const DICIONARIO: Traducoes = {
   "Belém (Brasil)": { es: "Belém (Brasil)" },
   "Recife (Brasil)": { es: "Recife (Brasil)" },
   "Fortaleza (Brasil)": { es: "Fortaleza (Brasil)" },
+  "Luanda (Angola)": { es: "Luanda (Angola)" },
+  "Lisboa (Portugal)": { es: "Lisboa (Portugal)" },
+  UTC: { es: "UTC" },
   // ─── Idiomas de definição de template (canal parceiro) ───
   Espanhol: { es: "Español" },
   "Espanhol (Argentina)": { es: "Español (Argentina)" },

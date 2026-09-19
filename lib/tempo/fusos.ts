@@ -48,6 +48,9 @@ export const FUSOS_OFERECIDOS: { codigo: string; rotulo: string }[] = [
   // português e usava a lista inteira errada. Aditivo — `FUSO_PADRAO` segue
   // `America/Sao_Paulo`, então ninguém que já escolheu muda de relógio.
   { codigo: "Africa/Luanda", rotulo: "Luanda (Angola)" },
+  // Mesmo motivo, em Portugal: sem Lisboa, quem opera lá ficava entre um fuso
+  // do Brasil e UTC — e UTC erra uma hora no verão europeu.
+  { codigo: "Europe/Lisbon", rotulo: "Lisboa (Portugal)" },
   { codigo: "UTC", rotulo: "UTC" },
 ];
 
