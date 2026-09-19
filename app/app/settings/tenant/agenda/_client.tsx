@@ -1,6 +1,7 @@
 "use client";
 import { AgendasConectadas } from "@/components/agenda/AgendasConectadas";
 import { PrazosDePresenca } from "@/components/agenda/PrazosDePresenca";
+import { AgendaDosColegas } from "@/components/agenda/AgendaDosColegas";
 import { ClientePelaAgenda } from "@/components/agenda/ClientePelaAgenda";
 import { DiasBloqueados } from "@/components/agenda/DiasBloqueados";
 
@@ -306,6 +307,8 @@ export function TiposDeAgendamentoClient({
   podeConfigurarGoogle,
   clientePelaAgendaLigado,
   podeLigarClientePelaAgenda,
+  colegasPodemMexerNaAgendaLigado,
+  podeMudarAgendaDosColegas,
 }: {
   tiposIniciais: TipoRow[];
   pessoas: Array<{ id: string; papel: string; nome: string }>;
@@ -315,6 +318,9 @@ export function TiposDeAgendamentoClient({
   /** `organizations.settings.crm.cliente_pela_agenda`, lido pela página. */
   clientePelaAgendaLigado: boolean;
   podeLigarClientePelaAgenda: boolean;
+  /** `organizations.settings.colegas_podem_mexer_na_agenda` (migration 0343). */
+  colegasPodemMexerNaAgendaLigado: boolean;
+  podeMudarAgendaDosColegas: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -367,6 +373,14 @@ export function TiposDeAgendamentoClient({
       <ClientePelaAgenda
         ligadoInicial={clientePelaAgendaLigado}
         podeLigar={podeLigarClientePelaAgenda}
+      />
+      {/* A opção da issue #978 fica ao lado das outras regras de comportamento
+          da agenda: é a mesma pergunta ("como a agenda se comporta nesta
+          empresa?"), e separá-la noutra tela esconderia de quem configura que
+          ela existe. */}
+      <AgendaDosColegas
+        ligadoInicial={colegasPodemMexerNaAgendaLigado}
+        podeMudar={podeMudarAgendaDosColegas}
       />
       <DiasBloqueados podeEditar={podeEditar}/>
       {podeEditar ? (

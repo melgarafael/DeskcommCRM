@@ -285,3 +285,35 @@ export function clientePelaAgendaLigado(settings: unknown): boolean {
       : undefined;
   return crmSettingsSchema.parse(crm ?? {}).cliente_pela_agenda === true;
 }
+
+/**
+ * A OPÇÃO "ATENDENTES PODEM MEXER NA AGENDA DOS COLEGAS" (migration 0343,
+ * issue #978) — a agenda como opção POR ORGANIZAÇÃO, LIGADA POR PADRÃO.
+ *
+ * Com ela DESLIGADA, o Atendente só mexe no compromisso de que é dono; Gerente
+ * e Administrador seguem mexendo em tudo. Ligada, tudo é como sempre foi.
+ *
+ * ⚠️ A RÉGUA É "SÓ O `false` EXPLÍCITO DESLIGA", e é a MESMA do banco, que lê
+ * `(settings->'colegas_podem_mexer_na_agenda') is distinct from 'false'::jsonb`
+ * em `fn_colegas_podem_mexer_na_agenda`. Ausente — toda organização que já
+ * existia antes desta migration —, `true`, a string `"true"` ou qualquer lixo
+ * contam como LIGADO aqui e lá. É o que faz "padrão ligado" ser literalmente
+ * "quem já instalou não vê mudança nenhuma". Se as duas réguas divergissem, a
+ * tela mostraria desligada uma regra que o banco aplica — ou o contrário.
+ *
+ * ⚠️ NÃO mora em `settings.agenda`, e isso é decisão, não acaso:
+ * `fn_agenda_settings` SUBSTITUI o objeto `settings.agenda` inteiro e recusa
+ * chave que não sejam as duas que ele conhece, então a chave seria recusada por
+ * ele e apagada na primeira vez que um Gerente salvasse os prazos. Chave
+ * própria de topo, no mesmo espírito do `settings.crm` da migration 0262.
+ *
+ * Nunca lança: a tela mostra a regra que o banco aplica, e um jsonb torto não
+ * pode derrubar Configurações.
+ */
+export function colegasPodemMexerNaAgendaLigado(settings: unknown): boolean {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return raiz?.colegas_podem_mexer_na_agenda !== false;
+}

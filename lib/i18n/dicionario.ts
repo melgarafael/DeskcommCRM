@@ -10126,6 +10126,32 @@ export const DICIONARIO: Traducoes = {
   'A origem aparece na ficha do contato e no filtro "Site (landing page)" da lista de contatos.': {
     es: 'El origen aparece en la ficha del contacto y en el filtro "Sitio (landing page)" de la lista de contactos.',
   },
+  // ─── Agenda dos colegas (components/agenda/AgendaDosColegas.tsx) ───────────
+  // A opção por organização da migration 0279 (issue #978). As frases de recusa
+  // são as que `ClientePelaAgenda` já usa ("Sua sessão expirou…", "Nenhuma
+  // empresa ativa.", "Confirme a verificação em duas etapas.", "Não consegui
+  // salvar essa mudança agora."), reaproveitadas de propósito: mesma situação,
+  // mesma frase. Só a do papel é nova, porque aqui o piso é gerente.
+  "Agenda dos colegas": { es: "Agenda de los colegas" },
+  "Atendentes podem mexer na agenda dos colegas": {
+    es: "Los agentes pueden tocar la agenda de sus colegas",
+  },
+  "Com isto ligado, qualquer atendente cancela e remarca o compromisso de qualquer colega — é o comportamento de sempre. Desligado, cada atendente mexe só no compromisso de que é o responsável; gerentes e administradores seguem mexendo em tudo.": {
+    es: "Con esto activado, cualquier agente cancela y reprograma el compromiso de cualquier colega: es el comportamiento de siempre. Desactivado, cada agente toca solo el compromiso del que es responsable; los gerentes y administradores siguen pudiendo con todo.",
+  },
+  "Ligado: qualquer atendente mexe na agenda de qualquer colega.": {
+    es: "Activado: cualquier agente toca la agenda de cualquier colega.",
+  },
+  "Desligado: cada atendente mexe só na própria agenda. Gerentes e administradores continuam mexendo em tudo.": {
+    es: "Desactivado: cada agente toca solo su propia agenda. Los gerentes y administradores siguen pudiendo con todo.",
+  },
+  "Isto não muda o que cada pessoa vê na agenda, só quem pode alterar o compromisso de quem.": {
+    es: "Esto no cambia lo que cada persona ve en la agenda, solo quién puede alterar el compromiso de quién.",
+  },
+  "Só um gerente ou administrador pode mudar essa regra.": {
+    es: "Solo un gerente o administrador puede cambiar esta regla.",
+  },
+
 };
 
 /**

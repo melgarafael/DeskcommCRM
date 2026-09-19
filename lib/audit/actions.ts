@@ -498,6 +498,12 @@ export const AUDIT_ACTIONS = [
   // próprio: como `agenda.tipo_alterado { campos: ["is_active"] }` ele seria,
   // na trilha, indistinguível de "mudaram a duração".
   "agenda.tipo_reativado",
+  // A opção da ORGANIZAÇÃO que decide se o Atendente mexe na agenda dos colegas
+  // (issue #978, migration 0279). É ato de gestão como o dos tipos acima: muda o
+  // que TODO Atendente pode fazer a partir dali, e sem esta linha a primeira
+  // negativa de um colega não teria explicação na trilha — nem como responder
+  // "quando foi que desligaram isso?".
+  "agenda.colegas_podem_mexer_alterado",
   // A rodada que AVISOU alguém do próprio compromisso. Mensagem que saiu para o
   // telefone de um cliente é efeito, e efeito audita — mas só a rodada que
   // enviou: a que varreu e não achou ninguém a avisar não é mutação.

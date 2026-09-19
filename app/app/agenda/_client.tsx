@@ -220,11 +220,20 @@ export function AgendaClient({
   const [isolada, setIsolada] = React.useState<string | null>(null);
   const [ancora, setAncora] = React.useState(() => new Date());
 
-  // AS PESSOAS SÃO REAIS: vêm de `/api/v1/team`, com a trilha de cor derivada do
-  // `user_id`. Até esta linha o filtro por pessoa era invisível na tela do
-  // produto — `FiltroDePessoas` devolve `null` com menos de duas pessoas, e a
-  // lista estava vazia. Ele existia, estava provado na vitrine, e ninguém o via
-  // aqui.
+  // AS PESSOAS SÃO REAIS, e vêm da lista MÍNIMA da agenda — `/api/v1/agenda/pessoas`
+  // (`ROTA_DA_LISTA_DE_PESSOAS`, `lib/agenda/lista-de-pessoas.ts`), papel mínimo
+  // `agent` e só id/nome. Com a trilha de cor derivada do `user_id`.
+  //
+  // ⚠️ ESTA LINHA DIZIA `/api/v1/team`, E A FRASE MENTIA. Ela descrevia o estado
+  // de antes do item 1 da issue 896, quando a agenda pedia a equipe à rota de
+  // administração — que é `manager+` e devolve e-mail e último acesso — e o
+  // Atendente levava 403 só por abrir a tela (virava aviso de falta de
+  // permissão sobre uma grade que continuava lá). A rota mínima consertou isso;
+  // a prosa ficou. Medido nesta rodada:
+  //   grep -rn "api/v1/team" app/app/agenda/ | grep -v "\(//\|\*\)"  → vazio
+  // É por isso que a frase foi reescrita em vez de apagada: quem lê o código
+  // para entender o 403 do Atendente precisa saber que ele JÁ não existe, e um
+  // comentário que afirma o contrário é o defeito de novo.
   const { data: pessoas = [] } = usePessoasDaAgenda();
 
   // A JANELA ACOMPANHA O MÊS QUE O PAINEL MOSTRA.

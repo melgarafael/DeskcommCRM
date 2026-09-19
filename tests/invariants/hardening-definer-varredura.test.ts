@@ -149,6 +149,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "negação agent/viewer/cross-org e ausência de efeito recusado.",
   },
   {
+    fn: "fn_definir_colegas_podem_mexer_na_agenda(uuid,boolean)",
+    razao:
+      "app/actions/settings/definirAgendaDosColegas.ts chama por rpc com o " +
+      "createClient da SESSÃO, e a própria função reconfere auth.uid(), " +
+      "manager, suporte de escrita e MFA comprovado antes de gravar. " +
+      "tests/invariants/agenda-presenca-acl.test.ts prova manager da própria " +
+      "org com fator provado e a negação de agent, viewer, sessão aal1, anon " +
+      "e da org vizinha, com a configuração intacta depois das recusas.",
+  },
+  {
     fn: "fn_definir_cliente_pela_agenda(uuid,boolean)",
     razao:
       "app/actions/settings/definirClientePelaAgenda.ts chama com createClient da sessão; " +
