@@ -7,6 +7,7 @@ import {
   legendaDaMoto,
   motosCitadasNoTexto,
   normalizarNomeDeMoto,
+  separarTextoApresentacao,
 } from './fotos-do-catalogo';
 
 const RESULTADO = {
@@ -110,5 +111,44 @@ describe('legendaDaMoto / formatarPreco', () => {
 describe('normalizarNomeDeMoto', () => {
   it('minúsculas, sem acento, espaços colapsados', () => {
     expect(normalizarNomeDeMoto('  CB  300 F  Twíster ')).toBe('cb 300 f twister');
+  });
+});
+
+describe('separarTextoApresentacao', () => {
+  const catalogo = extrairMotosDoResultado(RESULTADO);
+
+  it('tira a lista do texto e joga a pergunta para o fim', () => {
+    const texto = [
+      'Boa tarde! Tudo bem?',
+      'No momento não tenho a CB 250, mas tenho opções similares:',
+      'YS Fazer 250 2017\nCor: Vermelho\nQuilometragem: 82300\nPreço: R$ 17.990,00',
+      'CB 300 F Twister 2025\nCor: Vermelho\nQuilometragem: 4500\nPreço: R$ 28.990,00',
+      'Alguma dessas te interessa? Como pretende adquirir?',
+    ].join('\n\n');
+    const { introducao, final } = separarTextoApresentacao(texto, catalogo);
+    // a lista NÃO fica no texto
+    expect(introducao).not.toContain('YS Fazer 250 2017\n');
+    expect(introducao).not.toContain('Cor: Vermelho\nQuilometragem');
+    // introdução mantém o "não tenho a CB 250"
+    expect(introducao).toContain('não tenho a CB 250');
+    // a pergunta vai para o final
+    expect(final).toContain('Alguma dessas te interessa?');
+    expect(introducao).not.toContain('Alguma dessas');
+  });
+
+  it('remove bloco que é só o nome da moto', () => {
+    const texto = [
+      'Tenho estas opções:',
+      'XMax 250 2023',
+      'Qual te interessou?',
+    ].join('\n\n');
+    const { introducao, final } = separarTextoApresentacao(texto, catalogo);
+    expect(introducao).toBe('Tenho estas opções:');
+    expect(final).toBe('Qual te interessou?');
+  });
+
+  it('sem pergunta, final fica vazio (não inventa)', () => {
+    const { final } = separarTextoApresentacao('Segue a moto.', catalogo);
+    expect(final).toBe('');
   });
 });

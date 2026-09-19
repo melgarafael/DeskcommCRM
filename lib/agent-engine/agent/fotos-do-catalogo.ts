@@ -184,3 +184,71 @@ export function fotosComLegenda(
   }
   return plano;
 }
+
+/** Um parágrafo é "bloco de moto" (vai para a legenda, não para o texto)? */
+function ehBlocoDeMoto(paragrafo: string, catalogo: readonly MotoDoCatalogo[]): boolean {
+  const linhas = paragrafo.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (linhas.length === 0) return false;
+
+  // Linha de DADO da moto — com ou sem dois-pontos (o modelo escreve das duas
+  // formas: "Cor: Vermelho" e "Cor Vermelho"; idem "82.300 km", "R$ 17.990,00").
+  const ehLinhaDeDado = (l: string): boolean =>
+    /^(cor|quilometragem|km|pre[çc]o|valor|ano)\b/i.test(l) ||
+    /^r\$\s*[\d.]+,\d{2}$/i.test(l) ||
+    /^[\d.]+\s*km$/i.test(l);
+  if (linhas.some(ehLinhaDeDado)) return true;
+
+  // Parágrafo curto que é apenas o nome de uma moto conhecida (com/sem ano).
+  if (linhas.length <= 2) {
+    const semEspaco = chaveSemEspaco(paragrafo);
+    if (semEspaco === '') return false;
+    return catalogo.some((m) => {
+      const nome = chaveSemEspaco(m.nome);
+      return (
+        nome.length >= MIN_NOME_CASAVEL &&
+        (semEspaco === nome || semEspaco === chaveSemEspaco(`${m.nome} ${m.ano ?? ''}`))
+      );
+    });
+  }
+  return false;
+}
+
+export interface TextoDeApresentacao {
+  /** Introdução: vai ANTES das fotos ("não temos a X, mas tenho estas..."). */
+  introducao: string;
+  /** Pergunta(s) finais: vão DEPOIS das fotos e das legendas. */
+  final: string;
+}
+
+/**
+ * Separa o texto do modelo no formato do dono (2026-09-19): a lista de motos
+ * SAI do texto (ela já vive na legenda de cada foto), a introdução fica antes
+ * das fotos e a pergunta final fica depois. Sem esta separação, a mesma lista
+ * aparece duas vezes e a pergunta chega antes das imagens.
+ *
+ * Regras: parágrafos que são bloco de moto saem; o ÚLTIMO parágrafo restante,
+ * se contiver "?", vira `final` (é ali que o agente fecha com a pergunta de
+ * avanço); o resto vira `introducao`. Assim uma saudação com "?" no meio
+ * ("Tudo bem?") NÃO é arrancada da introdução. Sem pergunta no fim ⇒ `final`
+ * vazio (o motor não inventa pergunta).
+ */
+export function separarTextoApresentacao(
+  texto: string,
+  catalogo: readonly MotoDoCatalogo[],
+): TextoDeApresentacao {
+  const paragrafos = texto
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p !== '' && !ehBlocoDeMoto(p, catalogo));
+
+  if (paragrafos.length === 0) return { introducao: '', final: '' };
+
+  const ultimo = paragrafos[paragrafos.length - 1]!;
+  if (/\?/.test(ultimo)) {
+    return {
+      introducao: paragrafos.slice(0, -1).join('\n\n'),
+      final: ultimo,
+    };
+  }
+  return { introducao: paragrafos.join('\n\n'), final: '' };
+}

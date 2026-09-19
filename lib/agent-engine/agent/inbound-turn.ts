@@ -152,7 +152,12 @@ import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
-import { extrairMotosDoResultado, fotosComLegenda, type MotoDoCatalogo } from './fotos-do-catalogo';
+import {
+  extrairMotosDoResultado,
+  fotosComLegenda,
+  separarTextoApresentacao,
+  type MotoDoCatalogo,
+} from './fotos-do-catalogo';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -3298,18 +3303,19 @@ async function executarTurnoDoAgente(
             }
             return ultimo!;
           };
-          // Formato do dono (2026-09-19): a mensagem inicial vai em TEXTO; depois
-          // UMA FOTO POR MOTO, cada uma com a legenda da PRÓPRIA moto. As demais
-          // motos NÃO repetem o texto de início — a legenda da imagem já as
-          // identifica. `legendaTexto` é o `finalBody` do modelo (o texto que ele
-          // escreveu: "não temos a CB 250, mas olha essas..." + a lista).
+          // Formato do dono (2026-09-19): (1) introdução em TEXTO sem a lista —
+          // ela já vive na legenda de cada foto; (2) UMA FOTO POR MOTO com a
+          // legenda da PRÓPRIA moto; (3) pergunta final em TEXTO, DEPOIS das
+          // fotos. A lista de blocos é removida do texto e as perguntas são
+          // movidas para o fim — ver `separarTextoApresentacao`.
           const enviarFotosAutomaticas = async (
-            legendaTexto: string,
+            textoDoModelo: string,
           ): Promise<ChannelSendResult> => {
             let ultimo: ChannelSendResult | undefined;
-            // 1) mensagem inicial em TEXTO (com a lista), sem mídia.
-            if (legendaTexto.trim() !== '') {
-              ultimo = await sendInBubbles(legendaTexto, {
+            const { introducao, final } = separarTextoApresentacao(textoDoModelo, catalogoDoTurno);
+            const enviarTexto = async (txt: string): Promise<void> => {
+              if (txt.trim() === '') return;
+              ultimo = await sendInBubbles(txt, {
                 enabled: agentConfig?.splitMessages ?? false,
                 maxChars: agentConfig?.splitMaxChars ?? 600,
                 sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
@@ -3329,7 +3335,9 @@ async function executarTurnoDoAgente(
                 },
               });
               await dormir(700);
-            }
+            };
+            // 1) introdução em texto.
+            await enviarTexto(introducao);
             // 2) uma foto por moto, cada uma com a legenda dela.
             for (const item of planoAutomatico) {
               ultimo = await liveChannel().send({
@@ -3345,6 +3353,8 @@ async function executarTurnoDoAgente(
               });
               await dormir(700);
             }
+            // 3) pergunta final em texto, depois das fotos.
+            await enviarTexto(final);
             return ultimo!;
           };
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
