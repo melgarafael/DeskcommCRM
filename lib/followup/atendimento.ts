@@ -589,11 +589,73 @@ export async function processarInboundDoFluxo(
      * chamador conseguiu rodá-lo. Tem PRECEDÊNCIA sobre a captura determinística
      * porque ele vê o CONTEXTO da conversa — é o que evita gravar "ok"/2019 no
      * campo errado. Ausente = comportamento de antes (só o classificador puro).
+     * `campo` presente = CORREÇÃO de um dado já preenchido (com permite_correcao).
      */
-    validacao?: { respondeu: boolean; valor?: string } | undefined;
+    validacao?: { respondeu: boolean; valor?: string; campo?: string } | undefined;
   },
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
+
+  // CORREÇÃO: o validador apontou um campo JÁ PREENCHIDO que aceita correção.
+  // Trata antes da pendente — o cliente mudou um dado e isso não é resposta à
+  // pergunta atual. O campo precisa existir e permitir correção (defesa dupla).
+  if (args.validacao?.respondeu === true && args.validacao.campo !== undefined) {
+    const alvo = campoPorChave(estado.checklist, args.validacao.campo);
+    const pendenteAgora = estado.situacao.pendentes[0];
+    const ehCorrecao = alvo !== null && alvo.config.key !== pendenteAgora?.config.key;
+    if (ehCorrecao) {
+      if (!alvo.config.permite_correcao) return { estado, concluiu: false };
+      try {
+        await registrarDadoDoFluxo(db, {
+          organizationId: args.organizationId,
+          contactId: estado.enrollment.contact_id,
+          flowPointerId: estado.enrollment.pointer_id,
+          enrollmentId: estado.enrollment.id,
+          fieldKey: alvo.config.key,
+          value: args.texto ?? "",
+          valueJson: {
+            normalizado: args.validacao.valor ?? "",
+            tipo: alvo.config.type,
+            deterministico: true,
+            correcao: true,
+          },
+          source: "deterministic",
+        });
+      } catch {
+        return { estado, concluiu: false };
+      }
+      void registrarEventoDoFluxo(db, {
+        organizationId: args.organizationId,
+        enrollmentId: estado.enrollment.id,
+        flowPointerId: estado.enrollment.pointer_id,
+        contactId: estado.enrollment.contact_id,
+        kind: "resposta",
+        messageId: args.messageId ?? null,
+        fieldKey: alvo.config.key,
+        payload: { normalizado: args.validacao.valor ?? "", correcao: true, deterministico: true },
+      }).catch(() => {});
+      const valores = new Set(Object.keys(estado.valores));
+      valores.add(alvo.config.key);
+      const comValor = {
+        ...estado,
+        valores: { ...estado.valores, [alvo.config.key]: args.validacao.valor ?? "" },
+      };
+      const atualizado = recomputarSituacao(comValor, valores);
+      if (!atualizado.situacao.completo) return { estado: atualizado, concluiu: false };
+      const { finalizacao } = await finalizarFluxoDeAtendimento(db, {
+        organizationId: args.organizationId,
+        estado: atualizado,
+        messageId: args.messageId ?? null,
+        kind: "concluido",
+      });
+      return {
+        estado: atualizado,
+        concluiu: true,
+        ...(finalizacao !== undefined ? { finalizacao } : {}),
+      };
+    }
+  }
+
   const primeiro = estado.situacao.pendentes[0];
   // Nada pendente COM todos os obrigatórios preenchidos = o fluxo JÁ concluiu
   // (os valores chegaram por outra via — `flow_collect` do modelo, captura

@@ -2346,52 +2346,78 @@ async function executarTurnoDoAgente(
     // O turno que ACIONOU o fluxo não tem resposta a capturar (ver acima).
     !fluxoIniciadoNesteTurno
   ) {
+    // Narrowing estável dentro do callback/try: o TypeScript perde o `!== null`
+    // do `if` quando `atendimento` é reatribuído mais abaixo.
+    const atendimentoDoTurno = atendimento;
     try {
-      // O VALIDADOR (agente dedicado) decide o que gravar — só quando há uma
-      // pergunta pendente e o cliente respondeu. Ele vê o CONTEXTO da conversa,
+      // O VALIDADOR (agente dedicado) decide o que gravar — a pergunta pendente
+      // OU a correção de um campo já preenchido. Ele vê o CONTEXTO da conversa,
       // o que impede a gravação errada do modelo principal. Falha dele
       // (`indefinido`) cai no classificador determinístico de sempre.
-      const pendente = atendimento.situacao.pendentes[0];
-      let validacao: { respondeu: boolean; valor?: string } | undefined;
-      if (pendente !== undefined && currentInboundText !== null && currentInboundText.trim() !== '') {
+      const pendente = atendimentoDoTurno.situacao.pendentes[0];
+      // Campos já preenchidos que ACEITAM correção — o cliente pode mudar um dado
+      // a qualquer momento ("na verdade o ano é 2020").
+      const corrigiveis = atendimentoDoTurno.checklist.passos
+        .filter(
+          (p): p is Extract<(typeof atendimentoDoTurno.checklist.passos)[number], { kind: "collect" }> =>
+            p.kind === "collect" &&
+            p.node.config.permite_correcao &&
+            atendimentoDoTurno.valores[p.node.config.key] !== undefined,
+        )
+        .map((p) => ({
+          key: p.node.config.key,
+          label: p.node.config.label,
+          valor: atendimentoDoTurno.valores[p.node.config.key] ?? "",
+        }));
+      let validacao: { respondeu: boolean; valor?: string; campo?: string } | undefined;
+      if (
+        (pendente !== undefined || corrigiveis.length > 0) &&
+        currentInboundText !== null &&
+        currentInboundText.trim() !== ''
+      ) {
         const ultimasMensagens = effectiveContext.messages.slice(-6).map((m) => ({
           de: (m.direction === 'inbound' ? 'cliente' : 'loja') as 'cliente' | 'loja',
           texto: m.body,
         }));
-        const cfg = pendente.config;
+        const cfg = pendente?.config;
         const leitura = await validarRespostaDoFluxo(
           pool,
           deps.llmCfg,
           { tenantId, leadId, jobId: liveJob().id },
           {
-            pergunta: {
-              key: cfg.key,
-              label: cfg.label,
-              type: cfg.type,
-              ...(cfg.options !== undefined ? { options: cfg.options } : {}),
-              ...(cfg.question !== undefined ? { question: cfg.question } : {}),
-            },
+            pergunta:
+              cfg === undefined
+                ? null
+                : {
+                    key: cfg.key,
+                    label: cfg.label,
+                    type: cfg.type,
+                    ...(cfg.options !== undefined ? { options: cfg.options } : {}),
+                    ...(cfg.question !== undefined ? { question: cfg.question } : {}),
+                  },
+            preenchidos: corrigiveis,
             mensagens: ultimasMensagens,
           },
           { registry: deps.registry, log: runLog },
         );
         if (leitura.resultado === 'respondeu') {
-          validacao = { respondeu: true, valor: leitura.valor };
+          validacao = { respondeu: true, valor: leitura.valor, campo: leitura.campo };
         } else if (leitura.resultado === 'nao_respondeu') {
           validacao = { respondeu: false };
         }
         // `indefinido` → sem validação; o classificador puro decide abaixo.
         runLog.info('fluxo: decisão do validador', {
-          campo: cfg.key,
-          tipo: cfg.type,
+          campo: cfg?.key ?? null,
+          corrigiveis: corrigiveis.map((c) => c.key),
           resultado: leitura.resultado,
+          campo_alvo: leitura.resultado === 'respondeu' ? leitura.campo : null,
           texto: (currentInboundText ?? '').slice(0, 60),
         });
       }
-      // Se o VALIDADOR já gravou a pergunta deste turno, o modelo principal NÃO
-      // pode chamar `flow_collect`: ele gravava a MESMA resposta no próximo campo
-      // (medido ao vivo: validador grava `moto_troca`, e 6s depois o modelo
-      // grava `troca_ano`). Uma resposta, um campo — quem grava é o motor.
+      // Se o VALIDADOR já gravou neste turno, o modelo principal NÃO pode chamar
+      // `flow_collect`: ele gravava a MESMA resposta no próximo campo (medido ao
+      // vivo: validador grava `moto_troca`, e 6s depois o modelo grava
+      // `troca_ano`). Uma resposta, um campo — quem grava é o motor.
       validadorGravouNesteTurno = validacao?.respondeu === true;
       const r = await processarInboundDoFluxo(pool, {
         organizationId: tenantId,
