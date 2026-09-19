@@ -224,6 +224,12 @@ if [ -n "$violations" ]; then
   echo "o segundo caso vai pra inbox (loop/INBOX.md), não pro Edit." >&2
   echo "Exceção legítima (o catraca): flip de test.fails → teste normal quando a fase G2+ corrige o gap." >&2
   echo "Nesse caso: exporte DESKCOMM_GOV_INVARIANTS_EDIT=1 e cite o flip no commit message." >&2
+  echo "" >&2
+  echo "RESOLVENDO CONFLITO DE MERGE e caiu aqui? Então a sua resolução ficou DIFERENTE dos dois" >&2
+  echo "lados — isso é edição própria dentro do merge, e é o que este guard existe para pegar." >&2
+  echo "Caminho sem improviso: resolva ESCOLHENDO um dos lados, feche o merge, e faça a mudança" >&2
+  echo "que você queria num commit PRÓPRIO, com a razão escrita. A válvula acima é para o flip," >&2
+  echo "não para resolução — válvula usada fora do caso previsto vira válvula de rotina." >&2
   exit 1
 fi
 
