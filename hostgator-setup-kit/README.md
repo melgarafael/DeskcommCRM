@@ -1,6 +1,8 @@
-# DeskcommCRM — Kit de Instalação (HostGator)
+# escreve.ai — Kit de Instalação (HostGator)
 
-Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois caminhos:
+> **escreve.ai:** este repositório é uma edição independente. As branches, os remotes, a distribuição e a origem dos guias herdados estão definidos em [Identidade e operação](../docs/escreve-ai.md); essa orientação prevalece para esta edição.
+
+Este kit sobe o **escreve.ai** no seu servidor VPS da HostGator. Você tem dois caminhos:
 
 > **Ainda nem tem servidor?** Comece por `comecar.sh` — ele roda **no seu computador**, antes
 > de existir VPS, e responde a pergunta que trava todo mundo no início: *o que eu preciso
@@ -25,7 +27,7 @@ Este kit sobe o **DeskcommCRM** no seu servidor VPS da HostGator. Você tem dois
 2. Clone o repositório (`git clone --depth 1 https://github.com/melgarafael/DeskcommCRM.git deskcommcrm`)
    e abra a pasta no **Claude Code, Codex, Cursor, OpenCode ou Antigravity** dentro do VPS —
    ou jogue só esta pasta no chat: o `CLAUDE.md` daqui manda clonar e abre o guia.
-3. Diga: *"instala o DeskcommCRM pra mim"*. O guia `deskcomm-instalar` conduz tudo —
+3. Diga: *"instala o escreve.ai pra mim"*. O guia `deskcomm-instalar` conduz tudo —
    cria o banco, gera as senhas, sobe o CRM e te ajuda a conectar o WhatsApp.
 
 ## ⚙️ Caminho manual: um comando

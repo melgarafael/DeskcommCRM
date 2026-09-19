@@ -31,7 +31,7 @@ O follow-up já tem grafo + enrollment + `next_eval_at`. Unificar os dois motore
 | Novos tipos de gatilho além dos 5 atuais | Schema/API já fixam `TRIGGER_EVENTS`; expandir é feature à parte. |
 | Fila outbound dedicada / retry configurável | Fora da v1. |
 | Reescrever `automation_rules` como `followup_flow_pointers` | Dois relógios; não misturar. |
-| Marca “Deskcomm” na UI | Doutrina white-label. |
+| Marca “escreve.ai” na UI | Doutrina white-label. |
 
 ---
 

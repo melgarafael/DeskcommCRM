@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+> **escreve.ai:** este repositório é uma edição independente. As branches, os remotes, a distribuição e a origem dos guias herdados estão definidos em [Identidade e operação](docs/escreve-ai.md); essa orientação prevalece para esta edição.
+
 > Contrato portável para **qualquer** agente de código (Codex, Cursor, OpenCode, Antigravity, Copilot).
 > Este arquivo é o núcleo. A **doutrina completa e não-negociável vive em [`CLAUDE.md`](CLAUDE.md)** —
 > leia-o antes de tocar em código. O mapa de toda a documentação está em [`docs/index.md`](docs/index.md).
@@ -231,7 +233,7 @@ Função nova em `public` precisa de `revoke execute ... from public, anon` **e*
 duas origens de `EXECUTE`.
 
 **Marca própria (white-label)** — o produto é revendido e o nome não é seu. **Nunca** escreva
-"Deskcomm"/"DeskcommCRM" em código que alcança o usuário: `tests/unit/branding.test.ts` varre
+"escreve.ai"/"escreve.ai" em código que alcança o usuário: `tests/unit/branding.test.ts` varre
 `app|components|lib|workers|hooks` e reprova (a allowlist só encolhe). A marca resolve do banco
 (`platform_branding`, `organizations.settings.branding`); `APP_NAME`/`APP_LOGO_URL`/`APP_ACCENT_HEX`
 no `.env` são semente e piso de rollback. Fora do DOM (e-mail, ícone, `issuer` do MFA) use

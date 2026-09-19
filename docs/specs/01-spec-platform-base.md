@@ -11,7 +11,7 @@ regras_aplicadas: [T-01, T-02, T-03, T-04, T-05, T-06, T-07, T-08, L-04, L-06, L
 
 # Spec Técnica 01 — Plataforma Base
 
-> Spec foundational do DeskcommCRM. Define schema SQL completo, RLS policies, fluxos de auth, contratos de API REST `/api/v1/`, endpoints LGPD e onboarding de tenant. Toda spec posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) **depende** desta. Divergências exigem ADR explícito.
+> Spec foundational do escreve.ai. Define schema SQL completo, RLS policies, fluxos de auth, contratos de API REST `/api/v1/`, endpoints LGPD e onboarding de tenant. Toda spec posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) **depende** desta. Divergências exigem ADR explícito.
 
 ---
 

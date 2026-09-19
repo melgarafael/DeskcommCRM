@@ -1,6 +1,6 @@
 # Doutrina de Packaging e Distribuição
 
-> Lei de arquitetura para tudo que roda no disco de quem instalou o DeskcommCRM: imagens,
+> Lei de arquitetura para tudo que roda no disco de quem instalou o escreve.ai: imagens,
 > composes, tags e o kit de instalação. Complementa [`sistema-vivo.md`](./sistema-vivo.md) —
 > não é aspiração, é critério de aceite. Amarrada ao item 15 do Definition of Done
 > (`CLAUDE.md`).

@@ -128,7 +128,7 @@ sudo chown deskcomm:deskcomm /opt/deskcomm-waha
 cd /opt/deskcomm-waha
 ```
 
-Copiar (via `scp` ou `git clone`) o `docker-compose.yml` do repo (raiz do DeskcommCRM). Ajustes obrigatórios pra prod:
+Copiar (via `scp` ou `git clone`) o `docker-compose.yml` do repo (raiz do escreve.ai). Ajustes obrigatórios pra prod:
 
 ```yaml
 services:

@@ -1,4 +1,4 @@
-# 🧭 Visão — DeskcommCRM
+# 🧭 Visão — escreve.ai
 
 > **O sistema operacional de vendas com agentes de IA, open source, nativo no WhatsApp.**
 > Este documento é a fonte da verdade do posicionamento do projeto. Tudo que for público (README, site, docs, descrições) deriva daqui.
@@ -7,18 +7,13 @@
 
 ## O nome
 
-**Deskcomm** vem de **Desk** (mesa) + **comm** (comércio): **o comercial de mesa**.
-A ideia que o nome carrega: toda a operação comercial de um negócio — atendimento, qualificação, funil, pós-venda — operada a partir de uma única mesa, por pessoas e por agentes de IA trabalhando juntos.
+**escreve.ai** é o nome desta edição do CRM: conversas, agentes de IA e contexto do cliente reunidos para apoiar atendimento e vendas.
 
-O "CRM" no nome é a categoria de entrada, não o teto. O DeskcommCRM é **mais que um CRM**: é o sistema onde a venda acontece.
+## Origem e continuidade
 
-## De onde viemos, pra onde vamos
+Esta edição é mantida por SARAIVA e deriva do [DeskcommCRM](https://github.com/melgarafael/DeskcommCRM), de Rafael Melgaço e colaboradores. Preserva a licença MIT e o histórico do projeto original, acrescentando as personalizações de prospecção, enriquecimento, canais e experiência de atendimento.
 
-O projeto nasceu em 2026 como um CRM operacional para **e-commerce brasileiro** — WhatsApp via WAHA, integração Nuvemshop, LGPD nativa. Quando abrimos o código, a comunidade decidiu outra coisa: a maioria dos adopters passou a rodar o Deskcomm em **clínicas, infoprodutos, imobiliárias, agências e prestadores de serviço** — qualquer negócio que vende conversando.
-
-Os pedidos de feature dessa comunidade empurraram o produto na direção que hoje é a nossa identidade: **agentes de IA cada vez mais capazes, integrados ao sistema via MCP, operando o CRM de verdade**. O e-commerce continua sendo um caso de uso de primeira classe (foi nosso berço e a integração Nuvemshop prova isso) — mas ele é **um** vertical, não **o** produto.
-
-**A transição, em uma frase:** de "CRM de e-commerce com IA" para **"sistema operacional de vendas com agentes de IA, para qualquer negócio que vende pelo WhatsApp"**.
+As atualizações oficiais são incorporadas em uma branch de integração e precisam de validação antes de entrar na versão atual. Consulte [a identidade e operação do repositório](docs/escreve-ai.md).
 
 ## O que acreditamos sobre agentes de IA
 
@@ -26,7 +21,7 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 
 2. **Agentes que se auto-aprimoram.** O sistema é desenhado como um flywheel: conversas resolvidas viram conhecimento novo na base RAG; handoffs pro humano marcam onde o agente ainda não alcança; métricas e budget por tenant fecham o loop. Cada dia de operação torna o agente melhor — com **gate humano** nas decisões que importam. Essa é a aposta central do roadmap.
 
-3. **MCP como sistema nervoso.** O CRM inteiro é exposto como tools MCP — primeiro para os agentes internos, depois como contrato público. Um negócio deve poder plugar o agente que quiser (Claude, o que vier) e ele **opera** o Deskcomm: cria lead, responde cliente, agenda, consulta pedido. O CRM vira infraestrutura para agentes.
+3. **MCP como sistema nervoso.** O CRM inteiro é exposto como tools MCP — primeiro para os agentes internos, depois como contrato público. Um negócio deve poder plugar o agente que quiser (Claude, o que vier) e ele **opera** o escreve.ai: cria lead, responde cliente, agenda, consulta pedido. O CRM vira infraestrutura para agentes.
 
 4. **Humano no comando.** Handoff auditado, escopo por papel (RBAC), fila com posição, budget de IA por organização. Autonomia do agente cresce na medida em que a governança prova que ele acerta.
 
@@ -49,7 +44,7 @@ Os pedidos de feature dessa comunidade empurraram o produto na direção que hoj
 **Categoria própria (bandeira):** **sistema operacional de vendas com agentes de IA** — *AI Sales OS*. É pra onde a âncora nos leva: os incumbentes vendem assinatura de chat com bot acoplado; nós entregamos um sistema onde o agente de IA é operador nativo e o código é seu.
 
 **Uma frase (pt-br):**
-> DeskcommCRM é o sistema operacional de vendas open source com agentes de IA nativos e WhatsApp — self-hosted, multi-tenant, para qualquer negócio que vende conversando.
+> escreve.ai é o sistema operacional de vendas open source com agentes de IA nativos e WhatsApp — self-hosted, multi-tenant, para qualquer negócio que vende conversando.
 
 **One-liner (en):**
 > Open-source AI sales OS: a self-hosted CRM where AI agents natively operate sales and support over WhatsApp — an open alternative to Kommo, Octadesk and Intercom.

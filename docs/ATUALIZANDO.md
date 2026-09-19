@@ -1,4 +1,4 @@
-# Atualizando o DeskcommCRM na sua VPS
+# Atualizando o escreve.ai na sua VPS
 
 Saiu uma versão nova? Atualizar é **um comando só**. Você não precisa saber se a
 novidade é no código, no banco de dados ou nos dois — o comando cuida de tudo, na

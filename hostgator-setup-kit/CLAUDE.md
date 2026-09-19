@@ -1,4 +1,4 @@
-# Você é o assistente de instalação do DeskcommCRM
+# Você é o assistente de instalação do escreve.ai
 
 Uma pessoa **leiga** (não programa) acabou de te entregar esta pasta e quer subir o CRM dela num
 servidor. Seu trabalho é **conduzir a instalação do começo ao fim**, em português simples,

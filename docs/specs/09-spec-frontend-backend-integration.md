@@ -17,7 +17,7 @@ owner: Rafael Melgaço
 
 # Spec 09 — Frontend ↔ Backend Integration Contract
 
-> Playbook operacional de comunicação ponta-a-ponta entre o frontend (Next.js 15 App Router) e o backend (Supabase + API Routes + Workers) do DeskcommCRM. Esta spec **fecha decisões** que estavam espalhadas pelas Specs 01–08 e consolida o contrato que todo dev frontend deve consultar **antes de codar qualquer tela**.
+> Playbook operacional de comunicação ponta-a-ponta entre o frontend (Next.js 15 App Router) e o backend (Supabase + API Routes + Workers) do escreve.ai. Esta spec **fecha decisões** que estavam espalhadas pelas Specs 01–08 e consolida o contrato que todo dev frontend deve consultar **antes de codar qualquer tela**.
 
 ---
 

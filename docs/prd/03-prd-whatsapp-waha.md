@@ -11,7 +11,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 # Sub-PRD 03 — Canal WhatsApp via WAHA Plus
 
-> Define como o DeskcommCRM se conecta ao WhatsApp via WAHA Plus (API não-oficial) — desde a conexão de número via QR code, recebimento e envio de mensagens, suporte a mídia, multi-número e multi-atendente, até as defesas anti-banimento que sustentam a operação. É o canal primário do produto; sem ele, o CRM não opera. Profundidade de schema, payloads exatos e código de handlers ficam pra `docs/specs/03-spec-whatsapp-waha.md`.
+> Define como o escreve.ai se conecta ao WhatsApp via WAHA Plus (API não-oficial) — desde a conexão de número via QR code, recebimento e envio de mensagens, suporte a mídia, multi-número e multi-atendente, até as defesas anti-banimento que sustentam a operação. É o canal primário do produto; sem ele, o CRM não opera. Profundidade de schema, payloads exatos e código de handlers ficam pra `docs/specs/03-spec-whatsapp-waha.md`.
 
 ---
 
@@ -19,7 +19,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 WhatsApp é o canal **dominante** no e-commerce brasileiro PME — onde 80%+ das interações cliente↔loja acontecem. A API oficial Meta (Cloud API) é restritiva (template aprovado pra mensagem proativa fora da janela de 24h, custo por conversa, latência de aprovação), inadequada pra operação BPO de alto volume com tráfego majoritariamente reativo.
 
-O DeskcommCRM adota **WAHA Plus** (não Core) como solução de canal: API não-oficial baseada em engenharia reversa do WhatsApp Web, **multi-tenant nativo** (1 instância suporta N sessões), com auth via SHA512 hash em `WAHA_API_KEY`. Trade-off explícito: WAHA não tem SLA contratual com Meta — números podem ser banidos a qualquer momento se o tráfego destoar de comportamento humano. **Toda a engenharia deste sub-PRD é, em última análise, defesa contra banimento.**
+O escreve.ai adota **WAHA Plus** (não Core) como solução de canal: API não-oficial baseada em engenharia reversa do WhatsApp Web, **multi-tenant nativo** (1 instância suporta N sessões), com auth via SHA512 hash em `WAHA_API_KEY`. Trade-off explícito: WAHA não tem SLA contratual com Meta — números podem ser banidos a qualquer momento se o tráfego destoar de comportamento humano. **Toda a engenharia deste sub-PRD é, em última análise, defesa contra banimento.**
 
 A arquitetura aqui definida governa: (a) sessões (1 sessão = 1 número WhatsApp por tenant); (b) ingestão de inbound via webhook HMAC-protegido com idempotência forte; (c) envio com persistência otimista; (d) anti-banimento por throttle + warm-up + spinning + STOP detection; (e) crons de auto-recovery; (f) suporte a multi-número e multi-atendente desde o dia 1.
 
@@ -68,7 +68,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 - **Engine NOWEB por default** (mais leve, sem Chromium); **WEBJS apenas pra features específicas** (stickers animados, listas/botões interativos) — decisão por feature, não por sessão inteira; revisitar na Spec
 - `webhook_secret` é **único por sessão** (não global) — facilita revogação e rotação
 - 1 tenant pode ter N sessões (MVP-B: 1-2 por tenant; arquitetura suporta mais)
-- Auth WAHA: `WAHA_API_KEY` armazenada como **SHA512 do plaintext** no servidor WAHA; o backend DeskcommCRM guarda o plaintext em variável de ambiente segura (Vercel Encrypted Env Var)
+- Auth WAHA: `WAHA_API_KEY` armazenada como **SHA512 do plaintext** no servidor WAHA; o backend escreve.ai guarda o plaintext em variável de ambiente segura (Vercel Encrypted Env Var)
 - Mudança de status é evento de timeline + audit (`channel_session.status_changed`)
 
 **ACs principais.**
@@ -99,7 +99,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 
 ### 3.3 Recebimento de mensagens via webhook
 
-**O que provê.** Endpoint receptor do DeskcommCRM que valida HMAC, persiste mensagem inbound com idempotência forte, e dispara o pipeline de processamento (Customer 360, IA, automações).
+**O que provê.** Endpoint receptor do escreve.ai que valida HMAC, persiste mensagem inbound com idempotência forte, e dispara o pipeline de processamento (Customer 360, IA, automações).
 
 **Princípios.**
 - Endpoint canônico `/api/v1/webhooks/waha/:session_name` (ou path-token equivalente — decisão na Spec)
@@ -269,7 +269,7 @@ A janela de 24h da Meta (envio proativo só com template aprovado fora da janela
 
 **Princípios.**
 - WAHA permite assinar evento `message` (apenas inbound) ou `message.any` (inbound + outbound de qualquer device, incluindo `fromMe=true`)
-- DeskcommCRM **assina `message.any`** pra não perder contexto quando atendente responde fora do CRM
+- escreve.ai **assina `message.any`** pra não perder contexto quando atendente responde fora do CRM
 - Mensagens com `fromMe=true` são tratadas como outbound:
   - Se `external_id` corresponde a uma mensagem que o CRM mesmo enviou → no-op (já temos)
   - Se `external_id` é novo → INSERT como outbound com `metadata.sent_via='external_device'`

@@ -107,7 +107,7 @@ Fino, sticky, fundo `#faf9f6` com `border-bottom` de 1px que só aparece após 4
 
 ### O conceito
 
-O nome do produto virando imagem. **Deskcomm = Desk + comm — o comercial de mesa.** O hero é uma mesa isométrica vista de cima, onde a operação comercial inteira é **uma superfície só**: a conversa, o funil, o agente, o follow-up — peças distintas ligadas por trilhas visíveis.
+O nome do produto virando imagem. **escreve.ai = Desk + comm — o comercial de mesa.** O hero é uma mesa isométrica vista de cima, onde a operação comercial inteira é **uma superfície só**: a conversa, o funil, o agente, o follow-up — peças distintas ligadas por trilhas visíveis.
 
 Por que isso é a escolha certa e não outra: é a única imagem desta página que **nenhum concorrente pode usar**, porque ela nasce da etimologia do seu nome. Um CRM genérico pode mostrar um kanban. Nenhum pode mostrar "a mesa".
 
@@ -370,7 +370,7 @@ Sem tabela de planos — não temos planos. Um bloco só, honesto.
 
 Formato deliberado (é o que a pesquisa de GEO mediu como eficaz): **pergunta literal como H2 visível**, resposta direta nas duas primeiras frases, número verificável quando houver. Como HTML visível — não como JSON-LD escondido, que o Google descontinuou para FAQ.
 
-1. Quanto custa o DeskcommCRM?
+1. Quanto custa o escreve.ai?
 2. Preciso saber programar para instalar?
 3. Qual VPS eu preciso?
 4. Funciona com WhatsApp comum?
@@ -389,11 +389,11 @@ A 9 é a mais importante e quase ninguém responde: *"Cada mensagem passa por se
 
 Reconstruído em HTML fluido (o original é 1680×600 fixo e quebra no celular), **mantendo os sinais visuais da HostGator** — laranja `#F67922`, navy `#073f60` — como um bloco de **parceiro claramente delimitado**. A ruptura de paleta vira intencional em vez de acidental: uma faixa de largura total, com respiro antes e depois, lida como "aqui começa outra coisa".
 
-Removidos: **OpenClaw** e **Hermes** — não têm relação com o Deskcomm e diluem a conversão.
+Removidos: **OpenClaw** e **Hermes** — não têm relação com o escreve.ai e diluem a conversão.
 
 > **Eyebrow:** Parceiro oficial
 > **Título:** Soberania com IA é na HostGator
-> **Corpo:** Datacenter no Brasil, sem transferência internacional de dados. É onde o DeskcommCRM foi feito para rodar.
+> **Corpo:** Datacenter no Brasil, sem transferência internacional de dados. É onde o escreve.ai foi feito para rodar.
 > **CTA:** Assinar a VPS com desconto da parceria →
 > **Microcopy:** link de parceria — assinar por ele apoia o projeto
 

@@ -1,4 +1,6 @@
-# Contributing — DeskcommCRM
+# Contributing — escreve.ai
+
+> **escreve.ai:** este repositório é uma edição independente. As branches, os remotes, a distribuição e a origem dos guias herdados estão definidos em [Identidade e operação](docs/escreve-ai.md); essa orientação prevalece para esta edição.
 
 ## Antes de começar
 

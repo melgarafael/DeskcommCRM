@@ -1,4 +1,4 @@
-# Runbook — DeskcommCRM em VPS com CloudPanel (Nginx)
+# Runbook — escreve.ai em VPS com CloudPanel (Nginx)
 
 > Cenário: VPS com **CloudPanel** já instalado, com o Nginx dele ocupando as
 > portas 80 e 443. O instalador do CRM sobe um Caddy nessas mesmas portas, então

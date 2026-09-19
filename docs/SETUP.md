@@ -1,4 +1,4 @@
-# Guia de Setup — DeskcommCRM
+# Guia de Setup — escreve.ai
 
 > **Pra quem é este doc?** Você acabou de clonar o repo, copiou `.env.example` pra `.env.local`, abriu o arquivo e bateu o desespero: "o que é cada uma dessas chaves e onde eu pego?". Este guia resolve isso. Sem pular etapas, sem assumir que você já configurou nada antes.
 >
@@ -520,7 +520,7 @@ Com tudo verde no `/api/v1/health`:
 3. Leia [`CLAUDE.md`](../CLAUDE.md) pra convenções do projeto.
 4. Veja [`tasks/todo.md`](../tasks/todo.md) pra entender o backlog atual.
 
-Bem-vindo ao DeskcommCRM. 🛠️
+Bem-vindo ao escreve.ai. 🛠️
 
 ---
 

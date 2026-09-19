@@ -152,7 +152,7 @@ volumes:
 
 ### 2.2 Variáveis de ambiente
 
-A `WAHA_API_KEY` do servidor é o **hash SHA512 hex (lowercase) do plaintext**. O backend DeskcommCRM guarda **só** o plaintext em Vercel Encrypted Env Var; nunca a hash duplicada. Geração:
+A `WAHA_API_KEY` do servidor é o **hash SHA512 hex (lowercase) do plaintext**. O backend escreve.ai guarda **só** o plaintext em Vercel Encrypted Env Var; nunca a hash duplicada. Geração:
 
 ```bash
 # Gerar plaintext seguro (nunca commitar; armazenar em 1Password/Vercel)

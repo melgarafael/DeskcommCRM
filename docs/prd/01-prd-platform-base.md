@@ -10,13 +10,13 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 # Sub-PRD 01 — Plataforma Base
 
-> Foundation do DeskcommCRM. Todo subsistema posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) depende das capacidades aqui definidas. Profundidade técnica (schema, RLS policies, payloads de API) vai pra `docs/specs/` na próxima fase.
+> Foundation do escreve.ai. Todo subsistema posterior (Customer 360, WhatsApp, Pipeline, IA, Nuvemshop) depende das capacidades aqui definidas. Profundidade técnica (schema, RLS policies, payloads de API) vai pra `docs/specs/` na próxima fase.
 
 ---
 
 ## 1. Contexto & Posicionamento
 
-A Plataforma Base resolve o **problema fundacional**: todo dado tocado pelo DeskcommCRM precisa estar autenticado, isolado por tenant, autorizado por role, auditado por mutação, e respeitar LGPD desde o primeiro request. Sem isso, qualquer feature em cima vira risco regulatório e operacional.
+A Plataforma Base resolve o **problema fundacional**: todo dado tocado pelo escreve.ai precisa estar autenticado, isolado por tenant, autorizado por role, auditado por mutação, e respeitar LGPD desde o primeiro request. Sem isso, qualquer feature em cima vira risco regulatório e operacional.
 
 A Plataforma Base também sustenta a administração transversal da instalação. Quando uma pessoa administradora precisa acompanhar uma organização, o acesso operacional é uma sessão temporária com alvo, modo e prazo próprios; não é um bypass permanente nem uma membership implícita. O contrato vigente está em [`docs/support-sessions.md`](../support-sessions.md).
 

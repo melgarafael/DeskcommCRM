@@ -152,7 +152,7 @@ O estado HTTP saudável não comprova áudio. A prova de ligação exige aparelh
 
 Todas exigem `getUser()` + verificação de organização (nunca confiar em `organization_id` do body). Traduzem pra chamada server-to-server em `http://wacalls:8080/...` — contrato medido no código-fonte (`cmd/server/httpapi.go`, não no README, que não lista os shapes):
 
-| Rota DeskcommCRM | WaCalls | Body / resposta upstream |
+| Rota escreve.ai | WaCalls | Body / resposta upstream |
 |---|---|---|
 | `POST /api/v1/voice/sessions/pair` | `GET /api/sessions` + `POST /api/sessions` — **e nunca `POST /api/sessions/{sid}/pair`** | `{name}` → `{id}`; a criação já inicia o pareamento, e o QR chega por SSE no `auth-state` (ver §4.2). O `/pair` do upstream troca o cliente whatsmeow sem refazer o subsistema de chamadas (`replaceClient` em `internal/app/session/session.go`), e o discador fica preso ao cliente desconectado — a rota o chamava desde a primeira versão da feature (2026-09-08). Antes de apagar ou criar, a rota lê `GET /api/sessions`: sessão pareada lá (banco atrasado, worker reiniciando) é gravada no banco e responde `409 voice_already_paired`, nunca é apagada — apagar desloga o aparelho. Sessão que nunca pareou, e órfã não pareada com o nome da organização (`org_<uuid inteiro>`), é apagada e recriada; sessão criada sem conseguir registro no banco é desfeita |
 | `GET /api/v1/voice/sessions/status` | `GET /api/sessions` (filtrado pela org) | `{sessions: [{id,name,jid,state,paired}]}` — campo é `state`, não `status` como o README da tabela de API sugere |
@@ -167,7 +167,7 @@ Todas exigem `getUser()` + verificação de organização (nunca confiar em `org
 
 **A ponte grava a ligação antes da rota.** O WaCalls emite `call-status` na `/api/events` ao enviar a oferta, antes de responder o `startCall`, e o worker grava a linha ~200 ms antes do INSERT da rota. Em `23505` (`voice_calls_organization_id_wacalls_call_id_key`) a rota completa a linha da ponte — sentido, dono, contato, sem tocar no status — e responde 201; antes respondia 502 com o telefone do outro lado tocando.
 
-**`X-Client-Id`** (header ou `?clientId=`) é como o WaCalls identifica o OPERADOR dono de uma chamada (exclusividade — um atendente só segura uma chamada ativa por vez, `409 operator already on a call` senão). A rota DeskcommCRM injeta o `user.id` da sessão autenticada aqui — nunca deixa o frontend escolher esse valor.
+**`X-Client-Id`** (header ou `?clientId=`) é como o WaCalls identifica o OPERADOR dono de uma chamada (exclusividade — um atendente só segura uma chamada ativa por vez, `409 operator already on a call` senão). A rota escreve.ai injeta o `user.id` da sessão autenticada aqui — nunca deixa o frontend escolher esse valor.
 
 `sessionId` do WaCalls nunca vaza pro frontend sem passar pela verificação de org — igual o `webhook_path_token` do WAHA não expõe `session_name` direto.
 

@@ -1088,7 +1088,7 @@ Lista canônica de métricas:
 
 ### 9.4 Dashboards essenciais
 
-**Sentry Dashboard "DeskcommCRM Ops":**
+**Sentry Dashboard "escreve.ai Ops":**
 - Errors per hour by environment
 - p50/p95/p99 latência por endpoint top-20
 - Top issues últimos 7d
@@ -1352,7 +1352,7 @@ Feature flag `READ_ONLY_MODE` em Edge Config. Quando ativada:
 Trigger: manual via super-admin. Auto-trigger desligado (risco de flap).
 
 ### 13.3 Fallback strategies adicionais
-- **WAHA banimento generalizado da conta DeskcommCRM (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
+- **WAHA banimento generalizado da conta escreve.ai (modelo BPO):** plano de migração pra API oficial Meta documentado no PRD-03 (Fase 2.5).
 - **Nuvemshop deprecação de webhook:** adapter pattern + assinar feed de release notes; testes de contrato no CI dão alerta.
 
 ---

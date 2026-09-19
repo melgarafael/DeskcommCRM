@@ -20,7 +20,7 @@ business_rules: L-01, L-02, L-03, L-04, L-05, L-06, L-07, L-08, L-09, L-10, B-05
 
 ### 1.1 Objetivo
 
-Conectar o DeskcommCRM ao backend de e-commerce do tenant (Nuvemshop no MVP) de forma **plugável**, **resiliente** e **LGPD-compliant**. Tudo o que entra ou sai pra um provedor e-commerce passa por uma camada de abstração (`EcommercePlatformAdapter`) que isola o domínio (`crm_leads`, `contacts`, `orders`) de qualquer mudança contratual ou substituição de provedor.
+Conectar o escreve.ai ao backend de e-commerce do tenant (Nuvemshop no MVP) de forma **plugável**, **resiliente** e **LGPD-compliant**. Tudo o que entra ou sai pra um provedor e-commerce passa por uma camada de abstração (`EcommercePlatformAdapter`) que isola o domínio (`crm_leads`, `contacts`, `orders`) de qualquer mudança contratual ou substituição de provedor.
 
 ### 1.2 Componentes
 
@@ -67,7 +67,7 @@ Conectar o DeskcommCRM ao backend de e-commerce do tenant (Nuvemshop no MVP) de 
 
 | Decisão | Escolha | Justificativa |
 |---|---|---|
-| App embedded vs External | **External** | Mais flexibilidade de UI custom (admin DeskcommCRM tem UX própria); evita iframe sandbox; consent renderizado no domínio Nuvemshop é suficiente |
+| App embedded vs External | **External** | Mais flexibilidade de UI custom (admin escreve.ai tem UX própria); evita iframe sandbox; consent renderizado no domínio Nuvemshop é suficiente |
 | Lib Nuvemshop | **Wrapper próprio em `lib/nuvemshop/`** | SDK oficial PT-BR é incompleto pra webhooks LGPD; wrapper fino sobre `fetch` permite tipagem rigorosa e telemetria custom |
 | Worker runtime | **Vercel Cron + Upstash QStash** pra jobs longos (>30s); Edge Functions pros receivers | Hobby/Pro têm limite de 5/15 min; QStash dá retry e dedupe de fila; mantém stack Vercel-only |
 | Particionamento `webhook_events_log` | **Por mês (`PARTITION BY RANGE (received_at)`)** | Hot 90 dias acessível; partições antigas detacháveis pra cold S3 |
@@ -625,8 +625,8 @@ Já listados inline. Critério: cada query do hot path tem index dedicado.
 ### 4.1 Decisão: External app
 
 **External** (não embedded). Justificativa:
-- UI custom no admin DeskcommCRM (sem iframe Nuvemshop sandbox)
-- Permite callback em domínio próprio com cookie de sessão DeskcommCRM
+- UI custom no admin escreve.ai (sem iframe Nuvemshop sandbox)
+- Permite callback em domínio próprio com cookie de sessão escreve.ai
 - Mantém scopes mínimos visíveis ao admin antes do consent
 - Fluxo idêntico pra reconexão (caso de primeira classe — PRD §3.3)
 
@@ -1535,11 +1535,11 @@ Retenção 5 anos (L-10).
 
 ---
 
-## 8. Mapping Nuvemshop → DeskcommCRM
+## 8. Mapping Nuvemshop → escreve.ai
 
 ### 8.1 `customer.email/phone/identification` → `contacts`
 
-| Campo Nuvemshop | Campo DeskcommCRM | Notas |
+| Campo Nuvemshop | Campo escreve.ai | Notas |
 |---|---|---|
 | `customer.email` | `contacts.email` | Normalizar lowercase |
 | `customer.phone` | `contacts.phone_number` | Normalizar E.164 (default BR +55) |

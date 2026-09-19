@@ -11,7 +11,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 # Spec 05 — IA Conversacional + RAG + Sentiment + Handoff
 
-> Detalhamento técnico da camada de IA do DeskcommCRM. Define schema SQL completo das tabelas `ai_*`, pipeline de ingestão das 4 fontes de RAG, roteamento da chamada do bot via Vercel AI SDK + AI Gateway, sentiment detection paralelo, 4 gatilhos de handoff, guardrails declarativos e prompts canônicos em PT-BR. Esta spec assume a fundação herdada (event_log, RLS, audit, polimorfismo de activities) das specs 01–04.
+> Detalhamento técnico da camada de IA do escreve.ai. Define schema SQL completo das tabelas `ai_*`, pipeline de ingestão das 4 fontes de RAG, roteamento da chamada do bot via Vercel AI SDK + AI Gateway, sentiment detection paralelo, 4 gatilhos de handoff, guardrails declarativos e prompts canônicos em PT-BR. Esta spec assume a fundação herdada (event_log, RLS, audit, polimorfismo de activities) das specs 01–04.
 
 ---
 

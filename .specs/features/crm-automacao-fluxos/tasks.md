@@ -43,7 +43,7 @@ T11 → T12 → T13
 **Reuses:** `TRIGGER_EVENTS`, `actionSchema` em `lib/schemas/webhooks.ts`
 **Requirement:** AUTOFLUXO-01, AUTOFLUXO-09
 
-**Tools:** filesystem · Skill: DeskcommCRM
+**Tools:** filesystem · Skill: escreve.ai
 
 **Done when:**
 

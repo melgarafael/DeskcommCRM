@@ -123,7 +123,7 @@ enviados" — o padrão da pergunta é **não** enviar; o banner foi corrigido p
 **`--yes` instalou no canal `stable` em vez de uma versão.** O `.env` copiado do exemplo trouxe
 `APP_IMAGE=...:stable`. Confira `grep -E '^(APP|WORKER|SCHEDULER)_IMAGE=' .env`; para fixar uma
 versão, `bash hostgator-setup-kit/update.sh --to v1.17.0 --force` (a tag publicada mais recente
-aparece em github.com/melgarafael/DeskcommCRM/releases).
+aparece em github.com/melgarafael/escreve.ai/releases).
 
 **`update.sh` recusou com código 3.** Ele não conseguiu confirmar o que é mais novo (clone raso
 sem internet para o GitHub, ou a versão pedida é anterior à instalada). **Nada foi tocado.** Tente

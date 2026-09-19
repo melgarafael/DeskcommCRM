@@ -1851,7 +1851,7 @@ Comentário no próprio arquivo: "O replay DE ERRO continua, porque é o que exp
 
 ### L5 · FALSA · gravidade media · sobre-o-codigo
 
-> O DeskcommCRM é distribuído em rolling release a partir da branch `main`.
+> O escreve.ai é distribuído em rolling release a partir da branch `main`.
 
 **Mede com:**
 
@@ -1865,7 +1865,7 @@ grep -n 'TARGET_TAG="$(git tag' hostgator-setup-kit/update.sh ; gh release list 
 update.sh:39 → `[ -n "$TARGET_TAG" ] || TARGET_TAG="$(git tag -l 'v*' --sort=-v:refname | head -1)"`. Releases: v1.3.0 (2026-08-13), v1.2.1, v1.2.0, v1.1.0, v1.0.0. README:163 → "**O alvo é a última versão publicada** (`v1.2.3`), não o topo da `main`".
 ```
 
-**Sugestão:** O DeskcommCRM é distribuído por **versões marcadas** (`v1.x.y`), publicadas como release e descritas no [`CHANGELOG.md`]\(CHANGELOG.md\). O `update.sh` sempre aponta para a última versão publicada — nunca para o topo da `main`. Correções de segurança entram na próxima versão; mantenha sua instalação atualizada (`bash hostgator-setup-kit/update.sh` em self-host). Para saber qual é a última: `gh release list --limit 1`.
+**Sugestão:** O escreve.ai é distribuído por **versões marcadas** (`v1.x.y`), publicadas como release e descritas no [`CHANGELOG.md`]\(CHANGELOG.md\). O `update.sh` sempre aponta para a última versão publicada — nunca para o topo da `main`. Correções de segurança entram na próxima versão; mantenha sua instalação atualizada (`bash hostgator-setup-kit/update.sh` em self-host). Para saber qual é a última: `gh release list --limit 1`.
 
 **Vira teste:** assertar que SECURITY.md não afirma "a partir da branch main" enquanto hostgator-setup-kit/update.sh resolver o alvo por `git tag -l 'v*'`
 
@@ -4697,7 +4697,7 @@ QUEBRADOS: []
 - docs/ATUALIZANDO.md — AUDITADO SEM ACHADO: conferido contra hostgator-setup-kit/update.sh linha a linha; os 6 passos, o backup e os 3 scripts citados conferem.
 - docs/architecture/README.md — AUDITADO SEM ACHADO: a tabela de 10 mapas bate com `ls docs/architecture/*.json` (10).
 - docs/doctrine/sistema-vivo.md — AUDITADO SEM ACHADO: '10 gates before-send' bate com BEFORE_SEND_GATES (10 entradas).
-- docs/white-label.md — AUDITADO SEM ACHADO: /admin/marca, /app/settings/marca, X-Deskcomm-Signature e 'o alarme de orçamento não tem cron' conferem.
+- docs/white-label.md — AUDITADO SEM ACHADO: /admin/marca, /app/settings/marca, X-escreve.ai-Signature e 'o alarme de orçamento não tem cron' conferem.
 - docs/SETUP.md, docs/runbooks/waha-hostgator.md, docs/runbooks/ai-credentials-rotation.md, VISION.md, docs/business-rules/, docs/doctrine/restricao-de-canal.md, docs/doctrine/separacao-fala-e-operacao.md — varridos por existência de path e por contagem; zero path morto, zero contagem. O runbook de rotação cita `scripts/rotate-ai-cred-aes-key.ts` mas DECLARA que ele não existe — honesto, não é achado.
 - Fora do escopo literal do brief (não são raiz nem docs/) mas não cobertos e com afirmação de estado: .claude/agents/triagem-medidor.md, .claude/skills/sistema-vivo/SKILL.md, hostgator-setup-kit/README.md, hostgator-setup-kit/CLAUDE.md, plan/progress.md, tasks/todo.md.
 - NÃO SÃO ACHADO, e é deliberado: docs/specs/* e docs/stories/epics/* citam 324 paths inexistentes (medido). São planos — afirmam futuro, não estado. Excluí-los foi decisão minha, não omissão.

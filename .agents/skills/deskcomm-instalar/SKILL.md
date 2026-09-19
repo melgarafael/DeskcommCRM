@@ -1,12 +1,12 @@
 ---
 name: deskcomm-instalar
-description: Guia de instalação e operação do DeskcommCRM numa VPS (HostGator ou qualquer servidor com Docker), para quem não é técnico ou instala para um cliente. Use SEMPRE que alguém quiser instalar, subir, configurar, atualizar, fazer backup ou restaurar o CRM, trocar domínio, cor ou e-mails, conectar o WhatsApp, ou quando aparecer erro de instalação — SSL/cadeado, DNS, Supabase (connection string, pooler, IPv6), chave de IA, Resend, proxy (Traefik, CloudPanel, Hostinger), "app reiniciando", "esqueci a senha", "perdi o autenticador" — mesmo que a pessoa não diga a palavra "instalar". Conduz passo a passo, roda os scripts do kit e explica em português simples.
+description: Guia de instalação e operação do escreve.ai numa VPS (HostGator ou qualquer servidor com Docker), para quem não é técnico ou instala para um cliente. Use SEMPRE que alguém quiser instalar, subir, configurar, atualizar, fazer backup ou restaurar o CRM, trocar domínio, cor ou e-mails, conectar o WhatsApp, ou quando aparecer erro de instalação — SSL/cadeado, DNS, Supabase (connection string, pooler, IPv6), chave de IA, Resend, proxy (Traefik, CloudPanel, Hostinger), "app reiniciando", "esqueci a senha", "perdi o autenticador" — mesmo que a pessoa não diga a palavra "instalar". Conduz passo a passo, roda os scripts do kit e explica em português simples.
 metadata:
   publico: leigo, agência, operador de VPS
   fonte-de-verdade: hostgator-setup-kit/install.sh
 ---
 
-# Instalar e operar o DeskcommCRM
+# Instalar e operar o escreve.ai
 
 Você está conduzindo uma pessoa que, quase sempre, **não programa** — ou que instala para um
 cliente e quer acertar de primeira. O produto se vende como "um comando na VPS"; a experiência de

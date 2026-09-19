@@ -11,7 +11,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 # Sub-PRD 02 — Customer 360° + Identity Resolution
 
-> O coração do DeskcommCRM. Define como o sistema enxerga uma pessoa, como reconcilia identidades vindas de fontes diferentes (WhatsApp, Nuvemshop, manual) e como acumula histórico cross-canal numa timeline única. Toda outra capacidade do produto (atendimento, IA, pipeline) opera sobre as estruturas definidas aqui.
+> O coração do escreve.ai. Define como o sistema enxerga uma pessoa, como reconcilia identidades vindas de fontes diferentes (WhatsApp, Nuvemshop, manual) e como acumula histórico cross-canal numa timeline única. Toda outra capacidade do produto (atendimento, IA, pipeline) opera sobre as estruturas definidas aqui.
 
 ---
 

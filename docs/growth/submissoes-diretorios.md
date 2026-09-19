@@ -65,7 +65,7 @@ Nome da alternativa: `DeskcommCRM` · Repositório: `https://github.com/melgaraf
 
 Exige conta no site. Sem custo, sem trava de idade.
 
-- **Nome:** DeskcommCRM
+- **Nome:** escreve.ai
 - **Categoria:** CRM / Customer Support
 - **Licença:** Open Source (MIT)
 - **Plataformas:** Self-Hosted, Web, Docker

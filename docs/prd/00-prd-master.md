@@ -1,5 +1,5 @@
 ---
-title: DeskcommCRM — PRD-Mestre
+title: escreve.ai — PRD-Mestre
 version: 0.2
 status: em revisão
 date: 2026-07-19
@@ -7,7 +7,7 @@ owner: Rafael Melgaço
 referencia_arquitetural: docs/research/reference-synthesis.md
 ---
 
-# DeskcommCRM — PRD-Mestre
+# escreve.ai — PRD-Mestre
 
 > Documento-índice da visão, escopo e estrutura do produto. Cada subsistema é detalhado em sub-PRDs (`01-plataforma-base.md` ... `06-nuvemshop-lgpd.md`). Decisões arquiteturais herdadas estão em `docs/research/reference-synthesis.md`.
 
@@ -15,7 +15,7 @@ referencia_arquitetural: docs/research/reference-synthesis.md
 
 ## 0. Nota de transição (2026-07) — de "CRM de e-commerce" para "AI Sales OS"
 
-Este PRD nasceu (v0.1, abril/2026) com o produto posicionado como **CRM operacional para e-commerce**. Após a abertura do código, a realidade da adoção mudou o produto: a maioria da comunidade roda o Deskcomm em **clínicas, infoprodutos, imobiliárias, agências e serviços**, e os pedidos de feature nos especializaram em **agentes de IA integrados via MCP**. O posicionamento vigente está em [`VISION.md`](../../VISION.md):
+Este PRD nasceu (v0.1, abril/2026) com o produto posicionado como **CRM operacional para e-commerce**. Após a abertura do código, a realidade da adoção mudou o produto: a maioria da comunidade roda o escreve.ai em **clínicas, infoprodutos, imobiliárias, agências e serviços**, e os pedidos de feature nos especializaram em **agentes de IA integrados via MCP**. O posicionamento vigente está em [`VISION.md`](../../VISION.md):
 
 > **Sistema operacional de vendas open source com agentes de IA nativos e WhatsApp — self-hosted, multi-tenant, para qualquer negócio que vende conversando.**
 
@@ -28,7 +28,7 @@ Implicações de leitura deste documento e dos sub-PRDs:
 
 ## 1. Sumário Executivo
 
-**O que é.** DeskcommCRM é um sistema operacional de vendas open source com agentes de IA nativos — um CRM operacional onde a IA atende, qualifica e move o funil junto com humanos. Unifica atendimento humano, agentes com RAG por tenant, gestão de pedidos/negócios e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial). Nasceu especializado em e-commerce (vertical de origem, com integração Nuvemshop); hoje serve qualquer negócio que vende conversando — ver Nota de transição (§0).
+**O que é.** escreve.ai é um sistema operacional de vendas open source com agentes de IA nativos — um CRM operacional onde a IA atende, qualifica e move o funil junto com humanos. Unifica atendimento humano, agentes com RAG por tenant, gestão de pedidos/negócios e pipeline de pós-venda numa única plataforma multi-tenant, tendo WhatsApp como canal primário (via WAHA, API não-oficial). Nasceu especializado em e-commerce (vertical de origem, com integração Nuvemshop); hoje serve qualquer negócio que vende conversando — ver Nota de transição (§0).
 
 **Quem usa.** Cada pessoa opera as organizações às quais possui vínculo ativo, com papel próprio em cada uma. A administração da plataforma gerencia a instalação; quando precisa acompanhar dados de uma organização, abre uma sessão temporária de edição ou somente leitura, vinculada à sessão autenticada e auditada com o ator real. Esse acompanhamento não cria membership nem uma caixa unificada cross-tenant. O contrato vigente está em [`docs/support-sessions.md`](../support-sessions.md).
 
@@ -46,7 +46,7 @@ Implicações de leitura deste documento e dos sub-PRDs:
 
 ## 2. Problema & Visão
 
-### Problemas que o DeskcommCRM resolve
+### Problemas que o escreve.ai resolve
 
 1. **Atendimento desfragmentado.** PMEs hoje atendem via WhatsApp Web pessoal + planilha + memória do atendente. Sem histórico unificado, sem multi-atendente real, sem auditoria. Quando o atendente sai da empresa, o relacionamento com o cliente vai junto.
 
@@ -60,7 +60,7 @@ Implicações de leitura deste documento e dos sub-PRDs:
 
 ### Visão
 
-> "DeskcommCRM é o sistema operacional de vendas onde agentes de IA e humanos atendem juntos os clientes de qualquer negócio que vende pelo WhatsApp, com Customer 360° unificado, compliance LGPD nativa, operação multi-tenant pronta pra escala — e agentes que se auto-aprimoram a cada conversa resolvida."
+> "escreve.ai é o sistema operacional de vendas onde agentes de IA e humanos atendem juntos os clientes de qualquer negócio que vende pelo WhatsApp, com Customer 360° unificado, compliance LGPD nativa, operação multi-tenant pronta pra escala — e agentes que se auto-aprimoram a cada conversa resolvida."
 
 Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de IA e WhatsApp" — milhares de instâncias self-hosted (VPS HostGator como caminho recomendado), ecossistema de agentes plugados via MCP público, templates prontos por nicho (e-commerce, clínica, imobiliária, infoproduto), e o flywheel de auto-aprimoramento medido em produção. Posicionamento completo em [`VISION.md`](../../VISION.md).
 
@@ -171,7 +171,7 @@ Em três anos: ser a resposta padrão pra "melhor CRM open source com agentes de
 
 ## 5. Arquitetura de Referência Herdada
 
-DeskcommCRM **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
+escreve.ai **adota integralmente** a doutrina arquitetural extraída do material da *Aula CRM Nichado com WhatsApp (WAHA)*. Síntese completa em `docs/research/reference-synthesis.md`.
 
 **Pontos não negociáveis herdados:**
 - Stack Next.js + Supabase + WAHA Plus + Vercel
@@ -193,7 +193,7 @@ Toda decisão de spec/epic que conflitar com o bundle herdado **requer justifica
 
 ## 6. Capacidades Diferenciadoras (gaps sobre a referência)
 
-São os 6 deltas que o DeskcommCRM constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
+São os 6 deltas que o escreve.ai constrói sobre a base herdada — onde reside o valor competitivo e onde a engenharia adiciona algo não-trivial:
 
 ### 6.1 Integração Nuvemshop nativa
 OAuth + 8+ webhooks (incluindo LGPD redact/data_request) + sync inicial. Adapter pattern (`EcommercePlatformAdapter`) abstrai a interface pra VTEX/Shopify entrarem em fases posteriores sem reescrita.
@@ -266,7 +266,7 @@ Interface `EcommercePlatformAdapter` define `fetchOrders`, `fetchCustomers`, `su
 - Tempo médio de ciclo de pipeline (carrinho → entregue)
 
 ### 8.3 Critério de sucesso geral do MVP
-DeskcommCRM é considerado MVP-validado quando:
+escreve.ai é considerado MVP-validado quando:
 1. Pelo menos **1 tenant real** está em produção atendendo clientes finais por **30 dias contínuos** sem incidente que cause banimento WAHA ou perda de dados.
 2. Pelo menos **5 KPIs dos 7 listados acima** estão sendo medidos automaticamente e dentro do target ou com plano de correção.
 3. Audit log e LGPD passam revisão manual sem encontrar lacuna crítica.
@@ -306,7 +306,7 @@ Roadmap revisado a cada 4 semanas. Estimativa otimista; recalibrar a cada milest
 
 ## 11. Glossário
 
-- **Tenant** — uma organização cliente do DeskcommCRM (um negócio que vende pelo WhatsApp: e-commerce, clínica, imobiliária, infoprodutor, etc.). No DB = `organizations`. Sinônimo: organização.
+- **Tenant** — uma organização cliente do escreve.ai (um negócio que vende pelo WhatsApp: e-commerce, clínica, imobiliária, infoprodutor, etc.). No DB = `organizations`. Sinônimo: organização.
 - **Operador de atendimento** — pessoa que atende nas organizações em que possui vínculo ativo; papel e interface pertencem a cada vínculo.
 - **Super-admin de plataforma** — autoridade transversal para administrar a instalação. O acompanhamento de dados de uma organização é temporário, por sessão, e não cria membership nem troca a identidade do ator.
 - **Lead / Cliente** — registro central no CRM (`crm_leads`). No vocabulary de e-commerce, lead = "Cliente". Engloba cliente em qualquer estágio (interesse, comprou, pós-venda).

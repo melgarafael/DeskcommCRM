@@ -1,6 +1,6 @@
 # Instalando para um cliente (agência, consultor, revendedor)
 
-O DeskcommCRM é MIT e feito para ser revendido com a marca do cliente. O que muda quando quem
+O escreve.ai é MIT e feito para ser revendido com a marca do cliente. O que muda quando quem
 instala não é quem vai usar:
 
 ## De quem é cada coisa

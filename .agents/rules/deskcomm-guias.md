@@ -1,6 +1,6 @@
 ---
 trigger: always_on
-description: Guias do assistente do DeskcommCRM — quando usar cada um
+description: Guias do assistente do escreve.ai — quando usar cada um
 ---
 
 Este repositório embute guias (skills em `.agents/skills/`) para cinco situações. Quando o pedido
