@@ -596,6 +596,26 @@ export async function processarInboundDoFluxo(
 ): Promise<ResultadoDoInbound> {
   const { estado } = args;
 
+  // IDEMPOTÊNCIA: um job de inbound RE-EXECUTADO (retry de fila) reprocessava a
+  // MESMA mensagem contra o estado JÁ AVANÇADO do fluxo — e a abertura virava
+  // resposta do campo seguinte (medido ao vivo, 2026-09-19: "quero dar minha
+  // moto na troca" foi gravada em `troca_ano` no 2º processamento). Se a
+  // mensagem já gerou `resposta`/`fora_do_fluxo` neste enrollment, não processa
+  // de novo. Os eventos são a trilha que torna a operação idempotente.
+  if (args.messageId !== undefined && args.messageId !== null) {
+    try {
+      const ja = await db.query<{ n: number }>(
+        `select count(*)::int as n from contact_flow_events
+          where organization_id = $1 and enrollment_id = $2
+            and message_id = $3 and kind in ('resposta','fora_do_fluxo')`,
+        [args.organizationId, estado.enrollment.id, args.messageId],
+      );
+      if ((ja.rows[0]?.n ?? 0) > 0) return { estado, concluiu: false };
+    } catch {
+      // best-effort: sem a checagem, o pior caso é o comportamento anterior.
+    }
+  }
+
   // CORREÇÃO: o validador apontou um campo JÁ PREENCHIDO que aceita correção.
   // Trata antes da pendente — o cliente mudou um dado e isso não é resposta à
   // pergunta atual. O campo precisa existir e permitir correção (defesa dupla).

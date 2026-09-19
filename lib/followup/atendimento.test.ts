@@ -322,3 +322,13 @@ describe("processarInboundDoFluxo — estado já completo conclui e encadeia", (
     expect(src).toMatch(/if \(primeiro === undefined\) \{[\s\S]*estado\.situacao\.completo[\s\S]*finalizarFluxoDeAtendimento/);
   });
 });
+
+describe("idempotência do inbound do fluxo (retry de job não reprocessa)", () => {
+  it("processarInboundDoFluxo corta por message_id já visto na trilha", () => {
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    // A checagem precisa existir ANTES de qualquer gravação e filtrar por
+    // enrollment + message_id, contando eventos resposta/fora_do_fluxo.
+    expect(src).toMatch(/from contact_flow_events[\s\S]*message_id = \$3[\s\S]*kind in \('resposta','fora_do_fluxo'\)/);
+    expect(src).toMatch(/if \(\(ja\.rows\[0\]\?\.n \?\? 0\) > 0\) return \{ estado, concluiu: false \}/);
+  });
+});
