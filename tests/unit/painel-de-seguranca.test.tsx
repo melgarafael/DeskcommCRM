@@ -86,12 +86,30 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
     //
     // Nove continuam sem controle: desligar o que respeita quem pediu para parar,
     // ou o que impede o número do cliente de ser bloqueado, não é preferência.
+    // ⚠️ A CONTAGEM É DAS CONFERÊNCIAS, e não de todo `role="switch"` da tela.
+    // O painel passou a abrir com o cartão de ajustes de estilo (#378, PR
+    // #1139), que tem interruptor próprio — e ele NÃO é camada que custa
+    // dinheiro: é troca determinística de pontuação, sem chamada de modelo.
+    // Contar a tela inteira faria esta guarda reprovar por um interruptor que
+    // a regra dela nunca quis cobrir; afrouxar o número para três faria o
+    // contrário, deixando entrar uma camada paga nova sem ninguém olhar.
     const { container } = renderPainel();
     await waitFor(() =>
-      expect(container.querySelectorAll('[role="switch"]')).toHaveLength(2),
+      expect(
+        container.querySelectorAll('[data-testid^="conferencia-"][role="switch"]'),
+      ).toHaveLength(2),
     );
     expect(screen.getByTestId("conferencia-semantic_promise-liga")).toBeTruthy();
     expect(screen.getByTestId("conferencia-jailbreak_detect-liga")).toBeTruthy();
+
+    // E o interruptor do estilo existe, FORA do cartão das conferências: se ele
+    // migrar para dentro da lista, a contagem acima volta a três e reprova.
+    const estilo = screen.getByTestId("ajuste-sem-travessao-longo");
+    expect(estilo).toBeTruthy();
+    expect(
+      screen.getByTestId("ajustes-de-estilo").contains(estilo),
+      "o interruptor de estilo saiu do cartão dele",
+    ).toBe(true);
   });
 
   it("o interruptor reflete o que VALE hoje, não o que a organização digitou", async () => {

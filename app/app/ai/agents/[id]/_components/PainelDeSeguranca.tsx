@@ -51,6 +51,7 @@ import {
   CONFERENCIA_DE_ENTRADA,
   type ConferenciaDeSaida,
 } from "@/lib/ai/guardrails/lista-de-conferencia";
+import { AjustesDeEstilo } from "./AjustesDeEstilo";
 
 function Conferencia({
   c,
@@ -147,6 +148,9 @@ export function PainelDeSeguranca() {
 
   return (
     <div className="space-y-4" data-testid="painel-de-seguranca">
+      {/* A normalização acontece antes da cadeia abaixo; a ordem visual espelha o runtime. */}
+      <AjustesDeEstilo />
+
       <Card className="space-y-2 p-4">
         <h3 className="text-sm font-medium">{t("Antes de cada mensagem sair")}</h3>
         <p className="text-xs text-muted-foreground">
