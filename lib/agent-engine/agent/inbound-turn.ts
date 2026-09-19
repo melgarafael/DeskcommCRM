@@ -2381,6 +2381,12 @@ async function executarTurnoDoAgente(
           validacao = { respondeu: false };
         }
         // `indefinido` → sem validação; o classificador puro decide abaixo.
+        runLog.info('fluxo: decisão do validador', {
+          campo: cfg.key,
+          tipo: cfg.type,
+          resultado: leitura.resultado,
+          texto: (currentInboundText ?? '').slice(0, 60),
+        });
       }
       // Se o VALIDADOR já gravou a pergunta deste turno, o modelo principal NÃO
       // pode chamar `flow_collect`: ele gravava a MESMA resposta no próximo campo
