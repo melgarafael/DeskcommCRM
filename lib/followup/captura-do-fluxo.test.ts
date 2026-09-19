@@ -174,3 +174,11 @@ describe("abertura do fluxo não vira resposta (regressão do teste ao vivo)", (
     expect(src).toMatch(/if \(fluxoIniciadoNesteTurno\) \{/);
   });
 });
+
+describe("validador como fonte única da gravação (auditoria 2026-09-19)", () => {
+  it("o flow_collect do modelo é no-op quando o validador decidiu o turno", () => {
+    const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+    expect(src).toMatch(/if \(validadorDecidiuNesteTurno \|\| validadorGravouNesteTurno\) \{/);
+    expect(src).toMatch(/validadorDecidiuNesteTurno = leitura\.resultado !== 'indefinido'/);
+  });
+});

@@ -332,3 +332,14 @@ describe("idempotência do inbound do fluxo (retry de job não reprocessa)", () 
     expect(src).toMatch(/if \(\(ja\.rows\[0\]\?\.n \?\? 0\) > 0\) return \{ estado, concluiu: false \}/);
   });
 });
+
+describe("auditoria 2026-09-19 — o nao_respondeu do validador cai no classificador puro", () => {
+  it("distinguir aceno (conta tentativa) de desvio (não conta) preserva o teto", () => {
+    const src = readFileSync(join(process.cwd(), "lib/followup/atendimento.ts"), "utf8");
+    // A forma do código: `args.validacao.respondeu ? ... : classificarInbound(...)`.
+    // Antes era `: { resultado: "desviou" }`, e TODO nao_respondeu virava desvio —
+    // "ok"/emoji nunca esgotavam a pergunta (max_tentativas_pergunta inerte).
+    expect(src).toMatch(/args\.validacao\.respondeu\s*\?\s*\{[\s\S]*?\}\s*:\s*classificarInbound\(/);
+    expect(src).not.toMatch(/:\s*\{ resultado: "desviou" as const \};/);
+  });
+});

@@ -2051,8 +2051,12 @@ async function executarTurnoDoAgente(
   // pelo assunto da mensagem — não depende do modelo chamar flow_start. Só no
   // inbound e quando a mensagem casa as palavras-gatilho de um fluxo ativo.
   let fluxoIniciadoNesteTurno = false;
-  // O VALIDADOR já gravou a pergunta deste turno? Se sim, `flow_collect` do
-  // modelo vira no-op (uma resposta, um campo — quem grava é o motor).
+  // O VALIDADOR rodou neste turno? Se sim, ele é a FONTE da gravação do fluxo e
+  // o `flow_collect` do modelo vira no-op. Motivo medido (2026-09-19): com o
+  // modelo lento, um turno de abertura atrasado ainda chamava `flow_collect` e
+  // gravava a mensagem antiga num campo — o validador já tinha decidido. Uma
+  // resposta, um gravador.
+  let validadorDecidiuNesteTurno = false;
   let validadorGravouNesteTurno = false;
   if (
     !preview &&
@@ -2406,6 +2410,7 @@ async function executarTurnoDoAgente(
           validacao = { respondeu: false };
         }
         // `indefinido` → sem validação; o classificador puro decide abaixo.
+        validadorDecidiuNesteTurno = leitura.resultado !== 'indefinido';
         runLog.info('fluxo: decisão do validador', {
           campo: cfg?.key ?? null,
           corrigiveis: corrigiveis.map((c) => c.key),
@@ -2707,17 +2712,16 @@ async function executarTurnoDoAgente(
             },
           };
         }
-        // O VALIDADOR já gravou a resposta desta pergunta no turno. Registrar de
-        // novo (ou no PRÓXIMO campo, que passou a ser o pendente) é o defeito
-        // medido: validador grava `moto_troca` e o modelo grava a mesma resposta
-        // em `troca_ano` segundos depois. Uma resposta, um campo.
-        if (validadorGravouNesteTurno) {
+        // O VALIDADOR já decidiu este turno? Então o modelo NÃO registra: ele é
+        // a única fonte da gravação do fluxo. Recusar aqui fecha a via frágil
+        // (modelo lento/reprocessado gravando mensagem antiga num campo).
+        if (validadorDecidiuNesteTurno || validadorGravouNesteTurno) {
           return {
             ok: false,
             error: {
               code: 'resposta_ja_registrada',
               message:
-                'A resposta desta pergunta já foi registrada pelo sistema. Não chame flow_collect; siga a conversa.',
+                'O sistema já registrou a resposta deste turno. Não chame flow_collect; siga a conversa.',
             },
           };
         }
