@@ -194,11 +194,24 @@ function ehBlocoDeMoto(paragrafo: string, catalogo: readonly MotoDoCatalogo[]): 
   // formas: "Cor: Vermelho" e "Cor Vermelho"; idem "82.300 km", "R$ 17.990,00").
   const ehLinhaDeDado = (l: string): boolean =>
     /^(cor|quilometragem|km|pre[çc]o|valor|ano)\b/i.test(l) ||
-    /^r\$\s*[\d.]+,\d{2}$/i.test(l) ||
+    /^r\$\s*[\d.]+,?\d*$/i.test(l) ||
     /^[\d.]+\s*km$/i.test(l);
   if (linhas.some(ehLinhaDeDado)) return true;
 
-  // Parágrafo curto que é apenas o nome de uma moto conhecida (com/sem ano).
+  // A linha cita uma moto conhecida do catálogo?
+  const citaMoto = (l: string): boolean => {
+    const semEspaco = chaveSemEspaco(l);
+    return catalogo.some((m) => {
+      const nome = chaveSemEspaco(m.nome);
+      return nome.length >= MIN_NOME_CASAVEL && semEspaco.includes(nome);
+    });
+  };
+
+  // LISTA (uma moto por linha: "Nome Ano - R$ preço") ou bloco de UMA moto:
+  // se TODAS as linhas citam moto conhecida, o parágrafo é dado, não conversa.
+  if (linhas.length >= 1 && linhas.every(citaMoto)) return true;
+
+  // Parágrafo curto que é apenas o nome de uma moto (com/sem ano).
   if (linhas.length <= 2) {
     const semEspaco = chaveSemEspaco(paragrafo);
     if (semEspaco === '') return false;

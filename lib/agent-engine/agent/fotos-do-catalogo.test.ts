@@ -136,6 +136,18 @@ describe('separarTextoApresentacao', () => {
     expect(introducao).not.toContain('Alguma dessas');
   });
 
+  it('remove a LISTA "Nome Ano - R$ preço" (uma moto por linha) do texto', () => {
+    const texto = [
+      'Não temos a CB 250, mas tenho estas opções:',
+      'CB 300 F Twister 2025 - R$ 28990.00\nYS Fazer 250 2017 - R$ 17990.00',
+      'Qual te interessou?',
+    ].join('\n\n');
+    const { introducao, final } = separarTextoApresentacao(texto, catalogo);
+    expect(introducao).toBe('Não temos a CB 250, mas tenho estas opções:');
+    expect(introducao).not.toContain('R$ 28990.00');
+    expect(final).toBe('Qual te interessou?');
+  });
+
   it('remove bloco que é só o nome da moto', () => {
     const texto = [
       'Tenho estas opções:',
