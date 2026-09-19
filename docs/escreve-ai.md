@@ -6,7 +6,7 @@
 - `versao-atual`: branch padrão, com as personalizações existentes.
 - `integracao-oficial`: incorpora as atualizações do projeto original; sua validação completa continua pendente no PR de integração.
 - [PR de integração](https://github.com/saraivabr/escreve.ai/pull/1): não significa publicação em produção.
-- O nome da marca é **escreve.ai**, sempre em minúsculas. O nome não comprova registro de domínio, DNS ou mudança do endereço de produção.
+- O nome da marca é **escreve.ai**, sempre em minúsculas. A instalação existente está em [crm.escreve.ai](https://crm.escreve.ai).
 
 ## Origem e licença
 
@@ -44,7 +44,7 @@ Parcerias, SLAs, badges de CI e promessas de publicação descritos em documento
 
 ## Marca e compatibilidade
 
-A identidade exibida pelo CRM é configurada pelos mecanismos de branding existentes; consulte [white-label](white-label.md). A renomeação do repositório e da documentação não altera uma instalação em produção.
+A identidade exibida pelo CRM é configurada pelos mecanismos de branding existentes; consulte [white-label](white-label.md). O novo domínio foi configurado separadamente da renomeação do repositório. A identidade de cada organização continua configurável.
 
 Nomes de pacotes, caminhos, scripts `deskcomm-*`, cookies, cabeçalhos de assinatura, imagens, variáveis e identificadores persistidos permanecem quando são contratos técnicos. Não os renomeie por substituição textual: isso pode quebrar integrações, sessões e atualizações.
 
@@ -57,3 +57,13 @@ Nomes de pacotes, caminhos, scripts `deskcomm-*`, cookies, cabeçalhos de assina
 - [Prospecção nativa](features/prospeccao-nativa.md)
 - [Segurança](../SECURITY.md)
 - [Contribuição](../CONTRIBUTING.md)
+
+## Endereço de produção
+
+Desde 19/09/2026, a instalação existente usa **https://crm.escreve.ai**. As páginas de acesso e navegação de `crm.saraiva.ai` redirecionam temporariamente (307), preservando caminho e parâmetros. APIs e callbacks no endereço antigo permanecem disponíveis para as integrações existentes.
+
+O Supabase continua em `db.saraiva.ai`. O login tem a URL principal atualizada e mantém os callbacks antigos permitidos. A mudança de domínio exige entrar novamente no navegador: sessões não são compartilhadas entre os dois domínios.
+
+Antes de reconectar provedores externos que usem OAuth, confira as URLs de callback cadastradas no provedor. A troca de domínio não atualiza automaticamente consoles de terceiros.
+
+O logo está em [docs/brand/escreve-ai-logo.png](brand/escreve-ai-logo.png), com [notas de criação](brand/escreve-ai.md).

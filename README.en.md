@@ -1,5 +1,9 @@
 # escreve.ai
 
+<img src="docs/brand/escreve-ai-logo.png" alt="escreve.ai" width="520">
+
+[CRM](https://crm.escreve.ai)
+
 **AI CRM for support, prospecting and sales**
 
 [Português](README.md) · [English](README.en.md) · [Español](README.es.md)
