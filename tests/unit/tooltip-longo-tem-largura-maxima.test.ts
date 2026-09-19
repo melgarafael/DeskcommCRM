@@ -1,22 +1,33 @@
 /**
- * TOOLTIP COM FRASE LONGA PRECISA DECLARAR LARGURA MÁXIMA.
+ * TOOLTIP COM FRASE LONGA PRECISA DE LARGURA MÁXIMA.
  *
- * O `TooltipContent` do projeto (`components/ui/tooltip.tsx`) não tem `max-w`
- * na classe base, e o Radix desenha o conteúdo com `minWidth: max-content`. Sem
- * uma largura máxima, a frase vira UMA linha: 267 caracteres deram ~1467px de
- * texto, e o fim ("…a exclusão fica travada enquanto esse histórico existir")
- * sai da tela em 1280, 1366 e 1440 px. Achado na triagem do #1215, onde o
- * tooltip é a ÚNICA explicação de por que o botão de excluir está desligado.
+ * O `TooltipContent` do projeto (`components/ui/tooltip.tsx`) precisa de teto de
+ * largura, e o Radix desenha o balão com `minWidth: max-content`. Sem teto a
+ * frase vira UMA linha: 267 caracteres deram ~1467px de texto, e o fim ("…a
+ * exclusão fica travada enquanto esse histórico existir") sai da tela em 1280,
+ * 1366 e 1440 px. Achado na triagem do #1215.
  *
- * A régua é o texto LITERAL dentro do bloco, porque é o que dá para medir sem
- * browser. Acima de 80 caracteres, a tag de abertura tem de trazer `max-w-`.
+ * São DUAS réguas, e a segunda existe porque a primeira não alcança tudo:
  *
- * ## O que este arquivo NÃO alcança
+ * 1. O texto LITERAL dentro do bloco, que dá para contar sem browser. Acima de
+ *    80 caracteres, a tag de abertura tem de trazer `max-w-`.
+ * 2. A CLASSE BASE, em `components/ui/tooltip.tsx`. Todo tooltip herda dela,
+ *    então é ela que cobre o texto que NÃO está no código.
  *
- * Tooltip cujo conteúdo é uma EXPRESSÃO (`{erro.mensagem}`) pode ser tão longo
- * quanto o dado que chegar, e aqui ele conta como zero. É o caso de
- * `components/inbox/MessageBubble.tsx`, que mostra o erro do provedor: a mesma
- * classe, ainda aberta, e medi-la exige a tela. Declarado em vez de escondido.
+ * ## Por que a régua 2 é necessária (e não zelo)
+ *
+ * Tooltip cujo conteúdo é uma EXPRESSÃO (`{message.error_message}`) pode ser tão
+ * longo quanto o dado que chegar — e a régua 1 o conta como zero, porque não há
+ * o que contar. É o caso de `components/inbox/MessageBubble.tsx`, que mostra o
+ * erro do PROVEDOR de envio: `messages.error_message` é `text` sem teto no
+ * `supabase/baseline.sql`, e o que o upstream mandar é o que aparece. Nenhuma
+ * varredura de código mede isso; o que fecha a classe é o teto morar na base,
+ * onde vale para os dois casos. Medir o texto dinâmico pela tela exigiria
+ * browser — e o teto na base torna a medida desnecessária.
+ *
+ * `break-words` é afirmado junto porque é o par obrigatório do `max-w-` aqui:
+ * a classe base traz `overflow-hidden`, então um erro de provedor sem espaço
+ * (URL, hash) seria CORTADO em vez de quebrar a linha.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -26,6 +37,7 @@ import { describe, expect, it } from "vitest";
 const RAIZ = process.cwd();
 const PASTAS = ["app", "components"];
 const LIMITE = 80;
+const TOOLTIP_UI = "components/ui/tooltip.tsx";
 
 function arquivos(dir: string): string[] {
   const saida: string[] = [];
@@ -57,6 +69,17 @@ function textoLiteral(corpo: string): string {
   return `${deT} ${fora}`.trim();
 }
 
+/**
+ * A classe base do `TooltipContent` — o que TODO tooltip do produto recebe,
+ * com ou sem texto no código. Lê o `className={cn(…)}` de `tooltip.tsx`.
+ */
+function classeBase(): string {
+  const fonte = readFileSync(join(RAIZ, TOOLTIP_UI), "utf-8").replace(/\/\/[^\n]*/g, " ");
+  const bloco = fonte.match(/className=\{cn\(([\s\S]*?)\)\}/);
+  if (!bloco) throw new Error(`não achei o className={cn(…)} em ${TOOLTIP_UI}`);
+  return [...bloco[1]!.matchAll(/"([^"]*)"/g)].map((m) => m[1]!).join(" ");
+}
+
 const TOOLTIPS = arquivos(join(RAIZ, "app"))
   .concat(...PASTAS.slice(1).map((p) => arquivos(join(RAIZ, p))))
   .flatMap((caminho) =>
@@ -79,5 +102,15 @@ describe("tooltip com frase longa declara largura máxima", () => {
       (x) => x.texto.length > LIMITE && !/\bmax-w-/.test(x.abertura),
     ).map((x) => `${x.arquivo}: ${x.texto.length} caracteres`);
     expect(semLargura).toEqual([]);
+  });
+
+  it("a classe base do TooltipContent tem largura máxima (é o que cobre o texto de fora do código)", () => {
+    const base = classeBase();
+    // O teto na base é o único que alcança `{message.error_message}`: o texto
+    // vem do provedor, não tem tamanho no código e não tem teto no banco.
+    expect(base).toMatch(/\bmax-w-/);
+    // Sem quebra de palavra, `overflow-hidden` corta o erro de provedor que não
+    // tem espaço nenhum (URL, hash) em vez de quebrar a linha.
+    expect(base).toMatch(/\bbreak-words\b/);
   });
 });
