@@ -204,7 +204,7 @@ export async function ingestMetaInbound(
   // AQUI, antes de `aplicarEfeitosPosEntrada`, porque é lá que o lead nasce. A
   // guarda de primeiro toque fica no banco, então a re-entrega não reescreve.
   const atribuicao = extrairAtribuicaoMeta(e.referral);
-  if (atribuicao) await estamparAtribuicaoDoContato(admin, contactId as string, atribuicao);
+  if (atribuicao) await estamparAtribuicaoDoContato(admin, orgId, contactId as string, atribuicao);
 
   const { data: conversationId, error: erroConversa } = await admin.rpc(
     "fn_upsert_wa_conversation" as never,

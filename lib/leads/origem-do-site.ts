@@ -189,10 +189,12 @@ export function extrairOrigemDaPagina(texto: string | null | undefined): OrigemD
  */
 export async function estamparOrigemDaPagina(
   admin: Admin,
+  organizationId: string,
   contactId: string,
   origem: OrigemDaPagina,
 ): Promise<boolean> {
   const { error } = await admin.rpc("fn_estampar_atribuicao_de_anuncio", {
+    p_org: organizationId,
     p_contact: contactId,
     p_platform: "site",
     p_metadata: {

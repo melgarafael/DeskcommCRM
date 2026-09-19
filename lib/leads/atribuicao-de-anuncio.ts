@@ -64,13 +64,22 @@ export const str = (v: unknown): string | null =>
  * de `source_metadata` ATOMICAMENTE no banco (não aqui): duas mensagens quase
  * simultâneas do mesmo contato novo não podem correr a corrida de leitura e
  * escrita em JS e uma pisar na outra.
+ * Organização é parâmetro OBRIGATÓRIO (issue #1248). A função é
+ * `security definer` e o único limite era o `p_contact` que o chamador mandava
+ * — uma chamada de service_role escrevia no contato de QUALQUER organização.
+ * O `where` da função passou a casar `organization_id = p_org`: contato de
+ * outra organização não casa linha nenhuma, em silêncio, como a guarda de
+ * primeiro toque. Sem a organização não há chamada — a assinatura de três
+ * argumentos foi derrubada no banco de propósito.
  */
 export async function estamparAtribuicaoDoContato(
   admin: SupabaseClient,
+  organizationId: string,
   contactId: string,
   atribuicao: AtribuicaoDeAnuncio,
 ): Promise<void> {
   const { error } = await admin.rpc("fn_estampar_atribuicao_de_anuncio" as never, {
+    p_org: organizationId,
     p_contact: contactId,
     p_platform: atribuicao.plataforma,
     p_metadata: {

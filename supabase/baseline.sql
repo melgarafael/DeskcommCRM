@@ -13064,7 +13064,18 @@ notify pgrst, 'reload schema';
 -- ⚠️ ENTRA ANTES DO BLOCO DA VARREDURA anon, pelo mesmo motivo das funções
 -- acima: `tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts` proíbe `create
 -- function` depois dele.
+-- ⚠️ A ORGANIZAÇÃO É PARÂMETRO OBRIGATÓRIO (issue #1248, migration 0344): o
+-- único limite era o `p_contact` que o CHAMADOR mandava, e a função é security
+-- definer — chamada de service_role com o contato de OUTRA organização estampava
+-- o anúncio lá dentro. O `where` casa `organization_id = p_org` e a organização
+-- alheia casa zero linhas, silenciosamente, como o primeiro-toque.
+-- A assinatura antiga de TRÊS argumentos é derrubada ANTES do create: com as duas
+-- no catálogo, a chamada de três chaves resolveria na ANTIGA (mesmo defeito
+-- medido na 0336) e a organização nunca chegaria ao `where`.
+drop function if exists public.fn_estampar_atribuicao_de_anuncio(uuid, text, jsonb);
+
 create or replace function public.fn_estampar_atribuicao_de_anuncio(
+  p_org uuid,
   p_contact uuid,
   p_platform text,
   p_metadata jsonb
@@ -13080,15 +13091,16 @@ begin
     source_metadata = source_metadata || p_metadata,
     updated_at = now()
   where id = p_contact
+    and organization_id = p_org
     and source_metadata->>'ad_platform' is null;
 end;
 $$;
 
-comment on function public.fn_estampar_atribuicao_de_anuncio(uuid, text, jsonb) is
-  'Grava de qual anúncio (Meta Ads / Google Ads) um contato veio — só na primeira vez. `source_metadata = source_metadata || p_metadata` faz merge, nunca sobrescreve o que fn_upsert_wa_contact já gravou (waha_lid, waha_chat_id, notify_name). A guarda `source_metadata->>''ad_platform'' is null` é o primeiro-toque: clicar em outro anúncio meses depois, numa conversa já aberta, não reescreve de onde a pessoa veio originalmente — o UPDATE casa zero linhas, silenciosamente. security definer + revoke de anon/authenticated: só o backend (admin client no ingest de canal) chama isto.';
+comment on function public.fn_estampar_atribuicao_de_anuncio(uuid, uuid, text, jsonb) is
+  'Grava de qual anúncio (Meta Ads / Google Ads / site) um contato veio — só na primeira vez. `source_metadata = source_metadata || p_metadata` faz merge, nunca sobrescreve o que fn_upsert_wa_contact já gravou (waha_lid, waha_chat_id, notify_name). A guarda `source_metadata->>''ad_platform'' is null` é o primeiro-toque: clicar em outro anúncio meses depois, numa conversa já aberta, não reescreve de onde a pessoa veio originalmente — o UPDATE casa zero linhas, silenciosamente. `organization_id = p_org` (issue #1248): a organização é obrigatória e o contato de OUTRA organização casa zero linhas — escrita cross-tenant barrada no `where`, não no chamador. security definer + revoke de anon/authenticated: só o backend (admin client no ingest de canal) chama isto.';
 
-revoke execute on function public.fn_estampar_atribuicao_de_anuncio(uuid, text, jsonb) from public, anon, authenticated;
-grant  execute on function public.fn_estampar_atribuicao_de_anuncio(uuid, text, jsonb) to service_role;
+revoke execute on function public.fn_estampar_atribuicao_de_anuncio(uuid, uuid, text, jsonb) from public, anon, authenticated;
+grant  execute on function public.fn_estampar_atribuicao_de_anuncio(uuid, uuid, text, jsonb) to service_role;
 
 notify pgrst, 'reload schema';
 

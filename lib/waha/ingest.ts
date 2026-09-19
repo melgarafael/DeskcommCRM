@@ -640,7 +640,7 @@ async function handleInbound(
   // inbound. `estamparAtribuicaoDoContato` só grava na primeira vez — se o
   // contato já tem atribuição, o UPDATE casa zero linhas.
   const atribuicao = extrairAtribuicaoWaha(p._data?.message);
-  if (atribuicao) await estamparAtribuicaoDoContato(admin, contactId, atribuicao);
+  if (atribuicao) await estamparAtribuicaoDoContato(admin, session.organization_id, contactId, atribuicao);
 
   // Irmão do bloco acima, para o Google: o token vem no PRÓPRIO texto da
   // mensagem (não há payload de ad-reply equivalente para essa plataforma) —

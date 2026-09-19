@@ -248,7 +248,7 @@ async function efeitosDaEntrada(
   // regra de primeiro-toque: `estamparAtribuicaoDoContato` só grava se o
   // contato ainda não tem `ad_platform`.
   const atribuicao = extrairAtribuicaoMeta(msg.referral);
-  if (atribuicao) await estamparAtribuicaoDoContato(admin, contactId, atribuicao);
+  if (atribuicao) await estamparAtribuicaoDoContato(admin, input.organizationId, contactId, atribuicao);
 
   // Irmão do bloco acima, para o Google: o dado não vem no `referral` (que é
   // exclusivo da Meta), vem no PRÓPRIO texto da mensagem — ver o cabeçalho de

@@ -158,7 +158,7 @@ describe("estamparAtribuicaoDoContato", () => {
     const rpc = vi.fn().mockResolvedValue({ error: null });
     const admin = { rpc } as never;
 
-    await estamparAtribuicaoDoContato(admin, "contact-1", {
+    await estamparAtribuicaoDoContato(admin, "org-1", "contact-1", {
       plataforma: "meta_ads",
       sourceId: "clid-1",
       adId: "120210000000000",
@@ -171,6 +171,7 @@ describe("estamparAtribuicaoDoContato", () => {
     expect(rpc).toHaveBeenCalledWith(
       "fn_estampar_atribuicao_de_anuncio",
       expect.objectContaining({
+        p_org: "org-1",
         p_contact: "contact-1",
         p_platform: "meta_ads",
         p_metadata: expect.objectContaining({
@@ -191,7 +192,7 @@ describe("estamparAtribuicaoDoContato", () => {
     const admin = { rpc } as never;
 
     await expect(
-      estamparAtribuicaoDoContato(admin, "contact-1", {
+      estamparAtribuicaoDoContato(admin, "org-1", "contact-1", {
         plataforma: "meta_ads",
         sourceId: null,
         adId: null,

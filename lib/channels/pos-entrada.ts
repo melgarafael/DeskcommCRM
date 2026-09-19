@@ -385,7 +385,7 @@ async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): 
       return;
     }
 
-    const gravou = await estamparOrigemDaPagina(admin, entrada.contactId, origem);
+    const gravou = await estamparOrigemDaPagina(admin, entrada.organizationId, entrada.contactId, origem);
     if (!gravou) {
       logger.warn("pos-entrada: origem da página NÃO gravada (a mensagem entra assim mesmo)", {
         contactId: entrada.contactId,
