@@ -15,7 +15,7 @@ Agentes de IA, WhatsApp, canais sociais e prospecção com dados do lead — com
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%2BAuth%2BStorage-3ecf8e?logo=supabase)](https://supabase.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[**Acessar o CRM**](https://crm.escreve.ai) · [**O que é**](#-o-que-é) · [**Desenvolvimento**](#-desenvolvimento) · [**Documentação**](#-documentação) · [**Contribuir**](CONTRIBUTING.md)
+[**Site da ferramenta**](https://escreve.ai) · [**Acessar o CRM**](https://crm.escreve.ai) · [**O que é**](#-o-que-é) · [**Desenvolvimento**](#-desenvolvimento) · [**Documentação**](#-documentação) · [**Contribuir**](CONTRIBUTING.md)
 
 </div>
 

@@ -1,0 +1,12 @@
+{
+  "name": "escreve-crm-presentation",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-19",
+  "assets": { "directory": "./assets", "binding": "ASSETS", "run_worker_first": true },
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "workers_dev": true,
+  "routes": [
+    {"pattern": "escreve.ai/*", "zone_name": "escreve.ai"},
+    {"pattern": "www.escreve.ai/*", "zone_name": "escreve.ai"}
+  ]
+}
