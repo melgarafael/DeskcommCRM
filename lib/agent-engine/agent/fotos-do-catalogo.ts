@@ -67,13 +67,44 @@ function textoDe(registro: Record<string, unknown>, chaves: readonly string[]): 
   return undefined;
 }
 
+/** Colunas do catálogo configurado (migration 0244) — `nome` é obrigatória. */
+export interface ColunasDoCatalogo {
+  nome: string;
+  ano?: string;
+  cor?: string;
+  km?: string;
+  preco?: string;
+  imagem?: string;
+  estoque?: string;
+  cilindrada?: string;
+  tipo?: string;
+}
+
+/** Lê o campo pela coluna configurada; sem config, pelos nomes usuais. */
+function valorDe(
+  registro: Record<string, unknown>,
+  colunas: ColunasDoCatalogo | undefined,
+  papel: keyof ColunasDoCatalogo,
+  candidatos: readonly string[],
+): string | undefined {
+  const col = colunas?.[papel];
+  if (col !== undefined) return textoDe(registro, [col]);
+  return textoDe(registro, candidatos);
+}
+
 /**
  * Extrai as motos (nome + fotos + campos de legenda) de um resultado de
  * `crm_query_external_data`. Só entende o shape conhecido (`{ linhas: [...] }`);
- * qualquer outra coisa devolve `[]` — nunca lança, nunca inventa campo. A coluna
- * de nome é descoberta por candidatos usuais, a de imagem idem.
+ * qualquer outra coisa devolve `[]` — nunca lança, nunca inventa campo.
+ *
+ * Com `colunas` (mapeamento configurado na tela), usa os nomes REAIS de cada
+ * coluna; sem ele, descobre por candidatos usuais (retrocompatível com quem
+ * ainda não configurou o catálogo).
  */
-export function extrairMotosDoResultado(resultado: unknown): MotoDoCatalogo[] {
+export function extrairMotosDoResultado(
+  resultado: unknown,
+  colunas?: ColunasDoCatalogo,
+): MotoDoCatalogo[] {
   if (typeof resultado !== 'object' || resultado === null) return [];
   const linhas = (resultado as { linhas?: unknown }).linhas;
   if (!Array.isArray(linhas)) return [];
@@ -83,8 +114,8 @@ export function extrairMotosDoResultado(resultado: unknown): MotoDoCatalogo[] {
     if (typeof linha !== 'object' || linha === null) continue;
     const registro = linha as Record<string, unknown>;
 
-    const nomeBruto = textoDe(registro, ['nome', 'modelo', 'titulo', 'descricao']);
-    const imagemBruta = textoDe(registro, ['imagem_url', 'imagem', 'foto', 'fotos']);
+    const nomeBruto = valorDe(registro, colunas, 'nome', ['nome', 'modelo', 'titulo', 'descricao']);
+    const imagemBruta = valorDe(registro, colunas, 'imagem', ['imagem_url', 'imagem', 'foto', 'fotos']);
     if (nomeBruto === undefined || imagemBruta === undefined) continue;
 
     const fotos = imagemBruta
@@ -93,17 +124,18 @@ export function extrairMotosDoResultado(resultado: unknown): MotoDoCatalogo[] {
       .filter((u) => /^https?:\/\//i.test(u));
     if (fotos.length === 0) continue;
 
+    const ano = valorDe(registro, colunas, 'ano', ['ano']);
+    const cor = valorDe(registro, colunas, 'cor', ['cor']);
+    const km = valorDe(registro, colunas, 'km', ['quilometragem', 'km']);
+    const preco = valorDe(registro, colunas, 'preco', ['preco', 'preço', 'valor']);
+
     motos.push({
       nome: nomeBruto,
       fotos,
-      ...(textoDe(registro, ['ano']) !== undefined ? { ano: textoDe(registro, ['ano']) } : {}),
-      ...(textoDe(registro, ['cor']) !== undefined ? { cor: textoDe(registro, ['cor']) } : {}),
-      ...(textoDe(registro, ['quilometragem', 'km']) !== undefined
-        ? { quilometragem: textoDe(registro, ['quilometragem', 'km']) }
-        : {}),
-      ...(textoDe(registro, ['preco', 'preço', 'valor']) !== undefined
-        ? { preco: textoDe(registro, ['preco', 'preço', 'valor']) }
-        : {}),
+      ...(ano !== undefined ? { ano } : {}),
+      ...(cor !== undefined ? { cor } : {}),
+      ...(km !== undefined ? { quilometragem: km } : {}),
+      ...(preco !== undefined ? { preco } : {}),
     });
   }
   return motos;

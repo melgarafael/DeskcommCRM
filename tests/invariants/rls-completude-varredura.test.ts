@@ -219,6 +219,13 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "linhas da vizinha pela TABELA e pela VIEW `_safe`, e a view sem as três " +
       "colunas cifradas. A migration 0233 (banco externo do agente).",
   },
+  {
+    tabela: "catalog_mappings",
+    razao:
+      "tests/invariants/catalogo-rls.test.ts — mapeamento do catálogo do agente " +
+      "(migration 0244): controle positivo da própria org, 0 linhas da vizinha, " +
+      "`agent` recusado ao escrever (policy exige `admin`) e `anon` sem SELECT.",
+  },
 ];
 
 /**

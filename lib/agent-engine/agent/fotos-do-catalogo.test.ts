@@ -47,6 +47,38 @@ describe('extrairMotosDoResultado', () => {
     expect(extrairMotosDoResultado({ erro: 'filtro_sem_valor' })).toEqual([]);
     expect(extrairMotosDoResultado('texto')).toEqual([]);
   });
+
+  it('usa as colunas do mapeamento configurado (nomes reais do banco)', () => {
+    const resultado = {
+      linhas: [
+        {
+          descricao: 'CB 300 F Twister',
+          fabricacao: '2025',
+          tonalidade: 'Vermelho',
+          odometro: '4500',
+          valor: '28990.00',
+          foto_principal: 'http://x/cb.jpg',
+        },
+      ],
+    };
+    const motos = extrairMotosDoResultado(resultado, {
+      nome: 'descricao',
+      ano: 'fabricacao',
+      cor: 'tonalidade',
+      km: 'odometro',
+      preco: 'valor',
+      imagem: 'foto_principal',
+    });
+    expect(motos).toHaveLength(1);
+    expect(motos[0]).toMatchObject({
+      nome: 'CB 300 F Twister',
+      ano: '2025',
+      cor: 'Vermelho',
+      quilometragem: '4500',
+      preco: '28990.00',
+      fotos: ['http://x/cb.jpg'],
+    });
+  });
 });
 
 describe('fotosComLegenda', () => {

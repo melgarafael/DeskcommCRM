@@ -158,6 +158,11 @@ import {
   separarTextoApresentacao,
   type MotoDoCatalogo,
 } from './fotos-do-catalogo';
+import {
+  carregarCatalogoMapeamento,
+  colunasDoCatalogo,
+  renderBlocoCatalogo,
+} from '@/lib/external-db/catalogo';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -2046,6 +2051,12 @@ async function executarTurnoDoAgente(
   // ponteiros a cada run: trocar/rollback de skill = mover o ponteiro, sem restart.
   const skills = await loadSkills(pool, tenantId);
   const skillIndex = renderSkillIndex(skills);
+  // Catálogo configurado pela tela (migration 0244): qual tabela/colunas do banco
+  // externo o agente usa. `null` = não configurado → o motor usa a heurística de
+  // nomes de coluna de antes. Alimenta a extração de fotos e o bloco injetado no
+  // sufixo (nunca no prompt fixo da persona).
+  const catalogoMapeamento = await carregarCatalogoMapeamento(pool, tenantId).catch(() => null);
+  const colunasCatalogo = catalogoMapeamento !== null ? colunasDoCatalogo(catalogoMapeamento) : undefined;
   // Mensagem inbound do job, lida UMA vez: alimenta o gatilho por assunto, a
   // captura determinística do fluxo e o contexto do turno (antes era lida duas
   // vezes). `null` quando o job não tem inbound (ex.: follow-up).
@@ -4133,7 +4144,7 @@ async function executarTurnoDoAgente(
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
                   const resultado = await executeOriginal(...args);
-                  for (const moto of extrairMotosDoResultado(resultado)) {
+                  for (const moto of extrairMotosDoResultado(resultado, colunasCatalogo)) {
                     if (!catalogoDoTurno.some((m) => m.nome === moto.nome)) catalogoDoTurno.push(moto);
                   }
                   return resultado;
@@ -4337,6 +4348,10 @@ async function executarTurnoDoAgente(
     const openingSuffixes = [
       agoraBlock,
       matchedSkillsBlock,
+      // Catálogo configurado pela tela: tabela e colunas REAIS (migration 0244).
+      // Vazio quando não há mapeamento. Fica no sufixo (situacional), nunca no
+      // prefixo fixo da persona.
+      renderBlocoCatalogo(catalogoMapeamento),
       fluxoAtendimento ? renderBlocoDeAtendimento(fluxoAtendimento, finalizacaoDoFluxo) : '',
       stageHintBlock,
       splitHint,

@@ -14,7 +14,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ConfigurarCatalogo } from "./ConfigurarCatalogo";
 import { useCatalogoExterno, type TabelaExterna } from "@/hooks/external-db/useCatalogoExterno";
+import { useCatalogoMapeamento } from "@/hooks/external-db/useCatalogoMapeamento";
 import { useDadosExternos } from "@/hooks/external-db/useDadosExternos";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
@@ -81,7 +83,9 @@ function lerMedidas(chave: string | null): Medidas {
 export function ExploradorDeDados({ connectionId }: Props) {
   const t = useT();
   const catalogo = useCatalogoExterno(connectionId);
+  const mapeamento = useCatalogoMapeamento();
 
+  const [catalogoAberto, setCatalogoAberto] = useState(false);
   const [selecionada, setSelecionada] = useState<TabelaExterna | null>(null);
   const [limite, setLimite] = useState(LIMITE_PADRAO);
   const [offset, setOffset] = useState(0);
@@ -148,6 +152,10 @@ export function ExploradorDeDados({ connectionId }: Props) {
 
   const linhas = dados.data?.linhas ?? [];
   const colunas = dados.data?.colunas ?? [];
+  const ehCatalogoAtual =
+    selecionada !== null &&
+    mapeamento.data?.table_name === selecionada.nome &&
+    mapeamento.data?.schema_name === selecionada.schema;
 
   function aplicarLarguras(proximas: Medidas) {
     largurasRef.current = proximas;
@@ -343,6 +351,14 @@ export function ExploradorDeDados({ connectionId }: Props) {
                 <span className="text-muted-foreground">
                   ~{selecionada.estimativaLinhas.toLocaleString()} {t("linhas (estimativa)")}
                 </span>
+                <Button
+                  variant={ehCatalogoAtual ? "default" : "outline"}
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setCatalogoAberto(true)}
+                >
+                  {ehCatalogoAtual ? t("Catálogo do agente") : t("Usar como catálogo")}
+                </Button>
               </div>
               <div className="flex items-center gap-2">
                 <Select
@@ -517,6 +533,19 @@ export function ExploradorDeDados({ connectionId }: Props) {
           </>
         )}
       </section>
+
+      {selecionada && (
+        <ConfigurarCatalogo
+          connectionId={connectionId}
+          tabela={{
+            schema: selecionada.schema,
+            nome: selecionada.nome,
+            colunas: selecionada.colunas,
+          }}
+          aberto={catalogoAberto}
+          aoMudarAberto={setCatalogoAberto}
+        />
+      )}
     </div>
   );
 }
