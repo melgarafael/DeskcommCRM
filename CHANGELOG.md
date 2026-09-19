@@ -33,6 +33,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   O aviso se resolve sozinho quando deixa de ser verdade: o canal ganhou número autorizado, foi aberto ao público ou foi arquivado. Quem já tem os canais configurados não vê aviso nenhum.
 
+  Construído sobre o modo de teste do WhatsApp, de @rafaelcesardev (#599).
+
 - **As etiquetas ganham cor — e o filtro passa a mostrar a mesma cor que a lista** A tela Configurações › Tags passa a deixar você escolher a COR de cada etiqueta, numa paleta de oito tons. A paleta não foi escolhida a olho: cada tom foi medido contra os outros, inclusive para quem tem daltonismo, e o texto de dentro do marcador é escolhido pelo contraste — cor não deixa etiqueta ilegível.
 
   A cor aparece onde a etiqueta aparece: na lista de conversas, no painel lateral do atendimento, na lista e na ficha do contato, no funil e no filtro de etiqueta das três telas, que agora mostra um ponto da mesma cor antes do nome. Numa fila de duzentas conversas é a cor que faz achar "reclamação" antes de ler o texto — e é ela que denuncia a duplicata de vocabulário ("orçamento" e "orçamento novo" em dois tons do mesmo verde) que o número de uso sozinho não mostra.
@@ -145,6 +147,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Para quem opera um servidor, nada muda: isto acontece inteiramente na esteira de
   verificação do projeto, antes de qualquer versão ser publicada.
+
+  Crédito da medição: @webtecnica (#1056).
 
 - **O aviso de versão nova só aparece quando ela está pronta para instalar** A tela oferecia a versão nova **antes de ela estar pronta para instalar**. O aviso saía assim que a versão era publicada, mas o pacote que a VPS precisa baixar leva mais uns minutos para ficar pronto.
 
