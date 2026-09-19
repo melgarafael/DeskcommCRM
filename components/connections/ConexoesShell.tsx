@@ -9,6 +9,7 @@ import { CanalVozClient } from "./CanalVozClient";
 import { ConnectionsClient } from "./ConnectionsClient";
 import { TemplatesClient } from "./TemplatesClient";
 import { TemplatesParceiroClient } from "./TemplatesParceiroClient";
+import { TelefoniaClient } from "./TelefoniaClient";
 import { useT } from "@/hooks/i18n/useT";
 
 /**
@@ -50,9 +51,11 @@ export function ConexoesShell({
       ? "oficial"
       : abaParam === "parceiro"
         ? "parceiro"
-        : abaParam === "voz"
-          ? "voz"
-          : "numeros";
+        : abaParam === "telefonia"
+          ? "telefonia"
+          : abaParam === "voz"
+            ? "voz"
+            : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
@@ -85,11 +88,16 @@ export function ConexoesShell({
             porque no dia em que houver um segundo parceiro esta aba não muda.
             Aqui fica o CONCEITO; lá dentro o cartão diz de quem se trata. */}
         <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
+        <TabsTrigger value="telefonia">{t("Telefone")}</TabsTrigger>
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
       </TabsList>
 
       <TabsContent value="numeros" className="mt-0">
         <ConnectionsClient wahaConfigured={wahaConfigured} />
+      </TabsContent>
+
+      <TabsContent value="telefonia" className="mt-0">
+        <TelefoniaClient />
       </TabsContent>
 
       <TabsContent value="voz" className="mt-0">

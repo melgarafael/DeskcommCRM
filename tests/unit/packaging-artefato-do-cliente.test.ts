@@ -77,10 +77,10 @@ function lerServicos(yaml: string): Map<string, string> {
 const servicos = lerServicos(compose);
 
 /** Só as imagens que NÓS publicamos. Upstream tem regra própria, mais abaixo. */
-const NOSSOS = ["app", "worker", "scheduler"] as const;
+const NOSSOS = ["app", "worker", "scheduler", "voice-agent"] as const;
 
 describe("packaging — o artefato que o cliente instala", () => {
-  it("o parser enxerga os 8 serviços de produção", () => {
+  it("o parser enxerga os 10 serviços de produção", () => {
     // Guarda do próprio instrumento: se o parser parar de enxergar os serviços,
     // todos os testes abaixo passariam vazios — verde por não ter medido nada.
     //
@@ -91,8 +91,23 @@ describe("packaging — o artefato que o cliente instala", () => {
     // porque a exceção é o que apaga a regra" (docs/doctrine/packaging.md).
     // Movê-lo para `NOSSOS` seria assumir o build de um binário de terceiro
     // dentro de uma imagem nossa.
+    //
+    // O par da telefonia por SIP (#677, profile `telefonia`) segue a mesma
+    // divisão: `asterisk` é upstream, pinado por digest e fora de `NOSSOS`;
+    // `voice-agent` é código nosso, publicado pelo CI, e está em `NOSSOS`.
     expect([...servicos.keys()].sort()).toEqual(
-      ["app", "caddy", "redis", "scheduler", "srh", "wacalls", "waha", "worker"].sort(),
+      [
+        "app",
+        "asterisk",
+        "caddy",
+        "redis",
+        "scheduler",
+        "srh",
+        "voice-agent",
+        "wacalls",
+        "waha",
+        "worker",
+      ].sort(),
     );
   });
 
@@ -220,7 +235,12 @@ describe("packaging — o artefato que o cliente instala", () => {
     // O CI injeta os labels via docker/metadata-action, mas o build local do
     // docker-compose.build.yml não passa por ele. Sem LABEL no arquivo, essa
     // imagem sai sem origem nenhuma — e é justamente a que vira dívida numa VPS.
-    for (const arquivo of ["Dockerfile", "Dockerfile.worker", "Dockerfile.scheduler"]) {
+    for (const arquivo of [
+      "Dockerfile",
+      "Dockerfile.worker",
+      "Dockerfile.scheduler",
+      "Dockerfile.voice-agent",
+    ]) {
       const conteudo = fs.readFileSync(path.join(RAIZ, arquivo), "utf8");
       expect(conteudo, `${arquivo} sem org.opencontainers.image.source`).toContain(
         "org.opencontainers.image.source",
@@ -229,9 +249,14 @@ describe("packaging — o artefato que o cliente instala", () => {
     }
   });
 
-  it("o workflow publica as três imagens e injeta APP_VERSION", () => {
+  it("o workflow publica as quatro imagens e injeta APP_VERSION", () => {
     const wf = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
-    for (const imagem of ["deskcommcrm", "deskcomm-worker", "deskcomm-scheduler"]) {
+    for (const imagem of [
+      "deskcommcrm",
+      "deskcomm-worker",
+      "deskcomm-scheduler",
+      "deskcomm-voice-agent",
+    ]) {
       expect(wf, `publish-image.yml não publica '${imagem}'`).toContain(`name: ${imagem}`);
     }
     expect(wf, "publish-image.yml não passa APP_VERSION como build-arg").toContain(

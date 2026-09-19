@@ -6,6 +6,7 @@ export const NOTIFY_UI_CATEGORIES = [
   "lead_won",
   "lead_lost",
   "mention",
+  "call_inbound",
 ] as const;
 
 export type NotifyCategory = (typeof NOTIFY_UI_CATEGORIES)[number];
@@ -30,6 +31,7 @@ export function prefsPadrao(): NotifyPrefs {
     lead_won: { in_app: true, push: true },
     lead_lost: { in_app: true, push: true },
     mention: { in_app: true, push: true },
+    call_inbound: { in_app: true, push: true },
   };
 }
 
@@ -95,6 +97,10 @@ export function getPrefsSnapshot(): NotifyPrefs {
 
 const PREFS_DO_SERVIDOR: NotifyPrefs = {
   message: { in_app: true, push: true },
+  // Ligação chegando (módulo de telefonia, #677). Entra aqui porque
+  // `NotifyPrefs` exige uma linha por tipo: sem ela o tipo não fecha, e o
+  // servidor decidiria por ausência em vez de por declaração.
+  call_inbound: { in_app: true, push: true },
   lead_assigned: { in_app: true, push: true },
   lead_won: { in_app: true, push: true },
   lead_lost: { in_app: true, push: true },

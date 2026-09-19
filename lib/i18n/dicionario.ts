@@ -3569,6 +3569,11 @@ export const DICIONARIO: Traducoes = {
   "Seu WhatsApp": { es: "Tu WhatsApp" },
   "Seu e-mail": { es: "Tu correo" },
   "Quero receber contato": { es: "Quiero que me contacten" },
+  // A tela do tronco SIP (#677) — mesma família das duas linhas vizinhas de
+  // "não consegui copiar", com o bloco de configuração no lugar do token.
+  "Não consegui copiar. Selecione o bloco acima e copie à mão.": {
+    es: "No pude copiar. Selecciona el bloque de arriba y cópialo a mano.",
+  },
   "Não foi possível copiar — selecione e copie manualmente.": {
     es: "No se pudo copiar — selecciona y copia manualmente.",
   },
@@ -4506,6 +4511,7 @@ export const DICIONARIO: Traducoes = {
   "Lead ganho": { es: "Lead ganado" },
   "Lead perdido": { es: "Lead perdido" },
   "Você foi mencionado": { es: "Te mencionaron" },
+  "Ligação recebida": { es: "Llamada recibida" },
   Email: { es: "Correo" },
   "In-app": { es: "En la app" },
   Push: { es: "Push" },
@@ -9150,6 +9156,85 @@ export const DICIONARIO: Traducoes = {
     es: "Este punto usa el modelo definido en la versión publicada del agente; la elección del panel no se aplica.",
   },
 
+  // ─── app/app/settings/voip-trunk (Trunk SIP, migration 0349) ───
+  "Trunk SIP": { es: "Trunk SIP" },
+  "Credenciais de registro do seu provedor SIP (Asterisk/AudioSocket). Depois de salvar, aplique o bloco abaixo em": {
+    es: "Credenciales de registro de tu proveedor SIP (Asterisk/AudioSocket). Después de guardar, aplica el bloque de abajo en",
+  },
+  "na VPS — a aplicação ainda é manual.": { es: "en la VPS — la aplicación todavía es manual." },
+  "Provedor SIP": { es: "Proveedor SIP" },
+  Host: { es: "Host" },
+  "configurada, termina em": { es: "configurada, termina en" },
+  "Deixe em branco para manter a atual": { es: "Déjalo en blanco para mantener la actual" },
+  "From-domain (opcional)": { es: "From-domain (opcional)" },
+  "IP público da VPS, se o provedor exigir": { es: "IP público de la VPS, si el proveedor lo exige" },
+  "Cole em asterisk/pjsip.conf": { es: "Pega esto en asterisk/pjsip.conf" },
+  "Só aparece agora, logo após salvar — a senha não é guardada em claro, então este bloco completo não pode ser reconstruído depois.": {
+    es: "Solo aparece ahora, justo después de guardar — la contraseña no se guarda en texto plano, así que este bloque completo no se puede reconstruir después.",
+  },
+
+  // ─── components/ai/AgentEditor.tsx (aba Voz do agente) ───
+  Voz: { es: "Voz" },
+  "Este agente fala pela Realtime API da OpenAI -- o modelo de voz se escolhe na aba Voz, não aqui.": {
+    es: "Este agente habla mediante la Realtime API de OpenAI -- el modelo de voz se elige en la pestaña Voz, no aquí.",
+  },
+  "Modelo de voz": { es: "Modelo de voz" },
+  "Voz do modelo": { es: "Voz del modelo" },
+  "Velocidade da fala (0,25–1,5)": { es: "Velocidad del habla (0,25–1,5)" },
+  "1,0 é a velocidade padrão do modelo — abaixo disso fala mais devagar, acima fala mais rápido. Vale a partir da próxima ligação.": {
+    es: "1,0 es la velocidad predeterminada del modelo — por debajo habla más despacio, por encima habla más rápido. Vale a partir de la próxima llamada.",
+  },
+
+  // ─── components/connections/TelefoniaClient.tsx (números de voz / DID) ───
+  "Números que recebem ligações. Cada número aponta pra um agente de voz e um modo de atendimento.": {
+    es: "Números que reciben llamadas. Cada número apunta a un agente de voz y un modo de atención.",
+  },
+  "Novo número": { es: "Nuevo número" },
+  "Nenhum número cadastrado ainda.": { es: "Ningún número registrado todavía." },
+  "Cadastre o número (DID) que vai receber ligações. O troncal de voz já está configurado pela plataforma.": {
+    es: "Registra el número (DID) que va a recibir llamadas. El troncal de voz ya está configurado por la plataforma.",
+  },
+  "Número (E.164)": { es: "Número (E.164)" },
+  "Rótulo (opcional)": { es: "Etiqueta (opcional)" },
+  "Ex.: Linha principal": { es: "Ej.: Línea principal" },
+  "Modo de atendimento": { es: "Modo de atención" },
+  // Os três valores de ROUTING_LABELS (components/connections/TelefoniaClient.tsx):
+  // a chave chega por índice, então cada valor possível precisa da própria linha.
+  "IA responde": { es: "La IA responde" },
+  "Time humano": { es: "Equipo humano" },
+  "IA, depois time humano": { es: "La IA y después el equipo humano" },
+  "Agente de voz": { es: "Agente de voz" },
+  "Nenhum agente": { es: "Ningún agente" },
+  "Nenhum agente de voz publicado ainda — crie um em IA › Agentes.": {
+    es: "Ningún agente de voz publicado todavía — crea uno en IA › Agentes.",
+  },
+  "Sem rótulo": { es: "Sin etiqueta" },
+
+  // ─── app/app/calls/_client.tsx (histórico de chamadas SIP) ───
+  "Nova ligação": { es: "Nueva llamada" },
+  "A IA liga pra esse número e conduz a chamada — falar você mesmo ainda não está disponível.": {
+    es: "La IA llama a ese número y conduce la llamada — hablar tú mismo todavía no está disponible.",
+  },
+  "Número": { es: "Número" },
+  "Ligar com IA": { es: "Llamar con IA" },
+  "Chamadas": { es: "Llamadas" },
+  "Histórico de ligações (voz por IA) com transcrição.": {
+    es: "Historial de llamadas (voz por IA) con transcripción.",
+  },
+  "Data": { es: "Fecha" },
+  "Direção": { es: "Dirección" },
+  "Quem é": { es: "Quién es" },
+  "Atendido por": { es: "Atendido por" },
+  "Saída": { es: "Salida" },
+  "Entrada": { es: "Entrada" },
+  "Humano": { es: "Humano" },
+  "Nenhuma chamada ainda.": { es: "Ninguna llamada todavía." },
+  "Chamada com": { es: "Llamada con" },
+  "(sem áudio detectado)": { es: "(sin audio detectado)" },
+  "Sem transcrição pra esta chamada.": { es: "Sin transcripción para esta llamada." },
+  "Chamando": { es: "Llamando" },
+  "Não atendida": { es: "No atendida" },
+  "Ocupado": { es: "Ocupado" },
   // ─── app/app/team/_components/TeamInvitesClient.tsx (lista de convites) ───
   "Convites": { es: "Invitaciones" },
   "Convites enviados e seu status. Um convite aceito vira membro na lista acima.": {

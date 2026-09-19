@@ -1559,6 +1559,10 @@ esac
   envq WORKER_PULL_POLICY "$PULL_POLICY_ALVO"
   envq SCHEDULER_IMAGE "${IMG_SCHEDULER}:${TAG_ALVO}"
   envq SCHEDULER_PULL_POLICY "$PULL_POLICY_ALVO"
+  # A telefonia por SIP (profile `telefonia`, desligado por padrão) também segue
+  # a versão: gravar não liga nada, e no dia em que ligarem ela sobe casada.
+  envq VOICE_AGENT_IMAGE "${IMG_VOICE_AGENT}:${TAG_ALVO}"
+  envq VOICE_AGENT_PULL_POLICY "$PULL_POLICY_ALVO"
   envq DOMAIN "$DOMAIN"
   envq ACME_EMAIL "$ACME_EMAIL"
   printf '# Proxy reverso: "caddy" (o kit sobe o dele nas portas 80/443), "traefik"\n'

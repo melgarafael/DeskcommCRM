@@ -191,7 +191,12 @@ const DIVIDA_RBAC_CONHECIDA = new Set([
   "lead_checkpoints", "lead_notes", "lead_state", "lead_state_transitions", "llm_calls",
   "meta_templates", "metrics", "nuvemshop_products", "orders", "org_memory_entries",
   "org_memory_pointers", "org_memory_versions", "organizations", "outbound_copies",
-  "pacing_ledger", "playbook_pointers", "playbook_versions", "promise_table_pointers",
+  "pacing_ledger",
+  // phone_numbers (SIP module, #677): a leitura/escrita e org-scoped, mas o
+  // segundo eixo (so agent+ resolve numero, so manager+ configura roteamento)
+  // ainda nao tem par de casos provando papel de baixo barrado. Divida
+  // herdada de antes desta varredura existir, nao introduzida agora.
+  "phone_numbers", "playbook_pointers", "playbook_versions", "promise_table_pointers",
   "promise_table_versions", "reentry_knob_pointers", "reentry_knob_versions",
   "reentry_template_pointers", "reentry_template_versions", "send_ledger",
   "skill_activations", "skill_pointers", "skill_versions", "storage_redaction_queue",

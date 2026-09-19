@@ -17,6 +17,7 @@ export interface AgentRow {
   is_default: boolean;
   config: Record<string, unknown>;
   guardrails: unknown;
+  channel?: "whatsapp" | "voice";
   active_kb_version_id: string | null;
   kind?: "rag_bot" | "mcp_agent" | null;
   priority?: number | null;

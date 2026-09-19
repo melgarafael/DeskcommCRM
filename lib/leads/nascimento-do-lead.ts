@@ -75,6 +75,29 @@ const ROTULO_DE_ANUNCIO: Record<string, string> = {
 };
 
 /**
+ * De onde a conversa veio, para os dois pontos que precisam de um rotulo
+ * legivel: o titulo de fallback do card (quando nao ha nome cadastrado) e o
+ * `source` gravado em `crm_leads` (quando nao ha atribuicao de anuncio).
+ *
+ * Default preserva o comportamento de sempre (WhatsApp, unico canal ate a
+ * chamada de voz existir) -- os chamadores atuais nao precisam informar isto.
+ */
+export interface OrigemDoNascimento {
+  /** Nome do canal para o fallback do titulo ("Novo contato pelo X"). */
+  rotulo: string;
+  /** Valor de `crm_leads.source` quando nao ha atribuicao de anuncio. */
+  source: string;
+  /** Texto curto do "porque" na atividade da timeline. */
+  motivo: string;
+}
+
+const ORIGEM_PADRAO: OrigemDoNascimento = {
+  rotulo: "WhatsApp",
+  source: "whatsapp",
+  motivo: "primeira mensagem recebida no WhatsApp",
+};
+
+/**
  * Por que um lead NÃO nasceu. Cada motivo é registrado — silêncio não distingue
  * "não devia nascer" de "falhou ao nascer", e a segunda é a que custa caro.
  */
@@ -96,6 +119,8 @@ export interface DadosDoNascimento {
   conversationId: string;
   /** nome do contato, para o título do card. */
   nomeDoContato: string | null;
+  /** Rotulo/source/motivo do canal de origem -- default preserva o WhatsApp. */
+  origem?: OrigemDoNascimento;
 }
 
 /**
@@ -201,6 +226,7 @@ export async function garantirLeadDaConversa(
   dados: DadosDoNascimento,
 ): Promise<NascimentoDoLead> {
   const { organizationId, contactId, conversationId } = dados;
+  const origem = dados.origem ?? ORIGEM_PADRAO;
 
   // 1 · quem pediu para sair não vira oportunidade. O gate de envio já respeita
   // o opt-out; abrir um card para essa pessoa seria a mesma desatenção num
@@ -274,7 +300,7 @@ export async function garantirLeadDaConversa(
         ? doPayload
         : // "Sem nome" serve para uma linha de lista; um card de kanban precisa
           // dizer de onde veio, senão o quadro vira uma coluna de anônimos iguais.
-          "Novo contato pelo WhatsApp";
+          `Novo contato pelo ${origem.rotulo}`;
 
   // De onde veio: o contato já carrega a atribuição de anúncio (gravada no
   // primeiro toque, por `fn_estampar_atribuicao_de_anuncio` — ver
@@ -302,7 +328,7 @@ export async function garantirLeadDaConversa(
     p_pipeline: destino.pipelineId,
     p_stage: destino.stageId,
     p_title: titulo,
-    p_source: rotuloDeAnuncio ? contato!.source : "whatsapp",
+    p_source: rotuloDeAnuncio ? contato!.source : origem.source,
     p_source_metadata: rotuloDeAnuncio ? (contato!.source_metadata ?? {}) : {},
     // O ponto ao lado do título só acende se a organização cadastrar este
     // rótulo em `crm_pipelines.settings.canonical_tags` (Configurações do
@@ -348,9 +374,7 @@ export async function garantirLeadDaConversa(
     // nasceu naquele funil. Sem esta distinção, o cliente antigo aparece num
     // quadro diferente do resto sem explicação nenhuma, e quem vê conclui que
     // alguém arrastou.
-    reason: ehCliente
-      ? "cliente conhecido voltou a escrever"
-      : "primeira mensagem recebida no WhatsApp",
+    reason: ehCliente ? "cliente conhecido voltou a escrever" : origem.motivo,
     payload: { conversation_id: conversationId, cliente: ehCliente },
   });
   if (!registro.ok) {

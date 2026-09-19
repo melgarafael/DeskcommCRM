@@ -479,6 +479,7 @@ VERSAO_ALVO="${TARGET_TAG#v}"
 export APP_IMAGE="${IMG_APP}:${VERSAO_ALVO}"
 export WORKER_IMAGE="${IMG_WORKER}:${VERSAO_ALVO}"
 export SCHEDULER_IMAGE="${IMG_SCHEDULER}:${VERSAO_ALVO}"
+export VOICE_AGENT_IMAGE="${IMG_VOICE_AGENT}:${VERSAO_ALVO}"
 gravar_imagens .env "$VERSAO_ALVO"
 
 # Os segredos da chamada de voz (spec 18), para quem instalou antes dela existir.

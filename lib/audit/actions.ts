@@ -128,6 +128,8 @@ export const AUDIT_ACTIONS = [
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
   "contact.blocked",
+  "phone_number.created",
+  "phone_number.updated",
   "ai.handoff_triggered",
   "ai.reactivated_by_agent",
   "conversation.usable_for_rag_toggled",
@@ -569,6 +571,12 @@ export const AUDIT_ACTIONS = [
   "crm_task.updated",
   "crm_task.deleted",
   "organization.switched",
+  // Chamada originada via /api/v1/calls (módulo VoIP, migration 0347).
+  // Só o CREATE é auditado aqui — status/transcript são atualizados pelo
+  // worker via admin client, fora do caminho de sessão que este audit cobre.
+  "call.created",
+  "voip_trunk.created",
+  "voip_trunk.updated",
 
   // Chamada de voz WhatsApp (spec 18, migration 0234). Ligá-la vincula um
   // SEGUNDO aparelho ao número que já atende, por um caminho que não é o

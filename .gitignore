@@ -19,6 +19,12 @@ build/
 .env*
 !.env.example
 !.env.hostgator.example
+!.env.voip.example
+
+# Asterisk — credenciais reais do trunk SIP/ARI (módulo VoIP, migration 0231),
+# nunca comitar. Templates ficam em asterisk/*.conf.example.
+asterisk/pjsip.conf
+asterisk/ari.conf
 
 # Testing & coverage
 coverage/
@@ -147,6 +153,7 @@ backups/
 # commit posterior de remoção não tira o blob.
 .qa-backups/
 *.dump
+docker-compose.override.yml
 .prova/
 
 # Marca do kit: a senha das rotinas que vazou no log já foi trocada (#1054)

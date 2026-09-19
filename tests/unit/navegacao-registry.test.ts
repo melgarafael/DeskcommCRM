@@ -116,6 +116,13 @@ describe("sidebarGroups", () => {
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
+      // "/app/calls" (telefonia por SIP) NÃO entra aqui, e a ausência é a
+      // decisão: o módulo é OPCIONAL e nasce desligado (doc 27), então a porta
+      // no sidebar custaria um item a TODA instalação — e o vigésimo item é o
+      // que faz o menu rolar em 900px, que é a corrida por pixel que este
+      // teste existe para vigiar. A tela vive no hub do grupo e no ⌘K. Volta
+      // para cá no dia em que o app souber que o módulo está ligado (hoje isso
+      // é profile do compose, não estado que o aplicativo conheça).
     ]);
     expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub?.href).toBe("/app/crm");
   });
@@ -142,7 +149,7 @@ describe("sidebarGroups", () => {
 });
 
 describe("hubSections", () => {
-  it("o hub do CRM é inventário: as cinco telas do grupo, nas duas seções", () => {
+  it("o hub do CRM é inventário: as seis telas do grupo, nas duas seções", () => {
     // As seções são a régua do sidebar escrita por extenso — o que se abre todo
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.
@@ -152,6 +159,7 @@ describe("hubSections", () => {
       "/app/kanban",
       "/app/contacts",
       "/app/tasks",
+      "/app/calls",
       "/app/products",
       "/app/settings/tenant/pipelines",
     ]);

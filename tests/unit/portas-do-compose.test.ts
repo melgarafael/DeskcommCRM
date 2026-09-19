@@ -60,7 +60,14 @@ const PROXY = ["caddy"] as const;
  * serviço à internet, e foi exatamente esse o risco que este arquivo nasceu
  * para vigiar.
  */
-const PODE_PUBLICAR_UDP = ["wacalls"] as const;
+/*
+ * `asterisk` (telefonia por SIP, #677, profile `telefonia`) entra pelo mesmo
+ * motivo: sinalização SIP (5060) e mídia RTP não falam HTTP e o tronco do
+ * provedor precisa alcançá-las de fora. A ARI dele (TCP 8088, o controle total
+ * das chamadas) continua só na rede interna — e a regra de só-UDP abaixo é o
+ * que reprova quem colar a 8088 ali por hábito.
+ */
+const PODE_PUBLICAR_UDP = ["wacalls", "asterisk"] as const;
 
 /**
  * Serviço que pode ganhar label de roteamento. Só o `app` — é o único com uma
@@ -134,7 +141,18 @@ describe("a fronteira de rede do que o cliente instala", () => {
     // todos os casos abaixo verdes por não terem medido nada — que é a forma
     // mais silenciosa de um gate morrer.
     expect([...SERVICOS.get("docker-compose.prod.yml")!.keys()].sort()).toEqual(
-      ["app", "caddy", "redis", "scheduler", "srh", "wacalls", "waha", "worker"].sort(),
+      [
+        "app",
+        "asterisk",
+        "caddy",
+        "redis",
+        "scheduler",
+        "srh",
+        "voice-agent",
+        "wacalls",
+        "waha",
+        "worker",
+      ].sort(),
     );
     // O override do proxy externo declara um subconjunto (só o que ele muda).
     const traefik = [...SERVICOS.get("docker-compose.traefik.yml")!.keys()];

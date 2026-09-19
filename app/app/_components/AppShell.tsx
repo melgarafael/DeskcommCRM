@@ -5,6 +5,7 @@ import { TopBar } from "@/components/shell/TopBar";
 import { BarraDeProgressoNavegacao } from "@/components/shell/BarraDeProgressoNavegacao";
 import { useSinalDePresenca } from "@/hooks/atendimento/useSinalDePresenca";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
+import { useInboundCallAlerts } from "@/hooks/calls/useInboundCallAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
 
@@ -24,6 +25,7 @@ interface AppShellProps {
 
 export function AppShell({ sidebarCollapsed, podeAtender, children }: AppShellProps) {
   useInboundMessageAlerts();
+  useInboundCallAlerts();
   useCrmAlerts();
   useNotifyOpenFromServiceWorker();
   // O SINAL DE PRESENÇA (issue #996) sai daqui porque presença é "esta aba

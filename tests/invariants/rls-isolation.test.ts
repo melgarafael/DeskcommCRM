@@ -316,6 +316,25 @@ beforeAll(() => {
             );
         end if;
 
+        -- voip_trunk_settings (migration 0349): credenciais do trunk SIP da
+        -- organizacao. PK e o proprio organization_id (um trunk por org), e a
+        -- senha cifrada tem o MESMO esquema de ai_provider_credentials -- os
+        -- bytea aqui sao so preenchimento minimo pra satisfazer os NOT NULL,
+        -- nunca material real.
+        if not exists (select 1 from public.voip_trunk_settings where organization_id = v_org) then
+          insert into public.voip_trunk_settings
+            (organization_id, host, username, password_encrypted, password_iv, password_tag, password_last4, endpoint_name)
+            values (v_org, 'sip.rls-invariant.test', 'rls-user', '\\x00'::bytea, '\\x00'::bytea, '\\x00'::bytea, '0000', 'org-' || v_org::text || '-trunk-endpoint');
+        end if;
+
+        -- phone_numbers (SIP module, #677): numeros (DID) que a org cadastrou
+        -- pra receber ligacoes. 'number' e UNIQUE global, entao cada org
+        -- precisa de um valor distinto -- sufixado pelo proprio v_org.
+        if not exists (select 1 from public.phone_numbers where organization_id = v_org) then
+          insert into public.phone_numbers (organization_id, number, trunk_endpoint)
+            values (v_org, 'rls-' || v_org::text, 'trunk-endpoint');
+        end if;
+
         if not exists (select 1 from public.ai_provider_credentials where organization_id = v_org) then
           insert into public.ai_provider_credentials
             (organization_id, provider, label, api_key_encrypted, api_key_iv, api_key_tag, api_key_last4)
@@ -372,6 +391,15 @@ export const TABLES = [
   "crm_tasks",
   // 0227 — texto de sugestões: org + visibilidade da conversa por authenticated.
   "ai_reply_drafts",
+  // migration 0349 — credenciais do trunk SIP por organizacao. Leitura e
+  // qualquer membro da org (a tela de originar chamada precisa saber SE
+  // existe trunk configurado); a ESCRITA exige admin (mesmo nivel de
+  // ai_provider_credentials) e NAO e medida aqui.
+  "voip_trunk_settings",
+  // phone_numbers (SIP module, #677): numeros (DID) que recebem ligacao.
+  // Leitura/escrita org-scoped (sem segundo eixo medido aqui -- ver a nota
+  // de DIVIDA_RBAC_CONHECIDA em rbac-config-ia-canais.test.ts).
+  "phone_numbers",
   // 0232/0235 — chamada de voz. Guarda `peer_phone` (telefone da outra ponta) e
   // `owner_user_id` (quem atendeu): vazar a linha entrega ao vizinho com quem a
   // organização falou, quando, por quanto tempo e por meio de quem. A policy

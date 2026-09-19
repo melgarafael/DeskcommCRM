@@ -145,6 +145,11 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   "ai.credentials.view": "manager",
   "ai.credentials.write": "admin",
   "webhooks.manage": "manager",
+  // Mesmo mínimo de lib/navigation/catalogo.ts (destino /app/calls) e de
+  // requireRole("manager") em app/api/v1/calls/route.ts — a RLS de crm_calls
+  // é só por organização, então sem este gate o aviso ao vivo de ligação
+  // chegaria pra viewer/agent, papéis que a tela nunca mostra pra eles.
+  "calls.view": "manager",
   // Chamada de voz (spec 18). `agent` porque ligar e atender é ato de
   // atendimento, não de configuração — e porque é o piso que as rotas de
   // `app/api/v1/voice/calls/*` exigem. Quem não alcança este piso (viewer, e

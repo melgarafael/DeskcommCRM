@@ -881,6 +881,9 @@ IMG_NS="ghcr.io/melgarafael"
 IMG_APP="${IMG_NS}/deskcommcrm"
 IMG_WORKER="${IMG_NS}/deskcomm-worker"
 IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
+# Telefonia por SIP (#677): só roda com `telefonia` em COMPOSE_PROFILES, mas é
+# imagem NOSSA e segue a mesma versão das outras três (gravar_imagens).
+IMG_VOICE_AGENT="${IMG_NS}/deskcomm-voice-agent"
 
 # A última versão publicada (ex.: "1.2.1"), ou vazio se não deu para saber.
 #
@@ -947,9 +950,13 @@ ghcr_status() {
 # impossíveis, e o kit as construiria na VPS **em silêncio**, do topo da main:
 # app de uma release + worker/scheduler de outro código. Exatamente a mistura de
 # versões que a doutrina existe para proibir, no caminho de primeira impressão.
+# O nome ficou de quando eram três; hoje são quatro, e a lista acompanha a
+# matriz de publish-image.yml — quem cobra é
+# tests/unit/listas-de-imagens-seguem-matriz.test.ts. Renomear a função
+# quebraria o leitor daquele teste sem ganhar nada: o que importa é a lista.
 trio_publicado() {
   local tag="$1" i
-  for i in deskcommcrm deskcomm-worker deskcomm-scheduler; do
+  for i in deskcommcrm deskcomm-worker deskcomm-scheduler deskcomm-voice-agent; do
     [ "$(ghcr_status "$i" "$tag")" = "200" ] || return 1
   done
   return 0
@@ -1074,6 +1081,12 @@ gravar_imagens() {
   set_env_var "$envfile" WORKER_PULL_POLICY    "$politica"
   set_env_var "$envfile" SCHEDULER_IMAGE       "${IMG_SCHEDULER}:${versao}"
   set_env_var "$envfile" SCHEDULER_PULL_POLICY "$politica"
+  # A quarta imagem só é puxada com o profile `telefonia` ligado — compose não
+  # puxa serviço de profile inativo. Gravá-la sempre é o que garante que, no
+  # dia em que o dono ligar a telefonia, ela suba na MESMA versão do resto, e
+  # não no `stable` móvel do default do compose.
+  set_env_var "$envfile" VOICE_AGENT_IMAGE       "${IMG_VOICE_AGENT}:${versao}"
+  set_env_var "$envfile" VOICE_AGENT_PULL_POLICY "$politica"
 }
 
 # ── Os segredos da chamada de voz, no .env de quem já tinha instalado ────────
