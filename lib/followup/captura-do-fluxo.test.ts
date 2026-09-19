@@ -182,3 +182,11 @@ describe("validador como fonte única da gravação (auditoria 2026-09-19)", () 
     expect(src).toMatch(/validadorDecidiuNesteTurno = leitura\.resultado !== 'indefinido'/);
   });
 });
+
+describe("send_message nunca manda bolha em branco (achado 2026-09-19)", () => {
+  it("o execute recusa corpo vazio antes de enviar", () => {
+    const src = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+    expect(src).toMatch(/if \(body\.trim\(\) === '' && \(media_urls \?\? \[\]\)\.length === 0 && media_url === undefined\) \{/);
+    expect(src).toMatch(/code: 'corpo_vazio'/);
+  });
+});
