@@ -16,27 +16,31 @@
  * foto daquela moto existe e é a mesma que ele mandaria. Então o MOTOR a anexa:
  * captura as linhas que `crm_query_external_data` devolveu no turno, e quando o
  * `send_message` sai SEM mídia mas o corpo menciona o nome de uma moto conhecida,
- * inclui a 1ª URL dela. A legenda (o texto do modelo) segue na 1ª foto.
+ * envia UMA FOTO POR MOTO, cada uma com a LEGENDA DAQUELA MOTO (nome/ano/cor/km/
+ * preço). É o formato que o dono pediu (2026-09-19): mensagem inicial em texto +
+ * foto de cada moto identificada pela própria legenda + chamada final em texto.
  *
  * É o mesmo princípio do resto do harness: o modelo decide o CONTEÚDO, o motor
- * garante o que é determinístico. Se ele JÁ mandou fotos, nada é acrescentado —
- * a decisão dele vence.
+ * garante o que é determinístico. Se o modelo JÁ mandou fotos, a decisão dele
+ * vence e nada é acrescentado.
  *
  * ─── Por que casar por NOME e não por id ────────────────────────────────────
  *
  * O modelo cita "CB 300 F Twister" no texto; não devolve ids no `body`. O casar
- * é por substring normalizada (minúsculas, sem acento, espaços colapsados), com
- * piso de tamanho para não casar "CB" sozinho em qualquer frase. O risco de
- * casar a moto errada é baixo (nome de moto é específico) e o custo é a foto
- * certa da moto que o modelo decidiu ofertar.
+ * é por substring normalizada (minúsculas, sem acento, sem espaços), com piso de
+ * tamanho para não casar "CB" sozinho em qualquer frase.
  */
 
-/** Uma moto conhecida do catálogo, com as fotos na ordem em que vieram. */
+/** Uma moto conhecida do catálogo, com os campos usados na legenda. */
 export interface MotoDoCatalogo {
-  /** nome como veio do banco externo (para exibição/diagnóstico). */
+  /** nome como veio do banco externo (para exibição/legenda). */
   nome: string;
   /** URLs de imagem válidas (http/https), na ordem original, sem vazias. */
   fotos: string[];
+  ano?: string;
+  cor?: string;
+  quilometragem?: string;
+  preco?: string;
 }
 
 /** normaliza para casar nome: minúsculas, sem acento, espaços colapsados. */
@@ -49,23 +53,25 @@ export function normalizarNomeDeMoto(texto: string): string {
     .trim();
 }
 
-/**
- * Chave de casamento TOLERANTE A ESPAÇOS: remove todos os espaços. É o mesmo
- * critério do `contem` do banco externo (C-008), que junta "cb300f" e
- * "cb 300 f twister" — o modelo tanto escreve "CB 300 F Twister" quanto
- * "cb300f twister", e os dois precisam casar a MESMA moto.
- */
+/** Chave sem espaços (mesmo critério do `contem` do banco: "cb300f" casa "CB 300 F"). */
 function chaveSemEspaco(texto: string): string {
   return normalizarNomeDeMoto(texto).replace(/\s+/g, '');
 }
 
+function textoDe(registro: Record<string, unknown>, chaves: readonly string[]): string | undefined {
+  for (const chave of chaves) {
+    const valor = registro[chave];
+    if (typeof valor === 'string' && valor.trim() !== '') return valor.trim();
+    if (typeof valor === 'number') return String(valor);
+  }
+  return undefined;
+}
+
 /**
- * Extrai as motos (nome + fotos) de um resultado de `crm_query_external_data`.
- *
- * Só entende o shape conhecido: `{ linhas: [{ <colunaNome>: string,
- * imagem_url: string }] }`. Qualquer outra coisa devolve `[]` — nunca lança, e
- * nunca inventa campo. A coluna de nome é descoberta por candidatos usuais
- * (`nome`, `modelo`, `titulo`) e a de imagem por (`imagem_url`, `imagem`, `foto`).
+ * Extrai as motos (nome + fotos + campos de legenda) de um resultado de
+ * `crm_query_external_data`. Só entende o shape conhecido (`{ linhas: [...] }`);
+ * qualquer outra coisa devolve `[]` — nunca lança, nunca inventa campo. A coluna
+ * de nome é descoberta por candidatos usuais, a de imagem idem.
  */
 export function extrairMotosDoResultado(resultado: unknown): MotoDoCatalogo[] {
   if (typeof resultado !== 'object' || resultado === null) return [];
@@ -77,9 +83,9 @@ export function extrairMotosDoResultado(resultado: unknown): MotoDoCatalogo[] {
     if (typeof linha !== 'object' || linha === null) continue;
     const registro = linha as Record<string, unknown>;
 
-    const nomeBruto = primeiroTexto(registro, ['nome', 'modelo', 'titulo', 'descricao']);
-    const imagemBruta = primeiroTexto(registro, ['imagem_url', 'imagem', 'foto', 'fotos']);
-    if (nomeBruto === null || imagemBruta === null) continue;
+    const nomeBruto = textoDe(registro, ['nome', 'modelo', 'titulo', 'descricao']);
+    const imagemBruta = textoDe(registro, ['imagem_url', 'imagem', 'foto', 'fotos']);
+    if (nomeBruto === undefined || imagemBruta === undefined) continue;
 
     const fotos = imagemBruta
       .split('|')
@@ -87,28 +93,31 @@ export function extrairMotosDoResultado(resultado: unknown): MotoDoCatalogo[] {
       .filter((u) => /^https?:\/\//i.test(u));
     if (fotos.length === 0) continue;
 
-    motos.push({ nome: nomeBruto, fotos });
+    motos.push({
+      nome: nomeBruto,
+      fotos,
+      ...(textoDe(registro, ['ano']) !== undefined ? { ano: textoDe(registro, ['ano']) } : {}),
+      ...(textoDe(registro, ['cor']) !== undefined ? { cor: textoDe(registro, ['cor']) } : {}),
+      ...(textoDe(registro, ['quilometragem', 'km']) !== undefined
+        ? { quilometragem: textoDe(registro, ['quilometragem', 'km']) }
+        : {}),
+      ...(textoDe(registro, ['preco', 'preço', 'valor']) !== undefined
+        ? { preco: textoDe(registro, ['preco', 'preço', 'valor']) }
+        : {}),
+    });
   }
   return motos;
 }
 
-function primeiroTexto(registro: Record<string, unknown>, chaves: readonly string[]): string | null {
-  for (const chave of chaves) {
-    const valor = registro[chave];
-    if (typeof valor === 'string' && valor.trim() !== '') return valor.trim();
-  }
-  return null;
-}
-
 /** Tamanho mínimo do nome para ser casável — evita "CB" casar em qualquer frase. */
 const MIN_NOME_CASAVEL = 3;
-/** Teto de fotos que o motor acrescenta por turno (schemas típicos mandam ≤10). */
+/** Teto de fotos que o motor acrescenta por turno. */
 export const MAX_FOTOS_AUTO = 10;
 
 /**
  * As motos cujo nome aparece no TEXTO da mensagem — na ordem em que aparecem no
- * catálogo, para a 1ª foto (a que leva legenda) ser a 1ª moto citada quando o
- * modelo listou na ordem do resultado.
+ * catálogo, para a 1ª foto ser a 1ª moto citada quando o modelo listou na ordem
+ * do resultado.
  */
 export function motosCitadasNoTexto(texto: string, catalogo: readonly MotoDoCatalogo[]): MotoDoCatalogo[] {
   const alvo = normalizarNomeDeMoto(texto);
@@ -124,24 +133,54 @@ export function motosCitadasNoTexto(texto: string, catalogo: readonly MotoDoCata
   return citadas;
 }
 
+/** Formata preço "28990.00" → "R$ 28.990,00". Sem valor reconhecível, devolve cru. */
+export function formatarPreco(preco: string | undefined): string | undefined {
+  if (preco === undefined) return undefined;
+  const numero = Number(preco.replace(/[^0-9.,-]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+  if (!Number.isFinite(numero)) return preco;
+  return `R$ ${numero.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 /**
- * As URLs a anexar quando o modelo não mandou mídia: a 1ª foto de cada moto
- * citada no texto, até `MAX_FOTOS_AUTO`. Texto sem moto conhecida ⇒ [] (o motor
- * não inventa foto de conversa genérica).
+ * A legenda da foto de UMA moto — nome/ano em cima, cor/km/preço nas linhas
+ * seguintes. É o que prende a imagem à moto específica (pedido direto do dono,
+ * 2026-09-19): sem isto, a foto solta não diz QUAL moto é. Campos ausentes são
+ * omitidos; nome sozinho ainda identifica.
  */
-export function fotosParaAnexar(
+export function legendaDaMoto(moto: MotoDoCatalogo): string {
+  const titulo = [moto.nome, moto.ano].filter((v) => v !== undefined && v !== '').join(' ');
+  const linhas = [titulo];
+  if (moto.cor) linhas.push(`Cor: ${moto.cor}`);
+  if (moto.quilometragem) linhas.push(`Quilometragem: ${moto.quilometragem} km`);
+  const preco = formatarPreco(moto.preco);
+  if (preco) linhas.push(`Preço: ${preco}`);
+  return linhas.join('\n');
+}
+
+/** Plano de envio determinístico: a moto e a legenda própria de cada foto. */
+export interface FotoComLegenda {
+  url: string;
+  legenda: string;
+}
+
+/**
+ * As fotos a enviar (1ª de cada moto citada) JÁ com a legenda da própria moto,
+ * até `MAX_FOTOS_AUTO`. Texto sem moto conhecida ⇒ [] (o motor não inventa foto
+ * de conversa genérica).
+ */
+export function fotosComLegenda(
   texto: string,
   catalogo: readonly MotoDoCatalogo[],
   limite = MAX_FOTOS_AUTO,
-): string[] {
-  const urls: string[] = [];
-  const vistas = new Set<string>();
+): FotoComLegenda[] {
+  const plano: FotoComLegenda[] = [];
+  const urlsVistas = new Set<string>();
   for (const moto of motosCitadasNoTexto(texto, catalogo)) {
     const foto = moto.fotos[0];
-    if (foto === undefined || vistas.has(foto)) continue;
-    vistas.add(foto);
-    urls.push(foto);
-    if (urls.length >= limite) break;
+    if (foto === undefined || urlsVistas.has(foto)) continue;
+    urlsVistas.add(foto);
+    plano.push({ url: foto, legenda: legendaDaMoto(moto) });
+    if (plano.length >= limite) break;
   }
-  return urls;
+  return plano;
 }

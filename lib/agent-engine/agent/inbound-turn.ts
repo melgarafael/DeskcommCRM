@@ -152,7 +152,7 @@ import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
-import { extrairMotosDoResultado, fotosParaAnexar, type MotoDoCatalogo } from './fotos-do-catalogo';
+import { extrairMotosDoResultado, fotosComLegenda, type MotoDoCatalogo } from './fotos-do-catalogo';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
 import { decidePromise } from '../guardrails/promise/engine';
 import { loadPromiseTable } from '../guardrails/promise/table';
@@ -3209,16 +3209,17 @@ async function executarTurnoDoAgente(
               .filter((s) => /^https?:\/\//i.test(s)),
           ),
         ];
-        // FOTO QUE O MODELO ESQUECEU: se ele NÃO mandou mídia mas citou no texto
-        // motos que `crm_query_external_data` devolveu neste turno, o motor anexa
-        // a 1ª foto de cada uma (a legenda é o próprio `body`, na 1ª). Medido ao
-        // vivo: modelos lite listam a moto e esquecem a foto — e foto ao ofertar
-        // a moto é promessa do PRODUTO, não do humor do modelo. Se ele JÁ mandou
-        // fotos, a decisão dele vence e nada é acrescentado.
-        const fotos =
-          fotosDeclaradas.length > 0
-            ? fotosDeclaradas
-            : fotosParaAnexar(body, catalogoDoTurno);
+        // FOTO QUE O MODELO ESQUECEU (formato do dono, 2026-09-19): se ele NÃO
+        // mandou mídia mas citou no texto motos que `crm_query_external_data`
+        // devolveu neste turno, o motor manda o TEXTO dele (mensagem inicial +
+        // lista) e depois UMA FOTO POR MOTO, cada foto com a LEGENDA DA PRÓPRIA
+        // MOTO (nome/ano/cor/km/preço) — assim a imagem diz QUAL moto é, em vez
+        // da legenda única presa na 1ª. Medido ao vivo: modelos lite listam a
+        // moto e esquecem a foto; foto ao ofertar a moto é promessa do PRODUTO.
+        // Se o modelo JÁ mandou fotos, a decisão dele vence e nada é mudado.
+        const planoAutomatico =
+          fotosDeclaradas.length === 0 ? fotosComLegenda(body, catalogoDoTurno) : [];
+        const fotos = fotosDeclaradas;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {
@@ -3297,6 +3298,55 @@ async function executarTurnoDoAgente(
             }
             return ultimo!;
           };
+          // Formato do dono (2026-09-19): a mensagem inicial vai em TEXTO; depois
+          // UMA FOTO POR MOTO, cada uma com a legenda da PRÓPRIA moto. As demais
+          // motos NÃO repetem o texto de início — a legenda da imagem já as
+          // identifica. `legendaTexto` é o `finalBody` do modelo (o texto que ele
+          // escreveu: "não temos a CB 250, mas olha essas..." + a lista).
+          const enviarFotosAutomaticas = async (
+            legendaTexto: string,
+          ): Promise<ChannelSendResult> => {
+            let ultimo: ChannelSendResult | undefined;
+            // 1) mensagem inicial em TEXTO (com a lista), sem mídia.
+            if (legendaTexto.trim() !== '') {
+              ultimo = await sendInBubbles(legendaTexto, {
+                enabled: agentConfig?.splitMessages ?? false,
+                maxChars: agentConfig?.splitMaxChars ?? 600,
+                sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+                jitter: () => 1200 + Math.floor(Math.random() * 800),
+                send: (bubble): Promise<ChannelSendResult> => {
+                  seq += 1;
+                  return liveChannel().send({
+                    tenantId,
+                    leadId,
+                    jobId: liveJob().id,
+                    jobClaim: claimOfJob(liveJob()),
+                    agentOperation,
+                    seq,
+                    conversationId: input.conversationId,
+                    body: bubble,
+                  });
+                },
+              });
+              await dormir(700);
+            }
+            // 2) uma foto por moto, cada uma com a legenda dela.
+            for (const item of planoAutomatico) {
+              ultimo = await liveChannel().send({
+                tenantId,
+                leadId,
+                jobId: liveJob().id,
+                jobClaim: claimOfJob(liveJob()),
+                agentOperation,
+                seq: (seq += 1),
+                conversationId: input.conversationId,
+                body: item.legenda,
+                media: { type: 'image', url: item.url },
+              });
+              await dormir(700);
+            }
+            return ultimo!;
+          };
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
           // hasOpenCase/openedCaseThisTurn mudam depois do auto-abre-caso.
           const beforeSendArgs = {
@@ -3360,6 +3410,9 @@ async function executarTurnoDoAgente(
             // imagem em bolhas não faz sentido). Sem mídia, o caminho é o de sempre.
             send: (finalBody: string) => {
               corposEnviados.push(finalBody);
+              if (planoAutomatico.length > 0) {
+                return enviarFotosAutomaticas(finalBody);
+              }
               return fotos.length > 0
                 ? enviarFotos(finalBody)
                 : sendInBubbles(finalBody, {
