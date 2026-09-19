@@ -10126,6 +10126,32 @@ export const DICIONARIO: Traducoes = {
   'A origem aparece na ficha do contato e no filtro "Site (landing page)" da lista de contatos.': {
     es: 'El origen aparece en la ficha del contacto y en el filtro "Sitio (landing page)" de la lista de contactos.',
   },
+
+  // ── assistente de voz (recorte do PR #963, crédito @saraivabr) ──
+  "Assistente de voz": { es: "Asistente de voz" },
+  "Não foi possível concluir. Confira sua conexão e tente novamente.": { es: "No se pudo completar la operación. Revisa tu conexión e inténtalo de nuevo." },
+  "Não foi possível confirmar o encerramento. Feche esta aba para interromper o microfone.": { es: "No se pudo confirmar la finalización. Cierra esta pestaña para detener el micrófono." },
+  "O teste de voz encontrou uma falha. Encerre e tente novamente; confira a permissão do microfone e o saldo da conta.": { es: "La prueba de voz falló. Finalízala e inténtalo de nuevo; revisa el permiso del micrófono y el saldo de la cuenta." },
+  "Não foi possível iniciar a voz. Permita o microfone neste site e confira sua conexão.": { es: "No se pudo iniciar la voz. Permite el uso del micrófono en este sitio y revisa tu conexión." },
+  "Um administrador pode configurar e testar o assistente de voz.": { es: "Un administrador puede configurar y probar el asistente de voz." },
+  "Escolha a voz, ajuste a abertura e converse com seu assistente antes de usá-lo.": { es: "Elige la voz, ajusta el saludo inicial y conversa con tu asistente antes de usarlo." },
+  "Carregar configuração": { es: "Cargar configuración" },
+  "A chave fica protegida no CRM e é usada pelos assistentes de voz desta organização.": { es: "La clave queda protegida en el CRM y la utilizan los asistentes de voz de esta organización." },
+  "Chave da API": { es: "Clave de API" },
+  "Obter chave na ElevenLabs": { es: "Obtener clave en ElevenLabs" },
+  "Voz": { es: "Voz" },
+  "Escolha uma voz da sua conta": { es: "Elige una voz de tu cuenta" },
+  "Voz salva · indisponível na lista": { es: "Voz guardada · no disponible en la lista" },
+  "Português": { es: "Portugués" },
+  "Primeira mensagem": { es: "Primer mensaje" },
+  "Como o assistente deve conversar": { es: "Cómo debe conversar el asistente" },
+  "Começamos com as instruções salvas do agente. Os ajustes abaixo valem para a voz; ferramentas e materiais do CRM não são usados neste teste.": { es: "Partimos de las instrucciones guardadas del agente. Los ajustes siguientes se aplican a la voz; las herramientas y los materiales del CRM no se usan en esta prueba." },
+  "Duração máxima do teste": { es: "Duración máxima de la prueba" },
+  "Converse com seu assistente": { es: "Conversa con tu asistente" },
+  "Use seu microfone. O teste consome créditos da ElevenLabs. O áudio não é gravado; a transcrição fica no provedor por até 7 dias.": { es: "Usa tu micrófono. La prueba consume créditos de ElevenLabs. El audio no se graba; la transcripción se conserva en el proveedor hasta 7 días." },
+  "Testar com meu microfone": { es: "Probar con mi micrófono" },
+  "Encerrar teste": { es: "Finalizar prueba" },
+  "Conversa do teste de voz": { es: "Conversación de la prueba de voz" },
 };
 
 /**
