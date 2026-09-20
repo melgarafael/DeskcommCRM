@@ -28,3 +28,7 @@ No navegador, conferir desktop e mobile, as três etapas interativas, abertura/f
 - DM Sans: Google Fonts.
 
 A página utiliza referências de ritmo editorial, espaços e hierarquia da apresentação de iPhone da Apple, com imagens, marca e textos próprios.
+
+## Inovações orientadas a resultado
+
+A seção `#inovacoes` apresenta descoberta de empresas, contexto do contato, canais conectados, acompanhamento, qualificação e criação conversacional do agente a partir do resultado para quem usa. Cada cartão expande uma explicação concreta das condições. Não afirma taxas de conversão, faturamento ou garantias; não anuncia chamadas automáticas de voz como disponíveis.
