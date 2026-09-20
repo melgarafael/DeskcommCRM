@@ -3250,17 +3250,24 @@ async function executarTurnoDoAgente(
         // Se o modelo JÁ mandou fotos, a decisão dele vence e nada é mudado.
         const planoAutomatico: FotoComLegenda[] = (() => {
           if (fotosDeclaradas.length > 0) return [];
-          // Escolha DETERMINÍSTICA: regra configurada no PRÓPRIO catálogo
-          // (Integração de dados) — cilindrada/preço na ordem definida. O motor
-          // manda essas motos em vez de depender do julgamento do modelo.
-          if (
-            catalogoMapeamento?.similaridadeDeterministica === true &&
-            catalogoDoTurno.length > 0
-          ) {
+          // Escolha DETERMINÍSTICA. A regra passou a morar no CATÁLOGO (Integração
+          // de dados), mas o motor aceita as DUAS fontes — a nova primeiro, e a
+          // antiga (`ai_agents.config.catalog`) como FALLBACK. É o que impede a
+          // mudança de estrutura de mudar o processo: quem já tinha configurado no
+          // agente continua com o mesmo comportamento até reconfigurar no catálogo.
+          const cfgAgente = agentConfig?.catalogConfig;
+          const detLigada =
+            catalogoMapeamento?.similaridadeDeterministica ?? cfgAgente?.similaridade_deterministica ?? false;
+          if (detLigada === true && catalogoDoTurno.length > 0) {
             const termo = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
+            const temOrdemNoCatalogo =
+              catalogoMapeamento !== null && Object.keys(catalogoMapeamento.ordem ?? {}).length > 0;
+            const criterios = temOrdemNoCatalogo
+              ? criteriosDeSimilaridade(catalogoMapeamento!)
+              : (cfgAgente?.criterio ?? ['cilindrada', 'preco']);
             const escolhidas = ordenarSimilares(termo, catalogoDoTurno, {
-              quantidade: catalogoMapeamento.similaresQtd ?? 3,
-              criterios: criteriosDeSimilaridade(catalogoMapeamento),
+              quantidade: catalogoMapeamento?.similaresQtd ?? cfgAgente?.similares_qtd ?? 3,
+              criterios,
             });
             return escolhidas
               .map((m) => ({ url: m.fotos[0] ?? '', legenda: legendaDaMoto(m) }))

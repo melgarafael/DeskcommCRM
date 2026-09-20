@@ -24347,3 +24347,31 @@ comment on column public.catalog_mappings.ordem is
   'Prioridade por papel de coluna (ex.: {"cilindrada":1,"preco":2}). Vale para escolher as semelhantes e para a ordem dos campos na legenda.';
 
 -- ---- fim regras do catálogo no próprio catálogo (migration 0245) ----
+
+-- ---- backfill: leva a config do agente para o catálogo (migration 0246) ----
+-- Idempotente. Copia `ai_agents.config.catalog` para `catalog_mappings` só quando
+-- o catálogo ainda não tem a regra ligada. O runtime também tem fallback.
+
+update public.catalog_mappings cm
+set
+  similaridade_deterministica = true,
+  similares_qtd = coalesce(
+    nullif(a.config->'catalog'->>'similares_qtd', '')::int,
+    cm.similares_qtd
+  ),
+  ordem = coalesce(
+    (
+      select jsonb_object_agg(t.elem, t.ord::int)
+      from jsonb_array_elements_text(a.config->'catalog'->'criterio') with ordinality as t(elem, ord)
+      where t.elem in ('cilindrada', 'preco', 'tipo')
+    ),
+    cm.ordem
+  ),
+  updated_at = now()
+from public.ai_agents a
+where a.organization_id = cm.organization_id
+  and cm.similaridade_deterministica = false
+  and (a.config->'catalog'->>'similaridade_deterministica')::boolean is true
+  and a.config->'catalog'->'criterio' is not null;
+
+-- ---- fim backfill: config do agente para o catálogo (migration 0246) ----
