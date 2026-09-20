@@ -138,8 +138,43 @@ export type Database = {
           },
         ]
       }
+      cakto_billing_inbox: {
+        Row: {
+          id: string
+          order_id: string
+          event_type: string
+          received_at: string
+          retry_at: string
+          attempts: number
+          last_error: string | null
+          processed_at: string | null
+        }
+        Insert: {
+          id: string
+          order_id: string
+          event_type: string
+          received_at?: string
+          retry_at?: string
+          attempts?: number
+          last_error?: string | null
+          processed_at?: string | null
+        }
+        Update: {
+          id?: string
+          order_id?: string
+          event_type?: string
+          received_at?: string
+          retry_at?: string
+          attempts?: number
+          last_error?: string | null
+          processed_at?: string | null
+        }
+        Relationships: []
+      }
       org_subscriptions: {
         Row: {
+          cakto_paid_order_id: string | null
+          cakto_paid_period: number | null
           cancel_at_period_end: boolean
           checkout_attempt_id: string
           checkout_expires_at: string | null
@@ -158,6 +193,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cakto_paid_order_id?: string | null
+          cakto_paid_period?: number | null
           cancel_at_period_end?: boolean
           checkout_attempt_id?: string
           checkout_expires_at?: string | null
@@ -176,6 +213,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cakto_paid_order_id?: string | null
+          cakto_paid_period?: number | null
           cancel_at_period_end?: boolean
           checkout_attempt_id?: string
           checkout_expires_at?: string | null

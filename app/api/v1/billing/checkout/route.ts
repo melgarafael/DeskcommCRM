@@ -1,3 +1,4 @@
+import { createCaktoCheckout } from "@/lib/billing/cakto-checkout";
 import { audit } from "@/lib/audit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
@@ -14,6 +15,7 @@ import {
 } from "@/lib/billing/stripe";
 
 export async function POST(request: Request) {
+  if (process.env.BILLING_PROVIDER === "cakto") return createCaktoCheckout(request);
   const requestId = randomUUID();
   const auth = await requireRole("admin", { requestId, resource: "billing" });
   if (!auth.ok) return auth.response;

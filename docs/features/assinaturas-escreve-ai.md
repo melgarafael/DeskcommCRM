@@ -2,6 +2,36 @@
 
 Estado em 20/09/2026, 08:57 BRT: app e worker `9386bb79` publicados e saudáveis. Catálogo e infraestrutura de assinatura estão implementados; contratação e cobrança permanecem indisponíveis (`BILLING_ENABLED=false`). As seções de evidência abaixo registram etapas anteriores e não substituem este estado atual.
 
+## Integração Cakto — em validação, 20/09/2026
+
+O provedor escolhido pelo responsável é **Cakto**. Produto único `bff9e048-53cc-4e56-a461-e666745f8ac8`, nome escreve.ai, entrega Link de pagamento. As ofertas Essencial (`yd6ui6m`, R$197), Crescer (`srttzhx`, R$397) e Escala (`rz4ysui`, R$797) foram conferidas pela API autenticada: BRL, assinatura, 30 dias, sem teste gratuito, recorrência até cancelamento. Os checkouts são `yd6ui6m_1123876`, `srttzhx` e `rz4ysui`, respectivamente. Catálogo configurado não significa contratação integrada ou venda validada.
+
+A chave foi autorizada pelo responsável com leitura, escrita, produtos, ofertas, pedidos, assinaturas, webhooks, tokenização de cartão, pagamentos e consulta de saques. Autenticação e consulta de ofertas/assinaturas foram comprovadas a partir do servidor. O segredo fica fora do Git, em arquivo restrito no servidor; nenhum cliente precisa cadastrá-lo. Solicitação de saques não foi autorizada nem habilitada.
+
+### Caminho implementado nesta etapa
+
+- `BILLING_PROVIDER=cakto` seleciona a integração; `BILLING_ENABLED=false` continua sendo a condição de operação durante a validação.
+- `CAKTO_CATALOG` contém o produto e os pares `{offer,checkout}` para cada plano. A rota verifica preço, moeda, unidade, recorrência e ausência de trial pela API antes de abrir o pagamento.
+- O administrador autenticado gera uma tentativa persistida por organização. O checkout recebe apenas um identificador aleatório `sck`; nome, e-mail e preço não são usados para inferir a empresa.
+- `/api/v1/webhooks/cakto-billing` confere HMAC-SHA256 sobre os bytes originais, timestamp e limite de tamanho. Aceita V1/V2 e persiste somente identificadores de eventos/pedidos do produto configurado.
+- `billing-sync` no scheduler consulta pedido, pedido inicial e assinatura canônica após obter o lock da empresa. Confirma a oferta, vínculo e pagamento antes de alterar `org_subscriptions` e registrar auditoria. Falhas ficam na fila para nova tentativa em cinco minutos.
+- Cada ciclo confirmado mantém suas datas: repetição de evento não muda o início nem recria franquia. Reembolso do pedido creditado revoga o acesso; cancelamento preserva o período já pago e marca a renovação como cancelada.
+- A tela Planos e assinatura aceita o checkout hospedado e aponta o procedimento oficial de cancelamento da Cakto. Trocas de plano e substituição de uma assinatura exigem conferência do suporte nesta primeira integração.
+
+### Validação local desta integração
+
+Build Next.js completo, TypeScript e lint focado passaram. A execução geral teve 9.661 testes aprovados e quatro falhas; as quatro causas foram corrigidas e os 15 testes correspondentes passaram novamente. Depois disso, 40 testes específicos da Cakto e 18 testes da apresentação da assinatura passaram. O PostgreSQL passou sete invariantes de isolamento, privilégios e deduplicação, incluindo instalação/atualização do baseline. A falha legada do instalador com apóstrofo continua descrita abaixo.
+
+O navegador local na porta 3002 exibiu os três planos e a contratação indisponível, conforme a configuração desativada. Isso não comprova checkout, pagamento ou gestão de assinatura na Cakto. Código ainda sem deploy; webhook do provedor ainda não cadastrado.
+
+### Limites que impedem ativar a venda agora
+
+Não foi realizado pagamento nem homologação de renovação na Cakto. O contrato de pedido real, o retorno do `sck`, as datas do primeiro ciclo e os estados de cancelamento/reembolso precisam de prova no ambiente do provedor. Não presumir que o payload fixo de teste representa uma venda real. Credenciais de staging dependem de solicitação ao suporte da Cakto.
+
+Um link hospedado pode ser reutilizado no provedor: o CRM impede trocar tentativas automaticamente e rejeita segunda assinatura para o mesmo vínculo, mas isso não desfaz uma segunda cobrança feita no checkout. Uma compra sem `sck` permanece em conferência. Uma falha de banco antes de persistir o webhook exige conferir/reprocessar o histórico da Cakto: respostas HTTP de erro não têm retry automático garantido. Não prometer proteção completa contra compra duplicada antes da homologação.
+
+Fontes: [webhooks](https://docs.cakto.com.br/conceitos/webhooks), [assinaturas](https://docs.cakto.com.br/api-reference/subscriptions/retrieve), [ambientes](https://docs.cakto.com.br/conceitos/ambientes), [cancelamento](https://ajuda.cakto.com.br/pt-br/articles/108-como-cancelar-uma-assinatura-na-cakto).
+
 ## Oferta mensal
 
 | Plano     | Mensalidade | Pessoas | Canais | Agentes | Franquia de IA |

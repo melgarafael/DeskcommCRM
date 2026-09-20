@@ -1,3 +1,4 @@
+import { caktoConfiguration } from "@/lib/billing/cakto";
 import { AiAllowanceCard } from "@/components/billing/AiAllowanceCard";
 import { readAiAllowance, type AiAllowanceView } from "@/lib/billing/ai-allowance-view";
 import { billingConfiguration } from "@/lib/billing/stripe";
@@ -33,7 +34,10 @@ export default async function BillingPage() {
   let allowanceFailed = false;
   let billingEnabled = false;
   try {
-    billingConfiguration();
+    if (process.env.BILLING_PROVIDER === "cakto") {
+      if (process.env.BILLING_ENABLED !== "true") throw new Error("disabled");
+      caktoConfiguration();
+    } else billingConfiguration();
     billingEnabled = true;
   } catch {
     /* Unconfigured installations keep the informative catalogue. */
@@ -43,7 +47,7 @@ export default async function BillingPage() {
       const {
         rows: [subscription],
       } = await getRequestPool().query<SubscriptionSnapshot>(
-        "select provider,provider_customer_id,provider_subscription_id,plan_id,status,current_period_end,checkout_session_id,checkout_expires_at from org_subscriptions where organization_id=$1",
+        "select provider,provider_customer_id,provider_subscription_id,plan_id,status,current_period_end,cancel_at_period_end,checkout_session_id,checkout_expires_at from org_subscriptions where organization_id=$1",
         [activeOrg.orgId],
       );
       view = subscriptionView(subscription);
@@ -98,6 +102,16 @@ export default async function BillingPage() {
         </p>
       )}
       {view?.canManage && <ManageSubscriptionButton idioma={idioma} />}
+      {view?.caktoBound && (
+        <a
+          className="text-sm underline"
+          href="https://ajuda.cakto.com.br/pt-br/articles/108-como-cancelar-uma-assinatura-na-cakto"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Como solicitar o cancelamento da assinatura na Cakto
+        </a>
+      )}
       {loadFailed && (
         <p role="alert">
           {traduzir(

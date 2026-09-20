@@ -32,7 +32,10 @@ export function CheckoutButton({ planId, idioma }: { planId: SubscriptionPlanId;
       }
       const payload: unknown = await response.json();
       const url = (payload as { data?: { url?: unknown } })?.data?.url;
-      if (typeof url !== "string" || new URL(url).origin !== "https://checkout.stripe.com")
+      if (
+        typeof url !== "string" ||
+        !["https://checkout.stripe.com", "https://pay.cakto.com.br"].includes(new URL(url).origin)
+      )
         throw new Error("Invalid checkout URL");
       window.location.assign(url);
     } catch {

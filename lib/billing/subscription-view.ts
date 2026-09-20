@@ -6,6 +6,7 @@ export interface SubscriptionSnapshot {
   provider_subscription_id: string | null;
   plan_id: string | null;
   status: string;
+  cancel_at_period_end?: boolean;
   current_period_end: Date | string | null;
   checkout_session_id: string | null;
   checkout_expires_at: Date | string | null;
@@ -22,13 +23,15 @@ export function subscriptionView(subscription: SubscriptionSnapshot | undefined,
     : NaN;
   const active =
     bound && ["active", "trialing"].includes(subscription?.status ?? "") && paidThrough > now;
+  const caktoBound = subscription?.provider === "cakto" && bound;
   const checkoutPending =
     Boolean(subscription?.plan_id) &&
     (!bound || terminal || pending) &&
-    (((!bound || pending) && !subscription?.checkout_session_id) ||
+    ((subscription?.provider === "cakto" && !bound) ||
+      ((!bound || pending) && !subscription?.checkout_session_id) ||
       new Date(subscription?.checkout_expires_at ?? 0).getTime() > now);
   const allowedPlanIds: SubscriptionPlanId[] =
-    bound && !terminal && !pending
+    caktoBound || (bound && !terminal && !pending)
       ? []
       : checkoutPending
         ? plan
@@ -36,19 +39,24 @@ export function subscriptionView(subscription: SubscriptionSnapshot | undefined,
           : []
         : SUBSCRIPTION_PLANS.map((item) => item.id);
   const message = active
-    ? "Sua assinatura está ativa."
-    : bound && !terminal && !pending
-      ? "Sua assinatura precisa de atenção. Abra a gestão para conferir o pagamento."
-      : terminal
-        ? "Sua assinatura foi encerrada. Seus recursos existentes foram preservados."
-        : checkoutPending
-          ? "O pagamento ainda não foi confirmado. Você pode continuar com o plano escolhido."
-          : "Escolha o plano que combina com sua equipe.";
+    ? subscription?.cancel_at_period_end
+      ? "Renovação cancelada. Seu plano permanece disponível até o fim do período pago."
+      : "Sua assinatura está ativa."
+    : caktoBound
+      ? "Sua assinatura precisa de confirmação. Atualize a página ou contate o suporte."
+      : bound && !terminal && !pending
+        ? "Sua assinatura precisa de atenção. Abra a gestão para conferir o pagamento."
+        : terminal
+          ? "Sua assinatura foi encerrada. Seus recursos existentes foram preservados."
+          : checkoutPending
+            ? "O pagamento ainda não foi confirmado. Você pode continuar com o plano escolhido."
+            : "Escolha o plano que combina com sua equipe.";
   return {
     plan,
     active,
     message,
     allowedPlanIds,
+    caktoBound,
     canManage: subscription?.provider === "stripe" && Boolean(subscription.provider_customer_id),
   };
 }

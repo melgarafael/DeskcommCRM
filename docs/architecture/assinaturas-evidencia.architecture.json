@@ -92,6 +92,30 @@
       "type": "service",
       "label": "api_audit_log → Administração → Audit",
       "sublabel": "billing.ai_reconciled; transação atômica com o saldo"
+    },
+    {
+      "id": "cakto",
+      "lane": "runtime",
+      "col": 0,
+      "type": "service",
+      "label": "Cakto: checkout e estado canônico",
+      "sublabel": "Oferta validada e pedido com tentativa aleatória"
+    },
+    {
+      "id": "billing-inbox",
+      "lane": "storage",
+      "col": 1,
+      "type": "service",
+      "label": "cakto_billing_inbox",
+      "sublabel": "HMAC; IDs sem dados do comprador; retry persistido"
+    },
+    {
+      "id": "billing-sync",
+      "lane": "runtime",
+      "col": 2,
+      "type": "service",
+      "label": "billing-sync → org_subscriptions",
+      "sublabel": "Lock por empresa; pagamento e ciclo confirmados"
     }
   ],
   "edges": [
@@ -154,6 +178,36 @@
       "from": "audit",
       "to": "review",
       "label": "Confirmação leva à auditoria; erros mantêm campos"
+    },
+    {
+      "id": "cakto-in",
+      "from": "cakto",
+      "to": "billing-inbox",
+      "label": "webhook autenticado"
+    },
+    {
+      "id": "cakto-job",
+      "from": "billing-inbox",
+      "to": "billing-sync",
+      "label": "scheduler tenta até confirmar"
+    },
+    {
+      "id": "cakto-state",
+      "from": "billing-sync",
+      "to": "cakto",
+      "label": "consulta estado atual"
+    },
+    {
+      "id": "cakto-visible",
+      "from": "billing-sync",
+      "to": "balance",
+      "label": "status e franquia por período"
+    },
+    {
+      "id": "cakto-audit",
+      "from": "billing-sync",
+      "to": "audit",
+      "label": "billing.subscription_synced"
     }
   ]
 }

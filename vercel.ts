@@ -14,6 +14,7 @@ import type { VercelConfig } from "@vercel/config/v1";
 
 const config: VercelConfig = {
   crons: [
+    { path: "/api/v1/cron/billing-sync", schedule: "* * * * *" },
     { path: "/api/v1/cron/prospecting", schedule: "* * * * *" },
     { path: "/api/v1/cron/agent-dispatcher", schedule: "* * * * *" },
     { path: "/api/v1/cron/followup-flow-worker", schedule: "* * * * *" },

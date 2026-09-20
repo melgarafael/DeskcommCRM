@@ -75,3 +75,31 @@ it("allows recovery of a pending replacement without presenting the former subsc
   expect(view.allowedPlanIds).toEqual(["essencial"]);
   expect(view.message).toContain("não foi confirmado");
 });
+it("keeps a pending Cakto link on its selected plan even without an expiry", () => {
+  const view = subscriptionView(
+    snapshot({
+      provider: "cakto",
+      provider_subscription_id: null,
+      checkout_expires_at: null,
+      status: "pending",
+    }),
+    now,
+  );
+  expect(view.allowedPlanIds).toEqual(["essencial"]);
+  expect(view.active).toBe(false);
+  expect(view.canManage).toBe(false);
+});
+it.each(["pending", "canceled", "unpaid", "active"])(
+  "never offers duplicate Cakto checkout when bound: %s",
+  (status) => {
+    const view = subscriptionView(snapshot({ provider: "cakto", status }), now);
+    expect(view.allowedPlanIds).toEqual([]);
+    expect(view.caktoBound).toBe(true);
+    expect(view.canManage).toBe(false);
+  },
+);
+it("explains a canceled renewal without hiding the paid period", () => {
+  const view = subscriptionView(snapshot({ provider: "cakto", cancel_at_period_end: true }), now);
+  expect(view.active).toBe(true);
+  expect(view.message).toContain("Renovação cancelada");
+});
