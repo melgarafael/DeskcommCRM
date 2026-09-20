@@ -43,7 +43,8 @@ on:
   # dentro da imagem não enxerga `tests/` (`.dockerignore`), e a partir do
   # next 16.3 ele typecheca os `*.test.ts` colocados. O artefato que o
   # self-hoster instala era o único sem gate.
-  pull_request:
+  # ⚠️ RAMO DESCARTÁVEL (sabotagem do #1325): gatilho de `pull_request` removido
+  # para não construir três imagens Docker por causa de uma medição de e2e.
   workflow_dispatch: {}
 
 env:

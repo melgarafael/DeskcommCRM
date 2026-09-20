@@ -1,8 +1,9 @@
 name: perf
 
+# ⚠️ RAMO DESCARTÁVEL (sabotagem do #1325): o gatilho de `pull_request` saiu
+# para não gastar fila. Este ramo existe só para o job `e2e` medir o vermelho
+# da sabotagem; nada daqui vai para a `main`.
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
 
