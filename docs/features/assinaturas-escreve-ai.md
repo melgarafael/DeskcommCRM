@@ -1,6 +1,12 @@
 # Assinaturas escreve.ai
 
-Estado em 20/09/2026, 13:10 BRT: app `39e52fa0` e scheduler da integração Cakto publicados; worker preservado em `9386bb79`. Saúde pública, banco, Redis e WAHA confirmados. Contratação e cobrança permanecem indisponíveis (`BILLING_ENABLED=false`, `BILLING_PROVIDER=cakto`) até homologar o ciclo de pagamento. As seções de evidência abaixo registram etapas anteriores e não substituem este estado atual.
+Estado em 20/09/2026, 16:31 BRT: contratação habilitada em produção por autorização explícita do responsável (`BILLING_ENABLED=true`, `BILLING_PROVIDER=cakto`). App e scheduler `39e52fa0`; worker preservado em `9386bb79`. Os três planos e botões de pagamento foram conferidos no navegador autenticado em produção. Nenhum pagamento real foi efetuado nesta validação.
+
+## Ativação em produção — 20/09/2026, 16:31 BRT
+
+O responsável dispensou a espera pela homologação e solicitou seguir diretamente em produção. As três ofertas foram novamente conferidas na API autenticada: preço, produto, status ativo, BRL, recorrência de 30 dias, unidade e ausência de trial. Somente o app foi recriado com contratação habilitada; saúde pública e configuração efetiva foram verificadas. Backup do ambiente anterior preservado. A tela autenticada de Planos e assinatura exibiu Essencial, Crescer e Escala com os botões de pagamento ativos. Nenhuma tentativa foi criada para uma empresa existente, nenhum pagamento foi efetuado e nenhuma assinatura foi concedida manualmente. Contratação, renovação e estorno reais ainda não foram exercitados; a ativação não transforma os testes anteriores em prova de cobrança.
+
+O pedido de homologação já havia sido enviado ao suporte por autorização anterior; houve apenas resposta automática. A operação em produção não depende mais desse retorno por decisão do responsável.
 
 ## Integração Cakto — em validação, 20/09/2026
 
@@ -32,7 +38,7 @@ O webhook Cakto `69187` está ativo para os 12 eventos da integração e restrit
 
 O Checkout Principal recebeu o banner escreve.ai em desktop e mobile, e a página pública foi conferida. Os três planos usam esse checkout. A revisão pública mostrou taxa de serviço de R$0,99, além do preço do plano; não houve alteração dessa taxa. A capa quadrada também foi gerada, mas não foi aplicada como imagem do produto.
 
-### Limites que impedem ativar a venda agora
+### Limites de validação do ciclo de pagamento
 
 Não foi realizado pagamento nem homologação de renovação na Cakto. O contrato de pedido real, o retorno do `sck`, as datas do primeiro ciclo e os estados de cancelamento/reembolso precisam de prova no ambiente do provedor. Não presumir que o payload fixo de teste representa uma venda real. Credenciais de staging dependem de solicitação ao suporte da Cakto.
 
