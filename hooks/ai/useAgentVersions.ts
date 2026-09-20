@@ -23,6 +23,7 @@ export interface AgentVersionRow {
   history_token_window: number;
   handoff_keywords: string[];
   handoff_tool_enabled: boolean;
+  handoff_targets: string[];
   cases_enabled: boolean;
   operator_enabled: boolean;
   operator_model: string | null;

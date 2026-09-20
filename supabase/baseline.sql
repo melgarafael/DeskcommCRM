@@ -14742,3 +14742,22 @@ create policy "ai_agent_handoffs_select" on public.ai_agent_handoffs
   );
 
 notify pgrst, 'reload schema';
+
+-- ---- estoque no catálogo Magento (migration 0184) ----
+alter table public.commerce_products
+  add column if not exists is_in_stock boolean,
+  add column if not exists stock_qty numeric,
+  add column if not exists stock_synced_at timestamptz;
+
+comment on column public.commerce_products.is_in_stock is
+  'catalogInventoryStockItemList.is_in_stock. NULL = desconhecido (busca trata como disponível; present_product reconfere ao vivo).';
+comment on column public.commerce_products.stock_qty is
+  'catalogInventoryStockItemList.qty — informativo. NÃO decide vendabilidade: existe qty>0 com is_in_stock=false.';
+comment on column public.commerce_products.stock_synced_at is
+  'Quando o estoque desta linha foi lido da loja pela última vez.';
+
+create index if not exists commerce_products_in_stock_idx
+  on public.commerce_products (organization_id, integration_id)
+  where is_in_stock is distinct from false;
+
+notify pgrst, 'reload schema';

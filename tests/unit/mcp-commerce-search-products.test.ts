@@ -22,6 +22,8 @@ interface FakeRow {
   url_path: string | null;
   category_ids: unknown[];
   store_view: string;
+  /** undefined/null = estoque desconhecido. */
+  is_in_stock?: boolean | null;
 }
 
 function makeSupabase(rows: FakeRow[]) {
@@ -30,6 +32,7 @@ function makeSupabase(rows: FakeRow[]) {
     let orgFiltro: string | null = null;
     let orFiltro: string | null = null;
     let limite = 10;
+    let semEstoqueFora = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       select: () => chain,
@@ -41,6 +44,11 @@ function makeSupabase(rows: FakeRow[]) {
         orFiltro = expr;
         return chain;
       },
+      // `.not("is_in_stock", "is", false)` — o teste reproduz a semântica SQL: some só quem é false.
+      not: (col: string, op: string, val: unknown) => {
+        if (col === "is_in_stock" && op === "is" && val === false) semEstoqueFora = true;
+        return chain;
+      },
       limit: (n: number) => {
         limite = n;
         return chain;
@@ -49,13 +57,14 @@ function makeSupabase(rows: FakeRow[]) {
         const termoMatch = orFiltro?.match(/name\.ilike\.%(.*?)%,sku/)?.[1] ?? "";
         const filtrado = rows
           .filter((r) => r.organization_id === orgFiltro)
+          .filter((r) => !(semEstoqueFora && r.is_in_stock === false))
           .filter(
             (r) =>
               r.name.toLowerCase().includes(termoMatch.toLowerCase()) ||
               r.sku.toLowerCase().includes(termoMatch.toLowerCase()),
           )
           .slice(0, limite)
-          .map(({ organization_id: _organizationId, ...rest }) => rest);
+          .map(({ organization_id: _organizationId, is_in_stock: _stock, ...rest }) => rest);
         return Promise.resolve({ data: filtrado, error: null }).then(res);
       },
     };
@@ -86,41 +95,62 @@ const PRODUTO: FakeRow = {
   store_view: "default",
 };
 
+type Resposta = { produtos: Array<{ external_id: string; sku: string }>; aviso?: string };
+
 describe("commerce_search_products", () => {
   it("acha por parte do nome", async () => {
-    const res = await commerceSearchProducts.handler(
+    const res = (await commerceSearchProducts.handler(
       { termo: "sianinha", limite: 10 },
       makeCtx([PRODUTO]),
-    );
+    )) as Resposta;
     expect(res.produtos).toHaveLength(1);
     expect(res.produtos[0]?.sku).toBe("000018");
     expect(res).not.toHaveProperty("aviso");
   });
 
   it("acha por SKU", async () => {
-    const res = await commerceSearchProducts.handler(
+    const res = (await commerceSearchProducts.handler(
       { termo: "000018", limite: 10 },
       makeCtx([PRODUTO]),
-    );
+    )) as Resposta;
     expect(res.produtos).toHaveLength(1);
   });
 
   it("não vaza produto de outra organização", async () => {
-    const res = await commerceSearchProducts.handler(
+    const res = (await commerceSearchProducts.handler(
       { termo: "sianinha", limite: 10 },
       makeCtx([PRODUTO], OUTRA_ORG),
-    );
+    )) as Resposta;
     expect(res.produtos).toHaveLength(0);
     expect(res.aviso).toBe("nada com esse nome/SKU no catálogo importado");
   });
 
   it("busca vazia devolve aviso, não erro", async () => {
-    const res = await commerceSearchProducts.handler(
+    const res = (await commerceSearchProducts.handler(
       { termo: "inexistente", limite: 10 },
       makeCtx([PRODUTO]),
-    );
+    )) as Resposta;
     expect(res.produtos).toHaveLength(0);
     expect(res.aviso).toBeDefined();
+  });
+
+  it("não oferece produto que a loja marcou sem estoque", async () => {
+    const semEstoque: FakeRow = { ...PRODUTO, external_id: "785", sku: "000019", is_in_stock: false };
+    const res = (await commerceSearchProducts.handler(
+      { termo: "sianinha", limite: 10 },
+      makeCtx([semEstoque, PRODUTO]),
+    )) as Resposta;
+    expect(res.produtos.map((p) => p.external_id)).toEqual(["784"]);
+  });
+
+  it("estoque desconhecido (NULL) segue ofertável — a trava real é present_product", async () => {
+    const desconhecido: FakeRow = { ...PRODUTO, is_in_stock: null };
+    const emEstoque: FakeRow = { ...PRODUTO, external_id: "786", is_in_stock: true };
+    const res = (await commerceSearchProducts.handler(
+      { termo: "sianinha", limite: 10 },
+      makeCtx([desconhecido, emEstoque]),
+    )) as Resposta;
+    expect(res.produtos).toHaveLength(2);
   });
 
   it("recusa termo curto demais (Zod)", () => {

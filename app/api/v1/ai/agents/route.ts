@@ -158,6 +158,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         split_messages: v.split_messages,
         split_max_chars: v.split_max_chars,
         followup: v.followup,
+        operator_enabled: v.operator_enabled,
+        operator_model: v.operator_model,
+        operator_tool_ids: v.operator_tool_ids,
+        pipeline_ids: v.pipeline_ids,
         status: "draft",
         created_by: authUser.id,
       })

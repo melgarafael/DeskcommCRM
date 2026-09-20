@@ -113,9 +113,10 @@ export const commerceSearchProducts: McpToolDefinition<typeof catalogoInputShape
   name: "commerce_search_products",
   description:
     "Busca no catálogo Magento por nome ou SKU. Devolve identidade, tipo e link do produto — " +
-    "NÃO devolve preço nem disponibilidade confirmados: este é um cache de busca, e o Magento " +
-    "continua sendo a fonte de preço/estoque efetivos. Confirme preço e disponibilidade antes de " +
-    "prometer ao cliente.",
+    "NÃO devolve preço confirmado: este é um cache de busca, e o Magento continua sendo a fonte " +
+    "de preço/estoque efetivos. Produtos que a loja marcou SEM ESTOQUE não aparecem aqui (o cache " +
+    "de estoque atualiza algumas vezes ao dia), mas o estoque só é garantido ao apresentar o " +
+    "produto (present_product) e ao incluir no carrinho — não prometa ao cliente antes disso.",
   inputSchema: catalogoInputShape,
   category: "read",
   requiresRole: "agent",
@@ -127,6 +128,9 @@ export const commerceSearchProducts: McpToolDefinition<typeof catalogoInputShape
       .select("external_id, sku, type, name, url_path, category_ids, store_view")
       .eq("organization_id", ctx.organizationId)
       .or(`name.ilike.%${termo}%,sku.ilike.%${termo}%`)
+      // NULL = estoque ainda desconhecido → segue ofertável (fail-open); só some quem a loja
+      // marcou is_in_stock=false. NÃO filtrar por stock_qty: existe qty>0 com is_in_stock=false.
+      .not("is_in_stock", "is", false)
       .limit(input.limite);
 
     if (error) throw new Error(`buscar_catalogo_magento_falhou: ${error.message}`);

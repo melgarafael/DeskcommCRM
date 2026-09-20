@@ -20,10 +20,13 @@ vi.mock("@/lib/magento/soap", async () => {
     withMagentoSession: vi.fn(async (_config, fn: (sessionId: string) => Promise<unknown>) => fn("sid")),
     magentoGetProduct: vi.fn(),
     magentoGetProductImages: vi.fn(),
+    magentoGetStock: vi.fn(),
   };
 });
 
 const soap = await import("@/lib/magento/soap");
+
+const EM_ESTOQUE = [{ productId: "784", sku: "000018", qty: "10.0000", isInStock: true }];
 
 function makeAdmin(opts: {
   cachedRow?: { name: string; url_path: string | null } | null;
@@ -95,6 +98,36 @@ describe("presentProduct", () => {
     await expect(presentProduct(admin, INPUT_BASE)).rejects.toMatchObject({
       code: "produto_indisponivel",
     });
+  });
+
+  it("recusa produto habilitado mas SEM ESTOQUE ao vivo — o defeito de 20/09 (2 de 4 rendas)", async () => {
+    const admin = makeAdmin({ cachedRow: { name: "Renda", url_path: "renda.html" } });
+    vi.mocked(soap.magentoGetProduct).mockResolvedValue({
+      productId: "784", sku: "000018", type: "simple", name: "Renda", price: "19.90",
+      status: "1", // habilitado — e mesmo assim não dá para vender
+      visibility: "4", urlPath: "renda.html", description: null, shortDescription: null,
+    });
+    // a loja real devolve qty>0 com is_in_stock=0: vendabilidade é is_in_stock, não qty
+    vi.mocked(soap.magentoGetStock).mockResolvedValue([
+      { productId: "784", sku: "000018", qty: "2.0000", isInStock: false },
+    ]);
+    await expect(presentProduct(admin, INPUT_BASE)).rejects.toMatchObject({
+      code: "produto_sem_estoque",
+    });
+    // recusou ANTES de baixar/subir imagem
+    expect(soap.magentoGetProductImages).not.toHaveBeenCalled();
+  });
+
+  it("consulta de estoque que FALHA não derruba a apresentação (só recusa quando a loja confirma)", async () => {
+    const admin = makeAdmin({ cachedRow: { name: "Renda", url_path: "renda.html" } });
+    vi.mocked(soap.magentoGetProduct).mockResolvedValue({
+      productId: "784", sku: "000018", type: "simple", name: "Renda", price: "19.90",
+      status: "1", visibility: "4", urlPath: "renda.html", description: null, shortDescription: null,
+    });
+    vi.mocked(soap.magentoGetStock).mockRejectedValue(new Error("timeout"));
+    vi.mocked(soap.magentoGetProductImages).mockResolvedValue([]);
+    // chega até a etapa da imagem, prova de que passou pelo estoque
+    await expect(presentProduct(admin, INPUT_BASE)).rejects.toMatchObject({ code: "produto_sem_imagem" });
   });
 
   it("recusa produto sem imagem", async () => {

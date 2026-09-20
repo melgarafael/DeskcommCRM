@@ -15,6 +15,7 @@ import {
   withMagentoSession,
   magentoGetProduct,
   magentoGetProductImages,
+  magentoGetStock,
   type MagentoConnectionConfig,
 } from "@/lib/magento/soap";
 
@@ -24,6 +25,7 @@ export class PresentProductError extends Error {
     public readonly code:
       | "produto_nao_encontrado_no_catalogo"
       | "produto_indisponivel"
+      | "produto_sem_estoque"
       | "produto_sem_imagem"
       | "download_imagem_falhou"
       | "upload_falhou",
@@ -81,6 +83,21 @@ export async function presentProduct(
   );
   if (info.status !== "1") {
     throw new PresentProductError("produto está desabilitado na loja agora", "produto_indisponivel");
+  }
+
+  // Estoque ao vivo: `status` habilitado NÃO quer dizer que dá para vender. Apresentar
+  // com foto e preço algo que o carrinho vai recusar foi o defeito de 20/09/2026 (2 de 4
+  // rendas sem estoque → lote recusado inteiro). Só recusa quando a loja CONFIRMA
+  // is_in_stock=false; se a consulta falhar ou a loja não gerenciar estoque desse item,
+  // segue — o carrinho ainda diz a verdade, e isto não pode derrubar a apresentação.
+  const estoque = await withMagentoSession(input.config, (sessionId) =>
+    magentoGetStock(input.config, sessionId, [input.externalId]),
+  ).catch(() => []);
+  const linhaEstoque = Array.isArray(estoque)
+    ? estoque.find((e) => e.productId === input.externalId)
+    : undefined;
+  if (linhaEstoque && !linhaEstoque.isInStock) {
+    throw new PresentProductError("produto está sem estoque na loja agora", "produto_sem_estoque");
   }
 
   const images = await withMagentoSession(input.config, (sessionId) =>

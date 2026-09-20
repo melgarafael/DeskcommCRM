@@ -17,6 +17,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     maxSteps: 5,
     historyMessageWindow: 20,
     historyTokenWindow: 4000,
+    handoffTargets: [],
     handoffKeywords: [],
     handoffToolEnabled: false,
     splitMessages: false,

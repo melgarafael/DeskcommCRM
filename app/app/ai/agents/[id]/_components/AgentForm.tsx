@@ -144,6 +144,12 @@ interface FormState {
   operator_model: string;
   operator_tool_ids: string[];
   pipeline_ids: string[];
+  /**
+   * Destinos de `request_agent_handoff` (entrega 6 do concierge Magento). Sem
+   * UI própria ainda — campo oculto que só precisa sobreviver ao round-trip do
+   * form, para salvar pela tela não apagar o que a rota de versões gravou.
+   */
+  handoff_targets: string[];
 }
 
 interface FollowupValue {
@@ -206,6 +212,7 @@ function buildState(args: {
     operator_tool_ids: version?.operator_tool_ids ?? [],
     // `?? []` = nenhum funil. Agente novo nasce fechado, como o banco.
     pipeline_ids: version?.pipeline_ids ?? [],
+    handoff_targets: version?.handoff_targets ?? [],
   };
 }
 
@@ -236,6 +243,7 @@ function toVersionPayload(s: FormState) {
     operator_model: s.operator_model.trim() === "" ? null : s.operator_model.trim(),
     operator_tool_ids: s.operator_tool_ids,
     pipeline_ids: s.pipeline_ids,
+    handoff_targets: s.handoff_targets,
   };
 }
 

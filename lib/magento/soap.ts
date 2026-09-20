@@ -312,24 +312,35 @@ export interface MagentoStockItem {
   isInStock: boolean;
 }
 
-/** `catalogInventoryStockItemList` — estoque em lote, por lista de SKUs. */
-export async function magentoGetStock(
-  config: MagentoConnectionConfig,
-  sessionId: string,
-  skus: string[],
-  timeoutMs = 20_000,
-): Promise<MagentoStockItem[]> {
-  // Contrato SOAP espera um array (`products`); o encoder principal só
-  // serializa chaves simples, então este método monta o XML à mão — única
-  // exceção ao helper genérico.
-  const arrayXml = skus.map((sku) => `<products>${escapeXml(sku)}</products>`).join("");
+/**
+ * XML de `catalogInventoryStockItemList`. Exportado só para o teste travar o
+ * formato contra o WSDL: o parâmetro se chama `productIds` (tipo `ArrayOfString`)
+ * e cada valor vai em `<complexObjectArray>`. A versão anterior mandava
+ * `<products><products>…` — nome errado e aninhado duas vezes — e nunca foi
+ * chamada por ninguém, então o erro nunca apareceu.
+ */
+export function buildStockItemListEnvelope(sessionId: string, productIds: string[]): string {
   const wrapperTag = "catalogInventoryStockItemListRequestParam";
-  const envelope =
+  const itemsXml = productIds
+    .map((id) => `<complexObjectArray>${escapeXml(id)}</complexObjectArray>`)
+    .join("");
+  return (
     `<?xml version="1.0" encoding="utf-8"?>` +
     `<SOAP-ENV:Envelope xmlns:SOAP-ENV="${SOAP_NS}">` +
     `<SOAP-ENV:Body><ns1:${wrapperTag} xmlns:ns1="${MAGE_NS}">` +
-    `<sessionId>${escapeXml(sessionId)}</sessionId><products>${arrayXml}</products>` +
-    `</ns1:${wrapperTag}></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
+    `<sessionId>${escapeXml(sessionId)}</sessionId><productIds>${itemsXml}</productIds>` +
+    `</ns1:${wrapperTag}></SOAP-ENV:Body></SOAP-ENV:Envelope>`
+  );
+}
+
+/** `catalogInventoryStockItemList` — estoque em lote, por lista de `product_id` (ou SKU). */
+export async function magentoGetStock(
+  config: MagentoConnectionConfig,
+  sessionId: string,
+  productIds: string[],
+  timeoutMs = 20_000,
+): Promise<MagentoStockItem[]> {
+  const envelope = buildStockItemListEnvelope(sessionId, productIds);
   const body = await soapCallRaw(config.endpoint, "catalogInventoryStockItemList", envelope, timeoutMs);
   const result = extractResultXml(body) ?? "";
   return extractItems(result).map((item) => ({

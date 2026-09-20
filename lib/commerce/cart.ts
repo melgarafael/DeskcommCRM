@@ -26,6 +26,7 @@ import {
   magentoCartRemoveItems,
   magentoCartInfo,
   magentoCartTotals,
+  MagentoSoapError,
   type MagentoConnectionConfig,
   type MagentoCartSnapshot,
   type MagentoCartTotal,
@@ -40,7 +41,9 @@ export class CommerceCartError extends Error {
       | "carrinho_nao_esta_aberto"
       | "operacao_conflitante"
       | "modulo_nao_configurado"
-      | "link_de_recuperacao_falhou",
+      | "link_de_recuperacao_falhou"
+      | "nenhum_item_incluido"
+      | "carrinho_vazio",
   ) {
     super(message);
     this.name = "CommerceCartError";
@@ -233,10 +236,10 @@ async function requireCartRow(
   admin: SupabaseClient,
   ctx: CartExecutorContext,
   cartId: string,
-): Promise<{ id: string; external_quote_id: string; status: string }> {
+): Promise<{ id: string; external_quote_id: string; status: string; items?: unknown }> {
   const { data } = await admin
     .from("commerce_carts")
-    .select("id, external_quote_id, status")
+    .select("id, external_quote_id, status, items")
     .eq("id", cartId)
     .eq("organization_id", ctx.organizationId)
     .eq("integration_id", ctx.integrationId)
@@ -257,22 +260,30 @@ function requireOpen(row: { status: string }): void {
   }
 }
 
-/** Valida que todo `externalId` já apareceu no cache de busca desta integração — nunca confia em id do modelo. */
-async function assertKnownProducts(admin: SupabaseClient, ctx: CartExecutorContext, externalIds: string[]): Promise<void> {
+/**
+ * Valida que todo `externalId` já apareceu no cache de busca desta integração — nunca confia
+ * em id do modelo. Devolve `externalId → nome` para o relatório de itens recusados.
+ */
+async function assertKnownProducts(
+  admin: SupabaseClient,
+  ctx: CartExecutorContext,
+  externalIds: string[],
+): Promise<Map<string, string>> {
   const { data } = await admin
     .from("commerce_products")
-    .select("external_id")
+    .select("external_id, name")
     .eq("organization_id", ctx.organizationId)
     .eq("integration_id", ctx.integrationId)
     .in("external_id", externalIds);
-  const known = new Set((data ?? []).map((r) => r.external_id as string));
-  const unknown = externalIds.filter((id) => !known.has(id));
+  const nomes = new Map((data ?? []).map((r) => [r.external_id as string, (r.name as string | null) ?? ""]));
+  const unknown = externalIds.filter((id) => !nomes.has(id));
   if (unknown.length > 0) {
     throw new CommerceCartError(
       `produto(s) fora do catálogo importado desta loja: ${unknown.join(", ")} — busque de novo antes de incluir`,
       "produto_nao_encontrado_no_catalogo",
     );
   }
+  return nomes;
 }
 
 /** `commerce_get_cart`: lê o carrinho ABERTO desta conversa, criando um novo quote se não existir. */
@@ -313,16 +324,42 @@ export interface CartLineRequest {
   qty: number;
 }
 
-/** `commerce_add_items`: inclui linhas aceitas pelo cliente. */
+export interface CartLineRefused {
+  externalId: string;
+  name: string | null;
+  /** Mensagem da própria loja (ex.: "Este produto está sem estoque no momento."). */
+  reason: string;
+}
+
+export interface AddItemsResult extends CartSnapshot {
+  /** Linhas que a loja recusou. Vazio = tudo entrou. */
+  refused: CartLineRefused[];
+}
+
+/** A loja respondeu com fault (regra dela, ex.: sem estoque). Rede/parse NÃO é recusa — propaga. */
+function isStoreRefusal(err: unknown): err is MagentoSoapError {
+  return err instanceof MagentoSoapError && err.code === "soap_fault";
+}
+
+/**
+ * `commerce_add_items`: inclui linhas aceitas pelo cliente.
+ *
+ * O `shoppingCartProductAdd` do Magento valida o lote inteiro e só grava se TODAS as linhas
+ * passarem — uma sem estoque recusava as outras (20/09/2026: 2 de 4 rendas sem estoque, carrinho
+ * ficou vazio). Como a recusa não persiste nada, repetir linha a linha depois dela não duplica
+ * quantidade. Caminho feliz continua sendo UMA chamada; só cai no item-a-item quando a loja recusa.
+ * Entram os que puderem, e `refused` diz quais ficaram de fora e por quê — o agente precisa disso
+ * para falar com o cliente. Só falha inteiro quando NADA entrou.
+ */
 export async function addItems(
   admin: SupabaseClient,
   ctx: CartExecutorContext,
   cartId: string,
   items: CartLineRequest[],
-): Promise<CartSnapshot> {
+): Promise<AddItemsResult> {
   const row = await requireCartRow(admin, ctx, cartId);
   requireOpen(row);
-  await assertKnownProducts(admin, ctx, items.map((it) => it.externalId));
+  const nomes = await assertKnownProducts(admin, ctx, items.map((it) => it.externalId));
 
   return withLedger(
     admin,
@@ -334,16 +371,43 @@ export async function addItems(
       input: { cartId, items },
     },
     async () => {
-      await withMagentoSession(ctx.config, (sessionId) =>
-        magentoCartAddItems(
-          ctx.config,
-          sessionId,
-          row.external_quote_id,
-          items.map((it) => ({ productId: it.externalId, qty: it.qty })),
-          ctx.storeView,
-        ),
-      );
-      return persistSnapshot(admin, ctx, row.id, row.external_quote_id);
+      const refused: CartLineRefused[] = [];
+      const recusar = (it: CartLineRequest, err: MagentoSoapError) =>
+        refused.push({ externalId: it.externalId, name: nomes.get(it.externalId) || null, reason: err.message });
+
+      await withMagentoSession(ctx.config, async (sessionId) => {
+        const add = (lote: CartLineRequest[]) =>
+          magentoCartAddItems(
+            ctx.config,
+            sessionId,
+            row.external_quote_id,
+            lote.map((it) => ({ productId: it.externalId, qty: it.qty })),
+            ctx.storeView,
+          );
+        try {
+          await add(items);
+        } catch (err) {
+          if (!isStoreRefusal(err)) throw err;
+          if (items.length === 1) return void recusar(items[0]!, err);
+          for (const it of items) {
+            try {
+              await add([it]);
+            } catch (e) {
+              if (!isStoreRefusal(e)) throw e;
+              recusar(it, e);
+            }
+          }
+        }
+      });
+
+      if (refused.length === items.length) {
+        const detalhe = refused
+          .map((r) => `${r.name ?? r.externalId}: ${r.reason.replace(/\s+/g, " ").trim()}`)
+          .join(" | ");
+        throw new CommerceCartError(`a loja recusou todos os itens — ${detalhe}`, "nenhum_item_incluido");
+      }
+      const snapshot = await persistSnapshot(admin, ctx, row.id, row.external_quote_id);
+      return { ...snapshot, refused };
     },
   );
 }
@@ -425,6 +489,13 @@ export async function createCheckoutLink(
 ): Promise<CheckoutLink> {
   const row = await requireCartRow(admin, ctx, cartId);
   requireOpen(row);
+  // Só um cache vazio CONFIRMADO recusa (undefined = linha antiga/sem snapshot → segue).
+  if (Array.isArray(row.items) && row.items.length === 0) {
+    throw new CommerceCartError(
+      "o carrinho está vazio — inclua ao menos um item antes de gerar o link de checkout",
+      "carrinho_vazio",
+    );
+  }
   if (!moduleSecret) {
     throw new CommerceCartError(
       "o módulo de recuperação de carrinho não está configurado nesta loja — sem ele não é possível gerar link de checkout",
@@ -432,23 +503,37 @@ export async function createCheckoutLink(
     );
   }
 
-  const origin = new URL(ctx.config.endpoint).origin;
-  const res = await fetch(`${origin}/concierge/index/createLink`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-Concierge-Secret": moduleSecret,
+  // Passa pelo ledger como as demais mutações: era a única operação comercial sem rastro, e
+  // justamente a que fecha a venda — se falhasse, não sobrava linha nenhuma para diagnosticar.
+  return withLedger(
+    admin,
+    {
+      organizationId: ctx.organizationId,
+      integrationId: ctx.integrationId,
+      operation: "cart.checkout_link",
+      jobId: ctx.jobId,
+      input: { cartId },
     },
-    body: new URLSearchParams({ quote_id: row.external_quote_id }).toString(),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new CommerceCartError(
-      `não consegui gerar o link de recuperação (HTTP ${res.status}): ${text.slice(0, 200)}`,
-      "link_de_recuperacao_falhou",
-    );
-  }
-  const data = (await res.json()) as { url: string; expires_at: string };
-  return { url: data.url, expiresAt: data.expires_at };
+    async () => {
+      const origin = new URL(ctx.config.endpoint).origin;
+      const res = await fetch(`${origin}/concierge/index/createLink`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Concierge-Secret": moduleSecret,
+        },
+        body: new URLSearchParams({ quote_id: row.external_quote_id }).toString(),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new CommerceCartError(
+          `não consegui gerar o link de recuperação (HTTP ${res.status}): ${text.slice(0, 200)}`,
+          "link_de_recuperacao_falhou",
+        );
+      }
+      const data = (await res.json()) as { url: string; expires_at: string };
+      return { url: data.url, expiresAt: data.expires_at };
+    },
+  );
 }

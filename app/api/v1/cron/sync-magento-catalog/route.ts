@@ -58,7 +58,7 @@ async function handler(req: NextRequest): Promise<Response> {
 
   let synced = 0;
   let failed = 0;
-  const detalhes: Array<{ organization_id: string; fetched?: number; upserted?: number; error?: string }> =
+  const detalhes: Array<{ organization_id: string; fetched?: number; upserted?: number; stockSynced?: number; error?: string }> =
     [];
 
   for (const row of integrations ?? []) {
@@ -96,6 +96,7 @@ async function handler(req: NextRequest): Promise<Response> {
         organization_id: row.organization_id,
         fetched: resultado.fetched,
         upserted: resultado.upserted,
+        stockSynced: resultado.stockSynced,
       });
     } catch (err) {
       failed++;

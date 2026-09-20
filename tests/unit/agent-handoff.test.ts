@@ -20,7 +20,7 @@ vi.mock("@/lib/agent-engine/agent/agent-config", async () => {
   return { ...actual, loadPublishedAgentConfigById: loadPublishedAgentConfigByIdMock };
 });
 
-const enqueueJobMock = vi.fn(async () => ({ job: { id: "job-2" }, deduped: false }));
+const enqueueJobMock = vi.fn(async (..._args: unknown[]) => ({ job: { id: "job-2" }, deduped: false }));
 vi.mock("@/lib/agent-engine/queue/queue", async () => {
   const actual = await vi.importActual<typeof QueueModule>("@/lib/agent-engine/queue/queue");
   return { ...actual, enqueueJob: enqueueJobMock };

@@ -35,6 +35,7 @@ const AGENT: PublishedAgentConfig = {
   maxSteps: 8,
   historyMessageWindow: 20,
   historyTokenWindow: 1000,
+  handoffTargets: [],
   handoffKeywords: [],
   handoffToolEnabled: false,
   splitMessages: false,

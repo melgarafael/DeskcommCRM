@@ -6,7 +6,7 @@
  * e o link de recuperação (recusa sem módulo configurado).
  */
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -17,6 +17,7 @@ import {
   createCheckoutLink,
   type CartExecutorContext,
 } from "@/lib/commerce/cart";
+import { MagentoSoapError } from "@/lib/magento/soap";
 import type * as MagentoSoap from "@/lib/magento/soap";
 
 vi.mock("@/lib/magento/soap", async () => {
@@ -99,7 +100,7 @@ function makeFakeAdmin(seed: { products?: string[]; carts?: Row[]; operations?: 
   const cartsTable = makeTable(seed.carts ?? []);
   const opsTable = makeTable(seed.operations ?? []);
   const productsTable = makeTable(
-    (seed.products ?? []).map((id) => ({ organization_id: "org-1", integration_id: "int-1", external_id: id })),
+    (seed.products ?? []).map((id) => ({ organization_id: "org-1", integration_id: "int-1", external_id: id, name: `Renda ${id}` })),
   );
   return {
     from: (table: string) => {
@@ -207,6 +208,72 @@ describe("addItems", () => {
   });
 });
 
+describe("addItems — inclusão parcial (o defeito de 20/09: 2 de 4 sem estoque derrubavam o lote)", () => {
+  const cartRow = () => [
+    { id: "cart-1", organization_id: "org-1", integration_id: "int-1", conversation_id: "conv-1", status: "open", external_quote_id: "999" },
+  ];
+  // clearAllMocks (afterEach do arquivo) limpa o histórico mas NÃO a implementação: sem isto, o
+  // mockRejectedValue de um teste vaza para o seguinte.
+  beforeEach(() => {
+    vi.mocked(soap.magentoCartAddItems).mockReset().mockResolvedValue(true);
+  });
+  const semEstoque = () => new MagentoSoapError("Este produto está sem estoque no momento.", "soap_fault");
+  const linhas = [
+    { externalId: "784", qty: 1 },
+    { externalId: "785", qty: 1 },
+    { externalId: "786", qty: 1 },
+  ];
+
+  it("lote recusado → tenta item a item; entram os que a loja aceita e os recusados vêm nomeados", async () => {
+    const admin = makeFakeAdmin({ products: ["784", "785", "786"], carts: cartRow() });
+    vi.mocked(soap.magentoCartAddItems).mockImplementation(async (_c, _s, _q, lote) => {
+      // o lote (3 linhas) é recusado inteiro, como o Magento faz; sozinha, só a 785 é recusada
+      if (lote.length > 1 || lote[0]?.productId === "785") throw semEstoque();
+      return true;
+    });
+    const res = await addItems(admin, CTX, "cart-1", linhas);
+    expect(soap.magentoCartAddItems).toHaveBeenCalledTimes(4); // 1 lote + 3 individuais
+    expect(res.refused).toEqual([
+      { externalId: "785", name: "Renda 785", reason: "Este produto está sem estoque no momento." },
+    ]);
+    expect(res.cartId).toBe("cart-1"); // snapshot relido: o carrinho existe e reflete o que entrou
+  });
+
+  it("caminho feliz continua sendo UMA chamada e refused vazio", async () => {
+    const admin = makeFakeAdmin({ products: ["784", "785"], carts: cartRow() });
+    const res = await addItems(admin, CTX, "cart-1", linhas.slice(0, 2));
+    expect(soap.magentoCartAddItems).toHaveBeenCalledTimes(1);
+    expect(res.refused).toEqual([]);
+  });
+
+  it("a loja recusa TUDO → erro nenhum_item_incluido nomeando cada produto, ledger fica failed", async () => {
+    const operations: Array<Record<string, unknown>> = [];
+    const admin = makeFakeAdmin({ products: ["784", "785"], carts: cartRow(), operations });
+    vi.mocked(soap.magentoCartAddItems).mockRejectedValue(semEstoque());
+    await expect(addItems(admin, CTX, "cart-1", linhas.slice(0, 2))).rejects.toMatchObject({
+      code: "nenhum_item_incluido",
+      message: expect.stringContaining("Renda 784"),
+    });
+    expect(operations.at(-1)).toMatchObject({ operation: "cart.add_items", status: "failed" });
+  });
+
+  it("UM item recusado não é tentado duas vezes", async () => {
+    const admin = makeFakeAdmin({ products: ["785"], carts: cartRow() });
+    vi.mocked(soap.magentoCartAddItems).mockRejectedValue(semEstoque());
+    await expect(addItems(admin, CTX, "cart-1", [{ externalId: "785", qty: 1 }])).rejects.toMatchObject({
+      code: "nenhum_item_incluido",
+    });
+    expect(soap.magentoCartAddItems).toHaveBeenCalledTimes(1);
+  });
+
+  it("falha de REDE não vira 'recusado': propaga e não repete item a item", async () => {
+    const admin = makeFakeAdmin({ products: ["784", "785"], carts: cartRow() });
+    vi.mocked(soap.magentoCartAddItems).mockRejectedValue(new MagentoSoapError("timeout", "network_error"));
+    await expect(addItems(admin, CTX, "cart-1", linhas.slice(0, 2))).rejects.toMatchObject({ code: "network_error" });
+    expect(soap.magentoCartAddItems).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("updateItem / removeItem", () => {
   const carts = () => [
     { id: "cart-1", organization_id: "org-1", integration_id: "int-1", conversation_id: "conv-1", status: "open", external_quote_id: "999" },
@@ -252,5 +319,44 @@ describe("createCheckoutLink", () => {
     );
     const link = await createCheckoutLink(admin, CTX, "cart-1", "s3cret");
     expect(link.url).toBe("https://loja.example/concierge/cart#abc");
+  });
+
+  it("carrinho vazio confirmado → recusa sem chamar a loja (não gera link de quote vazio)", async () => {
+    const admin = makeFakeAdmin({ carts: [{ ...carts()[0], items: [] }] });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createCheckoutLink(admin, CTX, "cart-1", "s3cret")).rejects.toMatchObject({
+      code: "carrinho_vazio",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("deixa rastro no ledger quando gera o link (era a única operação sem rastro)", async () => {
+    const operations: Array<Record<string, unknown>> = [];
+    const admin = makeFakeAdmin({ carts: carts(), operations });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ url: "https://loja.example/concierge/cart#abc", expires_at: "2026-09-21T00:00:00Z" }),
+      })),
+    );
+    const link = await createCheckoutLink(admin, CTX, "cart-1", "s3cret");
+    expect(link.expiresAt).toBe("2026-09-21T00:00:00Z");
+    expect(operations.at(-1)).toMatchObject({ operation: "cart.checkout_link", status: "succeeded" });
+  });
+
+  it("deixa rastro no ledger quando FALHA — é a linha que faltava para diagnosticar o fechamento", async () => {
+    const operations: Array<Record<string, unknown>> = [];
+    const admin = makeFakeAdmin({ carts: carts(), operations });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 401, text: async () => "secret inválido" })));
+    await expect(createCheckoutLink(admin, CTX, "cart-1", "s3cret")).rejects.toMatchObject({
+      code: "link_de_recuperacao_falhou",
+    });
+    expect(operations.at(-1)).toMatchObject({
+      operation: "cart.checkout_link",
+      status: "failed",
+      result: { error: expect.stringContaining("401") },
+    });
   });
 });

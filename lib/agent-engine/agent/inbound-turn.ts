@@ -98,15 +98,16 @@ import {
 import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import { getMagentoIntegration } from '@/lib/commerce/get-magento-integration';
-import { presentProduct, PresentProductError } from '@/lib/commerce/present-product';
+import { erroEnsinavelDeComercio } from '@/lib/commerce/erro-ensinavel';
+import { presentProduct } from '@/lib/commerce/present-product';
 import {
   getOrCreateCart,
   addItems as addCommerceCartItems,
   updateItem as updateCommerceCartItem,
   removeItem as removeCommerceCartItem,
   createCheckoutLink,
-  CommerceCartError,
   type CartSnapshot,
+  type CartLineRefused,
 } from '@/lib/commerce/cart';
 import {
   latestInboundSignal,
@@ -142,6 +143,10 @@ import {
 import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 
 /** Projeção pt-br do snapshot de carrinho para o retorno das tools comerciais ao modelo. */
+function projetarRecusado(r: CartLineRefused) {
+  return { external_id: r.externalId, nome: r.name, motivo: r.reason.replace(/\s+/g, ' ').trim() };
+}
+
 function projetarCarrinho(carrinho: CartSnapshot) {
   return {
     cart_id: carrinho.cartId,
@@ -201,7 +206,9 @@ export const AGENT_TOOL_DEFS = {
     description:
       'Adiciona ao carrinho os itens que o cliente ACEITOU (instrução explícita, não sugestão). ' +
       'external_id de cada item precisa vir de um resultado real de commerce_search_products NESTA ' +
-      'conversa — nunca invente um id. Devolve o carrinho atualizado, sempre relido da loja.',
+      'conversa — nunca invente um id. Devolve o carrinho atualizado, sempre relido da loja. A inclusão ' +
+      'é PARCIAL: o que a loja aceitar entra, e "recusados" lista o que ficou de fora e por quê (ex.: sem ' +
+      'estoque) — diga ao cliente exatamente quais itens não entraram e ofereça alternativa.',
     inputSchema: z.object({
       cart_id: z.string().uuid().describe('cart_id de um commerce_get_cart anterior nesta conversa'),
       itens: z
@@ -2302,9 +2309,8 @@ async function executarTurnoDoAgente(
               };
           }
         } catch (err) {
-          if (err instanceof PresentProductError) {
-            return { ok: false, error: { code: err.code, message: err.message } };
-          }
+          const ensino = erroEnsinavelDeComercio(err);
+          if (ensino !== null) return ensino;
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {
             ok: false,
@@ -2335,9 +2341,8 @@ async function executarTurnoDoAgente(
           });
           return { ok: true, carrinho: projetarCarrinho(carrinho) };
         } catch (err) {
-          if (err instanceof CommerceCartError) {
-            return { ok: false, error: { code: err.code, message: err.message } };
-          }
+          const ensino = erroEnsinavelDeComercio(err);
+          if (ensino !== null) return ensino;
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return { ok: false, error: { code: 'internal_error', message: 'erro interno ao ler o carrinho — encerre o turno agora.' } };
         }
@@ -2368,11 +2373,14 @@ async function executarTurnoDoAgente(
             cart_id,
             itens.map((it) => ({ externalId: it.external_id, qty: it.qty })),
           );
-          return { ok: true, carrinho: projetarCarrinho(carrinho) };
+          return {
+            ok: true,
+            carrinho: projetarCarrinho(carrinho),
+            recusados: carrinho.refused.map(projetarRecusado),
+          };
         } catch (err) {
-          if (err instanceof CommerceCartError) {
-            return { ok: false, error: { code: err.code, message: err.message } };
-          }
+          const ensino = erroEnsinavelDeComercio(err);
+          if (ensino !== null) return ensino;
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return { ok: false, error: { code: 'internal_error', message: 'erro interno ao incluir itens — encerre o turno agora.' } };
         }
@@ -2406,9 +2414,8 @@ async function executarTurnoDoAgente(
           );
           return { ok: true, carrinho: projetarCarrinho(carrinho) };
         } catch (err) {
-          if (err instanceof CommerceCartError) {
-            return { ok: false, error: { code: err.code, message: err.message } };
-          }
+          const ensino = erroEnsinavelDeComercio(err);
+          if (ensino !== null) return ensino;
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return { ok: false, error: { code: 'internal_error', message: 'erro interno ao alterar quantidade — encerre o turno agora.' } };
         }
@@ -2441,9 +2448,8 @@ async function executarTurnoDoAgente(
           );
           return { ok: true, carrinho: projetarCarrinho(carrinho) };
         } catch (err) {
-          if (err instanceof CommerceCartError) {
-            return { ok: false, error: { code: err.code, message: err.message } };
-          }
+          const ensino = erroEnsinavelDeComercio(err);
+          if (ensino !== null) return ensino;
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return { ok: false, error: { code: 'internal_error', message: 'erro interno ao remover item — encerre o turno agora.' } };
         }
@@ -2476,9 +2482,8 @@ async function executarTurnoDoAgente(
           );
           return { ok: true, url: link.url, expira_em: link.expiresAt };
         } catch (err) {
-          if (err instanceof CommerceCartError) {
-            return { ok: false, error: { code: err.code, message: err.message } };
-          }
+          const ensino = erroEnsinavelDeComercio(err);
+          if (ensino !== null) return ensino;
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return { ok: false, error: { code: 'internal_error', message: 'erro interno ao gerar o link — encerre o turno agora.' } };
         }
