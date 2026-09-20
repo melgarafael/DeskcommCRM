@@ -488,7 +488,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? 0,
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
-  const cost = await meteredCostCents(db, config.provider, model, usage);
+  const cost = await meteredCostCents(db, config.provider, model, usage, cfg.cacheTtl ?? '1h');
   await settleSubscriptionAi(db, input.tenantId, allowanceReservation, cost).catch(() => {
     // Keep the generated answer and the held credit; reconciliation can retry later.
     (deps.log ?? console).error('llm: conciliação da franquia pendente', { organization_id: input.tenantId });

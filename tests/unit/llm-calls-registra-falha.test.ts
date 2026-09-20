@@ -442,3 +442,43 @@ it("falha do provedor mantém o consumo desconhecido e a exceção original", as
     null,
   ]);
 });
+
+it.each([
+  ["5m", 0.576],
+  ["1h", 0.666],
+] as const)(
+  "concilia o custo com o TTL de cache %s realmente configurado",
+  async (cacheTtl, expected) => {
+    const { pool, query } = poolQueGrava({}, [], "paid");
+    const registry = {
+      anthropic: () =>
+        ({
+          specificationVersion: "v3",
+          provider: "anthropic",
+          modelId: "claude-sonnet-4-6",
+          doGenerate: async () => ({
+            content: [{ type: "text", text: "Resposta" }],
+            finishReason: { unified: "stop", raw: undefined },
+            usage: {
+              inputTokens: { total: 1000, noCache: 400, cacheRead: 200, cacheWrite: 400 },
+              outputTokens: { total: 200, text: 200, reasoning: 0 },
+            },
+            warnings: [],
+          }),
+        }) as never,
+    };
+    const result = await runModelCall(
+      pool,
+      { ...cfg, cacheTtl },
+      {
+        tenantId: ORG,
+        model: "claude-sonnet-4-6",
+        messages: [{ role: "user", content: "oi" }],
+      },
+      { registry },
+    );
+    expect(result.costCents).toBeCloseTo(expected);
+    const settlement = query.mock.calls.find(([sql]) => sql.includes("fn_settle_subscription_ai"));
+    expect(settlement?.[1]?.[2]).toBeCloseTo(expected);
+  },
+);

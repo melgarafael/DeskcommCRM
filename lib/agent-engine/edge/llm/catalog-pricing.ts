@@ -31,13 +31,14 @@ export async function meteredCostCents(
   provider: string,
   model: string,
   usage: TokenUsage,
+  cacheWriteTtl?: "5m" | "1h",
 ): Promise<number | null> {
   if (Object.values(usage).some((value) => !Number.isFinite(value) || value < 0)) return null;
   if (usage.cacheReadTokens + usage.cacheWriteTokens > usage.inputTokens) return null;
   const canonical = model.startsWith(`${provider}/`) ? model.slice(provider.length + 1) : model;
-  // Keep the existing cache-aware tariffs only for their original provider.
+  // Apply first-party tariffs only to their actual provider.
   if (provider === "anthropic") {
-    const legacy = costCents(canonical, usage);
+    const legacy = costCents(canonical, usage, cacheWriteTtl);
     if (legacy !== null) return legacy;
   }
   try {

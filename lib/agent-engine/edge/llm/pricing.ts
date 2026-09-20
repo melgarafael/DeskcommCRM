@@ -1,25 +1,23 @@
 /**
- * Tabela de preços versionada (stack.md §2: usage × pricing.ts → llm_calls.cost_cents).
- * Tarifas legadas de cache da Anthropic; o seam usa catalog-pricing.ts para
- * consultar também ai_models, sempre com o provider escolhido.
- *
- * Fonte: https://docs.claude.com/en/docs/about-claude/pricing (conferida 2026-07);
- * cache write cotado no TTL 1h (2× input) — o TTL adotado pela doutrina de caching
- * (CLAUDE.md regra 15); cache read = 0.1× input.
- *
- * Modelo fora da tabela → custo NULL (desconhecido): mais honesto que inventar 0 —
- * o budget soma coalesce(cost_cents, 0), então modelo sem preço não consome teto;
- * catalog-pricing.ts complementa a tabela com preços conhecidos de ai_models.
+ * Standard first-party Anthropic prices in USD per million tokens.
+ * Source: https://platform.claude.com/docs/en/about-claude/pricing
+ * Verified 2026-09-20. Exact versions (and dated snapshots) only: a new
+ * model must never silently inherit a differently priced family's tariff.
+ * Cache-write duration is supplied by the caller; absent means unknown.
  */
-
-/** USD por MILHÃO de tokens; match por prefixo do id (cobre sufixo de data do vendor). */
-const USD_PER_MTOK: Record<
-  string,
-  { input: number; output: number; cacheRead: number; cacheWrite1h: number }
-> = {
-  "claude-sonnet-4": { input: 3, output: 15, cacheRead: 0.3, cacheWrite1h: 6 },
-  "claude-haiku-4": { input: 1, output: 5, cacheRead: 0.1, cacheWrite1h: 2 },
-  "claude-opus-4": { input: 15, output: 75, cacheRead: 1.5, cacheWrite1h: 30 },
+const USD_PER_MTOK: Record<string, { input: number; output: number }> = {
+  "claude-sonnet-4": { input: 3, output: 15 },
+  "claude-sonnet-4-5": { input: 3, output: 15 },
+  "claude-sonnet-4-6": { input: 3, output: 15 },
+  "claude-sonnet-5": { input: 2, output: 10 },
+  "claude-haiku-4-5": { input: 1, output: 5 },
+  "claude-opus-4": { input: 15, output: 75 },
+  "claude-opus-4-1": { input: 15, output: 75 },
+  "claude-opus-4-5": { input: 5, output: 25 },
+  "claude-opus-4-6": { input: 5, output: 25 },
+  "claude-opus-4-7": { input: 5, output: 25 },
+  "claude-opus-4-8": { input: 5, output: 25 },
+  "claude-opus-5": { input: 5, output: 25 },
 };
 
 export interface TokenUsage {
@@ -34,24 +32,23 @@ export interface TokenUsage {
  * conhecido. `inputTokens` aqui é o TOTAL do usage do SDK — a parcela cacheada é
  * descontada e cobrada pela tarifa de cache.
  */
-export function costCents(model: string, usage: TokenUsage): number | null {
-  const priceKey = Object.keys(USD_PER_MTOK).find((prefix) => model.startsWith(prefix));
-  if (priceKey === undefined) {
-    return null;
-  }
-  const p = USD_PER_MTOK[priceKey];
-  if (p === undefined) {
-    return null; // inalcançável (key veio de Object.keys); satisfaz noUncheckedIndexedAccess
-  }
-  const noCacheInput = Math.max(
-    0,
-    usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens,
-  );
-  const usd =
+export function costCents(
+  model: string,
+  usage: TokenUsage,
+  cacheWriteTtl?: "5m" | "1h",
+): number | null {
+  const canonical = model.replace(/-\d{8}$/, "");
+  const p = USD_PER_MTOK[canonical];
+  if (!p) return null;
+  if (Object.values(usage).some((value) => !Number.isFinite(value) || value < 0)) return null;
+  if (usage.cacheReadTokens + usage.cacheWriteTokens > usage.inputTokens) return null;
+  if (usage.cacheWriteTokens > 0 && !cacheWriteTtl) return null;
+  const noCacheInput = usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens;
+  const cost =
     (noCacheInput * p.input +
-      usage.cacheReadTokens * p.cacheRead +
-      usage.cacheWriteTokens * p.cacheWrite1h +
+      usage.cacheReadTokens * p.input * 0.1 +
+      usage.cacheWriteTokens * p.input * (cacheWriteTtl === "5m" ? 1.25 : 2) +
       usage.outputTokens * p.output) /
-    1_000_000;
-  return usd * 100;
+    10_000;
+  return Number.isFinite(cost) ? cost : null;
 }
