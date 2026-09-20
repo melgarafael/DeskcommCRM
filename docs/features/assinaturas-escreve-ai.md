@@ -147,3 +147,9 @@ A revisão das [tarifas oficiais Anthropic](https://platform.claude.com/docs/en/
 O motor compartilhado passa seu `cacheTtl` ao cálculo: cinco minutos usa o multiplicador 1,25 e uma hora usa 2. Chamadas diretas que apresentem gravação de cache sem duração conhecida continuam com custo desconhecido, sem presumir uma hora. A consulta por provedor do catálogo é preservada. Ainda é necessário completar as tarifas de cache dos outros provedores e as condições especiais de precificação antes da ativação comercial.
 
 Validação: 45 testes focados aprovados, incluindo duas execuções do motor com conciliação do valor esperado para cada TTL, versões antigas/novas, snapshots datados, valores inválidos e modelos desconhecidos. TypeScript passou e lint não teve erros; permanece o aviso preexistente de importação de tipo no motor. Não houve chamada paga nem alteração de schema ou produção nesta revisão.
+
+## Orientação de limite nas jornadas de acesso
+
+O aceite de convite preserva o motivo `subscription_resource_limit` desde a RPC até a tela, sem afirmar que o convite expirou. O formulário permite repetir o mesmo token; a função retorna antes de fechar o convite, mudar a organização ativa ou auditar acesso concedido. A reativação de membro e a conexão oficial retornam 409 com orientação de assinatura quando recebem SQLSTATE P4020, sem expor a mensagem interna do banco. O fluxo de confirmação de e-mail continua levando o aceite não concluído à mesma tela de convite.
+
+Validação: 72 testes focados passaram, incluindo renderização do erro e nova tentativa no formulário, convite revogado, isolamento da decisão de acesso e canal arquivado que permanece arquivado após recusa. TypeScript e lint focado sem erros. Esta revisão trata mensagens de resultado, sem novo layout, schema, pagamento ou envio real. Os conectores parceiros e sociais ainda precisam do mesmo tratamento antes da ativação comercial.

@@ -1,3 +1,7 @@
+import {
+  isSubscriptionResourceLimit,
+  subscriptionResourceLimitResponse,
+} from "@/lib/billing/resource-limit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/team/[user_id]/reactivate — devolve o acesso de um membro revogado.
@@ -81,6 +85,8 @@ export async function POST(
     .from("user_organizations")
     .update({ revoked_at: null, updated_at: nowIso })
     .eq("id", target.id);
+  if (isSubscriptionResourceLimit(updErr))
+    return subscriptionResourceLimitResponse(requestId, authz.user.idioma);
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
 
   await audit({

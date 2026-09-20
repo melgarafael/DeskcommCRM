@@ -1,3 +1,4 @@
+import { isSubscriptionResourceLimit } from "@/lib/billing/resource-limit";
 import { cookies } from "next/headers";
 
 import { audit } from "@/lib/audit";
@@ -43,7 +44,7 @@ import type { InvitePayload } from "@/lib/auth/invite-token";
 
 export type ResultadoDoConvite =
   | { ok: true; membershipId: string; mudou: boolean }
-  | { ok: false; motivo: "invalid_or_expired" | "internal_error" };
+  | { ok: false; motivo: "invalid_or_expired" | "internal_error" | "subscription_resource_limit" };
 
 export async function aplicarConvite(params: {
   userId: string;
@@ -80,7 +81,11 @@ export async function aplicarConvite(params: {
       ok: false,
       // 42501 é a recusa da própria função (convite revogado ou posterior à
       // revogação) — não é falha de infraestrutura e não merece 500.
-      motivo: error.code === "42501" ? "invalid_or_expired" : "internal_error",
+      motivo: isSubscriptionResourceLimit(error)
+        ? "subscription_resource_limit"
+        : error.code === "42501"
+          ? "invalid_or_expired"
+          : "internal_error",
     };
   }
 

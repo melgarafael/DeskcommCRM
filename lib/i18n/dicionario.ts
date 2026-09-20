@@ -37,6 +37,7 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "A equipe atingiu o limite do plano ou tem uma pendência na assinatura. Peça ao administrador para conferir Planos e assinatura e tente aceitar novamente.": { es: "El equipo alcanzó el límite del plan o tiene un problema con la suscripción. Pide al administrador que revise Planes y suscripción e intenta aceptar de nuevo." },
   "Sua franquia de IA": { es: "Tu saldo de IA" },
   "Ciclo:": { es: "Ciclo:" },
   "O saldo aparecerá após a confirmação do ciclo da assinatura.": { es: "El saldo aparecerá tras la confirmación del ciclo de la suscripción." },

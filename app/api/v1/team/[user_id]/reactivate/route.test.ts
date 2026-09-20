@@ -148,3 +148,15 @@ describe("reativar membro", () => {
     expect(res.status).toBe(500);
   });
 });
+
+it("explica a recusa de vaga sem registrar reativação nem expor SQL", async () => {
+  bancoCom({ id: "m1", user_id: ALVO, role: "agent", revoked_at: "2026-09-10T22:45:53Z" }, { code: "P4020", message: "private SQL detail" } as never);
+  const { POST } = await import("./route");
+  const res = await POST(pedido(), ctx);
+  const body = await res.json();
+  expect(res.status).toBe(409);
+  expect(body.error.code).toBe("subscription_resource_limit");
+  expect(body.error.message).toContain("Planos e assinatura");
+  expect(JSON.stringify(body)).not.toContain("private SQL detail");
+  expect(audit).not.toHaveBeenCalled();
+});

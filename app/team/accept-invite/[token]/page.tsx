@@ -35,9 +35,7 @@ export default async function AcceptInvitePage({ params }: PageProps) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const idioma = normalizarIdioma(
-    (user?.user_metadata?.locale as string | undefined) ?? null,
-  );
+  const idioma = normalizarIdioma((user?.user_metadata?.locale as string | undefined) ?? null);
   const t = (texto: string) => traduzir(texto, idioma);
 
   // O gargalo de enumeração é AQUI, não no aceite: a rota é pública e cada
@@ -133,7 +131,17 @@ export default async function AcceptInvitePage({ params }: PageProps) {
         {t("Você foi convidado para entrar como")} <strong>{payload.role}</strong>.{" "}
         {t("Confirme abaixo para ativar seu acesso.")}
       </p>
-      <AcceptInviteForm token={token} label={t("Aceitar convite")} pendingLabel={t("Confirmando…")} failureLabel={t("Não foi possível aceitar este convite. Ele pode ter vencido ou seu acesso foi revogado. Peça um novo link ao administrador.")} />
+      <AcceptInviteForm
+        limitLabel={t(
+          "A equipe atingiu o limite do plano ou tem uma pendência na assinatura. Peça ao administrador para conferir Planos e assinatura e tente aceitar novamente.",
+        )}
+        token={token}
+        label={t("Aceitar convite")}
+        pendingLabel={t("Confirmando…")}
+        failureLabel={t(
+          "Não foi possível aceitar este convite. Ele pode ter vencido ou seu acesso foi revogado. Peça um novo link ao administrador.",
+        )}
+      />
     </Shell>
   );
 }

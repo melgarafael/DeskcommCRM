@@ -950,3 +950,17 @@ describe("metaSessionByWebhookToken — a entrega da plataforma para no canal ex
     expect(await metaSessionByWebhookToken(TOKEN)).toMatchObject({ id: CANAL });
   });
 });
+
+it("recusa de plano na conexão oficial não anuncia sucesso nem ressuscita o canal", async () => {
+  authOk();
+  const db = makeDb({ sessions: [canalOficial({ archived_at: ARQUIVADO_EM })], writeError: () => ({ code: "P4020", message: "private SQL detail" }) });
+  const { POST } = await import("@/app/api/v1/channels/official/route");
+  const res = await POST(reqOficial());
+  const body = await res.json();
+  expect(res.status).toBe(409);
+  expect(body.error.code).toBe("subscription_resource_limit");
+  expect(body.error.message).toContain("Planos e assinatura");
+  expect(JSON.stringify(body)).not.toContain("private SQL detail");
+  expect(db.linhas[0]?.archived_at).toBe(ARQUIVADO_EM);
+  expect(audit).not.toHaveBeenCalled();
+});

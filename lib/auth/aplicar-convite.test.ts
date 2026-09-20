@@ -132,3 +132,13 @@ describe("aplicarConvite consulta a LINHA, não só o token", () => {
     });
   });
 });
+
+it("preserva o convite e não altera a organização ativa quando o plano recusa a vaga", async () => {
+  vi.clearAllMocks();
+  rpcDoAceite.mockResolvedValueOnce({ data: null, error: { code: "P4020", message: "private SQL detail" } } as never);
+  expect(await aplicar({ revoked_at: null })).toEqual({ ok: false, motivo: "subscription_resource_limit" });
+  const { cookies } = await import("next/headers");
+  const { audit } = await import("@/lib/audit");
+  expect(cookies).not.toHaveBeenCalled();
+  expect(audit).not.toHaveBeenCalled();
+});

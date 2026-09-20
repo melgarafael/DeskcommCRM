@@ -1,3 +1,7 @@
+import {
+  isSubscriptionResourceLimit,
+  subscriptionResourceLimitResponse,
+} from "@/lib/billing/resource-limit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channels/official — estado da conexão oficial + o que colar na Meta.
@@ -59,9 +63,7 @@ const conectarSchema = z.object({
 function publicBase(req: NextRequest): string {
   const configurada = env.NEXT_PUBLIC_APP_URL;
   const usavel = configurada && !configurada.includes("placeholder.invalid") ? configurada : null;
-  return (
-    usavel ?? req.headers.get("origin") ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`
-  );
+  return usavel ?? req.headers.get("origin") ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`;
 }
 
 /**
@@ -116,7 +118,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const consultar = () =>
     admin
       .from("channel_sessions")
-      .select("id, meta_phone_number_id, meta_waba_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status")
+      .select(
+        "id, meta_phone_number_id, meta_waba_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status",
+      )
       .eq("organization_id", orgId)
       .eq("provider", CHANNEL_PROVIDER_META);
   const { data } = await queryTolerantToMissingArchived(
@@ -184,7 +188,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // recusar. O operador precisa saber que falta uma configuração de servidor.
     return fail(
       "invalid_request",
-      t("cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente) — o token não foi gravado"),
+      t(
+        "cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente) — o token não foi gravado",
+      ),
       422,
       { requestId },
     );
@@ -213,7 +219,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     meta_phone_number_id: phone_number_id,
     meta_waba_id: waba_id,
     meta_token_encrypted: cifrado,
-    phone_number: validacao.displayPhoneNumber ? `+${validacao.displayPhoneNumber.replace(/\D/g, "")}` : null,
+    phone_number: validacao.displayPhoneNumber
+      ? `+${validacao.displayPhoneNumber.replace(/\D/g, "")}`
+      : null,
     display_name: validacao.verifiedName ?? "Canal oficial",
     status: "WORKING",
   };
@@ -252,6 +260,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         metadata: metadataInicialDoCanal(),
       });
 
+  if (isSubscriptionResourceLimit(error))
+    return subscriptionResourceLimitResponse(requestId, authz.user.idioma);
   if (error) {
     return fail("internal_error", error.message ?? "channel_session_write_failed", 500, {
       requestId,

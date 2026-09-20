@@ -21,7 +21,12 @@ export type AcceptInviteResult =
   | { ok: true }
   | {
       ok: false;
-      error: "invalid_or_expired" | "email_mismatch" | "not_authenticated" | "internal_error";
+      error:
+        | "invalid_or_expired"
+        | "email_mismatch"
+        | "not_authenticated"
+        | "internal_error"
+        | "subscription_resource_limit";
       message?: string;
       expectedEmail?: string;
     };
