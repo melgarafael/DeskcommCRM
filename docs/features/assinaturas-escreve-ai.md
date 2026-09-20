@@ -48,7 +48,7 @@ Produção confirmada em `crm.escreve.ai`, host Azure, app Docker. O checkout de
 
 ## Publicação da interface — 20/09/2026
 
-- Imagem `escreve-app:e698f004`, Linux amd64, compilada a partir de `e698f004`. Os commits posteriores desta rodada acrescentam testes e documentação, sem mudar o código da imagem.
+- Imagem `escreve-app:e698f004`, Linux amd64, compilada a partir de `e698f004`. Os commits `28e7f608` e `4f199c74` acrescentam testes e documentação, sem mudar o código da imagem. As alterações de cobrança posteriores ainda não estão nessa imagem.
 - Candidato validado antes da troca: health saudável e login, logo e ilustrações respondendo 200. A primeira tentativa foi descartada porque `docker run --env-file` preservava as aspas do `.env`; o candidato validado usou as variáveis já interpretadas do container anterior. O aplicativo anterior permaneceu saudável durante essa correção.
 - Apenas o serviço `app` foi substituído. Health público confirmou `escreve-e698f004`, Supabase, Redis e WAHA saudáveis. Imagem anterior preservada: `deskcomm-app:saraiva-voice-048e55ed`; configuração anterior em `.env.before-escreve-e698f004` no diretório de produção.
 - Banco conferido após a troca: 4 empresas, 6 agentes e 5 canais, sem alteração. Hashes das linhas completas dos agentes permaneceram iguais.
@@ -63,3 +63,12 @@ Ainda não publicado nem habilitado: o checkout passa a gravar `checkout_attempt
 Retentativas recentes reutilizam a mesma tentativa. Uma tentativa sem resposta confirmada há 23 horas é bloqueada para reconciliação, pois a Stripe pode remover chaves de idempotência após 24 horas ([contrato do provedor](https://docs.stripe.com/api/idempotent_requests)). A atualização da tentativa não renova esse relógio a cada repetição. Uma assinatura já cancelada recebe uma tentativa nova mesmo quando a gravação da sessão anterior falhou.
 
 Confirmações de assinatura e novas sessões de checkout emitem auditoria pelo mecanismo existente. Falhas de conexão com o banco retornam erro recuperável. Validação: 34 testes relevantes passaram, incluindo cinco falhas reproduzidas antes da correção; TypeScript, lint focado e diff-check passaram. Cobrança permanece desativada em produção; cancelamento/faturas, limites, reconciliação tardia e QA com a conta real continuam pendentes. A verificação do navegador encontrou a Stripe na tela de login, sem sessão disponível.
+
+
+## Portal de gestão preparado
+
+Código ainda não habilitado em produção: a página de planos oferece **Gerenciar assinatura** quando a cobrança está configurada e existe um cliente Stripe vinculado à empresa autenticada. A rota POST `/api/v1/billing/portal` exige administrador, recusa acompanhamento administrativo e origem externa e não aceita identificadores ou URLs enviados pelo cliente. Falhas retornam uma tentativa recuperável; a abertura bem-sucedida é auditada.
+
+O adaptador cria uma [sessão do portal da Stripe](https://docs.stripe.com/api/customer_portal/sessions/create) com cliente e retorno definidos no servidor. Valida cliente, ambiente e domínio da resposta antes de encaminhar o navegador. `STRIPE_PORTAL_CONFIGURATION` é obrigatória para habilitar a cobrança. Essa configuração precisa permitir faturas, atualização de pagamento e cancelamento ao fim do período; troca de plano pelo portal deve permanecer desativada até existir sincronização correspondente no produto. Configuração e cancelamento reais ainda precisam ser conferidos na conta recebedora.
+
+Validação local: 76 testes passaram (rotas, adaptador, interface, navegação, tradução e configuração), além de TypeScript, lint focado e diff-check. Os testes cobrem progresso, falha e nova tentativa na interface e recusam respostas com outro cliente, ambiente ou domínio. Não foi aberta sessão real de cobrança nem realizado cancelamento financeiro. A conta do provedor continua sem autenticação disponível.

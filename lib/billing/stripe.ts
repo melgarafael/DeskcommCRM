@@ -13,11 +13,20 @@ export function billingConfiguration() {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   const webhook = process.env.STRIPE_WEBHOOK_SECRET?.trim();
   const origin = process.env.NEXT_PUBLIC_APP_URL;
+  const portalConfiguration = process.env.STRIPE_PORTAL_CONFIGURATION?.trim();
+  if (!portalConfiguration || !/^bpc_[a-zA-Z0-9]+$/.test(portalConfiguration))
+    throw new BillingUnavailable();
   if (!key || !/^sk_(test|live)_/.test(key) || !webhook || !origin) throw new BillingUnavailable();
   const url = new URL(origin);
   if (url.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(url.hostname))
     throw new BillingUnavailable();
-  return { key, webhook, origin: url.origin, live: key.startsWith("sk_live_") };
+  return {
+    key,
+    webhook,
+    origin: url.origin,
+    portalConfiguration,
+    live: key.startsWith("sk_live_"),
+  };
 }
 
 export function verifyStripeSignature(
@@ -166,4 +175,41 @@ export async function retrieveStripeSubscription(id: string) {
     throw new Error("Assinatura divergente do catálogo.");
   }
   return subscription;
+}
+
+/** A dedicated portal configuration must be reviewed before opening billing management. */
+export async function createStripePortal(customerId: string) {
+  const config = billingConfiguration();
+  const portalConfiguration = config.portalConfiguration;
+  if (
+    !/^cus_[a-zA-Z0-9]+$/.test(customerId) ||
+    !portalConfiguration ||
+    !/^bpc_[a-zA-Z0-9]+$/.test(portalConfiguration)
+  )
+    throw new BillingUnavailable();
+  const response = await fetch("https://api.stripe.com/v1/billing_portal/sessions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.key}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Stripe-Version": "2025-06-30.basil",
+    },
+    body: new URLSearchParams({
+      customer: customerId,
+      configuration: portalConfiguration,
+      return_url: `${config.origin}/app/settings/billing`,
+    }),
+    signal: AbortSignal.timeout(15000),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Não foi possível abrir a gestão da assinatura.");
+  const session = z
+    .object({
+      id: z.string().startsWith("bps_"),
+      customer: z.literal(customerId),
+      livemode: z.literal(config.live),
+      url: z.url().refine((value) => new URL(value).origin === "https://billing.stripe.com"),
+    })
+    .parse(await response.json());
+  return { url: session.url };
 }

@@ -319,6 +319,12 @@ const schema = z.object({
     .default("false")
     .transform((v) => v === "true"),
 
+  // Billing remains disabled until provider setup and payment QA are complete.
+  BILLING_ENABLED: z.enum(["true", "false"]).optional().default("false").transform(v => v === "true"),
+  STRIPE_SECRET_KEY: z.string().optional().default(""),
+  STRIPE_WEBHOOK_SECRET: z.string().optional().default(""),
+  STRIPE_PORTAL_CONFIGURATION: z.string().optional().default(""),
+
   // App URLs
   NEXT_PUBLIC_APP_URL: z
     .string()

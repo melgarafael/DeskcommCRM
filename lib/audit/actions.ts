@@ -30,6 +30,7 @@
  */
 export const AUDIT_ACTIONS = [
   "billing.checkout_created",
+  "billing.portal_opened",
   "billing.subscription_synced",
   "auth.login_success",
   "auth.login_failed",

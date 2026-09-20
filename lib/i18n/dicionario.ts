@@ -37,6 +37,12 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Abrindo gestão da assinatura...": { es: "Abriendo gestión de la suscripción..." },
+  "Gerenciar assinatura": { es: "Gestionar suscripción" },
+  "Consulte faturas, atualize o pagamento ou cancele sua assinatura.": { es: "Consulta facturas, actualiza el pago o cancela tu suscripción." },
+  "Não foi possível abrir a gestão da assinatura. Tente novamente.": { es: "No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo." },
+  "Não foi possível consultar sua assinatura. Atualize a página para tentar novamente.": { es: "No se pudo consultar tu suscripción. Actualiza la página para intentarlo de nuevo." },
+
   "Planos de assinatura": { es: "Planes de suscripción" },
   "Planos e assinatura": { es: "Planes y suscripción" },
   "/ mês": { es: "/ mes" },

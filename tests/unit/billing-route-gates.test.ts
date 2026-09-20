@@ -1,6 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   audit: vi.fn(),
+  poolQuery: vi.fn(),
+  portal: vi.fn(),
   role: vi.fn(),
   support: vi.fn(),
   config: vi.fn(),
@@ -13,11 +15,12 @@ vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.role }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: mocks.support }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({
-  getRequestPool: () => ({ connect: mocks.connect }),
+  getRequestPool: () => ({ connect: mocks.connect, query: mocks.poolQuery }),
 }));
 vi.mock("@/lib/billing/stripe", () => ({
   billingConfiguration: mocks.config,
   createStripeCheckout: mocks.checkout,
+  createStripePortal: mocks.portal,
   retrieveStripeSubscription: mocks.subscription,
   verifyStripeSignature: mocks.signature,
   BillingUnavailable: class extends Error {
@@ -267,4 +270,50 @@ it("a canceled subscription gets a fresh attempt even when the prior session was
   expect(mocks.checkout).toHaveBeenCalledWith(
     expect.objectContaining({ planId: "crescer", attemptId: expect.not.stringMatching(attempt) }),
   );
+});
+
+import { POST as portal } from "@/app/api/v1/billing/portal/route";
+it("portal resolves the customer from the authenticated company", async () => {
+  mocks.poolQuery.mockResolvedValue({
+    rows: [{ provider: "stripe", provider_customer_id: "cus_own" }],
+  });
+  mocks.portal.mockResolvedValue({ url: "https://billing.stripe.com/session" });
+  expect((await portal(request({}))).status).toBe(200);
+  expect(mocks.poolQuery).toHaveBeenCalledWith(expect.any(String), ["trusted-org"]);
+  expect(mocks.portal).toHaveBeenCalledWith("cus_own");
+});
+it.each([
+  { customer_id: "cus_other" },
+  { organization_id: "other" },
+  { return_url: "https://evil.example" },
+])("portal refuses client-controlled identity or redirect: %j", async (body) => {
+  expect((await portal(request(body))).status).toBe(400);
+  expect(mocks.poolQuery).not.toHaveBeenCalled();
+  expect(mocks.portal).not.toHaveBeenCalled();
+});
+it("portal cannot open without a bound customer", async () => {
+  mocks.poolQuery.mockResolvedValue({ rows: [] });
+  expect((await portal(request({}))).status).toBe(409);
+  expect(mocks.portal).not.toHaveBeenCalled();
+});
+it("portal remains unavailable while billing is disabled", async () => {
+  mocks.config.mockImplementation(() => {
+    throw new Error("disabled");
+  });
+  expect((await portal(request({}))).status).toBe(503);
+  expect(mocks.poolQuery).not.toHaveBeenCalled();
+});
+it("portal rejects support impersonation even with full access", async () => {
+  mocks.role.mockResolvedValue({
+    ok: true,
+    user: { support: { access_mode: "full" } },
+    org: { orgId: "trusted-org" },
+  });
+  expect((await portal(request({}))).status).toBe(403);
+  expect(mocks.poolQuery).not.toHaveBeenCalled();
+});
+it("portal failure does not report a successful opening", async () => {
+  mocks.poolQuery.mockRejectedValue(new Error("database unavailable"));
+  expect((await portal(request({}))).status).toBe(503);
+  expect(mocks.audit).not.toHaveBeenCalled();
 });

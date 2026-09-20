@@ -1,3 +1,6 @@
+import { billingConfiguration } from "@/lib/billing/stripe";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { ManageSubscriptionButton } from "@/components/billing/ManageSubscriptionButton";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -21,6 +24,28 @@ export default async function BillingPage() {
   if (!activeOrg || ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
     redirect("/403");
   }
+  let canManage = false;
+  let loadFailed = false;
+  let billingEnabled = false;
+  try {
+    billingConfiguration();
+    billingEnabled = true;
+  } catch {
+    /* Unconfigured installations keep the informative catalogue. */
+  }
+  if (billingEnabled && !user.support) {
+    try {
+      const {
+        rows: [subscription],
+      } = await getRequestPool().query<{ provider: string; provider_customer_id: string | null }>(
+        "select provider,provider_customer_id from org_subscriptions where organization_id=$1",
+        [activeOrg.orgId],
+      );
+      canManage = subscription?.provider === "stripe" && Boolean(subscription.provider_customer_id);
+    } catch {
+      loadFailed = true;
+    }
+  }
   const suporte = emailDeSuporte();
   const idioma = user.idioma;
   return (
@@ -33,6 +58,15 @@ export default async function BillingPage() {
           {traduzir("Planos, faturas e cobrança.", idioma)}
         </p>
       </header>
+      {canManage && <ManageSubscriptionButton idioma={idioma} />}
+      {loadFailed && (
+        <p role="alert">
+          {traduzir(
+            "Não foi possível consultar sua assinatura. Atualize a página para tentar novamente.",
+            idioma,
+          )}
+        </p>
+      )}
       <PlanComparison idioma={idioma} />
       {suporte ? (
         <p className="text-sm text-muted-foreground">
