@@ -184,7 +184,8 @@ jobs:
       # uma rodada por parte.
       fail-fast: false
       matrix:
-        parte: [1, 2, 3, 4, 5]
+        # RAMO DESCARTÁVEL (#1367): só a parte 1, e só a spec medida.
+        parte: [1]
     # ─────────────────────────────────────────────────────────────────────────
     # A COBERTURA DEIXA DE SER PROSA DIGITADA À MÃO.
     #
@@ -618,36 +619,7 @@ jobs:
       # pela própria spec, em loopback, com SQLite e PID exclusivos.
       EXTENSIONS_LOCAL_CATALOG_ORIGIN: "http://127.0.0.1:56331"
       SPECS_PARTE_1: >-
-        pre-go-live-whatsapp.spec.ts
-        smoke.spec.ts auth.spec.ts error-pages.spec.ts
-        icone-da-marca.spec.ts
-        password-recovery.spec.ts signup-journey.spec.ts
-        primeiro-acesso-sem-organizacao.spec.ts
-        rbac-roles.spec.ts inbox-scope.spec.ts reset-password-mfa.spec.ts
-        degradacao-silenciosa.spec.ts vps-webhook-outbound-ssrf.spec.ts
-        kanban-owner-filter.spec.ts queue-assign.spec.ts
-        conversa-vira-lead.spec.ts contato-salva-email.spec.ts
-        confirmar-dado-do-contato.spec.ts
-        credenciais-de-ia.spec.ts
-        risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
-        agente-novo-e-uso.spec.ts
-        agente-papeis-operador.spec.ts
-        followup-linguagem.spec.ts followup-ramos.spec.ts
-        wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
-        agenda-tela-do-produto.spec.ts
-        notificacoes-diz-o-que-falta.spec.ts
-        relogio-http-cron-externo.spec.ts
-        j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
-        j20-elegibilidade-atendimento-manual.spec.ts
-        juntar-contatos-duplicados.spec.ts
-        lote-no-quadro-do-funil.spec.ts
-        motivos-de-perda-do-funil.spec.ts
-        importar-leads-planilha.spec.ts
-        prova-painel-provedores.spec.ts
-        relatorio-de-atividades.spec.ts
-        canal-mudo-avisa-na-central.spec.ts
-        qa-l12-troca-de-funil.spec.ts
-        qa-l12-agente-ia.spec.ts
+        inbox-scope.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava
