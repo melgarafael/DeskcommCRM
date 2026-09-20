@@ -50,7 +50,7 @@ export default async function NewAgentPage() {
   const credentials = (credentialsRes.data ?? []) as unknown as CredentialRow[];
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 p-4 sm:p-6">
       <AgentForm
         mode="create"
         credentials={credentials}

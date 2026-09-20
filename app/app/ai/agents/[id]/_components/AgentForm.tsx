@@ -39,7 +39,12 @@ import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { PROVEDORES } from "@/lib/ai/pontos/provedores";
 
 import { ModelPicker, useModelMeta } from "./ModelPicker";
-import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
+import {
+  CHAVE_DA_INSTALACAO,
+  CredentialPicker,
+  STATUS_LABEL,
+  findCredential,
+} from "./CredentialPicker";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { bloqueioDePublicacao } from "@/lib/ai/agents/bloqueio-de-publicacao";
 import { ToolPicker } from "./ToolPicker";
@@ -51,11 +56,7 @@ import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
-import {
-  saveAgentDraftAction,
-  publishAgentAction,
-  createMcpAgentAction,
-} from "../_actions";
+import { saveAgentDraftAction, publishAgentAction, createMcpAgentAction } from "../_actions";
 
 import {
   versionCreateSchema,
@@ -181,10 +182,7 @@ const DEFAULT_TRIGGER: TriggerValue = {
   concurrency: "one_per_conversation",
 };
 
-function buildState(args: {
-  agent?: AgentRow;
-  version: AgentVersionRow | null;
-}): FormState {
+function buildState(args: { agent?: AgentRow; version: AgentVersionRow | null }): FormState {
   const { agent, version } = args;
   return {
     name: agent?.name ?? "",
@@ -197,8 +195,7 @@ function buildState(args: {
     credential_id: version ? (version.credential_id ?? CHAVE_DA_INSTALACAO) : "",
     channel_session_id: version?.channel_session_id ?? "",
     system_prompt:
-      version?.system_prompt ??
-      "Você é um atendente. Responda de forma educada e clara, em pt-BR.",
+      version?.system_prompt ?? "Você é um atendente. Responda de forma educada e clara, em pt-BR.",
     tool_ids: version?.tool_ids ?? [],
     trigger_config: (version?.trigger_config as unknown as TriggerValue) ?? DEFAULT_TRIGGER,
     max_steps: version?.max_steps ?? 10,
@@ -206,11 +203,7 @@ function buildState(args: {
     cost_budget_cents: version?.cost_budget_cents ?? 50,
     history_message_window: version?.history_message_window ?? 20,
     history_token_window: version?.history_token_window ?? 8_000,
-    handoff_keywords: version?.handoff_keywords ?? [
-      "falar com humano",
-      "atendente",
-      "pessoa real",
-    ],
+    handoff_keywords: version?.handoff_keywords ?? ["falar com humano", "atendente", "pessoa real"],
     handoff_tool_enabled: version?.handoff_tool_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
@@ -302,6 +295,11 @@ export function AgentForm(props: Props) {
   }, [isEdit, props]);
 
   const [form, setForm] = React.useState<FormState>(baseline);
+  const formRef = React.useRef<HTMLDivElement>(null);
+  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
+  const [submitCount, setSubmitCount] = React.useState(0);
+  const submitted = submitCount > 0;
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -316,6 +314,10 @@ export function AgentForm(props: Props) {
 
   function patch(p: Partial<FormState>) {
     setForm((prev) => ({ ...prev, ...p }));
+    setTouched((prev) => ({
+      ...prev,
+      ...Object.fromEntries(Object.keys(p).map((key) => [key, true])),
+    }));
   }
 
   // Quando provider muda, limpa credential e modelo (eles dependem do provider).
@@ -333,10 +335,7 @@ export function AgentForm(props: Props) {
   // ---------------------------------------------------------------------
   const validation = React.useMemo(() => {
     const errors: Record<string, string> = {};
-    // As mensagens abaixo aparecem embaixo do campo ANTES de a pessoa tentar
-    // salvar, então são escritas como INSTRUÇÃO ("dê um nome") e não como
-    // acusação ("nome obrigatório") — um formulário recém-aberto acusando o
-    // usuário de errar é a primeira coisa que ele vê nesta tela.
+    // A validação continua ativa; a apresentação espera interação ou tentativa de salvar.
     if (form.name.trim().length === 0) errors.name = t("Dê um nome para este agente.");
     if (form.name.length > 120) errors.name = t("O nome pode ter até 120 caracteres.");
     // A rota REST já cobra `0..1000` (`app/api/v1/ai/agents/[id]/route.ts:90`).
@@ -379,19 +378,76 @@ export function AgentForm(props: Props) {
     if (form.tool_ids.length > TETO_TOOLS_POR_AGENTE)
       errors.tool_ids = `${t("Máximo de")} ${TETO_TOOLS_POR_AGENTE} ${t("capacidades por agente.")}`;
 
-    // Tenta o schema completo:
-    if (Object.keys(errors).length === 0) {
-      const parsed = versionCreateSchema.safeParse(toVersionPayload(form));
-      if (!parsed.success) {
-        const flat = parsed.error.flatten();
-        const first = Object.entries(flat.fieldErrors)[0];
-        if (first) errors[first[0]] = first[1]?.[0] ?? t("Campo inválido.");
+    // Recolher uma seção nunca pode esconder um erro do schema completo.
+    const parsed = versionCreateSchema.safeParse(toVersionPayload(form));
+    if (!parsed.success) {
+      for (const [key, messages] of Object.entries(parsed.error.flatten().fieldErrors)) {
+        errors[key] ??= messages?.[0] ?? t("Campo inválido.");
       }
     }
     return errors;
-  }, [form, t]);
+  }, [form, t, props.provedoresDaInstalacao]);
 
+  const fieldLabels: Record<string, string> = {
+    name: t("Nome"),
+    description: t("Descrição"),
+    priority: t("Ordem de preferência"),
+    model: t("Modelo"),
+    credential_id: t("Chave de acesso"),
+    system_prompt: t("Instruções"),
+    tool_ids: t("Capacidades"),
+    max_steps: t("Ações por atendimento"),
+    token_budget: t("Volume de texto"),
+    cost_budget_cents: t("Custo máximo"),
+    history_message_window: t("Mensagens anteriores"),
+    history_token_window: t("Tamanho do histórico"),
+    split_max_chars: t("Tamanho por bolha"),
+    trigger_config: t("Quando ele entra em ação"),
+    operator_model: t("Modelo do operador"),
+    operator_tool_ids: t("Capacidades do operador"),
+    pipeline_ids: t("Funis"),
+    knowledge_source_ids: t("Materiais"),
+    followup: t("Follow-up"),
+  };
   const isValid = Object.keys(validation).length === 0;
+  const visibleErrors = Object.fromEntries(
+    Object.entries(validation).filter(([key]) => submitted || touched[key]),
+  );
+
+  function revealField(key: string) {
+    setPapel(key.startsWith("operator_") || key === "pipeline_ids" ? "operacao" : "conversa");
+    requestAnimationFrame(() => {
+      const root = formRef.current;
+      const target = root?.querySelector<HTMLElement>(
+        `[id="${key}"], [data-field="${key === "operator_model" ? "operator_tool_ids" : key}"]`,
+      );
+      if (!target) return;
+      let parent = target.parentElement;
+      while (parent && parent !== root) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      const control = target.matches("input, textarea, button, select")
+        ? target
+        : target.querySelector<HTMLElement>("input, textarea, button, select");
+      (control ?? target).focus();
+      target.scrollIntoView?.({ block: "center", behavior: "instant" });
+    });
+  }
+
+  React.useEffect(() => {
+    for (const key of Object.keys(validation)) {
+      if (!submitted && !touched[key]) continue;
+      const target = formRef.current?.querySelector(
+        `[id="${key}"], [data-field="${key === "operator_model" ? "operator_tool_ids" : key}"]`,
+      );
+      let parent = target?.parentElement;
+      while (parent && parent !== formRef.current) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+    }
+  }, [validation, submitted, submitCount, touched]);
 
   /**
    * A dica do botão "Publicar" — uma frase, vinda de UM motivo.
@@ -412,9 +468,7 @@ export function AgentForm(props: Props) {
       provedor: form.provider,
       chave: {
         daInstalacao: form.credential_id === CHAVE_DA_INSTALACAO,
-        instalacaoTemChaveDoProvedor: (props.provedoresDaInstalacao ?? []).includes(
-          form.provider,
-        ),
+        instalacaoTemChaveDoProvedor: (props.provedoresDaInstalacao ?? []).includes(form.provider),
         estadoDaCredencialDaOrg: credSt,
       },
       numero: { estado: channelSession?.status ?? null },
@@ -447,7 +501,11 @@ export function AgentForm(props: Props) {
   // ---------------------------------------------------------------------
 
   async function handleSave() {
+    if (readOnly || saving || publishing) return;
+    setSubmitCount((count) => count + 1);
+    setSaveError(null);
     if (!isValid) {
+      revealField(Object.keys(validation)[0]!);
       const first = Object.values(validation)[0];
       toast.error(first ?? t("Formulário inválido."));
       return;
@@ -459,6 +517,7 @@ export function AgentForm(props: Props) {
         // de voltar como 500 depois de a versão já ter sido gravada.
         const cadastro = agentMcpPatchSchema.safeParse(toCadastroPayload(form));
         if (!cadastro.success) {
+          setSaveError(t("Validação falhou."));
           toast.error(t("Validação falhou."));
           return;
         }
@@ -468,6 +527,7 @@ export function AgentForm(props: Props) {
           cadastro.data,
         );
         if (!res.ok) {
+          setSaveError(res.message ?? `${t("Erro")}: ${res.error}`);
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
@@ -482,17 +542,25 @@ export function AgentForm(props: Props) {
         };
         const validated = agentMcpCreateSchema.safeParse(payload);
         if (!validated.success) {
+          setSaveError(t("Validação falhou."));
           toast.error(t("Validação falhou."));
           return;
         }
         const res = await createMcpAgentAction(validated.data);
         if (!res.ok) {
+          setSaveError(res.message ?? `${t("Erro")}: ${res.error}`);
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
-        toast.success(t("Agent criado."));
+        toast.success(t("Agente criado."));
         router.push(`/app/ai/agents/${res.data!.agent_id}`);
       }
+    } catch {
+      const message = t(
+        "Não foi possível confirmar o salvamento. Suas alterações continuam nesta tela. Tente novamente.",
+      );
+      setSaveError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -517,6 +585,9 @@ export function AgentForm(props: Props) {
 
   function handleReset() {
     setForm(baseline);
+    setTouched({});
+    setSubmitCount(0);
+    setSaveError(null);
   }
 
   const disabled = readOnly || saving || publishing;
@@ -552,14 +623,20 @@ export function AgentForm(props: Props) {
         </Badge>
       );
     }
-    if (draftN) return <Badge variant="outline">{t("Rascunho")} v{draftN}</Badge>;
+    if (draftN)
+      return (
+        <Badge variant="outline">
+          {t("Rascunho")} v{draftN}
+        </Badge>
+      );
     // Sem rascunho e sem publicada: o formulário abriu da última versão que
     // existiu (props.base), e não do texto padrão. Dizer isso é o que impede o
     // autor de achar que o prompt sumiu — e de salvar por cima achando que não.
     if (props.base) {
       return (
         <Badge variant="outline">
-          {t("Pausado")} {t("· editando a v")}{props.base.version_number}
+          {t("Pausado")} {t("· editando a v")}
+          {props.base.version_number}
         </Badge>
       );
     }
@@ -567,16 +644,29 @@ export function AgentForm(props: Props) {
   })();
 
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      ref={formRef}
+      className="flex min-w-0 flex-col gap-6"
+      aria-busy={saving || publishing}
+      onBlurCapture={(event) => {
+        const id = (event.target as HTMLElement).id;
+        if (id) setTouched((prev) => ({ ...prev, [id]: true }));
+      }}
+    >
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-semibold tracking-tight">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-semibold tracking-tight break-words">
               {isEdit ? props.agent.name : t("Novo agente")}
             </h2>
             {statusBadge}
           </div>
+          {!isEdit ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {t("Seu jeito de atender começa aqui. Escreve aí.")}
+            </p>
+          ) : null}
           {isEdit && props.agent.description ? (
             <p className="text-xs text-muted-foreground">{props.agent.description}</p>
           ) : null}
@@ -584,15 +674,11 @@ export function AgentForm(props: Props) {
 
         <div className="flex flex-wrap items-center gap-2">
           {isEdit ? (
-            <Button
-              variant="outline"
-              onClick={handleReset}
-              disabled={!dirty || disabled}
-            >
+            <Button variant="outline" onClick={handleReset} disabled={!dirty || disabled}>
               {t("Descartar alterações")}
             </Button>
           ) : null}
-          <Button onClick={handleSave} disabled={(!dirty && isEdit) || disabled || !isValid}>
+          <Button onClick={handleSave} disabled={(!dirty && isEdit) || disabled}>
             {saving ? t("Salvando…") : isEdit ? t("Salvar rascunho") : t("Criar agente")}
           </Button>
           {isEdit ? (
@@ -613,6 +699,47 @@ export function AgentForm(props: Props) {
         </div>
       </div>
 
+      {saveError ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+        >
+          {saveError}
+        </p>
+      ) : null}
+      {Object.keys(visibleErrors).length > 0 ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"
+        >
+          <p className="font-bold">{t("Revise os campos para salvar.")}</p>
+          <ul className="mt-2 space-y-1">
+            {Object.entries(visibleErrors).map(([key, message]) => (
+              <li key={key}>
+                <button
+                  type="button"
+                  className="text-left underline underline-offset-4"
+                  onClick={() => revealField(key)}
+                >
+                  {t("Revisar")}: {fieldLabels[key] ?? t("Configuração")}
+                </button>
+                {![
+                  "name",
+                  "priority",
+                  "system_prompt",
+                  "model",
+                  "credential_id",
+                  "tool_ids",
+                  "split_max_chars",
+                ].includes(key) ? (
+                  <p className="text-destructive">{message}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/*
         NAVEGAÇÃO POR PAPEL (spec 16 §6). Um form só, um save só — os papéis são
         SEÇÕES, não telas separadas: separá-las em abas com save próprio faria o
@@ -623,7 +750,11 @@ export function AgentForm(props: Props) {
         vocabulário interno; quem configura pensa em "quem fala com meu cliente" e
         "quem organiza minha casa".
       */}
-      <div className="flex flex-wrap gap-1 border-b" role="tablist" aria-label={t("Papéis do agente")}>
+      <div
+        className="flex flex-wrap gap-1 border-b"
+        role="tablist"
+        aria-label={t("Papéis do agente")}
+      >
         {(
           [
             ["conversa", t("Conversa com o cliente")],
@@ -655,36 +786,40 @@ export function AgentForm(props: Props) {
       {papel === "seguranca" ? <PainelDeSeguranca /> : null}
 
       {papel === "operacao" ? (
-        <PainelDoOperador
-          enabled={form.operator_enabled}
-          onEnabledChange={(v) => patch({ operator_enabled: v })}
-          model={form.operator_model}
-          onModelChange={(v) => patch({ operator_model: v })}
-          provider={form.provider}
-          toolIds={form.operator_tool_ids}
-          onToolIdsChange={(ids) => patch({ operator_tool_ids: ids })}
-          modeloDoConversador={form.model}
-          disabled={disabled}
-        />
+        <div data-field="operator_tool_ids" tabIndex={-1}>
+          <PainelDoOperador
+            enabled={form.operator_enabled}
+            onEnabledChange={(v) => patch({ operator_enabled: v })}
+            model={form.operator_model}
+            onModelChange={(v) => patch({ operator_model: v })}
+            provider={form.provider}
+            toolIds={form.operator_tool_ids}
+            onToolIdsChange={(ids) => patch({ operator_tool_ids: ids })}
+            modeloDoConversador={form.model}
+            disabled={disabled}
+          />
+        </div>
       ) : null}
 
       {/* Fica na aba de OPERAÇÃO e não na de conversa: é permissão de mexer em
           negócio, não de falar com cliente — a mesma separação que a spec 16
           impôs no resto da tela. */}
       {papel === "operacao" ? (
-        <FunisDoAgente
-          funis={funis}
-          cobertura={props.cobertura}
-          value={form.pipeline_ids}
-          onChange={(ids) => patch({ pipeline_ids: ids })}
-          disabled={disabled}
-        />
+        <div data-field="pipeline_ids" tabIndex={-1}>
+          <FunisDoAgente
+            funis={funis}
+            cobertura={props.cobertura}
+            value={form.pipeline_ids}
+            onChange={(ids) => patch({ pipeline_ids: ids })}
+            disabled={disabled}
+          />
+        </div>
       ) : null}
 
       {/* Two-column grid */}
       <div className={papel === "conversa" ? "grid grid-cols-1 gap-4 lg:grid-cols-2" : "hidden"}>
         {/* COLUMN 1 */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Identification */}
           <Card className="space-y-3 p-4">
             <h3 className="text-sm font-medium">{t("Quem é este agente")}</h3>
@@ -696,10 +831,13 @@ export function AgentForm(props: Props) {
                 onChange={(e) => patch({ name: e.target.value })}
                 disabled={disabled}
                 maxLength={120}
-                aria-invalid={!!validation.name}
+                aria-invalid={!!visibleErrors.name}
+                aria-describedby={visibleErrors.name ? "error-name" : undefined}
               />
-              {validation.name ? (
-                <p className="text-xs text-destructive">{validation.name}</p>
+              {visibleErrors.name ? (
+                <p id="error-name" className="text-xs text-destructive">
+                  {visibleErrors.name}
+                </p>
               ) : null}
             </div>
             <div className="space-y-1">
@@ -713,92 +851,64 @@ export function AgentForm(props: Props) {
                 maxLength={2000}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="priority">{t("Ordem de preferência (0 a 1000)")}</Label>
-              <Input
-                id="priority"
-                type="number"
-                min={0}
-                max={1000}
-                step={1}
-                value={form.priority}
-                onChange={(e) => patch({ priority: Number(e.target.value) })}
-                disabled={disabled}
-                aria-invalid={!!validation.priority}
-              />
-              {validation.priority ? (
-                <p className="text-xs text-destructive">{validation.priority}</p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Quando mais de um agente puder atender a mesma conversa, o de número maior tenta primeiro. Se você só tem um agente, pode deixar como está.",
-                )}
-              </p>
-            </div>
           </Card>
-
-          {/* Provider + credential + model */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">{t("A inteligência que ele usa")}</h3>
-            <div className="space-y-1">
-              <Label htmlFor="provider">{t("Empresa de inteligência artificial")}</Label>
-              <Select
-                value={form.provider}
-                onValueChange={(v) => changeProvider(v as Provider)}
-                disabled={disabled}
-              >
-                <SelectTrigger id="provider">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {/*
-                    Derivado de PROVEDORES, nunca escrito à mão: esta lista tinha
-                    três itens fixos enquanto o sistema executava quatro, e a
-                    OpenRouter — a opção [1] do instalador — não aparecia. Um
-                    agente publicado nela abria com o campo em BRANCO, porque
-                    nenhum item casava com o valor, e o primeiro save silencioso
-                    trocava o provedor do dono por outro.
-                  */}
-                  {PROVEDORES.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.rotulo}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Prompt */}
+          <Card className="space-y-2 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-medium">{t("As instruções dele")}</h3>
+              <div className="flex items-center gap-2">
+                {/* O contador é o aviso que chega ANTES do erro: quem cola um
+                    texto grande vê na hora que ele não vai caber, em vez de
+                    descobrir depois — ou nunca. */}
+                <span
+                  data-testid="contador-do-prompt"
+                  className={
+                    form.system_prompt.trim().length > 20000
+                      ? "text-xs text-destructive"
+                      : "text-xs text-muted-foreground"
+                  }
+                >
+                  {form.system_prompt.trim().length.toLocaleString("pt-BR")}/20.000
+                </span>
+                <TokenCounter
+                  text={form.system_prompt}
+                  contextWindow={modelMeta?.context_window ?? null}
+                  className="text-xs"
+                />
+              </div>
             </div>
-
-            <ModelPicker
-              provider={form.provider}
-              value={form.model}
-              onChange={(modelId) => patch({ model: modelId })}
+            <Textarea
+              id="system_prompt"
+              aria-label={t("As instruções dele")}
+              value={form.system_prompt}
+              onChange={(e) => patch({ system_prompt: e.target.value })}
               disabled={disabled}
-              id="model"
+              rows={12}
+              /**
+               * SEM `maxLength`, e é o conserto — não um esquecimento.
+               *
+               * O navegador aplica o atributo na COLAGEM, sem evento e sem
+               * aviso: o que passa do limite não entra no campo. Cinco versões
+               * de um agente em produção foram salvas com exatamente 19.999
+               * caracteres, a última cortada no meio de uma frase, e o aviso
+               * logo acima — "passaram de 20.000" — era inalcançável, porque o
+               * estado nunca podia exceder o teto que o atributo já impunha.
+               *
+               * Sem ele o texto inteiro entra, a validação dispara e o autor lê
+               * quanto precisa cortar. Limite que recusa é honesto; limite que
+               * corta em silêncio faz o autor publicar o que não escreveu.
+               */
+              spellCheck={false}
+              className="font-mono text-xs"
+              aria-invalid={!!visibleErrors.system_prompt}
+              aria-describedby={visibleErrors.system_prompt ? "error-system_prompt" : undefined}
             />
-            {validation.model ? (
-              <p className="text-xs text-destructive">{validation.model}</p>
-            ) : null}
-
-            <CredentialPicker
-              provider={form.provider}
-              credentials={props.credentials}
-              value={form.credential_id}
-              onChange={(id) => patch({ credential_id: id })}
-              disabled={disabled}
-              id="credential_id"
-              instalacaoTemChave={(props.provedoresDaInstalacao ?? []).includes(form.provider)}
-            />
-            {validation.credential_id ? (
-              <p className="text-xs text-destructive">{validation.credential_id}</p>
-            ) : null}
-            {cred && credSt && credSt !== "validated" ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                {t("Credencial selecionada está com status")} {t(STATUS_LABEL[credSt])}
-                {t(". Publish bloqueado até validar.")}
+            {visibleErrors.system_prompt ? (
+              <p id="error-system_prompt" className="text-xs text-destructive">
+                {visibleErrors.system_prompt}
               </p>
             ) : null}
           </Card>
-
           {/* WhatsApp session */}
           <Card className="space-y-3 p-4">
             <h3 className="text-sm font-medium">{t("Por qual número ele atende")}</h3>
@@ -869,141 +979,228 @@ export function AgentForm(props: Props) {
                       {t("para poder publicar.")}
                     </>
                   ) : (
-                    t("Escolha o número para poder publicar. Sem ele, o rascunho salva mas não atende.")
+                    t(
+                      "Escolha o número para poder publicar. Sem ele, o rascunho salva mas não atende.",
+                    )
                   )}
                 </p>
               ) : null}
             </div>
           </Card>
+          {/* Provider + credential + model */}
+          <details
+            className="rounded-xl border bg-card p-4"
+            open={!baseline.model || !baseline.credential_id}
+          >
+            <summary className="cursor-pointer rounded-md text-sm font-bold focus-visible:outline-2 focus-visible:outline-ring">
+              {t("Configuração da IA")}
+              <span className="mt-1 block text-sm font-normal break-words text-muted-foreground">
+                {PROVEDORES.find((p) => p.id === form.provider)?.rotulo ?? form.provider} ·{" "}
+                {form.model || t("Modelo pendente")} ·{" "}
+                {form.credential_id === CHAVE_DA_INSTALACAO
+                  ? t("Chave da instalação")
+                  : cred?.label || t("Chave pendente")}
+              </span>
+            </summary>
+            <div className="mt-4 space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="provider">{t("Empresa de inteligência artificial")}</Label>
+                <Select
+                  value={form.provider}
+                  onValueChange={(v) => changeProvider(v as Provider)}
+                  disabled={disabled}
+                >
+                  <SelectTrigger id="provider">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/*
+                    Derivado de PROVEDORES, nunca escrito à mão: esta lista tinha
+                    três itens fixos enquanto o sistema executava quatro, e a
+                    OpenRouter — a opção [1] do instalador — não aparecia. Um
+                    agente publicado nela abria com o campo em BRANCO, porque
+                    nenhum item casava com o valor, e o primeiro save silencioso
+                    trocava o provedor do dono por outro.
+                  */}
+                    {PROVEDORES.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
+              <ModelPicker
+                provider={form.provider}
+                value={form.model}
+                onChange={(modelId) => patch({ model: modelId })}
+                disabled={disabled}
+                id="model"
+              />
+              {visibleErrors.model ? (
+                <p className="text-xs text-destructive">{visibleErrors.model}</p>
+              ) : null}
+
+              <CredentialPicker
+                provider={form.provider}
+                credentials={props.credentials}
+                value={form.credential_id}
+                onChange={(id) => patch({ credential_id: id })}
+                disabled={disabled}
+                id="credential_id"
+                instalacaoTemChave={(props.provedoresDaInstalacao ?? []).includes(form.provider)}
+              />
+              {visibleErrors.credential_id ? (
+                <p className="text-xs text-destructive">{visibleErrors.credential_id}</p>
+              ) : null}
+              {cred && credSt && credSt !== "validated" ? (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {t("Credencial selecionada está com status")} {t(STATUS_LABEL[credSt])}
+                  {t(". Publish bloqueado até validar.")}
+                </p>
+              ) : null}
+            </div>
+          </details>
           {/* Limits */}
-          <Card className="space-y-3 p-4">
-            <h3 className="text-sm font-medium">{t("Freios de segurança")}</h3>
-            <div className="grid grid-cols-2 gap-3">
+          <details className="rounded-xl border bg-card p-4">
+            <summary className="cursor-pointer rounded-md text-sm font-bold focus-visible:outline-2 focus-visible:outline-ring">
+              {t("Opções avançadas")}
+              <span className="mt-1 block text-sm font-normal text-muted-foreground">
+                {t("Prioridade")}: {form.priority} · {form.max_steps} {t("ações por atendimento")} ·{" "}
+                {form.cost_budget_cents} {t("centavos por atendimento")}
+              </span>
+            </summary>
+            <div className="mt-4 space-y-4">
               <div className="space-y-1">
-                <Label htmlFor="max_steps">{t("Ações por atendimento (1 a 25)")}</Label>
+                <Label htmlFor="priority">{t("Ordem de preferência (0 a 1000)")}</Label>
                 <Input
-                  id="max_steps"
-                  type="number"
-                  min={1}
-                  max={25}
-                  value={form.max_steps}
-                  onChange={(e) => patch({ max_steps: Number(e.target.value) })}
-                  disabled={disabled}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="token_budget">{t("Volume de texto por atendimento")}</Label>
-                <Input
-                  id="token_budget"
-                  type="number"
-                  min={1000}
-                  max={500000}
-                  step={1000}
-                  value={form.token_budget}
-                  onChange={(e) => patch({ token_budget: Number(e.target.value) })}
-                  disabled={disabled}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cost_budget_cents">{t("Custo máximo por atendimento (centavos)")}</Label>
-                <Input
-                  id="cost_budget_cents"
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={form.cost_budget_cents}
-                  onChange={(e) => patch({ cost_budget_cents: Number(e.target.value) })}
-                  disabled={disabled}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="history_message_window">{t("Mensagens anteriores que ele lê")}</Label>
-                <Input
-                  id="history_message_window"
+                  id="priority"
                   type="number"
                   min={0}
-                  max={200}
-                  value={form.history_message_window}
-                  onChange={(e) =>
-                    patch({ history_message_window: Number(e.target.value) })
-                  }
+                  max={1000}
+                  step={1}
+                  value={form.priority}
+                  onChange={(e) => patch({ priority: Number(e.target.value) })}
                   disabled={disabled}
+                  aria-invalid={!!visibleErrors.priority}
+                  aria-describedby={visibleErrors.priority ? "error-priority" : undefined}
                 />
+                {visibleErrors.priority ? (
+                  <p id="error-priority" className="text-xs text-destructive">
+                    {visibleErrors.priority}
+                  </p>
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Quando mais de um agente puder atender a mesma conversa, o de número maior tenta primeiro. Se você só tem um agente, pode deixar como está.",
+                  )}
+                </p>
               </div>
-              <div className="col-span-2 space-y-1">
-                <Label htmlFor="history_token_window">{t("Tamanho máximo desse histórico")}</Label>
-                <Input
-                  id="history_token_window"
-                  type="number"
-                  min={0}
-                  max={50000}
-                  step={500}
-                  value={form.history_token_window}
-                  onChange={(e) =>
-                    patch({ history_token_window: Number(e.target.value) })
-                  }
-                  disabled={disabled}
-                />
+              <h3 className="text-sm font-medium">{t("Freios de segurança")}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="max_steps">{t("Ações por atendimento (1 a 25)")}</Label>
+                  <Input
+                    id="max_steps"
+                    type="number"
+                    min={1}
+                    max={25}
+                    value={form.max_steps}
+                    onChange={(e) => patch({ max_steps: Number(e.target.value) })}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="token_budget">{t("Volume de texto por atendimento")}</Label>
+                  <Input
+                    id="token_budget"
+                    type="number"
+                    min={1000}
+                    max={500000}
+                    step={1000}
+                    value={form.token_budget}
+                    onChange={(e) => patch({ token_budget: Number(e.target.value) })}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="cost_budget_cents">
+                    {t("Custo máximo por atendimento (centavos)")}
+                  </Label>
+                  <Input
+                    id="cost_budget_cents"
+                    type="number"
+                    min={1}
+                    max={10000}
+                    value={form.cost_budget_cents}
+                    onChange={(e) => patch({ cost_budget_cents: Number(e.target.value) })}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="history_message_window">
+                    {t("Mensagens anteriores que ele lê")}
+                  </Label>
+                  <Input
+                    id="history_message_window"
+                    type="number"
+                    min={0}
+                    max={200}
+                    value={form.history_message_window}
+                    onChange={(e) => patch({ history_message_window: Number(e.target.value) })}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label htmlFor="history_token_window">
+                    {t("Tamanho máximo desse histórico")}
+                  </Label>
+                  <Input
+                    id="history_token_window"
+                    type="number"
+                    min={0}
+                    max={50000}
+                    step={500}
+                    value={form.history_token_window}
+                    onChange={(e) => patch({ history_token_window: Number(e.target.value) })}
+                    disabled={disabled}
+                  />
+                </div>
               </div>
             </div>
-          </Card>
+          </details>{" "}
         </div>
 
         {/* COLUMN 2 */}
-        <div className="space-y-4">
-          {/* Prompt */}
-          <Card className="space-y-2 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">{t("As instruções dele")}</h3>
-              <div className="flex items-center gap-2">
-                {/* O contador é o aviso que chega ANTES do erro: quem cola um
-                    texto grande vê na hora que ele não vai caber, em vez de
-                    descobrir depois — ou nunca. */}
-                <span
-                  data-testid="contador-do-prompt"
-                  className={
-                    form.system_prompt.trim().length > 20000
-                      ? "text-xs text-destructive"
-                      : "text-xs text-muted-foreground"
-                  }
-                >
-                  {form.system_prompt.trim().length.toLocaleString("pt-BR")}/20.000
-                </span>
-                <TokenCounter
-                  text={form.system_prompt}
-                  contextWindow={modelMeta?.context_window ?? null}
-                  className="text-xs"
-                />
-              </div>
-            </div>
-            <Textarea
-              value={form.system_prompt}
-              onChange={(e) => patch({ system_prompt: e.target.value })}
+        <div className="min-w-0 space-y-4">
+          {/* Capacidades */}
+          <Card data-field="tool_ids" tabIndex={-1} className="space-y-2 p-4">
+            <h3 className="text-sm font-medium">{t("O que o agente pode fazer")}</h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Ligue por jornada de trabalho. O agente só consegue fazer o que estiver ligado aqui — e o que estiver ligado, ele fará sozinho durante o atendimento.",
+              )}
+            </p>
+            <ToolPicker
+              value={form.tool_ids}
+              onChange={(ids) => patch({ tool_ids: ids })}
               disabled={disabled}
-              rows={12}
-              /**
-               * SEM `maxLength`, e é o conserto — não um esquecimento.
-               *
-               * O navegador aplica o atributo na COLAGEM, sem evento e sem
-               * aviso: o que passa do limite não entra no campo. Cinco versões
-               * de um agente em produção foram salvas com exatamente 19.999
-               * caracteres, a última cortada no meio de uma frase, e o aviso
-               * logo acima — "passaram de 20.000" — era inalcançável, porque o
-               * estado nunca podia exceder o teto que o atributo já impunha.
-               *
-               * Sem ele o texto inteiro entra, a validação dispara e o autor lê
-               * quanto precisa cortar. Limite que recusa é honesto; limite que
-               * corta em silêncio faz o autor publicar o que não escreveu.
-               */
-              spellCheck={false}
-              className="font-mono text-xs"
-              aria-invalid={!!validation.system_prompt}
             />
-            {validation.system_prompt ? (
-              <p className="text-xs text-destructive">{validation.system_prompt}</p>
+            {visibleErrors.tool_ids ? (
+              <p className="text-xs text-destructive">{visibleErrors.tool_ids}</p>
             ) : null}
           </Card>
+
+          {/* O acervo que este assistente consulta (0181) */}
+          <div data-field="knowledge_source_ids" tabIndex={-1}>
+            <BasesDoAgente
+              materiais={materiais}
+              value={form.knowledge_source_ids}
+              onChange={(ids) => patch({ knowledge_source_ids: ids })}
+              disabled={disabled}
+            />
+          </div>
 
           {/* Estilo de resposta (split de mensagens — Onda 4) */}
           <Card className="space-y-3 p-4">
@@ -1036,43 +1233,22 @@ export function AgentForm(props: Props) {
                   value={form.split_max_chars}
                   onChange={(e) => patch({ split_max_chars: Number(e.target.value) })}
                   disabled={disabled}
-                  aria-invalid={!!validation.split_max_chars}
+                  aria-invalid={!!visibleErrors.split_max_chars}
+                  aria-describedby={
+                    visibleErrors.split_max_chars ? "error-split_max_chars" : undefined
+                  }
                 />
-                {validation.split_max_chars ? (
-                  <p className="text-xs text-destructive">{validation.split_max_chars}</p>
+                {visibleErrors.split_max_chars ? (
+                  <p id="error-split_max_chars" className="text-xs text-destructive">
+                    {visibleErrors.split_max_chars}
+                  </p>
                 ) : null}
               </div>
             ) : null}
           </Card>
 
-          {/* Capacidades */}
-          <Card className="space-y-2 p-4">
-            <h3 className="text-sm font-medium">{t("O que o agente pode fazer")}</h3>
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "Ligue por jornada de trabalho. O agente só consegue fazer o que estiver ligado aqui — e o que estiver ligado, ele fará sozinho durante o atendimento.",
-              )}
-            </p>
-            <ToolPicker
-              value={form.tool_ids}
-              onChange={(ids) => patch({ tool_ids: ids })}
-              disabled={disabled}
-            />
-            {validation.tool_ids ? (
-              <p className="text-xs text-destructive">{validation.tool_ids}</p>
-            ) : null}
-          </Card>
-
-          {/* O acervo que este assistente consulta (0181) */}
-          <BasesDoAgente
-            materiais={materiais}
-            value={form.knowledge_source_ids}
-            onChange={(ids) => patch({ knowledge_source_ids: ids })}
-            disabled={disabled}
-          />
-
           {/* Triggers */}
-          <Card className="space-y-2 p-4">
+          <Card data-field="trigger_config" tabIndex={-1} className="space-y-2 p-4">
             <h3 className="text-sm font-medium">{t("Quando ele entra em ação")}</h3>
             <TriggerEditor
               value={form.trigger_config}
@@ -1124,7 +1300,7 @@ export function AgentForm(props: Props) {
           </Card>
 
           {/* Follow-up */}
-          <Card className="space-y-3 p-4">
+          <Card data-field="followup" tabIndex={-1} className="space-y-3 p-4">
             <h3 className="text-sm font-medium">{t("Follow-up")}</h3>
             <p className="text-xs text-muted-foreground">
               {t(
@@ -1135,9 +1311,7 @@ export function AgentForm(props: Props) {
               <Switch
                 id="followup_enabled"
                 checked={form.followup.enabled}
-                onCheckedChange={(v) =>
-                  patch({ followup: { ...form.followup, enabled: v } })
-                }
+                onCheckedChange={(v) => patch({ followup: { ...form.followup, enabled: v } })}
                 disabled={disabled}
               />
               <Label htmlFor="followup_enabled">
@@ -1151,9 +1325,7 @@ export function AgentForm(props: Props) {
             </p>
             <FollowupFlowPicker
               value={form.followup.flow_pointer_ids}
-              onChange={(ids) =>
-                patch({ followup: { ...form.followup, flow_pointer_ids: ids } })
-              }
+              onChange={(ids) => patch({ followup: { ...form.followup, flow_pointer_ids: ids } })}
               disabled={disabled}
             />
           </Card>

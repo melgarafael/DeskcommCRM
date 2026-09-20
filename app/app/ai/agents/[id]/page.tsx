@@ -153,14 +153,21 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
   );
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 p-4 sm:p-6">
       <AgentOperation agent={agent} readOnly={readOnly} />
       {(agent.kind ?? "rag_bot") !== "mcp_agent" && !agent.published_version_id && (
         <LegacyRecovery
           agent={agent}
           channels={channelSessions}
           credentials={credentials}
-          hasVersion={versions.length > 0 && !(versions.length===1 && (versions[0] as AgentVersionRow & {provisioning_origin?:string}).provisioning_origin==="legacy_reconciliation")}
+          hasVersion={
+            versions.length > 0 &&
+            !(
+              versions.length === 1 &&
+              (versions[0] as AgentVersionRow & { provisioning_origin?: string })
+                .provisioning_origin === "legacy_reconciliation"
+            )
+          }
           readOnly={readOnly}
         />
       )}

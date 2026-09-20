@@ -116,7 +116,11 @@ const RASCUNHO = {
 };
 
 function abrirEditor(
-  opcoes: { canais?: Array<Record<string, unknown>>; versao?: Record<string, unknown> } = {},
+  opcoes: {
+    canais?: Array<Record<string, unknown>>;
+    versao?: Record<string, unknown>;
+    readOnly?: boolean;
+  } = {},
 ) {
   const versao = opcoes.versao ?? RASCUNHO;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -124,6 +128,7 @@ function abrirEditor(
     <QueryClientProvider client={qc}>
       <AgentForm
         mode="edit"
+        readOnly={opcoes.readOnly}
         agent={AGENTE_ROW as never}
         // Instalação fresca: NENHUMA credencial cadastrada na tela de IA, e a
         // chave da Anthropic vindo do ambiente.
@@ -239,4 +244,107 @@ describe("versionCreateSchema — o número é opcional, o resto não", () => {
   it("recusa a ausência do campo — omitir não é decidir", () => {
     expect(versionCreateSchema.safeParse(base).success).toBe(false);
   });
+});
+
+describe("piloto de UX dos agentes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    acoes.salvar.mockResolvedValue({ ok: true, data: { version_id: "v1", version_number: 1 } });
+  });
+
+  it("recolhe detalhes técnicos e preserva os valores no payload de salvamento", async () => {
+    const { container, botaoSalvar } = abrirEditor({
+      versao: { ...RASCUNHO, max_steps: 17, token_budget: 62000, history_message_window: 35 },
+    });
+    const options = screen.getByText("Opções avançadas").closest("details")!;
+    const ai = screen.getByText("Configuração da IA").closest("details")!;
+    expect(options).not.toHaveAttribute("open");
+    expect(ai).not.toHaveAttribute("open");
+    options.open = true;
+    fireEvent.change(container.querySelector("#priority")!, { target: { value: "37" } });
+    options.open = false;
+    fireEvent.click(botaoSalvar());
+    await waitFor(() => expect(acoes.salvar).toHaveBeenCalledTimes(1));
+    expect(acoes.salvar.mock.calls[0]![1]).toMatchObject({
+      max_steps: 17,
+      token_budget: 62000,
+      history_message_window: 35,
+      model: RASCUNHO.model,
+      credential_id: null,
+    });
+    expect(acoes.salvar.mock.calls[0]![2]).toMatchObject({ priority: 37 });
+  });
+
+  it("revela opções avançadas e foca o campo inválido ao tentar salvar", async () => {
+    const { botaoSalvar, container } = abrirEditor({ versao: { ...RASCUNHO, max_steps: 99 } });
+    const options = screen.getByText("Opções avançadas").closest("details")!;
+    expect(options).not.toHaveAttribute("open");
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Sofia atualizada" } });
+    fireEvent.click(botaoSalvar());
+    await waitFor(() => expect(container.querySelector("#max_steps")).toHaveFocus());
+    expect(options).toHaveAttribute("open");
+    expect(acoes.salvar).not.toHaveBeenCalled();
+  });
+
+  it("mantém alterações após falha e permite tentar salvar novamente", async () => {
+    acoes.salvar.mockRejectedValueOnce(new Error("offline"));
+    const { botaoSalvar } = abrirEditor();
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Sofia revisada" } });
+    fireEvent.click(botaoSalvar());
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText("Nome")).toHaveValue("Sofia revisada");
+    expect(botaoSalvar()).toBeEnabled();
+    fireEvent.click(botaoSalvar());
+    await waitFor(() => expect(acoes.salvar).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("mostra salvamento pendente até a ação confirmar sucesso", async () => {
+    let concluir!: (value: unknown) => void;
+    acoes.salvar.mockReturnValueOnce(
+      new Promise((resolve) => {
+        concluir = resolve;
+      }),
+    );
+    const { botaoSalvar } = abrirEditor();
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Sofia atualizada" } });
+    fireEvent.click(botaoSalvar());
+    expect(screen.getByRole("button", { name: "Salvando…" })).toBeDisabled();
+    concluir({ ok: true, data: { version_number: 2 } });
+    await waitFor(() => expect(botaoSalvar()).toBeEnabled());
+  });
+
+  it("não mostra erros antes de interagir com um novo formulário", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <AgentForm mode="create" credentials={[]} channelSessions={[]} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Nome")).toHaveAttribute("aria-invalid", "false");
+    expect(screen.getByText("Configuração da IA").closest("details")).toHaveAttribute("open");
+    fireEvent.blur(screen.getByLabelText("Nome"));
+    expect(screen.getByLabelText("Nome")).toHaveAttribute("aria-invalid", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Criar agente" }));
+    expect(acoes.criar).not.toHaveBeenCalled();
+  });
+});
+
+it("reabre a seção inválida em uma segunda tentativa de salvar", async () => {
+  const { container, botaoSalvar } = abrirEditor({ versao: { ...RASCUNHO, max_steps: 99 } });
+  fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "" } });
+  fireEvent.click(botaoSalvar());
+  const secao = container.querySelector<HTMLInputElement>("#max_steps")!.closest("details")!;
+  await waitFor(() => expect(secao.open).toBe(true));
+  secao.open = false;
+  fireEvent.click(botaoSalvar());
+  await waitFor(() => expect(secao.open).toBe(true));
+});
+
+it("mantém edição e publicação bloqueadas para quem só pode visualizar", () => {
+  const { botaoSalvar, botaoPublicar } = abrirEditor({ readOnly: true });
+  expect(screen.getByLabelText("Nome")).toBeDisabled();
+  expect(botaoSalvar()).toBeDisabled();
+  expect(botaoPublicar()).toBeDisabled();
 });

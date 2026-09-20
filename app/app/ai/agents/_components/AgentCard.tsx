@@ -58,21 +58,11 @@ export function AgentCard({ agent, canWrite }: Props) {
 
   return (
     <Card className="flex h-full flex-col gap-3 p-4">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate font-medium" title={agent.name}>
+          <h3 className="text-base font-bold break-words" title={agent.name}>
             {agent.name}
           </h3>
-          <p
-            className="truncate text-xs text-muted-foreground"
-            title={
-              origemDoModelo(agent) === "versao_publicada"
-                ? t("Modelo da versão publicada — é o que atende o cliente.")
-                : t("Modelo do cadastro; nenhuma versão publicada ainda.")
-            }
-          >
-            {modeloEmVigor(agent)}
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {agent.is_default && (
@@ -85,24 +75,39 @@ export function AgentCard({ agent, canWrite }: Props) {
         </div>
       </div>
       {agent.description && (
-        <p className="line-clamp-2 text-xs text-muted-foreground">{agent.description}</p>
+        <p className="text-sm break-words text-muted-foreground">{agent.description}</p>
       )}
-      <dl className="grid grid-cols-2 gap-2 pt-1 text-xs">
-        <div>
-          <dt className="text-muted-foreground">{t("Tipo")}</dt>
-          <dd className="font-mono">{agent.kind ?? "rag_bot"}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">{t("Prioridade")}</dt>
-          <dd className="font-mono">{agent.priority ?? "—"}</dd>
-        </div>
-      </dl>
+      <details className="rounded-md border-t pt-3">
+        <summary className="cursor-pointer text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
+          {t("Detalhes técnicos")}
+        </summary>
+        <p
+          className="truncate text-xs text-muted-foreground"
+          title={
+            origemDoModelo(agent) === "versao_publicada"
+              ? t("Modelo da versão publicada — é o que atende o cliente.")
+              : t("Modelo do cadastro; nenhuma versão publicada ainda.")
+          }
+        >
+          {modeloEmVigor(agent)}
+        </p>
+        <dl className="grid grid-cols-2 gap-2 pt-1 text-xs">
+          <div>
+            <dt className="text-muted-foreground">{t("Tipo")}</dt>
+            <dd className="font-mono">{agent.kind ?? "rag_bot"}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">{t("Prioridade")}</dt>
+            <dd className="font-mono">{agent.priority ?? "—"}</dd>
+          </div>
+        </dl>
+      </details>
       <div className="mt-auto pt-2">
-        <Link href={`/app/ai/agents/${agent.id}`}>
-          <Button variant="outline" size="sm" className="w-full">
+        <Button asChild variant="outline" size="sm" className="w-full">
+          <Link href={`/app/ai/agents/${agent.id}`}>
             {canWrite ? t("Editar") : t("Visualizar")}
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </div>
     </Card>
   );

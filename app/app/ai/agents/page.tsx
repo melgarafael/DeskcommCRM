@@ -53,14 +53,14 @@ export default async function AgentsListPage() {
   const idioma = user.idioma;
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {traduzir("Agents de IA", idioma)}
+            {traduzir("Agentes de IA", idioma)}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {traduzir("Configure o comportamento dos agents que respondem no WhatsApp.", idioma)}
+            {traduzir("Configure o comportamento dos agentes que respondem no WhatsApp.", idioma)}
           </p>
         </div>
       </header>
