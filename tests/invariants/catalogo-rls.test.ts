@@ -129,13 +129,18 @@ describe("catalog_mappings — isolamento entre organizações", () => {
 });
 
 describe("catalog_mappings — RBAC de escrita", () => {
-  it("`agent` NÃO consegue alterar o mapeamento (a policy exige admin)", () => {
-    expect(() =>
-      asUser(
-        AGENT_A,
-        `update ${TABELA} set table_name = 'outra' where organization_id = '${ORG_A}';`,
-      ),
-    ).toThrow();
+  it("`agent` NÃO consegue alterar o mapeamento (RLS exige admin) — 0 linhas", () => {
+    // RLS de UPDATE com USING falso NÃO lança erro: apenas nenhuma linha passa,
+    // então o UPDATE afeta 0. Medido na primeira execução deste invariante — a
+    // versão anterior esperava exceção e estava errada.
+    const out = asUser(
+      AGENT_A,
+      `with up as (
+         update ${TABELA} set table_name = 'outra' where organization_id = '${ORG_A}' returning 1
+       ) select count(*) from up;`,
+    );
+    const ultima = out.split("\n").pop();
+    expect(Number(ultima)).toBe(0);
   });
 
   it("`admin` consegue alterar o mapeamento da própria org", () => {
