@@ -348,11 +348,33 @@ export function separarTextoApresentacao(
   if (paragrafos.length === 0) return { introducao: '', final: '' };
 
   const ultimo = paragrafos[paragrafos.length - 1]!;
-  if (/\?/.test(ultimo)) {
-    return {
-      introducao: paragrafos.slice(0, -1).join('\n\n'),
-      final: ultimo,
-    };
+  if (!/\?/.test(ultimo)) {
+    return { introducao: paragrafos.join('\n\n'), final: '' };
   }
-  return { introducao: paragrafos.join('\n\n'), final: '' };
+
+  // O modelo muitas vezes escreve abertura E pergunta no MESMO parágrafo
+  // ("...opções que tenho aqui. Qual delas te interessou?"). Separar só por
+  // parágrafo jogaria o texto inteiro para DEPOIS das fotos (ordem invertida,
+  // medido ao vivo). Aqui a cauda de frases interrogativas do último parágrafo
+  // vira o `final`; o resto do parágrafo fica na introdução.
+  const sentencas = ultimo
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+  const finalPartes: string[] = [];
+  let i = sentencas.length - 1;
+  while (i >= 0 && sentencas[i]!.includes('?')) {
+    finalPartes.unshift(sentencas[i]!);
+    i -= 1;
+  }
+  if (finalPartes.length === 0) {
+    // Tinha "?" no meio, mas não como fecho — não arrisca: tudo na introdução.
+    return { introducao: paragrafos.join('\n\n'), final: '' };
+  }
+  const introDoUltimo = sentencas.slice(0, i + 1).join(' ');
+  const introPartes = [
+    ...paragrafos.slice(0, -1),
+    ...(introDoUltimo.trim() !== '' ? [introDoUltimo] : []),
+  ];
+  return { introducao: introPartes.join('\n\n'), final: finalPartes.join(' ') };
 }

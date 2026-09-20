@@ -229,6 +229,24 @@ describe('separarTextoApresentacao', () => {
     expect(final).toBe('Qual te interessou?');
   });
 
+  it('abertura e pergunta no MESMO parágrafo: pergunta vai para o final', () => {
+    const texto =
+      'No momento não tenho a CB 250, mas separei opções de 250 cilindradas. Qual delas te interessou?';
+    const { introducao, final } = separarTextoApresentacao(texto, catalogo);
+    expect(introducao).toBe(
+      'No momento não tenho a CB 250, mas separei opções de 250 cilindradas.',
+    );
+    expect(final).toBe('Qual delas te interessou?');
+    expect(introducao).not.toContain('?');
+  });
+
+  it('múltiplas perguntas finais no mesmo parágrafo vão juntas para o final', () => {
+    const texto = 'Separei estas opções. Gostou de alguma? Como pretende adquirir?';
+    const { introducao, final } = separarTextoApresentacao(texto, catalogo);
+    expect(introducao).toBe('Separei estas opções.');
+    expect(final).toBe('Gostou de alguma? Como pretende adquirir?');
+  });
+
   it('sem pergunta, final fica vazio (não inventa)', () => {
     const { final } = separarTextoApresentacao('Segue a moto.', catalogo);
     expect(final).toBe('');
