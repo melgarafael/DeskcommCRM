@@ -1,6 +1,6 @@
 # Assinaturas escreve.ai
 
-Estado: interface e catálogo publicados em 20/09/2026; contratação e cobrança permanecem indisponíveis.
+Estado em 20/09/2026, 06:26 BRT: app e worker `f4d159b4` publicados e saudáveis. Catálogo e infraestrutura de assinatura estão implementados; contratação e cobrança permanecem indisponíveis (`BILLING_ENABLED=false`). As seções de evidência abaixo registram etapas anteriores e não substituem este estado atual.
 
 ## Oferta mensal
 
@@ -23,12 +23,20 @@ Referências de posicionamento consultadas em 20/09/2026: [Zaia](https://www.zai
 - Eventos duplicados devem ser idempotentes; eventos atrasados não podem regredir uma assinatura mais recente.
 - Cancelamento, renovação, falha de pagamento e gestão de faturas precisam do estado real do provedor.
 - Valores comerciais em BRL não podem ser gravados diretamente no orçamento atual de IA: a contabilidade existente usa centavos de USD. Conversão e teto precisam de regra explícita e teste antes de ativar a venda.
-- A migration 0315 aplica limites de agentes, canais e pessoas no banco para assinaturas confirmadas. Está validada localmente, ainda não aplicada em produção. Não remove recursos preexistentes; tratamento amigável dos erros nas rotas e franquia comercial de IA continuam pendentes.
+- A migration 0315 aplica limites de agentes, canais e pessoas no banco para assinaturas confirmadas e está aplicada em produção. Não remove recursos preexistentes. As jornadas de agentes, equipe e canais tratam recusas de limite; a franquia comercial usa os períodos e reservas da migration 0317.
 - Sem provedor configurado, a interface mostra contratação indisponível, sem fabricar checkout ou assinatura ativa.
 
 ## Deploy
 
-Produção confirmada em `crm.escreve.ai`, host Azure, app Docker. O checkout de produção contém alterações próprias não commitadas; não executar reset, clean ou atualização in-place sem reconciliação. Preservar imagens atuais para rollback. Código de produção foi solicitado para cópia de auditoria fora do repositório; conclusão da transferência deve ser verificada.
+Produção em `crm.escreve.ai`, Azure, com `escreve-app:f4d159b4` e `escreve-worker:f4d159b4`. O health público confirmou a versão e Supabase, Redis e WAHA saudáveis; ambos os contêineres ficaram saudáveis. O contêiner de validação respondeu 200 no login e nas ilustrações antes da troca. Houve um 502 transitório durante a recriação do app, seguido de recuperação confirmada. O scheduler não foi substituído.
+
+As migrations 0265, 0315, 0316 e 0317 foram aplicadas em uma transação após backup PostgreSQL com catálogo validado. Permanecem 4 empresas, 6 agentes, 5 canais e nenhuma assinatura. O hash agregado das linhas de agentes não mudou. App e worker confirmam `BILLING_ENABLED=false`; nenhuma conta foi convertida ou cobrada.
+
+O build Docker amd64 completo passou, incluindo TypeScript e geração de páginas, após recuperar espaço e ampliar temporariamente a memória local para 12 GB. A configuração original de 8 GB foi restaurada. Validação do código publicado: 942 arquivos de testes aprovados, 9.579 testes aprovados e um caso de falha esperada; 44 testes de banco em cinco suítes. O saldo foi validado localmente em desktop/mobile e claro/escuro com dados sintéticos, removidos ao terminar. A nova checagem visual em produção ficou pendente porque a política do navegador bloqueou o acesso à aba estacionada; os testes de servidor não substituem essa evidência visual.
+
+Rollback preservado em `escreve-app:e698f004` e `deskcomm-worker:saraiva-voice-a87f55b6`, com cópia do ambiente anterior. Imagens antigas sem referências em contêineres foram arquivadas fora do servidor e validadas antes da remoção para liberar espaço. O checkout de produção possui alterações próprias: não executar reset, clean ou atualização in-place.
+
+Antes de ativar a venda: autenticar e configurar a conta recebedora, testar checkout/renovação/cancelamento/falha no provedor, completar tarifas especiais/cache ainda desconhecidas e recuperação administrativa de reservas ou tentativas ambíguas de checkout sem sessão após 23 horas. Nenhum teste simulado comprova esses fluxos reais.
 
 ## Evidência da preparação — 20/09/2026
 
