@@ -32,3 +32,9 @@ A página utiliza referências de ritmo editorial, espaços e hierarquia da apre
 ## Inovações orientadas a resultado
 
 A seção `#inovacoes` apresenta descoberta de empresas, contexto do contato, canais conectados, acompanhamento, qualificação e criação conversacional do agente a partir do resultado para quem usa. Cada cartão expande uma explicação concreta das condições. Não afirma taxas de conversão, faturamento ou garantias; não anuncia chamadas automáticas de voz como disponíveis.
+
+## Movimento
+
+GSAP + ScrollTrigger 3.15.0 são servidos localmente, com os avisos originais de licença preservados. `assets/GSAP-NOTICE.txt` registra a origem. `motion.js` adiciona abertura em sequência, revelação por rolagem, profundidade na imagem, zoom da fotografia, mensagens em cascata, transição do filme e progresso de leitura. Em desktop, as cenas dos cartões respondem suavemente ao ponteiro. Não há rolagem artificial nem animações infinitas.
+
+O carregamento é progressivo: sem as bibliotecas, o conteúdo e os controles continuam funcionando. `gsap.matchMedia` respeita mudanças em `prefers-reduced-motion` e desfaz estilos e ouvintes; efeitos de ponteiro são exclusivos de dispositivos adequados. A expansão dos detalhes atualiza as posições de rolagem. Confira também `node --check website/assets/motion.js`.

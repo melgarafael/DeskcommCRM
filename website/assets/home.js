@@ -19,18 +19,16 @@ document.querySelectorAll('[data-stage]').forEach(button => {
     const result = document.createElement('div'); result.className = 'result-tag';
     const dot = document.createElement('span'); dot.className = 'dot'; result.append(dot, document.createTextNode(stage.result));
     bubbles.replaceChildren(customer, reply, result);
+    document.dispatchEvent(new Event('conversation-change'));
   });
 });
 const film = document.getElementById('film');
 const video = film.querySelector('video');
 document.querySelectorAll('[data-film]').forEach(button => button.addEventListener('click', () => {
   film.showModal();
+  document.dispatchEvent(new Event('film-open'));
   video.play().catch(() => { /* Native controls remain available if playback needs another gesture. */ });
 }));
 document.getElementById('close-film').addEventListener('click', () => film.close());
 film.addEventListener('close', () => video.pause());
 film.addEventListener('click', event => { if(event.target === film) {const box = film.getBoundingClientRect(); if(event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) film.close();} });
-if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-  const observer = new IntersectionObserver(entries => {entries.forEach(entry => {if(entry.isIntersecting){entry.target.classList.remove('waiting');observer.unobserve(entry.target);}});},{threshold:0.08});
-  document.querySelectorAll('.reveal').forEach(element => {element.classList.add('waiting');observer.observe(element);});
-}

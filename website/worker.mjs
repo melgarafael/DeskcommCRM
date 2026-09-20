@@ -1,5 +1,5 @@
 import html from './index.html';
-const assets = new Set(['logo.png', 'conversation-sculpture.webp', 'time-for-people.webp', 'film-poster.webp', 'brand-film.mp4', 'home.css', 'home.js']);
+const assets = new Set(['logo.png', 'conversation-sculpture.webp', 'time-for-people.webp', 'film-poster.webp', 'brand-film.mp4', 'home.css', 'home.js', 'gsap.min.js', 'ScrollTrigger.min.js', 'motion.js']);
 const headers = {'Content-Type':'text/html; charset=utf-8','Cache-Control':'public, max-age=300','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 export default {
   async fetch(request, env) {
