@@ -8,14 +8,14 @@ globalThis.fetch = async request => { forwarded = request; return new Response('
 let count=0;
 try {
   for (const method of ['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']) {
-    for (const path of ['/','/?utm_source=test','/_escreve/logo.png','/api/webhook','/auth/callback?code=example','/legacy']) {
+    for (const path of ['/','/?utm_source=test','/_escreve/logo.png','/_escreve/conversation-sculpture.webp','/_escreve/time-for-people.webp','/_escreve/film-poster.webp','/_escreve/brand-film.mp4','/_escreve/home.css','/_escreve/home.js','/_escreve/unknown.js','/home.css','/api/webhook','/auth/callback?code=example','/legacy']) {
       forwarded=undefined;
       const request = new Request('https://escreve.ai'+path,{method,headers:{'x-example':'preserved'},...(!['GET','HEAD'].includes(method)?{body:'payload'}:{})});
       const response = await worker.fetch(request,{ASSETS:{fetch: async asset => {
-        assert.equal(new URL(asset.url).pathname,'/logo.png');assert.equal(asset.method,method);
+        assert.equal(new URL(asset.url).pathname,new URL(request.url).pathname.replace('/_escreve/','/')); assert.equal(asset.method,method);
         return new Response(method==='HEAD'?null:'logo',{headers:{'Content-Type':'image/png'}});
       }}});
-      const own = ['GET','HEAD'].includes(method) && ['/', '/_escreve/logo.png'].includes(new URL(request.url).pathname);
+      const own = ['GET','HEAD'].includes(method) && ['/', '/_escreve/logo.png','/_escreve/conversation-sculpture.webp','/_escreve/time-for-people.webp','/_escreve/film-poster.webp','/_escreve/brand-film.mp4','/_escreve/home.css','/_escreve/home.js'].includes(new URL(request.url).pathname);
       if (own) {assert.equal(forwarded,undefined);assert.equal(response.status,200);if(method==='HEAD')assert.equal(await response.text(),'');}
       else {assert.equal(forwarded,request);assert.equal(response.status,202);assert.equal(forwarded.headers.get('x-example'),'preserved');if(!['GET','HEAD'].includes(method))assert.equal(await forwarded.text(),'payload');}
       count++;
