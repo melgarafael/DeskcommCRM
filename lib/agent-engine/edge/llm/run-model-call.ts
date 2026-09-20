@@ -37,6 +37,7 @@ import {
   type ChaveDeOrcamento,
 } from './orcamento';
 import { meteredCostCents } from './catalog-pricing';
+import { reserveSubscriptionAi, settleSubscriptionAi, SubscriptionAiAllowanceError } from '@/lib/billing/ai-allowance';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
 
@@ -415,10 +416,12 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheTtl: cfg.cacheTtl ?? '1h',
   });
 
+  let allowanceReservation: string | null = null;
   const startedAt = Date.now();
   let result: Awaited<ReturnType<typeof generateText>>;
   try {
     input.abortSignal?.throwIfAborted();
+    allowanceReservation = await reserveSubscriptionAi(db, input.tenantId);
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
     // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
     result = await generateText({
@@ -439,6 +442,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         : Math.min(maxOutputTokens ?? Infinity, input.maxOutputTokens),
     });
   } catch (err) {
+    await settleSubscriptionAi(db, input.tenantId, allowanceReservation, null).catch(() => {
+      // A retained reservation cannot be spent again; preserve the original provider error.
+      (deps.log ?? console).error('llm: conciliação da franquia pendente', { organization_id: input.tenantId });
+    });
     // ─── A LINHA QUE FALTAVA ────────────────────────────────────────────────
     //
     // Até aqui o INSERT em llm_calls vivia só DEPOIS desta chamada, sem `try`
@@ -482,6 +489,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
   const cost = await meteredCostCents(db, config.provider, model, usage);
+  await settleSubscriptionAi(db, input.tenantId, allowanceReservation, cost).catch(() => {
+    // Keep the generated answer and the held credit; reconciliation can retry later.
+    (deps.log ?? console).error('llm: conciliação da franquia pendente', { organization_id: input.tenantId });
+  });
 
   const { rows } = await db.query<{ id: string }>(
     `insert into llm_calls
@@ -578,6 +589,9 @@ export function normalizarErro(err: unknown): {
   // grafias de fornecedor para reconciliar — há um objeto que nós mesmos
   // construímos. Sem este ramo a tela de Execuções mostraria "Não conseguimos
   // classificar esta falha" no caso mais bem explicado do produto.
+  if (err instanceof SubscriptionAiAllowanceError) {
+    return { error_code: 'franquia_de_ia', error_message: err.message, http_status: null };
+  }
   if (err instanceof LlmBudgetExceededError) {
     return { error_code: 'orcamento_esgotado', error_message: redigirMensagemDoProvedor(bruto), http_status: null };
   }

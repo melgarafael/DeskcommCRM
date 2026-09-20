@@ -25,9 +25,18 @@ const ORG = "22222222-2222-4222-8222-222222222222";
 function poolQueGrava(
   paramsDaOrg: Record<string, unknown> = {},
   catalogue: Record<string, unknown>[] = [],
+  allowance: "legacy" | "paid" | "exhausted" = "legacy",
 ) {
   const inserts: Array<{ sql: string; params: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    if (sql.startsWith("select provider_subscription_id from org_subscriptions")) {
+      return { rows: allowance === "legacy" ? [] : [{ provider_subscription_id: "sub_paid" }] };
+    }
+    if (sql.includes("fn_reserve_subscription_ai")) {
+      if (allowance === "exhausted")
+        throw Object.assign(new Error("database detail"), { code: "P4021" });
+      return { rows: [{ reservation_id: params[1] }] };
+    }
     if (sql.includes("settings->'llm'")) {
       return {
         rows: [
@@ -52,7 +61,7 @@ function poolQueGrava(
     }
     return { rows: [] };
   });
-  return { pool: { query } as never, inserts };
+  return { pool: { query } as never, inserts, query };
 }
 
 /** Registry cuja fábrica devolve um modelo que SEMPRE falha do jeito pedido. */
@@ -360,10 +369,12 @@ describe("cancelamento de chamada auxiliar", () => {
   });
 });
 
-it("o seam grava o custo do catálogo para um modelo fora da tabela antiga", async () => {
-  const { pool, inserts } = poolQueGrava({}, [
-    { input_price_per_million_cents: 250, output_price_per_million_cents: 1000 },
-  ]);
+it("o seam grava o custo e concilia a franquia da empresa com a resposta preservada", async () => {
+  const { pool, inserts, query } = poolQueGrava(
+    {},
+    [{ input_price_per_million_cents: 250, output_price_per_million_cents: 1000 }],
+    "paid",
+  );
   const registry = {
     anthropic: () =>
       ({
@@ -387,8 +398,47 @@ it("o seam grava o custo do catálogo para um modelo fora da tabela antiga", asy
     { tenantId: ORG, messages: [{ role: "user", content: "oi" }] },
     { registry },
   );
+  expect(query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    ORG,
+    expect.any(String),
+    0.45,
+  ]);
   expect(result.costCents).toBeCloseTo(0.45);
   expect(result.result.text).toBe("Resposta preservada");
   expect(inserts).toHaveLength(1);
   expect(inserts[0]!.params[11]).toBeCloseTo(0.45);
+});
+
+it("saldo comercial recusado impede a fábrica do provedor e deixa registro explicativo", async () => {
+  const { pool, inserts, query } = poolQueGrava({}, [], "exhausted");
+  const factory = vi.fn();
+  await expect(
+    runModelCall(
+      pool,
+      cfg,
+      { tenantId: ORG, messages: [{ role: "user", content: "oi" }] },
+      { registry: { anthropic: factory } },
+    ),
+  ).rejects.toMatchObject({ name: "subscription_ai_allowance", terminal: true });
+  expect(factory).not.toHaveBeenCalled();
+  expect(inserts).toHaveLength(1);
+  expect(inserts[0]!.params).toContain("franquia_de_ia");
+  expect(query.mock.calls.some(([sql]) => sql.includes("fn_settle_subscription_ai"))).toBe(false);
+});
+it("falha do provedor mantém o consumo desconhecido e a exceção original", async () => {
+  const { pool, query } = poolQueGrava({}, [], "paid");
+  const error = new Error("falha sem uso confirmado");
+  await expect(
+    runModelCall(
+      pool,
+      cfg,
+      { tenantId: ORG, messages: [{ role: "user", content: "oi" }] },
+      { registry: registryQueFalha(error) },
+    ),
+  ).rejects.toBe(error);
+  expect(query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    ORG,
+    expect.any(String),
+    null,
+  ]);
 });

@@ -330,3 +330,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260920072058` | `0315_subscription_resource_limits` | Limites comerciais de pessoas, canais e agentes com reserva serializada; preserva recursos existentes e empresas sem assinatura confirmada. |
 
 | `20260920075000` | `0316_subscription_billing_period` | Início do ciclo confirmado pelo provedor, sem backfill inferido; valida ordem e finitude do intervalo. |
+
+| `20260920080000` | `0317_subscription_ai_allowance` | Reserva e conciliação de franquia em BRL por ciclo, conversão fixa por período, isolamento e ausência de excedente automático. |

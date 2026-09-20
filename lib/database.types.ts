@@ -34,6 +34,101 @@ export type Database = {
   }
   public: {
     Tables: {
+      subscription_ai_reservations: {
+        Row: {
+          charged_brl_cents: number | null
+          cost_usd_cents: number | null
+          created_at: string
+          id: string
+          organization_id: string
+          period_id: string
+          reserved_brl_cents: number
+          settled_at: string | null
+          status: string
+        }
+        Insert: {
+          charged_brl_cents?: number | null
+          cost_usd_cents?: number | null
+          created_at?: string
+          id: string
+          organization_id: string
+          period_id: string
+          reserved_brl_cents: number
+          settled_at?: string | null
+          status?: string
+        }
+        Update: {
+          charged_brl_cents?: number | null
+          cost_usd_cents?: number | null
+          created_at?: string
+          id?: string
+          organization_id?: string
+          period_id?: string
+          reserved_brl_cents?: number
+          settled_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_ai_reservations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_ai_reservations_period_id_organization_id_fkey"
+            columns: ["period_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_ai_periods"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      subscription_ai_periods: {
+        Row: {
+          budget_brl_cents: number
+          created_at: string
+          id: string
+          organization_id: string
+          period_end: string
+          period_start: string
+          provider_subscription_id: string
+          revision: number
+          usd_to_brl_rate: number
+        }
+        Insert: {
+          budget_brl_cents: number
+          created_at?: string
+          id?: string
+          organization_id: string
+          period_end: string
+          period_start: string
+          provider_subscription_id: string
+          revision?: number
+          usd_to_brl_rate: number
+        }
+        Update: {
+          budget_brl_cents?: number
+          created_at?: string
+          id?: string
+          organization_id?: string
+          period_end?: string
+          period_start?: string
+          provider_subscription_id?: string
+          revision?: number
+          usd_to_brl_rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_ai_periods_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       org_subscriptions: {
         Row: {
           cancel_at_period_end: boolean
@@ -134,25 +229,30 @@ export type Database = {
       subscription_plan_limits: {
         Row: {
           agents: number
+          ai_credit_cents: number | null
+          ai_usd_to_brl_rate: number | null
           channels: number
           plan_id: string
           seats: number
         }
         Insert: {
           agents: number
+          ai_credit_cents?: number | null
+          ai_usd_to_brl_rate?: number | null
           channels: number
           plan_id: string
           seats: number
         }
         Update: {
           agents?: number
+          ai_credit_cents?: number | null
+          ai_usd_to_brl_rate?: number | null
           channels?: number
           plan_id?: string
           seats?: number
         }
         Relationships: []
       }
-
       channel_integrations: {
         Row: { organization_id: string; profile_id: string; credential_encrypted: string; created_at: string; updated_at: string }
         Insert: { organization_id: string; profile_id: string; credential_encrypted: string; created_at?: string; updated_at?: string }
@@ -7870,6 +7970,14 @@ export type Database = {
       }
     }
     Functions: {
+      fn_settle_subscription_ai: {
+        Args: { p_call: string; p_cost_usd_cents: number; p_org: string }
+        Returns: number
+      }
+      fn_reserve_subscription_ai: {
+        Args: { p_call: string; p_org: string }
+        Returns: string
+      }
       fn_channel_routing_claim: {
         Args: {
           p_channel: string
