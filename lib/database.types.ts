@@ -43,6 +43,7 @@ export type Database = {
           checkout_url: string | null
           created_at: string
           current_period_end: string | null
+          current_period_start: string | null
           organization_id: string
           plan_id: string | null
           provider: string
@@ -60,6 +61,7 @@ export type Database = {
           checkout_url?: string | null
           created_at?: string
           current_period_end?: string | null
+          current_period_start?: string | null
           organization_id: string
           plan_id?: string | null
           provider?: string
@@ -77,6 +79,7 @@ export type Database = {
           checkout_url?: string | null
           created_at?: string
           current_period_end?: string | null
+          current_period_start?: string | null
           organization_id?: string
           plan_id?: string | null
           provider?: string

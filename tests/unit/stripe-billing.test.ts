@@ -192,3 +192,63 @@ it("provider failure never fabricates an expired status", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
   await expect(retrieveStripeCheckout(checkoutBinding)).rejects.toThrow();
 });
+
+import { retrieveStripeSubscription } from "@/lib/billing/stripe";
+function subscriptionWithPeriod(start: unknown, end: unknown) {
+  return {
+    id: "sub_period",
+    customer: "cus_own",
+    livemode: false,
+    status: "active",
+    cancel_at_period_end: false,
+    metadata: {
+      organization_id: "11111111-1111-4111-8111-111111111111",
+      checkout_attempt_id: "22222222-2222-4222-8222-222222222222",
+      plan_id: "essencial",
+    },
+    items: {
+      data: [
+        {
+          current_period_start: start,
+          current_period_end: end,
+          quantity: 1,
+          price: {
+            currency: "brl",
+            unit_amount: 19700,
+            recurring: { interval: "month", interval_count: 1 },
+          },
+        },
+      ],
+    },
+  };
+}
+it("reads the actual item billing period instead of inferring a calendar month", async () => {
+  portalEnv();
+  const start = Date.parse("2026-09-20T17:25:00Z") / 1000;
+  const end = Date.parse("2026-10-20T17:25:00Z") / 1000;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, json: async () => subscriptionWithPeriod(start, end) }),
+  );
+  const subscription = await retrieveStripeSubscription("sub_period");
+  expect(subscription.items.data[0]).toMatchObject({
+    current_period_start: start,
+    current_period_end: end,
+  });
+});
+it.each([
+  [undefined, 1800000000],
+  [null, 1800000000],
+  [1800000000, undefined],
+  [1800000000, 1797408000],
+  [1800000000, 1800000000],
+  [0, 1800000000],
+  [1.5, 1800000000],
+])("rejects an unknown or invalid subscription period %s through %s", async (start, end) => {
+  portalEnv();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, json: async () => subscriptionWithPeriod(start, end) }),
+  );
+  await expect(retrieveStripeSubscription("sub_period")).rejects.toThrow();
+});

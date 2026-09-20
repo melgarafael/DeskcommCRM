@@ -25448,6 +25448,24 @@ drop trigger if exists subscription_seats_limit on public.user_organizations;
 create trigger subscription_seats_limit before insert or update of organization_id,revoked_at on public.user_organizations
  for each row execute function public.fn_subscription_resource_limit();
 
+-- ---- Subscription billing period (migration 0316) ----
+-- The commercial AI allowance follows the provider's billing cycle, not UTC month boundaries.
+-- Existing rows stay unknown until reconciled with the provider; never infer a paid start date.
+alter table public.org_subscriptions add column if not exists current_period_start timestamptz;
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname='org_subscriptions_period_order'
+      and conrelid='public.org_subscriptions'::regclass
+  ) then
+    alter table public.org_subscriptions add constraint org_subscriptions_period_order check (
+      current_period_start is null or (
+        isfinite(current_period_start) and current_period_end is not null
+        and isfinite(current_period_end) and current_period_start < current_period_end
+      )
+    );
+  end if;
+end $$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ ESTE BLOCO É, DE PROPÓSITO, O ÚLTIMO DO ARQUIVO. Apêndice novo entra ANTES

@@ -168,7 +168,7 @@ function webhookFixture(overrides: Record<string, unknown> = {}) {
     },
     status: "active",
     cancel_at_period_end: false,
-    items: { data: [{ current_period_end: 1800000000 }] },
+    items: { data: [{ current_period_start: 1797408000, current_period_end: 1800000000 }] },
   });
   return { row, query, release };
 }
@@ -177,6 +177,19 @@ it("uses current provider state instead of trusting the event snapshot", async (
   const result = await webhook(eventRequest());
   expect(result.status).toBe(200);
   expect(mocks.subscription).toHaveBeenCalledWith("sub_current");
+  expect(query).toHaveBeenCalledWith(
+    expect.stringContaining("current_period_start=to_timestamp($8)"),
+    [
+      "trusted-org",
+      "essencial",
+      "cus_company",
+      "sub_current",
+      "active",
+      1800000000,
+      false,
+      1797408000,
+    ],
+  );
   expect(query.mock.calls.some(([sql]) => sql.startsWith("update org_subscriptions"))).toBe(true);
   expect(query.mock.calls.some(([sql]) => sql.includes("insert into billing_webhook_events"))).toBe(
     true,

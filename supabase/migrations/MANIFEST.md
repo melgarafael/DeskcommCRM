@@ -328,3 +328,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260920010000` | `0265_org_subscriptions` | Assinaturas por organização; leitura admin isolada por tenant e escrita restrita ao backend. |
 
 | `20260920072058` | `0315_subscription_resource_limits` | Limites comerciais de pessoas, canais e agentes com reserva serializada; preserva recursos existentes e empresas sem assinatura confirmada. |
+
+| `20260920075000` | `0316_subscription_billing_period` | Início do ciclo confirmado pelo provedor, sem backfill inferido; valida ordem e finitude do intervalo. |

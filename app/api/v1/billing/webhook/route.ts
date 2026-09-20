@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       return ok({ received: true, ignored: true });
     }
     await db.query(
-      `update org_subscriptions set plan_id=$2,provider_customer_id=$3,provider_subscription_id=$4,status=$5,current_period_end=to_timestamp($6),cancel_at_period_end=$7,updated_at=now() where organization_id=$1`,
+      `update org_subscriptions set plan_id=$2,provider_customer_id=$3,provider_subscription_id=$4,status=$5,current_period_end=to_timestamp($6),cancel_at_period_end=$7,current_period_start=to_timestamp($8),updated_at=now() where organization_id=$1`,
       [
         organizationId,
         subscription.metadata.plan_id,
@@ -115,6 +115,7 @@ export async function POST(request: Request) {
         subscription.status,
         subscription.items.data[0]?.current_period_end ?? null,
         subscription.cancel_at_period_end,
+        subscription.items.data[0]!.current_period_start,
       ],
     );
     await db.query(

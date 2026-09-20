@@ -187,7 +187,8 @@ export const stripeSubscriptionSchema = z.object({
     data: z
       .array(
         z.object({
-          current_period_end: z.number().optional(),
+          current_period_start: z.number().int().positive(),
+          current_period_end: z.number().int().positive(),
           quantity: z.number(),
           price: z.object({
             currency: z.string(),
@@ -217,6 +218,7 @@ export async function retrieveStripeSubscription(id: string) {
   const item = subscription.items.data[0]!;
   if (
     !plan ||
+    item.current_period_start >= item.current_period_end ||
     subscription.id !== id ||
     subscription.livemode !== config.live ||
     item.quantity !== 1 ||

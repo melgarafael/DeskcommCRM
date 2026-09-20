@@ -105,3 +105,9 @@ A recontratação passa a registrar estado `pending` antes de chamar o provedor,
 Tentativas ambíguas sem identificador de sessão com mais de 23 horas ainda exigem reconciliação administrativa. Os testes de sessão e webhook são simulações locais; autenticação da conta recebedora, pagamento real de teste e aplicação em produção permanecem pendentes.
 
 Validação desta revisão: 83 testes unitários passaram em cinco arquivos, além de TypeScript e lint focado. O harness aplicou o baseline em instalação e atualização e passou 14 testes de limites no PostgreSQL, incluindo o estado `pending` com vínculo de assinatura preservado. Isso verifica a recuperação local e as restrições; não substitui o ciclo financeiro na conta real.
+
+## Ciclo da assinatura para a franquia
+
+A migration 0316 acrescenta `current_period_start`, mantendo valores desconhecidos como nulos e validando a ordem do intervalo quando conhecido. O adaptador exige início e fim válidos no item da assinatura, conforme a API Basil, e o webhook persiste ambos a partir da consulta autenticada ao provedor. Não infere o início pelo fim, pela chegada do evento ou pela virada do mês. Essa preparação evita conceder novamente uma franquia na data errada; a reserva e a aplicação do saldo comercial ainda precisam ser implementadas.
+
+Validação local: 80 testes unitários e 21 de banco passaram, com instalação e atualização do baseline, ordem da varredura de permissões e manifesto conferidos. Tipos foram gerados do PostgreSQL local e incorporados somente para a tabela alterada; TypeScript e lint focado passaram. Migration 0316 aplicada somente no banco de desenvolvimento, sem alteração em produção.
