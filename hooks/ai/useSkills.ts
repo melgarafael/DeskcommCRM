@@ -63,6 +63,44 @@ export function useSkill(name: string | null) {
   });
 }
 
+export interface SkillVersionResumo {
+  id: string;
+  created_at: string;
+  forked_from_version_id: string | null;
+  atual: boolean;
+}
+
+/** GET das versões da skill (histórico para rollback). */
+export function useSkillVersions(name: string | null) {
+  return useQuery({
+    queryKey: ["skills", "versions", name],
+    enabled: name !== null,
+    queryFn: () =>
+      apiClient
+        .get<{ data: { versions: SkillVersionResumo[] } }>(
+          `/api/v1/ai/skills/${encodeURIComponent(name ?? "")}/versions`,
+        )
+        .then((r) => r.data.versions),
+  });
+}
+
+/** POST — restaura uma versão anterior (move o ponteiro). */
+export function useRestaurarSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, versionId }: { name: string; versionId: string }) =>
+      apiClient.post<{ data: { name: string; version_id: string } }>(
+        `/api/v1/ai/skills/${encodeURIComponent(name)}/restore`,
+        { version_id: versionId },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+      void qc.invalidateQueries({ queryKey: ["skills", "versions"] });
+      void qc.invalidateQueries({ queryKey: ["skills", "detail"] });
+    },
+  });
+}
+
 /** PUT — salva uma versão NOVA do corpo e move o ponteiro da organização. */
 export function useSalvarSkill() {
   const qc = useQueryClient();

@@ -16,7 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useSkill, useSalvarSkill } from "@/hooks/ai/useSkills";
+import { useT } from "@/hooks/i18n/useT";
+import { useSkill, useSalvarSkill, useSkillVersions, useRestaurarSkill } from "@/hooks/ai/useSkills";
 
 /** Mesmo teto do backend (`MAX_SKILL_BODY_LINES` em lib/agent-engine/agent/skills.ts). */
 const MAX_LINHAS = 200;
@@ -42,8 +43,11 @@ function parseKeywords(texto: string): string[] {
 }
 
 export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
+  const t = useT();
   const skill = useSkill(aberto ? nome : null);
   const salvar = useSalvarSkill();
+  const versoes = useSkillVersions(aberto ? nome : null);
+  const restaurar = useRestaurarSkill();
 
   const [descricao, setDescricao] = useState("");
   const [keywords, setKeywords] = useState("");
@@ -154,6 +158,49 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
                 className="min-h-[320px] font-mono text-xs"
                 spellCheck={false}
               />
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-md border border-border/60 p-3">
+              <Label>{t("Histórico de versões")}</Label>
+              {versoes.isLoading && (
+                <p className="text-xs text-muted-foreground">Carregando…</p>
+              )}
+              {versoes.data && versoes.data.length > 0 && (
+                <ul className="flex flex-col gap-1">
+                  {versoes.data.map((v) => (
+                    <li key={v.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span>
+                        {new Date(v.created_at).toLocaleString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {v.atual ? " — em uso" : ""}
+                      </span>
+                      {!v.atual && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={restaurar.isPending}
+                          onClick={() =>
+                            restaurar.mutate(
+                              { name: nome, versionId: v.id },
+                              {
+                                onSuccess: () => toast.success("Versão restaurada."),
+                                onError: (err) => showApiError(err),
+                              },
+                            )
+                          }
+                        >
+                          Restaurar
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         )}

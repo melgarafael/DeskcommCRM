@@ -230,6 +230,8 @@ export const AUDIT_ACTIONS = [
   // movido. O corpo é texto que o agente lê — mudar isso muda o comportamento,
   // então fica auditado.
   "ai.skill_saved",
+  // Rollback para uma versão anterior (Fase 5): move o ponteiro sem criar versão.
+  "ai.skill_restored",
   "ai.router_created",
   "ai.router_updated",
   "ai.router_deleted",
