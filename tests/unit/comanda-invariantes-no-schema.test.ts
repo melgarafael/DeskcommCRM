@@ -38,9 +38,13 @@ const bloco = (() => {
   return semComentarios(baseline.slice(i));
 })();
 
-/** O corpo de uma função, do `create` até o `revoke` dela. */
+/**
+ * O corpo de uma função, do `create` até o `revoke` dela — ancorado na ÚLTIMA
+ * definição, que é a que vale: o baseline é dump + apêndice, aplicados em ordem
+ * (CLAUDE.md, item 10).
+ */
 function corpoDaFuncao(nome: string): string {
-  const f = bloco.slice(bloco.indexOf(`create or replace function public.${nome}`));
+  const f = bloco.slice(bloco.lastIndexOf(`create or replace function public.${nome}`));
   const fim = f.indexOf(`revoke execute on function public.${nome}`);
   expect(fim, `não achei o revoke de ${nome}`).toBeGreaterThan(0);
   return f.slice(0, fim);

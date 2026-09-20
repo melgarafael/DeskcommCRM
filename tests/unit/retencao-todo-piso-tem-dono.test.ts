@@ -81,7 +81,10 @@ function valor(prefixo: string, qual: "PADRAO" | "PISO"): number {
 }
 
 function corpoDaFuncao(nome: string): string {
-  const i = BASELINE.indexOf(`create or replace function public.${nome}(`);
+  // `lastIndexOf`: o baseline é dump + apêndice e vale a ÚLTIMA definição
+  // (CLAUDE.md, item 10). Com `indexOf` a sonda mediria o corpo do dump — morto
+  // desde o apêndice — e diria do produto o oposto do que o banco instala.
+  const i = BASELINE.lastIndexOf(`create or replace function public.${nome}(`);
   if (i < 0) throw new Error(`INSTRUMENTO: função ${nome} não existe no baseline`);
   const fim = BASELINE.indexOf("$$;", i);
   return BASELINE.slice(i, fim > i ? fim : i + 4000);

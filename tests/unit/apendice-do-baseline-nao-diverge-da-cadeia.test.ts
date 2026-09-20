@@ -29,6 +29,7 @@ const RAIZ = join(process.cwd(), "supabase");
 const BASELINE = readFileSync(join(RAIZ, "baseline.sql"), "utf8");
 
 /** Primeira marca de apêndice: daí para baixo, tudo é escrito à mão. */
+// sonda-do-baseline: primeira-de-proposito — a fronteira dump/apêndice É a primeira marca; é a ordem do arquivo que esta sonda mede, não uma definição.
 const INICIO_DO_APENDICE = BASELINE.search(/^-- ---- .* \(migration \d+\) ----/m);
 
 /**

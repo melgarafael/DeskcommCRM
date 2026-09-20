@@ -59,14 +59,31 @@ function publicacaoDoBaseline(): Set<string> {
   const sql = readFileSync(path.join(RAIZ, "supabase/baseline.sql"), "utf8");
   const dentro = new Set<string>();
 
-  // a lista em array (o bloco `foreach t in array array[...]`)
-  const bloco = sql.match(/foreach t in array array\[(.*?)\]/s);
-  if (bloco) for (const m of bloco[1]!.matchAll(/'([a-z_]+)'/g)) dentro.add(m[1]!);
-  // e os add/drop avulsos
-  for (const m of sql.matchAll(/alter publication supabase_realtime add table public\.(\w+)/g))
-    dentro.add(m[1]!);
-  for (const m of sql.matchAll(/alter publication supabase_realtime drop table public\.(\w+)/g))
-    dentro.delete(m[1]!);
+  // O baseline é aplicado INTEIRO e EM ORDEM. O dump traz o primeiro
+  // `foreach t in array array[...]` e o apêndice traz mais cinco lotes, aplicados
+  // um atrás do outro; os add/drop avulsos entram na posição em que aparecem no
+  // arquivo. Ancorar no PRIMEIRO lote mede a publicação morta: media 12 tabelas
+  // onde o arquivo instala 29 (medido em 20/09/2026 — ver CLAUDE.md, item 10).
+  const eventos: { idx: number; lote?: string; op?: string; tabela?: string }[] = [];
+  for (const m of sql.matchAll(/foreach\s+t\s+in\s+array\s+array\[(.*?)\]/gs))
+    eventos.push({ idx: m.index ?? 0, lote: m[1]! });
+  for (const m of sql.matchAll(
+    /alter publication supabase_realtime (add|drop) table public\.(\w+)/g,
+  ))
+    eventos.push({ idx: m.index ?? 0, op: m[1]!, tabela: m[2]! });
+  eventos.sort((a, b) => a.idx - b.idx);
+
+  for (const e of eventos) {
+    if (e.lote !== undefined) {
+      // `alter publication ... add table` dentro do laço é montado por `format()`,
+      // então o nome da tabela só existe no literal do array.
+      for (const t of e.lote.matchAll(/'([a-z_]+)'/g)) dentro.add(t[1]!);
+    } else if (e.op === "drop") {
+      dentro.delete(e.tabela!);
+    } else {
+      dentro.add(e.tabela!);
+    }
+  }
   return dentro;
 }
 

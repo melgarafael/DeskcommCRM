@@ -296,7 +296,13 @@ describe("o motivo da transferência — as duas metades do mesmo nome", () => {
   });
 
   it("a métrica de perdas não conta a transferência", () => {
-    const metrica = baseline.slice(baseline.indexOf("fn_attendant_metrics"));
+    // A ÚLTIMA definição é a que vale (o irmão acima já faz isso): a função tem
+    // TRÊS no arquivo — dump, apêndice e apêndice — e o `indexOf` pelo NOME
+    // parava na do dump, a definição morta. O recorte daqui até o fim do
+    // arquivo é satisfeito pela viva (CLAUDE.md, item 10).
+    const corte = baseline.lastIndexOf("create or replace function public.fn_attendant_metrics(");
+    expect(corte, "fn_attendant_metrics não encontrada no baseline").toBeGreaterThan(-1);
+    const metrica = baseline.slice(corte);
     expect(metrica).toContain(`coalesce(lost_reason, '') <> '${MOTIVO_DA_TRANSFERENCIA}'`);
   });
 
