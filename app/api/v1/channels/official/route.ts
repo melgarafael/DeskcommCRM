@@ -30,6 +30,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { CHANNEL_PROVIDER_META } from "@/lib/channels/capabilities";
 import { appDaMeta, appDaMetaDoAmbiente } from "@/lib/channels/meta/app";
+import { metaGraphBase } from "@/lib/channels/meta/credentials";
 import { validateMetaCredentials } from "@/lib/channels/meta/validate-credentials";
 import {
   COLUNAS_DO_DESFECHO_DO_WEBHOOK,
@@ -148,6 +149,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     hasToken: Boolean(data?.meta_token_encrypted),
     phoneNumberId: data?.meta_phone_number_id ?? null,
     wabaId: data?.meta_waba_id ?? null,
+    /** Base pública da Graph API — para o operador reaproveitar em outro sistema. */
+    endpoint: data ? metaGraphBase() : null,
     displayName: data?.display_name ?? null,
     phoneNumber: data?.phone_number ?? null,
     status: data?.status ?? null,

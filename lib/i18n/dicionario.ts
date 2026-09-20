@@ -10796,6 +10796,39 @@ export const DICIONARIO: Traducoes = {
   "Esta conexão está desativada. Ative-a na lista para consultar os dados.": {
     es: "Esta conexión está desactivada. Actívala en la lista para consultar los datos.",
   },
+
+  // ─── Painel "Para integrar" (dados não-secretos da conexão) ───
+  "Para integrar": { es: "Para integrar" },
+  "Copiar dados": { es: "Copiar datos" },
+  "Onde obter o token": { es: "Dónde obtener el token" },
+  "Não foi possível copiar.": { es: "No se pudo copiar." },
+  "Endpoint da API": { es: "Endpoint de la API" },
+  "Estes dados conectam outro sistema ao mesmo número. O token não aparece aqui — o ícone ao lado diz onde obtê-lo no painel do provedor.": {
+    es: "Estos datos conectan otro sistema al mismo número. El token no aparece aquí — el ícono de al lado indica dónde obtenerlo en el panel del proveedor.",
+  },
+  "O token de acesso é criado no painel da Meta: Configurações do Business → Usuários do sistema → gerar token permanente.": {
+    es: "El token de acceso se crea en el panel de Meta: Configuración del Business → Usuarios del sistema → generar token permanente.",
+  },
+  "A chave de API está no painel do provedor, na conta conectada — este CRM não a exibe de volta.": {
+    es: "La clave de API está en el panel del proveedor, en la cuenta conectada — este CRM no la muestra de vuelta.",
+  },
+  "O webhook de um número aponta para um só destino. Para os dois CRMs receberem ao mesmo tempo, um deles precisa reencaminhar as mensagens ao outro.": {
+    es: "El webhook de un número apunta a un solo destino. Para que los dos CRM reciban al mismo tiempo, uno de ellos debe reenviar los mensajes al otro.",
+  },
+  "Um número tem um único webhook.": { es: "Un número tiene un único webhook." },
+  "Para operar em dois CRMs ao mesmo tempo, configure o reencaminhamento de mensagens.": {
+    es: "Para operar en dos CRM a la vez, configure el reenvío de mensajes.",
+  },
+  "No canal por QR a credencial é interna desta instalação e não serve para fora. Para ligar outro CRM ao mesmo número, conecte-o por uma sessão própria (novo QR).": {
+    es: "En el canal por QR la credencial es interna de esta instalación y no sirve afuera. Para conectar otro CRM al mismo número, conéctalo con una sesión propia (nuevo QR).",
+  },
+  "Dois dispositivos vinculados recebem as mesmas mensagens — se os dois tiverem atendimento automático, o cliente pode receber resposta dupla.": {
+    es: "Dos dispositivos vinculados reciben los mismos mensajes — si ambos tienen atención automática, el cliente puede recibir respuesta doble.",
+  },
+  "Não compartilhe esta sessão.": { es: "No compartas esta sesión." },
+  "Crie uma conexão separada por QR no outro sistema.": {
+    es: "Crea una conexión separada por QR en el otro sistema.",
+  },
 };
 
 /**

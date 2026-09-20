@@ -61,6 +61,15 @@ export interface MetaCredsLookup {
 }
 
 /**
+ * Base da Graph API desta instalação — o "endpoint" que a tela de conexão mostra
+ * para o operador reaproveitar em outro sistema. Não é segredo (é o mesmo host
+ * público para todo mundo); o segredo é o token, que nunca sai daqui.
+ */
+export function metaGraphBase(): string {
+  return `https://graph.facebook.com/${graphVersion()}`;
+}
+
+/**
  * Credencial do ambiente. `null` quando não configurada — o chamador trata como
  * canal não conectado (noop), nunca como erro.
  */

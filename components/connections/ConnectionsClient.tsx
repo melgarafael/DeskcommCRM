@@ -22,6 +22,7 @@ import { usePacingKnobs } from "@/hooks/channels/usePacingKnobs";
 import { AntiBanSheet } from "./AntiBanSheet";
 import { PairingOptions } from "./PairingOptions";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { ParaIntegrar } from "./ParaIntegrar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -266,6 +267,32 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       <p className="text-sm text-muted-foreground">
         {t("Novos canais começam em modo de teste, sem respostas automáticas até você autorizar números ou liberar o público.")}
       </p>
+
+      {list.length > 0 ? (
+        <ParaIntegrar
+          campos={[]}
+          ajuda={
+            <div className="space-y-1.5">
+              <p>
+                {t(
+                  "No canal por QR a credencial é interna desta instalação e não serve para fora. Para ligar outro CRM ao mesmo número, conecte-o por uma sessão própria (novo QR).",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Dois dispositivos vinculados recebem as mesmas mensagens — se os dois tiverem atendimento automático, o cliente pode receber resposta dupla.",
+                )}
+              </p>
+            </div>
+          }
+          aviso={
+            <>
+              {t("Não compartilhe esta sessão.")}{" "}
+              {t("Crie uma conexão separada por QR no outro sistema.")}
+            </>
+          }
+        />
+      ) : null}
       {connectionDetail && <details className="rounded-md border p-3 text-sm"><summary>{t("Detalhes para suporte")}</summary><pre className="mt-2 whitespace-pre-wrap break-words">{connectionDetail}</pre><Button variant="outline" size="sm" onClick={async () => {
         if (await copyToClipboard(connectionDetail)) toast.success(t("Copiado!"));
         else toast.error(t("Não foi possível copiar. Selecione e copie manualmente."));
