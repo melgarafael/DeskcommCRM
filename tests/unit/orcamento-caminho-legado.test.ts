@@ -43,7 +43,7 @@ vi.mock("@/lib/ai/gateway", () => ({
   isEmbeddingProviderConfigured: () => false,
   // Resolvido via `resolverModeloDoPonto`; qualquer valor não-nulo serve, porque
   // quem consome é o `generateText` dublê logo abaixo.
-  resolveLanguageModel: () => "modelo-dublê",
+  resolveLanguageModelWithProvider: () => ({ model: "modelo-dublê", provider: "vercel" }),
 }));
 vi.mock("@/lib/ai/budget/check", () => ({ getBudgetStatus: vi.fn() }));
 // O SDK nunca é alcançado de verdade: se o guard deixar passar, esta sentinela é

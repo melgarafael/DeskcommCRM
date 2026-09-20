@@ -209,3 +209,26 @@ it("preserves explicit zero and single-step adapters without step metadata", () 
     cacheWriteTokens: 0,
   });
 });
+
+it("prices each direct SDK step before adding costs, preserving its actual tier", async () => {
+  const { measuredGeneration } = await import("@/lib/billing/measured-usage");
+  const response = {
+    steps: ["default", "flex"].map((serviceTier) => ({
+      usage: { inputTokens: 200000, outputTokens: 1000, inputTokenDetails: { cacheReadTokens: 100000 } },
+      providerMetadata: { openai: { serviceTier } },
+    })),
+  };
+  expect(await runMeteredOperation({ ...identity, model: "gpt-5.6-terra" }, async () => response, measuredGeneration)).toBe(response);
+  // Both requests are short-context despite their aggregate input exceeding 272k.
+  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [identity.organizationId, expect.any(String), 34.8]);
+});
+
+it("holds the reservation when just one step has an unknown processing tier", async () => {
+  const { measuredGeneration } = await import("@/lib/billing/measured-usage");
+  const response = { steps: [
+    { ...result, providerMetadata: { openai: { serviceTier: "default" } } },
+    result,
+  ] };
+  expect(await runMeteredOperation({ ...identity, model: "gpt-5.6-terra" }, async () => response, measuredGeneration)).toBe(response);
+  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [identity.organizationId, expect.any(String), null]);
+});

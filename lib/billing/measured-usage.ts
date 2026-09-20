@@ -11,6 +11,38 @@ interface MeasuredTextUsage {
     | undefined;
 }
 
+interface GenerationStep {
+  usage?: MeasuredTextUsage | undefined;
+  providerMetadata?: Record<string, unknown> | undefined;
+}
+
+export interface MeasuredGeneration {
+  steps: { usage: TokenUsage; serviceTier?: string | undefined }[];
+}
+
+/** Preserve request boundaries and returned pricing metadata after validation. */
+export function measuredGeneration(
+  result: GenerationStep & {
+    steps?: readonly GenerationStep[] | undefined;
+  },
+): MeasuredGeneration | null {
+  if (measuredGenerationUsage(result) === null) return null;
+  const steps = result.steps ?? [result];
+  return {
+    steps: steps.map((step) => {
+      const metadata = step.providerMetadata?.openai;
+      const serviceTier =
+        metadata &&
+        typeof metadata === "object" &&
+        "serviceTier" in metadata &&
+        typeof metadata.serviceTier === "string"
+          ? metadata.serviceTier
+          : undefined;
+      return { usage: measuredTextUsage(step.usage)!, serviceTier };
+    }),
+  };
+}
+
 /** Missing measurements are unknown; an explicitly measured zero is valid. */
 export function measuredTextUsage(usage: MeasuredTextUsage | undefined): TokenUsage | null {
   if (usage?.inputTokens === undefined || usage.outputTokens === undefined) return null;

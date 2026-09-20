@@ -4,7 +4,7 @@
  * messages.media_derived_text. Camada UNIVERSAL da Onda 3 — o texto alimenta
  * qualquer modelo de chat. Retry/backoff delegados ao drain (padrão do repo).
  */
-import { runMeteredOperation, measuredGenerationUsage } from "@/lib/billing/metered-operation";
+import { runMeteredOperation, measuredGeneration } from "@/lib/billing/metered-operation";
 import { generateText } from "ai";
 import type pg from "pg";
 
@@ -330,7 +330,7 @@ function buildDeriveDeps(
           },
         ],
       }),
-      (response) => measuredGenerationUsage(response),
+      (response) => measuredGeneration(response),
     );
     return res.text;
   };

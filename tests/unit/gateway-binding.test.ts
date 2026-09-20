@@ -43,7 +43,7 @@ vi.mock("@/lib/ai/gateway", async (orig) => {
     ...real,
     // O padrão devolve um objeto reconhecível, para os testes distinguirem
     // "caiu no padrão" de "usou o binding" sem depender do SDK.
-    resolveLanguageModel: (m: string) => ({ __padrao: true, modelId: m }),
+    resolveLanguageModelWithProvider: (m: string) => ({ model: { __padrao: true, modelId: m }, provider: "openrouter" }),
   };
 });
 
@@ -79,6 +79,7 @@ describe("com binding, o painel manda", () => {
     const r = await resolverModeloDoPonto("sentiment_classify", ORG, "anthropic/claude-haiku-4-5");
     expect(r?.origem).toBe("binding");
     expect(r?.modelId).toBe("meta-llama/llama-3.3-70b-instruct");
+    expect(r?.provider).toBe("openrouter");
     // E NÃO é o objeto do padrão — se fosse, o teste acima passaria igual e
     // este aqui estaria medindo só o rótulo.
     expect((r?.model as { __padrao?: boolean }).__padrao).toBeUndefined();
@@ -96,6 +97,7 @@ describe("com binding, o painel manda", () => {
     credenciais.linha = { api_key_encrypted: "x", api_key_iv: "y", api_key_tag: "z" };
     const r = await resolverModeloDoPonto("bot_respond", ORG, "anthropic/claude-sonnet-5");
     expect(r?.modelId).toBe("gpt-5-mini");
+    expect(r?.provider).toBe("openai");
   });
 });
 

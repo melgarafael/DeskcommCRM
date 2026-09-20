@@ -1,5 +1,7 @@
 import type pg from "pg";
 import { costCents, type TokenUsage } from "./pricing";
+import { hasOpenAiTariff, openAiCostCents } from "./openai-pricing";
+import type { MeasuredGeneration } from "@/lib/billing/measured-usage";
 
 /** Catalogue rates are fractional USD cents per million tokens, never BRL. */
 export interface CatalogTokenPrice {
@@ -32,10 +34,14 @@ export async function meteredCostCents(
   model: string,
   usage: TokenUsage,
   cacheWriteTtl?: "5m" | "1h",
+  serviceTier?: string,
 ): Promise<number | null> {
   if (Object.values(usage).some((value) => !Number.isFinite(value) || value < 0)) return null;
   if (usage.cacheReadTokens + usage.cacheWriteTokens > usage.inputTokens) return null;
   const canonical = model.startsWith(`${provider}/`) ? model.slice(provider.length + 1) : model;
+  if (provider === "openai" && hasOpenAiTariff(canonical)) {
+    return openAiCostCents(canonical, usage, serviceTier);
+  }
   // Apply first-party tariffs only to their actual provider.
   if (provider === "anthropic") {
     const legacy = costCents(canonical, usage, cacheWriteTtl);
@@ -53,4 +59,30 @@ export async function meteredCostCents(
     // Accounting must not discard an already generated answer or fabricate zero.
     return null;
   }
+}
+
+/** Nonlinear context tariffs and the actual service tier belong to each step. */
+export async function meteredUsageCostCents(
+  db: Pick<pg.PoolClient, "query">,
+  provider: string,
+  model: string,
+  measured: TokenUsage | MeasuredGeneration,
+  cacheWriteTtl?: "5m" | "1h",
+): Promise<number | null> {
+  if (!("steps" in measured)) return meteredCostCents(db, provider, model, measured, cacheWriteTtl);
+  if (measured.steps.length === 0) return null;
+  let total = 0;
+  for (const step of measured.steps) {
+    const cost = await meteredCostCents(
+      db,
+      provider,
+      model,
+      step.usage,
+      cacheWriteTtl,
+      step.serviceTier,
+    );
+    if (cost === null) return null;
+    total += cost;
+  }
+  return Number.isFinite(total) ? total : null;
 }

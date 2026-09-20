@@ -26,7 +26,7 @@ vi.mock("@/lib/env", () => ({
   },
 }));
 
-import { resolveLanguageModel } from "@/lib/ai/gateway";
+import { resolveLanguageModel, resolveLanguageModelWithProvider } from "@/lib/ai/gateway";
 
 beforeEach(() => {
   for (const k of Object.keys(envMock)) delete envMock[k];
@@ -76,4 +76,15 @@ describe("resolveLanguageModel", () => {
     envMock.OPENAI_API_KEY = "sk-openai";
     expect(resolveLanguageModel("anthropic/claude-haiku-4-5")).toBeNull();
   });
+});
+
+
+it("keeps the actual biller when the canonical model goes through intermediaries", () => {
+  const model = "openai/gpt-5.6-terra";
+  envMock.OPENAI_API_KEY = "test-key";
+  expect(resolveLanguageModelWithProvider(model)?.provider).toBe("openai");
+  envMock.OPENROUTER_API_KEY = "router-key";
+  expect(resolveLanguageModelWithProvider(model)?.provider).toBe("openrouter");
+  envMock.AI_GATEWAY_API_KEY = "gateway-key";
+  expect(resolveLanguageModelWithProvider(model)?.provider).toBe("vercel");
 });

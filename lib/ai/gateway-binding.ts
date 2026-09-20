@@ -30,10 +30,11 @@ import { decryptKey, byteaToBuffer } from "@/lib/crypto/aes_gcm";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { OPENROUTER_BASE_URL, resolveLanguageModel, type ModelId } from "./gateway";
+import { OPENROUTER_BASE_URL, resolveLanguageModelWithProvider, type ModelId } from "./gateway";
 
 export interface ModeloResolvido {
   model: LanguageModel;
+  provider: string;
   /** Para o log: qual modelo e de onde veio a decisão. */
   modelId: string;
   origem: "binding" | "credencial_da_organizacao" | "padrao";
@@ -71,11 +72,11 @@ export async function resolverModeloDoPonto(
       if (model !== null) {
         // `modelId` continua sendo o id CANÔNICO, não o traduzido: é ele que
         // casa com o catálogo de preço no log de custo.
-        return { model, modelId: String(padrao), origem: "credencial_da_organizacao" };
+        return { model, provider: daOrg.provider, modelId: String(padrao), origem: "credencial_da_organizacao" };
       }
     }
-    const model = resolveLanguageModel(padrao);
-    return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
+    const resolved = resolveLanguageModelWithProvider(padrao);
+    return resolved === null ? null : { ...resolved, modelId: String(padrao), origem: "padrao" };
   }
 
   const apiKey = await decifrarChave(binding.credential_id, organizationId);
@@ -87,8 +88,8 @@ export async function resolverModeloDoPonto(
       organization_id: organizationId,
       purpose,
     });
-    const model = resolveLanguageModel(padrao);
-    return model === null ? null : { model, modelId: String(padrao), origem: "padrao" };
+    const resolved = resolveLanguageModelWithProvider(padrao);
+    return resolved === null ? null : { ...resolved, modelId: String(padrao), origem: "padrao" };
   }
 
   const model = instanciar(binding.provider, apiKey, binding.model_id, binding.base_url);
@@ -98,11 +99,11 @@ export async function resolverModeloDoPonto(
       purpose,
       provider: binding.provider,
     });
-    const fallback = resolveLanguageModel(padrao);
-    return fallback === null ? null : { model: fallback, modelId: String(padrao), origem: "padrao" };
+    const fallback = resolveLanguageModelWithProvider(padrao);
+    return fallback === null ? null : { ...fallback, modelId: String(padrao), origem: "padrao" };
   }
 
-  return { model, modelId: binding.model_id, origem: "binding" };
+  return { model, provider: binding.provider, modelId: binding.model_id, origem: "binding" };
 }
 
 interface LinhaBinding {

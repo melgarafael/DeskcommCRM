@@ -41,6 +41,11 @@ export function isAiGatewayConfigured(): boolean {
   );
 }
 
+export interface ResolvedLanguageModel {
+  model: LanguageModel;
+  provider: string;
+}
+
 /**
  * Resolve o modelo de CHAT para algo que o `ai` SDK saiba executar.
  *
@@ -67,27 +72,34 @@ export function isAiGatewayConfigured(): boolean {
  * claro em vez de estourar com erro de rede lá dentro.
  */
 export function resolveLanguageModel(model: ModelId): LanguageModel | null {
+  return resolveLanguageModelWithProvider(model)?.model ?? null;
+}
+
+/** Keep the actual billing provider with the model selected by this resolver. */
+export function resolveLanguageModelWithProvider(model: ModelId): ResolvedLanguageModel | null {
   const id = String(model);
-
-  if (gatewayConfig()) return id as LanguageModel;
-
+  if (gatewayConfig()) return { model: id as LanguageModel, provider: "vercel" };
   if (env.OPENROUTER_API_KEY) {
-    return createOpenAI({
-      apiKey: env.OPENROUTER_API_KEY,
-      baseURL: env.OPENROUTER_BASE_URL || OPENROUTER_BASE_URL,
-    })(id);
+    return {
+      model: createOpenAI({
+        apiKey: env.OPENROUTER_API_KEY,
+        baseURL: env.OPENROUTER_BASE_URL || OPENROUTER_BASE_URL,
+      })(id),
+      provider: "openrouter",
+    };
   }
-
   if (id.startsWith("anthropic/") && env.ANTHROPIC_API_KEY) {
-    return createAnthropic({ apiKey: env.ANTHROPIC_API_KEY })(
-      id.slice("anthropic/".length),
-    );
+    return {
+      model: createAnthropic({ apiKey: env.ANTHROPIC_API_KEY })(id.slice("anthropic/".length)),
+      provider: "anthropic",
+    };
   }
-
   if (id.startsWith("openai/") && env.OPENAI_API_KEY) {
-    return createOpenAI({ apiKey: env.OPENAI_API_KEY })(id.slice("openai/".length));
+    return {
+      model: createOpenAI({ apiKey: env.OPENAI_API_KEY })(id.slice("openai/".length)),
+      provider: "openai",
+    };
   }
-
   return null;
 }
 
