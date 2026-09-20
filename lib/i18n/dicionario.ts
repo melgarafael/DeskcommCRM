@@ -37,6 +37,25 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Planos de assinatura": { es: "Planes de suscripción" },
+  "Planos e assinatura": { es: "Planes y suscripción" },
+  "/ mês": { es: "/ mes" },
+  "pessoas na equipe": { es: "personas en el equipo" },
+  "canal conectado": { es: "canal conectado" },
+  "canais conectados": { es: "canales conectados" },
+  "de franquia de IA por mês": { es: "de crédito de IA por mes" },
+  "Inbox, contatos, funis e agenda": { es: "Bandeja de entrada, contactos, embudos y agenda" },
+  "Contratação em preparação": { es: "Contratación en preparación" },
+  "Essencial": { es: "Esencial" },
+  "Crescer": { es: "Crecer" },
+  "Escala": { es: "Escala" },
+  "Para começar a atender com organização e IA.": { es: "Para empezar a atender con organización e IA." },
+  "Para unir a equipe, os canais e as oportunidades.": { es: "Para unir al equipo, los canales y las oportunidades." },
+  "Para uma operação maior, com mais pessoas e agentes.": { es: "Para una operación mayor, con más personas y agentes." },
+  "Mensalidade em reais. A franquia de IA é compartilhada pelos agentes da empresa e varia conforme o modelo e o volume de texto. Não representa uma quantidade garantida de mensagens.": { es: "Mensualidad en reales. El crédito de IA se comparte entre los agentes de la empresa y varía según el modelo y el volumen de texto. No representa una cantidad garantizada de mensajes." },
+  "Tarifas cobradas pela Meta e por outros provedores de canal são separadas. A conexão do Instagram depende das permissões e da aprovação da Meta.": { es: "Las tarifas de Meta y de otros proveedores de canales se cobran por separado. La conexión de Instagram depende de los permisos y de la aprobación de Meta." },
+  "Estes são os novos planos. Sua conta e seus acessos atuais permanecem como estão até a contratação ser concluída.": { es: "Estos son los nuevos planes. Tu cuenta y tus accesos actuales se mantienen hasta que se complete la contratación." },
+
   "O que você quer que ele faça?": { es: "¿Qué quieres que haga?" },
   "Escolha as tarefas. Você pode ajustar os detalhes depois.": { es: "Elige las tareas. Puedes ajustar los detalles después." },
   "Modo de configuração": { es: "Modo de configuración" },

@@ -1,3 +1,4 @@
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/require-role";
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
   const requestId = randomUUID();
   const auth = await requireRole("admin", { requestId, resource: "billing" });
   if (!auth.ok) return auth.response;
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
   if (auth.user.support)
     return fail("forbidden", "A cobrança deve ser gerenciada pelo administrador da empresa.", 403, {
       requestId,

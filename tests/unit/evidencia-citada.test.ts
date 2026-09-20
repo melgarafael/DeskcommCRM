@@ -167,9 +167,6 @@ const LEGADO = new Set([
   "HANDOFF.md",
   "docs/superpowers/plans/2026-07-21-onda0-fundacao-midia.md",
   "docs/superpowers/plans/2026-07-24-harness-fase2-skills.md",
-  "loop/checkpoints/G2-report.md",
-  "loop/checkpoints/G4-report.md",
-  "loop/checkpoints/G5-report.md",
 ]);
 
 /**
@@ -198,6 +195,9 @@ function refsNormalizadas(doc: string): string[] {
         // e reprovaria documento correto por um caminho que ele mesmo inventou —
         // exatamente o defeito que o comentário acima já mandou não repetir.
         const base = dir === "." || dir === "docs/handoffs" ? "evidence" : dir;
+        // Markdown links resolve relative to their document, including subdirectories.
+        const relative = path.posix.normalize(path.posix.join(dir, limpa));
+        if (dir !== "docs/handoffs" && fs.existsSync(path.join(RAIZ, relative))) return relative;
         // Sem diretório → resolve contra a pasta do documento.
         if (!limpa.includes("/")) return path.posix.join(base, limpa);
         // Subpasta REAL de evidence/ → também resolve. Aceitar a referência sem
@@ -213,6 +213,9 @@ function refsNormalizadas(doc: string): string[] {
 }
 
 describe("evidência citada", () => {
+  it("resolve subpastas relativas ao documento", () => {
+    expect(refsNormalizadas("docs/escreve-ai.md")).toContain("docs/brand/escreve-ai-logo.png");
+  });
   it("a quarentena não guarda documento que saiu da cobertura", () => {
     // O anti-apodrecimento só dispara para documento que o teste ALCANÇA. Se um
     // item da quarentena deixa de ter citação nenhuma (ou some do repo), ele

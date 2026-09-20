@@ -26,12 +26,14 @@ export default async function BillingPage() {
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Planos e assinatura</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {traduzir("Planos e assinatura", idioma)}
+        </h1>
         <p className="text-sm text-muted-foreground">
           {traduzir("Planos, faturas e cobrança.", idioma)}
         </p>
       </header>
-      <PlanComparison />
+      <PlanComparison idioma={idioma} />
       {suporte ? (
         <p className="text-sm text-muted-foreground">
           {traduzir("Para questões de pagamento, contate", idioma)}{" "}

@@ -22,9 +22,9 @@ No navegador, conferir desktop e mobile, as três etapas interativas, abertura/f
 
 ## Fontes dos ativos
 
-- `conversation-sculpture.webp` e `time-for-people.webp`: imagens originais geradas para esta home; fontes PNG preservadas no diretório de imagens geradas do Codex.
-- `brand-film.mp4`: filme aprovado nesta sessão, Google Flow, projeto `95cb996b-2ed3-4457-87e2-4a3a3fbcab9f`; `film-poster.webp` é um frame do próprio filme.
-- `logo.png`: identidade existente em `docs/brand/escreve-ai-logo.png`.
+- `assets/conversation-sculpture.webp` e `assets/time-for-people.webp`: imagens originais geradas para esta home; fontes PNG preservadas no diretório de imagens geradas do Codex.
+- `brand-film.mp4`: filme aprovado nesta sessão, Google Flow, projeto `95cb996b-2ed3-4457-87e2-4a3a3fbcab9f`; `assets/film-poster.webp` é um frame do próprio filme.
+- `assets/logo.png`: identidade existente em `docs/brand/escreve-ai-logo.png`.
 - DM Sans: Google Fonts.
 
 A página utiliza referências de ritmo editorial, espaços e hierarquia da apresentação de iPhone da Apple, com imagens, marca e textos próprios.
