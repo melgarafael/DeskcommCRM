@@ -3250,24 +3250,19 @@ async function executarTurnoDoAgente(
         // Se o modelo JÁ mandou fotos, a decisão dele vence e nada é mudado.
         const planoAutomatico: FotoComLegenda[] = (() => {
           if (fotosDeclaradas.length > 0) return [];
-          // Escolha DETERMINÍSTICA. A regra passou a morar no CATÁLOGO (Integração
-          // de dados), mas o motor aceita as DUAS fontes — a nova primeiro, e a
-          // antiga (`ai_agents.config.catalog`) como FALLBACK. É o que impede a
-          // mudança de estrutura de mudar o processo: quem já tinha configurado no
-          // agente continua com o mesmo comportamento até reconfigurar no catálogo.
-          const cfgAgente = agentConfig?.catalogConfig;
-          const detLigada =
-            catalogoMapeamento?.similaridadeDeterministica ?? cfgAgente?.similaridade_deterministica ?? false;
-          if (detLigada === true && catalogoDoTurno.length > 0) {
+          // Escolha DETERMINÍSTICA: a regra mora no CATÁLOGO (Integração de dados),
+          // fonte ÚNICA. A mudança de estrutura não muda o processo porque o dado
+          // é LEVADO junto pela migration 0246 (backfill de
+          // ai_agents.config.catalog -> catalog_mappings) — não por um fallback em
+          // runtime, que criaria ambiguidade e impediria desligar a regra.
+          if (
+            catalogoMapeamento?.similaridadeDeterministica === true &&
+            catalogoDoTurno.length > 0
+          ) {
             const termo = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
-            const temOrdemNoCatalogo =
-              catalogoMapeamento !== null && Object.keys(catalogoMapeamento.ordem ?? {}).length > 0;
-            const criterios = temOrdemNoCatalogo
-              ? criteriosDeSimilaridade(catalogoMapeamento!)
-              : (cfgAgente?.criterio ?? ['cilindrada', 'preco']);
             const escolhidas = ordenarSimilares(termo, catalogoDoTurno, {
-              quantidade: catalogoMapeamento?.similaresQtd ?? cfgAgente?.similares_qtd ?? 3,
-              criterios,
+              quantidade: catalogoMapeamento.similaresQtd ?? 3,
+              criterios: criteriosDeSimilaridade(catalogoMapeamento),
             });
             return escolhidas
               .map((m) => ({ url: m.fotos[0] ?? '', legenda: legendaDaMoto(m) }))
