@@ -8,7 +8,7 @@ import type { CredentialRow } from "@/hooks/ai/useCredentials";
 
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
 
-import { AgentForm } from "../[id]/_components/AgentForm";
+import { ConversationalAgentCreator } from "./_components/ConversationalAgentCreator";
 
 export const dynamic = "force-dynamic";
 
@@ -51,8 +51,7 @@ export default async function NewAgentPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-4 sm:p-6">
-      <AgentForm
-        mode="create"
+      <ConversationalAgentCreator
         credentials={credentials}
         provedoresDaInstalacao={provedoresDaInstalacao()}
         channelSessions={channelSessions}

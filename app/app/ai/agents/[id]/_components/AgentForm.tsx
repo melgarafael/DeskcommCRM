@@ -108,6 +108,8 @@ interface EditProps extends BaseProps {
 
 interface CreateProps extends BaseProps {
   mode: "create";
+  creationState?: FormState;
+  onCreationStateChange?: React.Dispatch<React.SetStateAction<FormState>>;
 }
 
 type Props = (EditProps | CreateProps) & {
@@ -133,7 +135,7 @@ type Props = (EditProps | CreateProps) & {
   materiais?: MaterialDoAcervo[];
 };
 
-interface FormState {
+export interface FormState {
   name: string;
   description: string;
   priority: number;
@@ -275,6 +277,10 @@ function toVersionPayload(s: FormState) {
   };
 }
 
+export function initialAgentCreationState(): FormState {
+  return buildState({ version: null });
+}
+
 export function AgentForm(props: Props) {
   const t = useT();
   const funis = props.funis ?? [];
@@ -294,7 +300,10 @@ export function AgentForm(props: Props) {
     return buildState({ version: null });
   }, [isEdit, props]);
 
-  const [form, setForm] = React.useState<FormState>(baseline);
+  const [localForm, setLocalForm] = React.useState<FormState>(baseline);
+  const form = props.mode === "create" ? (props.creationState ?? localForm) : localForm;
+  const setForm =
+    props.mode === "create" ? (props.onCreationStateChange ?? setLocalForm) : setLocalForm;
   const formRef = React.useRef<HTMLDivElement>(null);
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
   const [submitCount, setSubmitCount] = React.useState(0);

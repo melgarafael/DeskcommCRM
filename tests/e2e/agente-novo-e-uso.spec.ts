@@ -46,8 +46,27 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("Criar um agente pela tela", () => {
+  test("começa por conversa e preserva ajustes ao alternar com o editor", async ({ page }) => {
+    await page.goto("/app/ai/agents/new");
+    await expect(
+      page.getByRole("heading", { name: /O que seu agente precisa fazer/ }),
+    ).toBeVisible();
+    await expect(page.locator("#model")).not.toBeVisible();
+    await page.getByLabel("Conte sua ideia").fill("Quero atender interessados na minha clínica");
+    await page.getByRole("button", { name: "Configurar manualmente" }).click();
+    await page.locator("#name").fill("Recepção conversacional");
+    await page.getByRole("button", { name: "Voltar à conversa" }).click();
+    await expect(page.getByLabel("Conte sua ideia")).toHaveValue(
+      "Quero atender interessados na minha clínica",
+    );
+    await expect(page.getByRole("heading", { name: "Recepção conversacional" })).toBeVisible();
+    await page.getByRole("button", { name: "Configurar manualmente" }).click();
+    await expect(page.locator("#name")).toHaveValue("Recepção conversacional");
+  });
+
   test("o formulário valida após tentar criar e mantém o rascunho sem número", async ({ page }) => {
     await page.goto("/app/ai/agents/new");
+    await page.getByRole("button", { name: "Configurar manualmente" }).click();
     await expect(page.getByRole("heading", { name: /novo agent/i })).toBeVisible();
 
     const criar = page.getByRole("button", { name: /criar agent/i });
@@ -86,6 +105,7 @@ test.describe("Criar um agente pela tela", () => {
     page,
   }) => {
     await page.goto("/app/ai/agents/new");
+    await page.getByRole("button", { name: "Configurar manualmente" }).click();
     const nome = `Recepção da Clínica ${Date.now()}`;
 
     await page.locator("#name").fill(nome);
@@ -148,6 +168,7 @@ test.describe("Criar um agente pela tela", () => {
     page,
   }) => {
     await page.goto("/app/ai/agents/new");
+    await page.getByRole("button", { name: "Configurar manualmente" }).click();
     await expect(page.getByRole("heading", { name: /novo agent/i })).toBeVisible();
 
     // ⚠️ O QUE ESTE CASO NÃO CONSEGUE MEDIR, declarado em vez de fingido: o

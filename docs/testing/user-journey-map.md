@@ -2180,3 +2180,27 @@ fontes externas HTTP(S); superfície/porta = conversa existente no Inbox; config
 Leitura pura: não emite mutação/auditoria, não agenda ação nem altera o agente.
 Retorno de erro = estado explícito e nova leitura. Mapa: prospeccao-nativa.
 Cobertura: inbox-enrichment-route.test.ts e inbox-demandas-abertas.test.tsx.
+
+### Criação conversacional de Agentes de IA (escreve.ai)
+
+Entrada: objetivo em linguagem natural em `/app/ai/agents/new`. A ação privada
+`prepareAgentConversation` exige administrador e suporte com escrita, deriva o tenant
+da sessão e limita o uso por organização/usuário. Usa `runModelCall` com orçamento e
+registro de consumo, sem ferramentas executáveis. A resposta JSON validada propõe
+somente nome, descrição, instruções e IDs do catálogo permitidos.
+
+Saída: proposta ainda não salva; capacidades apenas sugeridas ficam desmarcadas.
+“Revisar rascunho” transfere texto e escolhas explícitas para o editor existente,
+preservando modelo, canal e limites. Salvar/publicar mantêm as ações e auditorias
+anteriores. Nada é publicado pela conversa. Trocar de modo preserva o formulário e
+leva alterações manuais ao contexto da conversa. Recarregar/sair perde a conversa
+não salva; não há persistência adicional nem migração.
+
+Living System Checklist: entrada = conversa administrativa; porta = ação privada
+com admin/tenant; configuração = provedor existente; saída = proposta revisável;
+continuidade = editor e save existentes; retorno = erro explícito com mensagem e
+proposta preservadas para tentar novamente. Limites: até 24 mensagens/24 mil
+caracteres, 3 mil por mensagem; teto de 15 chamadas por minuto por usuário/tenant.
+Cobertura: `agent-creation-conversation.test.tsx`, `agent-creation-action.test.ts`,
+regressões de AgentForm e `agente-novo-e-uso.spec.ts`. Respostas bem-sucedidas da IA
+são simuladas nos testes unitários; teste de provedor real exige credencial válida.
