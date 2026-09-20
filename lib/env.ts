@@ -256,6 +256,9 @@ const schema = z.object({
    */
   RESEND_API_KEY: z.string().optional().default(""),
   RESEND_FROM_EMAIL: z.string().optional().default(""),
+  // Brevo takes precedence when configured; auth SMTP is configured separately in GoTrue.
+  BREVO_API_KEY: z.string().optional().default(""),
+  BREVO_FROM_EMAIL: z.string().optional().default(""),
 
   /**
    * E-mail de suporte que a instalação mostra ao CLIENTE FINAL (tela de conta

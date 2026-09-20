@@ -1,5 +1,6 @@
 /**
- * Resend wrapper. Usado por: convites de team, LGPD (export + alarme de SLA).
+ * Transactional email wrapper (Brevo or Resend). The module path stays compatible.
+ * Usado por: convites de team, LGPD (export + alarme de SLA).
  *
  * ── O remetente é do OPERADOR; o nome de exibição é da MARCA ─────────────────
  *
@@ -67,7 +68,9 @@ function getClient(): Resend | null {
  * que o operador digita numa tela.
  */
 export function fromAddress(fromName?: string): string | null {
-  const endereco = env.RESEND_FROM_EMAIL.trim();
+  const endereco = (env.BREVO_API_KEY?.trim()
+    ? env.BREVO_FROM_EMAIL ?? ""
+    : env.RESEND_FROM_EMAIL).trim();
   if (endereco.length === 0) return null;
   const nome = (fromName ?? "").replace(/[<>"\r\n]/g, "").trim();
   return nome.length > 0 ? `${nome} <${endereco}>` : endereco;
@@ -88,6 +91,7 @@ function classificar(nome: string, mensagem: string): NonNullable<SendResult["er
 }
 
 export async function sendEmail(args: SendArgs): Promise<SendResult> {
+  if (env.BREVO_API_KEY?.trim()) return sendWithBrevo(args);
   const client = getClient();
   const from = fromAddress(args.fromName);
 
@@ -141,5 +145,49 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
  * mandaria o operador esperar uma mensagem que nunca sai.
  */
 export function isEmailConfigured(): boolean {
+  if (env.BREVO_API_KEY?.trim()) return fromAddress() !== null;
   return getClient() !== null && fromAddress() !== null;
+}
+
+async function sendWithBrevo(args: SendArgs): Promise<SendResult> {
+  const email = env.BREVO_FROM_EMAIL?.trim();
+  if (!email) return { ok: false, error: "not_configured" };
+  const name = args.fromName?.replace(/[<>"\r\n]/g, "").trim();
+  try {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY.trim(),
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        sender: { email, ...(name ? { name } : {}) },
+        to: (Array.isArray(args.to) ? args.to : [args.to]).map((to) => ({ email: to })),
+        subject: args.subject,
+        htmlContent: args.html,
+        ...(args.text ? { textContent: args.text } : {}),
+        ...(args.replyTo ? { replyTo: { email: args.replyTo } } : {}),
+        ...(args.tags?.length ? { tags: args.tags.map(({ name, value }) => `${name}:${value}`) } : {}),
+      }),
+      signal: AbortSignal.timeout(15_000),
+      redirect: "error",
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: response.status === 429 ? "rate_limited" : "send_failed",
+        details: `Brevo HTTP ${response.status}`,
+      };
+    }
+    const result: unknown = await response.json();
+    if (!result || typeof result !== "object" || !("messageId" in result)
+      || typeof result.messageId !== "string" || !result.messageId.trim()) {
+      return { ok: false, error: "send_failed", details: "Brevo response missing messageId" };
+    }
+    return { ok: true, id: result.messageId };
+  } catch {
+    // No automatic retry/fallback: an interrupted response may already have been accepted.
+    return { ok: false, error: "send_failed", details: "Brevo request failed" };
+  }
 }
