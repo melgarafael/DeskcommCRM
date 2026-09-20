@@ -1,3 +1,4 @@
+import { isSubscriptionResourceLimit } from "@/lib/billing/resource-limit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -158,6 +159,7 @@ export async function connectSocialInbox(
       })
       .select("id")
       .single();
+    if (isSubscriptionResourceLimit(error)) throw error;
     if (error || !data)
       throw new SocialError(
         "Não foi possível criar o canal. Atualize a lista antes de tentar novamente.",

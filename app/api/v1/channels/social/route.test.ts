@@ -1,3 +1,4 @@
+vi.mock("@/lib/env", () => ({ env: { NEXT_PUBLIC_APP_URL: "https://crm.test" } }));
 import type * as SocialClient from "@/lib/channels/social/client";
 import { beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
@@ -81,4 +82,18 @@ it("blocks missing role, read-only support and missing MFA proof", async () => {
   h.mfa.mockResolvedValue(true);
   expect((await call({})).status).toBe(403);
   expect(h.configure).not.toHaveBeenCalled();
+});
+
+it("returns an actionable quota refusal without SQL details or success audit", async () => {
+  const { connectSocialInbox } = await import("@/lib/channels/social/store");
+  vi.mocked(connectSocialInbox).mockRejectedValueOnce({
+    code: "P4020",
+    message: "private SQL detail",
+  });
+  const response = await call({ action: "inbox", account_id: "a".repeat(24) });
+  const body = await response.json();
+  expect(response.status).toBe(409);
+  expect(body.error.code).toBe("subscription_resource_limit");
+  expect(JSON.stringify(body)).not.toContain("private SQL detail");
+  expect(h.audit).not.toHaveBeenCalled();
 });

@@ -1,3 +1,7 @@
+import {
+  isSubscriptionResourceLimit,
+  subscriptionResourceLimitResponse,
+} from "@/lib/billing/resource-limit";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/require-role";
@@ -180,6 +184,8 @@ export async function POST(req: Request) {
     });
     return ok(result, { requestId, headers });
   } catch (error) {
+    if (isSubscriptionResourceLimit(error))
+      return subscriptionResourceLimitResponse(requestId, auth.user.idioma);
     return failure(error, requestId);
   }
 }

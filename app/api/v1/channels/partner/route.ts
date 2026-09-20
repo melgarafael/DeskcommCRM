@@ -1,3 +1,7 @@
+import {
+  isSubscriptionResourceLimit,
+  subscriptionResourceLimitResponse,
+} from "@/lib/billing/resource-limit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channels/partner — estado da conexão por credencial + o que colar no provedor.
@@ -143,7 +147,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // webhook é preservado para não invalidar o que já está colado do outro lado.
   const token = existente?.webhookPathToken ?? randomBytes(16).toString("hex");
 
-  const { error } = await savePartnerSession(admin, {
+  const saved = await savePartnerSession(admin, {
     organizationId: orgId,
     existingId: existente?.id ?? null,
     accountId: parsed.data.account_id.trim(),
@@ -153,7 +157,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     phoneNumber: v.phoneNumber ? `+${v.phoneNumber.replace(/\D/g, "")}` : null,
     displayName: v.displayName ?? PARTNER_CHANNEL_LABEL,
   });
-  if (error) return fail("internal_error", error, 500, { requestId });
+  if (isSubscriptionResourceLimit(saved))
+    return subscriptionResourceLimitResponse(requestId, authz.user.idioma);
+  if (saved.error) return fail("internal_error", saved.error, 500, { requestId });
 
   return ok(
     {

@@ -153,3 +153,9 @@ Validação: 45 testes focados aprovados, incluindo duas execuções do motor co
 O aceite de convite preserva o motivo `subscription_resource_limit` desde a RPC até a tela, sem afirmar que o convite expirou. O formulário permite repetir o mesmo token; a função retorna antes de fechar o convite, mudar a organização ativa ou auditar acesso concedido. A reativação de membro e a conexão oficial retornam 409 com orientação de assinatura quando recebem SQLSTATE P4020, sem expor a mensagem interna do banco. O fluxo de confirmação de e-mail continua levando o aceite não concluído à mesma tela de convite.
 
 Validação: 72 testes focados passaram, incluindo renderização do erro e nova tentativa no formulário, convite revogado, isolamento da decisão de acesso e canal arquivado que permanece arquivado após recusa. TypeScript e lint focado sem erros. Esta revisão trata mensagens de resultado, sem novo layout, schema, pagamento ou envio real. Os conectores parceiros e sociais ainda precisam do mesmo tratamento antes da ativação comercial.
+
+## Limites nos conectores parceiro e social
+
+`savePartnerSession` mantém o código do erro de banco na inserção e na atualização, permitindo que a rota devolva a mesma orientação 409 usada nos demais canais. `connectSocialInbox` preserva P4020 quando a criação do canal falha; a rota social traduz essa recusa sem vazar detalhes internos. A reserva do canal continua anterior à criação do webhook externo, portanto uma recusa de capacidade impede esse efeito externo.
+
+Nove testes focados passaram, cobrindo inserção/atualização do parceiro, resposta sem segredo de webhook, armazenamento social que recusa antes de chamar a API de webhooks, orientação pública e ausência de auditoria de sucesso na recusa. TypeScript passou; lint dos arquivos alterados sem erros após corrigir uma importação de tipo no teste novo. Testes usam provedores simulados e não conectaram contas reais. Não houve mudança de schema, layout ou produção.

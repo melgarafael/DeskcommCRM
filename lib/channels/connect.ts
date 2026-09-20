@@ -201,7 +201,7 @@ export async function savePartnerSession(
     phoneNumber: string | null;
     displayName: string;
   },
-): Promise<{ error: string | null }> {
+): Promise<{ error: string | null; code?: string }> {
   const linha = {
     organization_id: input.organizationId,
     provider: PARTNER_CHANNEL_PROVIDER,
@@ -217,9 +217,7 @@ export async function savePartnerSession(
 
   const { error } = input.existingId
     ? await admin.from("channel_sessions").update(linha).eq("id", input.existingId)
-    : await admin
-        .from("channel_sessions")
-        .insert({ ...linha, metadata: metadataInicialDoCanal() });
+    : await admin.from("channel_sessions").insert({ ...linha, metadata: metadataInicialDoCanal() });
 
-  return { error: error?.message ?? null };
+  return { error: error?.message ?? null, ...(error?.code ? { code: error.code } : {}) };
 }
