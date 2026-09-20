@@ -40,6 +40,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
 import { AdminShell } from "@/components/admin/AdminShell";
+import { ThemeProvider } from "@/lib/theme";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Único mock: o `AdminSidebar` é client component e chama `usePathname`. O
@@ -48,6 +49,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 vi.mock("next/navigation", () => ({
   usePathname: () => "/admin/inbox",
 }));
+
+// O `ThemeProvider` lê `matchMedia` para resolver o tema "system", e o jsdom
+// não implementa. Mesmo stub local de `lib/theme.test.tsx` — não há helper
+// compartilhado no repo, e inventar um terceiro padrão aqui seria pior.
+window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+  matches: false,
+  media: query,
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+})) as unknown as typeof window.matchMedia;
 
 /** Consumidor sem Provider próprio, como o `TenantBadge`. */
 function UsaTooltipSemProviderProprio() {
@@ -73,11 +84,19 @@ describe("AdminShell", () => {
   ])(
     "provê o TooltipProvider aos filhos com %s — tela nova nasce funcionando",
     (_rotulo, userEmail) => {
+      // O `<ThemeProvider>` NÃO é maquete: ele repõe aqui o que o layout RAIZ
+      // (`app/layout.tsx:294`) envolve em torno de toda a árvore, admin
+      // inclusive. Passou a ser necessário quando a tarja do Modo Plataforma
+      // ganhou o `ThemeToggle` — até então o admin era a única superfície sem
+      // forma de trocar de tema. Sem esta linha o teste mediria uma casca que
+      // não existe em produção: montada fora dos providers da raiz.
       expect(() =>
         render(
-          <AdminShell userEmail={userEmail}>
-            <UsaTooltipSemProviderProprio />
-          </AdminShell>,
+          <ThemeProvider>
+            <AdminShell userEmail={userEmail}>
+              <UsaTooltipSemProviderProprio />
+            </AdminShell>
+          </ThemeProvider>,
         ),
       ).not.toThrow();
 
