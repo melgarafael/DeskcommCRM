@@ -1,3 +1,5 @@
+import { AiAllowanceCard } from "@/components/billing/AiAllowanceCard";
+import { readAiAllowance, type AiAllowanceView } from "@/lib/billing/ai-allowance-view";
 import { billingConfiguration } from "@/lib/billing/stripe";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { ManageSubscriptionButton } from "@/components/billing/ManageSubscriptionButton";
@@ -27,6 +29,8 @@ export default async function BillingPage() {
   }
   let view: ReturnType<typeof subscriptionView> | null = null;
   let loadFailed = false;
+  let allowance: AiAllowanceView | null = null;
+  let allowanceFailed = false;
   let billingEnabled = false;
   try {
     billingConfiguration();
@@ -43,6 +47,13 @@ export default async function BillingPage() {
         [activeOrg.orgId],
       );
       view = subscriptionView(subscription);
+      if (subscription?.provider_subscription_id) {
+        try {
+          allowance = await readAiAllowance(getRequestPool(), activeOrg.orgId);
+        } catch {
+          allowanceFailed = true;
+        }
+      }
     } catch {
       loadFailed = true;
     }
@@ -76,6 +87,15 @@ export default async function BillingPage() {
             {traduzir("Atualizar estado da assinatura", idioma)}
           </a>
         </section>
+      )}
+      {allowance && <AiAllowanceCard balance={allowance} idioma={idioma} />}
+      {allowanceFailed && (
+        <p role="alert">
+          {traduzir(
+            "Não foi possível consultar o saldo de IA. Atualize a página para tentar novamente.",
+            idioma,
+          )}
+        </p>
       )}
       {view?.canManage && <ManageSubscriptionButton idioma={idioma} />}
       {loadFailed && (

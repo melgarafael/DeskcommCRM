@@ -37,6 +37,20 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Sua franquia de IA": { es: "Tu saldo de IA" },
+  "Ciclo:": { es: "Ciclo:" },
+  "O saldo aparecerá após a confirmação do ciclo da assinatura.": { es: "El saldo aparecerá tras la confirmación del ciclo de la suscripción." },
+  "Saldo restante": { es: "Saldo restante" },
+  "Franquia do ciclo:": { es: "Crédito del ciclo:" },
+  "Já utilizado": { es: "Ya utilizado" },
+  "Reservado": { es: "Reservado" },
+  "O uso de IA está pausado enquanto conferimos um consumo anterior. Seu saldo foi preservado.": { es: "El uso de IA está pausado mientras revisamos un consumo anterior. Tu saldo se ha conservado." },
+  "Este saldo não está liberado para uso. Confira a situação da sua assinatura.": { es: "Este saldo no está disponible para su uso. Revisa el estado de tu suscripción." },
+  "O saldo está usado ou reservado por atendimentos em andamento. Não haverá cobrança automática de excedente.": { es: "El saldo está utilizado o reservado por atenciones en curso. No habrá cobros automáticos por excedentes." },
+  "Enquanto a IA atende, parte do saldo fica reservada. Ao concluir, descontamos o consumo e liberamos a diferença.": { es: "Mientras la IA atiende, parte del saldo queda reservada. Al finalizar, descontamos el consumo y liberamos la diferencia." },
+  "Tarifa fixa deste ciclo:": { es: "Tarifa fija de este ciclo:" },
+  "por US$ 1 de consumo de IA. Sem cobrança automática de excedente.": { es: "por US$ 1 de consumo de IA. Sin cobros automáticos por excedentes." },
+  "Não foi possível consultar o saldo de IA. Atualize a página para tentar novamente.": { es: "No se pudo consultar el saldo de IA. Actualiza la página para intentarlo de nuevo." },
   "Não foi possível adicionar este recurso ao plano atual. Peça ao administrador para conferir os limites e o pagamento em Configurações → Planos e assinatura. Seus recursos existentes foram preservados.": { es: "No se pudo añadir este recurso al plan actual. Pide al administrador que revise los límites y el pago en Configuración → Planes y suscripción. Tus recursos existentes se han conservado." },
   "Sua assinatura": { es: "Tu suscripción" },
   "Sua assinatura está ativa.": { es: "Tu suscripción está activa." },
