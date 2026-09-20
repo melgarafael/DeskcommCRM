@@ -60,13 +60,16 @@ it("pending checkout does not convert an existing company", () => {
   for (let i = 0; i < 4; i++) sql(addAgent(org));
   expect(sql(`select count(*) from ai_agents where organization_id='${org}'`)).toBe("4");
 });
-it("canceled subscriptions preserve editing but block additions", () => {
-  const org = company();
-  sql(addAgent(org));
-  sql(`update org_subscriptions set status='canceled' where organization_id='${org}'`);
-  sql(`update ai_agents set name='Still accessible' where organization_id='${org}'`);
-  expect(() => sql(addAgent(org))).toThrow(/Regularize sua assinatura/);
-});
+it.each(["canceled", "pending"])(
+  "%s subscriptions preserve editing but block additions",
+  (status) => {
+    const org = company();
+    sql(addAgent(org));
+    sql(`update org_subscriptions set status='${status}' where organization_id='${org}'`);
+    sql(`update ai_agents set name='Still accessible' where organization_id='${org}'`);
+    expect(() => sql(addAgent(org))).toThrow(/Regularize sua assinatura/);
+  },
+);
 it("unarchived channels reserve slots even while disconnected", () => {
   const org = company();
   const insert = `insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted) values('${org}',gen_random_uuid()::text,'STOPPED',decode('00','hex'))`;

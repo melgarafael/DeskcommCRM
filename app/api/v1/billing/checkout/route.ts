@@ -9,6 +9,7 @@ import { subscriptionPlan } from "@/lib/billing/plans";
 import {
   billingConfiguration,
   createStripeCheckout,
+  retrieveStripeCheckout,
   BillingUnavailable,
 } from "@/lib/billing/stripe";
 
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
     ]);
     if (
       current.provider_subscription_id &&
-      !["canceled", "incomplete_expired"].includes(current.status)
+      !["pending", "canceled", "incomplete_expired"].includes(current.status)
     ) {
       await db.query("rollback");
       return fail(
@@ -71,16 +72,39 @@ export async function POST(request: Request) {
         { requestId },
       );
     }
-    if (current.checkout_url && new Date(current.checkout_expires_at).getTime() > Date.now()) {
-      await db.query("commit");
-      if (current.plan_id !== plan.id)
+    if (current.checkout_session_id) {
+      const previous = await retrieveStripeCheckout({
+        sessionId: current.checkout_session_id,
+        organizationId: auth.org.orgId,
+        attemptId: current.checkout_attempt_id,
+        planId: current.plan_id,
+        customerId: current.provider_customer_id ?? undefined,
+      });
+      if (previous.status === "open") {
+        await db.query("commit");
+        if (current.plan_id !== plan.id)
+          return fail(
+            "conflict",
+            "Existe um pagamento em andamento para outro plano. Conclua ou aguarde sua expiração.",
+            409,
+            { requestId },
+          );
+        return ok({ url: previous.url }, { requestId });
+      }
+      const completedTerminalSubscription =
+        previous.status === "complete" &&
+        previous.subscription === current.provider_subscription_id &&
+        Boolean(current.provider_subscription_id) &&
+        ["canceled", "incomplete_expired"].includes(current.status);
+      if (previous.status !== "expired" && !completedTerminalSubscription) {
+        await db.query("rollback");
         return fail(
           "conflict",
-          "Existe um pagamento em andamento para outro plano. Conclua ou aguarde sua expiração.",
+          "O pagamento anterior foi concluído e está sendo confirmado. Atualize a página em instantes.",
           409,
           { requestId },
         );
-      return ok({ url: current.checkout_url }, { requestId });
+      }
     }
     const replacingSubscription =
       Boolean(current.provider_subscription_id) &&
@@ -116,8 +140,10 @@ export async function POST(request: Request) {
         { requestId },
       );
     }
+    // Pending distinguishes an in-flight replacement from the terminal subscription.
+    // Retain its binding: clearing it would give the company the legacy quota exemption.
     await db.query(
-      "update org_subscriptions set plan_id=$2,checkout_attempt_id=$3,checkout_session_id=null,checkout_url=null,checkout_expires_at=null,updated_at=now() where organization_id=$1 and (plan_id is distinct from $2 or checkout_attempt_id is distinct from $3)",
+      "update org_subscriptions set plan_id=$2,checkout_attempt_id=$3,status='pending',checkout_session_id=null,checkout_url=null,checkout_expires_at=null,updated_at=now() where organization_id=$1 and (plan_id is distinct from $2 or checkout_attempt_id is distinct from $3)",
       [auth.org.orgId, plan.id, attempt],
     );
     await db.query("commit");
@@ -152,7 +178,7 @@ export async function POST(request: Request) {
     await db.query("rollback").catch(() => undefined);
     return fail(
       "service_unavailable",
-      "Não foi possível abrir o pagamento. Sua assinatura não foi alterada. Tente novamente.",
+      "Não foi possível conferir o pagamento. Tente novamente para recuperar a tentativa anterior.",
       503,
       { requestId },
     );

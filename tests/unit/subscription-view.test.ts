@@ -69,3 +69,9 @@ describe("billing display uses authoritative subscription state", () => {
     ).toEqual(["essencial"]);
   });
 });
+it("allows recovery of a pending replacement without presenting the former subscription as active", () => {
+  const view = subscriptionView(snapshot({ status: "pending", checkout_session_id: null }), now);
+  expect(view.active).toBe(false);
+  expect(view.allowedPlanIds).toEqual(["essencial"]);
+  expect(view.message).toContain("não foi confirmado");
+});

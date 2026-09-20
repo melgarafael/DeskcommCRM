@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     if (
       current.provider_subscription_id &&
       current.provider_subscription_id !== subscription.id &&
-      !["canceled", "incomplete_expired"].includes(current.status)
+      !["pending", "canceled", "incomplete_expired"].includes(current.status)
     ) {
       await db.query("rollback");
       return ok({ received: true, ignored: true });

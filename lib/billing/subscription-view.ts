@@ -15,6 +15,7 @@ export interface SubscriptionSnapshot {
 export function subscriptionView(subscription: SubscriptionSnapshot | undefined, now = Date.now()) {
   const plan = subscriptionPlan(subscription?.plan_id ?? "");
   const bound = Boolean(subscription?.provider_subscription_id);
+  const pending = subscription?.status === "pending";
   const terminal = ["canceled", "incomplete_expired"].includes(subscription?.status ?? "");
   const paidThrough = subscription?.current_period_end
     ? new Date(subscription.current_period_end).getTime()
@@ -23,11 +24,11 @@ export function subscriptionView(subscription: SubscriptionSnapshot | undefined,
     bound && ["active", "trialing"].includes(subscription?.status ?? "") && paidThrough > now;
   const checkoutPending =
     Boolean(subscription?.plan_id) &&
-    (!bound || terminal) &&
-    ((!bound && !subscription?.checkout_session_id) ||
+    (!bound || terminal || pending) &&
+    (((!bound || pending) && !subscription?.checkout_session_id) ||
       new Date(subscription?.checkout_expires_at ?? 0).getTime() > now);
   const allowedPlanIds: SubscriptionPlanId[] =
-    bound && !terminal
+    bound && !terminal && !pending
       ? []
       : checkoutPending
         ? plan
@@ -36,7 +37,7 @@ export function subscriptionView(subscription: SubscriptionSnapshot | undefined,
         : SUBSCRIPTION_PLANS.map((item) => item.id);
   const message = active
     ? "Sua assinatura está ativa."
-    : bound && !terminal
+    : bound && !terminal && !pending
       ? "Sua assinatura precisa de atenção. Abra a gestão para conferir o pagamento."
       : terminal
         ? "Sua assinatura foi encerrada. Seus recursos existentes foram preservados."

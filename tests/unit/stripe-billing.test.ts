@@ -57,17 +57,15 @@ function portalEnv() {
 afterEach(() => vi.unstubAllGlobals());
 it("opens only the server-selected portal customer and reviewed configuration", async () => {
   portalEnv();
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        id: "bps_test",
-        customer: "cus_own",
-        livemode: false,
-        url: "https://billing.stripe.com/p/session",
-      }),
-    });
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      id: "bps_test",
+      customer: "cus_own",
+      livemode: false,
+      url: "https://billing.stripe.com/p/session",
+    }),
+  });
   vi.stubGlobal("fetch", fetchMock);
   expect(await createStripePortal("cus_own")).toEqual({
     url: "https://billing.stripe.com/p/session",
@@ -96,4 +94,101 @@ it("does not contact the provider without a reviewed portal configuration", asyn
   vi.stubGlobal("fetch", fetchMock);
   await expect(createStripePortal("cus_own")).rejects.toThrow();
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+import { retrieveStripeCheckout } from "@/lib/billing/stripe";
+const checkoutBinding = {
+  sessionId: "cs_test_previous",
+  organizationId: "org_own",
+  attemptId: "attempt_own",
+  planId: "essencial",
+  customerId: "cus_own",
+};
+function retrievedCheckout(overrides: Record<string, unknown> = {}) {
+  return {
+    id: checkoutBinding.sessionId,
+    mode: "subscription",
+    livemode: false,
+    client_reference_id: checkoutBinding.organizationId,
+    metadata: {
+      organization_id: checkoutBinding.organizationId,
+      checkout_attempt_id: checkoutBinding.attemptId,
+      plan_id: checkoutBinding.planId,
+    },
+    status: "open",
+    subscription: null,
+    customer: checkoutBinding.customerId,
+    expires_at: 1900000000,
+    url: "https://checkout.stripe.com/existing",
+    ...overrides,
+  };
+}
+it("retrieves a bound checkout from the canonical provider endpoint without mutation", async () => {
+  portalEnv();
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => retrievedCheckout() });
+  vi.stubGlobal("fetch", fetchMock);
+  expect(await retrieveStripeCheckout(checkoutBinding)).toMatchObject({ status: "open" });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "https://api.stripe.com/v1/checkout/sessions/cs_test_previous",
+    expect.objectContaining({
+      cache: "no-store",
+      headers: expect.objectContaining({ "Stripe-Version": "2025-06-30.basil" }),
+    }),
+  );
+  expect(fetchMock.mock.calls[0]![1]).not.toHaveProperty("body");
+});
+it.each([
+  { id: "cs_other" },
+  { mode: "payment" },
+  { livemode: true },
+  { client_reference_id: "org_other" },
+  { customer: "cus_other" },
+  {
+    metadata: {
+      organization_id: "org_other",
+      checkout_attempt_id: "attempt_own",
+      plan_id: "essencial",
+    },
+  },
+  {
+    metadata: {
+      organization_id: "org_own",
+      checkout_attempt_id: "attempt_other",
+      plan_id: "essencial",
+    },
+  },
+  {
+    metadata: {
+      organization_id: "org_own",
+      checkout_attempt_id: "attempt_own",
+      plan_id: "crescer",
+    },
+  },
+  { url: "https://evil.example/payment" },
+  { status: "open", url: null },
+  { status: "expired", subscription: "sub_paid" },
+  { status: "open", subscription: "sub_paid" },
+])("refuses divergent or inconsistent checkout: %j", async (overrides) => {
+  portalEnv();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, json: async () => retrievedCheckout(overrides) }),
+  );
+  await expect(retrieveStripeCheckout(checkoutBinding)).rejects.toThrow();
+});
+it("accepts an expired unpaid session with no URL", async () => {
+  portalEnv();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => retrievedCheckout({ status: "expired", url: null }),
+    }),
+  );
+  expect(await retrieveStripeCheckout(checkoutBinding)).toMatchObject({ status: "expired" });
+});
+it("provider failure never fabricates an expired status", async () => {
+  portalEnv();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  await expect(retrieveStripeCheckout(checkoutBinding)).rejects.toThrow();
 });

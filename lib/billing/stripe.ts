@@ -110,6 +110,59 @@ export async function createStripeCheckout(input: {
   return checkoutSchema.parse(await response.json());
 }
 
+/** Reconcile the persisted attempt before its local expiry can allow a new checkout. */
+export async function retrieveStripeCheckout(input: {
+  sessionId: string;
+  organizationId: string;
+  attemptId: string;
+  planId: string;
+  customerId?: string;
+}) {
+  if (!/^cs_[a-zA-Z0-9_]+$/.test(input.sessionId)) throw new Error("Pagamento inválido.");
+  const config = billingConfiguration();
+  const response = await fetch(
+    `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(input.sessionId)}`,
+    {
+      headers: { Authorization: `Bearer ${config.key}`, "Stripe-Version": "2025-06-30.basil" },
+      signal: AbortSignal.timeout(15000),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) throw new Error("Não foi possível consultar o pagamento.");
+  const session = z
+    .object({
+      id: z.literal(input.sessionId),
+      mode: z.literal("subscription"),
+      livemode: z.literal(config.live),
+      client_reference_id: z.literal(input.organizationId),
+      metadata: z.object({
+        organization_id: z.literal(input.organizationId),
+        checkout_attempt_id: z.literal(input.attemptId),
+        plan_id: z.literal(input.planId),
+      }),
+      status: z.enum(["open", "complete", "expired"]),
+      subscription: z
+        .string()
+        .regex(/^sub_[a-zA-Z0-9]+$/)
+        .nullable(),
+      customer: z
+        .string()
+        .regex(/^cus_[a-zA-Z0-9]+$/)
+        .nullable(),
+      expires_at: z.number().int().positive(),
+      url: checkoutSchema.shape.url.nullable(),
+    })
+    .parse(await response.json());
+  if (input.customerId && session.customer !== input.customerId)
+    throw new Error("Pagamento divergente da empresa.");
+  // An expired session cannot authorize a retry if it already created a subscription.
+  if (session.status === "expired" && session.subscription)
+    throw new Error("Pagamento com assinatura precisa ser conferido.");
+  if (session.status === "open" && (!session.url || session.subscription))
+    throw new Error("Pagamento aberto inconsistente.");
+  return session;
+}
+
 export const stripeSubscriptionSchema = z.object({
   id: z.string().startsWith("sub_"),
   customer: z.string().startsWith("cus_"),

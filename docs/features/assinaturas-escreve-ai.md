@@ -95,3 +95,13 @@ O formulário preserva nome e instruções quando a criação é recusada e exib
 O seam de IA agora complementa as tarifas legadas com `ai_models`, buscando o provedor escolhido e priorizando o identificador exato do modelo. Registra centavos fracionários de USD em `llm_calls`, sem arredondar cada chamada para um centavo inteiro. Não aplica a tarifa direta da Anthropic a chamadas da OpenRouter. Preço ausente, inválido, consulta indisponível ou cache sem tarifa permanecem como custo desconhecido, não zero. As tarifas legadas de cache da Anthropic foram preservadas.
 
 A versão instalada do SDK já agrega todas as etapas em `usage`; esse comportamento não foi alterado. Um teste com o SDK e um modelo local simulado confirma que o custo consultado é gravado no registro da execução e que a resposta é preservada. Ainda faltam as tarifas de cache do catálogo e a vinculação da franquia comercial em reais ao período da assinatura, com reserva concorrente de consumo. Esta melhoria isolada não habilita a venda nem torna a franquia operacional.
+
+## Recuperação de sessões de pagamento preparada
+
+Antes de reutilizar ou substituir uma sessão persistida, o checkout consulta o [estado canônico da sessão na Stripe](https://docs.stripe.com/api/checkout/sessions/retrieve), validando empresa, tentativa, plano, cliente, ambiente e domínio. Uma sessão aberta é reutilizada mesmo que o relógio local indique expiração. Uma sessão concluída aguarda confirmação da assinatura; não gera outra cobrança. Somente expiração confirmada, ou uma sessão concluída da mesma assinatura já encerrada, permite substituição. Falha de consulta preserva a tentativa.
+
+A recontratação passa a registrar estado `pending` antes de chamar o provedor, mantendo o identificador da assinatura encerrada. Assim, timeout reaproveita a chave de idempotência e a conta não entra na exceção de empresa legada dos limites. O webhook só aceita a nova assinatura com a tentativa persistida; eventos da anterior continuam ignorados. A interface permite recuperar o plano escolhido, sem apresentá-lo como ativo.
+
+Tentativas ambíguas sem identificador de sessão com mais de 23 horas ainda exigem reconciliação administrativa. Os testes de sessão e webhook são simulações locais; autenticação da conta recebedora, pagamento real de teste e aplicação em produção permanecem pendentes.
+
+Validação desta revisão: 83 testes unitários passaram em cinco arquivos, além de TypeScript e lint focado. O harness aplicou o baseline em instalação e atualização e passou 14 testes de limites no PostgreSQL, incluindo o estado `pending` com vínculo de assinatura preservado. Isso verifica a recuperação local e as restrições; não substitui o ciclo financeiro na conta real.
