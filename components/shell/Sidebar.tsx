@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
 import { gsap } from "gsap";
 import { usePathname } from "next/navigation";
 import { useState, useTransition, useEffect, useRef } from "react";
@@ -70,26 +71,20 @@ export function SidebarContent({
           collapsed && "justify-center px-2",
         )}
       >
-        {logo && !collapsed ? (
+        {productBrand ? (
+          collapsed ? (
+            <SimboloDoProduto nome="escreve.ai" className="h-9 w-9" />
+          ) : (
+            <LogotipoDoProduto nome="escreve.ai" className="h-10 w-full" />
+          )
+        ) : logo && !collapsed ? (
           <div className="rounded-lg dark:bg-white dark:p-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={logo} alt={name} className="h-7 max-w-40 object-contain" />
           </div>
         ) : (
           <span className="text-[22px] font-semibold tracking-[-0.06em]">
-            {collapsed ? (
-              productBrand ? (
-                "e."
-              ) : (
-                [...name][0]
-              )
-            ) : productBrand ? (
-              <>
-                escreve<span className="text-primary">.ai</span>
-              </>
-            ) : (
-              name
-            )}
+            {collapsed ? [...name][0] : name}
           </span>
         )}
       </Link>

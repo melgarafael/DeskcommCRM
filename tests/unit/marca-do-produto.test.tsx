@@ -79,8 +79,9 @@ describe("marcaEhADoProduto", () => {
 describe("o desenho na barra lateral", () => {
   it("aberta e sem marca própria, mostra a assinatura escreve.ai", () => {
     renderSidebar(PADRAO, false);
-    expect(screen.getByRole("link", { name: "escreve.ai — início" })).toHaveTextContent(
-      "escreve.ai",
+    expect(screen.getByRole("img", { name: "escreve.ai" })).toHaveAttribute(
+      "viewBox",
+      "140 155 1870 410",
     );
     // O e2e `marca-logo.spec.ts` lê "barra sem <img>" como "sem logo do
     // revendedor"; um <img> do produto aqui faria a spec medir a coisa errada.
@@ -91,7 +92,10 @@ describe("o desenho na barra lateral", () => {
 
   it("recolhida, mostra a assinatura curta escreve.ai", () => {
     renderSidebar(PADRAO, true);
-    expect(screen.getByRole("link", { name: "escreve.ai — início" })).toHaveTextContent("e.");
+    expect(screen.getByRole("img", { name: "escreve.ai" })).toHaveAttribute(
+      "viewBox",
+      "140 155 410 410",
+    );
     expect(screen.queryByText("D")).toBeNull();
   });
 
@@ -151,7 +155,7 @@ describe("o favicon segue a mesma regra", () => {
 
   it("desenha o símbolo quando a marca é a do produto, e a inicial quando não é", () => {
     expect(icone).toMatch(/marcaEhADoProduto\(\{ name: marca\.nome, logoUrl: marca\.logoUrl \}\)/);
-    expect(icone).toMatch(/<path d=\{SIMBOLO\.d\}/);
+    expect(icone).toContain("public/brand/escreve-ai.png");
     expect(icone).toMatch(/letraDoIcone\(marca\.nome\)/);
   });
 });
