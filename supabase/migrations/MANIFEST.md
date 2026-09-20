@@ -334,3 +334,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260920080000` | `0317_subscription_ai_allowance` | Reserva e conciliação de franquia em BRL por ciclo, conversão fixa por período, isolamento e ausência de excedente automático. |
 
 | `20260920111000` | `0318_subscription_ai_evidence` | Identidade real e evidência de uso vinculadas à reserva, sem inferir dados históricos; escrita idempotente e restrita ao backend. |
+
+| `20260920113000` | `0319_subscription_ai_reconciliation` | Conferência explícita por administrador completo, conciliação e auditoria atômicas, sem liberar reservas em andamento. |

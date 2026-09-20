@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Franquia de IA — evidências e recuperação pendente",
+    "title": "Franquia de IA — evidências e conferência administrativa",
     "subtitle": "Referências por chamada sem conteúdo de conversas",
     "output": "assinaturas-evidencia.html",
     "quality_profile": "standard"
@@ -70,12 +70,28 @@
       "sublabel": "AiAllowanceCard mostra saldo e valores em conferência"
     },
     {
-      "id": "pending",
+      "id": "review",
       "lane": "ui",
-      "col": 5,
+      "col": 6,
       "type": "service",
-      "label": "Recuperação administrativa pendente",
-      "sublabel": "A evidência ainda não tem uma tela de decisão; contratação desativada"
+      "label": "Administração → Uso & Custo",
+      "sublabel": "AiReconciliation; administrador confirma custo e referência"
+    },
+    {
+      "id": "resolve",
+      "lane": "runtime",
+      "col": 7,
+      "type": "service",
+      "label": "fn_reconcile_subscription_ai",
+      "sublabel": "Ciclo original; full; idempotência; só unknown identificado"
+    },
+    {
+      "id": "audit",
+      "lane": "storage",
+      "col": 8,
+      "type": "service",
+      "label": "api_audit_log → Administração → Audit",
+      "sublabel": "billing.ai_reconciled; transação atômica com o saldo"
     }
   ],
   "edges": [
@@ -110,10 +126,34 @@
       "label": "consulta agregada do saldo"
     },
     {
-      "id": "e5",
+      "id": "e6",
       "from": "reservations",
-      "to": "pending",
-      "label": "próxima integração; ainda não implementada"
+      "to": "review",
+      "label": "GET administrativo paginado"
+    },
+    {
+      "id": "e7",
+      "from": "review",
+      "to": "resolve",
+      "label": "POST autenticado; custo e confirmação explícita"
+    },
+    {
+      "id": "e8",
+      "from": "resolve",
+      "to": "settle",
+      "label": "Respeita saldo e ciclo originais"
+    },
+    {
+      "id": "e9",
+      "from": "resolve",
+      "to": "audit",
+      "label": "Auditoria na mesma transação"
+    },
+    {
+      "id": "e10",
+      "from": "audit",
+      "to": "review",
+      "label": "Confirmação leva à auditoria; erros mantêm campos"
     }
   ]
 }

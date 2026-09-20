@@ -116,7 +116,7 @@ export function UsageCharts({ series }: UsageChartsProps) {
       </ChartCard>
 
       {/* AI Cost per day */}
-      <ChartCard title={t("Custo AI / dia (R$)")}>
+      <ChartCard title={t("Custo AI / dia (US$)")}>
         {!hasCost ? (
           <EmptyChart />
         ) : (

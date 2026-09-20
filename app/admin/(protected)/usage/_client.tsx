@@ -1,4 +1,5 @@
 "use client";
+import { AiReconciliation } from "@/components/admin/usage/AiReconciliation";
 import { useState } from "react";
 import {
   Select,
@@ -52,6 +53,8 @@ export function UsageClient() {
           </SelectContent>
         </Select>
       </div>
+
+      <AiReconciliation />
 
       {/* Charts */}
       {isLoading ? (

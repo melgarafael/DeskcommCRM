@@ -7979,6 +7979,10 @@ export type Database = {
       }
     }
     Functions: {
+      fn_reconcile_subscription_ai: {
+        Args: { p_org: string; p_call: string; p_actor: string; p_cost_usd_cents: number; p_reference: string; p_request_id: string }
+        Returns: number
+      }
       fn_record_subscription_ai_evidence: {
         Args: { p_org: string; p_call: string; p_provider: string; p_model: string; p_evidence: Json }
         Returns: undefined
