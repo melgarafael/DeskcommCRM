@@ -79,17 +79,50 @@ A paleta tem **dois temas desenhados independentemente**, não invertidos. Light
 | 300 | `#8e8b7f` | `--ds-text-muted` — texto secundário |
 | 400 | `#605e54` | Placeholder, helper |
 | 500 | `#444239` | Disabled |
-| 600 | `#33312a` | `--ds-border` — borders default |
-| 700 | `#272620` | `--ds-surface-elevated` — header, dropdown |
-| 800 | `#1d1c17` | `--ds-surface` — cards |
-| 900 | `#161510` | `--ds-bg` — page background (very-dark warm) |
+| 600 | `#33312a` | rampa neutra |
+| 700 | `#272620` | rampa neutra |
+| 800 | `#1d1c17` | rampa neutra |
+| 900 | `#161510` | rampa neutra |
 | 950 | `#0c0b08` | Voids decorativos (raro) |
 
-**Surfaces dark:**
-- `bg`: `#161510` — página (NÃO `#000` nem `#0a0a0a`; warm-tinted)
-- `surface`: `#1d1c17` — cards
-- `surfaceElevated`: `#272620` — header, dropdown
-- `text`: `#f5f4ef` / `textMuted`: `#8e8b7f` / `border`: `#33312a`
+> ⚠️ **A rampa de neutros não é mais a fonte das superfícies do tema escuro.**
+> Até a reforma da escada, `--ds-bg` era o grau 900 e `--ds-surface` o 800. As
+> superfícies agora têm valores próprios (tabela abaixo) porque precisavam de um
+> espaçamento que a rampa, com seus degraus regulares, não conseguia dar. A rampa
+> segue servindo ao que ela sempre serviu: texto, ícone e gráfico em cinza.
+
+**Surfaces dark** — cinco degraus, e a escada **desacelera**:
+
+| token | hex | L (OKLab) | Δ | papel |
+|---|---|---|---|---|
+| `bg` | `#080704` | 0,130 | — | página |
+| `surface` | `#13120d` | 0,180 | 0,050 | cards |
+| `surface-tile` | `#181712` | 0,205 | 0,025 | fundo de tile e de hover |
+| `surface-elevated` | `#1c1b15` | 0,220 | 0,015 | header, dropdown, secundário |
+| `border` | `#2b2922` | 0,280 | 0,060 | bordas |
+
+- `text`: `#f5f4ef` / `textMuted`: `#8e8b7f` / `borderStrong`: `#3f3d34`
+
+**Por que a escada desacelera, e por que o fundo escureceu.** A versão anterior
+era linear — `bg` L=0,195, depois degraus de ~0,04 cada até a borda — e isso
+produzia dois defeitos que a prova em tela reportou: o fundo não lia como
+escuro (0,195 num tema chamado escuro é marrom lavado, e o card a 0,226 mal se
+destacava dele), e escada de degraus iguais lê como chapada, porque o olho não
+consegue hierarquizar quando nada é "mais levantado" que o resto. O salto forte
+ao sair do fundo seguido de refinos é o que faz a profundidade ler como
+contínua.
+
+Os alvos de L vêm de uma referência externa; **o matiz e o croma continuam
+greige** — cada hex foi obtido convertendo o valor antigo para OKLCh, trocando
+só o L e voltando. A identidade quente não mudou: `#080704` ainda é um preto
+quente, e não `#000` nem um cinza frio.
+
+Escurecer o fundo **melhorou** todo o contraste, não piorou — e melhorou também
+a marca própria: uma semente a menos (`#4b0082`, índigo profundo) precisa da
+caminhada de correção, ou seja, mais um revendedor fica com o hex exato que
+escolheu. Números vigiados por `tests/unit/branding-pares-pintados.test.ts`.
+
+O tema claro **não** mudou nesta reforma; só ganhou o degrau `surface-tile`.
 
 ## Estados (success / warning / error / info)
 
@@ -114,8 +147,8 @@ Estados têm versões light e dark calibradas. Saturação fica ≤ 55% em light
 /* 2. Como border (foco específico): full opacity */
 .input-error { border-color: var(--ds-error); }
 
-/* 3. Como bg de botão destrutivo: full opacity, fg branco */
-.btn-destructive { background: var(--ds-error); color: #fff; }
+/* 3. Como bg de botão destrutivo: TINGIDO, não fill (ver 06-components.md) */
+.btn-destructive { background: var(--ds-error-bg); color: var(--ds-error-fg); }
 ```
 
 ## Contraste WCAG
@@ -128,7 +161,7 @@ Validações realizadas pela paleta:
 | `text-muted` (`#5d594f`) sobre `bg` | ~6.7:1 | AA+ | Secondary, helper, timestamps |
 | `accent-500` (`#67885d`) sobre `bg` | ~4.6:1 | AA | Texto UI 14px+, botão primary |
 | `accent-700` (`#41573b`) sobre `accent-soft` | ~7.2:1 | AAA | Link em chip, label sobre badge |
-| Dark: `text` (`#f5f4ef`) sobre `bg` (`#161510`) | ~14.1:1 | AAA | Body text |
+| Dark: `text` (`#f5f4ef`) sobre `bg` (`#080704`) | 18.29:1 | AAA | Body text |
 | Dark: `accent-400` (`#82a077`) sobre `bg` | ~5.9:1 | AA+ | Link, primary |
 | `error` light (`#a94a3c`) sobre `bg` | ~4.7:1 | AA | UI text 14px+ |
 

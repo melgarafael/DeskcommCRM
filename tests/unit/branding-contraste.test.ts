@@ -224,7 +224,12 @@ describe("derivarMarca — as 16 sementes adversariais", () => {
         .map((t) => `${semente}/${t.deslocamento}`),
     );
     expect(deslocados.length).toBeGreaterThan(0);
-    expect(deslocados).toHaveLength(13);
+    // Era 13 até a reforma da escada de superfícies do tema escuro. Quem saiu
+    // é `#4b0082` (índigo profundo) no escuro: com o fundo antigo (L 0,195) o
+    // accent precisava descer um degrau para alcançar o piso; com o novo
+    // (L 0,130) o hex exato do revendedor já passa. Menos caminhada é melhor —
+    // cada deslocamento é uma marca que NÃO recebe a cor que escolheu.
+    expect(deslocados).toHaveLength(12);
 
     // O amarelo é o caso que NÃO tem escapatória física: nenhum stop claro de amarelo
     // alcança 3:1 contra `#ffffff`. Se ele parar de andar, a caminhada quebrou.

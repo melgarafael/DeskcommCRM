@@ -122,7 +122,7 @@ const SelectItem = React.forwardRef<
       // Aqui `--color-accent` é o VERDE DA MARCA, então cada item percorrido
       // com o teclado ou o mouse virava uma barra verde sólida com texto
       // branco. Realce de item é superfície, não marca.
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-hidden focus:bg-surface-elevated focus:text-text data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-hidden focus:bg-surface-tile focus:text-text data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
     )}
     {...props}

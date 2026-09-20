@@ -52,7 +52,7 @@ const buttonVariants = cva(
         outline:
           "bg-transparent text-text border border-border hover:bg-surface-elevated hover:border-border-strong",
         ghost:
-          "bg-transparent text-text hover:bg-surface-elevated aria-expanded:bg-surface-elevated",
+          "bg-transparent text-text hover:bg-surface-tile aria-expanded:bg-surface-tile",
         // Destrutivo TINGIDO, não bloco vermelho. Os dois tokens já existiam e
         // já são o que o Badge `error` usa — é o vermelho terroso do Sage, e
         // não o `text-white` sobre fill, que era a única cor de alto impacto

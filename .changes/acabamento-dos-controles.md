@@ -27,6 +27,18 @@ Campo preenchido de forma inválida agora mostra o anel vermelho em repouso, sem
 precisar estar em foco — antes o erro era uma borda de um pixel, que some numa
 tela cheia de campos.
 
-Nenhuma altura, largura ou espaçamento mudou, e não há nada a fazer na VPS.
+O tema escuro ficou mais profundo. O fundo da página era claro demais para um
+tema que se chama escuro, e os cards mal se destacavam dele; agora o fundo é um
+preto quente de verdade e as superfícies levantadas se separam em degraus que
+vão ficando mais finos conforme sobem — é o que faz a tela ter profundidade em
+vez de parecer chapada. O tom continua o mesmo: nada virou cinza azulado.
+
+Quem instalou com a marca própria ganha de brinde: com o fundo mais profundo,
+uma cor de marca a mais passa no contraste sem precisar ser corrigida pelo
+sistema. Na prática, mais um revendedor fica com exatamente o tom que escolheu
+em vez de um vizinho dele.
+
+O tema claro não mudou. Nenhuma altura, largura ou espaçamento mudou em tema
+nenhum, e não há nada a fazer na VPS.
 
 Crédito: @Draven9
