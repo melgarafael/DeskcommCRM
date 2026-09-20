@@ -46,6 +46,9 @@ const COLUNAS = [
   "col_tipo",
   "busca_operador",
   "enabled",
+  "similaridade_deterministica",
+  "similares_qtd",
+  "ordem",
   "updated_at",
 ].join(", ");
 
@@ -195,6 +198,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
     col_tipo: input.col_tipo ?? null,
     busca_operador: input.busca_operador,
     enabled: input.enabled,
+    similaridade_deterministica: input.similaridade_deterministica,
+    similares_qtd: input.similares_qtd,
+    ordem: input.ordem,
   };
 
   const { data: salvo, error } = await admin

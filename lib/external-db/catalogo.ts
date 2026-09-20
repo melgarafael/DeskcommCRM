@@ -22,6 +22,80 @@ import type pg from 'pg';
 
 export type OperadorDeBusca = 'contem' | 'eq' | 'comeca_com';
 
+/** Papéis que uma coluna do catálogo pode exercer. */
+export type PapelColuna =
+  | 'nome'
+  | 'ano'
+  | 'cor'
+  | 'km'
+  | 'preco'
+  | 'imagem'
+  | 'estoque'
+  | 'cilindrada'
+  | 'tipo';
+
+export const PAPEIS_COLUNA: readonly PapelColuna[] = [
+  'nome',
+  'ano',
+  'cor',
+  'km',
+  'preco',
+  'imagem',
+  'estoque',
+  'cilindrada',
+  'tipo',
+];
+
+/** Rótulos legíveis de cada papel (UI e legenda). */
+export const ROTULO_DO_PAPEL: Record<PapelColuna, string> = {
+  nome: 'Nome / modelo',
+  ano: 'Ano',
+  cor: 'Cor',
+  km: 'Quilometragem',
+  preco: 'Preço',
+  imagem: 'Foto (URL da imagem)',
+  estoque: 'Estoque',
+  cilindrada: 'Cilindrada',
+  tipo: 'Tipo',
+};
+
+const ALIASES_DE_PAPEL: ReadonlyArray<[PapelColuna, readonly string[]]> = [
+  ['imagem', ['imagem_url', 'imagem_principal', 'url_imagem', 'foto_url', 'imagem', 'foto', 'fotos']],
+  ['cilindrada', ['cilindrada', 'cilindradas', 'cc', 'motor']],
+  ['km', ['quilometragem', 'quilometros', 'km', 'odometro', 'rodagem']],
+  ['preco', ['preco', 'preço', 'valor', 'preco_promocional', 'valor_promocional']],
+  ['estoque', ['estoque', 'quantidade', 'qtd']],
+  ['tipo', ['tipo', 'categoria', 'segmento']],
+  ['cor', ['cor', 'coloracao']],
+  ['ano', ['ano', 'ano_modelo', 'ano_fabricacao']],
+  ['nome', ['nome', 'titulo', 'title', 'descricao_curta']],
+];
+
+function normalizarColuna(nome: string): string {
+  return nome
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Chuta o PAPEL de uma coluna pelo nome (o dono ajusta na tela se errar).
+ * Igualdade exata primeiro; depois "contém" — assim `preco` ganha de
+ * `preco_promocional` quando a coluna é literalmente `preco`.
+ */
+export function detectarPapelColuna(nome: string): PapelColuna | null {
+  const n = normalizarColuna(nome);
+  if (n === '') return null;
+  for (const [papel, aliases] of ALIASES_DE_PAPEL) {
+    if (aliases.some((a) => normalizarColuna(a) === n)) return papel;
+  }
+  for (const [papel, aliases] of ALIASES_DE_PAPEL) {
+    if (aliases.some((a) => a !== '' && n.includes(normalizarColuna(a)))) return papel;
+  }
+  return null;
+}
+
 export interface CatalogoMapeamento {
   connectionId: string;
   schemaName: string;
@@ -36,6 +110,11 @@ export interface CatalogoMapeamento {
   colCilindrada: string | null;
   colTipo: string | null;
   buscaOperador: OperadorDeBusca;
+  /** Regras do catálogo (migration 0245). Opcionais na leitura por robustez. */
+  similaridadeDeterministica?: boolean;
+  similaresQtd?: number;
+  /** Prioridade por papel (1 = mais importante). */
+  ordem?: Partial<Record<PapelColuna, number>>;
 }
 
 /** As colunas que o extrator do motor conhece (todas opcionais menos o nome). */
@@ -88,10 +167,13 @@ export async function carregarCatalogoMapeamento(
     col_cilindrada: string | null;
     col_tipo: string | null;
     busca_operador: OperadorDeBusca;
+    similaridade_deterministica: boolean;
+    similares_qtd: number;
+    ordem: Partial<Record<PapelColuna, number>> | null;
   }>(
     `select connection_id, schema_name, table_name, col_nome, col_ano, col_cor,
             col_km, col_preco, col_imagem, col_estoque, col_cilindrada, col_tipo,
-            busca_operador
+            busca_operador, similaridade_deterministica, similares_qtd, ordem
        from public.catalog_mappings
       where organization_id = $1 and enabled`,
     [organizationId],
@@ -112,7 +194,24 @@ export async function carregarCatalogoMapeamento(
     colCilindrada: r.col_cilindrada,
     colTipo: r.col_tipo,
     buscaOperador: r.busca_operador,
+    similaridadeDeterministica: r.similaridade_deterministica ?? false,
+    similaresQtd: r.similares_qtd ?? 3,
+    ordem: r.ordem ?? {},
   };
+}
+
+/**
+ * Critérios de semelhança na ORDEM configurada (1 = mais importante), restritos
+ * aos que participam da escolha. Sem ordem configurada, cai no default
+ * `cilindrada → preco`.
+ */
+export function criteriosDeSimilaridade(m: CatalogoMapeamento): Array<'cilindrada' | 'preco' | 'tipo'> {
+  const ordem = m.ordem ?? {};
+  const possiveis: Array<'cilindrada' | 'preco' | 'tipo'> = ['cilindrada', 'preco', 'tipo'];
+  const comOrdem = possiveis
+    .filter((p) => typeof ordem[p] === 'number')
+    .sort((a, b) => (ordem[a] ?? 99) - (ordem[b] ?? 99));
+  return comOrdem.length > 0 ? comOrdem : ['cilindrada', 'preco'];
 }
 
 /** As colunas que o modelo deve pedir ao consultar o catálogo (nome + as demais). */

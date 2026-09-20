@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 
+import { PAPEIS_COLUNA } from "./catalogo";
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_PADRAO_DA_GRADE, LIMITE_RESPOSTA_BYTES } from "./limites";
 
 /** Espelha o CHECK de `external_db_connections.ssl_mode` e `ModoTls`. */
@@ -94,8 +95,34 @@ export const salvarCatalogoSchema = z
     col_tipo: colunaDoCatalogo.optional(),
     busca_operador: z.enum(["contem", "eq", "comeca_com"]).default("contem"),
     enabled: z.boolean().default(true),
+    // Regras do catálogo (migration 0245).
+    similaridade_deterministica: z.boolean().default(false),
+    similares_qtd: z.number().int().min(1).max(8).default(3),
+    // Prioridade por papel (1 = mais importante). Chaves = PAPEIS_COLUNA.
+    // Usa `z.record(string, ...)` de propósito: `z.record(z.enum(...), ...)` no
+    // Zod 4 exige TODAS as chaves no default, o que impediria `{}`.
+    ordem: z.record(z.string(), z.number().int().min(1).max(9)).default({}),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    const papeisValidos = new Set<string>(PAPEIS_COLUNA);
+    const usados = new Set<number>();
+    for (const [papel, n] of Object.entries(val.ordem)) {
+      if (!papeisValidos.has(papel)) {
+        ctx.addIssue({ code: "custom", path: ["ordem"], message: `papel desconhecido: ${papel}` });
+        continue;
+      }
+      if (usados.has(n)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["ordem"],
+          message: "cada número de ordem só pode ser usado uma vez",
+        });
+        break;
+      }
+      usados.add(n);
+    }
+  });
 
 export type SalvarCatalogoInput = z.infer<typeof salvarCatalogoSchema>;
 

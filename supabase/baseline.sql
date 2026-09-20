@@ -24323,3 +24323,27 @@ create trigger trg_catalog_mappings_audit
   for each row execute function public.fn_audit_log_row();
 
 -- ---- fim catálogo configurável do agente (migration 0244) ----
+
+-- ---- regras do catálogo no próprio catálogo (migration 0245) ----
+-- 0245 · ligar/desligar, ordem e "quantas oferecer" passam a morar junto ao
+-- catálogo (Integração de dados). Idempotente.
+
+alter table public.catalog_mappings
+  add column if not exists similaridade_deterministica boolean not null default false,
+  add column if not exists similares_qtd integer not null default 3,
+  add column if not exists ordem jsonb not null default '{}'::jsonb;
+
+alter table public.catalog_mappings
+  drop constraint if exists catalog_mappings_similares_qtd_valido;
+alter table public.catalog_mappings
+  add constraint catalog_mappings_similares_qtd_valido
+    check (similares_qtd between 1 and 8);
+
+comment on column public.catalog_mappings.similaridade_deterministica is
+  'true = o motor escolhe as motos semelhantes por regra fixa (ordem), sem depender do julgamento do modelo.';
+comment on column public.catalog_mappings.similares_qtd is
+  'Quantas motos semelhantes oferecer quando o modelo pedido não existe (1..8).';
+comment on column public.catalog_mappings.ordem is
+  'Prioridade por papel de coluna (ex.: {"cilindrada":1,"preco":2}). Vale para escolher as semelhantes e para a ordem dos campos na legenda.';
+
+-- ---- fim regras do catálogo no próprio catálogo (migration 0245) ----

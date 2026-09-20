@@ -6,6 +6,19 @@ import { apiClient } from "@/lib/api/client";
 
 export type OperadorDeBusca = "contem" | "eq" | "comeca_com";
 
+export type PapelColuna =
+  | "nome"
+  | "ano"
+  | "cor"
+  | "km"
+  | "preco"
+  | "imagem"
+  | "estoque"
+  | "cilindrada"
+  | "tipo";
+
+export type OrdemPorPapel = Partial<Record<PapelColuna, number>>;
+
 /** Linha de `catalog_mappings` como a API devolve (snake_case). */
 export interface CatalogoMapeamentoDTO {
   connection_id: string;
@@ -22,6 +35,9 @@ export interface CatalogoMapeamentoDTO {
   col_tipo: string | null;
   busca_operador: OperadorDeBusca;
   enabled: boolean;
+  similaridade_deterministica: boolean;
+  similares_qtd: number;
+  ordem: OrdemPorPapel;
   updated_at?: string;
 }
 
@@ -41,6 +57,9 @@ export interface SalvarCatalogoBody {
   col_tipo?: string;
   busca_operador: OperadorDeBusca;
   enabled: boolean;
+  similaridade_deterministica: boolean;
+  similares_qtd: number;
+  ordem: OrdemPorPapel;
 }
 
 export const catalogoMapeamentoQueryKey = ["external-db", "catalog"] as const;
