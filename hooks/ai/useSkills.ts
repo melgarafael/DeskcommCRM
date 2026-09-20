@@ -20,6 +20,27 @@ export interface SkillsState {
   catalog: CatalogSkill[];
 }
 
+export interface SkillMatcher {
+  any_keywords: string[];
+  probe_keywords?: string[];
+}
+
+/** Corpo completo de uma skill instalada, para o editor. */
+export interface SkillComCorpo {
+  name: string;
+  description: string;
+  body: string;
+  matcher: SkillMatcher;
+  version_id: string;
+  updated_at?: string;
+}
+
+export interface SalvarSkillBody {
+  description: string;
+  body: string;
+  matcher: SkillMatcher;
+}
+
 const KEY = ["skills"];
 
 export function useSkills(initial?: SkillsState) {
@@ -27,6 +48,31 @@ export function useSkills(initial?: SkillsState) {
     queryKey: KEY,
     ...(initial !== undefined ? { initialData: initial } : {}),
     queryFn: () => apiClient.get<{ data: SkillsState }>("/api/v1/ai/skills").then((r) => r.data),
+  });
+}
+
+/** GET do corpo/matcher de UMA skill instalada (abre o editor). */
+export function useSkill(name: string | null) {
+  return useQuery({
+    queryKey: ["skills", "detail", name],
+    enabled: name !== null,
+    queryFn: () =>
+      apiClient
+        .get<{ data: SkillComCorpo }>(`/api/v1/ai/skills/${encodeURIComponent(name ?? "")}`)
+        .then((r) => r.data),
+  });
+}
+
+/** PUT — salva uma versão NOVA do corpo e move o ponteiro da organização. */
+export function useSalvarSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, body }: { name: string; body: SalvarSkillBody }) =>
+      apiClient.put<{ data: { name: string; version_id: string } }>(
+        `/api/v1/ai/skills/${encodeURIComponent(name)}`,
+        body,
+      ),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
 

@@ -226,6 +226,10 @@ export const AUDIT_ACTIONS = [
   "ai.skill_imported",
   "ai.skill_installed",
   "ai.skill_uninstalled",
+  // Edição pela tela (Fase 2 do PLANO-CONFIG-UI-AGENTE): nova versão + ponteiro
+  // movido. O corpo é texto que o agente lê — mudar isso muda o comportamento,
+  // então fica auditado.
+  "ai.skill_saved",
   "ai.router_created",
   "ai.router_updated",
   "ai.router_deleted",
