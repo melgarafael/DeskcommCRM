@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { resolveTurnAgent } from './resolve-turn-agent';
 import type { PublishedAgentConfig } from './agent-config';
+import { CATALOG_CONFIG_DEFAULT } from './catalog-config';
 import type { LoadedRouter } from './router-config';
 
 /** Config mínima válida — só o agentId importa pros testes (identidade). */
@@ -28,6 +29,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     activeKbVersionId: null,
     ragTopK: 5,
     ragSimilarityThreshold: 0.72,
+    catalogConfig: CATALOG_CONFIG_DEFAULT,
     janelaDeAtendimento: null,
     versionCreatedBy: null,
     operatorEnabled: false,

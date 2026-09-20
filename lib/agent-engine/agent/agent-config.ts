@@ -16,6 +16,7 @@
 import type pg from 'pg';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
+import { parseCatalogConfig, type CatalogConfig } from './catalog-config';
 
 export interface PublishedAgentConfig {
   operationMode?: 'automatic' | 'assisted';
@@ -57,6 +58,8 @@ export interface PublishedAgentConfig {
   /** knobs de RAG do ai_agents.config (defaults calibrados na 0097: 5 / 0.40). */
   ragTopK: number;
   ragSimilarityThreshold: number;
+  /** Apresentação do catálogo e escolha das motos semelhantes (Fase 3). */
+  catalogConfig: CatalogConfig;
   /**
    * O papel OPERADOR está ligado nesta versão (spec 16 §3.2)?
    *
@@ -154,7 +157,11 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
-  const cfg = (r.config ?? {}) as { rag_top_k?: unknown; rag_similarity_threshold?: unknown };
+  const cfg = (r.config ?? {}) as {
+    rag_top_k?: unknown;
+    rag_similarity_threshold?: unknown;
+    catalog?: unknown;
+  };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
     Number.isInteger(cfg.rag_top_k) &&
@@ -215,6 +222,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // Leitura DEFENSIVA e que falha ABERTA: jsonb livre com shape estranho vira
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
+    // Config de catálogo (Fase 3). Leitura TOLERANTE: bloco ausente/parcial cai
+    // no default (não muda o comportamento de quem nunca abriu a tela).
+    catalogConfig: parseCatalogConfig(cfg.catalog),
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
   };

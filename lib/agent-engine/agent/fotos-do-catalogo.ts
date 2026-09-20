@@ -41,6 +41,10 @@ export interface MotoDoCatalogo {
   cor?: string;
   quilometragem?: string;
   preco?: string;
+  /** Cilindrada (coluna configurada); ausente = o motor extrai do nome. */
+  cilindrada?: string;
+  /** Tipo (street/trail/...), quando houver coluna. */
+  tipo?: string;
 }
 
 /** normaliza para casar nome: minúsculas, sem acento, espaços colapsados. */
@@ -128,6 +132,8 @@ export function extrairMotosDoResultado(
     const cor = valorDe(registro, colunas, 'cor', ['cor']);
     const km = valorDe(registro, colunas, 'km', ['quilometragem', 'km']);
     const preco = valorDe(registro, colunas, 'preco', ['preco', 'preço', 'valor']);
+    const cilindrada = valorDe(registro, colunas, 'cilindrada', ['cilindrada', 'cc']);
+    const tipo = valorDe(registro, colunas, 'tipo', ['tipo', 'categoria']);
 
     motos.push({
       nome: nomeBruto,
@@ -136,6 +142,8 @@ export function extrairMotosDoResultado(
       ...(cor !== undefined ? { cor } : {}),
       ...(km !== undefined ? { quilometragem: km } : {}),
       ...(preco !== undefined ? { preco } : {}),
+      ...(cilindrada !== undefined ? { cilindrada } : {}),
+      ...(tipo !== undefined ? { tipo } : {}),
     });
   }
   return motos;

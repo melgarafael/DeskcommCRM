@@ -154,10 +154,13 @@ import { esperarComoHumano } from './atraso-humano';
 import { sendInBubbles } from './split-message';
 import {
   extrairMotosDoResultado,
+  legendaDaMoto,
   planoDeFotos,
   separarTextoApresentacao,
+  type FotoComLegenda,
   type MotoDoCatalogo,
 } from './fotos-do-catalogo';
+import { ordenarSimilares } from './similaridade';
 import {
   carregarCatalogoMapeamento,
   colunasDoCatalogo,
@@ -3244,8 +3247,24 @@ async function executarTurnoDoAgente(
         // da legenda única presa na 1ª. Medido ao vivo: modelos lite listam a
         // moto e esquecem a foto; foto ao ofertar a moto é promessa do PRODUTO.
         // Se o modelo JÁ mandou fotos, a decisão dele vence e nada é mudado.
-        const planoAutomatico =
-          fotosDeclaradas.length === 0 ? planoDeFotos(motos, body, catalogoDoTurno) : [];
+        const planoAutomatico: FotoComLegenda[] = (() => {
+          if (fotosDeclaradas.length > 0) return [];
+          const cfg = agentConfig?.catalogConfig;
+          // Escolha DETERMINÍSTICA (Fase 3): o motor ordena o catálogo por
+          // cilindrada → preço (config do agente) e manda essas motos, em vez de
+          // depender do julgamento do modelo. Só quando o dono liga o toggle.
+          if (cfg?.similaridade_deterministica === true && catalogoDoTurno.length > 0) {
+            const termo = mensagemDoJob && mensagemDoJob.trim() !== '' ? mensagemDoJob : body;
+            const escolhidas = ordenarSimilares(termo, catalogoDoTurno, {
+              quantidade: cfg.similares_qtd,
+              criterios: cfg.criterio,
+            });
+            return escolhidas
+              .map((m) => ({ url: m.fotos[0] ?? '', legenda: legendaDaMoto(m) }))
+              .filter((f) => f.url !== '');
+          }
+          return planoDeFotos(motos, body, catalogoDoTurno);
+        })();
         const fotos = fotosDeclaradas;
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;

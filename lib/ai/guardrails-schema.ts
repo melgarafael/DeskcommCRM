@@ -4,6 +4,8 @@
  */
 import { z } from "zod";
 
+import { catalogConfigSchema } from "@/lib/agent-engine/agent/catalog-config";
+
 // ---------------------------------------------------------------------------
 // Models permitidos (Vercel AI Gateway)
 // ---------------------------------------------------------------------------
@@ -88,6 +90,10 @@ export const agentConfigSchema = z.object({
   rag_top_k: z.number().int().min(1).max(20).default(5),
   rag_similarity_threshold: z.number().min(0).max(1).default(0.4),
   confidence_threshold: z.number().min(0).max(1).default(0.6),
+  // Apresentação do catálogo e escolha das motos semelhantes (Fase 3 do
+  // PLANO-CONFIG-UI-AGENTE). Opcional: sem o bloco, o runtime usa os defaults
+  // (comportamento atual). A validação estrita mora no próprio schema.
+  catalog: catalogConfigSchema.optional(),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 

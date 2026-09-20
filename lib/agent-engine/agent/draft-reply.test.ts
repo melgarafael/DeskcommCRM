@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { generateDraftReply } from "./draft-reply";
 import { loadPublishedAgentConfig, type PublishedAgentConfig } from "./agent-config";
+import { CATALOG_CONFIG_DEFAULT } from "./catalog-config";
 import { getLeadContext, type LeadContextResult } from "../edge/crm/get-lead-context";
 import { runModelCall } from "../edge/llm/run-model-call";
 
@@ -46,6 +47,7 @@ const AGENT: PublishedAgentConfig = {
   activeKbVersionId: null,
   ragTopK: 5,
   ragSimilarityThreshold: 0.72,
+  catalogConfig: CATALOG_CONFIG_DEFAULT,
   janelaDeAtendimento: null,
   versionCreatedBy: null,
   operatorEnabled: false,

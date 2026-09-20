@@ -50,6 +50,7 @@ import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
+import { CatalogoDoAgente } from "./CatalogoDoAgente";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -1088,6 +1089,16 @@ export function AgentForm(props: Props) {
               disabled={disabled}
             />
           </Card>
+
+          {/* Catálogo: regras de apresentação e escolha das semelhantes. Salva em
+              `ai_agents.config.catalog` (config do agente, vale no próximo turno). */}
+          {isEdit && (
+            <CatalogoDoAgente
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).catalog}
+              disabled={disabled}
+            />
+          )}
         </div>
       </div>
 
