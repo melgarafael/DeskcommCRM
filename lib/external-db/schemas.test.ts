@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { LIMITE_FILTROS, LIMITE_LINHAS, LIMITE_PADRAO_DA_GRADE, LIMITE_RESPOSTA_BYTES } from "./limites";
-import { atualizarConexaoSchema, criarConexaoSchema, leituraQuerySchema, MODOS_TLS } from "./schemas";
+import {
+  atualizarConexaoSchema,
+  criarConexaoSchema,
+  leituraQuerySchema,
+  MODOS_TLS,
+  salvarCatalogoSchema,
+} from "./schemas";
 
 const VALIDO = {
   label: "Postgres do outro CRM",
@@ -61,6 +67,45 @@ describe("atualizarConexaoSchema", () => {
 
   it("campo desconhecido é recusado", () => {
     expect(() => atualizarConexaoSchema.parse({ nope: 1 })).toThrow();
+  });
+});
+
+describe("salvarCatalogoSchema", () => {
+  const BASE = {
+    connection_id: "11111111-1111-4111-8111-111111111111",
+    schema_name: "public",
+    table_name: "motos",
+    col_nome: "nome",
+  };
+
+  it("aceita o mínimo e aplica defaults das regras", () => {
+    const r = salvarCatalogoSchema.parse(BASE);
+    expect(r.busca_operador).toBe("contem");
+    expect(r.enabled).toBe(true);
+    expect(r.similaridade_deterministica).toBe(false);
+    expect(r.similares_qtd).toBe(3);
+    expect(r.ordem).toEqual({});
+  });
+
+  it("recusa ORDEM repetida (não pode usar o mesmo número duas vezes)", () => {
+    const r = salvarCatalogoSchema.safeParse({
+      ...BASE,
+      ordem: { cilindrada: 1, preco: 1 },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("aceita ordem com números distintos", () => {
+    const r = salvarCatalogoSchema.parse({
+      ...BASE,
+      ordem: { cilindrada: 1, preco: 2 },
+    });
+    expect(r.ordem).toEqual({ cilindrada: 1, preco: 2 });
+  });
+
+  it("recusa papel desconhecido e quantidade fora da faixa", () => {
+    expect(salvarCatalogoSchema.safeParse({ ...BASE, ordem: { foo: 1 } }).success).toBe(false);
+    expect(salvarCatalogoSchema.safeParse({ ...BASE, similares_qtd: 99 }).success).toBe(false);
   });
 });
 
