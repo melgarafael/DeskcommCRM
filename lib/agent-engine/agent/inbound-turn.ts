@@ -3352,8 +3352,8 @@ async function executarTurnoDoAgente(
           const enviarFotosAutomaticas = async (
             textoDoModelo: string,
           ): Promise<ChannelSendResult> => {
+            const cfg = agentConfig?.catalogConfig;
             let ultimo: ChannelSendResult | undefined;
-            const { introducao, final } = separarTextoApresentacao(textoDoModelo, catalogoDoTurno);
             const enviarTexto = async (txt: string): Promise<void> => {
               if (txt.trim() === '') return;
               ultimo = await sendInBubbles(txt, {
@@ -3377,10 +3377,7 @@ async function executarTurnoDoAgente(
               });
               await dormir(700);
             };
-            // 1) introdução em texto.
-            await enviarTexto(introducao);
-            // 2) uma foto por moto, cada uma com a legenda dela.
-            for (const item of planoAutomatico) {
+            const enviarFoto = async (url: string, legenda: string): Promise<void> => {
               ultimo = await liveChannel().send({
                 tenantId,
                 leadId,
@@ -3389,13 +3386,47 @@ async function executarTurnoDoAgente(
                 agentOperation,
                 seq: (seq += 1),
                 conversationId: input.conversationId,
-                body: item.legenda,
-                media: { type: 'image', url: item.url },
+                body: legenda,
+                media: { type: 'image', url },
               });
               await dormir(700);
+            };
+
+            // Separação do texto conforme os toggles:
+            //  - `abertura_sem_citar` (default true): tira a lista e manda a
+            //    abertura sem citar as motos; false = manda o texto como veio.
+            //  - `pergunta_separada` (default true): a pergunta vai DEPOIS das
+            //    fotos; false = vai junto na abertura (antes).
+            let introducao: string;
+            let final = '';
+            if (cfg?.abertura_sem_citar === false) {
+              introducao = textoDoModelo;
+            } else {
+              const sep = separarTextoApresentacao(textoDoModelo, catalogoDoTurno);
+              introducao = sep.introducao;
+              final = sep.final;
             }
-            // 3) pergunta final em texto, depois das fotos.
-            await enviarTexto(final);
+            if (cfg?.pergunta_separada === false) {
+              introducao = [introducao, final].filter((s) => s.trim() !== '').join('\n\n');
+              final = '';
+            }
+
+            if (cfg?.foto_por_moto === false) {
+              // Agrupado (comportamento antigo): legenda na 1ª foto, demais sem.
+              // A legenda vai junto da abertura que seria enviada em texto.
+              for (let i = 0; i < planoAutomatico.length; i += 1) {
+                await enviarFoto(planoAutomatico[i]!.url, i === 0 ? introducao : '');
+              }
+              await enviarTexto(final);
+            } else {
+              // Padrão: abertura em texto; uma foto por moto com a legenda dela;
+              // pergunta final em texto.
+              await enviarTexto(introducao);
+              for (const item of planoAutomatico) {
+                await enviarFoto(item.url, item.legenda);
+              }
+              await enviarTexto(final);
+            }
             return ultimo!;
           };
           // Args reusados EXATAMENTE (mesmo objeto) no re-run do fail-safe abaixo — só
@@ -3461,7 +3492,10 @@ async function executarTurnoDoAgente(
             // imagem em bolhas não faz sentido). Sem mídia, o caminho é o de sempre.
             send: (finalBody: string) => {
               corposEnviados.push(finalBody);
-              if (planoAutomatico.length > 0) {
+              if (
+                planoAutomatico.length > 0 &&
+                agentConfig?.catalogConfig.enviar_foto_automatica !== false
+              ) {
                 return enviarFotosAutomaticas(finalBody);
               }
               return fotos.length > 0

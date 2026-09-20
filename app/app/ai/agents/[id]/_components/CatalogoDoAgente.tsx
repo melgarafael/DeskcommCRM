@@ -130,6 +130,54 @@ export function CatalogoDoAgente({ agentId, inicial, disabled, aoSalvar }: Props
         </div>
       )}
 
+      <div className="flex flex-col gap-3 rounded-md border border-border/60 p-3">
+        <Label>{t("Formato das mensagens")}</Label>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="cat-enviar-foto"
+            checked={cfg.enviar_foto_automatica}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, enviar_foto_automatica: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-enviar-foto">
+            {t("Enviar a foto automaticamente quando a IA esquecer")}
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="cat-foto-moto"
+            checked={cfg.foto_por_moto}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, foto_por_moto: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-foto-moto">
+            {t("Uma foto por moto, cada uma com a legenda dela")}
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="cat-abertura"
+            checked={cfg.abertura_sem_citar}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, abertura_sem_citar: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-abertura">
+            {t("Abertura sem citar as motos (elas aparecem nas fotos)")}
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="cat-pergunta"
+            checked={cfg.pergunta_separada}
+            onCheckedChange={(v) => setCfg((c) => ({ ...c, pergunta_separada: v }))}
+            disabled={disabled}
+          />
+          <Label htmlFor="cat-pergunta">
+            {t("Pergunta final depois das fotos, em mensagem separada")}
+          </Label>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <Button onClick={salvar} disabled={disabled || salvando}>
           {salvando ? t("Salvando…") : t("Salvar regras do catálogo")}
