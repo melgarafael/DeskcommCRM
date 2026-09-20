@@ -170,9 +170,9 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
         <DialogHeader>
           <DialogTitle>Catálogo do agente — “{tabela.nome}”</DialogTitle>
           <DialogDescription>
-            Marque as colunas que o agente deve usar e escolha o papel de cada uma. A ordem
-            (1 = mais importante, sem repetir) define como as motos semelhantes são escolhidas
-            e a ordem dos campos na legenda.
+            Marque as colunas que o agente deve usar e dê uma ordem (1 = mais importante, sem
+            repetir). O sistema reconhece o tipo de cada coluna pelo nome; a ordem define como
+            as motos semelhantes são escolhidas e a ordem dos campos na legenda.
           </DialogDescription>
         </DialogHeader>
 
@@ -228,42 +228,30 @@ export function ConfigurarCatalogo({ connectionId, tabela, aberto, aoMudarAberto
         </div>
 
         <div className="flex max-h-[42vh] flex-col gap-2 overflow-y-auto rounded-md border border-border/60 p-3">
-          <div className="grid grid-cols-[1.5rem_1fr_12rem_4.5rem] items-center gap-2 text-xs font-semibold text-muted-foreground">
+          <div className="grid grid-cols-[1.5rem_1fr_10rem_4.5rem] items-center gap-2 text-xs font-semibold text-muted-foreground">
             <span />
             <span>Coluna</span>
-            <span>Papel</span>
+            <span>Reconhecida como</span>
             <span>Ordem</span>
           </div>
           {linhas.map((linha, i) => (
             <div
               key={linha.coluna}
-              className="grid grid-cols-[1.5rem_1fr_12rem_4.5rem] items-center gap-2"
+              className="grid grid-cols-[1.5rem_1fr_10rem_4.5rem] items-center gap-2"
             >
               <input
                 type="checkbox"
                 className="h-4 w-4"
                 checked={linha.usar}
+                disabled={linha.papel === null}
                 onChange={(e) => atualizar(i, { usar: e.target.checked })}
               />
               <span className="truncate font-mono text-xs" title={linha.coluna}>
                 {linha.coluna}
               </span>
-              <Select
-                value={linha.papel ?? ""}
-                onValueChange={(v) => atualizar(i, { papel: v as PapelColuna })}
-                disabled={!linha.usar}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue placeholder="não usar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAPEIS_COLUNA.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {ROTULO_DO_PAPEL[p]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <span className="truncate text-xs text-muted-foreground">
+                {linha.papel === null ? "não reconhecida" : ROTULO_DO_PAPEL[linha.papel]}
+              </span>
               <Input
                 type="number"
                 min={1}
