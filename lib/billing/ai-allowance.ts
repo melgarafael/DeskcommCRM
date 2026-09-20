@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import type { UsageEvidence } from "./usage-evidence";
 
 type Database = Pick<pg.Pool, "query">;
 export class SubscriptionAiAllowanceError extends Error {
@@ -46,5 +47,23 @@ export async function settleSubscriptionAi(
     organizationId,
     reservationId,
     costUsdCents,
+  ]);
+}
+
+/** The initial identity is stored before egress; completed evidence can only be attached once. */
+export async function recordSubscriptionAiEvidence(
+  db: Database,
+  organizationId: string,
+  reservationId: string | null,
+  identity: { provider: string; model: string },
+  evidence: UsageEvidence | null,
+) {
+  if (!reservationId) return;
+  await db.query("select fn_record_subscription_ai_evidence($1,$2,$3,$4,$5::jsonb)", [
+    organizationId,
+    reservationId,
+    identity.provider,
+    identity.model,
+    evidence === null ? null : JSON.stringify(evidence),
   ]);
 }

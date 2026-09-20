@@ -3,7 +3,13 @@ import { meteredUsageCostCents } from "@/lib/agent-engine/edge/llm/catalog-prici
 import type { MeasuredGeneration } from "./measured-usage";
 import type { TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
 import { logger } from "@/lib/logger";
-import { reserveSubscriptionAi, settleSubscriptionAi } from "./ai-allowance";
+import {
+  reserveSubscriptionAi,
+  settleSubscriptionAi,
+  recordSubscriptionAiEvidence,
+} from "./ai-allowance";
+
+import { usageEvidence } from "./usage-evidence";
 
 export { measuredTextUsage, measuredGenerationUsage, measuredGeneration } from "./measured-usage";
 
@@ -28,11 +34,28 @@ export async function runMeteredOperation<T>(
     }
   };
   let result: T;
+  let dispatched = false;
   try {
+    await recordSubscriptionAiEvidence(db, identity.organizationId, reservation, identity, null);
+    dispatched = true;
     result = await operation();
   } catch (error) {
-    await settle(null);
+    await settle(dispatched ? null : 0);
     throw error;
+  }
+  try {
+    await recordSubscriptionAiEvidence(
+      db,
+      identity.organizationId,
+      reservation,
+      identity,
+      usageEvidence(result),
+    );
+  } catch {
+    logger.error("ai-allowance: usage evidence pending", {
+      organization_id: identity.organizationId,
+      reservation_id: reservation,
+    });
   }
   let cost: number | null = null;
   try {

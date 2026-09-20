@@ -214,21 +214,97 @@ it("prices each direct SDK step before adding costs, preserving its actual tier"
   const { measuredGeneration } = await import("@/lib/billing/measured-usage");
   const response = {
     steps: ["default", "flex"].map((serviceTier) => ({
-      usage: { inputTokens: 200000, outputTokens: 1000, inputTokenDetails: { cacheReadTokens: 100000 } },
+      usage: {
+        inputTokens: 200000,
+        outputTokens: 1000,
+        inputTokenDetails: { cacheReadTokens: 100000 },
+      },
       providerMetadata: { openai: { serviceTier } },
     })),
   };
-  expect(await runMeteredOperation({ ...identity, model: "gpt-5.6-terra" }, async () => response, measuredGeneration)).toBe(response);
+  expect(
+    await runMeteredOperation(
+      { ...identity, model: "gpt-5.6-terra" },
+      async () => response,
+      measuredGeneration,
+    ),
+  ).toBe(response);
   // Both requests are short-context despite their aggregate input exceeding 272k.
-  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [identity.organizationId, expect.any(String), 34.8]);
+  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    identity.organizationId,
+    expect.any(String),
+    34.8,
+  ]);
 });
 
 it("holds the reservation when just one step has an unknown processing tier", async () => {
   const { measuredGeneration } = await import("@/lib/billing/measured-usage");
-  const response = { steps: [
-    { ...result, providerMetadata: { openai: { serviceTier: "default" } } },
-    result,
-  ] };
-  expect(await runMeteredOperation({ ...identity, model: "gpt-5.6-terra" }, async () => response, measuredGeneration)).toBe(response);
-  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [identity.organizationId, expect.any(String), null]);
+  const response = {
+    steps: [{ ...result, providerMetadata: { openai: { serviceTier: "default" } } }, result],
+  };
+  expect(
+    await runMeteredOperation(
+      { ...identity, model: "gpt-5.6-terra" },
+      async () => response,
+      measuredGeneration,
+    ),
+  ).toBe(response);
+  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    identity.organizationId,
+    expect.any(String),
+    null,
+  ]);
+});
+it("records billing identity before egress and keeps response references", async () => {
+  const call = vi.fn(async () => {
+    expect(m.query).toHaveBeenCalledWith(
+      "select fn_record_subscription_ai_evidence($1,$2,$3,$4,$5::jsonb)",
+      [identity.organizationId, expect.any(String), identity.provider, identity.model, null],
+    );
+    return { response: { id: "resp_accounting" }, usage: { inputTokens: 1 } };
+  });
+  await runMeteredOperation(identity, call, () => null);
+  const records = m.query.mock.calls.filter(([sql]) =>
+    sql.includes("fn_record_subscription_ai_evidence"),
+  );
+  expect(records).toHaveLength(2);
+  expect(JSON.parse(records[1]![1][4])).toMatchObject({
+    steps: [{ responseId: "resp_accounting", inputTokens: 1, outputTokens: null }],
+  });
+});
+it("does not call the provider when identity persistence fails", async () => {
+  const original = m.query.getMockImplementation()!;
+  m.query.mockImplementation(async (sql: string, params: unknown[]) => {
+    if (sql.includes("fn_record_subscription_ai_evidence")) throw new Error("storage unavailable");
+    return original(sql, params);
+  });
+  const call = vi.fn();
+  await expect(runMeteredOperation(identity, call, () => null)).rejects.toThrow(
+    "storage unavailable",
+  );
+  expect(call).not.toHaveBeenCalled();
+  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    identity.organizationId,
+    expect.any(String),
+    0,
+  ]);
+});
+it("preserves the answer when final evidence persistence fails", async () => {
+  const original = m.query.getMockImplementation()!;
+  m.query.mockImplementation(async (sql: string, params: unknown[]) => {
+    if (sql.includes("fn_record_subscription_ai_evidence") && params[4] !== null)
+      throw new Error("secret detail");
+    return original(sql, params);
+  });
+  await expect(
+    runMeteredOperation(
+      identity,
+      async () => result,
+      () => null,
+    ),
+  ).resolves.toBe(result);
+  expect(m.error).toHaveBeenCalledWith("ai-allowance: usage evidence pending", {
+    organization_id: identity.organizationId,
+    reservation_id: expect.any(String),
+  });
 });

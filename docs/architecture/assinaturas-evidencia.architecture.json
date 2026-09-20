@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Franquia de IA — evidências e recuperação pendente",
+    "subtitle": "Referências por chamada sem conteúdo de conversas",
+    "output": "assinaturas-evidencia.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "runtime",
+      "label": "Execução"
+    },
+    {
+      "id": "storage",
+      "label": "Persistência"
+    },
+    {
+      "id": "ui",
+      "label": "Operação"
+    }
+  ],
+  "mainPath": [
+    "calls",
+    "evidence",
+    "reservations",
+    "settle",
+    "balance"
+  ],
+  "nodes": [
+    {
+      "id": "calls",
+      "lane": "runtime",
+      "col": 0,
+      "type": "service",
+      "label": "runModelCall / runMeteredOperation",
+      "sublabel": "Chamadas compartilhadas e SDK direto"
+    },
+    {
+      "id": "evidence",
+      "lane": "runtime",
+      "col": 1,
+      "type": "service",
+      "label": "recordSubscriptionAiEvidence",
+      "sublabel": "Identidade antes da chamada; snapshot após a resposta"
+    },
+    {
+      "id": "reservations",
+      "lane": "storage",
+      "col": 2,
+      "type": "service",
+      "label": "subscription_ai_reservations",
+      "sublabel": "Empresa + reserva; evidência imutável após preenchimento"
+    },
+    {
+      "id": "settle",
+      "lane": "runtime",
+      "col": 3,
+      "type": "service",
+      "label": "settleSubscriptionAi",
+      "sublabel": "Concilia custo apurado ou mantém conferência"
+    },
+    {
+      "id": "balance",
+      "lane": "ui",
+      "col": 4,
+      "type": "service",
+      "label": "Planos e assinatura",
+      "sublabel": "AiAllowanceCard mostra saldo e valores em conferência"
+    },
+    {
+      "id": "pending",
+      "lane": "ui",
+      "col": 5,
+      "type": "service",
+      "label": "Recuperação administrativa pendente",
+      "sublabel": "A evidência ainda não tem uma tela de decisão; contratação desativada"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "calls",
+      "to": "evidence",
+      "label": "identidade real e resultado"
+    },
+    {
+      "id": "e1",
+      "from": "evidence",
+      "to": "reservations",
+      "label": "RPC com filtro de empresa e proteção de sobrescrita"
+    },
+    {
+      "id": "e2",
+      "from": "calls",
+      "to": "settle",
+      "label": "custo medido ou desconhecido"
+    },
+    {
+      "id": "e3",
+      "from": "settle",
+      "to": "reservations",
+      "label": "liquidação contra o ciclo original"
+    },
+    {
+      "id": "e4",
+      "from": "reservations",
+      "to": "balance",
+      "label": "consulta agregada do saldo"
+    },
+    {
+      "id": "e5",
+      "from": "reservations",
+      "to": "pending",
+      "label": "próxima integração; ainda não implementada"
+    }
+  ]
+}

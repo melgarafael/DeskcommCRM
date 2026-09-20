@@ -44,6 +44,9 @@ export type Database = {
           period_id: string
           reserved_brl_cents: number
           settled_at: string | null
+          provider: string | null
+          model: string | null
+          usage_evidence: Json | null
           status: string
         }
         Insert: {
@@ -55,6 +58,9 @@ export type Database = {
           period_id: string
           reserved_brl_cents: number
           settled_at?: string | null
+          provider?: string | null
+          model?: string | null
+          usage_evidence?: Json | null
           status?: string
         }
         Update: {
@@ -66,6 +72,9 @@ export type Database = {
           period_id?: string
           reserved_brl_cents?: number
           settled_at?: string | null
+          provider?: string | null
+          model?: string | null
+          usage_evidence?: Json | null
           status?: string
         }
         Relationships: [
@@ -7970,6 +7979,10 @@ export type Database = {
       }
     }
     Functions: {
+      fn_record_subscription_ai_evidence: {
+        Args: { p_org: string; p_call: string; p_provider: string; p_model: string; p_evidence: Json }
+        Returns: undefined
+      }
       fn_settle_subscription_ai: {
         Args: { p_call: string; p_cost_usd_cents: number; p_org: string }
         Returns: number

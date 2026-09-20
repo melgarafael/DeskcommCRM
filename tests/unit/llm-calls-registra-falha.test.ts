@@ -389,6 +389,7 @@ it("o seam grava o custo e concilia a franquia da empresa com a resposta preserv
             inputTokens: { total: 1000, noCache: 1000, cacheRead: 0, cacheWrite: 0 },
             outputTokens: { total: 200, text: 200, reasoning: 0 },
           },
+          response: { id: "resp_seam_evidence" },
           warnings: [],
         }),
       }) as never,
@@ -404,6 +405,20 @@ it("o seam grava o custo e concilia a franquia da empresa com a resposta preserv
     expect.any(String),
     0.45,
   ]);
+  const evidenceRecords = query.mock.calls.filter(([sql]) =>
+    sql.includes("fn_record_subscription_ai_evidence"),
+  );
+  expect(evidenceRecords).toHaveLength(2);
+  expect(evidenceRecords[0]![1]).toEqual([
+    ORG,
+    expect.any(String),
+    "anthropic",
+    "claude-padrao",
+    null,
+  ]);
+  expect(JSON.parse(evidenceRecords[1]?.[1]?.[4] as string)).toMatchObject({
+    steps: [{ responseId: "resp_seam_evidence", inputTokens: 1000, outputTokens: 200 }],
+  });
   expect(result.costCents).toBeCloseTo(0.45);
   expect(result.result.text).toBe("Resposta preservada");
   expect(inserts).toHaveLength(1);
@@ -574,31 +589,52 @@ it.each([
   },
 );
 
-it.each(["default", "flex", undefined])("concilia OpenAI por etapa usando o tier %s retornado pelo SDK", async (secondTier) => {
-  const { pool, query } = poolQueGrava({}, [], "paid");
-  let calls = 0;
-  const registry = { openai: () => ({
-    specificationVersion: "v3", provider: "openai", modelId: "gpt-5.6-terra",
-    doGenerate: async () => {
-      const first = calls++ === 0;
-      return {
-        content: first ? [{ type: "tool-call", toolCallId: "lookup-1", toolName: "lookup", input: "{}" }] : [{ type: "text", text: "Resposta final" }],
-        finishReason: { unified: first ? "tool-calls" : "stop", raw: undefined },
-        usage: { inputTokens: { total: 200000, cacheRead: 100000 }, outputTokens: { total: 1000 } },
-        providerMetadata: { openai: { serviceTier: first ? "default" : secondTier } },
-        warnings: [],
-      };
-    },
-  }) as never };
-  const result = await runModelCall(pool, { ...cfg, openaiApiKey: "test-key" }, {
-    tenantId: ORG, model: "gpt-5.6-terra", llmOverride: { provider: "openai" }, maxSteps: 2,
-    messages: [{ role: "user", content: "oi" }],
-    tools: { lookup: { inputSchema: z.object({}), execute: async () => "ok" } },
-  }, { registry });
-  expect(calls).toBe(2);
-  expect(result.result.text).toBe("Resposta final");
-  if (secondTier === undefined) expect(result.costCents).toBeNull();
-  else expect(result.costCents).toBeCloseTo(secondTier === "flex" ? 34.8 : 46.4);
-  const settlement = query.mock.calls.find(([sql]) => sql.includes("fn_settle_subscription_ai"));
-  expect(settlement?.[1]?.[2]).toBe(result.costCents);
-});
+it.each(["default", "flex", undefined])(
+  "concilia OpenAI por etapa usando o tier %s retornado pelo SDK",
+  async (secondTier) => {
+    const { pool, query } = poolQueGrava({}, [], "paid");
+    let calls = 0;
+    const registry = {
+      openai: () =>
+        ({
+          specificationVersion: "v3",
+          provider: "openai",
+          modelId: "gpt-5.6-terra",
+          doGenerate: async () => {
+            const first = calls++ === 0;
+            return {
+              content: first
+                ? [{ type: "tool-call", toolCallId: "lookup-1", toolName: "lookup", input: "{}" }]
+                : [{ type: "text", text: "Resposta final" }],
+              finishReason: { unified: first ? "tool-calls" : "stop", raw: undefined },
+              usage: {
+                inputTokens: { total: 200000, cacheRead: 100000 },
+                outputTokens: { total: 1000 },
+              },
+              providerMetadata: { openai: { serviceTier: first ? "default" : secondTier } },
+              warnings: [],
+            };
+          },
+        }) as never,
+    };
+    const result = await runModelCall(
+      pool,
+      { ...cfg, openaiApiKey: "test-key" },
+      {
+        tenantId: ORG,
+        model: "gpt-5.6-terra",
+        llmOverride: { provider: "openai" },
+        maxSteps: 2,
+        messages: [{ role: "user", content: "oi" }],
+        tools: { lookup: { inputSchema: z.object({}), execute: async () => "ok" } },
+      },
+      { registry },
+    );
+    expect(calls).toBe(2);
+    expect(result.result.text).toBe("Resposta final");
+    if (secondTier === undefined) expect(result.costCents).toBeNull();
+    else expect(result.costCents).toBeCloseTo(secondTier === "flex" ? 34.8 : 46.4);
+    const settlement = query.mock.calls.find(([sql]) => sql.includes("fn_settle_subscription_ai"));
+    expect(settlement?.[1]?.[2]).toBe(result.costCents);
+  },
+);
