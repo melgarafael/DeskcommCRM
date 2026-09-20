@@ -326,3 +326,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260916030000` | `0264_prospeccao_conversa_salva` | A conversa e a proposta do agente ficam na campanha, separadas da configuração ativa. Revisão monotônica impede respostas atrasadas e abas concorrentes de sobrescrever o resumo. Acesso permanece exclusivo pelo servidor autenticado; sem envio, roteamento ou backfill. |
 
 | `20260920010000` | `0265_org_subscriptions` | Assinaturas por organização; leitura admin isolada por tenant e escrita restrita ao backend. |
+
+| `20260920072058` | `0315_subscription_resource_limits` | Limites comerciais de pessoas, canais e agentes com reserva serializada; preserva recursos existentes e empresas sem assinatura confirmada. |

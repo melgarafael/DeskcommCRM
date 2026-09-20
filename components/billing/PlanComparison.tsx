@@ -1,9 +1,18 @@
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
-import { SUBSCRIPTION_PLANS, formatBRL } from "@/lib/billing/plans";
+import { SUBSCRIPTION_PLANS, formatBRL, type SubscriptionPlanId } from "@/lib/billing/plans";
+import { CheckoutButton } from "./CheckoutButton";
 
 /** Presentation only: a selection must never be mistaken for a paid subscription. */
-export function PlanComparison({ idioma }: { idioma: Idioma }) {
+export function PlanComparison({
+  idioma,
+  allowedPlanIds = [],
+  billingEnabled = false,
+}: {
+  idioma: Idioma;
+  allowedPlanIds?: SubscriptionPlanId[];
+  billingEnabled?: boolean;
+}) {
   const t = (text: string) => traduzir(text, idioma);
   return (
     <section aria-label={t("Planos de assinatura")} className="space-y-8">
@@ -34,9 +43,17 @@ export function PlanComparison({ idioma }: { idioma: Idioma }) {
               </li>
               <li>{t("Inbox, contatos, funis e agenda")}</li>
             </ul>
-            <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
-              {t("Contratação em preparação")}
-            </p>
+            {allowedPlanIds.includes(plan.id) ? (
+              <CheckoutButton planId={plan.id} idioma={idioma} />
+            ) : (
+              <p className="rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+                {t(
+                  billingEnabled
+                    ? "Consulte sua assinatura antes de escolher outro plano."
+                    : "Contratação em preparação",
+                )}
+              </p>
+            )}
           </article>
         ))}
       </div>

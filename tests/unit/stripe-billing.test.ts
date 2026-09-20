@@ -72,7 +72,7 @@ it("opens only the server-selected portal customer and reviewed configuration", 
   expect(await createStripePortal("cus_own")).toEqual({
     url: "https://billing.stripe.com/p/session",
   });
-  const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
+  const body = fetchMock.mock.calls[0]![1].body as URLSearchParams;
   expect(body.get("customer")).toBe("cus_own");
   expect(body.get("configuration")).toBe("bpc_reviewed");
   expect(body.get("return_url")).toBe("https://crm.example.test/app/settings/billing");

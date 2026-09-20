@@ -13,7 +13,7 @@ describe("subscription catalogue", () => {
       expect(plan.ai_credit_cents).toBeGreaterThan(0);
       expect(plan.ai_credit_cents / plan.monthly_price_cents).toBeLessThan(0.25);
       if (index > 0) {
-        const previous = SUBSCRIPTION_PLANS[index - 1];
+        const previous = SUBSCRIPTION_PLANS[index - 1]!;
         for (const metric of [
           "seats",
           "channels",

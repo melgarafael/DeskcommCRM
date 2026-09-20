@@ -34,6 +34,122 @@ export type Database = {
   }
   public: {
     Tables: {
+      org_subscriptions: {
+        Row: {
+          cancel_at_period_end: boolean
+          checkout_attempt_id: string
+          checkout_expires_at: string | null
+          checkout_session_id: string | null
+          checkout_url: string | null
+          created_at: string
+          current_period_end: string | null
+          organization_id: string
+          plan_id: string | null
+          provider: string
+          provider_customer_id: string | null
+          provider_subscription_id: string | null
+          quota_revision: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cancel_at_period_end?: boolean
+          checkout_attempt_id?: string
+          checkout_expires_at?: string | null
+          checkout_session_id?: string | null
+          checkout_url?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          organization_id: string
+          plan_id?: string | null
+          provider?: string
+          provider_customer_id?: string | null
+          provider_subscription_id?: string | null
+          quota_revision?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cancel_at_period_end?: boolean
+          checkout_attempt_id?: string
+          checkout_expires_at?: string | null
+          checkout_session_id?: string | null
+          checkout_url?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          organization_id?: string
+          plan_id?: string | null
+          provider?: string
+          provider_customer_id?: string | null
+          provider_subscription_id?: string | null
+          quota_revision?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_subscriptions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_webhook_events: {
+        Row: {
+          event_id: string
+          event_type: string
+          organization_id: string
+          processed_at: string
+          provider: string
+        }
+        Insert: {
+          event_id: string
+          event_type: string
+          organization_id: string
+          processed_at?: string
+          provider: string
+        }
+        Update: {
+          event_id?: string
+          event_type?: string
+          organization_id?: string
+          processed_at?: string
+          provider?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_webhook_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscription_plan_limits: {
+        Row: {
+          agents: number
+          channels: number
+          plan_id: string
+          seats: number
+        }
+        Insert: {
+          agents: number
+          channels: number
+          plan_id: string
+          seats: number
+        }
+        Update: {
+          agents?: number
+          channels?: number
+          plan_id?: string
+          seats?: number
+        }
+        Relationships: []
+      }
+
       channel_integrations: {
         Row: { organization_id: string; profile_id: string; credential_encrypted: string; created_at: string; updated_at: string }
         Insert: { organization_id: string; profile_id: string; credential_encrypted: string; created_at?: string; updated_at?: string }

@@ -1,6 +1,7 @@
 import { billingConfiguration } from "@/lib/billing/stripe";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { ManageSubscriptionButton } from "@/components/billing/ManageSubscriptionButton";
+import { subscriptionView, type SubscriptionSnapshot } from "@/lib/billing/subscription-view";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -24,7 +25,7 @@ export default async function BillingPage() {
   if (!activeOrg || ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
     redirect("/403");
   }
-  let canManage = false;
+  let view: ReturnType<typeof subscriptionView> | null = null;
   let loadFailed = false;
   let billingEnabled = false;
   try {
@@ -37,11 +38,11 @@ export default async function BillingPage() {
     try {
       const {
         rows: [subscription],
-      } = await getRequestPool().query<{ provider: string; provider_customer_id: string | null }>(
-        "select provider,provider_customer_id from org_subscriptions where organization_id=$1",
+      } = await getRequestPool().query<SubscriptionSnapshot>(
+        "select provider,provider_customer_id,provider_subscription_id,plan_id,status,current_period_end,checkout_session_id,checkout_expires_at from org_subscriptions where organization_id=$1",
         [activeOrg.orgId],
       );
-      canManage = subscription?.provider === "stripe" && Boolean(subscription.provider_customer_id);
+      view = subscriptionView(subscription);
     } catch {
       loadFailed = true;
     }
@@ -58,7 +59,25 @@ export default async function BillingPage() {
           {traduzir("Planos, faturas e cobrança.", idioma)}
         </p>
       </header>
-      {canManage && <ManageSubscriptionButton idioma={idioma} />}
+      {view && (
+        <section
+          className="space-y-3 rounded-2xl border bg-card p-5"
+          aria-label={traduzir("Sua assinatura", idioma)}
+        >
+          {view.plan && <p className="font-medium">{traduzir(view.plan.name, idioma)}</p>}
+          <p>{traduzir(view.message, idioma)}</p>
+          <p className="text-sm text-muted-foreground">
+            {traduzir(
+              "O estado é atualizado após a confirmação do provedor. Voltar do pagamento não confirma a assinatura.",
+              idioma,
+            )}
+          </p>
+          <a href="/app/settings/billing" className="text-sm underline">
+            {traduzir("Atualizar estado da assinatura", idioma)}
+          </a>
+        </section>
+      )}
+      {view?.canManage && <ManageSubscriptionButton idioma={idioma} />}
       {loadFailed && (
         <p role="alert">
           {traduzir(
@@ -67,7 +86,11 @@ export default async function BillingPage() {
           )}
         </p>
       )}
-      <PlanComparison idioma={idioma} />
+      <PlanComparison
+        idioma={idioma}
+        allowedPlanIds={view?.allowedPlanIds ?? []}
+        billingEnabled={billingEnabled}
+      />
       {suporte ? (
         <p className="text-sm text-muted-foreground">
           {traduzir("Para questões de pagamento, contate", idioma)}{" "}

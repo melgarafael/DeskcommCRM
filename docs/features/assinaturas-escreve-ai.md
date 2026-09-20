@@ -23,7 +23,7 @@ Referências de posicionamento consultadas em 20/09/2026: [Zaia](https://www.zai
 - Eventos duplicados devem ser idempotentes; eventos atrasados não podem regredir uma assinatura mais recente.
 - Cancelamento, renovação, falha de pagamento e gestão de faturas precisam do estado real do provedor.
 - Valores comerciais em BRL não podem ser gravados diretamente no orçamento atual de IA: a contabilidade existente usa centavos de USD. Conversão e teto precisam de regra explícita e teste antes de ativar a venda.
-- Limites comerciais ainda precisam de enforcement no backend para novos recursos. Não remover agentes, canais ou pessoas preexistentes ao mudar de plano.
+- A migration 0315 aplica limites de agentes, canais e pessoas no banco para assinaturas confirmadas. Está validada localmente, ainda não aplicada em produção. Não remove recursos preexistentes; tratamento amigável dos erros nas rotas e franquia comercial de IA continuam pendentes.
 - Sem provedor configurado, a interface mostra contratação indisponível, sem fabricar checkout ou assinatura ativa.
 
 ## Deploy
@@ -72,3 +72,15 @@ Código ainda não habilitado em produção: a página de planos oferece **Geren
 O adaptador cria uma [sessão do portal da Stripe](https://docs.stripe.com/api/customer_portal/sessions/create) com cliente e retorno definidos no servidor. Valida cliente, ambiente e domínio da resposta antes de encaminhar o navegador. `STRIPE_PORTAL_CONFIGURATION` é obrigatória para habilitar a cobrança. Essa configuração precisa permitir faturas, atualização de pagamento e cancelamento ao fim do período; troca de plano pelo portal deve permanecer desativada até existir sincronização correspondente no produto. Configuração e cancelamento reais ainda precisam ser conferidos na conta recebedora.
 
 Validação local: 76 testes passaram (rotas, adaptador, interface, navegação, tradução e configuração), além de TypeScript, lint focado e diff-check. Os testes cobrem progresso, falha e nova tentativa na interface e recusam respostas com outro cliente, ambiente ou domínio. Não foi aberta sessão real de cobrança nem realizado cancelamento financeiro. A conta do provedor continua sem autenticação disponível.
+
+## Escolha de plano e limites de recursos preparados
+
+A página de planos consulta a assinatura da empresa autenticada e oferece checkout somente quando não há assinatura vigente. Uma tentativa pendente mantém a escolha no mesmo plano; uma assinatura vigente oferece gestão, sem segundo checkout. O estado ativo exige identificador de assinatura, status confirmado e período ainda válido. Parâmetros de retorno do navegador não concedem acesso nem provam pagamento. O botão mostra progresso, recupera de falhas e recusa redirecionamento fora do domínio de checkout.
+
+A migration 0315, refletida no baseline e no manifesto, limita novos agentes, canais e vínculos de pessoas por plano. A reserva serializa no registro da assinatura, inclusive em transações repeatable-read. Rascunhos e canais desconectados ocupam vaga até arquivamento; vínculos de equipe ocupam vaga até revogação. Convites por e-mail ainda sem vínculo não ocupam vaga. Empresas sem assinatura confirmada continuam no comportamento anterior. Cancelamento bloqueia novas adições, preservando edição e arquivamento dos recursos existentes. O contador de reserva não altera o relógio de retentativa do checkout.
+
+Validação local: 17 testes de banco passaram, incluindo isolamento, concorrência, instalação/atualização do baseline e reaplicação. Outros 71 testes de interface, estados, adaptador, guardas, traduções e manifesto passaram. A verificação completa de tipos encontrou três indexações inseguras em testes desta entrega; corrigidas e `pnpm typecheck` passou.
+
+A tela atual foi conferida no navegador em servidor separado, na porta 3002, com configuração fictícia de provedor exclusivamente para mostrar os controles. Três escolhas visíveis e ausência de rolagem horizontal em 1280 px. Evidência: `outputs/billing/planos-selecao-local.png`, fora do repositório. Nenhum botão de pagamento foi enviado ao provedor. A porta 3001 permanece com seu build anterior. Esta conferência não valida pagamento real nem substitui o ciclo completo de cobrança em teste.
+
+Antes de habilitar: concluir a franquia de IA, os erros de limite nas jornadas de criação, a reconciliação de tentativas expiradas/ambíguas e o ciclo real na conta recebedora. Migration 0315 e seleção de plano ainda não publicadas em produção.

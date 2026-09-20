@@ -37,6 +37,20 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Sua assinatura": { es: "Tu suscripción" },
+  "Sua assinatura está ativa.": { es: "Tu suscripción está activa." },
+  "Sua assinatura precisa de atenção. Abra a gestão para conferir o pagamento.": { es: "Tu suscripción necesita atención. Abre la gestión para revisar el pago." },
+  "Sua assinatura foi encerrada. Seus recursos existentes foram preservados.": { es: "Tu suscripción finalizó. Tus recursos existentes se han conservado." },
+  "O pagamento ainda não foi confirmado. Você pode continuar com o plano escolhido.": { es: "El pago aún no se ha confirmado. Puedes continuar con el plan elegido." },
+  "Escolha o plano que combina com sua equipe.": { es: "Elige el plan que se adapte a tu equipo." },
+  "O estado é atualizado após a confirmação do provedor. Voltar do pagamento não confirma a assinatura.": { es: "El estado se actualiza tras la confirmación del proveedor. Volver del pago no confirma la suscripción." },
+  "Atualizar estado da assinatura": { es: "Actualizar estado de la suscripción" },
+  "Consulte sua assinatura antes de escolher outro plano.": { es: "Consulta tu suscripción antes de elegir otro plan." },
+  "Abrindo pagamento...": { es: "Abriendo pago..." },
+  "Continuar para pagamento": { es: "Continuar al pago" },
+  "Já existe uma assinatura ou pagamento em andamento. Atualize a página para conferir.": { es: "Ya existe una suscripción o un pago en curso. Actualiza la página para revisarlo." },
+  "Não foi possível abrir o pagamento. Tente novamente.": { es: "No se pudo abrir el pago. Inténtalo de nuevo." },
+
   "Abrindo gestão da assinatura...": { es: "Abriendo gestión de la suscripción..." },
   "Gerenciar assinatura": { es: "Gestionar suscripción" },
   "Consulte faturas, atualize o pagamento ou cancele sua assinatura.": { es: "Consulta facturas, actualiza el pago o cancela tu suscripción." },
