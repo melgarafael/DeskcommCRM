@@ -120,61 +120,75 @@ export function RedesSociaisClient() {
         </Button>
       )}
       {((state && !state.configured) || editing) && (
-        <Card className="space-y-4 p-4">
-          <h3 className="font-semibold">{t("Vincular o provedor")}</h3>
-          <div className="space-y-2">
-            <Label htmlFor="social-api-key">{t("Chave de API")}</Label>
-            <Input
-              id="social-api-key"
-              type="password"
-              autoComplete="off"
-              value={key}
-              onChange={(e) => {
-                setKey(e.target.value);
-                setProfiles([]);
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t("A chave fica cifrada no servidor e não é exibida novamente.")}
-            </p>
-          </div>
-          <Button
-            disabled={!!busy || key.trim().length < 8}
-            onClick={() => void perform("profiles", { action: "profiles", api_key: key.trim() })}
-          >
-            {t("Buscar perfis")}
-          </Button>
-          {profiles.length > 0 && (
-            <>
+        <Card className="space-y-4 p-5 sm:p-7">
+          <h3 className="font-medium">{t("Prepare a conexão da sua empresa")}</h3>
+          <p className="max-w-xl text-sm leading-7 text-muted-foreground">
+            {t(
+              "A integração precisa ser preparada pela equipe responsável. Depois, você autoriza sua conta na própria rede e escolhe onde receber as mensagens.",
+            )}
+          </p>
+          <details open={editing || !!error} className="rounded-xl border p-4">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("Configuração da integração")}
+            </summary>
+            <div className="mt-4 space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="social-profile">{t("Perfil da empresa")}</Label>
-                <select
-                  id="social-profile"
-                  className="w-full rounded-md border bg-background p-2"
-                  value={profile}
-                  onChange={(e) => setProfile(e.target.value)}
-                >
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <Label htmlFor="social-api-key">{t("Chave de API")}</Label>
+                <Input
+                  id="social-api-key"
+                  type="password"
+                  autoComplete="off"
+                  value={key}
+                  onChange={(e) => {
+                    setKey(e.target.value);
+                    setProfiles([]);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("A chave fica cifrada no servidor e não é exibida novamente.")}
+                </p>
               </div>
               <Button
-                disabled={!!busy || !profile}
+                disabled={!!busy || key.trim().length < 8}
                 onClick={() =>
-                  void perform("configure", {
-                    action: "configure",
-                    api_key: key.trim(),
-                    profile_id: profile,
-                  })
+                  void perform("profiles", { action: "profiles", api_key: key.trim() })
                 }
               >
-                {t("Salvar conexão")}
+                {t("Buscar perfis")}
               </Button>
-            </>
-          )}
+              {profiles.length > 0 && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="social-profile">{t("Perfil da empresa")}</Label>
+                    <select
+                      id="social-profile"
+                      className="w-full rounded-md border bg-background p-2"
+                      value={profile}
+                      onChange={(e) => setProfile(e.target.value)}
+                    >
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    disabled={!!busy || !profile}
+                    onClick={() =>
+                      void perform("configure", {
+                        action: "configure",
+                        api_key: key.trim(),
+                        profile_id: profile,
+                      })
+                    }
+                  >
+                    {t("Salvar conexão")}
+                  </Button>
+                </>
+              )}
+            </div>
+          </details>
         </Card>
       )}
       {state?.configured && (

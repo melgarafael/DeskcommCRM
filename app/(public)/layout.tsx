@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { LogotipoDoProduto } from "@/components/branding/MarcaDoProduto";
 import { marcaEhADoProduto } from "@/lib/branding";
 import { marcaDaSaida } from "@/lib/branding/saida";
@@ -51,8 +52,13 @@ export default async function PublicLayout({ children }: { children: React.React
 
   return (
     <IdiomaProvider locale={locale}>
-      <div className="flex min-h-screen items-center justify-center bg-background p-6">
-        <div className="w-full max-w-sm space-y-6">
+      <div className="workspace-shell artisan-access flex min-h-screen items-center justify-center gap-16 bg-background px-5 py-12 lg:px-12">
+        {marcaEhADoProduto({ name: marca.nome, logoUrl: marca.logoUrl }) && (
+          <aside aria-hidden="true" className="hidden max-w-md lg:block">
+            <Image src="/brand/conversation-art.png" width={1536} height={1024} alt="" className="artisan-illustration w-full rounded-[40px]" />
+          </aside>
+        )}
+        <div className="w-full max-w-md space-y-8 p-3 sm:p-8">
           {marca.logoUrl ? (
             <div className="flex justify-center">
               {/*

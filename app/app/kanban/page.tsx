@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { Kanban } from "@/lib/ui/icons";
+import { ArtisanIcon } from "@/components/brand/ArtisanIcon";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
@@ -54,7 +54,7 @@ export default async function KanbanPickerPage() {
   return (
     <div className="flex h-full flex-col gap-4 p-6">
       <header className="flex items-center gap-3">
-        <Kanban size={28} className="text-muted-foreground" weight="duotone" />
+        <ArtisanIcon symbol="pipeline" className="h-8 w-8 text-primary" />
         {/* Era "Pipelines" — nome de quem construiu o sistema, não de quem
             vende. O comentário anterior aqui listava o preço de trocá-lo
             (`rbac-roles.spec.ts` e `invite-lifecycle.spec.ts`) e dizia que
@@ -65,6 +65,7 @@ export default async function KanbanPickerPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{t("Funis")}</h1>
       </header>
 
+      <p className="max-w-xl text-sm leading-7 text-muted-foreground">{t("Organize as oportunidades no funil e registre o que precisa acontecer depois.")}</p>
       <FunisClient funis={funis} podeGerenciar={podeGerenciar} podeImportar={podeImportar} />
     </div>
   );

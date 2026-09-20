@@ -2,6 +2,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { gsap } from "gsap";
+import { JourneyGuide } from "@/components/shell/JourneyGuide";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { BarraDeProgressoNavegacao } from "@/components/shell/BarraDeProgressoNavegacao";
@@ -9,6 +10,7 @@ import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessage
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
 import { FloatingInbox } from "@/components/inbox/FloatingInbox";
+import { workspaceLayout } from "@/lib/navigation/workspace-layout";
 
 interface AppShellProps {
   sidebarCollapsed: boolean;
@@ -64,8 +66,10 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
         <main
           ref={content}
           id="workspace-content"
+          data-workspace={workspaceLayout(pathname)}
           className="min-w-0 flex-1 overflow-auto p-3 sm:p-5 lg:p-7"
         >
+          <JourneyGuide />
           {children}
         </main>
       </div>

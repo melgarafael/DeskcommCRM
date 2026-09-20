@@ -67,7 +67,7 @@ export default async function NuvemshopIntegrationPage() {
         <div>
           <h1 className="text-xl font-semibold">Nuvemshop</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {traduzir("Sincroniza pedidos, produtos e clientes via OAuth + webhooks.", idioma)}
+            {traduzir("Traga pedidos, produtos e clientes da sua loja para o CRM.", idioma)}
           </p>
         </div>
       </header>

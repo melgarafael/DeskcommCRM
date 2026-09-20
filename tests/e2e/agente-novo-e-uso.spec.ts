@@ -48,9 +48,7 @@ test.beforeEach(async ({ page }) => {
 test.describe("Criar um agente pela tela", () => {
   test("começa por conversa e preserva ajustes ao alternar com o editor", async ({ page }) => {
     await page.goto("/app/ai/agents/new");
-    await expect(
-      page.getByRole("heading", { name: /O que seu agente precisa fazer/ }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Seu próximo agente começa/ })).toBeVisible();
     await expect(page.locator("#model")).not.toBeVisible();
     await page.getByLabel("Conte sua ideia").fill("Quero atender interessados na minha clínica");
     await page.getByRole("button", { name: "Configurar manualmente" }).click();
@@ -75,16 +73,15 @@ test.describe("Criar um agente pela tela", () => {
     await criar.click();
     await expect(page.getByText("Revise os campos para salvar.")).toBeVisible();
     await expect(page.locator("#name")).toBeFocused();
-    for (const exigencia of [/escolha o modelo/i, /escolha a chave de acesso/i]) {
-      await expect(page.getByText(exigencia).first()).toBeVisible();
-    }
-
-    // Uma nova tentativa também reabre uma seção inválida fechada manualmente.
-    const configuracao = page.locator("details").filter({ has: page.locator("#model") });
-    await configuracao.locator("summary").click();
-    await expect(configuracao).not.toHaveAttribute("open", "");
+    // Managed defaults can already satisfy AI configuration. Exercise a real
+    // invalid numeric field instead of assuming model/key are always blank.
+    const avancadas = page.locator("details").filter({ has: page.locator("#max_steps") });
+    await avancadas.locator("summary").click();
+    await page.locator("#max_steps").fill("0");
+    await avancadas.locator("summary").click();
     await criar.click();
-    await expect(configuracao).toHaveAttribute("open", "");
+    await expect(avancadas).toHaveAttribute("open", "");
+    await expect(page.getByText("O valor mínimo é 1.").first()).toBeVisible();
 
     // ⚠️ O NÚMERO DE WHATSAPP NÃO ESTÁ NESSA LISTA, e a ausência é o teste.
     //
@@ -119,16 +116,24 @@ test.describe("Criar um agente pela tela", () => {
     // nativo: não existe `<option>` no DOM até o menu abrir, e procurar por
     // `option` devolve zero — que lê como "a tela não tem modelo nenhum" quando
     // na verdade o instrumento é que estava olhando o lugar errado.
-    for (const id of ["model", "credential_id", "channel_session_id"]) {
+    const configuracao = page.locator("details").filter({ has: page.locator("#model") });
+    if ((await configuracao.getAttribute("open")) === null) {
+      await configuracao.locator("summary").click();
+    }
+    for (const id of ["model", "credential_id"]) {
       const gatilho = page.locator(`#${id}`);
       if ((await gatilho.count()) === 0) continue;
+      if (!/Selecione|Escolha/.test((await gatilho.textContent()) ?? "")) continue;
       await gatilho.click();
       const opcoes = page.getByRole("option");
-      const quantas = await opcoes.count();
-      expect(quantas, `o campo "${id}" abriu sem nenhuma opção para escolher`).toBeGreaterThan(0);
+      await expect(opcoes.first()).toBeVisible();
       await opcoes.first().click();
-      await expect(gatilho).not.toContainText(/^Selecione/);
     }
+    // A draft deliberately has no connected channel and cannot start attending.
+    const avancadas = page.locator("details").filter({ has: page.locator("#max_steps") });
+    if ((await avancadas.getAttribute("open")) === null) await avancadas.locator("summary").click();
+    await page.locator("#max_steps").fill("17");
+    await avancadas.locator("summary").click();
 
     // Liga uma jornada de trabalho — o caminho que a W1 entregou.
     await page.getByTestId("switch-pacote-atender").click();

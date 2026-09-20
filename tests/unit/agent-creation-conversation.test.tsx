@@ -52,7 +52,7 @@ const send = () => {
   fireEvent.change(screen.getByLabelText("Conte sua ideia"), {
     target: { value: "Quero atender os interessados" },
   });
-  fireEvent.click(screen.getByRole("button", { name: /^Enviar$/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Começar$/ }));
 };
 
 beforeEach(() => {
@@ -65,6 +65,22 @@ beforeEach(() => {
 });
 
 describe("proposta conversacional", () => {
+  it("preenche uma ideia editável sem enviar ou ativar capacidades", () => {
+    open();
+    expect(screen.getByRole("button", { name: "Começar" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Responder clientes" }));
+    expect(screen.getByLabelText("Conte sua ideia")).toHaveValue(
+      "Quero responder dúvidas sobre meus serviços e chamar minha equipe quando precisar.",
+    );
+    expect(screen.getByLabelText("Conte sua ideia")).toHaveFocus();
+    expect(prepare).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Começar" })).toBeEnabled();
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Configurar manualmente" }));
+    expect(JSON.parse(screen.getByTestId("editor-values").textContent!).tool_ids).toEqual([
+      "crm_get_contact",
+    ]);
+  });
   it("recusa campos operacionais e capacidades inventadas ou exclusivas de humanos", () => {
     expect(creationDraftSchema.safeParse({ ...proposal, model: "outro" }).success).toBe(false);
     expect(creationDraftSchema.safeParse({ suggested_tool_ids: ["inventada"] }).success).toBe(
@@ -97,7 +113,9 @@ describe("proposta conversacional", () => {
   });
   it("começa pela conversa e permite abrir e voltar do editor sem perder ajustes", async () => {
     open();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Escreve aí.");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Seu próximo agente começa com uma ideia.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Configurar manualmente" }));
     fireEvent.change(screen.getByLabelText("Nome manual"), { target: { value: "Meu agente" } });
     fireEvent.click(screen.getByRole("button", { name: "Voltar à conversa" }));

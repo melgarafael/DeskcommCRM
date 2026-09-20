@@ -3,7 +3,6 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,11 +14,7 @@ import {
 } from "@/components/ui/select";
 import { updateProfile } from "@/app/actions/settings/updateProfile";
 import { useT } from "@/hooks/i18n/useT";
-import {
-  profileSchema,
-  SEM_PREFERENCIA_DE_IDIOMA,
-  type Locale,
-} from "@/lib/schemas/settings";
+import { profileSchema, SEM_PREFERENCIA_DE_IDIOMA, type Locale } from "@/lib/schemas/settings";
 
 const TIMEZONES = [
   "America/Sao_Paulo",
@@ -72,13 +67,13 @@ export function ProfileForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-xl">
-      <Card className="space-y-4 p-6">
+    <form onSubmit={handleSubmit} className="preference-form max-w-3xl space-y-8">
+      <section className="space-y-6" aria-label={t("Perfil")}>
         <div className="space-y-2">
           <Label htmlFor="email">{t("Email")}</Label>
           <Input id="email" value={email} disabled />
           <p className="text-xs text-muted-foreground">
-            {t("Trocar email — em breve.")}
+            {t("O e-mail de acesso não pode ser alterado nesta tela.")}
           </p>
         </div>
         <div className="space-y-2">
@@ -90,7 +85,10 @@ export function ProfileForm({
             maxLength={120}
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+      </section>
+      <section className="space-y-6 border-t pt-6" aria-label={t("Preferências")}>
+        <h2 className="font-serif text-xl">{t("Do seu jeito")}</h2>
+        <div className="grid gap-6 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="locale">{t("Idioma")}</Label>
             <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
@@ -137,15 +135,15 @@ export function ProfileForm({
             onChange={(e) => setAvatarUrl(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            {t("Upload de arquivo — em breve. Cole uma URL pública.")}
+            {t("Cole o endereço público da sua foto.")}
           </p>
         </div>
-        <div className="flex sm:justify-end">
-          <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
-            {isPending ? t("Salvando…") : t("Salvar")}
-          </Button>
-        </div>
-      </Card>
+      </section>
+      <div className="flex border-t pt-6 sm:justify-end">
+        <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
+          {isPending ? t("Salvando…") : t("Salvar")}
+        </Button>
+      </div>
     </form>
   );
 }

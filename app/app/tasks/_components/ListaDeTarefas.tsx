@@ -72,7 +72,7 @@ function Linha({
   return (
     <div
       className={cn(
-        "group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/40",
+        "group flex items-start gap-4 rounded-xl px-4 py-5 transition-colors hover:bg-muted/40",
         encerrada && "opacity-60",
       )}
     >
@@ -84,7 +84,7 @@ function Linha({
         disabled={ocupada || !podeEditar}
         onClick={() => comBloqueio(() => aoAlternarConcluida(tarefa))}
         className={cn(
-          "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-colors",
+          "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors",
           encerrada
             ? "border-primary bg-primary text-primary-foreground"
             : "border-muted-foreground/40 hover:border-primary",

@@ -324,3 +324,5 @@ To re-apply on a fresh Supabase project, replay the migrations in version order 
 | `20260916020000` | `0263_prospeccao_anonimizacao` | Cascata canônica apaga telefone e enriquecimento; tokens pseudônimos restritos ao servidor impedem reimportar a mesma origem ou telefone após anonimização. |
 
 | `20260916030000` | `0264_prospeccao_conversa_salva` | A conversa e a proposta do agente ficam na campanha, separadas da configuração ativa. Revisão monotônica impede respostas atrasadas e abas concorrentes de sobrescrever o resumo. Acesso permanece exclusivo pelo servidor autenticado; sem envio, roteamento ou backfill. |
+
+| `20260920010000` | `0265_org_subscriptions` | Assinaturas por organização; leitura admin isolada por tenant e escrita restrita ao backend. |

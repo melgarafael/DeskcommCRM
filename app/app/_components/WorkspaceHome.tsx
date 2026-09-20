@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowUp,
   ArrowUpRight,
@@ -86,21 +87,20 @@ function WorkspaceSession() {
     }
   }
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-130px)] w-full max-w-4xl flex-col px-1 pt-6 pb-24 sm:px-6 sm:pt-12">
+    <div className="mx-auto flex min-h-[calc(100dvh-130px)] w-full max-w-6xl flex-col px-1 pt-6 pb-24 sm:px-6 sm:pt-12">
       <div className="mb-9 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span>{activeOrg?.name ?? t("Seu espaço")}</span>
         <span>{t("WhatsApp · Instagram · Conteúdos")}</span>
       </div>
-      <header className="mb-9 max-w-2xl">
+      <header className="relative mb-9">
+        <Image src="/brand/agent-studio-art.png" width={1536} height={1024} alt="" className="artisan-illustration float-right hidden w-64 rounded-3xl lg:block" />
         <p className="mb-4 text-sm text-muted-foreground">{t("Tudo conectado. Do seu jeito.")}</p>
-        <h1 className="text-4xl font-medium tracking-[-0.055em] sm:text-5xl">
-          {t("Seu próximo passo?")}
-          <br />
-          <span className="text-primary">{t("Escreve aí.")}</span>
+        <h1 className="artisan-title text-4xl font-medium tracking-[-0.055em] sm:text-5xl">
+          {t("O que vamos resolver hoje?")}
         </h1>
         <p className="mt-5 max-w-lg text-sm leading-6 text-muted-foreground">
           {t(
-            "Converse com o conteúdo do seu CRM. Encontre informações, entenda suas conversas e acompanhe o funil.",
+            "Converse com o conteúdo do seu negócio.",
           )}
         </p>
       </header>

@@ -69,7 +69,7 @@ export function AdminShell({ userEmail, children }: AdminShellProps) {
 
   return (
     <TooltipProvider>
-      <div className="flex min-h-screen w-full flex-col bg-background">
+      <div className="workspace-shell flex min-h-screen w-full flex-col bg-background">
         <PlatformModeBanner />
         <div className="flex flex-1">
           <AdminSidebar userEmail={userEmail} />

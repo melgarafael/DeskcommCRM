@@ -10,7 +10,7 @@
  * responde é a versão publicada, e só a TELA mentia.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
@@ -151,4 +151,22 @@ describe("o editor abre a versão que a regra escolheu", () => {
     });
     expect(texto).toBe("rascunho novo em andamento");
   });
+});
+
+
+it("recolher comportamento não perde escolhas nem o tamanho da resposta", () => {
+  const version = versao(9, "draft", PROMPT_BOM);
+  textoDoPrompt({ draft: version, published: null, base: version, draftObsoleto: null });
+  const summary = screen.getByText(/Comportamento e repasses/);
+  const details = summary.closest("details")!;
+  expect(details.open).toBe(false);
+  fireEvent.click(summary);
+  expect(details.open).toBe(true);
+  const input = screen.getByLabelText("Tamanho máximo por bolha (80–4000)");
+  fireEvent.change(input, { target: { value: "880" } });
+  fireEvent.click(summary);
+  expect(details.open).toBe(false);
+  fireEvent.click(summary);
+  expect(input).toHaveValue(880);
+  expect(screen.getByRole("switch", { name: "Deixar o agente pedir uma tarefa a alguém e seguir conversando" })).toHaveAttribute("data-state", "checked");
 });

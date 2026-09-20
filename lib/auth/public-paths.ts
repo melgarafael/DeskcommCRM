@@ -3,6 +3,7 @@
  * Match precedence: array order. First match wins.
  */
 export const PUBLIC_PATHS: RegExp[] = [
+  /^\/api\/v1\/billing\/webhook$/, // Stripe signature checked in the handler.
   /^\/$/,
   /^\/login(\/.*)?$/,
   /^\/signup$/,

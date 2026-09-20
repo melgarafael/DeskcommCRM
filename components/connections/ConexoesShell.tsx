@@ -1,4 +1,6 @@
 "use client";
+import { useEffect, useRef } from "react";
+import { ConnectionWelcome } from "./ConnectionWelcome";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,6 +45,8 @@ export function ConexoesShell({
   wacallsConfigured: boolean;
 }) {
   const t = useT();
+  const panel = useRef<HTMLDivElement>(null);
+  const chosen = useRef(false);
   const router = useRouter();
   const params = useSearchParams();
   const abaParam = params.get("aba");
@@ -50,17 +54,27 @@ export function ConexoesShell({
     abaParam === "sociais"
       ? "sociais"
       : abaParam === "oficial"
-      ? "oficial"
-      : abaParam === "parceiro"
-        ? "parceiro"
-        : abaParam === "voz"
-          ? "voz"
-          : "numeros";
+        ? "oficial"
+        : abaParam === "parceiro"
+          ? "parceiro"
+          : abaParam === "voz"
+            ? "voz"
+            : abaParam === "numeros"
+              ? "numeros"
+              : "inicio";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
+
+  useEffect(() => {
+    if (chosen.current) {
+      panel.current?.focus({ preventScroll: true });
+      panel.current?.scrollIntoView({ block: "start" });
+      chosen.current = false;
+    }
+  }, [aba]);
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
     const q = new URLSearchParams();
-    if (proximaAba !== "numeros") q.set("aba", proximaAba);
+    if (proximaAba !== "inicio") q.set("aba", proximaAba);
     if (proximaSub && proximaSub !== "conexao") q.set("sub", proximaSub);
     const qs = q.toString();
     // `scroll: false`: trocar de aba não é navegar para outra página; jogar o
@@ -69,9 +83,44 @@ export function ConexoesShell({
   };
 
   return (
-    <Tabs value={aba} onValueChange={(v) => irPara(v, sub)} className="flex flex-col gap-4">
-      <TabsList className="h-auto max-w-full flex-wrap justify-start">
-        {/* Rótulos pelo que o usuário RECONHECE, não pelo nome técnico do motor por
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      {aba === "inicio" ? (
+        <ConnectionWelcome
+          onChoose={(channel) => {
+            chosen.current = true;
+            irPara(channel);
+          }}
+        />
+      ) : (
+        <header className="flex flex-wrap items-end justify-between gap-4 py-4">
+          <div>
+            <h1>{t("Conexões")}</h1>
+            <p className="mt-3 text-sm text-muted-foreground">
+              {t("Você escolhe o canal. Nós mostramos o próximo passo.")}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="min-h-11 rounded-full border px-4 text-sm hover:bg-muted"
+            onClick={() => irPara("inicio")}
+          >
+            {t("Escolher outro canal")}
+          </button>
+        </header>
+      )}
+      <div
+        ref={panel}
+        tabIndex={-1}
+        className="scroll-mt-20 rounded-xl focus-visible:outline-2 focus-visible:outline-accent"
+        aria-label={t("Opções de conexão")}
+      >
+        <Tabs value={aba} onValueChange={(v) => irPara(v, sub)} className="flex flex-col gap-4">
+          <TabsList
+            aria-label={t("Opções de conexão")}
+            className="h-auto max-w-full flex-wrap justify-start rounded-2xl bg-transparent p-1"
+          >
+            <TabsTrigger value="inicio">{t("Visão geral")}</TabsTrigger>
+            {/* Rótulos pelo que o usuário RECONHECE, não pelo nome técnico do motor por
             trás: ele sabe se leu um QR ou se tem conta na Meta; a sigla do provedor
             não diz nada a quem instalou o sistema para vender.
 
@@ -81,67 +130,79 @@ export function ConexoesShell({
             a frase custou menos que abrir exceção no gate, e o gate continua
             estrito: o dia em que alguém escrever o nome do provider aqui DE VERDADE,
             ele reprova igual. */}
-        <TabsTrigger value="numeros">{t("Números por QR")}</TabsTrigger>
-        <TabsTrigger value="oficial">{t("API Oficial (Meta)")}</TabsTrigger>
-        {/* "Provedor parceiro" e não a marca: o rótulo da marca vem do servidor
+            <TabsTrigger value="numeros">{t("Números por QR")}</TabsTrigger>
+            <TabsTrigger value="oficial">{t("API Oficial (Meta)")}</TabsTrigger>
+            {/* "Provedor parceiro" e não a marca: o rótulo da marca vem do servidor
             (`lib/channels/connect`), porque a tela não pode nomear provider — e
             porque no dia em que houver um segundo parceiro esta aba não muda.
             Aqui fica o CONCEITO; lá dentro o cartão diz de quem se trata. */}
-        <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
-        <TabsTrigger value="sociais">{t("Redes sociais")}</TabsTrigger>
-        <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
-      </TabsList>
+            <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
+            <TabsTrigger value="sociais">{t("Redes sociais")}</TabsTrigger>
+            <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
+          </TabsList>
 
-      <TabsContent value="numeros" className="mt-0">
-        <ConnectionsClient wahaConfigured={wahaConfigured} />
-      </TabsContent>
+          <TabsContent value="numeros" className="mt-0">
+            <ConnectionsClient wahaConfigured={wahaConfigured} />
+          </TabsContent>
 
-      <TabsContent value="sociais" className="mt-0"><RedesSociaisClient /></TabsContent>
+          <TabsContent value="sociais" className="mt-0">
+            <RedesSociaisClient />
+          </TabsContent>
 
-      <TabsContent value="voz" className="mt-0">
-        <CanalVozClient wacallsConfigured={wacallsConfigured} />
-      </TabsContent>
+          <TabsContent value="voz" className="mt-0">
+            <CanalVozClient wacallsConfigured={wacallsConfigured} />
+          </TabsContent>
 
-      <TabsContent value="parceiro" className="mt-0">
-        {/* Sub-abas como no canal oficial, e pelo mesmo motivo: conectar e
+          <TabsContent value="parceiro" className="mt-0">
+            {/* Sub-abas como no canal oficial, e pelo mesmo motivo: conectar e
             gerenciar definições são tarefas diferentes, e empilhá-las numa tela
             só faz a segunda sumir abaixo da dobra. O rótulo diz "do parceiro"
             para não colidir com "Templates" da barra lateral, que significa
             OUTRA coisa (respostas rápidas do atendente). */}
-        <Tabs value={sub} onValueChange={(v) => irPara("parceiro", v)} className="flex flex-col gap-4">
-          <TabsList>
-            <TabsTrigger value="conexao">{t("Conexão")}</TabsTrigger>
-            <TabsTrigger value="templates">{t("Modelos do parceiro")}</TabsTrigger>
-          </TabsList>
-          <TabsContent value="conexao" className="mt-0">
-            <CanalParceiroClient />
+            <Tabs
+              value={sub}
+              onValueChange={(v) => irPara("parceiro", v)}
+              className="flex flex-col gap-4"
+            >
+              <TabsList>
+                <TabsTrigger value="conexao">{t("Conexão")}</TabsTrigger>
+                <TabsTrigger value="templates">{t("Modelos do parceiro")}</TabsTrigger>
+              </TabsList>
+              <TabsContent value="conexao" className="mt-0">
+                <CanalParceiroClient />
+              </TabsContent>
+              <TabsContent value="templates" className="mt-0">
+                <TemplatesParceiroClient />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
-          <TabsContent value="templates" className="mt-0">
-            <TemplatesParceiroClient />
-          </TabsContent>
-        </Tabs>
-      </TabsContent>
 
-      <TabsContent value="oficial" className="mt-0">
-        <Tabs value={sub} onValueChange={(v) => irPara("oficial", v)} className="flex flex-col gap-4">
-          <TabsList>
-            <TabsTrigger value="conexao">{t("Conexão")}</TabsTrigger>
-            {/* "Templates da Meta", não "Templates": a barra lateral já tem um item
+          <TabsContent value="oficial" className="mt-0">
+            <Tabs
+              value={sub}
+              onValueChange={(v) => irPara("oficial", v)}
+              className="flex flex-col gap-4"
+            >
+              <TabsList>
+                <TabsTrigger value="conexao">{t("Conexão")}</TabsTrigger>
+                {/* "Templates da Meta", não "Templates": a barra lateral já tem um item
                 com esse nome que significa OUTRA coisa — respostas rápidas salvas
                 pelo atendente (`/app/templates`). Dois conceitos com o mesmo rótulo
                 fazem o operador clicar no errado e concluir que a tela está quebrada.
                 A colisão é anterior a esta mudança; o que dá para fazer aqui é não
                 agravá-la. */}
-            <TabsTrigger value="templates">{t("Templates da Meta")}</TabsTrigger>
-          </TabsList>
-          <TabsContent value="conexao" className="mt-0">
-            <CanalOficialClient />
-          </TabsContent>
-          <TabsContent value="templates" className="mt-0">
-            <TemplatesClient />
+                <TabsTrigger value="templates">{t("Templates da Meta")}</TabsTrigger>
+              </TabsList>
+              <TabsContent value="conexao" className="mt-0">
+                <CanalOficialClient />
+              </TabsContent>
+              <TabsContent value="templates" className="mt-0">
+                <TemplatesClient />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
         </Tabs>
-      </TabsContent>
-    </Tabs>
+      </div>
+    </div>
   );
 }

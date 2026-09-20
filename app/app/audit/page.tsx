@@ -24,7 +24,7 @@ export default async function AuditPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Audit Log")}</h1>
         <p className="text-sm text-muted-foreground">
-          {traduzir("Histórico append-only de mutações na organização. Manager+.", idioma)}
+          {traduzir("Veja quem alterou os dados da empresa, o que mudou e quando.", idioma)}
         </p>
       </header>
       <AuditClient />

@@ -52,7 +52,7 @@ export default async function TenantSettingsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Organização", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
-          {traduzir("Dados da empresa, retenção de mídia, DPO. Admin only.", idioma)}
+          {traduzir("Mantenha os dados da empresa e defina por quanto tempo guardar as mídias do atendimento.", idioma)}
         </p>
       </header>
       {row && (

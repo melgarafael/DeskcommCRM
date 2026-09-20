@@ -1,3 +1,4 @@
+import { chaveDePlataforma } from "@/lib/ai/runtime/agent";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -30,6 +31,7 @@ export default async function CredentialsPage() {
     .order("created_at", { ascending: false });
 
   const credentials = (data ?? []) as unknown as CredentialRow[];
+  const managedAI = ["openai", "anthropic", "openrouter"].some((provider) => !!chaveDePlataforma(provider));
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
 
   // Mesma regra do DELETE: só conta a versão PUBLICADA de agente não arquivado.
@@ -51,7 +53,7 @@ export default async function CredentialsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Chaves de acesso à IA", idioma)}</h1>
         <p className="text-sm text-muted-foreground">
           {traduzir(
-            "A conta de inteligência artificial é sua: você contrata direto na Anthropic, OpenAI ou Google e cola a chave aqui. Ela é guardada criptografada e nunca mais aparece na tela depois de salva — nem para você.",
+            managedAI ? "A IA gerenciada já está disponível. Adicione uma chave própria somente se quiser usar outra conta; agentes existentes mantêm suas configurações." : "A conta de inteligência artificial é sua: você contrata direto na Anthropic, OpenAI ou Google e cola a chave aqui. Ela é guardada criptografada e nunca mais aparece na tela depois de salva — nem para você.",
             idioma,
           )}
         </p>

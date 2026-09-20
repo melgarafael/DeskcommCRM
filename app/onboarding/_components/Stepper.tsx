@@ -36,6 +36,8 @@ export function Stepper({ passos }: { passos: PassoVisivel[] }) {
   const idx = passos.findIndex((p) => pathname.includes(`/${p.segmento}`));
 
   return (
+    <div>
+      {idx >= 0 && <p className="px-2 pt-2 text-sm text-muted-foreground">{t("Passo")} {idx + 1} {t("de")} {passos.length} <span className="text-foreground">· {t(passos[idx]!.rotulo)}</span></p>}
     <ol
       aria-label="onboarding steps"
       className="flex w-full items-center justify-between gap-2 px-2 py-3"
@@ -77,5 +79,6 @@ export function Stepper({ passos }: { passos: PassoVisivel[] }) {
         );
       })}
     </ol>
+    </div>
   );
 }

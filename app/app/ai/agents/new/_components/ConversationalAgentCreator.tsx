@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import { ArtisanIcon } from "@/components/brand/ArtisanIcon";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
@@ -15,13 +17,13 @@ import { prepareAgentConversation } from "../_chat-action";
 
 type Props = Pick<
   ComponentProps<typeof AgentForm>,
-  "credentials" | "channelSessions" | "provedoresDaInstalacao"
+  "credentials" | "channelSessions" | "provedoresDaInstalacao" | "defaultAI"
 >;
 
 export function ConversationalAgentCreator(props: Props) {
   const t = useT();
   const [mode, setMode] = useState<"conversation" | "editor">("conversation");
-  const [form, setForm] = useState(initialAgentCreationState);
+  const [form, setForm] = useState(() => initialAgentCreationState(props.defaultAI));
   const [draft, setDraft] = useState<CreationDraft>({});
   const [messages, setMessages] = useState<CreationMessage[]>([]);
   const [input, setInput] = useState("");
@@ -34,6 +36,7 @@ export function ConversationalAgentCreator(props: Props) {
   const transcript = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLDivElement>(null);
   const editorEntry = useRef(form);
+  const ideaInput = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -136,37 +139,81 @@ export function ConversationalAgentCreator(props: Props) {
       </div>
 
       <div hidden={mode !== "conversation"}>
-        <div
-          className={`grid min-w-0 gap-6 ${draft.name || draft.system_prompt ? "xl:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]" : "mx-auto max-w-3xl"}`}
-        >
+        <div className="agent-studio grid min-w-0 items-start gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.85fr)] xl:gap-12">
           <section aria-label={t("Criar agente por conversa")} className="min-w-0 space-y-5">
             <header className="space-y-2">
-              <p className="text-sm text-muted-foreground">{t("Novo agente")}</p>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                {t("O que seu agente precisa fazer?")}{" "}
-                <span className="text-primary">{t("Escreve aí.")}</span>
+              <h1 className="artisan-title max-w-2xl">
+                {t("Seu próximo agente começa com uma ideia.")}
               </h1>
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  "Conte como você quer atender. A conversa organiza uma proposta que você pode revisar e ajustar.",
-                )}
+              <p className="pt-3 text-base leading-7 text-muted-foreground">
+                {t("Conte o que precisa. A gente organiza com você.")}
               </p>
             </header>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              {props.defaultAI === null ? (
+                <p role="status">
+                  {t(
+                    "A IA ainda precisa ser preparada pelo administrador. Você pode configurar o agente manualmente enquanto isso.",
+                  )}
+                </p>
+              ) : null}
+            </div>
+            {!messages.length && !busy ? (
+              <section className="space-y-4 py-3" aria-label={t("Ideias para começar")}>
+                <h2 className="font-serif text-xl">{t("O que você quer facilitar hoje?")}</h2>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    {
+                      icon: "conversation" as const,
+                      label: t("Responder clientes"),
+                      text: t(
+                        "Quero responder dúvidas sobre meus serviços e chamar minha equipe quando precisar.",
+                      ),
+                    },
+                    {
+                      icon: "pipeline" as const,
+                      label: t("Organizar vendas"),
+                      text: t(
+                        "Quero entender o interesse dos clientes e organizar as oportunidades no funil.",
+                      ),
+                    },
+                    {
+                      icon: "calendar" as const,
+                      label: t("Agendar horários"),
+                      text: t(
+                        "Quero ajudar meus clientes a escolher um horário para serem atendidos.",
+                      ),
+                    },
+                  ].map((idea, index) => (
+                    <button
+                      key={idea.icon}
+                      type="button"
+                      className="agent-idea-choice flex items-center gap-3 rounded-2xl border p-4 text-left text-sm sm:flex-col sm:items-start sm:gap-4 sm:p-5"
+                      onClick={() => {
+                        setInput(idea.text);
+                        ideaInput.current?.focus();
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="agent-task-illustration"
+                        style={{ backgroundPosition: `${index * 50}% center` }}
+                      />
+                      {idea.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             <div
               ref={transcript}
               role="log"
               aria-label={t("Conversa de criação")}
               aria-live="polite"
               aria-relevant="additions"
-              className="max-h-[55vh] space-y-4 overflow-y-auto rounded-xl border bg-card p-4 sm:p-5"
+              hidden={!messages.length && !busy}
+              className="max-h-[55vh] space-y-4 overflow-y-auto rounded-2xl bg-card p-4 sm:p-5"
             >
-              {!messages.length && !busy ? (
-                <p className="text-sm leading-relaxed">
-                  {t(
-                    "Pode começar pelo seu negócio, por uma tarefa ou pelo que hoje toma seu tempo. Eu pergunto só o que faltar.",
-                  )}
-                </p>
-              ) : null}
               {messages.map((message, index) => (
                 <div
                   key={index}
@@ -199,17 +246,20 @@ export function ConversationalAgentCreator(props: Props) {
               className="space-y-3"
             >
               <label htmlFor="agent-idea" className="block text-sm font-medium">
-                {messages.length ? t("O que você quer ajustar?") : t("Conte sua ideia")}
+                {messages.length ? t("O que você quer ajustar?") : t("Escreve aí.")}
               </label>
               <Textarea
                 id="agent-idea"
+                ref={ideaInput}
+                aria-label={messages.length ? t("O que você quer ajustar?") : t("Conte sua ideia")}
+                className="min-h-32 rounded-2xl bg-card p-5 text-base leading-7"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 disabled={busy}
                 rows={4}
                 maxLength={3000}
                 placeholder={t(
-                  "Quero um agente que atenda os interessados, explique meus serviços e organize as oportunidades no funil…",
+                  "Ex.: quero responder dúvidas sobre meus serviços e chamar minha equipe quando precisar.",
                 )}
                 onKeyDown={(event) => {
                   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -229,13 +279,24 @@ export function ConversationalAgentCreator(props: Props) {
                   </Link>
                 </div>
               ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {t("Ctrl/⌘ + Enter para enviar")}
-                </span>
-                <Button type="submit" disabled={!input.trim() || busy}>
-                  {busy ? t("Preparando…") : error ? t("Tentar novamente") : t("Enviar")}
+              <div className="flex flex-wrap items-center gap-4 pt-2">
+                <Button
+                  type="submit"
+                  className="h-12 min-w-36 rounded-xl px-7"
+                  disabled={!input.trim() || busy}
+                >
+                  {busy
+                    ? t("Preparando…")
+                    : error
+                      ? t("Tentar novamente")
+                      : messages.length
+                        ? t("Enviar")
+                        : t("Começar")}
+                  <span aria-hidden>→</span>
                 </Button>
+                <span className="text-xs text-muted-foreground">
+                  {t("Você revisa tudo antes de ativar.")}
+                </span>
               </div>
             </form>
             <p className="text-xs text-muted-foreground">
@@ -319,7 +380,41 @@ export function ConversationalAgentCreator(props: Props) {
                 {t("Revisar rascunho")}
               </Button>
             </aside>
-          ) : null}
+          ) : (
+            <aside
+              className="agent-preview rounded-3xl border p-6 sm:p-8"
+              aria-label={t("Prévia do agente")}
+            >
+              <p className="mb-3 text-xs font-medium text-muted-foreground">{t("Prévia")}</p>
+              <h2 className="font-serif text-2xl tracking-tight">
+                {t("Seu agente, tomando forma")}
+              </h2>
+              <Image
+                src="/brand/agent-studio-art.png"
+                width={1536}
+                height={1024}
+                alt=""
+                className="artisan-illustration my-4 w-full rounded-2xl"
+              />
+              <ul className="divide-y">
+                {[
+                  { label: t("O que ele faz"), icon: "pipeline" as const },
+                  { label: t("Como ele conversa"), icon: "conversation" as const },
+                  { label: t("Quando chama você"), icon: "people" as const },
+                ].map(
+                  ({ label, icon }) => (
+                    <li key={label} className="flex items-center gap-3 py-5 text-sm">
+                      <ArtisanIcon symbol={icon} className="h-5 w-5 shrink-0 text-primary" />
+                      {label}
+                    </li>
+                  ),
+                )}
+              </ul>
+              <p className="mt-6 font-serif text-base text-muted-foreground italic">
+                {t("Primeiro a ideia. Depois os detalhes.")}
+              </p>
+            </aside>
+          )}
         </div>
       </div>
       <div ref={editor} hidden={mode !== "editor"}>

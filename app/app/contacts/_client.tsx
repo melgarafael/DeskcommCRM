@@ -56,10 +56,7 @@ export function ContactsListClient() {
   );
   const q = useContactList(filters);
 
-  const allContacts = useMemo(
-    () => q.data?.pages.flatMap((p) => p.data) ?? [],
-    [q.data],
-  );
+  const allContacts = useMemo(() => q.data?.pages.flatMap((p) => p.data) ?? [], [q.data]);
 
   const tagOptions = useMemo(() => {
     const set = new Set<string>();
@@ -85,7 +82,9 @@ export function ContactsListClient() {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{t("Contatos")}</h1>
           <p className="text-sm text-muted-foreground">
-            {t("Customer 360 — busque, filtre e gerencie contatos.")}
+            {t(
+              "Encontre uma pessoa, consulte seu histórico e acompanhe a relação com seu negócio.",
+            )}
           </p>
         </div>
         {/*
@@ -93,33 +92,40 @@ export function ContactsListClient() {
           vem do PR #267, e vale para os DOIS botões agora: numa tela de 390px
           uma linha de dois botões sem isso comprime os rótulos.
         */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {/*
             A porta do recurso de duplicados fica AQUI, na tela que já existe, e
             não num item de menu novo: quem descobre que tem contato repetido
             descobre olhando a lista, e a barra lateral não precisa crescer para
             um trabalho que se faz de vez em quando.
           */}
-          <Button variant="outline" onClick={() => setDuplicadosOpen(true)}>
-            <UsersThree size={16} weight="bold" aria-hidden />
-            <span>{t("Duplicados")}</span>
-          </Button>
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <UploadSimple size={16} weight="bold" aria-hidden />
-            <span>{t("Importar CSV")}</span>
-          </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus size={16} weight="bold" aria-hidden />
             <span>{t("Novo contato")}</span>
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost">{t("Mais opções")}</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setImportOpen(true)}>
+                <UploadSimple size={16} aria-hidden />
+                {t("Importar CSV")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setDuplicadosOpen(true)}>
+                <UsersThree size={16} aria-hidden />
+                {t("Duplicados")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
-        <div className="relative w-full sm:w-72">
+      <div className="flex flex-wrap items-start gap-3 py-4">
+        <div className="relative min-w-0 flex-1">
           <MagnifyingGlass
             size={16}
-            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+            className="absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
             aria-hidden
           />
           <Input
@@ -131,70 +137,78 @@ export function ContactsListClient() {
           />
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={tagOptions.length === 0}>
-              {tag ? `${t("Tag")}: ${tag}` : `${t("Tag")}: ${t("todas")}`}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel>{t("Tag")}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setTag(undefined)}>{t("Todas")}</DropdownMenuItem>
-            {tagOptions.map((tagOption) => (
-              <DropdownMenuItem key={tagOption} onClick={() => setTag(tagOption)}>
-                {tagOption}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <details className="max-w-full min-w-40 rounded-xl border bg-card px-4 py-2">
+          <summary className="cursor-pointer text-sm leading-6">
+            {t("Filtros")}
+            {tag || source || limit !== 25 ? ` · ${t("Personalizados")}` : ""}
+          </summary>
+          <div className="flex flex-wrap gap-2 pt-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={tagOptions.length === 0}>
+                  {tag ? `${t("Tag")}: ${tag}` : `${t("Tag")}: ${t("todas")}`}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>{t("Tag")}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setTag(undefined)}>{t("Todas")}</DropdownMenuItem>
+                {tagOptions.map((tagOption) => (
+                  <DropdownMenuItem key={tagOption} onClick={() => setTag(tagOption)}>
+                    {tagOption}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              {t(SOURCE_OPTIONS.find((s) => s.value === source)?.label ?? "Origem")}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {SOURCE_OPTIONS.map((s) => (
-              <DropdownMenuItem key={s.label} onClick={() => setSource(s.value)}>
-                {t(s.label)}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  {t(SOURCE_OPTIONS.find((s) => s.value === source)?.label ?? "Origem")}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {SOURCE_OPTIONS.map((s) => (
+                  <DropdownMenuItem key={s.label} onClick={() => setSource(s.value)}>
+                    {t(s.label)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              {limit} {t("por página")}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuLabel>{t("Itens por página")}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {PAGE_SIZE_OPTIONS.map((n) => (
-              <DropdownMenuItem key={n} onClick={() => setLimit(n)}>
-                {n}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  {limit} {t("por página")}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>{t("Itens por página")}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <DropdownMenuItem key={n} onClick={() => setLimit(n)}>
+                    {n}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        {(search || tag || source) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSearchInput("");
-              setSearch("");
-              setTag(undefined);
-              setSource(undefined);
-            }}
-          >
-            {t("Limpar filtros")}
-          </Button>
-        )}
+            {(search || tag || source) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchInput("");
+                  setSearch("");
+                  setTag(undefined);
+                  setSource(undefined);
+                }}
+              >
+                {t("Limpar filtros")}
+              </Button>
+            )}
+          </div>
+        </details>
       </div>
 
       {q.isLoading ? (
@@ -206,12 +220,7 @@ export function ContactsListClient() {
       ) : q.isError ? (
         <Card className="p-6 text-center">
           <p className="text-sm text-error-fg">{t("Erro ao carregar contatos.")}</p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-2"
-            onClick={() => q.refetch()}
-          >
+          <Button size="sm" variant="outline" className="mt-2" onClick={() => q.refetch()}>
             {t("Tentar novamente")}
           </Button>
         </Card>

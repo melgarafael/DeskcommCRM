@@ -1,7 +1,6 @@
 import type { InterfaceSettings } from "@/lib/navigation/interface";
 import Link from "next/link";
 
-import { Card } from "@/components/ui/card";
 import type { Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
@@ -61,10 +60,14 @@ export function NavHub({
   const secoes = hubSections(group, isPlatformAdmin, role, interfaceSettings);
 
   return (
-    <div className="flex h-full flex-col gap-8 p-6">
+    <div className="mx-auto flex h-full w-full max-w-6xl flex-col gap-10 p-2 sm:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{traduzir(title, locale)}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground">{traduzir(subtitle, locale)}</p>}
+        {subtitle && (
+          <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground">
+            {traduzir(subtitle, locale)}
+          </p>
+        )}
       </header>
 
       {secoes.map(({ section, items }) => (
@@ -79,25 +82,31 @@ export function NavHub({
           >
             {traduzir(section, locale)}
           </h2>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-x-10 lg:grid-cols-2">
             {items.map((item) => {
               const Icon = item.icon;
               return (
                 <Link key={item.href} href={item.href} className="block">
-                  <Card className="flex h-full gap-3 p-4 transition-colors hover:border-border-strong">
+                  <div className="group flex h-full items-start gap-4 border-b py-6 transition-colors hover:text-primary">
                     <Icon
-                      size={20}
+                      size={24}
                       weight="regular"
                       aria-hidden
                       className="mt-0.5 shrink-0 text-muted-foreground"
                     />
                     <div>
                       <h3 className="text-sm font-semibold">{traduzir(item.label, locale)}</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
                         {traduzir(item.description, locale)}
                       </p>
                     </div>
-                  </Card>
+                    <span
+                      aria-hidden
+                      className="ml-auto pt-1 text-muted-foreground transition-transform group-hover:translate-x-1"
+                    >
+                      ↗
+                    </span>
+                  </div>
                 </Link>
               );
             })}

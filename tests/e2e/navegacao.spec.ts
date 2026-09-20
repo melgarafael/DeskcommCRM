@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
 test("entrada conversacional, navegação enxuta e catálogo completo por teclado", async ({
   page,
 }) => {
-  await expect(page.getByRole("heading", { name: /Seu próximo passo/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /O que vamos resolver hoje/ })).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Navegação principal" });
   await expect(nav.getByRole("link")).toHaveCount(6);
   await expect(nav.getByRole("link", { name: "Agentes de IA" })).toBeVisible();
@@ -34,7 +34,7 @@ test("entrada conversacional, navegação enxuta e catálogo completo por teclad
 
 test("desktop claro/escuro, fonte nova e barra sem rolagem", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 });
-  await expect(page.getByRole("heading", { name: /Seu próximo passo/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /O que vamos resolver hoje/ })).toBeVisible();
   const measure = await page
     .getByRole("navigation", { name: "Navegação principal" })
     .evaluate((el) => ({ scroll: el.scrollHeight, height: el.clientHeight }));
@@ -49,9 +49,14 @@ test("desktop claro/escuro, fonte nova e barra sem rolagem", async ({ page }) =>
       await button.click();
     }
     await expect(page.locator(".workspace-nav-item.is-active")).toHaveCSS(
-      "background-color", theme === "dark" ? "rgb(29, 32, 38)" : "rgb(255, 255, 255)",
+      "background-color",
+      theme === "dark" ? "rgb(28, 38, 32)" : "rgb(255, 255, 255)",
     );
-    await page.screenshot({ path: path.join(EVIDENCE, `desktop-${theme}.png`), fullPage: true, animations: "disabled" });
+    await page.screenshot({
+      path: path.join(EVIDENCE, `desktop-${theme}.png`),
+      fullPage: true,
+      animations: "disabled",
+    });
   }
   await page.getByRole("button", { name: "Recolher sidebar" }).click();
   await expect(page.getByRole("button", { name: "Expandir sidebar" })).toBeVisible();
@@ -67,7 +72,7 @@ test("mobile 360/390, navegação por gaveta e preferência de movimento reduzid
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: 844 });
-    await expect(page.getByRole("heading", { name: /Seu próximo passo/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /O que vamos resolver hoje/ })).toBeVisible();
     const dimensions = await page.evaluate(() => ({
       scroll: document.body.scrollWidth,
       width: document.documentElement.clientWidth,

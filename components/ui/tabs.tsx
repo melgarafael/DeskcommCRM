@@ -24,7 +24,7 @@ const TabsList = React.forwardRef<
       // Aqui e não na tela do agente de propósito: TODA `TabsList` do app tem a
       // mesma fragilidade, e consertar só onde eu esbarrei deixaria as irmãs
       // quebradas com um álibi de "já foi tratado".
-      "inline-flex h-9 max-w-full items-center justify-center overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground",
+      "inline-flex min-h-11 max-w-full items-center justify-start gap-1 overflow-x-auto rounded-xl bg-muted/60 p-1 text-muted-foreground",
       className
     )}
     {...props}
@@ -39,7 +39,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
+      "inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ring-offset-background transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
       className
     )}
     {...props}

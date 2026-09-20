@@ -955,13 +955,72 @@
   }
 }
 
-/* escreve.ai workspace: restrained chrome, readable surfaces, brand accent retained. */
-.workspace-shell { --color-bg: #f6f7f9; --color-surface: #ffffff; --color-surface-elevated: #eef0f3; --color-text: #20232b; --color-text-muted: #606674; --color-text-subtle: #6c7280; --color-border: #e5e7ec; --color-border-strong: #cbd0d9; }
-[data-theme="dark"] .workspace-shell { --color-bg: #15171b; --color-surface: #1d2026; --color-surface-elevated: #272b33; --color-text: #f0f1f4; --color-text-muted: #b0b5c1; --color-text-subtle: #a0a7b4; --color-border: #30353f; --color-border-strong: #4a5260; }
-.workspace-sidebar { background: color-mix(in srgb, var(--color-bg) 85%, var(--color-surface)); border-right: 1px solid var(--color-border); }
-.workspace-nav-item { display: flex; width: 100%; align-items: center; gap: 12px; min-height: 44px; border-radius: 11px; padding: 10px 12px; font-size: 13px; font-weight: 500; color: var(--color-text-muted); transition: background-color 120ms, color 120ms; }
+/* Shared artisan foundation. Semantic status/accent tokens remain tenant-configurable. */
+:root { --color-bg: #faf9f6; --color-surface: #ffffff; --color-surface-elevated: #f1f0e9; --color-text: #213c30; --color-text-muted: #626b61; --color-text-subtle: #6c756b; --color-border: #e5e7dd; --color-border-strong: #c3cbbf; }
+[data-theme="dark"] { --color-bg: #151c18; --color-surface: #1c2620; --color-surface-elevated: #27332b; --color-text: #edf2e9; --color-text-muted: #b8c4b7; --color-text-subtle: #a9b6a7; --color-border: #354337; --color-border-strong: #576951; }
+.workspace-sidebar { background: color-mix(in srgb, var(--color-bg) 94%, var(--color-text)); border-right: 1px solid var(--color-border); }
+.workspace-nav-item { display: flex; width: 100%; align-items: center; gap: 12px; min-height: 46px; border-radius: 13px; padding: 11px 12px; font-size: 13px; font-weight: 500; color: var(--color-text-muted); transition: background-color 160ms, color 160ms; }
 .workspace-nav-item:hover { color: var(--color-text); background: var(--color-surface-elevated); }
-.workspace-nav-item.is-active { background: var(--color-surface); color: var(--color-text); box-shadow: 0 1px 4px #0000000a; }
+.workspace-nav-item.is-active { background: var(--color-surface); color: var(--color-text); box-shadow: 0 2px 8px #16372508; }
 .workspace-nav-item.is-active svg { color: var(--color-accent); }
 .workspace-nav-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+main h1, .artisan-title { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter-spacing: -.04em; line-height: 1.12; text-wrap: balance; }
+.workspace-shell main h1 { font-size: clamp(1.9rem, 3.2vw, 2.7rem); }
+.workspace-shell main .artisan-title { font-size: clamp(2.25rem, 4.2vw, 3.5rem); }
+.channel-emblem { display: grid; width: 64px; height: 64px; flex-shrink: 0; place-items: center; border-radius: 21px 24px 19px 25px; box-shadow: inset 0 2px 4px #ffffff80, 0 5px 12px #213c3010; transform: rotate(-5deg); }
+.channel-green { background: #e2ebd4; color: #246345; }
+.channel-coral { background: #fae2d8; color: #934c42; transform: rotate(4deg); }
+.artisan-illustration { mix-blend-mode: multiply; }
+[data-theme="dark"] .artisan-illustration { mix-blend-mode: normal; opacity: .9; }
+.artisan-onboarding main h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(1.8rem, 3vw, 2.5rem); letter-spacing: -.04em; }
+.artisan-onboarding main { padding-top: 3rem; padding-bottom: 4rem; }
 @media (prefers-reduced-motion: reduce) { .workspace-shell *, .workspace-shell *::before, .workspace-shell *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; } }
+
+/* A shared reading rhythm, with work surfaces specific to each task. */
+.workspace-shell main[data-workspace] { padding-bottom: 6rem; }
+.workspace-shell main[data-workspace] > :last-child { margin-inline: auto; width: 100%; max-width: 90rem; }
+.workspace-shell main[data-workspace="preferences"] > :last-child { max-width: 68rem; }
+.workspace-shell main[data-workspace="preferences"] form { max-width: 60rem; }
+.workspace-shell main[data-workspace="preferences"] [data-slot="card"] { box-shadow: none; border-color: transparent; background: color-mix(in srgb, var(--color-surface) 65%, var(--color-bg)); }
+.workspace-shell main[data-workspace="directory"] header,
+.workspace-shell main[data-workspace="preferences"] header,
+.workspace-shell main[data-workspace="insights"] header { padding-block: .6rem 1rem; }
+.workspace-shell main header h1 + p { margin-top: .85rem; max-width: 46rem; line-height: 1.75; }
+.workspace-shell .artisan-table { border-radius: 1rem; }
+.workspace-shell .artisan-table th { height: 3rem; font-size: .75rem; font-weight: 500; color: var(--color-text-muted); background: var(--color-bg); }
+.workspace-shell .artisan-table td { padding-block: 1.15rem; }
+.workspace-shell .artisan-table tbody tr { border-color: color-mix(in srgb, var(--color-border) 60%, transparent); }
+.workspace-shell .artisan-table tbody tr:hover { background: var(--color-surface-elevated); }
+.agent-studio { margin-inline: auto; max-width: 90rem; padding-top: 1rem; }
+.agent-studio > section > header { margin-bottom: 2rem; }
+.agent-idea-choice { color: var(--color-text); background: var(--color-surface); transition: border-color 160ms, background-color 160ms, transform 160ms; }
+.agent-idea-choice:hover { border-color: var(--color-accent); background: var(--color-surface-elevated); transform: translateY(-2px); }
+.agent-idea-choice:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.agent-preview { background: color-mix(in srgb, var(--color-surface-elevated) 35%, var(--color-bg)); }
+.agent-studio button[type="submit"] { background: var(--color-text); color: var(--color-bg); }
+.artisan-access h1, .artisan-access h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter-spacing: -.04em; }
+.artisan-access h1 { font-size: 2.5rem; line-height: 1.1; }
+.artisan-access form { margin-top: 2rem; }
+.artisan-onboarding main > div { border-color: transparent; box-shadow: none; }
+.agent-directory-item:hover { background: color-mix(in srgb, var(--color-surface) 60%, transparent); }
+.preference-form > section > div > label { line-height: 1.8; }
+@media (min-width: 1280px) { .agent-preview { position: sticky; top: 5rem; } }
+@media (max-width: 639px) {
+  .workspace-shell main[data-workspace] > :last-child { padding-inline: .25rem; }
+  .agent-studio > section > header { margin-bottom: 1rem; }
+  .agent-preview img { max-height: 10rem; object-fit: contain; }
+}
+
+/* One illustrated choice per existing task: decorative, never a second control. */
+.agent-task-illustration {
+  display: block;
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  background-image: url("/brand/agent-task-illustrations.png");
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+}
+@media (min-width: 640px) {
+  .agent-task-illustration { width: 84px; height: 84px; }
+}

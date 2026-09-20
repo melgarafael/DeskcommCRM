@@ -4,6 +4,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { ArtisanIcon } from "@/components/brand/ArtisanIcon";
 
 import { Button } from "@/components/ui/button";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
@@ -93,10 +94,11 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
 
       {lista.length === 0 ? (
         <div
-          className="rounded-lg border border-dashed border-border p-8 text-center"
+          className="flex flex-col items-center rounded-3xl bg-surface-elevated/50 px-6 py-12 text-center"
           data-testid="acervo-vazio"
         >
-          <p className="text-sm font-medium">{t("O agente ainda não conhece o seu negócio")}</p>
+          <ArtisanIcon symbol="conversation" className="mb-5 h-12 w-12 text-primary" />
+          <p className="font-serif text-2xl">{t("O agente ainda não conhece o seu negócio")}</p>
           <p className="mx-auto mt-1 max-w-prose text-sm text-text-muted">
             {t(
               "Comece pelo que ele mais vai precisar: as perguntas que se repetem, e a política que você mais explica. Ele passa a consultar isso antes de responder, em vez de improvisar.",
@@ -104,7 +106,7 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="knowledge-library grid grid-cols-1 gap-4 lg:grid-cols-2">
           {lista.map((s) => (
             <KnowledgeSourceCard
               key={s.id}

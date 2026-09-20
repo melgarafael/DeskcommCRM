@@ -5,18 +5,7 @@ import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/Marca
 import { gsap } from "gsap";
 import { usePathname } from "next/navigation";
 import { useState, useTransition, useEffect, useRef } from "react";
-import {
-  MessageCircle,
-  PanelsTopLeft,
-  UsersRound,
-  CalendarDays,
-  Bot,
-  LayoutGrid,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings2,
-  ArrowUpRight,
-} from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import { toggleSidebar } from "@/app/actions/shell/toggleSidebar";
@@ -27,12 +16,14 @@ import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { searchable } from "@/lib/navigation/registry";
 import { DEFAULT_APP_NAME } from "@/lib/branding";
 
-const daily = [
-  { href: "/app/inbox", icon: MessageCircle },
-  { href: "/app/kanban", icon: PanelsTopLeft },
-  { href: "/app/ai/agents", icon: Bot },
-  { href: "/app/contacts", icon: UsersRound },
-  { href: "/app/agenda", icon: CalendarDays },
+import { ArtisanIcon, type ArtisanSymbol } from "@/components/brand/ArtisanIcon";
+
+const daily: { href: string; symbol: ArtisanSymbol }[] = [
+  { href: "/app/inbox", symbol: "conversation" },
+  { href: "/app/kanban", symbol: "pipeline" },
+  { href: "/app/ai/agents", symbol: "agent" },
+  { href: "/app/contacts", symbol: "people" },
+  { href: "/app/agenda", symbol: "calendar" },
 ];
 
 export function SidebarContent({
@@ -100,7 +91,7 @@ export function SidebarContent({
           aria-current={pathname === "/app" ? "page" : undefined}
           className={linkClass(pathname === "/app")}
         >
-          <ArrowUpRight size={20} strokeWidth={1.7} aria-hidden />
+          <ArtisanIcon symbol="spark" className="h-5 w-5 shrink-0" />
           {!collapsed && <span>{t("Escreve aí")}</span>}
         </Link>
         {!collapsed && (
@@ -108,7 +99,7 @@ export function SidebarContent({
             {t("SEU ESPAÇO")}
           </p>
         )}
-        {daily.map(({ href, icon: Icon }) => {
+        {daily.map(({ href, symbol }) => {
           const item = destinations.find((d) => d.href === href);
           if (!item) return null;
           const active = pathname === href || pathname.startsWith(href + "/");
@@ -123,7 +114,7 @@ export function SidebarContent({
               aria-current={active ? "page" : undefined}
               className={linkClass(active)}
             >
-              <Icon size={20} strokeWidth={1.7} aria-hidden />
+              <ArtisanIcon symbol={symbol} className="h-5 w-5 shrink-0" />
               {!collapsed && <span>{t(label)}</span>}
             </Link>
           );
@@ -136,7 +127,7 @@ export function SidebarContent({
             aria-label={collapsed ? t("Todas as ferramentas") : undefined}
             className={linkClass(false)}
           >
-            <LayoutGrid size={19} strokeWidth={1.7} aria-hidden />
+            <ArtisanIcon symbol="tools" className="h-5 w-5 shrink-0" />
             {!collapsed && <span>{t("Todas as ferramentas")}</span>}
           </button>
         </div>
@@ -150,7 +141,7 @@ export function SidebarContent({
             aria-label={collapsed ? t("Configurações") : undefined}
             className={linkClass(pathname.startsWith("/app/settings"))}
           >
-            <Settings2 size={19} strokeWidth={1.7} aria-hidden />
+            <ArtisanIcon symbol="settings" className="h-5 w-5 shrink-0" />
             {!collapsed && <span>{t("Configurações")}</span>}
           </Link>
         )}

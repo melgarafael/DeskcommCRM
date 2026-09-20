@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import type { Role } from "@/lib/auth/types";
 import { roleAtLeast } from "@/lib/auth/types";
 import type { WorkspaceScope, WorkspaceSource } from "./schema";
@@ -45,7 +46,7 @@ export async function loadWorkspaceContext(
         .reverse();
       sources.push({
         id: `conversation:${c.id}`,
-        title: contact?.display_name || "Conversa",
+        title: rotuloDoContato(contact),
         kind: "Conversa",
         href: `/app/inbox?id=${c.id}`,
         text: `${c.channel} · ${c.status} · ${c.last_message_at ?? "sem data"}\n${recent.map((m) => `${m.sent_at} ${m.direction}: ${String(m.body ?? "[mídia sem transcrição]").slice(0, 800)}`).join("\n") || "Sem mensagem de texto disponível"}`,

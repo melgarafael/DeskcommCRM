@@ -30,3 +30,6 @@ scratchpad
 evidence
 .superpowers
 *.tsbuildinfo
+
+# Brand images are runtime assets, including generated illustrations.
+!public/**

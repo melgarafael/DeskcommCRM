@@ -26,7 +26,7 @@ export default async function LgpdRequestsPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Solicitações LGPD")}</h1>
         <p className="text-sm text-muted-foreground">
-          {t("Anonimizações e solicitações de dados de titulares. Apenas admins.")}
+          {t("Acompanhe os pedidos de acesso e exclusão de dados dos seus clientes.")}
         </p>
       </header>
       <RequestsTable />
