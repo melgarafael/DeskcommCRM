@@ -61,6 +61,9 @@ export const ApiErrorCodes = {
   // aceitar token, este comentário ganha o integrador de volta.
   agenda_listagem_alvo_nao_e_lead: "agenda_listagem_alvo_nao_e_lead",
 
+  // Commercial resource capacity or subscription standing (migration 0315).
+  subscription_resource_limit: "subscription_resource_limit",
+
   // 409 — conflito
   idempotency_conflict: "idempotency_conflict",
   state_conflict: "state_conflict",

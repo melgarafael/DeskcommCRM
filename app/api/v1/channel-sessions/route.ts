@@ -1,3 +1,5 @@
+import { subscriptionResourceLimitResponse } from "@/lib/billing/resource-limit";
+import { ApiErrorCodes } from "@/lib/api/errors";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channel-sessions — lista os canais WhatsApp da org (do DB).
@@ -112,6 +114,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {
+    if (error instanceof ChannelConnectionError && error.code === ApiErrorCodes.subscription_resource_limit)
+      return subscriptionResourceLimitResponse(requestId, authz.user.idioma);
     if (error instanceof ChannelConnectionError) return fail(error.code,
       error.code === "connection_in_progress" ? t("A conexão ainda está sendo preparada. Aguarde e tente novamente.")
         : error.code === "connection_session_name_too_long" ? t("O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente.")

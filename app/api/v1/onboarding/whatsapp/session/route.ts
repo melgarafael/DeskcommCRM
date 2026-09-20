@@ -1,3 +1,5 @@
+import { subscriptionResourceLimitResponse } from "@/lib/billing/resource-limit";
+import { ApiErrorCodes } from "@/lib/api/errors";
 import { randomUUID } from "node:crypto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
@@ -41,6 +43,8 @@ export async function POST(req: Request): Promise<Response> {
     });
     return ok({ status: result.channel.status, session: result.channel.waha_session_name, channel_session_id: result.channel.id }, { requestId });
   } catch (error) {
+    if (error instanceof ChannelConnectionError && error.code === ApiErrorCodes.subscription_resource_limit)
+      return subscriptionResourceLimitResponse(requestId, auth.user.idioma);
     if (error instanceof ChannelConnectionError) return fail(error.code,
       error.code === "connection_in_progress" ? "A conexão ainda está sendo preparada. Aguarde e tente novamente."
         : error.code === "connection_session_name_too_long" ? "O identificador desta conexão passou do limite que o WhatsApp aceita. Nada foi criado no WhatsApp — atualize o sistema e tente novamente."

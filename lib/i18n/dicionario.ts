@@ -37,6 +37,7 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Não foi possível adicionar este recurso ao plano atual. Peça ao administrador para conferir os limites e o pagamento em Configurações → Planos e assinatura. Seus recursos existentes foram preservados.": { es: "No se pudo añadir este recurso al plan actual. Pide al administrador que revise los límites y el pago en Configuración → Planes y suscripción. Tus recursos existentes se han conservado." },
   "Sua assinatura": { es: "Tu suscripción" },
   "Sua assinatura está ativa.": { es: "Tu suscripción está activa." },
   "Sua assinatura precisa de atenção. Abra a gestão para conferir o pagamento.": { es: "Tu suscripción necesita atención. Abre la gestión para revisar el pago." },

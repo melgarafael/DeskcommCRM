@@ -348,3 +348,31 @@ it("mantém edição e publicação bloqueadas para quem só pode visualizar", (
   expect(botaoSalvar()).toBeDisabled();
   expect(botaoPublicar()).toBeDisabled();
 });
+
+it("explica o limite do plano e preserva a ideia ao recusar a criação", async () => {
+  const message = "Confira os limites em Planos e assinatura. Seus recursos foram preservados.";
+  acoes.criar.mockResolvedValueOnce({ ok: false, error: "subscription_resource_limit", message });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <AgentForm
+        mode="create"
+        credentials={[]}
+        channelSessions={[]}
+        provedoresDaInstalacao={["openai"]}
+        defaultAI={{ provider: "openai", model: "gpt-5.6-terra", credential_id: null }}
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Atendente da loja" } });
+  fireEvent.change(screen.getByLabelText("As instruções dele"), {
+    target: { value: "Explique nossos produtos e chame uma pessoa quando precisar." },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Criar agente" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  expect(screen.getByLabelText("Nome")).toHaveValue("Atendente da loja");
+  expect(screen.getByLabelText("As instruções dele")).toHaveValue(
+    "Explique nossos produtos e chame uma pessoa quando precisar.",
+  );
+  expect(screen.getByRole("button", { name: "Criar agente" })).toBeEnabled();
+});

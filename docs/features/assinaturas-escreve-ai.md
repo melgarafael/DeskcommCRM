@@ -84,3 +84,9 @@ Validação local: 17 testes de banco passaram, incluindo isolamento, concorrên
 A tela atual foi conferida no navegador em servidor separado, na porta 3002, com configuração fictícia de provedor exclusivamente para mostrar os controles. Três escolhas visíveis e ausência de rolagem horizontal em 1280 px. Evidência: `outputs/billing/planos-selecao-local.png`, fora do repositório. Nenhum botão de pagamento foi enviado ao provedor. A porta 3001 permanece com seu build anterior. Esta conferência não valida pagamento real nem substitui o ciclo completo de cobrança em teste.
 
 Antes de habilitar: concluir a franquia de IA, os erros de limite nas jornadas de criação, a reconciliação de tentativas expiradas/ambíguas e o ciclo real na conta recebedora. Migration 0315 e seleção de plano ainda não publicadas em produção.
+
+## Recuperação após limite de recursos
+
+A criação de agentes pela ação usada no formulário e pela API, além da conexão WhatsApp pela página de Conexões e pelo onboarding, reconhece o SQLSTATE `P4020`. A resposta pública é `subscription_resource_limit` (HTTP 409 nas rotas), com orientação localizada para Configurações → Planos e assinatura. O backend não repassa diagnóstico SQL. A reserva de canal interrompe o fluxo antes de criar, iniciar ou parar sessões externas.
+
+O formulário preserva nome e instruções quando a criação é recusada e exibe o aviso sem confirmar sucesso. Testes exercitam a ação real de criação, o formulário e a fronteira de transporte do canal. A expansão desse tratamento para equipe e outros provedores de canal permanece pendente; os gatilhos do banco já fazem a restrição independentemente da mensagem da interface. Cobrança e estas mudanças continuam sem ativação em produção.

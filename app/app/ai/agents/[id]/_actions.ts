@@ -17,6 +17,8 @@
  * aqui chamamos os handlers internos para reusar a lógica.
  */
 import { randomUUID } from "node:crypto";
+import { isSubscriptionResourceLimit, subscriptionResourceLimitMessage } from "@/lib/billing/resource-limit";
+import { ApiErrorCodes } from "@/lib/api/errors";
 import { revalidatePath } from "next/cache";
 
 import { audit } from "@/lib/audit";
@@ -705,6 +707,9 @@ export async function createMcpAgentAction(
     .select("id")
     .single();
 
+  if (isSubscriptionResourceLimit(agentErr)) {
+    return { ok: false, error: ApiErrorCodes.subscription_resource_limit, message: subscriptionResourceLimitMessage(authUser.idioma) };
+  }
   if (agentErr || !agentRow) {
     return { ok: false, error: "internal_error", message: agentErr?.message };
   }

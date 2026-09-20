@@ -1,3 +1,5 @@
+import { isSubscriptionResourceLimit } from "@/lib/billing/resource-limit";
+import { ApiErrorCodes } from "@/lib/api/errors";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -38,6 +40,7 @@ export async function connectWahaChannel(authDb: SupabaseClient, serviceDb: Supa
     p_display_name: input.displayName ?? null, p_onboarding: input.onboarding ?? false,
   });
   if (error) {
+    if (isSubscriptionResourceLimit(error)) throw new ChannelConnectionError(ApiErrorCodes.subscription_resource_limit, 409);
     const code = ["idempotency_conflict", "connection_in_progress", "connection_mfa_required", "connection_forbidden"].find((c) => error.message.includes(c));
     throw new ChannelConnectionError(code ?? "connection_reservation_failed", error.code === "42501" ? 403 : code ? 409 : 500);
   }
