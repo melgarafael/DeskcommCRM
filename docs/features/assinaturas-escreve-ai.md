@@ -1,6 +1,6 @@
 # Assinaturas escreve.ai
 
-Estado em 20/09/2026, 07:56 BRT: app e worker `a4e70f65` publicados e saudáveis. Catálogo e infraestrutura de assinatura estão implementados; contratação e cobrança permanecem indisponíveis (`BILLING_ENABLED=false`). As seções de evidência abaixo registram etapas anteriores e não substituem este estado atual.
+Estado em 20/09/2026, 08:57 BRT: app e worker `9386bb79` publicados e saudáveis. Catálogo e infraestrutura de assinatura estão implementados; contratação e cobrança permanecem indisponíveis (`BILLING_ENABLED=false`). As seções de evidência abaixo registram etapas anteriores e não substituem este estado atual.
 
 ## Oferta mensal
 
@@ -28,15 +28,17 @@ Referências de posicionamento consultadas em 20/09/2026: [Zaia](https://www.zai
 
 ## Deploy
 
-Produção em `crm.escreve.ai`, Azure, com `escreve-app:a4e70f65` e `escreve-worker:a4e70f65`. O health público confirmou a versão e Supabase, Redis e WAHA saudáveis; ambos os contêineres ficaram saudáveis. O contêiner de validação respondeu 200 no login e nas ilustrações antes da troca. Houve um 502 transitório durante a recriação do app, seguido de recuperação confirmada. O scheduler não foi substituído.
+Produção em `crm.escreve.ai`, Azure, com `escreve-app:9386bb79` e `escreve-worker:9386bb79`, publicada em 20/09/2026, 08:57 BRT. Health público confirmou a versão e Supabase, Redis e WAHA saudáveis; ambos os contêineres estão saudáveis. Antes da troca, o contêiner isolado respondeu 200 no login e nas três ilustrações verificadas. Houve 502 transitório na recriação, com recuperação confirmada. Scheduler preservado.
 
-As migrations 0265, 0315, 0316 e 0317 foram aplicadas em uma transação após backup PostgreSQL com catálogo validado. Permanecem 4 empresas, 6 agentes, 5 canais e nenhuma assinatura. O hash agregado das linhas de agentes não mudou. App e worker confirmam `BILLING_ENABLED=false`; nenhuma conta foi convertida ou cobrada.
+As migrations 0318 e 0319 foram aplicadas em transação após backup PostgreSQL com catálogo validado; 0265, 0315, 0316 e 0317 já estavam aplicadas. As novas funções negam execução a anon/authenticated e permitem service_role. Permanecem 4 empresas, 6 agentes, 5 canais e nenhuma assinatura. O hash agregado dos agentes não mudou. App e worker confirmam `BILLING_ENABLED=false`; nenhuma conta foi convertida ou cobrada.
 
-O build Docker amd64 completo passou, incluindo TypeScript e geração de páginas, após recuperar espaço e ampliar temporariamente a memória local para 12 GB. A configuração original de 8 GB foi restaurada. Validação do código publicado: 944 arquivos de testes aprovados, 9.612 testes aprovados e um caso de falha esperada; 44 testes de banco em cinco suítes na revisão anterior, sem mudança de schema nesta revisão. O saldo foi validado localmente em desktop/mobile e claro/escuro com dados sintéticos, removidos ao terminar. A nova checagem visual em produção ficou pendente porque a política do navegador bloqueou o acesso à aba estacionada; os testes de servidor não substituem essa evidência visual.
+O build Docker amd64 passou, incluindo TypeScript e geração de páginas. O processo pnpm ficou preso esperando um subprocesso encerrado; a tentativa foi encerrada e o mesmo `next build` foi executado diretamente pelo Node, sem mudar fontes ou dependências. A identidade da imagem foi conferida no servidor. O worker foi construído sobre a4e70f65 com os arquivos alterados: 28 hashes e a configuração de execução foram conferidos; dependências e arquivos removidos não mudaram. A memória local voltou aos 8 GB originais e a aplicação local respondeu 200.
 
-Rollback imediato preservado em `escreve-app:be266dd5` e `escreve-worker:be266dd5`, com cópia do ambiente anterior. Imagens antigas sem referências em contêineres foram arquivadas fora do servidor e validadas antes da remoção para liberar espaço. O checkout de produção possui alterações próprias: não executar reset, clean ou atualização in-place.
+Validação: 947 arquivos de testes aprovados, 9.637 testes aprovados e um caso de falha esperada; 26 testes PostgreSQL desta etapa. TypeScript, lint focado e conferência de release passaram. QA local em desktop/mobile e claro/escuro percorreu formulário, confirmação e auditoria com dados sintéticos, removidos ao terminar. A verificação visual em produção continua pendente devido ao bloqueio do navegador na aba estacionada; health e HTTP não substituem essa evidência.
 
-Antes de ativar a venda: autenticar e configurar a conta recebedora, testar checkout/renovação/cancelamento/falha no provedor, completar tarifas especiais/cache ainda desconhecidas e recuperação administrativa de reservas ou tentativas ambíguas de checkout sem sessão após 23 horas. Nenhum teste simulado comprova esses fluxos reais.
+Rollback imediato preservado nas imagens app/worker a4e70f65 e em `.env.before-escreve-9386bb79`. A imagem antiga be266dd5 do app foi arquivada localmente e validada por manifesto e hashes antes da remoção do servidor. O checkout de produção possui alterações próprias: não executar reset, clean ou atualização in-place.
+
+Antes de ativar a venda: autenticar e configurar a conta recebedora, testar checkout/renovação/cancelamento/falha no provedor e concluir o tratamento operacional de tarifas não cobertas, reservas em andamento ou sem identificação e tentativas ambíguas de checkout sem sessão após 23 horas. Nenhum teste simulado comprova esses fluxos reais.
 
 ## Evidência da preparação — 20/09/2026
 
@@ -190,7 +192,7 @@ Esta revisão foi publicada em app e worker em 20/09/2026, 07:56 BRT. O build Do
 
 Validação: 82 testes focados passaram. Dois testes de tarifa falharam antes da implementação, e a restauração temporária da identidade antiga do worker fez sua regressão falhar. A suíte completa aprovou 944 arquivos e 9.612 testes, com um caso de falha esperada; a primeira tentativa encerrou com erro de teardown do Vitest em um teste de agenda inalterado, que passou isoladamente, e a repetição completa terminou com código zero. TypeScript, conferência de release e diff-check passaram. Lint focado sem erros, mantendo um aviso de importação de tipo anterior no motor. Nenhuma chamada paga, pagamento, publicação de agente ou mensagem a cliente foi usada.
 
-## Evidência de consumo — revisão local após a4e70f65
+## Evidência de consumo — publicada em 9386bb79
 
 A migration 0318 adiciona provedor, modelo e evidência de uso às reservas. O helper recordSubscriptionAiEvidence conecta o motor compartilhado e as operações diretas ao registro antes da consulta à IA. Depois da resposta, usageEvidence seleciona somente IDs de resposta, tokens e modalidade por etapa. Medidas ausentes continuam nulas; conteúdo de conversas, cabeçalhos e credenciais não são armazenados. A função de banco filtra organização e reserva, não permite trocar a identidade ou substituir evidência já registrada e não está disponível a usuários do tenant.
 
@@ -212,6 +214,6 @@ O registro de evidências, a resolução administrativa e o saldo agora têm con
 
 Validação local: 12 testes da tela/API e 26 de PostgreSQL passaram, incluindo instalação e atualização do baseline, papéis, organização, idempotência, renovação e rollback por falha de auditoria. Pelo navegador em 127.0.0.1:3002, uma conta administrativa e empresa sintéticas percorreram consulta → formulário → confirmação → detalhe da auditoria. A decisão aplicou exatamente 7,5 centavos de BRL para 1,25 centavo de USD, uma única vez. Foram verificadas larguras de 1280 e 390 px e temas claro/escuro; no celular, documento e viewport mediram 390 px. A captura está em outputs/billing/reconciliation-*.png fora do repositório. A sessão do usuário em localhost:3001 foi preservada. Dados e administrador sintéticos foram removidos, e o servidor de QA foi encerrado. O gráfico exibia um rótulo antigo em BRL apesar de formatar USD; o rótulo foi corrigido e conferido no navegador.
 
-Esta revisão ainda não foi publicada. Conta recebedora, ciclo real de pagamentos e demais pendências comerciais não foram validados por estes testes.
+Esta revisão foi publicada em 9386bb79, conforme a seção Deploy. Conta recebedora, ciclo real de pagamentos e demais pendências comerciais não foram validados por estes testes.
 
 A suíte completa final aprovou 947 arquivos e 9.637 testes, com um caso de falha esperada e saída zero. A primeira execução encontrou traduções ausentes, datas com locale fixo e os apêndices 0318/0319 após a varredura final de permissões; os três pontos foram corrigidos. A reaplicação do baseline e os 26 testes de banco passaram novamente. TypeScript, lint e conferência de release passaram. A remoção temporária da proteção de administrador somente leitura fez o teste de permissão falhar.
