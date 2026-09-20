@@ -23,10 +23,29 @@ Próximas adições previstas (não instalados ainda): `tooltip`, `select`, `com
 | `primary` | `accent` | `accent-fg` | none | Ação principal da view (1 por contexto, idealmente) |
 | `secondary` | `surface-elevated` | `text` | `border` | Ação secundária ao lado da primary |
 | `ghost` | transparent | `text` | none | Ações de toolbar, ícones com hover sutil |
-| `destructive` | `error` | `#fff` | none | Apagar, cancelar definitivamente, ações irreversíveis |
+| `destructive` | `error-bg` | `error-fg` | none | Apagar, cancelar definitivamente, ações irreversíveis |
 | `link` | transparent | `accent` | none | Inline em texto, navegação textual |
 
-States: `default`, `hover`, `active`, `disabled`, `focus-visible`. Focus sempre `outline: 2px solid var(--ds-accent)` com `outline-offset: 2px`.
+**O hover de `secondary` e `ghost` é NEUTRO, nunca accent.** Tingir texto e borda
+de accent a cada passada de mouse gasta a cor da marca — que é da ação primária —
+e faz piscar de verde toda tela com muitos controles. O degrau é de superfície:
+`surface-elevated` para `ghost`, `border` para `secondary` (em claro e em escuro,
+`--color-border` é exatamente o próximo degrau acima de `--color-surface-elevated`).
+
+States: `default`, `hover`, `active`, `disabled`, `focus-visible`.
+
+**Foco: anel de 3px COLADO, sem offset** — `focus-visible:ring-3 ring-accent-500/40`.
+O `ring-offset-2` anterior desenhava 2px da cor do fundo entre o controle e o anel,
+e o conjunto ocupava 4px fora da caixa; em toolbar apertada e em botão dentro de
+tabela isso encostava no vizinho. O anel é desenhado por fora, sobre o fundo neutro
+da página, então 40% do Sage 500 tem contraste até no botão já preenchido de accent.
+
+Esta seção afirma o que o código faz; para conferir em vez de acreditar:
+
+```bash
+grep -n "focus-visible:ring" components/ui/button.tsx components/ui/input.tsx
+grep -rn "ring-offset-2" components/ui/   # só deve aparecer em comentário
+```
 
 ```tsx
 <Button variant="primary">Salvar</Button>
@@ -46,9 +65,12 @@ Altura 36px. Border `border-thin` default, `border-focus` 2px no focus.
 |---------------|-------------|--------|
 | `default` | — | border `border`, bg `bg` |
 | `with-icon` | `<Input leadingIcon={<MagnifyingGlass/>}/>` | Padding-left 36px, ícone inserido |
-| `error` | `aria-invalid="true"` | border `error`, focus ring `error/18%` |
+| `error` | `aria-invalid="true"` | border `error` + anel `error/20` **em repouso** (não depende do foco) |
 | `disabled` | `disabled` | opacity 0.55, cursor not-allowed |
-| `focus` | tab/click | border `accent`, box-shadow `0 0 0 3px var(--ds-accent-soft)` |
+| `focus` | tab/click | border `accent-500`, anel `accent-500/30` de 3px |
+
+O anel usa **alfa do Sage 500**, e não `accent-soft`: no tema claro `--color-accent-soft`
+é opaco (`#e4ebe0`), então o anel tapava o que estivesse atrás em vez de velar.
 
 Search input usa o mesmo Input com `type="search"` + leading `MagnifyingGlass`. Não há `<SearchInput>` separado.
 
@@ -60,9 +82,16 @@ Search input usa o mesmo Input com `type="search"` + leading `MagnifyingGlass`. 
 
 | Variant | Border | Hover | Uso |
 |---------|--------|-------|-----|
-| `data` | `1px solid border` | none | Containers estáticos (resumo de cliente, painel de stats) |
-| `interactive` | `1px solid border` | `border-accent` + `translateY(-1px)` + `shadow-sm` | Cards clicáveis (kanban, dashboard tile) |
+| `data` | `1px solid text/10` | none | Containers estáticos (resumo de cliente, painel de stats) |
+| `interactive` | `1px solid text/10` | `border-accent` + `translateY(-1px)` + `shadow-sm` | Cards clicáveis (kanban, dashboard tile) |
 | `elevated` | none | none | Cards sobre fundos coloridos, modals internos |
+
+**A borda é `text/10`, e não `--color-border`.** No tema claro a borda (`#e7e3da`)
+contra o fundo da página (`#faf9f6`) tem pouca diferença de claridade e o card se
+dissolve. O hairline tirado da cor do texto se sustenta nos dois temas, porque
+acompanha o que é sempre o oposto da superfície. Continua sendo `border` de 1px e
+**não** `ring`: ring sai do box model e encolheria o card em 2px, deslocando o
+conteúdo de toda tela que o usa.
 
 Composição interna canônica:
 

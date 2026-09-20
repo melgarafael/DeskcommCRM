@@ -13,7 +13,9 @@ const badgeVariants = cva(
     "inline-flex items-center gap-1 rounded-full border px-3 py-0.5",
     "text-xs font-medium leading-5",
     "transition-colors duration-fast ease-out",
-    "focus:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2",
+    // Anel colado, igual ao do Button. Badge costuma viver encostado em outro
+    // badge; o offset de 2px roubava o vão entre eles.
+    "focus:outline-hidden focus-visible:ring-3 focus-visible:ring-accent-500/40",
   ].join(" "),
   {
     variants: {

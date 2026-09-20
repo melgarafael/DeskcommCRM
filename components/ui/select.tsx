@@ -118,7 +118,11 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-hidden focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      // `focus:bg-accent` vem do shadcn, onde `accent` é um cinza de realce.
+      // Aqui `--color-accent` é o VERDE DA MARCA, então cada item percorrido
+      // com o teclado ou o mouse virava uma barra verde sólida com texto
+      // branco. Realce de item é superfície, não marca.
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-hidden focus:bg-surface-elevated focus:text-text data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
     )}
     {...props}

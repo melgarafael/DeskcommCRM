@@ -181,6 +181,29 @@ Lista canônica do que **não fazer** no DeskcommCRM. Anti-patterns ficam aqui p
 
 ---
 
+## 26. ❌ `focus:bg-accent` colado do shadcn em item de menu
+
+**Por quê:** no shadcn `--accent` é um **cinza de realce**, e `focus:bg-accent` é o
+hover discreto de item de menu. Neste design system `--color-accent` é a **cor da
+marca** (Sage, ou o hex do revendedor via `lib/branding/rampa.ts`) — a mesma classe
+pinta cada item percorrido com uma barra sólida da marca e `text-accent-foreground`
+por cima. Chegou assim em `dropdown-menu.tsx` e `select.tsx`, que nunca foram
+migrados dos aliases shadcn, e o efeito era menu inteiro piscando de verde.
+
+**✅ Sim:** realce de item é degrau de **superfície** —
+`focus:bg-surface-elevated focus:text-text`. A marca é da ação primária, não da
+linha que o cursor está por cima.
+
+Vale para todo componente colado do shadcn: antes de mergear, procure `bg-accent`,
+`text-accent-foreground` e `ring-ring` no arquivo novo e traduza para os tokens
+Sage. Para achar o que ainda passa por fora:
+
+```bash
+grep -rn "bg-accent\b\|ring-ring\|ring-offset-background" components/ui/
+```
+
+---
+
 ## Como usar este doc
 
 Antes de mergear PR de UI:

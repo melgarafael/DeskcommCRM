@@ -9,7 +9,14 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-lg border border-border bg-surface text-text shadow-xs",
+      // Hairline tirado da cor do TEXTO a 10%, e não `--color-border`. No tema
+      // claro a borda (#e7e3da) contra o fundo da página (#faf9f6) tem pouca
+      // diferença de claridade e o card se dissolve; o hairline se sustenta nos
+      // dois temas porque acompanha o texto, que é sempre o oposto da superfície.
+      // Continua sendo `border` de 1px, e não `ring`: ring sai do box model e
+      // encolheria o card em 2px, deslocando o conteúdo de toda tela que o usa.
+      // Respiro interno (p-6) fica como estava.
+      "rounded-lg border border-text/10 bg-surface text-text shadow-sm",
       className,
     )}
     {...props}
