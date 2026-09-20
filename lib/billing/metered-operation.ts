@@ -4,26 +4,7 @@ import type { TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
 import { logger } from "@/lib/logger";
 import { reserveSubscriptionAi, settleSubscriptionAi } from "./ai-allowance";
 
-/** Normalizes measured SDK usage without inventing zero for missing measurements. */
-export function measuredTextUsage(
-  usage:
-    | {
-        inputTokens?: number | undefined;
-        outputTokens?: number | undefined;
-        inputTokenDetails?:
-          | { cacheReadTokens?: number | undefined; cacheWriteTokens?: number | undefined }
-          | undefined;
-      }
-    | undefined,
-): TokenUsage | null {
-  if (usage?.inputTokens === undefined || usage.outputTokens === undefined) return null;
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.inputTokenDetails?.cacheReadTokens ?? 0,
-    cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens ?? 0,
-  };
-}
+export { measuredTextUsage, measuredGenerationUsage } from "./measured-usage";
 
 /** Direct SDK callers use the same reservations as the shared model-call engine. */
 export async function runMeteredOperation<T>(

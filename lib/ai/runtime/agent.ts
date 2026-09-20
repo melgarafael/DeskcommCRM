@@ -22,7 +22,7 @@
  *   - Dry-run path bypasses concurrency unique guard, channel dispatch, outbound row.
  *   - Plaintext API keys are never logged.
  */
-import { runMeteredOperation, measuredTextUsage } from "@/lib/billing/metered-operation";
+import { runMeteredOperation, measuredGenerationUsage } from "@/lib/billing/metered-operation";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -536,7 +536,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
         tools,
         stopWhen: [stepCountIs(version.max_steps), budgetGuard],
       }),
-      (response) => measuredTextUsage(response.usage),
+      (response) => measuredGenerationUsage(response),
     );
 
     // 12) Aggregate metrics.

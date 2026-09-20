@@ -37,6 +37,7 @@ import {
   type ChaveDeOrcamento,
 } from './orcamento';
 import { meteredCostCents } from './catalog-pricing';
+import { measuredGenerationUsage } from '@/lib/billing/measured-usage';
 import { reserveSubscriptionAi, settleSubscriptionAi, SubscriptionAiAllowanceError } from '@/lib/billing/ai-allowance';
 import { createDefaultRegistry, type ProviderRegistry } from './providers';
 import { buildStablePrefix } from './stable-prefix';
@@ -488,7 +489,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cacheReadTokens: result.usage.inputTokenDetails.cacheReadTokens ?? 0,
     cacheWriteTokens: result.usage.inputTokenDetails.cacheWriteTokens ?? 0,
   };
-  const cost = await meteredCostCents(db, config.provider, model, usage, cfg.cacheTtl ?? '1h');
+  const measured = measuredGenerationUsage(result);
+  const cost = measured === null
+    ? null
+    : await meteredCostCents(db, config.provider, model, measured, cfg.cacheTtl ?? '1h');
   await settleSubscriptionAi(db, input.tenantId, allowanceReservation, cost).catch(() => {
     // Keep the generated answer and the held credit; reconciliation can retry later.
     (deps.log ?? console).error('llm: conciliação da franquia pendente', { organization_id: input.tenantId });

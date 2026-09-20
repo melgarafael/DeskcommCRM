@@ -4,7 +4,11 @@ vi.mock("@/lib/agent-engine/db/request-pool", () => ({
   getRequestPool: () => ({ query: m.query }),
 }));
 vi.mock("@/lib/logger", () => ({ logger: { error: m.error } }));
-import { measuredTextUsage, runMeteredOperation } from "@/lib/billing/metered-operation";
+import {
+  measuredTextUsage,
+  measuredGenerationUsage,
+  runMeteredOperation,
+} from "@/lib/billing/metered-operation";
 const identity = {
   organizationId: "11111111-1111-4111-8111-111111111111",
   provider: "openai",
@@ -112,4 +116,96 @@ it("database failure in settlement preserves the answer and logs the reservation
       reservation_id: expect.any(String),
     }),
   );
+});
+
+it("does not charge a partial SDK aggregate when any step was unmeasured", async () => {
+  const partial = {
+    text: "Resposta preservada",
+    usage: { inputTokens: 1000, outputTokens: 700 },
+    steps: [result, { usage: { outputTokens: 200 } }],
+  };
+  expect(await runMeteredOperation(identity, async () => partial, measuredGenerationUsage)).toBe(
+    partial,
+  );
+  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    identity.organizationId,
+    expect.any(String),
+    null,
+  ]);
+});
+
+it("settles every measured step once, including cached tokens", async () => {
+  const complete = {
+    steps: [result, { usage: { inputTokens: 200, outputTokens: 100 } }],
+  };
+  await runMeteredOperation(identity, async () => complete, measuredGenerationUsage);
+  expect(m.query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    identity.organizationId,
+    expect.any(String),
+    0.24,
+  ]);
+  expect(
+    measuredGenerationUsage({
+      steps: [
+        {
+          usage: {
+            inputTokens: 100,
+            outputTokens: 20,
+            inputTokenDetails: { cacheReadTokens: 30, cacheWriteTokens: 40 },
+          },
+        },
+        result,
+      ],
+    }),
+  ).toEqual({ inputTokens: 1100, outputTokens: 520, cacheReadTokens: 30, cacheWriteTokens: 40 });
+});
+
+it("rejects invalid steps before an aggregate can conceal them", () => {
+  for (const inputTokens of [-1, NaN, Infinity]) {
+    expect(
+      measuredGenerationUsage({ steps: [{ usage: { inputTokens, outputTokens: 0 } }, result] }),
+    ).toBeNull();
+  }
+  expect(measuredGenerationUsage({ steps: [] })).toBeNull();
+  expect(measuredGenerationUsage({ steps: [{}, result] })).toBeNull();
+  expect(
+    measuredGenerationUsage({
+      steps: [
+        {
+          usage: {
+            inputTokens: 1,
+            outputTokens: 0,
+            inputTokenDetails: { cacheReadTokens: 2 },
+          },
+        },
+      ],
+    }),
+  ).toBeNull();
+  expect(
+    measuredGenerationUsage({
+      steps: [1, 2].map(() => ({
+        usage: {
+          inputTokens: Number.MAX_VALUE,
+          outputTokens: 0,
+        },
+      })),
+    }),
+  ).toBeNull();
+});
+
+it("preserves explicit zero and single-step adapters without step metadata", () => {
+  expect(
+    measuredGenerationUsage({ steps: [{ usage: { inputTokens: 0, outputTokens: 0 } }] }),
+  ).toEqual({
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
+  expect(measuredGenerationUsage(result)).toEqual({
+    inputTokens: 1000,
+    outputTokens: 500,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
 });

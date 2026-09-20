@@ -1,4 +1,4 @@
-import { runMeteredOperation, measuredTextUsage } from "@/lib/billing/metered-operation";
+import { runMeteredOperation, measuredGenerationUsage } from "@/lib/billing/metered-operation";
 import { recordLegacyNotice } from "@/lib/ai/agents/legacy-notice";
 import { serviceFromMessage } from "@/lib/atendimento/origem-mensagem";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
@@ -999,7 +999,7 @@ async function invokeBot(ctx: BotContext, model: LanguageModel): Promise<BotResp
       messages,
       headers,
     }),
-    (response) => measuredTextUsage(response.usage),
+    (response) => measuredGenerationUsage(response),
   );
   const latency = Date.now() - start;
 

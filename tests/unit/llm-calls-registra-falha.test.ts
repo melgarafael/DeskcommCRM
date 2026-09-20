@@ -17,6 +17,7 @@
  * com quem instalou (chave, saldo, indisponibilidade).
  */
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
 
@@ -408,6 +409,96 @@ it("o seam grava o custo e concilia a franquia da empresa com a resposta preserv
   expect(inserts).toHaveLength(1);
   expect(inserts[0]!.params[11]).toBeCloseTo(0.45);
 });
+
+it.each(["input", "output", "both"])(
+  "uso %s ausente não concilia custo parcial ou zero",
+  async (missing) => {
+    const { pool, query } = poolQueGrava({}, [], "paid");
+    const registry = {
+      anthropic: () =>
+        ({
+          specificationVersion: "v3",
+          provider: "anthropic",
+          modelId: "claude-sonnet-4-6",
+          doGenerate: async () => ({
+            content: [{ type: "text", text: "Resposta preservada" }],
+            finishReason: { unified: "stop", raw: undefined },
+            usage: {
+              inputTokens: { total: missing === "output" ? 1000 : undefined },
+              outputTokens: { total: missing === "input" ? 200 : undefined },
+            },
+            warnings: [],
+          }),
+        }) as never,
+    };
+    const result = await runModelCall(
+      pool,
+      cfg,
+      {
+        tenantId: ORG,
+        model: "claude-sonnet-4-6",
+        messages: [{ role: "user", content: "oi" }],
+      },
+      { registry },
+    );
+    expect(result.result.text).toBe("Resposta preservada");
+    expect(result.costCents).toBeNull();
+    expect(query).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+      ORG,
+      expect.any(String),
+      null,
+    ]);
+  },
+);
+
+it.each([true, false])(
+  "valida todas as etapas do SDK real (primeira etapa medida: %s)",
+  async (complete) => {
+    const { pool, query } = poolQueGrava({}, [], "paid");
+    let calls = 0;
+    const registry = {
+      anthropic: () =>
+        ({
+          specificationVersion: "v3",
+          provider: "anthropic",
+          modelId: "claude-sonnet-4-6",
+          doGenerate: async () => {
+            const first = calls++ === 0;
+            return {
+              content: first
+                ? [{ type: "tool-call", toolCallId: "lookup-1", toolName: "lookup", input: "{}" }]
+                : [{ type: "text", text: "Resposta final" }],
+              finishReason: { unified: first ? "tool-calls" : "stop", raw: undefined },
+              usage: {
+                inputTokens: { total: first ? (complete ? 200 : undefined) : 100 },
+                outputTokens: { total: first ? 50 : 20 },
+              },
+              warnings: [],
+            };
+          },
+        }) as never,
+    };
+    const result = await runModelCall(
+      pool,
+      cfg,
+      {
+        tenantId: ORG,
+        model: "claude-sonnet-4-6",
+        maxSteps: 2,
+        messages: [{ role: "user", content: "oi" }],
+        tools: { lookup: { inputSchema: z.object({}), execute: async () => "ok" } },
+      },
+      { registry },
+    );
+    expect(calls).toBe(2);
+    expect(result.result.text).toBe("Resposta final");
+    expect(result.result.usage.outputTokens).toBe(70);
+    if (complete) expect(result.costCents).toBeCloseTo(0.195);
+    else expect(result.costCents).toBeNull();
+    const settlement = query.mock.calls.find(([sql]) => sql.includes("fn_settle_subscription_ai"));
+    expect(settlement?.[1]?.[2]).toBe(result.costCents);
+  },
+);
 
 it("saldo comercial recusado impede a fábrica do provedor e deixa registro explicativo", async () => {
   const { pool, inserts, query } = poolQueGrava({}, [], "exhausted");
