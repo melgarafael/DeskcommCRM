@@ -977,16 +977,7 @@ export function AgentForm(props: Props) {
               {!form.channel_session_id ? (
                 <p className="text-xs text-muted-foreground">
                   {props.channelSessions.length === 0 ? (
-                    <>
-                      {t("Nenhum número conectado ainda — o rascunho salva sem ele.")}{" "}
-                      <Link
-                        href="/app/connections"
-                        className="font-medium text-foreground underline underline-offset-4"
-                      >
-                        {t("Conectar WhatsApp")}
-                      </Link>{" "}
-                      {t("para poder publicar.")}
-                    </>
+                    t("Nenhum número conectado ainda — o rascunho salva sem ele.")
                   ) : (
                     t(
                       "Escolha o número para poder publicar. Sem ele, o rascunho salva mas não atende.",
@@ -996,6 +987,14 @@ export function AgentForm(props: Props) {
               ) : null}
             </div>
           </Card>
+          <p className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+            <Link href="/app/connections" className="underline underline-offset-4">
+              {t("Conectar WhatsApp")}
+            </Link>
+            <Link href="/app/ai/providers" className="underline underline-offset-4">
+              {t("Configurar credenciais de IA")}
+            </Link>
+          </p>
           {/* Provider + credential + model */}
           <details
             className="rounded-xl border bg-card p-4"

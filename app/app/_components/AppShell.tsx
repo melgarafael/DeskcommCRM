@@ -1,5 +1,7 @@
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { gsap } from "gsap";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { BarraDeProgressoNavegacao } from "@/components/shell/BarraDeProgressoNavegacao";
@@ -14,11 +16,26 @@ interface AppShellProps {
 }
 
 export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
+  const pathname = usePathname();
+  const content = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const media = gsap.matchMedia();
+    media.add("(prefers-reduced-motion: no-preference)", () => {
+      gsap.from(content.current, {
+        y: 6,
+        opacity: 0.65,
+        duration: 0.24,
+        ease: "power2.out",
+        clearProps: "transform,opacity",
+      });
+    });
+    return () => media.revert();
+  }, [pathname]);
   useInboundMessageAlerts();
   useCrmAlerts();
   useNotifyOpenFromServiceWorker();
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="workspace-shell flex min-h-screen w-full bg-background">
       <BarraDeProgressoNavegacao />
       <div className="hidden md:block">
         <Sidebar collapsed={sidebarCollapsed} />
@@ -44,7 +61,13 @@ export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
       */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main
+          ref={content}
+          id="workspace-content"
+          className="min-w-0 flex-1 overflow-auto p-3 sm:p-5 lg:p-7"
+        >
+          {children}
+        </main>
       </div>
       <FloatingInbox />
     </div>

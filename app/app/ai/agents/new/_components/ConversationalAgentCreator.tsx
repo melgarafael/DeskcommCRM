@@ -198,7 +198,7 @@ export function ConversationalAgentCreator(props: Props) {
               }}
               className="space-y-3"
             >
-              <label htmlFor="agent-idea" className="text-sm font-medium">
+              <label htmlFor="agent-idea" className="block text-sm font-medium">
                 {messages.length ? t("O que você quer ajustar?") : t("Conte sua ideia")}
               </label>
               <Textarea

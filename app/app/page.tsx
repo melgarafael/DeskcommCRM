@@ -1,14 +1,7 @@
-import { redirect } from "next/navigation";
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
-import { homeDaInterface } from "@/lib/navigation/interface";
+import { requireAuth } from "@/lib/auth/server";
+import { WorkspaceHome } from "./_components/WorkspaceHome";
+export const dynamic = "force-dynamic";
 export default async function AppHome() {
-  const user = await requireAuth();
-  const org = await resolveActiveOrg(user);
-  redirect(
-    homeDaInterface(
-      org?.interface_settings,
-      user.is_platform_admin && !user.support,
-      org?.role ?? null,
-    ),
-  );
+  await requireAuth();
+  return <WorkspaceHome />;
 }

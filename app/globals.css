@@ -532,7 +532,7 @@
   --color-card-foreground: var(--color-text);
 
   /* Tipografia */
-  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
+  --font-sans: var(--font-interface), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, monospace;
@@ -698,7 +698,7 @@
     overflow-x: clip;
     background-color: var(--color-bg);
     color: var(--color-text);
-    font-family: var(--font-atkinson), ui-sans-serif, system-ui, -apple-system,
+    font-family: var(--font-interface), ui-sans-serif, system-ui, -apple-system,
       "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
     -webkit-font-smoothing: antialiased;
@@ -954,3 +954,14 @@
     transform: none;
   }
 }
+
+/* escreve.ai workspace: restrained chrome, readable surfaces, brand accent retained. */
+.workspace-shell { --color-bg: #f6f7f9; --color-surface: #ffffff; --color-surface-elevated: #eef0f3; --color-text: #20232b; --color-text-muted: #606674; --color-text-subtle: #6c7280; --color-border: #e5e7ec; --color-border-strong: #cbd0d9; }
+[data-theme="dark"] .workspace-shell { --color-bg: #15171b; --color-surface: #1d2026; --color-surface-elevated: #272b33; --color-text: #f0f1f4; --color-text-muted: #b0b5c1; --color-text-subtle: #a0a7b4; --color-border: #30353f; --color-border-strong: #4a5260; }
+.workspace-sidebar { background: color-mix(in srgb, var(--color-bg) 85%, var(--color-surface)); border-right: 1px solid var(--color-border); }
+.workspace-nav-item { display: flex; width: 100%; align-items: center; gap: 12px; min-height: 44px; border-radius: 11px; padding: 10px 12px; font-size: 13px; font-weight: 500; color: var(--color-text-muted); transition: background-color 120ms, color 120ms; }
+.workspace-nav-item:hover { color: var(--color-text); background: var(--color-surface-elevated); }
+.workspace-nav-item.is-active { background: var(--color-surface); color: var(--color-text); box-shadow: 0 1px 4px #0000000a; }
+.workspace-nav-item.is-active svg { color: var(--color-accent); }
+.workspace-nav-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .workspace-shell *, .workspace-shell *::before, .workspace-shell *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; } }

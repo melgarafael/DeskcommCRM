@@ -153,7 +153,7 @@ function InboxDock({ orgId }: { orgId: string }) {
         aria-expanded={open}
         aria-controls="floating-inbox-panel"
         onClick={() => setOpen((value) => !value)}
-        className="ml-auto flex h-14 w-64 max-w-full items-center gap-3 rounded-full border border-border bg-background px-5 text-sm font-semibold shadow-xl transition-shadow hover:shadow-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="ml-auto flex h-12 w-auto max-w-full items-center gap-3 rounded-full border border-border bg-background px-5 text-sm font-semibold shadow-md transition-shadow hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2"
       >
         <ChatsCircle size={24} aria-hidden />
         <span>{t("Mensagens")}</span>

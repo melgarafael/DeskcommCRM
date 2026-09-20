@@ -40,6 +40,7 @@ describe("interface por vínculo é apresentação", () => {
   it("granular hub-only tem porta, home e busca úteis, sem grupos vazios", () => {
     const settings = interfaceSettingsSchema.parse(granular);
     expect(sidebarGroups(false, "admin", settings).map((g) => g.group.id)).toEqual([
+      "atendimento",
       "crm",
       "organizacao",
     ]);
@@ -49,7 +50,7 @@ describe("interface por vínculo é apresentação", () => {
         .map((d) => d.href),
     ).toEqual(["/app/products"]);
     expect(searchable(false, "admin", settings).map((d) => d.href)).toContain("/app/products");
-    expect(homeDaInterface(settings, false, "admin")).toBe("/app/products");
+    expect(homeDaInterface(settings, false, "admin")).toBe("/app");
     expect(hrefs(settings)).toEqual(
       expect.arrayContaining(["/app/team", "/app/settings/profile", "/app/settings/security"]),
     );

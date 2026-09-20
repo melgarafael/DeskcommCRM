@@ -34,6 +34,7 @@ export const PORTAS_ESSENCIAIS = [
 ] as const;
 export function essencial(d: NavMetadata, role: Role | null, platform = false): boolean {
   return (
+    d.href === "/app" ||
     d.href === PORTAS_ESSENCIAIS[0] ||
     d.href === PORTAS_ESSENCIAIS[1] ||
     (d.href === PORTAS_ESSENCIAIS[2] && (platform || role === "admin"))
@@ -91,10 +92,7 @@ export function interfaceTemDestino(
   return destinosDaInterface(settings, platform, role).some((d) => !essencial(d, role, platform));
 }
 export function homeDaInterface(raw: unknown, platform: boolean, role: Role | null): string {
-  const visible = destinosDaInterface(raw, platform, role);
-  return (
-    visible.find((d) => d.href === "/app/inbox")?.href ??
-    visible.find((d) => !essencial(d, role, platform))?.href ??
-    "/app/settings/profile"
-  );
+  return destinosDaInterface(raw, platform, role).some((d) => d.href === "/app")
+    ? "/app"
+    : "/app/settings/profile";
 }

@@ -54,6 +54,7 @@ Nomes de pacotes, caminhos, scripts `deskcomm-*`, cookies, cabeçalhos de assina
 - [Visão do produto](../VISION.md)
 - [Arquitetura](../ARCHITECTURE.md)
 - [Estado de implementação](current-state.md)
+- [Espaço de trabalho conversacional](features/escreve-workspace.md)
 - [Prospecção nativa](features/prospeccao-nativa.md)
 - [Segurança](../SECURITY.md)
 - [Contribuição](../CONTRIBUTING.md)

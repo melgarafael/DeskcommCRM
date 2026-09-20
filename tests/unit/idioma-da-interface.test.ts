@@ -127,7 +127,7 @@ describe("os elos que somem sem barulho", () => {
     // o operador concluiria que a opção segue sendo decorativa.
     const fonte = readFileSync("components/shell/Sidebar.tsx", "utf8");
     expect(fonte).toMatch(/const t = useT\(\);/);
-    expect(fonte).toMatch(/\{t\(item\.label\)\}/);
+    expect(fonte).toMatch(/\{t\(label\)\}/);
   });
 
   it("o inbox traduz o que se usa o dia inteiro", () => {

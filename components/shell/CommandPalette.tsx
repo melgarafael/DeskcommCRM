@@ -29,9 +29,11 @@ const ROTULO_GRUPO = new Map(NAV_GROUPS.map((g) => [g.id, g.label]));
 export function CommandPalette({
   open,
   onOpenChange,
+  onNavigate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onNavigate?: () => void;
 }) {
   const t = useT();
   return (
@@ -41,7 +43,12 @@ export function CommandPalette({
         {/* O miolo é um componente à parte porque o Radix o DESMONTA ao fechar:
             busca e destaque nascem zerados na próxima abertura por construção,
             sem um efeito de reset para manter em sincronia. */}
-        <Resultados aoEscolher={() => onOpenChange(false)} />
+        <Resultados
+          aoEscolher={() => {
+            onOpenChange(false);
+            onNavigate?.();
+          }}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -66,11 +73,9 @@ function Resultados({ aoEscolher }: { aoEscolher: () => void }) {
 
   const resultados = useMemo(() => {
     const termo = normalizar(busca.trim());
-    // Sem termo, abre no trabalho do dia em vez de uma tela vazia que não
-    // ensina nada sobre o que dá para procurar aqui.
+    // Sem termo, mostra o catálogo completo permitido para descoberta.
     if (!termo) {
-      const daily = visiveis.filter((d) => d.group === "atendimento");
-      return daily.length ? daily : visiveis.slice(0, 8);
+      return visiveis;
     }
     return visiveis.filter((d) => normalizar(`${d.label} ${d.description}`).includes(termo));
   }, [busca, visiveis]);

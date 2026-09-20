@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Escreve aí — conversar com o CRM",
+    "subtitle": "Consulta somente leitura com fontes e permissões da sessão",
+    "output": "escreve-workspace.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "app",
+      "label": "Aplicativo"
+    },
+    {
+      "id": "db",
+      "label": "Banco"
+    }
+  ],
+  "mainPath": [
+    "ui",
+    "action",
+    "context",
+    "model",
+    "destinations"
+  ],
+  "nodes": [
+    {
+      "id": "ui",
+      "lane": "app",
+      "col": 0,
+      "type": "service",
+      "label": "/app: pergunta, fontes e recuperação de falha"
+    },
+    {
+      "id": "action",
+      "lane": "app",
+      "col": 1,
+      "type": "service",
+      "label": "askWorkspace: sessão, papel, suporte e rate limit"
+    },
+    {
+      "id": "context",
+      "lane": "app",
+      "col": 2,
+      "type": "service",
+      "label": "loadWorkspaceContext: recortes com fontes e limite explícito"
+    },
+    {
+      "id": "db",
+      "lane": "db",
+      "col": 3,
+      "type": "database",
+      "label": "Supabase da sessão: RLS + organização ativa"
+    },
+    {
+      "id": "model",
+      "lane": "app",
+      "col": 4,
+      "type": "service",
+      "label": "runModelCall: orçamento, purpose e nenhum tool"
+    },
+    {
+      "id": "logs",
+      "lane": "db",
+      "col": 5,
+      "type": "database",
+      "label": "llm_calls: custo e resultado"
+    },
+    {
+      "id": "destinations",
+      "lane": "app",
+      "col": 6,
+      "type": "service",
+      "label": "Inbox, Funis, Conhecimento: links para conferência"
+    }
+  ],
+  "edges": [
+    {
+      "from": "ui",
+      "to": "action",
+      "label": "pergunta e histórico sem tenant do cliente"
+    },
+    {
+      "from": "action",
+      "to": "context",
+      "label": "organização e papel autenticados"
+    },
+    {
+      "from": "context",
+      "to": "db",
+      "label": "leitura sob RLS"
+    },
+    {
+      "from": "context",
+      "to": "model",
+      "label": "fontes com IDs"
+    },
+    {
+      "from": "model",
+      "to": "logs",
+      "label": "telemetria e consumo"
+    },
+    {
+      "from": "model",
+      "to": "ui",
+      "label": "resposta com IDs validados"
+    },
+    {
+      "from": "ui",
+      "to": "destinations",
+      "label": "conferir fonte"
+    }
+  ]
+}

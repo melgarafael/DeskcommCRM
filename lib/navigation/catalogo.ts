@@ -103,7 +103,23 @@ export const GRUPO_NO_RODAPE: NavGroupId = "organizacao";
  * fechada e por isso não vira `minRole`.
  */
 export const NAV_CATALOG = [
-  { href: "/app/prospecting", label: "Prospecção", description: "Busque empresas e conduza abordagens graduais com IA.", icon: "Funnel", group: "crm", minRole: "admin", sidebar: true, section: "O dia a dia da venda" },
+  {
+    href: "/app",
+    label: "Escreve aí",
+    description: "Converse com o conteúdo do seu CRM e encontre seu próximo passo.",
+    icon: "Sparkle",
+    group: "atendimento",
+  },
+  {
+    href: "/app/prospecting",
+    label: "Prospecção",
+    description: "Busque empresas e conduza abordagens graduais com IA.",
+    icon: "Funnel",
+    group: "crm",
+    minRole: "admin",
+    sidebar: true,
+    section: "O dia a dia da venda",
+  },
   // ---- Atendimento — onde o operador passa o dia ----
   {
     href: "/app/inbox",
