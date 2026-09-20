@@ -27,6 +27,7 @@ it("validates signatures over original bytes, timestamp and rotating secrets", (
 it("builds monthly price from catalogue and binds tenant in both metadata locations", () => {
   const params = checkoutParameters({
     organizationId: "org-a",
+    attemptId: "11111111-1111-4111-8111-111111111111",
     planId: "crescer",
     origin: "https://crm.example.test",
   });
@@ -34,6 +35,10 @@ it("builds monthly price from catalogue and binds tenant in both metadata locati
   expect(params.get("line_items[0][price_data][currency]")).toBe("brl");
   expect(params.get("subscription_data[metadata][organization_id]")).toBe("org-a");
   expect(params.get("metadata[organization_id]")).toBe("org-a");
+  expect(params.get("metadata[checkout_attempt_id]")).toBe("11111111-1111-4111-8111-111111111111");
+  expect(params.get("subscription_data[metadata][checkout_attempt_id]")).toBe(
+    "11111111-1111-4111-8111-111111111111",
+  );
   expect(params.get("success_url")).not.toContain("active");
 });
 it("fails closed when payment configuration is missing", () => {

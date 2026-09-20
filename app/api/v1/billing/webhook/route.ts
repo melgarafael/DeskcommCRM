@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
@@ -48,7 +49,15 @@ export async function POST(request: Request) {
       ? event.data.object.subscription
       : null;
   if (!subscriptionId) return ok({ received: true, ignored: true });
-  const db = await getRequestPool().connect();
+  const db = await getRequestPool()
+    .connect()
+    .catch(() => null);
+  if (!db)
+    return fail(
+      "service_unavailable",
+      "Não foi possível acessar a cobrança. Tente novamente.",
+      503,
+    );
   try {
     await db.query("begin");
     // Serialize before fetching current provider state: delayed events cannot roll it back.
@@ -77,6 +86,14 @@ export async function POST(request: Request) {
       (current.provider_customer_id && current.provider_customer_id !== subscription.customer)
     )
       throw new Error("Unbound subscription");
+    // A new checkout rotates this persisted UUID. Even a canceled replacement
+    // must never be overwritten by events from an earlier checkout.
+    if (current.checkout_attempt_id !== subscription.metadata.checkout_attempt_id) {
+      await db.query("rollback");
+      return ok({ received: true, ignored: true });
+    }
+    if (current.plan_id !== subscription.metadata.plan_id)
+      throw new Error("Subscription plan does not match checkout");
     // Ignore an old subscription once another subscription has replaced it.
     if (
       current.provider_subscription_id &&
@@ -103,6 +120,20 @@ export async function POST(request: Request) {
       [event.id, org, event.type],
     );
     await db.query("commit");
+    void audit({
+      action: "billing.subscription_synced",
+      organizationId: org,
+      resourceType: "org_subscriptions",
+      resourceId: org,
+      bypassedRls: true,
+      metadata: {
+        provider: "stripe",
+        event_id: event.id,
+        subscription_id: subscription.id,
+        status: subscription.status,
+        plan_id: subscription.metadata.plan_id,
+      },
+    });
     return ok({ received: true });
   } catch {
     await db.query("rollback").catch(() => undefined);

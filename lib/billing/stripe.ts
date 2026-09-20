@@ -44,6 +44,7 @@ export function checkoutParameters(input: {
   organizationId: string;
   planId: SubscriptionPlanId;
   origin: string;
+  attemptId: string;
   customerId?: string;
 }) {
   const plan = subscriptionPlan(input.planId);
@@ -62,6 +63,8 @@ export function checkoutParameters(input: {
     "subscription_data[metadata][plan_id]": plan.id,
     "metadata[organization_id]": input.organizationId,
     "metadata[plan_id]": plan.id,
+    "metadata[checkout_attempt_id]": input.attemptId,
+    "subscription_data[metadata][checkout_attempt_id]": input.attemptId,
   });
   if (input.customerId) params.set("customer", input.customerId);
   return params;
@@ -113,7 +116,11 @@ export const stripeSubscriptionSchema = z.object({
     "paused",
   ]),
   cancel_at_period_end: z.boolean(),
-  metadata: z.object({ organization_id: z.uuid(), plan_id: z.string() }),
+  metadata: z.object({
+    organization_id: z.uuid(),
+    plan_id: z.string(),
+    checkout_attempt_id: z.uuid(),
+  }),
   items: z.object({
     data: z
       .array(
@@ -148,6 +155,7 @@ export async function retrieveStripeSubscription(id: string) {
   const item = subscription.items.data[0]!;
   if (
     !plan ||
+    subscription.id !== id ||
     subscription.livemode !== config.live ||
     item.quantity !== 1 ||
     item.price.currency !== "brl" ||

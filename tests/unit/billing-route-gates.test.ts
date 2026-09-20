@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
+  audit: vi.fn(),
   role: vi.fn(),
   support: vi.fn(),
   config: vi.fn(),
@@ -8,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   checkout: vi.fn(),
   subscription: vi.fn(),
 }));
+vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.role }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: mocks.support }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({
@@ -123,4 +125,146 @@ it("acknowledges unrelated signed events without side effects", async () => {
   ).toBe(200);
   expect(mocks.connect).not.toHaveBeenCalled();
   expect(mocks.subscription).not.toHaveBeenCalled();
+});
+
+const attempt = "11111111-1111-4111-8111-111111111111";
+const previousAttempt = "22222222-2222-4222-8222-222222222222";
+function eventRequest() {
+  return request({
+    id: "evt_update",
+    type: "customer.subscription.updated",
+    livemode: false,
+    data: { object: { id: "sub_current" } },
+  });
+}
+function webhookFixture(overrides: Record<string, unknown> = {}) {
+  const row = {
+    provider: "stripe",
+    provider_customer_id: "cus_company",
+    provider_subscription_id: "sub_current",
+    status: "active",
+    plan_id: "essencial",
+    checkout_attempt_id: attempt,
+    ...overrides,
+  };
+  const query = vi.fn(async (sql: string) => {
+    if (sql.startsWith("select * from org_subscriptions")) return { rows: [row], rowCount: 1 };
+    return { rows: [], rowCount: 0 };
+  });
+  const release = vi.fn();
+  mocks.connect.mockResolvedValue({ query, release });
+  mocks.subscription.mockResolvedValue({
+    id: "sub_current",
+    customer: "cus_company",
+    metadata: {
+      organization_id: "trusted-org",
+      plan_id: "essencial",
+      checkout_attempt_id: attempt,
+    },
+    status: "active",
+    cancel_at_period_end: false,
+    items: { data: [{ current_period_end: 1800000000 }] },
+  });
+  return { row, query, release };
+}
+it("uses current provider state instead of trusting the event snapshot", async () => {
+  const { query, release } = webhookFixture();
+  const result = await webhook(eventRequest());
+  expect(result.status).toBe(200);
+  expect(mocks.subscription).toHaveBeenCalledWith("sub_current");
+  expect(query.mock.calls.some(([sql]) => sql.startsWith("update org_subscriptions"))).toBe(true);
+  expect(query.mock.calls.some(([sql]) => sql.includes("insert into billing_webhook_events"))).toBe(
+    true,
+  );
+  expect(release).toHaveBeenCalledOnce();
+  expect(mocks.audit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      action: "billing.subscription_synced",
+      organizationId: "trusted-org",
+    }),
+  );
+});
+it.each(["active", "canceled", "incomplete_expired"])(
+  "an obsolete checkout cannot replace a %s subscription",
+  async (status) => {
+    const { query } = webhookFixture({ status });
+    const sub = await mocks.subscription();
+    sub.metadata.checkout_attempt_id = previousAttempt;
+    mocks.subscription.mockResolvedValue(sub);
+    const result = await webhook(eventRequest());
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({ data: { ignored: true } });
+    expect(query.mock.calls.some(([sql]) => sql.startsWith("update org_subscriptions"))).toBe(
+      false,
+    );
+  },
+);
+it("rejects a plan different from the persisted checkout selection", async () => {
+  const { query } = webhookFixture({ plan_id: "crescer" });
+  expect((await webhook(eventRequest())).status).toBe(503);
+  expect(query.mock.calls.some(([sql]) => sql.startsWith("update org_subscriptions"))).toBe(false);
+});
+it("a duplicate event never re-fetches or rewrites the subscription", async () => {
+  const { query } = webhookFixture();
+  query.mockImplementation(async (sql: string) => ({
+    rows: [],
+    rowCount: sql.includes("select 1 from billing_webhook_events") ? 1 : 0,
+  }));
+  expect((await webhook(eventRequest())).status).toBe(200);
+  expect(mocks.subscription).not.toHaveBeenCalled();
+  expect(mocks.audit).not.toHaveBeenCalled();
+  expect(query.mock.calls.some(([sql]) => sql.startsWith("update org_subscriptions"))).toBe(false);
+});
+it("returns a recoverable response when no database connection is available", async () => {
+  mocks.connect.mockRejectedValue(new Error("database unavailable"));
+  expect((await checkout(request({ plan_id: "essencial" }))).status).toBe(503);
+  expect((await webhook(eventRequest())).status).toBe(503);
+  expect(mocks.checkout).not.toHaveBeenCalled();
+  expect(mocks.subscription).not.toHaveBeenCalled();
+});
+
+it("does not replay an ambiguous checkout after the provider idempotency window", async () => {
+  webhookFixture({
+    provider_subscription_id: null,
+    status: "pending",
+    checkout_session_id: null,
+    updated_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+  });
+  expect((await checkout(request({ plan_id: "essencial" }))).status).toBe(409);
+  expect(mocks.checkout).not.toHaveBeenCalled();
+  expect(mocks.audit).not.toHaveBeenCalled();
+});
+it("retries a recent ambiguous checkout with the same persisted attempt", async () => {
+  webhookFixture({
+    provider_subscription_id: null,
+    status: "pending",
+    checkout_session_id: null,
+    updated_at: new Date().toISOString(),
+  });
+  mocks.checkout.mockRejectedValue(new Error("provider timeout"));
+  expect((await checkout(request({ plan_id: "essencial" }))).status).toBe(503);
+  expect(mocks.checkout).toHaveBeenCalledWith(
+    expect.objectContaining({
+      organizationId: "trusted-org",
+      attemptId: attempt,
+      planId: "essencial",
+    }),
+  );
+  expect(mocks.audit).not.toHaveBeenCalled();
+});
+it("a canceled subscription gets a fresh attempt even when the prior session was not persisted", async () => {
+  webhookFixture({
+    status: "canceled",
+    checkout_session_id: null,
+    updated_at: new Date(0).toISOString(),
+  });
+  mocks.checkout.mockResolvedValue({
+    id: "cs_new",
+    url: "https://checkout.stripe.com/test",
+    expires_at: 1900000000,
+  });
+  expect((await checkout(request({ plan_id: "crescer" }))).status).toBe(200);
+  expect(mocks.checkout).toHaveBeenCalledWith(
+    expect.objectContaining({ planId: "crescer", attemptId: expect.not.stringMatching(attempt) }),
+  );
 });

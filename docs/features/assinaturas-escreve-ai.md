@@ -55,3 +55,11 @@ Produção confirmada em `crm.escreve.ai`, host Azure, app Docker. O checkout de
 - Marca da instalação atualizada para escreve.ai com auditoria e cópia dos valores anteriores; personalizações das empresas preservadas. Login e favicon confirmados no endereço público.
 - Lista de agentes, criação ilustrada em desktop/mobile e planos conferidos na sessão real do navegador. Cartão de tarefa preenche a ideia, sem criar nem publicar agente. Nenhum erro de console observado na revisão. Evidências visuais em `outputs/remake-frontend/`, fora do repositório.
 - `BILLING_ENABLED=false`; migration 0265 ainda não aplicada em produção. Publicação do catálogo não significa contratação operacional: os bloqueios da seção anterior continuam pendentes.
+
+## Endurecimento da cobrança após o deploy
+
+Ainda não publicado nem habilitado: o checkout passa a gravar `checkout_attempt_id` também nos metadados da assinatura. O webhook compara esse vínculo e o plano com a tentativa persistida, consulta o estado atual do provedor e ignora eventos de tentativas substituídas, inclusive após cancelamento. A consulta valida também o identificador retornado. O envio explícito por `subscription_data.metadata` segue o [contrato de metadados da Stripe](https://docs.stripe.com/metadata).
+
+Retentativas recentes reutilizam a mesma tentativa. Uma tentativa sem resposta confirmada há 23 horas é bloqueada para reconciliação, pois a Stripe pode remover chaves de idempotência após 24 horas ([contrato do provedor](https://docs.stripe.com/api/idempotent_requests)). A atualização da tentativa não renova esse relógio a cada repetição. Uma assinatura já cancelada recebe uma tentativa nova mesmo quando a gravação da sessão anterior falhou.
+
+Confirmações de assinatura e novas sessões de checkout emitem auditoria pelo mecanismo existente. Falhas de conexão com o banco retornam erro recuperável. Validação: 34 testes relevantes passaram, incluindo cinco falhas reproduzidas antes da correção; TypeScript, lint focado e diff-check passaram. Cobrança permanece desativada em produção; cancelamento/faturas, limites, reconciliação tardia e QA com a conta real continuam pendentes. A verificação do navegador encontrou a Stripe na tela de login, sem sessão disponível.

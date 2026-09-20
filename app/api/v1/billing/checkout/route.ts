@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -35,7 +36,15 @@ export async function POST(request: Request) {
     .safeParse(await request.json().catch(() => null));
   const plan = parsed.success ? subscriptionPlan(parsed.data.plan_id) : null;
   if (!plan) return fail("invalid_request", "Escolha um plano disponível.", 400, { requestId });
-  const db = await getRequestPool().connect();
+  const db = await getRequestPool()
+    .connect()
+    .catch(() => null);
+  if (!db)
+    return fail(
+      "service_unavailable",
+      "Não foi possível acessar a cobrança. Tente novamente.",
+      503,
+    );
   try {
     await db.query("begin");
     await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [
@@ -73,9 +82,32 @@ export async function POST(request: Request) {
         );
       return ok({ url: current.checkout_url }, { requestId });
     }
+    const replacingSubscription =
+      Boolean(current.provider_subscription_id) &&
+      ["canceled", "incomplete_expired"].includes(current.status);
+    const retryingUnconfirmedCheckout = !current.checkout_session_id && !replacingSubscription;
+    // Stripe can prune idempotency keys after 24h. Never replay an ambiguous
+    // request beyond a conservative 23h window without provider reconciliation.
+    if (
+      current.plan_id &&
+      retryingUnconfirmedCheckout &&
+      (!Number.isFinite(new Date(current.updated_at).getTime()) ||
+        Date.now() - new Date(current.updated_at).getTime() >= 23 * 60 * 60 * 1000)
+    ) {
+      await db.query("rollback");
+      return fail(
+        "conflict",
+        "O pagamento anterior precisa ser conferido antes de iniciar outro. Entre em contato com o suporte.",
+        409,
+        { requestId },
+      );
+    }
     // Persist the attempt before calling Stripe. An ambiguous failure must reuse its key.
-    const attempt = current.checkout_session_id ? randomUUID() : current.checkout_attempt_id;
-    if (current.plan_id && current.plan_id !== plan.id && !current.checkout_session_id) {
+    const attempt =
+      current.checkout_session_id || replacingSubscription
+        ? randomUUID()
+        : current.checkout_attempt_id;
+    if (current.plan_id && current.plan_id !== plan.id && retryingUnconfirmedCheckout) {
       await db.query("rollback");
       return fail(
         "conflict",
@@ -85,7 +117,7 @@ export async function POST(request: Request) {
       );
     }
     await db.query(
-      "update org_subscriptions set plan_id=$2,checkout_attempt_id=$3,checkout_session_id=null,checkout_url=null,checkout_expires_at=null,updated_at=now() where organization_id=$1",
+      "update org_subscriptions set plan_id=$2,checkout_attempt_id=$3,checkout_session_id=null,checkout_url=null,checkout_expires_at=null,updated_at=now() where organization_id=$1 and (plan_id is distinct from $2 or checkout_attempt_id is distinct from $3)",
       [auth.org.orgId, plan.id, attempt],
     );
     await db.query("commit");
@@ -95,10 +127,26 @@ export async function POST(request: Request) {
       customerId: current.provider_customer_id ?? undefined,
       attemptId: attempt,
     });
-    await db.query(
-      "update org_subscriptions set checkout_session_id=$2,checkout_url=$3,checkout_expires_at=to_timestamp($4),updated_at=now() where organization_id=$1 and checkout_attempt_id=$5",
+    const saved = await db.query(
+      "update org_subscriptions set checkout_session_id=$2,checkout_url=$3,checkout_expires_at=to_timestamp($4),updated_at=now() where organization_id=$1 and checkout_attempt_id=$5 and checkout_session_id is distinct from $2",
       [auth.org.orgId, session.id, session.url, session.expires_at, attempt],
     );
+    if (saved.rowCount)
+      void audit({
+        action: "billing.checkout_created",
+        organizationId: auth.org.orgId,
+        actorUserId: auth.user.id,
+        resourceType: "org_subscriptions",
+        resourceId: auth.org.orgId,
+        requestId,
+        bypassedRls: true,
+        metadata: {
+          provider: "stripe",
+          plan_id: plan.id,
+          checkout_session_id: session.id,
+          checkout_attempt_id: attempt,
+        },
+      });
     return ok({ url: session.url }, { requestId });
   } catch {
     await db.query("rollback").catch(() => undefined);
