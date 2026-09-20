@@ -8,6 +8,7 @@
  * (grava o que a pessoa aprovou). Fazer as duas num clique economizaria uma tela
  * e trocaria o quadro do dono por um texto que ele nunca viu.
  */
+import { runMeteredOperation, measuredTextUsage } from "@/lib/billing/metered-operation";
 import { redirect } from "next/navigation";
 import { generateText } from "ai";
 
@@ -152,15 +153,19 @@ export async function dadosDoPasso(orgId: string, negocio: string): Promise<Dado
   }
 
   const sugestao = await sugerirFunil(ctx, async ({ system, prompt }) => {
-    const r = await generateText({
-      model: buildModel(cerebro.provider, cerebro.apiKey, cerebro.model),
-      system,
-      prompt,
-      // Teto baixo de propósito: são sete linhas de JSON. Um modelo que resolva
-      // discursar bate no teto em vez de queimar o crédito de quem acabou de
-      // colar a chave.
-      maxOutputTokens: 900,
-    });
+    const r = await runMeteredOperation(
+      { organizationId: orgId, provider: cerebro.provider, model: cerebro.model },
+      () => generateText({
+        model: buildModel(cerebro.provider, cerebro.apiKey, cerebro.model),
+        system,
+        prompt,
+        // Teto baixo de propósito: são sete linhas de JSON. Um modelo que resolva
+        // discursar bate no teto em vez de queimar o crédito de quem acabou de
+        // colar a chave.
+        maxOutputTokens: 900,
+      }),
+      (response) => measuredTextUsage(response.usage),
+    );
     return r.text;
   });
 

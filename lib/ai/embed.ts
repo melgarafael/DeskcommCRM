@@ -9,6 +9,7 @@
  * que sim.
  */
 
+import { runMeteredOperation } from "@/lib/billing/metered-operation";
 import { createOpenAI } from "@ai-sdk/openai";
 import { embed } from "ai";
 
@@ -83,13 +84,21 @@ export async function embedText(
         ...(chave.baseUrl ? { baseURL: chave.baseUrl } : {}),
       }).textEmbeddingModel(modelId.replace(/^openai\//, ""));
 
-  const result = await embed({
-    model: resolvido,
-    value: content,
-    headers: chave.viaGateway
-      ? gatewayHeaders({ organizationId: opts.organizationId })
-      : undefined,
-  });
+  const result = await runMeteredOperation(
+    { organizationId: opts.organizationId, provider: "openai", model: modelId },
+    () => embed({
+      model: resolvido,
+      value: content,
+      headers: chave.viaGateway
+        ? gatewayHeaders({ organizationId: opts.organizationId })
+        : undefined,
+    }),
+    (response) => {
+      const tokens = (response.usage as { tokens?: number; promptTokens?: number } | undefined)?.tokens
+        ?? (response.usage as { promptTokens?: number } | undefined)?.promptTokens;
+      return tokens === undefined ? null : { inputTokens: tokens, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    },
+  );
 
   // Dimensão asserida a cada chamada: divergir de modelo quebra o recall em
   // SILÊNCIO (os vetores deixam de ser comparáveis), e uma chamada recusada é

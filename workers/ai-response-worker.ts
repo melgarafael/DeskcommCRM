@@ -1,3 +1,4 @@
+import { runMeteredOperation, measuredTextUsage } from "@/lib/billing/metered-operation";
 import { recordLegacyNotice } from "@/lib/ai/agents/legacy-notice";
 import { serviceFromMessage } from "@/lib/atendimento/origem-mensagem";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
@@ -990,12 +991,16 @@ async function invokeBot(ctx: BotContext, model: LanguageModel): Promise<BotResp
   }
 
   const start = Date.now();
-  const result = await generateText({
-    model,
-    system: renderedSystem,
-    messages,
-    headers,
-  });
+  const result = await runMeteredOperation(
+    { organizationId: ctx.organization_id, provider: ctx.agent.model.split("/")[0]!, model: ctx.agent.model },
+    () => generateText({
+      model,
+      system: renderedSystem,
+      messages,
+      headers,
+    }),
+    (response) => measuredTextUsage(response.usage),
+  );
   const latency = Date.now() - start;
 
   const usage = result.usage as

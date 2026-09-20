@@ -22,6 +22,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// These provider-routing cases use a legacy company; commercial accounting has its own tests.
+const billingQuery = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({
+  getRequestPool: () => ({ query: billingQuery }),
+}));
+
 const embedSpy = vi.fn();
 vi.mock("ai", () => ({
   embed: (args: unknown) => embedSpy(args),
@@ -29,8 +35,9 @@ vi.mock("ai", () => ({
 
 let chaveMock: () => unknown;
 vi.mock("@/lib/ai/embeddings/chave", async () => {
-  const real =
-    await vi.importActual<typeof import("@/lib/ai/embeddings/chave")>("@/lib/ai/embeddings/chave");
+  const real = await vi.importActual<typeof import("@/lib/ai/embeddings/chave")>(
+    "@/lib/ai/embeddings/chave",
+  );
   return {
     ...real,
     // Mockado porque a resposta REAL depende de banco e de `.env.local`, e este
@@ -43,6 +50,7 @@ vi.mock("@/lib/ai/embeddings/chave", async () => {
 import { embedText, SemChaveDeEmbeddingError } from "@/lib/ai/embed";
 
 beforeEach(() => {
+  billingQuery.mockReset().mockResolvedValue({ rows: [] });
   embedSpy.mockReset();
   embedSpy.mockResolvedValue({
     // 1536 dimensões: `embedText` assere a dimensão a cada chamada, porque
@@ -142,4 +150,31 @@ describe("embedText", () => {
 
     await expect(embedText("oi", { organizationId: "org-1" })).rejects.toThrow(/1536/);
   });
+});
+
+it("recusa embedding antes do provedor quando a franquia está indisponível", async () => {
+  billingQuery.mockResolvedValueOnce({ rows: [{ provider_subscription_id: "sub_paid" }] });
+  billingQuery.mockRejectedValueOnce(Object.assign(new Error("limite"), { code: "P4021" }));
+  await expect(embedText("oi", { organizationId: "org-paid" })).rejects.toMatchObject({
+    name: "subscription_ai_allowance",
+  });
+  expect(embedSpy).not.toHaveBeenCalled();
+});
+it("concilia os tokens medidos de embedding sem cobrar tokens de saída", async () => {
+  billingQuery.mockImplementation(async (sql: string, values: unknown[]) => {
+    if (sql.includes("select provider_subscription_id"))
+      return { rows: [{ provider_subscription_id: "sub_paid" }] };
+    if (sql.includes("fn_reserve_subscription_ai"))
+      return { rows: [{ reservation_id: values[1] }] };
+    if (sql.includes("from ai_models"))
+      return { rows: [{ input_price_per_million_cents: 2, output_price_per_million_cents: 0 }] };
+    return { rows: [] };
+  });
+  const result = await embedText("oi", { organizationId: "org-paid" });
+  expect(result.embedding).toHaveLength(1536);
+  expect(billingQuery).toHaveBeenCalledWith("select fn_settle_subscription_ai($1,$2,$3)", [
+    "org-paid",
+    expect.any(String),
+    0.000014,
+  ]);
 });
