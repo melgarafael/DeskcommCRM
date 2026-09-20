@@ -22,7 +22,10 @@ import { runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 
-function poolQueGrava(paramsDaOrg: Record<string, unknown> = {}) {
+function poolQueGrava(
+  paramsDaOrg: Record<string, unknown> = {},
+  catalogue: Record<string, unknown>[] = [],
+) {
   const inserts: Array<{ sql: string; params: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     if (sql.includes("settings->'llm'")) {
@@ -40,6 +43,7 @@ function poolQueGrava(paramsDaOrg: Record<string, unknown> = {}) {
         ],
       };
     }
+    if (sql.includes("from ai_models where provider")) return { rows: catalogue };
     if (sql.includes("from ai_purpose_bindings")) return { rows: [] };
     if (sql.includes("from ai_provider_credentials")) return { rows: [] };
     if (sql.includes("insert into llm_calls")) {
@@ -354,4 +358,37 @@ describe("cancelamento de chamada auxiliar", () => {
     expect(factory).not.toHaveBeenCalled();
     expect(inserts).toHaveLength(1);
   });
+});
+
+it("o seam grava o custo do catálogo para um modelo fora da tabela antiga", async () => {
+  const { pool, inserts } = poolQueGrava({}, [
+    { input_price_per_million_cents: 250, output_price_per_million_cents: 1000 },
+  ]);
+  const registry = {
+    anthropic: () =>
+      ({
+        specificationVersion: "v3",
+        provider: "anthropic",
+        modelId: "claude-padrao",
+        doGenerate: async () => ({
+          content: [{ type: "text", text: "Resposta preservada" }],
+          finishReason: { unified: "stop", raw: undefined },
+          usage: {
+            inputTokens: { total: 1000, noCache: 1000, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 200, text: 200, reasoning: 0 },
+          },
+          warnings: [],
+        }),
+      }) as never,
+  };
+  const result = await runModelCall(
+    pool,
+    cfg,
+    { tenantId: ORG, messages: [{ role: "user", content: "oi" }] },
+    { registry },
+  );
+  expect(result.costCents).toBeCloseTo(0.45);
+  expect(result.result.text).toBe("Resposta preservada");
+  expect(inserts).toHaveLength(1);
+  expect(inserts[0]!.params[11]).toBeCloseTo(0.45);
 });

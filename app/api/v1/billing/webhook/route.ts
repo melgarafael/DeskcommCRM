@@ -73,12 +73,14 @@ export async function POST(request: Request) {
       return ok({ received: true });
     }
     const subscription = await retrieveStripeSubscription(subscriptionId);
-    const org = subscription.metadata.organization_id;
-    await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [`billing:${org}`]);
+    const organizationId = subscription.metadata.organization_id;
+    await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [
+      `billing:${organizationId}`,
+    ]);
     const {
       rows: [current],
     } = await db.query("select * from org_subscriptions where organization_id=$1 for update", [
-      org,
+      organizationId,
     ]);
     if (
       !current ||
@@ -106,7 +108,7 @@ export async function POST(request: Request) {
     await db.query(
       `update org_subscriptions set plan_id=$2,provider_customer_id=$3,provider_subscription_id=$4,status=$5,current_period_end=to_timestamp($6),cancel_at_period_end=$7,updated_at=now() where organization_id=$1`,
       [
-        org,
+        organizationId,
         subscription.metadata.plan_id,
         subscription.customer,
         subscription.id,
@@ -117,14 +119,14 @@ export async function POST(request: Request) {
     );
     await db.query(
       "insert into billing_webhook_events(provider,event_id,organization_id,event_type) values('stripe',$1,$2,$3)",
-      [event.id, org, event.type],
+      [event.id, organizationId, event.type],
     );
     await db.query("commit");
     void audit({
       action: "billing.subscription_synced",
-      organizationId: org,
+      organizationId,
       resourceType: "org_subscriptions",
-      resourceId: org,
+      resourceId: organizationId,
       bypassedRls: true,
       metadata: {
         provider: "stripe",

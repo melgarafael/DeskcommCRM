@@ -1,6 +1,7 @@
 /**
  * Tabela de preços versionada (stack.md §2: usage × pricing.ts → llm_calls.cost_cents).
- * ÚNICO lugar com preço de modelo no repo.
+ * Tarifas legadas de cache da Anthropic; o seam usa catalog-pricing.ts para
+ * consultar também ai_models, sempre com o provider escolhido.
  *
  * Fonte: https://docs.claude.com/en/docs/about-claude/pricing (conferida 2026-07);
  * cache write cotado no TTL 1h (2× input) — o TTL adotado pela doutrina de caching
@@ -8,14 +9,17 @@
  *
  * Modelo fora da tabela → custo NULL (desconhecido): mais honesto que inventar 0 —
  * o budget soma coalesce(cost_cents, 0), então modelo sem preço não consome teto;
- * quem habilitar um modelo novo para uma org adiciona a linha de preço aqui.
+ * catalog-pricing.ts complementa a tabela com preços conhecidos de ai_models.
  */
 
 /** USD por MILHÃO de tokens; match por prefixo do id (cobre sufixo de data do vendor). */
-const USD_PER_MTOK: Record<string, { input: number; output: number; cacheRead: number; cacheWrite1h: number }> = {
-  'claude-sonnet-4': { input: 3, output: 15, cacheRead: 0.3, cacheWrite1h: 6 },
-  'claude-haiku-4': { input: 1, output: 5, cacheRead: 0.1, cacheWrite1h: 2 },
-  'claude-opus-4': { input: 15, output: 75, cacheRead: 1.5, cacheWrite1h: 30 },
+const USD_PER_MTOK: Record<
+  string,
+  { input: number; output: number; cacheRead: number; cacheWrite1h: number }
+> = {
+  "claude-sonnet-4": { input: 3, output: 15, cacheRead: 0.3, cacheWrite1h: 6 },
+  "claude-haiku-4": { input: 1, output: 5, cacheRead: 0.1, cacheWrite1h: 2 },
+  "claude-opus-4": { input: 15, output: 75, cacheRead: 1.5, cacheWrite1h: 30 },
 };
 
 export interface TokenUsage {
@@ -39,7 +43,10 @@ export function costCents(model: string, usage: TokenUsage): number | null {
   if (p === undefined) {
     return null; // inalcançável (key veio de Object.keys); satisfaz noUncheckedIndexedAccess
   }
-  const noCacheInput = Math.max(0, usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens);
+  const noCacheInput = Math.max(
+    0,
+    usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens,
+  );
   const usd =
     (noCacheInput * p.input +
       usage.cacheReadTokens * p.cacheRead +

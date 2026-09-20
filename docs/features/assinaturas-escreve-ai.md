@@ -4,11 +4,11 @@ Estado: interface e catálogo publicados em 20/09/2026; contratação e cobranç
 
 ## Oferta mensal
 
-| Plano | Mensalidade | Pessoas | Canais | Agentes | Franquia de IA |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Essencial | R$ 197 | 2 | 1 | 2 | R$ 30 |
-| Crescer | R$ 397 | 5 | 3 | 5 | R$ 80 |
-| Escala | R$ 797 | 15 | 8 | 15 | R$ 180 |
+| Plano     | Mensalidade | Pessoas | Canais | Agentes | Franquia de IA |
+| --------- | ----------: | ------: | -----: | ------: | -------------: |
+| Essencial |      R$ 197 |       2 |      1 |       2 |          R$ 30 |
+| Crescer   |      R$ 397 |       5 |      3 |       5 |          R$ 80 |
+| Escala    |      R$ 797 |      15 |      8 |      15 |         R$ 180 |
 
 Preços em reais por empresa. A franquia de IA representa consumo, não um número garantido de mensagens. Tarifas Meta e de outros canais são separadas. Não oferecer consumo ilimitado, teste gratuito ou desconto anual antes da implementação correspondente. Contas existentes não são convertidas nem cobradas automaticamente.
 
@@ -64,7 +64,6 @@ Retentativas recentes reutilizam a mesma tentativa. Uma tentativa sem resposta c
 
 Confirmações de assinatura e novas sessões de checkout emitem auditoria pelo mecanismo existente. Falhas de conexão com o banco retornam erro recuperável. Validação: 34 testes relevantes passaram, incluindo cinco falhas reproduzidas antes da correção; TypeScript, lint focado e diff-check passaram. Cobrança permanece desativada em produção; cancelamento/faturas, limites, reconciliação tardia e QA com a conta real continuam pendentes. A verificação do navegador encontrou a Stripe na tela de login, sem sessão disponível.
 
-
 ## Portal de gestão preparado
 
 Código ainda não habilitado em produção: a página de planos oferece **Gerenciar assinatura** quando a cobrança está configurada e existe um cliente Stripe vinculado à empresa autenticada. A rota POST `/api/v1/billing/portal` exige administrador, recusa acompanhamento administrativo e origem externa e não aceita identificadores ou URLs enviados pelo cliente. Falhas retornam uma tentativa recuperável; a abertura bem-sucedida é auditada.
@@ -90,3 +89,9 @@ Antes de habilitar: concluir a franquia de IA, os erros de limite nas jornadas d
 A criação de agentes pela ação usada no formulário e pela API, além da conexão WhatsApp pela página de Conexões e pelo onboarding, reconhece o SQLSTATE `P4020`. A resposta pública é `subscription_resource_limit` (HTTP 409 nas rotas), com orientação localizada para Configurações → Planos e assinatura. O backend não repassa diagnóstico SQL. A reserva de canal interrompe o fluxo antes de criar, iniciar ou parar sessões externas.
 
 O formulário preserva nome e instruções quando a criação é recusada e exibe o aviso sem confirmar sucesso. Testes exercitam a ação real de criação, o formulário e a fronteira de transporte do canal. A expansão desse tratamento para equipe e outros provedores de canal permanece pendente; os gatilhos do banco já fazem a restrição independentemente da mensagem da interface. Cobrança e estas mudanças continuam sem ativação em produção.
+
+## Contabilidade anterior à franquia comercial
+
+O seam de IA agora complementa as tarifas legadas com `ai_models`, buscando o provedor escolhido e priorizando o identificador exato do modelo. Registra centavos fracionários de USD em `llm_calls`, sem arredondar cada chamada para um centavo inteiro. Não aplica a tarifa direta da Anthropic a chamadas da OpenRouter. Preço ausente, inválido, consulta indisponível ou cache sem tarifa permanecem como custo desconhecido, não zero. As tarifas legadas de cache da Anthropic foram preservadas.
+
+A versão instalada do SDK já agrega todas as etapas em `usage`; esse comportamento não foi alterado. Um teste com o SDK e um modelo local simulado confirma que o custo consultado é gravado no registro da execução e que a resposta é preservada. Ainda faltam as tarifas de cache do catálogo e a vinculação da franquia comercial em reais ao período da assinatura, com reserva concorrente de consumo. Esta melhoria isolada não habilita a venda nem torna a franquia operacional.

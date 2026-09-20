@@ -58,19 +58,13 @@ export interface BudgetStatus {
    * Há chamadas de IA NESTE MÊS cujo custo o produto não sabe calcular
    * (`llm_calls.cost_cents is null`).
    *
-   * ⚠️ É O FURO DEBAIXO DA PROTEÇÃO INTEIRA, e por isso ele é um campo do
-   * contrato e não uma nota num doc. `pricing.ts` casa o `model` por PREFIXO
-   * contra três chaves (`claude-sonnet-4`, `claude-haiku-4`, `claude-opus-4`) e
-   * devolve `null` fora delas — id de gateway (`anthropic/claude-sonnet-4-6`) ou
-   * da OpenRouter (`z-ai/glm-4.7`) não casa nenhuma. A régua trata custo nulo
-   * como zero (`coalesce`), então nessas instalações o gasto medido é MENOR que
-   * o real — no limite, zero: o teto nunca dispara e o card mostra "US$ 0,00
-   * gastos" enquanto o dinheiro sai.
-   *
-   * O conserto de raiz é o motor consultar `ai_models` (onde o catálogo da
-   * OpenRouter já grava preço real — `lib/ai/cost.ts`), e é item próprio. No
-   * intervalo, a tela não pode PROMETER uma parada que não vai acontecer: este
-   * campo é o que ela usa para dizer a verdade ao lado da opção.
+   * A régua soma `coalesce(cost_cents, 0)`: custo desconhecido deixa o gasto
+   * medido abaixo do real. Por isso a interface precisa exibir esta lacuna.
+   * O seam consulta `ai_models` pelo provider em `edge/llm/catalog-pricing.ts`,
+   * além das tarifas legadas de cache. Preço ausente, inválido ou cache sem
+   * tarifa continua desconhecido; o catálogo não transforma esses casos em
+   * consumo gratuito. Este campo impede prometer uma parada exata quando a
+   * contabilidade ainda está incompleta.
    */
   gasto_incompleto: boolean;
   /**
