@@ -1,6 +1,6 @@
 # Assinaturas escreve.ai
 
-Estado em 20/09/2026, 08:57 BRT: app e worker `9386bb79` publicados e saudáveis. Catálogo e infraestrutura de assinatura estão implementados; contratação e cobrança permanecem indisponíveis (`BILLING_ENABLED=false`). As seções de evidência abaixo registram etapas anteriores e não substituem este estado atual.
+Estado em 20/09/2026, 13:10 BRT: app `39e52fa0` e scheduler da integração Cakto publicados; worker preservado em `9386bb79`. Saúde pública, banco, Redis e WAHA confirmados. Contratação e cobrança permanecem indisponíveis (`BILLING_ENABLED=false`, `BILLING_PROVIDER=cakto`) até homologar o ciclo de pagamento. As seções de evidência abaixo registram etapas anteriores e não substituem este estado atual.
 
 ## Integração Cakto — em validação, 20/09/2026
 
@@ -22,7 +22,15 @@ A chave foi autorizada pelo responsável com leitura, escrita, produtos, ofertas
 
 Build Next.js completo, TypeScript e lint focado passaram. A execução geral teve 9.661 testes aprovados e quatro falhas; as quatro causas foram corrigidas e os 15 testes correspondentes passaram novamente. Depois disso, 40 testes específicos da Cakto e 18 testes da apresentação da assinatura passaram. O PostgreSQL passou sete invariantes de isolamento, privilégios e deduplicação, incluindo instalação/atualização do baseline. A falha legada do instalador com apóstrofo continua descrita abaixo.
 
-O navegador local na porta 3002 exibiu os três planos e a contratação indisponível, conforme a configuração desativada. Isso não comprova checkout, pagamento ou gestão de assinatura na Cakto. Código ainda sem deploy; webhook do provedor ainda não cadastrado.
+O navegador local na porta 3002 exibiu os três planos e a contratação indisponível, conforme a configuração desativada. Isso não comprova checkout, pagamento ou gestão de assinatura na Cakto. A integração foi publicada conforme a evidência de deploy abaixo; pagamento real permanece não homologado.
+
+### Deploy e entrega do webhook — 20/09/2026, 13:10 BRT
+
+A imagem Linux foi construída com sucesso e transferida ao servidor; o identificador `sha256:0db5a70063b0064f62c5174fcf410f487508725d9c2b1d7982b1fe89f5cc95e7` é igual na origem e no destino. A migration 0320 foi aplicada após backup validado. A versão candidata passou em saúde, login, carregamento da marca e rejeição de webhook sem assinatura (401). Depois da troca, a saúde pública retornou `escreve-39e52fa0`, e o cron autenticado retornou zero processados e zero falhas. O hash dos agentes existentes permaneceu igual. App anterior e backup do ambiente foram preservados para rollback.
+
+O webhook Cakto `69187` está ativo para os 12 eventos da integração e restrito ao produto escreve.ai. O teste oficial `purchase_approved`, registro `31668089`, teve HTTP 200 no histórico do provedor. Essa é prova de entrega ao endpoint, não de pagamento ou concessão de acesso. Os segredos foram mantidos somente em arquivos restritos e no ambiente do servidor.
+
+O Checkout Principal recebeu o banner escreve.ai em desktop e mobile, e a página pública foi conferida. Os três planos usam esse checkout. A revisão pública mostrou taxa de serviço de R$0,99, além do preço do plano; não houve alteração dessa taxa. A capa quadrada também foi gerada, mas não foi aplicada como imagem do produto.
 
 ### Limites que impedem ativar a venda agora
 
