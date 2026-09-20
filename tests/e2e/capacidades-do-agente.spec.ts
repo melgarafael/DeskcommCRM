@@ -179,21 +179,7 @@ test.describe("Configurar o que o agente pode fazer", () => {
     expect(caixa.esquerda).toBeGreaterThanOrEqual(0);
     expect(caixa.direita).toBeLessThanOrEqual(larguraDaJanela);
 
-    // A contagem diz quantas das capacidades do pacote estão ligadas.
-    //
-    // ⚠️ Esta asserção JÁ COBROU `/Nenhuma capacidade disponível ainda/`, e estava
-    // certa quando foi escrita: a W1 rodou com o pacote `reter` ainda VAZIO,
-    // antes de a W2 entregar. O épico preencheu os seis pacotes e a frase virou
-    // falsa — o teste passou a travar um estado transitório em vez de uma
-    // propriedade. A tela diz "0 de 6 capacidades ligadas", que é o correto.
-    //
-    // O caminho "pacote vazio" não some da cobertura: ele é do COMPONENTE, e
-    // vive em tests/unit/selecao-por-pacote.test.ts (função textoDaContagem) — aqui
-    // não há mais como alcançá-lo sem esvaziar o catálogo, e um E2E que depende
-    // de catálogo vazio não descreve nenhuma instalação real.
-    await expect(page.getByTestId("contagem-reter")).toContainText(
-      /\d+ de \d+ capacidades? ligadas?/,
-    );
+    await expect(page.getByTestId("consumo-teto")).toContainText(/\d+ de 25/);
 
     await page
       .getByTestId("tool-picker")
@@ -240,7 +226,7 @@ test.describe("Configurar o que o agente pode fazer", () => {
       .getByTestId(`capacidade-${TOOLS_DO_SEED[2]}`)
       .locator("input[type=checkbox]")
       .click();
-    await page.getByTestId("toggle-avancado").click();
+    await page.getByRole("button", { name: "Simples", exact: true }).click();
 
     await page.getByTestId("switch-pacote-atender").click();
 
@@ -259,9 +245,12 @@ test.describe("Configurar o que o agente pode fazer", () => {
     // …e a que fala com o cliente de verdade, não.
     expect(await estaMarcada(page, ENVIO)).toBe(false);
 
+    await page.getByRole("button", { name: "Simples", exact: true }).click();
+
     // Ela aparece separada, pedindo a marcação individual.
     const bloco = page.getByTestId("criticas-atender");
     await expect(bloco).toBeVisible();
+    await bloco.locator("summary").click();
     await expect(bloco).toContainText(/o pacote não liga por você/i);
     await expect(bloco).toContainText("Enviar mensagem no WhatsApp");
 
@@ -281,6 +270,7 @@ test.describe("Configurar o que o agente pode fazer", () => {
     // E desligar a jornada leva a crítica junto: declarar que a jornada acabou
     // e ficar com o direito de enviar mensagem seria a pior surpresa possível.
     await page.getByTestId("switch-pacote-atender").click();
+    await page.getByTestId("toggle-avancado").click();
     await expect.poll(() => estaMarcada(page, ENVIO), { timeout: 5_000 }).toBe(false);
     await expect.poll(() => estaMarcada(page, LEITURA), { timeout: 5_000 }).toBe(false);
   });

@@ -22,12 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { apiClient } from "@/lib/api/client";
 import { useT } from "@/hooks/i18n/useT";
-import {
-  PACOTES,
-  riscoMeta,
-  type ToolBundle,
-  type ToolRisk,
-} from "@/lib/mcp/tools/pacotes";
+import { PACOTES, riscoMeta, type ToolBundle, type ToolRisk } from "@/lib/mcp/tools/pacotes";
 import {
   TETO_TOOLS_POR_AGENTE,
   capacidadesAutomaticasDoPacote,
@@ -36,7 +31,6 @@ import {
   estadoDoPacote,
   ligarPacote,
   vagasExigidasPeloPacote,
-  textoDaContagem,
   vagasRestantes,
   type CapacidadeSelecionavel,
 } from "@/lib/mcp/tools/selecao-por-pacote";
@@ -77,7 +71,11 @@ function BadgeRisco({ risco }: { risco: ToolRisk }) {
   const t = useT();
   const meta = riscoMeta(risco);
   return (
-    <Badge variant="outline" className={`text-[11px] ${CLASSE_RISCO[risco]}`} title={t(meta.explicacao)}>
+    <Badge
+      variant="outline"
+      className={`text-[11px] ${CLASSE_RISCO[risco]}`}
+      title={t(meta.explicacao)}
+    >
       {t(meta.rotulo)}
     </Badge>
   );
@@ -137,6 +135,7 @@ function FichaCapacidade({
 export function ToolPicker({ value, onChange, disabled }: Props) {
   const t = useT();
   const [avancado, setAvancado] = React.useState(false);
+  const [busca, setBusca] = React.useState("");
   const [recusa, setRecusa] = React.useState<string | null>(null);
 
   const query = useQuery({
@@ -150,10 +149,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
   });
 
   const catalogo = React.useMemo<McpToolMeta[]>(() => query.data ?? [], [query.data]);
-  const porNome = React.useMemo(
-    () => new Map(catalogo.map((c) => [c.name, c])),
-    [catalogo],
-  );
+  const porNome = React.useMemo(() => new Map(catalogo.map((c) => [c.name, c])), [catalogo]);
 
   const vagas = vagasRestantes(value);
   const cheio = vagas <= 0;
@@ -211,9 +207,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
       return;
     }
     aplicar(
-      [...catalogo.map((c) => c.name), ...orfas].filter(
-        (n) => value.includes(n) || n === name,
-      ),
+      [...catalogo.map((c) => c.name), ...orfas].filter((n) => value.includes(n) || n === name),
       `${t("Você já ligou")} ${TETO_TOOLS_POR_AGENTE} ${t("capacidades. Desligue uma antes de ligar outra.")}`,
     );
   }
@@ -231,20 +225,20 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
 
   return (
     <div className="space-y-4" data-testid="tool-picker">
-      {/* Consumo do teto — o número que impede a surpresa no salvar. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/30 p-3">
-        <p className="text-sm">
-          <strong data-testid="consumo-teto">
-            {value.length} {t("de")} {TETO_TOOLS_POR_AGENTE}
-          </strong>{" "}
-          {t("capacidades ligadas")}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {cheio
-            ? t("Limite atingido. Desligue algo para ligar outra coisa.")
-            : t("Acima disso o agente erra na hora de escolher o que usar.")}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium">{t("O que você quer que ele faça?")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("Escolha as tarefas. Você pode ajustar os detalhes depois.")}</p>
+        </div>
+        <div role="group" aria-label={t("Modo de configuração")} className="flex rounded-full bg-muted p-1">
+          <button type="button" aria-pressed={!avancado} onClick={() => setAvancado(false)} className={`min-h-10 rounded-full px-4 text-sm focus-visible:outline-2 focus-visible:outline-primary ${!avancado ? "bg-background shadow-sm" : "text-muted-foreground"}`}>{t("Simples")}</button>
+          <button type="button" data-testid="toggle-avancado" aria-pressed={avancado} onClick={() => setAvancado(true)} className={`min-h-10 rounded-full px-4 text-sm focus-visible:outline-2 focus-visible:outline-primary ${avancado ? "bg-background shadow-sm" : "text-muted-foreground"}`}>{t("Avançado")}</button>
+        </div>
       </div>
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        <span data-testid="consumo-teto">{value.length} {t("de")} {TETO_TOOLS_POR_AGENTE}</span>{" "}{t("capacidades ligadas")}
+        {cheio ? ` · ${t("Limite atingido. Desligue algo para ligar outra coisa.")}` : null}
+      </p>
 
       {recusa ? (
         <p
@@ -256,15 +250,12 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
       ) : null}
 
       {/* Caminho padrão: pacotes por jornada. */}
-      <div className="grid gap-3">
+      {!avancado ? <div className="divide-y divide-border/60">
         {PACOTES.map((pacote) => {
           const automaticas = capacidadesAutomaticasDoPacote(catalogo, pacote.id);
           const criticas = capacidadesCriticasDoPacote(catalogo, pacote.id);
           const estado = estadoDoPacote(value, catalogo, pacote.id);
           const total = automaticas.length + criticas.length;
-          const ligadas = [...automaticas, ...criticas].filter((n) =>
-            value.includes(n),
-          ).length;
           const vazio = total === 0;
 
           return (
@@ -272,7 +263,7 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
               key={pacote.id}
               data-testid={`pacote-${pacote.id}`}
               data-estado={estado}
-              className="space-y-3 rounded-md border border-border/60 p-4"
+              className="space-y-3 py-4"
             >
               <div className="flex items-start gap-3">
                 <Switch
@@ -293,24 +284,25 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                     </label>
                     {estado === "parcial" ? (
                       <Badge variant="outline" className="text-[11px]">
-                        {t("parcial")}
+                        {t("Personalizado")}
                       </Badge>
                     ) : null}
                   </div>
                   <p className="text-xs text-muted-foreground">{pacote.explicacao}</p>
-                  <p className="text-xs text-muted-foreground" data-testid={`contagem-${pacote.id}`}>
-                    {textoDaContagem(total, ligadas, t)}
-                  </p>
                 </div>
               </div>
 
               {/* Crítico nunca entra por pacote: exige o dedo do humano. */}
-              {criticas.length > 0 ? (
-                <div
+              {criticas.length > 0 && (estado !== "desligado" || criticas.some((name) => value.includes(name))) ? (
+                <details
                   data-testid={`criticas-${pacote.id}`}
                   className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2"
                 >
-                  <p className="text-xs font-medium text-destructive">
+                  <summary className="cursor-pointer text-xs leading-6 font-medium text-destructive">
+                    {t("Permissões com efeitos no atendimento")} ·{" "}
+                    {criticas.filter((name) => value.includes(name)).length}/{criticas.length}
+                  </summary>
+                  <p className="my-2 text-xs text-muted-foreground">
                     {t("Só ligando uma a uma — o pacote não liga por você:")}
                   </p>
                   {criticas.map((name) => {
@@ -328,25 +320,15 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                       />
                     );
                   })}
-                </div>
+                </details>
               ) : null}
             </div>
           );
         })}
-      </div>
+      </div> : null}
 
       {/* Modo avançado: a lista inteira, capacidade por capacidade. */}
       <div className="space-y-2">
-        <button
-          type="button"
-          data-testid="toggle-avancado"
-          aria-expanded={avancado}
-          onClick={() => setAvancado((v) => !v)}
-          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-        >
-          {avancado ? t("Esconder a lista completa") : t("Escolher uma a uma (modo avançado)")}
-        </button>
-
         {avancado ? (
           <div
             data-testid="lista-avancada"
@@ -357,7 +339,11 @@ export function ToolPicker({ value, onChange, disabled }: Props) {
                 "Cada linha é uma capacidade. O nome em cinza é como ela aparece para quem integra o sistema por fora.",
               )}
             </p>
-            {catalogo.map((capacidade) => {
+            <label className="block space-y-2 pb-3 text-sm">
+              <span>{t("Buscar uma capacidade")}</span>
+              <input type="search" value={busca} onChange={(event) => setBusca(event.target.value)} className="min-h-11 w-full rounded-md border border-input bg-background px-3" />
+            </label>
+            {catalogo.filter((capacidade) => `${capacidade.rotulo} ${capacidade.explicacao} ${capacidade.name}`.toLocaleLowerCase().includes(busca.trim().toLocaleLowerCase())).map((capacidade) => {
               const marcada = value.includes(capacidade.name);
               return (
                 <FichaCapacidade
